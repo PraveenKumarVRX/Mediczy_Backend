@@ -1,0 +1,73 @@
+name: Production Deployment with Sanity Checks
+
+on:
+  push:
+    branches: [main, master]
+  workflow_dispatch:
+
+jobs:
+  sanity-check:
+    name: Pre-Deployment Sanity Check
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v3
+      
+      - name: Setup Node.js
+        uses: actions/setup-node@v3
+        with:
+          node-version: '18'
+          cache: 'npm'
+      
+      - name: Install dependencies
+        run: npm ci
+      
+      - name: Run sanity checks
+        run: |
+          chmod +x pre-deploy-sanity-check.sh
+          ./pre-deploy-sanity-check.sh
+        env:
+          NODE_ENV: production
+          JWT_SECRET: ${{ secrets.JWT_SECRET }}
+          DB_HOST: ${{ secrets.DB_HOST }}
+          DB_USER: ${{ secrets.DB_USER }}
+          DB_PASSWORD: ${{ secrets.DB_PASSWORD }}
+          DB_NAME: ${{ secrets.DB_NAME }}
+
+  deploy:
+    name: Deploy to Production
+    needs: sanity-check
+    runs-on: ubuntu-latest
+    if: success()
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v3
+      
+      - name: Deploy to server
+        uses: appleboy/ssh-action@master
+        with:
+          host: ${{ secrets.SERVER_HOST }}
+          username: ${{ secrets.SERVER_USER }}
+          key: ${{ secrets.SSH_PRIVATE_KEY }}
+          script: |
+            cd /home/ubuntu/Mediczy
+            git pull origin main
+            chmod +x deploy-with-sanity-check.sh
+            ./deploy-with-sanity-check.sh
+      
+      - name: Post-deployment verification
+        run: |
+          # Wait for deployment
+          sleep 10
+          # Test critical endpoint
+          curl -f ${{ secrets.APP_URL }}/api/users/login || exit 1
+      
+      - name: Notify on success
+        if: success()
+        run: echo "✓ Deployment successful!"
+      
+      - name: Notify on failure
+        if: failure()
+        run: |
+          echo "✗ Deployment failed - check logs"
+          exit 1
