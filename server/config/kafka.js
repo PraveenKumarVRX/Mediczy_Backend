@@ -2,8 +2,18 @@ import { Kafka, logLevel } from 'kafkajs';
 import dotenv from 'dotenv';
 dotenv.config();
 
+// Kafka should be explicitly enabled via config.
+// In production deployments without Kafka, trying to connect creates noisy errors.
+const kafkaEnabled = process.env.KAFKA_ENABLED === 'true';
+const brokersEnv = (process.env.KAFKA_BROKERS || '').trim();
+const hasKafkaBrokers = brokersEnv.length > 0;
+
 // Check if Kafka is disabled
-const isKafkaDisabled = process.env.DISABLE_KAFKA === 'true' || process.env.NODE_ENV === 'development';
+const isKafkaDisabled =
+  process.env.DISABLE_KAFKA === 'true' ||
+  process.env.NODE_ENV === 'development' ||
+  !kafkaEnabled ||
+  !hasKafkaBrokers;
 
 // Only create Kafka instance if not disabled
 let kafka, kafkaProducer, kafkaConsumer;
@@ -12,7 +22,7 @@ if (!isKafkaDisabled) {
   // Kafka configuration
   kafka = new Kafka({
     clientId: process.env.KAFKA_CLIENT_ID || 'mediczy-server',
-    brokers: (process.env.KAFKA_BROKERS || 'localhost:9092').split(','),
+    brokers: brokersEnv.split(',').map((b) => b.trim()).filter(Boolean),
     logLevel: logLevel.ERROR,
     retry: {
       initialRetryTime: 100,
@@ -38,7 +48,14 @@ if (!isKafkaDisabled) {
   // Create null objects to prevent errors
   kafkaProducer = null;
   kafkaConsumer = null;
-  console.log('📝 Kafka initialization skipped - disabled by configuration');
+  const reason = process.env.DISABLE_KAFKA === 'true'
+    ? 'DISABLE_KAFKA=true'
+    : (process.env.NODE_ENV === 'development'
+      ? 'development mode'
+      : (!kafkaEnabled
+        ? 'KAFKA_ENABLED not true'
+        : 'KAFKA_BROKERS not set'));
+  console.log(`📝 Kafka initialization skipped (${reason})`);
 }
 
 // Export the instances (may be null if disabled)

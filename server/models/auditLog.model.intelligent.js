@@ -2,6 +2,7 @@ import { Op } from 'sequelize';
 import { postgresSequelize } from '../db/postgres-sequelize.js';
 
 let intelligentDB = null;
+let auditLogsTableEnsured = false;
 
 async function getDB() {
   if (!intelligentDB) {
@@ -10,6 +11,49 @@ async function getDB() {
     intelligentDB = postgresSequelize;
   }
   return intelligentDB;
+}
+
+async function ensureAuditLogsTable(db) {
+  if (auditLogsTableEnsured) return;
+
+  // Minimal schema to support compliance logging. Safe to run multiple times.
+  await db.query(`
+    CREATE TABLE IF NOT EXISTS audit_logs (
+      id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+      user_id UUID NULL,
+      user_type TEXT NULL,
+      user_email TEXT NULL,
+      action TEXT NOT NULL,
+      resource_type TEXT NULL,
+      resource_id TEXT NULL,
+      data_fields JSONB NOT NULL DEFAULT '{}'::jsonb,
+      changes_before JSONB NOT NULL DEFAULT '{}'::jsonb,
+      changes_after JSONB NOT NULL DEFAULT '{}'::jsonb,
+      ip_address TEXT NULL,
+      user_agent TEXT NULL,
+      method TEXT NULL,
+      endpoint TEXT NULL,
+      status TEXT NULL,
+      status_code INTEGER NULL,
+      error_message TEXT NULL,
+      is_phi BOOLEAN NOT NULL DEFAULT false,
+      is_pii BOOLEAN NOT NULL DEFAULT false,
+      purpose TEXT NULL,
+      consent_id TEXT NULL,
+      session_id TEXT NULL,
+      retention_date TIMESTAMPTZ NULL,
+      timestamp TIMESTAMPTZ NULL,
+      created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+      updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+    );
+  `);
+
+  await db.query(`CREATE INDEX IF NOT EXISTS audit_logs_timestamp_idx ON audit_logs (timestamp DESC);`);
+  await db.query(`CREATE INDEX IF NOT EXISTS audit_logs_user_id_idx ON audit_logs (user_id);`);
+  await db.query(`CREATE INDEX IF NOT EXISTS audit_logs_action_idx ON audit_logs (action);`);
+  await db.query(`CREATE INDEX IF NOT EXISTS audit_logs_resource_type_idx ON audit_logs (resource_type);`);
+
+  auditLogsTableEnsured = true;
 }
 
 const toPlainLog = (record) => {
@@ -90,6 +134,7 @@ const AuditLog = {
   create: async (logData) => {
     try {
       const db = await getDB();
+      await ensureAuditLogsTable(db);
       // Use raw SQL for now until proper model is created
       const query = `
         INSERT INTO audit_logs (
@@ -126,7 +171,7 @@ const AuditLog = {
         logData.sessionId,
         logData.retentionDate,
         logData.timestamp
-      ];
+      ].map((value) => (value === undefined ? null : value));
 
       const [result] = await db.query(query, {
         bind: values,

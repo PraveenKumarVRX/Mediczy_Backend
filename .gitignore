@@ -16,8 +16,11 @@ __pycache__/
 .env.test.local
 .env.production.local
 .env.*
+!.env.example
 server/.env
 client/.env
+!server/.env.example
+!client/.env.example
 
 # Logs
 *.log
