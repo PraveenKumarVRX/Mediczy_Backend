@@ -1,0 +1,590 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Medical Referral Letter</title>
+    <style>
+        @page {
+            size: A4;
+            margin: 15mm;
+        }
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            line-height: 1.6;
+            color: #333;
+            margin: 0;
+            padding: 0;
+        }
+        .letter-container {
+            max-width: 210mm;
+            margin: 0 auto;
+            background: white;
+            padding: 30px;
+        }
+        .letterhead {
+            border-bottom: 3px solid #2563eb;
+            padding-bottom: 20px;
+            margin-bottom: 30px;
+            display: flex;
+            justify-content: space-between;
+            align-items: start;
+        }
+        .clinic-info h1 {
+            margin: 0 0 8px 0;
+            color: #2563eb;
+            font-size: 26px;
+        }
+        .clinic-info p {
+            margin: 3px 0;
+            font-size: 13px;
+            color: #6b7280;
+        }
+        .logo {
+            width: 80px;
+            height: 80px;
+            background: #f3f4f6;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            border-radius: 50%;
+            font-size: 40px;
+        }
+        .reference-info {
+            display: flex;
+            justify-content: space-between;
+            margin-bottom: 25px;
+            font-size: 13px;
+        }
+        .ref-number {
+            color: #6b7280;
+        }
+        .ref-date {
+            color: #6b7280;
+        }
+        .recipient-section {
+            margin-bottom: 30px;
+        }
+        .recipient-label {
+            font-weight: 600;
+            color: #374151;
+            margin-bottom: 8px;
+        }
+        .recipient-details {
+            background: #f9fafb;
+            padding: 15px;
+            border-left: 4px solid #2563eb;
+            border-radius: 4px;
+        }
+        .recipient-name {
+            font-size: 18px;
+            font-weight: bold;
+            color: #1f2937;
+            margin-bottom: 5px;
+        }
+        .recipient-info {
+            font-size: 13px;
+            color: #6b7280;
+            line-height: 1.8;
+        }
+        .subject-line {
+            background: #dbeafe;
+            padding: 12px 15px;
+            border-left: 4px solid #2563eb;
+            margin-bottom: 25px;
+            border-radius: 4px;
+        }
+        .subject-label {
+            font-weight: 600;
+            color: #1e40af;
+            margin-right: 10px;
+        }
+        .subject-text {
+            color: #1e3a8a;
+            font-weight: 500;
+        }
+        .salutation {
+            font-size: 16px;
+            font-weight: 500;
+            margin-bottom: 20px;
+            color: #1f2937;
+        }
+        .letter-body {
+            font-size: 15px;
+            line-height: 1.8;
+            text-align: justify;
+            margin-bottom: 25px;
+        }
+        .patient-summary {
+            background: #f0fdf4;
+            border: 2px solid #10b981;
+            border-radius: 8px;
+            padding: 20px;
+            margin: 25px 0;
+        }
+        .summary-title {
+            font-weight: bold;
+            color: #065f46;
+            font-size: 16px;
+            margin-bottom: 15px;
+        }
+        .patient-details-grid {
+            display: grid;
+            grid-template-columns: repeat(2, 1fr);
+            gap: 12px;
+            margin-bottom: 15px;
+        }
+        .detail-row {
+            display: flex;
+            padding: 8px;
+            background: white;
+            border-radius: 4px;
+        }
+        .detail-label {
+            font-weight: 600;
+            color: #374151;
+            min-width: 140px;
+        }
+        .detail-value {
+            color: #1f2937;
+        }
+        .clinical-info {
+            background: #fffbeb;
+            border: 2px solid #f59e0b;
+            border-radius: 8px;
+            padding: 20px;
+            margin: 25px 0;
+        }
+        .clinical-section {
+            margin-bottom: 20px;
+        }
+        .clinical-section:last-child {
+            margin-bottom: 0;
+        }
+        .clinical-heading {
+            font-weight: bold;
+            color: #92400e;
+            font-size: 15px;
+            margin-bottom: 8px;
+            display: flex;
+            align-items: center;
+            gap: 8px;
+        }
+        .clinical-content {
+            color: #78350f;
+            padding-left: 25px;
+            line-height: 1.8;
+        }
+        .tests-list {
+            list-style: none;
+            padding: 0;
+        }
+        .tests-list li {
+            padding: 8px 12px;
+            background: #fef3c7;
+            margin-bottom: 8px;
+            border-left: 3px solid #f59e0b;
+            border-radius: 4px;
+        }
+        .treatment-given {
+            background: #dbeafe;
+            padding: 15px;
+            border-radius: 8px;
+            margin: 20px 0;
+        }
+        .treatment-title {
+            font-weight: bold;
+            color: #1e40af;
+            margin-bottom: 10px;
+        }
+        .medications-list {
+            list-style: none;
+            padding: 0;
+        }
+        .medications-list li {
+            padding: 8px 12px;
+            background: white;
+            margin-bottom: 6px;
+            border-left: 3px solid #3b82f6;
+            border-radius: 4px;
+            font-size: 14px;
+        }
+        .reason-for-referral {
+            background: #fef2f2;
+            border: 2px solid #ef4444;
+            border-radius: 8px;
+            padding: 20px;
+            margin: 25px 0;
+        }
+        .referral-reason-title {
+            font-weight: bold;
+            color: #991b1b;
+            font-size: 16px;
+            margin-bottom: 12px;
+            display: flex;
+            align-items: center;
+            gap: 8px;
+        }
+        .referral-reason-text {
+            color: #7f1d1d;
+            line-height: 1.8;
+        }
+        .urgency-box {
+            background: #fee2e2;
+            border: 2px dashed #ef4444;
+            padding: 12px;
+            text-align: center;
+            border-radius: 8px;
+            margin: 20px 0;
+        }
+        .urgency-label {
+            font-weight: bold;
+            color: #991b1b;
+            font-size: 14px;
+        }
+        .closing-remarks {
+            margin-top: 30px;
+            font-size: 15px;
+            line-height: 1.8;
+        }
+        .signature-section {
+            margin-top: 50px;
+            display: flex;
+            justify-content: space-between;
+            align-items: end;
+        }
+        .date-place {
+            font-size: 14px;
+            color: #6b7280;
+        }
+        .doctor-signature {
+            text-align: center;
+        }
+        .signature-line {
+            width: 200px;
+            border-top: 2px solid #374151;
+            margin: 40px auto 15px;
+        }
+        .doctor-name {
+            font-weight: bold;
+            font-size: 16px;
+            color: #1f2937;
+        }
+        .doctor-credentials {
+            font-size: 12px;
+            color: #6b7280;
+            margin-top: 3px;
+        }
+        .enclosures {
+            margin-top: 30px;
+            padding-top: 20px;
+            border-top: 1px solid #e5e7eb;
+        }
+        .enclosures-title {
+            font-weight: 600;
+            color: #374151;
+            margin-bottom: 10px;
+        }
+        .enclosures-list {
+            list-style: none;
+            padding: 0;
+            font-size: 13px;
+            color: #6b7280;
+        }
+        .enclosures-list li {
+            padding: 5px 0;
+            padding-left: 20px;
+            position: relative;
+        }
+        .enclosures-list li:before {
+            content: "📎";
+            position: absolute;
+            left: 0;
+        }
+        .footer {
+            margin-top: 30px;
+            padding-top: 15px;
+            border-top: 1px solid #e5e7eb;
+            font-size: 11px;
+            color: #9ca3af;
+            text-align: center;
+        }
+        .watermark {
+            position: absolute;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%) rotate(-45deg);
+            font-size: 100px;
+            color: rgba(37, 99, 235, 0.03);
+            font-weight: bold;
+            z-index: -1;
+            pointer-events: none;
+        }
+        @media print {
+            .letter-container {
+                padding: 0;
+            }
+        }
+    </style>
+</head>
+<body>
+    <div class="watermark">REFERRAL LETTER</div>
+    <div class="letter-container">
+        <!-- Letterhead -->
+        <div class="letterhead">
+            <div class="clinic-info">
+                <h1>{{clinicName}}</h1>
+                <p>📍 {{clinicAddress}}</p>
+                <p>📞 {{clinicPhone}} | ✉️ {{clinicEmail}}</p>
+                <p>Registration No: {{clinicRegNo}}</p>
+            </div>
+            <div class="logo">🏥</div>
+        </div>
+
+        <!-- Reference Information -->
+        <div class="reference-info">
+            <div class="ref-number">
+                <strong>Ref No:</strong> {{referenceNumber}}
+            </div>
+            <div class="ref-date">
+                <strong>Date:</strong> {{letterDate}}
+            </div>
+        </div>
+
+        <!-- Recipient Section -->
+        <div class="recipient-section">
+            <div class="recipient-label">To,</div>
+            <div class="recipient-details">
+                <div class="recipient-name">Dr. {{recipientDoctorName}}</div>
+                <div class="recipient-info">
+                    {{recipientQualifications}}<br>
+                    {{recipientSpecialization}}<br>
+                    {{recipientHospital}}<br>
+                    {{recipientAddress}}<br>
+                    📞 {{recipientPhone}}
+                </div>
+            </div>
+        </div>
+
+        <!-- Subject Line -->
+        <div class="subject-line">
+            <span class="subject-label">Subject:</span>
+            <span class="subject-text">Referral for {{referralPurpose}}</span>
+        </div>
+
+        <!-- Salutation -->
+        <div class="salutation">
+            Dear Dr. {{recipientDoctorName}},
+        </div>
+
+        <!-- Letter Body -->
+        <div class="letter-body">
+            <p>I am writing to refer my patient for further evaluation and specialized management. 
+            I would greatly appreciate your expert opinion and guidance in this case.</p>
+        </div>
+
+        <!-- Patient Summary -->
+        <div class="patient-summary">
+            <div class="summary-title">👤 Patient Information</div>
+            <div class="patient-details-grid">
+                <div class="detail-row">
+                    <span class="detail-label">Patient Name:</span>
+                    <span class="detail-value">{{patientName}}</span>
+                </div>
+                <div class="detail-row">
+                    <span class="detail-label">Age / Gender:</span>
+                    <span class="detail-value">{{patientAge}} Years / {{patientGender}}</span>
+                </div>
+                <div class="detail-row">
+                    <span class="detail-label">Patient ID:</span>
+                    <span class="detail-value">{{patientId}}</span>
+                </div>
+                <div class="detail-row">
+                    <span class="detail-label">Contact:</span>
+                    <span class="detail-value">{{patientPhone}}</span>
+                </div>
+                <div class="detail-row">
+                    <span class="detail-label">Blood Group:</span>
+                    <span class="detail-value">{{bloodGroup}}</span>
+                </div>
+                <div class="detail-row">
+                    <span class="detail-label">Address:</span>
+                    <span class="detail-value">{{patientAddress}}</span>
+                </div>
+            </div>
+        </div>
+
+        <!-- Clinical Information -->
+        <div class="clinical-info">
+            <div class="clinical-section">
+                <div class="clinical-heading">
+                    🩺 Chief Complaints
+                </div>
+                <div class="clinical-content">
+                    {{chiefComplaints}}
+                </div>
+            </div>
+
+            <div class="clinical-section">
+                <div class="clinical-heading">
+                    📋 History of Present Illness
+                </div>
+                <div class="clinical-content">
+                    {{historyOfPresentIllness}}
+                </div>
+            </div>
+
+            <div class="clinical-section">
+                <div class="clinical-heading">
+                    🏥 Past Medical History
+                </div>
+                <div class="clinical-content">
+                    {{pastMedicalHistory}}
+                </div>
+            </div>
+
+            {{#hasFamilyHistory}}
+            <div class="clinical-section">
+                <div class="clinical-heading">
+                    👨‍👩‍👧‍👦 Family History
+                </div>
+                <div class="clinical-content">
+                    {{familyHistory}}
+                </div>
+            </div>
+            {{/hasFamilyHistory}}
+
+            <div class="clinical-section">
+                <div class="clinical-heading">
+                    🔬 Physical Examination Findings
+                </div>
+                <div class="clinical-content">
+                    <strong>Vitals:</strong> BP: {{bloodPressure}}, Pulse: {{pulse}} bpm, Temp: {{temperature}}°F, SpO2: {{spo2}}%<br>
+                    <strong>General Examination:</strong> {{generalExamination}}<br>
+                    <strong>Systemic Examination:</strong> {{systemicExamination}}
+                </div>
+            </div>
+        </div>
+
+        <!-- Investigations -->
+        {{#hasInvestigations}}
+        <div class="clinical-info">
+            <div class="clinical-section">
+                <div class="clinical-heading">
+                    🔬 Investigations Performed
+                </div>
+                <ul class="tests-list">
+                    {{#investigations}}
+                    <li><strong>{{testName}}:</strong> {{testResult}}</li>
+                    {{/investigations}}
+                </ul>
+            </div>
+        </div>
+        {{/hasInvestigations}}
+
+        <!-- Diagnosis -->
+        <div class="clinical-info">
+            <div class="clinical-section">
+                <div class="clinical-heading">
+                    💊 Provisional/Working Diagnosis
+                </div>
+                <div class="clinical-content">
+                    {{diagnosis}}
+                </div>
+            </div>
+        </div>
+
+        <!-- Treatment Given -->
+        {{#hasTreatment}}
+        <div class="treatment-given">
+            <div class="treatment-title">💊 Treatment Provided So Far</div>
+            <ul class="medications-list">
+                {{#treatments}}
+                <li>{{medicationName}} - {{dosage}} - {{duration}}</li>
+                {{/treatments}}
+            </ul>
+        </div>
+        {{/hasTreatment}}
+
+        <!-- Reason for Referral -->
+        <div class="reason-for-referral">
+            <div class="referral-reason-title">
+                🎯 Reason for Referral
+            </div>
+            <div class="referral-reason-text">
+                {{reasonForReferral}}
+            </div>
+        </div>
+
+        <!-- Urgency Level -->
+        {{#hasUrgency}}
+        <div class="urgency-box">
+            <div class="urgency-label">
+                ⚠️ URGENCY LEVEL: {{urgencyLevel}}
+            </div>
+        </div>
+        {{/hasUrgency}}
+
+        <!-- Specific Questions -->
+        {{#hasQuestions}}
+        <div class="clinical-info">
+            <div class="clinical-section">
+                <div class="clinical-heading">
+                    ❓ Specific Questions for Consultation
+                </div>
+                <div class="clinical-content">
+                    {{specificQuestions}}
+                </div>
+            </div>
+        </div>
+        {{/hasQuestions}}
+
+        <!-- Closing Remarks -->
+        <div class="closing-remarks">
+            <p>I would be grateful if you could evaluate this patient and provide your expert opinion regarding 
+            further management. Please feel free to contact me if you require any additional information.</p>
+            
+            <p>Thank you for your time and consideration. I look forward to your valuable insights.</p>
+        </div>
+
+        <!-- Signature Section -->
+        <div class="signature-section">
+            <div class="date-place">
+                <strong>Place:</strong> {{placeOfIssue}}<br>
+                <strong>Date:</strong> {{letterDate}}
+            </div>
+            <div class="doctor-signature">
+                <div class="signature-line"></div>
+                <div class="doctor-name">Dr. {{referringDoctorName}}</div>
+                <div class="doctor-credentials">{{referringDoctorQualifications}}</div>
+                <div class="doctor-credentials">Reg. No: {{referringDoctorRegNo}}</div>
+                <div class="doctor-credentials">{{referringDoctorSpecialization}}</div>
+                <div class="doctor-credentials" style="margin-top: 8px;">
+                    📞 {{referringDoctorPhone}} | ✉️ {{referringDoctorEmail}}
+                </div>
+            </div>
+        </div>
+
+        <!-- Enclosures -->
+        {{#hasEnclosures}}
+        <div class="enclosures">
+            <div class="enclosures-title">Enclosures:</div>
+            <ul class="enclosures-list">
+                {{#enclosures}}
+                <li>{{enclosureName}}</li>
+                {{/enclosures}}
+            </ul>
+        </div>
+        {{/hasEnclosures}}
+
+        <!-- Footer -->
+        <div class="footer">
+            <p style="margin: 0;">
+                This is a confidential medical referral letter. Please maintain patient confidentiality as per medical ethics.<br>
+                For verification, contact: {{clinicPhone}} | Ref No: {{referenceNumber}}<br>
+                Generated via Mediczy Healthcare Platform on {{generatedDateTime}}
+            </p>
+        </div>
+    </div>
+</body>
+</html>

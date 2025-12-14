@@ -1,0 +1,870 @@
+import "regenerator-runtime/runtime";
+import { useRef, useEffect, useState, useCallback } from "react";
+import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
+import { ScrollArea } from "@/components/ui/scroll-area";
+import { Bot, Send, User, Mic, MicOff, Paperclip, Stethoscope, Heart, ThermometerSun, Pill, Activity, Globe2, Sparkles, X, FileText, Image as ImageIcon, Volume2, VolumeX, Loader2 } from "lucide-react";
+import ReactMarkdown from "react-markdown";
+import remarkGfm from "remark-gfm";
+import { motion, AnimatePresence } from "framer-motion";
+import { toast } from "sonner";
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
+import { cn } from "@/lib/utils";
+import MainLayout from "@/components/layout/MainLayout";
+import { useAuth } from '@/auth/AuthProvider';
+import { orchestratorAPI } from '@/services/orchestrator';
+import api from "@/utils/api";
+
+// Auth helper
+const getAuthToken = () => localStorage.getItem('token');
+
+// Types
+interface Language {
+  code: string;
+  name: string;
+  flag: string;
+  rtl?: boolean;
+}
+
+interface Message {
+  role: "user" | "assistant";
+  content: string;
+  language?: string;
+  id?: string;
+}
+
+interface Symptom {
+  id: string;
+  label: string;
+  icon: string;
+  description: string;
+}
+
+// Languages
+const languages: Language[] = [
+  { code: 'en', name: 'English', flag: '🇺🇸' },
+  { code: 'es', name: 'Español', flag: '🇪🇸' },
+  { code: 'hi', name: 'हिंदी', flag: '🇮🇳' },
+  { code: 'ar', name: 'العربية', flag: '🇸🇦', rtl: true },
+  { code: 'zh', name: '中文', flag: '🇨🇳' },
+];
+
+// Translations
+const translations: Record<string, Record<string, string>> = {
+  en: {
+    title: "Dr. iSHA",
+    subtitle: "Your AI Health Assistant",
+    placeholder: "Describe your symptoms or ask a health question...",
+    send: "Send",
+    greeting: "Hello! I'm Dr. iSHA, your personal AI health assistant. How can I help you today?",
+    quickActions: "Quick Actions",
+    symptoms: "Check Symptoms",
+    wellness: "General Wellness",
+    medications: "Medication Info",
+    emergency: "Emergency Signs",
+  },
+  es: {
+    title: "Dr. iSHA",
+    subtitle: "Tu Asistente de Salud IA",
+    placeholder: "Describe tus síntomas o haz una pregunta de salud...",
+    send: "Enviar",
+    greeting: "¡Hola! Soy Dr. iSHA, tu asistente de salud personal. ¿En qué puedo ayudarte hoy?",
+    quickActions: "Acciones Rápidas",
+    symptoms: "Verificar Síntomas",
+    wellness: "Bienestar General",
+    medications: "Info Medicamentos",
+    emergency: "Signos de Emergencia",
+  },
+  hi: {
+    title: "डॉ. iSHA",
+    subtitle: "आपका AI स्वास्थ्य सहायक",
+    placeholder: "अपने लक्षण बताएं या स्वास्थ्य प्रश्न पूछें...",
+    send: "भेजें",
+    greeting: "नमस्ते! मैं डॉ. iSHA हूं, आपका व्यक्तिगत AI स्वास्थ्य सहायक। आज मैं आपकी कैसे मदद कर सकती हूं?",
+    quickActions: "त्वरित कार्य",
+    symptoms: "लक्षण जांचें",
+    wellness: "सामान्य कल्याण",
+    medications: "दवा जानकारी",
+    emergency: "आपातकालीन संकेत",
+  },
+  ar: {
+    title: "د. iSHA",
+    subtitle: "مساعدك الصحي الذكي",
+    placeholder: "صف أعراضك أو اطرح سؤالاً صحياً...",
+    send: "إرسال",
+    greeting: "مرحبا! أنا د. iSHA، مساعدك الصحي الشخصي. كيف يمكنني مساعدتك اليوم؟",
+    quickActions: "إجراءات سريعة",
+    symptoms: "فحص الأعراض",
+    wellness: "العافية العامة",
+    medications: "معلومات الأدوية",
+    emergency: "علامات الطوارئ",
+  },
+  zh: {
+    title: "iSHA医生",
+    subtitle: "您的AI健康助手",
+    placeholder: "描述您的症状或提出健康问题...",
+    send: "发送",
+    greeting: "您好！我是iSHA医生，您的个人AI健康助手。今天我能帮您什么？",
+    quickActions: "快速操作",
+    symptoms: "检查症状",
+    wellness: "一般健康",
+    medications: "药物信息",
+    emergency: "紧急情况",
+  },
+};
+
+// Common symptoms for quick selection
+const commonSymptoms: Record<string, Symptom[]> = {
+  en: [
+    { id: 'headache', label: 'Headache', icon: '🤕', description: 'Pain in head region' },
+    { id: 'fever', label: 'Fever', icon: '🤒', description: 'Elevated body temperature' },
+    { id: 'cough', label: 'Cough', icon: '😷', description: 'Persistent coughing' },
+    { id: 'fatigue', label: 'Fatigue', icon: '😴', description: 'Feeling tired or weak' },
+    { id: 'nausea', label: 'Nausea', icon: '🤢', description: 'Feeling sick or queasy' },
+    { id: 'pain', label: 'Body Pain', icon: '💪', description: 'Muscle or joint pain' },
+    { id: 'breathing', label: 'Breathing Issues', icon: '🫁', description: 'Difficulty breathing' },
+    { id: 'stomach', label: 'Stomach Issues', icon: '🤰', description: 'Digestive problems' },
+  ],
+  es: [
+    { id: 'headache', label: 'Dolor de cabeza', icon: '🤕', description: 'Dolor en la región de la cabeza' },
+    { id: 'fever', label: 'Fiebre', icon: '🤒', description: 'Temperatura corporal elevada' },
+    { id: 'cough', label: 'Tos', icon: '😷', description: 'Tos persistente' },
+    { id: 'fatigue', label: 'Fatiga', icon: '😴', description: 'Sensación de cansancio' },
+    { id: 'nausea', label: 'Náuseas', icon: '🤢', description: 'Sensación de malestar' },
+    { id: 'pain', label: 'Dolor corporal', icon: '💪', description: 'Dolor muscular o articular' },
+    { id: 'breathing', label: 'Problemas respiratorios', icon: '🫁', description: 'Dificultad para respirar' },
+    { id: 'stomach', label: 'Problemas estomacales', icon: '🤰', description: 'Problemas digestivos' },
+  ],
+  hi: [
+    { id: 'headache', label: 'सिरदर्द', icon: '🤕', description: 'सिर में दर्द' },
+    { id: 'fever', label: 'बुखार', icon: '🤒', description: 'शरीर का तापमान बढ़ना' },
+    { id: 'cough', label: 'खांसी', icon: '😷', description: 'लगातार खांसी' },
+    { id: 'fatigue', label: 'थकान', icon: '😴', description: 'थकान या कमजोरी' },
+    { id: 'nausea', label: 'मतली', icon: '🤢', description: 'उबकाई आना' },
+    { id: 'pain', label: 'शरीर में दर्द', icon: '��', description: 'मांसपेशियों या जोड़ों में दर्द' },
+    { id: 'breathing', label: 'सांस की समस्या', icon: '🫁', description: 'सांस लेने में कठिनाई' },
+    { id: 'stomach', label: 'पेट की समस्या', icon: '🤰', description: 'पाचन संबंधी समस्या' },
+  ],
+};
+
+const AiDoctor = () => {
+  // State
+  const [messages, setMessages] = useState<Message[]>([]);
+  const [input, setInput] = useState("");
+  const [isLoading, setIsLoading] = useState(false);
+  const [currentLanguage, setCurrentLanguage] = useState<Language>(languages[0]);
+  const [showSymptomDialog, setShowSymptomDialog] = useState(false);
+  const [selectedSymptoms, setSelectedSymptoms] = useState<string[]>([]);
+  const [isListening, setIsListening] = useState(false);
+  const [uploadedFile, setUploadedFile] = useState<File | null>(null);
+  const [speakingMessageId, setSpeakingMessageId] = useState<string | null>(null);
+  const [isTTSLoading, setIsTTSLoading] = useState(false);
+  
+  // Refs
+  const scrollAreaRef = useRef<HTMLDivElement>(null);
+  const inputRef = useRef<HTMLInputElement>(null);
+  const fileInputRef = useRef<HTMLInputElement>(null);
+  const audioRef = useRef<HTMLAudioElement | null>(null);
+  const recognitionRef = useRef<any>(null);
+
+  // Auth
+  const { currentUser } = useAuth();
+
+  // Translation helper
+  const t = (key: string) => {
+    return translations[currentLanguage.code]?.[key] || translations.en[key] || key;
+  };
+
+  // Get symptoms for current language
+  const getSymptoms = () => commonSymptoms[currentLanguage.code] || commonSymptoms.en;
+
+  // Scroll to bottom when messages change
+  useEffect(() => {
+    if (scrollAreaRef.current) {
+      const scrollContainer = scrollAreaRef.current.querySelector('[data-radix-scroll-area-viewport]');
+      if (scrollContainer) {
+        scrollContainer.scrollTop = scrollContainer.scrollHeight;
+      }
+    }
+  }, [messages]);
+
+  // Cleanup on unmount
+  useEffect(() => {
+    return () => {
+      if (recognitionRef.current) {
+        recognitionRef.current.abort();
+      }
+      if (audioRef.current) {
+        audioRef.current.pause();
+        audioRef.current = null;
+      }
+      window.speechSynthesis?.cancel();
+    };
+  }, []);
+
+  // Voice recognition setup - Toggle on/off
+  const toggleListening = useCallback(() => {
+    // If already listening, stop
+    if (isListening && recognitionRef.current) {
+      recognitionRef.current.stop();
+      setIsListening(false);
+      return;
+    }
+
+    if (!('webkitSpeechRecognition' in window) && !('SpeechRecognition' in window)) {
+      toast.error('Voice recognition not supported in this browser');
+      return;
+    }
+
+    const SpeechRecognition = (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition;
+    const recognition = new SpeechRecognition();
+    recognitionRef.current = recognition;
+    
+    recognition.lang = currentLanguage.code === 'en' ? 'en-US' : 
+                       currentLanguage.code === 'es' ? 'es-ES' :
+                       currentLanguage.code === 'hi' ? 'hi-IN' :
+                       currentLanguage.code === 'ar' ? 'ar-SA' :
+                       currentLanguage.code === 'zh' ? 'zh-CN' : 'en-US';
+    recognition.continuous = true;
+    recognition.interimResults = true;
+
+    recognition.onstart = () => {
+      setIsListening(true);
+      toast.success('🎤 Listening... Speak now');
+    };
+    
+    recognition.onend = () => {
+      setIsListening(false);
+      recognitionRef.current = null;
+    };
+    
+    recognition.onerror = (event: any) => {
+      console.error('Speech recognition error:', event.error);
+      setIsListening(false);
+      recognitionRef.current = null;
+      if (event.error !== 'aborted' && event.error !== 'no-speech') {
+        toast.error('Voice recognition error: ' + event.error);
+      }
+    };
+    
+    recognition.onresult = (event: any) => {
+      let finalTranscript = '';
+      let interimTranscript = '';
+      
+      for (let i = event.resultIndex; i < event.results.length; i++) {
+        const transcript = event.results[i][0].transcript;
+        if (event.results[i].isFinal) {
+          finalTranscript += transcript;
+        } else {
+          interimTranscript += transcript;
+        }
+      }
+      
+      if (finalTranscript) {
+        setInput(prev => (prev + ' ' + finalTranscript).trim());
+      }
+    };
+
+    try {
+      recognition.start();
+    } catch (error) {
+      console.error('Failed to start recognition:', error);
+      toast.error('Failed to start voice recognition');
+    }
+  }, [currentLanguage, isListening]);
+
+  // Text-to-Speech function with ElevenLabs
+  const speakMessage = async (messageId: string, text: string) => {
+    // If already speaking this message, stop it
+    if (speakingMessageId === messageId) {
+      stopSpeaking();
+      return;
+    }
+
+    // Stop any current speech
+    stopSpeaking();
+    
+    setSpeakingMessageId(messageId);
+    setIsTTSLoading(true);
+
+    try {
+      const auth = getAuthToken();
+
+      const response = await api.post(
+        '/ai/text-to-speech',
+        { text },
+        {
+          headers: auth ? { Authorization: `Bearer ${auth}` } : undefined,
+        }
+      );
+
+      const data = response.data;
+
+      if (data.status === 'success' && data.audio) {
+        // Play ElevenLabs audio
+        const audioBlob = new Blob(
+          [Uint8Array.from(atob(data.audio), c => c.charCodeAt(0))],
+          { type: 'audio/mpeg' }
+        );
+        const audioUrl = URL.createObjectURL(audioBlob);
+        
+        audioRef.current = new Audio(audioUrl);
+        audioRef.current.onended = () => {
+          setSpeakingMessageId(null);
+          URL.revokeObjectURL(audioUrl);
+        };
+        audioRef.current.onerror = () => {
+          console.error('Audio playback error');
+          setSpeakingMessageId(null);
+          fallbackBrowserTTS(text);
+        };
+        
+        setIsTTSLoading(false);
+        await audioRef.current.play();
+      } else {
+        // Fallback to browser TTS
+        setIsTTSLoading(false);
+        fallbackBrowserTTS(text);
+      }
+    } catch (error) {
+      console.error('TTS error:', error);
+      setIsTTSLoading(false);
+      fallbackBrowserTTS(text);
+    }
+  };
+
+  // Fallback browser TTS
+  const fallbackBrowserTTS = (text: string) => {
+    if (!window.speechSynthesis) {
+      toast.error('Text-to-speech not supported');
+      setSpeakingMessageId(null);
+      return;
+    }
+
+    // Clean text for TTS
+    const cleanText = text
+      .replace(/[#*_~`]/g, '')
+      .replace(/\[([^\]]+)\]\([^)]+\)/g, '$1')
+      .replace(/\n{2,}/g, '. ')
+      .replace(/\n/g, ' ')
+      .trim();
+
+    const utterance = new SpeechSynthesisUtterance(cleanText);
+    utterance.rate = 0.9;
+    utterance.pitch = 1.0;
+    utterance.volume = 0.8;
+
+    // Try to set a good voice
+    const voices = window.speechSynthesis.getVoices();
+    const preferredVoice = voices.find(v => 
+      v.lang.startsWith(currentLanguage.code) && v.name.includes('Female')
+    ) || voices.find(v => v.lang.startsWith(currentLanguage.code)) || voices[0];
+    
+    if (preferredVoice) {
+      utterance.voice = preferredVoice;
+    }
+
+    utterance.onend = () => setSpeakingMessageId(null);
+    utterance.onerror = () => {
+      console.error('Browser TTS error');
+      setSpeakingMessageId(null);
+    };
+
+    window.speechSynthesis.speak(utterance);
+  };
+
+  // Stop speaking
+  const stopSpeaking = () => {
+    if (audioRef.current) {
+      audioRef.current.pause();
+      audioRef.current = null;
+    }
+    window.speechSynthesis?.cancel();
+    setSpeakingMessageId(null);
+    setIsTTSLoading(false);
+  };
+
+  // Handle file upload
+  const handleFileUpload = (file: File) => {
+    const validTypes = ['application/pdf', 'image/jpeg', 'image/png', 'image/webp'];
+    if (!validTypes.includes(file.type)) {
+      toast.error('Please upload a PDF or image file');
+      return;
+    }
+    if (file.size > 10 * 1024 * 1024) {
+      toast.error('File size should be less than 10MB');
+      return;
+    }
+    setUploadedFile(file);
+    toast.success('File "' + file.name + '" attached');
+  };
+
+  // Handle symptom selection
+  const handleSymptomSelect = (symptomId: string) => {
+    setSelectedSymptoms(prev => 
+      prev.includes(symptomId) 
+        ? prev.filter(id => id !== symptomId)
+        : [...prev, symptomId]
+    );
+  };
+
+  // Submit symptoms
+  const submitSymptoms = () => {
+    const symptoms = getSymptoms();
+    const selectedLabels = selectedSymptoms
+      .map(id => symptoms.find(s => s.id === id)?.label)
+      .filter(Boolean)
+      .join(', ');
+    
+    if (selectedLabels) {
+      setInput("I'm experiencing: " + selectedLabels);
+      setShowSymptomDialog(false);
+      setSelectedSymptoms([]);
+    }
+  };
+
+  // Quick action handler
+  const handleQuickAction = (action: string) => {
+    const prompts: Record<string, string> = {
+      symptoms: "I'd like to check my symptoms. Can you help me understand what might be wrong?",
+      wellness: "Can you give me some general wellness and health tips?",
+      medications: "I need information about my medications and possible interactions.",
+      emergency: "What are the warning signs that I should seek emergency medical care?",
+    };
+    setInput(prompts[action] || '');
+    inputRef.current?.focus();
+  };
+
+  // Submit message
+  const handleSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    
+    const messageText = input.trim();
+    if (!messageText && !uploadedFile) return;
+
+    const auth = getAuthToken();
+    if (!auth) {
+      toast.error('Please log in to use Dr. iSHA');
+      return;
+    }
+
+    // Stop listening when sending
+    if (isListening && recognitionRef.current) {
+      recognitionRef.current.stop();
+      setIsListening(false);
+    }
+
+    // Create user message with unique ID
+    const userMessage: Message = {
+      role: "user",
+      content: uploadedFile 
+        ? messageText + "\n\n📎 Attached: " + uploadedFile.name
+        : messageText,
+      language: currentLanguage.code,
+      id: 'user_' + Date.now()
+    };
+
+    setMessages(prev => [...prev, userMessage]);
+    setInput("");
+    setUploadedFile(null);
+    setIsLoading(true);
+
+    try {
+      // Use orchestrator for medical consultation
+      const response = await orchestratorAPI.consult(
+        messageText,
+        currentLanguage.code,
+        {
+          hasAttachment: !!uploadedFile,
+          attachmentName: uploadedFile?.name
+        }
+      );
+
+      if (response.success && response.data?.primary_response) {
+        const messageId = 'assistant_' + Date.now();
+        const assistantMessage: Message = {
+          role: "assistant",
+          content: response.data.primary_response,
+          language: currentLanguage.code,
+          id: messageId
+        };
+        setMessages(prev => [...prev, assistantMessage]);
+        
+        // Auto-speak the response (for shorter responses)
+        if (response.data.primary_response.length < 1000) {
+          setTimeout(() => {
+            speakMessage(messageId, response.data.primary_response);
+          }, 500);
+        }
+      } else {
+        throw new Error(response.error?.message || response.error || 'Orchestrator returned no response');
+      }
+    } catch (error) {
+      console.error('AI request error:', error);
+      const errorMessage = error instanceof Error ? error.message : 'Unknown error';
+      toast.error(`Failed to get response: ${errorMessage}`);
+      setMessages(prev => [...prev, {
+        role: "assistant",
+        content: `I apologize, but I'm having trouble processing your request right now. Error: ${errorMessage}. Please try again in a moment. If you're experiencing a medical emergency, please call emergency services immediately.`,
+        language: currentLanguage.code,
+        id: 'error_' + Date.now()
+      }]);
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  return (
+    <MainLayout>
+      <div className="fixed inset-0 top-16 bottom-16 md:bottom-0 md:left-64 flex flex-col bg-background">
+        {/* Header - Fixed at top */}
+        <div className="flex-shrink-0 flex items-center justify-between px-4 py-3 border-b bg-background/95 backdrop-blur-sm">
+          <div className="flex items-center gap-3">
+            <div className="w-10 h-10 md:w-12 md:h-12 rounded-full bg-gradient-to-br from-blue-500 to-purple-600 flex items-center justify-center shadow-lg">
+              <Stethoscope className="w-5 h-5 md:w-6 md:h-6 text-white" />
+            </div>
+            <div>
+              <h1 className="text-lg md:text-xl font-bold text-foreground">{t('title')}</h1>
+              <p className="text-xs md:text-sm text-muted-foreground">{t('subtitle')}</p>
+            </div>
+          </div>
+          
+          {/* Language Selector */}
+          <DropdownMenu>
+            <DropdownMenuTrigger asChild>
+              <Button variant="outline" size="sm" className="gap-2">
+                <Globe2 className="h-4 w-4" />
+                <span>{currentLanguage.flag}</span>
+              </Button>
+            </DropdownMenuTrigger>
+            <DropdownMenuContent align="end">
+              {languages.map((lang) => (
+                <DropdownMenuItem
+                  key={lang.code}
+                  onClick={() => setCurrentLanguage(lang)}
+                  className="gap-2"
+                >
+                  <span>{lang.flag}</span>
+                  <span>{lang.name}</span>
+                </DropdownMenuItem>
+              ))}
+            </DropdownMenuContent>
+          </DropdownMenu>
+        </div>
+
+        {/* Chat Area - Fills remaining space */}
+        <div className="flex-1 overflow-hidden flex flex-col">
+          <ScrollArea className="flex-1 px-4 py-2" ref={scrollAreaRef}>
+            {/* Welcome Message */}
+            {messages.length === 0 && (
+              <div className="min-h-full flex flex-col items-center justify-center py-6 px-2">
+                <motion.div
+                  initial={{ opacity: 0, y: 20 }}
+                  animate={{ opacity: 1, y: 0 }}
+                  className="text-center w-full max-w-sm"
+                >
+                  <div className="w-16 h-16 md:w-20 md:h-20 mx-auto mb-4 md:mb-6 rounded-full bg-gradient-to-br from-blue-500/20 to-purple-600/20 flex items-center justify-center">
+                    <Heart className="w-8 h-8 md:w-10 md:h-10 text-primary animate-pulse" />
+                  </div>
+                  
+                  <h2 className="text-xl md:text-2xl font-semibold mb-2">{t('title')}</h2>
+                  <p className="text-sm md:text-base text-muted-foreground mb-6">{t('greeting')}</p>
+                  
+                  {/* Quick Actions */}
+                  <div className="grid grid-cols-2 gap-2 md:gap-3">
+                    <Button
+                      variant="outline"
+                      className="h-auto py-3 md:py-4 flex flex-col items-center gap-1 md:gap-2 hover:bg-primary/5 hover:border-primary/30"
+                      onClick={() => handleQuickAction('symptoms')}
+                    >
+                      <ThermometerSun className="h-4 w-4 md:h-5 md:w-5 text-orange-500" />
+                      <span className="text-xs md:text-sm">{t('symptoms')}</span>
+                    </Button>
+                    <Button
+                      variant="outline"
+                      className="h-auto py-3 md:py-4 flex flex-col items-center gap-1 md:gap-2 hover:bg-primary/5 hover:border-primary/30"
+                      onClick={() => handleQuickAction('wellness')}
+                    >
+                      <Activity className="h-4 w-4 md:h-5 md:w-5 text-green-500" />
+                      <span className="text-xs md:text-sm">{t('wellness')}</span>
+                    </Button>
+                    <Button
+                      variant="outline"
+                      className="h-auto py-3 md:py-4 flex flex-col items-center gap-1 md:gap-2 hover:bg-primary/5 hover:border-primary/30"
+                      onClick={() => handleQuickAction('medications')}
+                    >
+                      <Pill className="h-4 w-4 md:h-5 md:w-5 text-blue-500" />
+                      <span className="text-xs md:text-sm">{t('medications')}</span>
+                    </Button>
+                    <Button
+                      variant="outline"
+                      className="h-auto py-3 md:py-4 flex flex-col items-center gap-1 md:gap-2 hover:bg-primary/5 hover:border-primary/30"
+                      onClick={() => handleQuickAction('emergency')}
+                    >
+                      <Sparkles className="h-4 w-4 md:h-5 md:w-5 text-red-500" />
+                      <span className="text-xs md:text-sm">{t('emergency')}</span>
+                    </Button>
+                  </div>
+                </motion.div>
+              </div>
+            )}
+
+            {/* Messages */}
+            <div className="space-y-3 md:space-y-4 max-w-3xl mx-auto">
+              <AnimatePresence>
+                {messages.map((message, index) => (
+                  <motion.div
+                    key={message.id || index}
+                    initial={{ opacity: 0, y: 10 }}
+                    animate={{ opacity: 1, y: 0 }}
+                    transition={{ duration: 0.2 }}
+                    className={cn(
+                      "flex gap-2 md:gap-3",
+                      message.role === "user" ? "flex-row-reverse" : "flex-row"
+                    )}
+                  >
+                    {/* Avatar */}
+                    <div className={cn(
+                      "w-7 h-7 md:w-8 md:h-8 rounded-full flex items-center justify-center flex-shrink-0 mt-1",
+                      message.role === "user" 
+                        ? "bg-primary text-primary-foreground" 
+                        : "bg-gradient-to-br from-blue-500 to-purple-600 text-white"
+                    )}>
+                      {message.role === "user" ? (
+                        <User className="w-3.5 h-3.5 md:w-4 md:h-4" />
+                      ) : (
+                        <Bot className="w-3.5 h-3.5 md:w-4 md:h-4" />
+                      )}
+                    </div>
+
+                    {/* Message Bubble */}
+                    <div className="flex flex-col gap-1 max-w-[85%] md:max-w-[80%]">
+                      <div className={cn(
+                        "rounded-2xl px-3 py-2 md:px-4 md:py-3",
+                        message.role === "user"
+                          ? "bg-primary text-primary-foreground rounded-tr-sm"
+                          : "bg-muted rounded-tl-sm"
+                      )}>
+                        {message.role === "assistant" ? (
+                          <div className="prose prose-sm dark:prose-invert max-w-none text-sm md:text-base">
+                            <ReactMarkdown remarkPlugins={[remarkGfm]}>
+                              {message.content}
+                            </ReactMarkdown>
+                          </div>
+                        ) : (
+                          <p className="text-sm md:text-base whitespace-pre-wrap">{message.content}</p>
+                        )}
+                      </div>
+                      
+                      {/* Speaker button for assistant messages */}
+                      {message.role === "assistant" && message.id && (
+                        <div className="flex items-center gap-1 pl-1">
+                          <Button
+                            variant="ghost"
+                            size="sm"
+                            className={cn(
+                              "h-6 w-6 p-0 rounded-full",
+                              speakingMessageId === message.id && "text-primary bg-primary/10"
+                            )}
+                            onClick={() => speakMessage(message.id!, message.content)}
+                            disabled={isTTSLoading && speakingMessageId !== message.id}
+                          >
+                            {isTTSLoading && speakingMessageId === message.id ? (
+                              <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                            ) : speakingMessageId === message.id ? (
+                              <VolumeX className="h-3.5 w-3.5" />
+                            ) : (
+                              <Volume2 className="h-3.5 w-3.5" />
+                            )}
+                          </Button>
+                          <span className="text-xs text-muted-foreground">
+                            {speakingMessageId === message.id ? 'Stop' : 'Listen'}
+                          </span>
+                        </div>
+                      )}
+                    </div>
+                  </motion.div>
+                ))}
+              </AnimatePresence>
+
+              {/* Loading Indicator */}
+              {isLoading && (
+                <motion.div
+                  initial={{ opacity: 0 }}
+                  animate={{ opacity: 1 }}
+                  className="flex gap-2 md:gap-3"
+                >
+                  <div className="w-7 h-7 md:w-8 md:h-8 rounded-full bg-gradient-to-br from-blue-500 to-purple-600 flex items-center justify-center">
+                    <Bot className="w-3.5 h-3.5 md:w-4 md:h-4 text-white" />
+                  </div>
+                  <div className="bg-muted rounded-2xl rounded-tl-sm px-3 py-2 md:px-4 md:py-3">
+                    <div className="flex gap-1">
+                      <span className="w-2 h-2 bg-foreground/40 rounded-full animate-bounce" style={{ animationDelay: '0ms' }} />
+                      <span className="w-2 h-2 bg-foreground/40 rounded-full animate-bounce" style={{ animationDelay: '150ms' }} />
+                      <span className="w-2 h-2 bg-foreground/40 rounded-full animate-bounce" style={{ animationDelay: '300ms' }} />
+                    </div>
+                  </div>
+                </motion.div>
+              )}
+            </div>
+          </ScrollArea>
+
+          {/* Input Area - Fixed at bottom */}
+          <div className="flex-shrink-0 border-t bg-background/95 backdrop-blur-sm p-3 md:p-4">
+            {/* Attached File Preview */}
+            {uploadedFile && (
+              <div className="mb-2 flex items-center gap-2 bg-muted/50 rounded-lg px-3 py-2">
+                {uploadedFile.type.startsWith('image/') ? (
+                  <ImageIcon className="h-4 w-4 text-muted-foreground" />
+                ) : (
+                  <FileText className="h-4 w-4 text-muted-foreground" />
+                )}
+                <span className="text-sm flex-1 truncate">{uploadedFile.name}</span>
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  className="h-6 w-6 p-0"
+                  onClick={() => setUploadedFile(null)}
+                >
+                  <X className="h-4 w-4" />
+                </Button>
+              </div>
+            )}
+
+            <form onSubmit={handleSubmit} className="flex gap-2 items-center">
+              {/* Action Buttons */}
+              <div className="flex-shrink-0 flex gap-1">
+                <Button
+                  type="button"
+                  variant="ghost"
+                  size="icon"
+                  className="h-9 w-9 md:h-10 md:w-10 rounded-full"
+                  onClick={() => setShowSymptomDialog(true)}
+                >
+                  <Activity className="h-4 w-4 md:h-5 md:w-5" />
+                </Button>
+                <Button
+                  type="button"
+                  variant="ghost"
+                  size="icon"
+                  className="h-9 w-9 md:h-10 md:w-10 rounded-full"
+                  onClick={() => fileInputRef.current?.click()}
+                >
+                  <Paperclip className="h-4 w-4 md:h-5 md:w-5" />
+                </Button>
+                <input
+                  ref={fileInputRef}
+                  type="file"
+                  className="hidden"
+                  accept=".pdf,image/*"
+                  onChange={(e) => {
+                    const file = e.target.files?.[0];
+                    if (file) handleFileUpload(file);
+                  }}
+                />
+              </div>
+
+              {/* Text Input */}
+              <div className="flex-1 relative min-w-0">
+                <Input
+                  ref={inputRef}
+                  value={input}
+                  onChange={(e) => setInput(e.target.value)}
+                  placeholder={isListening ? "🎤 Listening..." : t('placeholder')}
+                  disabled={isLoading}
+                  className={cn(
+                    "pr-10 md:pr-12 h-10 rounded-full bg-muted/50 border-0 focus-visible:ring-1 focus-visible:ring-primary text-sm",
+                    currentLanguage.rtl && "text-right",
+                    isListening && "border-red-500 ring-1 ring-red-500"
+                  )}
+                  dir={currentLanguage.rtl ? "rtl" : "ltr"}
+                />
+                <Button
+                  type="button"
+                  variant="ghost"
+                  size="icon"
+                  className={cn(
+                    "absolute right-1 top-1/2 -translate-y-1/2 h-7 w-7 md:h-8 md:w-8 rounded-full transition-all",
+                    isListening && "text-red-500 bg-red-500/10 animate-pulse"
+                  )}
+                  onClick={toggleListening}
+                >
+                  {isListening ? (
+                    <MicOff className="h-3.5 w-3.5 md:h-4 md:w-4" />
+                  ) : (
+                    <Mic className="h-3.5 w-3.5 md:h-4 md:w-4" />
+                  )}
+                </Button>
+              </div>
+
+              {/* Send Button */}
+              <Button
+                type="submit"
+                size="icon"
+                className="flex-shrink-0 h-9 w-9 md:h-10 md:w-10 rounded-full"
+                disabled={isLoading || (!input.trim() && !uploadedFile)}
+              >
+                <Send className="h-4 w-4 md:h-5 md:w-5" />
+              </Button>
+            </form>
+          </div>
+        </div>
+
+        {/* Symptom Selection Dialog */}
+        <Dialog open={showSymptomDialog} onOpenChange={setShowSymptomDialog}>
+          <DialogContent className="sm:max-w-md">
+            <DialogHeader>
+              <DialogTitle className="flex items-center gap-2">
+                <ThermometerSun className="h-5 w-5 text-orange-500" />
+                {t('symptoms')}
+              </DialogTitle>
+              <DialogDescription>
+                Select the symptoms you are experiencing
+              </DialogDescription>
+            </DialogHeader>
+            
+            <div className="grid grid-cols-2 gap-2 py-4">
+              {getSymptoms().map((symptom) => (
+                <Button
+                  key={symptom.id}
+                  variant={selectedSymptoms.includes(symptom.id) ? "default" : "outline"}
+                  className="h-auto py-3 flex flex-col items-center gap-1"
+                  onClick={() => handleSymptomSelect(symptom.id)}
+                >
+                  <span className="text-xl">{symptom.icon}</span>
+                  <span className="text-xs">{symptom.label}</span>
+                </Button>
+              ))}
+            </div>
+
+            <div className="flex justify-end gap-2">
+              <Button variant="outline" onClick={() => setShowSymptomDialog(false)}>
+                Cancel
+              </Button>
+              <Button 
+                onClick={submitSymptoms}
+                disabled={selectedSymptoms.length === 0}
+              >
+                Add Symptoms
+              </Button>
+            </div>
+          </DialogContent>
+        </Dialog>
+      </div>
+    </MainLayout>
+  );
+};
+
+export default AiDoctor;

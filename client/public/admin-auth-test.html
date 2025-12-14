@@ -1,0 +1,208 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Admin Auth Test - Mediczy</title>
+    <style>
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            margin: 0;
+            padding: 20px;
+            min-height: 100vh;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+        }
+        .container {
+            background: white;
+            border-radius: 15px;
+            padding: 30px;
+            box-shadow: 0 15px 35px rgba(0,0,0,0.1);
+            max-width: 500px;
+            width: 100%;
+        }
+        h1 {
+            color: #333;
+            text-align: center;
+            margin-bottom: 30px;
+        }
+        .status {
+            padding: 15px;
+            border-radius: 8px;
+            margin-bottom: 20px;
+            font-weight: 500;
+        }
+        .success {
+            background: #d4edda;
+            color: #155724;
+            border: 1px solid #c3e6cb;
+        }
+        .error {
+            background: #f8d7da;
+            color: #721c24;
+            border: 1px solid #f5c6cb;
+        }
+        .info {
+            background: #d1ecf1;
+            color: #0c5460;
+            border: 1px solid #bee5eb;
+        }
+        button {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            border: none;
+            padding: 12px 24px;
+            border-radius: 8px;
+            cursor: pointer;
+            font-size: 16px;
+            margin: 10px 5px;
+            transition: transform 0.2s;
+        }
+        button:hover {
+            transform: translateY(-2px);
+        }
+        button:disabled {
+            opacity: 0.6;
+            cursor: not-allowed;
+            transform: none;
+        }
+        .token-info {
+            background: #f8f9fa;
+            padding: 15px;
+            border-radius: 8px;
+            margin: 15px 0;
+            font-family: 'Courier New', monospace;
+            font-size: 12px;
+            word-break: break-all;
+        }
+        .actions {
+            text-align: center;
+            margin-top: 20px;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>🔐 Admin Auth Test</h1>
+        
+        <div id="status"></div>
+        
+        <div class="actions">
+            <button onclick="loginAdmin()">Login as Admin</button>
+            <button onclick="checkAuth()">Check Auth Status</button>
+            <button onclick="clearAuth()">Clear Auth</button>
+            <button onclick="goToActivityLog()">Go to Activity Log</button>
+        </div>
+        
+        <div id="tokenInfo"></div>
+    </div>
+
+    <script>
+        const API_BASE = 'http://192.168.1.72:8000/api';
+        const statusDiv = document.getElementById('status');
+        const tokenInfoDiv = document.getElementById('tokenInfo');
+
+        function updateStatus(message, type = 'info') {
+            statusDiv.innerHTML = `<div class="${type}">${message}</div>`;
+        }
+
+        function updateTokenInfo(token, adminData) {
+            if (token && adminData) {
+                const payload = JSON.parse(atob(token.split('.')[1]));
+                const expDate = new Date(payload.exp * 1000);
+                
+                tokenInfoDiv.innerHTML = `
+                    <div class="token-info">
+                        <strong>Token Info:</strong><br>
+                        User: ${adminData.email}<br>
+                        Role: ${adminData.role}<br>
+                        Expires: ${expDate.toLocaleString()}<br>
+                        Valid: ${payload.exp > Math.floor(Date.now() / 1000) ? 'Yes' : 'No'}<br>
+                        <details style="margin-top: 10px;">
+                            <summary>Token Details</summary>
+                            <pre>${JSON.stringify(payload, null, 2)}</pre>
+                        </details>
+                    </div>
+                `;
+            } else {
+                tokenInfoDiv.innerHTML = '';
+            }
+        }
+
+        async function loginAdmin() {
+            updateStatus('Logging in as admin...', 'info');
+            
+            try {
+                const response = await fetch(`${API_BASE}/admin/login`, {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json'
+                    },
+                    body: JSON.stringify({
+                        email: 'admin@mediczy.com',
+                        password: 'SecurePass123'
+                    })
+                });
+
+                const data = await response.json();
+
+                if (response.ok && data.token) {
+                    // Store in localStorage
+                    localStorage.setItem('adminToken', data.token);
+                    localStorage.setItem('adminData', JSON.stringify(data.admin));
+                    
+                    updateStatus(`✅ Admin login successful! Token stored in localStorage.`, 'success');
+                    updateTokenInfo(data.token, data.admin);
+                } else {
+                    updateStatus(`❌ Login failed: ${data.message || 'Unknown error'}`, 'error');
+                }
+            } catch (error) {
+                updateStatus(`❌ Login error: ${error.message}`, 'error');
+            }
+        }
+
+        function checkAuth() {
+            const token = localStorage.getItem('adminToken');
+            const adminDataStr = localStorage.getItem('adminData');
+            
+            if (!token || !adminDataStr) {
+                updateStatus('❌ No admin authentication found in localStorage', 'error');
+                tokenInfoDiv.innerHTML = '';
+                return;
+            }
+
+            try {
+                const adminData = JSON.parse(adminDataStr);
+                const payload = JSON.parse(atob(token.split('.')[1]));
+                const isExpired = payload.exp < Math.floor(Date.now() / 1000);
+                
+                if (isExpired) {
+                    updateStatus('⚠️ Admin token has expired', 'error');
+                } else {
+                    updateStatus('✅ Admin authentication is valid', 'success');
+                }
+                
+                updateTokenInfo(token, adminData);
+            } catch (error) {
+                updateStatus(`❌ Invalid auth data: ${error.message}`, 'error');
+            }
+        }
+
+        function clearAuth() {
+            localStorage.removeItem('adminToken');
+            localStorage.removeItem('adminData');
+            updateStatus('🗑️ Admin authentication cleared', 'info');
+            tokenInfoDiv.innerHTML = '';
+        }
+
+        function goToActivityLog() {
+            window.open('/admin/activity-log', '_blank');
+        }
+
+        // Check auth on page load
+        checkAuth();
+    </script>
+</body>
+</html>

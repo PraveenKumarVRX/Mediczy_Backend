@@ -1,0 +1,19 @@
+{
+  "watch": ["./"],
+  "ignore": [
+    "node_modules/**",
+    "logs/**",
+    "*.log",
+    ".git/**",
+    "test-template.js"
+  ],
+  "ext": "js,json,env",
+  "delay": 1000,
+  "env": {
+    "NODE_ENV": "development"
+  },
+  "verbose": true,
+  "restartable": "rs",
+  "colours": true,
+  "legacyWatch": false
+}

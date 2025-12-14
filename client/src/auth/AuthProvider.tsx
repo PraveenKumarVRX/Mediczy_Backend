@@ -1,0 +1,327 @@
+import { createContext, useContext, useEffect, useMemo, useState, useCallback } from "react";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
+import { useNavigate, useLocation } from "react-router-dom";
+import api from "@/utils/api";
+import { getToken, getUserType } from "@/hooks/auth";
+import { profileProps, doctorProfileProps } from "@/lib/user.type";
+import "@/App.css";
+
+interface AuthContextType {
+  currentUser: profileProps | null;
+  currentDoctor: doctorProfileProps | null;
+  currentCorporate: any | null;
+  userType: "user" | "doctor" | "corporate" | null;
+  isLoading: boolean;
+  refreshAuth: () => void;
+}
+
+const AuthContext = createContext<AuthContextType | null>(null);
+
+export const AuthProvider = ({ children }) => {
+  const navigate = useNavigate();
+  const location = useLocation();
+  const queryClient = useQueryClient();
+  const [authState, setAuthState] = useState({
+    token: getToken(),
+    userType: getUserType(),
+    hasCheckedAuth: false
+  });
+
+  // Function to refresh auth state from localStorage
+  const refreshAuth = useCallback(() => {
+    const newToken = getToken();
+    const newUserType = getUserType();
+    setAuthState({
+      token: newToken,
+      userType: newUserType,
+      hasCheckedAuth: false
+    });
+  }, []);
+
+  // Listen for storage changes (for multi-tab sync) and custom auth events
+  useEffect(() => {
+    const handleStorageChange = () => {
+      refreshAuth();
+    };
+
+    // Custom event for same-tab auth updates
+    const handleAuthChange = () => {
+      refreshAuth();
+    };
+
+    window.addEventListener('storage', handleStorageChange);
+    window.addEventListener('authChange', handleAuthChange);
+    
+    return () => {
+      window.removeEventListener('storage', handleStorageChange);
+      window.removeEventListener('authChange', handleAuthChange);
+    };
+  }, [refreshAuth]);
+
+  // Only fetch user data if we have a token and haven't checked auth yet
+  const { data: currentUser, isLoading: isUserLoading } = useQuery({
+    queryKey: ["currentUser", authState.token],
+    queryFn: async () => {
+      if (!authState.token || authState.userType !== "user") return null;
+      const { data } = await api.get("/users/profile");
+      return data;
+    },
+    enabled: !!authState.token && authState.userType === "user",
+    staleTime: Infinity, // Don't refetch unless token changes
+    retry: false,
+    refetchOnWindowFocus: false,
+    refetchOnMount: false,
+  });
+
+  const { data: currentDoctor, isLoading: isDoctorLoading } = useQuery({
+    queryKey: ["currentDoctor", authState.token],
+    queryFn: async () => {
+      if (!authState.token || authState.userType !== "doctor") return null;
+      const { data } = await api.get("/doctors/profile");
+      return data;
+    },
+    enabled: !!authState.token && authState.userType === "doctor",
+    staleTime: Infinity, // Don't refetch unless token changes
+    retry: false,
+    refetchOnWindowFocus: false,
+    refetchOnMount: false,
+  });
+
+  // Corporate user - use cached data from login, no separate profile endpoint needed
+  const currentCorporate = authState.userType === "corporate" ? { authenticated: true } : null;
+
+  const isLoading = isUserLoading || isDoctorLoading;
+  const isAuthenticated = !!(currentUser || currentDoctor || (authState.userType === "corporate" && authState.token));
+
+  // Handle route protection - only run once per route change
+  useEffect(() => {
+    if (isLoading || authState.hasCheckedAuth) return;
+
+    // Check if it's an admin route - admin routes bypass normal auth
+    const isAdminRoute = location.pathname.startsWith('/admin');
+    
+    // Check if it's a corporate route - corporate routes have their own auth flow
+    const isCorporateRoute = location.pathname.startsWith('/corporate');
+    
+    // Check if it's a team route - team routes have their own auth flow
+    const isTeamRoute = location.pathname.startsWith('/team');
+    
+    // Check if it's a nurse route - nurse routes have their own auth flow
+    const isNurseRoute = location.pathname.startsWith('/nurse');
+    
+    // Check if it's an assistant route - assistant routes have their own auth flow
+    const isAssistantRoute = location.pathname.startsWith('/assistant');
+    
+    // Check for portal-specific routes that have their own auth
+    const isHospitalRoute = location.pathname.startsWith('/hospital');
+    const isClinicRoute = location.pathname.startsWith('/clinic');
+    const isLabRoute = location.pathname.startsWith('/lab');
+    const isPharmacyRoute = location.pathname.startsWith('/pharmacy');
+    const isAmbulanceRoute = location.pathname.startsWith('/ambulance');
+    const isHomecareRoute = location.pathname.startsWith('/homecare');
+    const isDoctorRoute = location.pathname.startsWith('/doctor');
+    
+    // Skip auth checks for admin routes - they handle their own auth
+    if (isAdminRoute) {
+      setAuthState(prev => ({ ...prev, hasCheckedAuth: true }));
+      return;
+    }
+    
+    // Skip auth checks for corporate routes if user is corporate type
+    if (isCorporateRoute && authState.userType === "corporate" && authState.token) {
+      setAuthState(prev => ({ ...prev, hasCheckedAuth: true }));
+      return;
+    }
+    
+    // Check team routes - require teamToken
+    if (isTeamRoute) {
+      const teamToken = localStorage.getItem('teamToken');
+      if (!teamToken && location.pathname !== '/team/login' && location.pathname !== '/team-login') {
+        setAuthState(prev => ({ ...prev, hasCheckedAuth: true }));
+        navigate("/team/login", { replace: true });
+        return;
+      }
+      setAuthState(prev => ({ ...prev, hasCheckedAuth: true }));
+      return;
+    }
+    
+    // Check nurse routes - require nurseToken
+    if (isNurseRoute) {
+      const nurseToken = localStorage.getItem('nurseToken');
+      if (!nurseToken && location.pathname !== '/nurse/login') {
+        setAuthState(prev => ({ ...prev, hasCheckedAuth: true }));
+        navigate("/nurse/login", { replace: true });
+        return;
+      }
+      setAuthState(prev => ({ ...prev, hasCheckedAuth: true }));
+      return;
+    }
+    
+    // Check assistant routes - require assistantToken
+    if (isAssistantRoute) {
+      const assistantToken = localStorage.getItem('assistantToken');
+      if (!assistantToken && location.pathname !== '/assistant/login') {
+        setAuthState(prev => ({ ...prev, hasCheckedAuth: true }));
+        navigate("/assistant/login", { replace: true });
+        return;
+      }
+      setAuthState(prev => ({ ...prev, hasCheckedAuth: true }));
+      return;
+    }
+    
+    // Check portal routes - require respective tokens
+    if (isHospitalRoute) {
+      const hospitalToken = localStorage.getItem('hospitalToken');
+      if (!hospitalToken && location.pathname !== '/hospital/login') {
+        setAuthState(prev => ({ ...prev, hasCheckedAuth: true }));
+        navigate("/hospital/login", { replace: true });
+        return;
+      }
+      setAuthState(prev => ({ ...prev, hasCheckedAuth: true }));
+      return;
+    }
+    
+    if (isClinicRoute) {
+      const clinicToken = localStorage.getItem('clinicToken');
+      if (!clinicToken && location.pathname !== '/clinic/login') {
+        setAuthState(prev => ({ ...prev, hasCheckedAuth: true }));
+        navigate("/clinic/login", { replace: true });
+        return;
+      }
+      setAuthState(prev => ({ ...prev, hasCheckedAuth: true }));
+      return;
+    }
+    
+    if (isLabRoute) {
+      const labToken = localStorage.getItem('labToken');
+      if (!labToken && location.pathname !== '/lab/login') {
+        setAuthState(prev => ({ ...prev, hasCheckedAuth: true }));
+        navigate("/lab/login", { replace: true });
+        return;
+      }
+      setAuthState(prev => ({ ...prev, hasCheckedAuth: true }));
+      return;
+    }
+    
+    if (isPharmacyRoute) {
+      const pharmacyToken = localStorage.getItem('pharmacyToken');
+      if (!pharmacyToken && location.pathname !== '/pharmacy/login') {
+        setAuthState(prev => ({ ...prev, hasCheckedAuth: true }));
+        navigate("/pharmacy/login", { replace: true });
+        return;
+      }
+      setAuthState(prev => ({ ...prev, hasCheckedAuth: true }));
+      return;
+    }
+    
+    if (isAmbulanceRoute) {
+      const ambulanceToken = localStorage.getItem('ambulanceToken');
+      if (!ambulanceToken && location.pathname !== '/ambulance/login') {
+        setAuthState(prev => ({ ...prev, hasCheckedAuth: true }));
+        navigate("/ambulance/login", { replace: true });
+        return;
+      }
+      setAuthState(prev => ({ ...prev, hasCheckedAuth: true }));
+      return;
+    }
+    
+    if (isHomecareRoute) {
+      const homecareToken = localStorage.getItem('homecareToken');
+      if (!homecareToken && location.pathname !== '/homecare/login') {
+        setAuthState(prev => ({ ...prev, hasCheckedAuth: true }));
+        navigate("/homecare/login", { replace: true });
+        return;
+      }
+      setAuthState(prev => ({ ...prev, hasCheckedAuth: true }));
+      return;
+    }
+    
+    // Check doctor routes - require doctorToken
+    if (isDoctorRoute) {
+      const doctorToken = localStorage.getItem('doctorToken');
+      if (!doctorToken && location.pathname !== '/doctor/login') {
+        setAuthState(prev => ({ ...prev, hasCheckedAuth: true }));
+        navigate("/doctor/login", { replace: true });
+        return;
+      }
+      setAuthState(prev => ({ ...prev, hasCheckedAuth: true }));
+      return;
+    }
+
+    const isPublicRoute = [
+      "/", 
+      "/login", 
+      "/register", 
+      "/doc-register",
+      "/doctor-login",
+      "/doctor/login",
+      "/hospital/login",
+      "/clinic/login",
+      "/lab/login",
+      "/pharmacy/login",
+      "/ambulance/login",
+      "/homecare/login",
+      "/team-login",
+      "/team/login",
+      "/nurse/login",
+      "/assistant/login",
+      "/admin/login",
+      "/corporate/login"
+    ].includes(location.pathname);
+    
+    if (!authState.token && !isPublicRoute) {
+      setAuthState(prev => ({ ...prev, hasCheckedAuth: true }));
+      navigate("/login", { replace: true });
+    } else if (authState.token && isAuthenticated && isPublicRoute) {
+      setAuthState(prev => ({ ...prev, hasCheckedAuth: true }));
+      // Redirect authenticated users away from login pages to their dashboard
+      let redirectPath = "/";
+      if (authState.userType === "doctor") {
+        redirectPath = "/doctor-dashboard";
+      } else if (authState.userType === "corporate") {
+        redirectPath = "/corporate/dashboard";
+      } else if (authState.userType === "user") {
+        redirectPath = "/";
+      }
+      navigate(redirectPath, { replace: true });
+    } else {
+      setAuthState(prev => ({ ...prev, hasCheckedAuth: true }));
+    }
+  }, [authState.token, authState.userType, authState.hasCheckedAuth, isAuthenticated, isLoading, location.pathname, navigate]);
+
+  // Reset auth check when location changes
+  useEffect(() => {
+    setAuthState(prev => ({ ...prev, hasCheckedAuth: false }));
+  }, [location.pathname]);
+
+  if (isLoading) {
+    return (
+      <div className="flex justify-center items-center w-screen h-[100vh]">
+        <span className="loader"></span>
+      </div>
+    );
+  }
+
+  return (
+    <AuthContext.Provider
+      value={{ 
+        currentUser, 
+        currentDoctor,
+        currentCorporate,
+        userType: authState.userType, 
+        isLoading,
+        refreshAuth
+      }}
+    >
+      {children}
+    </AuthContext.Provider>
+  );
+};
+
+export const useAuth = () => {
+  const context = useContext(AuthContext);
+  if (!context) {
+    throw new Error("useAuth must be used within an AuthProvider");
+  }
+  return context;
+};

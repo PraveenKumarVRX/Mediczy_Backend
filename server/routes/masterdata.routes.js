@@ -1,0 +1,768 @@
+import express from 'express';
+import fs from 'fs/promises';
+import path from 'path';
+import { fileURLToPath } from 'url';
+import XLSX from 'xlsx';
+
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = path.dirname(__filename);
+
+const router = express.Router();
+
+// Base paths for provider data
+const PROVIDERS_BASE = '/tmp/rag_cache/all_providers';
+const LABS_BASE = '/tmp/rag_cache/profiles_enhanced';
+
+/**
+ * Get all hospitals with pagination, search, and filtering
+ */
+router.get('/hospitals', async (req, res) => {
+    try {
+        const { page = 1, limit = 50, search = '', city = '', state = '', area = '' } = req.query;
+        
+        const hospitalsDir = path.join(PROVIDERS_BASE, 'hospitals');
+        const files = await fs.readdir(hospitalsDir);
+        
+        // Load all hospital profiles
+        let hospitals = await Promise.all(
+            files.map(async (file) => {
+                const content = await fs.readFile(path.join(hospitalsDir, file), 'utf-8');
+                return JSON.parse(content);
+            })
+        );
+        
+        // Filter hospitals
+        if (search) {
+            const searchLower = search.toLowerCase();
+            hospitals = hospitals.filter(h => 
+                h.basic_info.name.toLowerCase().includes(searchLower) ||
+                (h.basic_info.address || '').toLowerCase().includes(searchLower)
+            );
+        }
+        
+        if (city) {
+            hospitals = hospitals.filter(h => 
+                (h.basic_info.city || '').toLowerCase().includes(city.toLowerCase())
+            );
+        }
+        
+        if (state) {
+            hospitals = hospitals.filter(h => 
+                (h.basic_info.state || '').toLowerCase().includes(state.toLowerCase())
+            );
+        }
+        
+        if (area) {
+            hospitals = hospitals.filter(h => 
+                (h.basic_info.area || '').toLowerCase().includes(area.toLowerCase())
+            );
+        }
+        
+        // Pagination
+        const startIndex = (page - 1) * limit;
+        const endIndex = startIndex + parseInt(limit);
+        const paginatedHospitals = hospitals.slice(startIndex, endIndex);
+        
+        // Transform to admin format
+        const transformed = paginatedHospitals.map(h => ({
+            id: h.id,
+            name: h.basic_info?.name || 'Unknown',
+            address: h.basic_info?.address || '',
+            area: h.basic_info?.area || null,
+            city: h.basic_info?.city || null,
+            state: h.basic_info?.state || null,
+            pincode: h.basic_info?.pincode || null,
+            latitude: h.basic_info?.coordinates?.latitude || null,
+            longitude: h.basic_info?.coordinates?.longitude || null,
+            services: Array.isArray(h.services) ? h.services.filter(s => s) : [],
+            classification: h.classification?.type || 'unknown',
+            quality_score: h.quality_indicators?.overall_score || h.quality_indicators?.completeness || 0.5,
+            contact: {
+                phone: h.basic_info?.contact?.phone || '',
+                email: h.basic_info?.contact?.email || ''
+            },
+            timestamp: h.timestamp,
+            // Data quality flags
+            data_quality: {
+                has_name: h.basic_info?.name && h.basic_info.name !== 'Unknown',
+                has_location: !!(h.basic_info?.city || h.basic_info?.state || h.basic_info?.pincode),
+                has_contact: !!(h.basic_info?.contact?.phone || h.basic_info?.contact?.email),
+                has_services: Array.isArray(h.services) && h.services.length > 0
+            }
+        }));
+        
+        res.json({
+            success: true,
+            data: transformed,
+            pagination: {
+                total: hospitals.length,
+                page: parseInt(page),
+                limit: parseInt(limit),
+                pages: Math.ceil(hospitals.length / limit)
+            }
+        });
+    } catch (error) {
+        console.error('Error fetching hospitals:', error);
+        res.status(500).json({ success: false, error: error.message });
+    }
+});
+
+/**
+ * Get all labs with pagination and filtering
+ */
+router.get('/labs', async (req, res) => {
+    try {
+        const { page = 1, limit = 50, search = '', city = '', state = '', area = '' } = req.query;
+        
+        const labsDir = LABS_BASE;
+        const files = await fs.readdir(labsDir);
+        
+        // Load lab profiles
+        let labs = await Promise.all(
+            files.map(async (file) => {
+                const content = await fs.readFile(path.join(labsDir, file), 'utf-8');
+                return JSON.parse(content);
+            })
+        );
+        
+        // Filter labs
+        if (search) {
+            const searchLower = search.toLowerCase();
+            labs = labs.filter(l => 
+                l.basic_info.name.toLowerCase().includes(searchLower) ||
+                (l.basic_info.address || '').toLowerCase().includes(searchLower)
+            );
+        }
+        
+        if (city) {
+            labs = labs.filter(l => 
+                (l.basic_info.city || '').toLowerCase().includes(city.toLowerCase())
+            );
+        }
+        
+        if (state) {
+            labs = labs.filter(l => 
+                (l.basic_info.state || '').toLowerCase().includes(state.toLowerCase())
+            );
+        }
+        
+        if (area) {
+            labs = labs.filter(l => 
+                (l.basic_info.area || '').toLowerCase().includes(area.toLowerCase())
+            );
+        }
+        
+        // Pagination
+        const startIndex = (page - 1) * limit;
+        const endIndex = startIndex + parseInt(limit);
+        const paginatedLabs = labs.slice(startIndex, endIndex);
+        
+        // Transform to admin format
+        const transformed = paginatedLabs.map(l => ({
+            id: l.id,
+            name: l.basic_info.name,
+            address: l.basic_info.address,
+            area: l.basic_info.area,
+            locality: l.basic_info.locality,
+            city: l.basic_info.city,
+            state: l.basic_info.state,
+            pincode: l.basic_info.pincode,
+            latitude: l.basic_info.coordinates?.latitude,
+            longitude: l.basic_info.coordinates?.longitude,
+            services: l.services || [],
+            classification: l.classification?.type,
+            quality_score: l.quality_indicators?.data_quality === 'good' ? 0.8 : 0.5,
+            contact: l.basic_info.contact,
+            pincode_mapped: l.metadata?.pincode_mapped || false,
+            timestamp: l.timestamp
+        }));
+        
+        res.json({
+            success: true,
+            data: transformed,
+            pagination: {
+                total: labs.length,
+                page: parseInt(page),
+                limit: parseInt(limit),
+                pages: Math.ceil(labs.length / limit)
+            }
+        });
+    } catch (error) {
+        console.error('Error fetching labs:', error);
+        res.status(500).json({ success: false, error: error.message });
+    }
+});
+
+/**
+ * Get all clinics with pagination and filtering
+ */
+router.get('/clinics', async (req, res) => {
+    try {
+        const { page = 1, limit = 50, search = '', city = '', type = '' } = req.query;
+        
+        const clinicsDir = path.join(PROVIDERS_BASE, 'clinics');
+        const files = await fs.readdir(clinicsDir);
+        
+        // Load clinic profiles
+        let clinics = await Promise.all(
+            files.map(async (file) => {
+                const content = await fs.readFile(path.join(clinicsDir, file), 'utf-8');
+                return JSON.parse(content);
+            })
+        );
+        
+        // Filter clinics
+        if (search) {
+            const searchLower = search.toLowerCase();
+            clinics = clinics.filter(c => 
+                c.basic_info.name.toLowerCase().includes(searchLower) ||
+                (c.basic_info.address || '').toLowerCase().includes(searchLower)
+            );
+        }
+        
+        if (city) {
+            clinics = clinics.filter(c => 
+                (c.basic_info.city || '').toLowerCase().includes(city.toLowerCase())
+            );
+        }
+        
+        if (type) {
+            clinics = clinics.filter(c => 
+                (c.classification?.sub_type || '').toLowerCase().includes(type.toLowerCase())
+            );
+        }
+        
+        // Pagination
+        const startIndex = (page - 1) * limit;
+        const endIndex = startIndex + parseInt(limit);
+        const paginatedClinics = clinics.slice(startIndex, endIndex);
+        
+        // Transform to admin format
+        const transformed = paginatedClinics.map(c => ({
+            id: c.id,
+            name: c.basic_info.name,
+            address: c.basic_info.address,
+            area: c.basic_info.area,
+            city: c.basic_info.city,
+            state: c.basic_info.state,
+            pincode: c.basic_info.pincode,
+            latitude: c.basic_info.coordinates?.latitude,
+            longitude: c.basic_info.coordinates?.longitude,
+            services: c.services || [],
+            classification: c.classification?.type,
+            sub_type: c.classification?.sub_type,
+            quality_score: c.quality_indicators?.completeness || 0.7,
+            contact: c.basic_info.contact,
+            timestamp: c.timestamp
+        }));
+        
+        res.json({
+            success: true,
+            data: transformed,
+            pagination: {
+                total: clinics.length,
+                page: parseInt(page),
+                limit: parseInt(limit),
+                pages: Math.ceil(clinics.length / limit)
+            }
+        });
+    } catch (error) {
+        console.error('Error fetching clinics:', error);
+        res.status(500).json({ success: false, error: error.message });
+    }
+});
+
+/**
+ * Get all pharmacies with pagination and filtering
+ */
+router.get('/pharmacies', async (req, res) => {
+    try {
+        const { page = 1, limit = 50, search = '', city = '', state = '' } = req.query;
+        
+        const pharmaciesDir = path.join(PROVIDERS_BASE, 'pharmacies');
+        const files = await fs.readdir(pharmaciesDir);
+        
+        // Load pharmacy profiles
+        let pharmacies = await Promise.all(
+            files.map(async (file) => {
+                const content = await fs.readFile(path.join(pharmaciesDir, file), 'utf-8');
+                return JSON.parse(content);
+            })
+        );
+        
+        // Filter pharmacies
+        if (search) {
+            const searchLower = search.toLowerCase();
+            pharmacies = pharmacies.filter(p => 
+                p.basic_info.name.toLowerCase().includes(searchLower) ||
+                (p.basic_info.address || '').toLowerCase().includes(searchLower)
+            );
+        }
+        
+        if (city) {
+            pharmacies = pharmacies.filter(p => 
+                (p.basic_info.city || '').toLowerCase().includes(city.toLowerCase())
+            );
+        }
+        
+        if (state) {
+            pharmacies = pharmacies.filter(p => 
+                (p.basic_info.state || '').toLowerCase().includes(state.toLowerCase())
+            );
+        }
+        
+        // Pagination
+        const startIndex = (page - 1) * limit;
+        const endIndex = startIndex + parseInt(limit);
+        const paginatedPharmacies = pharmacies.slice(startIndex, endIndex);
+        
+        // Transform to admin format
+        const transformed = paginatedPharmacies.map(p => ({
+            id: p.id,
+            name: p.basic_info.name,
+            address: p.basic_info.address,
+            area: p.basic_info.area,
+            city: p.basic_info.city,
+            state: p.basic_info.state,
+            pincode: p.basic_info.pincode,
+            latitude: p.basic_info.coordinates?.latitude,
+            longitude: p.basic_info.coordinates?.longitude,
+            services: p.services || [],
+            classification: p.classification?.type,
+            chain: p.classification?.chain,
+            chain_name: p.classification?.chain_name,
+            quality_score: p.quality_indicators?.overall_score || 0.8,
+            contact: p.basic_info.contact,
+            email: p.basic_info.email,
+            home_delivery: p.quality_indicators?.home_delivery || false,
+            timestamp: p.timestamp
+        }));
+        
+        res.json({
+            success: true,
+            data: transformed,
+            pagination: {
+                total: pharmacies.length,
+                page: parseInt(page),
+                limit: parseInt(limit),
+                pages: Math.ceil(pharmacies.length / limit)
+            }
+        });
+    } catch (error) {
+        console.error('Error fetching pharmacies:', error);
+        res.status(500).json({ success: false, error: error.message });
+    }
+});
+
+/**
+ * Get all corporates with pagination and filtering
+ */
+router.get('/corporates', async (req, res) => {
+    try {
+        const { page = 1, limit = 50, search = '', city = '', state = '' } = req.query;
+        
+        const corporatesDir = path.join(PROVIDERS_BASE, 'corporates');
+        const files = await fs.readdir(corporatesDir);
+        
+        // Load corporate profiles
+        let corporates = await Promise.all(
+            files.map(async (file) => {
+                const content = await fs.readFile(path.join(corporatesDir, file), 'utf-8');
+                return JSON.parse(content);
+            })
+        );
+        
+        // Filter corporates
+        if (search) {
+            const searchLower = search.toLowerCase();
+            corporates = corporates.filter(c => 
+                c.basic_info.name.toLowerCase().includes(searchLower) ||
+                (c.basic_info.company_type || '').toLowerCase().includes(searchLower)
+            );
+        }
+        
+        if (city) {
+            corporates = corporates.filter(c => 
+                (c.basic_info.city || '').toLowerCase().includes(city.toLowerCase())
+            );
+        }
+        
+        if (state) {
+            corporates = corporates.filter(c => 
+                (c.basic_info.state || '').toLowerCase().includes(state.toLowerCase())
+            );
+        }
+        
+        // Pagination
+        const startIndex = (page - 1) * limit;
+        const endIndex = startIndex + parseInt(limit);
+        const paginatedCorporates = corporates.slice(startIndex, endIndex);
+        
+        // Transform to admin format
+        const transformed = paginatedCorporates.map(c => ({
+            id: c.id,
+            name: c.basic_info.name,
+            company_type: c.basic_info.company_type,
+            address: c.basic_info.address,
+            city: c.basic_info.city,
+            state: c.basic_info.state,
+            pincode: c.basic_info.pincode,
+            contact: c.basic_info.contact,
+            email: c.basic_info.email,
+            website: c.basic_info.website,
+            employee_count: c.employee_info?.employee_count || 0,
+            covered_employees: c.employee_info?.covered_employees || 0,
+            covered_dependents: c.employee_info?.covered_dependents || 0,
+            plan_type: c.health_plan?.plan_type,
+            insurance_provider: c.health_plan?.insurance_provider,
+            coverage_amount: c.health_plan?.coverage_amount,
+            services: c.services || [],
+            quality_score: c.quality_indicators?.overall_score || 0.85,
+            active: c.quality_indicators?.active || true,
+            timestamp: c.timestamp
+        }));
+        
+        res.json({
+            success: true,
+            data: transformed,
+            pagination: {
+                total: corporates.length,
+                page: parseInt(page),
+                limit: parseInt(limit),
+                pages: Math.ceil(corporates.length / limit)
+            }
+        });
+    } catch (error) {
+        console.error('Error fetching corporates:', error);
+        res.status(500).json({ success: false, error: error.message });
+    }
+});
+
+/**
+ * Get all doctors with pagination and filtering
+ */
+router.get('/doctors', async (req, res) => {
+    try {
+        const { page = 1, limit = 50, search = '', city = '', state = '', specialty = '' } = req.query;
+        
+        // Read from Excel file
+        const doctorsFile = path.join(__dirname, '..', 'db', 'Master Data', 'Doctors Data', 'Doctors List 624.xlsx');
+        const workbook = XLSX.readFile(doctorsFile);
+        const sheetName = workbook.SheetNames[0];
+        let doctors = XLSX.utils.sheet_to_json(workbook.Sheets[sheetName], { defval: '' });
+        
+        // Filter doctors
+        if (search) {
+            const searchLower = search.toLowerCase();
+            doctors = doctors.filter(d => 
+                (d['Doctor Name'] || '').toLowerCase().includes(searchLower) ||
+                (d['UIN Speciality'] || '').toLowerCase().includes(searchLower) ||
+                (d['Division Speciality'] || '').toLowerCase().includes(searchLower)
+            );
+        }
+        
+        if (city) {
+            doctors = doctors.filter(d => 
+                (d['Area/Patch'] || '').toLowerCase().includes(city.toLowerCase()) ||
+                (d['Locality'] || '').toLowerCase().includes(city.toLowerCase())
+            );
+        }
+        
+        if (state) {
+            doctors = doctors.filter(d => 
+                (d['State'] || '').toLowerCase().includes(state.toLowerCase())
+            );
+        }
+        
+        if (specialty) {
+            doctors = doctors.filter(d => 
+                (d['UIN Speciality'] || '').toLowerCase().includes(specialty.toLowerCase()) ||
+                (d['Division Speciality'] || '').toLowerCase().includes(specialty.toLowerCase())
+            );
+        }
+        
+        // Pagination
+        const startIndex = (page - 1) * limit;
+        const endIndex = startIndex + parseInt(limit);
+        const paginatedDoctors = doctors.slice(startIndex, endIndex);
+        
+        // Transform to admin format
+        const transformed = paginatedDoctors.map((d, index) => {
+            const specialty = d['UIN Speciality'] || d['Division Speciality'] || '';
+            return {
+                id: `doctor_${d['S.no'] || index + 1}`,
+                name: d['Doctor Name'] || '',
+                gender: d['Gender'] || '',
+                specialties: specialty ? [specialty] : [],
+                specialty: specialty,
+                qualification: d['UIN Qualification'] || '',
+                city: d['Area/Patch'] || d['Locality'] || '',
+                locality: d['Locality'] || '',
+                state: d['State'] || '',
+                contact: d['Mobile Number'] ? String(d['Mobile Number']) : '',
+                phone: d['Mobile Number'] ? String(d['Mobile Number']) : '',
+                landline: d['Landline No.'] ? String(d['Landline No.']) : '',
+                email: d['Email'] || '',
+                clinic_name: d['Clinic Name'] || d['Clinic name'] || '',
+                clinic_address: d['Clinic Address'] || '',
+                registration_number: '',
+                verified: !!(d['UIN Qualification'] && d['Mobile Number']),
+                quality_score: (d['Mobile Number'] && d['Email']) ? 0.9 : 
+                              (d['Mobile Number'] || d['Email']) ? 0.7 : 0.5
+            };
+        });
+        
+        res.json({
+            success: true,
+            data: transformed,
+            pagination: {
+                total: doctors.length,
+                page: parseInt(page),
+                limit: parseInt(limit),
+                pages: Math.ceil(doctors.length / limit)
+            }
+        });
+    } catch (error) {
+        console.error('Error fetching doctors:', error);
+        console.error('Error stack:', error.stack);
+        res.status(500).json({ success: false, error: error.message, stack: error.stack });
+    }
+});
+
+/**
+ * Get statistics for all providers
+ */
+router.get('/stats', async (req, res) => {
+    try {
+        const hospitalsDir = path.join(PROVIDERS_BASE, 'hospitals');
+        const labsDir = LABS_BASE;
+        const clinicsDir = path.join(PROVIDERS_BASE, 'clinics');
+        const pharmaciesDir = path.join(PROVIDERS_BASE, 'pharmacies');
+        const corporatesDir = path.join(PROVIDERS_BASE, 'corporates');
+        const doctorsFile = path.join(__dirname, '..', 'db', 'Master Data', 'Doctors Data', 'Doctors List 624.xlsx');
+        
+        const [hospitalFiles, labFiles, clinicFiles, pharmacyFiles, corporateFiles] = await Promise.all([
+            fs.readdir(hospitalsDir).catch(() => []),
+            fs.readdir(labsDir).catch(() => []),
+            fs.readdir(clinicsDir).catch(() => []),
+            fs.readdir(pharmaciesDir).catch(() => []),
+            fs.readdir(corporatesDir).catch(() => [])
+        ]);
+        
+        // Read doctors from Excel
+        let doctorCount = 0;
+        try {
+            const workbook = XLSX.readFile(doctorsFile);
+            const sheetName = workbook.SheetNames[0];
+            const doctors = XLSX.utils.sheet_to_json(workbook.Sheets[sheetName]);
+            doctorCount = doctors.length;
+        } catch (error) {
+            console.error('Error reading doctors file:', error);
+        }
+        
+        // Load sample data for geographic distribution
+        const sampleLabs = await Promise.all(
+            labFiles.slice(0, 100).map(async (file) => {
+                const content = await fs.readFile(path.join(labsDir, file), 'utf-8');
+                return JSON.parse(content);
+            })
+        );
+        
+        const cities = new Set();
+        const states = new Set();
+        const areas = new Set();
+        
+        sampleLabs.forEach(lab => {
+            if (lab.basic_info.city) cities.add(lab.basic_info.city);
+            if (lab.basic_info.state) states.add(lab.basic_info.state);
+            if (lab.basic_info.area) areas.add(lab.basic_info.area);
+        });
+        
+        res.json({
+            success: true,
+            data: {
+                hospitals: {
+                    total: hospitalFiles.length,
+                    active: hospitalFiles.length
+                },
+                labs: {
+                    total: labFiles.length,
+                    active: labFiles.length,
+                    pincode_mapped: Math.floor(labFiles.length * 0.612)
+                },
+                clinics: {
+                    total: clinicFiles.length,
+                    active: clinicFiles.length
+                },
+                pharmacies: {
+                    total: pharmacyFiles.length,
+                    active: pharmacyFiles.length
+                },
+                corporates: {
+                    total: corporateFiles.length,
+                    active: corporateFiles.length
+                },
+                doctors: {
+                    total: doctorCount,
+                    active: doctorCount
+                },
+                geographic: {
+                    cities: cities.size,
+                    states: states.size,
+                    areas: areas.size
+                },
+                total_providers: hospitalFiles.length + labFiles.length + clinicFiles.length + pharmacyFiles.length + corporateFiles.length + doctorCount
+            }
+        });
+    } catch (error) {
+        console.error('Error fetching stats:', error);
+        res.status(500).json({ success: false, error: error.message });
+    }
+});
+
+/**
+ * Get unique cities for filtering
+ */
+router.get('/cities', async (req, res) => {
+    try {
+        const labsDir = LABS_BASE;
+        const files = await fs.readdir(labsDir);
+        
+        const labs = await Promise.all(
+            files.map(async (file) => {
+                const content = await fs.readFile(path.join(labsDir, file), 'utf-8');
+                return JSON.parse(content);
+            })
+        );
+        
+        const cities = [...new Set(labs.map(l => l.basic_info.city).filter(Boolean))].sort();
+        
+        res.json({
+            success: true,
+            data: cities
+        });
+    } catch (error) {
+        res.status(500).json({ success: false, error: error.message });
+    }
+});
+
+/**
+ * Get unique states for filtering
+ */
+router.get('/states', async (req, res) => {
+    try {
+        const labsDir = LABS_BASE;
+        const files = await fs.readdir(labsDir);
+        
+        const labs = await Promise.all(
+            files.map(async (file) => {
+                const content = await fs.readFile(path.join(labsDir, file), 'utf-8');
+                return JSON.parse(content);
+            })
+        );
+        
+        const states = [...new Set(labs.map(l => l.basic_info.state).filter(Boolean))].sort();
+        
+        res.json({
+            success: true,
+            data: states
+        });
+    } catch (error) {
+        res.status(500).json({ success: false, error: error.message });
+    }
+});
+
+/**
+ * Get unique areas for filtering
+ */
+router.get('/areas', async (req, res) => {
+    try {
+        const { city } = req.query;
+        const labsDir = LABS_BASE;
+        const files = await fs.readdir(labsDir);
+        
+        let labs = await Promise.all(
+            files.map(async (file) => {
+                const content = await fs.readFile(path.join(labsDir, file), 'utf-8');
+                return JSON.parse(content);
+            })
+        );
+        
+        if (city) {
+            labs = labs.filter(l => l.basic_info.city === city);
+        }
+        
+        const areas = [...new Set(labs.map(l => l.basic_info.area).filter(Boolean))].sort();
+        
+        res.json({
+            success: true,
+            data: areas
+        });
+    } catch (error) {
+        res.status(500).json({ success: false, error: error.message });
+    }
+});
+
+/**
+ * Get unique specialties for filtering doctors
+ */
+router.get('/specialties', async (req, res) => {
+    try {
+        const doctorsFile = path.join(__dirname, '..', 'db', 'Master Data', 'Doctors Data', 'Doctors List 624.xlsx');
+        const workbook = XLSX.readFile(doctorsFile);
+        const sheetName = workbook.SheetNames[0];
+        const doctors = XLSX.utils.sheet_to_json(workbook.Sheets[sheetName], { defval: '' });
+        
+        const specialtiesSet = new Set();
+        doctors.forEach(d => {
+            if (d['UIN Speciality']) specialtiesSet.add(d['UIN Speciality']);
+            if (d['Division Speciality']) specialtiesSet.add(d['Division Speciality']);
+        });
+        
+        const specialties = [...specialtiesSet].filter(Boolean).sort();
+        
+        res.json({
+            success: true,
+            data: specialties
+        });
+    } catch (error) {
+        res.status(500).json({ success: false, error: error.message });
+    }
+});
+
+/**
+ * Get single provider by ID
+ */
+router.get('/:type/:id', async (req, res) => {
+    try {
+        const { type, id } = req.params;
+        
+        let filePath;
+        if (type === 'hospital') {
+            filePath = path.join(PROVIDERS_BASE, 'hospitals', `${id}.json`);
+        } else if (type === 'lab') {
+            filePath = path.join(LABS_BASE, `${id}.json`);
+        } else if (type === 'clinic') {
+            filePath = path.join(PROVIDERS_BASE, 'clinics', `${id}.json`);
+        } else if (type === 'doctor') {
+            filePath = path.join(PROVIDERS_BASE, 'doctors', `${id}.json`);
+        } else {
+            return res.status(400).json({ success: false, error: 'Invalid provider type' });
+        }
+        
+        const content = await fs.readFile(filePath, 'utf-8');
+        const provider = JSON.parse(content);
+        
+        res.json({
+            success: true,
+            data: provider
+        });
+    } catch (error) {
+        if (error.code === 'ENOENT') {
+            return res.status(404).json({ success: false, error: 'Provider not found' });
+        }
+        res.status(500).json({ success: false, error: error.message });
+    }
+});
+
+export default router;

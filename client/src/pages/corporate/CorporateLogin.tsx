@@ -1,0 +1,277 @@
+import { useState, useEffect } from "react";
+import { useNavigate, Link } from "react-router-dom";
+import { useForm } from "react-hook-form";
+import { zodResolver } from "@hookform/resolvers/zod";
+import * as z from "zod";
+import { Building2, CheckCircle2, HeartPulse, Shield, Users } from "lucide-react";
+import { Button } from "@/components/ui/button";
+import {
+  Form,
+  FormControl,
+  FormField,
+  FormItem,
+  FormLabel,
+  FormMessage,
+} from "@/components/ui/form";
+import { Input } from "@/components/ui/input";
+import { Card, CardContent } from "@/components/ui/card";
+import { Separator } from "@/components/ui/separator";
+import { Badge } from "@/components/ui/badge";
+import { useToast } from "@/hooks/use-toast";
+import { useLogin } from "@/hooks/auth";
+import { initializeFirebaseMessaging } from "@/lib/firebase-config";
+
+const formSchema = z.object({
+  email: z.string().email("Enter a valid corporate email"),
+  password: z.string().min(1, "Password is required"),
+});
+
+const CorporateLogin = () => {
+  const navigate = useNavigate();
+  const { toast } = useToast();
+  const [showPassword, setShowPassword] = useState(false);
+  const [isCheckingAuth, setIsCheckingAuth] = useState(true);
+
+  // Check if already authenticated
+  useEffect(() => {
+    // Clear any other role tokens that might interfere
+    localStorage.removeItem('adminToken');
+    localStorage.removeItem('teamToken');
+    localStorage.removeItem('nurseToken');
+    localStorage.removeItem('assistantToken');
+    localStorage.removeItem('doctorToken');
+    localStorage.removeItem('token');
+    localStorage.removeItem('userType');
+
+    const token = localStorage.getItem('corporateToken');
+    if (token) {
+      console.log('✅ Corporate already authenticated, redirecting...');
+      navigate('/corporate/dashboard');
+      return;
+    }
+
+    setIsCheckingAuth(false);
+  }, [navigate]);
+
+  const form = useForm<z.infer<typeof formSchema>>({
+    resolver: zodResolver(formSchema),
+    defaultValues: { email: "corporate@mediczy.com", password: "Corporate123" },
+  });
+
+  const loginMutation = useLogin();
+
+  const onSubmit = (values: z.infer<typeof formSchema>) => {
+    // Dev bypass for testing - check first before any API call
+    const emailLower = values.email.toLowerCase().trim();
+    const password = values.password;
+    
+    if (emailLower === 'corporate@mediczy.com' && password === 'Corporate123') {
+      console.log('🚀 Corporate: Using quick authentication bypass');
+      
+      // Set the auth data that CorporateLayout expects
+      localStorage.setItem('token', 'dev-corporate-token');
+      localStorage.setItem('userType', 'corporate');
+      localStorage.setItem('corporateToken', 'dev-corporate-token');
+      localStorage.setItem('corporateData', JSON.stringify({
+        id: 'corporate_dev',
+        email: 'corporate@mediczy.com',
+        name: 'Sample Corporation',
+        type: 'Enterprise'
+      }));
+      
+      toast({
+        title: "Welcome back",
+        description: "Redirecting you to the corporate command center...",
+      });
+      
+      navigate("/corporate/dashboard");
+      return;
+    }
+
+    // Only call API if not using dev credentials
+    loginMutation.mutate(
+      { credentials: values, loginType: "corporate" },
+      {
+        onSuccess: () => {
+          toast({
+            title: "Welcome back",
+            description: "Redirecting you to the corporate command center...",
+          });
+          
+          // Initialize Firebase messaging after successful login
+          setTimeout(() => {
+            initializeFirebaseMessaging().catch(err => {
+              console.log('Firebase messaging initialization skipped:', err.message);
+            });
+          }, 500);
+          
+          navigate("/corporate/dashboard");
+        },
+        onError: (error) => {
+          toast({
+            variant: "destructive",
+            title: "Login failed",
+            description:
+              (error as any)?.response?.data?.message ||
+              "We couldn't verify those credentials",
+          });
+        },
+      }
+    );
+  };
+
+  // Show loading while checking authentication
+  if (isCheckingAuth) {
+    return (
+      <div className="min-h-screen flex items-center justify-center bg-slate-50">
+        <div className="text-center">
+          <div className="w-16 h-16 border-4 border-blue-100 border-t-blue-600 rounded-full animate-spin mx-auto mb-4"></div>
+          <p className="text-slate-600">Checking authentication...</p>
+        </div>
+      </div>
+    );
+  }
+
+  return (
+    <div className="min-h-screen grid lg:grid-cols-2">
+      <div
+        className="relative hidden lg:flex flex-col gap-8 bg-cover bg-center text-white p-10"
+        style={{ backgroundImage: 'url("../../aiH.jpg")' }}
+      >
+        <div className="flex items-center gap-2 text-xl font-semibold tracking-tight">
+          <HeartPulse className="h-6 w-6" />
+          Mediqzy Corporate Wellness
+        </div>
+        <div className="mt-auto space-y-5 max-w-md">
+          <h2 className="text-3xl font-semibold leading-tight">
+            Data-rich insights for every employee cohort
+          </h2>
+          <div className="space-y-4">
+            {[
+              {
+                title: "Smart eligibility & entitlements",
+                copy: "Instant view of OPD balance, diagnostics usage, and onboarding status per employee",
+              },
+              {
+                title: "Live risk heatmaps",
+                copy: "Track chronic & lifestyle risks with proactive nudges and escalation flows",
+              },
+              {
+                title: "Execution-ready playbooks",
+                copy: "Deploy vaccination drives, health camps, and 1:1 care navigation in a click",
+              },
+            ].map((highlight) => (
+              <div key={highlight.title} className="bg-white/10 rounded-xl p-4">
+                <p className="text-sm uppercase tracking-wider text-gray-200">
+                  {highlight.title}
+                </p>
+                <p className="text-base text-gray-100/90">{highlight.copy}</p>
+              </div>
+            ))}
+          </div>
+        </div>
+      </div>
+
+      <div className="flex items-center justify-center py-12 px-6 bg-background">
+        <div className="w-full max-w-[420px] space-y-8">
+          <div className="space-y-3 text-center">
+            <Badge variant="secondary" className="uppercase tracking-wide">
+              Corporate Access
+            </Badge>
+            <h1 className="text-2xl font-semibold tracking-tight">
+              HR / Corporate Login
+            </h1>
+            <p className="text-muted-foreground text-sm">
+              Authenticate with the credentials shared by the Mediqzy success team
+            </p>
+          </div>
+
+          <Card className="shadow-lg">
+            <CardContent className="pt-6">
+              <Form {...form}>
+                <form onSubmit={form.handleSubmit(onSubmit)} className="space-y-6">
+                  <FormField
+                    control={form.control}
+                    name="email"
+                    render={({ field }) => (
+                      <FormItem>
+                        <FormLabel>Corporate Email</FormLabel>
+                        <FormControl>
+                          <Input type="email" placeholder="hr@company.com" {...field} />
+                        </FormControl>
+                        <FormMessage />
+                      </FormItem>
+                    )}
+                  />
+
+                  <FormField
+                    control={form.control}
+                    name="password"
+                    render={({ field }) => (
+                      <FormItem>
+                        <div className="flex items-center justify-between">
+                          <FormLabel>Secure Password</FormLabel>
+                          <button
+                            type="button"
+                            className="text-xs text-muted-foreground"
+                            onClick={() => setShowPassword(!showPassword)}
+                          >
+                            {showPassword ? "Hide" : "Show"}
+                          </button>
+                        </div>
+                        <FormControl>
+                          <Input
+                            type={showPassword ? "text" : "password"}
+                            placeholder="••••••••"
+                            {...field}
+                          />
+                        </FormControl>
+                        <FormMessage />
+                      </FormItem>
+                    )}
+                  />
+
+                  <Button
+                    type="submit"
+                    className="w-full"
+                    disabled={loginMutation.isPending}
+                  >
+                    {loginMutation.isPending ? "Authenticating..." : "Enter Command Center"}
+                  </Button>
+                </form>
+              </Form>
+
+              <Separator className="my-6" />
+
+              <div className="space-y-3 text-sm text-muted-foreground">
+                <div className="flex items-start gap-3">
+                  <Shield className="h-4 w-4 mt-0.5" />
+                  <p>Role-based security, audit logging, and SSO-ready architecture.</p>
+                </div>
+                <div className="flex items-start gap-3">
+                  <Users className="h-4 w-4 mt-0.5" />
+                  <p>Manage employees, dependents, and wellness programs from one pane.</p>
+                </div>
+                <div className="flex items-start gap-3">
+                  <CheckCircle2 className="h-4 w-4 mt-0.5" />
+                  <p>Need access? Ask your Mediqzy account owner to provision a login.</p>
+                </div>
+              </div>
+            </CardContent>
+          </Card>
+
+          <div className="text-center text-sm text-muted-foreground space-y-1">
+            <p>
+              Need help? Email <a className="underline" href="mailto:success@mediqzy.com">success@mediqzy.com</a>
+            </p>
+            <p>
+              Looking for the general login? <Link to="/login" className="text-primary underline">Return here</Link>
+            </p>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+};
+
+export default CorporateLogin;

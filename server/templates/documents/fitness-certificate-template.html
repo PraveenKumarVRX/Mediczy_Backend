@@ -1,0 +1,413 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Medical Fitness Certificate</title>
+    <style>
+        @page {
+            size: A4;
+            margin: 15mm;
+        }
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            line-height: 1.6;
+            color: #333;
+            margin: 0;
+            padding: 0;
+        }
+        .certificate-container {
+            max-width: 210mm;
+            margin: 0 auto;
+            background: white;
+            padding: 30px;
+            border: 8px double #2563eb;
+            position: relative;
+        }
+        .certificate-header {
+            text-align: center;
+            border-bottom: 3px solid #2563eb;
+            padding-bottom: 20px;
+            margin-bottom: 30px;
+        }
+        .certificate-logo {
+            font-size: 64px;
+            margin-bottom: 10px;
+        }
+        .clinic-name {
+            font-size: 28px;
+            font-weight: bold;
+            color: #2563eb;
+            margin: 10px 0;
+        }
+        .clinic-details {
+            font-size: 13px;
+            color: #6b7280;
+            margin: 5px 0;
+        }
+        .certificate-title {
+            text-align: center;
+            margin: 30px 0;
+        }
+        .title-main {
+            font-size: 32px;
+            font-weight: bold;
+            color: #1f2937;
+            text-transform: uppercase;
+            letter-spacing: 2px;
+            margin-bottom: 10px;
+        }
+        .title-sub {
+            font-size: 16px;
+            color: #6b7280;
+            font-style: italic;
+        }
+        .certificate-body {
+            padding: 20px;
+            line-height: 2;
+            font-size: 16px;
+            text-align: justify;
+        }
+        .patient-name {
+            font-weight: bold;
+            color: #2563eb;
+            font-size: 18px;
+            text-decoration: underline;
+        }
+        .highlight {
+            font-weight: 600;
+            color: #1f2937;
+        }
+        .details-table {
+            width: 100%;
+            margin: 25px 0;
+            border-collapse: collapse;
+        }
+        .details-table td {
+            padding: 12px;
+            border: 1px solid #e5e7eb;
+        }
+        .details-label {
+            background: #f3f4f6;
+            font-weight: 600;
+            color: #374151;
+            width: 40%;
+        }
+        .details-value {
+            color: #1f2937;
+        }
+        .medical-info {
+            background: #f0fdf4;
+            border: 2px solid #10b981;
+            border-radius: 8px;
+            padding: 20px;
+            margin: 25px 0;
+        }
+        .medical-info-title {
+            font-weight: bold;
+            color: #065f46;
+            margin-bottom: 15px;
+            font-size: 18px;
+        }
+        .vitals-grid {
+            display: grid;
+            grid-template-columns: repeat(3, 1fr);
+            gap: 15px;
+            margin-top: 15px;
+        }
+        .vital-box {
+            background: white;
+            padding: 12px;
+            border-radius: 6px;
+            text-align: center;
+            border: 1px solid #d1fae5;
+        }
+        .vital-label {
+            font-size: 12px;
+            color: #6b7280;
+            font-weight: 500;
+        }
+        .vital-value {
+            font-size: 20px;
+            font-weight: bold;
+            color: #059669;
+            margin-top: 5px;
+        }
+        .fitness-declaration {
+            background: #dbeafe;
+            border-left: 5px solid #2563eb;
+            padding: 20px;
+            margin: 25px 0;
+            border-radius: 4px;
+        }
+        .declaration-text {
+            font-size: 16px;
+            font-weight: 600;
+            color: #1e40af;
+            text-align: center;
+        }
+        .purpose-box {
+            background: #fef3c7;
+            border: 2px dashed #f59e0b;
+            padding: 15px;
+            margin: 20px 0;
+            border-radius: 8px;
+        }
+        .purpose-label {
+            font-weight: bold;
+            color: #92400e;
+            margin-bottom: 8px;
+        }
+        .purpose-text {
+            color: #78350f;
+        }
+        .validity-box {
+            background: #fee2e2;
+            border: 2px solid #ef4444;
+            padding: 12px;
+            margin: 20px 0;
+            border-radius: 8px;
+            text-align: center;
+        }
+        .validity-text {
+            font-weight: bold;
+            color: #991b1b;
+            font-size: 14px;
+        }
+        .signature-section {
+            margin-top: 50px;
+            display: flex;
+            justify-content: space-between;
+            align-items: end;
+        }
+        .issue-date {
+            font-size: 14px;
+            color: #6b7280;
+        }
+        .doctor-signature {
+            text-align: center;
+        }
+        .signature-line {
+            width: 200px;
+            border-top: 2px solid #374151;
+            margin: 50px auto 15px;
+        }
+        .doctor-name {
+            font-weight: bold;
+            font-size: 16px;
+            color: #1f2937;
+        }
+        .doctor-credentials {
+            font-size: 12px;
+            color: #6b7280;
+            margin-top: 3px;
+        }
+        .stamp-box {
+            width: 120px;
+            height: 120px;
+            border: 2px dashed #9ca3af;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 11px;
+            color: #9ca3af;
+            text-align: center;
+            border-radius: 50%;
+            margin: 0 auto;
+        }
+        .footer-note {
+            margin-top: 30px;
+            padding-top: 15px;
+            border-top: 1px solid #e5e7eb;
+            font-size: 11px;
+            color: #9ca3af;
+            text-align: center;
+        }
+        .watermark {
+            position: absolute;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%) rotate(-45deg);
+            font-size: 100px;
+            color: rgba(37, 99, 235, 0.03);
+            font-weight: bold;
+            z-index: -1;
+            pointer-events: none;
+        }
+        @media print {
+            .certificate-container {
+                border: none;
+                padding: 0;
+            }
+        }
+    </style>
+</head>
+<body>
+    <div class="watermark">FITNESS CERTIFICATE</div>
+    <div class="certificate-container">
+        <!-- Header -->
+        <div class="certificate-header">
+            <div class="certificate-logo">🏥</div>
+            <div class="clinic-name">{{clinicName}}</div>
+            <div class="clinic-details">{{clinicAddress}}</div>
+            <div class="clinic-details">📞 {{clinicPhone}} | ✉️ {{clinicEmail}}</div>
+            <div class="clinic-details">Reg. No: {{clinicRegNo}}</div>
+        </div>
+
+        <!-- Certificate Title -->
+        <div class="certificate-title">
+            <div class="title-main">Medical Fitness Certificate</div>
+            <div class="title-sub">Certificate of Good Health</div>
+        </div>
+
+        <!-- Certificate Number and Date -->
+        <div style="text-align: right; margin-bottom: 20px; font-size: 13px; color: #6b7280;">
+            <strong>Certificate No:</strong> {{certificateNumber}}<br>
+            <strong>Issue Date:</strong> {{issueDate}}
+        </div>
+
+        <!-- Certificate Body -->
+        <div class="certificate-body">
+            <p>This is to certify that I have examined <span class="patient-name">{{patientName}}</span>, 
+            <span class="highlight">Age: {{patientAge}} years</span>, 
+            <span class="highlight">Gender: {{patientGender}}</span>, 
+            bearing <span class="highlight">ID: {{patientId}}</span>, 
+            residing at <span class="highlight">{{patientAddress}}</span>.</p>
+        </div>
+
+        <!-- Patient Details Table -->
+        <table class="details-table">
+            <tr>
+                <td class="details-label">Full Name</td>
+                <td class="details-value">{{patientName}}</td>
+            </tr>
+            <tr>
+                <td class="details-label">Date of Birth</td>
+                <td class="details-value">{{dateOfBirth}}</td>
+            </tr>
+            <tr>
+                <td class="details-label">Age / Gender</td>
+                <td class="details-value">{{patientAge}} Years / {{patientGender}}</td>
+            </tr>
+            <tr>
+                <td class="details-label">Contact Number</td>
+                <td class="details-value">{{patientPhone}}</td>
+            </tr>
+            <tr>
+                <td class="details-label">Blood Group</td>
+                <td class="details-value">{{bloodGroup}}</td>
+            </tr>
+            <tr>
+                <td class="details-label">Identification Mark</td>
+                <td class="details-value">{{identificationMark}}</td>
+            </tr>
+        </table>
+
+        <!-- Medical Examination Details -->
+        <div class="medical-info">
+            <div class="medical-info-title">📋 Medical Examination Details</div>
+            <p style="margin: 0 0 10px 0; color: #065f46;">
+                <strong>Examination Date:</strong> {{examinationDate}}
+            </p>
+            
+            <div class="vitals-grid">
+                <div class="vital-box">
+                    <div class="vital-label">Blood Pressure</div>
+                    <div class="vital-value">{{bloodPressure}}</div>
+                </div>
+                <div class="vital-box">
+                    <div class="vital-label">Pulse Rate</div>
+                    <div class="vital-value">{{pulse}} bpm</div>
+                </div>
+                <div class="vital-box">
+                    <div class="vital-label">Temperature</div>
+                    <div class="vital-value">{{temperature}}°F</div>
+                </div>
+                <div class="vital-box">
+                    <div class="vital-label">Height</div>
+                    <div class="vital-value">{{height}} cm</div>
+                </div>
+                <div class="vital-box">
+                    <div class="vital-label">Weight</div>
+                    <div class="vital-value">{{weight}} kg</div>
+                </div>
+                <div class="vital-box">
+                    <div class="vital-label">BMI</div>
+                    <div class="vital-value">{{bmi}}</div>
+                </div>
+            </div>
+
+            <div style="margin-top: 20px; padding: 15px; background: white; border-radius: 6px; border: 1px solid #d1fae5;">
+                <p style="margin: 0; color: #065f46;"><strong>Physical Examination Findings:</strong></p>
+                <p style="margin: 10px 0 0 0; color: #047857;">{{physicalFindings}}</p>
+            </div>
+        </div>
+
+        <!-- Purpose Box -->
+        <div class="purpose-box">
+            <div class="purpose-label">🎯 Purpose of Certificate:</div>
+            <div class="purpose-text">{{purpose}}</div>
+        </div>
+
+        <!-- Fitness Declaration -->
+        <div class="fitness-declaration">
+            <div class="declaration-text">
+                ✓ I hereby certify that the above-named person is MEDICALLY FIT<br>
+                and has NO apparent physical or mental disability that would prevent<br>
+                them from {{activityDescription}}.
+            </div>
+        </div>
+
+        <!-- Additional Remarks (if any) -->
+        {{#hasRemarks}}
+        <div style="background: #fef3c7; padding: 15px; border-radius: 8px; margin: 20px 0;">
+            <p style="margin: 0; font-weight: bold; color: #92400e;">Additional Remarks:</p>
+            <p style="margin: 10px 0 0 0; color: #78350f;">{{remarks}}</p>
+        </div>
+        {{/hasRemarks}}
+
+        <!-- Restrictions (if any) -->
+        {{#hasRestrictions}}
+        <div style="background: #fee2e2; padding: 15px; border-radius: 8px; margin: 20px 0; border-left: 4px solid #ef4444;">
+            <p style="margin: 0; font-weight: bold; color: #991b1b;">⚠️ Medical Restrictions/Precautions:</p>
+            <p style="margin: 10px 0 0 0; color: #7f1d1d;">{{restrictions}}</p>
+        </div>
+        {{/hasRestrictions}}
+
+        <!-- Validity -->
+        <div class="validity-box">
+            <div class="validity-text">
+                📅 This certificate is valid for {{validityMonths}} months from the date of issue<br>
+                Valid Until: {{validUntilDate}}
+            </div>
+        </div>
+
+        <!-- Signature Section -->
+        <div class="signature-section">
+            <div class="issue-date">
+                <strong>Place of Issue:</strong> {{placeOfIssue}}<br>
+                <strong>Date of Issue:</strong> {{issueDate}}
+            </div>
+            <div class="doctor-signature">
+                <div class="stamp-box">
+                    Doctor's Stamp<br>& Seal
+                </div>
+                <div class="signature-line"></div>
+                <div class="doctor-name">Dr. {{doctorName}}</div>
+                <div class="doctor-credentials">{{doctorQualifications}}</div>
+                <div class="doctor-credentials">Registration No: {{doctorRegNo}}</div>
+                <div class="doctor-credentials">{{doctorSpecialization}}</div>
+            </div>
+        </div>
+
+        <!-- Footer Note -->
+        <div class="footer-note">
+            <p style="margin: 0;">
+                This is a computer-generated fitness certificate. It is valid only with the doctor's signature and official stamp.<br>
+                For verification, please contact: {{clinicPhone}} | Certificate ID: {{certificateNumber}}<br>
+                Generated via Mediczy Healthcare Platform on {{generatedDateTime}}
+            </p>
+        </div>
+    </div>
+</body>
+</html>

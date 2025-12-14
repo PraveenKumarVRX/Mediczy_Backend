@@ -1,0 +1,684 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Second Medical Opinion Report</title>
+    <style>
+        @page {
+            size: A4;
+            margin: 15mm;
+        }
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            line-height: 1.6;
+            color: #333;
+            margin: 0;
+            padding: 0;
+        }
+        .report-container {
+            max-width: 210mm;
+            margin: 0 auto;
+            background: white;
+            padding: 30px;
+        }
+        .header {
+            background: linear-gradient(135deg, #2563eb 0%, #1e40af 100%);
+            color: white;
+            padding: 25px;
+            border-radius: 8px;
+            margin-bottom: 30px;
+        }
+        .header h1 {
+            margin: 0 0 8px 0;
+            font-size: 28px;
+        }
+        .header-subtitle {
+            font-size: 14px;
+            opacity: 0.9;
+            margin: 0;
+        }
+        .clinic-info {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-top: 15px;
+            padding-top: 15px;
+            border-top: 1px solid rgba(255,255,255,0.3);
+        }
+        .clinic-details {
+            font-size: 12px;
+            opacity: 0.95;
+        }
+        .report-badge {
+            background: white;
+            color: #2563eb;
+            padding: 8px 16px;
+            border-radius: 20px;
+            font-weight: bold;
+            font-size: 12px;
+        }
+        .report-info {
+            display: grid;
+            grid-template-columns: repeat(3, 1fr);
+            gap: 15px;
+            margin-bottom: 30px;
+        }
+        .info-box {
+            background: #f9fafb;
+            padding: 12px;
+            border-left: 4px solid #3b82f6;
+            border-radius: 4px;
+        }
+        .info-label {
+            font-size: 11px;
+            color: #6b7280;
+            font-weight: 500;
+            margin-bottom: 4px;
+        }
+        .info-value {
+            font-size: 14px;
+            font-weight: 600;
+            color: #1f2937;
+        }
+        .section-title {
+            font-size: 18px;
+            font-weight: bold;
+            color: #1f2937;
+            margin: 30px 0 15px 0;
+            padding-bottom: 8px;
+            border-bottom: 2px solid #e5e7eb;
+            display: flex;
+            align-items: center;
+            gap: 10px;
+        }
+        .section-icon {
+            font-size: 24px;
+        }
+        .patient-info-card {
+            background: #f0fdf4;
+            border: 2px solid #10b981;
+            border-radius: 8px;
+            padding: 20px;
+            margin-bottom: 25px;
+        }
+        .patient-details-grid {
+            display: grid;
+            grid-template-columns: repeat(2, 1fr);
+            gap: 12px;
+        }
+        .patient-detail-row {
+            display: flex;
+            padding: 8px;
+            background: white;
+            border-radius: 4px;
+        }
+        .patient-label {
+            font-weight: 600;
+            color: #065f46;
+            min-width: 140px;
+        }
+        .patient-value {
+            color: #047857;
+        }
+        .referring-doctor-box {
+            background: #eff6ff;
+            border: 2px solid #3b82f6;
+            border-radius: 8px;
+            padding: 15px;
+            margin-bottom: 25px;
+        }
+        .referring-title {
+            font-weight: bold;
+            color: #1e40af;
+            margin-bottom: 10px;
+            font-size: 15px;
+        }
+        .referring-details {
+            color: #1e3a8a;
+            font-size: 13px;
+            line-height: 1.8;
+        }
+        .case-summary {
+            background: #fefce8;
+            border: 2px solid #eab308;
+            border-radius: 8px;
+            padding: 20px;
+            margin: 20px 0;
+        }
+        .summary-heading {
+            font-weight: bold;
+            color: #854d0e;
+            font-size: 16px;
+            margin-bottom: 12px;
+        }
+        .summary-content {
+            color: #713f12;
+            line-height: 1.8;
+        }
+        .review-section {
+            background: white;
+            border: 1px solid #e5e7eb;
+            border-radius: 8px;
+            padding: 20px;
+            margin: 20px 0;
+        }
+        .review-heading {
+            font-weight: bold;
+            color: #374151;
+            font-size: 15px;
+            margin-bottom: 12px;
+            padding-bottom: 8px;
+            border-bottom: 1px solid #e5e7eb;
+        }
+        .review-content {
+            color: #4b5563;
+            line-height: 1.8;
+        }
+        .documents-reviewed {
+            display: grid;
+            grid-template-columns: repeat(2, 1fr);
+            gap: 10px;
+            margin: 15px 0;
+        }
+        .document-item {
+            padding: 10px;
+            background: #f3f4f6;
+            border-left: 3px solid #6b7280;
+            border-radius: 4px;
+            font-size: 13px;
+            display: flex;
+            align-items: center;
+            gap: 8px;
+        }
+        .findings-box {
+            background: #fef3c7;
+            border-left: 5px solid #f59e0b;
+            border-radius: 4px;
+            padding: 20px;
+            margin: 20px 0;
+        }
+        .findings-title {
+            font-weight: bold;
+            color: #92400e;
+            font-size: 16px;
+            margin-bottom: 15px;
+        }
+        .findings-list {
+            list-style: none;
+            padding: 0;
+        }
+        .findings-list li {
+            padding: 10px;
+            background: white;
+            margin-bottom: 10px;
+            border-left: 3px solid #f59e0b;
+            border-radius: 4px;
+            color: #78350f;
+        }
+        .opinion-box {
+            background: #dbeafe;
+            border: 3px solid #2563eb;
+            border-radius: 8px;
+            padding: 25px;
+            margin: 25px 0;
+        }
+        .opinion-title {
+            font-size: 20px;
+            font-weight: bold;
+            color: #1e40af;
+            margin-bottom: 15px;
+            text-align: center;
+        }
+        .opinion-content {
+            color: #1e3a8a;
+            line-height: 1.9;
+            font-size: 15px;
+        }
+        .recommendations-box {
+            background: #f0fdf4;
+            border: 2px solid #10b981;
+            border-radius: 8px;
+            padding: 20px;
+            margin: 20px 0;
+        }
+        .recommendations-title {
+            font-weight: bold;
+            color: #065f46;
+            font-size: 16px;
+            margin-bottom: 15px;
+        }
+        .recommendations-list {
+            counter-reset: recommendation-counter;
+            list-style: none;
+            padding: 0;
+        }
+        .recommendations-list li {
+            counter-increment: recommendation-counter;
+            padding: 12px 15px;
+            background: white;
+            margin-bottom: 12px;
+            border-left: 4px solid #10b981;
+            border-radius: 4px;
+            color: #047857;
+            position: relative;
+            padding-left: 45px;
+        }
+        .recommendations-list li:before {
+            content: counter(recommendation-counter);
+            position: absolute;
+            left: 12px;
+            top: 50%;
+            transform: translateY(-50%);
+            width: 24px;
+            height: 24px;
+            background: #10b981;
+            color: white;
+            border-radius: 50%;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-weight: bold;
+            font-size: 12px;
+        }
+        .agreement-box {
+            display: flex;
+            gap: 15px;
+            margin: 20px 0;
+        }
+        .agreement-item {
+            flex: 1;
+            padding: 15px;
+            border-radius: 8px;
+            text-align: center;
+        }
+        .agree {
+            background: #d1fae5;
+            border: 2px solid #10b981;
+        }
+        .differ {
+            background: #fee2e2;
+            border: 2px solid #ef4444;
+        }
+        .agreement-label {
+            font-weight: bold;
+            margin-bottom: 8px;
+            font-size: 14px;
+        }
+        .agreement-text {
+            font-size: 13px;
+            line-height: 1.6;
+        }
+        .prognosis-box {
+            background: #e0f2fe;
+            border: 2px solid #0ea5e9;
+            border-radius: 8px;
+            padding: 20px;
+            margin: 20px 0;
+        }
+        .prognosis-title {
+            font-weight: bold;
+            color: #075985;
+            font-size: 16px;
+            margin-bottom: 12px;
+        }
+        .prognosis-content {
+            color: #0c4a6e;
+            line-height: 1.8;
+        }
+        .disclaimer-box {
+            background: #fef2f2;
+            border: 2px dashed #ef4444;
+            border-radius: 8px;
+            padding: 15px;
+            margin: 25px 0;
+            font-size: 12px;
+        }
+        .disclaimer-title {
+            font-weight: bold;
+            color: #991b1b;
+            margin-bottom: 8px;
+        }
+        .disclaimer-text {
+            color: #7f1d1d;
+            line-height: 1.7;
+        }
+        .signature-section {
+            margin-top: 40px;
+            padding-top: 30px;
+            border-top: 2px solid #e5e7eb;
+            display: flex;
+            justify-content: space-between;
+            align-items: end;
+        }
+        .report-date {
+            font-size: 14px;
+            color: #6b7280;
+        }
+        .doctor-signature {
+            text-align: center;
+        }
+        .signature-line {
+            width: 200px;
+            border-top: 2px solid #374151;
+            margin: 40px auto 15px;
+        }
+        .doctor-name {
+            font-weight: bold;
+            font-size: 16px;
+            color: #1f2937;
+        }
+        .doctor-credentials {
+            font-size: 12px;
+            color: #6b7280;
+            margin-top: 3px;
+        }
+        .footer {
+            margin-top: 30px;
+            padding: 20px;
+            background: #f9fafb;
+            border-radius: 8px;
+            text-align: center;
+            font-size: 11px;
+            color: #6b7280;
+        }
+        .watermark {
+            position: absolute;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%) rotate(-45deg);
+            font-size: 100px;
+            color: rgba(37, 99, 235, 0.03);
+            font-weight: bold;
+            z-index: -1;
+            pointer-events: none;
+        }
+        @media print {
+            .report-container {
+                padding: 0;
+            }
+        }
+    </style>
+</head>
+<body>
+    <div class="watermark">SECOND OPINION</div>
+    <div class="report-container">
+        <!-- Header -->
+        <div class="header">
+            <h1>🩺 Second Medical Opinion Report</h1>
+            <p class="header-subtitle">Independent Expert Medical Assessment</p>
+            <div class="clinic-info">
+                <div class="clinic-details">
+                    <strong>{{clinicName}}</strong><br>
+                    {{clinicAddress}}<br>
+                    📞 {{clinicPhone}} | ✉️ {{clinicEmail}}
+                </div>
+                <div class="report-badge">
+                    CONFIDENTIAL
+                </div>
+            </div>
+        </div>
+
+        <!-- Report Information -->
+        <div class="report-info">
+            <div class="info-box">
+                <div class="info-label">Report ID</div>
+                <div class="info-value">{{reportId}}</div>
+            </div>
+            <div class="info-box">
+                <div class="info-label">Report Date</div>
+                <div class="info-value">{{reportDate}}</div>
+            </div>
+            <div class="info-box">
+                <div class="info-label">Consultation Type</div>
+                <div class="info-value">{{consultationType}}</div>
+            </div>
+        </div>
+
+        <!-- Patient Information -->
+        <div class="section-title">
+            <span class="section-icon">👤</span>
+            Patient Information
+        </div>
+        <div class="patient-info-card">
+            <div class="patient-details-grid">
+                <div class="patient-detail-row">
+                    <span class="patient-label">Patient Name:</span>
+                    <span class="patient-value">{{patientName}}</span>
+                </div>
+                <div class="patient-detail-row">
+                    <span class="patient-label">Age / Gender:</span>
+                    <span class="patient-value">{{patientAge}} Years / {{patientGender}}</span>
+                </div>
+                <div class="patient-detail-row">
+                    <span class="patient-label">Patient ID:</span>
+                    <span class="patient-value">{{patientId}}</span>
+                </div>
+                <div class="patient-detail-row">
+                    <span class="patient-label">Contact:</span>
+                    <span class="patient-value">{{patientPhone}}</span>
+                </div>
+                <div class="patient-detail-row">
+                    <span class="patient-label">Blood Group:</span>
+                    <span class="patient-value">{{bloodGroup}}</span>
+                </div>
+                <div class="patient-detail-row">
+                    <span class="patient-label">Occupation:</span>
+                    <span class="patient-value">{{occupation}}</span>
+                </div>
+            </div>
+        </div>
+
+        <!-- Referring Doctor -->
+        <div class="referring-doctor-box">
+            <div class="referring-title">📋 Referred By</div>
+            <div class="referring-details">
+                <strong>Dr. {{referringDoctorName}}</strong><br>
+                {{referringDoctorQualifications}} - {{referringDoctorSpecialization}}<br>
+                {{referringHospital}}<br>
+                Date of Referral: {{referralDate}}
+            </div>
+        </div>
+
+        <!-- Case Summary -->
+        <div class="section-title">
+            <span class="section-icon">📝</span>
+            Case Summary
+        </div>
+        <div class="case-summary">
+            <div class="summary-heading">Reason for Second Opinion Request</div>
+            <div class="summary-content">
+                {{reasonForSecondOpinion}}
+            </div>
+        </div>
+
+        <!-- Documents Reviewed -->
+        <div class="section-title">
+            <span class="section-icon">📄</span>
+            Documents Reviewed
+        </div>
+        <div class="documents-reviewed">
+            {{#documentsReviewed}}
+            <div class="document-item">
+                <span>📎</span>
+                <span>{{documentName}}</span>
+            </div>
+            {{/documentsReviewed}}
+        </div>
+
+        <!-- Medical History Review -->
+        <div class="section-title">
+            <span class="section-icon">🩺</span>
+            Medical History Review
+        </div>
+        
+        <div class="review-section">
+            <div class="review-heading">Chief Complaints</div>
+            <div class="review-content">{{chiefComplaints}}</div>
+        </div>
+
+        <div class="review-section">
+            <div class="review-heading">History of Present Illness</div>
+            <div class="review-content">{{historyOfPresentIllness}}</div>
+        </div>
+
+        <div class="review-section">
+            <div class="review-heading">Past Medical History</div>
+            <div class="review-content">{{pastMedicalHistory}}</div>
+        </div>
+
+        {{#hasSurgicalHistory}}
+        <div class="review-section">
+            <div class="review-heading">Surgical History</div>
+            <div class="review-content">{{surgicalHistory}}</div>
+        </div>
+        {{/hasSurgicalHistory}}
+
+        <div class="review-section">
+            <div class="review-heading">Current Medications</div>
+            <div class="review-content">{{currentMedications}}</div>
+        </div>
+
+        <!-- Original Diagnosis -->
+        <div class="section-title">
+            <span class="section-icon">🔬</span>
+            Original Diagnosis & Treatment Plan
+        </div>
+        <div class="review-section">
+            <div class="review-heading">Original Diagnosis by Referring Doctor</div>
+            <div class="review-content">{{originalDiagnosis}}</div>
+        </div>
+
+        <div class="review-section">
+            <div class="review-heading">Treatment Plan Proposed/Underway</div>
+            <div class="review-content">{{originalTreatmentPlan}}</div>
+        </div>
+
+        <!-- Clinical Findings -->
+        <div class="section-title">
+            <span class="section-icon">🔍</span>
+            Clinical Assessment & Findings
+        </div>
+        <div class="findings-box">
+            <div class="findings-title">Key Clinical Findings</div>
+            <ul class="findings-list">
+                {{#clinicalFindings}}
+                <li>{{finding}}</li>
+                {{/clinicalFindings}}
+            </ul>
+        </div>
+
+        <!-- Laboratory & Imaging Review -->
+        {{#hasInvestigations}}
+        <div class="review-section">
+            <div class="review-heading">Laboratory & Imaging Results Review</div>
+            <div class="review-content">{{investigationsReview}}</div>
+        </div>
+        {{/hasInvestigations}}
+
+        <!-- Second Opinion -->
+        <div class="section-title">
+            <span class="section-icon">💡</span>
+            Second Medical Opinion
+        </div>
+        <div class="opinion-box">
+            <div class="opinion-title">Expert Opinion & Assessment</div>
+            <div class="opinion-content">
+                {{secondOpinion}}
+            </div>
+        </div>
+
+        <!-- Agreement/Disagreement with Original Diagnosis -->
+        <div class="section-title">
+            <span class="section-icon">⚖️</span>
+            Analysis of Original Diagnosis
+        </div>
+        <div class="agreement-box">
+            <div class="agreement-item agree">
+                <div class="agreement-label" style="color: #065f46;">✓ Points of Agreement</div>
+                <div class="agreement-text" style="color: #047857;">{{pointsOfAgreement}}</div>
+            </div>
+            <div class="agreement-item differ">
+                <div class="agreement-label" style="color: #991b1b;">⚠ Points of Difference</div>
+                <div class="agreement-text" style="color: #7f1d1d;">{{pointsOfDifference}}</div>
+            </div>
+        </div>
+
+        <!-- Recommendations -->
+        <div class="section-title">
+            <span class="section-icon">📋</span>
+            Recommendations
+        </div>
+        <div class="recommendations-box">
+            <div class="recommendations-title">Treatment Recommendations</div>
+            <ul class="recommendations-list">
+                {{#recommendations}}
+                <li>{{recommendation}}</li>
+                {{/recommendations}}
+            </ul>
+        </div>
+
+        <!-- Additional Tests -->
+        {{#hasAdditionalTests}}
+        <div class="review-section">
+            <div class="review-heading">Additional Investigations Suggested</div>
+            <div class="review-content">{{additionalTestsSuggested}}</div>
+        </div>
+        {{/hasAdditionalTests}}
+
+        <!-- Prognosis -->
+        <div class="prognosis-box">
+            <div class="prognosis-title">Prognosis & Expected Outcomes</div>
+            <div class="prognosis-content">{{prognosis}}</div>
+        </div>
+
+        <!-- Follow-up Plan -->
+        <div class="review-section">
+            <div class="review-heading">Follow-up & Monitoring Plan</div>
+            <div class="review-content">{{followUpPlan}}</div>
+        </div>
+
+        <!-- Disclaimer -->
+        <div class="disclaimer-box">
+            <div class="disclaimer-title">⚠️ Important Disclaimer</div>
+            <div class="disclaimer-text">
+                This second opinion is based on the review of provided medical records and documents. 
+                It does not replace a comprehensive physical examination or the original treating physician's assessment. 
+                This opinion should be used as additional information to facilitate informed decision-making in consultation 
+                with the primary healthcare provider. The final treatment decisions should be made in collaboration with 
+                the treating physician who has direct access to the patient and complete medical records.
+            </div>
+        </div>
+
+        <!-- Signature -->
+        <div class="signature-section">
+            <div class="report-date">
+                <strong>Place:</strong> {{placeOfIssue}}<br>
+                <strong>Date:</strong> {{reportDate}}<br>
+                <strong>Time:</strong> {{reportTime}}
+            </div>
+            <div class="doctor-signature">
+                <div class="signature-line"></div>
+                <div class="doctor-name">Dr. {{consultingDoctorName}}</div>
+                <div class="doctor-credentials">{{consultingDoctorQualifications}}</div>
+                <div class="doctor-credentials">{{consultingDoctorSpecialization}}</div>
+                <div class="doctor-credentials">Registration No: {{consultingDoctorRegNo}}</div>
+                <div class="doctor-credentials" style="margin-top: 8px;">
+                    📞 {{consultingDoctorPhone}} | ✉️ {{consultingDoctorEmail}}
+                </div>
+            </div>
+        </div>
+
+        <!-- Footer -->
+        <div class="footer">
+            <p style="margin: 0; font-weight: bold;">CONFIDENTIAL MEDICAL DOCUMENT</p>
+            <p style="margin: 5px 0 0 0;">
+                This second opinion report is confidential and intended solely for the patient and their healthcare providers.<br>
+                Unauthorized disclosure or distribution is prohibited by medical ethics and applicable privacy laws.<br>
+                For verification, contact: {{clinicPhone}} | Report ID: {{reportId}}<br>
+                Generated via Mediczy Healthcare Platform on {{generatedDateTime}}
+            </p>
+        </div>
+    </div>
+</body>
+</html>

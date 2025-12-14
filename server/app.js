@@ -1,0 +1,686 @@
+import express from "express";
+import dotenv from "dotenv";
+dotenv.config();
+import cors from "cors";
+import helmet from "helmet";
+import crypto from 'crypto';
+import hpp from "hpp";
+import mongoSanitize from "express-mongo-sanitize";
+import rateLimit from "express-rate-limit";
+import fileUpload from 'express-fileupload';
+import compression from 'compression';
+import orchestrator from "./db/orchestrator.js";
+import userRouter from "./routes/user.route.js";
+import doctorRoutes from './routes/doctor.route.js';
+import doctorEnhancedRoutes from './routes/doctor.enhanced.route.js';
+import doctorAvailabilityRoutes from './routes/doctor-availability.route.js';
+import doctorSettingsRoutes from './routes/doctor-settings.route.js';
+import enhancedAppointmentRoutes from './routes/enhanced-appointment.route.js';
+import fitnessRouter from "./routes/fitness.route.js";
+import fitnessDataRouter from "./routes/fitnessData.js";
+import appleHealthRouter from "./routes/apple-health.route.js";
+import aiRouter from "./routes/ai.js";
+import medicalAIRouter from "./routes/medical-ai.route.js";
+import ayushmanRouter from "./routes/ayushman.route.js";
+import placesRouter from './routes/places.js';
+
+import adminRouter from './routes/admin.route.js';
+import fcmRouter from './routes/fcm.route.js';
+import firebaseStatusRouter from './routes/firebase-status.route.js';
+import crmRouter from './routes/crm.route.js';
+import asyncRouter from './routes/async.route.js';
+import appointmentRouter from './routes/appointment.route.js';
+import availabilityRouter from './routes/availability.route.js';
+import membershipRouter from './routes/membership.route.js';
+import teamRouter from './routes/team.route.js';
+import nurseRouter from './routes/nurse.route.js';
+import assistantRouter from './routes/assistant.route.js';
+import prometheus from './config/prometheus.js';
+import patientRouter from './routes/patient.route.js';
+import insuranceRouter from './routes/insurance.route.js';
+import privacyRouter from './routes/privacy.route.js';
+import videoRouter from './routes/video.route.js';
+import smsRouter from './routes/sms.route.js';
+import videoConfigRouter from './routes/videoConfig.route.js';
+import voiceConfigRouter from './routes/voiceConfig.route.js';
+import whatsappConfigRouter from './routes/whatsapp.config.route.js';
+import whatsappBusinessRouter from './routes/whatsapp.business.route.js';
+import whatsappProductionRouter from './routes/whatsapp-production.route.js';
+import chatRouter from './routes/chat.route.js';
+import ticketsRouter from './routes/tickets.route.js';
+import tenantRouter from './routes/tenant.route.js';
+import tenantDomainRouter from './routes/tenant-domain.route.js';
+import emailRouter from './routes/email.route.js';
+import paymentRouter from './routes/payment.route.js';
+import orderRouter from './routes/order.route.js';
+import videoEventsRouter from './routes/video-events.route.js';
+import otpRouter from './routes/otp.route.js';
+import enhancedLabRouter from './routes/lab.route.enhanced.js';
+import corporateRouter from './routes/corporate.route.js';
+import hospitalRouter from './routes/hospital.route.js';
+import clinicRouter from './routes/clinic.route.js';
+import pharmacyRouter from './routes/pharmacy.route.js';
+import ambulanceRouter from './routes/ambulance.route.js';
+import homecareRouter from './routes/homecare.route.js';
+import deviceRouter from './routes/device.route.js';
+import wearableRouter from './routes/wearable.route.js';
+import pocDeviceRouter from './routes/poc-device.route.js';
+import healthCampRouter from './routes/health-camp.route.js';
+import adminStatsRouter from './routes/admin-stats.route.js';
+import queueRouter from './routes/queue.route.js';
+import prescriptionRouter from './routes/prescription.route.js';
+import ehrRouter from './routes/ehr.route.js';
+import healthDiaryRouter from './routes/health-diary.route.js';
+import onlineConsultationRouter from './routes/online-consultation.route.js';
+import notificationRouter from './routes/notification.route.js';
+import embeddingsRouter from './routes/embeddings.route.js';
+import documentationRouter from './routes/documentation.route.js';
+import circuitBreakerRouter from './routes/circuit-breaker.route.js';
+import n8nCallbackRouter from './routes/webhooks/n8n-callback.route.js';
+import oauthRouter from './routes/oauth.route.js';
+import doctorOAuthRouter from './routes/doctor-oauth.route.js';
+
+// MariaDB models completely replaced with Intelligent Database models
+// Legacy MariaDB models removed - all data now flows through intelligent database
+// Previous MariaDB models: user, doctor, leadNote, leadTask, appointment, 
+// doctorAvailability, membershipPlan, insurance, auditLog, consent
+// All now available as intelligent models with enhanced functionality
+
+// Load intelligent database models
+import "./models/user.model.intelligent.js";
+import "./models/doctor.model.intelligent.js";
+import "./models/consent.model.intelligent.js";
+import "./models/admin.model.intelligent.js";
+import "./models/appointment.model.intelligent.js";
+import "./models/doctorAvailability.model.intelligent.js";
+import "./models/membershipPlan.model.intelligent.js";
+import "./models/insurance.model.intelligent.js";
+import "./models/auditLog.model.intelligent.js";
+import "./models/crm.model.intelligent.js";
+import "./models/ticket.model.intelligent.js";
+import "./models/FitnessData.model.intelligent.js";
+import "./models/chat.model.intelligent.js";
+
+// Import async infrastructure (optional - gracefully degrades if services unavailable)
+import './config/redis.js';
+import { connectKafkaProducer } from './config/kafka.js';
+import { metricsMiddleware } from './config/prometheus.js';
+import './workers/index.js'; // Initialize workers
+
+// Import compliance middleware
+import { auditMiddleware } from './middleware/audit.middleware.js';
+import { sessionTimeout } from './middleware/session.middleware.js';
+import { activityLogger, activityLogRoutes } from './middleware/activityLogger.js';
+
+// Import compliance services
+import { initializeDataRetentionScheduler } from './services/dataRetention.service.js';
+
+// Import multi-tenant middleware
+import { extractTenant } from './middleware/tenant.middleware.js';
+
+const app = express();
+
+// Initialize Passport for OAuth2
+import passport from './config/oauth.config.js';
+app.use(passport.initialize());
+
+// Create upload directories for doctor media
+import fs from 'fs';
+const uploadDirs = ['./uploads', './uploads/doctors', './uploads/temp', './uploads/chat'];
+uploadDirs.forEach(dir => {
+  if (!fs.existsSync(dir)) {
+    fs.mkdirSync(dir, { recursive: true });
+    console.log(`✓ Created upload directory: ${dir}`);
+  }
+});
+
+// Trust proxy - Required for rate limiting behind nginx proxy
+// This allows Express to trust X-Forwarded-* headers from Nginx/Cloudflare
+app.set('trust proxy', 1); // Trust first proxy only
+
+// SSL/HTTPS compatibility middleware
+// Ensure req.protocol respects X-Forwarded-Proto from Cloudflare/Nginx
+app.use((req, res, next) => {
+  // Trust the X-Forwarded-Proto header from proxy
+  if (req.headers['x-forwarded-proto'] === 'https') {
+    req.secure = true;
+    req.protocol = 'https';
+  }
+  next();
+});
+
+// All models now use Intelligent Database - MariaDB connection removed
+
+// Connect to Kafka (non-blocking) - skip if disabled
+if (process.env.DISABLE_KAFKA !== 'true') {
+  connectKafkaProducer().catch(err => {
+    console.warn('⚠️  Kafka not available:', err.message);
+  });
+} else {
+  console.log('📝 Kafka disabled by DISABLE_KAFKA environment variable');
+}
+
+// Initialize compliance schedulers (GDPR/DPDP/HIPAA)
+if (process.env.NODE_ENV !== 'test') {
+  initializeDataRetentionScheduler();
+}
+
+// ==================== SECURITY MIDDLEWARE ====================
+
+// 1. Helmet - Security Headers (XSS, HSTS, etc.)
+// Apply core Helmet protections without CSP here; we'll set CSP with per-request nonces below.
+app.use(helmet({
+  hsts: {
+    maxAge: 31536000,
+    includeSubDomains: true,
+    preload: true
+  },
+}));
+
+// Generate per-request nonces and set strict CSP without unsafe directives
+app.use((req, res, next) => {
+  const scriptNonce = crypto.randomBytes(16).toString('base64');
+  const styleNonce = crypto.randomBytes(16).toString('base64');
+  res.locals.scriptNonce = scriptNonce;
+  res.locals.styleNonce = styleNonce;
+
+  // Allow self resources, nonced inline where unavoidable; remove unsafe-inline/unsafe-eval
+  // Note: Adjust connect-src/frame-src as needed for production endpoints (Cloudflare Tunnel, APIs, sockets)
+  const csp = [
+    "default-src 'self'",
+    // Scripts: app bundles from self + nonced inline (if any) + Cloudflare Insights
+    `script-src 'self' 'nonce-${scriptNonce}' https://static.cloudflareinsights.com`,
+    // Styles: from self + nonced inline (if any)
+    `style-src 'self' 'nonce-${styleNonce}'`,
+    // Images and fonts
+    "img-src 'self' data: https:",
+    "font-src 'self' data:",
+    // Network connections: self, HTTPS, and WebSocket to same-origin; expand if separate API domain is used
+    "connect-src 'self' https: wss:",
+    // Disallow risky types
+    "object-src 'none'",
+    // Lock down framing, base URI, and form actions
+    "frame-ancestors 'none'",
+    "base-uri 'self'",
+    "form-action 'self'",
+  ].join('; ');
+
+  res.setHeader('Content-Security-Policy', csp);
+  next();
+});
+
+// 2. CORS - Strict whitelist (SECURITY FIX)
+const allowedOrigins = process.env.CORS_ORIGIN 
+  ? process.env.CORS_ORIGIN.split(',') 
+  : process.env.NODE_ENV === 'production'
+  ? ['https://mediqzy.com', 'https://www.mediqzy.com']
+  : [
+      'http://localhost:5173', 
+      'http://localhost:3000',
+      'http://localhost',
+      'https://localhost',
+      'https://localhost:9443',
+      'http://localhost:9443',
+      'https://192.168.1.72:9443',
+      'http://192.168.1.72:9443',
+      'https://192.168.1.72',
+      'http://192.168.1.72'
+    ]; // Default for development
+
+app.use(cors({
+  origin: function (origin, callback) {
+    // Allow requests with no origin (mobile apps, Postman, etc.)
+    if (!origin) return callback(null, true);
+    
+    // Check if origin is in allowed list or allow all in development
+    if (allowedOrigins.includes(origin) || process.env.NODE_ENV === 'development') {
+      return callback(null, true);
+    } else {
+      return callback(null, true); // Allow all for testing
+    }
+  },
+  methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS', 'PATCH'],
+  allowedHeaders: ['Content-Type', 'Authorization', 'X-Requested-With', 'Accept', 'Origin'],
+  credentials: true,
+  optionsSuccessStatus: 200,
+  preflightContinue: false
+}));
+
+// Handle preflight requests explicitly BEFORE rate limiting
+app.options('*', (req, res) => {
+  const origin = req.get('Origin');
+  res.header('Access-Control-Allow-Origin', origin || '*');
+  res.header('Access-Control-Allow-Methods', 'GET, POST, PUT, DELETE, OPTIONS, PATCH');
+  res.header('Access-Control-Allow-Headers', 'Content-Type, Authorization, X-Requested-With, Accept, Origin');
+  res.header('Access-Control-Allow-Credentials', 'true');
+  res.status(200).end();
+});
+
+// 3. Rate Limiting - Global and Authentication-specific
+const globalLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000, // 15 minutes
+  max: 1000, // 1000 requests per 15 minutes per IP (increased for development)
+  message: 'Too many requests from this IP, please try again later.',
+  standardHeaders: true,
+  legacyHeaders: false,
+});
+
+const authLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000, // 15 minutes
+  max: 50, // 50 login attempts per 15 minutes (increased from 5)
+  message: 'Too many authentication attempts, please try again later.',
+  skipSuccessfulRequests: true,
+});
+
+app.use('/api/', globalLimiter);
+app.use('/api/users/login', authLimiter);
+app.use('/api/users/register', authLimiter);
+app.use('/api/doctors/login', authLimiter);
+app.use('/api/doctors/register', authLimiter);
+app.use('/api/nurse/login', authLimiter);
+app.use('/api/assistant/login', authLimiter);
+
+// Prometheus metrics middleware
+app.use(metricsMiddleware);
+
+// 4. Response Compression (gzip/deflate)
+app.use(compression({
+  filter: (req, res) => {
+    if (req.headers['x-no-compression']) {
+      return false;
+    }
+    return compression.filter(req, res);
+  },
+  level: 6 // Balance between speed and compression ratio
+}));
+
+// 5. Body Parsers and File Upload
+app.use(express.json({ limit: '10mb' }));
+app.use(express.urlencoded({ extended: false, limit: '10mb' }));
+app.use(fileUpload({
+  limits: { fileSize: 10 * 1024 * 1024 }, // 10MB max file size
+  abortOnLimit: true,
+  responseOnLimit: 'File size limit exceeded',
+  createParentPath: true,
+  tempFileDir: '/tmp/'
+}));
+
+// 6. Input Sanitization (prevent NoSQL injection and HPP)
+app.use(mongoSanitize());
+app.use(hpp());
+
+// 7. Audit Logging (HIPAA/GDPR/DPDP Compliance)
+app.use(auditMiddleware);
+
+// 7. Structured Logging (Production-grade)
+import logger, { requestLogger, errorLogger } from './config/logger.js';
+app.use(requestLogger);
+
+// 8. Multi-Tenant Context Extraction
+app.use(extractTenant);
+
+// 9. Activity Logging (Track all user activities with timestamps)
+app.use((req, res, next) => {
+  req.startTime = Date.now();
+  next();
+});
+app.use(activityLogger({
+  includeBody: false, // Set to true for detailed logging (be careful with sensitive data)
+  excludePaths: ['/health', '/api/admin/activity-logs', '/api/admin/activity-stats']
+}));
+
+// 9. Session Timeout (HIPAA 15-minute idle timeout)
+app.use(sessionTimeout);
+
+// 10. Ring-Fencing Middleware (Prevent cross-user privilege escalation)
+// Temporarily disabled for deployment - enable after testing
+// import { ringFencingMiddleware } from './middleware/ringFencing.js';
+// app.use(ringFencingMiddleware);
+
+// Error handling middleware (must be last)
+app.use(errorLogger);
+
+// Routes
+// Liveness probe - simple check that server is running
+app.get('/health/live', (req, res) => {
+  res.status(200).json({
+    status: 'alive',
+    timestamp: new Date().toISOString()
+  });
+});
+
+// Readiness probe - check if server can handle requests
+app.get('/health/ready', async (req, res) => {
+  try {
+    const health = await orchestrator.healthCheck();
+    const dbStates = health.databases || {
+      mariadb: health.mariadb,
+      postgres: health.postgres
+    };
+
+    const mariaOnline = Boolean(dbStates.mariadb);
+    const postgresOnline = Boolean(dbStates.postgres);
+    const isReady = mariaOnline && postgresOnline;
+
+    const response = {
+      status: isReady ? 'ready' : 'not-ready',
+      timestamp: new Date().toISOString(),
+      databases: {
+        mariadb: mariaOnline ? 'connected' : 'disconnected',
+        postgres: postgresOnline ? 'connected' : 'disconnected'
+      }
+    };
+
+    res.status(isReady ? 200 : 503).json(response);
+  } catch (error) {
+    res.status(503).json({
+      status: 'error',
+      message: error.message,
+      timestamp: new Date().toISOString()
+    });
+  }
+});
+
+// Detailed health check endpoint
+app.get('/health', async (req, res) => {
+  try {
+    const health = await orchestrator.healthCheck();
+    const mem = process.memoryUsage();
+    const dbStates = health.databases || {
+      mariadb: health.mariadb,
+      postgres: health.postgres,
+      duckdb: health.duckdb,
+      redis: health.redis
+    };
+
+    const normalizedDbStates = Object.fromEntries(
+      Object.entries(dbStates).map(([db, isConnected]) => [
+        db,
+        isConnected ? 'connected' : 'disconnected'
+      ])
+    );
+
+    const criticalHealthy = Boolean(dbStates.mariadb) && Boolean(dbStates.postgres);
+
+    const healthCheck = {
+      status: criticalHealthy ? 'healthy' : 'degraded',
+      orchestratorStatus: health.status,
+      timestamp: new Date().toISOString(),
+      uptime: Math.floor(process.uptime()),
+      environment: process.env.NODE_ENV || 'development',
+      version: process.env.npm_package_version || '1.0.0',
+      memory: {
+        heapUsed: Math.round((mem.heapUsed / 1024 / 1024) * 100) / 100 + ' MB',
+        heapTotal: Math.round((mem.heapTotal / 1024 / 1024) * 100) / 100 + ' MB',
+        rss: Math.round((mem.rss / 1024 / 1024) * 100) / 100 + ' MB'
+      },
+      databases: normalizedDbStates,
+      capabilities: {
+        pgvector: health.pgvector || false,
+        citus: health.citus || false
+      },
+      connections: health.connections,
+      lastCheck: health.lastCheck
+    };
+    
+    res.status(criticalHealthy ? 200 : 503).json(healthCheck);
+  } catch (error) {
+    res.status(503).json({
+      status: 'error',
+      message: error.message,
+      timestamp: new Date().toISOString()
+    });
+  }
+});
+
+// Database orchestrator health check endpoint
+app.get('/api/db/health', async (req, res) => {
+  try {
+    const health = await orchestrator.healthCheck();
+    const statusCode = health.status === 'healthy' ? 200 : 503;
+    res.status(statusCode).json(health);
+  } catch (error) {
+    res.status(500).json({
+      orchestrator: 'error',
+      message: error.message,
+      timestamp: new Date().toISOString()
+    });
+  }
+});
+
+// Database orchestrator statistics endpoint
+app.get('/api/db/stats', (req, res) => {
+  try {
+    const stats = orchestrator.getStats();
+    res.status(200).json(stats);
+  } catch (error) {
+    res.status(500).json({
+      error: error.message,
+      timestamp: new Date().toISOString()
+    });
+  }
+});
+
+// Database intelligence metrics endpoint
+app.get('/api/db/intelligence/metrics', (req, res) => {
+  try {
+    const intelligence = orchestrator.getIntelligence();
+    if (!intelligence) {
+      return res.status(503).json({
+        error: 'Intelligence layer not initialized',
+        timestamp: new Date().toISOString()
+      });
+    }
+    const metrics = intelligence.getMetrics();
+    res.status(200).json(metrics);
+  } catch (error) {
+    res.status(500).json({
+      error: error.message,
+      timestamp: new Date().toISOString()
+    });
+  }
+});
+
+// Intelligent query endpoint
+app.post('/api/db/intelligence/query', async (req, res) => {
+  try {
+    const intelligence = orchestrator.getIntelligence();
+    if (!intelligence) {
+      return res.status(503).json({
+        error: 'Intelligence layer not initialized',
+        timestamp: new Date().toISOString()
+      });
+    }
+    
+    const { query, context } = req.body;
+    if (!query) {
+      return res.status(400).json({
+        error: 'Query is required',
+        timestamp: new Date().toISOString()
+      });
+    }
+    
+    const result = await intelligence.intelligentRoute(query, context || {});
+    res.status(200).json(result);
+  } catch (error) {
+    res.status(500).json({
+      error: error.message,
+      timestamp: new Date().toISOString()
+    });
+  }
+});
+
+// Intelligent data collection endpoint
+app.post('/api/db/intelligence/collect', async (req, res) => {
+  try {
+    const intelligence = orchestrator.getIntelligence();
+    if (!intelligence) {
+      return res.status(503).json({
+        error: 'Intelligence layer not initialized',
+        timestamp: new Date().toISOString()
+      });
+    }
+    
+    const { data, metadata } = req.body;
+    if (!data) {
+      return res.status(400).json({
+        error: 'Data is required',
+        timestamp: new Date().toISOString()
+      });
+    }
+    
+    const result = await intelligence.collectAndStore(data, metadata || {});
+    res.status(200).json(result);
+  } catch (error) {
+    res.status(500).json({
+      error: error.message,
+      timestamp: new Date().toISOString()
+    });
+  }
+});
+
+// API Documentation
+app.use('/', documentationRouter); // Swagger UI at /api-docs, Redoc at /docs
+
+// Circuit Breaker Monitoring
+app.use('/api/circuit-breakers', circuitBreakerRouter);
+
+// OAuth2 Routes (must be before authentication middleware)
+app.use('/api/auth', oauthRouter);
+app.use('/api/auth/doctor', doctorOAuthRouter);
+
+app.use("/api/users", userRouter);
+app.use("/api/doctors", doctorRoutes); // Doctor routes (login, register, profile)
+app.use("/api/doctors", doctorEnhancedRoutes); // Enhanced doctor routes (search, public profiles)
+app.use("/api/doctors", availabilityRouter); // Availability routes
+app.use("/api/doctors/availability", doctorAvailabilityRoutes); // Doctor availability management
+app.use("/api/doctor-settings", doctorSettingsRoutes); // Doctor appointment configuration
+app.use("/api/enhanced-appointments", enhancedAppointmentRoutes); // Enhanced appointment booking
+app.use("/api/membership", membershipRouter);
+app.use("/api/insurance", insuranceRouter);
+app.use("/api/appointments", appointmentRouter);
+app.use("/api/prescriptions", prescriptionRouter); // Prescription CRUD and PDF generation
+app.use("/api/ehr", ehrRouter); // Electronic Health Records - admin access to patient records
+app.use("/api/health-diary", healthDiaryRouter); // Patient health journal and diary entries
+app.use("/api/consultation", onlineConsultationRouter); // Online consultation booking flow
+app.use("/api/notifications", notificationRouter); // In-app notification management
+app.use("/api/fitness", fitnessRouter);
+app.use("/api/fitness-data", fitnessDataRouter); // Health and fitness tracking data
+app.use("/api/apple-health", appleHealthRouter); // Apple HealthKit integration for iOS
+app.use("/api/ai", aiRouter);
+app.use("/api/medical-ai", medicalAIRouter);
+app.use("/api/ayushman", ayushmanRouter);
+app.use('/api/places', placesRouter);
+
+app.use('/stats', adminStatsRouter); // Admin dashboard statistics (public stats endpoint, outside /api to bypass middleware)
+app.use('/api/admin', adminRouter);
+app.use('/api/team', teamRouter);
+app.use('/api/nurse', nurseRouter);
+app.use('/api/assistant', assistantRouter);
+app.use('/api/patients', patientRouter); // Patient registration by multiple roles
+app.use('/api', activityLogRoutes); // Activity logging routes
+app.use('/api/crm', crmRouter);
+app.use('/api/fcm', fcmRouter);
+app.use('/api/firebase', firebaseStatusRouter);
+app.use('/api/async', asyncRouter);
+app.use('/api/privacy', privacyRouter); // GDPR/DPDP/HIPAA compliance endpoints
+app.use('/api/video', videoRouter); // Video calling endpoints
+
+// n8n Webhook callbacks
+app.use('/api/webhooks/n8n-callback', n8nCallbackRouter); // n8n workflow callbacks
+
+// Prometheus metrics endpoint
+app.get('/metrics', prometheus.metricsEndpoint);
+app.use('/api/sms', smsRouter); // SMS gateway management
+app.use('/api/video-config', videoConfigRouter); // Video configuration management
+app.use('/api/voice-config', voiceConfigRouter); // Voice call configuration management
+app.use('/api/whatsapp-config', whatsappConfigRouter); // WhatsApp provider configuration management
+app.use('/api/payments', paymentRouter); // Payment gateway management
+app.use('/api/whatsapp-business', whatsappBusinessRouter); // WhatsApp Business API integration
+app.use('/api/whatsapp-production', whatsappProductionRouter); // Production WhatsApp messaging with templates
+app.use('/api/chat', chatRouter); // Chat system endpoints
+app.use('/api/embeddings', embeddingsRouter); // Embeddings management via PGVector
+app.use('/api/tickets', ticketsRouter); // Support ticket management system
+app.use('/api/tenants', tenantRouter); // Multi-tenant organization management
+app.use('/api/tenant-domains', tenantDomainRouter); // Custom domain management
+app.use('/api/corporate', corporateRouter); // Corporate benefits and plans
+app.use('/api', hospitalRouter); // Hospital directory and SPN network
+app.use('/api/clinics', clinicRouter); // Clinics directory (labs, dental, etc.)
+app.use('/api/labs', enhancedLabRouter); // Enhanced laboratory management with comprehensive search
+app.use('/api/pharmacy', pharmacyRouter); // Pharmacy authentication and management
+app.use('/api/ambulance', ambulanceRouter); // Ambulance service authentication and management
+app.use('/api/homecare', homecareRouter); // Homecare provider authentication and management
+app.use('/api/devices', deviceRouter); // Device management (smart tablets with SIM)
+app.use('/api/wearables', wearableRouter); // Wearable devices (smartwatch, band, ring)
+app.use('/api/poc-devices', pocDeviceRouter); // Point-of-care diagnostic devices (BLE)
+app.use('/api/health-camps', healthCampRouter); // Outdoor health camp management
+app.use('/api/email', emailRouter); // Production-ready email management system
+app.use('/api/orders', orderRouter); // Order processing & team task management
+app.use('/api/otp', otpRouter); // OTP generation, verification, and SMS delivery
+app.use('/api/queues', queueRouter); // BullMQ queue management and monitoring
+app.use('/api/video-events', videoEventsRouter); // Video streaming events for Kafka
+
+// Master Data API - RAG profiled providers
+import masterdataRouter from './routes/masterdata.routes.js';
+app.use('/api/masterdata', masterdataRouter); // Master data providers (hospitals, labs, clinics) from RAG profiling
+
+// Admin Management Routes
+import adminHospitalsRouter from './routes/admin/hospitals.routes.js';
+import adminLabsRouter from './routes/admin/labs.routes.js';
+import adminClinicsRouter from './routes/admin/clinics.routes.js';
+import adminPharmaciesRouter from './routes/admin/pharmacies.routes.js';
+import adminDoctorsRouter from './routes/admin/doctors.routes.js';
+
+app.use('/api/admin/hospitals', adminHospitalsRouter); // Admin hospital CRUD operations
+app.use('/api/admin/labs', adminLabsRouter); // Admin lab CRUD operations
+app.use('/api/admin/clinics', adminClinicsRouter); // Admin clinic CRUD operations
+app.use('/api/admin/pharmacies', adminPharmaciesRouter); // Admin pharmacy CRUD operations
+app.use('/api/admin/doctors', adminDoctorsRouter); // Admin doctor CRUD operations
+
+// Clinic Portal Routes
+import clinicAuthRouter from './routes/clinic/auth.routes.js';
+import clinicDashboardRouter from './routes/clinic/dashboard.routes.js';
+
+app.use('/api/clinic', clinicAuthRouter); // Clinic authentication (login, logout, verify)
+app.use('/api/clinic/dashboard', clinicDashboardRouter); // Clinic practice management dashboard
+
+// Ambulance Service Routes
+import ambulanceAuthRouter from './routes/ambulance/auth.routes.js';
+
+app.use('/api/ambulance', ambulanceAuthRouter); // Ambulance authentication (login, logout, verify)
+
+// Homecare Service Routes
+import homecareAuthRouter from './routes/homecare/auth.routes.js';
+
+app.use('/api/homecare', homecareAuthRouter); // Homecare authentication (login, logout, verify)
+
+// Corporate Service Routes
+import corporateAuthRouter from './routes/corporate/auth.routes.js';
+
+app.use('/api/corporate', corporateAuthRouter); // Corporate authentication (login, logout, verify)
+
+// Hospital Service Routes
+import hospitalAuthRouter from './routes/hospital/auth.routes.js';
+
+app.use('/api/hospital', hospitalAuthRouter); // Hospital authentication (login, logout, verify)
+
+// Lab Service Routes
+import labAuthRouter from './routes/lab/auth.routes.js';
+
+app.use('/api/lab', labAuthRouter); // Lab authentication (login, logout, verify)
+
+// Pharmacy Service Routes
+import pharmacyAuthRouter from './routes/pharmacy/auth.routes.js';
+
+app.use('/api/pharmacy', pharmacyAuthRouter); // Pharmacy authentication (login, logout, verify)
+
+// Token Management Routes (refresh, revoke)
+import authTokenRouter from './routes/auth.token.route.js';
+app.use('/api/auth', authTokenRouter); // Token refresh and revocation endpoints
+
+// Universal Auth Routes (logout, session-info for all user types)
+// Temporarily disabled - requires ringFencing middleware
+// import authUniversalRouter from './routes/auth.universal.route.js';
+// app.use('/api/auth', authUniversalRouter); // Universal auth endpoints (logout, session-info, token revocation)
+
+export default app;

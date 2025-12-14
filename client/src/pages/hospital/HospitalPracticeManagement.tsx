@@ -1,0 +1,805 @@
+import { useState, useEffect } from 'react';
+import { useNavigate } from 'react-router-dom';
+import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
+import { Button } from '@/components/ui/button';
+import { Input } from '@/components/ui/input';
+import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
+import { Badge } from '@/components/ui/badge';
+import { Label } from '@/components/ui/label';
+import { Textarea } from '@/components/ui/textarea';
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger, DialogFooter, DialogDescription } from '@/components/ui/dialog';
+import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
+import { Calendar } from '@/components/ui/calendar';
+import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
+import { Progress } from '@/components/ui/progress';
+import { ScrollArea } from '@/components/ui/scroll-area';
+import { 
+  Building2, Calendar as CalendarIcon, Users, Clock, 
+  Activity, UserCheck, Bell, Settings, LogOut, Plus, 
+  Search, Filter, Bed, Stethoscope, ClipboardList,
+  ArrowLeft, Edit, Trash2, Eye, CheckCircle, XCircle,
+  AlertCircle, RefreshCw, UserPlus, FileText, Phone,
+  Mail, MapPin, MoreVertical, Download, Upload, Printer,
+  BriefcaseMedical, ArrowUpDown, Timer, DollarSign
+} from 'lucide-react';
+import { format } from 'date-fns';
+
+// Types
+interface Appointment {
+  id: string;
+  patientId: string;
+  patientName: string;
+  patientPhone: string;
+  doctorId: string;
+  doctorName: string;
+  department: string;
+  date: string;
+  time: string;
+  type: 'OPD' | 'IPD' | 'Emergency' | 'Follow-up' | 'Procedure';
+  status: 'Scheduled' | 'Checked-in' | 'In-Progress' | 'Completed' | 'Cancelled' | 'No-Show';
+  priority: 'Normal' | 'Urgent' | 'Emergency';
+  notes?: string;
+  createdAt: string;
+}
+
+interface Patient {
+  id: string;
+  uhid: string;
+  name: string;
+  age: number;
+  gender: 'Male' | 'Female' | 'Other';
+  phone: string;
+  email?: string;
+  address: string;
+  bloodGroup: string;
+  admissionStatus: 'OPD' | 'IPD' | 'Discharged';
+  admissionDate?: string;
+  dischargeDate?: string;
+  assignedDoctor?: string;
+  department?: string;
+  bed?: string;
+  ward?: string;
+  diagnosis?: string;
+  insurance?: {
+    provider: string;
+    policyNumber: string;
+    validity: string;
+  };
+}
+
+interface Staff {
+  id: string;
+  name: string;
+  role: 'Doctor' | 'Nurse' | 'Technician' | 'Admin' | 'Receptionist';
+  department: string;
+  specialization?: string;
+  phone: string;
+  email: string;
+  shift: 'Morning' | 'Afternoon' | 'Night' | 'Rotating';
+  status: 'On-Duty' | 'Off-Duty' | 'On-Leave' | 'Available';
+  joiningDate: string;
+}
+
+interface Resource {
+  id: string;
+  name: string;
+  type: 'Equipment' | 'Room' | 'Bed' | 'Vehicle';
+  department: string;
+  status: 'Available' | 'In-Use' | 'Maintenance' | 'Reserved';
+  location: string;
+  lastMaintenance?: string;
+  nextMaintenance?: string;
+}
+
+const HospitalPracticeManagement = () => {
+  const navigate = useNavigate();
+  const [hospitalData, setHospitalData] = useState<any>(null);
+  const [loading, setLoading] = useState(true);
+  const [activeTab, setActiveTab] = useState('appointments');
+  const [searchQuery, setSearchQuery] = useState('');
+  const [filterDepartment, setFilterDepartment] = useState('all');
+  const [showNewAppointmentDialog, setShowNewAppointmentDialog] = useState(false);
+  const [showNewPatientDialog, setShowNewPatientDialog] = useState(false);
+  const [selectedDate, setSelectedDate] = useState<Date | undefined>(new Date());
+
+  useEffect(() => {
+    const token = localStorage.getItem('hospitalToken');
+    const data = localStorage.getItem('hospitalData');
+    
+    if (!token) {
+      navigate('/hospital/login');
+      return;
+    }
+    
+    if (data) {
+      setHospitalData(JSON.parse(data));
+    }
+    
+    setLoading(false);
+  }, [navigate]);
+
+  // Sample data
+  const appointments: Appointment[] = [
+    { id: 'APT001', patientId: 'P001', patientName: 'Rajesh Kumar', patientPhone: '9876543210', doctorId: 'D001', doctorName: 'Dr. Sharma', department: 'Cardiology', date: '2024-12-04', time: '09:00', type: 'OPD', status: 'Scheduled', priority: 'Normal', createdAt: '2024-12-03' },
+    { id: 'APT002', patientId: 'P002', patientName: 'Priya Singh', patientPhone: '9876543211', doctorId: 'D002', doctorName: 'Dr. Patel', department: 'Gynecology', date: '2024-12-04', time: '09:30', type: 'Follow-up', status: 'Checked-in', priority: 'Normal', createdAt: '2024-12-02' },
+    { id: 'APT003', patientId: 'P003', patientName: 'Amit Verma', patientPhone: '9876543212', doctorId: 'D003', doctorName: 'Dr. Mehta', department: 'Neurology', date: '2024-12-04', time: '10:00', type: 'Emergency', status: 'In-Progress', priority: 'Emergency', createdAt: '2024-12-04' },
+    { id: 'APT004', patientId: 'P004', patientName: 'Neha Gupta', patientPhone: '9876543213', doctorId: 'D004', doctorName: 'Dr. Joshi', department: 'Orthopedics', date: '2024-12-04', time: '10:30', type: 'Procedure', status: 'Scheduled', priority: 'Urgent', createdAt: '2024-12-01' },
+    { id: 'APT005', patientId: 'P005', patientName: 'Sanjay Reddy', patientPhone: '9876543214', doctorId: 'D001', doctorName: 'Dr. Sharma', department: 'Cardiology', date: '2024-12-04', time: '11:00', type: 'OPD', status: 'Completed', priority: 'Normal', createdAt: '2024-12-03' },
+  ];
+
+  const patients: Patient[] = [
+    { id: 'P001', uhid: 'UHID001234', name: 'Rajesh Kumar', age: 45, gender: 'Male', phone: '9876543210', email: 'rajesh@email.com', address: 'Delhi', bloodGroup: 'B+', admissionStatus: 'IPD', admissionDate: '2024-12-01', assignedDoctor: 'Dr. Sharma', department: 'Cardiology', bed: 'ICU-05', ward: 'ICU' },
+    { id: 'P002', uhid: 'UHID001235', name: 'Priya Singh', age: 32, gender: 'Female', phone: '9876543211', email: 'priya@email.com', address: 'Mumbai', bloodGroup: 'A+', admissionStatus: 'OPD', assignedDoctor: 'Dr. Patel', department: 'Gynecology' },
+    { id: 'P003', uhid: 'UHID001236', name: 'Amit Verma', age: 58, gender: 'Male', phone: '9876543212', address: 'Bangalore', bloodGroup: 'O+', admissionStatus: 'IPD', admissionDate: '2024-12-03', assignedDoctor: 'Dr. Mehta', department: 'Neurology', bed: 'NEURO-03', ward: 'Neurology' },
+    { id: 'P004', uhid: 'UHID001237', name: 'Neha Gupta', age: 28, gender: 'Female', phone: '9876543213', email: 'neha@email.com', address: 'Chennai', bloodGroup: 'AB+', admissionStatus: 'IPD', admissionDate: '2024-12-02', assignedDoctor: 'Dr. Joshi', department: 'Orthopedics', bed: 'ORTHO-08', ward: 'Orthopedics', insurance: { provider: 'Star Health', policyNumber: 'SH123456', validity: '2025-06-30' } },
+  ];
+
+  const staff: Staff[] = [
+    { id: 'D001', name: 'Dr. Rajiv Sharma', role: 'Doctor', department: 'Cardiology', specialization: 'Interventional Cardiology', phone: '9876543220', email: 'dr.sharma@hospital.com', shift: 'Morning', status: 'On-Duty', joiningDate: '2020-03-15' },
+    { id: 'D002', name: 'Dr. Anjali Patel', role: 'Doctor', department: 'Gynecology', specialization: 'Obstetrics', phone: '9876543221', email: 'dr.patel@hospital.com', shift: 'Morning', status: 'On-Duty', joiningDate: '2019-07-20' },
+    { id: 'N001', name: 'Nurse Sunita', role: 'Nurse', department: 'ICU', phone: '9876543230', email: 'sunita@hospital.com', shift: 'Night', status: 'On-Duty', joiningDate: '2021-01-10' },
+    { id: 'T001', name: 'Ramesh Kumar', role: 'Technician', department: 'Radiology', phone: '9876543240', email: 'ramesh@hospital.com', shift: 'Rotating', status: 'Available', joiningDate: '2022-05-05' },
+  ];
+
+  const resources: Resource[] = [
+    { id: 'R001', name: 'MRI Scanner', type: 'Equipment', department: 'Radiology', status: 'In-Use', location: 'Block A, Floor 2', lastMaintenance: '2024-11-15', nextMaintenance: '2025-02-15' },
+    { id: 'R002', name: 'ICU Bed 01', type: 'Bed', department: 'ICU', status: 'Available', location: 'ICU Wing' },
+    { id: 'R003', name: 'Operation Theatre 1', type: 'Room', department: 'Surgery', status: 'Reserved', location: 'OT Block' },
+    { id: 'R004', name: 'Ambulance A1', type: 'Vehicle', department: 'Emergency', status: 'Available', location: 'Parking' },
+  ];
+
+  const departments = ['Cardiology', 'Neurology', 'Orthopedics', 'Gynecology', 'Pediatrics', 'Emergency', 'General Medicine', 'Surgery'];
+
+  const getStatusColor = (status: string) => {
+    switch (status) {
+      case 'Scheduled': return 'bg-blue-100 text-blue-800';
+      case 'Checked-in': return 'bg-yellow-100 text-yellow-800';
+      case 'In-Progress': return 'bg-purple-100 text-purple-800';
+      case 'Completed': return 'bg-green-100 text-green-800';
+      case 'Cancelled': return 'bg-red-100 text-red-800';
+      case 'No-Show': return 'bg-gray-100 text-gray-800';
+      case 'On-Duty': return 'bg-green-100 text-green-800';
+      case 'Off-Duty': return 'bg-gray-100 text-gray-800';
+      case 'On-Leave': return 'bg-orange-100 text-orange-800';
+      case 'Available': return 'bg-green-100 text-green-800';
+      case 'In-Use': return 'bg-blue-100 text-blue-800';
+      case 'Maintenance': return 'bg-yellow-100 text-yellow-800';
+      case 'Reserved': return 'bg-purple-100 text-purple-800';
+      default: return 'bg-gray-100 text-gray-800';
+    }
+  };
+
+  const getPriorityColor = (priority: string) => {
+    switch (priority) {
+      case 'Emergency': return 'bg-red-500 text-white';
+      case 'Urgent': return 'bg-orange-500 text-white';
+      default: return 'bg-gray-200 text-gray-800';
+    }
+  };
+
+  if (loading) {
+    return (
+      <div className="min-h-screen flex items-center justify-center">
+        <Activity className="h-8 w-8 animate-spin text-blue-600" />
+      </div>
+    );
+  }
+
+  return (
+    <div className="min-h-screen bg-gradient-to-br from-blue-50 via-white to-cyan-50">
+      {/* Header */}
+      <header className="bg-white border-b shadow-sm sticky top-0 z-50">
+        <div className="container mx-auto px-6 py-4">
+          <div className="flex items-center justify-between">
+            <div className="flex items-center gap-4">
+              <Button variant="ghost" size="icon" onClick={() => navigate('/hospital/dashboard')}>
+                <ArrowLeft className="h-5 w-5" />
+              </Button>
+              <div className="bg-gradient-to-br from-blue-500 to-blue-600 p-3 rounded-xl">
+                <BriefcaseMedical className="h-6 w-6 text-white" />
+              </div>
+              <div>
+                <h1 className="text-2xl font-bold bg-gradient-to-r from-blue-600 to-blue-800 bg-clip-text text-transparent">
+                  Practice Management
+                </h1>
+                <p className="text-sm text-muted-foreground">Appointments, Patient Flow & Resource Management</p>
+              </div>
+            </div>
+            <div className="flex items-center gap-3">
+              <Button variant="outline" size="icon" className="relative">
+                <Bell className="h-5 w-5" />
+                <span className="absolute -top-1 -right-1 h-5 w-5 bg-red-500 rounded-full text-xs text-white flex items-center justify-center">
+                  5
+                </span>
+              </Button>
+              <Button variant="outline" size="icon">
+                <RefreshCw className="h-5 w-5" />
+              </Button>
+            </div>
+          </div>
+        </div>
+      </header>
+
+      <div className="container mx-auto px-6 py-8">
+        {/* Quick Stats */}
+        <div className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-6 gap-4 mb-8">
+          <Card className="bg-gradient-to-br from-blue-500 to-blue-600 text-white">
+            <CardContent className="p-4 text-center">
+              <CalendarIcon className="h-6 w-6 mx-auto mb-2 opacity-80" />
+              <p className="text-2xl font-bold">{appointments.filter(a => a.status === 'Scheduled').length}</p>
+              <p className="text-xs opacity-80">Scheduled</p>
+            </CardContent>
+          </Card>
+          <Card className="bg-gradient-to-br from-yellow-500 to-yellow-600 text-white">
+            <CardContent className="p-4 text-center">
+              <Timer className="h-6 w-6 mx-auto mb-2 opacity-80" />
+              <p className="text-2xl font-bold">{appointments.filter(a => a.status === 'Checked-in').length}</p>
+              <p className="text-xs opacity-80">Waiting</p>
+            </CardContent>
+          </Card>
+          <Card className="bg-gradient-to-br from-purple-500 to-purple-600 text-white">
+            <CardContent className="p-4 text-center">
+              <Activity className="h-6 w-6 mx-auto mb-2 opacity-80" />
+              <p className="text-2xl font-bold">{appointments.filter(a => a.status === 'In-Progress').length}</p>
+              <p className="text-xs opacity-80">In Progress</p>
+            </CardContent>
+          </Card>
+          <Card className="bg-gradient-to-br from-green-500 to-green-600 text-white">
+            <CardContent className="p-4 text-center">
+              <CheckCircle className="h-6 w-6 mx-auto mb-2 opacity-80" />
+              <p className="text-2xl font-bold">{appointments.filter(a => a.status === 'Completed').length}</p>
+              <p className="text-xs opacity-80">Completed</p>
+            </CardContent>
+          </Card>
+          <Card className="bg-gradient-to-br from-orange-500 to-orange-600 text-white">
+            <CardContent className="p-4 text-center">
+              <Bed className="h-6 w-6 mx-auto mb-2 opacity-80" />
+              <p className="text-2xl font-bold">{patients.filter(p => p.admissionStatus === 'IPD').length}</p>
+              <p className="text-xs opacity-80">IPD Patients</p>
+            </CardContent>
+          </Card>
+          <Card className="bg-gradient-to-br from-cyan-500 to-cyan-600 text-white">
+            <CardContent className="p-4 text-center">
+              <Stethoscope className="h-6 w-6 mx-auto mb-2 opacity-80" />
+              <p className="text-2xl font-bold">{staff.filter(s => s.status === 'On-Duty').length}</p>
+              <p className="text-xs opacity-80">On Duty</p>
+            </CardContent>
+          </Card>
+        </div>
+
+        {/* Main Tabs */}
+        <Tabs value={activeTab} onValueChange={setActiveTab} className="space-y-6">
+          <div className="flex items-center justify-between flex-wrap gap-4">
+            <TabsList className="grid grid-cols-4 w-auto">
+              <TabsTrigger value="appointments" className="gap-2">
+                <CalendarIcon className="h-4 w-4" /> Appointments
+              </TabsTrigger>
+              <TabsTrigger value="patients" className="gap-2">
+                <Users className="h-4 w-4" /> Patient Flow
+              </TabsTrigger>
+              <TabsTrigger value="staff" className="gap-2">
+                <Stethoscope className="h-4 w-4" /> Staff Schedule
+              </TabsTrigger>
+              <TabsTrigger value="resources" className="gap-2">
+                <Bed className="h-4 w-4" /> Resources
+              </TabsTrigger>
+            </TabsList>
+            <div className="flex items-center gap-3">
+              <div className="relative">
+                <Search className="h-4 w-4 absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground" />
+                <Input 
+                  placeholder="Search..." 
+                  className="pl-9 w-64"
+                  value={searchQuery}
+                  onChange={(e) => setSearchQuery(e.target.value)}
+                />
+              </div>
+              <Select value={filterDepartment} onValueChange={setFilterDepartment}>
+                <SelectTrigger className="w-40">
+                  <SelectValue placeholder="Department" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="all">All Departments</SelectItem>
+                  {departments.map(dept => (
+                    <SelectItem key={dept} value={dept}>{dept}</SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+          </div>
+
+          {/* Appointments Tab */}
+          <TabsContent value="appointments" className="space-y-6">
+            <div className="flex items-center justify-between">
+              <h2 className="text-xl font-bold">Today's Appointments</h2>
+              <Dialog open={showNewAppointmentDialog} onOpenChange={setShowNewAppointmentDialog}>
+                <DialogTrigger asChild>
+                  <Button className="gap-2 bg-gradient-to-r from-blue-600 to-blue-700">
+                    <Plus className="h-4 w-4" /> New Appointment
+                  </Button>
+                </DialogTrigger>
+                <DialogContent className="max-w-2xl">
+                  <DialogHeader>
+                    <DialogTitle>Schedule New Appointment</DialogTitle>
+                    <DialogDescription>Fill in the details to schedule a new appointment</DialogDescription>
+                  </DialogHeader>
+                  <div className="grid grid-cols-2 gap-4 py-4">
+                    <div className="space-y-2">
+                      <Label>Patient Name</Label>
+                      <Input placeholder="Enter patient name" />
+                    </div>
+                    <div className="space-y-2">
+                      <Label>Phone Number</Label>
+                      <Input placeholder="Enter phone number" />
+                    </div>
+                    <div className="space-y-2">
+                      <Label>Department</Label>
+                      <Select>
+                        <SelectTrigger>
+                          <SelectValue placeholder="Select department" />
+                        </SelectTrigger>
+                        <SelectContent>
+                          {departments.map(dept => (
+                            <SelectItem key={dept} value={dept}>{dept}</SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
+                    </div>
+                    <div className="space-y-2">
+                      <Label>Doctor</Label>
+                      <Select>
+                        <SelectTrigger>
+                          <SelectValue placeholder="Select doctor" />
+                        </SelectTrigger>
+                        <SelectContent>
+                          {staff.filter(s => s.role === 'Doctor').map(doc => (
+                            <SelectItem key={doc.id} value={doc.id}>{doc.name}</SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
+                    </div>
+                    <div className="space-y-2">
+                      <Label>Date</Label>
+                      <Popover>
+                        <PopoverTrigger asChild>
+                          <Button variant="outline" className="w-full justify-start">
+                            <CalendarIcon className="mr-2 h-4 w-4" />
+                            {selectedDate ? format(selectedDate, 'PPP') : 'Pick a date'}
+                          </Button>
+                        </PopoverTrigger>
+                        <PopoverContent className="w-auto p-0">
+                          <Calendar mode="single" selected={selectedDate} onSelect={setSelectedDate} />
+                        </PopoverContent>
+                      </Popover>
+                    </div>
+                    <div className="space-y-2">
+                      <Label>Time</Label>
+                      <Select>
+                        <SelectTrigger>
+                          <SelectValue placeholder="Select time" />
+                        </SelectTrigger>
+                        <SelectContent>
+                          {['09:00', '09:30', '10:00', '10:30', '11:00', '11:30', '12:00', '14:00', '14:30', '15:00', '15:30', '16:00'].map(time => (
+                            <SelectItem key={time} value={time}>{time}</SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
+                    </div>
+                    <div className="space-y-2">
+                      <Label>Appointment Type</Label>
+                      <Select>
+                        <SelectTrigger>
+                          <SelectValue placeholder="Select type" />
+                        </SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value="OPD">OPD</SelectItem>
+                          <SelectItem value="IPD">IPD</SelectItem>
+                          <SelectItem value="Emergency">Emergency</SelectItem>
+                          <SelectItem value="Follow-up">Follow-up</SelectItem>
+                          <SelectItem value="Procedure">Procedure</SelectItem>
+                        </SelectContent>
+                      </Select>
+                    </div>
+                    <div className="space-y-2">
+                      <Label>Priority</Label>
+                      <Select>
+                        <SelectTrigger>
+                          <SelectValue placeholder="Select priority" />
+                        </SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value="Normal">Normal</SelectItem>
+                          <SelectItem value="Urgent">Urgent</SelectItem>
+                          <SelectItem value="Emergency">Emergency</SelectItem>
+                        </SelectContent>
+                      </Select>
+                    </div>
+                    <div className="col-span-2 space-y-2">
+                      <Label>Notes</Label>
+                      <Textarea placeholder="Additional notes..." />
+                    </div>
+                  </div>
+                  <DialogFooter>
+                    <Button variant="outline" onClick={() => setShowNewAppointmentDialog(false)}>Cancel</Button>
+                    <Button className="bg-gradient-to-r from-blue-600 to-blue-700">Schedule Appointment</Button>
+                  </DialogFooter>
+                </DialogContent>
+              </Dialog>
+            </div>
+
+            <Card>
+              <CardContent className="p-0">
+                <Table>
+                  <TableHeader>
+                    <TableRow>
+                      <TableHead>Time</TableHead>
+                      <TableHead>Patient</TableHead>
+                      <TableHead>Doctor</TableHead>
+                      <TableHead>Department</TableHead>
+                      <TableHead>Type</TableHead>
+                      <TableHead>Priority</TableHead>
+                      <TableHead>Status</TableHead>
+                      <TableHead className="text-right">Actions</TableHead>
+                    </TableRow>
+                  </TableHeader>
+                  <TableBody>
+                    {appointments.map((apt) => (
+                      <TableRow key={apt.id}>
+                        <TableCell className="font-medium">{apt.time}</TableCell>
+                        <TableCell>
+                          <div>
+                            <p className="font-medium">{apt.patientName}</p>
+                            <p className="text-sm text-muted-foreground">{apt.patientPhone}</p>
+                          </div>
+                        </TableCell>
+                        <TableCell>{apt.doctorName}</TableCell>
+                        <TableCell>{apt.department}</TableCell>
+                        <TableCell>
+                          <Badge variant="outline">{apt.type}</Badge>
+                        </TableCell>
+                        <TableCell>
+                          <Badge className={getPriorityColor(apt.priority)}>{apt.priority}</Badge>
+                        </TableCell>
+                        <TableCell>
+                          <Badge className={getStatusColor(apt.status)}>{apt.status}</Badge>
+                        </TableCell>
+                        <TableCell className="text-right">
+                          <div className="flex justify-end gap-2">
+                            <Button variant="ghost" size="icon">
+                              <Eye className="h-4 w-4" />
+                            </Button>
+                            <Button variant="ghost" size="icon">
+                              <Edit className="h-4 w-4" />
+                            </Button>
+                            {apt.status === 'Scheduled' && (
+                              <Button variant="ghost" size="icon" className="text-green-600">
+                                <CheckCircle className="h-4 w-4" />
+                              </Button>
+                            )}
+                          </div>
+                        </TableCell>
+                      </TableRow>
+                    ))}
+                  </TableBody>
+                </Table>
+              </CardContent>
+            </Card>
+          </TabsContent>
+
+          {/* Patient Flow Tab */}
+          <TabsContent value="patients" className="space-y-6">
+            <div className="flex items-center justify-between">
+              <h2 className="text-xl font-bold">Patient Management</h2>
+              <Dialog open={showNewPatientDialog} onOpenChange={setShowNewPatientDialog}>
+                <DialogTrigger asChild>
+                  <Button className="gap-2 bg-gradient-to-r from-blue-600 to-blue-700">
+                    <UserPlus className="h-4 w-4" /> Register Patient
+                  </Button>
+                </DialogTrigger>
+                <DialogContent className="max-w-3xl">
+                  <DialogHeader>
+                    <DialogTitle>Patient Registration</DialogTitle>
+                    <DialogDescription>Register a new patient in the system</DialogDescription>
+                  </DialogHeader>
+                  <div className="grid grid-cols-3 gap-4 py-4">
+                    <div className="space-y-2">
+                      <Label>Full Name</Label>
+                      <Input placeholder="Enter full name" />
+                    </div>
+                    <div className="space-y-2">
+                      <Label>Age</Label>
+                      <Input type="number" placeholder="Age" />
+                    </div>
+                    <div className="space-y-2">
+                      <Label>Gender</Label>
+                      <Select>
+                        <SelectTrigger>
+                          <SelectValue placeholder="Select gender" />
+                        </SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value="Male">Male</SelectItem>
+                          <SelectItem value="Female">Female</SelectItem>
+                          <SelectItem value="Other">Other</SelectItem>
+                        </SelectContent>
+                      </Select>
+                    </div>
+                    <div className="space-y-2">
+                      <Label>Phone</Label>
+                      <Input placeholder="Phone number" />
+                    </div>
+                    <div className="space-y-2">
+                      <Label>Email</Label>
+                      <Input type="email" placeholder="Email address" />
+                    </div>
+                    <div className="space-y-2">
+                      <Label>Blood Group</Label>
+                      <Select>
+                        <SelectTrigger>
+                          <SelectValue placeholder="Select blood group" />
+                        </SelectTrigger>
+                        <SelectContent>
+                          {['A+', 'A-', 'B+', 'B-', 'AB+', 'AB-', 'O+', 'O-'].map(bg => (
+                            <SelectItem key={bg} value={bg}>{bg}</SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
+                    </div>
+                    <div className="col-span-3 space-y-2">
+                      <Label>Address</Label>
+                      <Textarea placeholder="Full address" />
+                    </div>
+                    <div className="space-y-2">
+                      <Label>Admission Type</Label>
+                      <Select>
+                        <SelectTrigger>
+                          <SelectValue placeholder="Select type" />
+                        </SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value="OPD">OPD</SelectItem>
+                          <SelectItem value="IPD">IPD</SelectItem>
+                        </SelectContent>
+                      </Select>
+                    </div>
+                    <div className="space-y-2">
+                      <Label>Department</Label>
+                      <Select>
+                        <SelectTrigger>
+                          <SelectValue placeholder="Select department" />
+                        </SelectTrigger>
+                        <SelectContent>
+                          {departments.map(dept => (
+                            <SelectItem key={dept} value={dept}>{dept}</SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
+                    </div>
+                    <div className="space-y-2">
+                      <Label>Assigned Doctor</Label>
+                      <Select>
+                        <SelectTrigger>
+                          <SelectValue placeholder="Select doctor" />
+                        </SelectTrigger>
+                        <SelectContent>
+                          {staff.filter(s => s.role === 'Doctor').map(doc => (
+                            <SelectItem key={doc.id} value={doc.id}>{doc.name}</SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
+                    </div>
+                  </div>
+                  <DialogFooter>
+                    <Button variant="outline" onClick={() => setShowNewPatientDialog(false)}>Cancel</Button>
+                    <Button className="bg-gradient-to-r from-blue-600 to-blue-700">Register Patient</Button>
+                  </DialogFooter>
+                </DialogContent>
+              </Dialog>
+            </div>
+
+            <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+              {/* OPD Patients */}
+              <Card>
+                <CardHeader className="bg-blue-50">
+                  <CardTitle className="flex items-center gap-2 text-blue-700">
+                    <Users className="h-5 w-5" /> OPD Patients
+                  </CardTitle>
+                </CardHeader>
+                <CardContent className="p-4">
+                  <ScrollArea className="h-[400px]">
+                    <div className="space-y-3">
+                      {patients.filter(p => p.admissionStatus === 'OPD').map(patient => (
+                        <div key={patient.id} className="p-3 border rounded-lg hover:bg-gray-50">
+                          <div className="flex items-center justify-between mb-2">
+                            <p className="font-semibold">{patient.name}</p>
+                            <Badge variant="outline">{patient.uhid}</Badge>
+                          </div>
+                          <div className="text-sm text-muted-foreground">
+                            <p>{patient.age} yrs • {patient.gender} • {patient.bloodGroup}</p>
+                            <p>{patient.department} • {patient.assignedDoctor}</p>
+                          </div>
+                          <div className="flex gap-2 mt-2">
+                            <Button size="sm" variant="outline" className="flex-1">View</Button>
+                            <Button size="sm" className="flex-1">Convert to IPD</Button>
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  </ScrollArea>
+                </CardContent>
+              </Card>
+
+              {/* IPD Patients */}
+              <Card>
+                <CardHeader className="bg-green-50">
+                  <CardTitle className="flex items-center gap-2 text-green-700">
+                    <Bed className="h-5 w-5" /> IPD Patients
+                  </CardTitle>
+                </CardHeader>
+                <CardContent className="p-4">
+                  <ScrollArea className="h-[400px]">
+                    <div className="space-y-3">
+                      {patients.filter(p => p.admissionStatus === 'IPD').map(patient => (
+                        <div key={patient.id} className="p-3 border rounded-lg hover:bg-gray-50">
+                          <div className="flex items-center justify-between mb-2">
+                            <p className="font-semibold">{patient.name}</p>
+                            <Badge className="bg-green-100 text-green-800">{patient.bed}</Badge>
+                          </div>
+                          <div className="text-sm text-muted-foreground">
+                            <p>{patient.age} yrs • {patient.gender} • {patient.bloodGroup}</p>
+                            <p>{patient.department} • {patient.ward}</p>
+                            <p className="text-xs">Admitted: {patient.admissionDate}</p>
+                          </div>
+                          {patient.insurance && (
+                            <Badge variant="outline" className="mt-2 text-xs">
+                              Insured: {patient.insurance.provider}
+                            </Badge>
+                          )}
+                          <div className="flex gap-2 mt-2">
+                            <Button size="sm" variant="outline" className="flex-1">View</Button>
+                            <Button size="sm" variant="destructive" className="flex-1">Discharge</Button>
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  </ScrollArea>
+                </CardContent>
+              </Card>
+
+              {/* Quick Actions */}
+              <Card>
+                <CardHeader>
+                  <CardTitle>Quick Actions</CardTitle>
+                </CardHeader>
+                <CardContent className="space-y-3">
+                  <Button variant="outline" className="w-full justify-start gap-2">
+                    <UserPlus className="h-4 w-4" /> Walk-in Registration
+                  </Button>
+                  <Button variant="outline" className="w-full justify-start gap-2">
+                    <Bed className="h-4 w-4" /> Bed Allocation
+                  </Button>
+                  <Button variant="outline" className="w-full justify-start gap-2">
+                    <ArrowUpDown className="h-4 w-4" /> Transfer Patient
+                  </Button>
+                  <Button variant="outline" className="w-full justify-start gap-2">
+                    <FileText className="h-4 w-4" /> Discharge Summary
+                  </Button>
+                  <Button variant="outline" className="w-full justify-start gap-2">
+                    <Download className="h-4 w-4" /> Export Patient List
+                  </Button>
+                  <Button variant="outline" className="w-full justify-start gap-2">
+                    <Printer className="h-4 w-4" /> Print Wristband
+                  </Button>
+                </CardContent>
+              </Card>
+            </div>
+          </TabsContent>
+
+          {/* Staff Schedule Tab */}
+          <TabsContent value="staff" className="space-y-6">
+            <div className="flex items-center justify-between">
+              <h2 className="text-xl font-bold">Staff Management</h2>
+              <Button className="gap-2 bg-gradient-to-r from-blue-600 to-blue-700">
+                <Plus className="h-4 w-4" /> Add Staff
+              </Button>
+            </div>
+
+            <Card>
+              <CardContent className="p-0">
+                <Table>
+                  <TableHeader>
+                    <TableRow>
+                      <TableHead>Name</TableHead>
+                      <TableHead>Role</TableHead>
+                      <TableHead>Department</TableHead>
+                      <TableHead>Specialization</TableHead>
+                      <TableHead>Shift</TableHead>
+                      <TableHead>Contact</TableHead>
+                      <TableHead>Status</TableHead>
+                      <TableHead className="text-right">Actions</TableHead>
+                    </TableRow>
+                  </TableHeader>
+                  <TableBody>
+                    {staff.map((member) => (
+                      <TableRow key={member.id}>
+                        <TableCell className="font-medium">{member.name}</TableCell>
+                        <TableCell>
+                          <Badge variant="outline">{member.role}</Badge>
+                        </TableCell>
+                        <TableCell>{member.department}</TableCell>
+                        <TableCell>{member.specialization || '-'}</TableCell>
+                        <TableCell>{member.shift}</TableCell>
+                        <TableCell>
+                          <div className="text-sm">
+                            <p className="flex items-center gap-1"><Phone className="h-3 w-3" />{member.phone}</p>
+                            <p className="flex items-center gap-1 text-muted-foreground"><Mail className="h-3 w-3" />{member.email}</p>
+                          </div>
+                        </TableCell>
+                        <TableCell>
+                          <Badge className={getStatusColor(member.status)}>{member.status}</Badge>
+                        </TableCell>
+                        <TableCell className="text-right">
+                          <div className="flex justify-end gap-2">
+                            <Button variant="ghost" size="icon">
+                              <Eye className="h-4 w-4" />
+                            </Button>
+                            <Button variant="ghost" size="icon">
+                              <Edit className="h-4 w-4" />
+                            </Button>
+                          </div>
+                        </TableCell>
+                      </TableRow>
+                    ))}
+                  </TableBody>
+                </Table>
+              </CardContent>
+            </Card>
+          </TabsContent>
+
+          {/* Resources Tab */}
+          <TabsContent value="resources" className="space-y-6">
+            <div className="flex items-center justify-between">
+              <h2 className="text-xl font-bold">Resource Allocation</h2>
+              <Button className="gap-2 bg-gradient-to-r from-blue-600 to-blue-700">
+                <Plus className="h-4 w-4" /> Add Resource
+              </Button>
+            </div>
+
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
+              {resources.map((resource) => (
+                <Card key={resource.id} className="hover:shadow-lg transition-shadow">
+                  <CardContent className="pt-6">
+                    <div className="flex items-center justify-between mb-4">
+                      <Badge variant="outline">{resource.type}</Badge>
+                      <Badge className={getStatusColor(resource.status)}>{resource.status}</Badge>
+                    </div>
+                    <h3 className="font-bold text-lg mb-2">{resource.name}</h3>
+                    <div className="text-sm text-muted-foreground space-y-1">
+                      <p className="flex items-center gap-2">
+                        <Building2 className="h-4 w-4" /> {resource.department}
+                      </p>
+                      <p className="flex items-center gap-2">
+                        <MapPin className="h-4 w-4" /> {resource.location}
+                      </p>
+                      {resource.nextMaintenance && (
+                        <p className="flex items-center gap-2 text-orange-600">
+                          <AlertCircle className="h-4 w-4" /> Next: {resource.nextMaintenance}
+                        </p>
+                      )}
+                    </div>
+                    <div className="flex gap-2 mt-4">
+                      <Button size="sm" variant="outline" className="flex-1">View</Button>
+                      <Button size="sm" className="flex-1">
+                        {resource.status === 'Available' ? 'Reserve' : 'Release'}
+                      </Button>
+                    </div>
+                  </CardContent>
+                </Card>
+              ))}
+            </div>
+          </TabsContent>
+        </Tabs>
+      </div>
+    </div>
+  );
+};
+
+export default HospitalPracticeManagement;

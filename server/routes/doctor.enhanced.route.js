@@ -1,0 +1,654 @@
+import express from 'express';
+import { body, param, query } from 'express-validator';
+import { authUser, requireRole } from '../middleware/auth.middleware.js';
+import doctorModel from '../models/doctor.model.intelligent.js';
+import bcrypt from 'bcrypt';
+import jwt from 'jsonwebtoken';
+import multer from 'multer';
+import path from 'path';
+import fs from 'fs';
+
+const router = express.Router();
+
+// Configure multer for file uploads
+const storage = multer.diskStorage({
+  destination: (req, file, cb) => {
+    const uploadPath = `./uploads/doctors/${req.params.doctorId || 'temp'}`;
+    if (!fs.existsSync(uploadPath)) {
+      fs.mkdirSync(uploadPath, { recursive: true });
+    }
+    cb(null, uploadPath);
+  },
+  filename: (req, file, cb) => {
+    const ext = path.extname(file.originalname);
+    const filename = `${file.fieldname}_${Date.now()}${ext}`;
+    cb(null, filename);
+  }
+});
+
+const upload = multer({
+  storage,
+  limits: { fileSize: 10 * 1024 * 1024 }, // 10MB limit
+  fileFilter: (req, file, cb) => {
+    const allowedTypes = /jpeg|jpg|png|pdf|doc|docx/;
+    const mimeType = allowedTypes.test(file.mimetype);
+    const extname = allowedTypes.test(path.extname(file.originalname).toLowerCase());
+    
+    if (mimeType && extname) {
+      return cb(null, true);
+    } else {
+      cb(new Error('Only images and documents are allowed'));
+    }
+  }
+});
+
+// ==========================================================================
+// DOCTOR AUTHENTICATION & REGISTRATION
+// ==========================================================================
+
+/**
+ * @route   POST /api/doctors/register
+ * @desc    Register new doctor with comprehensive profile
+ * @access  Public
+ */
+router.post('/register', [
+  body('prefix').optional().isIn(['Dr', 'Prof', 'Dr.']),
+  body('firstName').notEmpty().withMessage('First name is required'),
+  body('lastName').notEmpty().withMessage('Last name is required'),
+  body('email').isEmail().withMessage('Valid email is required'),
+  body('phoneNumber').notEmpty().withMessage('Phone number is required'),
+  body('password').isLength({ min: 6 }).withMessage('Password must be at least 6 characters'),
+  body('specialization').notEmpty().withMessage('Specialization is required'),
+  body('experience').isInt({ min: 0 }).withMessage('Experience must be a positive number'),
+  body('registrationNumber').notEmpty().withMessage('Medical registration number is required'),
+  body('medicalCouncil').notEmpty().withMessage('Medical council is required')
+], async (req, res) => {
+  try {
+    // Check if doctor already exists
+    const existingDoctor = await doctorModel.findOne({
+      where: { email: req.body.email }
+    });
+    
+    if (existingDoctor) {
+      return res.status(400).json({
+        success: false,
+        message: 'Doctor with this email already exists'
+      });
+    }
+
+    // Create doctor profile
+    const doctor = await doctorModel.create(req.body);
+    
+    // Generate JWT token
+    const token = jwt.sign(
+      { 
+        id: doctor.id, 
+        email: doctor.email, 
+        role: 'doctor' 
+      },
+      process.env.JWT_SECRET,
+      { expiresIn: '7d' }
+    );
+
+    res.status(201).json({
+      success: true,
+      message: 'Doctor registered successfully',
+      doctor: {
+        id: doctor.id,
+        name: `${doctor.prefix} ${doctor.firstName} ${doctor.lastName}`,
+        email: doctor.email,
+        specialization: doctor.specialization,
+        verificationStatus: doctor.verificationStatus
+      },
+      token
+    });
+  } catch (error) {
+    console.error('Doctor registration error:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Failed to register doctor',
+      error: error.message
+    });
+  }
+});
+
+/**
+ * @route   POST /api/doctors/login
+ * @desc    Doctor login
+ * @access  Public
+ */
+console.log('⭐ Registering POST /login route...');
+router.post('/login', async (req, res) => {
+  console.log('⭐⭐⭐ INSIDE LOGIN HANDLER');
+  try {
+    console.log('🟡 [Doctor Login] Request received');
+    const { email, password } = req.body;
+    console.log('🟡 [Doctor Login] Email:', email);
+    console.log('🟡 [Doctor Login] doctorModel:', typeof doctorModel, !!doctorModel);
+    
+    // Find doctor
+    console.log('🟡 [Doctor Login] Calling doctorModel.findOne...');
+    const doctor = await doctorModel.findOne({ where: { email } });
+    console.log('🟡 [Doctor Login] findOne returned:', !!doctor);
+    if (!doctor) {
+      return res.status(401).json({
+        success: false,
+        message: 'Invalid credentials'
+      });
+    }
+
+    // Verify password
+    const isValidPassword = await bcrypt.compare(password, doctor.password);
+    if (!isValidPassword) {
+      return res.status(401).json({
+        success: false,
+        message: 'Invalid credentials'
+      });
+    }
+
+    // Update last login
+    await doctorModel.update(doctor.id, {
+      ...doctor,
+      lastLoginAt: new Date().toISOString()
+    });
+
+    // Generate token
+    const token = jwt.sign(
+      { 
+        id: doctor.id, 
+        email: doctor.email, 
+        role: 'doctor' 
+      },
+      process.env.JWT_SECRET,
+      { expiresIn: '7d' }
+    );
+
+    res.json({
+      success: true,
+      message: 'Login successful',
+      doctor: {
+        id: doctor.id,
+        name: `${doctor.prefix} ${doctor.firstName} ${doctor.lastName}`,
+        email: doctor.email,
+        specialization: doctor.specialization,
+        isVerified: doctor.isVerified,
+        profilePicture: doctor.profilePicture
+      },
+      token
+    });
+  } catch (error) {
+    console.error('Doctor login error:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Login failed',
+      error: error.message
+    });
+  }
+});
+
+// ==========================================================================
+// DOCTOR PROFILE MANAGEMENT
+// ==========================================================================
+
+/**
+ * @route   GET /api/doctors/profile
+ * @desc    Get doctor's own profile
+ * @access  Private (Doctor)
+ */
+router.get('/profile', authUser, async (req, res) => {
+  try {
+    if (req.user.role !== 'doctor') {
+      return res.status(403).json({
+        success: false,
+        message: 'Access denied. Doctor role required.'
+      });
+    }
+
+    const doctor = await doctorModel.findByPk(req.user.id);
+    if (!doctor) {
+      return res.status(404).json({
+        success: false,
+        message: 'Doctor profile not found'
+      });
+    }
+
+    // Remove password from response
+    const { password, ...doctorProfile } = doctor;
+    
+    res.json({
+      success: true,
+      doctor: doctorProfile
+    });
+  } catch (error) {
+    console.error('Get profile error:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Failed to fetch profile',
+      error: error.message
+    });
+  }
+});
+
+/**
+ * @route   PUT /api/doctors/profile
+ * @desc    Update doctor profile
+ * @access  Private (Doctor)
+ */
+router.put('/profile', authUser, [
+  body('firstName').optional().notEmpty(),
+  body('lastName').optional().notEmpty(),
+  body('phoneNumber').optional().notEmpty(),
+  body('specialization').optional().notEmpty(),
+  body('experience').optional().isInt({ min: 0 }),
+  body('about').optional().isLength({ max: 1000 }),
+  body('languages').optional().isArray()
+], async (req, res) => {
+  try {
+    if (req.user.role !== 'doctor') {
+      return res.status(403).json({
+        success: false,
+        message: 'Access denied. Doctor role required.'
+      });
+    }
+
+    const doctor = await doctorModel.findByPk(req.user.id);
+    if (!doctor) {
+      return res.status(404).json({
+        success: false,
+        message: 'Doctor not found'
+      });
+    }
+
+    // Update profile
+    const updatedDoctor = await doctorModel.update(req.user.id, {
+      ...doctor,
+      ...req.body,
+      updatedAt: new Date().toISOString()
+    });
+
+    const { password, ...doctorProfile } = updatedDoctor;
+    
+    res.json({
+      success: true,
+      message: 'Profile updated successfully',
+      doctor: doctorProfile
+    });
+  } catch (error) {
+    console.error('Update profile error:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Failed to update profile',
+      error: error.message
+    });
+  }
+});
+
+// ==========================================================================
+// CONSULTATION TYPES & FEES
+// ==========================================================================
+
+/**
+ * @route   PUT /api/doctors/consultation-types
+ * @desc    Update consultation types and fees
+ * @access  Private (Doctor)
+ */
+router.put('/consultation-types', authUser, [
+  body('online.available').optional().isBoolean(),
+  body('online.fee').optional().isFloat({ min: 0 }),
+  body('online.duration').optional().isInt({ min: 5, max: 120 }),
+  body('walkIn.available').optional().isBoolean(),
+  body('walkIn.fee').optional().isFloat({ min: 0 }),
+  body('homeVisit.available').optional().isBoolean(),
+  body('homeVisit.fee').optional().isFloat({ min: 0 })
+], async (req, res) => {
+  try {
+    if (req.user.role !== 'doctor') {
+      return res.status(403).json({
+        success: false,
+        message: 'Access denied. Doctor role required.'
+      });
+    }
+
+    await doctorModel.updateConsultationFees(req.user.id, req.body);
+    
+    res.json({
+      success: true,
+      message: 'Consultation types updated successfully'
+    });
+  } catch (error) {
+    console.error('Update consultation types error:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Failed to update consultation types',
+      error: error.message
+    });
+  }
+});
+
+// ==========================================================================
+// AVAILABILITY MANAGEMENT
+// ==========================================================================
+
+/**
+ * @route   PUT /api/doctors/availability
+ * @desc    Update weekly availability slots
+ * @access  Private (Doctor)
+ */
+router.put('/availability', authUser, [
+  body('*.isAvailable').optional().isBoolean(),
+  body('*.slots').optional().isArray(),
+  body('*.slots.*.startTime').optional().matches(/^([0-1]?[0-9]|2[0-3]):[0-5][0-9]$/),
+  body('*.slots.*.endTime').optional().matches(/^([0-1]?[0-9]|2[0-3]):[0-5][0-9]$/),
+  body('*.slots.*.consultationType').optional().isIn(['online', 'walkIn', 'both'])
+], async (req, res) => {
+  try {
+    if (req.user.role !== 'doctor') {
+      return res.status(403).json({
+        success: false,
+        message: 'Access denied. Doctor role required.'
+      });
+    }
+
+    await doctorModel.updateAvailability(req.user.id, req.body);
+    
+    res.json({
+      success: true,
+      message: 'Availability updated successfully'
+    });
+  } catch (error) {
+    console.error('Update availability error:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Failed to update availability',
+      error: error.message
+    });
+  }
+});
+
+/**
+ * @route   GET /api/doctors/:doctorId/slots
+ * @desc    Get available slots for a specific date
+ * @access  Public
+ */
+router.get('/:doctorId/slots', [
+  param('doctorId').notEmpty(),
+  query('date').isISO8601().withMessage('Valid date required (YYYY-MM-DD)'),
+  query('consultationType').optional().isIn(['online', 'walkIn', 'homeVisit'])
+], async (req, res) => {
+  try {
+    const { doctorId } = req.params;
+    const { date, consultationType = 'online' } = req.query;
+    
+    const slots = await doctorModel.getAvailableSlots(doctorId, date, consultationType);
+    
+    res.json({
+      success: true,
+      date,
+      consultationType,
+      slots
+    });
+  } catch (error) {
+    console.error('Get slots error:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Failed to fetch available slots',
+      error: error.message
+    });
+  }
+});
+
+// ==========================================================================
+// MEDIA UPLOADS
+// ==========================================================================
+
+/**
+ * @route   POST /api/doctors/upload/:mediaType
+ * @desc    Upload doctor media (profile, signature, seal, clinic images)
+ * @access  Private (Doctor)
+ */
+router.post('/upload/:mediaType', authUser, upload.single('file'), async (req, res) => {
+  try {
+    if (req.user.role !== 'doctor') {
+      return res.status(403).json({
+        success: false,
+        message: 'Access denied. Doctor role required.'
+      });
+    }
+
+    const { mediaType } = req.params;
+    
+    if (!req.file) {
+      return res.status(400).json({
+        success: false,
+        message: 'No file uploaded'
+      });
+    }
+
+    const validMediaTypes = ['profilePicture', 'digitalSignature', 'medicalSeal', 'clinicImage'];
+    if (!validMediaTypes.includes(mediaType)) {
+      return res.status(400).json({
+        success: false,
+        message: 'Invalid media type'
+      });
+    }
+
+    const mediaUrl = `/uploads/doctors/${req.user.id}/${req.file.filename}`;
+    
+    await doctorModel.updateMedia(req.user.id, mediaType, mediaUrl);
+    
+    res.json({
+      success: true,
+      message: 'Media uploaded successfully',
+      mediaType,
+      url: mediaUrl
+    });
+  } catch (error) {
+    console.error('Upload media error:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Failed to upload media',
+      error: error.message
+    });
+  }
+});
+
+// ==========================================================================
+// DOCTOR SEARCH & DISCOVERY
+// ==========================================================================
+
+/**
+ * @route   GET /api/doctors/search
+ * @desc    Search doctors with filters
+ * @access  Public
+ */
+router.get('/search', [
+  query('specialization').optional().notEmpty(),
+  query('city').optional().notEmpty(),
+  query('consultationType').optional().isIn(['online', 'walkIn', 'homeVisit']),
+  query('languages').optional(),
+  query('maxFee').optional().isFloat({ min: 0 }),
+  query('isVerified').optional().isBoolean(),
+  query('page').optional().isInt({ min: 1 }),
+  query('limit').optional().isInt({ min: 1, max: 50 })
+], async (req, res) => {
+  try {
+    const filters = {
+      specialization: req.query.specialization,
+      city: req.query.city,
+      consultationType: req.query.consultationType,
+      languages: req.query.languages ? req.query.languages.split(',') : undefined,
+      maxFee: req.query.maxFee ? parseFloat(req.query.maxFee) : undefined,
+      isVerified: req.query.isVerified ? req.query.isVerified === 'true' : undefined
+    };
+
+    // Remove undefined filters
+    Object.keys(filters).forEach(key => filters[key] === undefined && delete filters[key]);
+
+    const doctors = await doctorModel.searchDoctors(filters);
+    
+    // Pagination
+    const page = parseInt(req.query.page) || 1;
+    const limit = parseInt(req.query.limit) || 20;
+    const startIndex = (page - 1) * limit;
+    const endIndex = startIndex + limit;
+    
+    const paginatedDoctors = doctors.slice(startIndex, endIndex);
+    
+    // Remove sensitive data
+    const publicDoctors = paginatedDoctors.map(doctor => {
+      const { password, verificationDocuments, ...publicDoctor } = doctor;
+      return publicDoctor;
+    });
+
+    res.json({
+      success: true,
+      doctors: publicDoctors,
+      pagination: {
+        page,
+        limit,
+        total: doctors.length,
+        pages: Math.ceil(doctors.length / limit)
+      },
+      filters
+    });
+  } catch (error) {
+    console.error('Search doctors error:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Failed to search doctors',
+      error: error.message
+    });
+  }
+});
+
+/**
+ * @route   GET /api/doctors/:doctorId/public
+ * @desc    Get public doctor profile
+ * @access  Public
+ */
+router.get('/:doctorId/public', [
+  param('doctorId').notEmpty()
+], async (req, res) => {
+  try {
+    const { doctorId } = req.params;
+    
+    const doctor = await doctorModel.findByPk(doctorId);
+    if (!doctor) {
+      return res.status(404).json({
+        success: false,
+        message: 'Doctor not found'
+      });
+    }
+
+    if (!doctor.isActive) {
+      return res.status(404).json({
+        success: false,
+        message: 'Doctor profile is not active'
+      });
+    }
+
+    // Remove sensitive information
+    const { 
+      password, 
+      verificationDocuments, 
+      digitalSignature, 
+      medicalSeal,
+      ...publicProfile 
+    } = doctor;
+
+    res.json({
+      success: true,
+      doctor: publicProfile
+    });
+  } catch (error) {
+    console.error('Get public profile error:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Failed to fetch doctor profile',
+      error: error.message
+    });
+  }
+});
+
+// ==========================================================================
+// ADMIN ROUTES
+// ==========================================================================
+
+/**
+ * @route   GET /api/doctors/admin/all
+ * @desc    Get all doctors (Admin only)
+ * @access  Private (Admin)
+ */
+router.get('/admin/all', authUser, requireRole('admin'), [
+  query('page').optional().isInt({ min: 1 }),
+  query('limit').optional().isInt({ min: 1, max: 100 }),
+  query('verificationStatus').optional().isIn(['pending', 'verified', 'rejected'])
+], async (req, res) => {
+  try {
+    const page = parseInt(req.query.page) || 1;
+    const limit = parseInt(req.query.limit) || 20;
+    const verificationStatus = req.query.verificationStatus;
+
+    let doctors = await doctorModel.findAll();
+    
+    // Filter by verification status if provided
+    if (verificationStatus) {
+      doctors = doctors.filter(doctor => doctor.verificationStatus === verificationStatus);
+    }
+
+    // Pagination
+    const startIndex = (page - 1) * limit;
+    const endIndex = startIndex + limit;
+    const paginatedDoctors = doctors.slice(startIndex, endIndex);
+
+    res.json({
+      success: true,
+      doctors: paginatedDoctors,
+      pagination: {
+        page,
+        limit,
+        total: doctors.length,
+        pages: Math.ceil(doctors.length / limit)
+      }
+    });
+  } catch (error) {
+    console.error('Get all doctors error:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Failed to fetch doctors',
+      error: error.message
+    });
+  }
+});
+
+/**
+ * @route   PUT /api/doctors/admin/:doctorId/verification
+ * @desc    Update doctor verification status (Admin only)
+ * @access  Private (Admin)
+ */
+router.put('/admin/:doctorId/verification', authUser, requireRole('admin'), [
+  param('doctorId').notEmpty(),
+  body('status').isIn(['pending', 'verified', 'rejected']),
+  body('notes').optional().isLength({ max: 500 })
+], async (req, res) => {
+  try {
+    const { doctorId } = req.params;
+    const { status, notes } = req.body;
+
+    await doctorModel.updateVerificationStatus(doctorId, status, notes);
+    
+    res.json({
+      success: true,
+      message: 'Doctor verification status updated successfully'
+    });
+  } catch (error) {
+    console.error('Update verification status error:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Failed to update verification status',
+      error: error.message
+    });
+  }
+});
+
+export default router;

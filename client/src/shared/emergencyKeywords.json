@@ -1,0 +1,84 @@
+{
+  "cardiac": {
+    "severity": "critical",
+    "specialization": "Cardiologist",
+    "phrases": [
+      "chest pain",
+      "tightness in chest",
+      "pressure in chest",
+      "heart attack",
+      "palpitations",
+      "shortness of breath",
+      "breathing trouble",
+      "pain in left arm"
+    ]
+  },
+  "neurological": {
+    "severity": "critical",
+    "specialization": "Neurologist",
+    "phrases": [
+      "severe migraine",
+      "worst headache",
+      "sudden headache",
+      "headache with vision loss",
+      "vision loss",
+      "double vision",
+      "slurred speech",
+      "numbness on one side",
+      "loss of balance",
+      "confusion",
+      "seizure"
+    ]
+  },
+  "respiratory": {
+    "severity": "critical",
+    "specialization": "Pulmonologist",
+    "phrases": [
+      "difficulty breathing",
+      "can't breathe",
+      "cannot breathe",
+      "wheezing attack",
+      "asthma attack",
+      "severe cough with blood",
+      "respiratory distress",
+      "oxygen level drop"
+    ]
+  },
+  "trauma": {
+    "severity": "critical",
+    "specialization": "General Surgeon",
+    "phrases": [
+      "severe bleeding",
+      "heavy bleeding",
+      "uncontrolled bleeding",
+      "broken bone",
+      "unconscious",
+      "head injury",
+      "spinal injury",
+      "accident trauma"
+    ]
+  },
+  "obstetrics": {
+    "severity": "critical",
+    "specialization": "Gynecologist",
+    "phrases": [
+      "pregnancy bleeding",
+      "reduced fetal movement",
+      "labor pain",
+      "severe abdominal pain pregnancy",
+      "convulsions pregnancy"
+    ]
+  },
+  "general": {
+    "severity": "high",
+    "specialization": "General Practitioner",
+    "phrases": [
+      "emergency",
+      "urgent help",
+      "life threatening",
+      "excruciating pain",
+      "unbearable pain",
+      "critical condition"
+    ]
+  }
+}

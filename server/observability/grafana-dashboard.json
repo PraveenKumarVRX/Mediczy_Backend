@@ -1,0 +1,81 @@
+{
+  "schemaVersion": 38,
+  "title": "Mediczy Intelligence Metrics",
+  "timezone": "browser",
+  "version": 1,
+  "refresh": "10s",
+  "panels": [
+    {
+      "type": "stat",
+      "title": "Total Intelligence Queries",
+      "gridPos": {"x": 0, "y": 0, "w": 6, "h": 4},
+      "targets": [
+        {"expr": "sum(db_intelligence_queries_total)", "refId": "A"}
+      ]
+    },
+    {
+      "type": "graph",
+      "title": "Query Processing Duration (avg)",
+      "gridPos": {"x": 6, "y": 0, "w": 18, "h": 6},
+      "targets": [
+        {
+          "expr": "sum(rate(db_intelligence_processing_seconds_sum[5m])) / sum(rate(db_intelligence_processing_seconds_count[5m]))",
+          "refId": "A"
+        }
+      ],
+      "legend": {"show": true}
+    },
+    {
+      "type": "bargauge",
+      "title": "Cache Events (hits vs misses)",
+      "gridPos": {"x": 0, "y": 6, "w": 12, "h": 6},
+      "targets": [
+        {"expr": "sum by (event) (db_intelligence_cache_events_total)", "refId": "A"}
+      ]
+    },
+    {
+      "type": "bargauge",
+      "title": "Kafka Events",
+      "gridPos": {"x": 12, "y": 6, "w": 12, "h": 6},
+      "targets": [
+        {"expr": "sum by (topic) (db_intelligence_kafka_events_total)", "refId": "A"}
+      ]
+    },
+    {
+      "type": "bargauge",
+      "title": "Queue Jobs Created",
+      "gridPos": {"x": 0, "y": 12, "w": 12, "h": 6},
+      "targets": [
+        {"expr": "sum by (queue, job_name) (db_intelligence_queue_jobs_total)", "refId": "A"}
+      ]
+    },
+    {
+      "type": "piechart",
+      "title": "Bayesian Inferences by Risk Level",
+      "gridPos": {"x": 12, "y": 12, "w": 12, "h": 6},
+      "options": {"legend": {"show": true}},
+      "targets": [
+        {"expr": "sum by (risk_level) (db_intelligence_bayesian_inferences_total)", "refId": "A"}
+      ]
+    },
+    {
+      "type": "piechart",
+      "title": "Primary DB for Collections",
+      "gridPos": {"x": 0, "y": 18, "w": 12, "h": 6},
+      "targets": [
+        {"expr": "sum by (primary_db) (db_intelligence_data_collections_total)", "refId": "A"}
+      ]
+    },
+    {
+      "type": "table",
+      "title": "HTTP Requests",
+      "gridPos": {"x": 12, "y": 18, "w": 12, "h": 8},
+      "targets": [
+        {"expr": "sum by (method, route, status_code) (http_requests_total)", "refId": "A"}
+      ],
+      "options": {"showHeader": true}
+    }
+  ],
+  "templating": {"list": []},
+  "time": {"from": "now-6h", "to": "now"}
+}
