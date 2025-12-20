@@ -398,6 +398,79 @@ This is for emergency medical guidance. Please prioritize safety and immediate c
     window.open(url, '_blank');
   };
 
+  // Refresh user location with high accuracy
+  const refreshUserLocation = () => {
+    if (!navigator.geolocation) {
+      toast({
+        title: "Location Not Supported",
+        description: "Your browser doesn't support geolocation.",
+        variant: "destructive",
+      });
+      return;
+    }
+
+    setLoading(true);
+    toast({
+      title: "Refreshing Location",
+      description: "Getting your current location with high accuracy...",
+    });
+
+    navigator.geolocation.getCurrentPosition(
+      async (position) => {
+        const { latitude, longitude, accuracy } = position.coords;
+        
+        console.log('📍 Location refreshed:', {
+          lat: latitude,
+          lng: longitude,
+          accuracy: `${accuracy.toFixed(2)}m`,
+          timestamp: new Date(position.timestamp).toLocaleTimeString()
+        });
+
+        const newLocation = { lat: latitude, lng: longitude };
+        setUserLocation(newLocation);
+        
+        // Update map center if map exists
+        if (mapRef.current) {
+          mapRef.current.setView([latitude, longitude], 14);
+        }
+
+        // Fetch new hospitals based on updated location
+        await fetchNearbyHospitals(latitude, longitude);
+        
+        toast({
+          title: "Location Updated",
+          description: `Accuracy: ±${accuracy.toFixed(0)}m. Found nearby facilities.`,
+        });
+        
+        setLoading(false);
+      },
+      (error) => {
+        console.error('Error refreshing location:', error);
+        setLoading(false);
+        
+        let errorMessage = "Unable to get your current location.";
+        if (error.code === error.PERMISSION_DENIED) {
+          errorMessage = "Location permission denied. Please enable location access in your browser settings.";
+        } else if (error.code === error.POSITION_UNAVAILABLE) {
+          errorMessage = "Location information unavailable. Please try again.";
+        } else if (error.code === error.TIMEOUT) {
+          errorMessage = "Location request timed out. Please try again.";
+        }
+        
+        toast({
+          title: "Location Refresh Failed",
+          description: errorMessage,
+          variant: "destructive",
+        });
+      },
+      {
+        enableHighAccuracy: true,
+        timeout: 20000,
+        maximumAge: 0,
+      }
+    );
+  };
+
   // Fetch nearby hospitals using Overpass API
   const fetchNearbyHospitals = async (lat: number, lon: number) => {
     try {
@@ -559,27 +632,76 @@ This is for emergency medical guidance. Please prioritize safety and immediate c
     }
   };
 
-  // Get user location
+  // Get user location with high accuracy
   useEffect(() => {
     if (!userLocation && !locationError) {
       if (navigator.geolocation) {
+        // First attempt with high accuracy and longer timeout
         navigator.geolocation.getCurrentPosition(
           async (position) => {
-            const { latitude, longitude } = position.coords;
+            const { latitude, longitude, accuracy } = position.coords;
+            
+            console.log('📍 Location obtained:', {
+              lat: latitude,
+              lng: longitude,
+              accuracy: `${accuracy.toFixed(2)}m`,
+              timestamp: new Date(position.timestamp).toLocaleTimeString()
+            });
+
+            // Check if accuracy is acceptable (within 100 meters)
+            if (accuracy > 100) {
+              console.warn(`⚠️ Location accuracy is low: ${accuracy.toFixed(2)}m. Attempting to improve...`);
+              toast({
+                title: "Location Accuracy",
+                description: `Location accuracy: ±${accuracy.toFixed(0)}m. For better results, ensure GPS is enabled and you're outdoors.`,
+                variant: "default",
+              });
+            }
+
             setUserLocation({ lat: latitude, lng: longitude });
             await fetchNearbyHospitals(latitude, longitude);
             setLoading(false);
           },
           async (error) => {
-            console.error('Error getting location:', error);
-            setLocationError('Unable to get your location. Please enable location services.');
-            await useApproximateLocation('Could not read GPS coordinates.');
-            setLoading(false);
+            console.error('Error getting high accuracy location:', error);
+            
+            // Try again with lower accuracy requirements as fallback
+            navigator.geolocation.getCurrentPosition(
+              async (position) => {
+                const { latitude, longitude, accuracy } = position.coords;
+                console.log('📍 Fallback location obtained:', {
+                  lat: latitude,
+                  lng: longitude,
+                  accuracy: `${accuracy.toFixed(2)}m`
+                });
+                
+                toast({
+                  title: "Location Obtained",
+                  description: `Using approximate location (±${accuracy.toFixed(0)}m accuracy)`,
+                  variant: "default",
+                });
+                
+                setUserLocation({ lat: latitude, lng: longitude });
+                await fetchNearbyHospitals(latitude, longitude);
+                setLoading(false);
+              },
+              async (fallbackError) => {
+                console.error('Error getting fallback location:', fallbackError);
+                setLocationError('Unable to get your location. Please enable location services.');
+                await useApproximateLocation('Could not read GPS coordinates.');
+                setLoading(false);
+              },
+              {
+                enableHighAccuracy: false, // Use network/WiFi positioning
+                timeout: 10000,
+                maximumAge: 60000, // Accept cached position up to 1 minute old
+              }
+            );
           },
           {
-            enableHighAccuracy: true,
-            timeout: 8000,
-            maximumAge: 0,
+            enableHighAccuracy: true, // Use GPS for best accuracy
+            timeout: 20000, // Increased to 20 seconds for GPS lock
+            maximumAge: 0, // Don't use cached position for emergency services
           }
         );
       } else {
@@ -1008,14 +1130,29 @@ This is for emergency medical guidance. Please prioritize safety and immediate c
                   </div>
                 )}
 
-                <Button
-                  variant="secondary"
-                  size="icon"
-                  className="absolute bottom-4 left-4 h-14 w-14 rounded-full bg-white shadow-lg transition-transform hover:scale-105"
-                  onClick={resetMapToUserLocation}
-                >
-                  <Locate className="h-6 w-6 text-blue-600" />
-                </Button>
+                <div className="absolute bottom-4 left-4 flex gap-2">
+                  <Button
+                    variant="secondary"
+                    size="icon"
+                    className="h-14 w-14 rounded-full bg-white shadow-lg transition-transform hover:scale-105"
+                    onClick={resetMapToUserLocation}
+                    title="Re-center map to your location"
+                  >
+                    <Locate className="h-6 w-6 text-blue-600" />
+                  </Button>
+                  
+                  <Button
+                    variant="secondary"
+                    size="icon"
+                    className="h-14 w-14 rounded-full bg-white shadow-lg transition-transform hover:scale-105"
+                    onClick={refreshUserLocation}
+                    disabled={loading}
+                    title="Refresh location with high accuracy"
+                  >
+                    <MapPin className="h-6 w-6 text-green-600" />
+                  </Button>
+                </div>
+                
                 {locationError && (
                   <div className="absolute bottom-4 right-4 rounded-md border border-yellow-400 bg-yellow-100 px-4 py-2 text-sm text-yellow-700">
                     {locationError}

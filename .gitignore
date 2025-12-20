@@ -1,104 +1,71 @@
 # Dependencies
 node_modules/
-*/node_modules/
-bun.lockb
+package-lock.json
 
-# Python
-.venv/
-venv/
-__pycache__/
-.pytest_cache/
-
-# Environment variables (security)
+# Environment files
 .env
 .env.local
-.env.development.local
-.env.test.local
-.env.production.local
-.env.*
-!.env.example
-server/.env
-client/.env
-!server/.env.example
-!client/.env.example
-
-# Logs
-*.log
-logs/
-pids/
-*.pid
-*.seed
-*.pid.lock
-
-# SSL certificates and keys
-*.pem
-*.crt
-*.key
-ssl-*
-*.p12
-*.pfx
-
-# Database
-*.db
-*.sqlite
-*.sqlite3
-*.duckdb
-*.duckdb.wal
-*.duckdb-shm
-uploads/*
-!uploads/.gitkeep
+.env.production
+.env.development
 
 # Build outputs
 dist/
 build/
-.vite/
-.next/
+client/dist/
+client/build/
+server/dist/
+*.tgz
+
+# Logs
+logs/
+*.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+backend.log
+
+# AI Engine (large models and data)
+ai-engine/
+*.gguf
+*.bin
+*.pth
+*.pt
+*.safetensors
+
+# Database dumps
+*.sql.gz
+*.dump
+
+# SSL certificates
+*.pem
+*.key
+*.crt
+*.csr
+ssl-upload/
+NEW-SSL-UPLOAD
+
+# System files
+.DS_Store
+Thumbs.db
+*.swp
+*.swo
 
 # IDE
 .vscode/
 .idea/
-*.swp
-*.swo
+*.sublime-*
 
-# OS
-.DS_Store
-Thumbs.db
-
-# Backup files
-*.bak
-*.backup
-*.tmp
-
-# Local backups (should not ship)
-client/src_backup_*/
-
-# Docker
-.dockerignore
-Dockerfile.prod
-
-# Test results
+# Testing
 test-results/
+playwright-report/
 coverage/
 
-# Medical AI models
-*.model
-*.pkl
-*.h5
-*.pt
-*.pth
+# Temporary files
+tmp/
+temp/
+*.tmp
 
-# Data dumps
-*.jsonl
-
-# Large files
+# Large binaries
 *.deb
+*.tar.gz
 cloudflared-*
-node_modules
-
-# Core dumps / crash artifacts
-core
-*.core
-
-# Vendored binaries (too large for git/GitHub)
-server/prometheus-*.tar.gz
-server/prometheus-*/

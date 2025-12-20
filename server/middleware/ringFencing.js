@@ -14,6 +14,8 @@ const USER_TYPE_PERMISSIONS = {
       '/api/consultation',
       '/api/chat',
       '/api/ai-doctor',
+      '/api/ai',  // AI doctor chat endpoints
+      '/api/medical-ai',  // Medical AI including emergency triage
       '/api/symptoms',
       '/api/medicine',
       '/api/emergency',
@@ -166,6 +168,46 @@ const USER_TYPE_PERMISSIONS = {
       '/api/pharmacy/prescriptions'
     ],
     tokenField: 'pharmacyId'
+  },
+  tpa: {
+    allowedPaths: [
+      '/api/tpa',
+      '/api/tpa/dashboard',
+      '/api/tpa/claims',
+      '/api/tpa/network',
+      '/api/tpa/policies'
+    ],
+    tokenField: 'tpaId'
+  },
+  psu: {
+    allowedPaths: [
+      '/api/psu',
+      '/api/psu/dashboard',
+      '/api/psu/employees',
+      '/api/psu/benefits',
+      '/api/psu/reports'
+    ],
+    tokenField: 'psuId'
+  },
+  insurer: {
+    allowedPaths: [
+      '/api/insurer',
+      '/api/insurer/dashboard',
+      '/api/insurer/policies',
+      '/api/insurer/claims',
+      '/api/insurer/analytics'
+    ],
+    tokenField: 'insurerId'
+  },
+  ngo: {
+    allowedPaths: [
+      '/api/ngo',
+      '/api/ngo/dashboard',
+      '/api/ngo/programs',
+      '/api/ngo/beneficiaries',
+      '/api/ngo/reports'
+    ],
+    tokenField: 'ngoId'
   }
 };
 
@@ -184,6 +226,10 @@ const PUBLIC_ENDPOINTS = [
   '/api/clinic/login',
   '/api/lab/login',
   '/api/pharmacy/login',
+  '/api/tpa/login',
+  '/api/psu/login',
+  '/api/insurer/login',
+  '/api/ngo/login',
   '/api/health-check',
   '/api/status'
 ];
