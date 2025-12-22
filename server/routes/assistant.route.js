@@ -70,42 +70,42 @@ router.post('/login', [
     if (process.env.NODE_ENV !== 'production') {
       const testAssistants = {
         'assistant@mediczy.com': {
-        id: 'asst_001',
-        email: 'assistant@mediczy.com',
-        password: 'AssistantPass123',
-        firstName: 'Emily',
-        lastName: 'Davis',
-        roleTitle: 'Medical Secretary',
-        linkedDoctorIds: ['doc_001'],
-        primaryDoctorId: 'doc_001',
-        linkedFacilityId: 'facility_001',
-        linkedFacilityType: 'clinic',
-        linkedFacilityName: 'Mediczy Health Clinic',
-        workSchedule: { monday: '9:00-17:00', tuesday: '9:00-17:00', wednesday: '9:00-17:00', thursday: '9:00-17:00', friday: '9:00-17:00' },
-        permissions: ['view_appointments', 'manage_appointments', 'view_patients', 'send_messages'],
-        canAccessDoctorCalendar: true,
-        canManagePatients: true,
-        phoneNumber: '+91 9876543210'
-      },
-      'secretary@mediczy.com': {
-        id: 'asst_002',
-        email: 'secretary@mediczy.com',
-        password: 'SecretaryPass123',
-        firstName: 'Sarah',
-        lastName: 'Johnson',
-        roleTitle: 'Doctor Secretary',
-        linkedDoctorIds: ['doc_002', 'doc_003'],
-        primaryDoctorId: 'doc_002',
-        linkedFacilityId: 'facility_001',
-        linkedFacilityType: 'hospital',
-        linkedFacilityName: 'Mediczy Hospital',
-        workSchedule: { monday: '8:00-16:00', tuesday: '8:00-16:00', wednesday: '8:00-16:00', thursday: '8:00-16:00', friday: '8:00-16:00' },
-        permissions: ['view_appointments', 'manage_appointments', 'view_patients', 'manage_patients', 'send_messages', 'view_billing'],
-        canAccessDoctorCalendar: true,
-        canManagePatients: true,
-        phoneNumber: '+91 9876543211'
-      }
-    };
+          id: 'asst_001',
+          email: 'assistant@mediczy.com',
+          password: 'AssistantPass123',
+          firstName: 'Emily',
+          lastName: 'Davis',
+          roleTitle: 'Medical Secretary',
+          linkedDoctorIds: ['doc_001'],
+          primaryDoctorId: 'doc_001',
+          linkedFacilityId: 'facility_001',
+          linkedFacilityType: 'clinic',
+          linkedFacilityName: 'Mediczy Health Clinic',
+          workSchedule: { monday: '9:00-17:00', tuesday: '9:00-17:00', wednesday: '9:00-17:00', thursday: '9:00-17:00', friday: '9:00-17:00' },
+          permissions: ['view_appointments', 'manage_appointments', 'view_patients', 'send_messages'],
+          canAccessDoctorCalendar: true,
+          canManagePatients: true,
+          phoneNumber: '+91 9876543210'
+        },
+        'secretary@mediczy.com': {
+          id: 'asst_002',
+          email: 'secretary@mediczy.com',
+          password: 'SecretaryPass123',
+          firstName: 'Sarah',
+          lastName: 'Johnson',
+          roleTitle: 'Doctor Secretary',
+          linkedDoctorIds: ['doc_002', 'doc_003'],
+          primaryDoctorId: 'doc_002',
+          linkedFacilityId: 'facility_001',
+          linkedFacilityType: 'hospital',
+          linkedFacilityName: 'Mediczy Hospital',
+          workSchedule: { monday: '8:00-16:00', tuesday: '8:00-16:00', wednesday: '8:00-16:00', thursday: '8:00-16:00', friday: '8:00-16:00' },
+          permissions: ['view_appointments', 'manage_appointments', 'view_patients', 'manage_patients', 'send_messages', 'view_billing'],
+          canAccessDoctorCalendar: true,
+          canManagePatients: true,
+          phoneNumber: '+91 9876543211'
+        }
+      };
 
     // Check test credentials first
     const testAssistant = testAssistants[email];

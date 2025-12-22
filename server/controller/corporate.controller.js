@@ -441,79 +441,45 @@ export const corporateLogin = async (req, res) => {
     const bcrypt = (await import('bcrypt')).default;
     const jwt = (await import('jsonwebtoken')).default;
     
-    // Check if email is a corporate/HR domain
-    const corporateDomains = ['techcorp.com', 'healthplus.com', 'tcs.com', 'mediqzy.com'];
-    const emailDomain = email.split('@')[1];
-    const isCorporateEmail = corporateDomains.some(domain => emailDomain === domain);
-    
-    if (!isCorporateEmail) {
-      return res.status(401).json({ 
-        success: false, 
-        message: 'Invalid corporate credentials. Please use a corporate email address.' 
-      });
-    }
-    
-    // Query the lowercase 'users' table directly (where HR users are stored)
-    const { postgresSequelize } = await import('../db/postgres-sequelize.js');
-    const users = await postgresSequelize.query(
-      'SELECT * FROM users WHERE email = ? AND "isActive" = TRUE',
-      { 
-        replacements: [email],
-        type: postgresSequelize.QueryTypes.SELECT
+    // Require an active corporate record in the corporates table
+    const corporateRecord = await Corporate.findOne({
+      where: {
+        email: email.toLowerCase(),
+        status: 'active'
       }
-    );
-    
-    const corporateUser = users[0];
-    
-    if (!corporateUser) {
-      return res.status(401).json({ success: false, message: 'Invalid credentials' });
+    });
+
+    if (!corporateRecord) {
+      return res.status(401).json({ success: false, message: 'Invalid corporate credentials' });
     }
 
-    // ROLE GUARD: Only users with isCorporate flag can access corporate portal
-    if (!corporateUser.isCorporate) {
-      console.log('🔴 [Corporate Login] Access denied: User lacks corporate role');
-      return res.status(403).json({ 
-        success: false, 
-        message: 'Access denied. Corporate HR privileges required.',
-        hint: 'Please contact your administrator to request corporate access.'
-      });
-    }
-    
-    // Verify password
-    const validPassword = await bcrypt.compare(password, corporateUser.password);
-    
+    // Verify password on corporate record (hashed)
+    const validPassword = await bcrypt.compare(password, corporateRecord.password);
     if (!validPassword) {
-      return res.status(401).json({ success: false, message: 'Invalid credentials' });
+      return res.status(401).json({ success: false, message: 'Invalid corporate credentials' });
     }
 
     // Generate JWT token
     const token = jwt.sign(
       { 
-        userId: corporateUser.id, 
-        email: corporateUser.email,
+        userId: corporateRecord.id, 
+        email: corporateRecord.email,
         userType: 'corporate'
       },
       process.env.JWT_SECRET || 'your-secret-key',
       { expiresIn: '7d' }
     );
-    
-    // Try to find associated corporate record
-    const corporateRecord = await Corporate.findOne({
-      where: {
-        email: email
-      }
-    });
 
     return res.json({
       success: true,
       token,
       user: {
-        id: corporateUser.id,
-        email: corporateUser.email,
-        firstName: corporateUser.firstName,
-        lastName: corporateUser.lastName,
+        id: corporateRecord.id,
+        email: corporateRecord.email,
+        firstName: corporateRecord.contactPersonName || corporateRecord.name || corporateRecord.companyName,
+        lastName: '',
         role: 'corporate',
-        corporateId: corporateRecord?.id || null,
+        corporateId: corporateRecord.id,
       },
       corporate: corporateRecord,
     });

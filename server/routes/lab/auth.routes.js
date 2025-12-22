@@ -49,13 +49,60 @@ router.post('/login', async (req, res) => {
       });
     }
 
-    // Check if lab exists
-    if (email !== mockLab.email) {
-      return res.status(401).json({
-        success: false,
-        message: 'Invalid email or password'
+    // DEV-ONLY: Mock lab authentication (disabled in production)
+    if (process.env.NODE_ENV !== 'production' && email === mockLab.email) {
+      console.warn('⚠️ Using mock lab credentials (development only)');
+      
+      // Verify password
+      const isPasswordValid = await bcrypt.compare(password, mockLab.password);
+      if (!isPasswordValid) {
+        return res.status(401).json({
+          success: false,
+          message: 'Invalid email or password'
+        });
+      }
+
+      // Check if lab is active
+      if (!mockLab.isActive) {
+        return res.status(403).json({
+          success: false,
+          message: 'Account is inactive. Please contact support.'
+        });
+      }
+
+      // Generate JWT token for mock lab
+      const token = jwt.sign(
+        {
+          id: mockLab.id,
+          labId: mockLab.id,
+          email: mockLab.email,
+          name: mockLab.name,
+          userType: 'lab',
+          role: 'lab'
+        },
+        JWT_SECRET,
+        { expiresIn: '7d' }
+      );
+
+      return res.status(200).json({
+        success: true,
+        token,
+        lab: mockLab
       });
     }
+
+    // PRODUCTION: Query actual Lab database (implement when Lab model is ready)
+    // const Lab = (await import('../models/lab.model.js')).default;
+    // const lab = await Lab.findOne({ where: { email: email.toLowerCase() } });
+    // if (!lab) {
+    //   return res.status(401).json({ success: false, message: 'Invalid credentials' });
+    // }
+    // ... verify password, generate token
+    
+    return res.status(401).json({
+      success: false,
+      message: 'Invalid email or password'
+    });
 
     // Verify password
     const isPasswordValid = await bcrypt.compare(password, mockLab.password);

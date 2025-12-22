@@ -40,13 +40,59 @@ router.post('/login', async (req, res) => {
       });
     }
 
-    // Check if hospital exists
-    if (email !== mockHospital.email) {
-      return res.status(401).json({
-        success: false,
-        message: 'Invalid email or password'
+    // DEV-ONLY: Mock hospital authentication (disabled in production)
+    if (process.env.NODE_ENV !== 'production' && email === mockHospital.email) {
+      console.warn('⚠️ Using mock hospital credentials (development only)');
+      
+      // Verify password
+      const isPasswordValid = await bcrypt.compare(password, mockHospital.password);
+      if (!isPasswordValid) {
+        return res.status(401).json({
+          success: false,
+          message: 'Invalid email or password'
+        });
+      }
+
+      // Check if hospital is active
+      if (!mockHospital.isActive) {
+        return res.status(403).json({
+          success: false,
+          message: 'Account is inactive. Please contact support.'
+        });
+      }
+
+      // Generate JWT token for mock hospital
+      const token = jwt.sign(
+        {
+          hospitalId: mockHospital.id,
+          email: mockHospital.email,
+          name: mockHospital.name,
+          userType: 'hospital',
+          role: 'hospital'
+        },
+        JWT_SECRET,
+        { expiresIn: '7d' }
+      );
+
+      return res.status(200).json({
+        success: true,
+        token,
+        hospital: mockHospital
       });
     }
+
+    // PRODUCTION: Query actual Hospital database (implement when Hospital model is ready)
+    // const Hospital = (await import('../models/hospital.model.js')).default;
+    // const hospital = await Hospital.findOne({ where: { email: email.toLowerCase() } });
+    // if (!hospital) {
+    //   return res.status(401).json({ success: false, message: 'Invalid credentials' });
+    // }
+    // ... verify password, generate token
+    
+    return res.status(401).json({
+      success: false,
+      message: 'Invalid email or password'
+    });
 
     // Verify password
     const isPasswordValid = await bcrypt.compare(password, mockHospital.password);

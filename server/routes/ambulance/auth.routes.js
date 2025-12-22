@@ -37,13 +37,59 @@ router.post('/login', async (req, res) => {
       });
     }
 
-    // Check if ambulance exists
-    if (email !== mockAmbulance.email) {
-      return res.status(401).json({
-        success: false,
-        message: 'Invalid email or password'
+    // DEV-ONLY: Mock ambulance authentication (disabled in production)
+    if (process.env.NODE_ENV !== 'production' && email === mockAmbulance.email) {
+      console.warn('⚠️ Using mock ambulance credentials (development only)');
+      
+      // Verify password
+      const isPasswordValid = await bcrypt.compare(password, mockAmbulance.password);
+      if (!isPasswordValid) {
+        return res.status(401).json({
+          success: false,
+          message: 'Invalid email or password'
+        });
+      }
+
+      // Check if ambulance is active
+      if (!mockAmbulance.isActive) {
+        return res.status(403).json({
+          success: false,
+          message: 'Account is inactive. Please contact support.'
+        });
+      }
+
+      // Generate JWT token for mock ambulance
+      const token = jwt.sign(
+        {
+          ambulanceId: mockAmbulance.id,
+          email: mockAmbulance.email,
+          name: mockAmbulance.name,
+          userType: 'ambulance',
+          role: 'ambulance'
+        },
+        JWT_SECRET,
+        { expiresIn: '7d' }
+      );
+
+      return res.status(200).json({
+        success: true,
+        token,
+        ambulance: mockAmbulance
       });
     }
+
+    // PRODUCTION: Query actual Ambulance database (implement when Ambulance model is ready)
+    // const Ambulance = (await import('../models/ambulance.model.js')).default;
+    // const ambulance = await Ambulance.findOne({ where: { email: email.toLowerCase() } });
+    // if (!ambulance) {
+    //   return res.status(401).json({ success: false, message: 'Invalid credentials' });
+    // }
+    // ... verify password, generate token
+    
+    return res.status(401).json({
+      success: false,
+      message: 'Invalid email or password'
+    });
 
     // Verify password
     const isPasswordValid = await bcrypt.compare(password, mockAmbulance.password);

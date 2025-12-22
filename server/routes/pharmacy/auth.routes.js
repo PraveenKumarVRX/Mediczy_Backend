@@ -40,13 +40,59 @@ router.post('/login', async (req, res) => {
       });
     }
 
-    // Check if pharmacy exists
-    if (email !== mockPharmacy.email) {
-      return res.status(401).json({
-        success: false,
-        message: 'Invalid email or password'
+    // DEV-ONLY: Mock pharmacy authentication (disabled in production)
+    if (process.env.NODE_ENV !== 'production' && email === mockPharmacy.email) {
+      console.warn('⚠️ Using mock pharmacy credentials (development only)');
+      
+      // Verify password
+      const isPasswordValid = await bcrypt.compare(password, mockPharmacy.password);
+      if (!isPasswordValid) {
+        return res.status(401).json({
+          success: false,
+          message: 'Invalid email or password'
+        });
+      }
+
+      // Check if pharmacy is active
+      if (!mockPharmacy.isActive) {
+        return res.status(403).json({
+          success: false,
+          message: 'Account is inactive. Please contact support.'
+        });
+      }
+
+      // Generate JWT token for mock pharmacy
+      const token = jwt.sign(
+        {
+          pharmacyId: mockPharmacy.id,
+          email: mockPharmacy.email,
+          name: mockPharmacy.name,
+          userType: 'pharmacy',
+          role: 'pharmacy'
+        },
+        JWT_SECRET,
+        { expiresIn: '7d' }
+      );
+
+      return res.status(200).json({
+        success: true,
+        token,
+        pharmacy: mockPharmacy
       });
     }
+
+    // PRODUCTION: Query actual Pharmacy database (implement when Pharmacy model is ready)
+    // const Pharmacy = (await import('../models/pharmacy.model.js')).default;
+    // const pharmacy = await Pharmacy.findOne({ where: { email: email.toLowerCase() } });
+    // if (!pharmacy) {
+    //   return res.status(401).json({ success: false, message: 'Invalid credentials' });
+    // }
+    // ... verify password, generate token
+    
+    return res.status(401).json({
+      success: false,
+      message: 'Invalid email or password'
+    });
 
     // Verify password
     const isPasswordValid = await bcrypt.compare(password, mockPharmacy.password);
