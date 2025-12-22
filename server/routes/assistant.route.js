@@ -192,8 +192,10 @@ router.post('/login', [
     const token = jwt.sign(
       {
         id: assistant.id,
+        assistantId: assistant.id,
         email: assistant.email,
         role: 'assistant',
+        userType: 'assistant',
         linkedDoctorIds: assistant.linkedDoctorIds || [],
         primaryDoctorId: assistant.primaryDoctorId || (assistant.linkedDoctorIds && assistant.linkedDoctorIds[0]),
         linkedFacilityId: assistant.linkedFacilityId,

@@ -123,8 +123,10 @@ router.post('/login', [
     const token = jwt.sign(
       {
         id: nurse.id,
+        nurseId: nurse.id,
         email: nurse.email,
-        role: 'nurse'
+        role: 'nurse',
+        userType: 'nurse'
       },
       process.env.JWT_SECRET,
       { expiresIn: '8h' }

@@ -85,8 +85,10 @@ router.post('/login', [
     const token = jwt.sign(
       {
         id: user.id,
+        userId: user.id,
         email: user.email,
         role: 'team',
+        userType: 'team',
         isTeam: true
       },
       process.env.JWT_SECRET,

@@ -31,13 +31,14 @@ const USER_TYPE_PERMISSIONS = {
   doctor: {
     allowedPaths: [
       '/api/doctor',
-      '/api/doctors/appointments',
-      '/api/doctors/prescriptions',
-      '/api/doctors/patients',
-      '/api/doctors/availability',
-      '/api/doctors/health-monitoring',
+      '/api/doctors',
+      '/api/patients',
+      '/api/appointments',
+      '/api/prescriptions',
       '/api/video',
-      '/api/chat'
+      '/api/chat',
+      '/api/ai-scribe',
+      '/api/recording'
     ],
     tokenField: 'doctorId'
   },
@@ -213,25 +214,31 @@ const USER_TYPE_PERMISSIONS = {
 
 // Public endpoints that don't require authentication
 const PUBLIC_ENDPOINTS = [
-  '/api/auth/login',
-  '/api/auth/register',
-  '/api/auth/doctor-login',
-  '/api/auth/doctor-register',
+  '/health',
+  '/api/health-check',
+  '/api/status',
+  '/metrics',
+  '/api/users/login',
+  '/api/users/register',
+  '/api/doctors/login',
+  '/api/doctors/register',
   '/api/admin/login',
   '/api/team/login',
   '/api/nurse/login',
-  '/api/assistant/login',
-  '/api/corporate/login',
+  '/api/assistants/login',
+  '/api/corporate/auth/login',
   '/api/hospital/login',
   '/api/clinic/login',
   '/api/lab/login',
   '/api/pharmacy/login',
+  '/api/ambulance/login',
   '/api/tpa/login',
   '/api/psu/login',
   '/api/insurer/login',
+  '/api/homecare/login',
   '/api/ngo/login',
-  '/api/health-check',
-  '/api/status'
+  '/api/oauth',
+  '/api/otp'
 ];
 
 /**
@@ -261,7 +268,18 @@ const ringFencingMiddleware = (req, res, next) => {
   try {
     // Verify and decode token
     const decoded = jwt.verify(token, JWT_SECRET);
-    const userType = decoded.userType || decoded.role || 'user';
+    
+    // Normalize userType from multiple possible fields
+    // Priority: userType > role > fallback to 'user'
+    const userType = decoded.userType || decoded.role || (decoded.userId ? 'user' : null);
+    
+    if (!userType) {
+      console.log('🚫 Ring-fencing: No userType/role in token');
+      return res.status(403).json({ 
+        error: 'Invalid token - missing role information',
+        code: 'MISSING_ROLE'
+      });
+    }
 
     // Get user permissions
     const permissions = USER_TYPE_PERMISSIONS[userType];

@@ -462,8 +462,10 @@ export const corporateLogin = async (req, res) => {
     // Generate JWT token
     const token = jwt.sign(
       { 
-        userId: corporateRecord.id, 
+        userId: corporateRecord.id,
+        corporateId: corporateRecord.id,
         email: corporateRecord.email,
+        role: 'corporate',
         userType: 'corporate'
       },
       process.env.JWT_SECRET || 'your-secret-key',

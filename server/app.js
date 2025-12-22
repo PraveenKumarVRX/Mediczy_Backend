@@ -387,9 +387,8 @@ app.use(activityLogger({
 app.use(sessionTimeout);
 
 // 10. Ring-Fencing Middleware (Prevent cross-user privilege escalation)
-// Temporarily disabled for deployment - enable after testing
-// import { ringFencingMiddleware } from './middleware/ringFencing.js';
-// app.use(ringFencingMiddleware);
+import { ringFencingMiddleware } from './middleware/ringFencing.js';
+app.use(ringFencingMiddleware);
 
 // Error handling middleware (must be last)
 app.use(errorLogger);

@@ -83,9 +83,11 @@ router.post('/register', [
     // Generate JWT token
     const token = jwt.sign(
       { 
-        id: doctor.id, 
+        id: doctor.id,
+        doctorId: doctor.id,
         email: doctor.email, 
-        role: 'doctor' 
+        role: 'doctor',
+        userType: 'doctor'
       },
       process.env.JWT_SECRET,
       { expiresIn: '7d' }

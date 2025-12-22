@@ -203,6 +203,19 @@ export async function signInUser(req, res) {
 
     // Generate authentication token including role/corporateId
     const token = generateAuthTokenForUser(user);
+    
+    // Enhance token with userType for ring-fencing
+    const enhancedToken = jwt.sign(
+      {
+        userId: user.id,
+        email: user.email,
+        role: user.role || 'user',
+        userType: 'user',
+        isAdmin: user.isAdmin || false
+      },
+      process.env.JWT_SECRET || 'fallback_secret',
+      { expiresIn: '24h' }
+    );
 
     // Audit successful login
     await auditLoginAttempt(req, user.id, email, true);
