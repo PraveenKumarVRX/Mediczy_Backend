@@ -66,9 +66,10 @@ router.post('/login', [
   try {
     const { email, password } = req.body;
 
-    // Test/Demo assistant credentials for development
-    const testAssistants = {
-      'assistant@mediczy.com': {
+    // DEV-ONLY: Test/Demo assistant credentials (disabled in production)
+    if (process.env.NODE_ENV !== 'production') {
+      const testAssistants = {
+        'assistant@mediczy.com': {
         id: 'asst_001',
         email: 'assistant@mediczy.com',
         password: 'AssistantPass123',
@@ -149,6 +150,7 @@ router.post('/login', [
         }
       });
     }
+    } // End NODE_ENV !== 'production' check
 
     // Check database for assistant
     const assistant = await Assistant.findOne({ 

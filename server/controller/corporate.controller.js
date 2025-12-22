@@ -455,11 +455,11 @@ export const corporateLogin = async (req, res) => {
     
     // Query the lowercase 'users' table directly (where HR users are stored)
     const { postgresSequelize } = await import('../db/postgres-sequelize.js');
-    const users = await sequelize.query(
-      'SELECT * FROM users WHERE email = ? AND isActive = 1',
+    const users = await postgresSequelize.query(
+      'SELECT * FROM users WHERE email = ? AND "isActive" = TRUE',
       { 
         replacements: [email],
-        type: sequelize.QueryTypes.SELECT
+        type: postgresSequelize.QueryTypes.SELECT
       }
     );
     
@@ -467,6 +467,16 @@ export const corporateLogin = async (req, res) => {
     
     if (!corporateUser) {
       return res.status(401).json({ success: false, message: 'Invalid credentials' });
+    }
+
+    // ROLE GUARD: Only users with isCorporate flag can access corporate portal
+    if (!corporateUser.isCorporate) {
+      console.log('🔴 [Corporate Login] Access denied: User lacks corporate role');
+      return res.status(403).json({ 
+        success: false, 
+        message: 'Access denied. Corporate HR privileges required.',
+        hint: 'Please contact your administrator to request corporate access.'
+      });
     }
     
     // Verify password

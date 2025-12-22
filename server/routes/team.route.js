@@ -41,6 +41,16 @@ router.post('/login', [
       });
     }
 
+    // ROLE GUARD: Only users with isTeam flag or isAdmin can login to team portal
+    if (!user.isTeam && !user.isAdmin) {
+      console.log('🔴 [Team Login] Access denied: User lacks team permissions');
+      return res.status(403).json({ 
+        success: false,
+        message: 'Access denied. Team member privileges required.',
+        hint: 'Please contact an administrator to request team access.'
+      });
+    }
+
     // Verify password
     const isPasswordValid = await user.comparePassword(password);
     if (!isPasswordValid) {

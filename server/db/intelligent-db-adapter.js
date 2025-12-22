@@ -512,8 +512,9 @@ class IntelligentDatabaseAdapter {
     return {
       findOne: async ({ where }) => {
         try {
-          // Simple test user for authentication
-          if (where.email === 'user@mediczy.com') {
+          // DEV-ONLY: Hardcoded test user (disabled in production)
+          if (process.env.NODE_ENV !== 'production' && where.email === 'user@mediczy.com') {
+            console.warn('⚠️ Using hardcoded test user (development only)');
             return {
               id: 'user_001',
               firstName: 'Jane',
@@ -739,8 +740,8 @@ class IntelligentDatabaseAdapter {
             }
           }
           
-          // Fallback test doctor for testing
-          if (where.email === 'doctor@mediczy.com') {
+          // Fallback test doctor for testing (disabled in production)
+          if (process.env.NODE_ENV !== 'production' && where.email === 'doctor@mediczy.com') {
             return {
               id: 'dr_test_001',
               prefix: 'Dr',
@@ -813,7 +814,7 @@ class IntelligentDatabaseAdapter {
           }
           
           // Fallback: Simple test doctor lookup by ID (for backwards compatibility)
-          if (id === 'dr_test_001') {
+          if (process.env.NODE_ENV !== 'production' && id === 'dr_test_001') {
             const doctor = {
               id: 'dr_test_001',
               prefix: 'Dr',

@@ -5,6 +5,9 @@ import { auditLoginAttempt } from "../middleware/audit.middleware.js";
 import Consent from "../models/consent.model.intelligent.js";
 import intelligentDb from "../utils/intelligentDbClient.js";
 import { col, fn, where as sequelizeWhere } from "sequelize";
+import Doctor from "../models/doctor.model.intelligent.js";
+import Nurse from "../models/nurse.model.intelligent.js";
+import Assistant from "../models/assistant.model.intelligent.js";
 
 export async function registerUser(req, res) {
   // Validate request
@@ -152,19 +155,38 @@ export async function signInUser(req, res) {
       return res.status(401).json({ message: "Invalid email or password" }); // Unauthorized
     }
 
-    // ROLE GUARD: Block doctor/staff roles from user login endpoint
-    // Doctors/staff should use their dedicated login endpoints
-    const blockedRoles = ['doctor', 'nurse', 'assistant', 'lab_admin', 'pharmacy_admin', 
-                          'hospital_admin', 'clinic_admin', 'homecare_admin', 'ambulance_admin'];
-    
-    if (user.role && blockedRoles.includes(user.role.toLowerCase())) {
-      await auditLoginAttempt(req, user.id, email, false, `Invalid login endpoint for role: ${user.role}`);
+    // ROLE GUARD: Block staff from using user login endpoint
+    if (user.isAdmin) {
+      await auditLoginAttempt(req, user.id, email, false, 'Admin attempted user login');
       return res.status(403).json({ 
-        message: "Invalid login endpoint. Please use the appropriate login page for your role.",
-        hint: user.role === 'doctor' ? 'Use /api/doctors/login for doctor accounts' : 
-              user.role === 'nurse' ? 'Use /api/nurses/login for nurse accounts' :
-              `Use the ${user.role} login endpoint`
+        message: "Please use the admin login portal" 
       });
+    }
+
+    // Cross-role guard: prevent doctor/nurse/assistant accounts from authenticating via user login
+    const doctorRecord = await Doctor.findOne({
+      where: sequelizeWhere(fn("lower", col("email")), email),
+      attributes: ["id"]
+    });
+    if (doctorRecord) {
+      await auditLoginAttempt(req, user.id, email, false, 'Doctor attempted user login');
+      return res.status(403).json({ message: "Please use the doctor login portal" });
+    }
+    const nurseRecord = await Nurse.findOne({
+      where: sequelizeWhere(fn("lower", col("email")), email),
+      attributes: ["id"]
+    });
+    if (nurseRecord) {
+      await auditLoginAttempt(req, user.id, email, false, 'Nurse attempted user login');
+      return res.status(403).json({ message: "Please use the nurse login portal" });
+    }
+    const assistantRecord = await Assistant.findOne({
+      where: sequelizeWhere(fn("lower", col("email")), email),
+      attributes: ["id"]
+    });
+    if (assistantRecord) {
+      await auditLoginAttempt(req, user.id, email, false, 'Assistant attempted user login');
+      return res.status(403).json({ message: "Please use the assistant login portal" });
     }
 
     // Compare provided password with stored hashed password

@@ -37,15 +37,17 @@ echo "Creating users..."
 
 # Create test users
 sudo mysql mediczy <<EOF
--- Users table (ONLY actual patients/users - NO doctors/staff)
-INSERT IGNORE INTO users (email, password, firstName, lastName, phoneNumber, dateOfBirth, gender, isEmailVerified, isAdmin, createdAt, updatedAt) 
+-- Users table (ONLY actual patients/users - NO doctors/staff/admin/team)
+-- Admin and team members should have isAdmin or isTeam flags, not separate accounts
+INSERT IGNORE INTO users (email, password, firstName, lastName, phoneNumber, dateOfBirth, gender, isEmailVerified, isAdmin, isTeam, isCorporate, createdAt, updatedAt) 
 VALUES 
-  ('user@mediczy.com', '$USER_HASH', 'Test', 'User', '9999999999', '1990-01-01', 'Male', 1, 0, NOW(), NOW()),
-  ('admin@mediczy.com', '$ADMIN_HASH', 'Admin', 'User', '9999999999', '1990-01-01', 'Male', 1, 1, NOW(), NOW()),
-  ('team@mediczy.com', '$TEAM_HASH', 'Team', 'Member', '9999999999', '1990-01-01', 'Male', 1, 1, NOW(), NOW()),
-  ('patient@test.com', '$TEST_HASH', 'John', 'Patient', '9999999998', '1990-01-01', 'Male', 1, 0, NOW(), NOW()),
-  ('user@test.com', '$TEST_HASH', 'Sarah', 'User', '9999999997', '1990-01-01', 'Female', 1, 0, NOW(), NOW()),
-  ('wellness@test.com', '$TEST_HASH', 'Mike', 'Wellness', '9999999996', '1990-01-01', 'Male', 1, 0, NOW(), NOW());
+  ('user@mediczy.com', '$USER_HASH', 'Test', 'User', '9999999999', '1990-01-01', 'Male', 1, 0, 0, 0, NOW(), NOW()),
+  ('admin@mediczy.com', '$ADMIN_HASH', 'Admin', 'User', '9999999998', '1990-01-01', 'Male', 1, 1, 1, 0, NOW(), NOW()),
+  ('team@mediczy.com', '$TEAM_HASH', 'Team', 'Member', '9999999997', '1990-01-01', 'Male', 1, 0, 1, 0, NOW(), NOW()),
+  ('hr@mediqzy.com', '$TEAM_HASH', 'Corporate', 'HR', '9999999996', '1990-01-01', 'Female', 1, 0, 0, 1, NOW(), NOW()),
+  ('patient@test.com', '$TEST_HASH', 'John', 'Patient', '9999999995', '1990-01-01', 'Male', 1, 0, 0, 0, NOW(), NOW()),
+  ('user@test.com', '$TEST_HASH', 'Sarah', 'User', '9999999994', '1990-01-01', 'Female', 1, 0, 0, 0, NOW(), NOW()),
+  ('wellness@test.com', '$TEST_HASH', 'Mike', 'Wellness', '9999999993', '1990-01-01', 'Male', 1, 0, 0, 0, NOW(), NOW());
 
 -- Doctors table (doctors go HERE, not in users table)
 INSERT IGNORE INTO doctors (email, password, firstName, lastName, specialization, qualification, experience, registrationNumber, phoneNumber, isVerified, createdAt, updatedAt) 
