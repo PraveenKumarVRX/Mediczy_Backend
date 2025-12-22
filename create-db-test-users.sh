@@ -32,9 +32,12 @@ sleep 1
 
 echo "Creating users..."
 
+# NOTE: Doctors, nurses, and staff should ONLY exist in their dedicated tables
+# DO NOT insert them into the users table to prevent login endpoint confusion
+
 # Create test users
 sudo mysql mediczy <<EOF
--- Users table
+-- Users table (ONLY actual patients/users - NO doctors/staff)
 INSERT IGNORE INTO users (email, password, firstName, lastName, phoneNumber, dateOfBirth, gender, isEmailVerified, isAdmin, createdAt, updatedAt) 
 VALUES 
   ('user@mediczy.com', '$USER_HASH', 'Test', 'User', '9999999999', '1990-01-01', 'Male', 1, 0, NOW(), NOW()),
@@ -44,7 +47,7 @@ VALUES
   ('user@test.com', '$TEST_HASH', 'Sarah', 'User', '9999999997', '1990-01-01', 'Female', 1, 0, NOW(), NOW()),
   ('wellness@test.com', '$TEST_HASH', 'Mike', 'Wellness', '9999999996', '1990-01-01', 'Male', 1, 0, NOW(), NOW());
 
--- Doctors table
+-- Doctors table (doctors go HERE, not in users table)
 INSERT IGNORE INTO doctors (email, password, firstName, lastName, specialization, qualification, experience, registrationNumber, phoneNumber, isVerified, createdAt, updatedAt) 
 VALUES 
   ('doctor@mediczy.com', '$DOCTOR_HASH', 'Test', 'Doctor', 'General Practitioner', 'MBBS', 5, 'REG123456', '8888888888', 1, NOW(), NOW()),
@@ -52,12 +55,12 @@ VALUES
   ('neuro@test.com', '$TEST_HASH', 'Dr. Priya', 'Patel', 'Neurologist', 'MBBS, MD', 8, 'REG222222', '8888888886', 1, NOW(), NOW()),
   ('gp@test.com', '$TEST_HASH', 'Dr. Amit', 'Kumar', 'General Practitioner', 'MBBS', 7, 'REG333333', '8888888885', 1, NOW(), NOW());
 
--- Nurses table
+-- Nurses table (nurses go HERE, not in users table)
 INSERT IGNORE INTO nurses (email, password, firstName, lastName, phoneNumber, licenseNumber, department, createdAt, updatedAt) 
 VALUES 
   ('nurse@mediczy.com', '$NURSE_HASH', 'Test', 'Nurse', '7777777777', 'NURSE12345', 'General', NOW(), NOW());
 
--- Doctor assistants table
+-- Doctor assistants table (assistants go HERE, not in users table)
 INSERT IGNORE INTO doctor_assistants (email, password, firstName, lastName, phoneNumber, qualification, experience, createdAt, updatedAt) 
 VALUES 
   ('assistant@mediczy.com', '$ASSISTANT_HASH', 'Test', 'Assistant', '6666666666', 'Diploma', 2, NOW(), NOW());
@@ -68,6 +71,7 @@ VALUES
   ('Test Corporate Ltd', 'Test Contact', 'corporate@mediczy.com', '5555555555', 'Healthcare', 500, NOW(), NOW());
 
 SELECT 'Users created successfully!' as status;
+SELECT 'IMPORTANT: Doctors/nurses/staff are in their dedicated tables, NOT in users table' as note;
 EOF
 
 echo "✅ Test users created in database"

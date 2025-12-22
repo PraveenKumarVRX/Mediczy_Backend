@@ -152,6 +152,21 @@ export async function signInUser(req, res) {
       return res.status(401).json({ message: "Invalid email or password" }); // Unauthorized
     }
 
+    // ROLE GUARD: Block doctor/staff roles from user login endpoint
+    // Doctors/staff should use their dedicated login endpoints
+    const blockedRoles = ['doctor', 'nurse', 'assistant', 'lab_admin', 'pharmacy_admin', 
+                          'hospital_admin', 'clinic_admin', 'homecare_admin', 'ambulance_admin'];
+    
+    if (user.role && blockedRoles.includes(user.role.toLowerCase())) {
+      await auditLoginAttempt(req, user.id, email, false, `Invalid login endpoint for role: ${user.role}`);
+      return res.status(403).json({ 
+        message: "Invalid login endpoint. Please use the appropriate login page for your role.",
+        hint: user.role === 'doctor' ? 'Use /api/doctors/login for doctor accounts' : 
+              user.role === 'nurse' ? 'Use /api/nurses/login for nurse accounts' :
+              `Use the ${user.role} login endpoint`
+      });
+    }
+
     // Compare provided password with stored hashed password
     const isPasswordValid = await user.comparePassword(password);
     if (!isPasswordValid) {
