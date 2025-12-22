@@ -1,0 +1,202 @@
+{
+	"info": {
+		"_postman_id": "4c34daca-c204-4bec-9d7d-063fe9cc58ca",
+		"name": "Health Raksha w2w",
+		"schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json",
+		"_exporter_id": "19690377"
+	},
+	"item": [
+		{
+			"name": "Get Active Data",
+			"request": {
+				"method": "POST",
+				"header": [],
+				"body": {
+					"mode": "raw",
+					"raw": "{\r\n    \"USERNAME\": \"WAY2WEALTH\",\r\n    \"PASSWORD\": \"Sept@2023\",\r\n    \"POLICY_NUMBER\": \"191300/48/2023/999\"\r\n}",
+					"options": {
+						"raw": {
+							"language": "json"
+						}
+					}
+				},
+				"url": {
+					"raw": "http://ws.rakshatpa.com:82/RakshaWST/RakshaServices/ActiveDataService",
+					"protocol": "http",
+					"host": [
+						"ws",
+						"rakshatpa",
+						"com"
+					],
+					"port": "82",
+					"path": [
+						"RakshaWST",
+						"RakshaServices",
+						"ActiveDataService"
+					]
+				}
+			},
+			"response": []
+		},
+		{
+			"name": "EcardDownloadService",
+			"request": {
+				"method": "POST",
+				"header": [],
+				"body": {
+					"mode": "raw",
+					"raw": "{\r\n    \"USERNAME\": \"WAY2WEALTH\",\r\n    \"PASSWORD\": \"Sept@2023\",\r\n    \"POLICY_NUMBER\": \"191300/48/2023/999\",\r\n    \"EMPLOYEE_NUMBER\": \"1076\"\r\n}",
+					"options": {
+						"raw": {
+							"language": "json"
+						}
+					}
+				},
+				"url": {
+					"raw": "http://ws.rakshatpa.com:82/RakshaWST/RakshaServices/EcardDownloadService",
+					"protocol": "http",
+					"host": [
+						"ws",
+						"rakshatpa",
+						"com"
+					],
+					"port": "82",
+					"path": [
+						"RakshaWST",
+						"RakshaServices",
+						"EcardDownloadService"
+					]
+				}
+			},
+			"response": []
+		},
+		{
+			"name": "ClaimDetailService",
+			"request": {
+				"method": "POST",
+				"header": [],
+				"body": {
+					"mode": "raw",
+					"raw": "{\r\n    \"USERNAME\": \"WAY2WEALTH\",\r\n    \"PASSWORD\": \"Sept@2023\",\r\n    \"POLICY_NUMBER\": \"191300/48/2023/999\",\r\n    \"START_INDEX\": \"1\",\r\n    \"RANGE\": \"9999\"\r\n}",
+					"options": {
+						"raw": {
+							"language": "json"
+						}
+					}
+				},
+				"url": {
+					"raw": "http://ws.rakshatpa.com:82/RakshaWST/RakshaServices/ClaimDetailService",
+					"protocol": "http",
+					"host": [
+						"ws",
+						"rakshatpa",
+						"com"
+					],
+					"port": "82",
+					"path": [
+						"RakshaWST",
+						"RakshaServices",
+						"ClaimDetailService"
+					]
+				}
+			},
+			"response": []
+		},
+		{
+			"name": "ClaimStatus Service",
+			"request": {
+				"method": "POST",
+				"header": [],
+				"body": {
+					"mode": "raw",
+					"raw": "{\r\n    \"USERNAME\": \"WAY2WEALTH\",\r\n    \"PASSWORD\": \"Sept@2023\",\r\n    \"ClaimIntimationID\": \"\"\r\n}",
+					"options": {
+						"raw": {
+							"language": "json"
+						}
+					}
+				},
+				"url": {
+					"raw": "http://ws.rakshatpa.com:82/RakshaWST/RakshaServices/ClaimStatusService",
+					"protocol": "http",
+					"host": [
+						"ws",
+						"rakshatpa",
+						"com"
+					],
+					"port": "82",
+					"path": [
+						"RakshaWST",
+						"RakshaServices",
+						"ClaimStatusService"
+					]
+				}
+			},
+			"response": []
+		},
+		{
+			"name": "ClaimIntimationService",
+			"request": {
+				"method": "POST",
+				"header": [],
+				"body": {
+					"mode": "raw",
+					"raw": "{\r\n    \"user\": \"TEST\",\r\n    \"password\": \"welcome$123\",\r\n    \"claimtype\": \"REIMBURSEMENT\",\r\n    \"hospitalName\": \"ABHAYA HOSPITAL\",\r\n    \"DOA\": \"23-JUN-2022\",\r\n    \"DOD\": \"24-JUN-2022\",\r\n    \"Diagnosis\": \"TEST\",\r\n    \"amount\": \"50000\",\r\n    \"PolicyNumber\": \"124200/48/08/17524\",\r\n    \"memberName\": \"Mavinkurve Ashwini\",\r\n    \"city\": \"ganjam\"\r\n}",
+					"options": {
+						"raw": {
+							"language": "json"
+						}
+					}
+				},
+				"url": {
+					"raw": "http://ws.rakshatpa.com:82/RakshaWST/RakshaServices/ClaimIntimationService - nontest",
+					"protocol": "http",
+					"host": [
+						"ws",
+						"rakshatpa",
+						"com"
+					],
+					"port": "82",
+					"path": [
+						"RakshaWST",
+						"RakshaServices",
+						"ClaimIntimationService - nontest"
+					]
+				}
+			},
+			"response": []
+		},
+		{
+			"name": "NetworkHospitalListService",
+			"request": {
+				"method": "POST",
+				"header": [],
+				"body": {
+					"mode": "raw",
+					"raw": "{\r\n    \"USERNAME\": \"WAY2WEALTH\",\r\n    \"PASSWORD\": \"Sept@2023\",\r\n    \"INSURER_ID\": \"I2\"\r\n}",
+					"options": {
+						"raw": {
+							"language": "json"
+						}
+					}
+				},
+				"url": {
+					"raw": "http://ws.rakshatpa.com:82/RakshaWST/RakshaServices/NetworkHospitalListService",
+					"protocol": "http",
+					"host": [
+						"ws",
+						"rakshatpa",
+						"com"
+					],
+					"port": "82",
+					"path": [
+						"RakshaWST",
+						"RakshaServices",
+						"NetworkHospitalListService"
+					]
+				}
+			},
+			"response": []
+		}
+	]
+}

@@ -43,6 +43,7 @@ import {
   AlertTriangle,
   Loader2
 } from 'lucide-react';
+import api from '../../utils/api';
 
 interface PaymentGateway {
   id: string;
@@ -245,6 +246,20 @@ const PaymentManagement = () => {
   const [clientTypeFilter, setClientTypeFilter] = useState<'all' | PaymentTransaction['clientType']>('all');
   const [viewingTransaction, setViewingTransaction] = useState<PaymentTransaction | null>(null);
   const [editingGateway, setEditingGateway] = useState<PaymentGateway | null>(null);
+  const [gatewayDialogOpen, setGatewayDialogOpen] = useState(false);
+  const [gatewayForm, setGatewayForm] = useState<Partial<PaymentGateway>>({
+    name: '',
+    provider: '',
+    type: 'credit_card',
+    isEnabled: true,
+    processingFee: 0,
+    currency: 'INR',
+    merchantId: '',
+    apiKey: '',
+    webhookUrl: '',
+    testMode: true,
+    countries: ['IN']
+  });
   const [loading, setLoading] = useState(false);
   const [statsData, setStatsData] = useState<PaymentStats | null>(null);
   const { toast } = useToast();
@@ -274,6 +289,92 @@ const PaymentManagement = () => {
       toast({
         title: 'Error',
         description: error.message || 'Failed to fetch transactions',
+        variant: 'destructive'
+      });
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const openCreateGateway = () => {
+    setEditingGateway(null);
+    setGatewayForm({
+      name: '',
+      provider: '',
+      type: 'credit_card',
+      isEnabled: true,
+      processingFee: 0,
+      currency: 'INR',
+      merchantId: '',
+      apiKey: '',
+      webhookUrl: '',
+      testMode: true,
+      countries: ['IN']
+    });
+    setGatewayDialogOpen(true);
+    setActiveTab('gateways');
+  };
+
+  const openEditGateway = (gateway: PaymentGateway) => {
+    setEditingGateway(gateway);
+    setGatewayForm({ ...gateway });
+    setGatewayDialogOpen(true);
+    setActiveTab('gateways');
+  };
+
+  const saveGateway = async () => {
+    const token = getToken();
+    if (!token) {
+      toast({ title: 'Not authenticated', description: 'Please login again.', variant: 'destructive' });
+      return;
+    }
+
+    const payload = {
+      name: (gatewayForm.name || '').trim(),
+      provider: (gatewayForm.provider || '').trim(),
+      type: gatewayForm.type,
+      isEnabled: !!gatewayForm.isEnabled,
+      processingFee: Number(gatewayForm.processingFee || 0),
+      currency: (gatewayForm.currency || 'INR').trim(),
+      merchantId: (gatewayForm.merchantId || '').trim() || undefined,
+      apiKey: (gatewayForm.apiKey || '').trim() || undefined,
+      webhookUrl: (gatewayForm.webhookUrl || '').trim() || undefined,
+      testMode: !!gatewayForm.testMode,
+      dailyLimit: gatewayForm.dailyLimit ? Number(gatewayForm.dailyLimit) : undefined,
+      monthlyLimit: gatewayForm.monthlyLimit ? Number(gatewayForm.monthlyLimit) : undefined,
+      countries: Array.isArray(gatewayForm.countries) ? gatewayForm.countries : ['IN']
+    };
+
+    if (!payload.name || !payload.provider || !payload.type) {
+      toast({ title: 'Missing fields', description: 'Name, Provider, and Type are required.', variant: 'destructive' });
+      return;
+    }
+
+    try {
+      setLoading(true);
+
+      if (editingGateway?.id) {
+        await updateGateway(editingGateway.id, payload, token);
+        setGateways(prev => prev.map(g => (g.id === editingGateway.id ? ({ ...(g as any), ...payload } as any) : g)));
+        toast({ title: 'Gateway updated', description: 'Gateway configuration saved.' });
+      } else {
+        const { data } = await api.post(
+          '/payments/gateways',
+          payload,
+          { headers: { Authorization: `Bearer ${token}` } }
+        );
+        const created = data?.gateway;
+        if (created) {
+          setGateways(prev => [created, ...prev]);
+        }
+        toast({ title: 'Gateway created', description: 'New gateway added successfully.' });
+      }
+
+      setGatewayDialogOpen(false);
+    } catch (err: any) {
+      toast({
+        title: 'Failed to save gateway',
+        description: err?.response?.data?.message || err?.message || 'Please try again.',
         variant: 'destructive'
       });
     } finally {
@@ -403,11 +504,113 @@ const PaymentManagement = () => {
             </h2>
             <p className="text-muted-foreground">Manage payment gateways, transactions and processing</p>
           </div>
-          <Button className="bg-green-600 hover:bg-green-700">
+          <Button className="bg-green-600 hover:bg-green-700" onClick={openCreateGateway}>
             <Plus className="mr-2 h-4 w-4" />
             Add Gateway
           </Button>
         </div>
+
+        <Dialog open={gatewayDialogOpen} onOpenChange={setGatewayDialogOpen}>
+          <DialogContent className="sm:max-w-[560px]">
+            <DialogHeader>
+              <DialogTitle>{editingGateway ? 'Configure Gateway' : 'Add Gateway'}</DialogTitle>
+            </DialogHeader>
+            <div className="space-y-4">
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                <div className="space-y-2">
+                  <Label htmlFor="gwName">Name *</Label>
+                  <Input
+                    id="gwName"
+                    value={gatewayForm.name || ''}
+                    onChange={(e) => setGatewayForm(prev => ({ ...prev, name: e.target.value }))}
+                    placeholder="e.g., Razorpay"
+                  />
+                </div>
+                <div className="space-y-2">
+                  <Label htmlFor="gwProvider">Provider *</Label>
+                  <Input
+                    id="gwProvider"
+                    value={gatewayForm.provider || ''}
+                    onChange={(e) => setGatewayForm(prev => ({ ...prev, provider: e.target.value }))}
+                    placeholder="e.g., Razorpay"
+                  />
+                </div>
+                <div className="space-y-2">
+                  <Label>Type *</Label>
+                  <Select
+                    value={(gatewayForm.type as any) || 'credit_card'}
+                    onValueChange={(value) => setGatewayForm(prev => ({ ...prev, type: value as any }))}
+                  >
+                    <SelectTrigger>
+                      <SelectValue placeholder="Select type" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="credit_card">Credit Card</SelectItem>
+                      <SelectItem value="upi">UPI</SelectItem>
+                      <SelectItem value="net_banking">Net Banking</SelectItem>
+                      <SelectItem value="wallet">Wallet</SelectItem>
+                      <SelectItem value="crypto">Crypto</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
+                <div className="space-y-2">
+                  <Label htmlFor="gwFee">Processing Fee (%)</Label>
+                  <Input
+                    id="gwFee"
+                    type="number"
+                    value={(gatewayForm.processingFee as any) ?? 0}
+                    onChange={(e) => setGatewayForm(prev => ({ ...prev, processingFee: Number(e.target.value) }))}
+                  />
+                </div>
+                <div className="space-y-2">
+                  <Label htmlFor="gwMerchant">Merchant ID</Label>
+                  <Input
+                    id="gwMerchant"
+                    value={gatewayForm.merchantId || ''}
+                    onChange={(e) => setGatewayForm(prev => ({ ...prev, merchantId: e.target.value }))}
+                    placeholder="Merchant identifier"
+                  />
+                </div>
+                <div className="space-y-2">
+                  <Label htmlFor="gwWebhook">Webhook URL</Label>
+                  <Input
+                    id="gwWebhook"
+                    value={gatewayForm.webhookUrl || ''}
+                    onChange={(e) => setGatewayForm(prev => ({ ...prev, webhookUrl: e.target.value }))}
+                    placeholder="https://..."
+                  />
+                </div>
+              </div>
+
+              <div className="flex items-center justify-between rounded-lg border p-3">
+                <div className="space-y-1">
+                  <div className="text-sm font-medium">Enabled</div>
+                  <div className="text-xs text-muted-foreground">Allow processing payments via this gateway</div>
+                </div>
+                <Switch
+                  checked={!!gatewayForm.isEnabled}
+                  onCheckedChange={(checked) => setGatewayForm(prev => ({ ...prev, isEnabled: checked }))}
+                />
+              </div>
+
+              <div className="flex items-center justify-end gap-2">
+                <Button variant="outline" onClick={() => setGatewayDialogOpen(false)} disabled={loading}>
+                  Cancel
+                </Button>
+                <Button onClick={saveGateway} disabled={loading} className="bg-green-600 hover:bg-green-700">
+                  {loading ? (
+                    <>
+                      <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                      Saving...
+                    </>
+                  ) : (
+                    'Save'
+                  )}
+                </Button>
+              </div>
+            </div>
+          </DialogContent>
+        </Dialog>
 
         {/* Stats Cards */}
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 xl:grid-cols-6 gap-4">
@@ -658,13 +861,15 @@ const PaymentManagement = () => {
                             </TableCell>
                             <TableCell>
                               <div className="flex items-center gap-2">
-                                <Dialog>
-                                  <DialogTrigger asChild>
-                                    <Button size="sm" variant="outline" className="h-8 w-8 p-0" onClick={() => setViewingTransaction(txn)}>
-                                      <Eye className="h-3 w-3" />
-                                    </Button>
-                                  </DialogTrigger>
-                                </Dialog>
+                                <Button
+                                  type="button"
+                                  size="sm"
+                                  variant="outline"
+                                  className="h-8 w-8 p-0"
+                                  onClick={() => setViewingTransaction(txn)}
+                                >
+                                  <Eye className="h-3 w-3" />
+                                </Button>
                                 {txn.status === 'completed' && (
                                   <Button 
                                     size="sm" 
@@ -765,7 +970,7 @@ const PaymentManagement = () => {
                             </div>
 
                             <div className="flex gap-2">
-                              <Button size="sm" variant="outline" className="flex-1" onClick={() => setEditingGateway(gateway)}>
+                              <Button size="sm" variant="outline" className="flex-1" onClick={() => openEditGateway(gateway)}>
                                 <Settings className="mr-2 h-3 w-3" />
                                 Configure
                               </Button>
@@ -796,7 +1001,7 @@ const PaymentManagement = () => {
                   <p className="text-muted-foreground mb-4">
                     Match payment records with gateway settlements
                   </p>
-                  <Button>
+                  <Button onClick={() => toast({ title: "Coming Soon", description: "Payment reconciliation feature coming soon!" })}>
                     <CheckCircle className="mr-2 h-4 w-4" />
                     Start Reconciliation
                   </Button>

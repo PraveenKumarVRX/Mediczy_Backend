@@ -161,6 +161,14 @@ const User = sequelize.define('User', {
     allowNull: true
   },
   
+  // Health ID
+  abhaHealthId: {
+    type: DataTypes.STRING(50),
+    allowNull: true,
+    unique: true,
+    comment: 'Ayushman Bharat Health Account ID (14-digit)'
+  },
+  
   // Verification
   isVerified: {
     type: DataTypes.BOOLEAN,
@@ -213,12 +221,41 @@ const User = sequelize.define('User', {
   isAdmin: {
     type: DataTypes.BOOLEAN,
     defaultValue: false,
-    comment: 'Admin flag for system administrators'
+    comment: 'Admin flag for SYSTEM administrators only (platform level)'
   },
   role: {
     type: DataTypes.STRING(50),
     defaultValue: 'user',
-    comment: 'User role: user, admin, super_admin, etc.'
+    comment: 'User role: user, system_admin, hospital_admin, clinic_admin, lab_admin, pharmacy_admin, tpa_admin, psu_admin, ngo_admin, insurer_admin, corporate_admin, homecare_admin, ambulance_admin, dept_admin, doctor, nurse, etc.'
+  },
+  
+  // Organization Admin Context
+  tenant_id: {
+    type: DataTypes.INTEGER,
+    allowNull: true,
+    comment: 'Reference to tenant (organization) this user belongs to'
+  },
+  department_id: {
+    type: DataTypes.INTEGER,
+    allowNull: true,
+    comment: 'Department/unit ID within organization (for dept_admin role)'
+  },
+  department_name: {
+    type: DataTypes.STRING(100),
+    allowNull: true,
+    comment: 'Department name (e.g., Cardiology, HR, Pathology)'
+  },
+  
+  // Permissions & Scope
+  permissions: {
+    type: DataTypes.JSONB,
+    defaultValue: [],
+    comment: 'Array of permission strings (e.g., ["manage_staff", "view_analytics"])'
+  },
+  scope: {
+    type: DataTypes.JSONB,
+    defaultValue: {},
+    comment: 'Access scope restrictions { organization_ids: [], department_ids: [], features: [] }'
   },
   
   // Full-Text Search (PostgreSQL tsvector)
@@ -374,10 +411,14 @@ User.prototype.generateAuthToken = function() {
   const payload = {
     id: this.id,
     email: this.email,
-    role: this.isAdmin ? (this.role || 'admin') : (this.role || 'user'),
+    role: this.isAdmin ? (this.role || 'system_admin') : (this.role || 'user'),
     isAdmin: this.isAdmin,
     organization_id: this.organization_id,
-    organization_type: this.organization_type
+    organization_type: this.organization_type,
+    tenant_id: this.tenant_id,
+    department_id: this.department_id,
+    permissions: this.permissions || [],
+    scope: this.scope || {}
   };
   
   return jwt.sign(payload, process.env.JWT_SECRET, { expiresIn: '7d' });

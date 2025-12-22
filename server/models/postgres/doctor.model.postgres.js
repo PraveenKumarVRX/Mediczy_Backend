@@ -172,6 +172,23 @@ const Doctor = sequelize.define('Doctor', {
     }
   },
   
+  // Slot Duration in minutes (15, 30, 45, or 60)
+  slotDuration: {
+    type: DataTypes.INTEGER,
+    defaultValue: 30,
+    validate: {
+      isIn: [[15, 30, 45, 60]]
+    },
+    comment: 'Duration of each appointment slot in minutes'
+  },
+  
+  // Practice Locations as JSONB Array
+  practiceLocations: {
+    type: DataTypes.JSONB,
+    defaultValue: [],
+    comment: 'Array of practice location objects with id, name, address, consultationFee'
+  },
+  
   // Reviews and Ratings
   reviews: {
     type: DataTypes.TEXT,
@@ -249,6 +266,16 @@ const Doctor = sequelize.define('Doctor', {
   documentVerified: {
     type: DataTypes.BOOLEAN,
     defaultValue: false
+  },
+  
+  // Password Reset Fields
+  passwordResetToken: {
+    type: DataTypes.STRING(255),
+    allowNull: true
+  },
+  passwordResetExpires: {
+    type: DataTypes.DATE,
+    allowNull: true
   },
   
   // Documents as JSONB

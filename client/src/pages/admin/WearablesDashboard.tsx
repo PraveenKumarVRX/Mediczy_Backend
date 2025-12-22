@@ -2,9 +2,17 @@ import React, { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import axios from 'axios';
 import {
-  FiWatch, FiActivity, FiHeart, FiBattery, FiWifi,
-  FiPlus, FiSearch, FiUser, FiTrendingUp, FiAlertCircle
-} from 'react-icons/fi';
+  Watch,
+  Activity,
+  Heart,
+  Battery,
+  Wifi,
+  Plus,
+  Search,
+  User,
+  TrendingUp,
+  AlertCircle
+} from 'lucide-react';
 
 const WearablesDashboard = () => {
   const navigate = useNavigate();
@@ -97,7 +105,7 @@ const WearablesDashboard = () => {
           <div className="flex items-center justify-between">
             <div>
               <h1 className="text-3xl font-bold text-gray-900 flex items-center gap-2">
-                <FiWatch className="text-blue-600" />
+                <Watch className="text-blue-600" />
                 Wearable Devices
               </h1>
               <p className="text-gray-600 mt-1">Health monitoring smartwatch, band & ring</p>
@@ -106,7 +114,7 @@ const WearablesDashboard = () => {
               onClick={() => navigate('/admin/wearables/provision')}
               className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 flex items-center gap-2"
             >
-              <FiPlus /> Provision Device
+              <Plus /> Provision Device
             </button>
           </div>
         </div>
@@ -119,7 +127,7 @@ const WearablesDashboard = () => {
                 <p className="text-sm text-gray-600">Total Devices</p>
                 <p className="text-2xl font-bold text-gray-900">{stats.total}</p>
               </div>
-              <FiWatch className="text-3xl text-blue-600" />
+              <Watch className="text-3xl text-blue-600" />
             </div>
           </div>
 
@@ -129,7 +137,7 @@ const WearablesDashboard = () => {
                 <p className="text-sm text-gray-600">Active</p>
                 <p className="text-2xl font-bold text-gray-900">{stats.active}</p>
               </div>
-              <FiActivity className="text-3xl text-green-600" />
+              <Activity className="text-3xl text-green-600" />
             </div>
           </div>
 
@@ -139,7 +147,7 @@ const WearablesDashboard = () => {
                 <p className="text-sm text-gray-600">Low Battery</p>
                 <p className="text-2xl font-bold text-gray-900">{stats.low_battery}</p>
               </div>
-              <FiBattery className="text-3xl text-yellow-600" />
+              <Battery className="text-3xl text-yellow-600" />
             </div>
           </div>
 
@@ -149,7 +157,7 @@ const WearablesDashboard = () => {
                 <p className="text-sm text-gray-600">Offline</p>
                 <p className="text-2xl font-bold text-gray-900">{stats.offline}</p>
               </div>
-              <FiWifi className="text-3xl text-red-600" />
+              <Wifi className="text-3xl text-red-600" />
             </div>
           </div>
         </div>
@@ -158,7 +166,7 @@ const WearablesDashboard = () => {
         <div className="bg-white p-4 rounded-lg shadow mb-6">
           <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
             <div className="relative">
-              <FiSearch className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400" />
+              <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400" />
               <input
                 type="text"
                 placeholder="Search devices..."
@@ -233,7 +241,7 @@ const WearablesDashboard = () => {
                 {/* User Info */}
                 {wearable.user_id && (
                   <div className="mb-4 flex items-center gap-2 text-sm text-gray-600">
-                    <FiUser size={14} />
+                    <User size={14} />
                     <span>User ID: {wearable.user_id}</span>
                   </div>
                 )}
@@ -241,13 +249,13 @@ const WearablesDashboard = () => {
                 {/* Health Metrics */}
                 <div className="grid grid-cols-2 gap-4 mb-4">
                   <div className="flex items-center gap-2">
-                    <FiBattery className={getBatteryColor(wearable.battery_level)} />
+                    <Battery className={getBatteryColor(wearable.battery_level)} />
                     <span className="text-sm text-gray-700">
                       {wearable.battery_level !== null ? `${wearable.battery_level}%` : 'N/A'}
                     </span>
                   </div>
                   <div className="flex items-center gap-2">
-                    <FiWifi className={wearable.is_online ? 'text-green-600' : 'text-gray-400'} />
+                    <Wifi className={wearable.is_online ? 'text-green-600' : 'text-gray-400'} />
                     <span className="text-sm text-gray-700">
                       {wearable.is_online ? 'Online' : 'Offline'}
                     </span>

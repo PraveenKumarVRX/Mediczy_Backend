@@ -1,0 +1,6 @@
+employeeId,name,email,phone,department,designation,joiningDate,healthStatus,lastCheckup,insurancePlan
+EMP201,Valid Employee,valid@test.com,+1555200001,Engineering,Developer,2024-01-15,good,2024-12-01,Standard Plan
+EMP202,,missing.name@test.com,+1555200002,Sales,Sales Rep,2024-02-01,good,2024-11-28,Standard Plan
+EMP203,Missing Email,,+1555200003,Marketing,Marketer,2024-03-01,good,2024-12-05,Standard Plan
+EMP204,Missing Department,no.dept@test.com,+1555200004,,Manager,2024-04-01,good,2024-12-10,Premium Plan
+EMP205,Another Valid,another.valid@test.com,+1555200005,HR,HR Specialist,2024-05-01,excellent,2024-11-30,Standard Plan

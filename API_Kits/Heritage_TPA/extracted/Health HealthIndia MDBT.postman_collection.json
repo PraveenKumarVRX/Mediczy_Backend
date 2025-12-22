@@ -1,0 +1,391 @@
+{
+	"info": {
+		"_postman_id": "bb435a86-7e6a-4b3c-b8a5-8845baf9b200",
+		"name": "Health HealthIndia MDBT",
+		"schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json",
+		"_exporter_id": "19690377"
+	},
+	"item": [
+		{
+			"name": "GetEnrollmentDetails",
+			"request": {
+				"method": "POST",
+				"header": [],
+				"body": {
+					"mode": "raw",
+					"raw": "{\r\n  \"PolicyNumber\": \"71290034220400000044\",\r\n  \"EmployeeNumber\": \"\",\r\n  \"MemberID\": \"\",\r\n  \"UserName\": \"XdZTWq+aFlqsEUXkXry54Q==\",\r\n  \"Password\": \"zEsGhdOayMAJWvFIGcrYjC4VVl2T4WA1oQaQZ/EXGLM=\"\r\n}",
+					"options": {
+						"raw": {
+							"language": "json"
+						}
+					}
+				},
+				"url": {
+					"raw": "https://software.healthindiatpa.com/HiWebApi/BHRE/GetEnrollmentDetails",
+					"protocol": "https",
+					"host": [
+						"software",
+						"healthindiatpa",
+						"com"
+					],
+					"path": [
+						"HiWebApi",
+						"BHRE",
+						"GetEnrollmentDetails"
+					]
+				}
+			},
+			"response": []
+		},
+		{
+			"name": "GetClaimsList",
+			"protocolProfileBehavior": {
+				"disabledSystemHeaders": {}
+			},
+			"request": {
+				"method": "POST",
+				"header": [
+					{
+						"key": "Content-Type",
+						"value": "application/json, text/json",
+						"type": "text",
+						"disabled": true
+					}
+				],
+				"body": {
+					"mode": "raw",
+					"raw": "{\r\n    \"MemberID\": \"\",\r\n    \"UserName\": \"XdZTWq+aFlqsEUXkXry54Q==\",\r\n    \"PolicyNumber\": \"71290034220400000044\",\r\n    \"EmployeeNumber\": \"\",\r\n    \"FromDate\": \"05/11/2022\",\r\n    \"ToDate\": \"04/11/2023\",\r\n    \"Password\": \"zEsGhdOayMAJWvFIGcrYjC4VVl2T4WA1oQaQZ/EXGLM=\"\r\n}",
+					"options": {
+						"raw": {
+							"language": "json"
+						}
+					}
+				},
+				"url": {
+					"raw": "https://software.healthindiatpa.com/HiWebApi/BHRE/GetClaimsList",
+					"protocol": "https",
+					"host": [
+						"software",
+						"healthindiatpa",
+						"com"
+					],
+					"path": [
+						"HiWebApi",
+						"BHRE",
+						"GetClaimsList"
+					]
+				}
+			},
+			"response": []
+		},
+		{
+			"name": "GetDownloadedEcard",
+			"request": {
+				"method": "POST",
+				"header": [],
+				"body": {
+					"mode": "raw",
+					"raw": "{\r\n    \"UserName\": \"XdZTWq+aFlqsEUXkXry54Q==\",\r\n    \"Password\": \"zEsGhdOayMAJWvFIGcrYjC4VVl2T4WA1oQaQZ/EXGLM=\",\r\n    \"PolicyNumber\": \"71290034220400000044\",\r\n    \"MemberID\": \"\",\r\n    \"FamilyCode\": \"\",\r\n    \"EmployeeNumber\": \"W1273\"\r\n}\r\n",
+					"options": {
+						"raw": {
+							"language": "json"
+						}
+					}
+				},
+				"url": {
+					"raw": "https://software.healthindiatpa.com/HiWebApi/BHRE/GetDownloadedEcard",
+					"protocol": "https",
+					"host": [
+						"software",
+						"healthindiatpa",
+						"com"
+					],
+					"path": [
+						"HiWebApi",
+						"BHRE",
+						"GetDownloadedEcard"
+					]
+				}
+			},
+			"response": []
+		},
+		{
+			"name": "GetNetworkHospitals",
+			"request": {
+				"method": "POST",
+				"header": [],
+				"body": {
+					"mode": "raw",
+					"raw": "{\r\n    \"PolicyNumber\": \"71290034220400000044\",\r\n    \"UserName\": \"XdZTWq+aFlqsEUXkXry54Q==\",\r\n    \"Password\": \"zEsGhdOayMAJWvFIGcrYjC4VVl2T4WA1oQaQZ/EXGLM=\",\r\n    \"InsAbbrevation\": \"\",\r\n    \"InsCode\": \"\",\r\n    \"StateCode\": \"\",\r\n    \"CityCode\": \"\"\r\n}",
+					"options": {
+						"raw": {
+							"language": "json"
+						}
+					}
+				},
+				"url": {
+					"raw": "https://software.healthindiatpa.com/HiWebApi/BHRE/GetNetworkHospitals",
+					"protocol": "https",
+					"host": [
+						"software",
+						"healthindiatpa",
+						"com"
+					],
+					"path": [
+						"HiWebApi",
+						"BHRE",
+						"GetNetworkHospitals"
+					]
+				}
+			},
+			"response": []
+		},
+		{
+			"name": "IntimateClaimRequest",
+			"request": {
+				"method": "POST",
+				"header": [],
+				"body": {
+					"mode": "raw",
+					"raw": "{\r\n  \"AilmentDescription\": \"Leg injury\",\r\n  \"ContactNo\": \"1234567890\",\r\n  \"ProviderNumber\": \"\",\r\n  \"DateOfAdmission\": \"07/03/2023\",\r\n  \"HospName\": \"kangaroo\",\r\n  \"HospAddress\": \"Bangalore\",\r\n  \"MemberID\": \"13209184E\",\r\n  \"PolicyNumber\": \"71290034220400000044\",\r\n  \"UserName\": \"XdZTWq+aFlqsEUXkXry54Q==\",\r\n  \"Password\": \"zEsGhdOayMAJWvFIGcrYjC4VVl2T4WA1oQaQZ/EXGLM=\"\r\n}\r\n",
+					"options": {
+						"raw": {
+							"language": "json"
+						}
+					}
+				},
+				"url": {
+					"raw": "https://software.healthindiatpa.com/HiWebApi/BHRE/IntimateClaimRequest",
+					"protocol": "https",
+					"host": [
+						"software",
+						"healthindiatpa",
+						"com"
+					],
+					"path": [
+						"HiWebApi",
+						"BHRE",
+						"IntimateClaimRequest"
+					]
+				}
+			},
+			"response": [
+				{
+					"name": "IntimateClaimRequest",
+					"originalRequest": {
+						"method": "POST",
+						"header": [],
+						"body": {
+							"mode": "raw",
+							"raw": "{\r\n  \"AilmentDescription\": \"Leg injury\",\r\n  \"ContactNo\": \"1234567890\",\r\n  \"ProviderNumber\": \"\",\r\n  \"DateOfAdmission\": \"07/03/2023\",\r\n  \"HospName\": \"kangaroo\",\r\n  \"HospAddress\": \"Bangalore\",\r\n\r\n  \r\n  \"MemberID\": \"13209184E\",\r\n  \"PolicyNumber\": \"71290034220400000044\",\r\n  \"UserName\": \"XdZTWq+aFlqsEUXkXry54Q==\",\r\n  \"Password\": \"zEsGhdOayMAJWvFIGcrYjC4VVl2T4WA1oQaQZ/EXGLM=\"\r\n}\r\n",
+							"options": {
+								"raw": {
+									"language": "json"
+								}
+							}
+						},
+						"url": {
+							"raw": "https://software.healthindiatpa.com/HiWebApi/BHRE/IntimateClaimRequest",
+							"protocol": "https",
+							"host": [
+								"software",
+								"healthindiatpa",
+								"com"
+							],
+							"path": [
+								"HiWebApi",
+								"BHRE",
+								"IntimateClaimRequest"
+							]
+						}
+					},
+					"status": "OK",
+					"code": 200,
+					"_postman_previewlanguage": "json",
+					"header": [
+						{
+							"key": "Cache-Control",
+							"value": "no-cache"
+						},
+						{
+							"key": "Pragma",
+							"value": "no-cache"
+						},
+						{
+							"key": "Content-Length",
+							"value": "115"
+						},
+						{
+							"key": "Content-Type",
+							"value": "application/json; charset=utf-8"
+						},
+						{
+							"key": "Expires",
+							"value": "-1"
+						},
+						{
+							"key": "Server",
+							"value": "Microsoft-IIS/10.0"
+						},
+						{
+							"key": "X-AspNet-Version",
+							"value": "4.0.30319"
+						},
+						{
+							"key": "X-Powered-By",
+							"value": "ASP.NET"
+						},
+						{
+							"key": "Date",
+							"value": "Wed, 12 Jun 2024 13:11:48 GMT"
+						}
+					],
+					"cookie": [],
+					"body": "{\n    \"status\": \"True\",\n    \"errorMsg\": \"\",\n    \"result\": \"[{\\\"CCN\\\":\\\"HI-NIA-003024874\\\",\\\"CCN_Ext\\\":\\\"0\\\",\\\"ErrorMessage\\\":null}]\"\n}"
+				},
+				{
+					"name": "IntimateClaimRequest",
+					"originalRequest": {
+						"method": "POST",
+						"header": [],
+						"body": {
+							"mode": "raw",
+							"raw": "\r\n{\r\n    \"MemberID\": \"13209184E\",\r\n    \"ContactNo\": \"123\",\r\n    \"UserName\": \"XdZTWq+aFlqsEUXkXry54Q==\",\r\n    \"ProviderNumber\": \"\",\r\n    \"PolicyNumber\": \"71290034220400000044\",\r\n    \"DateOfAdmission\": \"07/03/2023\",\r\n    \"HospName\": \"123\",\r\n    \"HospAddress\": \"123\",\r\n    \"AilmentDescription\": \"\",\r\n    \"Password\": \"zEsGhdOayMAJWvFIGcrYjC4VVl2T4WA1oQaQZ/EXGLM=\"\r\n}",
+							"options": {
+								"raw": {
+									"language": "json"
+								}
+							}
+						},
+						"url": {
+							"raw": "https://software.healthindiatpa.com/HiWebApi/BHRE/IntimateClaimRequest",
+							"protocol": "https",
+							"host": [
+								"software",
+								"healthindiatpa",
+								"com"
+							],
+							"path": [
+								"HiWebApi",
+								"BHRE",
+								"IntimateClaimRequest"
+							]
+						}
+					},
+					"status": "OK",
+					"code": 200,
+					"_postman_previewlanguage": "json",
+					"header": [
+						{
+							"key": "Cache-Control",
+							"value": "no-cache"
+						},
+						{
+							"key": "Pragma",
+							"value": "no-cache"
+						},
+						{
+							"key": "Content-Length",
+							"value": "115"
+						},
+						{
+							"key": "Content-Type",
+							"value": "application/json; charset=utf-8"
+						},
+						{
+							"key": "Expires",
+							"value": "-1"
+						},
+						{
+							"key": "Server",
+							"value": "Microsoft-IIS/10.0"
+						},
+						{
+							"key": "X-AspNet-Version",
+							"value": "4.0.30319"
+						},
+						{
+							"key": "X-Powered-By",
+							"value": "ASP.NET"
+						},
+						{
+							"key": "Date",
+							"value": "Wed, 28 Aug 2024 11:34:41 GMT"
+						}
+					],
+					"cookie": [],
+					"body": "{\n    \"status\": \"True\",\n    \"errorMsg\": \"\",\n    \"result\": \"[{\\\"CCN\\\":\\\"HI-NIA-003650052\\\",\\\"CCN_Ext\\\":\\\"0\\\",\\\"ErrorMessage\\\":null}]\"\n}"
+				}
+			]
+		},
+		{
+			"name": "Health India claimsList details response",
+			"protocolProfileBehavior": {
+				"disableBodyPruning": true
+			},
+			"request": {
+				"method": "GET",
+				"header": [],
+				"body": {
+					"mode": "raw",
+					"raw": "{\r\n    memberclaim_id\r\n    y\"status\": \"paid\",\r\n    y\"message\": null,\r\n    y\"insurance_company_name\": \"the new india assurance company limited\",\r\n    \"group_code\": null,\r\n    y\"group_name\": \"lifecell international pvt. ltd.\",\r\n\r\n\r\n\r\n    y\"policy_number\": \"71290034220400000044\",\r\n\r\n\r\n    \r\n    y\"commencement_date\": \"05/11/2022\",\r\n    y\"valid_upto\": \"04/11/2023\",\r\n    y\"tpa_health_id\": \"12375534w\",\r\n    y\"beneficiary_name\": \"saranya\",\r\n    y\"employee_name\": \"elavarasan\",\r\n    y\"employee_no\": \"ft011\",\r\n    y\"age\": \"28\",\r\n    y\"relation\": \"wife\",\r\n    y\"date_of_birth\": \"16/05/1994\",\r\n    y\"gender\": \"f\",\r\n    y\"sum_insured\": \"200000\",\r\n    \"grade\": \"\",\r\n    \"sub_group\": \"\",\r\n    \"city\": \"chennai\",\r\n    \"insurance_claim_no\": \"tp02271290022901039093\",\r\n    \"tpa_claim_intimation_number\": \"\",\r\n    y\"tpa_claim_no\": \"hi-nia-001935607(0)\",\r\n    \"tpa_claim_extension\": \"0\",\r\n    \"partial_payment_sequence\": \"0\",\r\n    \"unique_claim\": \"hi-nia-001935607(0)\",\r\n    \"claim_registered_date\": \"18/01/2023 12:00:00 am\",\r\n    \"pre_auth_number\": null,\r\n    \"pre_auth_request_date\": \"18/01/2023 12:00:00 am\",\r\n    \"pre_auth_sent_date\": \"\",\r\n    \"pre_auth_amount\": \"0\",\r\n    \"pre_auth_status\": \"\",\r\n    \"hospital_no\": \"7982\",\r\n    y\"hospital_name\": \"sri ramachandra medical centre\",\r\n    \"network_status\": \"network\",\r\n    y\"hospital_city\": \"chennai\",\r\n    \"hospital_state\": \"tamil nadu\",\r\n    \"level_of_care\": \"tertiary\",\r\n    \"room_type\": \"\",\r\n    y\"ailment\": \"lscs\",\r\n    \"final_diagnosis\": \"lscs\",\r\n    \"diagnosis_procedure\": \"\",\r\n    \"disease_category\": \"maternity\",\r\n    \"icd_code\": \"o82\",\r\n    y\"date_of_admission\": \"20/12/2022 12:00:00 am\",\r\n    y\"date_of_discharge\": \"28/12/2022 12:00:00 am\",\r\n    \"length_of_stay\": \"8\",\r\n    \"file_received_date\": \"18/01/2023 12:00:00 am\",\r\n    y\"deficiencies_details\": null,\r\n    \"first_deficiency_letter_date\": \"27/01/2023 12:00:00 am\",\r\n    \"second_deficiency_letter_date\": \"03/02/2023 12:00:00 am\",\r\n    \"deficiency_intimated_date\": \"19/01/2023\",\r\n    \"deficiencies_retrieved_date\": \"11/02/2023 12:00:00 am\",\r\n    \"claims_pending_date\": \"\",\r\n    \"claims_approval_rcvd_date\": \"\",\r\n    y\"estimated_claim_amount\": \"152005\",\r\n    y\"reported_amount\": \"152625\",\r\n    \"ambulance_charges_claimed\": \"\",\r\n    \"ambulance_charges_approved\": \"\",\r\n    \"doctor_charges_claimed\": \"\",\r\n    \"doctor_charges_approved\": \"\",\r\n    \"duty_doctor_charges_claimed\": \"\",\r\n    \"duty_doctor_charges_approved\": \"\",\r\n    \"surgeon_fees_claimed\": \"\",\r\n    \"surgeon_fees_approved\": \"\",\r\n    \"asst_surgeon_fees_claimed\": null,\r\n    \"asst_surgeon_fees_approved\": \"\",\r\n    \"consultant_charges_claimed\": \"\",\r\n    \"consultant_charges_approved\": null,\r\n    \"specialist_fees_claimed\": \"\",\r\n    \"specialist_fees_approved\": \"\",\r\n    \"cost_of_stent_claimed\": null,\r\n    \"cost_of_stent_approved\": \"\",\r\n    \"implant_amount_claimed\": null,\r\n    \"implant_amount_approved\": \"\",\r\n    \"pacemaker_charges_claimed\": null,\r\n    \"pacemaker_charges_approved\": \"\",\r\n    \"domiciliary_charges_claimed\": null,\r\n    \"domiciliary_charges_approved\": \"\",\r\n    \"emergency_charges_claimed\": null,\r\n    \"emergency_charges_approved\": \"\",\r\n    \"investigation_and_diagnostics_outside_hospital_amount_claimed\": null,\r\n    \"investigation_and_diagnostics_outside_hospital_amount_approved\": \"\",\r\n    \"investigation_and_diagnostics_inside_hospital_amount_claimed\": null,\r\n    \"investigation_and_diagnostics_inside_hospital_amount_approved\": \"\",\r\n    \"ot_consumable_amount_claimed\": null,\r\n    \"ot_consumable_amount_approved\": \"\",\r\n    \"ot_medicine_amount_claimed\": null,\r\n    \"ot_medicine_amount_approved\": \"\",\r\n    \"ot_charges_claimed\": null,\r\n    \"ot_charges_approved\": \"\",\r\n    \"pre_natal_expences_claimed\": null,\r\n    \"pre_natal_expences_approved\": \"\",\r\n    \"post_natal_expences_claimed\": null,\r\n    \"post_natal_expences_approved\": \"\",\r\n    \"room_rent_perday_opted\": null,\r\n    \"room_rent_perday_approved\": null,\r\n    \"icu_amount_claimed\": null,\r\n    \"icu_amount_approved\": null,\r\n    \"total_room_nursing_charges_claimed\": null,\r\n    \"total_room_nursing_charges_approved\": null,\r\n    \"surgery_charges\": \"0\",\r\n    \"surgery_charge_approved\": \"\",\r\n    \"investigation_charges\": \"0\",\r\n    \"investigation_charg_es_approved\": null,\r\n    \"medicine_charges\": \"0\",\r\n    \"medicine_charges_approved\": \"\",\r\n    \"miscellaneous_charges\": \"\",\r\n    \"miscellaneous_charges_approved\": \"\",\r\n    \"other_charges\": null,\r\n    \"other_charges_approved\": \"\",\r\n    \"package_charges\": \"\",\r\n    \"package_charges_approved\": \"\",\r\n    y\"final_bill_amount\": \"152625\",\r\n    y\"hospital_discount\": \"\",\r\n    y\"non_payable_expenses\": \"135520\",\r\n    y\"co_payment_deductions\": \"\",\r\n    y\"deduction_reasons\": \"[rs.66500/-] reason :already settled by mediassist,[rs.690/-] reason :renal profile,[rs.890/-] reason :l.f,t,[rs.265/-] reason :l.d.h,[rs.140/-] reason :uric acid,[rs.1680/-] reason :blood gas analysis,[rs.1100/-] reason :cbc,[rs.180/-] reason :routine urine complete analysis,[rs.250/-] reason :peripheral smear examination,[rs.500/-] reason :prothrombin time (p.t),[rs.720/-] reason :ptt (partial thromi3oplastin time,[rs.1380/-] reason :fibrinogen,[rs.60/-] reason :albumin (urine,[rs.985/-] reason :culture-urine,[rs.2760/-] reason :echo,[rs.250/-] reason :blood grouping & rh typing,[rs.30/-] reason :crossmatch request,[rs.925/-] reason :unexpectedredcillantjjody,[rs.480/-] reason :saline cross match,[rs.2500/-] reason :colour doppler u/s-ob&g,[rs.3080/-] reason :n.s.t. foetal monitor,[rs.1400/-] reason :room rent,[rs.500/-] reason :nursing charges,[rs.750/-] reason :dm0,[rs.1500/-] reason :ctg,[rs.75/-] reason :arrender pass with lanyard,[rs.1000/-] reason :emergency charges-moderate,[rs.600/-] reason :oxygen - operation theatres,[rs.1035/-] reason :drugs & disposables,[rs.100/-] reason :servicecharges,[rs.150/-] reason :new registration,[rs.1200/-] reason :house keeping charges,[rs.8588/-] reason :medicine,[rs.5/-] reason :gst on diet charges,[rs.30/-] reason :milk,[rs.25/-] reason :tea,[rs.40/-] reason :sliced bread(2nos),[rs.4/-] reason :gst on diet charges,[rs.70/-] reason :rice conjee,[rs.7584/-] reason :medicine,[rs.4499/-] reason :medicine,[rs.11000/-] reason :additional stay in sharing room,[rs.8000/-] reason :additional stay professional fees,[rs.2000/-] reason :emergency consultation charges\",\r\n    \"amount\": \"152005\",\r\n    y\"paid_amount\": \"152005\",\r\n    y\"rejected_amount\": \"\",\r\n    \"buffer_utilised_amount\": \"0\",\r\n    y\"balance_si\": \"182895\",\r\n    y\"date_of_settlement\": \"15/03/2023\",\r\n    \"date_of_payment_to_provider\": \"\",\r\n    \"amount_paid_to_provider\": \"\",\r\n    \"date_of_payment_to_member\": \"15/03/2023\",\r\n    \"amount_paid_to_member\": \"17105\",\r\n    \"settlement_mode\": null,\r\n    y\"bank_cheque_no\": \"axiscn0223517100\",\r\n    \"gst_no\": \"\",\r\n    \"gst_amount\": \"\",\r\n    \"tds_amount\": \"0\",\r\n    \"paid_date\": \"15/03/2023\",\r\n    \"rejected_closed_date\": null,\r\n    y\"type_of_claim\": \"reimbursement\",\r\n    y\"outstanding_claim_status\": \"paid\",\r\n    \"cashless_denial_reasons\": \"\",\r\n    y\"reason_for_closure\": \"\",\r\n    y\"reason_for_rejection\": \"\",\r\n    \"claim_received_tpa_branch\": \"\",\r\n    \"claim_received_dt_tpa_branch\": \"\",\r\n    \"claim_received_dt_head_office\": \"\"\r\n}\r\n]\"\r\n}",
+					"options": {
+						"raw": {
+							"language": "json"
+						}
+					}
+				},
+				"url": {
+					"raw": ""
+				}
+			},
+			"response": []
+		},
+		{
+			"name": "network Hospitals Response Data",
+			"protocolProfileBehavior": {
+				"disableBodyPruning": true
+			},
+			"request": {
+				"method": "GET",
+				"header": [],
+				"body": {
+					"mode": "raw",
+					"raw": "{\r\n    \"ROWNUMBER\": \"360\",\r\n    y\"HOSPITALID\": \"4649\",\r\n    y\"HOSPITALNAME\": \"SALEM GOPI HOSPITALS PVT. LTD.\",\r\n    y\"ADDRESSLINE1\": \"23 B\",\r\n    y\"ADDRESSLINE2\": \"\",\r\n    y\"CITYNAME\": \"Salem\",\r\n    y\"STATENAME\": \"Tamil Nadu\",\r\n    y\"PINCODE\": \"636007\",\r\n    \"LANDMARK1\": \"\",\r\n    \"LANDMARK2\": \"\",\r\n    y\"STDCODE\": \"427\",\r\n    y\"PHONENUMBER\": \"\",\r\n    \"FAXNUMBER\": \"\",\r\n    y\"EMAIL\": \"salemgopihosp@gmail.com;insurance@salemgopi.com\",\r\n    \"LEVELOFCARE\": \"Secondary\",\r\n    y\"INSCODE\": \"NIA\",\r\n    \"NOOFBEDS\": \"65\",\r\n    y\"NetworkType\": \"NON PPN\",\r\n    y\"RohiniCode\": \"8900080218871\",\r\n    y\"Gipsa\": \"0\",\r\n    y\"Latitude\": null,\r\n    y\"Longitude\": null,\r\n    \"ADDREMOVEFLAG\": \"Yes\"\r\n}",
+					"options": {
+						"raw": {
+							"language": "json"
+						}
+					}
+				},
+				"url": {
+					"raw": ""
+				}
+			},
+			"response": []
+		},
+		{
+			"name": "enrollmentDetails rsponse Data",
+			"protocolProfileBehavior": {
+				"disableBodyPruning": true
+			},
+			"request": {
+				"method": "GET",
+				"header": [],
+				"body": {
+					"mode": "raw",
+					"raw": "{\r\n    y\"POLICY_NUMBER\": \"71290034220400000044\",y\r\n    y\"TPA_HEALTH_ID\": \"12356331E\",y\r\n    y\"RELATION\": \"Employee\",y\r\n    y\"GENDER\": \"M\",y\r\n    y\"DATE_OF_BIRTH\": \"24/11/1993\",y\r\n    y\"AGE\": \"28\",y\r\n    y\"EMPLOYEE_ID\": \"W0500\",n\r\n    y\"EMPLOYEE_NAME\": \"NILESH KADAM\",y\r\n    y\"GRADE\": \"A\",\r\n    y\"LOCATION\": \"Pune\",\r\n    \"DESIGNATION\": \"\",\r\n    y\"EMAIL_ID\": \"nileshkadam.d@lifecell.in\",\r\n    \"PERSONAL_EMAILID\": \"nileshkadam.d@lifecell.in\",\r\n    y\"CELLPHONE_NO\": \"8600528603\",\r\n    y\"POLICY_VALIDUPTO\": \"04/11/2023\",\r\n    y\"DATE_OF_JOINING\": \"05/11/2022\",\r\n    \"DATE_OF_RESIGN_FROM_POLICY\": null,\r\n    y\"ADDRESS\": \"LIFECELL INTERNATIONAL PVT. LTD., NO.26, VANDALUR KELAMBAKKAM MAIN ROAD, KEELAKOTTAIYUR, VANDALUR, KANCHIPURAM\",\r\n    y\"CITY\": \"CHENNAI\",\r\n    y\"GROUP_NAME\": \"LIFECELL INTERNATIONAL PVT. LTD.\",\r\n    \"GROUP_CODE\": \"LIFECELL\",\r\n    y\"BASE_SUMINSURED\": \"200000\",\r\n    y\"TOPUP_SUMINSURED\": \"0\",\r\n    \"ENDORSEMENT_NO\": \"\",\r\n    \"ENDORSEMENT_DATE\": \"\",\r\n    \"ENDORSEMENT_TYPE\": \"\",\r\n    \"ProductName\": null,\r\n    \"REMARKS\": \"\",\r\n    \"BENEFICIARY_NAME\": \"\",\r\n    \"DEPARTMENT\": \"\",\r\n    \"PLANT_DEPARTMENT\": \"\",\r\n    y\"POLICY_COMMENCEMENT_DATE\": \"05/11/2022\"\r\n}",
+					"options": {
+						"raw": {
+							"language": "json"
+						}
+					}
+				},
+				"url": {
+					"raw": ""
+				}
+			},
+			"response": []
+		}
+	]
+}

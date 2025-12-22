@@ -9,11 +9,13 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from ".
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "../../components/ui/table";
 import { Badge } from "../../components/ui/badge";
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger, DropdownMenuSeparator } from "../../components/ui/dropdown-menu";
+import { Dialog, DialogContent, DialogHeader, DialogTitle } from "../../components/ui/dialog";
 import AdminLayout from '../../components/layout/AdminLayout';
+import { useToast } from '../../hooks/use-toast';
 import { 
   Download, Upload, Plus, FileSpreadsheet, UserPlus,
   Search, Eye, Edit, Trash2, MoreVertical, Star, Building2, Phone, Mail,
-  ChevronLeft, ChevronRight, Users, Activity, TrendingUp, Shield
+  ChevronLeft, ChevronRight, Users, Activity, TrendingUp, Shield, Building
 } from 'lucide-react';
 import { downloadExcelTemplate } from '../../utils/excelParser';
 import api from '../../utils/api';
@@ -143,7 +145,62 @@ const sampleTPAData: TPAProvider[] = [
   }
 ];
 
+interface TPAFormState {
+  id?: string;
+  tpaName: string;
+  registrationNumber: string;
+  email: string;
+  phoneNumber: string;
+  contactPerson: string;
+  area: string;
+  city: string;
+  state: string;
+  pincode: string;
+  serviceTypes: string;
+  claimProcessingTime: string;
+  networkSize: string;
+  supportedInsurers: string;
+  digitalPlatform: boolean;
+  status: TPAProvider['status'];
+  joinedDate: string;
+  lastActive: string;
+  website?: string;
+  accreditation?: string;
+}
+
+const formatListInput = (value: string[] = []) => value.join(', ');
+const parseListInput = (value: string) =>
+  value
+    .split(',')
+    .map((item) => item.trim())
+    .filter(Boolean);
+const today = () => new Date().toISOString().split('T')[0];
+
+const createTpaFormState = (tpa?: TPAProvider): TPAFormState => ({
+  id: tpa?.id,
+  tpaName: tpa?.tpaName || '',
+  registrationNumber: tpa?.registrationNumber || '',
+  email: tpa?.email || '',
+  phoneNumber: tpa?.phoneNumber || '',
+  contactPerson: tpa?.contactPerson || '',
+  area: tpa?.area || '',
+  city: tpa?.city || '',
+  state: tpa?.state || '',
+  pincode: tpa?.pincode || '',
+  serviceTypes: formatListInput(tpa?.serviceTypes),
+  claimProcessingTime: tpa?.claimProcessingTime || '',
+  networkSize: tpa ? String(tpa.networkSize) : '',
+  supportedInsurers: formatListInput(tpa?.supportedInsurers),
+  digitalPlatform: tpa?.digitalPlatform ?? true,
+  status: tpa?.status || 'Active',
+  joinedDate: tpa?.joinedDate || today(),
+  lastActive: tpa?.lastActive || today(),
+  website: tpa?.website || '',
+  accreditation: tpa?.accreditation || '',
+});
+
 const TPAManagement = () => {
+  const { toast } = useToast();
   // Form and upload state
   const [loading, setLoading] = useState(false);
   const [result, setResult] = useState<{ message: string; count?: number } | null>(null);
@@ -151,6 +208,7 @@ const TPAManagement = () => {
   const [jsonInput, setJsonInput] = useState('');
   const [activeTab, setActiveTab] = useState('list');
   const [editingTPA, setEditingTPA] = useState<TPAProvider | null>(null);
+  const [tpaForm, setTpaForm] = useState<TPAFormState | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const token = localStorage.getItem('adminToken');
 
@@ -261,6 +319,73 @@ const TPAManagement = () => {
     ], 'tpa-providers', sampleData);
   };
 
+  const openTpaDialog = (tpa?: TPAProvider) => {
+    setEditingTPA(tpa || null);
+    setTpaForm(createTpaFormState(tpa));
+    setActiveTab('list');
+  };
+
+  const closeTpaDialog = () => {
+    setEditingTPA(null);
+    setTpaForm(null);
+  };
+
+  const updateTpaForm = <K extends keyof TPAFormState>(field: K, value: TPAFormState[K]) => {
+    setTpaForm(prev => prev ? { ...prev, [field]: value } : prev);
+  };
+
+  const handleSaveTPA = () => {
+    if (!tpaForm) return;
+
+    if (!tpaForm.tpaName.trim() || !tpaForm.registrationNumber.trim()) {
+      toast({
+        title: "Missing information",
+        description: "TPA name and registration number are required.",
+        variant: "destructive"
+      });
+      return;
+    }
+
+    const normalized: TPAProvider = {
+      id: editingTPA?.id || `TPA${Date.now()}`,
+      tpaName: tpaForm.tpaName.trim(),
+      registrationNumber: tpaForm.registrationNumber.trim(),
+      email: tpaForm.email.trim(),
+      phoneNumber: tpaForm.phoneNumber.trim(),
+      contactPerson: tpaForm.contactPerson.trim(),
+      area: tpaForm.area.trim(),
+      city: tpaForm.city.trim(),
+      state: tpaForm.state.trim(),
+      pincode: tpaForm.pincode.trim(),
+      serviceTypes: parseListInput(tpaForm.serviceTypes),
+      claimProcessingTime: tpaForm.claimProcessingTime.trim() || '3-5 days',
+      networkSize: Number(tpaForm.networkSize) || 0,
+      supportedInsurers: parseListInput(tpaForm.supportedInsurers),
+      digitalPlatform: tpaForm.digitalPlatform,
+      status: tpaForm.status,
+      joinedDate: tpaForm.joinedDate || today(),
+      lastActive: tpaForm.lastActive || tpaForm.joinedDate || today(),
+      website: tpaForm.website?.trim() || undefined,
+      accreditation: tpaForm.accreditation?.trim() || undefined,
+      rating: editingTPA?.rating,
+      reviewCount: editingTPA?.reviewCount,
+    };
+
+    setTPAs(prev => {
+      if (editingTPA) {
+        return prev.map(t => t.id === editingTPA.id ? normalized : t);
+      }
+      return [normalized, ...prev];
+    });
+
+    toast({
+      title: editingTPA ? "TPA updated" : "TPA added",
+      description: `${normalized.tpaName} has been ${editingTPA ? 'updated' : 'added'} successfully.`
+    });
+
+    closeTpaDialog();
+  };
+
   return (
     <AdminLayout>
       <div className="space-y-6">
@@ -271,7 +396,7 @@ const TPAManagement = () => {
             <p className="text-muted-foreground">Manage Third Party Administrator providers</p>
           </div>
           <div className="flex flex-col sm:flex-row gap-2">
-            <Button onClick={() => setActiveTab('create')} variant="outline">
+            <Button onClick={() => openTpaDialog()} variant="outline">
               <UserPlus className="mr-2 h-4 w-4" />
               Add TPA
             </Button>
@@ -475,17 +600,17 @@ const TPAManagement = () => {
                                   </Button>
                                 </DropdownMenuTrigger>
                                 <DropdownMenuContent align="end" className="w-[160px]">
-                                  <DropdownMenuItem onClick={() => setEditingTPA(tpa)}>
+                                  <DropdownMenuItem onClick={() => openTpaDialog(tpa)}>
                                     <Edit className="mr-2 h-4 w-4" />
                                     Edit TPA
                                   </DropdownMenuItem>
-                                  <DropdownMenuItem onClick={() => alert(`View details for ${tpa.tpaName}`)}>
+                                  <DropdownMenuItem onClick={() => toast({ title: "TPA Details", description: `Viewing details for ${tpa.tpaName}` })}>
                                     <Eye className="mr-2 h-4 w-4" />
                                     View Details
                                   </DropdownMenuItem>
                                   <DropdownMenuSeparator />
                                   <DropdownMenuItem 
-                                    onClick={() => alert(`Delete ${tpa.tpaName}?`)} 
+                                    onClick={() => toast({ title: "Confirm Delete", description: `Are you sure you want to delete ${tpa.tpaName}?`, variant: "destructive" })} 
                                     className="text-destructive focus:text-destructive"
                                   >
                                     <Trash2 className="mr-2 h-4 w-4" />
@@ -622,13 +747,13 @@ const TPAManagement = () => {
               <CardContent>
                 <div className="space-y-4">
                   <p className="text-sm text-muted-foreground">
-                    Upload an Excel file (.xlsx, .xls) with TPA provider records.
+                    Upload an Excel file (.xlsx) with TPA provider records.
                   </p>
                   <div className="flex items-center gap-4">
                     <Input 
                       ref={fileInputRef} 
                       type="file" 
-                      accept=".xlsx,.xls" 
+                      accept=".xlsx" 
                       onChange={handleExcelUpload} 
                       disabled={loading} 
                     />
@@ -669,6 +794,124 @@ const TPAManagement = () => {
             </Card>
           </TabsContent>
         </Tabs>
+
+        {tpaForm && (
+          <Dialog open={!!tpaForm} onOpenChange={(open) => {
+            if (!open) {
+              closeTpaDialog();
+            }
+          }}>
+            <DialogContent className="max-w-3xl">
+              <DialogHeader>
+                <DialogTitle>{editingTPA ? 'Edit TPA' : 'Add TPA Provider'}</DialogTitle>
+              </DialogHeader>
+              <div className="grid gap-4 md:grid-cols-2">
+                <div>
+                  <Label>TPA Name</Label>
+                  <Input value={tpaForm.tpaName} onChange={(e) => updateTpaForm('tpaName', e.target.value)} />
+                </div>
+                <div>
+                  <Label>Registration Number</Label>
+                  <Input value={tpaForm.registrationNumber} onChange={(e) => updateTpaForm('registrationNumber', e.target.value)} />
+                </div>
+                <div>
+                  <Label>Email</Label>
+                  <Input type="email" value={tpaForm.email} onChange={(e) => updateTpaForm('email', e.target.value)} />
+                </div>
+                <div>
+                  <Label>Phone Number</Label>
+                  <Input value={tpaForm.phoneNumber} onChange={(e) => updateTpaForm('phoneNumber', e.target.value)} />
+                </div>
+                <div>
+                  <Label>Contact Person</Label>
+                  <Input value={tpaForm.contactPerson} onChange={(e) => updateTpaForm('contactPerson', e.target.value)} />
+                </div>
+                <div>
+                  <Label>Area</Label>
+                  <Input value={tpaForm.area} placeholder="Area" onChange={(e) => updateTpaForm('area', e.target.value)} />
+                </div>
+                <div>
+                  <Label>City</Label>
+                  <Input value={tpaForm.city} onChange={(e) => updateTpaForm('city', e.target.value)} />
+                </div>
+                <div>
+                  <Label>State</Label>
+                  <Input value={tpaForm.state} onChange={(e) => updateTpaForm('state', e.target.value)} />
+                </div>
+                <div>
+                  <Label>Pincode</Label>
+                  <Input value={tpaForm.pincode} onChange={(e) => updateTpaForm('pincode', e.target.value)} />
+                </div>
+                <div>
+                  <Label>Service Types (comma separated)</Label>
+                  <Input value={tpaForm.serviceTypes} onChange={(e) => updateTpaForm('serviceTypes', e.target.value)} />
+                </div>
+                <div>
+                  <Label>Supported Insurers (comma separated)</Label>
+                  <Input value={tpaForm.supportedInsurers} onChange={(e) => updateTpaForm('supportedInsurers', e.target.value)} />
+                </div>
+                <div>
+                  <Label>Claim Processing Time</Label>
+                  <Input value={tpaForm.claimProcessingTime} onChange={(e) => updateTpaForm('claimProcessingTime', e.target.value)} />
+                </div>
+                <div>
+                  <Label>Network Size</Label>
+                  <Input value={tpaForm.networkSize} onChange={(e) => updateTpaForm('networkSize', e.target.value)} />
+                </div>
+                <div>
+                  <Label>Website</Label>
+                  <Input value={tpaForm.website} onChange={(e) => updateTpaForm('website', e.target.value)} />
+                </div>
+                <div>
+                  <Label>Accreditation</Label>
+                  <Input value={tpaForm.accreditation} onChange={(e) => updateTpaForm('accreditation', e.target.value)} />
+                </div>
+                <div>
+                  <Label>Status</Label>
+                  <Select value={tpaForm.status} onValueChange={(value) => updateTpaForm('status', value as TPAProvider['status'])}>
+                    <SelectTrigger>
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="Active">Active</SelectItem>
+                      <SelectItem value="Inactive">Inactive</SelectItem>
+                      <SelectItem value="Pending">Pending</SelectItem>
+                      <SelectItem value="Suspended">Suspended</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
+                <div>
+                  <Label>Digital Platform</Label>
+                  <Select value={tpaForm.digitalPlatform ? 'yes' : 'no'} onValueChange={(value) => updateTpaForm('digitalPlatform', value === 'yes')}>
+                    <SelectTrigger>
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="yes">Yes</SelectItem>
+                      <SelectItem value="no">No</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
+                <div>
+                  <Label>Joined Date</Label>
+                  <Input type="date" value={tpaForm.joinedDate} onChange={(e) => updateTpaForm('joinedDate', e.target.value)} />
+                </div>
+                <div>
+                  <Label>Last Active</Label>
+                  <Input type="date" value={tpaForm.lastActive} onChange={(e) => updateTpaForm('lastActive', e.target.value)} />
+                </div>
+              </div>
+              <div className="flex justify-end gap-2 pt-4">
+                <Button type="button" variant="outline" onClick={closeTpaDialog}>
+                  Cancel
+                </Button>
+                <Button type="button" onClick={handleSaveTPA}>
+                  {editingTPA ? 'Update TPA' : 'Add TPA'}
+                </Button>
+              </div>
+            </DialogContent>
+          </Dialog>
+        )}
       </div>
     </AdminLayout>
   );

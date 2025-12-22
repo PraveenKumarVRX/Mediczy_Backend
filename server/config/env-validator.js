@@ -1,24 +1,24 @@
 import dotenv from 'dotenv';
-dotenv.config();
+import path from 'path';
+import { fileURLToPath } from 'url';
+
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = path.dirname(__filename);
+
+// Load .env from project root (parent of server directory)
+dotenv.config({ path: path.resolve(__dirname, '../../.env') });
 
 const REQUIRED_ENV_VARS = {
   // Security
   JWT_SECRET: 'JWT secret key for token signing',
   ENCRYPTION_KEY: 'Encryption key for sensitive data (PHI/PII)',
-  
-  // Database - MariaDB Leader
-  DB_HOST: 'MariaDB host',
-  DB_USER: 'MariaDB username',
-  DB_PASSWORD: 'MariaDB password',
-  DB_NAME: 'MariaDB database name',
-  
-  // Redis Cache
-  REDIS_HOST: 'Redis host',
-  REDIS_PORT: 'Redis port',
-  
+
   // Node Environment
   NODE_ENV: 'Node environment (production/development)',
 };
+
+// Legacy MariaDB variables that should no longer break boot; warn only
+const LEGACY_MARIADB_VARS = ['DB_HOST', 'DB_USER', 'DB_PASSWORD', 'DB_NAME'];
 
 const OPTIONAL_ENV_VARS = {
   // Server Config
@@ -38,6 +38,7 @@ const OPTIONAL_ENV_VARS = {
   
   // Feature Flags
   DISABLE_KAFKA: { default: 'false', description: 'Disable Kafka integration' },
+  DUCKDB_ENABLED: { default: 'false', description: 'Enable DuckDB analytics engine' },
   
   // Integrations
   GROQ_API_KEY: { default: '', description: 'Groq AI API key' },
@@ -67,7 +68,13 @@ export function validateEnvironment() {
   const postgresUri = process.env.POSTGRES_URI || process.env.PG_URI;
   const postgresConfigSet = process.env.POSTGRES_HOST && process.env.POSTGRES_USER && process.env.POSTGRES_PASSWORD && process.env.POSTGRES_DATABASE;
   if (!postgresUri && !postgresConfigSet) {
-    errors.push('❌ Missing PostgreSQL helper configuration (set POSTGRES_URI or POSTGRES_HOST/USER/PASSWORD/DATABASE).');
+    errors.push('❌ Missing PostgreSQL configuration (set POSTGRES_URI or POSTGRES_HOST/USER/PASSWORD/DATABASE).');
+  }
+
+  // Warn (do not fail) if legacy MariaDB vars are missing for deployments that no longer use them
+  const legacyMissing = LEGACY_MARIADB_VARS.filter(key => !process.env[key]);
+  if (legacyMissing.length === LEGACY_MARIADB_VARS.length) {
+    warnings.push('ℹ️  MariaDB variables not set (legacy layer). This is expected if using the intelligent DB only.');
   }
 
   if (process.env.CITUS_ENABLED === 'true' && !process.env.CITUS_WORKERS) {

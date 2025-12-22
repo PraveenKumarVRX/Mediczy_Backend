@@ -1,0 +1,23 @@
+{
+  "implemented": [
+    "Heritage",
+    "MDIndia",
+    "HealthIndia"
+  ],
+  "pending": [
+    "Care",
+    "FGI",
+    "FHPL",
+    "GoDigit",
+    "ICICI",
+    "MediAssist",
+    "MedSave",
+    "NivaBupa",
+    "Paramount",
+    "Raksha",
+    "StarHealth",
+    "Vidal",
+    "VoloTPA",
+    "EWAT"
+  ]
+}

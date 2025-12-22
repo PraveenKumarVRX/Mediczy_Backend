@@ -1,0 +1,6 @@
+pgvector_packages:
+  - "postgresql-{{ pg_version }}-pgvector"
+pgvector_databases: []
+pgvector_indexes: []
+pgvector_ivfflat_lists: 100
+pgvector_analyze_tables: []

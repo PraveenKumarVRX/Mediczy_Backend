@@ -8,6 +8,48 @@ import Appointment from '../models/appointment.model.intelligent.js';
 
 const router = express.Router();
 
+const normalizeSymptoms = (value) => {
+  if (!value) return [];
+  if (Array.isArray(value)) {
+    return value
+      .map((entry) => String(entry ?? '').trim())
+      .filter(Boolean);
+  }
+  const asString = String(value).trim();
+  if (!asString) return [];
+  return asString
+    .split(/[,\n;]+/)
+    .map((entry) => entry.trim())
+    .filter(Boolean);
+};
+
+const normalizeTimeHHMM = (value = '') => {
+  const trimmed = String(value || '').trim();
+  if (/^([01]\d|2[0-3]):[0-5]\d$/.test(trimmed)) return trimmed;
+  if (/^([01]\d|2[0-3]):[0-5]\d:[0-5]\d$/.test(trimmed)) return trimmed.slice(0, 5);
+  return trimmed;
+};
+
+const mapEnhancedConsultationTypeToDb = (requestedType) => {
+  const normalized = String(requestedType || '').toLowerCase().trim();
+  if (normalized === 'online') return 'online';
+  if (normalized === 'walkin' || normalized === 'walk-in') return 'in-person';
+  if (normalized === 'homevisit' || normalized === 'home-visit' || normalized === 'home_visit') return 'in-person';
+  if (normalized === 'in-person' || normalized === 'inperson') return 'in-person';
+  // Default to online to keep the route permissive; callers can still see requested type in metadata.
+  return 'online';
+};
+
+const deriveChannelFromRequestedType = (requestedType) => {
+  const normalized = String(requestedType || '').toLowerCase();
+  if (normalized === 'audio' || normalized === 'phone') return 'phone';
+  if (normalized === 'chat') return 'chat';
+  if (normalized === 'walkin' || normalized === 'walk-in' || normalized === 'in-person' || normalized === 'homevisit') {
+    return 'in-person';
+  }
+  return 'video';
+};
+
 const toPlainRecord = (record) => {
   if (!record) return null;
   if (typeof record.toJSON === 'function') {
@@ -170,17 +212,75 @@ router.post('/book', authUser, [
     const serviceFee = Math.round(baseFee * 0.1); // 10% service fee
     const totalFee = baseFee + serviceFee;
 
-    // Create DB-backed appointment (minimal canonical fields)
+    const normalizedStartTime = normalizeTimeHHMM(startTime);
+    const normalizedEndTime = normalizeTimeHHMM(endTime);
+    const requestedConsultationType = consultationType;
+    const dbConsultationType = mapEnhancedConsultationTypeToDb(requestedConsultationType);
+    const channel = deriveChannelFromRequestedType(requestedConsultationType);
+    const symptomsArray = normalizeSymptoms(symptoms);
+    const doctorName = `${doctor.prefix || 'Dr.'} ${doctor.firstName} ${doctor.lastName}`.trim();
+
+    // Best-effort duration in minutes
+    const toMinutes = (time) => {
+      const [hours, minutes] = String(time || '').split(':').map((value) => parseInt(value, 10));
+      if (!Number.isFinite(hours) || !Number.isFinite(minutes)) return null;
+      return hours * 60 + minutes;
+    };
+    const startMinutes = toMinutes(normalizedStartTime);
+    const endMinutes = toMinutes(normalizedEndTime);
+    const durationMinutes =
+      startMinutes !== null && endMinutes !== null && endMinutes > startMinutes
+        ? endMinutes - startMinutes
+        : null;
+
+    // Create DB-backed appointment (canonical fields required by the Postgres model)
     const dbAppointment = await Appointment.create({
       userId: req.user.id,
       doctorId,
       appointmentDate,
-      appointmentTime: startTime,
-      consultationType,
-      symptoms: symptoms || '',
-      reason: notes || '',
+      appointmentTime: normalizedStartTime,
+      consultationType: dbConsultationType,
+      duration: durationMinutes || 15,
+      patientName,
+      patientEmail: patient.email,
+      patientPhone: patientPhone || 'N/A',
+      doctorName,
+      specialization: doctor.specialization,
+      paymentAmount: totalFee,
+      symptoms: symptomsArray,
+      reason: notes || null,
+      notes: notes || null,
       status: 'scheduled',
-      paymentStatus: 'pending'
+      paymentStatus: 'pending',
+      patientDetails: {
+        ...(patientAge ? { age: patientAge } : {}),
+        ...(patientGender ? { gender: patientGender } : {}),
+        ...(patientAddress ? { address: patientAddress } : patient.address ? { address: patient.address } : {})
+      },
+      doctorDetails: {
+        ...(doctor.phoneNumber ? { phoneNumber: doctor.phoneNumber } : {}),
+        ...(doctor.email ? { email: doctor.email } : {}),
+        ...(doctor.clinicHospitalName ? { clinicName: doctor.clinicHospitalName } : {}),
+        ...(doctor.practiceAddress ? { address: doctor.practiceAddress } : {})
+      },
+      metadata: {
+        requestedConsultationType,
+        channel,
+        preferredLanguage: preferredLanguage || null,
+        emergencyContact: emergencyContact || null,
+        patientAddress: patientAddress || null,
+        insuranceDetails: insuranceDetails || null,
+        fees: {
+          consultationFee: baseFee,
+          serviceFee,
+          totalFee,
+          currency: 'INR'
+        },
+        meeting: {
+          meetingLink: requestedConsultationType === 'online' ? `https://meet.mediczy.com/${meetingRoom}` : null,
+          roomId: meetingRoom
+        }
+      }
     });
 
     // Build enhanced view object (keeps previous response shape as much as possible)
@@ -555,7 +655,7 @@ router.get('/my-appointments', authUser, [
  */
 router.get('/doctor-appointments', authUser, [
   query('date').optional().isDate(),
-  query('status').optional().isIn(['scheduled', 'completed', 'cancelled', 'in-progress']),
+  query('status').optional().isIn(['scheduled', 'confirmed', 'completed', 'cancelled', 'in-progress']),
   query('consultationType').optional().isIn(['online', 'walkIn', 'homeVisit'])
 ], async (req, res) => {
   try {
@@ -567,40 +667,32 @@ router.get('/doctor-appointments', authUser, [
     }
 
     const { date, status, consultationType } = req.query;
-    
+
+    const where = { doctorId: req.user.id };
+    if (date) {
+      where.appointmentDate = date;
+    }
+    if (status) {
+      where.status = status;
+    }
+    if (consultationType) {
+      where.consultationType = mapEnhancedConsultationTypeToDb(consultationType);
+    }
+
     // Filter appointments for this doctor
-    let doctorAppointments = await Appointment.findAll({
-      where: { doctorId: req.user.id },
+    const doctorAppointments = await Appointment.findAll({
+      where,
       order: [
         ['appointmentDate', 'ASC'],
         ['appointmentTime', 'ASC']
       ]
     });
 
-    // Apply filters
-    if (date) {
-      doctorAppointments = doctorAppointments.filter(apt => apt.appointmentDate === date);
-    }
-    if (status) {
-      doctorAppointments = doctorAppointments.filter(apt => apt.status === status);
-    }
-    if (consultationType) {
-      doctorAppointments = doctorAppointments.filter(apt => apt.consultationType === consultationType);
-    }
-
-    // Sort by date and time
-    doctorAppointments.sort((a, b) => {
-      const dateCompare = new Date(a.appointmentDate) - new Date(b.appointmentDate);
-      if (dateCompare === 0) {
-        return a.timeSlot.localeCompare(b.timeSlot);
-      }
-      return dateCompare;
-    });
-
     // Normalize shape and add enhanced details for doctor view
     const enhancedAppointments = doctorAppointments.map(aptModel => {
       const apt = aptModel.toJSON();
-      const timeSlot = `${apt.appointmentTime}-${apt.appointmentTime}`;
+      const appointmentTime = normalizeTimeHHMM(apt.appointmentTime);
+      const timeSlot = `${appointmentTime}-${appointmentTime}`;
 
       // Normalize consultation type (online vs walkin)
       const rawType = apt.consultationType || 'online';
@@ -610,23 +702,28 @@ router.get('/doctor-appointments', authUser, [
           : 'online';
 
       // Derive channel
-      let channel = 'video';
-      if (apt.channel === 'phone' || apt.consultationMode === 'audio') channel = 'phone';
-      else if (rawType === 'in-person' || rawType === 'walkIn' || rawType === 'walkin') channel = 'in-person';
+      const requestedType = apt.metadata?.requestedConsultationType || apt.metadata?.channel || rawType;
+      const channel = deriveChannelFromRequestedType(requestedType);
 
       // Clinic / location details for walk-in
       const clinicId = apt.clinicId || null;
       const clinicName = apt.clinicName || apt.clinic?.name || null;
       const clinicAddress = apt.clinicAddress || apt.clinic?.address || apt.location || null;
 
+      const symptomsValue = Array.isArray(apt.symptoms) ? apt.symptoms.join(', ') : apt.symptoms;
+      const consultationFee = Number(apt.paymentAmount || 0);
+
       return {
         ...apt,
+        appointmentTime,
         timeSlot,
         consultationType,
         channel,
         clinicId,
         clinicName,
         clinicAddress,
+        symptoms: symptomsValue,
+        consultationFee,
         statusBadge: getStatusBadge(apt.status),
         timeUntilAppointment: getTimeUntilAppointment(apt.appointmentDate, timeSlot),
         canStart: apt.status === 'scheduled' && canStartConsultation({

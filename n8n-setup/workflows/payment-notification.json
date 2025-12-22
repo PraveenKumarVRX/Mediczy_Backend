@@ -1,0 +1,174 @@
+{
+  "name": "Mediczy - Payment Notification",
+  "nodes": [
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "payment-success",
+        "responseMode": "responseNode",
+        "options": {}
+      },
+      "id": "payment-webhook",
+      "name": "Payment Webhook",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 1,
+      "position": [250, 300]
+    },
+    {
+      "parameters": {
+        "url": "=http://localhost:8000/api/notifications/send",
+        "sendBody": true,
+        "bodyParameters": {
+          "parameters": [
+            {
+              "name": "userId",
+              "value": "={{ $json.data.patientId }}"
+            },
+            {
+              "name": "userType",
+              "value": "patient"
+            },
+            {
+              "name": "type",
+              "value": "payment_received"
+            },
+            {
+              "name": "title",
+              "value": "Payment Successful ✅"
+            },
+            {
+              "name": "message",
+              "value": "=Payment of ₹{{ $json.data.amount }} received. Your consultation is confirmed."
+            },
+            {
+              "name": "channels",
+              "value": "=['push', 'email', 'sms', 'in-app']"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "notify-patient",
+      "name": "Notify Patient",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 3,
+      "position": [500, 200]
+    },
+    {
+      "parameters": {
+        "url": "=http://localhost:8000/api/notifications/send",
+        "sendBody": true,
+        "bodyParameters": {
+          "parameters": [
+            {
+              "name": "userId",
+              "value": "={{ $json.data.doctorId }}"
+            },
+            {
+              "name": "userType",
+              "value": "doctor"
+            },
+            {
+              "name": "type",
+              "value": "payment_received"
+            },
+            {
+              "name": "title",
+              "value": "Payment Received"
+            },
+            {
+              "name": "message",
+              "value": "=Payment of ₹{{ $json.data.amount }} received for appointment with {{ $json.data.patientName }}"
+            },
+            {
+              "name": "channels",
+              "value": "=['push', 'in-app']"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "notify-doctor",
+      "name": "Notify Doctor",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 3,
+      "position": [500, 400]
+    },
+    {
+      "parameters": {
+        "topic": "analytics-events",
+        "message": "={{ JSON.stringify({ type: 'PAYMENT_NOTIFICATION_SENT', timestamp: new Date().toISOString(), data: $json.data }) }}"
+      },
+      "id": "kafka-analytics",
+      "name": "Kafka Analytics",
+      "type": "n8n-nodes-base.kafka",
+      "typeVersion": 1,
+      "position": [750, 300]
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={{ JSON.stringify({ success: true, workflow: 'payment-success' }) }}"
+      },
+      "id": "respond",
+      "name": "Respond",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1,
+      "position": [950, 300]
+    }
+  ],
+  "connections": {
+    "Payment Webhook": {
+      "main": [
+        [
+          {
+            "node": "Notify Patient",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Notify Doctor",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Notify Patient": {
+      "main": [
+        [
+          {
+            "node": "Kafka Analytics",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Notify Doctor": {
+      "main": [
+        [
+          {
+            "node": "Kafka Analytics",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Kafka Analytics": {
+      "main": [
+        [
+          {
+            "node": "Respond",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "settings": {
+    "executionOrder": "v1"
+  }
+}

@@ -268,6 +268,8 @@ const DoctorListBooking = () => {
   const [symptoms, setSymptoms] = useState("");
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [viewMode, setViewMode] = useState<"all" | "categories">("all");
+  const [doctorSlots, setDoctorSlots] = useState<any>(null);
+  const [loadingSlots, setLoadingSlots] = useState(false);
   
   const { toast } = useToast();
   const navigate = useNavigate();
@@ -396,7 +398,39 @@ const DoctorListBooking = () => {
   const handleBookAppointment = (doctor: Doctor) => {
     setSelectedDoctor(doctor);
     setShowBookingModal(true);
+    setDoctorSlots(null); // Reset slots when opening modal
+    fetchDoctorSlots(doctor._id, selectedDate);
   };
+
+  const fetchDoctorSlots = async (doctorId: string, date?: Date) => {
+    if (!doctorId) return;
+    
+    setLoadingSlots(true);
+    try {
+      const dateParam = date ? format(date, 'yyyy-MM-dd') : undefined;
+      const { data } = await api.get(`/doctors/${doctorId}/user-slots`, {
+        params: dateParam ? { date: dateParam } : {}
+      });
+      
+      setDoctorSlots(data);
+    } catch (error) {
+      console.error('Error fetching doctor slots:', error);
+      toast({
+        title: "Info",
+        description: "Could not load doctor's availability schedule",
+        variant: "default",
+      });
+    } finally {
+      setLoadingSlots(false);
+    }
+  };
+
+  // Fetch slots when date changes
+  useEffect(() => {
+    if (selectedDoctor && selectedDate && showBookingModal) {
+      fetchDoctorSlots(selectedDoctor._id, selectedDate);
+    }
+  }, [selectedDate, selectedDoctor, showBookingModal]);
 
   const renderDoctorCard = (doctor: Doctor) => {
     const SpecIcon = getSpecializationIcon(doctor.specialization);
@@ -515,20 +549,39 @@ const DoctorListBooking = () => {
     try {
       setIsSubmitting(true);
 
-      const doctorIdentifier = (selectedDoctor.id ?? selectedDoctor._id)?.toString();
-      if (!doctorIdentifier || !/^\d+$/.test(doctorIdentifier)) {
+      const normalizedTime = toBackendTime(selectedTime);
+      if (!normalizedTime) {
+        toast({
+          title: "Invalid time",
+          description: "Please select a valid appointment time.",
+          variant: "destructive",
+        });
+        return;
+      }
+
+      const doctorIdentifier = selectedDoctor._id?.toString();
+      if (!doctorIdentifier) {
         toast({
           title: "Booking unavailable",
-          description: "This doctor profile is not ready for online bookings yet.",
+          description: "Doctor information is incomplete. Please try another doctor.",
           variant: "destructive"
         });
         return;
       }
+
+      // Convert doctor ID to number if possible, otherwise use as string
+      let doctorId: number | string;
+      if (/^\d+$/.test(doctorIdentifier)) {
+        doctorId = parseInt(doctorIdentifier, 10);
+      } else {
+        // For non-numeric IDs (like MongoDB ObjectIDs), use as string
+        doctorId = doctorIdentifier;
+      }
       
       const bookingData = {
-        doctorId: parseInt(doctorIdentifier, 10),
+        doctorId,
         appointmentDate: format(selectedDate, "yyyy-MM-dd"),
-        appointmentTime: selectedTime,
+        appointmentTime: normalizedTime,
         consultationType: consultationType === "online" ? "video" : "in-person",
         symptoms,
         consultationFee: consultationType === "online" 
@@ -935,11 +988,11 @@ const DoctorListBooking = () => {
                       <div>
                         <div className="font-semibold text-gray-900">In-Person Visit</div>
                         <div className="text-sm text-gray-500">
-                          {selectedDoctor?.clinic.name}
+                          {doctorSlots?.slots?.inPerson?.[0]?.location?.name || selectedDoctor?.clinic.name}
                         </div>
                       </div>
                       <div className="ml-auto text-lg font-bold text-green-600">
-                        ₹{selectedDoctor?.consultationFee.inPerson}
+                        ₹{doctorSlots?.slots?.inPerson?.[0]?.location?.fee || selectedDoctor?.consultationFee.inPerson}
                       </div>
                     </Label>
                   </div>
@@ -978,25 +1031,145 @@ const DoctorListBooking = () => {
               {/* Time Selection */}
               <div className="space-y-3">
                 <Label className="text-base font-semibold">Select Time</Label>
-                <div className="grid grid-cols-4 sm:grid-cols-6 gap-2">
-                  {timeSlots.map((time) => {
-                    const backendTime = toBackendTime(time);
-                    return (
-                      <Button
-                        key={time}
-                        variant={selectedTime === backendTime ? "default" : "outline"}
-                        size="sm"
-                        onClick={() => setSelectedTime(backendTime)}
-                        className={cn(
-                          "text-xs rounded-lg",
-                          selectedTime === backendTime && "bg-gradient-to-r from-blue-600 to-green-600 border-0"
+                
+                {loadingSlots ? (
+                  <div className="flex items-center justify-center py-8">
+                    <Loader2 className="h-6 w-6 animate-spin text-blue-600" />
+                    <span className="ml-2 text-gray-600">Loading available slots...</span>
+                  </div>
+                ) : doctorSlots && !doctorSlots.isOff ? (
+                  <div className="space-y-4">
+                    {/* Online Slots */}
+                    {consultationType === "online" && doctorSlots.slots?.online?.length > 0 ? (
+                      <div>
+                        <div className="flex items-center gap-2 mb-2">
+                          <Video className="h-4 w-4 text-blue-600" />
+                          <span className="text-sm font-semibold text-gray-700">Online Consultation Slots</span>
+                          <Badge variant="outline" className="text-xs">
+                            {doctorSlots.slotDuration || 30} min slots
+                          </Badge>
+                        </div>
+                        <div className="grid grid-cols-4 sm:grid-cols-6 gap-2">
+                          {doctorSlots.slots.online
+                            .filter((slot: any) => slot.available && !slot.blocked)
+                            .map((slot: any) => {
+                              const slotTime = slot.time;
+                              return (
+                                <Button
+                                  key={slotTime}
+                                  variant={selectedTime === slotTime ? "default" : "outline"}
+                                  size="sm"
+                                  onClick={() => setSelectedTime(slotTime)}
+                                  className={cn(
+                                    "text-xs rounded-lg",
+                                    selectedTime === slotTime && "bg-gradient-to-r from-blue-600 to-blue-500 border-0"
+                                  )}
+                                >
+                                  {slotTime}
+                                </Button>
+                              );
+                            })}
+                        </div>
+                        {doctorSlots.slots.online.filter((s: any) => s.available && !s.blocked).length === 0 && (
+                          <p className="text-sm text-gray-500 py-4 text-center">No available online slots for this date</p>
                         )}
-                      >
-                        {time}
-                      </Button>
-                    );
-                  })}
-                </div>
+                      </div>
+                    ) : null}
+
+                    {/* In-Person Slots */}
+                    {consultationType === "inPerson" && doctorSlots.slots?.inPerson?.length > 0 ? (
+                      <div>
+                        <div className="flex items-center gap-2 mb-2">
+                          <User className="h-4 w-4 text-green-600" />
+                          <span className="text-sm font-semibold text-gray-700">In-Person Consultation Slots</span>
+                          <Badge variant="outline" className="text-xs">
+                            {doctorSlots.slotDuration || 30} min slots
+                          </Badge>
+                        </div>
+                        
+                        {/* Location Info */}
+                        {doctorSlots.slots.inPerson[0]?.location && (
+                          <div className="mb-3 p-3 bg-green-50 border border-green-200 rounded-lg">
+                            <div className="flex items-start gap-2">
+                              <MapPin className="h-4 w-4 text-green-600 mt-0.5" />
+                              <div className="flex-1">
+                                <p className="font-semibold text-gray-900 text-sm">{doctorSlots.slots.inPerson[0].location.name}</p>
+                                <p className="text-xs text-gray-600">{doctorSlots.slots.inPerson[0].location.address}</p>
+                                <p className="text-xs font-semibold text-green-700 mt-1">
+                                  Consultation Fee: ₹{doctorSlots.slots.inPerson[0].location.fee}
+                                </p>
+                              </div>
+                            </div>
+                          </div>
+                        )}
+                        
+                        <div className="grid grid-cols-4 sm:grid-cols-6 gap-2">
+                          {doctorSlots.slots.inPerson
+                            .filter((slot: any) => slot.available && !slot.blocked)
+                            .map((slot: any) => {
+                              const slotTime = slot.time;
+                              return (
+                                <Button
+                                  key={slotTime}
+                                  variant={selectedTime === slotTime ? "default" : "outline"}
+                                  size="sm"
+                                  onClick={() => setSelectedTime(slotTime)}
+                                  className={cn(
+                                    "text-xs rounded-lg",
+                                    selectedTime === slotTime && "bg-gradient-to-r from-green-600 to-green-500 border-0"
+                                  )}
+                                >
+                                  {slotTime}
+                                </Button>
+                              );
+                            })}
+                        </div>
+                        {doctorSlots.slots.inPerson.filter((s: any) => s.available && !s.blocked).length === 0 && (
+                          <p className="text-sm text-gray-500 py-4 text-center">No available in-person slots for this date</p>
+                        )}
+                      </div>
+                    ) : null}
+
+                    {/* No slots available for selected type */}
+                    {consultationType === "online" && (!doctorSlots.slots?.online || doctorSlots.slots.online.length === 0) && (
+                      <p className="text-sm text-gray-500 py-4 text-center">Doctor does not have online consultation slots configured for this day</p>
+                    )}
+                    {consultationType === "inPerson" && (!doctorSlots.slots?.inPerson || doctorSlots.slots.inPerson.length === 0) && (
+                      <p className="text-sm text-gray-500 py-4 text-center">Doctor does not have in-person consultation slots configured for this day</p>
+                    )}
+                  </div>
+                ) : doctorSlots && doctorSlots.isOff ? (
+                  <div className="py-8 text-center">
+                    <Calendar className="h-12 w-12 text-gray-300 mx-auto mb-3" />
+                    <p className="text-gray-600 font-medium">Doctor is not available on this day</p>
+                    <p className="text-sm text-gray-500 mt-1">Please select a different date</p>
+                  </div>
+                ) : (
+                  <div className="grid grid-cols-4 sm:grid-cols-6 gap-2">
+                    {timeSlots.map((time) => {
+                      const backendTime = toBackendTime(time);
+                      return (
+                        <Button
+                          key={time}
+                          variant={selectedTime === backendTime ? "default" : "outline"}
+                          size="sm"
+                          onClick={() => setSelectedTime(backendTime)}
+                          className={cn(
+                            "text-xs rounded-lg",
+                            selectedTime === backendTime && "bg-gradient-to-r from-blue-600 to-green-600 border-0"
+                          )}
+                        >
+                          {time}
+                        </Button>
+                      );
+                    })}
+                  </div>
+                )}
+                {selectedTime && !loadingSlots ? (
+                  <p className="text-xs text-muted-foreground">
+                    Selected slot: <span className="font-medium text-foreground">{selectedTime}</span>
+                  </p>
+                ) : null}
               </div>
 
               {/* Symptoms */}
@@ -1051,12 +1224,16 @@ const DoctorListBooking = () => {
                     <div className="flex justify-between items-center text-lg">
                       <span className="font-semibold text-gray-900">Total Fee</span>
                       <span className="font-bold text-green-600">
-                        ₹{selectedDoctor 
-                          ? (consultationType === "online" 
-                              ? selectedDoctor.consultationFee.online 
-                              : selectedDoctor.consultationFee.inPerson)
-                          : 0
-                        }
+                        ₹{(() => {
+                          if (!selectedDoctor) return 0;
+                          if (consultationType === "online") {
+                            return selectedDoctor.consultationFee.online;
+                          } else {
+                            // Use location-specific fee if available
+                            const locationFee = doctorSlots?.slots?.inPerson?.[0]?.location?.fee;
+                            return locationFee || selectedDoctor.consultationFee.inPerson;
+                          }
+                        })()}
                       </span>
                     </div>
                   </div>

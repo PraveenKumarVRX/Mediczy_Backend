@@ -5,10 +5,13 @@ import { Badge } from "@/components/ui/badge";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Separator } from "@/components/ui/separator";
 import DrISHAChat from "@/components/DrISHAChat";
+import QuickAppointmentModal from "@/components/QuickAppointmentModal";
 import { drIshaAPI } from "@/services/drIsha";
 import { useState, useEffect } from "react";
 import { useQuery } from "@tanstack/react-query";
 import api from "@/utils/api";
+import { useNavigate } from "react-router-dom";
+import { useToast } from "@/hooks/use-toast";
 import { 
   Calendar, 
   Clock, 
@@ -33,6 +36,7 @@ import {
 
 interface Appointment {
   id: string;
+  backendId?: number;
   doctor: {
     id?: string;
     name: string;
@@ -64,12 +68,23 @@ interface SmartSuggestion {
   actionable: boolean;
 }
 
+const parseBackendId = (value: unknown) => {
+  if (value === null || value === undefined) return undefined;
+  const parsed = typeof value === "number" ? value : Number(String(value));
+  return Number.isFinite(parsed) ? parsed : undefined;
+};
+
 const Appointments = () => {
+  const navigate = useNavigate();
+  const { toast } = useToast();
+
   const [activeTab, setActiveTab] = useState("upcoming");
+  const [showBookingModal, setShowBookingModal] = useState(false);
   const [appointments, setAppointments] = useState<Appointment[]>([]);
   const [smartSuggestions, setSmartSuggestions] = useState<SmartSuggestion[]>([]);
   const [showAIChat, setShowAIChat] = useState(false);
   const [aiAnalyzing, setAiAnalyzing] = useState(false);
+  const [actionLoadingId, setActionLoadingId] = useState<string | null>(null);
   const [reminderSettings, setReminderSettings] = useState({
     enabled: true,
     timeBeforeAppointment: 30, // minutes
@@ -94,6 +109,7 @@ const Appointments = () => {
 
       return list.map((apt: any) => ({
         id: String(apt.id ?? apt.appointmentId ?? apt._id ?? crypto.randomUUID()),
+        backendId: parseBackendId(apt.id ?? apt.appointmentId ?? apt.appointment_id),
         doctor: {
           id: apt.doctorId ?? apt.doctor?._id,
           name:
@@ -349,6 +365,103 @@ const Appointments = () => {
     });
   };
 
+  const handleJoinCall = (appointment: Appointment) => {
+    const doctorId = appointment.doctor.id;
+    if (!doctorId) {
+      toast({
+        title: "Unable to start call",
+        description: "Doctor details are missing for this appointment.",
+        variant: "destructive",
+      });
+      return;
+    }
+    navigate(`/chat?doctorId=${doctorId}`);
+  };
+
+  const handleCancelAppointment = async (appointment: Appointment) => {
+    if (!appointment.backendId) {
+      toast({
+        title: "Cancel unavailable",
+        description: "This appointment is missing a backend id.",
+        variant: "destructive",
+      });
+      return;
+    }
+
+    const confirmed = window.confirm("Cancel this appointment?");
+    if (!confirmed) return;
+
+    setActionLoadingId(appointment.id);
+    try {
+      await api.patch(`/appointments/${appointment.backendId}/cancel`);
+      setAppointments((prev) =>
+        prev.map((apt) =>
+          apt.id === appointment.id ? { ...apt, status: "cancelled" } : apt
+        )
+      );
+      toast({ title: "Appointment cancelled" });
+    } catch (error: any) {
+      toast({
+        title: "Cancel failed",
+        description: error?.response?.data?.message || "Please try again.",
+        variant: "destructive",
+      });
+    } finally {
+      setActionLoadingId(null);
+    }
+  };
+
+  const handleRescheduleAppointment = async (appointment: Appointment) => {
+    if (!appointment.backendId) {
+      toast({
+        title: "Reschedule unavailable",
+        description: "This appointment is missing a backend id.",
+        variant: "destructive",
+      });
+      return;
+    }
+
+    const appointmentDate = window.prompt(
+      "Enter new appointment date (YYYY-MM-DD):",
+      String(appointment.date ?? "")
+    );
+    if (!appointmentDate) return;
+    const appointmentTime = window.prompt(
+      "Enter new appointment time (HH:MM, 24-hour):",
+      String(appointment.time ?? "")
+    );
+    if (!appointmentTime) return;
+
+    setActionLoadingId(appointment.id);
+    try {
+      await api.patch(`/appointments/${appointment.backendId}/reschedule`, {
+        appointmentDate,
+        appointmentTime,
+      });
+      setAppointments((prev) =>
+        prev.map((apt) =>
+          apt.id === appointment.id
+            ? {
+                ...apt,
+                date: appointmentDate,
+                time: appointmentTime,
+                status: "rescheduled",
+              }
+            : apt
+        )
+      );
+      toast({ title: "Appointment rescheduled" });
+    } catch (error: any) {
+      toast({
+        title: "Reschedule failed",
+        description: error?.response?.data?.message || "Please try again.",
+        variant: "destructive",
+      });
+    } finally {
+      setActionLoadingId(null);
+    }
+  };
+
   return (
     <MainLayout>
       <div className="space-y-8 animate-in fade-in duration-700">
@@ -366,7 +479,9 @@ const Appointments = () => {
                 <MessageSquare className="h-4 w-4 mr-2" />
                 Ask Dr. iSHA
               </Button>
-              <Button className="bg-gradient-to-r from-[#00FFF3] to-[#00B8FF] text-black hover:from-[#00E6D6] hover:to-[#00A3E6]">
+              <Button 
+                onClick={() => setShowBookingModal(true)}
+                className="bg-gradient-to-r from-[#00FFF3] to-[#00B8FF] text-black hover:from-[#00E6D6] hover:to-[#00A3E6]">
                 <Plus className="h-4 w-4 mr-2" />
                 New Appointment
               </Button>
@@ -465,15 +580,32 @@ const Appointments = () => {
                         
                         <div className="flex gap-2 mt-4">
                           {appointment.consultationType === 'online' && appointment.channel === 'video' && (
-                            <Button size="sm" className="bg-green-600 hover:bg-green-700">
+                            <Button
+                              size="sm"
+                              className="bg-green-600 hover:bg-green-700"
+                              disabled={actionLoadingId === appointment.id}
+                              onClick={() => handleJoinCall(appointment)}
+                            >
                               <Video className="h-4 w-4 mr-1" />
                               Join Call
                             </Button>
                           )}
-                          <Button variant="outline" size="sm" className="border-[#00FFF3]/30 text-[#00FFF3]">
+                          <Button
+                            variant="outline"
+                            size="sm"
+                            className="border-[#00FFF3]/30 text-[#00FFF3]"
+                            disabled={actionLoadingId === appointment.id}
+                            onClick={() => handleRescheduleAppointment(appointment)}
+                          >
                             Reschedule
                           </Button>
-                          <Button variant="outline" size="sm" className="border-red-500/30 text-red-500">
+                          <Button
+                            variant="outline"
+                            size="sm"
+                            className="border-red-500/30 text-red-500"
+                            disabled={actionLoadingId === appointment.id}
+                            onClick={() => handleCancelAppointment(appointment)}
+                          >
                             Cancel
                           </Button>
                         </div>
@@ -489,7 +621,9 @@ const Appointments = () => {
                     <CalendarDays className="h-12 w-12 text-[#00FFF3] mx-auto mb-4 opacity-50" />
                     <h3 className="text-lg font-semibold text-[#00FFF3] mb-2">No Upcoming Appointments</h3>
                     <p className="text-gray-400 mb-6">Schedule your next consultation to stay on top of your health</p>
-                    <Button className="bg-gradient-to-r from-[#00FFF3] to-[#00B8FF] text-black">
+                    <Button 
+                      onClick={() => setShowBookingModal(true)}
+                      className="bg-gradient-to-r from-[#00FFF3] to-[#00B8FF] text-black">
                       <Plus className="h-4 w-4 mr-2" />
                       Book Appointment
                     </Button>
@@ -533,10 +667,36 @@ const Appointments = () => {
                           <span className="ml-1 capitalize">{appointment.status}</span>
                         </Badge>
                         <div className="flex gap-2 mt-2">
-                          <Button variant="outline" size="sm" className="border-[#00FFF3]/30 text-[#00FFF3]">
+                          <Button
+                            variant="outline"
+                            size="sm"
+                            className="border-[#00FFF3]/30 text-[#00FFF3]"
+                            onClick={() =>
+                              toast({
+                                title: "View report",
+                                description: "Report view is not wired yet for this appointment.",
+                              })
+                            }
+                          >
                             View Report
                           </Button>
-                          <Button variant="outline" size="sm" className="border-[#00FFF3]/30 text-[#00FFF3]">
+                          <Button
+                            variant="outline"
+                            size="sm"
+                            className="border-[#00FFF3]/30 text-[#00FFF3]"
+                            onClick={() => {
+                              const doctorId = appointment.doctor.id;
+                              if (!doctorId) {
+                                toast({
+                                  title: "Unable to book follow-up",
+                                  description: "Doctor details are missing for this appointment.",
+                                  variant: "destructive",
+                                });
+                                return;
+                              }
+                              navigate(`/consultation/${doctorId}`);
+                            }}
+                          >
                             Book Follow-up
                           </Button>
                         </div>
@@ -740,6 +900,12 @@ const Appointments = () => {
             </div>
           </div>
         )}
+
+        {/* Quick Appointment Booking Modal */}
+        <QuickAppointmentModal 
+          open={showBookingModal} 
+          onOpenChange={setShowBookingModal} 
+        />
       </div>
     </MainLayout>
   );

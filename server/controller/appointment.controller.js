@@ -11,6 +11,65 @@ import {
 } from '../tasks/index.js';
 import intelligentDb from '../utils/intelligentDbClient.js';
 import n8nService from '../services/n8n.service.js';
+import notificationService from '../services/notification.service.js';
+
+const normalizeTimeHHMM = (value = '') => {
+  const trimmed = String(value || '').trim();
+  if (/^([01]\d|2[0-3]):[0-5]\d$/.test(trimmed)) return trimmed;
+  if (/^([01]\d|2[0-3]):[0-5]\d:[0-5]\d$/.test(trimmed)) return trimmed.slice(0, 5);
+  return trimmed;
+};
+
+const getAppointmentDateTime = (appointment) => {
+  if (!appointment?.appointmentDate || !appointment?.appointmentTime) return null;
+
+  const datePart =
+    appointment.appointmentDate instanceof Date
+      ? appointment.appointmentDate.toISOString().split('T')[0]
+      : String(appointment.appointmentDate);
+
+  const timePart = normalizeTimeHHMM(appointment.appointmentTime);
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(datePart) || !/^([01]\d|2[0-3]):[0-5]\d$/.test(timePart)) {
+    return null;
+  }
+
+  const candidate = new Date(`${datePart}T${timePart}:00`);
+  return Number.isNaN(candidate.getTime()) ? null : candidate;
+};
+
+const canCancelOrReschedule = (appointment, minimumHours = 2) => {
+  if (!appointment) return false;
+  if (['completed', 'cancelled', 'no-show'].includes(appointment.status)) return false;
+  const dateTime = getAppointmentDateTime(appointment);
+  if (!dateTime) return true; // If we cannot parse, don't hard-block; let business rules be permissive.
+  const diffMs = dateTime.getTime() - Date.now();
+  return diffMs >= minimumHours * 60 * 60 * 1000;
+};
+
+const normalizeSymptoms = (value) => {
+  if (!value) return [];
+  if (Array.isArray(value)) {
+    return value
+      .map((entry) => String(entry ?? '').trim())
+      .filter(Boolean);
+  }
+  const asString = String(value).trim();
+  if (!asString) return [];
+  const parts = asString
+    .split(/[,\n;]+/)
+    .map((entry) => entry.trim())
+    .filter(Boolean);
+  return parts.length > 1 ? parts : [asString];
+};
+
+const mapConsultationTypeForDb = (requestedType) => {
+  const normalized = String(requestedType || '').toLowerCase();
+  if (normalized === 'in-person' || normalized === 'walkin' || normalized === 'walk-in') {
+    return 'in-person';
+  }
+  // For video/audio/chat and other online modes, Appointment model expects `online`.
+  return 'online';
+};
 
 /**
  * Create a new appointment
@@ -33,6 +92,9 @@ export const createAppointment = async (req, res) => {
     } = req.body;
 
     const userId = req.user.id;
+    const requestedConsultationType = consultationType;
+    const dbConsultationType = mapConsultationTypeForDb(requestedConsultationType);
+    const normalizedSymptoms = normalizeSymptoms(symptoms);
 
     // Fetch user details
     const user = await User.findByPk(userId);
@@ -71,7 +133,7 @@ export const createAppointment = async (req, res) => {
 
     let consultationFee = 500; // Default
     if (availability) {
-      switch (consultationType) {
+      switch (requestedConsultationType) {
         case 'video':
           consultationFee = availability.videoConsultationFee;
           break;
@@ -98,12 +160,24 @@ export const createAppointment = async (req, res) => {
       specialization: doctor.specialization,
       appointmentDate,
       appointmentTime,
-      consultationType,
-      consultationFee,
-      symptoms,
+      consultationType: dbConsultationType,
+      paymentAmount: consultationFee,
+      symptoms: normalizedSymptoms,
       reason,
       status: 'scheduled',
-      paymentStatus: 'pending'
+      paymentStatus: 'pending',
+      metadata: {
+        ...(req.userTenantId ? { organizationId: req.userTenantId } : {}),
+        requestedConsultationType: requestedConsultationType || null,
+        channel:
+          requestedConsultationType === 'audio'
+            ? 'phone'
+            : requestedConsultationType === 'chat'
+            ? 'chat'
+            : dbConsultationType === 'in-person'
+            ? 'in-person'
+            : 'video'
+      }
     });
 
     // Send confirmation email (async task)
@@ -159,6 +233,87 @@ export const createAppointment = async (req, res) => {
       console.error('Failed to trigger n8n workflow:', n8nError);
     }
 
+    // Send comprehensive notification to doctor (NEW - Multi-channel)
+    try {
+      console.log('📧 Sending appointment notification to doctor...');
+      
+      // Prepare appointment data for iCal generation
+      const appointmentData = {
+        id: appointment.id,
+        patientName: appointment.patientName,
+        patientEmail: appointment.patientEmail || user.email,
+        patientPhone: appointment.patientPhone || user.phoneNumber || user.phone,
+        doctorName: appointment.doctorName,
+        doctorEmail: doctor.email,
+        specialization: appointment.specialization,
+        appointmentDate: appointment.appointmentDate,
+        appointmentTime: appointment.appointmentTime,
+        duration: appointment.duration || 30,
+        consultationType: appointment.consultationType,
+        consultationFee: appointment.consultationFee,
+        symptoms: appointment.symptoms,
+        notes: appointment.notes,
+        location: appointment.location,
+        meetingLink: appointment.meetingLink
+      };
+      
+      await notificationService.notifyAppointmentRequest(appointment, appointmentData);
+      console.log('✅ Doctor notification sent successfully');
+    } catch (notificationError) {
+      console.error('❌ Failed to send doctor notification:', notificationError);
+    }
+
+    // Send confirmation notification to patient
+    try {
+      console.log('📧 Sending appointment confirmation to patient...');
+      
+      // Prepare appointment data for iCal generation
+      const appointmentData = {
+        id: appointment.id,
+        patientName: appointment.patientName,
+        patientEmail: appointment.patientEmail || user.email,
+        patientPhone: appointment.patientPhone || user.phoneNumber || user.phone,
+        doctorName: appointment.doctorName,
+        doctorEmail: doctor.email,
+        specialization: appointment.specialization,
+        appointmentDate: appointment.appointmentDate,
+        appointmentTime: appointment.appointmentTime,
+        duration: appointment.duration || 30,
+        consultationType: appointment.consultationType,
+        consultationFee: appointment.consultationFee,
+        symptoms: appointment.symptoms,
+        notes: appointment.notes,
+        location: appointment.location,
+        meetingLink: appointment.meetingLink
+      };
+      
+      await notificationService.send({
+        userId: appointment.userId,
+        userType: 'patient',
+        type: 'appointment_booked',
+        variables: {
+          patientName: appointment.patientName,
+          doctorName: appointment.doctorName,
+          date: appointment.appointmentDate,
+          time: appointment.appointmentTime,
+          appointmentId: appointment.id,
+          consultationType: consultationType,
+          paymentStatus: 'Pending'
+        },
+        data: { 
+          appointmentId: appointment.id,
+          status: 'scheduled',
+          doctorId: appointment.doctorId
+        },
+        channels: ['in-app', 'email'],
+        actionUrl: '/my-bookings',
+        appointmentData: appointmentData
+      });
+      console.log('✅ Patient confirmation sent successfully');
+    } catch (patientNotificationError) {
+      console.error('❌ Failed to send patient confirmation:', patientNotificationError);
+    }
+
     // Mirror to intelligent DB (fire-and-forget style)
     (async () => {
       try {
@@ -187,8 +342,8 @@ export const createAppointment = async (req, res) => {
         specialization: appointment.specialization,
         appointmentDate: appointment.appointmentDate,
         appointmentTime: appointment.appointmentTime,
-        consultationType: appointment.consultationType,
-        consultationFee: appointment.consultationFee,
+        consultationType: requestedConsultationType || appointment.consultationType,
+        consultationFee,
         status: appointment.status,
         paymentStatus: appointment.paymentStatus
       }
@@ -353,7 +508,7 @@ export const cancelAppointment = async (req, res) => {
     }
 
     // Check if appointment can be cancelled
-    if (!appointment.canBeCancelled()) {
+    if (!canCancelOrReschedule(appointment, 2)) {
       return res.status(400).json({ 
         message: 'Appointment cannot be cancelled. Must be cancelled at least 2 hours before the scheduled time.' 
       });
@@ -407,7 +562,7 @@ export const rescheduleAppointment = async (req, res) => {
     }
 
     // Check if appointment can be rescheduled
-    if (!appointment.canBeRescheduled()) {
+    if (!canCancelOrReschedule(appointment, 2)) {
       return res.status(400).json({ 
         message: 'Appointment cannot be rescheduled at this time.' 
       });
@@ -459,7 +614,7 @@ export const completeAppointment = async (req, res) => {
   try {
     const { id } = req.params;
     const doctorId = req.user.id;
-    const { notes, prescription } = req.body;
+    const { notes, prescription, autoCreatePrescription } = req.body;
 
     const appointment = await Appointment.findByPk(id);
 
@@ -472,16 +627,105 @@ export const completeAppointment = async (req, res) => {
       return res.status(403).json({ message: 'Unauthorized access' });
     }
 
+    let prescriptionData = null;
+
+    // Auto-create prescription draft for online consultations if requested
+    if (autoCreatePrescription !== false && ['video', 'audio', 'chat'].includes(appointment.consultationType)) {
+      try {
+        const { Prescription, Doctor, User } = await import('../models/index.js');
+        
+        // Check if prescription already exists
+        const existingPrescription = await Prescription.findOne({
+          where: { appointmentId: parseInt(id) }
+        });
+
+        if (!existingPrescription) {
+          const doctor = await Doctor.findByPk(doctorId);
+          const patient = await User.findByPk(appointment.userId);
+
+          if (doctor && patient) {
+            let patientAge = null;
+            if (patient.dateOfBirth) {
+              const dob = new Date(patient.dateOfBirth);
+              const today = new Date();
+              patientAge = today.getFullYear() - dob.getFullYear();
+            }
+
+            const newPrescription = await Prescription.create({
+              appointmentId: appointment.id,
+              patientId: appointment.userId,
+              patientName: `${patient.firstName || ''} ${patient.lastName || ''}`.trim() || appointment.patientName,
+              patientAge,
+              patientGender: patient.gender || 'Not specified',
+              patientPhone: patient.phoneNumber || patient.phone || appointment.patientPhone,
+              doctorId: doctor.id,
+              doctorName: `${doctor.firstName || ''} ${doctor.lastName || ''}`.trim(),
+              doctorQualifications: Array.isArray(doctor.qualifications) 
+                ? doctor.qualifications.join(', ') 
+                : (doctor.qualifications || doctor.qualification || 'MBBS'),
+              doctorRegNo: doctor.registrationNumber || doctor.licenseNumber || 'N/A',
+              specialty: doctor.specialization || 'General Medicine',
+              clinicName: doctor.clinicHospitalName || doctor.clinicName || 'Mediczy Healthcare',
+              clinicAddress: appointment.consultationType === 'in-person' 
+                ? (doctor.clinicAddress || 'Clinic') 
+                : 'Online Consultation / Telemedicine',
+              clinicPhone: doctor.phone || doctor.phoneNumber,
+              clinicEmail: doctor.email,
+              clinicDetails: {
+                name: doctor.clinicHospitalName || doctor.clinicName || 'Mediczy Healthcare',
+                address: appointment.consultationType === 'in-person' 
+                  ? (doctor.clinicAddress || 'Clinic') 
+                  : 'Online Consultation / Telemedicine',
+                phone: doctor.phone || doctor.phoneNumber,
+                email: doctor.email,
+                specialty: doctor.specialization,
+                consultationType: appointment.consultationType
+              },
+              diagnosis: 'To be filled by doctor',
+              chiefComplaints: appointment.symptoms || ['As discussed during consultation'],
+              medications: [],
+              labTests: [],
+              instructions: [
+                'Complete the full course of medications',
+                'Take medicines as directed',
+                'Contact doctor if symptoms worsen'
+              ],
+              vitals: {},
+              validityDays: 30,
+              notes: notes || `${appointment.consultationType} consultation completed`,
+              status: 'draft'
+            });
+
+            prescriptionData = {
+              prescriptionId: newPrescription.prescriptionId,
+              status: 'draft',
+              message: 'Prescription draft auto-created'
+            };
+          }
+        } else {
+          prescriptionData = {
+            prescriptionId: existingPrescription.prescriptionId,
+            status: existingPrescription.status,
+            message: 'Prescription already exists'
+          };
+        }
+      } catch (prescriptionError) {
+        console.error('Auto-prescription creation failed:', prescriptionError);
+        // Continue even if prescription creation fails
+      }
+    }
+
     // Update appointment
     await appointment.update({
       status: 'completed',
-      notes,
-      prescription
+      notes: notes || appointment.notes,
+      prescription: prescription || prescriptionData?.prescriptionId || appointment.prescription
     });
 
     return res.status(200).json({
       message: 'Appointment marked as completed',
-      appointment
+      appointment,
+      prescription: prescriptionData
     });
   } catch (error) {
     console.error('Complete appointment error:', error);

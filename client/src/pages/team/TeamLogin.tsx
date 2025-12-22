@@ -17,7 +17,8 @@ import {
   CheckCircle2,
   Activity
 } from 'lucide-react';
-import axios from 'axios';
+import api from '@/utils/api';
+import { clearAuthTokens } from '@/hooks/auth';
 
 const TeamLogin = () => {
   const navigate = useNavigate();
@@ -32,15 +33,6 @@ const TeamLogin = () => {
 
   // Check if already authenticated and setup dev credentials
   useEffect(() => {
-    // Clear any other role tokens that might interfere
-    localStorage.removeItem('adminToken');
-    localStorage.removeItem('nurseToken');
-    localStorage.removeItem('assistantToken');
-    localStorage.removeItem('corporateToken');
-    localStorage.removeItem('doctorToken');
-    localStorage.removeItem('token');
-    localStorage.removeItem('userType');
-
     const token = localStorage.getItem('teamToken');
     if (token) {
       console.log('✅ Team already authenticated, redirecting...');
@@ -68,18 +60,40 @@ const TeamLogin = () => {
     if (error) setError('');
   };
 
+  const establishTeamSession = (token: string, teamUser?: any) => {
+    clearAuthTokens();
+    localStorage.setItem('teamToken', token);
+    localStorage.setItem('token', token);
+    localStorage.setItem('userType', 'team');
+    if (teamUser) {
+      localStorage.setItem('teamUserData', JSON.stringify({
+        id: teamUser.id,
+        email: teamUser.email,
+        firstName: teamUser.firstName,
+        lastName: teamUser.lastName,
+        role: teamUser.role,
+        department: teamUser.department,
+        isActive: teamUser.isActive
+      }));
+    } else {
+      localStorage.removeItem('teamUserData');
+    }
+    window.dispatchEvent(new Event('authChange'));
+  };
+
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setLoading(true);
     setError('');
 
     // Development mode: Quick bypass for test credentials
-    if (import.meta.env.DEV && formData.email === 'team@mediczy.com' && formData.password === 'TeamPass123') {
+    if (
+      import.meta.env.DEV &&
+      formData.email === 'team@mediczy.com' &&
+      formData.password === 'TeamPass123'
+    ) {
       console.log('🚀 Team development mode: Using quick authentication bypass');
-      
-      // Set dev team token directly
-      localStorage.setItem('teamToken', 'dev-team-token');
-      localStorage.setItem('teamUserData', JSON.stringify({
+      establishTeamSession('dev-team-token', {
         id: 'team_dev',
         email: 'team@mediczy.com',
         firstName: 'Team',
@@ -87,29 +101,23 @@ const TeamLogin = () => {
         role: 'Team Member',
         department: 'Healthcare Operations',
         isActive: true
-      }));
+      });
       
       setLoading(false);
-      navigate('/team/dashboard');
+      navigate('/team/dashboard', { replace: true });
       return;
     }
 
     try {
       console.log('🔐 Attempting team login...', formData.email);
-      const apiUrl = import.meta.env.VITE_API_URL || '/api';
-      const { data } = await axios.post(`${apiUrl}/team/login`, formData);
+      const { data } = await api.post('/team/login', formData, { skipAuth: true });
       
       console.log('✅ Team login response:', data);
       
       if (data.success && data.token && data.teamUser) {
-        // Store team user credentials
-        localStorage.setItem('teamToken', data.token);
-        localStorage.setItem('teamUserData', JSON.stringify(data.teamUser));
-        
+        establishTeamSession(data.token, data.teamUser);
         console.log('✅ Team credentials stored, navigating to dashboard...');
-        
-        // Use window.location for hard navigation to avoid AuthProvider interference
-        window.location.href = '/team/dashboard';
+        navigate('/team/dashboard', { replace: true });
       } else {
         setError('Invalid login response from server');
       }
@@ -198,7 +206,7 @@ const TeamLogin = () => {
 
           <CardContent className="relative space-y-6">
             {error && (
-              <Alert variant="destructive" className="animate-in slide-in-from-top-2 duration-300 border-red-200 bg-red-50">
+              <Alert variant="destructive" className="animate-in slide-in-from-top-2 duration-300 border-red-200 bg-red-50" role="alert">
                 <AlertDescription>{error}</AlertDescription>
               </Alert>
             )}
@@ -246,10 +254,11 @@ const TeamLogin = () => {
                   <button
                     type="button"
                     onClick={() => setShowPassword(!showPassword)}
-                    className="absolute right-4 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground transition-colors"
+                    className="absolute right-4 top-1/2 -translate-y-1/2 rounded-md p-1 text-muted-foreground hover:text-foreground transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-purple-500"
                     disabled={loading}
+                    aria-label={showPassword ? 'Hide password' : 'Show password'}
                   >
-                    {showPassword ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
+                    {showPassword ? <EyeOff className="h-4 w-4" aria-hidden="true" /> : <Eye className="h-4 w-4" aria-hidden="true" />}
                   </button>
                 </div>
               </div>
@@ -288,8 +297,7 @@ const TeamLogin = () => {
                   type="button"
                   onClick={() => {
                     console.log('🚀 Quick team member login');
-                    localStorage.setItem('teamToken', 'dev-team-token');
-                    localStorage.setItem('teamUserData', JSON.stringify({
+                    establishTeamSession('dev-team-token', {
                       id: 'team_dev',
                       email: 'team@mediczy.com',
                       firstName: 'Team',
@@ -297,8 +305,8 @@ const TeamLogin = () => {
                       role: 'Team Member',
                       department: 'Healthcare Operations',
                       isActive: true
-                    }));
-                    navigate('/team/dashboard');
+                    });
+                    navigate('/team/dashboard', { replace: true });
                   }}
                   className="w-full h-10 mt-2 bg-green-600 hover:bg-green-700 text-white font-medium"
                 >
@@ -329,6 +337,15 @@ const TeamLogin = () => {
                   Doctor Login
                 </Link>
               </div>
+            </div>
+            <div className="text-center text-xs text-muted-foreground">
+              Trouble signing in?{' '}
+              <a
+                href="mailto:support@mediczy.com?subject=Team%20Portal%20Login%20Help"
+                className="font-semibold underline underline-offset-2 hover:text-purple-600"
+              >
+                Contact support
+              </a>
             </div>
           </CardContent>
         </Card>

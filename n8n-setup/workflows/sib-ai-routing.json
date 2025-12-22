@@ -1,0 +1,384 @@
+{
+  "name": "SIB AI-Driven Workflow Routing",
+  "nodes": [
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "sib-ai-routing",
+        "responseMode": "responseNode",
+        "options": {}
+      },
+      "id": "webhook-ai-routing",
+      "name": "Webhook - AI Routing Trigger",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 1,
+      "position": [250, 300],
+      "webhookId": "sib-ai-routing-webhook"
+    },
+    {
+      "parameters": {
+        "functionCode": "// Extract patient data from webhook\nconst patientId = $input.item.json.patient_id;\nconst healthData = $input.item.json.health_data;\n\n// Analyze patient context\nconst vitals = healthData.vitals || {};\nconst conditions = healthData.conditions || [];\nconst riskScores = healthData.risk_scores || {};\n\nconst framinghamScore = riskScores.framingham_10yr_risk || 0;\nconst bmi = vitals.bmi || 0;\nconst systolicBp = vitals.systolic_bp || 0;\n\n// Calculate risk level\nlet riskLevel = 'low';\nif (framinghamScore >= 25 || conditions.includes('heart_disease')) {\n  riskLevel = 'critical';\n} else if (framinghamScore >= 20 || systolicBp >= 160) {\n  riskLevel = 'high';\n} else if (framinghamScore >= 10 || conditions.length >= 2) {\n  riskLevel = 'moderate';\n}\n\n// AI-driven workflow selection\nconst workflows = [];\n\n// Cardiovascular high risk routing\nif (conditions.some(c => ['hypertension', 'high_cholesterol', 'heart_disease'].includes(c))) {\n  workflows.push({\n    name: 'sib-appointment-booking',\n    priority: 'high',\n    specialist: 'cardiologist',\n    reason: 'Cardiovascular risk detected'\n  });\n  workflows.push({\n    name: 'sib-escalation-engine',\n    priority: 'high',\n    tier: 3,\n    reason: 'High cardiovascular risk'\n  });\n}\n\n// Diabetes management routing\nif (conditions.some(c => ['diabetes', 'pre_diabetes', 'insulin_resistance'].includes(c))) {\n  workflows.push({\n    name: 'sib-appointment-booking',\n    priority: 'medium',\n    specialist: 'endocrinologist',\n    reason: 'Diabetes management'\n  });\n  workflows.push({\n    name: 'sib-notification-whatsapp',\n    priority: 'medium',\n    message: 'Diabetes care reminder'\n  });\n}\n\n// Critical intervention routing\nif (framinghamScore >= 25) {\n  workflows.push({\n    name: 'sib-escalation-engine',\n    priority: 'critical',\n    tier: 4,\n    reason: 'Critical Framingham score'\n  });\n}\n\n// Preventive care (default)\nif (workflows.length === 0 && riskLevel === 'low') {\n  workflows.push({\n    name: 'sib-notification-whatsapp',\n    priority: 'low',\n    message: 'Preventive care reminder'\n  });\n}\n\n// Calculate confidence score\nconst avgMatchScore = workflows.length > 0 ? 0.7 : 0.3;\nconst riskBoost = ['critical', 'high'].includes(riskLevel) ? 0.2 : 0.0;\nconst confidence = Math.min(avgMatchScore + riskBoost, 1.0);\n\nreturn {\n  patient_id: patientId,\n  risk_level: riskLevel,\n  confidence_score: confidence.toFixed(2),\n  workflows: workflows,\n  health_indicators: {\n    framingham_score: framinghamScore,\n    bmi: bmi,\n    blood_pressure: systolicBp,\n    conditions: conditions\n  },\n  timestamp: new Date().toISOString()\n};"
+      },
+      "id": "analyze-context",
+      "name": "AI Context Analysis",
+      "type": "n8n-nodes-base.function",
+      "typeVersion": 1,
+      "position": [450, 300]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "number": [
+            {
+              "value1": "={{$json.workflows.length}}",
+              "operation": "larger",
+              "value2": 0
+            }
+          ]
+        }
+      },
+      "id": "check-workflows",
+      "name": "Check Workflows Exist",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 1,
+      "position": [650, 300]
+    },
+    {
+      "parameters": {
+        "functionCode": "// Split into individual workflow items\nconst workflows = $input.item.json.workflows;\nconst baseContext = {\n  patient_id: $input.item.json.patient_id,\n  risk_level: $input.item.json.risk_level,\n  confidence_score: $input.item.json.confidence_score,\n  timestamp: $input.item.json.timestamp\n};\n\nreturn workflows.map(workflow => ({\n  json: {\n    ...baseContext,\n    workflow: workflow\n  }\n}));"
+      },
+      "id": "split-workflows",
+      "name": "Split Workflows",
+      "type": "n8n-nodes-base.function",
+      "typeVersion": 1,
+      "position": [850, 250]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "string": [
+            {
+              "value1": "={{$json.workflow.name}}",
+              "operation": "equals",
+              "value2": "sib-appointment-booking"
+            }
+          ]
+        }
+      },
+      "id": "route-appointment",
+      "name": "Route: Appointment Booking",
+      "type": "n8n-nodes-base.switch",
+      "typeVersion": 1,
+      "position": [1050, 150]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "string": [
+            {
+              "value1": "={{$json.workflow.name}}",
+              "operation": "equals",
+              "value2": "sib-escalation-engine"
+            }
+          ]
+        }
+      },
+      "id": "route-escalation",
+      "name": "Route: Escalation",
+      "type": "n8n-nodes-base.switch",
+      "typeVersion": 1,
+      "position": [1050, 300]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "string": [
+            {
+              "value1": "={{$json.workflow.name}}",
+              "operation": "equals",
+              "value2": "sib-notification-whatsapp"
+            }
+          ]
+        }
+      },
+      "id": "route-notification",
+      "name": "Route: WhatsApp",
+      "type": "n8n-nodes-base.switch",
+      "typeVersion": 1,
+      "position": [1050, 450]
+    },
+    {
+      "parameters": {
+        "url": "http://localhost:5678/webhook/sib-appointment-booking",
+        "sendBody": true,
+        "bodyParameters": {
+          "parameters": [
+            {
+              "name": "patient_id",
+              "value": "={{$json.patient_id}}"
+            },
+            {
+              "name": "specialist_type",
+              "value": "={{$json.workflow.specialist}}"
+            },
+            {
+              "name": "urgency",
+              "value": "={{$json.workflow.priority}}"
+            },
+            {
+              "name": "reason",
+              "value": "={{$json.workflow.reason}}"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "trigger-appointment",
+      "name": "Trigger Appointment Workflow",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 3,
+      "position": [1250, 150]
+    },
+    {
+      "parameters": {
+        "url": "http://localhost:5678/webhook/sib-escalation-engine",
+        "sendBody": true,
+        "bodyParameters": {
+          "parameters": [
+            {
+              "name": "patient_id",
+              "value": "={{$json.patient_id}}"
+            },
+            {
+              "name": "escalation_tier",
+              "value": "={{$json.workflow.tier}}"
+            },
+            {
+              "name": "reason",
+              "value": "={{$json.workflow.reason}}"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "trigger-escalation",
+      "name": "Trigger Escalation Workflow",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 3,
+      "position": [1250, 300]
+    },
+    {
+      "parameters": {
+        "url": "http://localhost:5678/webhook/sib-notification-whatsapp",
+        "sendBody": true,
+        "bodyParameters": {
+          "parameters": [
+            {
+              "name": "patient_id",
+              "value": "={{$json.patient_id}}"
+            },
+            {
+              "name": "message",
+              "value": "={{$json.workflow.message}}"
+            },
+            {
+              "name": "priority",
+              "value": "={{$json.workflow.priority}}"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "trigger-whatsapp",
+      "name": "Trigger WhatsApp Workflow",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 3,
+      "position": [1250, 450]
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "INSERT INTO sib_routing_logs (patient_id, timestamp, risk_level, confidence_score, workflows_recommended, workflows_triggered, context, results) VALUES ($1, $2, $3, $4, $5, $6, $7, $8)",
+        "additionalFields": {}
+      },
+      "id": "log-routing",
+      "name": "Log Routing Decision",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 1,
+      "position": [1450, 300],
+      "credentials": {
+        "postgres": {
+          "id": "1",
+          "name": "PostgreSQL Account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={{JSON.stringify({\n  success: true,\n  patient_id: $json.patient_id,\n  risk_level: $json.risk_level,\n  confidence_score: $json.confidence_score,\n  workflows_triggered: $json.workflows.length,\n  timestamp: $json.timestamp\n})}}",
+        "options": {}
+      },
+      "id": "respond-success",
+      "name": "Respond Success",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1,
+      "position": [1650, 250]
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={{JSON.stringify({\n  success: false,\n  patient_id: $json.patient_id,\n  message: 'No workflows to route',\n  timestamp: new Date().toISOString()\n})}}",
+        "options": {}
+      },
+      "id": "respond-no-workflows",
+      "name": "Respond No Workflows",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1,
+      "position": [850, 400]
+    }
+  ],
+  "connections": {
+    "Webhook - AI Routing Trigger": {
+      "main": [
+        [
+          {
+            "node": "AI Context Analysis",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "AI Context Analysis": {
+      "main": [
+        [
+          {
+            "node": "Check Workflows Exist",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Check Workflows Exist": {
+      "main": [
+        [
+          {
+            "node": "Split Workflows",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Respond No Workflows",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Split Workflows": {
+      "main": [
+        [
+          {
+            "node": "Route: Appointment Booking",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Route: Escalation",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Route: WhatsApp",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Route: Appointment Booking": {
+      "main": [
+        [
+          {
+            "node": "Trigger Appointment Workflow",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Route: Escalation": {
+      "main": [
+        [
+          {
+            "node": "Trigger Escalation Workflow",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Route: WhatsApp": {
+      "main": [
+        [
+          {
+            "node": "Trigger WhatsApp Workflow",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Trigger Appointment Workflow": {
+      "main": [
+        [
+          {
+            "node": "Log Routing Decision",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Trigger Escalation Workflow": {
+      "main": [
+        [
+          {
+            "node": "Log Routing Decision",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Trigger WhatsApp Workflow": {
+      "main": [
+        [
+          {
+            "node": "Log Routing Decision",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Log Routing Decision": {
+      "main": [
+        [
+          {
+            "node": "Respond Success",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": true,
+  "settings": {},
+  "id": "sib-ai-routing"
+}

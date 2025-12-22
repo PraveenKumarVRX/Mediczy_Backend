@@ -1,5 +1,8 @@
 import paymentService from '../services/payment.service.js';
-import { connectToDb as db } from '../db/mariadb.js';
+
+// Temporary in-memory store for payment transactions
+const paymentTransactions = new Map();
+const paymentGateways = new Map();
 
 class PaymentController {
   /**
@@ -441,6 +444,68 @@ class PaymentController {
     } catch (error) {
       console.error('❌ Error fetching gateways:', error);
       res.status(500).json({
+        success: false,
+        message: 'Internal server error',
+        error: error.message
+      });
+    }
+  }
+
+  /**
+   * Create a payment gateway
+   * POST /api/payments/gateways
+   */
+  async createGateway(req, res) {
+    try {
+      const {
+        name,
+        provider,
+        type,
+        isEnabled = true,
+        processingFee = 0,
+        currency = 'INR',
+        merchantId,
+        apiKey,
+        webhookUrl,
+        testMode = true,
+        dailyLimit,
+        monthlyLimit,
+        countries = ['IN']
+      } = req.body || {};
+
+      if (!name || !provider || !type) {
+        return res.status(400).json({
+          success: false,
+          message: 'Missing required fields: name, provider, type'
+        });
+      }
+
+      const gateway = await db.PaymentGateway.create({
+        id: `gw_${Date.now()}`,
+        name,
+        provider,
+        type,
+        isEnabled,
+        processingFee,
+        currency,
+        merchantId,
+        apiKey,
+        webhookUrl,
+        testMode,
+        dailyLimit,
+        monthlyLimit,
+        countries,
+        createdAt: new Date().toISOString()
+      });
+
+      return res.status(201).json({
+        success: true,
+        message: 'Gateway created successfully',
+        gateway
+      });
+    } catch (error) {
+      console.error('❌ Error creating gateway:', error);
+      return res.status(500).json({
         success: false,
         message: 'Internal server error',
         error: error.message

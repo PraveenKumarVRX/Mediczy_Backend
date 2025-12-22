@@ -71,8 +71,12 @@ const LabSidebar = () => {
   const [collapsed, setCollapsed] = useState(false);
 
   const handleLogout = () => {
+    localStorage.removeItem("token");
+    localStorage.removeItem("userType");
+    localStorage.removeItem("userId");
     localStorage.removeItem("labToken");
     localStorage.removeItem("labData");
+    window.dispatchEvent(new CustomEvent('authChange'));
     navigate("/lab/login");
   };
 

@@ -1,0 +1,91 @@
+{
+  "totalProviders": 17,
+  "totalCollections": 33,
+  "providers": {
+    "Care": {
+      "collections": 2,
+      "totalEndpoints": 40,
+      "implemented": false
+    },
+    "FGI": {
+      "collections": 3,
+      "totalEndpoints": 37,
+      "implemented": false
+    },
+    "FHPL": {
+      "collections": 2,
+      "totalEndpoints": 14,
+      "implemented": false
+    },
+    "GoDigit": {
+      "collections": 2,
+      "totalEndpoints": 22,
+      "implemented": false
+    },
+    "HealthIndia": {
+      "collections": 4,
+      "totalEndpoints": 30,
+      "implemented": true
+    },
+    "Heritage": {
+      "collections": 2,
+      "totalEndpoints": 7,
+      "implemented": true
+    },
+    "ICICI": {
+      "collections": 2,
+      "totalEndpoints": 12,
+      "implemented": false
+    },
+    "MDIndia": {
+      "collections": 4,
+      "totalEndpoints": 24,
+      "implemented": true
+    },
+    "MediAssist": {
+      "collections": 1,
+      "totalEndpoints": 5,
+      "implemented": false
+    },
+    "MedSave": {
+      "collections": 1,
+      "totalEndpoints": 7,
+      "implemented": false
+    },
+    "NivaBupa": {
+      "collections": 1,
+      "totalEndpoints": 1,
+      "implemented": false
+    },
+    "Paramount": {
+      "collections": 2,
+      "totalEndpoints": 14,
+      "implemented": false
+    },
+    "Raksha": {
+      "collections": 2,
+      "totalEndpoints": 12,
+      "implemented": false
+    },
+    "StarHealth": {
+      "collections": 1,
+      "totalEndpoints": 7,
+      "implemented": false
+    },
+    "Vidal": {
+      "collections": 2,
+      "totalEndpoints": 12,
+      "implemented": false
+    },
+    "VoloTPA": {
+      "collections": 1,
+      "totalEndpoints": 9,
+      "implemented": false
+    },
+    "EWAT": {
+      "collections": 1,
+      "totalEndpoints": 6,
+      "implemented": false
+    }
+  }
+}

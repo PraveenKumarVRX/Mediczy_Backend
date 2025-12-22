@@ -1,4 +1,28 @@
-import * as XLSX from 'xlsx';
+import ExcelJS from 'exceljs';
+import { downloadArrayBuffer } from './downloadFile';
+
+const downloadXlsx = async (sheetName: string, data: any[], columnWidths: number[], filename: string) => {
+    const workbook = new ExcelJS.Workbook();
+    const worksheet = workbook.addWorksheet(sheetName);
+
+    const headers = data.length > 0 ? Object.keys(data[0]) : [];
+    worksheet.columns = headers.map((h, idx) => ({
+        header: h,
+        key: h,
+        width: columnWidths[idx] ?? Math.min(60, Math.max(12, h.length + 4))
+    }));
+
+    for (const row of data) {
+        worksheet.addRow(row);
+    }
+
+    const buffer = await workbook.xlsx.writeBuffer();
+    downloadArrayBuffer(
+        buffer as ArrayBuffer,
+        filename,
+        'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'
+    );
+};
 
 export const generateDoctorTemplate = () => {
     const templateData = [
@@ -34,17 +58,12 @@ export const generateDoctorTemplate = () => {
         }
     ];
 
-    const worksheet = XLSX.utils.json_to_sheet(templateData);
-    const workbook = XLSX.utils.book_new();
-    XLSX.utils.book_append_sheet(workbook, worksheet, 'Doctors');
-    
-    worksheet['!cols'] = [
-        { wch: 25 }, { wch: 12 }, { wch: 20 }, { wch: 30 }, 
-        { wch: 18 }, { wch: 20 }, { wch: 15 }, { wch: 15 },
-        { wch: 18 }, { wch: 25 }, { wch: 25 }, { wch: 35 }, { wch: 18 }
-    ];
-
-    XLSX.writeFile(workbook, 'Doctors_Upload_Template.xlsx');
+    downloadXlsx(
+        'Doctors',
+        templateData,
+        [25, 12, 20, 30, 18, 20, 15, 15, 18, 25, 25, 35, 18],
+        'Doctors_Upload_Template.xlsx'
+    );
 };
 
 export const generateLabTemplate = () => {
@@ -85,17 +104,12 @@ export const generateLabTemplate = () => {
         }
     ];
 
-    const worksheet = XLSX.utils.json_to_sheet(templateData);
-    const workbook = XLSX.utils.book_new();
-    XLSX.utils.book_append_sheet(workbook, worksheet, 'Labs');
-    
-    worksheet['!cols'] = [
-        { wch: 25 }, { wch: 25 }, { wch: 18 }, { wch: 20 }, { wch: 30 },
-        { wch: 15 }, { wch: 15 }, { wch: 10 }, { wch: 15 }, { wch: 40 },
-        { wch: 18 }, { wch: 15 }, { wch: 18 }, { wch: 15 }, { wch: 25 }
-    ];
-
-    XLSX.writeFile(workbook, 'Labs_Upload_Template.xlsx');
+    downloadXlsx(
+        'Labs',
+        templateData,
+        [25, 25, 18, 20, 30, 15, 15, 10, 15, 40, 18, 15, 18, 15, 25],
+        'Labs_Upload_Template.xlsx'
+    );
 };
 
 export const generateClinicTemplate = () => {
@@ -134,17 +148,12 @@ export const generateClinicTemplate = () => {
         }
     ];
 
-    const worksheet = XLSX.utils.json_to_sheet(templateData);
-    const workbook = XLSX.utils.book_new();
-    XLSX.utils.book_append_sheet(workbook, worksheet, 'Clinics');
-    
-    worksheet['!cols'] = [
-        { wch: 25 }, { wch: 25 }, { wch: 18 }, { wch: 20 }, { wch: 30 },
-        { wch: 15 }, { wch: 15 }, { wch: 10 }, { wch: 15 }, { wch: 25 },
-        { wch: 30 }, { wch: 18 }, { wch: 20 }, { wch: 25 }
-    ];
-
-    XLSX.writeFile(workbook, 'Clinics_Upload_Template.xlsx');
+    downloadXlsx(
+        'Clinics',
+        templateData,
+        [25, 25, 18, 20, 30, 15, 15, 10, 15, 25, 30, 18, 20, 25],
+        'Clinics_Upload_Template.xlsx'
+    );
 };
 
 export const generatePharmacyTemplate = () => {
@@ -187,15 +196,10 @@ export const generatePharmacyTemplate = () => {
         }
     ];
 
-    const worksheet = XLSX.utils.json_to_sheet(templateData);
-    const workbook = XLSX.utils.book_new();
-    XLSX.utils.book_append_sheet(workbook, worksheet, 'Pharmacies');
-    
-    worksheet['!cols'] = [
-        { wch: 25 }, { wch: 25 }, { wch: 18 }, { wch: 30 }, { wch: 15 },
-        { wch: 15 }, { wch: 10 }, { wch: 15 }, { wch: 10 }, { wch: 20 },
-        { wch: 20 }, { wch: 20 }, { wch: 15 }, { wch: 18 }, { wch: 15 }, { wch: 25 }
-    ];
-
-    XLSX.writeFile(workbook, 'Pharmacies_Upload_Template.xlsx');
+    downloadXlsx(
+        'Pharmacies',
+        templateData,
+        [25, 25, 18, 30, 15, 15, 10, 15, 10, 20, 20, 20, 15, 18, 15, 25],
+        'Pharmacies_Upload_Template.xlsx'
+    );
 };

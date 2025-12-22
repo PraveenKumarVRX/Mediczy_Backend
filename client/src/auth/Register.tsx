@@ -21,7 +21,7 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { useToast } from "@/hooks/use-toast";
-import { HeartPulse, Eye, EyeOff, Chrome, Facebook } from "lucide-react";
+import { HeartPulse, Eye, EyeOff, Chrome, Facebook, Calendar } from "lucide-react";
 import "../index.css";
 import { useRegister } from "@/hooks/auth";
 
@@ -257,7 +257,15 @@ const Register = () => {
                   <FormItem>
                     <FormLabel>Date of Birth</FormLabel>
                     <FormControl>
-                      <Input type="date" {...field} />
+                      <div className="relative">
+                        <Input 
+                          type="date" 
+                          {...field}
+                          className="pr-10"
+                          placeholder="DD/MM/YYYY"
+                        />
+                        <Calendar className="absolute right-3 top-1/2 transform -translate-y-1/2 h-4 w-4 text-muted-foreground pointer-events-none" />
+                      </div>
                     </FormControl>
                     <FormMessage />
                   </FormItem>

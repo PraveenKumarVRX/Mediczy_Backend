@@ -15,6 +15,7 @@ import {
   Stethoscope
 } from 'lucide-react';
 import api from '@/utils/api';
+import { clearAuthTokens } from '@/hooks/auth';
 
 const NurseLogin = () => {
   const navigate = useNavigate();
@@ -29,15 +30,6 @@ const NurseLogin = () => {
 
   // Check if already authenticated and setup dev credentials
   useEffect(() => {
-    // Clear any other role tokens that might interfere
-    localStorage.removeItem('adminToken');
-    localStorage.removeItem('teamToken');
-    localStorage.removeItem('assistantToken');
-    localStorage.removeItem('corporateToken');
-    localStorage.removeItem('doctorToken');
-    localStorage.removeItem('token');
-    localStorage.removeItem('userType');
-
     const token = localStorage.getItem('nurseToken');
     if (token) {
       console.log('✅ Nurse already authenticated, redirecting...');
@@ -64,6 +56,27 @@ const NurseLogin = () => {
     if (error) setError('');
   };
 
+  const establishNurseSession = (token: string, nurseProfile?: any) => {
+    clearAuthTokens();
+    localStorage.setItem('nurseToken', token);
+    localStorage.setItem('token', token);
+    localStorage.setItem('userType', 'nurse');
+    if (nurseProfile) {
+      localStorage.setItem('nurseData', JSON.stringify({
+        id: nurseProfile.id,
+        email: nurseProfile.email,
+        firstName: nurseProfile.firstName,
+        lastName: nurseProfile.lastName,
+        department: nurseProfile.department,
+        shift: nurseProfile.shift,
+        assignedWard: nurseProfile.assignedWard,
+      }));
+    } else {
+      localStorage.removeItem('nurseData');
+    }
+    window.dispatchEvent(new Event('authChange'));
+  };
+
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setLoading(true);
@@ -71,49 +84,35 @@ const NurseLogin = () => {
     console.log('[NurseLogin] Submitting credentials', { email: formData.email, ts: Date.now() });
 
     // Development mode bypass - allows login without backend
-    if (import.meta.env.DEV && formData.email === 'nurse@mediczy.com' && formData.password === 'Nurse123') {
+    if (
+      import.meta.env.DEV &&
+      formData.email === 'nurse@mediczy.com' &&
+      formData.password === 'Nurse123'
+    ) {
       console.log('🚀 Development mode: Using quick authentication bypass for Nurse');
-      
-      // Clear other tokens for ring-fencing
-      const otherTokens = [
-        'token', 'doctorToken', 'adminToken', 'teamToken', 
-        'assistantToken', 'corporateToken', 'hospitalToken', 
-        'clinicToken', 'labToken', 'pharmacyToken', 'ambulanceToken', 'homecareToken'
-      ];
-      otherTokens.forEach(token => localStorage.removeItem(token));
-
-      localStorage.setItem('nurseToken', 'dev-nurse-token');
-      localStorage.setItem('userType', 'nurse');
-      localStorage.setItem('nurseData', JSON.stringify({
+      establishNurseSession('dev-nurse-token', {
         id: 'nurse_dev',
         email: 'nurse@mediczy.com',
         firstName: 'Sample',
         lastName: 'Nurse',
         department: 'General Ward',
         shift: 'Morning',
-        assignedWard: 'General Ward',
-        permissions: ['View Patients', 'View Appointments', 'Record Vitals', 'Patient Notes']
-      }));
-
-      window.dispatchEvent(new Event('authChange'));
-      
+        assignedWard: 'General Ward'
+      });
       setLoading(false);
-      navigate('/nurse/dashboard');
+      navigate('/nurse/dashboard', { replace: true });
       return;
     }
 
     try {
       console.log('[NurseLogin] POST /nurse/login start with body', formData);
-      const { data } = await api.post('/nurse/login', formData);
+      const { data } = await api.post('/nurse/login', formData, { skipAuth: true });
       console.log('[NurseLogin] POST /nurse/login response', data);
       
       if (data.success && data.token && data.nurse) {
-        localStorage.setItem('nurseToken', data.token);
-        localStorage.setItem('userType', 'nurse');
-        localStorage.setItem('nurseData', JSON.stringify(data.nurse));
-        window.dispatchEvent(new Event('authChange'));
+        establishNurseSession(data.token, data.nurse);
         console.log('[NurseLogin] Token stored, navigating to dashboard');
-        navigate('/nurse/dashboard');
+        navigate('/nurse/dashboard', { replace: true });
       } else {
         console.warn('[NurseLogin] Unexpected response shape', data);
         setError('Invalid login response from server');
@@ -182,7 +181,7 @@ const NurseLogin = () => {
 
           <CardContent className="space-y-6">
             {error && (
-              <Alert variant="destructive" className="animate-in fade-in slide-in-from-top-2">
+              <Alert variant="destructive" className="animate-in fade-in slide-in-from-top-2" role="alert">
                 <AlertDescription>{error}</AlertDescription>
               </Alert>
             )}
@@ -221,26 +220,24 @@ const NurseLogin = () => {
                     className="h-11 pr-10"
                     disabled={loading}
                   />
-                  <Button
+                  <button
                     type="button"
-                    variant="ghost"
-                    size="sm"
-                    className="absolute right-0 top-0 h-11 px-3 hover:bg-transparent"
+                    className="absolute right-2 top-1/2 -translate-y-1/2 rounded-md p-1 text-muted-foreground hover:text-foreground focus:outline-none focus-visible:ring-2 focus-visible:ring-blue-500"
                     onClick={() => setShowPassword(!showPassword)}
-                    tabIndex={-1}
+                    disabled={loading}
+                    aria-label={showPassword ? 'Hide password' : 'Show password'}
                   >
                     {showPassword ? (
-                      <EyeOff className="h-4 w-4 text-muted-foreground" />
+                      <EyeOff className="h-4 w-4" aria-hidden="true" />
                     ) : (
-                      <Eye className="h-4 w-4 text-muted-foreground" />
+                      <Eye className="h-4 w-4" aria-hidden="true" />
                     )}
-                  </Button>
+                  </button>
                 </div>
               </div>
 
               <Button 
-                type="button" 
-                onClick={(e) => { console.log('[NurseLogin] Manual submit button clicked'); handleSubmit(e as any); }}
+                type="submit" 
                 className="w-full h-11 bg-gradient-to-r from-blue-500 to-green-500 hover:from-blue-600 hover:to-green-600 text-white font-medium shadow-lg hover:shadow-xl transition-all"
                 disabled={loading}
               >
@@ -295,6 +292,16 @@ const NurseLogin = () => {
                 </Button>
               </div>
             </div>
+
+            <p className="text-center text-xs text-muted-foreground">
+              Trouble signing in?{' '}
+              <a
+                href="mailto:support@mediczy.com?subject=Nurse%20Portal%20Login%20Help"
+                className="font-semibold underline underline-offset-2 hover:text-blue-600"
+              >
+                Contact support
+              </a>
+            </p>
           </CardContent>
         </Card>
 

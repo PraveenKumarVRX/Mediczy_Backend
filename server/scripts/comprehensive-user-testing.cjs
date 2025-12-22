@@ -17,8 +17,8 @@ const fs = require('fs');
 const path = require('path');
 
 // Configuration
-const BASE_URL = 'http://localhost:8080';
-const TEST_RESULTS_DIR = '/root/Mediczy/test-results';
+const BASE_URL = process.env.BASE_URL || 'http://localhost:8000';
+const TEST_RESULTS_DIR = process.env.TEST_RESULTS_DIR || path.resolve(process.cwd(), 'test-results');
 const DELAY_BETWEEN_TESTS = 1000; // 1 second
 
 // Test Credentials

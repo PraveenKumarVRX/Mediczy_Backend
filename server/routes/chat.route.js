@@ -573,12 +573,13 @@ router.get('/team-members', authUser, async (req, res) => {
 
     const teamMembers = [];
     
-    // Import models
-    const { connectToDb } = await import('../db/mariadb.js');
-    const db = await connectToDb();
+    // Import intelligent models (PostgreSQL)
+    const { Doctor } = await import('../models/doctor.model.intelligent.js');
+    const { Nurse } = await import('../models/nurse.model.intelligent.js');
+    const { Assistant } = await import('../models/assistant.model.intelligent.js');
     
     // Get doctors
-    const doctors = await db.Doctor.findAll();
+    const doctors = await Doctor.findAll();
     doctors.forEach(doctor => {
       teamMembers.push({
         id: doctor.id,
@@ -805,6 +806,112 @@ router.get('/dashboard/overview', adminMiddleware, async (req, res) => {
     res.status(500).json({
       success: false,
       message: 'Failed to fetch dashboard overview',
+      error: error.message
+    });
+  }
+});
+
+/**
+ * @route   GET /api/chat/dashboard/analytics
+ * @desc    Get chat dashboard analytics (admin only)
+ * @access  Admin
+ */
+router.get('/dashboard/analytics', adminMiddleware, [
+  query('period').optional().isIn(['24h', '7d', '30d']).withMessage('Invalid period')
+], async (req, res) => {
+  try {
+    const errors = validationResult(req);
+    if (!errors.isEmpty()) {
+      return res.status(400).json({
+        success: false,
+        message: 'Validation failed',
+        errors: errors.array()
+      });
+    }
+
+    const period = req.query.period || '7d';
+    const now = Date.now();
+    const windowMs =
+      period === '24h' ? 24 * 60 * 60 * 1000 :
+      period === '30d' ? 30 * 24 * 60 * 60 * 1000 :
+      7 * 24 * 60 * 60 * 1000;
+    const windowStart = new Date(now - windowMs);
+
+    const dayKey = (d) => {
+      const date = new Date(d);
+      const yyyy = date.getFullYear();
+      const mm = String(date.getMonth() + 1).padStart(2, '0');
+      const dd = String(date.getDate()).padStart(2, '0');
+      return `${yyyy}-${mm}-${dd}`;
+    };
+
+    // Messages by day
+    const messagesByDayMap = new Map();
+    const roomMessageCounts = new Map();
+    let totalMessagesInPeriod = 0;
+
+    for (const [roomId, roomMessages] of messages.entries()) {
+      for (const msg of roomMessages) {
+        const ts = new Date(msg.timestamp);
+        if (ts > windowStart) {
+          totalMessagesInPeriod++;
+          const key = dayKey(ts);
+          messagesByDayMap.set(key, (messagesByDayMap.get(key) || 0) + 1);
+          roomMessageCounts.set(roomId, (roomMessageCounts.get(roomId) || 0) + 1);
+        }
+      }
+    }
+
+    // New rooms by day
+    const roomsByDayMap = new Map();
+    for (const room of chatRooms.values()) {
+      const createdAt = new Date(room.createdAt);
+      if (createdAt > windowStart) {
+        const key = dayKey(createdAt);
+        roomsByDayMap.set(key, (roomsByDayMap.get(key) || 0) + 1);
+      }
+    }
+
+    const messagesByDay = Array.from(messagesByDayMap.entries())
+      .sort((a, b) => a[0].localeCompare(b[0]))
+      .map(([date, count]) => ({ date, count }));
+
+    const roomsByDay = Array.from(roomsByDayMap.entries())
+      .sort((a, b) => a[0].localeCompare(b[0]))
+      .map(([date, count]) => ({ date, count }));
+
+    const topRooms = Array.from(roomMessageCounts.entries())
+      .sort((a, b) => b[1] - a[1])
+      .slice(0, 10)
+      .map(([roomId, count]) => {
+        const room = chatRooms.get(roomId);
+        return {
+          roomId,
+          title: room?.title || room?.name || roomId,
+          type: room?.type,
+          messages: count
+        };
+      });
+
+    res.json({
+      success: true,
+      analytics: {
+        period,
+        windowStart: windowStart.toISOString(),
+        totals: {
+          messages: totalMessagesInPeriod,
+          roomsCreated: roomsByDay.reduce((sum, r) => sum + r.count, 0)
+        },
+        messagesByDay,
+        roomsByDay,
+        topRooms
+      }
+    });
+  } catch (error) {
+    console.error('Error fetching dashboard analytics:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Failed to fetch dashboard analytics',
       error: error.message
     });
   }

@@ -1,0 +1,47 @@
+- name: Install Redis packages
+  ansible.builtin.package:
+    name: "{{ redis_packages }}"
+    state: present
+
+- name: Ensure Redis directories exist
+  ansible.builtin.file:
+    path: "{{ item }}"
+    state: directory
+    owner: "{{ redis_user }}"
+    group: "{{ redis_group }}"
+    mode: '0755'
+  loop:
+    - /etc/redis
+    - /var/lib/redis
+
+- name: Deploy redis.conf
+  ansible.builtin.template:
+    src: redis.conf.j2
+    dest: "{{ redis_conf_path }}"
+    owner: "{{ redis_user }}"
+    group: "{{ redis_group }}"
+    mode: '0640'
+  notify: restart redis
+
+- name: Ensure systemd override directory exists
+  ansible.builtin.file:
+    path: "/etc/systemd/system/{{ redis_service_name }}.service.d"
+    state: directory
+    mode: '0755'
+  when: redis_systemd_limits | length > 0
+
+- name: Configure systemd overrides
+  ansible.builtin.template:
+    src: redis-service-override.conf.j2
+    dest: "/etc/systemd/system/{{ redis_service_name }}.service.d/override.conf"
+    mode: '0644'
+  when: redis_systemd_limits | length > 0
+  notify:
+    - reload redis systemd
+    - restart redis
+
+- name: Ensure Redis service is enabled
+  ansible.builtin.service:
+    name: "{{ redis_service_name }}"
+    state: started
+    enabled: true

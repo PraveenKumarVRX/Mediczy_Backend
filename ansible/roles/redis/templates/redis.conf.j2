@@ -1,0 +1,31 @@
+# Managed by Ansible
+bind {{ redis_bind_address }}
+port {{ redis_tls_enabled | bool | ternary(0, redis_port) }}
+protected-mode yes
+supervised systemd
+dir /var/lib/redis
+dbfilename dump.rdb
+logfile /var/log/redis/redis-server.log
+maxmemory-policy allkeys-lru
+requirepass {{ redis_requirepass }}
+repl-disable-tcp-nodelay no
+save 900 1
+save 300 10
+save 60 10000
+{% if redis_persistence.rdb | default(true) %}
+rdbcompression yes
+{% else %}
+rdbcompression no
+{% endif %}
+appendonly {{ redis_persistence.aof | default(false) | ternary('yes', 'no') }}
+{% if redis_tls_enabled | bool %}
+tls-port {{ redis_port }}
+tls-cert-file {{ redis_tls_cert_file }}
+tls-key-file {{ redis_tls_key_file }}
+tls-ca-cert-file {{ redis_tls_ca_cert_file }}
+{% else %}
+tls-port 0
+{% endif %}
+{% for rule in redis_acl_rules | default([]) %}
+user {{ rule.name }} {{ rule.rules }}
+{% endfor %}

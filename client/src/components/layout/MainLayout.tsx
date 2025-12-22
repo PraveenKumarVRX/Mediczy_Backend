@@ -1,8 +1,8 @@
 import { Sidebar } from "./Sidebar";
 import { useToast } from "@/hooks/use-toast";
 import { Button } from "@/components/ui/button";
-import { Menu, Moon, Sun, X, LogOut } from "lucide-react";
-import {  memo, useEffect, useMemo } from "react";
+import { Menu, Moon, Sun, X, LogOut, CalendarPlus } from "lucide-react";
+import {  memo, useEffect, useMemo, useState } from "react";
 // import { useIsMobile } from "@/hooks/use-mobile";
 import { Link, useNavigate, useLocation } from "react-router-dom";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
@@ -20,12 +20,21 @@ import { useAuth } from "@/auth/AuthProvider";
 // import exp from "constants";
 import { Navigation } from "./Navigation";
 import { OfflineIndicator } from '@/components/OfflineIndicator';
+import QuickAppointmentModal from "@/components/QuickAppointmentModal";
+import {
+  Tooltip,
+  TooltipContent,
+  TooltipProvider,
+  TooltipTrigger,
+} from "@/components/ui/tooltip";
 
 interface MainLayoutProps {
   children: React.ReactNode;
 }
 
 const MainLayout = ({ children }: MainLayoutProps) => {
+  const [showBookingModal, setShowBookingModal] = useState(false);
+  
   // Register service worker
   useEffect(() => {
     if ('serviceWorker' in navigator) {
@@ -208,6 +217,12 @@ const MainLayout = ({ children }: MainLayoutProps) => {
       </main>
       <Navigation />
       <OfflineIndicator />
+      
+      {/* Universal Quick Appointment Booking Modal */}
+      <QuickAppointmentModal 
+        open={showBookingModal} 
+        onOpenChange={setShowBookingModal} 
+      />
     </div>
   );
 };

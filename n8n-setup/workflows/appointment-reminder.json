@@ -1,0 +1,272 @@
+{
+  "name": "Mediczy - Appointment Reminder",
+  "nodes": [
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "appointment-reminder",
+        "responseMode": "responseNode",
+        "options": {}
+      },
+      "id": "reminder-webhook",
+      "name": "Reminder Webhook",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 1,
+      "position": [250, 300]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "string": [
+            {
+              "value1": "={{ $json.data.reminderType }}",
+              "operation": "equals",
+              "value2": "1hour"
+            }
+          ]
+        }
+      },
+      "id": "check-reminder-type",
+      "name": "Check Type",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 1,
+      "position": [450, 300]
+    },
+    {
+      "parameters": {
+        "url": "=http://localhost:8000/api/notifications/send",
+        "sendBody": true,
+        "bodyParameters": {
+          "parameters": [
+            {
+              "name": "userId",
+              "value": "={{ $json.data.patientId }}"
+            },
+            {
+              "name": "userType",
+              "value": "patient"
+            },
+            {
+              "name": "type",
+              "value": "appointment_reminder"
+            },
+            {
+              "name": "title",
+              "value": "⏰ Appointment in 1 Hour"
+            },
+            {
+              "name": "message",
+              "value": "=Your consultation with Dr. {{ $json.data.doctorName }} starts in 1 hour. Please be ready!"
+            },
+            {
+              "name": "channels",
+              "value": "=['push', 'sms', 'whatsapp', 'in-app']"
+            },
+            {
+              "name": "priority",
+              "value": "high"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "notify-1hour-patient",
+      "name": "1 Hour - Patient",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 3,
+      "position": [650, 200]
+    },
+    {
+      "parameters": {
+        "url": "=http://localhost:8000/api/notifications/send",
+        "sendBody": true,
+        "bodyParameters": {
+          "parameters": [
+            {
+              "name": "userId",
+              "value": "={{ $json.data.doctorId }}"
+            },
+            {
+              "name": "userType",
+              "value": "doctor"
+            },
+            {
+              "name": "type",
+              "value": "appointment_reminder"
+            },
+            {
+              "name": "title",
+              "value": "⏰ Appointment in 1 Hour"
+            },
+            {
+              "name": "message",
+              "value": "=Consultation with {{ $json.data.patientName }} starts in 1 hour"
+            },
+            {
+              "name": "channels",
+              "value": "=['push', 'in-app']"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "notify-1hour-doctor",
+      "name": "1 Hour - Doctor",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 3,
+      "position": [650, 350]
+    },
+    {
+      "parameters": {
+        "url": "=http://localhost:8000/api/notifications/send",
+        "sendBody": true,
+        "bodyParameters": {
+          "parameters": [
+            {
+              "name": "userId",
+              "value": "={{ $json.data.patientId }}"
+            },
+            {
+              "name": "userType",
+              "value": "patient"
+            },
+            {
+              "name": "type",
+              "value": "appointment_reminder"
+            },
+            {
+              "name": "title",
+              "value": "📅 Appointment Tomorrow"
+            },
+            {
+              "name": "message",
+              "value": "=Reminder: You have a consultation with Dr. {{ $json.data.doctorName }} tomorrow at {{ $json.data.appointmentTime }}"
+            },
+            {
+              "name": "channels",
+              "value": "=['push', 'email', 'in-app']"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "notify-24hour-patient",
+      "name": "24 Hour - Patient",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 3,
+      "position": [650, 500]
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "INSERT INTO n8n.notification_logs (workflow_name, user_id, notification_type, status, created_at) VALUES ('appointment-reminder', '{{ $json.data.patientId }}', 'appointment_reminder', 'sent', NOW())",
+        "options": {}
+      },
+      "id": "log-postgres",
+      "name": "Log to PostgreSQL",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2,
+      "position": [900, 300],
+      "credentials": {
+        "postgres": {
+          "id": "mediczy-postgres",
+          "name": "Mediczy PostgreSQL"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={{ JSON.stringify({ success: true, workflow: 'appointment-reminder', reminderType: $json.data.reminderType }) }}"
+      },
+      "id": "respond",
+      "name": "Respond",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1,
+      "position": [1100, 300]
+    }
+  ],
+  "connections": {
+    "Reminder Webhook": {
+      "main": [
+        [
+          {
+            "node": "Check Type",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Check Type": {
+      "main": [
+        [
+          {
+            "node": "1 Hour - Patient",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "1 Hour - Doctor",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "24 Hour - Patient",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "1 Hour - Patient": {
+      "main": [
+        [
+          {
+            "node": "Log to PostgreSQL",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "1 Hour - Doctor": {
+      "main": [
+        [
+          {
+            "node": "Log to PostgreSQL",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "24 Hour - Patient": {
+      "main": [
+        [
+          {
+            "node": "Log to PostgreSQL",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Log to PostgreSQL": {
+      "main": [
+        [
+          {
+            "node": "Respond",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "settings": {
+    "executionOrder": "v1"
+  }
+}

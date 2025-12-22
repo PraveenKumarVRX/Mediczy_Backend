@@ -16,6 +16,7 @@ import {
   Sun, Moon, Edit, Trash2, Eye, Download, Settings, AlertCircle,
   BarChart3, Bell, Package, Mail
 } from "lucide-react";
+import type { LucideIcon } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import { useTheme } from "@/utils/theme.provider";
 
@@ -65,7 +66,7 @@ type HomecareAppointment = {
   notes?: string;
 };
 
-type IconType = ComponentType<{ className?: string }>;
+type IconType = LucideIcon | ComponentType<{ className?: string }>;
 
 const HOMECARE_STORAGE_KEYS = {
   patients: "homecare.patients",
@@ -584,8 +585,8 @@ const HomecareDashboard = () => {
                 <Button
                   className="bg-purple-600 hover:bg-purple-700"
                   onClick={() => {
-                    toast({ title: "Patients", description: "Opening patient management..." });
-                    navigate("/homecare/patients");
+                    toast({ title: "Patients", description: "Opening add patient..." });
+                    navigate("/homecare/patients/new");
                   }}
                 >
                   <Plus className="h-4 w-4 mr-2" />
@@ -982,7 +983,7 @@ const HomecareDashboard = () => {
       <div className="mb-8">
         <div className="flex justify-between items-center">
           <h2 className="text-3xl font-bold bg-gradient-to-r from-purple-600 to-pink-600 bg-clip-text text-transparent">Care Providers</h2>
-          <Button className="gap-2 bg-gradient-to-r from-purple-600 to-pink-600">
+          <Button className="gap-2 bg-gradient-to-r from-purple-600 to-pink-600" onClick={() => toast({ title: "Add Provider", description: "Opening add provider form..." })}>
             <Plus className="h-4 w-4" />
             Add Provider
           </Button>
@@ -1098,7 +1099,7 @@ const HomecareDashboard = () => {
       <div className="mb-8">
         <div className="flex justify-between items-center">
           <h2 className="text-3xl font-bold bg-gradient-to-r from-purple-600 to-pink-600 bg-clip-text text-transparent">Patient Management</h2>
-          <Button className="gap-2 bg-gradient-to-r from-purple-600 to-pink-600">
+          <Button className="gap-2 bg-gradient-to-r from-purple-600 to-pink-600" onClick={() => toast({ title: "Add Patient", description: "Opening add patient form..." })}>
             <Plus className="h-4 w-4" />
             Add Patient
           </Button>
@@ -1167,7 +1168,7 @@ const HomecareDashboard = () => {
       <div className="mb-8">
         <div className="flex justify-between items-center">
           <h2 className="text-3xl font-bold bg-gradient-to-r from-purple-600 to-pink-600 bg-clip-text text-transparent">Billing & Payments</h2>
-          <Button className="gap-2 bg-gradient-to-r from-purple-600 to-pink-600">
+          <Button className="gap-2 bg-gradient-to-r from-purple-600 to-pink-600" onClick={() => toast({ title: "Generate Invoice", description: "Opening invoice generation form..." })}>
             <Plus className="h-4 w-4" />
             Generate Invoice
           </Button>
@@ -1244,7 +1245,7 @@ const HomecareDashboard = () => {
               <CardTitle className="text-lg">{report}</CardTitle>
             </CardHeader>
             <CardContent>
-              <Button className="w-full gap-2 bg-gradient-to-r from-purple-600 to-pink-600">
+              <Button className="w-full gap-2 bg-gradient-to-r from-purple-600 to-pink-600" onClick={() => toast({ title: "Generating Report", description: `Generating ${report}...` })}>
                 <Download className="h-4 w-4" />
                 Generate Report
               </Button>

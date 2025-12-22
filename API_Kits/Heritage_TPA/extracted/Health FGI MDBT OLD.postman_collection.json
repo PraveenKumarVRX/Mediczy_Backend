@@ -1,0 +1,837 @@
+{
+	"info": {
+		"_postman_id": "d30771aa-353a-4e88-b505-31cbb313378c",
+		"name": "Health FGI MDBT OLD",
+		"schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json",
+		"_exporter_id": "19690377"
+	},
+	"item": [
+		{
+			"name": "global token api",
+			"request": {
+				"method": "POST",
+				"header": [
+					{
+						"key": "Content-Type",
+						"value": "application/x-www-form-urlencoded"
+					},
+					{
+						"key": "Authorization",
+						"value": "Basic WE85YWtCSWVPa1VFVkpFWkxlcGlrMzdRWFNFYTpRcXZzZWRES05jUjNnU2VUSVU4bXlYY1VoUDBh"
+					}
+				],
+				"body": {
+					"mode": "urlencoded",
+					"urlencoded": [
+						{
+							"key": "username",
+							"value": "User_HealthClaim",
+							"type": "text"
+						},
+						{
+							"key": "password",
+							"value": "He@lth@25",
+							"type": "text"
+						},
+						{
+							"key": "grant_type",
+							"value": "client_credentials",
+							"type": "text"
+						}
+					]
+				},
+				"url": {
+					"raw": "https://uat-internal-apim.futuregenerali.in:9443/oauth2/token",
+					"protocol": "https",
+					"host": [
+						"uat-internal-apim",
+						"futuregenerali",
+						"in"
+					],
+					"port": "9443",
+					"path": [
+						"oauth2",
+						"token"
+					]
+				},
+				"description": "Generated from cURL: curl --location 'https://uat-internal-apim.futuregenerali.in:9443/oauth2/token' \\\r\n\r\n--header 'Content-Type: application/x-www-form-urlencoded' \\\r\n\r\n--header 'Authorization: Basic WE85YWtCSWVPa1VFVkpFWkxlcGlrMzdRWFNFYTpRcXZzZWRES05jUjNnU2VUSVU4bXlYY1VoUDBh' \\\r\n\r\n--data-urlencode 'username=User_HealthClaim' \\\r\n\r\n--data-urlencode 'password=He@lth@25' \\\r\n\r\n--data-urlencode 'grant_type=client_credentials'"
+			},
+			"response": []
+		},
+		{
+			"name": "Token",
+			"request": {
+				"auth": {
+					"type": "noauth"
+				},
+				"method": "POST",
+				"header": [
+					{
+						"key": "Authorization",
+						"value": "Basic Y25rNjY2cV9QeDV2N3poRzRQdzhOSHhCNjQwYTphaTJ4dDNqckh4NldwTlVwX3VHRWY5NEFLVjBh"
+					},
+					{
+						"key": "Content-Type",
+						"value": "application/x-www-form-urlencoded",
+						"disabled": true
+					}
+				],
+				"body": {
+					"mode": "urlencoded",
+					"urlencoded": [
+						{
+							"key": "grant_type",
+							"value": "password",
+							"type": "text"
+						},
+						{
+							"key": "username",
+							"value": "LockTon",
+							"type": "text"
+						},
+						{
+							"key": "password",
+							"value": "lockTon#@25",
+							"type": "text"
+						}
+					]
+				},
+				"url": {
+					"raw": "https://uat-internal-apim.futuregenerali.in:9443/oauth2/token",
+					"protocol": "https",
+					"host": [
+						"uat-internal-apim",
+						"futuregenerali",
+						"in"
+					],
+					"port": "9443",
+					"path": [
+						"oauth2",
+						"token"
+					]
+				}
+			},
+			"response": []
+		},
+		{
+			"name": "GetClaimDetails",
+			"request": {
+				"auth": {
+					"type": "bearer",
+					"bearer": [
+						{
+							"key": "token",
+							"value": "eyJ4NXQiOiJNRGxqTW1KaU5EUTJaamhoTW1FME1qa3lPREU1WmpWa05tUmlZemc1WldWaU9XUTJOR0l4TkEiLCJraWQiOiJaVGd3TldWaU16WmxZbVkxTXpNeU1EZGhOell6WkRjek9UZGxZek0xTXpJeU9UTXhNMk0wTm1abU1tRXhNemRoT0RjME5tUXlPR05oWldRMlptTXlOUV9SUzI1NiIsInR5cCI6ImF0K2p3dCIsImFsZyI6IlJTMjU2In0.eyJzdWIiOiJkNGU5YjVlMC1iZjI0LTRiMTgtYWViZC00Yjg3MGY2NmE5NDAiLCJhdXQiOiJBUFBMSUNBVElPTl9VU0VSIiwiYXVkIjoiY25rNjY2cV9QeDV2N3poRzRQdzhOSHhCNjQwYSIsIm5iZiI6MTc0MzIxMzEwNSwiYXpwIjoiY25rNjY2cV9QeDV2N3poRzRQdzhOSHhCNjQwYSIsInNjb3BlIjoiZGVmYXVsdCIsImlzcyI6Imh0dHBzOlwvXC91YXQtaW50ZXJuYWwtYXBpbS5mdXR1cmVnZW5lcmFsaS5pbjo5NDQzXC9vYXV0aDJcL3Rva2VuIiwiZXhwIjoxNzQzMjE2NzA1LCJpYXQiOjE3NDMyMTMxMDUsImp0aSI6ImM3MjYwMDU3LTlkZTktNGQyNi05MmM5LWQyMTIxZjEyNjQ4ZiIsImNsaWVudF9pZCI6ImNuazY2NnFfUHg1djd6aEc0UHc4Tkh4QjY0MGEifQ.y1WAIH-C8xQ2zXMDK0KRss-oV_nKPTiccpcIJnvLhXsB0J6er7Rz8Ew4_7KvaAQ1_oMromsaIFWxxX6m0efxjMA82Xdx-cWdxBdVKLntyyhXuoDlvOS4P_TLqs1GLQOAtDL8pvwJTfjp9rUY90vR-BBgDTK-jbecNh4qrNW8ZN-_SCxgWsuWArOZZI49kuzINfY4cum_IVy2u8zlSsB6RZlRIA6p34x-IXJENthXvviLbIHfDhRca9Ng10rtpOF_9XVZ9YLBowUnXF9bZnxVXZKQ8qf-BCSwJF29PBMm4pKXOzWWrGnthSlx4n5ApgO0hyOcNM96nf35pEOTRYkqjg",
+							"type": "string"
+						}
+					]
+				},
+				"method": "POST",
+				"header": [
+					{
+						"key": "accept",
+						"value": "*/*"
+					},
+					{
+						"key": "Content-Type",
+						"value": "application/json"
+					},
+					{
+						"key": "Authorization",
+						"value": "Bearer eyJ4NXQiOiJNRGxqTW1KaU5EUTJaamhoTW1FME1qa3lPREU1WmpWa05tUmlZemc1WldWaU9XUTJOR0l4TkEiLCJraWQiOiJaVGd3TldWaU16WmxZbVkxTXpNeU1EZGhOell6WkRjek9UZGxZek0xTXpJeU9UTXhNMk0wTm1abU1tRXhNemRoT0RjME5tUXlPR05oWldRMlptTXlOUV9SUzI1NiIsInR5cCI6ImF0K2p3dCIsImFsZyI6IlJTMjU2In0.eyJzdWIiOiJkNGU5YjVlMC1iZjI0LTRiMTgtYWViZC00Yjg3MGY2NmE5NDAiLCJhdXQiOiJBUFBMSUNBVElPTl9VU0VSIiwiYXVkIjoiY25rNjY2cV9QeDV2N3poRzRQdzhOSHhCNjQwYSIsIm5iZiI6MTczNzM0OTYxNywiYXpwIjoiY25rNjY2cV9QeDV2N3poRzRQdzhOSHhCNjQwYSIsInNjb3BlIjoiZGVmYXVsdCIsImlzcyI6Imh0dHBzOlwvXC91YXQtaW50ZXJuYWwtYXBpbS5mdXR1cmVnZW5lcmFsaS5pbjo5NDQzXC9vYXV0aDJcL3Rva2VuIiwiZXhwIjoxNzM3MzUzMjE3LCJpYXQiOjE3MzczNDk2MTcsImp0aSI6ImVkODU0MmM3LTEzN2UtNGQxMi1iMDJmLTU4MTU4YzI1M2UzZSIsImNsaWVudF9pZCI6ImNuazY2NnFfUHg1djd6aEc0UHc4Tkh4QjY0MGEifQ.A_G0s6X1u2X44kxvAiJinB6E0QRxrpBqKNXMwXnXBlMAaQrvEKXO_DFGbQmyyNPHKgn7XsMaLT7aYvBLwXmavC7sPAkTNcm4r4ViIGpDCyDkUYjZ_nPuy1fPfizZwtZZz7IOlrSRMol0kX1AZMjC3AYP86HeJdOPKyr3GDAJUztZmUX9A1sZEpETbktHUmecTjgoYMbzt489x_Z658wcr1KY1uRqvUs1k6FX5vB43fcGG86ayvRcjJNYIDY_p-CztE7NgIdGq7KxJOBclHIj0Me42hhqJiR6POXUW7xLVoyVX4b37r0TZ2VvHLeTAaf9DIqphbFniULujXUHNZ6mXA",
+						"disabled": true
+					}
+				],
+				"body": {
+					"mode": "raw",
+					"raw": "{\r\n    \"BrokerCode\": \"60054573\",\r\n    \"MasterPolicyNo\": \"FGP-HO-24-0000016-00-000\",\r\n    \"EmployeeCode\": \"PT2400459679\",\r\n    \"FromDate\": \"19-05-2024\",\r\n    \"ToDate\": \"20-06-2024\"\r\n}",
+					"options": {
+						"raw": {
+							"language": "json"
+						}
+					}
+				},
+				"url": {
+					"raw": "https://uat-internal-apigw.futuregenerali.in:8243/HealthClaim/1.0.0/PartnerHealthAPI/api/PartnerHealth/GetClaimDetails",
+					"protocol": "https",
+					"host": [
+						"uat-internal-apigw",
+						"futuregenerali",
+						"in"
+					],
+					"port": "8243",
+					"path": [
+						"HealthClaim",
+						"1.0.0",
+						"PartnerHealthAPI",
+						"api",
+						"PartnerHealth",
+						"GetClaimDetails"
+					]
+				},
+				"description": "Generated from cURL: curl --location 'https://uat-internal-apigw.futuregenerali.in:8243/HealthClaim/1.0.0/PartnerHealthAPI/api/PartnerHealth/GetClaimDetails' \\\r\n--header 'accept: */*' \\\r\n--header 'Content-Type: application/json' \\\r\n--header 'Authorization: Bearer eyJ4NXQiOiJNRGxqTW1KaU5EUTJaamhoTW1FME1qa3lPREU1WmpWa05tUmlZemc1WldWaU9XUTJOR0l4TkEiLCJraWQiOiJaVGd3TldWaU16WmxZbVkxTXpNeU1EZGhOell6WkRjek9UZGxZek0xTXpJeU9UTXhNMk0wTm1abU1tRXhNemRoT0RjME5tUXlPR05oWldRMlptTXlOUV9SUzI1NiIsInR5cCI6ImF0K2p3dCIsImFsZyI6IlJTMjU2In0.eyJzdWIiOiJkNGU5YjVlMC1iZjI0LTRiMTgtYWViZC00Yjg3MGY2NmE5NDAiLCJhdXQiOiJBUFBMSUNBVElPTl9VU0VSIiwiYXVkIjoiY25rNjY2cV9QeDV2N3poRzRQdzhOSHhCNjQwYSIsIm5iZiI6MTczNzM0OTYxNywiYXpwIjoiY25rNjY2cV9QeDV2N3poRzRQdzhOSHhCNjQwYSIsInNjb3BlIjoiZGVmYXVsdCIsImlzcyI6Imh0dHBzOlwvXC91YXQtaW50ZXJuYWwtYXBpbS5mdXR1cmVnZW5lcmFsaS5pbjo5NDQzXC9vYXV0aDJcL3Rva2VuIiwiZXhwIjoxNzM3MzUzMjE3LCJpYXQiOjE3MzczNDk2MTcsImp0aSI6ImVkODU0MmM3LTEzN2UtNGQxMi1iMDJmLTU4MTU4YzI1M2UzZSIsImNsaWVudF9pZCI6ImNuazY2NnFfUHg1djd6aEc0UHc4Tkh4QjY0MGEifQ.A_G0s6X1u2X44kxvAiJinB6E0QRxrpBqKNXMwXnXBlMAaQrvEKXO_DFGbQmyyNPHKgn7XsMaLT7aYvBLwXmavC7sPAkTNcm4r4ViIGpDCyDkUYjZ_nPuy1fPfizZwtZZz7IOlrSRMol0kX1AZMjC3AYP86HeJdOPKyr3GDAJUztZmUX9A1sZEpETbktHUmecTjgoYMbzt489x_Z658wcr1KY1uRqvUs1k6FX5vB43fcGG86ayvRcjJNYIDY_p-CztE7NgIdGq7KxJOBclHIj0Me42hhqJiR6POXUW7xLVoyVX4b37r0TZ2VvHLeTAaf9DIqphbFniULujXUHNZ6mXA' \\\r\n--data '    {\r\n        BrokerCode :\"60054573\",\r\n        MasterPolicyNo :\"FGP-HO-24-0000016-00-000\",\r\n        EmployeeCode : \"PT2400459679\",\r\n        FromDate : \"19-05-2024\",\r\n        ToDate : \"20-06-2024\"\r\n \r\n    }'\r\n"
+			},
+			"response": []
+		},
+		{
+			"name": "GetFamilyEcardBytes",
+			"request": {
+				"auth": {
+					"type": "bearer",
+					"bearer": [
+						{
+							"key": "token",
+							"value": "eyJ4NXQiOiJNRGxqTW1KaU5EUTJaamhoTW1FME1qa3lPREU1WmpWa05tUmlZemc1WldWaU9XUTJOR0l4TkEiLCJraWQiOiJaVGd3TldWaU16WmxZbVkxTXpNeU1EZGhOell6WkRjek9UZGxZek0xTXpJeU9UTXhNMk0wTm1abU1tRXhNemRoT0RjME5tUXlPR05oWldRMlptTXlOUV9SUzI1NiIsInR5cCI6ImF0K2p3dCIsImFsZyI6IlJTMjU2In0.eyJzdWIiOiJkNGU5YjVlMC1iZjI0LTRiMTgtYWViZC00Yjg3MGY2NmE5NDAiLCJhdXQiOiJBUFBMSUNBVElPTl9VU0VSIiwiYXVkIjoiY25rNjY2cV9QeDV2N3poRzRQdzhOSHhCNjQwYSIsIm5iZiI6MTc0MzIxMzEwNSwiYXpwIjoiY25rNjY2cV9QeDV2N3poRzRQdzhOSHhCNjQwYSIsInNjb3BlIjoiZGVmYXVsdCIsImlzcyI6Imh0dHBzOlwvXC91YXQtaW50ZXJuYWwtYXBpbS5mdXR1cmVnZW5lcmFsaS5pbjo5NDQzXC9vYXV0aDJcL3Rva2VuIiwiZXhwIjoxNzQzMjE2NzA1LCJpYXQiOjE3NDMyMTMxMDUsImp0aSI6ImM3MjYwMDU3LTlkZTktNGQyNi05MmM5LWQyMTIxZjEyNjQ4ZiIsImNsaWVudF9pZCI6ImNuazY2NnFfUHg1djd6aEc0UHc4Tkh4QjY0MGEifQ.y1WAIH-C8xQ2zXMDK0KRss-oV_nKPTiccpcIJnvLhXsB0J6er7Rz8Ew4_7KvaAQ1_oMromsaIFWxxX6m0efxjMA82Xdx-cWdxBdVKLntyyhXuoDlvOS4P_TLqs1GLQOAtDL8pvwJTfjp9rUY90vR-BBgDTK-jbecNh4qrNW8ZN-_SCxgWsuWArOZZI49kuzINfY4cum_IVy2u8zlSsB6RZlRIA6p34x-IXJENthXvviLbIHfDhRca9Ng10rtpOF_9XVZ9YLBowUnXF9bZnxVXZKQ8qf-BCSwJF29PBMm4pKXOzWWrGnthSlx4n5ApgO0hyOcNM96nf35pEOTRYkqjg",
+							"type": "string"
+						}
+					]
+				},
+				"method": "POST",
+				"header": [
+					{
+						"key": "accept",
+						"value": "*/*"
+					},
+					{
+						"key": "Content-Type",
+						"value": "application/json"
+					},
+					{
+						"key": "Authorization",
+						"value": "Bearer eyJ4NXQiOiJNRGxqTW1KaU5EUTJaamhoTW1FME1qa3lPREU1WmpWa05tUmlZemc1WldWaU9XUTJOR0l4TkEiLCJraWQiOiJaVGd3TldWaU16WmxZbVkxTXpNeU1EZGhOell6WkRjek9UZGxZek0xTXpJeU9UTXhNMk0wTm1abU1tRXhNemRoT0RjME5tUXlPR05oWldRMlptTXlOUV9SUzI1NiIsInR5cCI6ImF0K2p3dCIsImFsZyI6IlJTMjU2In0.eyJzdWIiOiJkNGU5YjVlMC1iZjI0LTRiMTgtYWViZC00Yjg3MGY2NmE5NDAiLCJhdXQiOiJBUFBMSUNBVElPTl9VU0VSIiwiYXVkIjoiY25rNjY2cV9QeDV2N3poRzRQdzhOSHhCNjQwYSIsIm5iZiI6MTczNzM0ODc1MCwiYXpwIjoiY25rNjY2cV9QeDV2N3poRzRQdzhOSHhCNjQwYSIsInNjb3BlIjoiZGVmYXVsdCIsImlzcyI6Imh0dHBzOlwvXC91YXQtaW50ZXJuYWwtYXBpbS5mdXR1cmVnZW5lcmFsaS5pbjo5NDQzXC9vYXV0aDJcL3Rva2VuIiwiZXhwIjoxNzM3MzUyMzUwLCJpYXQiOjE3MzczNDg3NTAsImp0aSI6ImIxMWFjOWU4LWE4ZTYtNDNmNS1hMjAzLThlMzU5MTYyYzFjMiIsImNsaWVudF9pZCI6ImNuazY2NnFfUHg1djd6aEc0UHc4Tkh4QjY0MGEifQ.n0rEZmjjwToZQxpza9muLRs_WI7nGizcngU3ZTJIBN8lAVEoQlABZxlMfo0VNPeS0ij17ojxOLHROyPKhLwPF46010HmcDAufJu8hNf5eXtSQTqPsc2kUXZPkbm6gYOSHi7x9iB63WJjhQMBt-_egSIKHfHOieEb7U8DB5JjzMS5Ya_JjTxmKtNhnjHe8AscPBCAAQ8ATbyDR-Sx-tOZdAwd_5QuCyWgoy7LVmfO9jmFLfhW3kxQ3thRpOQMXhhkcZz7y2rYimeRrHOyKvvv5_lYaWq8ArSf5DbkRpd6nXkrjsF61nYVOXonqRHZaQ9Cx-F1jxuRNj6VYmNntGTmhg",
+						"disabled": true
+					}
+				],
+				"body": {
+					"mode": "raw",
+					"raw": "{\r\n    BrokerCode :\"60000272\",\r\n    MasterPolicyNo :\"FGH-10-24-0002158-00-000\",\r\n    EmployeeCode : \"471\"\r\n \r\n}",
+					"options": {
+						"raw": {
+							"language": "json"
+						}
+					}
+				},
+				"url": {
+					"raw": "https://uat-internal-apigw.futuregenerali.in:8243/HealthClaim/1.0.0/PartnerHealthAPI/api/PartnerHealth/GetFamilyEcardBytes",
+					"protocol": "https",
+					"host": [
+						"uat-internal-apigw",
+						"futuregenerali",
+						"in"
+					],
+					"port": "8243",
+					"path": [
+						"HealthClaim",
+						"1.0.0",
+						"PartnerHealthAPI",
+						"api",
+						"PartnerHealth",
+						"GetFamilyEcardBytes"
+					]
+				},
+				"description": "Generated from cURL: curl --location 'https://uat-internal-apigw.futuregenerali.in:8243/HealthClaim/1.0.0/PartnerHealthAPI/api/PartnerHealth/GetFamilyEcardBytes' \\\r\n--header 'accept: */*' \\\r\n--header 'Content-Type: application/json' \\\r\n--header 'Authorization: Bearer eyJ4NXQiOiJNRGxqTW1KaU5EUTJaamhoTW1FME1qa3lPREU1WmpWa05tUmlZemc1WldWaU9XUTJOR0l4TkEiLCJraWQiOiJaVGd3TldWaU16WmxZbVkxTXpNeU1EZGhOell6WkRjek9UZGxZek0xTXpJeU9UTXhNMk0wTm1abU1tRXhNemRoT0RjME5tUXlPR05oWldRMlptTXlOUV9SUzI1NiIsInR5cCI6ImF0K2p3dCIsImFsZyI6IlJTMjU2In0.eyJzdWIiOiJkNGU5YjVlMC1iZjI0LTRiMTgtYWViZC00Yjg3MGY2NmE5NDAiLCJhdXQiOiJBUFBMSUNBVElPTl9VU0VSIiwiYXVkIjoiY25rNjY2cV9QeDV2N3poRzRQdzhOSHhCNjQwYSIsIm5iZiI6MTczNzM0ODc1MCwiYXpwIjoiY25rNjY2cV9QeDV2N3poRzRQdzhOSHhCNjQwYSIsInNjb3BlIjoiZGVmYXVsdCIsImlzcyI6Imh0dHBzOlwvXC91YXQtaW50ZXJuYWwtYXBpbS5mdXR1cmVnZW5lcmFsaS5pbjo5NDQzXC9vYXV0aDJcL3Rva2VuIiwiZXhwIjoxNzM3MzUyMzUwLCJpYXQiOjE3MzczNDg3NTAsImp0aSI6ImIxMWFjOWU4LWE4ZTYtNDNmNS1hMjAzLThlMzU5MTYyYzFjMiIsImNsaWVudF9pZCI6ImNuazY2NnFfUHg1djd6aEc0UHc4Tkh4QjY0MGEifQ.n0rEZmjjwToZQxpza9muLRs_WI7nGizcngU3ZTJIBN8lAVEoQlABZxlMfo0VNPeS0ij17ojxOLHROyPKhLwPF46010HmcDAufJu8hNf5eXtSQTqPsc2kUXZPkbm6gYOSHi7x9iB63WJjhQMBt-_egSIKHfHOieEb7U8DB5JjzMS5Ya_JjTxmKtNhnjHe8AscPBCAAQ8ATbyDR-Sx-tOZdAwd_5QuCyWgoy7LVmfO9jmFLfhW3kxQ3thRpOQMXhhkcZz7y2rYimeRrHOyKvvv5_lYaWq8ArSf5DbkRpd6nXkrjsF61nYVOXonqRHZaQ9Cx-F1jxuRNj6VYmNntGTmhg' \\\r\n--data '{\r\n    BrokerCode :\"60000272\",\r\n    MasterPolicyNo :\"FGH-10-24-0002158-00-000\",\r\n    EmployeeCode : \"471\"\r\n \r\n}'\r\n"
+			},
+			"response": []
+		},
+		{
+			"name": "GetHospitalCount",
+			"request": {
+				"auth": {
+					"type": "bearer",
+					"bearer": [
+						{
+							"key": "token",
+							"value": "eyJ4NXQiOiJNRGxqTW1KaU5EUTJaamhoTW1FME1qa3lPREU1WmpWa05tUmlZemc1WldWaU9XUTJOR0l4TkEiLCJraWQiOiJaVGd3TldWaU16WmxZbVkxTXpNeU1EZGhOell6WkRjek9UZGxZek0xTXpJeU9UTXhNMk0wTm1abU1tRXhNemRoT0RjME5tUXlPR05oWldRMlptTXlOUV9SUzI1NiIsInR5cCI6ImF0K2p3dCIsImFsZyI6IlJTMjU2In0.eyJzdWIiOiJkNGU5YjVlMC1iZjI0LTRiMTgtYWViZC00Yjg3MGY2NmE5NDAiLCJhdXQiOiJBUFBMSUNBVElPTl9VU0VSIiwiYXVkIjoiY25rNjY2cV9QeDV2N3poRzRQdzhOSHhCNjQwYSIsIm5iZiI6MTc0MzIxMzEwNSwiYXpwIjoiY25rNjY2cV9QeDV2N3poRzRQdzhOSHhCNjQwYSIsInNjb3BlIjoiZGVmYXVsdCIsImlzcyI6Imh0dHBzOlwvXC91YXQtaW50ZXJuYWwtYXBpbS5mdXR1cmVnZW5lcmFsaS5pbjo5NDQzXC9vYXV0aDJcL3Rva2VuIiwiZXhwIjoxNzQzMjE2NzA1LCJpYXQiOjE3NDMyMTMxMDUsImp0aSI6ImM3MjYwMDU3LTlkZTktNGQyNi05MmM5LWQyMTIxZjEyNjQ4ZiIsImNsaWVudF9pZCI6ImNuazY2NnFfUHg1djd6aEc0UHc4Tkh4QjY0MGEifQ.y1WAIH-C8xQ2zXMDK0KRss-oV_nKPTiccpcIJnvLhXsB0J6er7Rz8Ew4_7KvaAQ1_oMromsaIFWxxX6m0efxjMA82Xdx-cWdxBdVKLntyyhXuoDlvOS4P_TLqs1GLQOAtDL8pvwJTfjp9rUY90vR-BBgDTK-jbecNh4qrNW8ZN-_SCxgWsuWArOZZI49kuzINfY4cum_IVy2u8zlSsB6RZlRIA6p34x-IXJENthXvviLbIHfDhRca9Ng10rtpOF_9XVZ9YLBowUnXF9bZnxVXZKQ8qf-BCSwJF29PBMm4pKXOzWWrGnthSlx4n5ApgO0hyOcNM96nf35pEOTRYkqjg",
+							"type": "string"
+						}
+					]
+				},
+				"method": "POST",
+				"header": [
+					{
+						"key": "accept",
+						"value": "*/*"
+					},
+					{
+						"key": "Content-Type",
+						"value": "application/json"
+					},
+					{
+						"key": "Authorization",
+						"value": "Bearer eyJ4NXQiOiJNRGxqTW1KaU5EUTJaamhoTW1FME1qa3lPREU1WmpWa05tUmlZemc1WldWaU9XUTJOR0l4TkEiLCJraWQiOiJaVGd3TldWaU16WmxZbVkxTXpNeU1EZGhOell6WkRjek9UZGxZek0xTXpJeU9UTXhNMk0wTm1abU1tRXhNemRoT0RjME5tUXlPR05oWldRMlptTXlOUV9SUzI1NiIsInR5cCI6ImF0K2p3dCIsImFsZyI6IlJTMjU2In0.eyJzdWIiOiJkNGU5YjVlMC1iZjI0LTRiMTgtYWViZC00Yjg3MGY2NmE5NDAiLCJhdXQiOiJBUFBMSUNBVElPTl9VU0VSIiwiYXVkIjoiY25rNjY2cV9QeDV2N3poRzRQdzhOSHhCNjQwYSIsIm5iZiI6MTczNzM0OTYxNywiYXpwIjoiY25rNjY2cV9QeDV2N3poRzRQdzhOSHhCNjQwYSIsInNjb3BlIjoiZGVmYXVsdCIsImlzcyI6Imh0dHBzOlwvXC91YXQtaW50ZXJuYWwtYXBpbS5mdXR1cmVnZW5lcmFsaS5pbjo5NDQzXC9vYXV0aDJcL3Rva2VuIiwiZXhwIjoxNzM3MzUzMjE3LCJpYXQiOjE3MzczNDk2MTcsImp0aSI6ImVkODU0MmM3LTEzN2UtNGQxMi1iMDJmLTU4MTU4YzI1M2UzZSIsImNsaWVudF9pZCI6ImNuazY2NnFfUHg1djd6aEc0UHc4Tkh4QjY0MGEifQ.A_G0s6X1u2X44kxvAiJinB6E0QRxrpBqKNXMwXnXBlMAaQrvEKXO_DFGbQmyyNPHKgn7XsMaLT7aYvBLwXmavC7sPAkTNcm4r4ViIGpDCyDkUYjZ_nPuy1fPfizZwtZZz7IOlrSRMol0kX1AZMjC3AYP86HeJdOPKyr3GDAJUztZmUX9A1sZEpETbktHUmecTjgoYMbzt489x_Z658wcr1KY1uRqvUs1k6FX5vB43fcGG86ayvRcjJNYIDY_p-CztE7NgIdGq7KxJOBclHIj0Me42hhqJiR6POXUW7xLVoyVX4b37r0TZ2VvHLeTAaf9DIqphbFniULujXUHNZ6mXA",
+						"disabled": true
+					}
+				],
+				"body": {
+					"mode": "raw",
+					"raw": "{\n    \"Count\": \"True\",\n    \"StartIndex\": \"0\",\n    \"EndIndex\": \"0\"\n}",
+					"options": {
+						"raw": {
+							"language": "json"
+						}
+					}
+				},
+				"url": {
+					"raw": "https://uat-internal-apigw.futuregenerali.in:8243/HealthClaim/1.0.0/PartnerHealthAPI/api/PartnerHealth/GetHospitalCount",
+					"protocol": "https",
+					"host": [
+						"uat-internal-apigw",
+						"futuregenerali",
+						"in"
+					],
+					"port": "8243",
+					"path": [
+						"HealthClaim",
+						"1.0.0",
+						"PartnerHealthAPI",
+						"api",
+						"PartnerHealth",
+						"GetHospitalCount"
+					]
+				}
+			},
+			"response": []
+		},
+		{
+			"name": "GetHospitalDetail",
+			"request": {
+				"auth": {
+					"type": "bearer",
+					"bearer": [
+						{
+							"key": "token",
+							"value": "eyJ4NXQiOiJNRGxqTW1KaU5EUTJaamhoTW1FME1qa3lPREU1WmpWa05tUmlZemc1WldWaU9XUTJOR0l4TkEiLCJraWQiOiJaVGd3TldWaU16WmxZbVkxTXpNeU1EZGhOell6WkRjek9UZGxZek0xTXpJeU9UTXhNMk0wTm1abU1tRXhNemRoT0RjME5tUXlPR05oWldRMlptTXlOUV9SUzI1NiIsInR5cCI6ImF0K2p3dCIsImFsZyI6IlJTMjU2In0.eyJzdWIiOiJkNGU5YjVlMC1iZjI0LTRiMTgtYWViZC00Yjg3MGY2NmE5NDAiLCJhdXQiOiJBUFBMSUNBVElPTl9VU0VSIiwiYXVkIjoiY25rNjY2cV9QeDV2N3poRzRQdzhOSHhCNjQwYSIsIm5iZiI6MTc0MzIxMzEwNSwiYXpwIjoiY25rNjY2cV9QeDV2N3poRzRQdzhOSHhCNjQwYSIsInNjb3BlIjoiZGVmYXVsdCIsImlzcyI6Imh0dHBzOlwvXC91YXQtaW50ZXJuYWwtYXBpbS5mdXR1cmVnZW5lcmFsaS5pbjo5NDQzXC9vYXV0aDJcL3Rva2VuIiwiZXhwIjoxNzQzMjE2NzA1LCJpYXQiOjE3NDMyMTMxMDUsImp0aSI6ImM3MjYwMDU3LTlkZTktNGQyNi05MmM5LWQyMTIxZjEyNjQ4ZiIsImNsaWVudF9pZCI6ImNuazY2NnFfUHg1djd6aEc0UHc4Tkh4QjY0MGEifQ.y1WAIH-C8xQ2zXMDK0KRss-oV_nKPTiccpcIJnvLhXsB0J6er7Rz8Ew4_7KvaAQ1_oMromsaIFWxxX6m0efxjMA82Xdx-cWdxBdVKLntyyhXuoDlvOS4P_TLqs1GLQOAtDL8pvwJTfjp9rUY90vR-BBgDTK-jbecNh4qrNW8ZN-_SCxgWsuWArOZZI49kuzINfY4cum_IVy2u8zlSsB6RZlRIA6p34x-IXJENthXvviLbIHfDhRca9Ng10rtpOF_9XVZ9YLBowUnXF9bZnxVXZKQ8qf-BCSwJF29PBMm4pKXOzWWrGnthSlx4n5ApgO0hyOcNM96nf35pEOTRYkqjg",
+							"type": "string"
+						}
+					]
+				},
+				"method": "POST",
+				"header": [
+					{
+						"key": "accept",
+						"value": "*/*"
+					},
+					{
+						"key": "Content-Type",
+						"value": "application/json"
+					},
+					{
+						"key": "Authorization",
+						"value": "Bearer eyJ4NXQiOiJNRGxqTW1KaU5EUTJaamhoTW1FME1qa3lPREU1WmpWa05tUmlZemc1WldWaU9XUTJOR0l4TkEiLCJraWQiOiJaVGd3TldWaU16WmxZbVkxTXpNeU1EZGhOell6WkRjek9UZGxZek0xTXpJeU9UTXhNMk0wTm1abU1tRXhNemRoT0RjME5tUXlPR05oWldRMlptTXlOUV9SUzI1NiIsInR5cCI6ImF0K2p3dCIsImFsZyI6IlJTMjU2In0.eyJzdWIiOiJkNGU5YjVlMC1iZjI0LTRiMTgtYWViZC00Yjg3MGY2NmE5NDAiLCJhdXQiOiJBUFBMSUNBVElPTl9VU0VSIiwiYXVkIjoiY25rNjY2cV9QeDV2N3poRzRQdzhOSHhCNjQwYSIsIm5iZiI6MTczNzM0ODc1MCwiYXpwIjoiY25rNjY2cV9QeDV2N3poRzRQdzhOSHhCNjQwYSIsInNjb3BlIjoiZGVmYXVsdCIsImlzcyI6Imh0dHBzOlwvXC91YXQtaW50ZXJuYWwtYXBpbS5mdXR1cmVnZW5lcmFsaS5pbjo5NDQzXC9vYXV0aDJcL3Rva2VuIiwiZXhwIjoxNzM3MzUyMzUwLCJpYXQiOjE3MzczNDg3NTAsImp0aSI6ImIxMWFjOWU4LWE4ZTYtNDNmNS1hMjAzLThlMzU5MTYyYzFjMiIsImNsaWVudF9pZCI6ImNuazY2NnFfUHg1djd6aEc0UHc4Tkh4QjY0MGEifQ.n0rEZmjjwToZQxpza9muLRs_WI7nGizcngU3ZTJIBN8lAVEoQlABZxlMfo0VNPeS0ij17ojxOLHROyPKhLwPF46010HmcDAufJu8hNf5eXtSQTqPsc2kUXZPkbm6gYOSHi7x9iB63WJjhQMBt-_egSIKHfHOieEb7U8DB5JjzMS5Ya_JjTxmKtNhnjHe8AscPBCAAQ8ATbyDR-Sx-tOZdAwd_5QuCyWgoy7LVmfO9jmFLfhW3kxQ3thRpOQMXhhkcZz7y2rYimeRrHOyKvvv5_lYaWq8ArSf5DbkRpd6nXkrjsF61nYVOXonqRHZaQ9Cx-F1jxuRNj6VYmNntGTmhg",
+						"disabled": true
+					}
+				],
+				"body": {
+					"mode": "raw",
+					"raw": "{   \n    \"StartIndex\" : \"1\",\n    \"EndIndex\" : \"10\"\n \n}",
+					"options": {
+						"raw": {
+							"language": "json"
+						}
+					}
+				},
+				"url": {
+					"raw": "https://uat-internal-apigw.futuregenerali.in:8243/HealthClaim/1.0.0/PartnerHealthAPI/api/PartnerHealth/GetHospitalDetail",
+					"protocol": "https",
+					"host": [
+						"uat-internal-apigw",
+						"futuregenerali",
+						"in"
+					],
+					"port": "8243",
+					"path": [
+						"HealthClaim",
+						"1.0.0",
+						"PartnerHealthAPI",
+						"api",
+						"PartnerHealth",
+						"GetHospitalDetail"
+					]
+				}
+			},
+			"response": []
+		},
+		{
+			"name": "token 2",
+			"request": {
+				"auth": {
+					"type": "noauth"
+				},
+				"method": "POST",
+				"header": [
+					{
+						"key": "Content-Type",
+						"value": "application/x-www-form-urlencoded",
+						"disabled": true
+					},
+					{
+						"key": "Authorization",
+						"value": "Basic WE85YWtCSWVPa1VFVkpFWkxlcGlrMzdRWFNFYTpRcXZzZWRES05jUjNnU2VUSVU4bXlYY1VoUDBh"
+					}
+				],
+				"body": {
+					"mode": "urlencoded",
+					"urlencoded": [
+						{
+							"key": "username",
+							"value": "User_HealthClaim",
+							"type": "text"
+						},
+						{
+							"key": "password",
+							"value": "He@lth@25",
+							"type": "text"
+						},
+						{
+							"key": "grant_type",
+							"value": "client_credentials",
+							"type": "text"
+						}
+					]
+				},
+				"url": {
+					"raw": "https://uat-internal-apim.futuregenerali.in:9443/oauth2/token",
+					"protocol": "https",
+					"host": [
+						"uat-internal-apim",
+						"futuregenerali",
+						"in"
+					],
+					"port": "9443",
+					"path": [
+						"oauth2",
+						"token"
+					]
+				}
+			},
+			"response": []
+		},
+		{
+			"name": "GetPolicyDetails",
+			"protocolProfileBehavior": {
+				"disabledSystemHeaders": {
+					"user-agent": true,
+					"accept": true,
+					"accept-encoding": true
+				}
+			},
+			"request": {
+				"auth": {
+					"type": "bearer",
+					"bearer": [
+						{
+							"key": "token",
+							"value": "eyJ4NXQiOiJNRGxqTW1KaU5EUTJaamhoTW1FME1qa3lPREU1WmpWa05tUmlZemc1WldWaU9XUTJOR0l4TkEiLCJraWQiOiJaVGd3TldWaU16WmxZbVkxTXpNeU1EZGhOell6WkRjek9UZGxZek0xTXpJeU9UTXhNMk0wTm1abU1tRXhNemRoT0RjME5tUXlPR05oWldRMlptTXlOUV9SUzI1NiIsInR5cCI6ImF0K2p3dCIsImFsZyI6IlJTMjU2In0.eyJzdWIiOiI4NzkxZDE1NS0wMGE3LTQ4YjItOGJiMi0yMGRkMTMzNzc2NmIiLCJhdXQiOiJBUFBMSUNBVElPTiIsImF1ZCI6IlhPOWFrQkllT2tVRVZKRVpMZXBpazM3UVhTRWEiLCJuYmYiOjE3NDc5ODAzOTcsImF6cCI6IlhPOWFrQkllT2tVRVZKRVpMZXBpazM3UVhTRWEiLCJzY29wZSI6ImRlZmF1bHQiLCJpc3MiOiJodHRwczpcL1wvdWF0LWludGVybmFsLWFwaW0uZnV0dXJlZ2VuZXJhbGkuaW46OTQ0M1wvb2F1dGgyXC90b2tlbiIsImV4cCI6MTc0Nzk4Mzk5NywiaWF0IjoxNzQ3OTgwMzk3LCJqdGkiOiJiMzE2MjYyYi03Nzk5LTQ4YzgtOGM0My1lYWY1M2ExYmU4ZDIiLCJjbGllbnRfaWQiOiJYTzlha0JJZU9rVUVWSkVaTGVwaWszN1FYU0VhIn0.NhFbv4s_h_ulOWu5qX4RLZ0IQApURlhxVNHn3VKTz34rmd1etve585iUl4OI34OxRj8QaQ3awloDXXAM4jpQZVy3U5zFOl3HowTRqPTqTGyGz5SGrU9py3DZXdWP8CuBas5r0HRF-aaOpnJEmq3qsrws87n-dgT6abkeqVa5e0JmCdqzstIamseEC8ioDC3Zl75gHlhfdJONLBv47OpjnAtmpAEOiFsZmWyyKTLkrqDwYGbjrY75XZENq21hzgsLRRyZrCaly9QKKqaUXfu9Cx-1KFM24YwU7dAAI8LTvfFPsrDvr3DXkgneOo9Hz45O3ShAoiR9gVbwpjxYvKTarQ",
+							"type": "string"
+						}
+					]
+				},
+				"method": "POST",
+				"header": [
+					{
+						"key": "accept",
+						"value": "*/*",
+						"type": "text",
+						"disabled": true
+					},
+					{
+						"key": "Content-Type",
+						"value": "application/json",
+						"type": "text",
+						"disabled": true
+					},
+					{
+						"key": "Authorization",
+						"value": "Bearer null",
+						"type": "text",
+						"disabled": true
+					},
+					{
+						"key": "",
+						"value": "",
+						"type": "text"
+					}
+				],
+				"body": {
+					"mode": "raw",
+					"raw": "{\n  \"masterPolicyNo\": \"FGS-59-24-0000751-00-000\",\n  \"familyIdentificationNo\": \"AL0001072013\",\n  \"vendorCode\": \"767654\",\n  \"uniqueRequestID\": \"65454354\"\n}",
+					"options": {
+						"raw": {
+							"language": "json"
+						}
+					}
+				},
+				"url": {
+					"raw": "https://uat-internal-apigw.futuregenerali.in:8243/HealthClaim-Process/1.0.0/HealthClaim_V1/GetPolicyDetails",
+					"protocol": "https",
+					"host": [
+						"uat-internal-apigw",
+						"futuregenerali",
+						"in"
+					],
+					"port": "8243",
+					"path": [
+						"HealthClaim-Process",
+						"1.0.0",
+						"HealthClaim_V1",
+						"GetPolicyDetails"
+					]
+				}
+			},
+			"response": []
+		},
+		{
+			"name": "ClaimIntimation",
+			"request": {
+				"auth": {
+					"type": "noauth"
+				},
+				"method": "POST",
+				"header": [
+					{
+						"key": "accept",
+						"value": "*/*"
+					},
+					{
+						"key": "Authorization",
+						"value": "Bearer null"
+					}
+				],
+				"body": {
+					"mode": "formdata",
+					"formdata": [
+						{
+							"key": "HealthIdCardId",
+							"value": "FGH1136122916122024C",
+							"type": "text"
+						},
+						{
+							"key": "DoctorName",
+							"value": "JHGY JHJ",
+							"type": "text"
+						},
+						{
+							"key": "MobileNumber",
+							"value": "8787675765",
+							"type": "text"
+						},
+						{
+							"key": "PolicyType",
+							"value": "02",
+							"type": "text"
+						},
+						{
+							"key": "DateOfAddmission",
+							"value": "25-02-2025",
+							"type": "text"
+						},
+						{
+							"key": "DiagnosisDetails",
+							"value": "Fever",
+							"type": "text"
+						},
+						{
+							"key": "TreatmentType",
+							"value": "IPD",
+							"type": "text"
+						},
+						{
+							"key": "Remarks",
+							"value": "OK",
+							"type": "text"
+						},
+						{
+							"key": "ClaimedAmount",
+							"value": "1",
+							"type": "text"
+						},
+						{
+							"key": "HospitalId",
+							"value": "HS24635600",
+							"type": "text"
+						},
+						{
+							"key": "VendorCode",
+							"value": "8787676",
+							"type": "text"
+						},
+						{
+							"key": "ClaimType",
+							"value": "RI",
+							"type": "text"
+						},
+						{
+							"key": "EmailId",
+							"value": "TF@GMAIL.COM",
+							"type": "text"
+						},
+						{
+							"key": "UniqueRequestID",
+							"value": "76886875567",
+							"type": "text"
+						},
+						{
+							"key": "DateOfDischarge",
+							"value": "28-02-2025",
+							"type": "text"
+						}
+					]
+				},
+				"url": {
+					"raw": "https://uat-internal-apigw.futuregenerali.in:8243/HealthClaim-Process/1.0.0/HealthClaim_V1/ClaimIntimation",
+					"protocol": "https",
+					"host": [
+						"uat-internal-apigw",
+						"futuregenerali",
+						"in"
+					],
+					"port": "8243",
+					"path": [
+						"HealthClaim-Process",
+						"1.0.0",
+						"HealthClaim_V1",
+						"ClaimIntimation"
+					]
+				}
+			},
+			"response": []
+		},
+		{
+			"name": "ClaimDefficiencyDocumentsUpload",
+			"request": {
+				"auth": {
+					"type": "noauth"
+				},
+				"method": "POST",
+				"header": [
+					{
+						"key": "accept",
+						"value": "*/*"
+					},
+					{
+						"key": "Authorization",
+						"value": "Bearer null"
+					}
+				],
+				"body": {
+					"mode": "formdata",
+					"formdata": [
+						{
+							"key": "ClaimNumber",
+							"value": "FGH-2400465-00",
+							"type": "text"
+						},
+						{
+							"key": "VendorCode",
+							"value": "7657665",
+							"type": "text"
+						},
+						{
+							"key": "DocumentName",
+							"contentType": "image/png",
+							"type": "file",
+							"src": "Swapnil Ahir DL.png"
+						},
+						{
+							"key": "DocumentType",
+							"value": "Original bills and reports",
+							"type": "text"
+						},
+						{
+							"key": "UniqueRequestID",
+							"value": "7567588",
+							"type": "text"
+						}
+					]
+				},
+				"url": {
+					"raw": "https://uat-internal-apigw.futuregenerali.in:8243/HealthClaim-Process/1.0.0/HealthClaim_V1/ClaimDefficiencyDocumentsUpload",
+					"protocol": "https",
+					"host": [
+						"uat-internal-apigw",
+						"futuregenerali",
+						"in"
+					],
+					"port": "8243",
+					"path": [
+						"HealthClaim-Process",
+						"1.0.0",
+						"HealthClaim_V1",
+						"ClaimDefficiencyDocumentsUpload"
+					]
+				}
+			},
+			"response": []
+		},
+		{
+			"name": "ClaimDocumentsUpload",
+			"request": {
+				"auth": {
+					"type": "noauth"
+				},
+				"method": "POST",
+				"header": [
+					{
+						"key": "accept",
+						"value": "*/*"
+					},
+					{
+						"key": "Authorization",
+						"value": "Bearer null"
+					}
+				],
+				"body": {
+					"mode": "formdata",
+					"formdata": [
+						{
+							"key": "ClaimNumber",
+							"value": "FGH-2400465-00",
+							"type": "text"
+						},
+						{
+							"key": "HID",
+							"value": "",
+							"type": "text"
+						},
+						{
+							"key": "VendorCode",
+							"value": "6785745",
+							"type": "text"
+						},
+						{
+							"key": "DocumentName",
+							"contentType": "image/jpeg",
+							"type": "file",
+							"src": "Swapnil Sadashiv Ahir Aadhar.jpg"
+						},
+						{
+							"key": "DocUploadType",
+							"value": "Adhar",
+							"type": "text"
+						},
+						{
+							"key": "UniqueRequestID",
+							"value": "76765654",
+							"type": "text"
+						}
+					]
+				},
+				"url": {
+					"raw": "https://uat-internal-apigw.futuregenerali.in:8243/HealthClaim-Process/1.0.0/HealthClaim_V1/ClaimDocumentsUpload",
+					"protocol": "https",
+					"host": [
+						"uat-internal-apigw",
+						"futuregenerali",
+						"in"
+					],
+					"port": "8243",
+					"path": [
+						"HealthClaim-Process",
+						"1.0.0",
+						"HealthClaim_V1",
+						"ClaimDocumentsUpload"
+					]
+				}
+			},
+			"response": []
+		},
+		{
+			"name": "GetQueryList",
+			"request": {
+				"auth": {
+					"type": "noauth"
+				},
+				"method": "POST",
+				"header": [
+					{
+						"key": "accept",
+						"value": "*/*"
+					},
+					{
+						"key": "Content-Type",
+						"value": "application/json"
+					},
+					{
+						"key": "Authorization",
+						"value": "Bearer null"
+					}
+				],
+				"body": {
+					"mode": "raw",
+					"raw": "{\n  \"claimNumber\": \"FGH-2400488-00\",\n  \"hid\": \"string\",\n  \"vendorCode\": \"7676787\",\n  \"uniqueRequestID\": \"7676564\"\n}",
+					"options": {
+						"raw": {
+							"language": "json"
+						}
+					}
+				},
+				"url": {
+					"raw": "https://uat-internal-apigw.futuregenerali.in:8243/HealthClaim-Process/1.0.0/HealthClaim_V1/GetQueryList",
+					"protocol": "https",
+					"host": [
+						"uat-internal-apigw",
+						"futuregenerali",
+						"in"
+					],
+					"port": "8243",
+					"path": [
+						"HealthClaim-Process",
+						"1.0.0",
+						"HealthClaim_V1",
+						"GetQueryList"
+					]
+				}
+			},
+			"response": []
+		},
+		{
+			"name": "FetchClaimLetter",
+			"request": {
+				"auth": {
+					"type": "noauth"
+				},
+				"method": "POST",
+				"header": [
+					{
+						"key": "accept",
+						"value": "*/*"
+					},
+					{
+						"key": "Content-Type",
+						"value": "application/json"
+					},
+					{
+						"key": "Authorization",
+						"value": "Bearer null"
+					}
+				],
+				"body": {
+					"mode": "raw",
+					"raw": "{\n  \"claimNO\": \"FGH-2400465-00\",\n  \"vendorCode\": \"8767656\",\n  \"uniqueRequestID\": \"5457677\"\n}",
+					"options": {
+						"raw": {
+							"language": "json"
+						}
+					}
+				},
+				"url": {
+					"raw": "https://uat-internal-apigw.futuregenerali.in:8243/HealthClaim-Process/1.0.0/HealthClaim_V1/FetchClaimLetter",
+					"protocol": "https",
+					"host": [
+						"uat-internal-apigw",
+						"futuregenerali",
+						"in"
+					],
+					"port": "8243",
+					"path": [
+						"HealthClaim-Process",
+						"1.0.0",
+						"HealthClaim_V1",
+						"FetchClaimLetter"
+					]
+				}
+			},
+			"response": []
+		}
+	]
+}

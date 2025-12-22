@@ -11,18 +11,28 @@ router.post('/login', [
   body('email').isEmail().withMessage('Must be a valid email'),
   body('password').notEmpty().withMessage('Password is required'),
 ], async (req, res) => {
+  console.log('🔵 [Team Login] Request received');
   try {
     const { email, password } = req.body;
+    console.log('🔵 [Team Login] Email:', email);
 
     // Hardcoded credentials removed for security - all team members must be in database
 
     // Check if user exists in database and has team role
-    const user = await userModel.findOne({ 
-      where: { 
-        email,
-        isActive: true 
-      } 
-    });
+    console.log('🔵 [Team Login] Querying database...');
+    let user;
+    try {
+      user = await userModel.findOne({ 
+        where: { 
+          email
+        } 
+      });
+      console.log('🔵 [Team Login] Query completed');
+    } catch (queryError) {
+      console.error('❌ Team DB query error:', queryError.message);
+      throw queryError;
+    }
+    console.log('🔵 [Team Login] User found:', !!user);
 
     if (!user) {
       return res.status(401).json({ 
@@ -58,8 +68,7 @@ router.post('/login', [
         'Hospital Management',
         'Pharmacy Management',
         'Health Plans Access'
-      ],
-      isActive: user.isActive
+      ]
     };
 
     // Generate JWT token
@@ -85,7 +94,9 @@ router.post('/login', [
     });
 
   } catch (error) {
-    console.error('Team login error:', error);
+    console.error('❌ TEAM LOGIN ERROR:', error);
+    console.error('❌ Error message:', error.message);
+    console.error('❌ Error stack:', error.stack);
     res.status(500).json({ 
       success: false,
       message: 'Internal server error' 

@@ -1,0 +1,148 @@
+{
+  "name": "SIB: Push Notification",
+  "nodes": [
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "notification-push",
+        "options": {}
+      },
+      "id": "webhook-push",
+      "name": "Webhook - Push Trigger",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 1,
+      "position": [250, 300],
+      "webhookId": "sib-notification-push"
+    },
+    {
+      "parameters": {
+        "url": "https://fcm.googleapis.com/fcm/send",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Authorization",
+              "value": "key={{$env.FCM_SERVER_KEY}}"
+            },
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={\n  \"to\": \"{{$node[\"Webhook - Push Trigger\"].json[\"data\"][\"device_token\"]}}\",\n  \"notification\": {\n    \"title\": \"{{$node[\"Webhook - Push Trigger\"].json[\"data\"][\"title\"]}}\",\n    \"body\": \"{{$node[\"Webhook - Push Trigger\"].json[\"data\"][\"body\"]}}\",\n    \"priority\": \"{{$node[\"Webhook - Push Trigger\"].json[\"data\"][\"priority\"] || \"normal\"}}\"\n  },\n  \"data\": {{$node[\"Webhook - Push Trigger\"].json[\"data\"][\"data\"]}}\n}",
+        "options": {}
+      },
+      "id": "send-push-fcm",
+      "name": "Send Push (Firebase)",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4,
+      "position": [500, 300]
+    },
+    {
+      "parameters": {
+        "url": "http://localhost:3000/api/notifications/log",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={\n  \"channel\": \"push\",\n  \"patient_id\": \"{{$node[\"Webhook - Push Trigger\"].json[\"data\"][\"patient_id\"]}}\",\n  \"device_token\": \"{{$node[\"Webhook - Push Trigger\"].json[\"data\"][\"device_token\"]}}\",\n  \"status\": \"{{$node[\"Send Push (Firebase)\"].json[\"success\"] ? \"delivered\" : \"failed\"}}\",\n  \"sent_at\": \"{{new Date().toISOString()}}\"\n}",
+        "options": {}
+      },
+      "id": "log-push",
+      "name": "Log to Database",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4,
+      "position": [750, 300]
+    },
+    {
+      "parameters": {
+        "values": {
+          "string": [
+            {
+              "name": "status",
+              "value": "success"
+            },
+            {
+              "name": "channel",
+              "value": "push"
+            },
+            {
+              "name": "fcm_response",
+              "value": "={{$node[\"Send Push (Firebase)\"].json}}"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "response-push",
+      "name": "Respond to Webhook",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3,
+      "position": [1000, 300]
+    }
+  ],
+  "connections": {
+    "Webhook - Push Trigger": {
+      "main": [
+        [
+          {
+            "node": "Send Push (Firebase)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Send Push (Firebase)": {
+      "main": [
+        [
+          {
+            "node": "Log to Database",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Log to Database": {
+      "main": [
+        [
+          {
+            "node": "Respond to Webhook",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": true,
+  "settings": {
+    "executionOrder": "v1"
+  },
+  "versionId": "1",
+  "id": "sib-notification-push",
+  "meta": {
+    "instanceId": "mediczy-n8n"
+  },
+  "tags": [
+    {
+      "name": "sib-automation"
+    },
+    {
+      "name": "notifications"
+    }
+  ]
+}

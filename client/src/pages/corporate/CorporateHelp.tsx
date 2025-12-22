@@ -149,13 +149,13 @@ const CorporateHelp: React.FC = () => {
       title: 'Documentation',
       description: 'Comprehensive guides and tutorials',
       icon: <Book className="h-6 w-6 text-blue-600" />,
-      link: '#'
+      link: '/docs'
     },
     {
       title: 'Video Tutorials',
       description: 'Step-by-step video guides',
       icon: <Video className="h-6 w-6 text-purple-600" />,
-      link: '#'
+      link: '/docs'
     },
     {
       title: 'Live Chat',
@@ -179,7 +179,7 @@ const CorporateHelp: React.FC = () => {
       title: 'Knowledge Base',
       description: 'Browse articles and guides',
       icon: <FileText className="h-6 w-6 text-indigo-600" />,
-      link: '#'
+      link: '/api-docs'
     }
   ];
 
@@ -232,7 +232,13 @@ const CorporateHelp: React.FC = () => {
                   }
                   if (resource.title === 'Live Chat') {
                     openTicketDialog('technical', 'Live chat request');
+                    return;
                   }
+                  if (resource.link.startsWith('http') || resource.link.startsWith('/')) {
+                    window.open(resource.link, '_blank', 'noopener,noreferrer');
+                    return;
+                  }
+                  openTicketDialog('technical', `${resource.title} request`);
                 }}
               >
                 <CardContent className="pt-6">

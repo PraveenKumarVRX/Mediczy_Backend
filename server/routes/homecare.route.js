@@ -80,6 +80,100 @@ router.post('/login', async (req, res) => {
 });
 
 /**
+ * POST /api/homecare/book
+ * Book a homecare service appointment
+ */
+router.post('/book', async (req, res) => {
+  try {
+    const {
+      homecareId,
+      appointmentDate,
+      appointmentTime,
+      serviceType, // 'doctor', 'nurse', or 'lab'
+      specificService,
+      duration,
+      symptoms,
+      notes,
+      patientName,
+      patientPhone,
+      patientAddress,
+      emergencyContact
+    } = req.body;
+
+    // Validate required fields
+    if (!homecareId || !appointmentDate || !appointmentTime) {
+      return res.status(400).json({
+        success: false,
+        message: 'Homecare ID, appointment date, and time are required'
+      });
+    }
+
+    if (!serviceType || !['doctor', 'nurse', 'lab'].includes(serviceType)) {
+      return res.status(400).json({
+        success: false,
+        message: 'Service type must be "doctor", "nurse", or "lab"'
+      });
+    }
+
+    if (!patientAddress || !patientAddress.street || !patientAddress.city) {
+      return res.status(400).json({
+        success: false,
+        message: 'Complete patient address is required for homecare services'
+      });
+    }
+
+    // TODO: Fetch homecare provider details
+    // const provider = await HomecareProvider.findByPk(homecareId);
+
+    // Calculate fees based on service type and duration
+    const baseFees = {
+      doctor: 2000,
+      nurse: 1000,
+      lab: 1500
+    };
+    const baseFee = baseFees[serviceType] || 1500;
+    const durationMultiplier = duration ? Math.ceil(duration / 60) : 1;
+    const totalFee = baseFee * durationMultiplier;
+
+    // Create appointment record
+    const appointment = {
+      id: `homecare-appt-${Date.now()}`,
+      homecareId,
+      patientName: patientName || 'Patient',
+      patientPhone: patientPhone || '',
+      emergencyContact: emergencyContact || patientPhone || '',
+      appointmentDate,
+      appointmentTime,
+      serviceType,
+      specificService: specificService || `${serviceType} visit`,
+      duration: duration || 60,
+      symptoms: symptoms || '',
+      notes: notes || '',
+      patientAddress,
+      status: 'scheduled',
+      bookingTime: new Date().toISOString(),
+      fee: totalFee,
+      visitStatus: 'pending'
+    };
+
+    // TODO: Store in database once HomecareAppointment model is created
+
+    res.json({
+      success: true,
+      message: 'Homecare appointment booked successfully',
+      appointment
+    });
+  } catch (error) {
+    console.error('Homecare booking error:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Failed to book homecare appointment',
+      error: error.message
+    });
+  }
+});
+
+/**
  * POST /api/homecare/register
  * Register new homecare provider
  */

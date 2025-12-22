@@ -5,6 +5,9 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Badge } from "@/components/ui/badge";
+import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
+import RecordingControls from "@/components/consultation/RecordingControls";
+import TranscriptionViewer from "@/components/consultation/TranscriptionViewer";
 import {
   Video,
   VideoOff,
@@ -20,7 +23,9 @@ import {
   Settings,
   Monitor,
   Camera,
-  Loader2
+  Loader2,
+  FileVideo,
+  Brain
 } from "lucide-react";
 import { useState } from "react";
 import { useNavigate } from "react-router-dom";
@@ -52,6 +57,9 @@ const DoctorVideoConsultation = () => {
   const [roomId, setRoomId] = useState("");
   const [isVideoEnabled, setIsVideoEnabled] = useState(true);
   const [isAudioEnabled, setIsAudioEnabled] = useState(true);
+  const [selectedConsultationForRecording, setSelectedConsultationForRecording] = useState<any>(null);
+  const [showTranscriptionDialog, setShowTranscriptionDialog] = useState(false);
+  const [selectedRecording, setSelectedRecording] = useState<any>(null);
 
   // Fetch video consultation stats
   const { data: stats = { todaysConsultations: 0, totalHours: 0, activePatients: 0, avgDuration: 0 }, isLoading: statsLoading } = useQuery({
@@ -98,13 +106,16 @@ const DoctorVideoConsultation = () => {
     staleTime: 5 * 60 * 1000, // 5 minutes
   });
 
-  const handleStartConsultation = (consultationId: string) => {
+  const handleStartConsultation = (consultation: any) => {
+    const baseUrl = import.meta.env.VITE_MIROTALK_URL || 'http://mediqzy.com:3010';
+    const meetingUrl = `${baseUrl}/join/${consultation.id}?name=${encodeURIComponent(currentDoctor?.name || 'Doctor')}`;
+    
+    window.open(meetingUrl, '_blank');
+    
     toast({
       title: "Starting Video Call",
-      description: "Connecting to patient...",
+      description: `Connecting to ${consultation.patient}...`,
     });
-    // Navigate to video call page with room ID
-    navigate(`/chat?room=${consultationId}`);
   };
 
   const handleJoinRoom = () => {
@@ -116,12 +127,42 @@ const DoctorVideoConsultation = () => {
       });
       return;
     }
-    navigate(`/chat?room=${roomId}`);
+    
+    const baseUrl = import.meta.env.VITE_MIROTALK_URL || 'http://mediqzy.com:3010';
+    const meetingUrl = `${baseUrl}/join/${roomId}?name=${encodeURIComponent(currentDoctor?.name || 'Doctor')}`;
+    window.open(meetingUrl, '_blank');
+    
+    toast({
+      title: "Joining Meeting",
+      description: "Opening video consultation...",
+    });
   };
 
   const handleQuickStart = () => {
     const quickRoomId = `dr-${currentDoctor?.id}-${Date.now()}`;
-    navigate(`/chat?room=${quickRoomId}`);
+    const baseUrl = import.meta.env.VITE_MIROTALK_URL || 'http://mediqzy.com:3010';
+    const meetingUrl = `${baseUrl}/join/${quickRoomId}?name=${encodeURIComponent(currentDoctor?.name || 'Doctor')}`;
+    window.open(meetingUrl, '_blank');
+    
+    toast({
+      title: "Starting Quick Call",
+      description: "Opening video room...",
+    });
+  };
+
+  const handleRecordingComplete = (recording: any) => {
+    setSelectedRecording(recording);
+    setShowTranscriptionDialog(true);
+    toast({
+      title: "🎉 AI Analysis Complete!",
+      description: "View transcription and AI-generated prescription",
+    });
+  };
+
+  const handleImportPrescription = (prescriptionData: any) => {
+    // Store in localStorage for prescription page to pick up
+    localStorage.setItem('importedPrescription', JSON.stringify(prescriptionData));
+    navigate('/doctor/prescriptions');
   };
 
   return (
@@ -251,6 +292,65 @@ const DoctorVideoConsultation = () => {
             </CardContent>
           </Card>
 
+          {/* AI Recording & Transcription Demo */}
+          <Card className="border-purple-200 bg-gradient-to-r from-purple-50 to-blue-50">
+            <CardHeader>
+              <CardTitle className="flex items-center gap-2">
+                <Brain className="h-5 w-5 text-purple-600" />
+                AI-Powered Consultation Recording
+              </CardTitle>
+              <CardDescription>
+                Record consultations with automatic AI transcription and prescription generation
+              </CardDescription>
+            </CardHeader>
+            <CardContent className="space-y-4">
+              <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                <Card className="p-4 bg-white">
+                  <div className="flex items-center gap-3">
+                    <FileVideo className="h-8 w-8 text-purple-600" />
+                    <div>
+                      <p className="font-semibold">Auto Recording</p>
+                      <p className="text-xs text-muted-foreground">Start/stop with one click</p>
+                    </div>
+                  </div>
+                </Card>
+                <Card className="p-4 bg-white">
+                  <div className="flex items-center gap-3">
+                    <Brain className="h-8 w-8 text-blue-600" />
+                    <div>
+                      <p className="font-semibold">AI Transcription</p>
+                      <p className="text-xs text-muted-foreground">Whisper AI powered</p>
+                    </div>
+                  </div>
+                </Card>
+                <Card className="p-4 bg-white">
+                  <div className="flex items-center gap-3">
+                    <MessageSquare className="h-8 w-8 text-green-600" />
+                    <div>
+                      <p className="font-semibold">Smart Prescription</p>
+                      <p className="text-xs text-muted-foreground">Auto-extract medications</p>
+                    </div>
+                  </div>
+                </Card>
+              </div>
+              
+              <div className="p-4 bg-white rounded-lg border border-purple-200">
+                <p className="text-sm text-muted-foreground mb-3">
+                  <strong>How it works:</strong> Click "Start Recording" when consultation begins. 
+                  AI automatically transcribes the conversation and extracts diagnosis, medications, 
+                  lab tests, and follow-up instructions. Import directly to prescription form!
+                </p>
+                <Button 
+                  onClick={() => navigate('/doctor/prescriptions')}
+                  variant="outline" 
+                  className="w-full border-purple-300 text-purple-700 hover:bg-purple-50"
+                >
+                  Go to Prescriptions to Test
+                </Button>
+              </div>
+            </CardContent>
+          </Card>
+
           {/* Upcoming Consultations */}
           <Card>
             <CardHeader>
@@ -307,7 +407,7 @@ const DoctorVideoConsultation = () => {
                           <MessageSquare className="h-4 w-4" />
                         </Button>
                         <Button
-                          onClick={() => handleStartConsultation(consultation.id)}
+                          onClick={() => handleStartConsultation(consultation)}
                           size="sm"
                           className="gap-2"
                         >
@@ -416,6 +516,24 @@ const DoctorVideoConsultation = () => {
           </Card>
         </div>
       </div>
+
+      {/* Transcription Viewer Dialog */}
+      <Dialog open={showTranscriptionDialog} onOpenChange={setShowTranscriptionDialog}>
+        <DialogContent className="max-w-5xl max-h-[90vh] overflow-y-auto">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <Brain className="h-5 w-5 text-purple-600" />
+              AI Consultation Analysis
+            </DialogTitle>
+          </DialogHeader>
+          {selectedRecording && (
+            <TranscriptionViewer
+              recordingId={selectedRecording.id}
+              onImportPrescription={handleImportPrescription}
+            />
+          )}
+        </DialogContent>
+      </Dialog>
     </MainLayout>
   );
 };

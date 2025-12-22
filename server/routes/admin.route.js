@@ -4,6 +4,7 @@ import { authUser, requireRole } from '../middleware/auth.middleware.js';
 import bcrypt from 'bcrypt';
 import userModel, { generateAuthTokenForUser } from '../models/user.model.intelligent.js';
 import { Corporate } from '../models/crm.model.intelligent.js';
+import { Corporate as InsuranceCorporate } from '../models/insurance-company.model.intelligent.js';
 import Nurse from '../models/nurse.model.intelligent.js';
 import Assistant from '../models/assistant.model.intelligent.js';
 import { Op } from 'sequelize';
@@ -296,6 +297,67 @@ router.get('/corporates', authUser, requireRole('admin'), (req, res) => {
   return res.json({ success: true, data: demoAdminCorporates, total: demoAdminCorporates.length });
 });
 
+/**
+ * Get All Active Insurance Corporates (Master List)
+ * GET /api/admin/insurance-corporates
+ */
+router.get('/insurance-corporates', authUser, requireRole('admin'), async (req, res) => {
+  try {
+    const { status = 'active', page = 1, limit = 50, onboardedBy } = req.query;
+    
+    const whereClause = {};
+    if (status) whereClause.status = status;
+    if (onboardedBy) whereClause.onboardedBy = onboardedBy;
+
+    const offset = (page - 1) * limit;
+    
+    const { count, rows: corporates } = await InsuranceCorporate.findAndCountAll({
+      where: whereClause,
+      attributes: [
+        'id', 'companyName', 'cin', 'gstin', 'pan', 'industry', 
+        'employeeCount', 'hrContactName', 'hrContactEmail', 'hrContactPhone',
+        'officeAddress', 'city', 'state', 'pincode', 
+        'status', 'isVerified', 'onboardedBy', 'onboardedById',
+        'createdAt', 'updatedAt'
+      ],
+      limit: parseInt(limit),
+      offset: parseInt(offset),
+      order: [['createdAt', 'DESC']]
+    });
+
+    // Group by onboarding source
+    const groupedBySource = corporates.reduce((acc, corp) => {
+      const source = corp.onboardedBy || 'direct';
+      if (!acc[source]) acc[source] = [];
+      acc[source].push(corp);
+      return acc;
+    }, {});
+
+    res.json({
+      success: true,
+      total: count,
+      page: parseInt(page),
+      totalPages: Math.ceil(count / limit),
+      corporates,
+      groupedBySource,
+      stats: {
+        total: count,
+        bySource: Object.keys(groupedBySource).reduce((acc, key) => {
+          acc[key] = groupedBySource[key].length;
+          return acc;
+        }, {})
+      }
+    });
+  } catch (error) {
+    console.error('Get insurance corporates error:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Failed to get corporates',
+      error: error.message
+    });
+  }
+});
+
 // Nurses admin listings backed by Sequelize
 router.get('/nurses', authUser, requireRole('admin'), async (req, res) => {
   try {
@@ -321,10 +383,12 @@ router.get('/nurses', authUser, requireRole('admin'), async (req, res) => {
 router.post('/nurses', authUser, requireRole('admin'), async (req, res) => {
   try {
     const nursePayload = req.body?.nurse || req.body;
+    let generatedPassword;
     
     // Generate default password if not provided
     if (!nursePayload.password) {
-      nursePayload.password = Math.random().toString(36).slice(-8) + 'Nurse123!';
+      generatedPassword = Math.random().toString(36).slice(-8) + 'Nurse123!';
+      nursePayload.password = generatedPassword;
     }
     
     const created = await Nurse.create(nursePayload);
@@ -337,10 +401,57 @@ router.post('/nurses', authUser, requireRole('admin'), async (req, res) => {
       success: true,
       message: 'Nurse created',
       nurse: nurseResponse,
+      ...(generatedPassword ? { generatedPassword } : {}),
     });
   } catch (e) {
     console.error('Failed to create nurse:', e);
     return res.status(500).json({ success: false, message: 'Failed to create nurse', error: e.message });
+  }
+});
+
+// Reset nurse password (admin-only)
+router.post('/nurses/:id/reset-password', authUser, requireRole('admin'), async (req, res) => {
+  try {
+    const nurse = await Nurse.findByPk(req.params.id);
+    if (!nurse) {
+      return res.status(404).json({ success: false, message: 'Nurse not found' });
+    }
+
+    const requestedPassword = String(req.body?.password || '').trim();
+    const generatedPassword = requestedPassword
+      ? undefined
+      : Math.random().toString(36).slice(-10) + 'Nurse123!';
+    const newPassword = requestedPassword || generatedPassword;
+
+    // Nurse model hooks will hash the password.
+    await nurse.update({ password: newPassword });
+
+    // Best-effort: keep any associated userModel (role=nurse) password aligned.
+    try {
+      const nurseEmail = String(nurse.email || '').trim().toLowerCase();
+      if (nurseEmail) {
+        const nurseUser = await userModel.findOne({ where: { email: nurseEmail, role: 'nurse' } });
+        if (nurseUser) {
+          const hashedPassword = await bcrypt.hash(newPassword, 10);
+          await nurseUser.update({ password: hashedPassword });
+        }
+      }
+    } catch (e) {
+      console.warn('Failed to sync nurse password to nurse user record:', e?.message || e);
+    }
+
+    const nurseResponse = { ...nurse.toJSON() };
+    delete nurseResponse.password;
+
+    return res.json({
+      success: true,
+      message: 'Nurse password reset',
+      nurse: nurseResponse,
+      ...(generatedPassword ? { generatedPassword } : {}),
+    });
+  } catch (e) {
+    console.error('Failed to reset nurse password:', e);
+    return res.status(500).json({ success: false, message: 'Failed to reset nurse password', error: e.message });
   }
 });
 
@@ -575,15 +686,16 @@ router.post('/users', authUser, requireRole('admin'), createInternalUser);
 router.post('/nurse-users', authUser, requireRole('admin'), async (req, res) => {
   try {
     const { nurseId, email, firstName, lastName, phoneNumber, password } = req.body || {};
+    const requestedEmail = String(email || '').trim().toLowerCase();
 
-    if (!nurseId || !email || !password) {
+    if (!nurseId || !requestedEmail || !password) {
       return res.status(400).json({
         success: false,
         message: 'nurseId, email and password are required',
       });
     }
 
-    const existing = await userModel.findOne({ where: { email } });
+    const existing = await userModel.findOne({ where: { email: requestedEmail } });
     if (existing) {
       return res.status(409).json({
         success: false,
@@ -594,6 +706,14 @@ router.post('/nurse-users', authUser, requireRole('admin'), async (req, res) => 
     const nurse = await Nurse.findByPk(nurseId);
     if (!nurse) {
       return res.status(404).json({ success: false, message: 'Nurse record not found' });
+    }
+
+    const nurseEmail = String(nurse.email || '').trim().toLowerCase();
+    if (requestedEmail !== nurseEmail) {
+      return res.status(400).json({
+        success: false,
+        message: 'Email must match the nurse record email to provision nurse portal login',
+      });
     }
 
     // Ensure this nurse does not already have an associated login by email
@@ -607,10 +727,18 @@ router.post('/nurse-users', authUser, requireRole('admin'), async (req, res) => 
 
     const hashedPassword = await bcrypt.hash(password, 10);
 
+    // Keep the nurse portal login (which authenticates against the nurses table)
+    // in sync with the provisioned credentials.
+    try {
+      await nurse.update({ password: hashedPassword });
+    } catch (e) {
+      console.warn('Failed to sync nurse password to nurse record:', e?.message || e);
+    }
+
     const nurseUser = await userModel.create({
       firstName: firstName || nurse.firstName,
       lastName: lastName || nurse.lastName,
-      email,
+      email: requestedEmail,
       phoneNumber: phoneNumber || nurse.phoneNumber,
       password: hashedPassword,
       role: 'nurse',
@@ -1454,5 +1582,209 @@ router.get('/analytics/accounts-receivable', authUser, requireRole('admin'), (re
   });
 });
 
+
+// ============================================================================
+// MEMBERSHIP VALIDATION MANAGEMENT
+// ============================================================================
+
+/**
+ * POST /api/admin/membership/sync-all
+ * Manually trigger membership status sync for all users
+ */
+router.post('/membership/sync-all', authUser, requireRole('admin'), async (req, res) => {
+  try {
+    const { syncAllUsersStatus } = await import('../middleware/membership.middleware.js');
+    
+    console.log('🔄 Admin triggered full membership sync...');
+    const results = await syncAllUsersStatus();
+    
+    return res.json({
+      success: true,
+      message: 'Membership status sync completed',
+      data: results
+    });
+  } catch (error) {
+    console.error('Membership sync error:', error);
+    return res.status(500).json({
+      success: false,
+      message: 'Failed to sync membership status',
+      error: error.message
+    });
+  }
+});
+
+/**
+ * POST /api/admin/membership/sync-user/:userId
+ * Manually trigger membership status sync for specific user
+ */
+router.post('/membership/sync-user/:userId', authUser, requireRole('admin'), async (req, res) => {
+  try {
+    const { userId } = req.params;
+    const { syncUserStatusWithMembership } = await import('../middleware/membership.middleware.js');
+    
+    const result = await syncUserStatusWithMembership(parseInt(userId));
+    
+    if (result.success) {
+      return res.json({
+        success: true,
+        message: `User ${userId} membership status synced`,
+        data: {
+          userId: userId,
+          status: result.status,
+          hasActivePlan: result.hasActivePlan
+        }
+      });
+    } else {
+      return res.status(500).json({
+        success: false,
+        message: 'Failed to sync user membership',
+        error: result.error
+      });
+    }
+  } catch (error) {
+    console.error('User membership sync error:', error);
+    return res.status(500).json({
+      success: false,
+      message: 'Failed to sync user membership',
+      error: error.message
+    });
+  }
+});
+
+/**
+ * GET /api/admin/membership/expiring
+ * Get list of users with expiring memberships
+ */
+router.get('/membership/expiring', authUser, requireRole('admin'), async (req, res) => {
+  try {
+    const { UserPlan } = await import('../models/membershipPlan.model.intelligent.js');
+    const { Op } = await import('sequelize');
+    
+    const days = parseInt(req.query.days) || 7;
+    const today = new Date();
+    const futureDate = new Date();
+    futureDate.setDate(today.getDate() + days);
+    
+    const expiringPlans = await UserPlan.findAll({
+      where: {
+        status: 'active',
+        endDate: {
+          [Op.gte]: today.toISOString().split('T')[0],
+          [Op.lte]: futureDate.toISOString().split('T')[0]
+        }
+      },
+      order: [['endDate', 'ASC']]
+    });
+
+    // Get user details for each plan
+    const userModel = await import('../models/user.model.intelligent.js');
+    const usersWithExpiringPlans = await Promise.all(
+      expiringPlans.map(async (plan) => {
+        const user = await userModel.default.findByPk(plan.userId, {
+          attributes: ['id', 'firstName', 'lastName', 'email', 'phoneNumber', 'status']
+        });
+        
+        const daysRemaining = Math.ceil(
+          (new Date(plan.endDate) - today) / (1000 * 60 * 60 * 24)
+        );
+        
+        return {
+          userId: plan.userId,
+          user: user ? {
+            name: `${user.firstName} ${user.lastName}`,
+            email: user.email,
+            phone: user.phoneNumber,
+            status: user.status
+          } : null,
+          membershipPlanId: plan.membershipPlanId,
+          startDate: plan.startDate,
+          endDate: plan.endDate,
+          daysRemaining: daysRemaining,
+          autoRenew: plan.autoRenew,
+          planStatus: plan.status
+        };
+      })
+    );
+
+    return res.json({
+      success: true,
+      data: {
+        total: usersWithExpiringPlans.length,
+        daysFilter: days,
+        expiringMemberships: usersWithExpiringPlans
+      }
+    });
+  } catch (error) {
+    console.error('Get expiring memberships error:', error);
+    return res.status(500).json({
+      success: false,
+      message: 'Failed to fetch expiring memberships',
+      error: error.message
+    });
+  }
+});
+
+/**
+ * GET /api/admin/membership/inactive-users
+ * Get list of users with inactive status due to no membership
+ */
+router.get('/membership/inactive-users', authUser, requireRole('admin'), async (req, res) => {
+  try {
+    const userModel = await import('../models/user.model.intelligent.js');
+    const { UserPlan } = await import('../models/membershipPlan.model.intelligent.js');
+    
+    // Get all inactive users
+    const inactiveUsers = await userModel.default.findAll({
+      where: {
+        status: 'inactive',
+        isAdmin: false
+      },
+      attributes: ['id', 'firstName', 'lastName', 'email', 'phoneNumber', 'createdAt', 'status']
+    });
+
+    // Check if they have any membership history
+    const usersWithMembershipInfo = await Promise.all(
+      inactiveUsers.map(async (user) => {
+        const latestPlan = await UserPlan.findOne({
+          where: { userId: user.id },
+          order: [['endDate', 'DESC']]
+        });
+        
+        return {
+          userId: user.id,
+          name: `${user.firstName} ${user.lastName}`,
+          email: user.email,
+          phone: user.phoneNumber,
+          status: user.status,
+          joinedDate: user.createdAt,
+          lastMembership: latestPlan ? {
+            planId: latestPlan.membershipPlanId,
+            endDate: latestPlan.endDate,
+            status: latestPlan.status,
+            daysExpired: Math.floor(
+              (new Date() - new Date(latestPlan.endDate)) / (1000 * 60 * 60 * 24)
+            )
+          } : null,
+          hasNeverHadMembership: !latestPlan
+        };
+      })
+    );
+
+    return res.json({
+      success: true,
+      data: {
+        total: usersWithMembershipInfo.length,
+        users: usersWithMembershipInfo
+      }
+    });
+  } catch (error) {
+    console.error('Get inactive users error:', error);
+    return res.status(500).json({
+      success: false,
+      message: 'Failed to fetch inactive users',
+      error: error.message
+    });
+  }
+});
 
 export default router;

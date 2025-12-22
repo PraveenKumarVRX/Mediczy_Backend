@@ -24,10 +24,10 @@ const renderPrescriptionHTML = (prescription) => {
   
   // Basic replacements
   const replacements = {
-    '{{clinicName}}': prescription.clinicName || 'Mediczy Healthcare',
-    '{{clinicAddress}}': prescription.clinicAddress || 'Virtual Consultation',
-    '{{clinicPhone}}': prescription.clinicPhone || '+91-XXX-XXX-XXXX',
-    '{{clinicEmail}}': prescription.clinicEmail || 'support@mediczy.com',
+    '{{clinicName}}': prescription.clinicName || prescription.clinicDetails?.name || 'Mediczy Healthcare',
+    '{{clinicAddress}}': prescription.clinicAddress || prescription.clinicDetails?.address || 'Virtual Consultation Platform',
+    '{{clinicPhone}}': prescription.clinicPhone || prescription.clinicDetails?.phone || '+91-XXX-XXX-XXXX',
+    '{{clinicEmail}}': prescription.clinicEmail || prescription.clinicDetails?.email || 'support@mediczy.com',
     '{{clinicWebsite}}': 'www.mediczy.com',
     '{{patientName}}': prescription.patientName || 'N/A',
     '{{patientAge}}': prescription.patientAge || 'N/A',
@@ -51,8 +51,10 @@ const renderPrescriptionHTML = (prescription) => {
       : 'As needed',
     '{{validityDays}}': prescription.validityDays || 30,
     '{{doctorName}}': prescription.doctorName || 'Doctor',
-    '{{doctorQualifications}}': prescription.doctorQualifications || 'MBBS',
-    '{{doctorRegNo}}': prescription.doctorRegNo || 'N/A',
+    '{{doctorQualifications}}': prescription.doctorQualifications || 'MBBS, MD',
+    '{{doctorSpecialty}}': prescription.doctorSpecialty || prescription.specialty || 'General Medicine',
+    '{{doctorRegNo}}': prescription.doctorRegNo || prescription.registrationNumber || 'N/A',
+    '{{doctorId}}': prescription.doctorId || 'N/A',
     '{{generatedDateTime}}': new Date().toLocaleString('en-IN')
   };
   
@@ -111,6 +113,161 @@ const renderPrescriptionHTML = (prescription) => {
 };
 
 /**
+ * @route   POST /api/prescriptions/from-appointment/:appointmentId
+ * @desc    Create prescription from appointment/consultation (Doctor only)
+ * @access  Private (Doctor)
+ */
+router.post('/from-appointment/:appointmentId', authUser, [
+  param('appointmentId').isInt().withMessage('Valid appointment ID is required'),
+  body('diagnosis').notEmpty().withMessage('Diagnosis is required'),
+  body('medications').isArray({ min: 1 }).withMessage('At least one medication is required')
+], async (req, res) => {
+  try {
+    const errors = validationResult(req);
+    if (!errors.isEmpty()) {
+      return res.status(400).json({ success: false, errors: errors.array() });
+    }
+    
+    const { appointmentId } = req.params;
+    const {
+      diagnosis,
+      chiefComplaints,
+      medications,
+      labTests,
+      instructions,
+      vitals,
+      followUpDate,
+      validityDays,
+      notes
+    } = req.body;
+    
+    // Get appointment details
+    const appointment = await Appointment.findByPk(appointmentId);
+    if (!appointment) {
+      return res.status(404).json({ success: false, message: 'Appointment not found' });
+    }
+    
+    // Verify doctor access
+    if (appointment.doctorId !== req.user.id) {
+      return res.status(403).json({ success: false, message: 'You can only create prescriptions for your own appointments' });
+    }
+    
+    // Get doctor info
+    const doctor = await Doctor.findByPk(req.user.id);
+    if (!doctor) {
+      return res.status(403).json({ success: false, message: 'Doctor access required' });
+    }
+    
+    // Get patient info
+    const patient = await User.findByPk(appointment.userId);
+    let patientData = {
+      patientName: appointment.patientName || 'Patient',
+      patientAge: null,
+      patientGender: 'Not specified',
+      patientPhone: appointment.patientPhone
+    };
+    
+    if (patient) {
+      let patientAge = null;
+      if (patient.dateOfBirth) {
+        const dob = new Date(patient.dateOfBirth);
+        const today = new Date();
+        patientAge = today.getFullYear() - dob.getFullYear();
+      }
+      
+      patientData = {
+        patientName: `${patient.firstName || ''} ${patient.lastName || ''}`.trim() || appointment.patientName,
+        patientAge,
+        patientGender: patient.gender || 'Not specified',
+        patientPhone: patient.phoneNumber || patient.phone || appointment.patientPhone
+      };
+    }
+    
+    // Determine if this was an online consultation
+    const consultationType = appointment.consultationType || 'in-person';
+    const clinicAddress = consultationType === 'online' 
+      ? 'Online Consultation / Telemedicine'
+      : (doctor.clinicAddress || doctor.address?.street || 'Clinic');
+    
+    // Create prescription linked to appointment
+    const prescription = await Prescription.create({
+      appointmentId: appointment.id,
+      patientId: appointment.userId,
+      ...patientData,
+      doctorId: doctor.id,
+      doctorName: `${doctor.firstName || ''} ${doctor.lastName || ''}`.trim(),
+      doctorQualifications: Array.isArray(doctor.qualifications) 
+        ? doctor.qualifications.join(', ') 
+        : (doctor.qualifications || doctor.qualification || 'MBBS'),
+      doctorRegNo: doctor.registrationNumber || doctor.licenseNumber || 'N/A',
+      specialty: doctor.specialization || 'General Medicine',
+      clinicName: doctor.clinicHospitalName || doctor.clinicName || 'Mediczy Healthcare',
+      clinicAddress,
+      clinicPhone: doctor.phone || doctor.phoneNumber || doctor.clinicPhone,
+      clinicEmail: doctor.email,
+      clinicDetails: {
+        name: doctor.clinicHospitalName || doctor.clinicName || 'Mediczy Healthcare',
+        address: clinicAddress,
+        phone: doctor.phone || doctor.phoneNumber,
+        email: doctor.email,
+        specialty: doctor.specialization,
+        consultationType
+      },
+      diagnosis,
+      chiefComplaints: typeof chiefComplaints === 'string' 
+        ? [chiefComplaints] 
+        : (Array.isArray(chiefComplaints) ? chiefComplaints : appointment.symptoms || []),
+      medications,
+      labTests: labTests || [],
+      instructions: instructions || [
+        'Complete the full course of medications',
+        'Take medicines as directed',
+        'Contact doctor if symptoms worsen'
+      ],
+      vitals: vitals || {},
+      followUpDate,
+      validityDays: validityDays || 30,
+      notes: notes || appointment.notes,
+      status: 'active'
+    });
+    
+    // Update appointment with prescription reference
+    await Appointment.update(
+      { 
+        prescription: prescription.prescriptionId,
+        status: 'completed' 
+      },
+      { where: { id: appointmentId } }
+    );
+    
+    res.status(201).json({
+      success: true,
+      message: `Prescription created successfully for ${consultationType} consultation`,
+      prescription: {
+        id: prescription.id,
+        prescriptionId: prescription.prescriptionId,
+        patientName: prescription.patientName,
+        diagnosis: prescription.diagnosis,
+        medicationsCount: prescription.medications.length,
+        consultationType,
+        status: prescription.status,
+        createdAt: prescription.createdAt,
+        expiresAt: prescription.expiresAt,
+        pdfUrl: `https://mediqzy.com/api/prescriptions/${prescription.prescriptionId}/pdf`,
+        shareUrl: `https://mediqzy.com/api/prescriptions/${prescription.prescriptionId}/share/whatsapp`
+      }
+    });
+  } catch (error) {
+    console.error('Create prescription from appointment error:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Failed to create prescription',
+      error: error.message
+    });
+  }
+});
+
+/**
  * @route   POST /api/prescriptions
  * @desc    Create a new prescription (Doctor only)
  * @access  Private (Doctor)
@@ -164,7 +321,7 @@ router.post('/', authUser, [
     };
     
     if (patientUserId) {
-      const patient = await userModel.findByPk(patientUserId);
+      const patient = await User.findByPk(patientUserId);
       if (patient) {
         // Calculate patient age
         let patientAge = reqPatientAge;
@@ -190,14 +347,26 @@ router.post('/', authUser, [
       ...patientData,
       doctorId: doctor.id,
       doctorName: `${doctor.firstName || ''} ${doctor.lastName || ''}`.trim(),
-      doctorQualifications: doctor.qualifications || doctor.specialization || 'MBBS',
+      doctorQualifications: Array.isArray(doctor.qualifications) 
+        ? doctor.qualifications.join(', ') 
+        : (doctor.qualifications || doctor.qualification || 'MBBS'),
       doctorRegNo: doctor.registrationNumber || doctor.licenseNumber || 'N/A',
-      clinicName: doctor.clinicHospitalName || 'Mediczy Healthcare',
-      clinicAddress: doctor.clinicAddress || 'Online Consultation',
-      clinicPhone: doctor.phone || doctor.phoneNumber,
+      specialty: doctor.specialization || 'General Medicine',
+      clinicName: doctor.clinicHospitalName || doctor.clinicName || 'Mediczy Healthcare',
+      clinicAddress: doctor.clinicAddress || doctor.address?.street || 'Online Consultation',
+      clinicPhone: doctor.phone || doctor.phoneNumber || doctor.clinicPhone,
       clinicEmail: doctor.email,
+      clinicDetails: {
+        name: doctor.clinicHospitalName || doctor.clinicName || 'Mediczy Healthcare',
+        address: doctor.clinicAddress || doctor.address?.street || 'Online Consultation',
+        phone: doctor.phone || doctor.phoneNumber,
+        email: doctor.email,
+        specialty: doctor.specialization
+      },
       diagnosis,
-      chiefComplaints,
+      chiefComplaints: typeof chiefComplaints === 'string' 
+        ? [chiefComplaints] 
+        : (Array.isArray(chiefComplaints) ? chiefComplaints : []),
       medications,
       labTests: labTests || [],
       instructions: instructions || [
@@ -636,12 +805,13 @@ router.patch('/:id/status', authUser, async (req, res) => {
 
 /**
  * @route   GET /api/prescriptions/:id/html
- * @desc    Get prescription as HTML (for display/printing)
- * @access  Private
+ * @desc    Get print-friendly prescription HTML
+ * @access  Private (Doctor or Patient owner) or Public with valid token in query
  */
-router.get('/:id/html', authUser, async (req, res) => {
+router.get('/:id/html', async (req, res) => {
   try {
     const { id } = req.params;
+    const { token } = req.query;
     
     const prescription = await Prescription.findOne({
       where: isNaN(id) 
@@ -653,20 +823,84 @@ router.get('/:id/html', authUser, async (req, res) => {
       return res.status(404).json({ success: false, message: 'Prescription not found' });
     }
     
-    // Check access
-    const userId = req.user.id;
-    const userRole = req.user.role;
+    // Check access - either via Authorization header or query token
+    let authenticated = false;
     
-    if (userRole !== 'doctor' && prescription.userId !== userId) {
-      return res.status(403).json({ success: false, message: 'Access denied' });
+    // Try authorization header first
+    if (req.headers.authorization) {
+      try {
+        const headerToken = req.headers.authorization.split(' ')[1];
+        const jwt = await import('jsonwebtoken');
+        const decoded = jwt.default.verify(headerToken, process.env.JWT_SECRET);
+        if (decoded.role === 'doctor' || decoded.id === prescription.patientId) {
+          authenticated = true;
+        }
+      } catch (err) {
+        // Header auth failed, will try query token
+      }
     }
     
+    // Try query token if header auth failed
+    if (!authenticated && token) {
+      try {
+        const jwt = await import('jsonwebtoken');
+        const decoded = jwt.default.verify(token, process.env.JWT_SECRET);
+        if (decoded.role === 'doctor' || decoded.id === prescription.patientId) {
+          authenticated = true;
+        }
+      } catch (err) {
+        // Query token also failed
+      }
+    }
+    
+    if (!authenticated) {
+      return res.status(403).json({ success: false, message: 'Access denied. Please login to view prescription.' });
+    }
+    
+    // Generate HTML
     const html = renderPrescriptionHTML(prescription);
     
+    // Add print button at the top
+    const printableHTML = html.replace(
+      '</head>',
+      `<style>
+        @media print {
+          .print-button, .no-print { display: none !important; }
+        }
+        .print-button {
+          position: fixed;
+          top: 20px;
+          right: 20px;
+          z-index: 1000;
+          padding: 12px 24px;
+          background: #2196F3;
+          color: white;
+          border: none;
+          border-radius: 6px;
+          font-size: 16px;
+          cursor: pointer;
+          box-shadow: 0 2px 8px rgba(0,0,0,0.2);
+        }
+        .print-button:hover {
+          background: #1976D2;
+        }
+      </style>
+      <script>
+        function printPrescription() {
+          window.print();
+        }
+      </script>
+      </head>`
+    ).replace(
+      '<body>',
+      `<body>
+        <button class="print-button no-print" onclick="printPrescription()">🖨️ Print Prescription</button>`
+    );
+    
     res.setHeader('Content-Type', 'text/html');
-    res.send(html);
+    res.send(printableHTML);
   } catch (error) {
-    console.error('Get prescription HTML error:', error);
+    console.error('Generate prescription HTML error:', error);
     res.status(500).json({
       success: false,
       message: 'Failed to generate HTML',
@@ -678,9 +912,114 @@ router.get('/:id/html', authUser, async (req, res) => {
 /**
  * @route   GET /api/prescriptions/:id/pdf
  * @desc    Generate and download prescription PDF
+ * @access  Private or Public with valid token in query
+ */
+router.get('/:id/pdf', async (req, res) => {
+  try {
+    const { id } = req.params;
+    const { token } = req.query;
+    
+    const prescription = await Prescription.findOne({
+      where: isNaN(id) 
+        ? { prescriptionId: id }
+        : { id: parseInt(id) }
+    });
+    
+    if (!prescription) {
+      return res.status(404).json({ success: false, message: 'Prescription not found' });
+    }
+    
+    // Check access - either via Authorization header or query token
+    let authenticated = false;
+    
+    // Try authorization header first
+    if (req.headers.authorization) {
+      try {
+        const headerToken = req.headers.authorization.split(' ')[1];
+        const jwt = await import('jsonwebtoken');
+        const decoded = jwt.default.verify(headerToken, process.env.JWT_SECRET);
+        if (decoded.role === 'doctor' || decoded.id === prescription.patientId) {
+          authenticated = true;
+        }
+      } catch (err) {
+        // Header auth failed, will try query token
+      }
+    }
+    
+    // Try query token if header auth failed
+    if (!authenticated && token) {
+      try {
+        const jwt = await import('jsonwebtoken');
+        const decoded = jwt.default.verify(token, process.env.JWT_SECRET);
+        if (decoded.role === 'doctor' || decoded.id === prescription.patientId) {
+          authenticated = true;
+        }
+      } catch (err) {
+        // Query token also failed
+      }
+    }
+    
+    if (!authenticated) {
+      return res.status(403).json({ success: false, message: 'Access denied. Please login to view prescription.' });
+    }
+    
+    // Generate HTML
+    const html = renderPrescriptionHTML(prescription);
+    
+    // Try to use html-pdf-node for PDF generation
+    try {
+      const htmlPdf = await import('html-pdf-node');
+      
+      const options = {
+        format: 'A4',
+        printBackground: true,
+        margin: {
+          top: '10mm',
+          right: '10mm',
+          bottom: '10mm',
+          left: '10mm'
+        }
+      };
+      
+      const file = { content: html };
+      const pdfBuffer = await htmlPdf.default.generatePdf(file, options);
+      
+      // Save PDF to uploads directory
+      const fs = await import('fs');
+      const uploadsDir = path.join(__dirname, '../../uploads/prescriptions');
+      if (!fs.existsSync(uploadsDir)) {
+        fs.mkdirSync(uploadsDir, { recursive: true });
+      }
+      
+      const pdfPath = path.join(uploadsDir, `${prescription.prescriptionId}.pdf`);
+      fs.writeFileSync(pdfPath, pdfBuffer);
+      
+      res.setHeader('Content-Type', 'application/pdf');
+      res.setHeader('Content-Disposition', `attachment; filename="prescription-${prescription.prescriptionId}.pdf"`);
+      res.send(pdfBuffer);
+    } catch (pdfError) {
+      console.warn('PDF generation failed, returning HTML:', pdfError.message);
+      // Fallback to HTML if PDF fails
+      res.setHeader('Content-Type', 'text/html');
+      res.setHeader('Content-Disposition', `inline; filename="prescription-${prescription.prescriptionId}.html"`);
+      res.send(html);
+    }
+  } catch (error) {
+    console.error('Generate prescription PDF error:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Failed to generate PDF',
+      error: error.message
+    });
+  }
+});
+
+/**
+ * @route   GET /api/prescriptions/:id/share/whatsapp
+ * @desc    Generate WhatsApp share link for prescription
  * @access  Private
  */
-router.get('/:id/pdf', authUser, async (req, res) => {
+router.get('/:id/share/whatsapp', authUser, async (req, res) => {
   try {
     const { id } = req.params;
     
@@ -698,52 +1037,123 @@ router.get('/:id/pdf', authUser, async (req, res) => {
     const userId = req.user.id;
     const userRole = req.user.role;
     
-    if (userRole !== 'doctor' && prescription.userId !== userId) {
+    if (userRole !== 'doctor' && prescription.patientId !== userId) {
       return res.status(403).json({ success: false, message: 'Access denied' });
     }
     
-    // Generate HTML
-    const html = renderPrescriptionHTML(prescription);
+    // Generate shareable link
+    const baseUrl = process.env.FRONTEND_URL || 'https://mediqzy.com';
     
-    // Try to use puppeteer for PDF generation
-    try {
-      const puppeteer = await import('puppeteer');
-      const browser = await puppeteer.default.launch({
-        headless: 'new',
-        args: ['--no-sandbox', '--disable-setuid-sandbox']
-      });
-      
-      const page = await browser.newPage();
-      await page.setContent(html, { waitUntil: 'networkidle0' });
-      
-      const pdfBuffer = await page.pdf({
-        format: 'A4',
-        printBackground: true,
-        margin: {
-          top: '10mm',
-          right: '10mm',
-          bottom: '10mm',
-          left: '10mm'
-        }
-      });
-      
-      await browser.close();
-      
-      res.setHeader('Content-Type', 'application/pdf');
-      res.setHeader('Content-Disposition', `attachment; filename="prescription-${prescription.prescriptionId}.pdf"`);
-      res.send(pdfBuffer);
-    } catch (puppeteerError) {
-      console.warn('Puppeteer PDF generation failed, returning HTML:', puppeteerError.message);
-      // Fallback to HTML if puppeteer fails
-      res.setHeader('Content-Type', 'text/html');
-      res.setHeader('Content-Disposition', `attachment; filename="prescription-${prescription.prescriptionId}.html"`);
-      res.send(html);
-    }
+    // Get a fresh token for the patient to access the prescription
+    const jwt = await import('jsonwebtoken');
+    const shareToken = jwt.default.sign(
+      { id: prescription.patientId, role: 'user' },
+      process.env.JWT_SECRET,
+      { expiresIn: '30d' }
+    );
+    
+    const pdfUrl = `${baseUrl}/api/prescriptions/${prescription.prescriptionId}/pdf?token=${shareToken}`;
+    
+    // Determine consultation type
+    const consultationType = prescription.clinicDetails?.consultationType || 
+      (prescription.clinicAddress && prescription.clinicAddress.includes('Online') ? 'Online Consultation' : 'Clinic Visit');
+    
+    // WhatsApp message
+    const message = `🏥 *Prescription from ${prescription.doctorName || 'Doctor'}*\n\n` +
+      `Patient: ${prescription.patientName}\n` +
+      `Date: ${new Date(prescription.createdAt).toLocaleDateString('en-IN')}\n` +
+      `Consultation Type: ${consultationType}\n` +
+      `Prescription ID: ${prescription.prescriptionId}\n\n` +
+      `📥 Download: ${pdfUrl}`;
+    
+    const whatsappUrl = `https://wa.me/?text=${encodeURIComponent(message)}`;
+    
+    res.json({
+      success: true,
+      whatsappUrl,
+      pdfUrl,
+      message,
+      consultationType
+    });
   } catch (error) {
-    console.error('Generate prescription PDF error:', error);
+    console.error('WhatsApp share error:', error);
     res.status(500).json({
       success: false,
-      message: 'Failed to generate PDF',
+      message: 'Failed to generate share link',
+      error: error.message
+    });
+  }
+});
+
+/**
+ * @route   POST /api/prescriptions/:id/share/whatsapp/:phone
+ * @desc    Send prescription via WhatsApp to patient phone number
+ * @access  Private (Doctor)
+ */
+router.post('/:id/share/whatsapp/:phone', authDoctor, async (req, res) => {
+  try {
+    const { id, phone } = req.params;
+    
+    const prescription = await Prescription.findOne({
+      where: isNaN(id) 
+        ? { prescriptionId: id }
+        : { id: parseInt(id) }
+    });
+    
+    if (!prescription) {
+      return res.status(404).json({ success: false, message: 'Prescription not found' });
+    }
+    
+    // Generate prescription URL
+    const baseUrl = process.env.FRONTEND_URL || 'https://mediqzy.com';
+    
+    // Create a share token for the patient
+    const jwt = await import('jsonwebtoken');
+    const shareToken = jwt.default.sign(
+      { id: prescription.patientId, role: 'user' },
+      process.env.JWT_SECRET,
+      { expiresIn: '30d' }
+    );
+    
+    const prescriptionUrl = `${baseUrl}/api/prescriptions/${prescription.prescriptionId}/html?token=${shareToken}`;
+    const pdfUrl = `${baseUrl}/api/prescriptions/${prescription.prescriptionId}/pdf?token=${shareToken}`;
+    
+    // Format phone number (remove +91 if present, then add it)
+    const formattedPhone = phone.replace(/[^0-9]/g, '').replace(/^91/, '');
+    
+    // Determine consultation type
+    const consultationType = prescription.clinicDetails?.consultationType || 
+      (prescription.clinicAddress && prescription.clinicAddress.includes('Online') ? 'Online Consultation' : 'Clinic Visit');
+    
+    // WhatsApp message for specific patient
+    const message = `🏥 *Medical Prescription*\n\n` +
+      `Dear ${prescription.patientName},\n\n` +
+      `Your prescription has been generated by ${prescription.doctorName || 'your doctor'}.\n\n` +
+      `📋 *Prescription Details:*\n` +
+      `Date: ${new Date(prescription.createdAt).toLocaleDateString('en-IN')}\n` +
+      `Consultation Type: ${consultationType}\n` +
+      `Prescription ID: ${prescription.prescriptionId}\n\n` +
+      `📥 *Download PDF:* ${pdfUrl}\n` +
+      `📱 *View Online:* ${prescriptionUrl}\n\n` +
+      `⚕️ Please follow the prescribed medications and instructions.\n\n` +
+      `For any queries, contact: ${prescription.clinicPhone || 'your clinic'}`;
+    
+    const whatsappUrl = `https://wa.me/91${formattedPhone}?text=${encodeURIComponent(message)}`;
+    
+    res.json({
+      success: true,
+      whatsappUrl,
+      prescriptionUrl,
+      pdfUrl,
+      phoneNumber: `+91${formattedPhone}`,
+      consultationType,
+      message: 'WhatsApp link generated. Click the URL to send.'
+    });
+  } catch (error) {
+    console.error('WhatsApp send error:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Failed to generate WhatsApp message',
       error: error.message
     });
   }

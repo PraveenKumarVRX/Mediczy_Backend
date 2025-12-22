@@ -1,0 +1,25 @@
+# Mediczy Daily Health Check Configuration
+# 
+# To install these cron jobs, run:
+# crontab -e
+# 
+# Then add the following lines:
+
+# Run daily health checks at 6 AM for production
+0 6 * * * /root/Mediczy/scripts/run-daily-checks.sh production --silent
+
+# Run health checks every 4 hours for staging 
+0 */4 * * * /root/Mediczy/scripts/run-daily-checks.sh staging --silent
+
+# Run hourly checks during business hours for development
+0 9-17 * * 1-5 /root/Mediczy/scripts/run-daily-checks.sh development --silent
+
+# Weekly comprehensive report (Mondays at 8 AM)
+0 8 * * 1 /root/Mediczy/scripts/weekly-report.sh
+
+# Monthly log cleanup (1st of every month at 2 AM)
+0 2 1 * * find /root/Mediczy/logs -name "*.log" -mtime +30 -delete
+
+# Alternative: Install via script
+# To automatically install these cron jobs, run:
+# /root/Mediczy/scripts/install-cron.sh

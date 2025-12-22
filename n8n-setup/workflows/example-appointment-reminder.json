@@ -1,0 +1,171 @@
+{
+  "name": "Appointment Reminder - Multi-Channel",
+  "nodes": [
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "appointment-booked",
+        "responseMode": "responseNode",
+        "options": {}
+      },
+      "id": "webhook-trigger",
+      "name": "Webhook Trigger",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 1,
+      "position": [250, 300]
+    },
+    {
+      "parameters": {
+        "values": {
+          "string": [
+            {
+              "name": "appointmentId",
+              "value": "={{ $json.body.appointmentId }}"
+            },
+            {
+              "name": "patientName",
+              "value": "={{ $json.body.patientName }}"
+            },
+            {
+              "name": "patientEmail",
+              "value": "={{ $json.body.patientEmail }}"
+            },
+            {
+              "name": "patientPhone",
+              "value": "={{ $json.body.patientPhone }}"
+            },
+            {
+              "name": "doctorName",
+              "value": "={{ $json.body.doctorName }}"
+            },
+            {
+              "name": "appointmentDate",
+              "value": "={{ $json.body.appointmentDate }}"
+            },
+            {
+              "name": "appointmentTime",
+              "value": "={{ $json.body.appointmentTime }}"
+            }
+          ]
+        }
+      },
+      "id": "set-variables",
+      "name": "Set Variables",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 1,
+      "position": [450, 300]
+    },
+    {
+      "parameters": {
+        "content": "# Appointment Confirmation\n\nDear {{ $json.patientName }},\n\nYour appointment has been confirmed!\n\n**Details:**\n- Doctor: {{ $json.doctorName }}\n- Date: {{ $json.appointmentDate }}\n- Time: {{ $json.appointmentTime }}\n\nWe look forward to seeing you!\n\nBest regards,\nMediczy Team",
+        "height": 200,
+        "width": 300
+      },
+      "id": "sticky-note",
+      "name": "Workflow Description",
+      "type": "n8n-nodes-base.stickyNote",
+      "typeVersion": 1,
+      "position": [250, 100]
+    },
+    {
+      "parameters": {
+        "url": "http://mediczy-server:8000/api/webhooks/n8n-callback/workflow-complete",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "sendBody": true,
+        "bodyParameters": {
+          "parameters": [
+            {
+              "name": "workflowId",
+              "value": "={{ $workflow.id }}"
+            },
+            {
+              "name": "workflowName",
+              "value": "={{ $workflow.name }}"
+            },
+            {
+              "name": "executionId",
+              "value": "={{ $execution.id }}"
+            },
+            {
+              "name": "status",
+              "value": "success"
+            },
+            {
+              "name": "data",
+              "value": "={{ $json }}"
+            }
+          ]
+        }
+      },
+      "id": "callback-success",
+      "name": "Callback to Mediczy",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 2,
+      "position": [850, 300]
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={{ { \"success\": true, \"message\": \"Appointment confirmation workflow triggered\", \"appointmentId\": $json.appointmentId } }}"
+      },
+      "id": "respond-webhook",
+      "name": "Respond to Webhook",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1,
+      "position": [650, 300]
+    }
+  ],
+  "connections": {
+    "Webhook Trigger": {
+      "main": [
+        [
+          {
+            "node": "Set Variables",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Set Variables": {
+      "main": [
+        [
+          {
+            "node": "Respond to Webhook",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Respond to Webhook": {
+      "main": [
+        [
+          {
+            "node": "Callback to Mediczy",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": true,
+  "settings": {},
+  "versionId": "1",
+  "id": "appointment-reminder-multichannel",
+  "meta": {
+    "instanceId": "mediczy-n8n"
+  },
+  "tags": [
+    {
+      "name": "healthcare",
+      "id": "1"
+    },
+    {
+      "name": "appointments",
+      "id": "2"
+    }
+  ]
+}

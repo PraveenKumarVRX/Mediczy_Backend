@@ -8,6 +8,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from ".
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "../../components/ui/table";
 import { Badge } from "../../components/ui/badge";
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "../../components/ui/dropdown-menu";
+import { useToast } from '../../hooks/use-toast';
 import AdminLayout from '../../components/layout/AdminLayout';
 import { 
   Plus, Search, Eye, Edit, Trash2, MoreVertical, Truck, Plane, Phone, Mail,
@@ -32,6 +33,22 @@ interface MedivacProvider {
   status: 'Active' | 'Inactive' | 'Pending';
   joinedDate: string;
   lastService?: string;
+}
+
+interface MedivacFormState {
+  providerName: string;
+  registrationNumber: string;
+  email: string;
+  phoneNumber: string;
+  contactPerson: string;
+  city: string;
+  state: string;
+  vehicleTypes: string;
+  aircraftCount: string;
+  groundVehicleCount: string;
+  coverageArea: string;
+  responseTime: string;
+  status: MedivacProvider['status'];
 }
 
 const sampleMedivacs: MedivacProvider[] = [
@@ -94,12 +111,30 @@ const sampleMedivacs: MedivacProvider[] = [
   }
 ];
 
+const createEmptyMedivac = (): MedivacFormState => ({
+  providerName: '',
+  registrationNumber: '',
+  email: '',
+  phoneNumber: '',
+  contactPerson: '',
+  city: '',
+  state: '',
+  vehicleTypes: '',
+  aircraftCount: '',
+  groundVehicleCount: '',
+  coverageArea: '',
+  responseTime: '',
+  status: 'Active',
+});
+
 const MedivacManagement = () => {
+  const { toast } = useToast();
   const [medivacs, setMedivacs] = useState<MedivacProvider[]>(sampleMedivacs);
   const [searchTerm, setSearchTerm] = useState('');
   const [statusFilter, setStatusFilter] = useState<string>('all');
   const [currentPage, setCurrentPage] = useState(1);
   const itemsPerPage = 10;
+  const [newMedivac, setNewMedivac] = useState<MedivacFormState>(createEmptyMedivac());
 
   const filteredMedivacs = useMemo(() => {
     return medivacs.filter(medivac => {
@@ -126,6 +161,50 @@ const MedivacManagement = () => {
       Pending: "destructive"
     };
     return <Badge variant={variants[status] || "default"}>{status}</Badge>;
+  };
+
+  const resetMedivacForm = () => setNewMedivac(createEmptyMedivac());
+
+  const handleAddMedivac = () => {
+    if (!newMedivac.providerName.trim() || !newMedivac.phoneNumber.trim()) {
+      toast({
+        title: "Missing details",
+        description: "Provider name and phone number are required.",
+        variant: "destructive"
+      });
+      return;
+    }
+
+    const provider: MedivacProvider = {
+      id: `MED${Date.now()}`,
+      providerName: newMedivac.providerName.trim(),
+      registrationNumber: newMedivac.registrationNumber.trim() || `MEDV-${new Date().getFullYear()}`,
+      email: newMedivac.email.trim(),
+      phoneNumber: newMedivac.phoneNumber.trim(),
+      contactPerson: newMedivac.contactPerson.trim(),
+      city: newMedivac.city.trim(),
+      state: newMedivac.state.trim(),
+      vehicleTypes: newMedivac.vehicleTypes
+        .split(',')
+        .map(v => v.trim())
+        .filter(Boolean),
+      aircraftCount: Number(newMedivac.aircraftCount) || 0,
+      groundVehicleCount: Number(newMedivac.groundVehicleCount) || 0,
+      coverageArea: newMedivac.coverageArea.trim() || 'Pan India',
+      responseTime: newMedivac.responseTime.trim() || '30-60 minutes',
+      status: newMedivac.status,
+      joinedDate: new Date().toISOString().split('T')[0],
+      lastService: new Date().toISOString().split('T')[0],
+      rating: 4.5,
+    };
+
+    setMedivacs(prev => [provider, ...prev]);
+    toast({
+      title: "Provider added",
+      description: `${provider.providerName} has been added to the directory.`
+    });
+    resetMedivacForm();
+    setStatusFilter('all');
   };
 
   return (
@@ -211,7 +290,7 @@ const MedivacManagement = () => {
                       </SelectContent>
                     </Select>
                   </div>
-                  <Button>
+                  <Button onClick={() => setActiveTab('add')}>
                     <Plus className="mr-2 h-4 w-4" />
                     Add Provider
                   </Button>
@@ -340,52 +419,132 @@ const MedivacManagement = () => {
                 <div className="grid gap-4 md:grid-cols-2">
                   <div className="space-y-2">
                     <Label htmlFor="providerName">Provider Name</Label>
-                    <Input id="providerName" placeholder="Enter provider name" />
+                    <Input
+                      id="providerName"
+                      placeholder="Enter provider name"
+                      value={newMedivac.providerName}
+                      onChange={(e) => setNewMedivac(prev => ({ ...prev, providerName: e.target.value }))}
+                    />
                   </div>
                   <div className="space-y-2">
                     <Label htmlFor="regNumber">Registration Number</Label>
-                    <Input id="regNumber" placeholder="MEDV-YYYY-XXX" />
+                    <Input
+                      id="regNumber"
+                      placeholder="MEDV-YYYY-XXX"
+                      value={newMedivac.registrationNumber}
+                      onChange={(e) => setNewMedivac(prev => ({ ...prev, registrationNumber: e.target.value }))}
+                    />
                   </div>
                   <div className="space-y-2">
                     <Label htmlFor="email">Email</Label>
-                    <Input id="email" type="email" placeholder="contact@provider.com" />
+                    <Input
+                      id="email"
+                      type="email"
+                      placeholder="contact@provider.com"
+                      value={newMedivac.email}
+                      onChange={(e) => setNewMedivac(prev => ({ ...prev, email: e.target.value }))}
+                    />
                   </div>
                   <div className="space-y-2">
                     <Label htmlFor="phone">Phone Number</Label>
-                    <Input id="phone" placeholder="+91-XX-XXXXXXXX" />
+                    <Input
+                      id="phone"
+                      placeholder="+91-XX-XXXXXXXX"
+                      value={newMedivac.phoneNumber}
+                      onChange={(e) => setNewMedivac(prev => ({ ...prev, phoneNumber: e.target.value }))}
+                    />
                   </div>
                   <div className="space-y-2">
                     <Label htmlFor="contactPerson">Contact Person</Label>
-                    <Input id="contactPerson" placeholder="Contact person name" />
+                    <Input
+                      id="contactPerson"
+                      placeholder="Contact person name"
+                      value={newMedivac.contactPerson}
+                      onChange={(e) => setNewMedivac(prev => ({ ...prev, contactPerson: e.target.value }))}
+                    />
                   </div>
                   <div className="space-y-2">
                     <Label htmlFor="coverageArea">Coverage Area</Label>
-                    <Input id="coverageArea" placeholder="e.g., Pan India, South India" />
+                    <Input
+                      id="coverageArea"
+                      placeholder="e.g., Pan India, South India"
+                      value={newMedivac.coverageArea}
+                      onChange={(e) => setNewMedivac(prev => ({ ...prev, coverageArea: e.target.value }))}
+                    />
                   </div>
                   <div className="space-y-2">
                     <Label htmlFor="aircraftCount">Aircraft Count</Label>
-                    <Input id="aircraftCount" type="number" placeholder="0" />
+                    <Input
+                      id="aircraftCount"
+                      type="number"
+                      placeholder="0"
+                      value={newMedivac.aircraftCount}
+                      onChange={(e) => setNewMedivac(prev => ({ ...prev, aircraftCount: e.target.value }))}
+                    />
                   </div>
                   <div className="space-y-2">
                     <Label htmlFor="groundVehicles">Ground Vehicles</Label>
-                    <Input id="groundVehicles" type="number" placeholder="0" />
+                    <Input
+                      id="groundVehicles"
+                      type="number"
+                      placeholder="0"
+                      value={newMedivac.groundVehicleCount}
+                      onChange={(e) => setNewMedivac(prev => ({ ...prev, groundVehicleCount: e.target.value }))}
+                    />
                   </div>
                   <div className="space-y-2">
                     <Label htmlFor="responseTime">Response Time</Label>
-                    <Input id="responseTime" placeholder="e.g., 30-60 minutes" />
+                    <Input
+                      id="responseTime"
+                      placeholder="e.g., 30-60 minutes"
+                      value={newMedivac.responseTime}
+                      onChange={(e) => setNewMedivac(prev => ({ ...prev, responseTime: e.target.value }))}
+                    />
                   </div>
                   <div className="space-y-2">
                     <Label htmlFor="city">City</Label>
-                    <Input id="city" placeholder="City" />
+                    <Input
+                      id="city"
+                      placeholder="City"
+                      value={newMedivac.city}
+                      onChange={(e) => setNewMedivac(prev => ({ ...prev, city: e.target.value }))}
+                    />
                   </div>
                   <div className="space-y-2 md:col-span-2">
                     <Label htmlFor="vehicleTypes">Vehicle Types</Label>
-                    <Input id="vehicleTypes" placeholder="Helicopter, Fixed Wing, Air Ambulance (comma separated)" />
+                    <Input
+                      id="vehicleTypes"
+                      placeholder="Helicopter, Fixed Wing, Air Ambulance (comma separated)"
+                      value={newMedivac.vehicleTypes}
+                      onChange={(e) => setNewMedivac(prev => ({ ...prev, vehicleTypes: e.target.value }))}
+                    />
+                  </div>
+                  <div className="space-y-2">
+                    <Label htmlFor="state">State</Label>
+                    <Input
+                      id="state"
+                      placeholder="State"
+                      value={newMedivac.state}
+                      onChange={(e) => setNewMedivac(prev => ({ ...prev, state: e.target.value }))}
+                    />
+                  </div>
+                  <div className="space-y-2">
+                    <Label>Status</Label>
+                    <Select value={newMedivac.status} onValueChange={(value) => setNewMedivac(prev => ({ ...prev, status: value as MedivacProvider['status'] }))}>
+                      <SelectTrigger>
+                        <SelectValue />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="Active">Active</SelectItem>
+                        <SelectItem value="Inactive">Inactive</SelectItem>
+                        <SelectItem value="Pending">Pending</SelectItem>
+                      </SelectContent>
+                    </Select>
                   </div>
                 </div>
                 <div className="flex justify-end gap-2 mt-6">
-                  <Button variant="outline">Cancel</Button>
-                  <Button>Add Provider</Button>
+                  <Button type="button" variant="outline" onClick={resetMedivacForm}>Reset</Button>
+                  <Button type="button" onClick={handleAddMedivac}>Add Provider</Button>
                 </div>
               </CardContent>
             </Card>

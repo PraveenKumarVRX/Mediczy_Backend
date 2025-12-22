@@ -1,0 +1,7 @@
+pg_role: worker
+postgres_wal_level: replica
+postgres_max_connections: 200
+postgres_max_worker_processes: 32
+worker_rebalance: true
+worker_storage_device: /dev/nvme1n1
+worker_mountpoint: /var/lib/postgresql/16/main

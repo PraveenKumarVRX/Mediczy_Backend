@@ -1,0 +1,313 @@
+{
+  "name": "SIB A/B Test Analysis",
+  "nodes": [
+    {
+      "parameters": {
+        "rule": {
+          "interval": [
+            {
+              "field": "hours",
+              "hoursInterval": 6
+            }
+          ]
+        }
+      },
+      "id": "schedule-analysis",
+      "name": "Schedule - Every 6 Hours",
+      "type": "n8n-nodes-base.scheduleTrigger",
+      "typeVersion": 1,
+      "position": [250, 300]
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "SELECT id, name, test_type FROM sib_ab_tests WHERE status = 'active'",
+        "additionalFields": {}
+      },
+      "id": "get-active-tests",
+      "name": "Get Active A/B Tests",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 1,
+      "position": [450, 300],
+      "credentials": {
+        "postgres": {
+          "id": "1",
+          "name": "PostgreSQL Account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "functionCode": "// Process each test individually\nconst tests = $input.all();\n\nreturn tests.map(test => ({\n  json: {\n    test_id: test.json.id,\n    test_name: test.json.name,\n    test_type: test.json.test_type\n  }\n}));"
+      },
+      "id": "split-tests",
+      "name": "Split Tests",
+      "type": "n8n-nodes-base.function",
+      "typeVersion": 1,
+      "position": [650, 300]
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "SELECT \n  variant,\n  COUNT(DISTINCT user_id) as users,\n  COUNT(*) as events,\n  COUNT(DISTINCT CASE WHEN event_type = 'view' THEN user_id END) as views,\n  COUNT(DISTINCT CASE WHEN event_type = 'click' THEN user_id END) as clicks,\n  COUNT(DISTINCT CASE WHEN event_type = 'conversion' THEN user_id END) as conversions\nFROM sib_ab_test_events\nWHERE test_id = $1\nGROUP BY variant",
+        "additionalFields": {}
+      },
+      "id": "get-test-stats",
+      "name": "Get Test Statistics",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 1,
+      "position": [850, 300],
+      "credentials": {
+        "postgres": {
+          "id": "1",
+          "name": "PostgreSQL Account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "functionCode": "// Calculate A/B test metrics\nconst testId = $input.item.json.test_id;\nconst testName = $input.item.json.test_name;\nconst stats = $input.all();\n\nconst variantA = stats.find(s => s.json.variant === 'variant_a')?.json || {};\nconst variantB = stats.find(s => s.json.variant === 'variant_b')?.json || {};\n\n// Calculate conversion rates\nconst aConversionRate = variantA.views > 0 ? (variantA.conversions / variantA.views * 100).toFixed(2) : 0;\nconst bConversionRate = variantB.views > 0 ? (variantB.conversions / variantB.views * 100).toFixed(2) : 0;\n\n// Calculate lift\nconst lift = aConversionRate > 0 ? ((bConversionRate - aConversionRate) / aConversionRate * 100).toFixed(2) : 0;\n\n// Determine winner\nconst winner = bConversionRate > aConversionRate ? 'variant_b' : 'variant_a';\n\n// Statistical significance (simplified)\nlet significance = 'insufficient_data';\nif (variantA.users >= 100 && variantB.users >= 100) {\n  const diff = Math.abs(bConversionRate - aConversionRate);\n  if (diff >= 5.0) {\n    significance = 'highly_significant';\n  } else if (diff >= 1.0) {\n    significance = 'significant';\n  } else {\n    significance = 'not_significant';\n  }\n}\n\nreturn {\n  test_id: testId,\n  test_name: testName,\n  variant_a: {\n    users: variantA.users || 0,\n    views: variantA.views || 0,\n    clicks: variantA.clicks || 0,\n    conversions: variantA.conversions || 0,\n    conversion_rate: aConversionRate\n  },\n  variant_b: {\n    users: variantB.users || 0,\n    views: variantB.views || 0,\n    clicks: variantB.clicks || 0,\n    conversions: variantB.conversions || 0,\n    conversion_rate: bConversionRate\n  },\n  summary: {\n    lift_percentage: lift,\n    winner: winner,\n    statistical_significance: significance,\n    analysis_timestamp: new Date().toISOString()\n  }\n};"
+      },
+      "id": "calculate-metrics",
+      "name": "Calculate Metrics",
+      "type": "n8n-nodes-base.function",
+      "typeVersion": 1,
+      "position": [1050, 300]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "string": [
+            {
+              "value1": "={{$json.summary.statistical_significance}}",
+              "operation": "equals",
+              "value2": "highly_significant"
+            }
+          ]
+        }
+      },
+      "id": "check-significance",
+      "name": "Check Significance",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 1,
+      "position": [1250, 300]
+    },
+    {
+      "parameters": {
+        "url": "http://localhost:8000/api/notifications/alert",
+        "sendBody": true,
+        "bodyParameters": {
+          "parameters": [
+            {
+              "name": "title",
+              "value": "A/B Test Alert: Significant Results"
+            },
+            {
+              "name": "message",
+              "value": "={{\"Test: \" + $json.test_name + \" - \" + $json.summary.winner + \" is winning by \" + $json.summary.lift_percentage + \"%\"}}"
+            },
+            {
+              "name": "severity",
+              "value": "info"
+            },
+            {
+              "name": "test_id",
+              "value": "={{$json.test_id}}"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "alert-significant",
+      "name": "Send Significance Alert",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 3,
+      "position": [1450, 200]
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "INSERT INTO sib_ab_test_analysis_results (test_id, analysis_timestamp, variant_a_stats, variant_b_stats, summary) VALUES ($1, $2, $3, $4, $5)",
+        "additionalFields": {}
+      },
+      "id": "store-results",
+      "name": "Store Analysis Results",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 1,
+      "position": [1450, 350],
+      "credentials": {
+        "postgres": {
+          "id": "1",
+          "name": "PostgreSQL Account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "number": [
+            {
+              "value1": "={{$json.variant_a.users + $json.variant_b.users}}",
+              "operation": "largerEqual",
+              "value2": 1000
+            }
+          ]
+        }
+      },
+      "id": "check-sample-size",
+      "name": "Check Sample Size (1000+)",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 1,
+      "position": [1650, 300]
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "UPDATE sib_ab_tests SET status = 'completed', end_date = NOW() WHERE id = $1 AND status = 'active'",
+        "additionalFields": {}
+      },
+      "id": "auto-complete",
+      "name": "Auto-Complete Test",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 1,
+      "position": [1850, 250],
+      "credentials": {
+        "postgres": {
+          "id": "1",
+          "name": "PostgreSQL Account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "url": "http://localhost:8000/api/notifications/alert",
+        "sendBody": true,
+        "bodyParameters": {
+          "parameters": [
+            {
+              "name": "title",
+              "value": "A/B Test Completed"
+            },
+            {
+              "name": "message",
+              "value": "={{\"Test: \" + $json.test_name + \" reached sample size and completed. Winner: \" + $json.summary.winner}}"
+            },
+            {
+              "name": "severity",
+              "value": "info"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "notify-completion",
+      "name": "Notify Completion",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 3,
+      "position": [2050, 250]
+    }
+  ],
+  "connections": {
+    "Schedule - Every 6 Hours": {
+      "main": [
+        [
+          {
+            "node": "Get Active A/B Tests",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Get Active A/B Tests": {
+      "main": [
+        [
+          {
+            "node": "Split Tests",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Split Tests": {
+      "main": [
+        [
+          {
+            "node": "Get Test Statistics",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Get Test Statistics": {
+      "main": [
+        [
+          {
+            "node": "Calculate Metrics",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Calculate Metrics": {
+      "main": [
+        [
+          {
+            "node": "Check Significance",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Store Analysis Results",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Check Sample Size (1000+)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Check Significance": {
+      "main": [
+        [
+          {
+            "node": "Send Significance Alert",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Check Sample Size (1000+)": {
+      "main": [
+        [
+          {
+            "node": "Auto-Complete Test",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Auto-Complete Test": {
+      "main": [
+        [
+          {
+            "node": "Notify Completion",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": true,
+  "settings": {},
+  "id": "sib-ab-test-analysis"
+}

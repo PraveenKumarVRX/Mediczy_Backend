@@ -621,7 +621,7 @@ const AdminPlans = () => {
                                     <Pencil className="mr-2 h-4 w-4" />
                                     Edit Plan
                                   </DropdownMenuItem>
-                                  <DropdownMenuItem onClick={() => alert(`View details for ${plan.name}`)}>
+                                  <DropdownMenuItem onClick={() => toast({ title: "Plan Details", description: `Viewing details for ${plan.name}` })}>
                                     <Eye className="mr-2 h-4 w-4" />
                                     View Details
                                   </DropdownMenuItem>
@@ -766,13 +766,13 @@ const AdminPlans = () => {
               <CardContent>
                 <div className="space-y-4">
                   <p className="text-sm text-muted-foreground">
-                    Upload an Excel file (.xlsx, .xls) with membership plan records.
+                    Upload an Excel file (.xlsx) with membership plan records.
                   </p>
                   <div className="flex items-center gap-4">
                     <Input 
                       ref={fileInputRef} 
                       type="file" 
-                      accept=".xlsx,.xls" 
+                      accept=".xlsx" 
                       onChange={handleExcelUpload} 
                       disabled={loading} 
                     />

@@ -1,0 +1,263 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Google Fit OAuth Test</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            max-width: 800px;
+            margin: 50px auto;
+            padding: 20px;
+            background: #f5f5f5;
+        }
+        .container {
+            background: white;
+            padding: 30px;
+            border-radius: 10px;
+            box-shadow: 0 2px 10px rgba(0,0,0,0.1);
+        }
+        .status {
+            padding: 15px;
+            margin: 10px 0;
+            border-radius: 5px;
+            font-weight: bold;
+        }
+        .success { background: #d4edda; color: #155724; border: 1px solid #c3e6cb; }
+        .error { background: #f8d7da; color: #721c24; border: 1px solid #f5c6cb; }
+        .warning { background: #fff3cd; color: #856404; border: 1px solid #ffeaa7; }
+        .info { background: #d1ecf1; color: #0c5460; border: 1px solid #bee5eb; }
+        button {
+            background: #4285f4;
+            color: white;
+            border: none;
+            padding: 12px 24px;
+            font-size: 16px;
+            border-radius: 5px;
+            cursor: pointer;
+            margin: 10px 5px;
+        }
+        button:hover { background: #357ae8; }
+        button:disabled {
+            background: #ccc;
+            cursor: not-allowed;
+        }
+        pre {
+            background: #f4f4f4;
+            padding: 15px;
+            border-radius: 5px;
+            overflow-x: auto;
+            font-size: 12px;
+        }
+        .checklist {
+            list-style: none;
+            padding: 0;
+        }
+        .checklist li {
+            padding: 10px;
+            margin: 5px 0;
+            background: #f9f9f9;
+            border-left: 4px solid #ddd;
+        }
+        .checklist li.checked {
+            border-left-color: #28a745;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>🔍 Google Fit OAuth Configuration Test</h1>
+        
+        <div class="info status">
+            <strong>Project:</strong> mediczy-624ed<br>
+            <strong>Client ID:</strong> 982376166047-j975co5qc5enqhcesggbsee3obnj7tqa.apps.googleusercontent.com
+        </div>
+
+        <h2>Configuration Checklist</h2>
+        <ul class="checklist">
+            <li id="check1">
+                <input type="checkbox" id="api-enabled"> 
+                <label for="api-enabled">Google Fitness API is enabled in Google Cloud Console</label>
+            </li>
+            <li id="check2">
+                <input type="checkbox" id="consent-screen"> 
+                <label for="consent-screen">OAuth consent screen is configured with app details</label>
+            </li>
+            <li id="check3">
+                <input type="checkbox" id="scopes-added"> 
+                <label for="scopes-added">All 5 fitness scopes are added to consent screen</label>
+            </li>
+            <li id="check4">
+                <input type="checkbox" id="redirect-uris"> 
+                <label for="redirect-uris">Redirect URIs include: https://mediqzy.com</label>
+            </li>
+            <li id="check5">
+                <input type="checkbox" id="origins"> 
+                <label for="origins">Authorized JavaScript origins include: https://mediqzy.com</label>
+            </li>
+        </ul>
+
+        <h2>Quick Links</h2>
+        <div>
+            <button onclick="openLink('https://console.cloud.google.com/apis/library/fitness.googleapis.com?project=mediczy-624ed')">
+                1️⃣ Enable Fitness API
+            </button>
+            <button onclick="openLink('https://console.cloud.google.com/apis/credentials/consent?project=mediczy-624ed')">
+                2️⃣ Configure Consent Screen
+            </button>
+            <button onclick="openLink('https://console.cloud.google.com/apis/credentials?project=mediczy-624ed')">
+                3️⃣ Edit OAuth Client
+            </button>
+        </div>
+
+        <h2>Test OAuth Flow</h2>
+        <button onclick="testOAuth()" id="testBtn">Test Google Fit Connection</button>
+        <button onclick="clearResults()">Clear Results</button>
+
+        <div id="results"></div>
+
+        <h2>Required Scopes</h2>
+        <pre>https://www.googleapis.com/auth/fitness.activity.read
+https://www.googleapis.com/auth/fitness.heart_rate.read
+https://www.googleapis.com/auth/fitness.sleep.read
+https://www.googleapis.com/auth/fitness.body.read
+https://www.googleapis.com/auth/fitness.location.read</pre>
+
+        <h2>Required Redirect URIs</h2>
+        <pre>http://localhost:9443
+https://mediqzy.com</pre>
+    </div>
+
+    <script>
+        const CLIENT_ID = '982376166047-j975co5qc5enqhcesggbsee3obnj7tqa.apps.googleusercontent.com';
+        const SCOPES = [
+            'https://www.googleapis.com/auth/fitness.activity.read',
+            'https://www.googleapis.com/auth/fitness.heart_rate.read',
+            'https://www.googleapis.com/auth/fitness.sleep.read',
+            'https://www.googleapis.com/auth/fitness.body.read',
+            'https://www.googleapis.com/auth/fitness.location.read'
+        ].join(' ');
+
+        function openLink(url) {
+            window.open(url, '_blank');
+        }
+
+        function showResult(message, type) {
+            const results = document.getElementById('results');
+            const div = document.createElement('div');
+            div.className = `status ${type}`;
+            div.innerHTML = message;
+            results.appendChild(div);
+        }
+
+        function clearResults() {
+            document.getElementById('results').innerHTML = '';
+        }
+
+        function testOAuth() {
+            clearResults();
+            showResult('🔄 Initiating OAuth flow...', 'info');
+            
+            // Build OAuth URL
+            const redirectUri = window.location.origin;
+            const state = Math.random().toString(36).substring(7);
+            
+            const authUrl = `https://accounts.google.com/o/oauth2/v2/auth?` +
+                `client_id=${CLIENT_ID}&` +
+                `redirect_uri=${encodeURIComponent(redirectUri)}&` +
+                `response_type=token&` +
+                `scope=${encodeURIComponent(SCOPES)}&` +
+                `state=${state}`;
+
+            showResult(`Redirect URI being used: ${redirectUri}`, 'info');
+            showResult(`Opening OAuth popup...`, 'info');
+            
+            // Open popup
+            const popup = window.open(authUrl, 'Google OAuth', 'width=500,height=600');
+            
+            if (!popup) {
+                showResult('❌ Popup was blocked! Please allow popups and try again.', 'error');
+                return;
+            }
+
+            // Listen for OAuth callback
+            window.addEventListener('message', function(event) {
+                if (event.data.type === 'oauth-success') {
+                    showResult('✅ OAuth flow completed successfully!', 'success');
+                    showResult(`Access token received: ${event.data.token.substring(0, 20)}...`, 'success');
+                }
+            });
+
+            // Check if popup was closed
+            const checkClosed = setInterval(() => {
+                if (popup.closed) {
+                    clearInterval(checkClosed);
+                    // Check URL hash for token
+                    if (window.location.hash.includes('access_token')) {
+                        const params = new URLSearchParams(window.location.hash.substring(1));
+                        const token = params.get('access_token');
+                        if (token) {
+                            showResult('✅ OAuth Success! Access token received.', 'success');
+                            showResult(`Token: ${token.substring(0, 20)}...`, 'success');
+                            
+                            // Test API call
+                            testFitnessAPI(token);
+                        }
+                    } else {
+                        showResult('⚠️ Popup closed. Check for errors in browser console.', 'warning');
+                    }
+                }
+            }, 1000);
+        }
+
+        async function testFitnessAPI(token) {
+            showResult('🧪 Testing Fitness API access...', 'info');
+            
+            try {
+                const response = await fetch('https://www.googleapis.com/fitness/v1/users/me/dataSources', {
+                    headers: {
+                        'Authorization': `Bearer ${token}`
+                    }
+                });
+
+                if (response.ok) {
+                    const data = await response.json();
+                    showResult('✅ Fitness API is accessible!', 'success');
+                    showResult(`Found ${data.dataSource?.length || 0} data sources`, 'info');
+                } else {
+                    const error = await response.text();
+                    showResult(`❌ API Error: ${response.status} - ${error}`, 'error');
+                }
+            } catch (error) {
+                showResult(`❌ API Test Failed: ${error.message}`, 'error');
+            }
+        }
+
+        // Check for OAuth callback in URL
+        window.onload = function() {
+            if (window.location.hash.includes('access_token')) {
+                const params = new URLSearchParams(window.location.hash.substring(1));
+                const token = params.get('access_token');
+                if (token) {
+                    showResult('✅ OAuth callback received!', 'success');
+                    testFitnessAPI(token);
+                    
+                    // Clean up URL
+                    window.history.replaceState({}, document.title, window.location.pathname);
+                }
+            }
+
+            // Update checklist
+            document.querySelectorAll('.checklist input[type="checkbox"]').forEach(checkbox => {
+                checkbox.addEventListener('change', function() {
+                    const li = this.closest('li');
+                    if (this.checked) {
+                        li.classList.add('checked');
+                    } else {
+                        li.classList.remove('checked');
+                    }
+                });
+            });
+        };
+    </script>
+</body>
+</html>

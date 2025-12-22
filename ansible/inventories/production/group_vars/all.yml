@@ -1,0 +1,38 @@
+ansible_python_interpreter: /usr/bin/python3
+pg_version: 16
+citus_version: 12.1
+postgres_listen_addresses:
+  - 0.0.0.0
+postgres_shared_preload_libraries:
+  - citus
+  - timescaledb
+  - columnar
+  - pg_stat_statements
+pg_default_extensions:
+  - hstore
+  - pg_stat_statements
+pgvector_dimension: 1536
+pgvector_distance_metric: cosine
+pgvector_databases:
+  - mediczy_ai
+  - medical_embeddings
+pg_data_mount: /var/lib/postgresql/16/main
+pg_backup_dir: /var/backups/postgres
+citus_replication_factor: 2
+citus_shard_count: 64
+timescale_databases:
+  - metrics
+columnar_tables:
+  - database: mediczy_ai
+    schema: public
+    table: medical_embeddings
+redis_version: 7
+redis_port: 6379
+redis_password: changeme
+redis_tls_enabled: false
+kafka_version: 3.6
+kafka_brokers:
+  - kafka-1:9092
+  - kafka-2:9092
+kafka_cluster_id: mediczy-cluster
+embedding_event_topic: embedding-events

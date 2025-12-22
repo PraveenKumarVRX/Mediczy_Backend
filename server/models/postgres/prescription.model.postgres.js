@@ -95,6 +95,13 @@ const Prescription = sequelize.define('Prescription', {
     allowNull: true
   },
   
+  // Doctor Specialty
+  specialty: {
+    type: DataTypes.STRING(200),
+    allowNull: true,
+    comment: 'Doctor specialty/specialization'
+  },
+  
   // Clinic Information
   clinicName: {
     type: DataTypes.STRING(200),

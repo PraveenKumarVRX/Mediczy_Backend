@@ -1,9 +1,9 @@
-import { sequelize } from '../db/mariadb.js';
+import { postgresSequelize as sequelize } from '../db/postgres-sequelize.js';
 import { DataTypes } from 'sequelize';
 import jwt from 'jsonwebtoken';
 import bcrypt from 'bcrypt';
 
-// Define User model
+// Define User model - NOW USING POSTGRESQL
 const User = sequelize.define('User', {
   id: {
     type: DataTypes.INTEGER,
@@ -43,21 +43,85 @@ const User = sequelize.define('User', {
     type: DataTypes.BOOLEAN,
     defaultValue: false
   },
-  isActive: {
-    type: DataTypes.BOOLEAN,
-    defaultValue: true
+  // PostgreSQL uses 'status' instead of 'isActive'
+  status: {
+    type: DataTypes.ENUM('active', 'inactive', 'suspended', 'deleted'),
+    defaultValue: 'active'
   },
-  isEmailVerified: {
+  // PostgreSQL uses 'emailVerified' instead of 'isEmailVerified'
+  emailVerified: {
     type: DataTypes.BOOLEAN,
     defaultValue: false
   },
-  lastLogin: {
+  // PostgreSQL uses 'lastLoginAt' instead of 'lastLogin'
+  lastLoginAt: {
     type: DataTypes.DATE,
     allowNull: true
+  },
+  // Password reset fields
+  passwordResetToken: {
+    type: DataTypes.STRING,
+    allowNull: true
+  },
+  passwordResetExpires: {
+    type: DataTypes.DATE,
+    allowNull: true
+  },
+  // Corporate employment fields
+  employerName: {
+    type: DataTypes.STRING(200),
+    allowNull: true,
+    field: 'employer_name'
+  },
+  employeeId: {
+    type: DataTypes.STRING(50),
+    allowNull: true,
+    field: 'employee_id'
+  },
+  corporateId: {
+    type: DataTypes.INTEGER,
+    allowNull: true,
+    field: 'corporate_id',
+    references: {
+      model: 'corporates',
+      key: 'id'
+    }
+  },
+  membershipType: {
+    type: DataTypes.STRING(50),
+    defaultValue: 'individual',
+    field: 'membership_type'
   }
 }, {
   tableName: 'users',
-  timestamps: true
+  timestamps: true,
+  // Virtual getters for backward compatibility
+  getterMethods: {
+    isActive() {
+      return this.status === 'active';
+    },
+    isEmailVerified() {
+      return this.emailVerified;
+    },
+    lastLogin() {
+      return this.lastLoginAt;
+    }
+  }
+});
+
+// Add hooks to hash password before saving
+User.beforeCreate(async (user) => {
+  if (user.password) {
+    const salt = await bcrypt.genSalt(10);
+    user.password = await bcrypt.hash(user.password, salt);
+  }
+});
+
+User.beforeUpdate(async (user) => {
+  if (user.changed('password') && user.password) {
+    const salt = await bcrypt.genSalt(10);
+    user.password = await bcrypt.hash(user.password, salt);
+  }
 });
 
 // Add instance method to compare passwords
@@ -116,4 +180,5 @@ export const generateAuthTokenForUser = (userInstance) => {
   });
 };
 
+export { User };
 export default userModel;

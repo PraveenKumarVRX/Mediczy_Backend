@@ -1,0 +1,5 @@
+citus_packages:
+  - postgresql-{{ pg_version }}-citus-{{ citus_version }}
+citus_metadata_db: mediczy_citus
+citus_worker_nodes: []
+citus_rebalance_scale: 1.0

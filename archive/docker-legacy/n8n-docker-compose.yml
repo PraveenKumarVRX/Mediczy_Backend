@@ -1,0 +1,65 @@
+version: '3.8'
+
+# n8n workflow automation - wired to core Mediczy PostgreSQL database
+# This connects n8n to the main mediczy_ai database using a dedicated schema
+
+services:
+  n8n:
+    image: n8nio/n8n:latest
+    container_name: mediczy-n8n
+    restart: unless-stopped
+    ports:
+      - "5678:5678"
+    environment:
+      # n8n Authentication
+      - N8N_BASIC_AUTH_ACTIVE=true
+      - N8N_BASIC_AUTH_USER=admin
+      - N8N_BASIC_AUTH_PASSWORD=MediczyN8N2025!
+      
+      # n8n Host Configuration
+      - N8N_HOST=localhost
+      - N8N_PROTOCOL=http
+      - N8N_PORT=5678
+      - WEBHOOK_URL=http://localhost:5678
+      - GENERIC_TIMEZONE=Asia/Kolkata
+      - N8N_LOG_LEVEL=info
+      
+      # Execution Data Settings
+      - EXECUTIONS_DATA_SAVE_ON_ERROR=all
+      - EXECUTIONS_DATA_SAVE_ON_SUCCESS=all
+      - EXECUTIONS_DATA_SAVE_MANUAL_EXECUTIONS=true
+      
+      # Core PostgreSQL Database Connection (mediczy_ai)
+      - DB_TYPE=postgresdb
+      - DB_POSTGRESDB_HOST=host.docker.internal
+      - DB_POSTGRESDB_PORT=5432
+      - DB_POSTGRESDB_DATABASE=mediczy_ai
+      - DB_POSTGRESDB_USER=mediczy_helper
+      - DB_POSTGRESDB_PASSWORD=Mediczy2024Helper
+      - DB_POSTGRESDB_SCHEMA=n8n
+      
+      # Mediczy API Configuration (for workflows)
+      - MEDICZY_API_URL=http://host.docker.internal:8000/api
+      - MEDICZY_WEBHOOK_SECRET=mediczy_n8n_webhook_2025
+      
+    volumes:
+      - n8n_data:/home/node/.n8n
+      - ./workflows:/home/node/.n8n/workflows
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    networks:
+      - mediczy-network
+    healthcheck:
+      test: ["CMD", "wget", "--quiet", "--tries=1", "--spider", "http://localhost:5678/healthz"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
+
+volumes:
+  n8n_data:
+    driver: local
+
+networks:
+  mediczy-network:
+    driver: bridge

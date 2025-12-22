@@ -1,23 +1,21 @@
-import { connectToDb } from '../db/mariadb.js';
-
-let intelligentDB = null;
-
-async function getDB() {
-  if (!intelligentDB) {
-    intelligentDB = await connectToDb();
-  }
-  return intelligentDB;
-}
+// Admin operations use the User model with role='admin'
+import { User } from './user.model.intelligent.js';
 
 const adminModel = {
   findOne: async (options) => {
-    const db = await getDB();
-    return await db.Admin.findOne(options);
+    // Admin is a user with role='admin'
+    return await User.findOne({
+      ...options,
+      where: { ...options.where, role: 'admin' }
+    });
   },
 
   create: async (adminData) => {
-    const db = await getDB();
-    return await db.Admin.create(adminData);
+    // Create admin as a user with role='admin'
+    return await User.create({
+      ...adminData,
+      role: 'admin'
+    });
   }
 };
 

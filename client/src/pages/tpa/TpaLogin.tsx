@@ -19,17 +19,37 @@ const TpaLogin = () => {
 
   // Check if already authenticated
   useEffect(() => {
-    // Clear any other role tokens that might interfere
+    console.log('🧹 Clearing all other role tokens on TpaLogin mount...');
+    // Clear ALL other role tokens that might interfere
     localStorage.removeItem('adminToken');
     localStorage.removeItem('teamToken');
     localStorage.removeItem('nurseToken');
     localStorage.removeItem('assistantToken');
     localStorage.removeItem('insuranceBrokerToken');
     localStorage.removeItem('insuranceCompanyToken');
+    localStorage.removeItem('doctorToken');
+    localStorage.removeItem('hospitalToken');
+    localStorage.removeItem('clinicToken');
+    localStorage.removeItem('labToken');
+    localStorage.removeItem('pharmacyToken');
+    localStorage.removeItem('ambulanceToken');
+    localStorage.removeItem('homecareToken');
+    localStorage.removeItem('corporateToken');
+    localStorage.removeItem('psuToken');
+    localStorage.removeItem('insurerToken');
+    localStorage.removeItem('ngoToken');
+    // Also clear any generic tokens to avoid fallback to user flows
+    // This ensures the app doesn't treat a lingering user token as active
+    localStorage.removeItem('token');
+    localStorage.removeItem('userType');
 
     const token = localStorage.getItem('tpaToken');
+    console.log('🔍 Checking existing TPA token:', token ? 'EXISTS' : 'MISSING');
     if (token) {
-      console.log('✅ TPA already authenticated, redirecting...');
+      console.log('✅ TPA already authenticated, redirecting to /tpa/dashboard...');
+      // Ensure userType is set correctly
+      localStorage.setItem('userType', 'tpa');
+      localStorage.setItem('token', token);
       navigate('/tpa/dashboard');
       return;
     }
@@ -109,25 +129,38 @@ const TpaLogin = () => {
       localStorage.removeItem('assistantToken');
       localStorage.removeItem('insuranceBrokerToken');
       localStorage.removeItem('insuranceCompanyToken');
-      localStorage.removeItem('token');
-      localStorage.removeItem('userType');
+      localStorage.removeItem('doctorToken');
+      localStorage.removeItem('hospitalToken');
+      localStorage.removeItem('clinicToken');
+      localStorage.removeItem('labToken');
+      localStorage.removeItem('pharmacyToken');
+      localStorage.removeItem('ambulanceToken');
+      localStorage.removeItem('homecareToken');
 
       // Store token securely with immediate verification
+      console.log('💾 Setting TPA tokens...', {
+        token: data.token.substring(0, 20) + '...',
+        userEmail: data.user.email
+      });
       localStorage.setItem('tpaToken', data.token);
+      localStorage.setItem('token', data.token); // Also set generic token
+      localStorage.setItem('userType', 'tpa'); // Set user type
       localStorage.setItem('tpaData', JSON.stringify(data.user));
 
       // Immediate verification
       const verifyToken = localStorage.getItem('tpaToken');
+      const verifyUserType = localStorage.getItem('userType');
       console.log('✅ Token stored successfully:', verifyToken ? 'YES' : 'NO');
+      console.log('✅ UserType stored:', verifyUserType);
       console.log('🔒 Token length:', verifyToken?.length);
 
-      // Success message and redirect
+      // Success message
       setError(null);
-
-      // Redirect to TPA dashboard
-      setTimeout(() => {
-        navigate('/tpa/dashboard');
-      }, 500);
+      
+      // IMPORTANT: Use window.location.href for full page reload
+      // This ensures clean state and fresh token reading
+      console.log('🚀 Redirecting to /tpa/dashboard with full page reload...');
+      window.location.href = '/tpa/dashboard';
     } catch (err: any) {
       console.error('TPA login error:', err);
 

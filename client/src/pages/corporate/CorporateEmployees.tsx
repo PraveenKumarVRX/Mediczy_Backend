@@ -4,7 +4,7 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Badge } from '@/components/ui/badge';
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle, DialogTrigger } from '@/components/ui/dialog';
-import { Users, Search, Plus, Mail, Phone, MapPin, Briefcase, Calendar, Activity } from 'lucide-react';
+import { Users, Search, Plus, Mail, Phone, MapPin, Briefcase, Calendar, Activity, Upload, Download, FileSpreadsheet, CheckCircle, XCircle } from 'lucide-react';
 import { Label } from '@/components/ui/label';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import api from '@/utils/api';
@@ -61,6 +61,12 @@ const CorporateEmployees: React.FC = () => {
   const [editingEmployeeId, setEditingEmployeeId] = useState<string | null>(null);
   const [selectedEmployee, setSelectedEmployee] = useState<Employee | null>(null);
   const [form, setForm] = useState<EmployeeFormState>(() => emptyEmployeeForm());
+
+  // Bulk upload state
+  const [isBulkUploadOpen, setIsBulkUploadOpen] = useState(false);
+  const [uploadFile, setUploadFile] = useState<File | null>(null);
+  const [isUploading, setIsUploading] = useState(false);
+  const [uploadResults, setUploadResults] = useState<{ successful: number; failed: number; errors?: any[] } | null>(null);
 
   const [searchTerm, setSearchTerm] = useState('');
   const [selectedDept, setSelectedDept] = useState('all');
@@ -138,6 +144,114 @@ const CorporateEmployees: React.FC = () => {
     setIsViewDialogOpen(true);
   };
 
+  const downloadTemplate = async () => {
+    try {
+      const response = await api.get('/corporate/employees/download-template', {
+        responseType: 'blob',
+      });
+      const url = window.URL.createObjectURL(new Blob([response.data]));
+      const link = document.createElement('a');
+      link.href = url;
+      link.setAttribute('download', 'employee_template.csv');
+      document.body.appendChild(link);
+      link.click();
+      link.remove();
+      toast({ title: 'Template downloaded', description: 'CSV template downloaded successfully.' });
+    } catch (error: any) {
+      toast({
+        title: 'Failed to download template',
+        description: error?.response?.data?.message || 'Please try again.',
+        variant: 'destructive',
+      });
+    }
+  };
+
+  const parseCSV = (text: string): any[] => {
+    const lines = text.split('\n').filter(line => line.trim());
+    if (lines.length < 2) return [];
+    
+    const headers = lines[0].split(',').map(h => h.trim());
+    const employees = [];
+    
+    for (let i = 1; i < lines.length; i++) {
+      const values = lines[i].split(',').map(v => v.trim());
+      const employee: any = {};
+      headers.forEach((header, index) => {
+        employee[header] = values[index] || '';
+      });
+      employees.push(employee);
+    }
+    
+    return employees;
+  };
+
+  const handleBulkUpload = async () => {
+    if (!uploadFile) {
+      toast({
+        title: 'No file selected',
+        description: 'Please select a CSV file to upload.',
+        variant: 'destructive',
+      });
+      return;
+    }
+
+    try {
+      setIsUploading(true);
+      setUploadResults(null);
+
+      const text = await uploadFile.text();
+      const employeeList = parseCSV(text);
+
+      if (employeeList.length === 0) {
+        toast({
+          title: 'Empty file',
+          description: 'The CSV file contains no employee data.',
+          variant: 'destructive',
+        });
+        return;
+      }
+
+      const { data } = await api.post('/corporate/employees/bulk-upload', { employees: employeeList });
+      const result = (data as any)?.data;
+      
+      setUploadResults({
+        successful: result?.summary?.successful || 0,
+        failed: result?.summary?.failed || 0,
+        errors: result?.errors || [],
+      });
+
+      if (result?.summary?.successful > 0) {
+        await loadEmployees();
+        toast({ 
+          title: 'Upload completed', 
+          description: `${result.summary.successful} employees uploaded successfully.` 
+        });
+      }
+
+      if (result?.summary?.failed > 0) {
+        toast({
+          title: 'Some uploads failed',
+          description: `${result.summary.failed} employees failed to upload. Check the results below.`,
+          variant: 'destructive',
+        });
+      }
+    } catch (error: any) {
+      toast({
+        title: 'Upload failed',
+        description: error?.response?.data?.message || 'Failed to upload employees.',
+        variant: 'destructive',
+      });
+    } finally {
+      setIsUploading(false);
+    }
+  };
+
+  const closeBulkUpload = () => {
+    setIsBulkUploadOpen(false);
+    setUploadFile(null);
+    setUploadResults(null);
+  };
+
   const handleSubmit = async () => {
     try {
       setIsUpserting(true);
@@ -181,10 +295,16 @@ const CorporateEmployees: React.FC = () => {
           </h1>
           <p className="text-gray-600 mt-1">Manage employee health profiles and insurance</p>
         </div>
-        <Button onClick={openCreate}>
-          <Plus className="mr-2 h-4 w-4" />
-          Add Employee
-        </Button>
+        <div className="flex gap-2">
+          <Button onClick={openCreate}>
+            <Plus className="mr-2 h-4 w-4" />
+            Add Employee
+          </Button>
+          <Button onClick={() => setIsBulkUploadOpen(true)} variant="outline">
+            <Upload className="mr-2 h-4 w-4" />
+            Bulk Upload
+          </Button>
+        </div>
       </div>
 
       {/* Add/Edit Dialog */}
@@ -457,6 +577,122 @@ const CorporateEmployees: React.FC = () => {
           )}
         </CardContent>
       </Card>
+
+      {/* Bulk Upload Dialog */}
+      <Dialog open={isBulkUploadOpen} onOpenChange={closeBulkUpload}>
+        <DialogContent className="sm:max-w-[600px]">
+          <DialogHeader>
+            <DialogTitle>Bulk Upload Employees</DialogTitle>
+            <DialogDescription>
+              Upload multiple employees at once using a CSV file. Download the template to get started.
+            </DialogDescription>
+          </DialogHeader>
+
+          <div className="space-y-4">
+            {/* Download Template Section */}
+            <div className="bg-blue-50 p-4 rounded-lg border border-blue-200">
+              <div className="flex items-start gap-3">
+                <FileSpreadsheet className="h-5 w-5 text-blue-600 mt-0.5" />
+                <div className="flex-1">
+                  <h4 className="font-semibold text-sm mb-1">Step 1: Download Template</h4>
+                  <p className="text-sm text-gray-600 mb-2">
+                    Download the CSV template with the required format and fill in employee details.
+                  </p>
+                  <Button onClick={downloadTemplate} variant="outline" size="sm">
+                    <Download className="mr-2 h-4 w-4" />
+                    Download Template
+                  </Button>
+                </div>
+              </div>
+            </div>
+
+            {/* File Upload Section */}
+            <div className="bg-gray-50 p-4 rounded-lg border border-gray-200">
+              <div className="flex items-start gap-3">
+                <Upload className="h-5 w-5 text-gray-600 mt-0.5" />
+                <div className="flex-1">
+                  <h4 className="font-semibold text-sm mb-1">Step 2: Upload File</h4>
+                  <p className="text-sm text-gray-600 mb-3">
+                    Select the completed CSV file to upload employee data.
+                  </p>
+                  <Input
+                    type="file"
+                    accept=".csv"
+                    onChange={(e) => setUploadFile(e.target.files?.[0] || null)}
+                    disabled={isUploading}
+                  />
+                  {uploadFile && (
+                    <p className="text-sm text-green-600 mt-2 flex items-center gap-1">
+                      <CheckCircle className="h-4 w-4" />
+                      Selected: {uploadFile.name}
+                    </p>
+                  )}
+                </div>
+              </div>
+            </div>
+
+            {/* Upload Results */}
+            {uploadResults && (
+              <div className="bg-white p-4 rounded-lg border">
+                <h4 className="font-semibold text-sm mb-3">Upload Results</h4>
+                <div className="space-y-2">
+                  <div className="flex items-center justify-between p-2 bg-green-50 rounded border border-green-200">
+                    <div className="flex items-center gap-2">
+                      <CheckCircle className="h-5 w-5 text-green-600" />
+                      <span className="text-sm font-medium">Successful</span>
+                    </div>
+                    <span className="text-lg font-bold text-green-600">{uploadResults.successful}</span>
+                  </div>
+                  {uploadResults.failed > 0 && (
+                    <div className="flex items-center justify-between p-2 bg-red-50 rounded border border-red-200">
+                      <div className="flex items-center gap-2">
+                        <XCircle className="h-5 w-5 text-red-600" />
+                        <span className="text-sm font-medium">Failed</span>
+                      </div>
+                      <span className="text-lg font-bold text-red-600">{uploadResults.failed}</span>
+                    </div>
+                  )}
+                </div>
+
+                {/* Error Details */}
+                {uploadResults.errors && uploadResults.errors.length > 0 && (
+                  <div className="mt-3 max-h-40 overflow-y-auto">
+                    <p className="text-sm font-medium mb-2">Error Details:</p>
+                    <div className="space-y-1">
+                      {uploadResults.errors.map((error: any, index: number) => (
+                        <div key={index} className="text-xs bg-red-50 p-2 rounded border border-red-200">
+                          <span className="font-medium">Row {error.row}:</span> {error.error}
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                )}
+              </div>
+            )}
+
+            {/* Instructions */}
+            <div className="text-xs text-gray-600 space-y-1">
+              <p className="font-semibold">Required Fields:</p>
+              <ul className="list-disc list-inside ml-2 space-y-0.5">
+                <li>name, email, department</li>
+              </ul>
+              <p className="font-semibold mt-2">Optional Fields:</p>
+              <ul className="list-disc list-inside ml-2 space-y-0.5">
+                <li>employeeId, phone, designation, joiningDate, healthStatus, lastCheckup, insurancePlan</li>
+              </ul>
+            </div>
+          </div>
+
+          <DialogFooter>
+            <Button variant="outline" onClick={closeBulkUpload} disabled={isUploading}>
+              Cancel
+            </Button>
+            <Button onClick={handleBulkUpload} disabled={!uploadFile || isUploading}>
+              {isUploading ? 'Uploading...' : 'Upload Employees'}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 };

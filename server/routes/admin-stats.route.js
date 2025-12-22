@@ -1,58 +1,38 @@
 import express from 'express';
-import mysql from 'mysql2/promise';
+import { postgresSequelize } from '../db/postgres-sequelize.js';
 
 const router = express.Router();
-
-async function getPool() {
-  return mysql.createPool({
-    host: 'localhost',
-    user: process.env.DB_USER || 'mediczy',
-    password: process.env.DB_PASSWORD || 'Mediczy2024Secure',
-    database: process.env.DB_NAME || 'mediczy',
-    waitForConnections: true,
-    connectionLimit: 10,
-    queueLimit: 0,
-  });
-}
 
 // GET /api/dashboard/stats - Dashboard statistics (public read-only endpoint)
 router.get('/dashboard/stats', async (req, res) => {
   // Public endpoint - no auth required for read-only stats
   try {
-    const pool = await getPool();
-    
     // Get users count
-    const [usersResult] = await pool.query('SELECT COUNT(*) as count FROM users');
-    const usersCount = usersResult[0].count;
+    const [usersResult] = await postgresSequelize.query('SELECT COUNT(*) as count FROM users');
+    const usersCount = parseInt(usersResult[0]?.count || 0);
     
     // Get doctors count
-    const [doctorsResult] = await pool.query('SELECT COUNT(*) as count FROM doctors');
-    const doctorsCount = doctorsResult[0].count;
+    const [doctorsResult] = await postgresSequelize.query('SELECT COUNT(*) as count FROM doctors');
+    const doctorsCount = parseInt(doctorsResult[0]?.count || 0);
     
-    // Get labs count (clinics with category='lab')
-    const [labsResult] = await pool.query("SELECT COUNT(*) as count FROM clinics WHERE category='lab'");
-    const labsCount = labsResult[0].count;
-    
-    // Get clinics count (excluding labs - only polyclinic and dental categories)
-    const [clinicsResult] = await pool.query("SELECT COUNT(*) as count FROM clinics WHERE category != 'lab'");
-    const clinicsCount = clinicsResult[0].count;
-    
-    // Get pharmacies count (for now, using placeholder - add pharmacies table later)
-    const pharmaciesCount = 0;
+    // Get clinics count from tenants
+    const [clinicsResult] = await postgresSequelize.query("SELECT COUNT(*) as count FROM tenants WHERE type = 'clinic'");
+    const clinicsCount = parseInt(clinicsResult[0]?.count || 0);
     
     // Get hospitals count
-    const [hospitalsResult] = await pool.query('SELECT COUNT(*) as count FROM hospitals');
-    const hospitalsCount = hospitalsResult[0].count;
+    const [hospitalsResult] = await postgresSequelize.query('SELECT COUNT(*) as count FROM hospitals');
+    const hospitalsCount = parseInt(hospitalsResult[0]?.count || 0);
     
-    // Get corporates count (placeholder for now)
+    // Placeholder counts
+    const labsCount = 0;
+    const pharmaciesCount = 0;
     const corporatesCount = 0;
-    const activeCorporatesCount = 0;
     
     // Get recent users (last 5)
-    const [recentUsers] = await pool.query(`
-      SELECT id, firstName, lastName, email, createdAt 
+    const [recentUsers] = await postgresSequelize.query(`
+      SELECT id, "firstName", "lastName", email, "createdAt" 
       FROM users 
-      ORDER BY createdAt DESC 
+      ORDER BY "createdAt" DESC 
       LIMIT 5
     `);
     

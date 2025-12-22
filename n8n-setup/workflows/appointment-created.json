@@ -1,0 +1,156 @@
+{
+  "name": "Mediczy - Appointment Created",
+  "nodes": [
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "appointment-created",
+        "responseMode": "responseNode",
+        "options": {}
+      },
+      "id": "webhook-trigger",
+      "name": "Webhook Trigger",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 1,
+      "position": [250, 300]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "string": [
+            {
+              "value1": "={{ $json.data.status }}",
+              "value2": "pending"
+            }
+          ]
+        }
+      },
+      "id": "check-status",
+      "name": "Check Status",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 1,
+      "position": [450, 300]
+    },
+    {
+      "parameters": {
+        "url": "=http://localhost:8000/api/notifications/send",
+        "authentication": "predefinedCredentialType",
+        "sendBody": true,
+        "bodyParameters": {
+          "parameters": [
+            {
+              "name": "userId",
+              "value": "={{ $json.data.doctorId }}"
+            },
+            {
+              "name": "userType",
+              "value": "doctor"
+            },
+            {
+              "name": "type",
+              "value": "appointment_request"
+            },
+            {
+              "name": "title",
+              "value": "New Appointment Request"
+            },
+            {
+              "name": "message",
+              "value": "={{ $json.data.patientName }} has requested an appointment on {{ $json.data.date }} at {{ $json.data.time }}"
+            },
+            {
+              "name": "channels",
+              "value": "=['push', 'in-app', 'email']"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "send-doctor-notification",
+      "name": "Notify Doctor",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 3,
+      "position": [650, 200]
+    },
+    {
+      "parameters": {
+        "operation": "insert",
+        "table": "notification_analytics",
+        "columns": "user_id,user_type,notification_type,channel,status,sent_at,metadata",
+        "options": {}
+      },
+      "id": "log-postgres",
+      "name": "Log to PostgreSQL",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2,
+      "position": [850, 200]
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={{ JSON.stringify({ success: true, workflow: 'appointment-created' }) }}"
+      },
+      "id": "respond",
+      "name": "Respond",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1,
+      "position": [1050, 300]
+    }
+  ],
+  "connections": {
+    "Webhook Trigger": {
+      "main": [
+        [
+          {
+            "node": "Check Status",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Check Status": {
+      "main": [
+        [
+          {
+            "node": "Notify Doctor",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Respond",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Notify Doctor": {
+      "main": [
+        [
+          {
+            "node": "Log to PostgreSQL",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Log to PostgreSQL": {
+      "main": [
+        [
+          {
+            "node": "Respond",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "settings": {
+    "executionOrder": "v1"
+  }
+}

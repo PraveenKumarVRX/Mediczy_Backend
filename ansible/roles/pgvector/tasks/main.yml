@@ -1,0 +1,27 @@
+- name: Install PGVector packages
+  ansible.builtin.package:
+    name: "{{ pgvector_packages }}"
+    state: present
+
+- name: Apply PGVector bootstrap
+  become_user: postgres
+  community.postgresql.postgresql_query:
+    db: "{{ pgvector_db_name }}"
+    query: "{{ lookup('template', 'pgvector.sql.j2') }}"
+  loop: "{{ pgvector_databases }}"
+  loop_control:
+    loop_var: pgvector_db
+    label: "{{ pgvector_db_label }}"
+  vars:
+    pgvector_db_name: "{{ pgvector_db.name if pgvector_db is mapping else pgvector_db }}"
+    pgvector_db_label: "{{ pgvector_db.name if pgvector_db is mapping else pgvector_db }}"
+    pgvector_current_db: "{{ pgvector_db.name if pgvector_db is mapping else pgvector_db }}"
+  when: pgvector_databases | length > 0
+
+- name: Analyze vector tables
+  become_user: postgres
+  community.postgresql.postgresql_query:
+    db: "{{ item.database }}"
+    query: "ANALYZE {{ item.schema | default('public') }}.{{ item.table }};"
+  loop: "{{ pgvector_analyze_tables }}"
+  when: pgvector_analyze_tables | length > 0

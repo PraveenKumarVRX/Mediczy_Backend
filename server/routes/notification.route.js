@@ -2,6 +2,7 @@ import express from 'express';
 import { body, param, query, validationResult } from 'express-validator';
 import { authUser } from '../middleware/auth.middleware.js';
 import notificationService, { Notification, FCMToken } from '../services/notification.service.js';
+import { getKafkaWorkerStatus, getKafkaWorkerAnalytics } from '../workers/index.js';
 
 const router = express.Router();
 
@@ -252,6 +253,98 @@ router.get('/preferences', authUser, async (req, res) => {
     res.status(500).json({
       success: false,
       message: 'Failed to get preferences',
+      error: error.message
+    });
+  }
+});
+
+/**
+ * @route   POST /api/notifications/send
+ * @desc    Send notification (for n8n workflows)
+ * @access  Internal/Admin
+ */
+router.post('/send', [
+  body('userId').notEmpty().withMessage('User ID is required'),
+  body('userType').isIn(['patient', 'doctor', 'admin', 'hospital']).withMessage('Valid user type required'),
+  body('type').notEmpty().withMessage('Notification type is required'),
+  body('title').notEmpty().withMessage('Title is required'),
+  body('message').notEmpty().withMessage('Message is required')
+], async (req, res) => {
+  try {
+    const errors = validationResult(req);
+    if (!errors.isEmpty()) {
+      return res.status(400).json({ success: false, errors: errors.array() });
+    }
+
+    const { userId, userType, type, title, message, channels = ['push', 'in-app'], priority, actionUrl, metadata } = req.body;
+
+    const result = await notificationService.send({
+      userId,
+      userType,
+      type,
+      title,
+      message,
+      channels,
+      priority,
+      actionUrl,
+      data: metadata
+    });
+
+    res.json({
+      success: true,
+      message: 'Notification sent successfully',
+      result
+    });
+  } catch (error) {
+    res.status(500).json({
+      success: false,
+      message: 'Failed to send notification',
+      error: error.message
+    });
+  }
+});
+
+/**
+ * @route   GET /api/notifications/automation/status
+ * @desc    Get Kafka-n8n automation worker status
+ * @access  Private (Admin)
+ */
+router.get('/automation/status', authUser, async (req, res) => {
+  try {
+    const status = getKafkaWorkerStatus();
+    res.json({
+      success: true,
+      worker: status,
+      kafkaEnabled: process.env.KAFKA_ENABLED === 'true',
+      n8nUrl: process.env.N8N_WEBHOOK_URL || 'http://localhost:5678/webhook'
+    });
+  } catch (error) {
+    res.status(500).json({
+      success: false,
+      message: 'Failed to get automation status',
+      error: error.message
+    });
+  }
+});
+
+/**
+ * @route   GET /api/notifications/automation/analytics
+ * @desc    Get notification automation analytics
+ * @access  Private (Admin)
+ */
+router.get('/automation/analytics', authUser, async (req, res) => {
+  try {
+    const { timeRange = '24h' } = req.query;
+    const analytics = await getKafkaWorkerAnalytics(timeRange);
+    
+    res.json({
+      success: true,
+      analytics: analytics || { message: 'Kafka worker not available' }
+    });
+  } catch (error) {
+    res.status(500).json({
+      success: false,
+      message: 'Failed to get analytics',
       error: error.message
     });
   }

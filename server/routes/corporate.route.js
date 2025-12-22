@@ -8,6 +8,7 @@ import {
   getCorporateEmployeesHealth,
   getCorporateAppointments
 } from '../controller/corporate.controller.js';
+import { UserPlan, MembershipPlan } from '../models/postgres/membershipPlan.model.postgres.js';
 
 const router = express.Router();
 
@@ -430,35 +431,115 @@ const corporatePlans = [
   }
 ];
 
+const DEFAULT_PLAN_TEMPLATE = corporatePlans[0];
+const corporateAppointmentsStore = new Map();
+
+async function getActiveUserPlan(userId) {
+  return await UserPlan.findOne({
+    where: { userId, status: 'active' },
+    include: [{ model: MembershipPlan, as: 'plan' }]
+  });
+}
+
+function normalizePlanPayload(planRecord, userPlan, userContext) {
+  const planData = planRecord ? {
+    ...DEFAULT_PLAN_TEMPLATE,
+    ...planRecord,
+    benefits: planRecord.benefits || planRecord.metadata?.benefits
+  } : DEFAULT_PLAN_TEMPLATE;
+
+  return {
+    id: planData.id || planRecord?.id || userPlan?.membershipPlanId || DEFAULT_PLAN_TEMPLATE.id,
+    planName: planData.planName || planData.name || DEFAULT_PLAN_TEMPLATE.planName,
+    corporateName: userContext?.corporateName || userContext?.companyName || planData.corporateName || DEFAULT_PLAN_TEMPLATE.corporateName,
+    validFrom: userPlan?.startDate || planData.validFrom || '2024-01-01',
+    validTo: userPlan?.endDate || planData.validTo || '2024-12-31',
+    planType: planData.planType || planData.tier || DEFAULT_PLAN_TEMPLATE.planType,
+    benefits: planData.benefits || DEFAULT_PLAN_TEMPLATE.benefits,
+    features: {
+      ...DEFAULT_PLAN_TEMPLATE.features,
+      ...(planData.features || {})
+    },
+    coverage: {
+      ...DEFAULT_PLAN_TEMPLATE.coverage,
+      ...(planData.coverage || {})
+    }
+  };
+}
+
+function buildUsageSnapshot(userPlan) {
+  const usage = userPlan?.usage || {};
+  const benefitLimits = userPlan?.appliedLimits?.benefitLimits || userPlan?.plan?.benefitLimits || {};
+  return {
+    opdUsed: usage.opdVisits || usage.opdUsed || 0,
+    opdLimit: benefitLimits.opdVisits || benefitLimits.opdLimit || 10,
+    diagnosticsUsed: usage.diagnostics || usage.diagnosticsUsed || 0,
+    diagnosticsLimit: benefitLimits.diagnostics || benefitLimits.diagnosticsLimit || 5,
+    amountUsed: usage.benefitINR?.total || usage.amountUsed || 0,
+    amountLimit: benefitLimits.totalBenefitINR || benefitLimits.amountLimit || 8000
+  };
+}
+
+function deriveHealthCheckups(planRecord) {
+  const packageData = planRecord?.healthCheckPackage || planRecord?.healthCheckPackages;
+  if (packageData?.checkups && Array.isArray(packageData.checkups)) {
+    return packageData.checkups;
+  }
+  return [
+    {
+      id: 'chk-basic',
+      name: 'Basic Health Checkup',
+      description: 'Essential screening covering CBC, lipid profile, and vitals',
+      tests: ['CBC', 'Blood Sugar', 'Lipid Profile', 'Blood Pressure', 'BMI'],
+      duration: '2 hours',
+      fasting: true,
+      price: 2000,
+      discountedPrice: planRecord?.planType === 'elite' ? 0 : 500,
+      category: 'Basic',
+      ageGroup: '18-40 years',
+      gender: 'All'
+    },
+    {
+      id: 'chk-comprehensive',
+      name: 'Comprehensive Health Checkup',
+      description: 'Advanced tests with imaging for preventive diagnostics',
+      tests: ['CBC', 'HbA1c', 'LFT', 'KFT', 'Vitamin D', 'Vitamin B12', 'ECG'],
+      duration: '4 hours',
+      fasting: true,
+      price: 5000,
+      discountedPrice: planRecord?.planType === 'elite' ? 0 : 1000,
+      category: 'Comprehensive',
+      ageGroup: '25-60 years',
+      gender: 'All'
+    }
+  ];
+}
+
+function getUserAppointments(userId) {
+  return corporateAppointmentsStore.get(userId) || [];
+}
+
+function addUserAppointment(userId, appointment) {
+  const existing = corporateAppointmentsStore.get(userId) || [];
+  corporateAppointmentsStore.set(userId, [appointment, ...existing].slice(0, 25));
+}
+
 // Get user's corporate benefits/plan
 router.get('/my-benefits', authUser, async (req, res) => {
   try {
-    const userId = req.user.id;
-    
-    // In production, query database for user's corporate enrollment
-    // For now, return first plan as example
-    const userPlan = corporatePlans[0];
-    
-    if (!userPlan) {
-      return res.status(404).json({
-        success: false,
-        message: 'No corporate plan found for this user'
-      });
-    }
+    const activePlan = await getActiveUserPlan(req.user.id);
+    const planPayload = normalizePlanPayload(activePlan?.plan?.toJSON(), activePlan?.toJSON(), req.user);
+    const usage = buildUsageSnapshot(activePlan?.toJSON());
 
     res.json({
       success: true,
+      linkedPlan: Boolean(activePlan),
+      plan: planPayload,
+      usage,
       data: {
-        enrolled: true,
-        plan: userPlan,
-        usage: {
-          opdUsed: 2,
-          opdLimit: 10,
-          diagnosticsUsed: 1,
-          diagnosticsLimit: 5,
-          amountUsed: 2500,
-          amountLimit: 8000
-        }
+        linkedPlan: Boolean(activePlan),
+        plan: planPayload,
+        usage
       }
     });
   } catch (error) {
@@ -471,12 +552,109 @@ router.get('/my-benefits', authUser, async (req, res) => {
   }
 });
 
+router.get('/health-checkups', authUser, async (req, res) => {
+  try {
+    const activePlan = await getActiveUserPlan(req.user.id);
+    const planConfig = activePlan?.plan?.toJSON();
+    const checkups = deriveHealthCheckups(planConfig);
+    res.json({
+      success: true,
+      linkedPlan: Boolean(activePlan),
+      checkups,
+      data: { checkups }
+    });
+  } catch (error) {
+    console.error('Error fetching corporate health checkups:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Failed to fetch health checkups',
+      error: error.message
+    });
+  }
+});
+
+router.get('/my-appointments', authUser, async (req, res) => {
+  try {
+    const appointments = getUserAppointments(req.user.id);
+    res.json({
+      success: true,
+      appointments,
+      data: { appointments }
+    });
+  } catch (error) {
+    console.error('Error fetching corporate appointments:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Failed to fetch appointments',
+      error: error.message
+    });
+  }
+});
+
+router.post('/book-checkup', authUser, async (req, res) => {
+  try {
+    const { checkupId, preferredDate, preferredTime, location, hospital, specialInstructions } = req.body || {};
+    if (!checkupId || !preferredDate || !preferredTime || !location) {
+      return res.status(400).json({
+        success: false,
+        message: 'checkupId, preferredDate, preferredTime, and location are required'
+      });
+    }
+
+    const activePlan = await getActiveUserPlan(req.user.id);
+    if (!activePlan) {
+      return res.status(400).json({
+        success: false,
+        message: 'No active corporate plan found for user'
+      });
+    }
+
+    const appointment = {
+      id: `CHK-${Date.now()}`,
+      appointmentId: `CHK-${Math.floor(Math.random() * 1e6)}`,
+      userId: req.user.id,
+      checkupId,
+      appointmentType: 'Annual Health Checkup',
+      date: preferredDate,
+      time: preferredTime,
+      hospital: hospital || 'Network Hospital',
+      location,
+      doctor: 'Corporate Wellness Team',
+      status: 'scheduled',
+      bookedOn: new Date().toISOString().split('T')[0],
+      specialInstructions: specialInstructions || null,
+      claimAmount: 0
+    };
+
+    addUserAppointment(req.user.id, appointment);
+
+    res.status(201).json({
+      success: true,
+      appointment,
+      data: { appointment }
+    });
+  } catch (error) {
+    console.error('Error booking corporate checkup:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Failed to book health checkup',
+      error: error.message
+    });
+  }
+});
+
 // Get all available corporate plans (public - for browsing)
 router.get('/plans', async (req, res) => {
   try {
+    const plans = await MembershipPlan.findAll({
+      where: { isActive: true }
+    });
+    const payload = plans.length
+      ? plans.map(plan => normalizePlanPayload(plan.toJSON(), null, {}))
+      : corporatePlans;
     res.json({
       success: true,
-      data: corporatePlans
+      data: payload
     });
   } catch (error) {
     console.error('Error fetching corporate plans:', error);
@@ -492,7 +670,12 @@ router.get('/plans', async (req, res) => {
 router.get('/plans/:planId', authUser, async (req, res) => {
   try {
     const { planId } = req.params;
-    const plan = corporatePlans.find(p => p.id === planId);
+    let plan = await MembershipPlan.findOne({ where: { id: planId } });
+    if (plan) {
+      plan = normalizePlanPayload(plan.toJSON(), null, req.user);
+    } else {
+      plan = corporatePlans.find(p => p.id === planId);
+    }
     
     if (!plan) {
       return res.status(404).json({
@@ -681,6 +864,96 @@ router.delete('/employees/:id', authUser, requireRole('corporate'), async (req, 
   corporateEmployees = corporateEmployees.filter((e) => e.id !== id && e.employeeId !== id);
   if (corporateEmployees.length === before) return res.status(404).json({ success: false, message: 'Employee not found' });
   return res.json({ success: true });
+});
+
+// Bulk upload employees from CSV/Excel
+router.post('/employees/bulk-upload', authUser, requireRole('corporate'), async (req, res) => {
+  try {
+    const { employees: employeeList } = req.body;
+    
+    if (!Array.isArray(employeeList) || employeeList.length === 0) {
+      return res.status(400).json({ 
+        success: false, 
+        message: 'employees array is required and must not be empty' 
+      });
+    }
+
+    const successfulUploads = [];
+    const errors = [];
+
+    employeeList.forEach((emp, index) => {
+      // Validate required fields
+      if (!emp.name || !emp.email || !emp.department) {
+        errors.push({
+          row: index + 1,
+          employee: emp,
+          error: 'Missing required fields: name, email, and department are required'
+        });
+        return;
+      }
+
+      // Check for duplicate email
+      const existingEmployee = corporateEmployees.find(e => e.email === emp.email);
+      if (existingEmployee) {
+        errors.push({
+          row: index + 1,
+          employee: emp,
+          error: `Email already exists: ${emp.email}`
+        });
+        return;
+      }
+
+      // Create employee
+      const generatedEmployeeId = emp.employeeId || `EMP${String(Date.now() + index).slice(-5)}`;
+      const created = {
+        id: generatedEmployeeId,
+        employeeId: generatedEmployeeId,
+        name: emp.name,
+        email: emp.email,
+        phone: emp.phone || '',
+        department: emp.department,
+        designation: emp.designation || '',
+        joiningDate: emp.joiningDate || new Date().toISOString().slice(0, 10),
+        healthStatus: emp.healthStatus || 'good',
+        lastCheckup: emp.lastCheckup || new Date().toISOString().slice(0, 10),
+        insurancePlan: emp.insurancePlan || 'Standard Plan',
+      };
+
+      corporateEmployees = [created, ...corporateEmployees];
+      successfulUploads.push(created);
+    });
+
+    return res.status(201).json({ 
+      success: true, 
+      data: { 
+        employees: successfulUploads,
+        summary: {
+          total: employeeList.length,
+          successful: successfulUploads.length,
+          failed: errors.length
+        },
+        errors: errors.length > 0 ? errors : undefined
+      } 
+    });
+  } catch (error) {
+    console.error('Bulk upload error:', error);
+    return res.status(500).json({ 
+      success: false, 
+      message: 'Failed to process bulk upload',
+      error: error.message 
+    });
+  }
+});
+
+// Download employee template CSV
+router.get('/employees/download-template', authUser, requireRole('corporate'), async (req, res) => {
+  const csvHeader = 'employeeId,name,email,phone,department,designation,joiningDate,healthStatus,lastCheckup,insurancePlan\n';
+  const csvSample = 'EMP001,John Doe,john.doe@company.com,+1234567890,Engineering,Software Engineer,2024-01-15,good,2024-12-01,Standard Plan\n';
+  const csvTemplate = csvHeader + csvSample;
+  
+  res.setHeader('Content-Type', 'text/csv');
+  res.setHeader('Content-Disposition', 'attachment; filename="employee_template.csv"');
+  res.send(csvTemplate);
 });
 
 // ---------------------------------------------------------------------------

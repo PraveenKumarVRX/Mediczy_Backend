@@ -10,6 +10,7 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from ".
 import { Badge } from "../../components/ui/badge";
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger, DropdownMenuSeparator } from "../../components/ui/dropdown-menu";
 import AdminLayout from "../../components/layout/AdminLayout";
+import { useToast } from '../../hooks/use-toast';
 import { 
   Download, Upload, Plus, FileSpreadsheet, UserPlus,
   Search, Eye, Edit, Trash2, MoreVertical, Star, Building2, Phone, Mail,
@@ -207,6 +208,7 @@ const sampleOHCData: OHCCentre[] = [
 ];
 
 const OHCManagement = () => {
+  const { toast } = useToast();
   // Form and upload state
   const [loading, setLoading] = useState(false);
   const [result, setResult] = useState<{ message: string; count?: number } | null>(null);
@@ -214,6 +216,35 @@ const OHCManagement = () => {
   const [jsonInput, setJsonInput] = useState('');
   const [activeTab, setActiveTab] = useState('list');
   const [editingOHC, setEditingOHC] = useState<OHCCentre | null>(null);
+  const [createForm, setCreateForm] = useState<Partial<OHCCentre>>({
+    ohcName: '',
+    ohcCode: '',
+    email: '',
+    phoneNumber: '',
+    contactPerson: '',
+    designation: '',
+    area: '',
+    city: '',
+    state: '',
+    pincode: '',
+    corporateCompany: '',
+    industryType: '',
+    facilityType: 'In-house',
+    licenseNumber: '',
+    employeeCapacity: 0,
+    establishedYear: new Date().getFullYear(),
+    operatingHours: '',
+    emergencyServices: false,
+    preventiveCareServices: false,
+    occupationalHealthServices: false,
+    firstAidServices: false,
+    medicalStaff: 0,
+    ambulanceAvailable: false,
+    equipmentLevel: 'Basic',
+    status: 'Active',
+    specializations: [],
+    complianceCertifications: []
+  });
   const fileInputRef = useRef<HTMLInputElement>(null);
   const token = localStorage.getItem('adminToken');
 
@@ -243,6 +274,78 @@ const OHCManagement = () => {
     } finally {
       setLoading(false);
     }
+  };
+
+  const handleCreateOHC = (e: React.FormEvent) => {
+    e.preventDefault();
+    setError(null);
+
+    const now = new Date();
+    const newOHC: OHCCentre = {
+      id: `OHC_${now.getTime()}`,
+      ohcName: (createForm.ohcName || '').trim(),
+      ohcCode: (createForm.ohcCode || '').trim(),
+      email: (createForm.email || '').trim(),
+      phoneNumber: (createForm.phoneNumber || '').trim(),
+      contactPerson: (createForm.contactPerson || '').trim(),
+      designation: (createForm.designation || '').trim(),
+      area: (createForm.area || '').trim(),
+      city: (createForm.city || '').trim(),
+      state: (createForm.state || '').trim(),
+      pincode: (createForm.pincode || '').trim(),
+      corporateCompany: (createForm.corporateCompany || '').trim(),
+      industryType: (createForm.industryType || '').trim(),
+      facilityType: (createForm.facilityType as any) || 'In-house',
+      licenseNumber: (createForm.licenseNumber || '').trim(),
+      employeeCapacity: Number(createForm.employeeCapacity || 0),
+      establishedYear: Number(createForm.establishedYear || now.getFullYear()),
+      operatingHours: (createForm.operatingHours || '').trim(),
+      emergencyServices: !!createForm.emergencyServices,
+      preventiveCareServices: !!createForm.preventiveCareServices,
+      occupationalHealthServices: !!createForm.occupationalHealthServices,
+      firstAidServices: !!createForm.firstAidServices,
+      medicalStaff: Number(createForm.medicalStaff || 0),
+      bedCapacity: createForm.bedCapacity ? Number(createForm.bedCapacity) : undefined,
+      ambulanceAvailable: !!createForm.ambulanceAvailable,
+      equipmentLevel: (createForm.equipmentLevel as any) || 'Basic',
+      rating: 0,
+      reviewCount: 0,
+      status: (createForm.status as any) || 'Active',
+      joinedDate: now.toISOString().slice(0, 10),
+      lastInspection: now.toISOString().slice(0, 10),
+      website: (createForm.website || '').trim() || undefined,
+      specializations: Array.isArray(createForm.specializations) ? createForm.specializations : [],
+      complianceCertifications: Array.isArray(createForm.complianceCertifications) ? createForm.complianceCertifications : []
+    };
+
+    if (!newOHC.ohcName || !newOHC.ohcCode || !newOHC.email) {
+      setError('Please fill OHC Name, OHC Code, and Email.');
+      return;
+    }
+
+    setOHCCentres(prev => [newOHC, ...prev]);
+    setResult({ message: 'OHC created successfully', count: 1 });
+    setActiveTab('list');
+
+    setCreateForm(prev => ({
+      ...prev,
+      ohcName: '',
+      ohcCode: '',
+      email: '',
+      phoneNumber: '',
+      contactPerson: '',
+      designation: '',
+      area: '',
+      city: '',
+      state: '',
+      pincode: '',
+      corporateCompany: '',
+      industryType: '',
+      licenseNumber: '',
+      operatingHours: '',
+      employeeCapacity: 0,
+      medicalStaff: 0
+    }));
   };
 
   // Filtered and paginated OHC centres
@@ -374,12 +477,147 @@ const OHCManagement = () => {
         )}
 
         <Tabs value={activeTab} onValueChange={setActiveTab}>
-          <TabsList className="grid w-full grid-cols-4 lg:w-[400px]">
+          <TabsList className="grid w-full grid-cols-5 lg:w-[520px]">
             <TabsTrigger value="list">List View</TabsTrigger>
             <TabsTrigger value="analytics">Analytics</TabsTrigger>
+            <TabsTrigger value="create">Add OHC</TabsTrigger>
             <TabsTrigger value="excel">Excel Upload</TabsTrigger>
             <TabsTrigger value="json">JSON Upload</TabsTrigger>
           </TabsList>
+
+          <TabsContent value="create" className="space-y-6">
+            <Card>
+              <CardHeader>
+                <CardTitle>Add Occupational Health Centre</CardTitle>
+                <p className="text-sm text-muted-foreground">
+                  Create a new OHC entry (saved locally in this admin view).
+                </p>
+              </CardHeader>
+              <CardContent>
+                <form onSubmit={handleCreateOHC} className="space-y-4">
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                    <div className="space-y-2">
+                      <Label htmlFor="ohcName">OHC Name *</Label>
+                      <Input
+                        id="ohcName"
+                        value={createForm.ohcName || ''}
+                        onChange={(e) => setCreateForm(prev => ({ ...prev, ohcName: e.target.value }))}
+                        placeholder="Enter OHC name"
+                      />
+                    </div>
+                    <div className="space-y-2">
+                      <Label htmlFor="ohcCode">OHC Code *</Label>
+                      <Input
+                        id="ohcCode"
+                        value={createForm.ohcCode || ''}
+                        onChange={(e) => setCreateForm(prev => ({ ...prev, ohcCode: e.target.value }))}
+                        placeholder="Enter OHC code"
+                      />
+                    </div>
+                    <div className="space-y-2">
+                      <Label htmlFor="email">Email *</Label>
+                      <Input
+                        id="email"
+                        type="email"
+                        value={createForm.email || ''}
+                        onChange={(e) => setCreateForm(prev => ({ ...prev, email: e.target.value }))}
+                        placeholder="ohc@example.com"
+                      />
+                    </div>
+                    <div className="space-y-2">
+                      <Label htmlFor="phone">Phone</Label>
+                      <Input
+                        id="phone"
+                        value={createForm.phoneNumber || ''}
+                        onChange={(e) => setCreateForm(prev => ({ ...prev, phoneNumber: e.target.value }))}
+                        placeholder="+91XXXXXXXXXX"
+                      />
+                    </div>
+                    <div className="space-y-2">
+                      <Label htmlFor="corporateCompany">Corporate Company</Label>
+                      <Input
+                        id="corporateCompany"
+                        value={createForm.corporateCompany || ''}
+                        onChange={(e) => setCreateForm(prev => ({ ...prev, corporateCompany: e.target.value }))}
+                        placeholder="Company name"
+                      />
+                    </div>
+                    <div className="space-y-2">
+                      <Label htmlFor="industryType">Industry Type</Label>
+                      <Input
+                        id="industryType"
+                        value={createForm.industryType || ''}
+                        onChange={(e) => setCreateForm(prev => ({ ...prev, industryType: e.target.value }))}
+                        placeholder="e.g., Manufacturing"
+                      />
+                    </div>
+                    <div className="space-y-2">
+                      <Label>Facility Type</Label>
+                      <Select
+                        value={(createForm.facilityType as any) || 'In-house'}
+                        onValueChange={(value) => setCreateForm(prev => ({ ...prev, facilityType: value as any }))}
+                      >
+                        <SelectTrigger>
+                          <SelectValue placeholder="Select facility type" />
+                        </SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value="In-house">In-house</SelectItem>
+                          <SelectItem value="Outsourced">Outsourced</SelectItem>
+                          <SelectItem value="Shared">Shared</SelectItem>
+                          <SelectItem value="Mobile">Mobile</SelectItem>
+                        </SelectContent>
+                      </Select>
+                    </div>
+                    <div className="space-y-2">
+                      <Label>Status</Label>
+                      <Select
+                        value={(createForm.status as any) || 'Active'}
+                        onValueChange={(value) => setCreateForm(prev => ({ ...prev, status: value as any }))}
+                      >
+                        <SelectTrigger>
+                          <SelectValue placeholder="Select status" />
+                        </SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value="Active">Active</SelectItem>
+                          <SelectItem value="Inactive">Inactive</SelectItem>
+                          <SelectItem value="Pending">Pending</SelectItem>
+                          <SelectItem value="Suspended">Suspended</SelectItem>
+                        </SelectContent>
+                      </Select>
+                    </div>
+                    <div className="space-y-2">
+                      <Label htmlFor="city">City</Label>
+                      <Input
+                        id="city"
+                        value={createForm.city || ''}
+                        onChange={(e) => setCreateForm(prev => ({ ...prev, city: e.target.value }))}
+                        placeholder="City"
+                      />
+                    </div>
+                    <div className="space-y-2">
+                      <Label htmlFor="state">State</Label>
+                      <Input
+                        id="state"
+                        value={createForm.state || ''}
+                        onChange={(e) => setCreateForm(prev => ({ ...prev, state: e.target.value }))}
+                        placeholder="State"
+                      />
+                    </div>
+                  </div>
+
+                  <div className="flex gap-2">
+                    <Button type="submit" disabled={loading}>
+                      <Plus className="mr-2 h-4 w-4" />
+                      Create OHC
+                    </Button>
+                    <Button type="button" variant="outline" onClick={() => setActiveTab('list')}>
+                      Cancel
+                    </Button>
+                  </div>
+                </form>
+              </CardContent>
+            </Card>
+          </TabsContent>
 
           <TabsContent value="list" className="space-y-6">
             {/* Search and Filter Controls */}
@@ -591,17 +829,25 @@ const OHCManagement = () => {
                                     <Edit className="mr-2 h-4 w-4" />
                                     Edit OHC
                                   </DropdownMenuItem>
-                                  <DropdownMenuItem onClick={() => alert(`View details for ${ohc.ohcName}`)}>
+                                  <DropdownMenuItem onClick={() => toast({ title: "OHC Details", description: `Viewing details for ${ohc.ohcName}` })}>
                                     <Eye className="mr-2 h-4 w-4" />
                                     View Details
                                   </DropdownMenuItem>
-                                  <DropdownMenuItem onClick={() => alert(`Inspect ${ohc.ohcName}`)}>
+                                  <DropdownMenuItem onClick={() => toast({ title: "Schedule Inspection", description: `Scheduling inspection for ${ohc.ohcName}` })}>
                                     <Shield className="mr-2 h-4 w-4" />
                                     Schedule Inspection
                                   </DropdownMenuItem>
                                   <DropdownMenuSeparator />
                                   <DropdownMenuItem 
-                                    onClick={() => alert(`Delete ${ohc.ohcName}?`)} 
+                                    onClick={() => toast({ title: "Confirm Delete", description: `Are you sure you want to delete ${ohc.ohcName}?`, variant: "destructive" })} 
+                                    className="text-destructive focus:text-destructive"
+                                  >
+                                    <Shield className="mr-2 h-4 w-4" />
+                                    Schedule Inspection
+                                  </DropdownMenuItem>
+                                  <DropdownMenuSeparator />
+                                  <DropdownMenuItem 
+                                    onClick={() => toast({ title: "Confirm Delete", description: `Are you sure you want to delete ${ohc.ohcName}?`, variant: "destructive" })} 
                                     className="text-destructive focus:text-destructive"
                                   >
                                     <Trash2 className="mr-2 h-4 w-4" />
@@ -836,13 +1082,13 @@ const OHCManagement = () => {
               <CardContent>
                 <div className="space-y-4">
                   <p className="text-sm text-muted-foreground">
-                    Upload an Excel file (.xlsx, .xls) with OHC centre records.
+                    Upload an Excel file (.xlsx) with OHC centre records.
                   </p>
                   <div className="flex items-center gap-4">
                     <Input 
                       ref={fileInputRef} 
                       type="file" 
-                      accept=".xlsx,.xls" 
+                      accept=".xlsx" 
                       onChange={handleExcelUpload} 
                       disabled={loading} 
                     />

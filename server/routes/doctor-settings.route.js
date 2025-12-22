@@ -27,11 +27,57 @@ router.get('/appointment-config', authUser, async (req, res) => {
       });
     }
 
+    // Ensure weeklySchedule has a default structure
+    const defaultSchedule = {
+      monday: { isOff: false, online: { enabled: true, startTime: '09:00', endTime: '13:00' }, inPerson: { enabled: true, startTime: '14:00', endTime: '18:00' } },
+      tuesday: { isOff: false, online: { enabled: true, startTime: '09:00', endTime: '13:00' }, inPerson: { enabled: true, startTime: '14:00', endTime: '18:00' } },
+      wednesday: { isOff: false, online: { enabled: true, startTime: '09:00', endTime: '13:00' }, inPerson: { enabled: true, startTime: '14:00', endTime: '18:00' } },
+      thursday: { isOff: false, online: { enabled: true, startTime: '09:00', endTime: '13:00' }, inPerson: { enabled: true, startTime: '14:00', endTime: '18:00' } },
+      friday: { isOff: false, online: { enabled: true, startTime: '09:00', endTime: '13:00' }, inPerson: { enabled: true, startTime: '14:00', endTime: '18:00' } },
+      saturday: { isOff: false, online: { enabled: true, startTime: '10:00', endTime: '14:00' }, inPerson: { enabled: false, startTime: '14:00', endTime: '18:00' } },
+      sunday: { isOff: true, online: { enabled: false, startTime: '09:00', endTime: '13:00' }, inPerson: { enabled: false, startTime: '14:00', endTime: '18:00' } }
+    };
+
+    // Parse weeklySchedule if it's a string, or use default if null
+    let weeklySchedule = doctor.weeklySchedule;
+    if (!weeklySchedule) {
+      weeklySchedule = defaultSchedule;
+    } else if (typeof weeklySchedule === 'string') {
+      try {
+        weeklySchedule = JSON.parse(weeklySchedule);
+      } catch (e) {
+        console.error('Failed to parse weeklySchedule:', e);
+        weeklySchedule = defaultSchedule;
+      }
+    }
+    
+    // Ensure all days are present with proper structure
+    Object.keys(defaultSchedule).forEach(day => {
+      if (!weeklySchedule[day]) {
+        weeklySchedule[day] = defaultSchedule[day];
+      } else {
+        // Ensure each day has complete structure
+        weeklySchedule[day] = {
+          isOff: weeklySchedule[day].isOff ?? defaultSchedule[day].isOff,
+          online: {
+            enabled: weeklySchedule[day].online?.enabled ?? defaultSchedule[day].online.enabled,
+            startTime: weeklySchedule[day].online?.startTime || defaultSchedule[day].online.startTime,
+            endTime: weeklySchedule[day].online?.endTime || defaultSchedule[day].online.endTime
+          },
+          inPerson: {
+            enabled: weeklySchedule[day].inPerson?.enabled ?? defaultSchedule[day].inPerson.enabled,
+            startTime: weeklySchedule[day].inPerson?.startTime || defaultSchedule[day].inPerson.startTime,
+            endTime: weeklySchedule[day].inPerson?.endTime || defaultSchedule[day].inPerson.endTime
+          }
+        };
+      }
+    });
+
     res.json({
       success: true,
       config: {
         slotDuration: doctor.slotDuration || 15,
-        weeklySchedule: doctor.weeklySchedule,
+        weeklySchedule: weeklySchedule,
         offDays: doctor.offDays || ['sunday'],
         onlineConsultationEnabled: doctor.onlineConsultationEnabled ?? true,
         inPersonConsultationEnabled: doctor.inPersonConsultationEnabled ?? true,

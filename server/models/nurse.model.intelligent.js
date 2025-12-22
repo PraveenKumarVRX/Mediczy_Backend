@@ -1,8 +1,14 @@
-import { sequelize } from '../db/mariadb.js';
+import { postgresSequelize as sequelize } from '../db/postgres-sequelize.js';
 import { DataTypes } from 'sequelize';
 import bcrypt from 'bcrypt';
 
-// Define Nurse model
+const SALT_ROUNDS = 10;
+
+function isBcryptHash(value) {
+  return typeof value === 'string' && value.startsWith('$2');
+}
+
+// Define Nurse model - NOW USING POSTGRESQL
 const Nurse = sequelize.define('Nurse', {
   id: {
     type: DataTypes.INTEGER,
@@ -10,41 +16,76 @@ const Nurse = sequelize.define('Nurse', {
     autoIncrement: true
   },
   firstName: {
-    type: DataTypes.STRING,
+    type: DataTypes.STRING(100),
     allowNull: false
   },
   lastName: {
-    type: DataTypes.STRING,
+    type: DataTypes.STRING(100),
     allowNull: false
   },
   email: {
-    type: DataTypes.STRING,
+    type: DataTypes.STRING(255),
     allowNull: false,
     unique: true
   },
   password: {
-    type: DataTypes.STRING,
+    type: DataTypes.STRING(255),
     allowNull: true
   },
   phoneNumber: {
-    type: DataTypes.STRING,
+    type: DataTypes.STRING(20),
     allowNull: true
   },
-  department: {
-    type: DataTypes.STRING,
+  qualification: {
+    type: DataTypes.STRING(255),
+    allowNull: true
+  },
+  specialization: {
+    type: DataTypes.STRING(255),
+    allowNull: true
+  },
+  experience: {
+    type: DataTypes.INTEGER,
     allowNull: true
   },
   licenseNumber: {
-    type: DataTypes.STRING,
+    type: DataTypes.STRING(100),
     allowNull: true
   },
-  isActive: {
+  // PostgreSQL uses 'status' instead of 'isActive'
+  status: {
+    type: DataTypes.STRING(50),
+    defaultValue: 'pending'
+  },
+  isVerified: {
     type: DataTypes.BOOLEAN,
-    defaultValue: true
+    defaultValue: false
   }
 }, {
   tableName: 'nurses',
-  timestamps: true
+  timestamps: true,
+  // Virtual getter for backward compatibility
+  getterMethods: {
+    isActive() {
+      return this.status === 'active';
+    },
+    // Map department to specialization for backward compatibility
+    department() {
+      return this.specialization;
+    }
+  },
+  hooks: {
+    beforeCreate: async (nurse) => {
+      if (nurse.password && !isBcryptHash(nurse.password)) {
+        nurse.password = await bcrypt.hash(nurse.password, SALT_ROUNDS);
+      }
+    },
+    beforeUpdate: async (nurse) => {
+      if (nurse.changed('password') && nurse.password && !isBcryptHash(nurse.password)) {
+        nurse.password = await bcrypt.hash(nurse.password, SALT_ROUNDS);
+      }
+    }
+  }
 });
 
 // Add instance method to compare passwords

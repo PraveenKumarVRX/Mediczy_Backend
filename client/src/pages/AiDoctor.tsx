@@ -182,6 +182,21 @@ const AiDoctor = () => {
   // Auth
   const { currentUser } = useAuth();
 
+  // Check authentication on mount
+  useEffect(() => {
+    const token = getAuthToken();
+    if (!token && !currentUser) {
+      toast.error('Please log in to use Dr. iSHA', {
+        description: 'You need to be logged in to access the AI Health Assistant',
+        duration: 5000
+      });
+      // Redirect to login after a short delay
+      setTimeout(() => {
+        window.location.href = '/login?redirect=/ai-doctor';
+      }, 2000);
+    }
+  }, [currentUser]);
+
   // Translation helper
   const t = (key: string) => {
     return translations[currentLanguage.code]?.[key] || translations.en[key] || key;
@@ -456,7 +471,13 @@ const AiDoctor = () => {
 
     const auth = getAuthToken();
     if (!auth) {
-      toast.error('Please log in to use Dr. iSHA');
+      toast.error('Authentication required', {
+        description: 'Please log in to continue using Dr. iSHA',
+        action: {
+          label: 'Login',
+          onClick: () => window.location.href = '/login?redirect=/ai-doctor'
+        }
+      });
       return;
     }
 
@@ -509,15 +530,45 @@ const AiDoctor = () => {
           }, 500);
         }
       } else {
+        // Check if authentication error
+        if (response.status === 401 || response.error?.requiresLogin) {
+          toast.error('Session expired', {
+            description: 'Please log in again to continue',
+            action: {
+              label: 'Login',
+              onClick: () => window.location.href = '/login?redirect=/ai-doctor'
+            },
+            duration: 10000
+          });
+          return;
+        }
+        
         throw new Error(response.error?.message || response.error || 'Orchestrator returned no response');
       }
     } catch (error) {
       console.error('AI request error:', error);
       const errorMessage = error instanceof Error ? error.message : 'Unknown error';
-      toast.error(`Failed to get response: ${errorMessage}`);
+      
+      // Check if it's an authentication error
+      if (error.response?.status === 401 || errorMessage.includes('token')) {
+        toast.error('Session expired', {
+          description: 'Please log in again to continue',
+          action: {
+            label: 'Login',
+            onClick: () => window.location.href = '/login?redirect=/ai-doctor'
+          }
+        });
+        return;
+      }
+      
+      toast.error(`Failed to get response: ${errorMessage}`, {
+        description: 'The AI assistant is temporarily unavailable. Please try again.',
+        duration: 5000
+      });
+      
       setMessages(prev => [...prev, {
         role: "assistant",
-        content: `I apologize, but I'm having trouble processing your request right now. Error: ${errorMessage}. Please try again in a moment. If you're experiencing a medical emergency, please call emergency services immediately.`,
+        content: `I apologize, but I'm having trouble processing your request right now. ${errorMessage.includes('Network') ? 'Please check your internet connection and try again.' : 'Please try again in a moment.'} If you're experiencing a medical emergency, please call emergency services immediately.`,
         language: currentLanguage.code,
         id: 'error_' + Date.now()
       }]);

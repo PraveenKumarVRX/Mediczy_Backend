@@ -1,0 +1,16 @@
+---
+- name: Configure Redis caching tier
+  hosts: redis
+  become: true
+  roles:
+    - redis
+  tags:
+    - redis
+
+- name: Configure Kafka streaming tier
+  hosts: kafka
+  become: true
+  roles:
+    - kafka
+  tags:
+    - kafka

@@ -39,25 +39,6 @@ const PharmacyLogin = () => {
     
     console.log('Pharmacy login attempt:', { email, password: '***' });
     
-    if (email === 'pharmacy@mediczy.com' && password === 'Pharmacy123') {
-      console.log('🚀 Using quick authentication bypass');
-      
-      localStorage.removeItem('token');
-      localStorage.removeItem('userType');
-      
-      localStorage.setItem('pharmacyToken', 'dev-pharmacy-token');
-      localStorage.setItem('pharmacyData', JSON.stringify({
-        id: 'pharmacy_dev',
-        email: 'pharmacy@mediczy.com',
-        name: 'Sample Pharmacy',
-        type: 'Retail Pharmacy'
-      }));
-      
-      setLoading(false);
-      navigate('/pharmacy/dashboard');
-      return;
-    }
-    
     try {
       const controller = new AbortController();
       const timeoutId = setTimeout(() => controller.abort(), 10000);
@@ -65,6 +46,38 @@ const PharmacyLogin = () => {
       const { data } = await api.post('/pharmacy/login', { email, password }, { signal: controller.signal, skipAuth: true });
 
       clearTimeout(timeoutId);
+
+      // Clear other login tokens to prevent cross-portal confusion
+      const tokenKeys = [
+        'token',
+        'doctorToken',
+        'teamToken',
+        'nurseToken',
+        'assistantToken',
+        'adminToken',
+        'corporateToken',
+        'hospitalToken',
+        'clinicToken',
+        'labToken',
+        'ambulanceToken',
+        'homecareToken'
+      ];
+      const dataKeys = [
+        'userData',
+        'doctorData',
+        'teamData',
+        'nurseData',
+        'assistantData',
+        'adminData',
+        'corporateData',
+        'hospitalData',
+        'clinicData',
+        'labData',
+        'ambulanceData',
+        'homecareData'
+      ];
+      tokenKeys.forEach((key) => localStorage.removeItem(key));
+      dataKeys.forEach((key) => localStorage.removeItem(key));
 
       localStorage.setItem('pharmacyToken', data.token);
       localStorage.setItem('pharmacyData', JSON.stringify(data.pharmacy));

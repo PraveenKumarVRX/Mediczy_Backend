@@ -313,6 +313,7 @@ export async function signInDoctor(req, res) {
     // Validate request input
     const errors = validationResult(req);
     if (!errors.isEmpty()) {
+      console.log('💚 [signInDoctor] Validation errors:', errors.array());
       return res.status(400).json({ errors: errors.array() });
     }
 
@@ -321,28 +322,46 @@ export async function signInDoctor(req, res) {
     console.log('💚 [signInDoctor] doctorModel type:', typeof doctorModel);
 
     // Check if doctor exists using Sequelize
-    const doctor = await doctorModel.findOne({ where: { email } });
+    console.log('💚 [signInDoctor] About to query database...');
+    let doctor;
+    try {
+      doctor = await doctorModel.findOne({ where: { email } });
+      console.log('💚 [signInDoctor] Query completed');
+    } catch (queryError) {
+      console.error('❌ [signInDoctor] Database query error:', queryError);
+      console.error('❌ [signInDoctor] Query error message:', queryError.message);
+      console.error('❌ [signInDoctor] Query error stack:', queryError.stack);
+      throw queryError; // Re-throw to outer catch
+    }
+    
     console.log('💚 [signInDoctor] Doctor found:', !!doctor);
+    console.log('💚 [signInDoctor] Doctor object keys:', doctor ? Object.keys(doctor.dataValues || doctor) : 'null');
 
     if (!doctor) {
+      console.log('💚 [signInDoctor] No doctor found, returning 401');
       return res.status(401).json({ message: "Invalid email or password" });
     }
 
+    console.log('💚 [signInDoctor] About to compare password...');
     // Validate password
     try {
       const isPasswordValid = await doctor.comparePassword(password);
+      console.log('💚 [signInDoctor] Password valid:', isPasswordValid);
       
       if (!isPasswordValid) {
         return res.status(401).json({ message: "Invalid email or password" });
       }
 
+      console.log('💚 [signInDoctor] About to generate token...');
       // Generate authentication token
       const token = doctor.generateAuthToken();
+      console.log('💚 [signInDoctor] Token generated successfully');
 
       // Update online status
       await doctor.update({
         isOnline: true,
-        lastActive: new Date()
+        lastLoginAt: new Date(),
+        lastActivityAt: new Date()
       });
 
       // Respond with doctor data & token
@@ -357,15 +376,19 @@ export async function signInDoctor(req, res) {
           specialization: doctor.specialization,
           experience: doctor.experience,
           isOnline: doctor.isOnline,
-          lastActive: doctor.lastActive
+          lastActive: doctor.lastActivityAt || doctor.lastLoginAt || null
         },
       });
     } catch (passwordError) {
-      console.error("Password comparison error:", passwordError);
+      console.error("❌ Password comparison error:", passwordError);
+      console.error("❌ Error stack:", passwordError.stack);
       return res.status(401).json({ message: "Invalid email or password" });
     }
   } catch (error) {
-    console.error("Login error:", error);
+    console.error("❌ LOGIN ERROR:", error);
+    console.error("❌ Error message:", error.message);
+    console.error("❌ Error stack:", error.stack);
+    console.error("❌ Error name:", error.name);
     return res.status(500).json({ message: "Internal Server Error" });
   }
 }
@@ -485,10 +508,10 @@ export const getAvailableDoctors = async (req, res) => {
         'isOnline',
         'qualification',
         'reviews',
-        'averageRating',
+        'rating',
         'totalReviews',
         'consultationFees',
-        'isAvailable'
+        'availableSlots'
       ],
       order: [['experience', 'DESC']] // Sort by experience (most experienced first)
     });

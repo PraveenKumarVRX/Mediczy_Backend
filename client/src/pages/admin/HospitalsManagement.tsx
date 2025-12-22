@@ -15,6 +15,7 @@ import { exportProviders } from '@/utils/exportToExcel';
 import ProviderDetailModal from '@/components/providers/ProviderDetailModal';
 import ProviderAnalytics from '@/components/providers/ProviderAnalytics';
 import api from '@/utils/api';
+import { downloadExcelTemplate, parseExcelFile } from '@/utils/excelParser';
 
 interface Hospital {
   id?: number;
@@ -311,32 +312,30 @@ const HospitalsManagement = () => {
       }
     ];
 
-    const worksheet = XLSX.utils.json_to_sheet(templateData);
-    const workbook = XLSX.utils.book_new();
-    XLSX.utils.book_append_sheet(workbook, worksheet, 'Hospital Template');
-    
-    // Set column widths
-    const colWidths = [
-      { wch: 25 }, // Hospital Name
-      { wch: 18 }, // Registration Number
-      { wch: 25 }, // Email
-      { wch: 18 }, // Phone
-      { wch: 25 }, // Type
-      { wch: 12 }, // Total Beds
-      { wch: 15 }, // Available Beds
-      { wch: 30 }, // Street Address
-      { wch: 15 }, // City
-      { wch: 15 }, // State
-      { wch: 10 }, // Pincode
-      { wch: 35 }, // Specialties
-      { wch: 18 }, // Emergency Services
-      { wch: 15 }, // Accreditation
-      { wch: 25 }, // Website
-      { wch: 10 }  // Active
+    const columns = [
+      'Hospital Name',
+      'Registration Number',
+      'Email',
+      'Phone',
+      'Type',
+      'Total Beds',
+      'Available Beds',
+      'Street Address',
+      'City',
+      'State',
+      'Pincode',
+      'Specialties',
+      'Emergency Services',
+      'Accreditation',
+      'Website',
+      'Active'
     ];
-    worksheet['!cols'] = colWidths;
-
-    XLSX.writeFile(workbook, 'Hospital_Upload_Template.xlsx');
+    downloadExcelTemplate(
+      columns,
+      'Hospital_Upload',
+      templateData,
+      [25, 18, 25, 18, 25, 12, 15, 30, 15, 15, 10, 35, 18, 15, 25, 10]
+    );
     setResult({ message: 'Template downloaded successfully' });
   };
 
@@ -349,10 +348,7 @@ const HospitalsManagement = () => {
       setError(null);
       setResult(null);
 
-      const data = await file.arrayBuffer();
-      const workbook = XLSX.read(data);
-      const worksheet = workbook.Sheets[workbook.SheetNames[0]];
-      const jsonData = XLSX.utils.sheet_to_json(worksheet);
+      const jsonData = await parseExcelFile(file);
 
       // Transform Excel data to hospital format
       const hospitals = jsonData.map((row: any) => ({
@@ -1087,7 +1083,7 @@ const HospitalsManagement = () => {
                       <Input
                         id="excel-upload"
                         type="file"
-                        accept=".xlsx,.xls"
+                        accept=".xlsx"
                         onChange={handleExcelUpload}
                         className="flex-1"
                       />
@@ -1097,7 +1093,7 @@ const HospitalsManagement = () => {
                       </Button>
                     </div>
                     <p className="text-xs text-muted-foreground">
-                      Accepted formats: .xlsx, .xls | Maximum: 1000 hospitals per upload
+                      Accepted format: .xlsx | Maximum: 1000 hospitals per upload
                     </p>
                   </div>
                 </div>

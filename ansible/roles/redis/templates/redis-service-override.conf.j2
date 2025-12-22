@@ -1,0 +1,4 @@
+[Service]
+{% for key, value in redis_systemd_limits.items() %}
+{{ key }}={{ value }}
+{% endfor %}

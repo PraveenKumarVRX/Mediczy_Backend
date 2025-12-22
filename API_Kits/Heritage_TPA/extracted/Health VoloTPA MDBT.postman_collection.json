@@ -1,0 +1,331 @@
+{
+	"info": {
+		"_postman_id": "73d9a36e-7702-4fc4-865c-c941b178c993",
+		"name": "Health VoloTPA MDBT",
+		"schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json",
+		"_exporter_id": "19690377"
+	},
+	"item": [
+		{
+			"name": "getExternaltoken",
+			"request": {
+				"method": "POST",
+				"header": [],
+				"body": {
+					"mode": "raw",
+					"raw": "{\n  \"emailId\": \"medibharat\",\n  \"password\": \"Test@12345\",\n  \"loggedInPortal\": \"POLICY_CONFIGURATION_PORTAL\"\n}",
+					"options": {
+						"raw": {
+							"language": "json"
+						}
+					}
+				},
+				"url": {
+					"raw": "https://uatapiadmin.ewatpa.com/external/login",
+					"protocol": "https",
+					"host": [
+						"uatapiadmin",
+						"ewatpa",
+						"com"
+					],
+					"path": [
+						"external",
+						"login"
+					]
+				}
+			},
+			"response": []
+		},
+		{
+			"name": "get active lives",
+			"protocolProfileBehavior": {
+				"disableBodyPruning": true
+			},
+			"request": {
+				"method": "GET",
+				"header": [
+					{
+						"key": "Authorization",
+						"value": "Token eyJhbGciOiJIUzUxMiJ9.eyJzdWIiOiI3MDMiLCJyb2xlIjoiMjkiLCJleHAiOjE3NDg2MjcxOTQsImlhdCI6MTc0ODYxMjc5NCwiaXNzIjoidHJ1ZWNvdmVyLmluIiwibmJmIjoxNzQ4NjEyNzk0fQ.GaXHyUW6vnxdv1aqdJMMv_9f1-xyKVbSnT3lnXcz9DNxMMTND6fEaTmLQYYvxGWuXbL9CUdWya2Ew-nmSV1abA",
+						"type": "text"
+					}
+				],
+				"body": {
+					"mode": "urlencoded",
+					"urlencoded": []
+				},
+				"url": {
+					"raw": "https://uatapiadmin.ewatpa.com/trueclaim/policy-bazaar/get-active-lives-dump?policyNumber=bharat_123",
+					"protocol": "https",
+					"host": [
+						"uatapiadmin",
+						"ewatpa",
+						"com"
+					],
+					"path": [
+						"trueclaim",
+						"policy-bazaar",
+						"get-active-lives-dump"
+					],
+					"query": [
+						{
+							"key": "policyNumber",
+							"value": "bharat_123"
+						}
+					]
+				}
+			},
+			"response": []
+		},
+		{
+			"name": "get entity",
+			"request": {
+				"method": "GET",
+				"header": [
+					{
+						"key": "Authorization",
+						"value": "Token eyJhbGciOiJIUzUxMiJ9.eyJzdWIiOiI3MDMiLCJyb2xlIjoiMjkiLCJleHAiOjE3NDc5MTMxNTcsImlhdCI6MTc0Nzg5ODc1NywiaXNzIjoidHJ1ZWNvdmVyLmluIiwibmJmIjoxNzQ3ODk4NzU3fQ.3x123NypxRX7xfr_xdIFt1XF-VM1maOu1mn3CPA0UsOfZxI11XScS5SCVW15ZM6OK5mBl-o7eoZ0Xr_ie18cqw",
+						"type": "text"
+					}
+				],
+				"url": {
+					"raw": "https://uatapiadmin.ewatpa.com/trueclaim/policy-bazaar/get-entity-from-policy?policyNumber=bharat_123",
+					"protocol": "https",
+					"host": [
+						"uatapiadmin",
+						"ewatpa",
+						"com"
+					],
+					"path": [
+						"trueclaim",
+						"policy-bazaar",
+						"get-entity-from-policy"
+					],
+					"query": [
+						{
+							"key": "policyNumber",
+							"value": "bharat_123"
+						}
+					]
+				}
+			},
+			"response": []
+		},
+		{
+			"name": "get claims dump",
+			"request": {
+				"method": "POST",
+				"header": [
+					{
+						"key": "Authorization",
+						"value": "Token eyJhbGciOiJIUzUxMiJ9.eyJzdWIiOiI3MDMiLCJyb2xlIjoiMjkiLCJleHAiOjE3NDc5MTMxNTcsImlhdCI6MTc0Nzg5ODc1NywiaXNzIjoidHJ1ZWNvdmVyLmluIiwibmJmIjoxNzQ3ODk4NzU3fQ.3x123NypxRX7xfr_xdIFt1XF-VM1maOu1mn3CPA0UsOfZxI11XScS5SCVW15ZM6OK5mBl-o7eoZ0Xr_ie18cqw",
+						"type": "text"
+					}
+				],
+				"body": {
+					"mode": "raw",
+					"raw": "{\n    \"startDate\":\"2025-01-01\",\n    \"endDate\":\"2025-12-31\",\n    \"entityId\":\"813\"\n}",
+					"options": {
+						"raw": {
+							"language": "json"
+						}
+					}
+				},
+				"url": {
+					"raw": "https://uatapiadmin.ewatpa.com/trueclaim/tpa/getTpaData",
+					"protocol": "https",
+					"host": [
+						"uatapiadmin",
+						"ewatpa",
+						"com"
+					],
+					"path": [
+						"trueclaim",
+						"tpa",
+						"getTpaData"
+					]
+				}
+			},
+			"response": []
+		},
+		{
+			"name": "Network Hospital",
+			"request": {
+				"method": "POST",
+				"header": [
+					{
+						"key": "Authorization",
+						"value": "Token eyJhbGciOiJIUzUxMiJ9.eyJzdWIiOiI3MDMiLCJyb2xlIjoiMjkiLCJleHAiOjE3NDg2MjcxOTQsImlhdCI6MTc0ODYxMjc5NCwiaXNzIjoidHJ1ZWNvdmVyLmluIiwibmJmIjoxNzQ4NjEyNzk0fQ.GaXHyUW6vnxdv1aqdJMMv_9f1-xyKVbSnT3lnXcz9DNxMMTND6fEaTmLQYYvxGWuXbL9CUdWya2Ew-nmSV1abA",
+						"type": "text"
+					}
+				],
+				"url": {
+					"raw": "https://uatapiadmin.ewatpa.com/trueclaim/policy-bazaar/hospital-network?insurerId=4",
+					"protocol": "https",
+					"host": [
+						"uatapiadmin",
+						"ewatpa",
+						"com"
+					],
+					"path": [
+						"trueclaim",
+						"policy-bazaar",
+						"hospital-network"
+					],
+					"query": [
+						{
+							"key": "insurerId",
+							"value": "4"
+						}
+					]
+				}
+			},
+			"response": []
+		},
+		{
+			"name": "getEcard",
+			"request": {
+				"method": "GET",
+				"header": [
+					{
+						"key": "Authorization",
+						"value": "Token eyJhbGciOiJIUzUxMiJ9.eyJzdWIiOiI3MDMiLCJyb2xlIjoiMjkiLCJleHAiOjE3NDc5MTMxNTcsImlhdCI6MTc0Nzg5ODc1NywiaXNzIjoidHJ1ZWNvdmVyLmluIiwibmJmIjoxNzQ3ODk4NzU3fQ.3x123NypxRX7xfr_xdIFt1XF-VM1maOu1mn3CPA0UsOfZxI11XScS5SCVW15ZM6OK5mBl-o7eoZ0Xr_ie18cqw",
+						"type": "text"
+					}
+				],
+				"url": {
+					"raw": "https://uatapiadmin.ewatpa.com/trueclaim/create-new-all-member-id-card-pdf?employeeId=11&entityId=813",
+					"protocol": "https",
+					"host": [
+						"uatapiadmin",
+						"ewatpa",
+						"com"
+					],
+					"path": [
+						"trueclaim",
+						"create-new-all-member-id-card-pdf"
+					],
+					"query": [
+						{
+							"key": "employeeId",
+							"value": "11"
+						},
+						{
+							"key": "entityId",
+							"value": "813"
+						}
+					]
+				}
+			},
+			"response": []
+		},
+		{
+			"name": "claim intimation",
+			"request": {
+				"method": "POST",
+				"header": [
+					{
+						"key": "Authorization",
+						"value": "Token eyJhbGciOiJIUzUxMiJ9.eyJzdWIiOiI0NTAiLCJyb2xlIjoiMjkiLCJleHAiOjE3MDI5ODQ0ODksImlhdCI6MTcwMjk3MDA4OSwiaXNzIjoidHJ1ZWNvdmVyLmluIiwibmJmIjoxNzAyOTcwMDg5fQ.uDTdbgag8MT8OhWHCGVPZnt5XTDSOoinQ9LaXCDe14eCwmFls_js_Jyq-y9gvfNfKiGtPninastxUSWme0Prgw",
+						"type": "text"
+					}
+				],
+				"body": {
+					"mode": "raw",
+					"raw": "{\n  \"hospitalId\": \"1\",\n  \"memberId\": \"EWAI00008289\",\n  \"dateOfAdmission\": \"2023-12-10T03:07:30.522Z\",\n  \"dateOfDischarge\": \"2023-12-12T03:07:30.522Z\",\n  \"potentialClaimAmount\": 500,\n  \"claimDocuments\": [\n    {\n      \"documentName\": \"Claim_form_duly_filled_and_signed_PRE_AUTH_SUBMITTED__14_10_2022_12_36_09_PM_1665731169102.pdf\",\n      \"documentType\": \"Claim form duly filled and signed\",\n      \"extension\": \"pdf\",\n      \"url\": \"https://www.africau.edu/images/default/sample.pdf\"\n    }\n  ],\n  \"aadharNo\": \"\",\n  \"panNo\": \"\",\n  \"entityId\": \"563\",\n  \"insurerPolicyNumber\": \"dummy_jio2023\"\n}",
+					"options": {
+						"raw": {
+							"language": "json"
+						}
+					}
+				},
+				"url": {
+					"raw": "https://uatapiadmin.ewatpa.com/trueclaim/policy-bazaar/intimate-claim",
+					"protocol": "https",
+					"host": [
+						"uatapiadmin",
+						"ewatpa",
+						"com"
+					],
+					"path": [
+						"trueclaim",
+						"policy-bazaar",
+						"intimate-claim"
+					]
+				}
+			},
+			"response": []
+		},
+		{
+			"name": "broker submit claim",
+			"request": {
+				"method": "POST",
+				"header": [
+					{
+						"key": "Authorization",
+						"value": "Token eyJhbGciOiJIUzUxMiJ9.eyJzdWIiOiIzMjQiLCJyb2xlIjoiMjkiLCJleHAiOjE2OTMzMTQ4ODcsImlhdCI6MTY5MzMwMDQ4NywiaXNzIjoidHJ1ZWNvdmVyLmluIiwibmJmIjoxNjkzMzAwNDg3fQ.RxBlL5fIwOQ0gMmsx7D45Js4JnO2PeLdUDsShGBl9CTIOz4rpIKyiz82pXIBl5Zzo7co7DD_aVqRkzRA7ccL7g",
+						"type": "text"
+					}
+				],
+				"body": {
+					"mode": "raw",
+					"raw": "{\n  \"hospitalId\": \"1\",\n  \"memberId\": \"EWAI00006381\",\n  \"primaryContactNumber\": \"9867069407\",\n  \"email\": \"mail@email.com\",\n  \"claimType\": \"REIMBURSEMENT_CLAIM\",\n  \"mainClaimId\": \"\",\n  \"dateOfAdmission\": \"2023-08-10T02:52:54.935Z\",\n  \"dateOfDischarge\": \"2023-08-10T02:52:54.935Z\",\n  \"potentialClaimAmount\": 1000,\n  \"IntimationDate\":null,\n  \"intimationNumber\": null,\n  \"claimDocuments\": [\n    {\n      \"documentName\": \"Claim_form_duly_filled_and_signed_PRE_AUTH_SUBMITTED__14_10_2022_12_36_09_PM_1665731169102.pdf\",\n      \"documentType\": \"Claim Form duly filled and signed\",\n      \"extension\": \"pdf\",\n      \"url\": \"https://www.africau.edu/images/default/sample.pdf\"\n    }\n  ],\n  \"aadharNo\": \"\",\n  \"panNo\": \"\",\n  \"entityId\": \"420\",\n  \"insurerPolicyNumber\": \"Dummy_98765\",\n  \"city\": \"Mumbai\",\n  \"state\": \"Maharashtra\",\n  \"pinCode\": \"444516\",\n  \"currentAddressOfPatient\": \"Street\"\n}",
+					"options": {
+						"raw": {
+							"language": "json"
+						}
+					}
+				},
+				"url": {
+					"raw": "https://uatapiadmin.ewatpa.com/trueclaim/tpa/submit-claim",
+					"protocol": "https",
+					"host": [
+						"uatapiadmin",
+						"ewatpa",
+						"com"
+					],
+					"path": [
+						"trueclaim",
+						"tpa",
+						"submit-claim"
+					]
+				}
+			},
+			"response": []
+		},
+		{
+			"name": "Get individual claim details",
+			"request": {
+				"method": "POST",
+				"header": [
+					{
+						"key": "Authorization",
+						"value": "Token eyJhbGciOiJIUzUxMiJ9.eyJzdWIiOiI3MDMiLCJyb2xlIjoiMjkiLCJleHAiOjE3NDc5MTMxNTcsImlhdCI6MTc0Nzg5ODc1NywiaXNzIjoidHJ1ZWNvdmVyLmluIiwibmJmIjoxNzQ3ODk4NzU3fQ.3x123NypxRX7xfr_xdIFt1XF-VM1maOu1mn3CPA0UsOfZxI11XScS5SCVW15ZM6OK5mBl-o7eoZ0Xr_ie18cqw",
+						"type": "text"
+					}
+				],
+				"url": {
+					"raw": "https://uatapiadmin.ewatpa.com/trueclaim/tpa/getClaimData?claimId=2736",
+					"protocol": "https",
+					"host": [
+						"uatapiadmin",
+						"ewatpa",
+						"com"
+					],
+					"path": [
+						"trueclaim",
+						"tpa",
+						"getClaimData"
+					],
+					"query": [
+						{
+							"key": "claimId",
+							"value": "2736"
+						}
+					]
+				}
+			},
+			"response": []
+		}
+	]
+}

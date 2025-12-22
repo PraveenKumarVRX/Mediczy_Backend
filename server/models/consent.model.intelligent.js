@@ -1,13 +1,57 @@
-import { connectToDb } from '../db/mariadb.js';
+import { postgresSequelize as sequelize } from '../db/postgres-sequelize.js';
+import { DataTypes, Op } from 'sequelize';
 
-let intelligentDB = null;
-
-async function getDB() {
-  if (!intelligentDB) {
-    intelligentDB = await connectToDb();
+// Define Consent model - NOW USING POSTGRESQL
+const ConsentModel = sequelize.define('Consent', {
+  id: {
+    type: DataTypes.INTEGER,
+    primaryKey: true,
+    autoIncrement: true
+  },
+  userId: {
+    type: DataTypes.INTEGER,
+    allowNull: false
+  },
+  consentType: {
+    type: DataTypes.STRING(100),
+    allowNull: false
+  },
+  consentText: {
+    type: DataTypes.TEXT,
+    allowNull: true
+  },
+  isGranted: {
+    type: DataTypes.BOOLEAN,
+    defaultValue: false
+  },
+  grantedAt: {
+    type: DataTypes.DATE,
+    allowNull: true
+  },
+  revokedAt: {
+    type: DataTypes.DATE,
+    allowNull: true
+  },
+  expiresAt: {
+    type: DataTypes.DATE,
+    allowNull: true
+  },
+  ipAddress: {
+    type: DataTypes.STRING(50),
+    allowNull: true
+  },
+  userAgent: {
+    type: DataTypes.TEXT,
+    allowNull: true
+  },
+  metadata: {
+    type: DataTypes.JSONB,
+    defaultValue: {}
   }
-  return intelligentDB;
-}
+}, {
+  tableName: 'consents',
+  timestamps: true
+});
 
 const toPlainConsent = (record) => {
   if (!record) return null;
@@ -22,57 +66,39 @@ const toPlainConsent = (record) => {
 
 const Consent = {
   grantConsent: async (consentData) => {
-    const db = await getDB();
-    if (typeof db.Consent?.grantConsent === 'function') {
-      return await db.Consent.grantConsent(consentData);
-    }
-
     const {
       userId,
-      userType = 'user',
       consentType,
-      purpose,
-      dataCategories = [],
-      grantedVia = 'WEB',
+      consentText = null,
       req,
       expiresInDays = null,
-      recipientName = null,
-      recipientType = null,
-      consentVersion = '1.0',
-      consentText = null,
     } = consentData;
 
     const expiresAt = expiresInDays
       ? new Date(Date.now() + expiresInDays * 24 * 60 * 60 * 1000)
       : null;
 
-    return await db.Consent.create({
+    return await ConsentModel.create({
       userId,
-      userType,
       consentType,
-      purpose,
-      dataCategories,
-      grantedVia,
+      consentText,
+      isGranted: true,
+      grantedAt: new Date(),
+      expiresAt,
       ipAddress: req?.ip || req?.connection?.remoteAddress,
       userAgent: req?.headers?.['user-agent'],
-      expiresAt,
-      recipientName,
-      recipientType,
-      consentVersion,
-      consentText,
-      status: 'ACTIVE',
-      grantedAt: new Date(),
+      metadata: consentData.metadata || {}
     });
   },
 
-  hasActiveConsent: async (userId, consentType, userType = 'user') => {
-    const db = await getDB();
-    if (typeof db.Consent?.hasActiveConsent === 'function') {
-      return await db.Consent.hasActiveConsent(userId, consentType, userType);
-    }
-
-    const consents = await db.Consent.findAll({
-      where: { userId, userType, consentType, status: 'ACTIVE' },
+  hasActiveConsent: async (userId, consentType) => {
+    const consents = await ConsentModel.findAll({
+      where: { 
+        userId, 
+        consentType, 
+        isGranted: true,
+        revokedAt: null
+      },
     });
 
     const now = Date.now();
@@ -85,44 +111,47 @@ const Consent = {
     });
   },
 
-  withdrawConsent: async (userId, consentType, reason, userType = 'user') => {
-    const db = await getDB();
-    if (typeof db.Consent?.withdrawConsent === 'function') {
-      return await db.Consent.withdrawConsent(userId, consentType, reason, userType);
-    }
-
-    const consents = await db.Consent.findAll({
-      where: { userId, userType, consentType, status: 'ACTIVE' },
-    });
-
-    await Promise.all((consents || []).map(async (consent) => {
-      if (typeof consent.update === 'function') {
-        await consent.update({
-          status: 'WITHDRAWN',
-          withdrawnAt: new Date(),
-          withdrawalReason: reason,
-        });
-      } else {
-        await db.Consent.update({
-          status: 'WITHDRAWN',
-          withdrawnAt: new Date(),
-          withdrawalReason: reason,
-        }, {
-          where: { id: consent.id },
-        });
+  withdrawConsent: async (userId, consentType, reason = null) => {
+    const [updatedCount] = await ConsentModel.update(
+      { 
+        isGranted: false,
+        revokedAt: new Date(),
+        metadata: { withdrawalReason: reason || '' }
+      },
+      { 
+        where: { 
+          userId, 
+          consentType, 
+          isGranted: true,
+          revokedAt: null
+        } 
       }
-    }));
-
-    return consents?.length || 0;
+    );
+    return updatedCount;
   },
 
-  getUserConsents: async (userId, userType = 'user') => {
-    const db = await getDB();
-    const consents = await db.Consent.findAll({
-      where: { userId, userType },
-      order: [['grantedAt', 'DESC']],
+  getUserConsents: async (userId) => {
+    const consents = await ConsentModel.findAll({
+      where: { userId },
+      order: [['createdAt', 'DESC']]
     });
     return consents?.map?.(toPlainConsent) || consents;
+  },
+
+  findOne: async (options) => {
+    return await ConsentModel.findOne(options);
+  },
+
+  findAll: async (options) => {
+    return await ConsentModel.findAll(options);
+  },
+
+  create: async (data) => {
+    return await ConsentModel.create(data);
+  },
+
+  update: async (values, options) => {
+    return await ConsentModel.update(values, options);
   }
 };
 

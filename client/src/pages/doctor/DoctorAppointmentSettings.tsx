@@ -11,6 +11,10 @@ import {
   AlertCircle,
   Settings,
   IndianRupee,
+  MapPin,
+  Plus,
+  Trash2,
+  Edit,
 } from "lucide-react";
 import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -21,6 +25,14 @@ import { Switch } from "@/components/ui/switch";
 import { useToast } from "@/hooks/use-toast";
 import api from "@/utils/api";
 import MainLayout from "@/components/layout/MainLayoutdoctor";
+import SlotPreview from "@/components/doctor/SlotPreview";
+import {
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+  DialogFooter,
+} from "@/components/ui/dialog";
 import {
   Select,
   SelectContent,
@@ -46,7 +58,16 @@ interface DaySchedule {
     enabled: boolean;
     startTime: string;
     endTime: string;
+    locationId?: string; // Reference to practice location
   };
+  blockedSlots?: string[]; // Array of blocked slot times
+}
+
+interface PracticeLocation {
+  id: string;
+  name: string;
+  address: string;
+  consultationFee: number;
 }
 
 interface WeeklySchedule {
@@ -61,6 +82,7 @@ interface AppointmentConfig {
   inPersonConsultationEnabled: boolean;
   onlineConsultationFee: number;
   inPersonConsultationFee: number;
+  practiceLocations?: PracticeLocation[];
 }
 
 const DAYS = ['monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday', 'sunday'];
@@ -85,6 +107,9 @@ const DoctorAppointmentSettings = () => {
   const { toast } = useToast();
   const queryClient = useQueryClient();
   const [config, setConfig] = useState<AppointmentConfig | null>(null);
+  const [showLocationModal, setShowLocationModal] = useState(false);
+  const [editingLocation, setEditingLocation] = useState<PracticeLocation | null>(null);
+  const [newLocation, setNewLocation] = useState({ name: '', address: '', consultationFee: 0 });
 
   // Fetch current configuration
   const resolveDoctorToken = () =>
@@ -172,6 +197,74 @@ const DoctorAppointmentSettings = () => {
     }
   };
 
+  const handleLocationChange = (day: string, value: string) => {
+    if (config) {
+      const updatedSchedule = { ...config.weeklySchedule };
+      updatedSchedule[day] = {
+        ...updatedSchedule[day],
+        inPerson: {
+          ...updatedSchedule[day].inPerson,
+          locationId: value,
+        },
+      };
+      setConfig({ ...config, weeklySchedule: updatedSchedule });
+    }
+  };
+
+  const handleAddLocation = () => {
+    if (config && newLocation.name && newLocation.address) {
+      const location: PracticeLocation = {
+        id: Date.now().toString(),
+        ...newLocation,
+      };
+      
+      const updatedLocations = [...(config.practiceLocations || []), location];
+      setConfig({ ...config, practiceLocations: updatedLocations });
+      
+      setNewLocation({ name: '', address: '', consultationFee: 0 });
+      setShowLocationModal(false);
+      
+      toast({
+        title: "Location Added",
+        description: `${location.name} has been added to your practice locations.`,
+      });
+    }
+  };
+
+  const handleUpdateLocation = () => {
+    if (config && editingLocation) {
+      const updatedLocations = config.practiceLocations?.map(loc =>
+        loc.id === editingLocation.id ? editingLocation : loc
+      ) || [];
+      
+      setConfig({ ...config, practiceLocations: updatedLocations });
+      setEditingLocation(null);
+      
+      toast({
+        title: "Location Updated",
+        description: "Location details have been updated.",
+      });
+    }
+  };
+
+  const handleDeleteLocation = (locationId: string) => {
+    if (config) {
+      const updatedLocations = config.practiceLocations?.filter(loc => loc.id !== locationId) || [];
+      setConfig({ ...config, practiceLocations: updatedLocations });
+      
+      toast({
+        title: "Location Removed",
+        description: "Practice location has been removed.",
+        variant: "destructive",
+      });
+    }
+  };
+
+  const getLocationById = (locationId?: string) => {
+    if (!locationId || !config?.practiceLocations) return null;
+    return config.practiceLocations.find(loc => loc.id === locationId);
+  };
+
   const handleTypeToggle = (day: string, type: 'online' | 'inPerson') => {
     if (config) {
       const updatedSchedule = { ...config.weeklySchedule };
@@ -190,6 +283,42 @@ const DoctorAppointmentSettings = () => {
     if (config) {
       const key = type === 'online' ? 'onlineConsultationFee' : 'inPersonConsultationFee';
       setConfig({ ...config, [key]: parseFloat(value) || 0 });
+    }
+  };
+
+  const handleBlockSlot = (day: string, slotTime: string, type: 'online' | 'inPerson') => {
+    if (config) {
+      const updatedSchedule = { ...config.weeklySchedule };
+      const currentBlockedSlots = updatedSchedule[day].blockedSlots || [];
+      
+      if (!currentBlockedSlots.includes(slotTime)) {
+        updatedSchedule[day] = {
+          ...updatedSchedule[day],
+          blockedSlots: [...currentBlockedSlots, slotTime],
+        };
+        setConfig({ ...config, weeklySchedule: updatedSchedule });
+        toast({
+          title: "Slot Blocked",
+          description: `${slotTime} blocked for ${DAY_LABELS[day]}`,
+        });
+      }
+    }
+  };
+
+  const handleUnblockSlot = (day: string, slotTime: string, type: 'online' | 'inPerson') => {
+    if (config) {
+      const updatedSchedule = { ...config.weeklySchedule };
+      const currentBlockedSlots = updatedSchedule[day].blockedSlots || [];
+      
+      updatedSchedule[day] = {
+        ...updatedSchedule[day],
+        blockedSlots: currentBlockedSlots.filter(slot => slot !== slotTime),
+      };
+      setConfig({ ...config, weeklySchedule: updatedSchedule });
+      toast({
+        title: "Slot Unblocked",
+        description: `${slotTime} unblocked for ${DAY_LABELS[day]}`,
+      });
     }
   };
 
@@ -313,15 +442,97 @@ const DoctorAppointmentSettings = () => {
           </div>
         </Card>
 
+        {/* Practice Locations Card */}
+        <Card className="p-6">
+          <div className="flex items-center justify-between mb-4">
+            <div>
+              <h2 className="text-xl font-semibold flex items-center gap-2">
+                <MapPin className="h-5 w-5" />
+                Practice Locations
+              </h2>
+              <p className="text-sm text-gray-600 mt-1">
+                Manage your clinics and hospitals with location-specific consultation fees
+              </p>
+            </div>
+            <Button 
+              onClick={() => setShowLocationModal(true)}
+              size="sm"
+            >
+              <Plus className="h-4 w-4 mr-2" />
+              Add Location
+            </Button>
+          </div>
+
+          {config.practiceLocations && config.practiceLocations.length > 0 ? (
+            <div className="grid md:grid-cols-2 gap-4">
+              {config.practiceLocations.map((location) => (
+                <Card key={location.id} className="p-4 border-2">
+                  <div className="flex items-start justify-between">
+                    <div className="flex-1">
+                      <h3 className="font-semibold text-lg flex items-center gap-2">
+                        <MapPin className="h-4 w-4 text-blue-600" />
+                        {location.name}
+                      </h3>
+                      <p className="text-sm text-gray-600 mt-1">{location.address}</p>
+                      <div className="mt-2 flex items-center gap-2">
+                        <Badge variant="default" className="bg-green-600">
+                          <IndianRupee className="h-3 w-3 mr-1" />
+                          ₹{location.consultationFee}
+                        </Badge>
+                      </div>
+                    </div>
+                    <div className="flex gap-2">
+                      <Button
+                        size="icon"
+                        variant="ghost"
+                        onClick={() => setEditingLocation(location)}
+                      >
+                        <Edit className="h-4 w-4" />
+                      </Button>
+                      <Button
+                        size="icon"
+                        variant="ghost"
+                        onClick={() => handleDeleteLocation(location.id)}
+                      >
+                        <Trash2 className="h-4 w-4 text-red-600" />
+                      </Button>
+                    </div>
+                  </div>
+                </Card>
+              ))}
+            </div>
+          ) : (
+            <div className="text-center py-8 bg-gray-50 rounded-lg">
+              <MapPin className="h-12 w-12 text-gray-400 mx-auto mb-2" />
+              <p className="text-gray-600">No practice locations added yet</p>
+              <p className="text-sm text-gray-500">Add your clinic or hospital locations to get started</p>
+            </div>
+          )}
+        </Card>
+
         {/* Weekly Schedule Card */}
         <Card className="p-6">
           <h2 className="text-xl font-semibold mb-4 flex items-center gap-2">
             <Calendar className="h-5 w-5" />
             Weekly Schedule
           </h2>
-          <p className="text-gray-600 mb-6">
+          <p className="text-gray-600 mb-4">
             Configure your availability for each day. Set separate timings for online and in-person consultations.
           </p>
+          
+          {/* Scheduling Info */}
+          <div className="mb-6 p-4 bg-blue-50 border border-blue-200 rounded-lg">
+            <h3 className="font-semibold text-blue-900 mb-2 flex items-center gap-2">
+              <CheckCircle className="h-4 w-4" />
+              Flexible Scheduling
+            </h3>
+            <ul className="text-sm text-blue-800 space-y-1">
+              <li>✓ Online and in-person consultations can run simultaneously or sequentially</li>
+              <li>✓ Each type has independent time slots - no interference</li>
+              <li>✓ Specify location for in-person appointments (clinic/hospital)</li>
+              <li>✓ Block specific slots when you're unavailable</li>
+            </ul>
+          </div>
 
           <Tabs defaultValue="monday" className="w-full">
             <TabsList className="grid grid-cols-7 w-full mb-6">
@@ -422,44 +633,96 @@ const DoctorAppointmentSettings = () => {
                       </div>
 
                       {config.weeklySchedule[day]?.inPerson?.enabled && (
-                        <div className="grid grid-cols-2 gap-4">
-                          <div className="space-y-2">
-                            <Label>Start Time</Label>
-                            <Select
-                              value={config.weeklySchedule[day]?.inPerson?.startTime || '14:00'}
-                              onValueChange={(v) => handleTimeChange(day, 'inPerson', 'startTime', v)}
-                            >
-                              <SelectTrigger>
-                                <SelectValue />
-                              </SelectTrigger>
-                              <SelectContent>
-                                {TIME_OPTIONS.map((time) => (
-                                  <SelectItem key={time} value={time}>{time}</SelectItem>
-                                ))}
-                              </SelectContent>
-                            </Select>
+                        <>
+                          <div className="grid grid-cols-2 gap-4">
+                            <div className="space-y-2">
+                              <Label>Start Time</Label>
+                              <Select
+                                value={config.weeklySchedule[day]?.inPerson?.startTime || '14:00'}
+                                onValueChange={(v) => handleTimeChange(day, 'inPerson', 'startTime', v)}
+                              >
+                                <SelectTrigger>
+                                  <SelectValue />
+                                </SelectTrigger>
+                                <SelectContent>
+                                  {TIME_OPTIONS.map((time) => (
+                                    <SelectItem key={time} value={time}>{time}</SelectItem>
+                                  ))}
+                                </SelectContent>
+                              </Select>
+                            </div>
+                            <div className="space-y-2">
+                              <Label>End Time</Label>
+                              <Select
+                                value={config.weeklySchedule[day]?.inPerson?.endTime || '18:00'}
+                                onValueChange={(v) => handleTimeChange(day, 'inPerson', 'endTime', v)}
+                              >
+                                <SelectTrigger>
+                                  <SelectValue />
+                                </SelectTrigger>
+                                <SelectContent>
+                                  {TIME_OPTIONS.map((time) => (
+                                    <SelectItem key={time} value={time}>{time}</SelectItem>
+                                  ))}
+                                </SelectContent>
+                              </Select>
+                            </div>
                           </div>
                           <div className="space-y-2">
-                            <Label>End Time</Label>
-                            <Select
-                              value={config.weeklySchedule[day]?.inPerson?.endTime || '18:00'}
-                              onValueChange={(v) => handleTimeChange(day, 'inPerson', 'endTime', v)}
-                            >
-                              <SelectTrigger>
-                                <SelectValue />
-                              </SelectTrigger>
-                              <SelectContent>
-                                {TIME_OPTIONS.map((time) => (
-                                  <SelectItem key={time} value={time}>{time}</SelectItem>
-                                ))}
-                              </SelectContent>
-                            </Select>
+                            <Label>Consultation Location</Label>
+                            {config.practiceLocations && config.practiceLocations.length > 0 ? (
+                              <>
+                                <Select
+                                  value={config.weeklySchedule[day]?.inPerson?.locationId || ''}
+                                  onValueChange={(v) => handleLocationChange(day, v)}
+                                >
+                                  <SelectTrigger>
+                                    <SelectValue placeholder="Select a location" />
+                                  </SelectTrigger>
+                                  <SelectContent>
+                                    {config.practiceLocations.map((loc) => (
+                                      <SelectItem key={loc.id} value={loc.id}>
+                                        <div className="flex items-center gap-2">
+                                          <MapPin className="h-3 w-3" />
+                                          {loc.name} - ₹{loc.consultationFee}
+                                        </div>
+                                      </SelectItem>
+                                    ))}
+                                  </SelectContent>
+                                </Select>
+                                {config.weeklySchedule[day]?.inPerson?.locationId && (
+                                  <p className="text-xs text-gray-600">
+                                    {getLocationById(config.weeklySchedule[day]?.inPerson?.locationId)?.address}
+                                  </p>
+                                )}
+                              </>
+                            ) : (
+                              <div className="text-sm text-gray-500 p-3 bg-yellow-50 border border-yellow-200 rounded">
+                                Please add practice locations first
+                              </div>
+                            )}
                           </div>
-                        </div>
+                        </>
                       )}
                     </div>
                   </div>
                 )}
+
+                {/* Slot Preview */}
+                <SlotPreview
+                  dayName={DAY_LABELS[day]}
+                  slotDuration={config.slotDuration}
+                  onlineEnabled={config.weeklySchedule[day]?.online?.enabled || false}
+                  onlineStart={config.weeklySchedule[day]?.online?.startTime || '09:00'}
+                  onlineEnd={config.weeklySchedule[day]?.online?.endTime || '13:00'}
+                  inPersonEnabled={config.weeklySchedule[day]?.inPerson?.enabled || false}
+                  inPersonStart={config.weeklySchedule[day]?.inPerson?.startTime || '14:00'}
+                  inPersonEnd={config.weeklySchedule[day]?.inPerson?.endTime || '18:00'}
+                  inPersonLocation={getLocationById(config.weeklySchedule[day]?.inPerson?.locationId)?.name || ''}
+                  blockedSlots={config.weeklySchedule[day]?.blockedSlots || []}
+                  onBlockSlot={(slotTime, type) => handleBlockSlot(day, slotTime, type)}
+                  onUnblockSlot={(slotTime, type) => handleUnblockSlot(day, slotTime, type)}
+                />
               </TabsContent>
             ))}
           </Tabs>
@@ -501,6 +764,106 @@ const DoctorAppointmentSettings = () => {
             Save All Changes
           </Button>
         </div>
+
+        {/* Add/Edit Location Dialog */}
+        <Dialog open={showLocationModal} onOpenChange={setShowLocationModal}>
+          <DialogContent>
+            <DialogHeader>
+              <DialogTitle>Add Practice Location</DialogTitle>
+            </DialogHeader>
+            <div className="space-y-4">
+              <div className="space-y-2">
+                <Label>Location Name *</Label>
+                <Input
+                  placeholder="e.g., City Hospital, Main Clinic"
+                  value={newLocation.name}
+                  onChange={(e) => setNewLocation({...newLocation, name: e.target.value})}
+                />
+              </div>
+              <div className="space-y-2">
+                <Label>Address *</Label>
+                <Input
+                  placeholder="e.g., 123 Medical Street, City"
+                  value={newLocation.address}
+                  onChange={(e) => setNewLocation({...newLocation, address: e.target.value})}
+                />
+              </div>
+              <div className="space-y-2">
+                <Label>Consultation Fee *</Label>
+                <div className="relative">
+                  <IndianRupee className="absolute left-3 top-1/2 transform -translate-y-1/2 h-4 w-4 text-gray-400" />
+                  <Input
+                    type="number"
+                    placeholder="500"
+                    className="pl-10"
+                    value={newLocation.consultationFee || ''}
+                    onChange={(e) => setNewLocation({...newLocation, consultationFee: parseFloat(e.target.value) || 0})}
+                    min="0"
+                  />
+                </div>
+              </div>
+            </div>
+            <DialogFooter>
+              <Button variant="outline" onClick={() => setShowLocationModal(false)}>
+                Cancel
+              </Button>
+              <Button onClick={handleAddLocation} disabled={!newLocation.name || !newLocation.address}>
+                Add Location
+              </Button>
+            </DialogFooter>
+          </DialogContent>
+        </Dialog>
+
+        {/* Edit Location Dialog */}
+        <Dialog open={!!editingLocation} onOpenChange={(open) => !open && setEditingLocation(null)}>
+          <DialogContent>
+            <DialogHeader>
+              <DialogTitle>Edit Practice Location</DialogTitle>
+            </DialogHeader>
+            {editingLocation && (
+              <div className="space-y-4">
+                <div className="space-y-2">
+                  <Label>Location Name *</Label>
+                  <Input
+                    placeholder="e.g., City Hospital, Main Clinic"
+                    value={editingLocation.name}
+                    onChange={(e) => setEditingLocation({...editingLocation, name: e.target.value})}
+                  />
+                </div>
+                <div className="space-y-2">
+                  <Label>Address *</Label>
+                  <Input
+                    placeholder="e.g., 123 Medical Street, City"
+                    value={editingLocation.address}
+                    onChange={(e) => setEditingLocation({...editingLocation, address: e.target.value})}
+                  />
+                </div>
+                <div className="space-y-2">
+                  <Label>Consultation Fee *</Label>
+                  <div className="relative">
+                    <IndianRupee className="absolute left-3 top-1/2 transform -translate-y-1/2 h-4 w-4 text-gray-400" />
+                    <Input
+                      type="number"
+                      placeholder="500"
+                      className="pl-10"
+                      value={editingLocation.consultationFee || ''}
+                      onChange={(e) => setEditingLocation({...editingLocation, consultationFee: parseFloat(e.target.value) || 0})}
+                      min="0"
+                    />
+                  </div>
+                </div>
+              </div>
+            )}
+            <DialogFooter>
+              <Button variant="outline" onClick={() => setEditingLocation(null)}>
+                Cancel
+              </Button>
+              <Button onClick={handleUpdateLocation} disabled={!editingLocation?.name || !editingLocation?.address}>
+                Update Location
+              </Button>
+            </DialogFooter>
+          </DialogContent>
+        </Dialog>
       </div>
     </MainLayout>
   );

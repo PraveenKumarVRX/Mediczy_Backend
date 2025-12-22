@@ -32,6 +32,7 @@ class MedicalAIService {
     // SIB Local LLM Configuration (PRIMARY)
     this.sibBaseUrl = process.env.SIB_URL || 'http://localhost:8001';
     this.sibAvailable = false;
+    this.lastSibError = null;
     
     // Cloud API Keys (FALLBACKS)
     this.groqApiKey = process.env.GROQ_API_KEY;
@@ -86,6 +87,7 @@ class MedicalAIService {
         if (health.status === 'healthy') {
           this.sibAvailable = true;
           this.activeProvider = 'sib-llama';
+          this.lastSibError = null;
           console.log('✅ Medical AI: SIB Local Llama initialized (PRIMARY)');
           console.log(`   Model: Llama-3.1-8B-Instruct-Q4_K_M.gguf`);
           console.log(`   URL: ${this.sibBaseUrl}`);
@@ -93,10 +95,18 @@ class MedicalAIService {
         }
       }
       this.sibAvailable = false;
+      this.lastSibError = {
+        message: 'SIB health endpoint returned non-healthy status',
+        at: new Date().toISOString()
+      };
       return false;
     } catch (error) {
       console.warn('⚠️ SIB Local LLM not available:', error.message);
       this.sibAvailable = false;
+      this.lastSibError = {
+        message: error.message,
+        at: new Date().toISOString()
+      };
       this.activeProvider = this.groqApiKey ? 'groq' : (this.geminiApiKey ? 'gemini' : 'fallback');
       return false;
     }
@@ -149,6 +159,8 @@ This is AI-generated guidance from Dr. iSHA. Always consult qualified healthcare
    * Consult with SIB Local Llama (PRIMARY)
    */
   async consultWithSIB(query, history = [], language = 'en', sessionId = null) {
+    const controller = new AbortController();
+    let timeout;
     try {
       // Re-check SIB availability
       if (!this.sibAvailable) {
@@ -158,8 +170,7 @@ This is AI-generated guidance from Dr. iSHA. Always consult qualified healthcare
         }
       }
 
-      const controller = new AbortController();
-      const timeout = setTimeout(() => controller.abort(), 60000); // 60s timeout for LLM
+      timeout = setTimeout(() => controller.abort(), 60000); // 60s timeout for LLM
 
       const patientId = sessionId || `mediczy_${Date.now()}`;
       
@@ -176,8 +187,6 @@ This is AI-generated guidance from Dr. iSHA. Always consult qualified healthcare
         signal: controller.signal
       });
       
-      clearTimeout(timeout);
-
       if (!response.ok) {
         const errorText = await response.text();
         console.error('SIB error response:', errorText);
@@ -200,7 +209,15 @@ This is AI-generated guidance from Dr. iSHA. Always consult qualified healthcare
     } catch (error) {
       console.error('SIB Local LLM error:', error.message);
       this.sibAvailable = false; // Mark as unavailable for retry logic
+      this.lastSibError = {
+        message: error.message,
+        at: new Date().toISOString()
+      };
       throw error;
+    } finally {
+      if (timeout) {
+        clearTimeout(timeout);
+      }
     }
   }
 
@@ -738,22 +755,39 @@ I understand you're seeking medical guidance. While I'm currently experiencing s
       storedSessions = null;
     }
     
+    const providers = {
+      sib: this.sibAvailable,
+      groq: !!this.groqClient,
+      gemini: !!this.geminiClient
+    };
+
+    let status = 'down';
+    if (providers.sib) {
+      status = 'healthy';
+    } else if (providers.groq || providers.gemini) {
+      status = 'degraded';
+    }
+
+    const statusMessage = status === 'healthy'
+      ? 'SIB primary brain is operational'
+      : status === 'degraded'
+        ? 'SIB primary unavailable; fallback providers active'
+        : 'All AI providers offline';
+
     return {
-      status: 'healthy',
+      status,
+      message: statusMessage,
       initialized: this.isInitialized,
       activeProvider: this.activeProvider,
       architecture: 'SIB → Groq/Gemini (local LLM requires GPU)',
-      providers: {
-        'sib': this.sibAvailable,
-        groq: !!this.groqClient,
-        gemini: !!this.geminiClient
-      },
+      providers,
       priority: [
         { name: 'SIB Brain (Groq-backed)', status: this.sibAvailable ? 'available' : 'unavailable', role: 'PRIMARY' },
         { name: 'Groq API Direct', status: this.groqClient ? 'available' : 'unavailable', role: 'FALLBACK 1' },
         { name: 'Gemini API', status: this.geminiClient ? 'available' : 'unavailable', role: 'FALLBACK 2' }
       ],
       sibUrl: this.sibBaseUrl,
+      lastSibError: this.lastSibError,
       sessionsActive: this.conversationHistory.size,
       storedSessions,
       timestamp: new Date().toISOString()

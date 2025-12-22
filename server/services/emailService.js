@@ -6,6 +6,19 @@ class EmailService {
     this.transporters = new Map();
   }
 
+  // Get default email configuration
+  async getDefaultConfig() {
+    try {
+      const defaultConfig = await EmailConfig.findOne({ 
+        where: { isDefault: true, isActive: true } 
+      });
+      return defaultConfig;
+    } catch (error) {
+      console.error('Error fetching default email config:', error);
+      return null;
+    }
+  }
+
   // Create and cache SMTP transporter
   async getTransporter(config) {
     const configKey = config.id.toString();

@@ -73,6 +73,7 @@ const DoctorAppointments = () => {
   const { toast } = useToast();
   const { currentDoctor } = useAuth();
   const queryClient = useQueryClient();
+  const doctorId = (currentDoctor as any)?.id ?? (currentDoctor as any)?._id;
 
   const [selectedAppointment, setSelectedAppointment] = useState<Appointment | null>(null);
   const [notesDialogOpen, setNotesDialogOpen] = useState(false);
@@ -84,21 +85,21 @@ const DoctorAppointments = () => {
 
   // Fetch doctor's enhanced appointments
   const { data: appointments = [], isLoading } = useQuery({
-    queryKey: ["doctorEnhancedAppointments", currentDoctor?._id],
+    queryKey: ["doctorEnhancedAppointments", doctorId],
     queryFn: async () => {
       const { data } = await api.get(`/enhanced-appointments/doctor-appointments`);
       return (data as any).appointments || data || [];
     },
-    enabled: !!currentDoctor?._id,
+    enabled: !!doctorId,
   });
 
   const { data: analytics } = useQuery({
-    queryKey: ["doctorAppointmentAnalytics", currentDoctor?._id],
+    queryKey: ["doctorAppointmentAnalytics", doctorId],
     queryFn: async () => {
       const { data } = await api.get("/appointments/analytics/basic");
       return (data as any).analytics || data;
     },
-    enabled: !!currentDoctor?._id,
+    enabled: !!doctorId,
   });
 
   // Update status mutation

@@ -1,6 +1,12 @@
-import { Lead, LeadActivity, LeadNote, LeadTask, Corporate } from '../models/crm.model.intelligent.js';
-import User from '../models/user.model.intelligent.js';
-import { Op } from 'sequelize';
+import { LeadActivity, LeadNote, LeadTask } from '../models/crm.model.intelligent.js';
+import {
+  createLeadForTenant,
+  deleteLeadForTenant,
+  fetchAllTenantLeads,
+  fetchLeadForTenantOrThrow,
+  listLeadsForTenant,
+  updateLeadForTenant
+} from '../services/crmLead.service.js';
 
 // Helper: pick fields
 const pick = (obj, keys) => Object.fromEntries(keys.filter(k => obj[k] !== undefined).map(k => [k, obj[k]]));
@@ -8,7 +14,7 @@ const pick = (obj, keys) => Object.fromEntries(keys.filter(k => obj[k] !== undef
 export const createLead = async (req, res) => {
   try {
     const data = pick(req.body, ['name','company','email','phone','source','stage','value','assignedTo','corporateId','tags','customFields']);
-    const lead = await Lead.create(data);
+    const lead = await createLeadForTenant(req.tenantId, data);
     res.json({ success: true, lead });
   } catch (err) {
     res.status(400).json({ success: false, message: err.message });
@@ -18,11 +24,10 @@ export const createLead = async (req, res) => {
 export const updateLead = async (req, res) => {
   try {
     const { id } = req.params;
-    const lead = await Lead.findByPk(id);
-    if (!lead) return res.status(404).json({ success:false, message:'Lead not found' });
-    const prevStage = lead.stage;
+    const leadInstance = await fetchLeadForTenantOrThrow(req.tenantId, id);
+    const prevStage = leadInstance.stage;
     const data = pick(req.body, ['name','company','email','phone','source','stage','value','assignedTo','corporateId','tags','customFields','isArchived','statusReason','closedAt']);
-    await lead.update(data);
+    const lead = await updateLeadForTenant(req.tenantId, id, data);
     if (req.body.stage && req.body.stage !== prevStage) {
       await LeadActivity.create({
         leadId: lead.id, type: 'Status Change', subject: `Stage: ${prevStage} → ${lead.stage}`,
@@ -38,22 +43,14 @@ export const updateLead = async (req, res) => {
 export const listLeads = async (req, res) => {
   try {
     const { stage, q, assignedTo, limit = 50, offset = 0 } = req.query;
-    const where = {};
-    if (stage) where.stage = stage;
-    if (assignedTo) where.assignedTo = assignedTo;
-    if (q) {
-      const like = { [Op.like]: `%${q}%` };
-      Object.assign(where, {
-        [Op.or]: [
-          { name: like },
-          { company: like },
-          { email: like },
-          { phone: like }
-        ]
-      });
-    }
-    const leads = await Lead.findAll({ where, order: [['updatedAt','DESC']], limit: Number(limit), offset: Number(offset) });
-    res.json({ success:true, leads });
+    const leads = await listLeadsForTenant(req.tenantId, { stage, q, assignedTo });
+    const start = Number(offset);
+    const end = start + Number(limit);
+    res.json({
+      success:true,
+      leads: leads.slice(start, end),
+      pagination: { total: leads.length, offset: start, limit: Number(limit) }
+    });
   } catch (err) {
     res.status(400).json({ success:false, message: err.message });
   }
@@ -61,8 +58,12 @@ export const listLeads = async (req, res) => {
 
 export const getLead = async (req, res) => {
   try {
-    const lead = await Lead.findByPk(req.params.id);
-    if (!lead) return res.status(404).json({ success:false, message:'Lead not found' });
+    const leadInstance = await fetchLeadForTenantOrThrow(req.tenantId, req.params.id);
+    const lead = leadInstance.get({ plain: true });
+    if (lead.customFields && lead.customFields.__tenantId) {
+      const { __tenantId, ...rest } = lead.customFields;
+      lead.customFields = rest;
+    }
     const [activities, notes, tasks] = await Promise.all([
       LeadActivity.findAll({ where: { leadId: lead.id }, order: [['createdAt','DESC']] }),
       LeadNote.findAll({ where: { leadId: lead.id }, order: [['createdAt','DESC']] }),
@@ -76,9 +77,7 @@ export const getLead = async (req, res) => {
 
 export const deleteLead = async (req, res) => {
   try {
-    const lead = await Lead.findByPk(req.params.id);
-    if (!lead) return res.status(404).json({ success:false, message:'Lead not found' });
-    await lead.destroy();
+    await deleteLeadForTenant(req.tenantId, req.params.id);
     res.json({ success:true });
   } catch (err) {
     res.status(400).json({ success:false, message: err.message });
@@ -89,11 +88,13 @@ export const deleteLead = async (req, res) => {
 export const addActivity = async (req, res) => {
   try {
     const { leadId } = req.params;
-    const lead = await Lead.findByPk(leadId);
-    if (!lead) return res.status(404).json({ success:false, message:'Lead not found' });
+    const lead = await fetchLeadForTenantOrThrow(req.tenantId, leadId);
     const payload = pick(req.body, ['type','subject','content','dueDate','metadata']);
     const activity = await LeadActivity.create({ ...payload, leadId, createdBy: req.user?.id });
-    await lead.update({ lastActivityAt: new Date(), notesSnapshot: payload.type === 'Note' ? (payload.content || '') : lead.notesSnapshot });
+    await lead.update({
+      lastActivityAt: new Date(),
+      notesSnapshot: payload.type === 'Note' ? (payload.content || '') : lead.notesSnapshot
+    });
     res.json({ success:true, activity });
   } catch (err) {
     res.status(400).json({ success:false, message: err.message });
@@ -103,8 +104,7 @@ export const addActivity = async (req, res) => {
 export const addNote = async (req, res) => {
   try {
     const { leadId } = req.params;
-    const lead = await Lead.findByPk(leadId);
-    if (!lead) return res.status(404).json({ success:false, message:'Lead not found' });
+    const lead = await fetchLeadForTenantOrThrow(req.tenantId, leadId);
     const note = await LeadNote.create({ leadId, authorId: req.user?.id, content: req.body.content, pinned: !!req.body.pinned });
     await lead.update({ notesSnapshot: req.body.content, lastActivityAt: new Date() });
     await LeadActivity.create({ leadId, type:'Note', subject:'Note added', content: req.body.content, createdBy: req.user?.id });
@@ -117,8 +117,7 @@ export const addNote = async (req, res) => {
 export const addTask = async (req, res) => {
   try {
     const { leadId } = req.params;
-    const lead = await Lead.findByPk(leadId);
-    if (!lead) return res.status(404).json({ success:false, message:'Lead not found' });
+    await fetchLeadForTenantOrThrow(req.tenantId, leadId);
     const payload = pick(req.body, ['title','description','dueDate','priority','assignedTo']);
     const task = await LeadTask.create({ ...payload, leadId, createdBy: req.user?.id, completed: false });
     await LeadActivity.create({ leadId, type:'Task', subject: payload.title, content: payload.description || '', createdBy: req.user?.id, dueDate: payload.dueDate });
@@ -133,6 +132,7 @@ export const completeTask = async (req, res) => {
     const { id } = req.params; // task id
     const task = await LeadTask.findByPk(id);
     if (!task) return res.status(404).json({ success:false, message:'Task not found' });
+    await fetchLeadForTenantOrThrow(req.tenantId, task.leadId);
     await task.update({ completed: true, completedAt: new Date() });
     await LeadActivity.create({ leadId: task.leadId, type:'Task', subject: `Task completed: ${task.title}`, content: task.description || '', createdBy: req.user?.id });
     res.json({ success:true, task });
@@ -141,32 +141,39 @@ export const completeTask = async (req, res) => {
   }
 };
 
-export const crmStats = async (_req, res) => {
+export const crmStats = async (req, res) => {
   try {
     // simple aggregates
     const stages = ['New','Qualified','Proposal','Negotiation','Closed Won','Closed Lost'];
-    const counts = {};
-    await Promise.all(stages.map(async s => {
-      counts[s] = await Lead.count({ where: { stage: s } });
-    }));
+    const leads = await fetchAllTenantLeads(req.tenantId);
+    const counts = stages.reduce((acc, stage) => {
+      acc[stage] = leads.filter((lead) => lead.stage === stage).length;
+      return acc;
+    }, {});
     const openStages = ['New','Qualified','Proposal','Negotiation'];
-    const openValue = await Lead.sum('value', { where: { stage: { [Op.in]: openStages } } }) || 0;
+    const openValue = leads
+      .filter((lead) => openStages.includes(lead.stage))
+      .reduce((sum, lead) => sum + (parseFloat(lead.value) || 0), 0);
     const won = counts['Closed Won'] || 0;
     const lost = counts['Closed Lost'] || 0;
     const conversionRate = (won + lost) > 0 ? +(won / (won + lost) * 100).toFixed(2) : 0;
     // Source counts
-    const sourcesRaw = await Lead.findAll({ attributes: ['source'], where: { source: { [Op.ne]: null } } });
-    const sourceCounts = sourcesRaw.reduce((acc,l)=>{ acc[l.source] = (acc[l.source]||0)+1; return acc; }, {});
+    const sourceCounts = leads
+      .filter((lead) => lead.source)
+      .reduce((acc, lead) => {
+        acc[lead.source] = (acc[lead.source] || 0) + 1;
+        return acc;
+      }, {});
     res.json({ success:true, counts, openValue, conversionRate, sourceCounts });
   } catch (err) {
     res.status(400).json({ success:false, message: err.message });
   }
 };
 
-export const crmReportsOverview = async (_req, res) => {
+export const crmReportsOverview = async (req, res) => {
   try {
     const now = Date.now();
-    const leads = await Lead.findAll({ attributes: ['id','stage','createdAt','value'] });
+    const leads = await fetchAllTenantLeads(req.tenantId);
     const stageAges = {};
     const stageTotals = {};
     leads.forEach(l => {

@@ -1,0 +1,195 @@
+╔══════════════════════════════════════════════════════════════════════════╗
+║                  GOOGLE FIT OAUTH CONFIGURATION GUIDE                    ║
+║                         Project: mediczy-624ed                           ║
+╚══════════════════════════════════════════════════════════════════════════╝
+
+📋 CURRENT CONFIGURATION
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+Project ID:     mediczy-624ed
+OAuth Client:   982376166047-j975co5qc5enqhcesggbsee3obnj7tqa.apps.googleusercontent.com
+Environment:    ✅ Updated in .env and .env.production
+Production:     ✅ Deployed to https://mediqzy.com
+
+
+✅ STEP 1: ENABLE GOOGLE FITNESS API
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+1. Go to: https://console.cloud.google.com/apis/library/fitness.googleapis.com?project=mediczy-624ed
+
+2. Click the "ENABLE" button
+
+3. Wait for confirmation message
+
+Status: [ ] COMPLETED
+
+
+✅ STEP 2: CONFIGURE OAUTH CONSENT SCREEN
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+1. Go to: https://console.cloud.google.com/apis/credentials/consent?project=mediczy-624ed
+
+2. Fill in App Information:
+   ┌─────────────────────────────────────────────────────────────────┐
+   │ App name:                Mediczy Healthcare Platform            │
+   │ User support email:      [your-email@example.com]               │
+   │ App logo:                (optional)                             │
+   │ App domain:              https://mediqzy.com                    │
+   │ Authorized domains:      mediqzy.com                            │
+   │ Developer contact:       [your-email@example.com]               │
+   └─────────────────────────────────────────────────────────────────┘
+
+3. Click "SAVE AND CONTINUE"
+
+4. Add Scopes - Click "ADD OR REMOVE SCOPES"
+
+5. Add these EXACT scopes (search and select each):
+   ┌─────────────────────────────────────────────────────────────────┐
+   │ ✓ https://www.googleapis.com/auth/fitness.activity.read        │
+   │ ✓ https://www.googleapis.com/auth/fitness.heart_rate.read      │
+   │ ✓ https://www.googleapis.com/auth/fitness.sleep.read           │
+   │ ✓ https://www.googleapis.com/auth/fitness.body.read            │
+   │ ✓ https://www.googleapis.com/auth/fitness.location.read        │
+   └─────────────────────────────────────────────────────────────────┘
+
+6. Click "UPDATE" then "SAVE AND CONTINUE"
+
+7. Add test users (optional for development):
+   - Add your email address for testing
+
+8. Click "SAVE AND CONTINUE" through remaining screens
+
+Status: [ ] COMPLETED
+
+
+✅ STEP 3: CONFIGURE OAUTH CLIENT ID REDIRECT URIs
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+1. Go to: https://console.cloud.google.com/apis/credentials?project=mediczy-624ed
+
+2. Find your OAuth 2.0 Client ID:
+   982376166047-j975co5qc5enqhcesggbsee3obnj7tqa.apps.googleusercontent.com
+
+3. Click the pencil icon (✏️) to edit
+
+4. Under "Authorized JavaScript origins" add:
+   ┌─────────────────────────────────────────────────────────────────┐
+   │ ✓ http://localhost:9443                                         │
+   │ ✓ https://mediqzy.com                                           │
+   └─────────────────────────────────────────────────────────────────┘
+
+5. Under "Authorized redirect URIs" add:
+   ┌─────────────────────────────────────────────────────────────────┐
+   │ ✓ http://localhost:9443                                         │
+   │ ✓ https://mediqzy.com                                           │
+   └─────────────────────────────────────────────────────────────────┘
+
+   ⚠️  IMPORTANT:
+   - NO trailing slashes (/)
+   - Exact case match (lowercase)
+   - Exact protocol (https:// for production)
+
+6. Click "SAVE"
+
+Status: [ ] COMPLETED
+
+
+🧪 TESTING THE INTEGRATION
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+Option 1: Use Test Tool
+------------------------
+1. Go to: https://mediqzy.com/test-google-fit-config.html
+2. Follow the checklist
+3. Click "Test Google Fit Connection"
+4. Check for success/error messages
+
+Option 2: Use Production App
+-----------------------------
+1. Clear browser cache and cookies
+2. Go to: https://mediqzy.com
+3. Login to your account
+4. Navigate to Google Fit dashboard
+5. Click "Connect Google Fit" button
+6. Complete OAuth authorization
+
+Expected Success Flow:
+┌─────────────────────────────────────────────────────────────────┐
+│ 1. ✅ Google OAuth popup opens                                   │
+│ 2. ✅ Shows "Mediczy Healthcare Platform"                        │
+│ 3. ✅ Lists all 5 fitness permissions                            │
+│ 4. ✅ Click "Allow"                                              │
+│ 5. ✅ Popup closes, data starts syncing                          │
+│ 6. ✅ Dashboard shows fitness data                               │
+└─────────────────────────────────────────────────────────────────┘
+
+
+🔧 TROUBLESHOOTING
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+Error: "invalid_client"
+-----------------------
+Cause: Client ID doesn't exist or is incorrect
+Fix:   Verify Client ID in Google Cloud Console matches:
+       982376166047-j975co5qc5enqhcesggbsee3obnj7tqa.apps.googleusercontent.com
+
+
+Error: "redirect_uri_mismatch"
+-------------------------------
+Cause: Redirect URI not configured or doesn't match exactly
+Fix:   In OAuth Client settings, ensure these are added:
+       • http://localhost:9443
+       • https://mediqzy.com
+       
+       Check for:
+       - Trailing slashes (should NOT have)
+       - Correct protocol (http vs https)
+       - Exact domain spelling
+
+
+Error: "access_denied"
+----------------------
+Cause: User denied permission OR scopes not configured
+Fix:   1. Check OAuth consent screen has all 5 fitness scopes
+       2. User must click "Allow" not "Deny"
+
+
+Error: "Popup blocked"
+----------------------
+Cause: Browser is blocking the OAuth popup
+Fix:   Allow popups from mediqzy.com in browser settings
+
+
+Error: "Fitness API not enabled"
+---------------------------------
+Cause: Google Fitness API not enabled for project
+Fix:   Enable at: https://console.cloud.google.com/apis/library/fitness.googleapis.com?project=mediczy-624ed
+
+
+📞 SUPPORT RESOURCES
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+Google Fitness API Documentation:
+https://developers.google.com/fit/rest/v1/get-started
+
+OAuth 2.0 for Client-side Apps:
+https://developers.google.com/identity/protocols/oauth2/javascript-implicit-flow
+
+Google Cloud Console:
+https://console.cloud.google.com/
+
+
+✅ VERIFICATION CHECKLIST
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+Before testing, ensure ALL items are checked:
+
+[ ] Google Fitness API is enabled
+[ ] OAuth consent screen is configured with app details  
+[ ] All 5 fitness scopes are added to consent screen
+[ ] Authorized JavaScript origins include both URLs
+[ ] Authorized redirect URIs include both URLs
+[ ] OAuth Client ID matches environment configuration
+[ ] Browser allows popups from mediqzy.com
+[ ] Using correct URL (https://mediqzy.com not http://)
+

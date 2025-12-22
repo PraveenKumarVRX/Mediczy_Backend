@@ -26,7 +26,7 @@ import { useQueryClient } from "@tanstack/react-query";
 import { profileProps, UserProps } from "@/lib/user.type";
 import { useAuth } from "@/auth/AuthProvider";
 import MainLayout from "@/components/layout/MainLayout";
-import { MapPin, Wifi, WifiOff } from "lucide-react";
+import { MapPin, Wifi, WifiOff, Calendar } from "lucide-react";
 import { Switch } from "@radix-ui/react-switch";
 import axios from "axios";
 import api from "@/utils/api";
@@ -39,6 +39,8 @@ const profileSchema = z.object({
   phoneNumber: z
     .string()
     .min(10, "Phone number must be at least 10 characters"),
+  dateOfBirth: z.string().optional(),
+  gender: z.enum(["Male", "Female", "Other"]).optional(),
 });
 
 // Add emergency contact schema
@@ -103,16 +105,28 @@ const Profile = () => {
         userType === "user"
           ? currentUser?.phoneNumber
           : currentDoctor?.phoneNumber,
+      dateOfBirth: userType === "user" ? (currentUser?.dateOfBirth ? new Date(currentUser.dateOfBirth).toISOString().split('T')[0] : "") : "",
+      gender: userType === "user" ? currentUser?.gender : undefined,
     },
   });
 
-  const onSubmit = (values: z.infer<typeof profileSchema>) => {
-    console.log(values);
-    toast({
-      title: "Profile Updated",
-      description: "Your profile has been updated successfully",
-    });
-    setIsEditing(false);
+  const onSubmit = async (values: z.infer<typeof profileSchema>) => {
+    try {
+      const response = await api.put('/users/profile', values);
+      toast({
+        title: "Profile Updated",
+        description: "Your profile has been updated successfully",
+      });
+      setIsEditing(false);
+      // Refresh user data
+      window.location.reload();
+    } catch (error: any) {
+      toast({
+        variant: "destructive",
+        title: "Error",
+        description: error.response?.data?.message || "Failed to update profile",
+      });
+    }
   };
 
   // Function to get current location
@@ -377,6 +391,54 @@ const Profile = () => {
                         </FormItem>
                       )}
                     />
+                    <div className="grid gap-6 md:grid-cols-2">
+                      <FormField
+                        control={form.control}
+                        name="dateOfBirth"
+                        render={({ field }) => (
+                          <FormItem>
+                            <FormLabel className="text-lg font-semibold">
+                              Date of Birth
+                            </FormLabel>
+                            <FormControl>
+                              <div className="relative">
+                                <Input 
+                                  type="date" 
+                                  {...field}
+                                  className="pr-10"
+                                  placeholder="DD/MM/YYYY"
+                                />
+                                <Calendar className="absolute right-3 top-1/2 transform -translate-y-1/2 h-4 w-4 text-muted-foreground pointer-events-none" />
+                              </div>
+                            </FormControl>
+                            <FormMessage />
+                          </FormItem>
+                        )}
+                      />
+                      <FormField
+                        control={form.control}
+                        name="gender"
+                        render={({ field }) => (
+                          <FormItem>
+                            <FormLabel className="text-lg font-semibold">
+                              Gender
+                            </FormLabel>
+                            <FormControl>
+                              <select
+                                {...field}
+                                className="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background file:border-0 file:bg-transparent file:text-sm file:font-medium placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50"
+                              >
+                                <option value="">Select gender</option>
+                                <option value="Male">Male</option>
+                                <option value="Female">Female</option>
+                                <option value="Other">Other</option>
+                              </select>
+                            </FormControl>
+                            <FormMessage />
+                          </FormItem>
+                        )}
+                      />
+                    </div>
                     <Button type="submit">Save Changes</Button>
                   </form>
                 </Form>
@@ -406,6 +468,37 @@ const Profile = () => {
                     <Label className="text-lg font-semibold">Phone</Label>
                     <p className="mt-1 text-base">
                       {form.getValues("phoneNumber")}
+                    </p>
+                  </div>
+                  <div className="grid gap-6 md:grid-cols-2">
+                    <div>
+                      <Label className="text-lg font-semibold">Date of Birth</Label>
+                      <p className="mt-1 text-base">
+                        {form.getValues("dateOfBirth") 
+                          ? new Date(form.getValues("dateOfBirth") || "").toLocaleDateString('en-GB', { day: '2-digit', month: '2-digit', year: 'numeric' }) 
+                          : "Not provided"}
+                      </p>
+                    </div>
+                    <div>
+                      <Label className="text-lg font-semibold">Age</Label>
+                      <p className="mt-1 text-base">
+                        {form.getValues("dateOfBirth") ? (() => {
+                          const birthDate = new Date(form.getValues("dateOfBirth") || "");
+                          const today = new Date();
+                          let age = today.getFullYear() - birthDate.getFullYear();
+                          const monthDiff = today.getMonth() - birthDate.getMonth();
+                          if (monthDiff < 0 || (monthDiff === 0 && today.getDate() < birthDate.getDate())) {
+                            age--;
+                          }
+                          return age;
+                        })() : "N/A"}
+                      </p>
+                    </div>
+                  </div>
+                  <div>
+                    <Label className="text-lg font-semibold">Gender</Label>
+                    <p className="mt-1 text-base">
+                      {form.getValues("gender") || "Not provided"}
                     </p>
                   </div>
                 </div>

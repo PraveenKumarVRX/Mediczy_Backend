@@ -1,37 +1,41 @@
-import { sequelize } from '../db/mariadb.js';
+import { postgresSequelize as sequelize } from '../db/postgres-sequelize.js';
 import { DataTypes } from 'sequelize';
 import bcrypt from 'bcrypt';
 
-// Define Assistant model
+// Define Assistant model - NOW USING POSTGRESQL
 const Assistant = sequelize.define('Assistant', {
   id: {
     type: DataTypes.INTEGER,
     primaryKey: true,
     autoIncrement: true
   },
+  doctorId: {
+    type: DataTypes.INTEGER,
+    allowNull: true
+  },
   firstName: {
-    type: DataTypes.STRING,
+    type: DataTypes.STRING(100),
     allowNull: false
   },
   lastName: {
-    type: DataTypes.STRING,
+    type: DataTypes.STRING(100),
     allowNull: false
   },
   email: {
-    type: DataTypes.STRING,
+    type: DataTypes.STRING(255),
     allowNull: false,
     unique: true
   },
   password: {
-    type: DataTypes.STRING,
+    type: DataTypes.STRING(255),
     allowNull: true
   },
   phoneNumber: {
-    type: DataTypes.STRING,
+    type: DataTypes.STRING(20),
     allowNull: true
   },
   qualification: {
-    type: DataTypes.STRING,
+    type: DataTypes.STRING(255),
     allowNull: true
   },
   experience: {
@@ -39,9 +43,25 @@ const Assistant = sequelize.define('Assistant', {
     allowNull: true,
     defaultValue: 0
   },
+  role: {
+    type: DataTypes.STRING(50),
+    defaultValue: 'assistant'
+  },
   isActive: {
     type: DataTypes.BOOLEAN,
     defaultValue: true
+  },
+  status: {
+    type: DataTypes.STRING(50),
+    defaultValue: 'active'
+  },
+  isVerified: {
+    type: DataTypes.BOOLEAN,
+    defaultValue: false
+  },
+  permissions: {
+    type: DataTypes.JSONB,
+    defaultValue: {}
   }
 }, {
   tableName: 'doctor_assistants',

@@ -1,0 +1,48 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>AI Chat Test</title>
+</head>
+<body>
+    <h1>Testing AI Doctor Chat</h1>
+    <div id="result"></div>
+    <script>
+        async function testAI() {
+            try {
+                // Login first
+                const loginRes = await fetch('http://localhost:8000/api/users/login', {
+                    method: 'POST',
+                    headers: {'Content-Type': 'application/json'},
+                    body: JSON.stringify({
+                        email: 'testuser2025@mediczy.com',
+                        password: 'Password123'
+                    })
+                });
+                const loginData = await loginRes.json();
+                const token = loginData.token;
+                document.getElementById('result').innerHTML += '<p>✅ Login successful</p>';
+                
+                // Test AI chat
+                const aiRes = await fetch('http://localhost:8000/api/ai/working-medical-consult', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                        'Authorization': `Bearer ${token}`
+                    },
+                    body: JSON.stringify({
+                        query: 'I have a headache',
+                        language: 'en'
+                    })
+                });
+                const aiData = await aiRes.json();
+                document.getElementById('result').innerHTML += '<p>✅ AI Response: ' + aiData.primary_response.substring(0, 100) + '</p>';
+                console.log('Full AI Response:', aiData);
+            } catch (error) {
+                document.getElementById('result').innerHTML += '<p>❌ Error: ' + error.message + '</p>';
+                console.error('Error:', error);
+            }
+        }
+        testAI();
+    </script>
+</body>
+</html>

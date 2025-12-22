@@ -1,0 +1,4 @@
+- name: reload postgres for citus
+  ansible.builtin.service:
+    name: "{{ postgres_service_name | default('postgresql') }}"
+    state: reloaded

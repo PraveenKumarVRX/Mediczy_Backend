@@ -10,10 +10,12 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from ".
 import { Badge } from "../../components/ui/badge";
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger, DropdownMenuSeparator } from "../../components/ui/dropdown-menu";
 import AdminLayout from '../../components/layout/AdminLayout';
+import { useToast } from '../../hooks/use-toast';
 import { 
   Download, Upload, Plus, FileSpreadsheet, UserPlus,
   Search, Eye, Edit, Trash2, MoreVertical, Star, Building2, Phone, Mail,
-  ChevronLeft, ChevronRight, Users, Activity, TrendingUp, Shield
+  ChevronLeft, ChevronRight, Users, Activity, TrendingUp, Shield,
+  Award, Heart
 } from 'lucide-react';
 import { downloadExcelTemplate } from '../../utils/excelParser';
 import api from '../../utils/api';
@@ -151,6 +153,7 @@ const sampleNGOData: NGOOrganization[] = [
 ];
 
 const NGOManagement = () => {
+  const { toast } = useToast();
   // Form and upload state
   const [loading, setLoading] = useState(false);
   const [result, setResult] = useState<{ message: string; count?: number } | null>(null);
@@ -158,6 +161,25 @@ const NGOManagement = () => {
   const [jsonInput, setJsonInput] = useState('');
   const [activeTab, setActiveTab] = useState('list');
   const [editingNGO, setEditingNGO] = useState<NGOOrganization | null>(null);
+  const [createForm, setCreateForm] = useState<Partial<NGOOrganization>>({
+    ngoName: '',
+    registrationNumber: '',
+    email: '',
+    phoneNumber: '',
+    contactPerson: '',
+    area: '',
+    city: '',
+    state: '',
+    pincode: '',
+    focusAreas: [],
+    programs: [],
+    establishedYear: new Date().getFullYear(),
+    beneficiariesServed: 0,
+    volunteerCount: 0,
+    donationSupported: false,
+    certifications: [],
+    status: 'Active'
+  });
   const fileInputRef = useRef<HTMLInputElement>(null);
   const token = localStorage.getItem('adminToken');
 
@@ -269,6 +291,67 @@ const NGOManagement = () => {
     ], 'ngo-organizations', sampleData);
   };
 
+  const handleCreateNGO = (e: React.FormEvent) => {
+    e.preventDefault();
+    setError(null);
+
+    const now = new Date();
+    const newNGO: NGOOrganization = {
+      id: `NGO_${now.getTime()}`,
+      ngoName: (createForm.ngoName || '').trim(),
+      registrationNumber: (createForm.registrationNumber || '').trim(),
+      email: (createForm.email || '').trim(),
+      phoneNumber: (createForm.phoneNumber || '').trim(),
+      contactPerson: (createForm.contactPerson || '').trim(),
+      area: (createForm.area || '').trim(),
+      city: (createForm.city || '').trim(),
+      state: (createForm.state || '').trim(),
+      pincode: (createForm.pincode || '').trim(),
+      focusAreas: Array.isArray(createForm.focusAreas) ? createForm.focusAreas : [],
+      programs: Array.isArray(createForm.programs) ? createForm.programs : [],
+      establishedYear: Number(createForm.establishedYear || now.getFullYear()),
+      beneficiariesServed: Number(createForm.beneficiariesServed || 0),
+      volunteerCount: Number(createForm.volunteerCount || 0),
+      donationSupported: !!createForm.donationSupported,
+      website: (createForm.website || '').trim() || undefined,
+      certifications: Array.isArray(createForm.certifications) ? createForm.certifications : [],
+      rating: 0,
+      reviewCount: 0,
+      status: (createForm.status as any) || 'Active',
+      joinedDate: now.toISOString().slice(0, 10),
+      lastActivity: now.toISOString().slice(0, 10),
+      verificationStatus: 'Pending'
+    };
+
+    if (!newNGO.ngoName || !newNGO.registrationNumber || !newNGO.email) {
+      setError('Please fill NGO Name, Registration Number, and Email.');
+      return;
+    }
+
+    setNGOs(prev => [newNGO, ...prev]);
+    setResult({ message: 'NGO created successfully', count: 1 });
+    setActiveTab('list');
+
+    setCreateForm(prev => ({
+      ...prev,
+      ngoName: '',
+      registrationNumber: '',
+      email: '',
+      phoneNumber: '',
+      contactPerson: '',
+      area: '',
+      city: '',
+      state: '',
+      pincode: '',
+      beneficiariesServed: 0,
+      volunteerCount: 0,
+      donationSupported: false,
+      focusAreas: [],
+      programs: [],
+      certifications: []
+    }));
+  };
+
   return (
     <AdminLayout>
       <div className="space-y-6">
@@ -303,12 +386,122 @@ const NGOManagement = () => {
         )}
 
         <Tabs value={activeTab} onValueChange={setActiveTab}>
-          <TabsList className="grid w-full grid-cols-4 lg:w-[400px]">
+          <TabsList className="grid w-full grid-cols-5 lg:w-[520px]">
             <TabsTrigger value="list">List View</TabsTrigger>
             <TabsTrigger value="analytics">Analytics</TabsTrigger>
+            <TabsTrigger value="create">Add NGO</TabsTrigger>
             <TabsTrigger value="excel">Excel Upload</TabsTrigger>
             <TabsTrigger value="json">JSON Upload</TabsTrigger>
           </TabsList>
+
+          <TabsContent value="create" className="space-y-6">
+            <Card>
+              <CardHeader>
+                <CardTitle>Add NGO</CardTitle>
+                <p className="text-sm text-muted-foreground">
+                  Create a new NGO entry (saved locally in this admin view).
+                </p>
+              </CardHeader>
+              <CardContent>
+                <form onSubmit={handleCreateNGO} className="space-y-4">
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                    <div className="space-y-2">
+                      <Label htmlFor="ngoName">NGO Name *</Label>
+                      <Input
+                        id="ngoName"
+                        value={createForm.ngoName || ''}
+                        onChange={(e) => setCreateForm(prev => ({ ...prev, ngoName: e.target.value }))}
+                        placeholder="Enter NGO name"
+                      />
+                    </div>
+                    <div className="space-y-2">
+                      <Label htmlFor="reg">Registration Number *</Label>
+                      <Input
+                        id="reg"
+                        value={createForm.registrationNumber || ''}
+                        onChange={(e) => setCreateForm(prev => ({ ...prev, registrationNumber: e.target.value }))}
+                        placeholder="Enter registration number"
+                      />
+                    </div>
+                    <div className="space-y-2">
+                      <Label htmlFor="email">Email *</Label>
+                      <Input
+                        id="email"
+                        type="email"
+                        value={createForm.email || ''}
+                        onChange={(e) => setCreateForm(prev => ({ ...prev, email: e.target.value }))}
+                        placeholder="ngo@example.com"
+                      />
+                    </div>
+                    <div className="space-y-2">
+                      <Label htmlFor="phone">Phone</Label>
+                      <Input
+                        id="phone"
+                        value={createForm.phoneNumber || ''}
+                        onChange={(e) => setCreateForm(prev => ({ ...prev, phoneNumber: e.target.value }))}
+                        placeholder="+91XXXXXXXXXX"
+                      />
+                    </div>
+                    <div className="space-y-2">
+                      <Label htmlFor="city">City</Label>
+                      <Input
+                        id="city"
+                        value={createForm.city || ''}
+                        onChange={(e) => setCreateForm(prev => ({ ...prev, city: e.target.value }))}
+                        placeholder="City"
+                      />
+                    </div>
+                    <div className="space-y-2">
+                      <Label htmlFor="state">State</Label>
+                      <Input
+                        id="state"
+                        value={createForm.state || ''}
+                        onChange={(e) => setCreateForm(prev => ({ ...prev, state: e.target.value }))}
+                        placeholder="State"
+                      />
+                    </div>
+                    <div className="space-y-2">
+                      <Label>Status</Label>
+                      <Select
+                        value={(createForm.status as any) || 'Active'}
+                        onValueChange={(value) => setCreateForm(prev => ({ ...prev, status: value as any }))}
+                      >
+                        <SelectTrigger>
+                          <SelectValue placeholder="Select status" />
+                        </SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value="Active">Active</SelectItem>
+                          <SelectItem value="Inactive">Inactive</SelectItem>
+                          <SelectItem value="Pending">Pending</SelectItem>
+                          <SelectItem value="Suspended">Suspended</SelectItem>
+                        </SelectContent>
+                      </Select>
+                    </div>
+                    <div className="space-y-2">
+                      <Label htmlFor="benef">Beneficiaries Served</Label>
+                      <Input
+                        id="benef"
+                        type="number"
+                        value={(createForm.beneficiariesServed as any) ?? 0}
+                        onChange={(e) => setCreateForm(prev => ({ ...prev, beneficiariesServed: Number(e.target.value) }))}
+                        placeholder="0"
+                      />
+                    </div>
+                  </div>
+
+                  <div className="flex gap-2">
+                    <Button type="submit" disabled={loading}>
+                      <Plus className="mr-2 h-4 w-4" />
+                      Create NGO
+                    </Button>
+                    <Button type="button" variant="outline" onClick={() => setActiveTab('list')}>
+                      Cancel
+                    </Button>
+                  </div>
+                </form>
+              </CardContent>
+            </Card>
+          </TabsContent>
 
           <TabsContent value="list" className="space-y-6">
             {/* Search and Filter Controls */}
@@ -497,13 +690,13 @@ const NGOManagement = () => {
                                     <Edit className="mr-2 h-4 w-4" />
                                     Edit NGO
                                   </DropdownMenuItem>
-                                  <DropdownMenuItem onClick={() => alert(`View details for ${ngo.ngoName}`)}>
+                                  <DropdownMenuItem onClick={() => toast({ title: "NGO Details", description: `Viewing details for ${ngo.ngoName}` })}>
                                     <Eye className="mr-2 h-4 w-4" />
                                     View Details
                                   </DropdownMenuItem>
                                   <DropdownMenuSeparator />
                                   <DropdownMenuItem 
-                                    onClick={() => alert(`Delete ${ngo.ngoName}?`)} 
+                                    onClick={() => toast({ title: "Confirm Delete", description: `Are you sure you want to delete ${ngo.ngoName}?`, variant: "destructive" })} 
                                     className="text-destructive focus:text-destructive"
                                   >
                                     <Trash2 className="mr-2 h-4 w-4" />
@@ -642,13 +835,13 @@ const NGOManagement = () => {
               <CardContent>
                 <div className="space-y-4">
                   <p className="text-sm text-muted-foreground">
-                    Upload an Excel file (.xlsx, .xls) with NGO organization records.
+                    Upload an Excel file (.xlsx) with NGO organization records.
                   </p>
                   <div className="flex items-center gap-4">
                     <Input 
                       ref={fileInputRef} 
                       type="file" 
-                      accept=".xlsx,.xls" 
+                      accept=".xlsx" 
                       onChange={handleExcelUpload} 
                       disabled={loading} 
                     />

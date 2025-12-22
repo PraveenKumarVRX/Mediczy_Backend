@@ -1,0 +1,86 @@
+- name: Include OS specific vars
+  ansible.builtin.include_vars:
+    file: "{{ ansible_os_family | lower }}.yml"
+  ignore_errors: true
+
+- name: Install PostgreSQL packages
+  ansible.builtin.package:
+    name: "{{ postgres_packages }}"
+    state: present
+
+- name: Ensure data directory exists
+  ansible.builtin.file:
+    path: "{{ postgres_data_dir }}"
+    state: directory
+    owner: postgres
+    group: postgres
+    mode: '0700'
+
+- name: Deploy postgresql.conf
+  ansible.builtin.template:
+    src: postgresql.conf.j2
+    dest: "{{ postgres_conf_path }}"
+    owner: postgres
+    group: postgres
+    mode: '0644'
+    backup: true
+  notify: restart postgres
+
+- name: Deploy pg_hba.conf
+  ansible.builtin.template:
+    src: pg_hba.conf.j2
+    dest: "{{ postgres_hba_path }}"
+    owner: postgres
+    group: postgres
+    mode: '0640'
+    backup: true
+  notify: reload postgres
+
+- name: Ensure PostgreSQL service is enabled
+  ansible.builtin.service:
+    name: "{{ postgres_service_name }}"
+    state: started
+    enabled: true
+
+- name: Create helper users
+  become_user: postgres
+  community.postgresql.postgresql_user:
+    name: "{{ item.name }}"
+    password: "{{ item.password }}"
+    role_attr_flags: "{{ item.role_attr_flags | default('LOGIN') }}"
+  loop: "{{ postgres_users }}"
+
+- name: Create helper databases
+  become_user: postgres
+  community.postgresql.postgresql_db:
+    name: "{{ item.name }}"
+    owner: "{{ item.owner }}"
+    encoding: "{{ item.encoding | default('UTF8') }}"
+    template: "{{ item.template | default('template0') }}"
+    lc_collate: "{{ item.lc_collate | default('C.UTF-8') }}"
+    lc_ctype: "{{ item.lc_ctype | default('C.UTF-8') }}"
+  loop: "{{ postgres_databases }}"
+
+- name: Install backup script
+  ansible.builtin.copy:
+    dest: "{{ postgres_backup_cron.script_path }}"
+    owner: postgres
+    group: postgres
+    mode: '0750'
+    content: |
+      #!/usr/bin/env bash
+      set -euo pipefail
+      pg_basebackup -D {{ pg_backup_dir }}/$(date +%F) -X stream -c fast -U postgres
+  when: postgres_backup_cron.enabled
+
+- name: Schedule basebackup cron
+  ansible.builtin.cron:
+    name: "pg basebackup"
+    user: postgres
+    minute: "{{ postgres_backup_cron.schedule.split()[0] }}"
+    hour: "{{ postgres_backup_cron.schedule.split()[1] }}"
+    day: "{{ postgres_backup_cron.schedule.split()[2] }}"
+    month: "{{ postgres_backup_cron.schedule.split()[3] }}"
+    weekday: "{{ postgres_backup_cron.schedule.split()[4] }}"
+    job: "{{ postgres_backup_cron.script_path }}"
+  when: postgres_backup_cron.enabled

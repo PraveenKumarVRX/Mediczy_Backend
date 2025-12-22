@@ -30,4 +30,5 @@ const IntelligentAppointment = {
   }
 };
 
+export { Appointment };
 export default IntelligentAppointment;

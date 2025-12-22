@@ -1,0 +1,11 @@
+employeeId,name,email,phone,department,designation,joiningDate,healthStatus,lastCheckup,insurancePlan
+EMP101,Sarah Martinez,sarah.martinez@techcorp.com,+1555123001,Engineering,Senior Software Engineer,2024-01-15,excellent,2024-12-01,Premium Plan
+EMP102,Michael Chen,michael.chen@techcorp.com,+1555123002,Engineering,DevOps Engineer,2024-02-01,good,2024-11-28,Standard Plan
+EMP103,Jennifer Williams,jennifer.w@techcorp.com,+1555123003,HR,HR Manager,2024-01-20,good,2024-12-05,Premium Plan
+EMP104,David Brown,david.brown@techcorp.com,+1555123004,Sales,Sales Director,2024-03-10,excellent,2024-12-10,Executive Plan
+EMP105,Lisa Anderson,lisa.anderson@techcorp.com,+1555123005,Marketing,Marketing Lead,2024-02-15,good,2024-11-30,Standard Plan
+EMP106,Robert Taylor,robert.t@techcorp.com,+1555123006,Finance,Financial Analyst,2024-04-01,moderate,2024-12-02,Standard Plan
+EMP107,Emily Davis,emily.davis@techcorp.com,+1555123007,Engineering,Frontend Developer,2024-03-20,good,2024-12-08,Standard Plan
+EMP108,James Wilson,james.wilson@techcorp.com,+1555123008,Operations,Operations Manager,2024-01-10,excellent,2024-11-25,Premium Plan
+EMP109,Maria Garcia,maria.garcia@techcorp.com,+1555123009,Customer Success,Customer Success Lead,2024-02-28,good,2024-12-03,Standard Plan
+EMP110,Christopher Lee,chris.lee@techcorp.com,+1555123010,Engineering,Backend Developer,2024-03-15,good,2024-12-07,Standard Plan

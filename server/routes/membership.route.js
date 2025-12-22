@@ -1,7 +1,7 @@
 import express from 'express';
 import { body, param } from 'express-validator';
 import { authUser, requireRole } from '../middleware/auth.middleware.js';
-import { MembershipPlan, UserPlan } from '../models/membershipPlan.model.intelligent.js';
+import { MembershipPlan, UserPlan } from '../models/postgres/membershipPlan.model.postgres.js';
 
 const router = express.Router();
 

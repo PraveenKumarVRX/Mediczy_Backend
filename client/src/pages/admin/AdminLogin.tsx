@@ -5,8 +5,9 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
 import { Alert, AlertDescription } from '@/components/ui/alert';
-import { Shield, Eye, EyeOff, Activity, Lock, ArrowRight, CheckCircle2 } from 'lucide-react';
+import { Shield, Eye, EyeOff, Activity, Lock, ArrowRight, CheckCircle2, LifeBuoy } from 'lucide-react';
 import api from '@/utils/api';
+import { clearAuthTokens } from '@/hooks/auth';
 
 const AdminLogin = () => {
   const [email, setEmail] = useState('');
@@ -17,26 +18,25 @@ const AdminLogin = () => {
   const [isCheckingAuth, setIsCheckingAuth] = useState(true);
   const navigate = useNavigate();
 
-  const clearNonAdminTokens = () => {
-    const keysToClear = [
-      'token',
-      'doctorToken',
-      'teamToken',
-      'nurseToken',
-      'assistantToken',
-      'corporateToken',
-      'hospitalToken',
-      'clinicToken',
-      'labToken',
-      'pharmacyToken',
-      'ambulanceToken',
-      'homecareToken',
-      'tpaToken',
-      'insuranceBrokerToken',
-      'insuranceCompanyToken',
-      'userType'
-    ];
-    keysToClear.forEach((key) => localStorage.removeItem(key));
+  const establishAdminSession = (token: string, adminUser?: any) => {
+    clearAuthTokens();
+    const safeAdminData = adminUser
+      ? {
+          id: adminUser.id,
+          email: adminUser.email,
+          role: adminUser.role || adminUser.type || 'admin'
+        }
+      : null;
+
+    localStorage.setItem('adminToken', token);
+    localStorage.setItem('token', token);
+    localStorage.setItem('userType', 'admin');
+    if (safeAdminData) {
+      localStorage.setItem('adminData', JSON.stringify(safeAdminData));
+    } else {
+      localStorage.removeItem('adminData');
+    }
+    window.dispatchEvent(new Event('authChange'));
   };
 
   // Check if already authenticated
@@ -44,16 +44,11 @@ const AdminLogin = () => {
     const token = localStorage.getItem('adminToken');
     if (token) {
       console.log('✅ Admin already authenticated, redirecting...');
-      // Ensure role context is consistent for admin-only UI that keys off userType
-      clearNonAdminTokens();
       localStorage.setItem('userType', 'admin');
       window.dispatchEvent(new Event('authChange'));
       navigate('/admin/dashboard');
       return;
     }
-
-    // Clear any other role tokens that might interfere (ring-fencing)
-    clearNonAdminTokens();
     
     // Development mode: Auto-set credentials
     if (import.meta.env.DEV) {
@@ -71,39 +66,14 @@ const AdminLogin = () => {
     
     console.log('Admin login attempt:', { email, password: '***' });
     
-    // Development mode: Quick bypass for valid credentials
-    if (import.meta.env.DEV && email === 'admin@mediczy.com' && password === 'SecurePass123') {
-      console.log('🚀 Development mode: Using quick authentication bypass');
-      
-      // Clear any other role tokens first
-      clearNonAdminTokens();
-      
-      // Set dev token directly
-      localStorage.setItem('adminToken', 'dev-admin-token');
-      localStorage.setItem('userType', 'admin');
-      localStorage.setItem('adminData', JSON.stringify({
-        id: 'admin_dev',
-        email: 'admin@mediczy.com',
-        role: 'super_admin',
-        firstName: 'System',
-        lastName: 'Administrator'
-      }));
-
-      window.dispatchEvent(new Event('authChange'));
-      
-      setLoading(false);
-      navigate('/admin/dashboard');
-      return;
-    }
+    const controller = new AbortController();
+    let timeoutId: ReturnType<typeof setTimeout> | undefined;
     
     try {
       // Add timeout to prevent long waits
-      const controller = new AbortController();
-      const timeoutId = setTimeout(() => controller.abort(), 10000); // 10 second timeout
+      timeoutId = setTimeout(() => controller.abort(), 10000); // 10 second timeout
 
       const { data } = await api.post('/admin/login', { email, password }, { signal: controller.signal, skipAuth: true });
-
-      clearTimeout(timeoutId);
       
       if (import.meta.env.DEV) {
         console.log('Login response:', data);
@@ -114,15 +84,7 @@ const AdminLogin = () => {
         throw new Error('Invalid server response');
       }
       
-      // Clear any other role tokens first
-      clearNonAdminTokens();
-      
-      // Store token securely with immediate verification
-      localStorage.setItem('adminToken', data.token);
-      localStorage.setItem('userType', 'admin');
-      localStorage.setItem('adminData', JSON.stringify(data.user));
-
-      window.dispatchEvent(new Event('authChange'));
+      establishAdminSession(data.token, data.user);
       
       // Immediate verification
       const verifyToken = localStorage.getItem('adminToken');
@@ -158,6 +120,9 @@ const AdminLogin = () => {
         setError(message);
       }
     } finally {
+      if (timeoutId) {
+        clearTimeout(timeoutId);
+      }
       setLoading(false);
     }
   };
@@ -220,7 +185,7 @@ const AdminLogin = () => {
                   initial={{ opacity: 0, height: 0 }}
                   animate={{ opacity: 1, height: 'auto' }}
                 >
-                  <Alert className="border-red-100 bg-red-50/50 text-red-800">
+                  <Alert className="border-red-100 bg-red-50/50 text-red-800" role="alert">
                     <AlertDescription className="flex items-center gap-2 text-sm font-medium">
                       <div className="w-1.5 h-1.5 rounded-full bg-red-500"></div>
                       {error}
@@ -269,8 +234,9 @@ const AdminLogin = () => {
                       type="button"
                       onClick={() => setShowPassword(!showPassword)}
                       className="absolute right-3 top-1/2 transform -translate-y-1/2 text-slate-400 hover:text-slate-600 transition-colors p-1 rounded-md hover:bg-slate-100"
+                      aria-label={showPassword ? 'Hide password' : 'Show password'}
                     >
-                      {showPassword ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
+                      {showPassword ? <EyeOff className="h-4 w-4" aria-hidden="true" /> : <Eye className="h-4 w-4" aria-hidden="true" />}
                     </button>
                   </div>
                 </div>
@@ -301,17 +267,11 @@ const AdminLogin = () => {
                   variant="ghost"
                   onClick={() => {
                     console.log('🚀 Quick development login');
-                    clearNonAdminTokens();
-                    localStorage.setItem('adminToken', 'dev-admin-token');
-                    localStorage.setItem('userType', 'admin');
-                    localStorage.setItem('adminData', JSON.stringify({
+                    establishAdminSession('dev-admin-token', {
                       id: 'admin_dev',
                       email: 'admin@mediczy.com',
-                      role: 'super_admin',
-                      firstName: 'System',
-                      lastName: 'Administrator'
-                    }));
-                    window.dispatchEvent(new Event('authChange'));
+                      role: 'super_admin'
+                    });
                     navigate('/admin/dashboard');
                   }}
                   className="w-full h-9 text-xs text-slate-400 hover:text-slate-600 hover:bg-slate-50"
@@ -320,6 +280,25 @@ const AdminLogin = () => {
                 </Button>
               )}
             </form>
+
+            <div className="mt-6 text-center space-y-2">
+              <button
+                type="button"
+                className="text-sm text-blue-600 hover:underline font-medium"
+                onClick={() => window.open('mailto:support@mediczy.com?subject=Admin%20Access%20Help', '_self')}
+              >
+                Forgot password or locked out?
+              </button>
+              <div className="flex items-center justify-center gap-2 text-xs text-slate-500">
+                <LifeBuoy className="h-3.5 w-3.5" aria-hidden="true" />
+                <a
+                  href="mailto:support@mediczy.com?subject=Admin%20Portal%20Assistance"
+                  className="underline-offset-2 hover:underline"
+                >
+                  Contact support
+                </a>
+              </div>
+            </div>
           </CardContent>
         </Card>
         

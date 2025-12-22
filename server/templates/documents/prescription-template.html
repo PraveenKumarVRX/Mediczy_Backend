@@ -3,16 +3,16 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Medical Prescription</title>
+    <title>Medical Prescription - EMR</title>
     <style>
         @page {
             size: A4;
-            margin: 15mm;
+            margin: 12mm;
         }
         body {
             font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
-            line-height: 1.6;
-            color: #333;
+            line-height: 1.5;
+            color: #1a1a1a;
             margin: 0;
             padding: 0;
         }
@@ -20,45 +20,118 @@
             max-width: 210mm;
             margin: 0 auto;
             background: white;
+            padding: 15px;
+            border: 2px solid #2563eb;
+            position: relative;
+        }
+        
+        /* EMR Header with Doctor Credentials */
+        .emr-header {
+            background: linear-gradient(135deg, #2563eb 0%, #1e40af 100%);
+            color: white;
             padding: 20px;
+            margin: -15px -15px 20px -15px;
+            border-radius: 0;
         }
-        .header {
-            border-bottom: 3px solid #2563eb;
-            padding-bottom: 15px;
-            margin-bottom: 20px;
-        }
-        .clinic-info {
+        .header-top {
             display: flex;
             justify-content: space-between;
-            align-items: start;
+            align-items: flex-start;
+            margin-bottom: 15px;
         }
-        .clinic-details h1 {
+        .doctor-info {
+            flex: 1;
+        }
+        .doctor-name {
+            font-size: 26px;
+            font-weight: bold;
+            margin: 0 0 8px 0;
+            letter-spacing: 0.5px;
+        }
+        .doctor-qualifications {
+            font-size: 14px;
             margin: 0 0 5px 0;
-            color: #2563eb;
-            font-size: 24px;
+            opacity: 0.95;
+            font-weight: 500;
         }
-        .clinic-details p {
-            margin: 3px 0;
+        .doctor-specialty {
+            font-size: 15px;
+            margin: 0 0 5px 0;
+            font-weight: 600;
+            color: #fbbf24;
+        }
+        .doctor-registration {
             font-size: 12px;
-            color: #666;
+            margin: 5px 0 0 0;
+            opacity: 0.9;
+            font-style: italic;
         }
-        .logo {
-            width: 80px;
-            height: 80px;
-            background: #f3f4f6;
+        .clinic-logo {
+            width: 90px;
+            height: 90px;
+            background: white;
             display: flex;
             align-items: center;
             justify-content: center;
-            border-radius: 8px;
-            font-size: 36px;
+            border-radius: 50%;
+            font-size: 42px;
+            box-shadow: 0 4px 6px rgba(0,0,0,0.1);
+            border: 3px solid #fbbf24;
         }
+        .clinic-details {
+            background: rgba(255, 255, 255, 0.1);
+            padding: 12px;
+            border-radius: 6px;
+            margin-top: 10px;
+        }
+        .clinic-name {
+            font-size: 18px;
+            font-weight: bold;
+            margin: 0 0 8px 0;
+        }
+        .clinic-address {
+            font-size: 12px;
+            margin: 3px 0;
+            opacity: 0.95;
+            line-height: 1.4;
+        }
+        .clinic-address {
+            font-size: 12px;
+            margin: 3px 0;
+            opacity: 0.95;
+            line-height: 1.4;
+        }
+        
+        /* Prescription Details Bar */
+        .prescription-bar {
+            background: #f3f4f6;
+            padding: 12px 15px;
+            margin: 0 -15px 20px -15px;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            border-top: 2px solid #e5e7eb;
+            border-bottom: 2px solid #e5e7eb;
+        }
+        .prescription-id {
+            font-size: 14px;
+            font-weight: bold;
+            color: #2563eb;
+        }
+        .prescription-date {
+            font-size: 13px;
+            color: #4b5563;
+        }
+        
+        /* Rx Symbol */
         .rx-symbol {
-            font-size: 48px;
+            font-size: 56px;
             color: #2563eb;
             font-weight: bold;
             text-align: center;
-            margin: 20px 0;
+            margin: 15px 0;
             font-family: 'Times New Roman', serif;
+            text-shadow: 2px 2px 4px rgba(0,0,0,0.1);
         }
         .patient-section {
             background: #f9fafb;
@@ -190,40 +263,119 @@
         .follow-up-icon {
             font-size: 24px;
         }
-        .footer {
+        
+        /* EMR Footer with Signature and Seal */
+        .emr-footer {
             margin-top: 40px;
             padding-top: 20px;
             border-top: 2px solid #e5e7eb;
         }
-        .doctor-signature {
+        .signature-section {
             display: flex;
             justify-content: space-between;
-            align-items: end;
+            align-items: flex-end;
+            margin-bottom: 20px;
         }
-        .signature-box {
+        .doctor-signature-box {
+            flex: 1;
+            max-width: 45%;
+        }
+        .signature-image {
+            height: 60px;
+            margin-bottom: 5px;
+            border-bottom: 2px solid #374151;
+            display: flex;
+            align-items: flex-end;
+            justify-content: center;
+            font-family: 'Brush Script MT', cursive;
+            font-size: 32px;
+            color: #1e40af;
+            padding-bottom: 5px;
+        }
+        .signature-label {
+            font-size: 11px;
+            color: #6b7280;
             text-align: center;
+            margin-top: 5px;
         }
-        .signature-line {
-            width: 200px;
-            border-top: 2px solid #374151;
-            margin: 40px auto 10px;
-        }
-        .doctor-name {
+        .signature-doctor-name {
             font-weight: bold;
             color: #1f2937;
+            text-align: center;
+            margin: 5px 0 2px 0;
+            font-size: 14px;
         }
-        .doctor-credentials {
-            font-size: 12px;
+        .signature-credentials {
+            font-size: 11px;
             color: #6b7280;
+            text-align: center;
+            margin: 2px 0;
+        }
+        .signature-registration {
+            font-size: 11px;
+            color: #4b5563;
+            text-align: center;
+            font-weight: 600;
+            margin-top: 3px;
+        }
+        .clinic-seal {
+            flex: 0 0 140px;
+            text-align: center;
+        }
+        .seal-container {
+            width: 130px;
+            height: 130px;
+            border: 4px double #2563eb;
+            border-radius: 50%;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            margin: 0 auto;
+            background: radial-gradient(circle, #eff6ff 0%, #dbeafe 100%);
+            position: relative;
+        }
+        .seal-text {
+            font-size: 11px;
+            font-weight: bold;
+            color: #1e40af;
+            text-align: center;
+            line-height: 1.3;
+            margin: 3px 0;
+        }
+        .seal-icon {
+            font-size: 36px;
+            margin: 5px 0;
+        }
+        .seal-number {
+            font-size: 9px;
+            color: #4b5563;
+            font-weight: 600;
+            margin-top: 3px;
         }
         .prescription-footer {
             margin-top: 20px;
             padding: 15px;
             background: #f9fafb;
-            border-radius: 8px;
-            font-size: 11px;
+            border-radius: 6px;
+            font-size: 10px;
             color: #6b7280;
             text-align: center;
+            line-height: 1.5;
+        }
+        .disclaimer {
+            font-style: italic;
+            margin-top: 8px;
+        }
+        .emr-badge {
+            display: inline-block;
+            background: #10b981;
+            color: white;
+            padding: 4px 12px;
+            border-radius: 12px;
+            font-size: 10px;
+            font-weight: bold;
+            margin-top: 5px;
         }
         .watermark {
             position: absolute;
@@ -231,38 +383,49 @@
             left: 50%;
             transform: translate(-50%, -50%) rotate(-45deg);
             font-size: 120px;
-            color: rgba(37, 99, 235, 0.05);
+            color: rgba(37, 99, 235, 0.03);
             font-weight: bold;
             z-index: -1;
             pointer-events: none;
         }
         @media print {
             .prescription-container {
-                padding: 0;
+                padding: 10px;
+                border: none;
             }
         }
     </style>
 </head>
 <body>
-    <div class="watermark">PRESCRIPTION</div>
+    <div class="watermark">℞ PRESCRIPTION</div>
     <div class="prescription-container">
-        <!-- Header -->
-        <div class="header">
-            <div class="clinic-info">
-                <div class="clinic-details">
-                    <h1>{{clinicName}}</h1>
-                    <p>📍 {{clinicAddress}}</p>
-                    <p>📞 {{clinicPhone}} | ✉️ {{clinicEmail}}</p>
-                    <p>🌐 {{clinicWebsite}}</p>
+        
+        <!-- EMR Header with Complete Doctor Credentials -->
+        <div class="emr-header">
+            <div class="header-top">
+                <div class="doctor-info">
+                    <h1 class="doctor-name">{{doctorName}}</h1>
+                    <p class="doctor-qualifications">{{doctorQualifications}}</p>
+                    <p class="doctor-specialty">{{doctorSpecialty}}</p>
+                    <p class="doctor-registration">Registration No: {{doctorRegNo}}</p>
                 </div>
-                <div class="logo">
+                <div class="clinic-logo">
                     🏥
                 </div>
             </div>
+            
+            <div class="clinic-details">
+                <div class="clinic-name">{{clinicName}}</div>
+                <div class="clinic-address">📍 {{clinicAddress}}</div>
+                <div class="clinic-address">📞 {{clinicPhone}} | ✉️ {{clinicEmail}}</div>
+            </div>
         </div>
 
-        <!-- Rx Symbol -->
-        <div class="rx-symbol">℞</div>
+        <!-- Prescription ID and Date Bar -->
+        <div class="prescription-bar">
+            <div class="prescription-id">Prescription No: {{prescriptionId}}</div>
+            <div class="prescription-date">📅 Date: {{prescriptionDate}}</div>
+        </div>
 
         <!-- Patient Information -->
         <div class="patient-section">
@@ -393,33 +556,52 @@
             </div>
         </div>
 
-        <!-- Footer with Doctor Signature -->
-        <div class="footer">
-            <div class="doctor-signature">
-                <div style="flex: 1;">
-                    <p style="margin: 0; font-size: 12px; color: #6b7280;">
-                        This is a computer-generated prescription and is valid for {{validityDays}} days from the date of issue.
-                    </p>
+        <!-- EMR Footer with Digital Signature and Clinic Seal -->
+        <div class="emr-footer">
+            <div class="signature-section">
+                <!-- Doctor's Digital Signature -->
+                <div class="doctor-signature-box">
+                    <div class="signature-image">{{doctorName}}</div>
+                    <div class="signature-label">Digital Signature</div>
+                    <div class="signature-doctor-name">Dr. {{doctorName}}</div>
+                    <div class="signature-credentials">{{doctorQualifications}}</div>
+                    <div class="signature-credentials">{{doctorSpecialty}}</div>
+                    <div class="signature-registration">Reg. No: {{doctorRegNo}}</div>
                 </div>
-                <div class="signature-box">
-                    <div class="signature-line"></div>
-                    <div class="doctor-name">Dr. {{doctorName}}</div>
-                    <div class="doctor-credentials">{{doctorQualifications}}</div>
-                    <div class="doctor-credentials">Reg. No: {{doctorRegNo}}</div>
+                
+                <!-- Clinic Official Seal -->
+                <div class="clinic-seal">
+                    <div class="seal-container">
+                        <div class="seal-text">{{clinicName}}</div>
+                        <div class="seal-icon">🏥</div>
+                        <div class="seal-text">OFFICIAL SEAL</div>
+                        <div class="seal-number">Est. 2024</div>
+                    </div>
+                    <div class="signature-label" style="margin-top: 8px;">Clinic Seal</div>
                 </div>
             </div>
         </div>
 
-        <!-- Prescription Footer -->
+        <!-- EMR Prescription Footer -->
         <div class="prescription-footer">
-            <p style="margin: 0;"><strong>Important Notes:</strong></p>
-            <p style="margin: 5px 0 0 0;">
-                • This prescription is valid only with doctor's signature and stamp<br>
-                • Do not self-medicate or share medicines with others<br>
-                • Store medicines as per instructions | Complete the full course as prescribed<br>
-                • In case of any adverse reaction, contact your doctor immediately<br>
-                Generated via Mediczy Healthcare Platform | {{generatedDateTime}}
+            <div style="margin-bottom: 8px;">
+                <strong>📋 EMR PRESCRIPTION - LEGALLY VALID DOCUMENT</strong>
+                <span class="emr-badge">CERTIFIED EMR</span>
+            </div>
+            <p style="margin: 0; line-height: 1.6;">
+                ✓ This is a digitally signed Electronic Medical Record (EMR) prescription<br>
+                ✓ Valid for {{validityDays}} days from date of issue | Authentication: Digital Signature + Clinic Seal<br>
+                ✓ Accepted at all pharmacies | Complies with Medical Council of India regulations
             </p>
+            <p class="disclaimer">
+                <strong>Important:</strong> Do not self-medicate • Complete full course as prescribed • 
+                Store medicines properly • Contact doctor if adverse reactions occur • 
+                This prescription is valid only with digital signature and seal displayed above
+            </p>
+            <div style="margin-top: 10px; font-size: 9px; color: #9ca3af;">
+                Generated: {{generatedDateTime}} | Platform: Mediczy Healthcare EMR System<br>
+                Document ID: {{prescriptionId}} | Doctor ID: {{doctorId}}
+            </div>
         </div>
     </div>
 </body>

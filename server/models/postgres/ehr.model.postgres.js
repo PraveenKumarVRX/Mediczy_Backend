@@ -165,12 +165,13 @@ const HealthDiary = sequelize.define('HealthDiary', {
     index: true
   },
   entryDate: {
-    type: DataTypes.DATEONLY,
+    type: DataTypes.DATE,
     allowNull: false,
-    index: true
+    index: true,
+    comment: 'Precise timestamp: year-month-day-hour-minute-second'
   },
   entryType: {
-    type: DataTypes.ENUM('symptom', 'medication', 'mood', 'activity', 'diet', 'sleep', 'vital', 'note', 'prescription'),
+    type: DataTypes.ENUM('symptom', 'medication', 'mood', 'activity', 'diet', 'sleep', 'vital', 'note', 'prescription', 'consultation', 'lab_test', 'lab_result', 'appointment', 'device_reading', 'ai_consultation', 'diagnosis', 'procedure', 'imaging', 'vaccination', 'allergy', 'insurance_claim'),
     allowNull: false,
     index: true
   },

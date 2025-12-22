@@ -77,7 +77,7 @@ const CorporateSupport: React.FC = () => {
       </div>
 
       <div className="grid gap-4 md:grid-cols-3">
-        <Card className="hover:shadow-lg transition-shadow cursor-pointer">
+        <Card className="hover:shadow-lg transition-shadow cursor-pointer" onClick={() => setTicketOpen(true)}>
           <CardContent className="pt-6">
             <div className="flex flex-col items-center text-center gap-4">
               <div className="p-4 bg-green-100 rounded-full">
@@ -92,7 +92,7 @@ const CorporateSupport: React.FC = () => {
           </CardContent>
         </Card>
 
-        <Card className="hover:shadow-lg transition-shadow cursor-pointer">
+        <Card className="hover:shadow-lg transition-shadow cursor-pointer" onClick={() => window.location.href = 'tel:+18001234567'}>
           <CardContent className="pt-6">
             <div className="flex flex-col items-center text-center gap-4">
               <div className="p-4 bg-blue-100 rounded-full">
@@ -109,7 +109,7 @@ const CorporateSupport: React.FC = () => {
           </CardContent>
         </Card>
 
-        <Card className="hover:shadow-lg transition-shadow cursor-pointer">
+        <Card className="hover:shadow-lg transition-shadow cursor-pointer" onClick={() => window.location.href = 'mailto:support@mediczy.com'}>
           <CardContent className="pt-6">
             <div className="flex flex-col items-center text-center gap-4">
               <div className="p-4 bg-purple-100 rounded-full">

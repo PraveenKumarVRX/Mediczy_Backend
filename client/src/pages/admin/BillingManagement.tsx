@@ -607,17 +607,22 @@ const BillingManagement = () => {
                             </TableCell>
                             <TableCell>
                               <div className="flex items-center gap-2">
-                                <Dialog>
-                                  <DialogTrigger asChild>
-                                    <Button size="sm" variant="outline" className="h-8 w-8 p-0" onClick={() => setViewingInvoice(invoice)}>
-                                      <Eye className="h-3 w-3" />
-                                    </Button>
-                                  </DialogTrigger>
-                                </Dialog>
+                                <Button
+                                  type="button"
+                                  size="sm"
+                                  variant="outline"
+                                  className="h-8 w-8 p-0"
+                                  onClick={() => setViewingInvoice(invoice)}
+                                >
+                                  <Eye className="h-3 w-3" />
+                                </Button>
                                 <Button size="sm" variant="outline" className="h-8 w-8 p-0" onClick={() => setEditingInvoice(invoice)}>
                                   <Edit className="h-3 w-3" />
                                 </Button>
-                                <Button size="sm" variant="outline" className="h-8 w-8 p-0">
+                                <Button size="sm" variant="outline" className="h-8 w-8 p-0" onClick={() => {
+                                  // Export invoice as PDF
+                                  alert(`Exporting invoice ${invoice.invoiceNumber}`);
+                                }}>
                                   <Download className="h-3 w-3" />
                                 </Button>
                                 {invoice.status === 'draft' && (
@@ -691,7 +696,7 @@ const BillingManagement = () => {
                       <SelectItem value="SAC">SAC (Services)</SelectItem>
                     </SelectContent>
                   </Select>
-                  <Button className="bg-green-600 hover:bg-green-700">
+                  <Button className="bg-green-600 hover:bg-green-700" onClick={() => setEditingHsnSac({} as HSNSACCode)}>
                     <Plus className="mr-2 h-4 w-4" />
                     Add HSN/SAC Code
                   </Button>
@@ -790,6 +795,11 @@ const BillingManagement = () => {
                                 size="sm" 
                                 variant="outline" 
                                 className="h-8 w-8 p-0 text-red-600"
+                                onClick={() => {
+                                  if (confirm('Delete this HSN/SAC code?')) {
+                                    setHsnSacCodes(prev => prev.filter(c => c.id !== code.id));
+                                  }
+                                }}
                               >
                                 <Trash2 className="h-3 w-3" />
                               </Button>

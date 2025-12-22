@@ -4,6 +4,27 @@ import { QUEUE_NAMES } from '../config/queues.js';
 import { queueJobsTotal, queueJobDuration } from '../config/prometheus.js';
 import emailService from '../services/emailService.js';
 
+// Kafka-n8n notification worker
+let kafkaN8NWorker = null;
+const initKafkaWorker = async () => {
+  try {
+    const { worker } = await import('./kafka-n8n.worker.js');
+    const initialized = await worker.initialize();
+    if (initialized) {
+      await worker.start();
+      kafkaN8NWorker = worker;
+      console.log('✅ Kafka-n8n notification worker started');
+    }
+  } catch (error) {
+    console.warn('⚠️  Kafka-n8n worker not available:', error.message);
+  }
+};
+
+// Initialize Kafka worker (non-blocking)
+if (process.env.KAFKA_ENABLED === 'true') {
+  initKafkaWorker();
+}
+
 // Redis connection for workers
 const connection = createRedisConnection();
 
@@ -169,6 +190,17 @@ export const workers = {
   dataExport: createWorker(QUEUE_NAMES.DATA_EXPORT, processDataExportJob),
   analytics: createWorker(QUEUE_NAMES.ANALYTICS, processAnalyticsJob),
   cleanup: createWorker(QUEUE_NAMES.CLEANUP, processCleanupJob),
+  kafkaN8N: kafkaN8NWorker
+};
+
+// Export Kafka worker status
+export const getKafkaWorkerStatus = () => {
+  return kafkaN8NWorker ? kafkaN8NWorker.getStatus() : { running: false, reason: 'Not initialized' };
+};
+
+// Export Kafka worker analytics
+export const getKafkaWorkerAnalytics = async (timeRange = '24h') => {
+  return kafkaN8NWorker ? await kafkaN8NWorker.getAnalytics(timeRange) : null;
 };
 
 console.log('✅ All workers initialized');
@@ -176,7 +208,10 @@ console.log('✅ All workers initialized');
 // Graceful shutdown
 const shutdown = async () => {
   console.log('Closing workers...');
-  await Promise.all(Object.values(workers).map(w => w.close()));
+  await Promise.all(Object.values(workers).filter(w => w && typeof w.close === 'function').map(w => w.close()));
+  if (kafkaN8NWorker) {
+    await kafkaN8NWorker.stop();
+  }
   await connection.quit();
   console.log('✅ Workers closed');
 };

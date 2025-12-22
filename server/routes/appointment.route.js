@@ -11,9 +11,12 @@ import {
   rateAppointment,
   updatePaymentStatus
 } from '../controller/appointment.controller.js';
-import { authUser } from '../middleware/auth.middleware.js';
+import { authUser, requireRole } from '../middleware/auth.middleware.js';
 import Appointment from '../models/appointment.model.intelligent.js';
 import intelligentDb from '../utils/intelligentDbClient.js';
+import { generateICalFile, generateDoctorICalFile, generateICalFilename } from '../utils/icalGenerator.js';
+import Doctor from '../models/doctor.model.intelligent.js';
+import User from '../models/user.model.intelligent.js';
 
 const router = express.Router();
 
@@ -76,6 +79,7 @@ router.get(
 router.get(
   '/doctor',
   authUser,
+  requireRole('doctor'),
   [
     query('status').optional().isIn(['scheduled', 'confirmed', 'in-progress', 'completed', 'cancelled', 'no-show', 'rescheduled']),
     query('date').optional().isDate(),
@@ -202,6 +206,16 @@ router.patch(
       if (!appointment) {
         return res.status(404).json({ message: 'Appointment not found' });
       }
+
+      const isAdmin =
+        Boolean(req.user?.isAdmin) ||
+        (typeof req.userRole === 'string' && req.userRole.includes('admin'));
+      const isDoctorOwner =
+        req.userRole === 'doctor' && appointment.doctorId === req.user.id;
+
+      if (!isAdmin && !isDoctorOwner) {
+        return res.status(403).json({ message: 'Unauthorized access' });
+      }
       
       const updates = {};
       if (status) updates.status = status;
@@ -212,7 +226,7 @@ router.patch(
       // Auto-increment patient's plan usage when marking as completed
       if (status === 'completed' && appointment.userId && appointment.specialization) {
         try {
-          const { UserPlan } = await import('../models/membershipPlan.model.intelligent.js');
+          const { UserPlan } = await import('../models/postgres/membershipPlan.model.postgres.js');
           
           const userPlan = await UserPlan.findOne({
             where: { userId: appointment.userId, status: 'active' }
@@ -272,6 +286,140 @@ router.post(
 );
 
 /**
+ * @route   POST /api/appointments/:id/complete-with-prescription
+ * @desc    Complete consultation and auto-create prescription draft
+ * @access  Private (Doctor)
+ */
+router.post(
+  '/:id/complete-with-prescription',
+  authUser,
+  [
+    param('id').isInt().withMessage('Valid appointment ID is required'),
+    body('notes').optional().isString(),
+    body('duration').optional().isString()
+  ],
+  async (req, res) => {
+    try {
+      const { id } = req.params;
+      const doctorId = req.user.id;
+      const { notes, duration } = req.body;
+
+      const appointment = await Appointment.findByPk(id);
+
+      if (!appointment) {
+        return res.status(404).json({ message: 'Appointment not found' });
+      }
+
+      if (appointment.doctorId !== doctorId) {
+        return res.status(403).json({ message: 'Unauthorized access' });
+      }
+
+      // Check if prescription already exists
+      const { Prescription, Doctor, User } = await import('../models/index.js');
+      
+      let prescription = await Prescription.findOne({
+        where: { appointmentId: parseInt(id) }
+      });
+
+      // If no prescription exists, create draft
+      if (!prescription) {
+        const doctor = await Doctor.findByPk(doctorId);
+        const patient = await User.findByPk(appointment.userId);
+
+        if (doctor && patient) {
+          let patientAge = null;
+          if (patient.dateOfBirth) {
+            const dob = new Date(patient.dateOfBirth);
+            const today = new Date();
+            patientAge = today.getFullYear() - dob.getFullYear();
+          }
+
+          prescription = await Prescription.create({
+            appointmentId: appointment.id,
+            patientId: appointment.userId,
+            patientName: `${patient.firstName || ''} ${patient.lastName || ''}`.trim() || appointment.patientName,
+            patientAge,
+            patientGender: patient.gender || 'Not specified',
+            patientPhone: patient.phoneNumber || patient.phone || appointment.patientPhone,
+            doctorId: doctor.id,
+            doctorName: `${doctor.firstName || ''} ${doctor.lastName || ''}`.trim(),
+            doctorQualifications: Array.isArray(doctor.qualifications) 
+              ? doctor.qualifications.join(', ') 
+              : (doctor.qualifications || doctor.qualification || 'MBBS'),
+            doctorRegNo: doctor.registrationNumber || doctor.licenseNumber || 'N/A',
+            specialty: doctor.specialization || 'General Medicine',
+            clinicName: doctor.clinicHospitalName || doctor.clinicName || 'Mediczy Healthcare',
+            clinicAddress: ['video', 'audio', 'chat'].includes(appointment.consultationType)
+              ? 'Online Consultation / Telemedicine'
+              : (doctor.clinicAddress || 'Clinic'),
+            clinicPhone: doctor.phone || doctor.phoneNumber,
+            clinicEmail: doctor.email,
+            clinicDetails: {
+              name: doctor.clinicHospitalName || doctor.clinicName || 'Mediczy Healthcare',
+              address: ['video', 'audio', 'chat'].includes(appointment.consultationType)
+                ? 'Online Consultation / Telemedicine'
+                : (doctor.clinicAddress || 'Clinic'),
+              phone: doctor.phone || doctor.phoneNumber,
+              email: doctor.email,
+              specialty: doctor.specialization,
+              consultationType: appointment.consultationType
+            },
+            diagnosis: 'To be filled by doctor',
+            chiefComplaints: appointment.symptoms || ['As discussed during consultation'],
+            medications: [],
+            labTests: [],
+            instructions: [
+              'Complete the full course of medications',
+              'Take medicines as directed',
+              'Contact doctor if symptoms worsen'
+            ],
+            vitals: {},
+            validityDays: 30,
+            notes: duration 
+              ? `${appointment.consultationType} consultation completed (${duration})`
+              : notes || `${appointment.consultationType} consultation completed`,
+            status: 'draft'
+          });
+        }
+      }
+
+      // Update appointment
+      await appointment.update({
+        status: 'completed',
+        notes: duration 
+          ? `Consultation completed (${duration})`
+          : notes || 'Consultation completed',
+        prescription: prescription?.prescriptionId
+      });
+
+      return res.status(200).json({
+        success: true,
+        message: 'Consultation completed and prescription draft created',
+        appointment: {
+          id: appointment.id,
+          status: appointment.status,
+          consultationType: appointment.consultationType
+        },
+        prescription: prescription ? {
+          prescriptionId: prescription.prescriptionId,
+          status: prescription.status,
+          editUrl: `/api/prescriptions/${prescription.prescriptionId}`,
+          updateUrl: `/api/prescriptions/from-appointment/${appointment.id}`,
+          message: 'Prescription draft ready. Add diagnosis and medications to finalize.'
+        } : null
+      });
+
+    } catch (error) {
+      console.error('Complete with prescription error:', error);
+      return res.status(500).json({ 
+        message: 'Failed to complete consultation',
+        error: error.message 
+      });
+    }
+  }
+);
+
+/**
  * @route   PATCH /api/appointments/:id/rating
  * @desc    Submit appointment rating (alternative route)
  * @access  Private (User)
@@ -318,6 +466,173 @@ router.patch(
     body('transactionId').optional().isString()
   ],
   updatePaymentStatus
+);
+
+/**
+ * @route   POST /api/appointments/:id/remind
+ * @desc    Send reminder notification for an appointment
+ * @access  Private (Assistant/Staff)
+ */
+router.post(
+  '/:id/remind',
+  authUser,
+  [
+    param('id').isInt().withMessage('Valid appointment ID is required'),
+    body('message').optional().isString()
+  ],
+  async (req, res) => {
+    try {
+      const { id } = req.params;
+      const { message } = req.body;
+      
+      const appointment = await Appointment.findByPk(id);
+      if (!appointment) {
+        return res.status(404).json({ success: false, message: 'Appointment not found' });
+      }
+      
+      // Try to send notification
+      try {
+        const notificationService = (await import('../services/notification.service.js')).default;
+        
+        const reminderMessage = message || `Reminder: You have an appointment scheduled for ${appointment.appointmentDate} at ${appointment.appointmentTime}`;
+        
+        // Send notification to patient
+        if (appointment.userId) {
+          await notificationService.sendNotification({
+            userId: appointment.userId,
+            userType: 'patient',
+            title: 'Appointment Reminder',
+            body: reminderMessage,
+            type: 'appointment_reminder',
+            data: {
+              appointmentId: id,
+              appointmentDate: appointment.appointmentDate,
+              appointmentTime: appointment.appointmentTime
+            }
+          });
+        }
+        
+        // Update appointment to mark reminder sent
+        await appointment.update({ 
+          reminderSent: true,
+          lastReminderAt: new Date()
+        });
+        
+        res.json({ 
+          success: true, 
+          message: 'Reminder sent successfully',
+          appointment
+        });
+      } catch (notifError) {
+        console.error('Notification service error:', notifError);
+        // Still return success but note the notification failed
+        res.json({ 
+          success: true, 
+          message: 'Appointment marked for reminder (notification service unavailable)',
+          notificationSent: false
+        });
+      }
+    } catch (error) {
+      console.error('Remind appointment error:', error);
+      res.status(500).json({ 
+        success: false, 
+        message: 'Failed to send reminder', 
+        error: error.message 
+      });
+    }
+  }
+);
+
+/**
+ * @route   GET /api/appointments/:id/calendar
+ * @desc    Download appointment as iCal (.ics) file
+ * @access  Private (User/Doctor)
+ */
+router.get(
+  '/:id/calendar',
+  authUser,
+  [
+    param('id').isInt().withMessage('Valid appointment ID is required')
+  ],
+  async (req, res) => {
+    try {
+      const appointmentId = parseInt(req.params.id);
+      const userId = req.user.id;
+      const userRole = req.user.role;
+
+      // Fetch appointment
+      const appointment = await Appointment.findByPk(appointmentId);
+
+      if (!appointment) {
+        return res.status(404).json({
+          success: false,
+          message: 'Appointment not found'
+        });
+      }
+
+      // Verify user has access to this appointment
+      const isDoctor = userRole === 'doctor' && appointment.doctorId === userId;
+      const isPatient = userRole !== 'doctor' && appointment.userId === userId;
+
+      if (!isDoctor && !isPatient) {
+        return res.status(403).json({
+          success: false,
+          message: 'Access denied'
+        });
+      }
+
+      // Fetch doctor and user details for complete calendar info
+      const doctor = await Doctor.findByPk(appointment.doctorId);
+      const patient = await User.findByPk(appointment.userId);
+
+      // Build appointment data for iCal
+      const appointmentData = {
+        id: appointment.id,
+        patientName: appointment.patientName || `${patient?.firstName} ${patient?.lastName}`.trim(),
+        patientEmail: appointment.patientEmail || patient?.email,
+        patientPhone: appointment.patientPhone || patient?.phoneNumber || patient?.phone,
+        doctorName: appointment.doctorName || `Dr. ${doctor?.firstName} ${doctor?.lastName}`.trim(),
+        doctorEmail: doctor?.email,
+        specialization: appointment.specialization || doctor?.specialization,
+        appointmentDate: appointment.appointmentDate,
+        appointmentTime: appointment.appointmentTime,
+        duration: appointment.duration || 30,
+        consultationType: appointment.consultationType,
+        consultationFee: appointment.consultationFee,
+        symptoms: appointment.symptoms,
+        notes: appointment.notes,
+        location: appointment.location,
+        meetingLink: appointment.meetingLink
+      };
+
+      // Generate iCal content based on user role
+      const icalContent = isDoctor 
+        ? generateDoctorICalFile(appointmentData)
+        : generateICalFile(appointmentData);
+
+      // Generate filename
+      const filename = generateICalFilename(
+        appointmentData, 
+        isDoctor ? 'doctor' : 'patient'
+      );
+
+      // Set response headers for file download
+      res.setHeader('Content-Type', 'text/calendar; charset=utf-8');
+      res.setHeader('Content-Disposition', `attachment; filename="${filename}"`);
+      res.setHeader('Content-Length', Buffer.byteLength(icalContent));
+
+      // Send iCal file
+      return res.send(icalContent);
+
+    } catch (error) {
+      console.error('Calendar download error:', error);
+      return res.status(500).json({
+        success: false,
+        message: 'Failed to generate calendar file',
+        error: error.message
+      });
+    }
+  }
 );
 
 export default router;

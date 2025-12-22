@@ -1,10 +1,8 @@
 import userModel from '../models/user.model.intelligent.js';
 import doctorModel from '../models/doctor.model.intelligent.js';
-import Lab from '../models/lab.model.mariadb.js';
-import Pharmacy from '../models/pharmacy.model.mariadb.js';
 import bcrypt from 'bcrypt';
 import jwt from 'jsonwebtoken';
-import { sequelize } from '../db/mariadb.js';
+import { postgresSequelize as sequelize } from '../db/postgres-sequelize.js';
 import { QueryTypes } from 'sequelize';
 
 // Production-level rate limiting store (would be Redis in production cluster)
@@ -57,6 +55,15 @@ export const adminLogin = async (req, res) => {
   const { email, password } = req.body;
   const clientIP = req.ip || req.connection.remoteAddress || req.headers['x-forwarded-for'] || 'unknown';
   const userAgent = req.headers['user-agent'] || 'unknown';
+
+  if (!process.env.JWT_SECRET) {
+    console.error('FATAL: JWT_SECRET environment variable not set!');
+    return res.status(500).json({
+      success: false,
+      message: 'Server configuration error',
+      code: 'JWT_SECRET_MISSING'
+    });
+  }
   
   // Enhanced input validation
   if (!email || !password) {
@@ -94,26 +101,39 @@ export const adminLogin = async (req, res) => {
     
     console.log(`🔐 Admin login attempt - IP: ${clientIP}, Email: ${email.substring(0, 3)}***`);
     
-    // Production authentication - check database first using raw query
-    const users = await sequelize.query(
-      'SELECT * FROM users WHERE email = ? AND isAdmin = 1 LIMIT 1',
-      { 
-        replacements: [email.toLowerCase()],
-        type: QueryTypes.SELECT
-      }
-    );
+    // Find admin user using userModel (same approach as working doctor/user logins)
+    console.log('🔍 Querying database for admin user...');
+    let adminUser;
+    try {
+      adminUser = await userModel.findOne({ 
+        where: { 
+          email: email.toLowerCase(),
+          isAdmin: true
+        } 
+      });
+      console.log('🔍 Query completed');
+    } catch (queryError) {
+      console.error('❌ Admin DB query error:', queryError.message);
+      throw queryError;
+    }
     
-    const adminUser = users[0];
+    console.log('🔍 Admin user found:', !!adminUser);
     
-    if (adminUser && await bcrypt.compare(password, adminUser.password)) {
+    if (!adminUser) {
+      logFailedAttempt(clientIP, email, 'User not found or not admin');
+      return res.status(401).json({ message: 'Invalid credentials' });
+    }
+    
+    // Verify password
+    console.log('🔍 Verifying password...');
+    const isPasswordValid = await adminUser.comparePassword(password);
+    console.log('🔍 Password valid:', isPasswordValid);
+    
+    if (isPasswordValid) {
       // Update last login
-      await sequelize.query(
-        'UPDATE users SET lastLogin = NOW() WHERE id = ?',
-        { 
-          replacements: [adminUser.id],
-          type: QueryTypes.UPDATE
-        }
-      );
+      await adminUser.update({ 
+        lastLogin: new Date()
+      });
       
       const token = jwt.sign(
         { 
@@ -123,7 +143,7 @@ export const adminLogin = async (req, res) => {
           isAdmin: true,
           loginTime: new Date().toISOString()
         },
-        process.env.JWT_SECRET || 'MediczYJWTK3yS3cur3AndStr0ng2024!',
+        process.env.JWT_SECRET,
         { expiresIn: '8h' }
       );
       
@@ -154,7 +174,9 @@ export const adminLogin = async (req, res) => {
     console.warn(`❌ Failed admin login - Email: ${email}, IP: ${clientIP}, UA: ${userAgent}`);
     return res.status(401).json({ message: 'Invalid credentials' });
   } catch (e) {
-    console.error('Admin login error:', e);
+    console.error('❌ ADMIN LOGIN ERROR:', e);
+    console.error('❌ Error message:', e.message);
+    console.error('❌ Error stack:', e.stack);
     return res.status(500).json({ message: 'Internal server error. Please try again later.' });
   }
 };
@@ -259,63 +281,19 @@ export const bulkUploadDoctors = async (req, res) => {
 };
 
 export const bulkUploadLabs = async (req, res) => {
-  try {
-    const records = ensureArray(req.body.labs || []);
-    if (!records.length) return res.status(400).json({ message: 'No lab data provided' });
-    
-    const created = [];
-    for (const l of records) {
-      if (!l.email || !l.name) continue;
-      
-      const exists = await Lab.findOne({ where: { email: l.email } });
-      if (exists) continue;
-      
-      const lab = await Lab.create({
-        name: l.name,
-        email: l.email,
-        phoneNumber: l.phoneNumber || '',
-        address: normalizeObjectField(l.address),
-        services: normalizeArrayField(l.services),
-        accreditation: l.accreditation || null,
-        isActive: l.isActive !== undefined ? l.isActive : true
-      });
-      created.push({ id: lab.id, email: lab.email });
-    }
-    return res.json({ message: 'Labs uploaded', count: created.length, created });
-  } catch (e) {
-    console.error('Lab upload error:', e);
-    return res.status(500).json({ message: 'Upload failed', error: e.message });
-  }
+  // TODO: Migrate Lab model to PostgreSQL
+  return res.status(503).json({ 
+    success: false, 
+    message: 'Lab management temporarily unavailable during database migration' 
+  });
 };
 
 export const bulkUploadPharmacies = async (req, res) => {
-  try {
-    const records = ensureArray(req.body.pharmacies || []);
-    if (!records.length) return res.status(400).json({ message: 'No pharmacy data provided' });
-    
-    const created = [];
-    for (const p of records) {
-      if (!p.email || !p.name) continue;
-      
-      const exists = await Pharmacy.findOne({ where: { email: p.email } });
-      if (exists) continue;
-      
-      const pharmacy = await Pharmacy.create({
-        name: p.name,
-        email: p.email,
-        phoneNumber: p.phoneNumber || '',
-        address: normalizeObjectField(p.address),
-        services: normalizeArrayField(p.services),
-        licenseNumber: p.licenseNumber || null,
-        isActive: p.isActive !== undefined ? p.isActive : true
-      });
-      created.push({ id: pharmacy.id, email: pharmacy.email });
-    }
-    return res.json({ message: 'Pharmacies uploaded', count: created.length, created });
-  } catch (e) {
-    console.error('Pharmacy upload error:', e);
-    return res.status(500).json({ message: 'Upload failed', error: e.message });
-  }
+  // TODO: Migrate Pharmacy model to PostgreSQL
+  return res.status(503).json({ 
+    success: false, 
+    message: 'Pharmacy management temporarily unavailable during database migration' 
+  });
 };
 
 export const bulkUploadCorporates = async (req, res) => {
@@ -367,51 +345,27 @@ export const bulkUploadCorporates = async (req, res) => {
 
 
 export const listLabs = async (req, res) => {
-  try {
-    const { page = 1, limit = 20 } = req.query;
-    const offset = (page - 1) * limit;
-    
-    const { count, rows } = await Lab.findAndCountAll({
-      limit: parseInt(limit),
-      offset
-    });
-    
-    console.log(`Fetched ${rows.length} labs, page ${page}`);
-    return res.json({ 
-      success: true,
-      total: count, 
-      data: rows, 
-      page: parseInt(page), 
-      limit: parseInt(limit) 
-    });
-  } catch (e) {
-    console.error('List labs error:', e);
-    return res.status(500).json({ message: 'Failed to fetch labs', error: e.message });
-  }
+  // TODO: Migrate Lab model to PostgreSQL
+  return res.status(503).json({ 
+    success: false, 
+    message: 'Lab management temporarily unavailable during database migration',
+    total: 0,
+    data: [],
+    page: 1,
+    limit: 20
+  });
 };
 
 export const listPharmacies = async (req, res) => {
-  try {
-    const { page = 1, limit = 20 } = req.query;
-    const offset = (page - 1) * limit;
-    
-    const { count, rows } = await Pharmacy.findAndCountAll({
-      limit: parseInt(limit),
-      offset
-    });
-    
-    console.log(`Fetched ${rows.length} pharmacies, page ${page}`);
-    return res.json({ 
-      success: true,
-      total: count, 
-      data: rows, 
-      page: parseInt(page), 
-      limit: parseInt(limit) 
-    });
-  } catch (e) {
-    console.error('List pharmacies error:', e);
-    return res.status(500).json({ message: 'Failed to fetch pharmacies', error: e.message });
-  }
+  // TODO: Migrate Pharmacy model to PostgreSQL
+  return res.status(503).json({ 
+    success: false, 
+    message: 'Pharmacy management temporarily unavailable during database migration',
+    total: 0,
+    data: [],
+    page: 1,
+    limit: 20
+  });
 };
 
 export const listCorporates = async (req, res) => {
@@ -468,11 +422,10 @@ export const createInternalUser = async (req, res) => {
 
 
 
-
 export const getDashboardStats = async (req, res) => {
   try {
-    // Import mysql for direct database queries
-    const mysql = (await import('mysql2/promise')).default;
+    // Import postgresSequelize for database queries
+    const { postgresSequelize } = await import('../db/postgres-sequelize.js');
     const fs = (await import('fs/promises')).default;
     const path = (await import('path')).default;
     const XLSX = (await import('xlsx')).default;
@@ -481,50 +434,39 @@ export const getDashboardStats = async (req, res) => {
     const __filename = fileURLToPath(import.meta.url);
     const __dirname = path.dirname(__filename);
     
-    // Create database connection pool
-    const pool = mysql.createPool({
-      host: 'localhost',
-      user: process.env.DB_USER || 'mediczy',
-      password: process.env.DB_PASSWORD || 'Mediczy2024Secure',
-      database: process.env.DB_NAME || 'mediczy',
-      waitForConnections: true,
-      connectionLimit: 10,
-      queueLimit: 0,
-    });
-    
     // Get users count
-    const [usersResult] = await pool.query('SELECT COUNT(*) as count FROM users');
-    const userCount = usersResult[0].count;
+    const [usersResult] = await postgresSequelize.query('SELECT COUNT(*) as count FROM users');
+    const userCount = parseInt(usersResult[0]?.count || 0);
     
     // Get doctors count from database
-    const [doctorsResult] = await pool.query('SELECT COUNT(*) as count FROM doctors');
-    const doctorCountDB = doctorsResult[0].count;
+    const [doctorsResult] = await postgresSequelize.query('SELECT COUNT(*) as count FROM doctors');
+    const doctorCountDB = parseInt(doctorsResult[0]?.count || 0);
     
     // Get nurses count
-    const [nursesResult] = await pool.query('SELECT COUNT(*) as count FROM nurses');
-    const nursesCount = nursesResult[0].count;
+    const [nursesResult] = await postgresSequelize.query('SELECT COUNT(*) as count FROM nurses');
+    const nursesCount = parseInt(nursesResult[0]?.count || 0);
     
-    // Get active users count
-    const [activeUsersResult] = await pool.query('SELECT COUNT(*) as count FROM users WHERE isActive = 1');
-    const activeUsersCount = activeUsersResult[0].count;
+    // Get active users count (use status field instead of isActive)
+    const [activeUsersResult] = await postgresSequelize.query('SELECT COUNT(*) as count FROM users WHERE status = \'active\'');
+    const activeUsersCount = parseInt(activeUsersResult[0]?.count || 0);
     
     // Get admin users count
-    const [adminUsersResult] = await pool.query('SELECT COUNT(*) as count FROM users WHERE isAdmin = 1');
-    const adminUsersCount = adminUsersResult[0].count;
+    const [adminUsersResult] = await postgresSequelize.query('SELECT COUNT(*) as count FROM users WHERE "isAdmin" = true');
+    const adminUsersCount = parseInt(adminUsersResult[0]?.count || 0);
 
     // Get recent users (last 5 created)
-    const [recentUsers] = await pool.query(`
-      SELECT id, firstName, lastName, email, createdAt 
+    const [recentUsers] = await postgresSequelize.query(`
+      SELECT id, "firstName", "lastName", email, "createdAt" 
       FROM users 
-      ORDER BY createdAt DESC 
+      ORDER BY "createdAt" DESC 
       LIMIT 5
     `);
 
     // Get recent doctors (last 5 created)
-    const [recentDoctors] = await pool.query(`
-      SELECT id, firstName, lastName, email, specialization, createdAt 
+    const [recentDoctors] = await postgresSequelize.query(`
+      SELECT id, "firstName", "lastName", email, specialization, "createdAt" 
       FROM doctors 
-      ORDER BY createdAt DESC 
+      ORDER BY "createdAt" DESC 
       LIMIT 5
     `);
     
@@ -578,9 +520,6 @@ export const getDashboardStats = async (req, res) => {
     };
 
     console.log('Dashboard stats generated successfully:', stats);
-    
-    // Close the pool
-    await pool.end();
     
     return res.json({ 
       success: true,

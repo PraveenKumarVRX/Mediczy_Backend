@@ -1,0 +1,289 @@
+{
+  "name": "SIB: Critical Case Escalation",
+  "nodes": [
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "escalation-trigger",
+        "responseMode": "responseNode",
+        "options": {
+          "allowedOrigins": "*"
+        }
+      },
+      "id": "webhook-escalation",
+      "name": "Webhook (Escalation Trigger)",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 1,
+      "position": [250, 500],
+      "webhookId": "sib-escalation-trigger"
+    },
+    {
+      "parameters": {
+        "functionCode": "// Escalation rules engine\nconst data = items[0].json;\nconst riskCategory = data.risk_category;\nconst riskScore = data.risk_score || 0;\nconst symptoms = data.symptoms || [];\nconst vitals = data.vitals || {};\n\n// Define escalation tiers\nconst escalationTiers = {\n  tier_1: {\n    level: 'standard',\n    notify: ['primary_physician'],\n    urgency: 'routine',\n    response_time_hours: 48\n  },\n  tier_2: {\n    level: 'elevated',\n    notify: ['primary_physician', 'nurse_coordinator'],\n    urgency: 'priority',\n    response_time_hours: 24\n  },\n  tier_3: {\n    level: 'urgent',\n    notify: ['primary_physician', 'specialist', 'nurse_coordinator'],\n    urgency: 'urgent',\n    response_time_hours: 4\n  },\n  tier_4: {\n    level: 'critical',\n    notify: ['emergency_team', 'primary_physician', 'specialist', 'department_head'],\n    urgency: 'emergency',\n    response_time_hours: 1\n  }\n};\n\n// Escalation logic\nlet escalationTier = 'tier_1';\nlet escalationReasons = [];\n\n// Critical symptoms check\nconst criticalSymptoms = ['chest_pain', 'difficulty_breathing', 'severe_bleeding', 'loss_of_consciousness'];\nconst hasCriticalSymptom = symptoms.some(s => criticalSymptoms.includes(s));\n\nif (hasCriticalSymptom) {\n  escalationTier = 'tier_4';\n  escalationReasons.push('Critical symptom detected');\n}\n\n// Vital signs check\nif (vitals.systolic_bp >= 180 || vitals.systolic_bp <= 90) {\n  escalationTier = escalationTier === 'tier_4' ? 'tier_4' : 'tier_3';\n  escalationReasons.push('Critical blood pressure');\n}\n\nif (vitals.heart_rate >= 120 || vitals.heart_rate <= 50) {\n  escalationTier = escalationTier === 'tier_4' ? 'tier_4' : 'tier_3';\n  escalationReasons.push('Abnormal heart rate');\n}\n\n// Risk score check\nif (riskScore >= 0.9 && escalationTier === 'tier_1') {\n  escalationTier = 'tier_3';\n  escalationReasons.push('Very high risk score');\n} else if (riskScore >= 0.7 && escalationTier === 'tier_1') {\n  escalationTier = 'tier_2';\n  escalationReasons.push('High risk score');\n}\n\n// Risk category override\nif (riskCategory === 'very_high' && escalationTier === 'tier_1') {\n  escalationTier = 'tier_3';\n  escalationReasons.push('Very high risk category');\n}\n\n// Time-based escalation (if no response within expected time)\nif (data.previous_escalation) {\n  const hoursSinceLastEscalation = (Date.now() - new Date(data.previous_escalation.timestamp).getTime()) / (1000 * 60 * 60);\n  const expectedResponseTime = escalationTiers[data.previous_escalation.tier].response_time_hours;\n  \n  if (hoursSinceLastEscalation >= expectedResponseTime && !data.previous_escalation.responded) {\n    // Escalate to next tier\n    const currentTierNum = parseInt(data.previous_escalation.tier.split('_')[1]);\n    const nextTierNum = Math.min(currentTierNum + 1, 4);\n    escalationTier = `tier_${nextTierNum}`;\n    escalationReasons.push('No response within expected timeframe');\n  }\n}\n\nconst escalation = escalationTiers[escalationTier];\n\nreturn [{\n  json: {\n    patient_id: data.patient_id,\n    escalation_tier: escalationTier,\n    escalation_level: escalation.level,\n    urgency: escalation.urgency,\n    notify_roles: escalation.notify,\n    response_time_hours: escalation.response_time_hours,\n    reasons: escalationReasons,\n    risk_category: riskCategory,\n    risk_score: riskScore,\n    symptoms: symptoms,\n    vitals: vitals,\n    escalated_at: new Date().toISOString()\n  }\n}];"
+      },
+      "id": "escalation-rules",
+      "name": "Escalation Rules Engine",
+      "type": "n8n-nodes-base.function",
+      "typeVersion": 1,
+      "position": [450, 500]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "string": [
+            {
+              "value1": "={{ $json.escalation_tier }}",
+              "operation": "equals",
+              "value2": "tier_4"
+            }
+          ]
+        }
+      },
+      "id": "check-critical",
+      "name": "Is Critical?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 1,
+      "position": [650, 500]
+    },
+    {
+      "parameters": {
+        "url": "http://localhost:3000/api/emergency/alert",
+        "method": "POST",
+        "sendBody": true,
+        "bodyParameters": {
+          "parameters": [
+            {
+              "name": "patient_id",
+              "value": "={{ $json.patient_id }}"
+            },
+            {
+              "name": "alert_type",
+              "value": "critical_escalation"
+            },
+            {
+              "name": "reasons",
+              "value": "={{ JSON.stringify($json.reasons) }}"
+            },
+            {
+              "name": "vitals",
+              "value": "={{ JSON.stringify($json.vitals) }}"
+            },
+            {
+              "name": "urgency",
+              "value": "emergency"
+            }
+          ]
+        }
+      },
+      "id": "trigger-emergency",
+      "name": "Trigger Emergency Protocol",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 1,
+      "position": [850, 400]
+    },
+    {
+      "parameters": {
+        "functionCode": "// Generate multi-tier notification list\nconst notifyRoles = items[0].json.notify_roles;\nconst patientId = items[0].json.patient_id;\nconst escalationTier = items[0].json.escalation_tier;\nconst urgency = items[0].json.urgency;\n\n// Fetch care team members for each role (simulated)\nconst careTeamDirectory = {\n  primary_physician: [{email: 'dr.smith@mediczy.com', phone: '+1234567890', sms: true, call: true}],\n  specialist: [{email: 'dr.jones@mediczy.com', phone: '+1234567891', sms: true, call: true}],\n  nurse_coordinator: [{email: 'nurse.jane@mediczy.com', phone: '+1234567892', sms: true, call: false}],\n  emergency_team: [\n    {email: 'emergency@mediczy.com', phone: '+1234567893', sms: true, call: true},\n    {email: 'oncall@mediczy.com', phone: '+1234567894', sms: true, call: true}\n  ],\n  department_head: [{email: 'dept.head@mediczy.com', phone: '+1234567895', sms: false, call: true}]\n};\n\nconst notifications = [];\n\nfor (const role of notifyRoles) {\n  const members = careTeamDirectory[role] || [];\n  for (const member of members) {\n    notifications.push({\n      recipient: member.email,\n      phone: member.phone,\n      role: role,\n      channels: [\n        'email',\n        ...(member.sms ? ['sms'] : []),\n        ...(urgency === 'emergency' && member.call ? ['phone_call'] : []),\n        'push'\n      ],\n      patient_id: patientId,\n      escalation_tier: escalationTier,\n      urgency: urgency,\n      message: `ESCALATION ${escalationTier.toUpperCase()}: Patient ${patientId} requires ${urgency} attention. Reasons: ${items[0].json.reasons.join(', ')}`\n    });\n  }\n}\n\nreturn notifications.map(n => ({json: n}));"
+      },
+      "id": "generate-notifications",
+      "name": "Generate Notification List",
+      "type": "n8n-nodes-base.function",
+      "typeVersion": 1,
+      "position": [1050, 500]
+    },
+    {
+      "parameters": {
+        "batchSize": 3,
+        "options": {}
+      },
+      "id": "split-notifications",
+      "name": "Split Notifications",
+      "type": "n8n-nodes-base.splitInBatches",
+      "typeVersion": 1,
+      "position": [1250, 500]
+    },
+    {
+      "parameters": {
+        "url": "http://localhost:8001/webhook/n8n",
+        "method": "POST",
+        "sendBody": true,
+        "bodyParameters": {
+          "parameters": [
+            {
+              "name": "workflow",
+              "value": "escalation-notification"
+            },
+            {
+              "name": "action",
+              "value": "trigger_notification"
+            },
+            {
+              "name": "payload",
+              "value": "={{ JSON.stringify({patient_id: $json.patient_id, recipient: $json.recipient, phone: $json.phone, channels: $json.channels, message: $json.message, urgency: $json.urgency, role: $json.role}) }}"
+            }
+          ]
+        }
+      },
+      "id": "send-notifications",
+      "name": "Send Multi-channel Notification",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 1,
+      "position": [1450, 500]
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "INSERT INTO escalation_logs (patient_id, escalation_tier, escalation_level, urgency, reasons, notify_roles, escalated_at, response_deadline) VALUES ($1, $2, $3, $4, $5, $6, $7, $8) RETURNING id",
+        "additionalFields": {
+          "queryParameters": "={{ JSON.stringify([$json.patient_id, $json.escalation_tier, $json.escalation_level, $json.urgency, JSON.stringify($json.reasons), JSON.stringify($json.notify_roles), $json.escalated_at, new Date(Date.now() + $json.response_time_hours * 60 * 60 * 1000).toISOString()]) }}"
+        }
+      },
+      "id": "log-escalation",
+      "name": "Log Escalation Event",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 1,
+      "position": [1050, 650],
+      "credentials": {
+        "postgres": {
+          "id": "1",
+          "name": "PostgreSQL - Mediczy"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={{ JSON.stringify({success: true, escalation_tier: $json.escalation_tier, escalation_level: $json.escalation_level, urgency: $json.urgency, notifications_sent: $json.notifications_sent || 0, response_deadline: new Date(Date.now() + $json.response_time_hours * 60 * 60 * 1000).toISOString()}) }}"
+      },
+      "id": "respond-escalation",
+      "name": "Respond to Webhook",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1,
+      "position": [1650, 500]
+    }
+  ],
+  "connections": {
+    "Webhook (Escalation Trigger)": {
+      "main": [
+        [
+          {
+            "node": "Escalation Rules Engine",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Escalation Rules Engine": {
+      "main": [
+        [
+          {
+            "node": "Is Critical?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Is Critical?": {
+      "main": [
+        [
+          {
+            "node": "Trigger Emergency Protocol",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Generate Notification List",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Trigger Emergency Protocol": {
+      "main": [
+        [
+          {
+            "node": "Generate Notification List",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Generate Notification List": {
+      "main": [
+        [
+          {
+            "node": "Split Notifications",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Log Escalation Event",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Split Notifications": {
+      "main": [
+        [
+          {
+            "node": "Send Multi-channel Notification",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Send Multi-channel Notification": {
+      "main": [
+        [
+          {
+            "node": "Split Notifications",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Log Escalation Event": {
+      "main": [
+        [
+          {
+            "node": "Respond to Webhook",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": true,
+  "settings": {
+    "executionOrder": "v1"
+  },
+  "versionId": "1",
+  "meta": {
+    "instanceId": "sib-escalation-workflow"
+  },
+  "tags": [
+    {
+      "name": "SIB",
+      "id": "1"
+    },
+    {
+      "name": "Escalation",
+      "id": "6"
+    },
+    {
+      "name": "Emergency",
+      "id": "7"
+    }
+  ]
+}

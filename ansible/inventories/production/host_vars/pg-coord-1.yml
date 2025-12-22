@@ -1,0 +1,6 @@
+ansible_host: 10.0.0.11
+pg_data_mount: /data/postgresql
+pg_backup_dir: /data/backups
+citus_metadata_db: mediczy_citus
+pg_ssl_cert: /etc/ssl/postgres/server.crt
+pg_ssl_key: /etc/ssl/postgres/server.key

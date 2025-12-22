@@ -16,8 +16,10 @@ import {
   User,
   Bell,
   MessageSquare,
-  Stethoscope
+  Stethoscope,
+  Loader2
 } from 'lucide-react';
+import { toast } from 'sonner';
 import AssistantDoctorManager from '@/components/AssistantDoctorManager';
 import api from '@/utils/api';
 
@@ -45,6 +47,7 @@ const AssistantDashboard = () => {
   const [loading, setLoading] = useState(true);
   const [consultations, setConsultations] = useState<any[]>([]);
   const [consultationsLoading, setConsultationsLoading] = useState(false);
+  const [actionLoading, setActionLoading] = useState<{ [key: string]: boolean }>({});
 
   useEffect(() => {
     const token = localStorage.getItem('assistantToken');
@@ -455,20 +458,34 @@ const AssistantDashboard = () => {
                             <Button 
                               size="sm" 
                               variant="outline"
-                              onClick={() => {
-                                // Confirm appointment
-                                console.log('Confirm appointment:', appointment.id);
+                              disabled={actionLoading[`confirm-${appointment.id}`]}
+                              onClick={async () => {
+                                setActionLoading(prev => ({ ...prev, [`confirm-${appointment.id}`]: true }));
+                                try {
+                                  await api.patch(`/appointments/${appointment.id}/status`, { status: 'confirmed' });
+                                  setAppointments(prev => prev.map(a => 
+                                    a.id === appointment.id ? { ...a, status: 'Confirmed' } : a
+                                  ));
+                                  toast.success('Appointment confirmed successfully');
+                                } catch (error: any) {
+                                  toast.error(error?.response?.data?.message || 'Failed to confirm appointment');
+                                } finally {
+                                  setActionLoading(prev => ({ ...prev, [`confirm-${appointment.id}`]: false }));
+                                }
                               }}
                             >
-                              <CheckCircle className="h-4 w-4 mr-1" />
-                              Confirm
+                              {actionLoading[`confirm-${appointment.id}`] ? (
+                                <Loader2 className="h-4 w-4 mr-1 animate-spin" />
+                              ) : (
+                                <CheckCircle className="h-4 w-4 mr-1" />
+                              )}
+                              {actionLoading[`confirm-${appointment.id}`] ? 'Confirming...' : 'Confirm'}
                             </Button>
                             <Button 
                               size="sm" 
                               variant="outline"
                               onClick={() => {
-                                // Reschedule appointment
-                                console.log('Reschedule appointment:', appointment.id);
+                                navigate(`/appointments?reschedule=${appointment.id}`);
                               }}
                             >
                               <Calendar className="h-4 w-4 mr-1" />
@@ -477,13 +494,25 @@ const AssistantDashboard = () => {
                             <Button 
                               size="sm" 
                               variant="ghost"
-                              onClick={() => {
-                                // Send reminder
-                                console.log('Send reminder:', appointment.id);
+                              disabled={actionLoading[`remind-${appointment.id}`]}
+                              onClick={async () => {
+                                setActionLoading(prev => ({ ...prev, [`remind-${appointment.id}`]: true }));
+                                try {
+                                  await api.post(`/appointments/${appointment.id}/remind`);
+                                  toast.success(`Reminder sent to ${appointment.patientName}`);
+                                } catch (error: any) {
+                                  toast.error(error?.response?.data?.message || 'Failed to send reminder');
+                                } finally {
+                                  setActionLoading(prev => ({ ...prev, [`remind-${appointment.id}`]: false }));
+                                }
                               }}
                             >
-                              <Bell className="h-4 w-4 mr-1" />
-                              Remind
+                              {actionLoading[`remind-${appointment.id}`] ? (
+                                <Loader2 className="h-4 w-4 mr-1 animate-spin" />
+                              ) : (
+                                <Bell className="h-4 w-4 mr-1" />
+                              )}
+                              {actionLoading[`remind-${appointment.id}`] ? 'Sending...' : 'Remind'}
                             </Button>
                           </div>
                         </div>

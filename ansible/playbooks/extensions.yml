@@ -1,0 +1,20 @@
+---
+- name: Apply Timescale, Columnar, and PGVector extensions
+  hosts: pg_coordinators
+  become: true
+  roles:
+    - timescale
+    - columnar
+    - pgvector
+  tags:
+    - extensions
+    - coordinators
+
+- name: Ensure columnar bits on workers
+  hosts: pg_workers
+  become: true
+  roles:
+    - columnar
+  tags:
+    - extensions
+    - workers

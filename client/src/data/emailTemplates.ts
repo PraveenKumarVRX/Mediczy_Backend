@@ -559,9 +559,12 @@ export const validateTemplateVariables = (template: EmailTemplateData, variables
 
 export const renderTemplate = (template: string, variables: Record<string, string>) => {
   let rendered = template;
+
+  const escapeRegExp = (value: string) => value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
   
   Object.entries(variables).forEach(([key, value]) => {
-    const regex = new RegExp(`{{\\s*${key}\\s*}}`, 'g');
+    const safeKey = escapeRegExp(key);
+    const regex = new RegExp(`{{\\s*${safeKey}\\s*}}`, 'g');
     rendered = rendered.replace(regex, value || '');
   });
   

@@ -3,7 +3,8 @@ import passport from 'passport';
 import { Strategy as GoogleStrategy } from 'passport-google-oauth20';
 import { Strategy as FacebookStrategy } from 'passport-facebook';
 import jwt from 'jsonwebtoken';
-import Doctor from '../models/doctor.model.mariadb.js';
+import Doctor from '../models/doctor.model.intelligent.js';
+import { processOAuthProfilePicture } from '../utils/oauth-profile-picture.js';
 
 const router = express.Router();
 
@@ -79,6 +80,16 @@ async function findOrCreateDoctor(profile, provider) {
       }
     }
     
+    // Download and save profile picture for existing doctor
+    let profileImagePath = null;
+    if (doctor) {
+      profileImagePath = await processOAuthProfilePicture(profile, doctor.id, provider);
+      if (profileImagePath) {
+        await doctor.update({ profileImage: profileImagePath });
+        console.log(`✅ Updated doctor profile picture from ${provider} for doctor ${doctor.id}`);
+      }
+    }
+    
     // If still no doctor, create new one
     if (!doctor) {
       console.log(`✨ Creating new doctor from ${provider} OAuth: ${email}`);
@@ -98,7 +109,6 @@ async function findOrCreateDoctor(profile, provider) {
         [oauthIdField]: profile.id,
         oauthProvider: provider,
         emailVerified: true,
-        profilePhoto: profile.photos && profile.photos[0] ? profile.photos[0].value : null,
         phoneNumber: '',
         specialization: 'General Practitioner', // Default, will be updated
         experience: 0,
@@ -106,6 +116,13 @@ async function findOrCreateDoctor(profile, provider) {
         status: 'active',
         isAvailable: true
       });
+      
+      // Download and save profile picture for new doctor
+      profileImagePath = await processOAuthProfilePicture(profile, doctor.id, provider);
+      if (profileImagePath) {
+        await doctor.update({ profileImage: profileImagePath });
+        console.log(`✅ Saved doctor profile picture from ${provider} for new doctor ${doctor.id}`);
+      }
     }
     
     return doctor;

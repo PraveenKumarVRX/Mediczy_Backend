@@ -7,8 +7,18 @@ import express from 'express';
 import bcrypt from 'bcrypt';
 import jwt from 'jsonwebtoken';
 import { Pharmacy } from '../models/index.js';
+import dashboardRouter from './pharmacy/dashboard.routes.js';
+import inventoryRouter from './pharmacy/inventory.routes.js';
+import posRouter from './pharmacy/pos.routes.js';
+import prescriptionsRouter from './pharmacy/prescriptions.routes.js';
 
 const router = express.Router();
+
+// Mount sub-routers
+router.use('/dashboard', dashboardRouter);
+router.use('/inventory', inventoryRouter);
+router.use('/pos', posRouter);
+router.use('/prescriptions', prescriptionsRouter);
 
 /**
  * POST /api/pharmacy/login

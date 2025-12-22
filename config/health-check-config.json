@@ -1,0 +1,112 @@
+{
+  "environments": {
+    "production": {
+      "base_url": "https://mediczy.com/api",
+      "web_url": "https://mediczy.com",
+      "timeout": 30,
+      "retry_count": 3,
+      "expected_response_time_ms": 2000,
+      "alerts": {
+        "email": "ops-team@mediczy.com",
+        "slack_webhook": "YOUR_SLACK_WEBHOOK_URL",
+        "pagerduty_key": "YOUR_PAGERDUTY_INTEGRATION_KEY"
+      }
+    },
+    "staging": {
+      "base_url": "https://staging.mediczy.com/api",
+      "web_url": "https://staging.mediczy.com",
+      "timeout": 30,
+      "retry_count": 2,
+      "expected_response_time_ms": 3000,
+      "alerts": {
+        "email": "dev-team@mediczy.com",
+        "slack_webhook": "YOUR_DEV_SLACK_WEBHOOK_URL"
+      }
+    },
+    "development": {
+      "base_url": "http://localhost:8000/api",
+      "web_url": "http://localhost:4000",
+      "timeout": 15,
+      "retry_count": 1,
+      "expected_response_time_ms": 1000,
+      "alerts": {
+        "email": "dev@localhost"
+      }
+    }
+  },
+  "test_suites": {
+    "system_health": {
+      "enabled": true,
+      "tests": [
+        "server_connectivity",
+        "database_health",
+        "redis_health",
+        "frontend_availability"
+      ]
+    },
+    "authentication": {
+      "enabled": true,
+      "tests": [
+        "user_registration",
+        "user_login",
+        "doctor_registration",
+        "doctor_login",
+        "protected_access"
+      ],
+      "cleanup_test_users": true
+    },
+    "core_features": {
+      "enabled": true,
+      "tests": [
+        "user_appointments",
+        "doctor_appointments",
+        "membership_plans",
+        "plan_usage",
+        "available_doctors",
+        "ai_doctor_health"
+      ]
+    },
+    "compliance_security": {
+      "enabled": true,
+      "tests": [
+        "rate_limiting",
+        "data_export",
+        "consent_management",
+        "audit_logs",
+        "security_headers"
+      ]
+    },
+    "integrations": {
+      "enabled": true,
+      "tests": [
+        "fcm_registration",
+        "google_fit_oauth",
+        "payment_gateway"
+      ],
+      "allow_failures": true
+    },
+    "performance": {
+      "enabled": true,
+      "critical_endpoints": [
+        "health",
+        "doctors",
+        "membership/plans"
+      ],
+      "max_response_time_ms": 5000,
+      "warning_threshold_ms": 2000
+    }
+  },
+  "reporting": {
+    "formats": ["json", "text", "html"],
+    "retention_days": 30,
+    "include_performance_trends": true,
+    "generate_charts": false
+  },
+  "notifications": {
+    "on_failure": true,
+    "on_recovery": true,
+    "on_performance_degradation": true,
+    "failure_threshold": 1,
+    "batch_notifications": false
+  }
+}

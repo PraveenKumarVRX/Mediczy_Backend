@@ -1,0 +1,296 @@
+{
+  "name": "SIB: Auto Appointment Booking",
+  "nodes": [
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "appointment-booking",
+        "responseMode": "responseNode",
+        "options": {
+          "allowedOrigins": "*"
+        }
+      },
+      "id": "webhook-appointment",
+      "name": "Webhook (Appointment Request)",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 1,
+      "position": [250, 400],
+      "webhookId": "sib-appointment-booking"
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "string": [
+            {
+              "value1": "={{ $json.trigger_type }}",
+              "operation": "equals",
+              "value2": "high_risk"
+            }
+          ]
+        }
+      },
+      "id": "check-trigger-type",
+      "name": "Check Trigger Type",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 1,
+      "position": [450, 400]
+    },
+    {
+      "parameters": {
+        "functionCode": "// Calculate appointment slot based on risk level and availability\nconst riskCategory = items[0].json.risk_category;\nconst patientId = items[0].json.patient_id;\n\n// Determine urgency\nlet daysUntilAppointment;\nlet appointmentType;\n\nswitch(riskCategory) {\n  case 'very_high':\n    daysUntilAppointment = 1; // Next day\n    appointmentType = 'urgent_consultation';\n    break;\n  case 'high':\n    daysUntilAppointment = 3; // Within 3 days\n    appointmentType = 'priority_consultation';\n    break;\n  default:\n    daysUntilAppointment = 7; // Within a week\n    appointmentType = 'routine_consultation';\n}\n\n// Calculate appointment date\nconst appointmentDate = new Date();\nappointmentDate.setDate(appointmentDate.getDate() + daysUntilAppointment);\nappointmentDate.setHours(9, 0, 0, 0); // Default to 9 AM\n\n// Find available specialist based on risk factors\nconst specialists = {\n  cardiovascular: 'cardiologist',\n  diabetes: 'endocrinologist',\n  respiratory: 'pulmonologist',\n  default: 'general_practitioner'\n};\n\nconst riskFactors = items[0].json.risk_factors || [];\nlet specialistType = specialists.default;\n\nfor (const factor of riskFactors) {\n  if (specialists[factor.toLowerCase()]) {\n    specialistType = specialists[factor.toLowerCase()];\n    break;\n  }\n}\n\nreturn [{\n  json: {\n    patient_id: patientId,\n    appointment_date: appointmentDate.toISOString(),\n    appointment_type: appointmentType,\n    specialist_type: specialistType,\n    duration_minutes: 30,\n    risk_category: riskCategory,\n    risk_factors: riskFactors,\n    auto_scheduled: true,\n    status: 'pending_confirmation'\n  }\n}];"
+      },
+      "id": "calculate-appointment",
+      "name": "Calculate Appointment Slot",
+      "type": "n8n-nodes-base.function",
+      "typeVersion": 1,
+      "position": [650, 300]
+    },
+    {
+      "parameters": {
+        "url": "http://localhost:3000/api/appointments/create",
+        "method": "POST",
+        "sendBody": true,
+        "bodyParameters": {
+          "parameters": [
+            {
+              "name": "patient_id",
+              "value": "={{ $json.patient_id }}"
+            },
+            {
+              "name": "appointment_date",
+              "value": "={{ $json.appointment_date }}"
+            },
+            {
+              "name": "appointment_type",
+              "value": "={{ $json.appointment_type }}"
+            },
+            {
+              "name": "specialist_type",
+              "value": "={{ $json.specialist_type }}"
+            },
+            {
+              "name": "duration_minutes",
+              "value": "={{ $json.duration_minutes }}"
+            },
+            {
+              "name": "auto_scheduled",
+              "value": "true"
+            },
+            {
+              "name": "status",
+              "value": "={{ $json.status }}"
+            },
+            {
+              "name": "metadata",
+              "value": "={{ JSON.stringify({risk_category: $json.risk_category, risk_factors: $json.risk_factors}) }}"
+            }
+          ]
+        },
+        "options": {
+          "timeout": 30000
+        }
+      },
+      "id": "create-appointment",
+      "name": "Create Appointment in System",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 1,
+      "position": [850, 300]
+    },
+    {
+      "parameters": {
+        "url": "http://localhost:8001/webhook/n8n",
+        "method": "POST",
+        "sendBody": true,
+        "bodyParameters": {
+          "parameters": [
+            {
+              "name": "workflow",
+              "value": "appointment-booking"
+            },
+            {
+              "name": "action",
+              "value": "trigger_notification"
+            },
+            {
+              "name": "payload",
+              "value": "={{ JSON.stringify({patient_id: $json.patient_id, notification_type: 'appointment_confirmation', appointment_id: $json.appointment_id, appointment_date: $json.appointment_date, specialist_type: $json.specialist_type, channels: ['email', 'sms', 'whatsapp', 'push']}) }}"
+            }
+          ]
+        }
+      },
+      "id": "notify-patient",
+      "name": "Notify Patient (Multi-channel)",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 1,
+      "position": [1050, 300]
+    },
+    {
+      "parameters": {
+        "url": "http://localhost:8001/task",
+        "method": "POST",
+        "sendBody": true,
+        "bodyParameters": {
+          "parameters": [
+            {
+              "name": "action",
+              "value": "create"
+            },
+            {
+              "name": "task_data",
+              "value": "={{ JSON.stringify({title: 'Prepare for ' + $json.specialist_type + ' appointment', description: 'Gather recent medical records and list of symptoms', patient_id: $json.patient_id, priority: 'high', due_date: new Date($json.appointment_date).toISOString(), task_type: 'appointment_preparation'}) }}"
+            }
+          ]
+        }
+      },
+      "id": "create-prep-task",
+      "name": "Create Preparation Task",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 1,
+      "position": [1050, 450]
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "INSERT INTO appointment_analytics (appointment_id, patient_id, auto_scheduled, risk_triggered, specialist_type, scheduled_at, metadata) VALUES ($1, $2, $3, $4, $5, NOW(), $6)",
+        "additionalFields": {
+          "queryParameters": "={{ JSON.stringify([$json.appointment_id, $json.patient_id, true, true, $json.specialist_type, JSON.stringify({risk_category: $json.risk_category, workflow: 'auto-booking'})]) }}"
+        }
+      },
+      "id": "log-analytics",
+      "name": "Log to Analytics",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 1,
+      "position": [1250, 300],
+      "credentials": {
+        "postgres": {
+          "id": "1",
+          "name": "PostgreSQL - Mediczy"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={{ JSON.stringify({success: true, appointment_id: $json.appointment_id, appointment_date: $json.appointment_date, specialist_type: $json.specialist_type, auto_scheduled: true, notification_sent: true, timestamp: new Date().toISOString()}) }}"
+      },
+      "id": "respond-appointment",
+      "name": "Respond to Webhook",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1,
+      "position": [1450, 300]
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={{ JSON.stringify({success: false, reason: 'Not a high-risk trigger', trigger_type: $json.trigger_type}) }}"
+      },
+      "id": "respond-skip",
+      "name": "Respond (Skipped)",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1,
+      "position": [650, 500]
+    }
+  ],
+  "connections": {
+    "Webhook (Appointment Request)": {
+      "main": [
+        [
+          {
+            "node": "Check Trigger Type",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Check Trigger Type": {
+      "main": [
+        [
+          {
+            "node": "Calculate Appointment Slot",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Respond (Skipped)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Calculate Appointment Slot": {
+      "main": [
+        [
+          {
+            "node": "Create Appointment in System",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Create Appointment in System": {
+      "main": [
+        [
+          {
+            "node": "Notify Patient (Multi-channel)",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Create Preparation Task",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Notify Patient (Multi-channel)": {
+      "main": [
+        [
+          {
+            "node": "Log to Analytics",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Log to Analytics": {
+      "main": [
+        [
+          {
+            "node": "Respond to Webhook",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": true,
+  "settings": {
+    "executionOrder": "v1"
+  },
+  "versionId": "1",
+  "meta": {
+    "instanceId": "sib-appointment-booking-workflow"
+  },
+  "tags": [
+    {
+      "name": "SIB",
+      "id": "1"
+    },
+    {
+      "name": "Appointment",
+      "id": "4"
+    },
+    {
+      "name": "Automation",
+      "id": "5"
+    }
+  ]
+}

@@ -9,7 +9,9 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from ".
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "../../components/ui/table";
 import { Badge } from "../../components/ui/badge";
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger, DropdownMenuSeparator } from "../../components/ui/dropdown-menu";
+import { Dialog, DialogContent, DialogHeader, DialogTitle } from "../../components/ui/dialog";
 import AdminLayout from '../../components/layout/AdminLayout';
+import { useToast } from '../../hooks/use-toast';
 import { 
   Download, Upload, Plus, FileSpreadsheet, UserPlus,
   Search, Eye, Edit, Trash2, MoreVertical, Star, Building2, Phone, Mail,
@@ -165,7 +167,71 @@ const samplePSUData: PSUOrganization[] = [
   }
 ];
 
+interface PSUFormState {
+  id?: string;
+  psuName: string;
+  psuCode: string;
+  email: string;
+  phoneNumber: string;
+  contactPerson: string;
+  designation: string;
+  area: string;
+  city: string;
+  state: string;
+  pincode: string;
+  sector: string;
+  category: string;
+  establishedYear: string;
+  employeeCount: string;
+  serviceTypes: string;
+  healthSchemes: string;
+  empanelledHospitals: string;
+  budgetAllocated: string;
+  parentMinistry: string;
+  status: PSUOrganization['status'];
+  website?: string;
+}
+
+const listFromString = (value: string) =>
+  value
+    .split(',')
+    .map((item) => item.trim())
+    .filter(Boolean);
+
+const numberFromString = (value: string, fallback = 0) => {
+  const parsed = Number(value);
+  return Number.isFinite(parsed) ? parsed : fallback;
+};
+
+const currentDate = () => new Date().toISOString().split('T')[0];
+
+const createPsuFormState = (psu?: PSUOrganization): PSUFormState => ({
+  id: psu?.id,
+  psuName: psu?.psuName || '',
+  psuCode: psu?.psuCode || '',
+  email: psu?.email || '',
+  phoneNumber: psu?.phoneNumber || '',
+  contactPerson: psu?.contactPerson || '',
+  designation: psu?.designation || '',
+  area: psu?.area || '',
+  city: psu?.city || '',
+  state: psu?.state || '',
+  pincode: psu?.pincode || '',
+  sector: psu?.sector || '',
+  category: psu?.category || '',
+  establishedYear: psu ? String(psu.establishedYear) : '',
+  employeeCount: psu ? String(psu.employeeCount) : '',
+  serviceTypes: (psu?.serviceTypes || []).join(', '),
+  healthSchemes: (psu?.healthSchemes || []).join(', '),
+  empanelledHospitals: psu ? String(psu.empanelledHospitals) : '',
+  budgetAllocated: psu ? String(psu.budgetAllocated) : '',
+  parentMinistry: psu?.parentMinistry || '',
+  status: psu?.status || 'Active',
+  website: psu?.website || '',
+});
+
 const PSUManagement = () => {
+  const { toast } = useToast();
   // Form and upload state
   const [loading, setLoading] = useState(false);
   const [result, setResult] = useState<{ message: string; count?: number } | null>(null);
@@ -173,6 +239,7 @@ const PSUManagement = () => {
   const [jsonInput, setJsonInput] = useState('');
   const [activeTab, setActiveTab] = useState('list');
   const [editingPSU, setEditingPSU] = useState<PSUOrganization | null>(null);
+  const [psuForm, setPsuForm] = useState<PSUFormState | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const token = localStorage.getItem('adminToken');
 
@@ -294,6 +361,77 @@ const PSUManagement = () => {
     ], 'psu-organizations', sampleData);
   };
 
+  const openPsuDialog = (psu?: PSUOrganization) => {
+    setEditingPSU(psu || null);
+    setPsuForm(createPsuFormState(psu));
+    setActiveTab('list');
+  };
+
+  const closePsuDialog = () => {
+    setEditingPSU(null);
+    setPsuForm(null);
+  };
+
+  const updatePsuForm = <K extends keyof PSUFormState>(field: K, value: PSUFormState[K]) => {
+    setPsuForm(prev => prev ? { ...prev, [field]: value } : prev);
+  };
+
+  const handleSavePSU = () => {
+    if (!psuForm) return;
+
+    if (!psuForm.psuName.trim() || !psuForm.psuCode.trim()) {
+      toast({
+        title: "Missing details",
+        description: "PSU name and code are required.",
+        variant: "destructive"
+      });
+      return;
+    }
+
+    const normalized: PSUOrganization = {
+      id: editingPSU?.id || `PSU${Date.now()}`,
+      psuName: psuForm.psuName.trim(),
+      psuCode: psuForm.psuCode.trim(),
+      email: psuForm.email.trim(),
+      phoneNumber: psuForm.phoneNumber.trim(),
+      contactPerson: psuForm.contactPerson.trim(),
+      designation: psuForm.designation.trim(),
+      area: psuForm.area.trim(),
+      city: psuForm.city.trim(),
+      state: psuForm.state.trim(),
+      pincode: psuForm.pincode.trim(),
+      sector: psuForm.sector.trim(),
+      category: psuForm.category.trim(),
+      establishedYear: numberFromString(psuForm.establishedYear, new Date().getFullYear()),
+      employeeCount: numberFromString(psuForm.employeeCount),
+      serviceTypes: listFromString(psuForm.serviceTypes),
+      healthSchemes: listFromString(psuForm.healthSchemes),
+      empanelledHospitals: numberFromString(psuForm.empanelledHospitals),
+      budgetAllocated: numberFromString(psuForm.budgetAllocated),
+      status: psuForm.status,
+      joinedDate: editingPSU?.joinedDate || currentDate(),
+      lastActive: editingPSU?.lastActive || currentDate(),
+      website: psuForm.website?.trim() || undefined,
+      parentMinistry: psuForm.parentMinistry.trim(),
+      rating: editingPSU?.rating,
+      reviewCount: editingPSU?.reviewCount,
+    };
+
+    setPSUs(prev => {
+      if (editingPSU) {
+        return prev.map(psu => psu.id === editingPSU.id ? normalized : psu);
+      }
+      return [normalized, ...prev];
+    });
+
+    toast({
+      title: editingPSU ? "PSU updated" : "PSU added",
+      description: `${normalized.psuName} has been ${editingPSU ? 'updated' : 'added'} successfully.`
+    });
+
+    closePsuDialog();
+  };
+
   return (
     <AdminLayout>
       <div className="space-y-6">
@@ -304,7 +442,7 @@ const PSUManagement = () => {
             <p className="text-muted-foreground">Manage Public Sector Undertaking healthcare organizations</p>
           </div>
           <div className="flex flex-col sm:flex-row gap-2">
-            <Button onClick={() => setActiveTab('create')} variant="outline">
+            <Button onClick={() => openPsuDialog()} variant="outline">
               <UserPlus className="mr-2 h-4 w-4" />
               Add PSU
             </Button>
@@ -513,17 +651,17 @@ const PSUManagement = () => {
                                   </Button>
                                 </DropdownMenuTrigger>
                                 <DropdownMenuContent align="end" className="w-[160px]">
-                                  <DropdownMenuItem onClick={() => setEditingPSU(psu)}>
+                                  <DropdownMenuItem onClick={() => openPsuDialog(psu)}>
                                     <Edit className="mr-2 h-4 w-4" />
                                     Edit PSU
                                   </DropdownMenuItem>
-                                  <DropdownMenuItem onClick={() => alert(`View details for ${psu.psuName}`)}>
+                                  <DropdownMenuItem onClick={() => toast({ title: "PSU Details", description: `Viewing details for ${psu.psuName}` })}>
                                     <Eye className="mr-2 h-4 w-4" />
                                     View Details
                                   </DropdownMenuItem>
                                   <DropdownMenuSeparator />
                                   <DropdownMenuItem 
-                                    onClick={() => alert(`Delete ${psu.psuName}?`)} 
+                                    onClick={() => toast({ title: "Confirm Delete", description: `Are you sure you want to delete ${psu.psuName}?`, variant: "destructive" })} 
                                     className="text-destructive focus:text-destructive"
                                   >
                                     <Trash2 className="mr-2 h-4 w-4" />
@@ -662,13 +800,13 @@ const PSUManagement = () => {
               <CardContent>
                 <div className="space-y-4">
                   <p className="text-sm text-muted-foreground">
-                    Upload an Excel file (.xlsx, .xls) with PSU organization records.
+                    Upload an Excel file (.xlsx) with PSU organization records.
                   </p>
                   <div className="flex items-center gap-4">
                     <Input 
                       ref={fileInputRef} 
                       type="file" 
-                      accept=".xlsx,.xls" 
+                      accept=".xlsx" 
                       onChange={handleExcelUpload} 
                       disabled={loading} 
                     />
@@ -709,6 +847,124 @@ const PSUManagement = () => {
             </Card>
           </TabsContent>
         </Tabs>
+
+        {psuForm && (
+          <Dialog open={!!psuForm} onOpenChange={(open) => {
+            if (!open) {
+              closePsuDialog();
+            }
+          }}>
+            <DialogContent className="max-w-4xl">
+              <DialogHeader>
+                <DialogTitle>{editingPSU ? 'Edit PSU Organization' : 'Add PSU Organization'}</DialogTitle>
+              </DialogHeader>
+              <div className="grid gap-4 md:grid-cols-2">
+                <div>
+                  <Label>PSU Name</Label>
+                  <Input value={psuForm.psuName} onChange={(e) => updatePsuForm('psuName', e.target.value)} />
+                </div>
+                <div>
+                  <Label>PSU Code</Label>
+                  <Input value={psuForm.psuCode} onChange={(e) => updatePsuForm('psuCode', e.target.value)} />
+                </div>
+                <div>
+                  <Label>Email</Label>
+                  <Input type="email" value={psuForm.email} onChange={(e) => updatePsuForm('email', e.target.value)} />
+                </div>
+                <div>
+                  <Label>Phone Number</Label>
+                  <Input value={psuForm.phoneNumber} onChange={(e) => updatePsuForm('phoneNumber', e.target.value)} />
+                </div>
+                <div>
+                  <Label>Contact Person</Label>
+                  <Input value={psuForm.contactPerson} onChange={(e) => updatePsuForm('contactPerson', e.target.value)} />
+                </div>
+                <div>
+                  <Label>Designation</Label>
+                  <Input value={psuForm.designation} onChange={(e) => updatePsuForm('designation', e.target.value)} />
+                </div>
+                <div>
+                  <Label>Area</Label>
+                  <Input value={psuForm.area} onChange={(e) => updatePsuForm('area', e.target.value)} />
+                </div>
+                <div>
+                  <Label>City</Label>
+                  <Input value={psuForm.city} onChange={(e) => updatePsuForm('city', e.target.value)} />
+                </div>
+                <div>
+                  <Label>State</Label>
+                  <Input value={psuForm.state} onChange={(e) => updatePsuForm('state', e.target.value)} />
+                </div>
+                <div>
+                  <Label>Pincode</Label>
+                  <Input value={psuForm.pincode} onChange={(e) => updatePsuForm('pincode', e.target.value)} />
+                </div>
+                <div>
+                  <Label>Sector</Label>
+                  <Input value={psuForm.sector} onChange={(e) => updatePsuForm('sector', e.target.value)} />
+                </div>
+                <div>
+                  <Label>Category</Label>
+                  <Input value={psuForm.category} onChange={(e) => updatePsuForm('category', e.target.value)} />
+                </div>
+                <div>
+                  <Label>Established Year</Label>
+                  <Input value={psuForm.establishedYear} onChange={(e) => updatePsuForm('establishedYear', e.target.value)} />
+                </div>
+                <div>
+                  <Label>Employee Count</Label>
+                  <Input value={psuForm.employeeCount} onChange={(e) => updatePsuForm('employeeCount', e.target.value)} />
+                </div>
+                <div>
+                  <Label>Service Types (comma separated)</Label>
+                  <Input value={psuForm.serviceTypes} onChange={(e) => updatePsuForm('serviceTypes', e.target.value)} />
+                </div>
+                <div>
+                  <Label>Health Schemes (comma separated)</Label>
+                  <Input value={psuForm.healthSchemes} onChange={(e) => updatePsuForm('healthSchemes', e.target.value)} />
+                </div>
+                <div>
+                  <Label>Empanelled Hospitals</Label>
+                  <Input value={psuForm.empanelledHospitals} onChange={(e) => updatePsuForm('empanelledHospitals', e.target.value)} />
+                </div>
+                <div>
+                  <Label>Budget Allocated</Label>
+                  <Input value={psuForm.budgetAllocated} onChange={(e) => updatePsuForm('budgetAllocated', e.target.value)} />
+                </div>
+                <div>
+                  <Label>Parent Ministry</Label>
+                  <Input value={psuForm.parentMinistry} onChange={(e) => updatePsuForm('parentMinistry', e.target.value)} />
+                </div>
+                <div>
+                  <Label>Website</Label>
+                  <Input value={psuForm.website} onChange={(e) => updatePsuForm('website', e.target.value)} />
+                </div>
+                <div>
+                  <Label>Status</Label>
+                  <Select value={psuForm.status} onValueChange={(value) => updatePsuForm('status', value as PSUOrganization['status'])}>
+                    <SelectTrigger>
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="Active">Active</SelectItem>
+                      <SelectItem value="Inactive">Inactive</SelectItem>
+                      <SelectItem value="Pending">Pending</SelectItem>
+                      <SelectItem value="Suspended">Suspended</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
+              </div>
+              <div className="flex justify-end gap-2 pt-4">
+                <Button type="button" variant="outline" onClick={closePsuDialog}>
+                  Cancel
+                </Button>
+                <Button type="button" onClick={handleSavePSU}>
+                  {editingPSU ? 'Update PSU' : 'Add PSU'}
+                </Button>
+              </div>
+            </DialogContent>
+          </Dialog>
+        )}
       </div>
     </AdminLayout>
   );

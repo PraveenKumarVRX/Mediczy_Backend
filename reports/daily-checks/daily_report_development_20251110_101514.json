@@ -1,0 +1,38 @@
+{
+  "metadata": {
+    "environment": "development",
+    "timestamp": "2025-11-10T10:37:08+05:30",
+    "base_url": "http://localhost:8000/api",
+    "web_url": "http://localhost:4000",
+    "test_duration_seconds": 1314
+  },
+  "summary": {
+    "total_tests": 13,
+    "passed": 5,
+    "failed": 8,
+    "success_rate": "38.46%"
+  },
+  "test_results": {
+    "User Registration": {"status": "PASS", "response_time_ms": "362"},
+    "Doctor Registration": {"status": "FAIL", "response_time_ms": "0"},
+    "Security Headers": {"status": "FAIL", "response_time_ms": "0"},
+    "User Login": {"status": "PASS", "response_time_ms": "252"},
+    "Get Available Doctors": {"status": "FAIL", "response_time_ms": "0"},
+    "Doctor Login": {"status": "PASS", "response_time_ms": "35"},
+    "Server Connectivity": {"status": "FAIL", "response_time_ms": "0"},
+    "Database Health": {"status": "FAIL", "response_time_ms": "0"},
+    "Payment Gateway Health": {"status": "PASS", "response_time_ms": "24"},
+    "Google Fit OAuth Endpoint": {"status": "FAIL", "response_time_ms": "0"},
+    "Rate Limiting Protection": {"status": "PASS", "response_time_ms": "139"},
+    "Redis Cache Health": {"status": "FAIL", "response_time_ms": "0"},
+    "Frontend Application": {"status": "FAIL", "response_time_ms": "0"}
+  },
+  "performance": {
+    "User Registration": 362,
+    "User Login": 252,
+    "membership/plans": 32,
+    "Doctor Login": 35,
+    "Payment Gateway Health": 24,
+    "Rate Limiting Protection": 139
+  }
+}

@@ -1,0 +1,282 @@
+{
+	"info": {
+		"_postman_id": "25d9859e-e7dc-4711-b6ba-e160e7cc57ab",
+		"name": "Health FHPL MDBT",
+		"schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json",
+		"_exporter_id": "19690377"
+	},
+	"item": [
+		{
+			"name": "service request Token",
+			"request": {
+				"method": "POST",
+				"header": [
+					{
+						"key": "Content-Type",
+						"value": "application/x-www-form-urlencoded",
+						"type": "text"
+					}
+				],
+				"body": {
+					"mode": "urlencoded",
+					"urlencoded": [
+						{
+							"key": "UserName",
+							"value": "Bharatre",
+							"type": "text",
+							"disabled": true
+						},
+						{
+							"key": "Password",
+							"value": "",
+							"type": "text",
+							"disabled": true
+						},
+						{
+							"key": "grant_type",
+							"value": "'Password'",
+							"type": "text",
+							"disabled": true
+						}
+					]
+				},
+				"url": {
+					"raw": "https://m.fhpl.net/BcServiceAPI/token",
+					"protocol": "https",
+					"host": [
+						"m",
+						"fhpl",
+						"net"
+					],
+					"path": [
+						"BcServiceAPI",
+						"token"
+					]
+				}
+			},
+			"response": []
+		},
+		{
+			"name": "ClaimIntimation",
+			"request": {
+				"method": "POST",
+				"header": [
+					{
+						"key": "Content-Type",
+						"value": "application/json",
+						"type": "text"
+					},
+					{
+						"key": "Authorization",
+						"value": "token_type +\" \"+access_token",
+						"type": "text"
+					}
+				],
+				"body": {
+					"mode": "raw",
+					"raw": "{\r\n    \"Member_UHID\": \"XXXXXXXXXXX\",\r\n    \"Date_of_Admission\": \"YYYY-DD-MM\",\r\n    \"Policy_Number\": \"XXXXXXXXXXX\",\r\n    \"Type_of_Claim\": 1,\r\n    \"Diagnosis\": \"XXXXXXXXXXX\",\r\n    \"Mobile_number\":XXXXXXXXXX,\r\n    \"Email_id\": \"XXXXXXXXXXX\",\r\n    \"Name_of_hospital\": \"XXXXXXXXXXX\",\r\n    \"Hospital_address\": \"XXXXXXXXXXX\",\r\n    \"HospitalID\":XXXX\r\n}"
+				},
+				"url": {
+					"raw": "https://m.fhpl.net/BcServiceAPI/api/ClaimIntimation",
+					"protocol": "https",
+					"host": [
+						"m",
+						"fhpl",
+						"net"
+					],
+					"path": [
+						"BcServiceAPI",
+						"api",
+						"ClaimIntimation"
+					]
+				}
+			},
+			"response": []
+		},
+		{
+			"name": "GetTPA_ClaimsDetails",
+			"request": {
+				"method": "POST",
+				"header": [
+					{
+						"key": "Content-Type",
+						"value": "application/json",
+						"type": "text"
+					},
+					{
+						"key": "Authorization",
+						"value": "token_type + \" \" + access_token",
+						"type": "text"
+					}
+				],
+				"body": {
+					"mode": "raw",
+					"raw": "{\r\n    \"UserName\": \"xxxxxx\",\r\n    \"Password\": \"xxxxxx\",\r\n    \"PolicyNumber\": \"xxxxxxxxxxxx\",\r\n    \"FromDate\": \"yyyy-mm-dd\",\r\n    \"ToDate\": \"yyyy-mm-dd\"\r\n}"
+				},
+				"url": {
+					"raw": "https://m.fhpl.net/BcServiceAPI/api/GetTPA_ClaimsDetails",
+					"protocol": "https",
+					"host": [
+						"m",
+						"fhpl",
+						"net"
+					],
+					"path": [
+						"BcServiceAPI",
+						"api",
+						"GetTPA_ClaimsDetails"
+					]
+				}
+			},
+			"response": []
+		},
+		{
+			"name": "GetEcard",
+			"request": {
+				"method": "POST",
+				"header": [
+					{
+						"key": "Content-Type",
+						"value": "application/json",
+						"type": "text"
+					},
+					{
+						"key": "Authorization",
+						"value": "token_type + \" \" + access_token",
+						"type": "text"
+					}
+				],
+				"body": {
+					"mode": "raw",
+					"raw": "{\r\n    \"UserName\": \"xxxxx\",\r\n    \"Password\": \"xxxxx\",\r\n    \"EmployeeID\": \"xxxxx\",\r\n    \"PolicyNumber\": \"xxxxxxx\"\r\n}"
+				},
+				"url": {
+					"raw": "https://m.fhpl.net/BcServiceAPI/api/GetEcard",
+					"protocol": "https",
+					"host": [
+						"m",
+						"fhpl",
+						"net"
+					],
+					"path": [
+						"BcServiceAPI",
+						"api",
+						"GetEcard"
+					]
+				}
+			},
+			"response": []
+		},
+		{
+			"name": "GetNetworkHospitalDetails",
+			"request": {
+				"method": "POST",
+				"header": [
+					{
+						"key": "Content-Type",
+						"value": "application/json",
+						"type": "text"
+					},
+					{
+						"key": "Authorization",
+						"value": "token_type + \" \" + access_token",
+						"type": "text"
+					}
+				],
+				"body": {
+					"mode": "raw",
+					"raw": "{\r\n    \"UserName\": \"xxxxx\",\r\n    \"Password\": \"xxxxxx\",\r\n    \"StartIndex\": 0,\r\n    \"EndIndex\": 100\r\n}"
+				},
+				"url": {
+					"raw": "https://m.fhpl.net/BcServiceAPI/api/GetNetworkHospitalDetails",
+					"protocol": "https",
+					"host": [
+						"m",
+						"fhpl",
+						"net"
+					],
+					"path": [
+						"BcServiceAPI",
+						"api",
+						"GetNetworkHospitalDetails"
+					]
+				}
+			},
+			"response": []
+		},
+		{
+			"name": "GetEnrollmentDetails",
+			"request": {
+				"method": "POST",
+				"header": [
+					{
+						"key": "Content-Type",
+						"value": "application/json",
+						"type": "text"
+					},
+					{
+						"key": "Authorization",
+						"value": "token_type + \" \" + access_token",
+						"type": "text"
+					}
+				],
+				"body": {
+					"mode": "raw",
+					"raw": "{\r\n    \"UserName\":\"xxxxxx\",\r\n    \"Password\":\"xxxxxxx\",\r\n    \"EmployeeID\":\"xxxxxx\",\r\n    \"PolicyNumber\":\"xxxxxxx\"\r\n}\r\n"
+				},
+				"url": {
+					"raw": "https://m.fhpl.net/BcServiceAPI/api/GetEnrollmentDetails",
+					"protocol": "https",
+					"host": [
+						"m",
+						"fhpl",
+						"net"
+					],
+					"path": [
+						"BcServiceAPI",
+						"api",
+						"GetEnrollmentDetails"
+					]
+				}
+			},
+			"response": []
+		},
+		{
+			"name": "GetEnrollmentDetailsPolicy",
+			"request": {
+				"method": "POST",
+				"header": [
+					{
+						"key": "Content-Type",
+						"value": "application/json",
+						"type": "text"
+					},
+					{
+						"key": "Authorization",
+						"value": "token_type + \" \" + access_token",
+						"type": "text"
+					}
+				],
+				"body": {
+					"mode": "raw",
+					"raw": "{\r\n    \"UserName\": \"xxxx\",\r\n    \"Password\": \"xxxxxx\",\r\n    \"PolicyNumber\": \"xxxxxx\",\r\n    \"StartIndex\": \"1\",\r\n    \"Range\": \"1000\"\r\n}"
+				},
+				"url": {
+					"raw": "https://m.fhpl.net/BcServiceAPI/api/GetEnrollmentDetailsPolicy",
+					"protocol": "https",
+					"host": [
+						"m",
+						"fhpl",
+						"net"
+					],
+					"path": [
+						"BcServiceAPI",
+						"api",
+						"GetEnrollmentDetailsPolicy"
+					]
+				}
+			},
+			"response": []
+		}
+	]
+}

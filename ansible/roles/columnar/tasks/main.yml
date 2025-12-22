@@ -1,0 +1,40 @@
+- name: Install columnar packages
+  ansible.builtin.package:
+    name: "{{ columnar_packages }}"
+    state: present
+
+- name: Ensure columnar conf directory exists
+  ansible.builtin.file:
+    path: "{{ columnar_conf_path | dirname }}"
+    state: directory
+    mode: '0755'
+
+- name: Deploy columnar tuning file
+  ansible.builtin.template:
+    src: columnar.conf.j2
+    dest: "{{ columnar_conf_path }}"
+    owner: postgres
+    group: postgres
+    mode: '0644'
+  notify: reload postgres for columnar
+
+- name: Determine columnar databases
+  ansible.builtin.set_fact:
+    columnar_target_databases: "{{ columnar_tables | map(attribute='database') | list | unique }}"
+  when: columnar_tables | length > 0
+
+- name: Enable columnar extension on databases
+  become_user: postgres
+  community.postgresql.postgresql_query:
+    db: "{{ item }}"
+    query: "CREATE EXTENSION IF NOT EXISTS citus_columnar;"
+  loop: "{{ columnar_target_databases | default([]) }}"
+  when: columnar_target_databases is defined
+
+- name: Convert row tables to columnar access
+  become_user: postgres
+  community.postgresql.postgresql_query:
+    db: "{{ item.database }}"
+    query: "ALTER TABLE {{ item.schema | default('public') }}.{{ item.table }} SET ACCESS METHOD columnar;"
+  loop: "{{ columnar_tables }}"
+  when: columnar_tables | length > 0

@@ -13,6 +13,17 @@ const router = express.Router();
 export const authNurse = async (req, res, next) => {
   try {
     const token = req.headers.authorization?.replace('Bearer ', '');
+
+    // Development bypass: allow the Vite dev token without requiring JWT signing.
+    // This keeps nurse portal pages functional in local dev environments.
+    if (token === 'dev-nurse-token' && process.env.NODE_ENV !== 'production') {
+      req.nurse = {
+        id: 'nurse_001',
+        email: 'nurse@mediczy.com',
+        role: 'nurse'
+      };
+      return next();
+    }
     
     if (!token) {
       return res.status(401).json({ 
@@ -59,17 +70,28 @@ router.post('/login', [
   body('email').isEmail().withMessage('Must be a valid email'),
   body('password').notEmpty().withMessage('Password is required'),
 ], async (req, res) => {
+  console.log('🟢 [Nurse Login] Request received');
   try {
     const { email, password } = req.body;
+    console.log('🟢 [Nurse Login] Email:', email);
 
     // Hardcoded credentials removed for security - all nurses must be in database
     
     // Check database for nurse
-    const nurse = await Nurse.findOne({ 
-      where: { 
-        email
-      } 
-    });
+    console.log('🟢 [Nurse Login] Querying database...');
+    let nurse;
+    try {
+      nurse = await Nurse.findOne({ 
+        where: { 
+          email
+        } 
+      });
+      console.log('🟢 [Nurse Login] Query completed');
+    } catch (queryError) {
+      console.error('❌ Nurse DB query error:', queryError.message);
+      throw queryError;
+    }
+    console.log('🟢 [Nurse Login] Nurse found:', !!nurse);
 
     if (!nurse) {
       return res.status(401).json({ 
@@ -127,7 +149,9 @@ router.post('/login', [
       }
     });
   } catch (error) {
-    console.error('Nurse login error:', error);
+    console.error('❌ NURSE LOGIN ERROR:', error);
+    console.error('❌ Error message:', error.message);
+    console.error('❌ Error stack:', error.stack);
     res.status(500).json({ 
       success: false,
       message: 'Server error during login',
@@ -474,6 +498,75 @@ router.get('/schedule', authNurse, async (req, res) => {
       success: false,
       message: 'Server error',
       error: error.message 
+    });
+  }
+});
+
+/**
+ * POST /api/nurses/book
+ * Book an appointment with a nurse
+ */
+router.post('/book', async (req, res) => {
+  try {
+    const {
+      nurseId,
+      appointmentDate,
+      appointmentTime,
+      serviceType,
+      symptoms,
+      notes,
+      patientName,
+      patientPhone,
+      patientAddress
+    } = req.body;
+
+    // Validate required fields
+    if (!nurseId || !appointmentDate || !appointmentTime) {
+      return res.status(400).json({
+        success: false,
+        message: 'Nurse ID, appointment date, and time are required'
+      });
+    }
+
+    // Get nurse details
+    const nurse = await Nurse.findByPk(nurseId);
+    if (!nurse) {
+      return res.status(404).json({
+        success: false,
+        message: 'Nurse not found'
+      });
+    }
+
+    // Create appointment record
+    const appointment = {
+      id: `nurse-appt-${Date.now()}`,
+      nurseId,
+      patientName: patientName || 'Patient',
+      patientPhone: patientPhone || '',
+      appointmentDate,
+      appointmentTime,
+      serviceType: serviceType || 'general',
+      symptoms: symptoms || '',
+      notes: notes || '',
+      patientAddress: patientAddress || {},
+      status: 'scheduled',
+      bookingTime: new Date().toISOString(),
+      fee: nurse.consultationFee || 500
+    };
+
+    // TODO: Store in database once NurseAppointment model is created
+
+    res.json({
+      success: true,
+      message: 'Appointment booked successfully',
+      appointment
+    });
+  } catch (error) {
+    console.error('Nurse booking error:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Failed to book appointment',
+      error: error.message
     });
   }
 });

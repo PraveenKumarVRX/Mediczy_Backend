@@ -596,4 +596,125 @@ function calculateSuitabilityScore(lab, criteria) {
   return Math.min(100, Math.round(score));
 }
 
+/**
+ * POST /api/labs/book
+ * Book a lab test appointment
+ */
+router.post('/book', async (req, res) => {
+  try {
+    const {
+      labId,
+      appointmentDate,
+      appointmentTime,
+      serviceType, // 'checkup' or 'diagnostic'
+      testType,
+      tests = [],
+      symptoms,
+      notes,
+      patientName,
+      patientPhone,
+      patientAddress,
+      prescriptionUrl
+    } = req.body;
+
+    // Validate required fields
+    if (!labId || !appointmentDate || !appointmentTime) {
+      return res.status(400).json({
+        success: false,
+        message: 'Lab ID, appointment date, and time are required'
+      });
+    }
+
+    if (!serviceType || !['checkup', 'diagnostic'].includes(serviceType)) {
+      return res.status(400).json({
+        success: false,
+        message: 'Service type must be either "checkup" or "diagnostic"'
+      });
+    }
+
+    // Calculate estimated fee based on service type
+    const baseFee = serviceType === 'checkup' ? 1500 : 2500;
+    const testFees = tests.reduce((sum, test) => sum + (test.price || 0), 0);
+    const totalFee = baseFee + testFees;
+
+    // Create appointment record
+    const appointment = {
+      id: `lab-appt-${Date.now()}`,
+      labId,
+      patientName: patientName || 'Patient',
+      patientPhone: patientPhone || '',
+      appointmentDate,
+      appointmentTime,
+      serviceType,
+      testType: testType || '',
+      tests,
+      symptoms: symptoms || '',
+      notes: notes || '',
+      patientAddress: patientAddress || {},
+      prescriptionUrl: prescriptionUrl || null,
+      status: 'scheduled',
+      bookingTime: new Date().toISOString(),
+      fee: totalFee,
+      reportStatus: 'pending'
+    };
+
+    // TODO: Store in database once LabAppointment model is created
+
+    res.json({
+      success: true,
+      message: 'Lab appointment booked successfully',
+      appointment
+    });
+  } catch (error) {
+    console.error('Lab booking error:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Failed to book lab appointment',
+      error: error.message
+    });
+  }
+});
+
+/**
+ * GET /api/labs/:labId/tests
+ * Get available tests for a lab
+ */
+router.get('/:labId/tests', async (req, res) => {
+  try {
+    const { labId } = req.params;
+    const { serviceType } = req.query;
+
+    // TODO: Fetch from database
+    // For now return sample tests
+    const tests = {
+      checkup: [
+        { id: 1, name: 'Complete Blood Count (CBC)', price: 500, duration: '2 hours' },
+        { id: 2, name: 'Lipid Profile', price: 800, duration: '4 hours' },
+        { id: 3, name: 'Blood Sugar (Fasting)', price: 200, duration: '1 hour' },
+        { id: 4, name: 'Thyroid Profile', price: 1200, duration: '6 hours' }
+      ],
+      diagnostic: [
+        { id: 5, name: 'X-Ray', price: 1500, duration: '30 minutes' },
+        { id: 6, name: 'Ultrasound', price: 2000, duration: '45 minutes' },
+        { id: 7, name: 'ECG', price: 800, duration: '15 minutes' },
+        { id: 8, name: 'MRI Scan', price: 8000, duration: '1 hour' }
+      ]
+    };
+
+    const availableTests = serviceType ? tests[serviceType] || [] : [...tests.checkup, ...tests.diagnostic];
+
+    res.json({
+      success: true,
+      tests: availableTests
+    });
+  } catch (error) {
+    console.error('Get tests error:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Failed to fetch tests',
+      error: error.message
+    });
+  }
+});
+
 export default router;

@@ -1,0 +1,29 @@
+MEDICZY VIDEO CONSULTATION TEST
+Generated: Sat Dec 20 16:52:48 UTC 2025
+═══════════════════════════════════════════════════════════════
+
+Room ID: mediczy_live_1766249568
+
+Doctor Join Link:
+http://mediqzy.com/mirotalk/join/mediczy_live_1766249568?name=Dr.Sarah.Johnson
+
+Patient Join Link:
+http://mediqzy.com/mirotalk/join/mediczy_live_1766249568?name=John.Doe.Patient
+
+═══════════════════════════════════════════════════════════════
+
+INSTRUCTIONS:
+1. Copy Doctor Link → Open in your main browser
+2. Allow camera/microphone when prompted  
+3. Copy Patient Link → Open in incognito/different browser
+4. Allow camera/microphone
+5. Both users should now be in the same video call
+
+EXPECTED RESULT:
+- See each other's video
+- Hear each other's audio
+- Can use text chat
+- Can share screen
+- Low latency communication
+
+═══════════════════════════════════════════════════════════════

@@ -1,3 +1,9 @@
+// NOTE: This file is a known-broken dashboard draft and is intentionally disabled.
+export default function HealthMonitoringDashboard() {
+  return null;
+}
+
+/*
 import { useState, useEffect } from 'react';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
@@ -887,4 +893,4 @@ const HealthMonitoringDashboard = () => {
   );
 };
 
-export default HealthMonitoringDashboard;
+*/

@@ -1,0 +1,25 @@
+# Dependencies
+node_modules/
+package-lock.json
+
+# Test Results
+test-results/
+playwright-report/
+test-results.json
+
+# Environment
+.env
+.env.local
+
+# Playwright
+playwright/.cache/
+
+# OS
+.DS_Store
+Thumbs.db
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo

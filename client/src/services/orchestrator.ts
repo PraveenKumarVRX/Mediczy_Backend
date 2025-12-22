@@ -81,6 +81,22 @@ class OrchestratorAPI {
    */
   getAuthHeaders() {
     const token = localStorage.getItem('token');
+    
+    // Debug logging
+    console.log('🔑 Auth Headers Debug:', {
+      hasToken: !!token,
+      tokenLength: token?.length || 0,
+      tokenPreview: token ? token.substring(0, 20) + '...' : 'NO TOKEN',
+      localStorage: {
+        token: !!localStorage.getItem('token'),
+        userType: localStorage.getItem('userType'),
+      }
+    });
+    
+    if (!token) {
+      console.warn('⚠️ No authentication token found in localStorage');
+    }
+    
     return {
       'Content-Type': 'application/json',
       'Authorization': token ? `Bearer ${token}` : '',
@@ -141,7 +157,7 @@ class OrchestratorAPI {
           sessionId,
         },
         {
-          headers: { 'Content-Type': 'application/json' },
+          headers: this.getAuthHeaders(),
           timeout: 45000, // 45 second timeout for medical consultations
         }
       );
@@ -412,7 +428,29 @@ class OrchestratorAPI {
    * Handle API errors consistently
    */
   handleError(error) {
+    console.error('🔴 Orchestrator Error Handler:', {
+      hasResponse: !!error.response,
+      status: error.response?.status,
+      data: error.response?.data,
+      hasRequest: !!error.request,
+      message: error.message
+    });
+    
     if (error.response) {
+      // Check for authentication errors
+      if (error.response.status === 401) {
+        return {
+          success: false,
+          error: {
+            message: error.response.data?.message || 'No token provided',
+            details: 'Please log in to continue using Dr. iSHA',
+            type: 'authentication_error',
+            requiresLogin: true
+          },
+          status: 401,
+        };
+      }
+      
       return {
         success: false,
         error: error.response.data,

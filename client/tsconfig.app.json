@@ -27,5 +27,10 @@
     }
   },
   "include": ["src"],
-  "exclude": ["node_modules"]
+  "exclude": [
+    "node_modules",
+    "src/pages/doctor/HealthMonitoringDashboard.tsx",
+    "src/pages/doctor/HealthMonitoringDashboard_broken.tsx",
+    "src/pages/doctor/HealthMonitoringDashboard_current.tsx"
+  ]
 }

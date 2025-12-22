@@ -99,32 +99,10 @@ const AdminLayout = ({ children }: AdminLayoutProps) => {
   const { setTheme, theme } = useTheme();
   const [isTeamMember, setIsTeamMember] = useState(false);
 
-  // Set admin token immediately for development
-  // BUT: if team member is logged in, use their token instead
+  // Determine if current user is a team member (affects menu visibility)
   useEffect(() => {
     const teamToken = localStorage.getItem('teamToken');
-    const adminToken = localStorage.getItem('adminToken');
-    
-    // Check if current user is a team member
     setIsTeamMember(!!teamToken);
-    
-    // If team member is logged in, they can access admin routes with their teamToken
-    if (teamToken) {
-      // Team members use their own token, no need to set adminToken
-      return;
-    }
-    
-    // Otherwise, set dev admin token for development
-    if (!adminToken) {
-      localStorage.setItem('adminToken', 'dev-admin-token');
-      localStorage.setItem('adminData', JSON.stringify({
-        id: 'admin_dev',
-        email: 'admin@mediczy.com',
-        role: 'super_admin',
-        firstName: 'System',
-        lastName: 'Administrator'
-      }));
-    }
   }, []);
 
   const handleLogout = () => {
@@ -176,7 +154,6 @@ const AdminLayout = ({ children }: AdminLayoutProps) => {
         { icon: Users, label: 'Team', path: '/admin/team', color: 'text-purple-500', bg: 'bg-purple-500/10' },
         { icon: Stethoscope, label: 'Doctors', path: '/admin/doctors', color: 'text-emerald-500', bg: 'bg-emerald-500/10' },
         { icon: Calendar, label: 'Appointments', path: '/admin/appointments', color: 'text-orange-500', bg: 'bg-orange-500/10' },
-        { icon: MessageSquare, label: 'Chat', path: '/admin/chat', color: 'text-blue-600', bg: 'bg-blue-600/10' },
       ]
     },
     {
@@ -238,6 +215,7 @@ const AdminLayout = ({ children }: AdminLayoutProps) => {
       icon: MessageSquare,
       color: 'text-blue-600',
       items: [
+        { icon: MessageSquare, label: 'Chat', path: '/admin/chat', color: 'text-blue-600', bg: 'bg-blue-600/10' },
         { icon: Mail, label: 'Email', path: '/admin/email', color: 'text-orange-500', bg: 'bg-orange-500/10' },
         { icon: Send, label: 'SMS', path: '/admin/sms', color: 'text-green-500', bg: 'bg-green-500/10' },
         { icon: MessageSquare, label: 'WhatsApp', path: '/admin/whatsapp', color: 'text-green-600', bg: 'bg-green-600/10' },
@@ -513,7 +491,7 @@ const AdminLayout = ({ children }: AdminLayoutProps) => {
                     </div>
                   </DropdownMenuLabel>
                   <DropdownMenuSeparator />
-                  <DropdownMenuItem>
+                  <DropdownMenuItem onClick={() => navigate('/admin/settings')}>
                     <Settings className="mr-2 h-4 w-4" />
                     Admin Settings
                   </DropdownMenuItem>

@@ -10,7 +10,7 @@ const DEFAULT_TIMEOUT_MS = 6000;
 const PYTHON_BIN = process.env.BAYESIAN_PYTHON_BIN || process.env.PYTHON_BIN || 'python3';
 const SCRIPT_PATH = process.env.BAYESIAN_SCRIPT_PATH
   ? path.resolve(process.env.BAYESIAN_SCRIPT_PATH)
-  : path.resolve(__dirname, '..', '..', 'ai-engine', 'medical_ai', 'bayesian_model', 'bayesian_network.py');
+  : path.resolve(__dirname, '..', '..', 'ai-engine', 'doctor_bot', 'utils', 'bayesian_network.py');
 
 if (!fs.existsSync(SCRIPT_PATH)) {
   console.warn(`Bayesian inference script not found at ${SCRIPT_PATH}`);

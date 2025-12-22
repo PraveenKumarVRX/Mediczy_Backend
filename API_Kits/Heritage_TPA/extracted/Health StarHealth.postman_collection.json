@@ -1,0 +1,344 @@
+{
+	"info": {
+		"_postman_id": "c656b0db-afb0-4ce2-a477-47ce3d1a0487",
+		"name": "Health StarHealth",
+		"schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json",
+		"_exporter_id": "19690377"
+	},
+	"item": [
+		{
+			"name": "Generate Token Service",
+			"request": {
+				"method": "POST",
+				"header": [
+					{
+						"key": "Content-Type",
+						"value": "application/json",
+						"type": "text"
+					},
+					{
+						"key": "Accept",
+						"value": "application/json",
+						"type": "text"
+					}
+				],
+				"body": {
+					"mode": "raw",
+					"raw": "{\r\n    \"userId\": \"<User ID>\",\r\n    \"password\": \"<Password>\",\r\n    \"deviceType\": \"<Device Type>\"\r\n}"
+				},
+				"url": {
+					"raw": "https://securegw-uat.starhealth.in/api/authentication-service/v1/auth/token/generate",
+					"protocol": "https",
+					"host": [
+						"securegw-uat",
+						"starhealth",
+						"in"
+					],
+					"path": [
+						"api",
+						"authentication-service",
+						"v1",
+						"auth",
+						"token",
+						"generate"
+					]
+				}
+			},
+			"response": []
+		},
+		{
+			"name": "Get Broker Client Details",
+			"request": {
+				"method": "GET",
+				"header": [
+					{
+						"key": "Content-Type",
+						"value": "application/json",
+						"type": "text"
+					},
+					{
+						"key": "Accept",
+						"value": "application/json",
+						"type": "text"
+					},
+					{
+						"key": "token",
+						"value": "",
+						"type": "text"
+					}
+				],
+				"url": {
+					"raw": "https://securegw-uat.starhealth.in/api/broker-service/v1/client/brokercode/LC0000000010?startIndex=0&endIndex=2",
+					"protocol": "https",
+					"host": [
+						"securegw-uat",
+						"starhealth",
+						"in"
+					],
+					"path": [
+						"api",
+						"broker-service",
+						"v1",
+						"client",
+						"brokercode",
+						"LC0000000010"
+					],
+					"query": [
+						{
+							"key": "startIndex",
+							"value": "0"
+						},
+						{
+							"key": "endIndex",
+							"value": "2"
+						}
+					]
+				}
+			},
+			"response": []
+		},
+		{
+			"name": "Get Enrolment Data of Employees",
+			"request": {
+				"method": "GET",
+				"header": [
+					{
+						"key": "Content-Type",
+						"value": "application/json",
+						"type": "text"
+					},
+					{
+						"key": "Accept",
+						"value": "application/json",
+						"type": "text"
+					},
+					{
+						"key": "token",
+						"value": "",
+						"type": "text"
+					}
+				],
+				"url": {
+					"raw": "https://securegw-uat.starhealth.in/api/broker-service/v1/enroldata/groupcode/5286756?policyNumber=P/161200/01/2017/000781&startIndex=0&endIndex=2",
+					"protocol": "https",
+					"host": [
+						"securegw-uat",
+						"starhealth",
+						"in"
+					],
+					"path": [
+						"api",
+						"broker-service",
+						"v1",
+						"enroldata",
+						"groupcode",
+						"5286756"
+					],
+					"query": [
+						{
+							"key": "policyNumber",
+							"value": "P/161200/01/2017/000781"
+						},
+						{
+							"key": "startIndex",
+							"value": "0"
+						},
+						{
+							"key": "endIndex",
+							"value": "2"
+						}
+					]
+				}
+			},
+			"response": []
+		},
+		{
+			"name": "Validate Token Service",
+			"request": {
+				"method": "GET",
+				"header": [
+					{
+						"key": "Content-Type",
+						"value": "application/json",
+						"type": "text"
+					},
+					{
+						"key": "Accept",
+						"value": "application/json",
+						"type": "text"
+					},
+					{
+						"key": "token",
+						"value": "",
+						"type": "text"
+					}
+				],
+				"url": {
+					"raw": "https://securegw-uat.starhealth.in/api/authentication-service/v1/auth/token/validate",
+					"protocol": "https",
+					"host": [
+						"securegw-uat",
+						"starhealth",
+						"in"
+					],
+					"path": [
+						"api",
+						"authentication-service",
+						"v1",
+						"auth",
+						"token",
+						"validate"
+					]
+				}
+			},
+			"response": []
+		},
+		{
+			"name": "Get Ecard Details By Employee ID",
+			"request": {
+				"method": "GET",
+				"header": [
+					{
+						"key": "Content-Type",
+						"value": "application/json",
+						"type": "text"
+					},
+					{
+						"key": "Accept",
+						"value": "application/json",
+						"type": "text"
+					},
+					{
+						"key": "token",
+						"value": "",
+						"type": "text"
+					}
+				],
+				"url": {
+					"raw": "https://securegw-uat.starhealth.in/api/broker-service/v1/ecard/employeeid/SGL0001?policyNumber=P/161200/01/2017/000781",
+					"protocol": "https",
+					"host": [
+						"securegw-uat",
+						"starhealth",
+						"in"
+					],
+					"path": [
+						"api",
+						"broker-service",
+						"v1",
+						"ecard",
+						"employeeid",
+						"SGL0001"
+					],
+					"query": [
+						{
+							"key": "policyNumber",
+							"value": "P/161200/01/2017/000781"
+						}
+					]
+				}
+			},
+			"response": []
+		},
+		{
+			"name": "Get Hospital List By Pin Code",
+			"request": {
+				"method": "GET",
+				"header": [
+					{
+						"key": "Content-Type",
+						"value": "application/json",
+						"type": "text"
+					},
+					{
+						"key": "Accept",
+						"value": "application/json",
+						"type": "text"
+					},
+					{
+						"key": "token",
+						"value": "",
+						"type": "text"
+					}
+				],
+				"url": {
+					"raw": "https://securegw-uat.starhealth.in/api/utility-service/v1/hospital/network/pincode/600092/list?startIndex=0&endIndex=2",
+					"protocol": "https",
+					"host": [
+						"securegw-uat",
+						"starhealth",
+						"in"
+					],
+					"path": [
+						"api",
+						"utility-service",
+						"v1",
+						"hospital",
+						"network",
+						"pincode",
+						"600092",
+						"list"
+					],
+					"query": [
+						{
+							"key": "startIndex",
+							"value": "0"
+						},
+						{
+							"key": "endIndex",
+							"value": "2"
+						}
+					]
+				}
+			},
+			"response": []
+		},
+		{
+			"name": "Get Ecard Details By Health Card ID",
+			"request": {
+				"method": "GET",
+				"header": [
+					{
+						"key": "Content-Type",
+						"value": "application/json",
+						"type": "text"
+					},
+					{
+						"key": "Accept",
+						"value": "application/json",
+						"type": "text"
+					},
+					{
+						"key": "token",
+						"value": "",
+						"type": "text"
+					}
+				],
+				"url": {
+					"raw": "https://securegw-uat.starhealth.in/api/broker-service/v1/ecard/healthcardid/2269552000000100?policyNumber=P/151118/01/2020\n/000593",
+					"protocol": "https",
+					"host": [
+						"securegw-uat",
+						"starhealth",
+						"in"
+					],
+					"path": [
+						"api",
+						"broker-service",
+						"v1",
+						"ecard",
+						"healthcardid",
+						"2269552000000100"
+					],
+					"query": [
+						{
+							"key": "policyNumber",
+							"value": "P/151118/01/2020\n/000593"
+						}
+					]
+				}
+			},
+			"response": []
+		}
+	]
+}

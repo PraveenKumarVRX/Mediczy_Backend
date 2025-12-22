@@ -1,0 +1,26 @@
+postgres_packages:
+  - postgresql-{{ pg_version }}
+  - postgresql-{{ pg_version }}-contrib
+postgres_service_name: postgresql
+postgres_listen_addresses: ["0.0.0.0"]
+postgres_port: 5432
+postgres_data_dir: "{{ pg_data_mount }}"
+postgres_conf_path: /etc/postgresql/{{ pg_version }}/main/postgresql.conf
+postgres_hba_path: /etc/postgresql/{{ pg_version }}/main/pg_hba.conf
+pg_ssl_cert: /etc/ssl/postgres/server.crt
+pg_ssl_key: /etc/ssl/postgres/server.key
+postgres_users:
+  - name: mediczy_helper
+    password: "{{ vault_mediczy_helper_password | default('change_me') }}"
+    role_attr_flags: CREATEDB,LOGIN,REPLICATION
+postgres_databases:
+  - name: mediczy_ai
+    owner: mediczy_helper
+    encoding: UTF8
+    template: template0
+    lc_collate: C.UTF-8
+    lc_ctype: C.UTF-8
+postgres_backup_cron:
+  enabled: true
+  schedule: "0 2 * * *"
+  script_path: /usr/local/bin/pg_basebackup.sh

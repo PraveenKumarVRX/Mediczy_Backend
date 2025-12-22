@@ -3,6 +3,8 @@ import Groq from 'groq-sdk';
 import auth from '../middleware/auth.js';
 import dotenv from 'dotenv';
 import { GoogleGenerativeAI } from "@google/generative-ai";
+import healthDiaryService from '../services/health-diary.service.js';
+import rateLimit from 'express-rate-limit';
 
 // Load environment variables
 dotenv.config();
@@ -14,13 +16,36 @@ const groq = new Groq({
   apiKey: process.env.GROQ_API_KEY
 });
 
-// Initialize Gemini AI
-const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY);
+// Lazy-init Gemini AI to avoid crashing when key is missing
+const getGenAI = () => {
+  const key = process.env.GEMINI_API_KEY;
+  if (!key) return null;
+  return new GoogleGenerativeAI(key);
+};
 
 // Verify API key is loaded
 if (!process.env.GROQ_API_KEY) {
-  console.warn('Warning: Using fallback GROQ_API_KEY. Please check your .env file.');
+  console.warn('Warning: GROQ_API_KEY not set. AI endpoints will return 503.');
 }
+
+const assertGroqConfigured = () => {
+  if (!process.env.GROQ_API_KEY) {
+    const err = new Error('AI service unavailable: GROQ_API_KEY missing');
+    err.statusCode = 503;
+    throw err;
+  }
+};
+
+// Per-route limiter to protect expensive AI calls
+const aiRouteLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000,
+  max: 60,
+  message: 'Too many AI requests, please slow down.',
+  standardHeaders: true,
+  legacyHeaders: false,
+});
+
+router.use(aiRouteLimiter);
 
 // Helper function to validate command response
 const validateCommandResponse = (result) => {
@@ -65,9 +90,7 @@ router.post('/process-command', auth, async (req, res) => {
       });
     }
 
-    console.log('Processing command:', command);
-    console.log('Current path:', currentPath);
-    console.log('User context:', userContext);
+    console.log('Processing AI voice command request');
 
     const systemPrompt = `You are an AI assistant that processes voice commands for a health tracking application.
 Your task is to understand the user's intent and provide appropriate navigation or action responses.
@@ -248,6 +271,8 @@ Examples:
         });
       }
 
+      assertGroqConfigured();
+
       const completion = await groq.chat.completions.create({
         messages: [
           {
@@ -286,12 +311,13 @@ Examples:
       result.timestamp = new Date().toISOString();
       result.commandProcessed = command;
 
-      console.log('Processed result:', result);
+      console.log('AI command processed successfully');
       res.json(result);
 
     } catch (aiError) {
       console.error('AI Service Error:', aiError);
-      res.status(500).json({
+      const status = aiError.statusCode || 500;
+      res.status(status).json({
         error: 'AI Processing Error',
         details: aiError.message,
         command: command,
@@ -354,6 +380,8 @@ Respond in JSON format:
   ]
 }`;
 
+    assertGroqConfigured();
+
     const completion = await groq.chat.completions.create({
       messages: [
         {
@@ -383,7 +411,8 @@ Respond in JSON format:
     }
   } catch (error) {
     console.error('Error generating suggestions:', error);
-    res.status(500).json({
+    const status = error.statusCode || 500;
+    res.status(status).json({
       error: 'Failed to generate command suggestions',
       details: error.message
     });
@@ -396,6 +425,14 @@ router.post('/analyze-image', async (req, res) => {
 
     if (!image) {
       return res.status(400).json({ error: 'No image provided' });
+    }
+
+    const genAI = getGenAI();
+    if (!genAI) {
+      return res.status(503).json({
+        error: 'Image analysis unavailable',
+        details: 'GEMINI_API_KEY is not configured'
+      });
     }
 
     // Initialize the model
@@ -432,10 +469,18 @@ router.post('/analyze-image', async (req, res) => {
       language,
     });
   } catch (error) {
-    console.error('Image analysis error:', error);
-    res.status(500).json({ 
+    const status = error.status || error.response?.status;
+    const isServiceDisabled = typeof error.message === 'string' && error.message.includes('SERVICE_DISABLED');
+
+    console.error('Image analysis error:', status || error.message);
+
+    const friendlyDetails = isServiceDisabled
+      ? 'Generative AI API disabled or not enabled for this project. Enable Generative Language API in Google Cloud.'
+      : 'Upstream AI service unavailable. Please try again.';
+
+    res.status(isServiceDisabled ? 503 : 500).json({ 
       error: 'Failed to analyze image',
-      details: error.message 
+      details: friendlyDetails
     });
   }
 });
@@ -443,8 +488,9 @@ router.post('/analyze-image', async (req, res) => {
 // Medical Consultation endpoint using Groq AI for Dr. Mediczy AI
 router.post('/working-medical-consult', auth, async (req, res) => {
   try {
-    const { query, language = 'en', userContext = {}, sessionId } = req.body;
+    const { query, language = 'en', userContext = {}, sessionId: providedSessionId } = req.body;
     const userId = req.user.id;
+    const sessionId = providedSessionId || `med_${userId}_${Date.now()}`;
 
     if (!query) {
       return res.status(400).json({
@@ -453,20 +499,7 @@ router.post('/working-medical-consult', auth, async (req, res) => {
       });
     }
 
-    console.log(`🏥 Medical consultation request: ${query.substring(0, 50)}...`);
-
-    // Determine token limit based on query complexity
-    const queryLength = query.length;
-    const hasDetailedContext = userContext && (userContext.conversationHistory?.length > 0 || userContext.symptoms?.length > 0);
-    
-    // Dynamic token allocation: 250 base, up to 400 for complex queries
-    let maxTokens = 250;
-    if (queryLength > 200 || hasDetailedContext) {
-      maxTokens = 350;
-    }
-    if (queryLength > 400) {
-      maxTokens = 400;
-    }
+    console.log(`🏥 Medical consultation request received for user ${userId}`);
 
     // Check if this is a simple greeting or casual chat
     const greetingPatterns = /^(hi+|hello+|hey+|hola|namaste|good\s*(morning|afternoon|evening)|greetings?|how are you|what'?s up|yo|sup)[\s!.,?]*$/i;
@@ -476,12 +509,19 @@ router.post('/working-medical-consult', auth, async (req, res) => {
     // For greetings, return a simple friendly response directly
     if (isGreeting) {
       const greetingResponses = [
-        "Hey there! 👋 I'm Dr. iSHA, your AI health buddy. What's on your mind today?",
+        "Hey there! 👋 I'm Dr. iSHA, your AI health buddy powered by Mediczy's Synthetic Intelligence Brain. What's on your mind today?",
         "Hi! 😊 I'm Dr. iSHA. How can I help you feel better today?",
         "Hello! 👋 Great to meet you! I'm Dr. iSHA - tell me what's going on with your health.",
         "Hey! 😊 I'm Dr. iSHA, here to help. What would you like to chat about?"
       ];
       const randomGreeting = greetingResponses[Math.floor(Math.random() * greetingResponses.length)];
+      
+      // Save greeting to health diary using service
+      await healthDiaryService.logAIConsultation(userId, query, randomGreeting, {
+        sessionId,
+        isGreeting: true,
+        language
+      });
       
       return res.json({
         status: 'success',
@@ -491,12 +531,58 @@ router.post('/working-medical-consult', auth, async (req, res) => {
           urgency_score: 0,
           detected_symptoms: [],
           recommended_specialists: []
-        }
+        },
+        session_id: sessionId
       });
     }
 
-    // Create a friendly medical prompt for actual health questions
-    const medicalPrompt = `You are Dr. iSHA, a friendly and caring AI health assistant. Respond conversationally like a helpful friend who happens to be a doctor.
+    // ROUTE THROUGH SIB (Synthetic Intelligence Brain)
+    let aiResponse;
+    let sibUsed = false;
+    let modelUsed = 'unknown';
+
+    try {
+      console.log(`🧠 Routing request to SIB (Synthetic Intelligence Brain)...`);
+      
+      const sibResponse = await fetch('http://localhost:8001/chat', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          patient_id: userId.toString(),
+          message: query,
+          language: language,
+          session_id: sessionId
+        }),
+        timeout: 10000
+      });
+
+      if (sibResponse.ok) {
+        const sibData = await sibResponse.json();
+        aiResponse = sibData.response || sibData.message || sibData.result;
+        sibUsed = true;
+        modelUsed = sibData.model || 'SIB-Llama-3.1';
+        console.log(`✅ SIB processed consultation successfully for user ${userId}`);
+      } else {
+        throw new Error(`SIB returned ${sibResponse.status}, falling back to direct Groq`);
+      }
+    } catch (sibError) {
+      console.warn(`⚠️ SIB unavailable (${sibError.message}), falling back to direct Groq`);
+      
+      // FALLBACK: Direct Groq API call if SIB is unavailable
+      const queryLength = query.length;
+      const hasDetailedContext = userContext && (userContext.conversationHistory?.length > 0 || userContext.symptoms?.length > 0);
+      
+      let maxTokens = 250;
+      if (queryLength > 200 || hasDetailedContext) {
+        maxTokens = 350;
+      }
+      if (queryLength > 400) {
+        maxTokens = 400;
+      }
+
+      const medicalPrompt = `You are Dr. iSHA, a friendly and caring AI health assistant. Respond conversationally like a helpful friend who happens to be a doctor.
 
 Patient's message: "${query}"
 
@@ -509,32 +595,30 @@ Guidelines:
 - Don't use bullet points or structured formats for simple questions
 - Only use structured format for complex symptom descriptions
 
-Example good responses:
-- "That sounds uncomfortable! A headache with neck stiffness could be tension from stress or poor posture. Try a warm compress and gentle stretches. If it persists more than a day or gets worse, definitely see a doctor. 🤕"
-- "Feeling tired all the time? That's really common! Could be sleep quality, stress, or diet. Try getting 7-8 hours of sleep and staying hydrated. If it continues for weeks, worth getting a checkup. 💪"
-
 Now respond naturally to their message:`;
 
-    // Get AI response using Groq
-    const chatCompletion = await groq.chat.completions.create({
-      messages: [
-        {
-          role: "system",
-          content: "You are Dr. iSHA, a friendly AI health assistant. Respond like a caring friend who is also a doctor - warm, helpful, and conversational. Keep responses SHORT and natural. NO formal medical report formats. NO bullet points unless absolutely necessary. Just friendly, practical health advice in 2-4 sentences."
-        },
-        {
-          role: "user",
-          content: medicalPrompt
-        }
-      ],
-      model: "llama-3.3-70b-versatile",
-      temperature: 0.7,
-      max_tokens: maxTokens,
-    });
+      assertGroqConfigured();
 
-    const aiResponse = chatCompletion.choices[0]?.message?.content || "I apologize, but I'm unable to provide a response at this moment. Please try again.";
+      const chatCompletion = await groq.chat.completions.create({
+        messages: [
+          {
+            role: "system",
+            content: "You are Dr. iSHA, a friendly AI health assistant. Respond like a caring friend who is also a doctor - warm, helpful, and conversational. Keep responses SHORT and natural. NO formal medical report formats. Just friendly, practical health advice in 2-4 sentences."
+          },
+          {
+            role: "user",
+            content: medicalPrompt
+          }
+        ],
+        model: "llama-3.3-70b-versatile",
+        temperature: 0.7,
+        max_tokens: maxTokens,
+      });
 
-    // Response is already formatted nicely
+      aiResponse = chatCompletion.choices[0]?.message?.content || "I apologize, but I'm unable to provide a response at this moment. Please try again.";
+      modelUsed = 'llama-3.3-70b-versatile (Groq Fallback)';
+    }
+
     const finalResponse = aiResponse;
 
     // Analyze urgency (simple keyword-based analysis)
@@ -600,12 +684,13 @@ Now respond naturally to their message:`;
       needs_appointment: needsAppointment,
       available_doctors: availableDoctors,
       can_book_now: availableDoctors.length > 0,
-      coordinated_by: 'Dr. iSHA',
+      coordinated_by: sibUsed ? 'Dr. iSHA (via SIB)' : 'Dr. iSHA',
       ultra_fast_analysis: {
         response_time: '< 3s',
-        model_used: 'llama-3.3-70b-versatile (GROQ)',
+        model_used: modelUsed,
+        sib_used: sibUsed,
         confidence: 0.85,
-        powered_by: 'GROQ Cloud AI'
+        powered_by: sibUsed ? 'Mediczy SIB' : 'GROQ Cloud AI'
       },
       session_id: sessionId,
       timestamp: new Date().toISOString(),
@@ -613,7 +698,18 @@ Now respond naturally to their message:`;
       user_id: userId
     };
 
-    // Log the consultation (you could save this to intelligent database if needed)
+    // SAVE TO HEALTH DIARY - Persistent conversation storage
+    await healthDiaryService.logAIConsultation(userId, query, finalResponse, {
+      sessionId,
+      urgencyScore,
+      symptomsDetected: detectedSymptoms,
+      needsAppointment,
+      availableDoctors,
+      language,
+      sibUsed,
+      modelUsed
+    });
+
     console.log(`✅ Medical consultation completed for user ${userId}, session ${sessionId}`);
 
     res.json(responseData);
@@ -977,6 +1073,8 @@ router.post('/translate', auth, async (req, res) => {
       ? `You are a medical translator. Translate the following medical text to ${targetLanguage} while preserving medical terminology, emojis, and markdown formatting. Keep the translation accurate and easy to understand for patients.\n\nText to translate:\n${text}`
       : `Translate the following text to ${targetLanguage} while preserving emojis and formatting.\n\nText to translate:\n${text}`;
 
+    assertGroqConfigured();
+
     const chatCompletion = await groq.chat.completions.create({
       messages: [
         {
@@ -1005,7 +1103,8 @@ router.post('/translate', auth, async (req, res) => {
 
   } catch (error) {
     console.error('Translation error:', error);
-    res.status(500).json({
+    const status = error.statusCode || 500;
+    res.status(status).json({
       status: 'error',
       message: 'Translation failed',
       translatedText: req.body.text // Return original text as fallback
@@ -1038,7 +1137,7 @@ router.post('/text-to-speech', auth, async (req, res) => {
       });
     }
 
-    console.log(`🔊 ElevenLabs TTS request: ${text.substring(0, 50)}...`);
+    console.log(`🔊 ElevenLabs TTS request length=${text.length}`);
 
     // Clean text for TTS (remove markdown, emojis, etc.)
     const cleanText = text

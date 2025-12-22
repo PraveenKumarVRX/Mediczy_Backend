@@ -11,12 +11,14 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger, Dialog
 import { Textarea } from "@/components/ui/textarea";
 import { Progress } from "@/components/ui/progress";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
+import { useToast } from "@/hooks/use-toast";
+import { useState } from "react";
 import {
   Plus, Search, Filter, Calendar, Clock, Users, Pill, Package,
   CheckCircle, FileText, Receipt, CreditCard, TrendingUp,
   UserCog, Bell, Settings, HelpCircle, ArrowLeft, Edit, Trash2,
   Eye, AlertCircle, Download, Upload, Activity, BarChart3,
-  ShoppingCart, Truck, AlertTriangle, DollarSign
+  ShoppingCart, Truck, AlertTriangle, DollarSign, Phone, Mail
 } from "lucide-react";
 
 interface StatCardProps {
@@ -72,6 +74,11 @@ const PlaceholderList = ({
 
 // Pharmacy POS Page
 export const PharmacyPOSPage = () => {
+  const { toast } = useToast();
+  const [showNewTransaction, setShowNewTransaction] = useState(false);
+  const [showCustomerLookup, setShowCustomerLookup] = useState(false);
+  const [searchQuery, setSearchQuery] = useState('');
+
   const stats = [
     { title: "Today's Sales", value: "₹12,450", helper: "+12% from yesterday" },
     { title: "Transactions", value: "89", helper: "Active today" },
@@ -93,7 +100,7 @@ export const PharmacyPOSPage = () => {
             <h1 className="text-2xl font-bold text-slate-900">Point of Sale</h1>
             <p className="text-muted-foreground">Manage sales transactions and customer orders</p>
           </div>
-          <Button>
+          <Button onClick={() => setShowNewTransaction(true)}>
             <Plus className="w-4 h-4 mr-2" />
             New Transaction
           </Button>
@@ -110,8 +117,17 @@ export const PharmacyPOSPage = () => {
               <CardContent>
                 <div className="space-y-4">
                   <div className="flex gap-2">
-                    <Input placeholder="Scan barcode or search medicine..." className="flex-1" />
-                    <Button variant="outline">
+                    <Input 
+                      placeholder="Scan barcode or search medicine..." 
+                      className="flex-1" 
+                      value={searchQuery}
+                      onChange={(e) => setSearchQuery(e.target.value)}
+                    />
+                    <Button variant="outline" onClick={() => {
+                      if (searchQuery) {
+                        toast({ title: "Searching", description: `Searching for "${searchQuery}"...` });
+                      }
+                    }}>
                       <Search className="w-4 h-4" />
                     </Button>
                   </div>
@@ -129,15 +145,19 @@ export const PharmacyPOSPage = () => {
                 <CardTitle>Quick Actions</CardTitle>
               </CardHeader>
               <CardContent className="space-y-3">
-                <Button className="w-full" variant="outline">
+                <Button className="w-full" variant="outline" onClick={() => setShowCustomerLookup(true)}>
                   <Users className="w-4 h-4 mr-2" />
                   Customer Lookup
                 </Button>
-                <Button className="w-full" variant="outline">
+                <Button className="w-full" variant="outline" onClick={() => {
+                  toast({ title: "Print Receipt", description: "Printing receipt..." });
+                }}>
                   <Receipt className="w-4 h-4 mr-2" />
                   Print Receipt
                 </Button>
-                <Button className="w-full" variant="outline">
+                <Button className="w-full" variant="outline" onClick={() => {
+                  toast({ title: "Payment Methods", description: "Opening payment options..." });
+                }}>
                   <CreditCard className="w-4 h-4 mr-2" />
                   Payment Methods
                 </Button>
@@ -169,6 +189,55 @@ export const PharmacyPOSPage = () => {
             </Card>
           </div>
         </div>
+
+        {/* New Transaction Dialog */}
+        <Dialog open={showNewTransaction} onOpenChange={setShowNewTransaction}>
+          <DialogContent className="max-w-md">
+            <DialogHeader>
+              <DialogTitle>New Transaction</DialogTitle>
+              <DialogDescription>Start a new sales transaction</DialogDescription>
+            </DialogHeader>
+            <div className="space-y-4 py-4">
+              <div>
+                <Label>Customer Name (Optional)</Label>
+                <Input placeholder="Enter customer name or leave blank for walk-in" />
+              </div>
+              <div>
+                <Label>Phone Number (Optional)</Label>
+                <Input placeholder="Enter phone number" />
+              </div>
+            </div>
+            <DialogFooter>
+              <Button variant="outline" onClick={() => setShowNewTransaction(false)}>Cancel</Button>
+              <Button onClick={() => {
+                toast({ title: "Transaction Started", description: "New transaction created successfully" });
+                setShowNewTransaction(false);
+              }}>Start Transaction</Button>
+            </DialogFooter>
+          </DialogContent>
+        </Dialog>
+
+        {/* Customer Lookup Dialog */}
+        <Dialog open={showCustomerLookup} onOpenChange={setShowCustomerLookup}>
+          <DialogContent className="max-w-md">
+            <DialogHeader>
+              <DialogTitle>Customer Lookup</DialogTitle>
+              <DialogDescription>Search for existing customers</DialogDescription>
+            </DialogHeader>
+            <div className="space-y-4 py-4">
+              <div>
+                <Label>Search</Label>
+                <Input placeholder="Enter name or phone number" />
+              </div>
+              <div className="border rounded-lg p-4 text-center text-muted-foreground">
+                No customers found. Enter search term above.
+              </div>
+            </div>
+            <DialogFooter>
+              <Button variant="outline" onClick={() => setShowCustomerLookup(false)}>Close</Button>
+            </DialogFooter>
+          </DialogContent>
+        </Dialog>
       </div>
     </PharmacyLayout>
   );
@@ -176,6 +245,12 @@ export const PharmacyPOSPage = () => {
 
 // Pharmacy Prescriptions Page
 export const PharmacyPrescriptionsPage = () => {
+  const { toast } = useToast();
+  const [showNewPrescription, setShowNewPrescription] = useState(false);
+  const [showViewPrescription, setShowViewPrescription] = useState(false);
+  const [showEditPrescription, setShowEditPrescription] = useState(false);
+  const [selectedPrescription, setSelectedPrescription] = useState<any>(null);
+
   const stats = [
     { title: "Pending Prescriptions", value: "24", helper: "Awaiting processing" },
     { title: "Processed Today", value: "156", helper: "+8% from yesterday" },
@@ -197,7 +272,7 @@ export const PharmacyPrescriptionsPage = () => {
             <h1 className="text-2xl font-bold text-slate-900">Prescriptions</h1>
             <p className="text-muted-foreground">Manage prescription orders and dispensing</p>
           </div>
-          <Button>
+          <Button onClick={() => setShowNewPrescription(true)}>
             <Plus className="w-4 h-4 mr-2" />
             New Prescription
           </Button>
@@ -247,10 +322,16 @@ export const PharmacyPrescriptionsPage = () => {
                     </TableCell>
                     <TableCell>
                       <div className="flex gap-2">
-                        <Button size="sm" variant="outline">
+                        <Button size="sm" variant="outline" onClick={() => {
+                          setSelectedPrescription(rx);
+                          setShowViewPrescription(true);
+                        }}>
                           <Eye className="w-4 h-4" />
                         </Button>
-                        <Button size="sm" variant="outline">
+                        <Button size="sm" variant="outline" onClick={() => {
+                          setSelectedPrescription(rx);
+                          setShowEditPrescription(true);
+                        }}>
                           <Edit className="w-4 h-4" />
                         </Button>
                       </div>
@@ -261,6 +342,118 @@ export const PharmacyPrescriptionsPage = () => {
             </Table>
           </CardContent>
         </Card>
+
+        {/* New Prescription Dialog */}
+        <Dialog open={showNewPrescription} onOpenChange={setShowNewPrescription}>
+          <DialogContent className="max-w-md">
+            <DialogHeader>
+              <DialogTitle>New Prescription</DialogTitle>
+              <DialogDescription>Create a new prescription record</DialogDescription>
+            </DialogHeader>
+            <div className="space-y-4 py-4">
+              <div>
+                <Label>Patient Name</Label>
+                <Input placeholder="Enter patient name" />
+              </div>
+              <div>
+                <Label>Doctor</Label>
+                <Input placeholder="Enter prescribing doctor" />
+              </div>
+              <div>
+                <Label>Medications</Label>
+                <Textarea placeholder="Enter medications..." rows={3} />
+              </div>
+            </div>
+            <DialogFooter>
+              <Button variant="outline" onClick={() => setShowNewPrescription(false)}>Cancel</Button>
+              <Button onClick={() => {
+                toast({ title: "Success", description: "Prescription created successfully" });
+                setShowNewPrescription(false);
+              }}>Create</Button>
+            </DialogFooter>
+          </DialogContent>
+        </Dialog>
+
+        {/* View Prescription Dialog */}
+        <Dialog open={showViewPrescription} onOpenChange={setShowViewPrescription}>
+          <DialogContent className="max-w-lg">
+            <DialogHeader>
+              <DialogTitle>Prescription Details</DialogTitle>
+              <DialogDescription>ID: {selectedPrescription?.id}</DialogDescription>
+            </DialogHeader>
+            {selectedPrescription && (
+              <div className="space-y-4 py-4">
+                <div className="grid grid-cols-2 gap-4">
+                  <div>
+                    <Label className="text-muted-foreground">Patient</Label>
+                    <p className="font-medium">{selectedPrescription.patient}</p>
+                  </div>
+                  <div>
+                    <Label className="text-muted-foreground">Doctor</Label>
+                    <p className="font-medium">{selectedPrescription.doctor}</p>
+                  </div>
+                  <div>
+                    <Label className="text-muted-foreground">Date</Label>
+                    <p className="font-medium">{selectedPrescription.date}</p>
+                  </div>
+                  <div>
+                    <Label className="text-muted-foreground">Status</Label>
+                    <Badge variant={selectedPrescription.status === "Ready" ? "default" : "secondary"}>
+                      {selectedPrescription.status}
+                    </Badge>
+                  </div>
+                </div>
+              </div>
+            )}
+            <DialogFooter>
+              <Button variant="outline" onClick={() => setShowViewPrescription(false)}>Close</Button>
+              <Button onClick={() => {
+                setShowViewPrescription(false);
+                setShowEditPrescription(true);
+              }}>Edit</Button>
+            </DialogFooter>
+          </DialogContent>
+        </Dialog>
+
+        {/* Edit Prescription Dialog */}
+        <Dialog open={showEditPrescription} onOpenChange={setShowEditPrescription}>
+          <DialogContent className="max-w-md">
+            <DialogHeader>
+              <DialogTitle>Edit Prescription</DialogTitle>
+              <DialogDescription>Update prescription details</DialogDescription>
+            </DialogHeader>
+            <div className="space-y-4 py-4">
+              <div>
+                <Label>Patient Name</Label>
+                <Input defaultValue={selectedPrescription?.patient} />
+              </div>
+              <div>
+                <Label>Doctor</Label>
+                <Input defaultValue={selectedPrescription?.doctor} />
+              </div>
+              <div>
+                <Label>Status</Label>
+                <Select defaultValue={selectedPrescription?.status}>
+                  <SelectTrigger>
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="Pending">Pending</SelectItem>
+                    <SelectItem value="Processing">Processing</SelectItem>
+                    <SelectItem value="Ready">Ready</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+            </div>
+            <DialogFooter>
+              <Button variant="outline" onClick={() => setShowEditPrescription(false)}>Cancel</Button>
+              <Button onClick={() => {
+                toast({ title: "Success", description: "Prescription updated successfully" });
+                setShowEditPrescription(false);
+              }}>Save Changes</Button>
+            </DialogFooter>
+          </DialogContent>
+        </Dialog>
       </div>
     </PharmacyLayout>
   );
@@ -268,6 +461,12 @@ export const PharmacyPrescriptionsPage = () => {
 
 // Pharmacy Inventory Page
 export const PharmacyInventoryPage = () => {
+  const { toast } = useToast();
+  const [showAddItem, setShowAddItem] = useState(false);
+  const [showEditItem, setShowEditItem] = useState(false);
+  const [showViewItem, setShowViewItem] = useState(false);
+  const [selectedItem, setSelectedItem] = useState<any>(null);
+
   const stats = [
     { title: "Total Items", value: "2,847", helper: "In stock" },
     { title: "Low Stock Items", value: "23", helper: "Need restocking" },
@@ -290,11 +489,13 @@ export const PharmacyInventoryPage = () => {
             <p className="text-muted-foreground">Track stock levels and manage pharmacy inventory</p>
           </div>
           <div className="flex gap-2">
-            <Button variant="outline">
+            <Button variant="outline" onClick={() => {
+              toast({ title: "Export", description: "Exporting inventory to CSV..." });
+            }}>
               <Download className="w-4 h-4 mr-2" />
               Export
             </Button>
-            <Button>
+            <Button onClick={() => setShowAddItem(true)}>
               <Plus className="w-4 h-4 mr-2" />
               Add Item
             </Button>
@@ -351,10 +552,16 @@ export const PharmacyInventoryPage = () => {
                     </TableCell>
                     <TableCell>
                       <div className="flex gap-2">
-                        <Button size="sm" variant="outline">
+                        <Button size="sm" variant="outline" onClick={() => {
+                          setSelectedItem(item);
+                          setShowEditItem(true);
+                        }}>
                           <Edit className="w-4 h-4" />
                         </Button>
-                        <Button size="sm" variant="outline">
+                        <Button size="sm" variant="outline" onClick={() => {
+                          setSelectedItem(item);
+                          setShowViewItem(true);
+                        }}>
                           <Eye className="w-4 h-4" />
                         </Button>
                       </div>
@@ -365,6 +572,147 @@ export const PharmacyInventoryPage = () => {
             </Table>
           </CardContent>
         </Card>
+
+        {/* Add Item Dialog */}
+        <Dialog open={showAddItem} onOpenChange={setShowAddItem}>
+          <DialogContent className="max-w-md">
+            <DialogHeader>
+              <DialogTitle>Add Inventory Item</DialogTitle>
+              <DialogDescription>Add a new medicine to inventory</DialogDescription>
+            </DialogHeader>
+            <div className="space-y-4 py-4">
+              <div>
+                <Label>Medicine Name</Label>
+                <Input placeholder="Enter medicine name" />
+              </div>
+              <div className="grid grid-cols-2 gap-4">
+                <div>
+                  <Label>Stock Quantity</Label>
+                  <Input type="number" placeholder="0" />
+                </div>
+                <div>
+                  <Label>Min Stock Level</Label>
+                  <Input type="number" placeholder="0" />
+                </div>
+              </div>
+              <div>
+                <Label>Category</Label>
+                <Select>
+                  <SelectTrigger>
+                    <SelectValue placeholder="Select category" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="Pain Relief">Pain Relief</SelectItem>
+                    <SelectItem value="Antibiotics">Antibiotics</SelectItem>
+                    <SelectItem value="Vitamins">Vitamins</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+              <div>
+                <Label>Expiry Date</Label>
+                <Input type="date" />
+              </div>
+            </div>
+            <DialogFooter>
+              <Button variant="outline" onClick={() => setShowAddItem(false)}>Cancel</Button>
+              <Button onClick={() => {
+                toast({ title: "Success", description: "Item added to inventory" });
+                setShowAddItem(false);
+              }}>Add Item</Button>
+            </DialogFooter>
+          </DialogContent>
+        </Dialog>
+
+        {/* View Item Dialog */}
+        <Dialog open={showViewItem} onOpenChange={setShowViewItem}>
+          <DialogContent className="max-w-lg">
+            <DialogHeader>
+              <DialogTitle>Item Details</DialogTitle>
+              <DialogDescription>{selectedItem?.name}</DialogDescription>
+            </DialogHeader>
+            {selectedItem && (
+              <div className="space-y-4 py-4">
+                <div className="grid grid-cols-2 gap-4">
+                  <div>
+                    <Label className="text-muted-foreground">Stock</Label>
+                    <p className="font-medium">{selectedItem.stock}</p>
+                  </div>
+                  <div>
+                    <Label className="text-muted-foreground">Min Stock</Label>
+                    <p className="font-medium">{selectedItem.minStock}</p>
+                  </div>
+                  <div>
+                    <Label className="text-muted-foreground">Category</Label>
+                    <p className="font-medium">{selectedItem.category}</p>
+                  </div>
+                  <div>
+                    <Label className="text-muted-foreground">Expiry</Label>
+                    <p className="font-medium">{selectedItem.expiry}</p>
+                  </div>
+                </div>
+                <div>
+                  <Label className="text-muted-foreground">Status</Label>
+                  <Badge variant={selectedItem.stock < selectedItem.minStock ? "destructive" : "default"}>
+                    {selectedItem.stock < selectedItem.minStock ? "Low Stock" : "In Stock"}
+                  </Badge>
+                </div>
+              </div>
+            )}
+            <DialogFooter>
+              <Button variant="outline" onClick={() => setShowViewItem(false)}>Close</Button>
+              <Button onClick={() => {
+                setShowViewItem(false);
+                setShowEditItem(true);
+              }}>Edit</Button>
+            </DialogFooter>
+          </DialogContent>
+        </Dialog>
+
+        {/* Edit Item Dialog */}
+        <Dialog open={showEditItem} onOpenChange={setShowEditItem}>
+          <DialogContent className="max-w-md">
+            <DialogHeader>
+              <DialogTitle>Edit Item</DialogTitle>
+              <DialogDescription>Update inventory item details</DialogDescription>
+            </DialogHeader>
+            <div className="space-y-4 py-4">
+              <div>
+                <Label>Medicine Name</Label>
+                <Input defaultValue={selectedItem?.name} />
+              </div>
+              <div className="grid grid-cols-2 gap-4">
+                <div>
+                  <Label>Stock Quantity</Label>
+                  <Input type="number" defaultValue={selectedItem?.stock} />
+                </div>
+                <div>
+                  <Label>Min Stock Level</Label>
+                  <Input type="number" defaultValue={selectedItem?.minStock} />
+                </div>
+              </div>
+              <div>
+                <Label>Category</Label>
+                <Select defaultValue={selectedItem?.category}>
+                  <SelectTrigger>
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="Pain Relief">Pain Relief</SelectItem>
+                    <SelectItem value="Antibiotics">Antibiotics</SelectItem>
+                    <SelectItem value="Vitamins">Vitamins</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+            </div>
+            <DialogFooter>
+              <Button variant="outline" onClick={() => setShowEditItem(false)}>Cancel</Button>
+              <Button onClick={() => {
+                toast({ title: "Success", description: "Item updated successfully" });
+                setShowEditItem(false);
+              }}>Save Changes</Button>
+            </DialogFooter>
+          </DialogContent>
+        </Dialog>
       </div>
     </PharmacyLayout>
   );
@@ -372,6 +720,9 @@ export const PharmacyInventoryPage = () => {
 
 // Pharmacy Stock Alerts Page
 export const PharmacyStockAlertsPage = () => {
+  const { toast } = useToast();
+  const [showCreateOrder, setShowCreateOrder] = useState(false);
+
   const alerts = [
     { medicine: "Amoxicillin 250mg", currentStock: 75, minStock: 100, supplier: "MedCorp Ltd", priority: "High" },
     { medicine: "Ibuprofen 200mg", currentStock: 45, minStock: 80, supplier: "PharmaPlus", priority: "Medium" },
@@ -386,7 +737,7 @@ export const PharmacyStockAlertsPage = () => {
             <h1 className="text-2xl font-bold text-slate-900">Stock Alerts</h1>
             <p className="text-muted-foreground">Monitor low stock items and reorder alerts</p>
           </div>
-          <Button>
+          <Button onClick={() => setShowCreateOrder(true)}>
             <Plus className="w-4 h-4 mr-2" />
             Create Order
           </Button>
@@ -439,27 +790,31 @@ export const PharmacyStockAlertsPage = () => {
                 </TableRow>
               </TableHeader>
               <TableBody>
-                {alerts.map((alert, index) => (
+                {alerts.map((alertItem, index) => (
                   <TableRow key={index}>
-                    <TableCell className="font-medium">{alert.medicine}</TableCell>
-                    <TableCell>{alert.currentStock}</TableCell>
-                    <TableCell>{alert.minStock}</TableCell>
-                    <TableCell>{alert.supplier}</TableCell>
+                    <TableCell className="font-medium">{alertItem.medicine}</TableCell>
+                    <TableCell>{alertItem.currentStock}</TableCell>
+                    <TableCell>{alertItem.minStock}</TableCell>
+                    <TableCell>{alertItem.supplier}</TableCell>
                     <TableCell>
                       <Badge variant={
-                        alert.priority === "Critical" ? "destructive" :
-                        alert.priority === "High" ? "default" : "secondary"
+                        alertItem.priority === "Critical" ? "destructive" :
+                        alertItem.priority === "High" ? "default" : "secondary"
                       }>
-                        {alert.priority}
+                        {alertItem.priority}
                       </Badge>
                     </TableCell>
                     <TableCell>
                       <div className="flex gap-2">
-                        <Button size="sm" variant="outline">
+                        <Button size="sm" variant="outline" onClick={() => {
+                          toast({ title: "Order Created", description: `Creating order for ${alertItem.medicine}` });
+                        }}>
                           <ShoppingCart className="w-4 h-4 mr-1" />
                           Order
                         </Button>
-                        <Button size="sm" variant="outline">
+                        <Button size="sm" variant="outline" onClick={() => {
+                          toast({ title: "Notification Sent", description: `Notifying supplier for ${alertItem.medicine}` });
+                        }}>
                           <Bell className="w-4 h-4 mr-1" />
                           Notify
                         </Button>
@@ -478,6 +833,7 @@ export const PharmacyStockAlertsPage = () => {
 
 // Pharmacy Batches Page
 export const PharmacyBatchesPage = () => {
+  const { toast } = useToast();
   const batches = [
     { batchId: "BAT001", medicine: "Paracetamol 500mg", quantity: 1000, expiry: "2026-06-15", supplier: "MedCorp Ltd", status: "Active" },
     { batchId: "BAT002", medicine: "Amoxicillin 250mg", quantity: 500, expiry: "2026-03-20", supplier: "PharmaPlus", status: "Active" },
@@ -492,7 +848,7 @@ export const PharmacyBatchesPage = () => {
             <h1 className="text-2xl font-bold text-slate-900">Batch Management</h1>
             <p className="text-muted-foreground">Track medicine batches and expiry dates</p>
           </div>
-          <Button>
+          <Button onClick={() => toast({ title: "Add Batch", description: "Opening batch form..." })}>
             <Plus className="w-4 h-4 mr-2" />
             Add Batch
           </Button>
@@ -584,10 +940,10 @@ export const PharmacyBatchesPage = () => {
                     </TableCell>
                     <TableCell>
                       <div className="flex gap-2">
-                        <Button size="sm" variant="outline">
+                        <Button size="sm" variant="outline" onClick={() => toast({ title: "View Batch", description: `Viewing batch ${batch.batchId}` })}>
                           <Eye className="w-4 h-4" />
                         </Button>
-                        <Button size="sm" variant="outline">
+                        <Button size="sm" variant="outline" onClick={() => toast({ title: "Edit Batch", description: `Editing batch ${batch.batchId}` })}>
                           <Edit className="w-4 h-4" />
                         </Button>
                       </div>
@@ -605,6 +961,7 @@ export const PharmacyBatchesPage = () => {
 
 // Pharmacy Purchase Orders Page
 export const PharmacyPurchaseOrdersPage = () => {
+  const { toast } = useToast();
   const orders = [
     { id: "PO001", supplier: "MedCorp Ltd", items: 25, total: "₹45,000", status: "Delivered", date: "2025-12-08" },
     { id: "PO002", supplier: "PharmaPlus", items: 18, total: "₹32,500", status: "In Transit", date: "2025-12-09" },
@@ -619,7 +976,7 @@ export const PharmacyPurchaseOrdersPage = () => {
             <h1 className="text-2xl font-bold text-slate-900">Purchase Orders</h1>
             <p className="text-muted-foreground">Manage supplier orders and procurement</p>
           </div>
-          <Button>
+          <Button onClick={() => toast({ title: "New Order", description: "Creating new purchase order..." })}>
             <Plus className="w-4 h-4 mr-2" />
             New Order
           </Button>
@@ -711,10 +1068,10 @@ export const PharmacyPurchaseOrdersPage = () => {
                     <TableCell>{order.date}</TableCell>
                     <TableCell>
                       <div className="flex gap-2">
-                        <Button size="sm" variant="outline">
+                        <Button size="sm" variant="outline" onClick={() => toast({ title: "View Order", description: `Viewing order ${order.id}` })}>
                           <Eye className="w-4 h-4" />
                         </Button>
-                        <Button size="sm" variant="outline">
+                        <Button size="sm" variant="outline" onClick={() => toast({ title: "Track Shipment", description: `Tracking shipment for ${order.id}` })}>
                           <Truck className="w-4 h-4" />
                         </Button>
                       </div>
@@ -732,6 +1089,7 @@ export const PharmacyPurchaseOrdersPage = () => {
 
 // Pharmacy Customers Page
 export const PharmacyCustomersPage = () => {
+  const { toast } = useToast();
   const customers = [
     { id: "C001", name: "John Doe", phone: "+91 9876543210", prescriptions: 12, lastVisit: "2025-12-09", status: "Active" },
     { id: "C002", name: "Jane Smith", phone: "+91 9876543211", prescriptions: 8, lastVisit: "2025-12-08", status: "Active" },
@@ -746,7 +1104,7 @@ export const PharmacyCustomersPage = () => {
             <h1 className="text-2xl font-bold text-slate-900">Customer Management</h1>
             <p className="text-muted-foreground">Manage customer profiles and prescription history</p>
           </div>
-          <Button>
+          <Button onClick={() => toast({ title: "Add Customer", description: "Opening new customer form..." })}>
             <Plus className="w-4 h-4 mr-2" />
             Add Customer
           </Button>
@@ -826,10 +1184,10 @@ export const PharmacyCustomersPage = () => {
                     </TableCell>
                     <TableCell>
                       <div className="flex gap-2">
-                        <Button size="sm" variant="outline">
+                        <Button size="sm" variant="outline" onClick={() => toast({ title: "View Customer", description: `Viewing customer ${customer.name}` })}>
                           <Eye className="w-4 h-4" />
                         </Button>
-                        <Button size="sm" variant="outline">
+                        <Button size="sm" variant="outline" onClick={() => toast({ title: "Edit Customer", description: `Editing customer ${customer.name}` })}>
                           <Edit className="w-4 h-4" />
                         </Button>
                       </div>
@@ -847,6 +1205,7 @@ export const PharmacyCustomersPage = () => {
 
 // Pharmacy Reports Page
 export const PharmacyReportsPage = () => {
+  const { toast } = useToast();
   return (
     <PharmacyLayout>
       <div className="space-y-6">
@@ -855,7 +1214,7 @@ export const PharmacyReportsPage = () => {
             <h1 className="text-2xl font-bold text-slate-900">Reports & Analytics</h1>
             <p className="text-muted-foreground">Generate reports and analyze pharmacy performance</p>
           </div>
-          <Button>
+          <Button onClick={() => toast({ title: "Export Report", description: "Generating report for export..." })}>
             <Download className="w-4 h-4 mr-2" />
             Export Report
           </Button>
@@ -938,6 +1297,7 @@ export const PharmacyReportsPage = () => {
 
 // Pharmacy Invoices Page
 export const PharmacyInvoicesPage = () => {
+  const { toast } = useToast();
   const invoices = [
     { id: "INV001", customer: "John Doe", amount: "₹450", date: "2025-12-10", status: "Paid", payment: "Cash" },
     { id: "INV002", customer: "Jane Smith", amount: "₹280", date: "2025-12-09", status: "Paid", payment: "Card" },
@@ -1041,10 +1401,10 @@ export const PharmacyInvoicesPage = () => {
                     </TableCell>
                     <TableCell>
                       <div className="flex gap-2">
-                        <Button size="sm" variant="outline">
+                        <Button size="sm" variant="outline" onClick={() => toast({ title: "View Invoice", description: `Viewing invoice ${invoice.id}` })}>
                           <Eye className="w-4 h-4" />
                         </Button>
-                        <Button size="sm" variant="outline">
+                        <Button size="sm" variant="outline" onClick={() => toast({ title: "Download", description: `Downloading invoice ${invoice.id}` })}>
                           <Download className="w-4 h-4" />
                         </Button>
                       </div>
@@ -1062,6 +1422,7 @@ export const PharmacyInvoicesPage = () => {
 
 // Pharmacy Expiry Page
 export const PharmacyExpiryPage = () => {
+  const { toast } = useToast();
   const expiringItems = [
     { medicine: "Vitamin D3 1000IU", batch: "BAT003", expiry: "2025-12-15", quantity: 200, daysLeft: 5, status: "Critical" },
     { medicine: "Ibuprofen 200mg", batch: "BAT007", expiry: "2025-12-20", quantity: 150, daysLeft: 10, status: "Warning" },
@@ -1172,10 +1533,10 @@ export const PharmacyExpiryPage = () => {
                     </TableCell>
                     <TableCell>
                       <div className="flex gap-2">
-                        <Button size="sm" variant="outline">
+                        <Button size="sm" variant="outline" onClick={() => toast({ title: "View Details", description: `Viewing ${item.medicine} expiry details` })}>
                           <Eye className="w-4 h-4" />
                         </Button>
-                        <Button size="sm" variant="outline">
+                        <Button size="sm" variant="outline" onClick={() => toast({ title: "Dispose Item", description: `Marking ${item.medicine} for disposal` })}>
                           <Trash2 className="w-4 h-4" />
                         </Button>
                       </div>

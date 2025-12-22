@@ -1,0 +1,205 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Doctor Auth Debugger</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            max-width: 800px;
+            margin: 50px auto;
+            padding: 20px;
+            background: #f5f5f5;
+        }
+        .debug-panel {
+            background: white;
+            padding: 20px;
+            border-radius: 8px;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+            margin-bottom: 20px;
+        }
+        .token-info {
+            background: #f0f0f0;
+            padding: 10px;
+            border-radius: 4px;
+            margin: 10px 0;
+            font-family: monospace;
+            word-break: break-all;
+        }
+        .status {
+            padding: 5px 10px;
+            border-radius: 4px;
+            display: inline-block;
+            margin: 5px;
+        }
+        .status.good { background: #d4edda; color: #155724; }
+        .status.bad { background: #f8d7da; color: #721c24; }
+        button {
+            background: #007bff;
+            color: white;
+            border: none;
+            padding: 10px 20px;
+            border-radius: 4px;
+            cursor: pointer;
+            margin: 5px;
+        }
+        button:hover { background: #0056b3; }
+        button.danger { background: #dc3545; }
+        button.danger:hover { background: #c82333; }
+    </style>
+</head>
+<body>
+    <h1>🔍 Doctor Authentication Debugger</h1>
+    
+    <div class="debug-panel">
+        <h2>Current Authentication State</h2>
+        <div id="authState"></div>
+    </div>
+
+    <div class="debug-panel">
+        <h2>LocalStorage Tokens</h2>
+        <div id="tokens"></div>
+    </div>
+
+    <div class="debug-panel">
+        <h2>Actions</h2>
+        <button onclick="refreshCheck()">🔄 Refresh Check</button>
+        <button onclick="clearDoctorAuth()" class="danger">🗑️ Clear Doctor Auth</button>
+        <button onclick="clearAllAuth()" class="danger">🗑️ Clear All Auth</button>
+        <button onclick="fixDoctorAuth()">✅ Fix Doctor Auth</button>
+    </div>
+
+    <div class="debug-panel">
+        <h2>Instructions</h2>
+        <ol>
+            <li>Login as a doctor in another tab</li>
+            <li>Come back here and click "Refresh Check"</li>
+            <li>Check if doctorToken is present</li>
+            <li>If userType is not "doctor", click "Fix Doctor Auth"</li>
+        </ol>
+    </div>
+
+    <script>
+        function checkAuth() {
+            const authState = {
+                token: localStorage.getItem('token'),
+                doctorToken: localStorage.getItem('doctorToken'),
+                userType: localStorage.getItem('userType'),
+                doctorData: localStorage.getItem('doctorData'),
+                userData: localStorage.getItem('userData'),
+            };
+
+            // Check for all possible tokens
+            const allTokens = {};
+            const tokenKeys = [
+                'token', 'doctorToken', 'corporateToken', 'nurseToken', 
+                'assistantToken', 'adminToken', 'teamToken', 'hospitalToken',
+                'clinicToken', 'labToken', 'pharmacyToken', 'ambulanceToken',
+                'homecareToken', 'insurerToken', 'tpaToken', 'psuToken', 'ngoToken'
+            ];
+
+            tokenKeys.forEach(key => {
+                const value = localStorage.getItem(key);
+                if (value) {
+                    allTokens[key] = value.substring(0, 20) + '...';
+                }
+            });
+
+            return { authState, allTokens };
+        }
+
+        function displayAuthState() {
+            const { authState, allTokens } = checkAuth();
+            
+            let html = '';
+            
+            // Display main auth state
+            html += `<div>`;
+            html += `<strong>User Type:</strong> `;
+            if (authState.userType === 'doctor') {
+                html += `<span class="status good">✅ ${authState.userType}</span>`;
+            } else if (authState.userType) {
+                html += `<span class="status bad">⚠️ ${authState.userType} (WRONG!)</span>`;
+            } else {
+                html += `<span class="status bad">❌ Not set</span>`;
+            }
+            html += `</div>`;
+
+            html += `<div>`;
+            html += `<strong>Doctor Token:</strong> `;
+            if (authState.doctorToken) {
+                html += `<span class="status good">✅ Present</span>`;
+            } else {
+                html += `<span class="status bad">❌ Missing</span>`;
+            }
+            html += `</div>`;
+
+            html += `<div>`;
+            html += `<strong>Generic Token:</strong> `;
+            if (authState.token) {
+                html += `<span class="status good">✅ Present</span>`;
+            } else {
+                html += `<span class="status bad">❌ Missing</span>`;
+            }
+            html += `</div>`;
+
+            document.getElementById('authState').innerHTML = html;
+
+            // Display all tokens
+            let tokensHtml = '';
+            if (Object.keys(allTokens).length === 0) {
+                tokensHtml = '<div class="token-info">No tokens found in localStorage</div>';
+            } else {
+                for (const [key, value] of Object.entries(allTokens)) {
+                    tokensHtml += `<div class="token-info"><strong>${key}:</strong> ${value}</div>`;
+                }
+            }
+            document.getElementById('tokens').innerHTML = tokensHtml;
+        }
+
+        function refreshCheck() {
+            displayAuthState();
+        }
+
+        function clearDoctorAuth() {
+            if (!confirm('Clear doctor authentication?')) return;
+            localStorage.removeItem('doctorToken');
+            localStorage.removeItem('doctorData');
+            alert('Doctor auth cleared');
+            displayAuthState();
+        }
+
+        function clearAllAuth() {
+            if (!confirm('Clear ALL authentication tokens? You will be logged out.')) return;
+            localStorage.clear();
+            alert('All auth cleared');
+            displayAuthState();
+        }
+
+        function fixDoctorAuth() {
+            const doctorToken = localStorage.getItem('doctorToken');
+            if (!doctorToken) {
+                alert('No doctorToken found! Please login as a doctor first.');
+                return;
+            }
+
+            // Fix the userType
+            localStorage.setItem('userType', 'doctor');
+            localStorage.setItem('token', doctorToken);
+            
+            // Dispatch auth change event
+            window.dispatchEvent(new Event('authChange'));
+            window.dispatchEvent(new Event('storage'));
+            
+            alert('✅ Doctor auth fixed! userType set to "doctor"');
+            displayAuthState();
+        }
+
+        // Initial check
+        displayAuthState();
+
+        // Listen for storage changes
+        window.addEventListener('storage', displayAuthState);
+        window.addEventListener('authChange', displayAuthState);
+    </script>
+</body>
+</html>

@@ -1,0 +1,53 @@
+- name: Install TimescaleDB packages
+  ansible.builtin.package:
+    name: "{{ timescale_packages }}"
+    state: present
+
+- name: Ensure Timescale conf directory exists
+  ansible.builtin.file:
+    path: "{{ timescale_conf_path | dirname }}"
+    state: directory
+    mode: '0755'
+
+- name: Deploy Timescale tuning file
+  ansible.builtin.template:
+    src: timescale.conf.j2
+    dest: "{{ timescale_conf_path }}"
+    owner: postgres
+    group: postgres
+    mode: '0644'
+  notify: reload postgres for timescale
+
+- name: Enable TimescaleDB extension
+  become_user: postgres
+  community.postgresql.postgresql_query:
+    db: "{{ timescale_db_name }}"
+    query: "CREATE EXTENSION IF NOT EXISTS timescaledb;"
+  loop: "{{ timescale_databases }}"
+  loop_control:
+    loop_var: timescale_db
+    label: "{{ timescale_db_label }}"
+  vars:
+    timescale_db_name: "{{ timescale_db.name if timescale_db is mapping else timescale_db }}"
+    timescale_db_label: "{{ timescale_db.name if timescale_db is mapping else timescale_db }}"
+  when: timescale_databases | length > 0
+
+- name: Ensure hypertables exist
+  become_user: postgres
+  community.postgresql.postgresql_query:
+    db: "{{ item.database }}"
+    query: |
+      SELECT create_hypertable('{{ item.schema | default('public') }}.{{ item.table }}', '{{ item.time_column | default('created_at') }}',
+                               chunk_time_interval => INTERVAL '{{ item.chunk_time_interval | default('1 day') }}',
+                               if_not_exists => TRUE,
+                               migrate_data => {{ item.migrate_data | default(true) | ternary('TRUE', 'FALSE') }});
+      {% if item.compress_after is defined %}
+      ALTER TABLE {{ item.schema | default('public') }}.{{ item.table }} SET (
+        timescaledb.compress,
+        timescaledb.compress_orderby = '{{ item.compress_orderby | default(item.time_column | default('created_at') ~ ' DESC') }}',
+        timescaledb.compress_segmentby = '{{ item.compress_segmentby | default('tenant_id') }}'
+      );
+      SELECT add_compression_policy('{{ item.schema | default('public') }}.{{ item.table }}', INTERVAL '{{ item.compress_after }}');
+      {% endif %}
+  loop: "{{ timescale_hypertables }}"
+  when: timescale_hypertables | length > 0

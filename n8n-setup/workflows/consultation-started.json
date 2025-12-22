@@ -1,0 +1,160 @@
+{
+  "name": "Mediczy - Consultation Started",
+  "nodes": [
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "consultation-started",
+        "responseMode": "responseNode",
+        "options": {}
+      },
+      "id": "consultation-webhook",
+      "name": "Consultation Webhook",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 1,
+      "position": [250, 300]
+    },
+    {
+      "parameters": {
+        "url": "=http://localhost:8000/api/notifications/send",
+        "sendBody": true,
+        "bodyParameters": {
+          "parameters": [
+            {
+              "name": "userId",
+              "value": "={{ $json.data.patientId }}"
+            },
+            {
+              "name": "userType",
+              "value": "patient"
+            },
+            {
+              "name": "type",
+              "value": "consultation_started"
+            },
+            {
+              "name": "title",
+              "value": "🩺 Doctor is Ready!"
+            },
+            {
+              "name": "message",
+              "value": "=Dr. {{ $json.data.doctorName }} is ready for your consultation. Click to join now!"
+            },
+            {
+              "name": "channels",
+              "value": "=['push', 'sms', 'whatsapp', 'in-app']"
+            },
+            {
+              "name": "priority",
+              "value": "critical"
+            },
+            {
+              "name": "actionUrl",
+              "value": "={{ $json.data.joinUrl }}"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "notify-patient",
+      "name": "Notify Patient",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 3,
+      "position": [500, 200]
+    },
+    {
+      "parameters": {
+        "topic": "video-stream-start",
+        "message": "={{ JSON.stringify({ appointmentId: $json.data.appointmentId, patientId: $json.data.patientId, doctorId: $json.data.doctorId, channel: $json.data.agoraChannel, timestamp: new Date().toISOString() }) }}"
+      },
+      "id": "kafka-video-event",
+      "name": "Kafka Video Event",
+      "type": "n8n-nodes-base.kafka",
+      "typeVersion": 1,
+      "position": [500, 400]
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "UPDATE appointments SET status = 'in_progress', started_at = NOW() WHERE id = '{{ $json.data.appointmentId }}'",
+        "options": {}
+      },
+      "id": "update-appointment",
+      "name": "Update Appointment",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2,
+      "position": [750, 300],
+      "credentials": {
+        "postgres": {
+          "id": "mediczy-postgres",
+          "name": "Mediczy PostgreSQL"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={{ JSON.stringify({ success: true, workflow: 'consultation-started', appointmentId: $json.data.appointmentId }) }}"
+      },
+      "id": "respond",
+      "name": "Respond",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1,
+      "position": [950, 300]
+    }
+  ],
+  "connections": {
+    "Consultation Webhook": {
+      "main": [
+        [
+          {
+            "node": "Notify Patient",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Kafka Video Event",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Notify Patient": {
+      "main": [
+        [
+          {
+            "node": "Update Appointment",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Kafka Video Event": {
+      "main": [
+        [
+          {
+            "node": "Update Appointment",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Update Appointment": {
+      "main": [
+        [
+          {
+            "node": "Respond",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "settings": {
+    "executionOrder": "v1"
+  }
+}

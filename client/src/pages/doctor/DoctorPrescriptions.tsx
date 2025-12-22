@@ -172,6 +172,49 @@ const DoctorPrescriptions = () => {
   const [showScribe, setShowScribe] = useState(false);
   const [currentScribeField, setCurrentScribeField] = useState<string>("diagnosis");
 
+  // Check for imported prescription from AI recording
+  useEffect(() => {
+    const importedData = localStorage.getItem('importedPrescription');
+    if (importedData) {
+      try {
+        const prescriptionData = JSON.parse(importedData);
+        
+        // Map AI prescription data to form format
+        const mappedFormData: NewPrescription = {
+          ...emptyPrescription,
+          chiefComplaints: prescriptionData.chiefComplaints?.join(', ') || '',
+          diagnosis: prescriptionData.diagnosis || '',
+          medications: prescriptionData.medications?.map((med: any) => ({
+            name: med.name || '',
+            composition: '',
+            dosage: med.dosage || '',
+            frequency: med.frequency || '',
+            duration: med.duration || '',
+            quantity: '',
+            instructions: med.instructions || ''
+          })) || [{ ...emptyMedication }],
+          labTests: prescriptionData.labTests || [],
+          instructions: prescriptionData.followUpInstructions 
+            ? [prescriptionData.followUpInstructions]
+            : [''],
+          followUpDate: prescriptionData.followUpDate || '',
+        };
+        
+        setFormData(mappedFormData);
+        setCreateDialogOpen(true);
+        localStorage.removeItem('importedPrescription');
+        
+        toast({
+          title: "✨ AI Prescription Imported!",
+          description: "Review and edit the AI-generated prescription before saving",
+        });
+      } catch (error) {
+        console.error('Failed to import prescription:', error);
+        localStorage.removeItem('importedPrescription');
+      }
+    }
+  }, []);
+
   // Fetch prescriptions
   const { data: prescriptions = [], isLoading, refetch } = useQuery({
     queryKey: ["doctorPrescriptions", currentDoctor?._id],

@@ -1,0 +1,57 @@
+version: '3.8'
+
+# Development overrides for docker-compose.yml
+services:
+  mediczy-app:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    environment:
+      - NODE_ENV=development
+      - DEBUG=mediczy:*
+    volumes:
+      - ./server:/app
+      - ./client/dist:/app/public
+      - /app/node_modules
+    ports:
+      - "8000:8000"
+      - "9229:9229" # Node.js debugger port
+    command: node --inspect=0.0.0.0:9229 index.js
+
+  nginx:
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - ./client/dist:/usr/share/nginx/html:ro
+
+  # Add development tools
+  mongo-express:
+    image: mongo-express:latest
+    container_name: mediczy-mongo-express
+    restart: unless-stopped
+    ports:
+      - "8081:8081"
+    environment:
+      - ME_CONFIG_MONGODB_ADMINUSERNAME=admin
+      - ME_CONFIG_MONGODB_ADMINPASSWORD=secure-mongo-password-change-this
+      - ME_CONFIG_MONGODB_URL=mongodb://admin:secure-mongo-password-change-this@mongo:27017/
+      - ME_CONFIG_BASICAUTH_USERNAME=admin
+      - ME_CONFIG_BASICAUTH_PASSWORD=admin
+    depends_on:
+      - mongo
+    networks:
+      - mediczy-network
+
+  redis-commander:
+    image: rediscommander/redis-commander:latest
+    container_name: mediczy-redis-commander
+    restart: unless-stopped
+    ports:
+      - "8082:8081"
+    environment:
+      - REDIS_HOSTS=local:redis:6379
+    depends_on:
+      - redis
+    networks:
+      - mediczy-network

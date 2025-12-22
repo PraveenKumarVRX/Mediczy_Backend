@@ -58,6 +58,10 @@ const CorporateLayout = ({ children, title, subtitle }: CorporateLayoutProps) =>
   const handleLogout = () => {
     localStorage.removeItem("token");
     localStorage.removeItem("userType");
+    localStorage.removeItem("corporateToken");
+    localStorage.removeItem("corporateData");
+    localStorage.removeItem("userId");
+    window.dispatchEvent(new CustomEvent('authChange'));
     navigate("/corporate/login");
   };
 

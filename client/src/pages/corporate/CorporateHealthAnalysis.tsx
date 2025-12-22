@@ -5,6 +5,7 @@ import { Button } from '@/components/ui/button';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Progress } from '@/components/ui/progress';
 import { Badge } from '@/components/ui/badge';
+import { exportToCSV } from '@/utils/exportToExcel';
 
 interface HealthMetric {
   category: string;
@@ -134,6 +135,62 @@ const CorporateHealthAnalysis: React.FC = () => {
     return 'bg-red-600';
   };
 
+  const handleExport = () => {
+    const rows = [
+      {
+        Section: 'Overview',
+        Metric: 'Average Health Score',
+        Value: `${overallStats.averageHealthScore}%`,
+        TimeRange: timeRange,
+        Department: selectedDepartment,
+      },
+      {
+        Section: 'Overview',
+        Metric: 'Total Employees',
+        Value: String(overallStats.totalEmployees),
+        TimeRange: timeRange,
+        Department: selectedDepartment,
+      },
+      {
+        Section: 'Overview',
+        Metric: 'Checkup Completion Rate',
+        Value: `${overallStats.checkupCompletionRate}%`,
+        TimeRange: timeRange,
+        Department: selectedDepartment,
+      },
+      {
+        Section: 'Overview',
+        Metric: 'High Risk Employees',
+        Value: String(overallStats.highRiskEmployees),
+        TimeRange: timeRange,
+        Department: selectedDepartment,
+      },
+      ...healthMetrics.map((m) => ({
+        Section: 'Health Metrics',
+        Metric: m.category,
+        Value: `${m.score}%`,
+        Trend: m.trend,
+        Change: `${m.change}%`,
+        TotalEmployees: m.totalEmployees,
+        AtRisk: m.atRisk,
+        TimeRange: timeRange,
+        Department: selectedDepartment,
+      })),
+      ...departmentHealth.map((d) => ({
+        Section: 'Department Health',
+        DepartmentName: d.department,
+        TotalEmployees: d.totalEmployees,
+        HealthScore: `${d.healthScore}%`,
+        CheckupCompletion: `${d.checkupCompletion}%`,
+        AtRiskCount: d.atRiskCount,
+        TimeRange: timeRange,
+        DepartmentFilter: selectedDepartment,
+      })),
+    ];
+
+    exportToCSV(rows, { filename: 'corporate-health-analysis', includeTimestamp: true });
+  };
+
   return (
     <div className="space-y-6">
       <div className="flex justify-between items-center">
@@ -168,7 +225,7 @@ const CorporateHealthAnalysis: React.FC = () => {
               <SelectItem value="operations">Operations</SelectItem>
             </SelectContent>
           </Select>
-          <Button>
+          <Button onClick={handleExport}>
             <Download className="h-4 w-4 mr-2" />
             Export Report
           </Button>

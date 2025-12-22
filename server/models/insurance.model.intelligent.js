@@ -1,140 +1,82 @@
-import { connectToDb } from '../db/mariadb.js';
+import { postgresSequelize as sequelize } from '../db/postgres-sequelize.js';
+import { DataTypes } from 'sequelize';
 
-let intelligentDB = null;
+// Define InsuranceProvider model - NOW USING POSTGRESQL
+const InsuranceProviderModel = sequelize.define('InsuranceProvider', {
+  id: { type: DataTypes.INTEGER, primaryKey: true, autoIncrement: true },
+  name: { type: DataTypes.STRING(255), allowNull: false },
+  code: { type: DataTypes.STRING(50), unique: true },
+  logoUrl: { type: DataTypes.STRING(500) },
+  contactEmail: { type: DataTypes.STRING(255) },
+  contactPhone: { type: DataTypes.STRING(50) },
+  website: { type: DataTypes.STRING(500) },
+  address: { type: DataTypes.JSONB, defaultValue: {} },
+  isActive: { type: DataTypes.BOOLEAN, defaultValue: true },
+  metadata: { type: DataTypes.JSONB, defaultValue: {} }
+}, { tableName: 'insurance_providers', timestamps: true });
 
-async function getDB() {
-  if (!intelligentDB) {
-    intelligentDB = await connectToDb();
-  }
-  return intelligentDB;
-}
+// Define InsurancePolicy model
+const InsurancePolicyModel = sequelize.define('InsurancePolicy', {
+  id: { type: DataTypes.INTEGER, primaryKey: true, autoIncrement: true },
+  providerId: { type: DataTypes.INTEGER, allowNull: false },
+  name: { type: DataTypes.STRING(255), allowNull: false },
+  code: { type: DataTypes.STRING(100) },
+  type: { type: DataTypes.STRING(100) },
+  coverageAmount: { type: DataTypes.DECIMAL(12, 2) },
+  premiumAmount: { type: DataTypes.DECIMAL(10, 2) },
+  coverageDetails: { type: DataTypes.JSONB, defaultValue: {} },
+  benefits: { type: DataTypes.ARRAY(DataTypes.TEXT), defaultValue: [] },
+  exclusions: { type: DataTypes.ARRAY(DataTypes.TEXT), defaultValue: [] },
+  isActive: { type: DataTypes.BOOLEAN, defaultValue: true },
+  metadata: { type: DataTypes.JSONB, defaultValue: {} }
+}, { tableName: 'insurance_policies', timestamps: true });
 
-const InsuranceProvider = {
-  findOne: async (options) => {
-    const db = await getDB();
-    return await db.InsuranceProvider.findOne(options);
-  },
+// Define UserInsurance model
+const UserInsuranceModel = sequelize.define('UserInsurance', {
+  id: { type: DataTypes.INTEGER, primaryKey: true, autoIncrement: true },
+  userId: { type: DataTypes.INTEGER, allowNull: false },
+  policyId: { type: DataTypes.INTEGER, allowNull: false },
+  policyNumber: { type: DataTypes.STRING(100) },
+  membershipId: { type: DataTypes.STRING(100) },
+  startDate: { type: DataTypes.DATEONLY },
+  endDate: { type: DataTypes.DATEONLY },
+  status: { type: DataTypes.STRING(50), defaultValue: 'active' },
+  primaryHolder: { type: DataTypes.BOOLEAN, defaultValue: true },
+  dependents: { type: DataTypes.JSONB, defaultValue: [] },
+  documents: { type: DataTypes.JSONB, defaultValue: [] },
+  metadata: { type: DataTypes.JSONB, defaultValue: {} }
+}, { tableName: 'user_insurances', timestamps: true });
 
-  findByPk: async (id, options = {}) => {
-    const db = await getDB();
-    return await db.InsuranceProvider.findByPk(id, options);
-  },
+// Define InsuranceClaim model
+const InsuranceClaimModel = sequelize.define('InsuranceClaim', {
+  id: { type: DataTypes.INTEGER, primaryKey: true, autoIncrement: true },
+  userInsuranceId: { type: DataTypes.INTEGER, allowNull: false },
+  appointmentId: { type: DataTypes.INTEGER },
+  claimNumber: { type: DataTypes.STRING(100), unique: true },
+  claimAmount: { type: DataTypes.DECIMAL(10, 2) },
+  approvedAmount: { type: DataTypes.DECIMAL(10, 2) },
+  status: { type: DataTypes.STRING(50), defaultValue: 'pending' },
+  submittedAt: { type: DataTypes.DATE },
+  processedAt: { type: DataTypes.DATE },
+  documents: { type: DataTypes.JSONB, defaultValue: [] },
+  notes: { type: DataTypes.TEXT },
+  metadata: { type: DataTypes.JSONB, defaultValue: {} }
+}, { tableName: 'insurance_claims', timestamps: true });
 
-  create: async (data) => {
-    const db = await getDB();
-    return await db.InsuranceProvider.create(data);
-  },
+// Wrapper functions
+const createWrapper = (Model) => ({
+  findOne: async (options) => Model.findOne(options),
+  findByPk: async (id, options = {}) => Model.findByPk(id, options),
+  create: async (data) => Model.create(data),
+  findAll: async (options = {}) => Model.findAll(options),
+  update: async (values, options) => Model.update(values, options),
+  destroy: async (options) => Model.destroy(options),
+  count: async (options = {}) => Model.count(options)
+});
 
-  findAll: async (options = {}) => {
-    const db = await getDB();
-    return await db.InsuranceProvider.findAll(options);
-  },
-
-  update: async (values, options) => {
-    const db = await getDB();
-    return await db.InsuranceProvider.update(values, options);
-  },
-
-  destroy: async (options) => {
-    const db = await getDB();
-    return await db.InsuranceProvider.destroy(options);
-  }
-};
-
-const InsurancePolicy = {
-  findOne: async (options) => {
-    const db = await getDB();
-    return await db.InsurancePolicy.findOne(options);
-  },
-
-  findByPk: async (id, options = {}) => {
-    const db = await getDB();
-    return await db.InsurancePolicy.findByPk(id, options);
-  },
-
-  create: async (data) => {
-    const db = await getDB();
-    return await db.InsurancePolicy.create(data);
-  },
-
-  findAll: async (options = {}) => {
-    const db = await getDB();
-    return await db.InsurancePolicy.findAll(options);
-  },
-
-  update: async (values, options) => {
-    const db = await getDB();
-    return await db.InsurancePolicy.update(values, options);
-  },
-
-  destroy: async (options) => {
-    const db = await getDB();
-    return await db.InsurancePolicy.destroy(options);
-  }
-};
-
-const UserInsurance = {
-  findOne: async (options) => {
-    const db = await getDB();
-    return await db.UserInsurance.findOne(options);
-  },
-
-  findByPk: async (id, options = {}) => {
-    const db = await getDB();
-    return await db.UserInsurance.findByPk(id, options);
-  },
-
-  create: async (data) => {
-    const db = await getDB();
-    return await db.UserInsurance.create(data);
-  },
-
-  findAll: async (options = {}) => {
-    const db = await getDB();
-    return await db.UserInsurance.findAll(options);
-  },
-
-  update: async (values, options) => {
-    const db = await getDB();
-    return await db.UserInsurance.update(values, options);
-  },
-
-  destroy: async (options) => {
-    const db = await getDB();
-    return await db.UserInsurance.destroy(options);
-  }
-};
-
-const InsuranceClaim = {
-  findOne: async (options) => {
-    const db = await getDB();
-    return await db.InsuranceClaim.findOne(options);
-  },
-
-  findByPk: async (id, options = {}) => {
-    const db = await getDB();
-    return await db.InsuranceClaim.findByPk(id, options);
-  },
-
-  create: async (data) => {
-    const db = await getDB();
-    return await db.InsuranceClaim.create(data);
-  },
-
-  findAll: async (options = {}) => {
-    const db = await getDB();
-    return await db.InsuranceClaim.findAll(options);
-  },
-
-  update: async (values, options) => {
-    const db = await getDB();
-    return await db.InsuranceClaim.update(values, options);
-  },
-
-  destroy: async (options) => {
-    const db = await getDB();
-    return await db.InsuranceClaim.destroy(options);
-  }
-};
+const InsuranceProvider = createWrapper(InsuranceProviderModel);
+const InsurancePolicy = createWrapper(InsurancePolicyModel);
+const UserInsurance = createWrapper(UserInsuranceModel);
+const InsuranceClaim = createWrapper(InsuranceClaimModel);
 
 export { InsuranceProvider, InsurancePolicy, UserInsurance, InsuranceClaim };

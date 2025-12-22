@@ -198,7 +198,10 @@ const VoiceCallManagement = () => {
           <CardContent>
             <div className="text-2xl font-bold">{stats?.totalCalls || 0}</div>
             <p className="text-xs text-muted-foreground">
-              {stats?.callsToday || 0} today
+              {(logs || []).filter(l => {
+                const ts = l?.timestamp ? new Date(l.timestamp) : null;
+                return ts && ts.toDateString() === new Date().toDateString();
+              }).length} today
             </p>
           </CardContent>
         </Card>
@@ -208,7 +211,13 @@ const VoiceCallManagement = () => {
             <BarChart3 className="h-4 w-4 text-muted-foreground" />
           </CardHeader>
           <CardContent>
-            <div className="text-2xl font-bold">{stats?.successRate || 0}%</div>
+            <div className="text-2xl font-bold">
+              {(() => {
+                const total = Number(stats?.totalCalls || 0);
+                const completed = Number(stats?.callsByStatus?.completed || 0);
+                return total > 0 ? Math.round((completed / total) * 100) : 0;
+              })()}%
+            </div>
             <p className="text-xs text-muted-foreground">
               Last 30 days
             </p>
@@ -375,14 +384,97 @@ const VoiceCallManagement = () => {
 
   const renderStatistics = () => (
     <div className="space-y-6">
+      <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+        <Card>
+          <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+            <CardTitle className="text-sm font-medium">Active Calls</CardTitle>
+            <Phone className="h-4 w-4 text-muted-foreground" />
+          </CardHeader>
+          <CardContent>
+            <div className="text-2xl font-bold">{stats?.activeCalls || 0}</div>
+            <p className="text-xs text-muted-foreground">Current active call sessions</p>
+          </CardContent>
+        </Card>
+        <Card>
+          <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+            <CardTitle className="text-sm font-medium">Avg Duration</CardTitle>
+            <Clock className="h-4 w-4 text-muted-foreground" />
+          </CardHeader>
+          <CardContent>
+            <div className="text-2xl font-bold">{stats?.averageDuration || 0}s</div>
+            <p className="text-xs text-muted-foreground">Based on logged calls</p>
+          </CardContent>
+        </Card>
+        <Card>
+          <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+            <CardTitle className="text-sm font-medium">Current Provider</CardTitle>
+            <Monitor className="h-4 w-4 text-muted-foreground" />
+          </CardHeader>
+          <CardContent>
+            <div className="text-2xl font-bold">{stats?.currentProvider || '—'}</div>
+            <p className="text-xs text-muted-foreground">Active voice provider</p>
+          </CardContent>
+        </Card>
+      </div>
+
       <Card>
         <CardHeader>
-          <CardTitle>Call Analytics</CardTitle>
+          <CardTitle className="flex items-center gap-2">
+            <BarChart3 className="h-5 w-5" />
+            Calls by Provider
+          </CardTitle>
         </CardHeader>
         <CardContent>
-          <div className="text-center py-8">
-            <BarChart3 className="h-16 w-16 mx-auto text-muted-foreground mb-4" />
-            <p className="text-muted-foreground">Analytics dashboard coming soon</p>
+          {stats?.callsByProvider && Object.keys(stats.callsByProvider).length > 0 ? (
+            <div className="space-y-3">
+              {Object.entries(stats.callsByProvider).map(([provider, count]) => (
+                <div key={provider} className="flex items-center justify-between p-3 border rounded-lg">
+                  <div className="font-medium capitalize">{provider}</div>
+                  <Badge variant="outline">{String(count)}</Badge>
+                </div>
+              ))}
+            </div>
+          ) : (
+            <div className="text-sm text-muted-foreground">No provider statistics available.</div>
+          )}
+        </CardContent>
+      </Card>
+
+      <Card>
+        <CardHeader>
+          <CardTitle className="flex items-center gap-2">
+            <Activity className="h-5 w-5" />
+            Calls by Status
+          </CardTitle>
+        </CardHeader>
+        <CardContent>
+          {stats?.callsByStatus ? (
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+              {Object.entries(stats.callsByStatus).map(([status, count]) => (
+                <div key={status} className="flex items-center justify-between p-3 border rounded-lg">
+                  <div className="font-medium capitalize">{status}</div>
+                  <Badge variant="outline">{String(count)}</Badge>
+                </div>
+              ))}
+            </div>
+          ) : (
+            <div className="text-sm text-muted-foreground">No status statistics available.</div>
+          )}
+        </CardContent>
+      </Card>
+
+      <Card>
+        <CardHeader>
+          <CardTitle className="flex items-center gap-2">
+            <Shield className="h-5 w-5" />
+            Compliance
+          </CardTitle>
+        </CardHeader>
+        <CardContent>
+          <div className="flex flex-wrap gap-2">
+            <Badge variant="outline">TRAI: {stats?.indianCompliance?.trai ? 'Yes' : 'No'}</Badge>
+            <Badge variant="outline">DoT: {stats?.indianCompliance?.dot ? 'Yes' : 'No'}</Badge>
+            <Badge variant="outline">DND: {stats?.indianCompliance?.enableDND ? 'Yes' : 'No'}</Badge>
           </div>
         </CardContent>
       </Card>

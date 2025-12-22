@@ -1,0 +1,206 @@
+{
+	"info": {
+		"_postman_id": "7eca1927-aade-4b21-aa1a-a4dad2f6376a",
+		"name": "Health HealthIndia Sriyah",
+		"schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json",
+		"_exporter_id": "19690377"
+	},
+	"item": [
+		{
+			"name": "GetClaimsList",
+			"protocolProfileBehavior": {
+				"disabledSystemHeaders": {}
+			},
+			"request": {
+				"method": "POST",
+				"header": [
+					{
+						"key": "Content-Type",
+						"value": "application/json, text/json",
+						"type": "text",
+						"disabled": true
+					}
+				],
+				"body": {
+					"mode": "raw",
+					"raw": "{\r\n    \"PolicyNumber\": \"GHS/Q0282923/31\",\r\n    \"FromDate\": \"26/11/2018\",\r\n    \"ToDate\": \"11/06/2019\",\r\n    \"AuthId\": \"VNHsCmQrOkGmo67FuYe3FOmOw1avBafE2zQV9dteFqo=\",\r\n    \"EmployeeNumber\": \"\",\r\n    \"MemberID\": \"\"\r\n}",
+					"options": {
+						"raw": {
+							"language": "json"
+						}
+					}
+				},
+				"url": {
+					"raw": "https://software.healthindiatpa.com/HiWebApi/Sriyah/GetClaimsList",
+					"protocol": "https",
+					"host": [
+						"software",
+						"healthindiatpa",
+						"com"
+					],
+					"path": [
+						"HiWebApi",
+						"Sriyah",
+						"GetClaimsList"
+					]
+				}
+			},
+			"response": []
+		},
+		{
+			"name": "GetEnrollmentDetails",
+			"request": {
+				"method": "POST",
+				"header": [],
+				"body": {
+					"mode": "raw",
+					"raw": "{\r\n \"PolicyNumber\": \"GHS/Q0282923/31\",\r\n \"AuthId\": \"VNHsCmQrOkGmo67FuYe3FOmOw1avBafE2zQV9dteFqo=\",\r\n \"EmployeeNumber\": \"17\",\r\n \"MemberID\": \"\"\r\n}\r\n",
+					"options": {
+						"raw": {
+							"language": "json"
+						}
+					}
+				},
+				"url": {
+					"raw": "https://software.healthindiatpa.com/HiWebApi/Sriyah/GetEnrollmentDetails",
+					"protocol": "https",
+					"host": [
+						"software",
+						"healthindiatpa",
+						"com"
+					],
+					"path": [
+						"HiWebApi",
+						"Sriyah",
+						"GetEnrollmentDetails"
+					]
+				}
+			},
+			"response": []
+		},
+		{
+			"name": "GetNetworkHospitals",
+			"request": {
+				"method": "POST",
+				"header": [],
+				"body": {
+					"mode": "raw",
+					"raw": "{\r\n  \"PolicyNumber\": \"GHS/Q0282923/31\",\r\n  \"UserName\": \"XdZTWq+aFlqsEUXkXry54Q==\",\r\n  \"Password\": \"zEsGhdOayMAJWvFIGcrYjC4VVl2T4WA1oQaQZ/EXGLM=\",\r\n  \"InsAbbrevation\": \"\",\r\n  \"InsCode\": \"\",\r\n  \"StateCode\": \"\",\r\n  \"CityCode\": \"\"\r\n}\r\n",
+					"options": {
+						"raw": {
+							"language": "json"
+						}
+					}
+				},
+				"url": {
+					"raw": "https://software.healthindiatpa.com/HiWebApi/Sriyah/GetNetworkHospitals",
+					"protocol": "https",
+					"host": [
+						"software",
+						"healthindiatpa",
+						"com"
+					],
+					"path": [
+						"HiWebApi",
+						"Sriyah",
+						"GetNetworkHospitals"
+					]
+				}
+			},
+			"response": []
+		},
+		{
+			"name": "GetDownloadedEcard",
+			"request": {
+				"method": "POST",
+				"header": [],
+				"body": {
+					"mode": "raw",
+					"raw": "{\r\n  \"UserName\": \"XdZTWq+aFlqsEUXkXry54Q==\",\r\n  \"Password\": \"zEsGhdOayMAJWvFIGcrYjC4VVl2T4WA1oQaQZ/EXGLM=\",\r\n  \"PolicyNumber\": \"GHS/Q0282923/31\",\r\n  \"MemberID\": \"2969431E\",\r\n  \"FamilyCode\": \"\",\r\n  \"EmployeeNumber\": \"17\"\r\n}\r\n",
+					"options": {
+						"raw": {
+							"language": "json"
+						}
+					}
+				},
+				"url": {
+					"raw": "https://software.healthindiatpa.com/HiWebApi/Sriyah/GetDownloadedEcard",
+					"protocol": "https",
+					"host": [
+						"software",
+						"healthindiatpa",
+						"com"
+					],
+					"path": [
+						"HiWebApi",
+						"Sriyah",
+						"GetDownloadedEcard"
+					]
+				}
+			},
+			"response": []
+		},
+		{
+			"name": "IntimateClaimRequest",
+			"request": {
+				"method": "POST",
+				"header": [],
+				"body": {
+					"mode": "raw",
+					"raw": "{\r\n  \"AilmentDescription\": \"eye infection\",\r\n  \"ContactNo\": \"1234567890\",\r\n  \"ProviderNumber\": \"0987654321\",\r\n  \"DateOfAdmission\": \"07/03/2023\",\r\n  \"HospName\": \"SRI KRISHNA SAHITHI EYE HOSPITAL\",\r\n  \"HospAddress\": \"3/137 Christian Lane Kadapa Andhra Pradesh PINCODE 516001\",\r\n  \"MemberID\": \"2969431E\",\r\n  \"PolicyNumber\": \"GHS/Q0282923/31\",\r\n  \"UserName\": \"XdZTWq+aFlqsEUXkXry54Q==\",\r\n  \"Password\": \"zEsGhdOayMAJWvFIGcrYjC4VVl2T4WA1oQaQZ/EXGLM=\"\r\n}\r\n",
+					"options": {
+						"raw": {
+							"language": "json"
+						}
+					}
+				},
+				"url": {
+					"raw": "https://software.healthindiatpa.com/HiWebApi/Sriyah/IntimateClaimRequest",
+					"protocol": "https",
+					"host": [
+						"software",
+						"healthindiatpa",
+						"com"
+					],
+					"path": [
+						"HiWebApi",
+						"Sriyah",
+						"IntimateClaimRequest"
+					]
+				}
+			},
+			"response": []
+		},
+		{
+			"name": "IntimateClaimRequest",
+			"request": {
+				"method": "POST",
+				"header": [],
+				"body": {
+					"mode": "raw",
+					"raw": "{\r\n    \"AilmentDescription\": \"eye infection\",\r\n    \"ContactNo\": \"1234567890\",\r\n    \"ProviderNumber\": \"\",\r\n    \"DateOfAdmission\": \"07/03/2023\",\r\n    \"HospName\": \"SRI KRISHNA SAHITHI EYE HOSPITAL\",\r\n    \"HospAddress\": \"\",\r\n    \"MemberID\": \"2431E\",\r\n    \"PolicyNumber\": \"\",\r\n    \"UserName\": \"XdZTWq+aFlqsEUXkXry54Q==\",\r\n    \"Password\": \"zEsGhdOayMAJWvFIGcrYjC4VVl2T4WA1oQaQZ/EXGLM=\"\r\n    \r\n}",
+					"options": {
+						"raw": {
+							"language": "json"
+						}
+					}
+				},
+				"url": {
+					"raw": "https://software.healthindiatpa.com/HiWebApi/BHRE/IntimateClaimRequest - do not call live",
+					"protocol": "https",
+					"host": [
+						"software",
+						"healthindiatpa",
+						"com"
+					],
+					"path": [
+						"HiWebApi",
+						"BHRE",
+						"IntimateClaimRequest - do not call live"
+					]
+				}
+			},
+			"response": []
+		}
+	]
+}

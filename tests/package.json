@@ -1,0 +1,30 @@
+{
+  "name": "mediczy-tests",
+  "version": "1.0.0",
+  "description": "Automated tests for Mediczy platform",
+  "scripts": {
+    "test": "playwright test",
+    "test:smoke": "playwright test smoke.spec.ts",
+    "test:admin": "playwright test admin-login.spec.ts",
+    "test:admin-features": "playwright test admin-functionality.spec.ts",
+    "test:all-logins": "playwright test all-logins.spec.ts",
+    "test:quick": "playwright test smoke.spec.ts all-logins.spec.ts",
+    "test:headed": "playwright test --headed",
+    "test:debug": "playwright test --debug",
+    "test:ui": "playwright test --ui",
+    "test:report": "playwright show-report",
+    "test:chrome": "playwright test --project=chromium",
+    "test:firefox": "playwright test --project=firefox",
+    "test:webkit": "playwright test --project=webkit",
+    "test:ci": "playwright test --reporter=json",
+    "install": "playwright install"
+  },
+  "keywords": ["playwright", "e2e", "testing", "automation"],
+  "author": "Mediczy Team",
+  "license": "MIT",
+  "devDependencies": {
+    "@playwright/test": "^1.40.0",
+    "@types/node": "^20.0.0",
+    "typescript": "^5.3.0"
+  }
+}

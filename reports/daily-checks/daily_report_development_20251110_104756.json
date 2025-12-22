@@ -1,0 +1,35 @@
+{
+  "metadata": {
+    "environment": "development",
+    "timestamp": "2025-11-10T10:47:56+05:30",
+    "base_url": "http://localhost:8000/api",
+    "web_url": "http://localhost:4000",
+    "test_duration_seconds": 0
+  },
+  "summary": {
+    "total_tests": 13,
+    "passed": 3,
+    "failed": 10,
+    "success_rate": "23.07%"
+  },
+  "test_results": {
+    "User Registration": {"status": "FAIL", "response_time_ms": "0"},
+    "Doctor Registration": {"status": "FAIL", "response_time_ms": "0"},
+    "Get Available Doctors (cache/db)": {"status": "FAIL", "response_time_ms": "0"},
+    "Security Headers": {"status": "FAIL", "response_time_ms": "0"},
+    "User Login": {"status": "FAIL", "response_time_ms": "0"},
+    "Membership Plans (DB check)": {"status": "FAIL", "response_time_ms": "0"},
+    "Get Available Doctors": {"status": "FAIL", "response_time_ms": "0"},
+    "Doctor Login": {"status": "FAIL", "response_time_ms": "0"},
+    "Payment Gateway Health": {"status": "PASS", "response_time_ms": "22"},
+    "Google Fit OAuth Endpoint": {"status": "FAIL", "response_time_ms": "0"},
+    "Rate Limiting Protection": {"status": "FAIL", "response_time_ms": "0"},
+    "Frontend Application": {"status": "PASS", "response_time_ms": "69"},
+    "AI Service Health (dr-isha)": {"status": "PASS", "response_time_ms": "76"}
+  },
+  "performance": {
+    "Payment Gateway Health": 22,
+    "Frontend Application": 69,
+    "AI Service Health (dr-isha)": 76
+  }
+}

@@ -1,0 +1,85 @@
+version: '3.8'
+
+services:
+  # Hasura GraphQL Engine
+  hasura:
+    image: hasura/graphql-engine:v2.36.0
+    container_name: mediczy-hasura
+    ports:
+      - "8080:8080"
+    depends_on:
+      - postgres
+    restart: always
+    environment:
+      ## PostgreSQL connection
+      HASURA_GRAPHQL_DATABASE_URL: postgresql://postgres:${POSTGRES_PASSWORD:-mediczy_secure_2024}@postgres:5432/mediczy
+      
+      ## Enable the console
+      HASURA_GRAPHQL_ENABLE_CONSOLE: "true"
+      
+      ## Admin secret for securing the endpoint
+      HASURA_GRAPHQL_ADMIN_SECRET: ${HASURA_ADMIN_SECRET:-mediczy_hasura_secret_2024}
+      
+      ## JWT secret for authentication (matches your existing JWT)
+      HASURA_GRAPHQL_JWT_SECRET: '{"type":"HS256","key":"${JWT_SECRET:-mediczy-super-secret-key-2024}"}'
+      
+      ## Enable unauthorized role for public access
+      HASURA_GRAPHQL_UNAUTHORIZED_ROLE: anonymous
+      
+      ## Enable dev mode (disable in production)
+      HASURA_GRAPHQL_DEV_MODE: "true"
+      
+      ## Enable telemetry
+      HASURA_GRAPHQL_ENABLE_TELEMETRY: "false"
+      
+      ## CORS settings
+      HASURA_GRAPHQL_CORS_DOMAIN: "*"
+      
+      ## WebSocket compression
+      HASURA_GRAPHQL_ENABLED_APIS: "metadata,graphql,config,metrics"
+      
+      ## Performance
+      HASURA_GRAPHQL_CONNECTIONS_PER_READ_REPLICA: 50
+      
+      ## Logging
+      HASURA_GRAPHQL_LOG_LEVEL: info
+      HASURA_GRAPHQL_ENABLED_LOG_TYPES: startup,http-log,webhook-log,websocket-log
+    volumes:
+      - ./hasura/metadata:/hasura-metadata
+    networks:
+      - mediczy-network
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8080/healthz"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
+
+  # PostgreSQL (use existing if already running)
+  postgres:
+    image: postgres:16-alpine
+    container_name: mediczy-postgres
+    restart: always
+    environment:
+      POSTGRES_DB: mediczy
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-mediczy_secure_2024}
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    ports:
+      - "5432:5432"
+    networks:
+      - mediczy-network
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+networks:
+  mediczy-network:
+    driver: bridge
+
+volumes:
+  postgres_data:
+    driver: local

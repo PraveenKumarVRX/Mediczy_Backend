@@ -61,38 +61,23 @@ const CorporateLogin = () => {
   const loginMutation = useLogin();
 
   const onSubmit = (values: z.infer<typeof formSchema>) => {
-    // Dev bypass for testing - check first before any API call
-    const emailLower = values.email.toLowerCase().trim();
-    const password = values.password;
-    
-    if (emailLower === 'corporate@mediczy.com' && password === 'Corporate123') {
-      console.log('🚀 Corporate: Using quick authentication bypass');
-      
-      // Set the auth data that CorporateLayout expects
-      localStorage.setItem('token', 'dev-corporate-token');
-      localStorage.setItem('userType', 'corporate');
-      localStorage.setItem('corporateToken', 'dev-corporate-token');
-      localStorage.setItem('corporateData', JSON.stringify({
-        id: 'corporate_dev',
-        email: 'corporate@mediczy.com',
-        name: 'Sample Corporation',
-        type: 'Enterprise'
-      }));
-      
-      toast({
-        title: "Welcome back",
-        description: "Redirecting you to the corporate command center...",
-      });
-      
-      navigate("/corporate/dashboard");
-      return;
-    }
-
-    // Only call API if not using dev credentials
     loginMutation.mutate(
       { credentials: values, loginType: "corporate" },
       {
-        onSuccess: () => {
+        onSuccess: (data) => {
+          // Store corporate profile data for help/support ticket defaults.
+          if (data?.corporate) {
+            localStorage.setItem(
+              'corporateData',
+              JSON.stringify({
+                id: data.corporate.id,
+                email: data.corporate.email,
+                name: data.corporate.companyName,
+                type: data.corporate.planType,
+              })
+            );
+          }
+
           toast({
             title: "Welcome back",
             description: "Redirecting you to the corporate command center...",

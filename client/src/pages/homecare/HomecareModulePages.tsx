@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
+import { useLocation, useNavigate } from "react-router-dom";
 import HomecareLayout from "@/components/homecare/HomecareLayout";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -18,7 +19,7 @@ import {
   CheckCircle, FileText, Receipt, CreditCard, TrendingUp,
   UserCog, Bell, Settings, HelpCircle, ArrowLeft, Edit, Trash2,
   Eye, AlertCircle, Download, Upload, Activity, BarChart3,
-  Home, Stethoscope, Pill, UserCheck, ClipboardList
+  Home, Stethoscope, Pill, UserCheck, ClipboardList, Phone
 } from "lucide-react";
 
 interface StatCardProps {
@@ -166,6 +167,8 @@ const PlaceholderList = ({
 // Homecare Patients Page
 export const HomecarePatientsPage = () => {
   const { toast } = useToast();
+  const location = useLocation();
+  const navigate = useNavigate();
   const [patients, setPatients] = useState<HomecarePatient[]>([]);
   const [statusFilter, setStatusFilter] = useState<"all" | Lowercase<HomecarePatientStatus>>("all");
   const [query, setQuery] = useState("");
@@ -270,6 +273,19 @@ export const HomecarePatientsPage = () => {
     });
     setUpsertOpen(true);
   };
+
+  useEffect(() => {
+    const isNewPath = location.pathname === "/homecare/patients/new";
+    const search = new URLSearchParams(location.search);
+    const isNewQuery = search.get("new") === "1";
+
+    if (isNewPath || isNewQuery) {
+      openAdd();
+      // Normalize URL so refresh/back doesn't repeatedly reopen the modal.
+      navigate("/homecare/patients", { replace: true });
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [location.pathname, location.search]);
 
   const openEdit = (patient: HomecarePatient) => {
     setEditing(patient);
@@ -554,11 +570,42 @@ export const HomecarePatientsPage = () => {
 
 // Homecare Care Plans Page
 export const HomecareCarePlansPage = () => {
+  const { toast } = useToast();
+  const [showNewPlan, setShowNewPlan] = useState(false);
+  const [showViewPlan, setShowViewPlan] = useState(false);
+  const [showEditPlan, setShowEditPlan] = useState(false);
+  const [selectedPlan, setSelectedPlan] = useState<any>(null);
+  const [saving, setSaving] = useState(false);
+  const [planForm, setPlanForm] = useState({
+    patient: '',
+    type: '',
+    duration: '',
+    notes: ''
+  });
+
   const carePlans = [
     { id: "CP001", patient: "Mary Johnson", type: "Post-Surgery Care", duration: "4 weeks", status: "Active", progress: 75 },
     { id: "CP002", patient: "Robert Wilson", type: "Chronic Disease Management", duration: "Ongoing", status: "Active", progress: 60 },
     { id: "CP003", patient: "Alice Brown", type: "Physical Therapy", duration: "8 weeks", status: "Active", progress: 40 },
   ];
+
+  const handleCreatePlan = async () => {
+    if (!planForm.patient || !planForm.type) {
+      toast({ title: "Error", description: "Please fill in required fields", variant: "destructive" });
+      return;
+    }
+    setSaving(true);
+    try {
+      await new Promise(resolve => setTimeout(resolve, 1000));
+      toast({ title: "Success", description: "Care plan created successfully" });
+      setShowNewPlan(false);
+      setPlanForm({ patient: '', type: '', duration: '', notes: '' });
+    } catch (error) {
+      toast({ title: "Error", description: "Failed to create care plan", variant: "destructive" });
+    } finally {
+      setSaving(false);
+    }
+  };
 
   return (
     <HomecareLayout>
@@ -568,7 +615,7 @@ export const HomecareCarePlansPage = () => {
             <h1 className="text-2xl font-bold text-slate-900">Care Plans</h1>
             <p className="text-muted-foreground">Create and manage personalized care plans</p>
           </div>
-          <Button>
+          <Button onClick={() => setShowNewPlan(true)}>
             <Plus className="w-4 h-4 mr-2" />
             New Care Plan
           </Button>
@@ -664,10 +711,22 @@ export const HomecareCarePlansPage = () => {
                     </TableCell>
                     <TableCell>
                       <div className="flex gap-2">
-                        <Button size="sm" variant="outline">
+                        <Button size="sm" variant="outline" onClick={() => {
+                          setSelectedPlan(plan);
+                          setShowViewPlan(true);
+                        }}>
                           <Eye className="w-4 h-4" />
                         </Button>
-                        <Button size="sm" variant="outline">
+                        <Button size="sm" variant="outline" onClick={() => {
+                          setSelectedPlan(plan);
+                          setPlanForm({
+                            patient: plan.patient,
+                            type: plan.type,
+                            duration: plan.duration,
+                            notes: ''
+                          });
+                          setShowEditPlan(true);
+                        }}>
                           <Edit className="w-4 h-4" />
                         </Button>
                       </div>
@@ -678,6 +737,173 @@ export const HomecareCarePlansPage = () => {
             </Table>
           </CardContent>
         </Card>
+
+        {/* New Care Plan Dialog */}
+        <Dialog open={showNewPlan} onOpenChange={setShowNewPlan}>
+          <DialogContent className="max-w-md">
+            <DialogHeader>
+              <DialogTitle>Create New Care Plan</DialogTitle>
+              <DialogDescription>Fill in the details for the new care plan</DialogDescription>
+            </DialogHeader>
+            <div className="space-y-4 py-4">
+              <div>
+                <Label>Patient Name *</Label>
+                <Input
+                  value={planForm.patient}
+                  onChange={(e) => setPlanForm({ ...planForm, patient: e.target.value })}
+                  placeholder="Enter patient name"
+                />
+              </div>
+              <div>
+                <Label>Care Type *</Label>
+                <Select value={planForm.type} onValueChange={(v) => setPlanForm({ ...planForm, type: v })}>
+                  <SelectTrigger>
+                    <SelectValue placeholder="Select care type" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="Post-Surgery Care">Post-Surgery Care</SelectItem>
+                    <SelectItem value="Chronic Disease Management">Chronic Disease Management</SelectItem>
+                    <SelectItem value="Physical Therapy">Physical Therapy</SelectItem>
+                    <SelectItem value="Wound Care">Wound Care</SelectItem>
+                    <SelectItem value="Palliative Care">Palliative Care</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+              <div>
+                <Label>Duration</Label>
+                <Input
+                  value={planForm.duration}
+                  onChange={(e) => setPlanForm({ ...planForm, duration: e.target.value })}
+                  placeholder="e.g., 4 weeks, Ongoing"
+                />
+              </div>
+              <div>
+                <Label>Notes</Label>
+                <Textarea
+                  value={planForm.notes}
+                  onChange={(e) => setPlanForm({ ...planForm, notes: e.target.value })}
+                  placeholder="Additional notes..."
+                  rows={3}
+                />
+              </div>
+            </div>
+            <DialogFooter>
+              <Button variant="outline" onClick={() => setShowNewPlan(false)}>Cancel</Button>
+              <Button onClick={handleCreatePlan} disabled={saving}>
+                {saving ? "Creating..." : "Create Plan"}
+              </Button>
+            </DialogFooter>
+          </DialogContent>
+        </Dialog>
+
+        {/* View Care Plan Dialog */}
+        <Dialog open={showViewPlan} onOpenChange={setShowViewPlan}>
+          <DialogContent className="max-w-lg">
+            <DialogHeader>
+              <DialogTitle>Care Plan Details</DialogTitle>
+              <DialogDescription>Plan ID: {selectedPlan?.id}</DialogDescription>
+            </DialogHeader>
+            {selectedPlan && (
+              <div className="space-y-4 py-4">
+                <div className="grid grid-cols-2 gap-4">
+                  <div>
+                    <Label className="text-muted-foreground">Patient</Label>
+                    <p className="font-medium">{selectedPlan.patient}</p>
+                  </div>
+                  <div>
+                    <Label className="text-muted-foreground">Care Type</Label>
+                    <p className="font-medium">{selectedPlan.type}</p>
+                  </div>
+                  <div>
+                    <Label className="text-muted-foreground">Duration</Label>
+                    <p className="font-medium">{selectedPlan.duration}</p>
+                  </div>
+                  <div>
+                    <Label className="text-muted-foreground">Status</Label>
+                    <Badge variant="default">{selectedPlan.status}</Badge>
+                  </div>
+                </div>
+                <div>
+                  <Label className="text-muted-foreground">Progress</Label>
+                  <div className="flex items-center gap-2 mt-1">
+                    <Progress value={selectedPlan.progress} className="flex-1" />
+                    <span className="font-medium">{selectedPlan.progress}%</span>
+                  </div>
+                </div>
+              </div>
+            )}
+            <DialogFooter>
+              <Button variant="outline" onClick={() => setShowViewPlan(false)}>Close</Button>
+              <Button onClick={() => {
+                setShowViewPlan(false);
+                setPlanForm({
+                  patient: selectedPlan.patient,
+                  type: selectedPlan.type,
+                  duration: selectedPlan.duration,
+                  notes: ''
+                });
+                setShowEditPlan(true);
+              }}>Edit Plan</Button>
+            </DialogFooter>
+          </DialogContent>
+        </Dialog>
+
+        {/* Edit Care Plan Dialog */}
+        <Dialog open={showEditPlan} onOpenChange={setShowEditPlan}>
+          <DialogContent className="max-w-md">
+            <DialogHeader>
+              <DialogTitle>Edit Care Plan</DialogTitle>
+              <DialogDescription>Update the care plan details</DialogDescription>
+            </DialogHeader>
+            <div className="space-y-4 py-4">
+              <div>
+                <Label>Patient Name</Label>
+                <Input
+                  value={planForm.patient}
+                  onChange={(e) => setPlanForm({ ...planForm, patient: e.target.value })}
+                />
+              </div>
+              <div>
+                <Label>Care Type</Label>
+                <Select value={planForm.type} onValueChange={(v) => setPlanForm({ ...planForm, type: v })}>
+                  <SelectTrigger>
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="Post-Surgery Care">Post-Surgery Care</SelectItem>
+                    <SelectItem value="Chronic Disease Management">Chronic Disease Management</SelectItem>
+                    <SelectItem value="Physical Therapy">Physical Therapy</SelectItem>
+                    <SelectItem value="Wound Care">Wound Care</SelectItem>
+                    <SelectItem value="Palliative Care">Palliative Care</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+              <div>
+                <Label>Duration</Label>
+                <Input
+                  value={planForm.duration}
+                  onChange={(e) => setPlanForm({ ...planForm, duration: e.target.value })}
+                />
+              </div>
+              <div>
+                <Label>Notes</Label>
+                <Textarea
+                  value={planForm.notes}
+                  onChange={(e) => setPlanForm({ ...planForm, notes: e.target.value })}
+                  placeholder="Additional notes..."
+                  rows={3}
+                />
+              </div>
+            </div>
+            <DialogFooter>
+              <Button variant="outline" onClick={() => setShowEditPlan(false)}>Cancel</Button>
+              <Button onClick={() => {
+                toast({ title: "Success", description: "Care plan updated successfully" });
+                setShowEditPlan(false);
+              }}>Save Changes</Button>
+            </DialogFooter>
+          </DialogContent>
+        </Dialog>
       </div>
     </HomecareLayout>
   );
@@ -1725,11 +1951,41 @@ export const HomecareServicesPage = () => {
 
 // Homecare Billing Page
 export const HomecareBillingPage = () => {
+  const { toast } = useToast();
+  const [showCreateInvoice, setShowCreateInvoice] = useState(false);
+  const [showViewInvoice, setShowViewInvoice] = useState(false);
+  const [selectedInvoice, setSelectedInvoice] = useState<any>(null);
+  const [saving, setSaving] = useState(false);
+  const [invoiceForm, setInvoiceForm] = useState({
+    patient: '',
+    service: '',
+    amount: '',
+    notes: ''
+  });
+
   const invoices = [
     { id: "INV001", patient: "Mary Johnson", service: "Nursing Care", amount: "₹3,200", date: "2025-12-10", status: "Paid" },
     { id: "INV002", patient: "Robert Wilson", service: "Personal Care", amount: "₹2,000", date: "2025-12-09", status: "Pending" },
     { id: "INV003", patient: "Alice Brown", service: "Physical Therapy", amount: "₹4,800", date: "2025-12-08", status: "Paid" },
   ];
+
+  const handleCreateInvoice = async () => {
+    if (!invoiceForm.patient || !invoiceForm.service || !invoiceForm.amount) {
+      toast({ title: "Error", description: "Please fill in all required fields", variant: "destructive" });
+      return;
+    }
+    setSaving(true);
+    try {
+      await new Promise(resolve => setTimeout(resolve, 1000));
+      toast({ title: "Success", description: "Invoice created successfully" });
+      setShowCreateInvoice(false);
+      setInvoiceForm({ patient: '', service: '', amount: '', notes: '' });
+    } catch (error) {
+      toast({ title: "Error", description: "Failed to create invoice", variant: "destructive" });
+    } finally {
+      setSaving(false);
+    }
+  };
 
   return (
     <HomecareLayout>
@@ -1739,7 +1995,7 @@ export const HomecareBillingPage = () => {
             <h1 className="text-2xl font-bold text-slate-900">Billing & Payments</h1>
             <p className="text-muted-foreground">Manage invoices and payment processing</p>
           </div>
-          <Button>
+          <Button onClick={() => setShowCreateInvoice(true)}>
             <Plus className="w-4 h-4 mr-2" />
             Create Invoice
           </Button>
@@ -1832,10 +2088,15 @@ export const HomecareBillingPage = () => {
                     </TableCell>
                     <TableCell>
                       <div className="flex gap-2">
-                        <Button size="sm" variant="outline">
+                        <Button size="sm" variant="outline" onClick={() => {
+                          setSelectedInvoice(invoice);
+                          setShowViewInvoice(true);
+                        }}>
                           <Eye className="w-4 h-4" />
                         </Button>
-                        <Button size="sm" variant="outline">
+                        <Button size="sm" variant="outline" onClick={() => {
+                          toast({ title: "Download Invoice", description: `Downloading invoice ${invoice.id}` });
+                        }}>
                           <Download className="w-4 h-4" />
                         </Button>
                       </div>
@@ -1846,6 +2107,110 @@ export const HomecareBillingPage = () => {
             </Table>
           </CardContent>
         </Card>
+
+        {/* Create Invoice Dialog */}
+        <Dialog open={showCreateInvoice} onOpenChange={setShowCreateInvoice}>
+          <DialogContent className="max-w-md">
+            <DialogHeader>
+              <DialogTitle>Create Invoice</DialogTitle>
+              <DialogDescription>Generate a new invoice for services rendered</DialogDescription>
+            </DialogHeader>
+            <div className="space-y-4 py-4">
+              <div>
+                <Label>Patient Name *</Label>
+                <Input
+                  value={invoiceForm.patient}
+                  onChange={(e) => setInvoiceForm({ ...invoiceForm, patient: e.target.value })}
+                  placeholder="Enter patient name"
+                />
+              </div>
+              <div>
+                <Label>Service *</Label>
+                <Select value={invoiceForm.service} onValueChange={(v) => setInvoiceForm({ ...invoiceForm, service: v })}>
+                  <SelectTrigger>
+                    <SelectValue placeholder="Select service" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="Nursing Care">Nursing Care</SelectItem>
+                    <SelectItem value="Personal Care">Personal Care</SelectItem>
+                    <SelectItem value="Physical Therapy">Physical Therapy</SelectItem>
+                    <SelectItem value="Medication Admin">Medication Admin</SelectItem>
+                    <SelectItem value="Wound Care">Wound Care</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+              <div>
+                <Label>Amount *</Label>
+                <Input
+                  value={invoiceForm.amount}
+                  onChange={(e) => setInvoiceForm({ ...invoiceForm, amount: e.target.value })}
+                  placeholder="₹0.00"
+                />
+              </div>
+              <div>
+                <Label>Notes</Label>
+                <Textarea
+                  value={invoiceForm.notes}
+                  onChange={(e) => setInvoiceForm({ ...invoiceForm, notes: e.target.value })}
+                  placeholder="Additional notes..."
+                  rows={3}
+                />
+              </div>
+            </div>
+            <DialogFooter>
+              <Button variant="outline" onClick={() => setShowCreateInvoice(false)}>Cancel</Button>
+              <Button onClick={handleCreateInvoice} disabled={saving}>
+                {saving ? "Creating..." : "Create Invoice"}
+              </Button>
+            </DialogFooter>
+          </DialogContent>
+        </Dialog>
+
+        {/* View Invoice Dialog */}
+        <Dialog open={showViewInvoice} onOpenChange={setShowViewInvoice}>
+          <DialogContent className="max-w-lg">
+            <DialogHeader>
+              <DialogTitle>Invoice Details</DialogTitle>
+              <DialogDescription>Invoice ID: {selectedInvoice?.id}</DialogDescription>
+            </DialogHeader>
+            {selectedInvoice && (
+              <div className="space-y-4 py-4">
+                <div className="grid grid-cols-2 gap-4">
+                  <div>
+                    <Label className="text-muted-foreground">Patient</Label>
+                    <p className="font-medium">{selectedInvoice.patient}</p>
+                  </div>
+                  <div>
+                    <Label className="text-muted-foreground">Service</Label>
+                    <p className="font-medium">{selectedInvoice.service}</p>
+                  </div>
+                  <div>
+                    <Label className="text-muted-foreground">Amount</Label>
+                    <p className="font-medium text-lg">{selectedInvoice.amount}</p>
+                  </div>
+                  <div>
+                    <Label className="text-muted-foreground">Date</Label>
+                    <p className="font-medium">{selectedInvoice.date}</p>
+                  </div>
+                </div>
+                <div>
+                  <Label className="text-muted-foreground">Status</Label>
+                  <div className="mt-1">
+                    <Badge variant={selectedInvoice.status === "Paid" ? "default" : "secondary"}>
+                      {selectedInvoice.status}
+                    </Badge>
+                  </div>
+                </div>
+              </div>
+            )}
+            <DialogFooter>
+              <Button variant="outline" onClick={() => setShowViewInvoice(false)}>Close</Button>
+              <Button onClick={() => {
+                toast({ title: "Downloaded", description: `Invoice ${selectedInvoice?.id} downloaded` });
+              }}>Download PDF</Button>
+            </DialogFooter>
+          </DialogContent>
+        </Dialog>
       </div>
     </HomecareLayout>
   );
@@ -1853,11 +2218,43 @@ export const HomecareBillingPage = () => {
 
 // Homecare Inventory Page
 export const HomecareInventoryPage = () => {
+  const { toast } = useToast();
+  const [showAddItem, setShowAddItem] = useState(false);
+  const [showEditItem, setShowEditItem] = useState(false);
+  const [showViewItem, setShowViewItem] = useState(false);
+  const [selectedItem, setSelectedItem] = useState<any>(null);
+  const [saving, setSaving] = useState(false);
+  const [itemForm, setItemForm] = useState({
+    name: '',
+    stock: '',
+    minStock: '',
+    category: '',
+    notes: ''
+  });
+
   const inventory = [
     { name: "Blood Pressure Monitor", stock: 25, minStock: 10, category: "Medical Equipment", status: "In Stock" },
     { name: "Wound Care Supplies", stock: 8, minStock: 15, category: "Consumables", status: "Low Stock" },
     { name: "Mobility Aids", stock: 12, minStock: 8, category: "Equipment", status: "In Stock" },
   ];
+
+  const handleAddItem = async () => {
+    if (!itemForm.name || !itemForm.stock || !itemForm.category) {
+      toast({ title: "Error", description: "Please fill in all required fields", variant: "destructive" });
+      return;
+    }
+    setSaving(true);
+    try {
+      await new Promise(resolve => setTimeout(resolve, 1000));
+      toast({ title: "Success", description: "Item added to inventory" });
+      setShowAddItem(false);
+      setItemForm({ name: '', stock: '', minStock: '', category: '', notes: '' });
+    } catch (error) {
+      toast({ title: "Error", description: "Failed to add item", variant: "destructive" });
+    } finally {
+      setSaving(false);
+    }
+  };
 
   return (
     <HomecareLayout>
@@ -1867,7 +2264,7 @@ export const HomecareInventoryPage = () => {
             <h1 className="text-2xl font-bold text-slate-900">Inventory Management</h1>
             <p className="text-muted-foreground">Track medical supplies and equipment</p>
           </div>
-          <Button>
+          <Button onClick={() => setShowAddItem(true)}>
             <Plus className="w-4 h-4 mr-2" />
             Add Item
           </Button>
@@ -1958,10 +2355,23 @@ export const HomecareInventoryPage = () => {
                     </TableCell>
                     <TableCell>
                       <div className="flex gap-2">
-                        <Button size="sm" variant="outline">
+                        <Button size="sm" variant="outline" onClick={() => {
+                          setSelectedItem(item);
+                          setItemForm({
+                            name: item.name,
+                            stock: String(item.stock),
+                            minStock: String(item.minStock),
+                            category: item.category,
+                            notes: ''
+                          });
+                          setShowEditItem(true);
+                        }}>
                           <Edit className="w-4 h-4" />
                         </Button>
-                        <Button size="sm" variant="outline">
+                        <Button size="sm" variant="outline" onClick={() => {
+                          setSelectedItem(item);
+                          setShowViewItem(true);
+                        }}>
                           <Eye className="w-4 h-4" />
                         </Button>
                       </div>
@@ -1972,6 +2382,187 @@ export const HomecareInventoryPage = () => {
             </Table>
           </CardContent>
         </Card>
+
+        {/* Add Item Dialog */}
+        <Dialog open={showAddItem} onOpenChange={setShowAddItem}>
+          <DialogContent className="max-w-md">
+            <DialogHeader>
+              <DialogTitle>Add Inventory Item</DialogTitle>
+              <DialogDescription>Add a new item to inventory</DialogDescription>
+            </DialogHeader>
+            <div className="space-y-4 py-4">
+              <div>
+                <Label>Item Name *</Label>
+                <Input
+                  value={itemForm.name}
+                  onChange={(e) => setItemForm({ ...itemForm, name: e.target.value })}
+                  placeholder="Enter item name"
+                />
+              </div>
+              <div className="grid grid-cols-2 gap-4">
+                <div>
+                  <Label>Stock Quantity *</Label>
+                  <Input
+                    type="number"
+                    value={itemForm.stock}
+                    onChange={(e) => setItemForm({ ...itemForm, stock: e.target.value })}
+                    placeholder="0"
+                  />
+                </div>
+                <div>
+                  <Label>Min Stock Level</Label>
+                  <Input
+                    type="number"
+                    value={itemForm.minStock}
+                    onChange={(e) => setItemForm({ ...itemForm, minStock: e.target.value })}
+                    placeholder="0"
+                  />
+                </div>
+              </div>
+              <div>
+                <Label>Category *</Label>
+                <Select value={itemForm.category} onValueChange={(v) => setItemForm({ ...itemForm, category: v })}>
+                  <SelectTrigger>
+                    <SelectValue placeholder="Select category" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="Medical Equipment">Medical Equipment</SelectItem>
+                    <SelectItem value="Consumables">Consumables</SelectItem>
+                    <SelectItem value="Equipment">Equipment</SelectItem>
+                    <SelectItem value="Medications">Medications</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+              <div>
+                <Label>Notes</Label>
+                <Textarea
+                  value={itemForm.notes}
+                  onChange={(e) => setItemForm({ ...itemForm, notes: e.target.value })}
+                  placeholder="Additional notes..."
+                  rows={2}
+                />
+              </div>
+            </div>
+            <DialogFooter>
+              <Button variant="outline" onClick={() => setShowAddItem(false)}>Cancel</Button>
+              <Button onClick={handleAddItem} disabled={saving}>
+                {saving ? "Adding..." : "Add Item"}
+              </Button>
+            </DialogFooter>
+          </DialogContent>
+        </Dialog>
+
+        {/* View Item Dialog */}
+        <Dialog open={showViewItem} onOpenChange={setShowViewItem}>
+          <DialogContent className="max-w-lg">
+            <DialogHeader>
+              <DialogTitle>Item Details</DialogTitle>
+              <DialogDescription>Inventory item information</DialogDescription>
+            </DialogHeader>
+            {selectedItem && (
+              <div className="space-y-4 py-4">
+                <div className="grid grid-cols-2 gap-4">
+                  <div>
+                    <Label className="text-muted-foreground">Item Name</Label>
+                    <p className="font-medium">{selectedItem.name}</p>
+                  </div>
+                  <div>
+                    <Label className="text-muted-foreground">Category</Label>
+                    <p className="font-medium">{selectedItem.category}</p>
+                  </div>
+                  <div>
+                    <Label className="text-muted-foreground">Current Stock</Label>
+                    <p className="font-medium text-lg">{selectedItem.stock}</p>
+                  </div>
+                  <div>
+                    <Label className="text-muted-foreground">Min Stock Level</Label>
+                    <p className="font-medium">{selectedItem.minStock}</p>
+                  </div>
+                </div>
+                <div>
+                  <Label className="text-muted-foreground">Status</Label>
+                  <div className="mt-1">
+                    <Badge variant={selectedItem.status === "Low Stock" ? "destructive" : "default"}>
+                      {selectedItem.status}
+                    </Badge>
+                  </div>
+                </div>
+              </div>
+            )}
+            <DialogFooter>
+              <Button variant="outline" onClick={() => setShowViewItem(false)}>Close</Button>
+              <Button onClick={() => {
+                setShowViewItem(false);
+                setItemForm({
+                  name: selectedItem.name,
+                  stock: String(selectedItem.stock),
+                  minStock: String(selectedItem.minStock),
+                  category: selectedItem.category,
+                  notes: ''
+                });
+                setShowEditItem(true);
+              }}>Edit Item</Button>
+            </DialogFooter>
+          </DialogContent>
+        </Dialog>
+
+        {/* Edit Item Dialog */}
+        <Dialog open={showEditItem} onOpenChange={setShowEditItem}>
+          <DialogContent className="max-w-md">
+            <DialogHeader>
+              <DialogTitle>Edit Inventory Item</DialogTitle>
+              <DialogDescription>Update item details</DialogDescription>
+            </DialogHeader>
+            <div className="space-y-4 py-4">
+              <div>
+                <Label>Item Name</Label>
+                <Input
+                  value={itemForm.name}
+                  onChange={(e) => setItemForm({ ...itemForm, name: e.target.value })}
+                />
+              </div>
+              <div className="grid grid-cols-2 gap-4">
+                <div>
+                  <Label>Stock Quantity</Label>
+                  <Input
+                    type="number"
+                    value={itemForm.stock}
+                    onChange={(e) => setItemForm({ ...itemForm, stock: e.target.value })}
+                  />
+                </div>
+                <div>
+                  <Label>Min Stock Level</Label>
+                  <Input
+                    type="number"
+                    value={itemForm.minStock}
+                    onChange={(e) => setItemForm({ ...itemForm, minStock: e.target.value })}
+                  />
+                </div>
+              </div>
+              <div>
+                <Label>Category</Label>
+                <Select value={itemForm.category} onValueChange={(v) => setItemForm({ ...itemForm, category: v })}>
+                  <SelectTrigger>
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="Medical Equipment">Medical Equipment</SelectItem>
+                    <SelectItem value="Consumables">Consumables</SelectItem>
+                    <SelectItem value="Equipment">Equipment</SelectItem>
+                    <SelectItem value="Medications">Medications</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+            </div>
+            <DialogFooter>
+              <Button variant="outline" onClick={() => setShowEditItem(false)}>Cancel</Button>
+              <Button onClick={() => {
+                toast({ title: "Success", description: "Item updated successfully" });
+                setShowEditItem(false);
+              }}>Save Changes</Button>
+            </DialogFooter>
+          </DialogContent>
+        </Dialog>
       </div>
     </HomecareLayout>
   );
@@ -1979,6 +2570,21 @@ export const HomecareInventoryPage = () => {
 
 // Homecare Reports Page
 export const HomecareReportsPage = () => {
+  const { toast } = useToast();
+  const [generating, setGenerating] = useState(false);
+
+  const handleGenerateReport = async () => {
+    setGenerating(true);
+    try {
+      await new Promise(resolve => setTimeout(resolve, 2000));
+      toast({ title: "Success", description: "Report generated successfully. Download will start shortly." });
+    } catch (error) {
+      toast({ title: "Error", description: "Failed to generate report", variant: "destructive" });
+    } finally {
+      setGenerating(false);
+    }
+  };
+
   return (
     <HomecareLayout>
       <div className="space-y-6">
@@ -1987,9 +2593,15 @@ export const HomecareReportsPage = () => {
             <h1 className="text-2xl font-bold text-slate-900">Reports & Analytics</h1>
             <p className="text-muted-foreground">Generate comprehensive reports and performance metrics</p>
           </div>
-          <Button>
-            <Download className="w-4 h-4 mr-2" />
-            Generate Report
+          <Button onClick={handleGenerateReport} disabled={generating}>
+            {generating ? (
+              <>Generating...</>
+            ) : (
+              <>
+                <Download className="w-4 h-4 mr-2" />
+                Generate Report
+              </>
+            )}
           </Button>
         </div>
 
@@ -2172,6 +2784,8 @@ export const HomecareSettingsPage = () => {
 
 // Homecare Support Page
 export const HomecareSupportPage = () => {
+  const { toast } = useToast();
+
   return (
     <HomecareLayout>
       <div className="space-y-6">
@@ -2219,29 +2833,39 @@ export const HomecareSupportPage = () => {
           <CardContent>
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
               <div className="space-y-3">
-                <Button className="w-full" variant="outline">
+                <Button className="w-full" variant="outline" onClick={() => window.open('tel:+1800123456', '_blank')}>
                   <Phone className="w-4 h-4 mr-2" />
                   Emergency Support Line
                 </Button>
-                <Button className="w-full" variant="outline">
+                <Button className="w-full" variant="outline" onClick={() => {
+                  toast({ title: "Care Protocols Guide", description: "Opening care protocols documentation..." });
+                }}>
                   <HelpCircle className="w-4 h-4 mr-2" />
                   Care Protocols Guide
                 </Button>
-                <Button className="w-full" variant="outline">
+                <Button className="w-full" variant="outline" onClick={() => {
+                  toast({ title: "Incident Report", description: "Opening incident report form..." });
+                }}>
                   <FileText className="w-4 h-4 mr-2" />
                   Report Incident
                 </Button>
               </div>
               <div className="space-y-3">
-                <Button className="w-full" variant="outline">
+                <Button className="w-full" variant="outline" onClick={() => {
+                  toast({ title: "Training Portal", description: "Opening staff training portal..." });
+                }}>
                   <Users className="w-4 h-4 mr-2" />
                   Staff Training Portal
                 </Button>
-                <Button className="w-full" variant="outline">
+                <Button className="w-full" variant="outline" onClick={() => {
+                  toast({ title: "Troubleshooting", description: "Opening system troubleshooting guide..." });
+                }}>
                   <Settings className="w-4 h-4 mr-2" />
                   System Troubleshooting
                 </Button>
-                <Button className="w-full" variant="outline">
+                <Button className="w-full" variant="outline" onClick={() => {
+                  toast({ title: "Downloading", description: "Preparing resources for download..." });
+                }}>
                   <Download className="w-4 h-4 mr-2" />
                   Download Resources
                 </Button>

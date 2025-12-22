@@ -1,0 +1,1657 @@
+{
+  "Health Care W2W PROD": {
+    "filename": "Health Care W2W PROD.postman_collection.json",
+    "totalEndpoints": 20,
+    "endpoints": [
+      {
+        "name": "ActiveLives/enrollments",
+        "method": "POST",
+        "url": "https://rhiclapi.religarehealthinsurance.com/ActiveLives.php"
+      },
+      {
+        "name": "Cd Statements",
+        "method": "POST",
+        "url": "https://rhiclapi.religarehealthinsurance.com/InsertCdStatements.php"
+      },
+      {
+        "name": "getHealthAndOpdCard / Ecards",
+        "method": "POST",
+        "url": "https://uat-rhiclapi.religarehealthinsurance.com/getHealthAndOpdCard.php"
+      },
+      {
+        "name": "Token APi",
+        "method": "POST",
+        "url": "https://api.religarehealthinsurance.com/relinterfacerestful/religare/secure/restful/generatePartnerToken"
+      },
+      {
+        "name": "claims - Claim Status",
+        "method": "POST",
+        "url": "https://api.religarehealthinsurance.com/relinterfacerestful/religare/secure/restful/getClaimStatusGenie"
+      },
+      {
+        "name": "claims - claim dump old",
+        "method": "POST",
+        "url": "https://rhiclapi.religarehealthinsurance.com/getClaimData.php"
+      },
+      {
+        "name": "claims - Claim dump new",
+        "method": "POST",
+        "url": "https://tractusuat.careinsurance.com/groupcareapi/public/getClaimData"
+      },
+      {
+        "name": "claims - getPolicyEnquiry",
+        "method": "POST",
+        "url": "https://api.religarehealthinsurance.com/relinterfacerestful/religare/secure/restful/getPolicyEnquiry"
+      },
+      {
+        "name": "claims - network hospital getStateCity",
+        "method": "POST",
+        "url": "https://api.religarehealthinsurance.com/relinterfacerestful/religare/secure/restful/getStateCity"
+      },
+      {
+        "name": "claims - get network hospital",
+        "method": "POST",
+        "url": "https://api.religarehealthinsurance.com/relinterfacerestful/religare/secure/restful/getNetwork"
+      },
+      {
+        "name": "claims - Claim Intimation",
+        "method": "POST",
+        "url": "https://api.religarehealthinsurance.com/relinterfacerestful/religare/secure/restful/preIntimateClaimGenie"
+      },
+      {
+        "name": "claims - Document Upload Chunk",
+        "method": "POST",
+        "url": "https://api.religarehealthinsurance.com/relinterfacerestful/religare/secure/restful/uploadChunk"
+      },
+      {
+        "name": "claims - Attach Document",
+        "method": "POST",
+        "url": "https://api.religarehealthinsurance.com/relinterfacerestful/religare/secure/restful/getDocumentServicesAttachDocuments"
+      },
+      {
+        "name": "claims - get Claim Letters",
+        "method": "POST",
+        "url": "https://api.religarehealthinsurance.com/relinterfacerestful/religare/restful/getPDFDocumentFromDMS"
+      },
+      {
+        "name": "endorsement accessToken",
+        "method": "POST",
+        "url": "https://rhiclapi.religarehealthinsurance.com/accessToken.php"
+      },
+      {
+        "name": "endorsement - searchPolicyList",
+        "method": "POST",
+        "url": "https://tractusuat.careinsurance.com/groupcareapi/public/services/searchPolicyList"
+      },
+      {
+        "name": "endorsement - submitEndorsement",
+        "method": "POST",
+        "url": "https://tractusuat.careinsurance.com/groupcareapi/public/submitEndorsement"
+      },
+      {
+        "name": "endorsement - requestDoc",
+        "method": "POST",
+        "url": "https://tractusuat.careinsurance.com/groupcareapi/public/requestDoc"
+      },
+      {
+        "name": "endorsement - viewEndorsement",
+        "method": "POST",
+        "url": "https://tractusuat.careinsurance.com/groupcareapi/public/viewEndorsement"
+      },
+      {
+        "name": "endorsement - Search Endorsement details using Policy Number OR Service Request Number",
+        "method": "POST",
+        "url": "https://tractusuat.careinsurance.com/groupcareapi/public/endorsementList"
+      }
+    ],
+    "baseUrls": [
+      "https://rhiclapi.religarehealthinsurance.com",
+      "https://uat-rhiclapi.religarehealthinsurance.com",
+      "https://api.religarehealthinsurance.com",
+      "https://tractusuat.careinsurance.com"
+    ],
+    "authentication": null
+  },
+  "Health Care W2W UAT": {
+    "filename": "Health Care W2W UAT.postman_collection.json",
+    "totalEndpoints": 20,
+    "endpoints": [
+      {
+        "name": "ActiveLives/enrollments",
+        "method": "POST",
+        "url": "https://uat-rhiclapi.religarehealthinsurance.com/ActiveLives.php"
+      },
+      {
+        "name": "Cd Statements",
+        "method": "POST",
+        "url": "https://uat-rhiclapi.religarehealthinsurance.com/InsertCdStatements.php"
+      },
+      {
+        "name": "getHealthAndOpdCard / Ecards",
+        "method": "POST",
+        "url": "https://uat-rhiclapi.religarehealthinsurance.com/getHealthAndOpdCard.php"
+      },
+      {
+        "name": "Token APi",
+        "method": "POST",
+        "url": "https://apiuat.religarehealthinsurance.com/relinterfacerestful/religare/secure/restful/generatePartnerToken"
+      },
+      {
+        "name": "claims - Claim Status",
+        "method": "POST",
+        "url": "https://apiuat.religarehealthinsurance.com/relinterfacerestful/religare/secure/restful/getClaimStatusGenie"
+      },
+      {
+        "name": "claims - claim dump old",
+        "method": "POST",
+        "url": "https://uat-rhiclapi.religarehealthinsurance.com/getClaimData.php"
+      },
+      {
+        "name": "claims - Claim dump new",
+        "method": "POST",
+        "url": "https://tractusuat.careinsurance.com/groupcareapi/public/getClaimData"
+      },
+      {
+        "name": "claims - getPolicyEnquiry",
+        "method": "POST",
+        "url": "https://apiuat.religarehealthinsurance.com/relinterfacerestful/religare/secure/restful/getPolicyEnquiry"
+      },
+      {
+        "name": "claims - network hospital getStateCity",
+        "method": "POST",
+        "url": "https://apiuat.religarehealthinsurance.com/relinterfacerestful/religare/secure/restful/getStateCity"
+      },
+      {
+        "name": "claims - get network hospital",
+        "method": "POST",
+        "url": "https://apiuat.religarehealthinsurance.com/relinterfacerestful/religare/restful/getNetwork"
+      },
+      {
+        "name": "claims - Claim Intimation",
+        "method": "POST",
+        "url": "https://apiuat.religarehealthinsurance.com/relinterfacerestful/religare/secure/restful/preIntimateClaimGenie"
+      },
+      {
+        "name": "claims - Document Upload Chunk",
+        "method": "POST",
+        "url": "https://apiuat.religarehealthinsurance.com/relinterfacerestful/religare/secure/restful/uploadChunk"
+      },
+      {
+        "name": "claims - Attach Document",
+        "method": "POST",
+        "url": "https://apiuat.religarehealthinsurance.com/relinterfacerestful/religare/secure/restful/getDocumentServicesAttachDocuments"
+      },
+      {
+        "name": "claims - get Claim Letters",
+        "method": "POST",
+        "url": "https://apiuat.religarehealthinsurance.com/relinterfacerestful/religare/restful/getPDFDocumentFromDMS"
+      },
+      {
+        "name": "endorsement accessToken",
+        "method": "POST",
+        "url": "https://uat-rhiclapi.religarehealthinsurance.com/accessToken.php"
+      },
+      {
+        "name": "endorsement - searchPolicyList",
+        "method": "POST",
+        "url": "https://tractusuat.careinsurance.com/groupcareapi/public/services/searchPolicyList"
+      },
+      {
+        "name": "endorsement - submitEndorsement",
+        "method": "POST",
+        "url": "https://tractusuat.careinsurance.com/groupcareapi/public/submitEndorsement"
+      },
+      {
+        "name": "endorsement - requestDoc",
+        "method": "POST",
+        "url": "https://tractusuat.careinsurance.com/groupcareapi/public/requestDoc"
+      },
+      {
+        "name": "endorsement - viewEndorsement",
+        "method": "POST",
+        "url": "https://tractusuat.careinsurance.com/groupcareapi/public/viewEndorsement"
+      },
+      {
+        "name": "endorsement - Search Endorsement details using Policy Number OR Service Request Number",
+        "method": "POST",
+        "url": "https://tractusuat.careinsurance.com/groupcareapi/public/endorsementList"
+      }
+    ],
+    "baseUrls": [
+      "https://uat-rhiclapi.religarehealthinsurance.com",
+      "https://apiuat.religarehealthinsurance.com",
+      "https://tractusuat.careinsurance.com"
+    ],
+    "authentication": null
+  },
+  "Health FGI MDBT OLD": {
+    "filename": "Health FGI MDBT OLD.postman_collection.json",
+    "totalEndpoints": 13,
+    "endpoints": [
+      {
+        "name": "global token api",
+        "method": "POST",
+        "url": "https://uat-internal-apim.futuregenerali.in:9443/oauth2/token"
+      },
+      {
+        "name": "Token",
+        "method": "POST",
+        "url": "https://uat-internal-apim.futuregenerali.in:9443/oauth2/token"
+      },
+      {
+        "name": "GetClaimDetails",
+        "method": "POST",
+        "url": "https://uat-internal-apigw.futuregenerali.in:8243/HealthClaim/1.0.0/PartnerHealthAPI/api/PartnerHealth/GetClaimDetails"
+      },
+      {
+        "name": "GetFamilyEcardBytes",
+        "method": "POST",
+        "url": "https://uat-internal-apigw.futuregenerali.in:8243/HealthClaim/1.0.0/PartnerHealthAPI/api/PartnerHealth/GetFamilyEcardBytes"
+      },
+      {
+        "name": "GetHospitalCount",
+        "method": "POST",
+        "url": "https://uat-internal-apigw.futuregenerali.in:8243/HealthClaim/1.0.0/PartnerHealthAPI/api/PartnerHealth/GetHospitalCount"
+      },
+      {
+        "name": "GetHospitalDetail",
+        "method": "POST",
+        "url": "https://uat-internal-apigw.futuregenerali.in:8243/HealthClaim/1.0.0/PartnerHealthAPI/api/PartnerHealth/GetHospitalDetail"
+      },
+      {
+        "name": "token 2",
+        "method": "POST",
+        "url": "https://uat-internal-apim.futuregenerali.in:9443/oauth2/token"
+      },
+      {
+        "name": "GetPolicyDetails",
+        "method": "POST",
+        "url": "https://uat-internal-apigw.futuregenerali.in:8243/HealthClaim-Process/1.0.0/HealthClaim_V1/GetPolicyDetails"
+      },
+      {
+        "name": "ClaimIntimation",
+        "method": "POST",
+        "url": "https://uat-internal-apigw.futuregenerali.in:8243/HealthClaim-Process/1.0.0/HealthClaim_V1/ClaimIntimation"
+      },
+      {
+        "name": "ClaimDefficiencyDocumentsUpload",
+        "method": "POST",
+        "url": "https://uat-internal-apigw.futuregenerali.in:8243/HealthClaim-Process/1.0.0/HealthClaim_V1/ClaimDefficiencyDocumentsUpload"
+      },
+      {
+        "name": "ClaimDocumentsUpload",
+        "method": "POST",
+        "url": "https://uat-internal-apigw.futuregenerali.in:8243/HealthClaim-Process/1.0.0/HealthClaim_V1/ClaimDocumentsUpload"
+      },
+      {
+        "name": "GetQueryList",
+        "method": "POST",
+        "url": "https://uat-internal-apigw.futuregenerali.in:8243/HealthClaim-Process/1.0.0/HealthClaim_V1/GetQueryList"
+      },
+      {
+        "name": "FetchClaimLetter",
+        "method": "POST",
+        "url": "https://uat-internal-apigw.futuregenerali.in:8243/HealthClaim-Process/1.0.0/HealthClaim_V1/FetchClaimLetter"
+      }
+    ],
+    "baseUrls": [
+      "https://uat-internal-apim.futuregenerali.in:9443",
+      "https://uat-internal-apigw.futuregenerali.in:8243"
+    ],
+    "authentication": null
+  },
+  "Health FGI MDBT PROD": {
+    "filename": "Health FGI MDBT PROD.postman_collection.json",
+    "totalEndpoints": 12,
+    "endpoints": [
+      {
+        "name": "Token Gen",
+        "method": "POST",
+        "url": "https://fgnle-apim.fggeneral.in/oauth2/token"
+      },
+      {
+        "name": "GetPolicyDetails",
+        "method": "POST",
+        "url": "https://fgnle-apigw.fggeneral.in/ClaimProcess/1.0.0/HealthClaim_V1/GetPolicyDetails"
+      },
+      {
+        "name": "GetClaimDetails",
+        "method": "POST",
+        "url": "https://uat-internal-apigw.futuregenerali.in:8243/HealthClaim-Process/1.0.0/HealthClaim_V1/GetClaimDetails"
+      },
+      {
+        "name": "GetFamilyEcardBytes",
+        "method": "POST",
+        "url": "https://uat-internal-apigw.futuregenerali.in:8243/HealthClaim-Process/1.0.0/HealthClaim_V1/GetFamilyEcardBytes"
+      },
+      {
+        "name": "GetHospitalDetail",
+        "method": "POST",
+        "url": "https://uat-internal-apigw.futuregenerali.in:8243/HealthClaim-Process/1.0.0/HealthClaim_V1/GetHospitalDetail"
+      },
+      {
+        "name": "ClaimDefficiencyDocumentsUpload",
+        "method": "POST",
+        "url": "https://uat-internal-apigw.futuregenerali.in:8243/HealthClaim-Process/1.0.0/HealthClaim_V1/ClaimDefficiencyDocumentsUpload"
+      },
+      {
+        "name": "ClaimDocumentsUpload",
+        "method": "POST",
+        "url": "https://uat-internal-apigw.futuregenerali.in:8243/HealthClaim-Process/1.0.0/HealthClaim_V1/ClaimDocumentsUpload"
+      },
+      {
+        "name": "FetchClaimLetter",
+        "method": "POST",
+        "url": "https://uat-internal-apigw.futuregenerali.in:8243/HealthClaim-Process/1.0.0/HealthClaim_V1/FetchClaimLetter"
+      },
+      {
+        "name": "GetQueryList",
+        "method": "POST",
+        "url": "https://uat-internal-apigw.futuregenerali.in:8243/HealthClaim-Process/1.0.0/HealthClaim_V1/GetQueryList"
+      },
+      {
+        "name": "GetHospitalCount",
+        "method": "POST",
+        "url": "https://uat-internal-apigw.futuregenerali.in:8243/HealthClaim-Process/1.0.0/HealthClaim_V1/GetHospitalCount"
+      },
+      {
+        "name": "ClaimIntimation",
+        "method": "POST",
+        "url": "https://uat-internal-apigw.futuregenerali.in:8243/HealthClaim-Process/1.0.0/HealthClaim_V1/ClaimIntimation"
+      },
+      {
+        "name": "ClaimPrePost",
+        "method": "POST",
+        "url": "https://uat-internal-apigw.futuregenerali.in:8243/HealthClaim-Process/1.0.0/HealthClaim_V1/ClaimPrePost"
+      }
+    ],
+    "baseUrls": [
+      "https://fgnle-apim.fggeneral.in",
+      "https://fgnle-apigw.fggeneral.in",
+      "https://uat-internal-apigw.futuregenerali.in:8243"
+    ],
+    "authentication": null
+  },
+  "Health FGI MDBT UAT": {
+    "filename": "Health FGI MDBT UAT.postman_collection.json",
+    "totalEndpoints": 12,
+    "endpoints": [
+      {
+        "name": "Token Gen",
+        "method": "POST",
+        "url": "https://uat-internal-apim.futuregenerali.in:9443/oauth2/token"
+      },
+      {
+        "name": "GetPolicyDetails",
+        "method": "POST",
+        "url": "https://uat-internal-apigw.futuregenerali.in:8243/HealthClaim-Process/1.0.0/HealthClaim_V1/GetPolicyDetails"
+      },
+      {
+        "name": "GetClaimDetails",
+        "method": "POST",
+        "url": "https://uat-internal-apigw.futuregenerali.in:8243/HealthClaim-Process/1.0.0/HealthClaim_V1/GetClaimDetails"
+      },
+      {
+        "name": "GetFamilyEcardBytes",
+        "method": "POST",
+        "url": "https://uat-internal-apigw.futuregenerali.in:8243/HealthClaim-Process/1.0.0/HealthClaim_V1/GetFamilyEcardBytes"
+      },
+      {
+        "name": "GetHospitalDetail",
+        "method": "POST",
+        "url": "https://uat-internal-apigw.futuregenerali.in:8243/HealthClaim-Process/1.0.0/HealthClaim_V1/GetHospitalDetail"
+      },
+      {
+        "name": "ClaimDefficiencyDocumentsUpload",
+        "method": "POST",
+        "url": "https://uat-internal-apigw.futuregenerali.in:8243/HealthClaim-Process/1.0.0/HealthClaim_V1/ClaimDefficiencyDocumentsUpload"
+      },
+      {
+        "name": "ClaimDocumentsUpload",
+        "method": "POST",
+        "url": "https://uat-internal-apigw.futuregenerali.in:8243/HealthClaim-Process/1.0.0/HealthClaim_V1/ClaimDocumentsUpload"
+      },
+      {
+        "name": "FetchClaimLetter",
+        "method": "POST",
+        "url": "https://uat-internal-apigw.futuregenerali.in:8243/HealthClaim-Process/1.0.0/HealthClaim_V1/FetchClaimLetter"
+      },
+      {
+        "name": "GetQueryList",
+        "method": "POST",
+        "url": "https://uat-internal-apigw.futuregenerali.in:8243/HealthClaim-Process/1.0.0/HealthClaim_V1/GetQueryList"
+      },
+      {
+        "name": "GetHospitalCount",
+        "method": "POST",
+        "url": "https://uat-internal-apigw.futuregenerali.in:8243/HealthClaim-Process/1.0.0/HealthClaim_V1/GetHospitalCount"
+      },
+      {
+        "name": "ClaimIntimation",
+        "method": "POST",
+        "url": "https://uat-internal-apigw.futuregenerali.in:8243/HealthClaim-Process/1.0.0/HealthClaim_V1/ClaimIntimation"
+      },
+      {
+        "name": "ClaimPrePost",
+        "method": "POST",
+        "url": "https://uat-internal-apigw.futuregenerali.in:8243/HealthClaim-Process/1.0.0/HealthClaim_V1/ClaimPrePost"
+      }
+    ],
+    "baseUrls": [
+      "https://uat-internal-apim.futuregenerali.in:9443",
+      "https://uat-internal-apigw.futuregenerali.in:8243"
+    ],
+    "authentication": null
+  },
+  "Health FHPL MDBT": {
+    "filename": "Health FHPL MDBT.postman_collection.json",
+    "totalEndpoints": 7,
+    "endpoints": [
+      {
+        "name": "service request Token",
+        "method": "POST",
+        "url": "https://m.fhpl.net/BcServiceAPI/token"
+      },
+      {
+        "name": "ClaimIntimation",
+        "method": "POST",
+        "url": "https://m.fhpl.net/BcServiceAPI/api/ClaimIntimation"
+      },
+      {
+        "name": "GetTPA_ClaimsDetails",
+        "method": "POST",
+        "url": "https://m.fhpl.net/BcServiceAPI/api/GetTPA_ClaimsDetails"
+      },
+      {
+        "name": "GetEcard",
+        "method": "POST",
+        "url": "https://m.fhpl.net/BcServiceAPI/api/GetEcard"
+      },
+      {
+        "name": "GetNetworkHospitalDetails",
+        "method": "POST",
+        "url": "https://m.fhpl.net/BcServiceAPI/api/GetNetworkHospitalDetails"
+      },
+      {
+        "name": "GetEnrollmentDetails",
+        "method": "POST",
+        "url": "https://m.fhpl.net/BcServiceAPI/api/GetEnrollmentDetails"
+      },
+      {
+        "name": "GetEnrollmentDetailsPolicy",
+        "method": "POST",
+        "url": "https://m.fhpl.net/BcServiceAPI/api/GetEnrollmentDetailsPolicy"
+      }
+    ],
+    "baseUrls": [
+      "https://m.fhpl.net"
+    ],
+    "authentication": null
+  },
+  "Health FHPL W2W": {
+    "filename": "Health FHPL W2W.postman_collection.json",
+    "totalEndpoints": 7,
+    "endpoints": [
+      {
+        "name": "service request Token",
+        "method": "POST",
+        "url": "https://bconnect-api.fhpl.net/token"
+      },
+      {
+        "name": "GetEnrollmentDetailsPolicy",
+        "method": "POST",
+        "url": "https://bconnect-api.fhpl.net/api/GetEnrollmentDetailsPolicy"
+      },
+      {
+        "name": "GetTPA_ClaimsDetails",
+        "method": "POST",
+        "url": "https://bconnect-api.fhpl.net/api/GetTPA_ClaimsDetails"
+      },
+      {
+        "name": "GetEcard",
+        "method": "POST",
+        "url": "https://bconnect-api.fhpl.net/api/GetEcard"
+      },
+      {
+        "name": "GetNetworkHospitalDetails",
+        "method": "POST",
+        "url": "https://bconnect-api.fhpl.net/api/GetNetworkHospitalDetails"
+      },
+      {
+        "name": "ClaimIntimation",
+        "method": "POST",
+        "url": "https://m.fhpl.net/BcServiceAPI/api/ClaimIntimation"
+      },
+      {
+        "name": "GetEnrollmentDetails",
+        "method": "POST",
+        "url": "https://m.fhpl.net/BcServiceAPI/api/GetEnrollmentDetails"
+      }
+    ],
+    "baseUrls": [
+      "https://bconnect-api.fhpl.net",
+      "https://m.fhpl.net"
+    ],
+    "authentication": null
+  },
+  "Health Godigit MDBT PROD": {
+    "filename": "Health Godigit MDBT PROD.postman_collection (1).json",
+    "totalEndpoints": 11,
+    "endpoints": [
+      {
+        "name": "Payment Gateway PROD",
+        "method": "POST",
+        "url": "https://prod-digitpaymentgateway.godigit.com/DigitPaymentGateway/v1/customerFloat"
+      },
+      {
+        "name": "Payment Status Check PROD",
+        "method": "GET",
+        "url": "https://prod-digitpaymentgateway.godigit.com/DigitPaymentGateway/v2/payments"
+      },
+      {
+        "name": "Claim intimation FNOL",
+        "method": "POST",
+        "url": "https://preprod-oneapi.godigit.com/OneAPI/v1/executor"
+      },
+      {
+        "name": "claim documents upload",
+        "method": "POST",
+        "url": "https://preprod-oneapi.godigit.com/OneAPI/v1/executor"
+      },
+      {
+        "name": "1. token auth",
+        "method": "POST",
+        "url": "https://preprod-oneapi.godigit.com/OneAPI/digit/generateAuthKey"
+      },
+      {
+        "name": "1. token auth old",
+        "method": "POST",
+        "url": "https://oneapi.godigit.com/OneAPI/digit/generateAuthKey"
+      },
+      {
+        "name": "2. Enrollment/Member API",
+        "method": "POST",
+        "url": "https://oneapi.godigit.com/OneAPI/v1/executor"
+      },
+      {
+        "name": "3. Claims Dump",
+        "method": "POST",
+        "url": "https://oneapi.godigit.com/OneAPI/v1/executor"
+      },
+      {
+        "name": "4. individual Ecard",
+        "method": "POST",
+        "url": "https://oneapi.godigit.com/OneAPI/v1/executor"
+      },
+      {
+        "name": "5. network hospitals",
+        "method": "POST",
+        "url": "https://oneapi.godigit.com/OneAPI/v1/executor"
+      },
+      {
+        "name": "6. Claims API",
+        "method": "POST",
+        "url": "https://oneapi.godigit.com/OneAPI/v1/executor"
+      }
+    ],
+    "baseUrls": [
+      "https://prod-digitpaymentgateway.godigit.com",
+      "https://preprod-oneapi.godigit.com",
+      "https://oneapi.godigit.com"
+    ],
+    "authentication": null
+  },
+  "Health Godigit MDBT UAT": {
+    "filename": "Health Godigit MDBT UAT.postman_collection (1).json",
+    "totalEndpoints": 11,
+    "endpoints": [
+      {
+        "name": "1. token auth",
+        "method": "POST",
+        "url": "https://preprod-oneapi.godigit.com/OneAPI/digit/generateAuthKey"
+      },
+      {
+        "name": "Payment Gateway UAT",
+        "method": "POST",
+        "url": "https://preprod-digitpaymentgateway.godigit.com/DigitPaymentGateway/v1/customerFloat"
+      },
+      {
+        "name": "Payment Status Check UAT",
+        "method": "GET",
+        "url": "https://preprod-digitpaymentgateway.godigit.com/DigitPaymentGateway/v2/payments"
+      },
+      {
+        "name": "Claim intimation FNOL",
+        "method": "POST",
+        "url": "https://preprod-oneapi.godigit.com/OneAPI/v1/executor"
+      },
+      {
+        "name": "claim documents upload",
+        "method": "POST",
+        "url": "https://preprod-oneapi.godigit.com/OneAPI/v1/executor"
+      },
+      {
+        "name": "1. token auth",
+        "method": "POST",
+        "url": "https://preprod-oneapi.godigit.com/OneAPI/digit/generateAuthKey"
+      },
+      {
+        "name": "2. Enrollment/Member API",
+        "method": "POST",
+        "url": "https://preprod-oneapi.godigit.com/OneAPI/v1/executor"
+      },
+      {
+        "name": "3. Claims Dump",
+        "method": "POST",
+        "url": "https://preprod-oneapi.godigit.com/OneAPI/v1/executor"
+      },
+      {
+        "name": "4. individual Ecard",
+        "method": "POST",
+        "url": "https://preprod-oneapi.godigit.com/OneAPI/v1/executor"
+      },
+      {
+        "name": "5. network hospitals",
+        "method": "POST",
+        "url": "https://preprod-oneapi.godigit.com/OneAPI/v1/executor"
+      },
+      {
+        "name": "6. Claims API",
+        "method": "POST",
+        "url": "https://preprod-oneapi.godigit.com/OneAPI/v1/executor"
+      }
+    ],
+    "baseUrls": [
+      "https://preprod-oneapi.godigit.com",
+      "https://preprod-digitpaymentgateway.godigit.com"
+    ],
+    "authentication": null
+  },
+  "Health HealthIndia ANIB": {
+    "filename": "Health HealthIndia ANIB.postman_collection.json",
+    "totalEndpoints": 8,
+    "endpoints": [
+      {
+        "name": "GetClaimsList",
+        "method": "POST",
+        "url": "https://software.healthindiatpa.com/HiWebApi/ANIBE/GetClaimsList"
+      },
+      {
+        "name": "GetEnrollmentDetails",
+        "method": "POST",
+        "url": "https://software.healthindiatpa.com/HiWebApi/ANIBE/GetEnrollmentDetails"
+      },
+      {
+        "name": "GetNetworkHospitals",
+        "method": "POST",
+        "url": "https://software.healthindiatpa.com/HiWebApi/ANIBE/GetNetworkHospitals"
+      },
+      {
+        "name": "GetDownloadedEcard",
+        "method": "POST",
+        "url": "https://software.healthindiatpa.com/HiWebApi/ANIBE/GetDownloadedEcard"
+      },
+      {
+        "name": "IntimateClaimRequest",
+        "method": "POST",
+        "url": "https://software.healthindiatpa.com/HiWebApi/ANIBE/IntimateClaimRequest - non test"
+      },
+      {
+        "name": "Health India claimsList details response",
+        "method": "GET",
+        "url": ""
+      },
+      {
+        "name": "network Hospitals Response Data",
+        "method": "GET",
+        "url": ""
+      },
+      {
+        "name": "enrollmentDetails rsponse Data",
+        "method": "GET",
+        "url": ""
+      }
+    ],
+    "baseUrls": [
+      "https://software.healthindiatpa.com"
+    ],
+    "authentication": null
+  },
+  "Health HealthIndia MDBT": {
+    "filename": "Health HealthIndia MDBT.postman_collection.json",
+    "totalEndpoints": 8,
+    "endpoints": [
+      {
+        "name": "GetEnrollmentDetails",
+        "method": "POST",
+        "url": "https://software.healthindiatpa.com/HiWebApi/BHRE/GetEnrollmentDetails"
+      },
+      {
+        "name": "GetClaimsList",
+        "method": "POST",
+        "url": "https://software.healthindiatpa.com/HiWebApi/BHRE/GetClaimsList"
+      },
+      {
+        "name": "GetDownloadedEcard",
+        "method": "POST",
+        "url": "https://software.healthindiatpa.com/HiWebApi/BHRE/GetDownloadedEcard"
+      },
+      {
+        "name": "GetNetworkHospitals",
+        "method": "POST",
+        "url": "https://software.healthindiatpa.com/HiWebApi/BHRE/GetNetworkHospitals"
+      },
+      {
+        "name": "IntimateClaimRequest",
+        "method": "POST",
+        "url": "https://software.healthindiatpa.com/HiWebApi/BHRE/IntimateClaimRequest"
+      },
+      {
+        "name": "Health India claimsList details response",
+        "method": "GET",
+        "url": ""
+      },
+      {
+        "name": "network Hospitals Response Data",
+        "method": "GET",
+        "url": ""
+      },
+      {
+        "name": "enrollmentDetails rsponse Data",
+        "method": "GET",
+        "url": ""
+      }
+    ],
+    "baseUrls": [
+      "https://software.healthindiatpa.com"
+    ],
+    "authentication": null
+  },
+  "Health HealthIndia Sriyah": {
+    "filename": "Health HealthIndia Sriyah.postman_collection.json",
+    "totalEndpoints": 6,
+    "endpoints": [
+      {
+        "name": "GetClaimsList",
+        "method": "POST",
+        "url": "https://software.healthindiatpa.com/HiWebApi/Sriyah/GetClaimsList"
+      },
+      {
+        "name": "GetEnrollmentDetails",
+        "method": "POST",
+        "url": "https://software.healthindiatpa.com/HiWebApi/Sriyah/GetEnrollmentDetails"
+      },
+      {
+        "name": "GetNetworkHospitals",
+        "method": "POST",
+        "url": "https://software.healthindiatpa.com/HiWebApi/Sriyah/GetNetworkHospitals"
+      },
+      {
+        "name": "GetDownloadedEcard",
+        "method": "POST",
+        "url": "https://software.healthindiatpa.com/HiWebApi/Sriyah/GetDownloadedEcard"
+      },
+      {
+        "name": "IntimateClaimRequest",
+        "method": "POST",
+        "url": "https://software.healthindiatpa.com/HiWebApi/Sriyah/IntimateClaimRequest"
+      },
+      {
+        "name": "IntimateClaimRequest",
+        "method": "POST",
+        "url": "https://software.healthindiatpa.com/HiWebApi/BHRE/IntimateClaimRequest - do not call live"
+      }
+    ],
+    "baseUrls": [
+      "https://software.healthindiatpa.com"
+    ],
+    "authentication": null
+  },
+  "Health HealthIndia W2W": {
+    "filename": "Health HealthIndia W2W.postman_collection.json",
+    "totalEndpoints": 8,
+    "endpoints": [
+      {
+        "name": "GetEnrollmentDetails",
+        "method": "POST",
+        "url": "https://software.healthindiatpa.com/HiWebApi/Way2/GetEnrollmentDetails"
+      },
+      {
+        "name": "GetClaimsList",
+        "method": "POST",
+        "url": "https://software.healthindiatpa.com/HiWebApi/Way2/GetClaimsList"
+      },
+      {
+        "name": "GetDownloadedEcard",
+        "method": "POST",
+        "url": "https://software.healthindiatpa.com/HiWebApi/Way2/GetECardLink"
+      },
+      {
+        "name": "GetNetworkHospitals",
+        "method": "POST",
+        "url": "https://software.healthindiatpa.com/HiWebApi/Way2/GetNetworkHospitals"
+      },
+      {
+        "name": "IntimateClaimRequest",
+        "method": "POST",
+        "url": "https://software.healthindiatpa.com/HiWebApi/Way2/IntimateClaimRequest"
+      },
+      {
+        "name": "Health India claimsList details response",
+        "method": "GET",
+        "url": ""
+      },
+      {
+        "name": "network Hospitals Response Data",
+        "method": "GET",
+        "url": ""
+      },
+      {
+        "name": "enrollmentDetails rsponse Data",
+        "method": "GET",
+        "url": ""
+      }
+    ],
+    "baseUrls": [
+      "https://software.healthindiatpa.com"
+    ],
+    "authentication": null
+  },
+  "Health Heritage 2": {
+    "filename": "Health Heritage 2.postman_collection.json",
+    "totalEndpoints": 1,
+    "endpoints": [
+      {
+        "name": "GetClaimsList",
+        "method": "POST",
+        "url": "http://223.31.103.204/HeritageMobileAppNew/MobileAppAPI.svc/GetClaimsList"
+      }
+    ],
+    "baseUrls": [
+      "http://223.31.103.204"
+    ],
+    "authentication": null
+  },
+  "Health Heritage w2w": {
+    "filename": "Health Heritage w2w.postman_collection (1).json",
+    "totalEndpoints": 6,
+    "endpoints": [
+      {
+        "name": "GetEnrollmentDetails",
+        "method": "POST",
+        "url": "http://heritagehealthtpa.in/HeritageMobileAppNew/MobileAppAPI.svc/GetEnrollmentDetails"
+      },
+      {
+        "name": "GetClaimsList",
+        "method": "POST",
+        "url": "http://223.31.103.204/HeritageMobileAppNew/MobileAppAPI.svc/GetClaimsList"
+      },
+      {
+        "name": "GetMemberECardURL",
+        "method": "POST",
+        "url": "http://223.31.103.204/HeritageMobileAppNew/MobileAppAPI.svc/GetMemberECardURL"
+      },
+      {
+        "name": "GetNetworkHospitals",
+        "method": "POST",
+        "url": "http://223.31.103.204/HeritageMobileAppNew/MobileAppAPI.svc/GetNetworkHospitals"
+      },
+      {
+        "name": "GetClaimIntimationDetails",
+        "method": "POST",
+        "url": "http://223.31.103.204/HeritageMobileAppNew/MobileAppAPI.svc/GetClaimIntimationDetails - nontest"
+      },
+      {
+        "name": "GetNetworkHospitalCount",
+        "method": "POST",
+        "url": "http://223.31.103.204/HeritageMobileAppNew/MobileAppAPI.svc/GetNetworkHospitalCount"
+      }
+    ],
+    "baseUrls": [
+      "http://heritagehealthtpa.in",
+      "http://223.31.103.204"
+    ],
+    "authentication": null
+  },
+  "Health ICICI MDBT PROD": {
+    "filename": "Health ICICI MDBT PROD.postman_collection (1).json",
+    "totalEndpoints": 4,
+    "endpoints": [
+      {
+        "name": "token",
+        "method": "POST",
+        "url": "https://ilesbapigee.insurancearticlez.com/generate-jwt-token"
+      },
+      {
+        "name": "Hospital List",
+        "method": "GET",
+        "url": "https://ilesbapigee.insurancearticlez.com/health/ilservices/health/v1/generic/hospitalnetworklist"
+      },
+      {
+        "name": "UHIDPolicyDetails",
+        "method": "POST",
+        "url": "https://ilesbapigee.insurancearticlez.com/misc-generic/ilservices/misc/v2/genus/getuhidreport"
+      },
+      {
+        "name": "ecard",
+        "method": "POST",
+        "url": "https://ilesbapigee.insurancearticlez.com/health/ilservices/health/v2/healthcard/fetch"
+      }
+    ],
+    "baseUrls": [
+      "https://ilesbapigee.insurancearticlez.com"
+    ],
+    "authentication": {
+      "type": "bearer",
+      "bearer": [
+        {
+          "key": "token",
+          "value": "eyJ0eXAiOiJKV1QiLCJhbGciOiJSUzI1NiJ9.eyJzdWIiOiJzdWJqZWN0IiwiYW1yIjpbImN1c3RvbSJdLCJpc19hcGlnZWUiOnRydWUsImlzcyI6Imh0dHBzOi8vaWxlc2JzYW5pdHkuaW5zdXJhbmNlYXJ0aWNsZXouY29tL2NlcmJlcnVzIiwiY2xpZW50X2lkIjoiQmhhcmF0X1JlIiwiYXVkIjpbImh0dHBzOi8vaWxlc2JzYW5pdHkuaW5zdXJhbmNlYXJ0aWNsZXouY29tL2NlcmJlcnVzL3Jlc291cmNlcnMiLCJlc2JoZWFsdGgiXSwibmJmIjoxNzQ4NTE3NzYwLCJpZHAiOiJsb2NhbCIsInNjb3BlIjpbImVzYmhlYWx0aCJdLCJhdXRoX3RpbWUiOjE3NDg1MTc3NjAsInBiayI6Ii0tLS0tQkVHSU4gUFVCTElDIEtFWS0tLS0tICBNSUdmTUEwR0NTcUdTSWIzRFFFQkFRVUFBNEdOQURDQmlRS0JnUUNVL3pUYXNubm1DTkd1Y01ad0Y2TG5mRWhDICBPOW5KZ3RxdEhHUjk5T3dwcHJ3ZmhKYnVGR1RtdTZzZWxWVUVHbUtYRjB5YmFtWVl6VmFPVG03dlJzZWRMaUhPICBobFZNM2FLOWI3WnkwQWF5M3U1Wmxqc3hxOXRrVUc4Wjhhei9iSDR4MUtnakdFOHpTVmZVOEhaSkVhb1pLWjJZICBaT3RWSVNYend0K3FLSmo4dXdJREFRQUIgIC0tLS0tRU5EIFBVQkxJQyBLRVktLS0tLSIsImV4cCI6MTc0ODUxODM2MCwiaWF0IjoxNzQ4NTE3NzYwLCJqdGkiOiIwYzEzZDQxNC1mZWI3LTQ0ZDgtYmJkZC00NjJjMjhkYmM4ZTUifQ.aq8jaRH0FEYIBXxxuLQJPpSD_a6msJdnlTeOBaoTqRFt6M7il33pqvF4-KT1-DEe8eeFRUbk89JhI8nvtCRTVv81svHKLdRDZi4m8v8JCz9NJB-_nWxwb2OZUmly0RS3BLAfvi6i0qxCAT-5hspwcwMFtOdOP0uKxU1ezXGVVjoodtS2HOV0xsAEppJhEEMHhBWtRKIts8h1Tc14ZofVR-w495zJRftjq5lTeR7r_2KDTGubUya1zV_QrRXMY-vDG7tQal7CcTWmMQ3enOwFTN3psZ7WZOFZOrjPPwVJErF061DEX_KvendZRD2eIP7zvZZBPS4Jbffw2YGWgP2wHA",
+          "type": "string"
+        }
+      ]
+    }
+  },
+  "Health ICICI MDBT UAT": {
+    "filename": "Health ICICI MDBT UAT.postman_collection (1).json",
+    "totalEndpoints": 8,
+    "endpoints": [
+      {
+        "name": "token",
+        "method": "POST",
+        "url": "https://ilesbapigee.insurancearticlez.com/generate-jwt-token"
+      },
+      {
+        "name": "Hospital List",
+        "method": "GET",
+        "url": "https://ilesbapigee.insurancearticlez.com/health/ilservices/health/v1/generic/hospitalnetworklist"
+      },
+      {
+        "name": "UHIDPolicyDetails",
+        "method": "POST",
+        "url": "https://ilesbapigee.insurancearticlez.com/misc-generic/ilservices/misc/v2/genus/getuhidreport"
+      },
+      {
+        "name": "ecard",
+        "method": "POST",
+        "url": "https://ilesbapigee.insurancearticlez.com/health/ilservices/health/v2/healthcard/fetch"
+      },
+      {
+        "name": "Enrollment Batch Creation - fetchuhid",
+        "method": "POST",
+        "url": "https://ilesbapigee.insurancearticlez.com/health/ilservices/health/v1/enrollment/fetchuhid"
+      },
+      {
+        "name": "Enrollment Batch Creation - batchcreation",
+        "method": "POST",
+        "url": "https://ilesbapigee.insurancearticlez.com/health/ilservices/health/v1/enrollment/batchcreation"
+      },
+      {
+        "name": "Enrollment Batch Creation - batchstatus",
+        "method": "POST",
+        "url": "https://ilesbapigee.insurancearticlez.com/health/ilservices/health/v1/enrollment/batchstatus"
+      },
+      {
+        "name": "Enrollment Batch Creation - batchdetails",
+        "method": "POST",
+        "url": "https://ilesbapigee.insurancearticlez.com/health/ilservices/health/v1/enrollment/batchdetails"
+      }
+    ],
+    "baseUrls": [
+      "https://ilesbapigee.insurancearticlez.com"
+    ],
+    "authentication": {
+      "type": "bearer",
+      "bearer": [
+        {
+          "key": "token",
+          "value": "eyJ0eXAiOiJKV1QiLCJhbGciOiJSUzI1NiJ9.eyJzdWIiOiJzdWJqZWN0IiwiYW1yIjpbImN1c3RvbSJdLCJpc19hcGlnZWUiOnRydWUsImlzcyI6Imh0dHBzOi8vaWxlc2JzYW5pdHkuaW5zdXJhbmNlYXJ0aWNsZXouY29tL2NlcmJlcnVzIiwiY2xpZW50X2lkIjoiQmhhcmF0X1JlIiwiYXVkIjpbImh0dHBzOi8vaWxlc2JzYW5pdHkuaW5zdXJhbmNlYXJ0aWNsZXouY29tL2NlcmJlcnVzL3Jlc291cmNlcnMiLCJlc2JoZWFsdGgiXSwibmJmIjoxNzQ4NTE3NzYwLCJpZHAiOiJsb2NhbCIsInNjb3BlIjpbImVzYmhlYWx0aCJdLCJhdXRoX3RpbWUiOjE3NDg1MTc3NjAsInBiayI6Ii0tLS0tQkVHSU4gUFVCTElDIEtFWS0tLS0tICBNSUdmTUEwR0NTcUdTSWIzRFFFQkFRVUFBNEdOQURDQmlRS0JnUUNVL3pUYXNubm1DTkd1Y01ad0Y2TG5mRWhDICBPOW5KZ3RxdEhHUjk5T3dwcHJ3ZmhKYnVGR1RtdTZzZWxWVUVHbUtYRjB5YmFtWVl6VmFPVG03dlJzZWRMaUhPICBobFZNM2FLOWI3WnkwQWF5M3U1Wmxqc3hxOXRrVUc4Wjhhei9iSDR4MUtnakdFOHpTVmZVOEhaSkVhb1pLWjJZICBaT3RWSVNYend0K3FLSmo4dXdJREFRQUIgIC0tLS0tRU5EIFBVQkxJQyBLRVktLS0tLSIsImV4cCI6MTc0ODUxODM2MCwiaWF0IjoxNzQ4NTE3NzYwLCJqdGkiOiIwYzEzZDQxNC1mZWI3LTQ0ZDgtYmJkZC00NjJjMjhkYmM4ZTUifQ.aq8jaRH0FEYIBXxxuLQJPpSD_a6msJdnlTeOBaoTqRFt6M7il33pqvF4-KT1-DEe8eeFRUbk89JhI8nvtCRTVv81svHKLdRDZi4m8v8JCz9NJB-_nWxwb2OZUmly0RS3BLAfvi6i0qxCAT-5hspwcwMFtOdOP0uKxU1ezXGVVjoodtS2HOV0xsAEppJhEEMHhBWtRKIts8h1Tc14ZofVR-w495zJRftjq5lTeR7r_2KDTGubUya1zV_QrRXMY-vDG7tQal7CcTWmMQ3enOwFTN3psZ7WZOFZOrjPPwVJErF061DEX_KvendZRD2eIP7zvZZBPS4Jbffw2YGWgP2wHA",
+          "type": "string"
+        }
+      ]
+    }
+  },
+  "Health MDIndia ANIB": {
+    "filename": "Health MDIndia ANIB.postman_collection.json",
+    "totalEndpoints": 6,
+    "endpoints": [
+      {
+        "name": "enrollment details",
+        "method": "POST",
+        "url": "https://apiset.mdindia.com:8167/Anib/AnibService.svc"
+      },
+      {
+        "name": "claim details",
+        "method": "POST",
+        "url": "https://apiset.mdindia.com:8167/Anib/AnibService.svc"
+      },
+      {
+        "name": "Ecard",
+        "method": "POST",
+        "url": "https://apiset.mdindia.com:8167/Anib/AnibService.svc"
+      },
+      {
+        "name": "Network Hospitals",
+        "method": "POST",
+        "url": "https://apiset.mdindia.com:8167/Anib/AnibService.svc"
+      },
+      {
+        "name": "claim intimation UAT",
+        "method": "POST",
+        "url": "https://apiset.mdindia.com:8167/Anib/AnibService.svc - nontest"
+      },
+      {
+        "name": "claim submission UAT",
+        "method": "POST",
+        "url": "https://apiset.mdindia.com:8167/Zeal/ZealService.svc"
+      }
+    ],
+    "baseUrls": [
+      "https://apiset.mdindia.com:8167"
+    ],
+    "authentication": null
+  },
+  "Health MDIndia Sriyah": {
+    "filename": "Health MDIndia Sriyah.postman_collection (1).json",
+    "totalEndpoints": 6,
+    "endpoints": [
+      {
+        "name": "enrollment details",
+        "method": "POST",
+        "url": "https://apiset.mdindia.com:8167/Sriyah/SriyahService.svc"
+      },
+      {
+        "name": "claim details",
+        "method": "POST",
+        "url": "https://apiset.mdindia.com:8167/Sriyah/SriyahService.svc"
+      },
+      {
+        "name": "Ecard",
+        "method": "POST",
+        "url": "https://apiset.mdindia.com:8167/Sriyah/SriyahService.svc"
+      },
+      {
+        "name": "Network Hospitals",
+        "method": "POST",
+        "url": "https://apiset.mdindia.com:8167/Sriyah/SriyahService.svc"
+      },
+      {
+        "name": "claim intimation UAT",
+        "method": "POST",
+        "url": "https://apiset.mdindia.com:8167/Anib/AnibService.svc - nontest"
+      },
+      {
+        "name": "claim submission UAT",
+        "method": "POST",
+        "url": "https://apiset.mdindia.com:8167/Zeal/ZealService.svc"
+      }
+    ],
+    "baseUrls": [
+      "https://apiset.mdindia.com:8167"
+    ],
+    "authentication": null
+  },
+  "Health MDIndia Zeal": {
+    "filename": "Health MDIndia Zeal.postman_collection.json",
+    "totalEndpoints": 6,
+    "endpoints": [
+      {
+        "name": "enrollment details",
+        "method": "POST",
+        "url": "https://apiset.mdindia.com:8167/Zeal/ZealService.svc"
+      },
+      {
+        "name": "claim details",
+        "method": "POST",
+        "url": "https://apiset.mdindia.com:8167/Zeal/ZealService.svc"
+      },
+      {
+        "name": "Ecard",
+        "method": "POST",
+        "url": "https://apiset.mdindia.com:8167/Zeal/ZealService.svc"
+      },
+      {
+        "name": "Network Hospitals",
+        "method": "POST",
+        "url": "https://apiset.mdindia.com:8167/Zeal/ZealService.svc"
+      },
+      {
+        "name": "claim intimation UAT",
+        "method": "POST",
+        "url": "https://apiset.mdindia.com:8167/Zeal/ZealService.svc"
+      },
+      {
+        "name": "claim submission UAT",
+        "method": "POST",
+        "url": "https://apiset.mdindia.com:8167/Zeal/ZealService.svc"
+      }
+    ],
+    "baseUrls": [
+      "https://apiset.mdindia.com:8167"
+    ],
+    "authentication": null
+  },
+  "Health MDIndia w2w": {
+    "filename": "Health MDIndia w2w.postman_collection.json",
+    "totalEndpoints": 6,
+    "endpoints": [
+      {
+        "name": "GetEnrollmentDetails",
+        "method": "GET",
+        "url": "https://APISet.mdindia.com:8167/Way2Wealth/Way2WealthService.svc/rest/GetEnrollmentDetails"
+      },
+      {
+        "name": "GetClaims",
+        "method": "GET",
+        "url": "https://APISet.mdindia.com:8167/Way2Wealth/Way2WealthService.svc/rest/GetClaims"
+      },
+      {
+        "name": "enrollment details Copy",
+        "method": "GET",
+        "url": "https://APISet.mdindia.com:8167/Way2Wealth/Way2WealthService.svc/rest/GetEnrollmentDetails"
+      },
+      {
+        "name": "GetPolicyWiseHospital",
+        "method": "GET",
+        "url": "https://APISet.mdindia.com:8167/Way2Wealth/Way2WealthService.svc/rest/GetPolicyWiseHospital"
+      },
+      {
+        "name": "GetEcard",
+        "method": "GET",
+        "url": "https://APISet.mdindia.com:8167/Way2Wealth/Way2WealthService.svc/rest/GetEcard"
+      },
+      {
+        "name": "GetEndorsmentData",
+        "method": "GET",
+        "url": "https://APISet.mdindia.com:8167/Way2Wealth/Way2WealthService.svc/rest/GetEndorsmentData"
+      }
+    ],
+    "baseUrls": [
+      "https://APISet.mdindia.com:8167"
+    ],
+    "authentication": null
+  },
+  "Health MedSave MDBT": {
+    "filename": "Health MedSave MDBT.postman_collection.json",
+    "totalEndpoints": 7,
+    "endpoints": [
+      {
+        "name": "enrollment details",
+        "method": "GET",
+        "url": "https://medsave.in/MedApp/api/bharatre/getPolicyData"
+      },
+      {
+        "name": "enrollment details Copy",
+        "method": "GET",
+        "url": "https://medsave.in/MedApp/api/bharatre/getPolicyData"
+      },
+      {
+        "name": "ClaimData",
+        "method": "POST",
+        "url": "https://medsave.in/CapitalSquare/Service1.svc"
+      },
+      {
+        "name": "EcardPDF",
+        "method": "POST",
+        "url": "https://medsave.in/CapitalSquare/Service1.svc"
+      },
+      {
+        "name": "HospitalData",
+        "method": "POST",
+        "url": "https://medsave.in/CapitalSquare/Service1.svc"
+      },
+      {
+        "name": "hospital Data Response",
+        "method": "GET",
+        "url": ""
+      },
+      {
+        "name": "claim Data Response",
+        "method": "GET",
+        "url": ""
+      }
+    ],
+    "baseUrls": [
+      "https://medsave.in"
+    ],
+    "authentication": null
+  },
+  "Health MediAssist MDBT": {
+    "filename": "Health MediAssist MDBT.postman_collection (1).json",
+    "totalEndpoints": 5,
+    "endpoints": [
+      {
+        "name": "Enrollment Details",
+        "method": "POST",
+        "url": "https://integration.medibuddy.in/ClaimAPIServiceV2/ClaimService/GetBenefDetails"
+      },
+      {
+        "name": "Claim Details",
+        "method": "POST",
+        "url": "https://integration.medibuddy.in/ClaimAPIServiceV2/ClaimService/ClaimDetail"
+      },
+      {
+        "name": "Network Hospital",
+        "method": "POST",
+        "url": "https://integration.medibuddy.in/ClaimAPIServiceV2/ClaimService/NetworkHospital"
+      },
+      {
+        "name": "Ecard",
+        "method": "POST",
+        "url": "https://integration.medibuddy.in/ClaimAPIServiceV2/ClaimService/MemberEcard/"
+      },
+      {
+        "name": "Claim Details Individual",
+        "method": "POST",
+        "url": "https://integration.medibuddy.in/ClaimAPIServiceV2/ClaimService/ClaimDetail"
+      }
+    ],
+    "baseUrls": [
+      "https://integration.medibuddy.in"
+    ],
+    "authentication": null
+  },
+  "Health NivaBupa W2W": {
+    "filename": "Health NivaBupa W2W.postman_collection.json",
+    "totalEndpoints": 1,
+    "endpoints": [
+      {
+        "name": "Health NivaBupa W2W",
+        "method": "GET",
+        "url": "https://serviceuat.nivabupa.com:8088/UploadService.svc/PolicyMemberDataDump"
+      }
+    ],
+    "baseUrls": [
+      "https://serviceuat.nivabupa.com:8088"
+    ],
+    "authentication": null
+  },
+  "Health Paramount Anib": {
+    "filename": "Health Paramount Anib.postman_collection.json",
+    "totalEndpoints": 9,
+    "endpoints": [
+      {
+        "name": "GetEnrollmentDetails",
+        "method": "POST",
+        "url": "https://webintegrations.paramounttpa.com/ANIBESSEL_API/Service1.svc/GetEnrollmentDetails"
+      },
+      {
+        "name": "GetClaimMISDetails",
+        "method": "POST",
+        "url": "https://webintegrations.paramounttpa.com/ANIBESSEL_API/Service1.svc/GetClaimMISDetails"
+      },
+      {
+        "name": "GetClaimStatus",
+        "method": "POST",
+        "url": "https://webintegrations.paramounttpa.com/ANIBESSEL_API/Service1.svc/GetClaimStatus"
+      },
+      {
+        "name": "GetHospitalList",
+        "method": "POST",
+        "url": "https://webintegrations.paramounttpa.com/ANIBESSEL_API/Service1.svc/GetHospitalList"
+      },
+      {
+        "name": "GetFamilyECard",
+        "method": "POST",
+        "url": "https://webintegrations.paramounttpa.com/ANIBESSEL_API/Service1.svc/Get_Member_Ecards"
+      },
+      {
+        "name": "Claim Intimation",
+        "method": "POST",
+        "url": "https://webintegrations.paramounttpa.com/ANIBESSEL_API/Service1.svc/INTIMATE_CLAIM-donotcall,claimintimation"
+      },
+      {
+        "name": "UAT GetClaimMISDetails",
+        "method": "POST",
+        "url": "https://uatintegrations.paramounttpa.com/ANIBESSEL_API/Service1.svc/GetClaimMISDetails"
+      },
+      {
+        "name": "UAT INTIMATE_CLAIM",
+        "method": "POST",
+        "url": "https://uatintegrations.paramounttpa.com/ANIBESSEL_API/Service1.svc/INTIMATE_CLAIM"
+      },
+      {
+        "name": "UAT GetClaimStatus",
+        "method": "POST",
+        "url": "https://uatintegrations.paramounttpa.com/ANIBESSEL_API/Service1.svc/GetClaimStatus"
+      }
+    ],
+    "baseUrls": [
+      "https://webintegrations.paramounttpa.com",
+      "https://uatintegrations.paramounttpa.com"
+    ],
+    "authentication": null
+  },
+  "Health Paramount Mdbt": {
+    "filename": "Health Paramount Mdbt.postman_collection.json",
+    "totalEndpoints": 5,
+    "endpoints": [
+      {
+        "name": "GetEnrollmentDetails",
+        "method": "POST",
+        "url": "https://webintegrations.paramounttpa.com/BharatReAPI/Service1.svc/GetEnrollmentDetails"
+      },
+      {
+        "name": "GetClaimMISDetails",
+        "method": "POST",
+        "url": "https://webintegrations.paramounttpa.com/BharatReAPI/Service1.svc/GetClaimMISDetails"
+      },
+      {
+        "name": "GetHospitalList",
+        "method": "POST",
+        "url": "https://webintegrations.paramounttpa.com/BharatReAPI/Service1.svc/GetHospitalList"
+      },
+      {
+        "name": "GetFamilyECard",
+        "method": "POST",
+        "url": "https://webintegrations.paramounttpa.com/BharatReAPI/Service1.svc/GetFamilyECard"
+      },
+      {
+        "name": "GetClaimStatus",
+        "method": "POST",
+        "url": "https://webintegrations.paramounttpa.com/BharatReAPI/Service1.svc/GetClaimStatus"
+      }
+    ],
+    "baseUrls": [
+      "https://webintegrations.paramounttpa.com"
+    ],
+    "authentication": null
+  },
+  "Health Raksha w2w": {
+    "filename": "Health Raksha w2w.postman_collection.json",
+    "totalEndpoints": 6,
+    "endpoints": [
+      {
+        "name": "Get Active Data",
+        "method": "POST",
+        "url": "http://ws.rakshatpa.com:82/RakshaWST/RakshaServices/ActiveDataService"
+      },
+      {
+        "name": "EcardDownloadService",
+        "method": "POST",
+        "url": "http://ws.rakshatpa.com:82/RakshaWST/RakshaServices/EcardDownloadService"
+      },
+      {
+        "name": "ClaimDetailService",
+        "method": "POST",
+        "url": "http://ws.rakshatpa.com:82/RakshaWST/RakshaServices/ClaimDetailService"
+      },
+      {
+        "name": "ClaimStatus Service",
+        "method": "POST",
+        "url": "http://ws.rakshatpa.com:82/RakshaWST/RakshaServices/ClaimStatusService"
+      },
+      {
+        "name": "ClaimIntimationService",
+        "method": "POST",
+        "url": "http://ws.rakshatpa.com:82/RakshaWST/RakshaServices/ClaimIntimationService - nontest"
+      },
+      {
+        "name": "NetworkHospitalListService",
+        "method": "POST",
+        "url": "http://ws.rakshatpa.com:82/RakshaWST/RakshaServices/NetworkHospitalListService"
+      }
+    ],
+    "baseUrls": [
+      "http://ws.rakshatpa.com:82"
+    ],
+    "authentication": null
+  },
+  "Health Raksha": {
+    "filename": "Health Raksha.postman_collection.json",
+    "totalEndpoints": 5,
+    "endpoints": [
+      {
+        "name": "Get Active Data",
+        "method": "POST",
+        "url": "http://115.241.23.168/RakshaWST/RakshaServices/ActiveDataService"
+      },
+      {
+        "name": "EcardDownloadService",
+        "method": "POST",
+        "url": "http://115.241.23.168/RakshaWST/RakshaServices/EcardDownloadService"
+      },
+      {
+        "name": "ClaimDetailService",
+        "method": "POST",
+        "url": "http://115.241.23.168/RakshaWST/RakshaServices/ClaimDetailService"
+      },
+      {
+        "name": "ClaimIntimationService",
+        "method": "POST",
+        "url": "http://115.241.23.168/RakshaWST/RakshaServices/ClaimIntimationService"
+      },
+      {
+        "name": "NetworkHospitalListService",
+        "method": "POST",
+        "url": "http://115.241.23.168/RakshaWST/RakshaServices/NetworkHospitalListService"
+      }
+    ],
+    "baseUrls": [
+      "http://115.241.23.168"
+    ],
+    "authentication": null
+  },
+  "Health StarHealth": {
+    "filename": "Health StarHealth.postman_collection.json",
+    "totalEndpoints": 7,
+    "endpoints": [
+      {
+        "name": "Generate Token Service",
+        "method": "POST",
+        "url": "https://securegw-uat.starhealth.in/api/authentication-service/v1/auth/token/generate"
+      },
+      {
+        "name": "Get Broker Client Details",
+        "method": "GET",
+        "url": "https://securegw-uat.starhealth.in/api/broker-service/v1/client/brokercode/LC0000000010"
+      },
+      {
+        "name": "Get Enrolment Data of Employees",
+        "method": "GET",
+        "url": "https://securegw-uat.starhealth.in/api/broker-service/v1/enroldata/groupcode/5286756"
+      },
+      {
+        "name": "Validate Token Service",
+        "method": "GET",
+        "url": "https://securegw-uat.starhealth.in/api/authentication-service/v1/auth/token/validate"
+      },
+      {
+        "name": "Get Ecard Details By Employee ID",
+        "method": "GET",
+        "url": "https://securegw-uat.starhealth.in/api/broker-service/v1/ecard/employeeid/SGL0001"
+      },
+      {
+        "name": "Get Hospital List By Pin Code",
+        "method": "GET",
+        "url": "https://securegw-uat.starhealth.in/api/utility-service/v1/hospital/network/pincode/600092/list"
+      },
+      {
+        "name": "Get Ecard Details By Health Card ID",
+        "method": "GET",
+        "url": "https://securegw-uat.starhealth.in/api/broker-service/v1/ecard/healthcardid/2269552000000100"
+      }
+    ],
+    "baseUrls": [
+      "https://securegw-uat.starhealth.in"
+    ],
+    "authentication": null
+  },
+  "Health Vidal ANIB": {
+    "filename": "Health Vidal ANIB.postman_collection.json",
+    "totalEndpoints": 6,
+    "endpoints": [
+      {
+        "name": "Enroll data service",
+        "method": "POST",
+        "url": "https://tips.vidalhealthtpa.com/rest/vidalbrokerservices/enrollmendataservice"
+      },
+      {
+        "name": "Claims Service",
+        "method": "POST",
+        "url": "https://tips.vidalhealthtpa.com/rest/vidalbrokerservices/claimpreauthservice"
+      },
+      {
+        "name": "Ecard Service",
+        "method": "POST",
+        "url": "https://tips.vidalhealthtpa.com/rest/vidalbrokerservices/ecardservice"
+      },
+      {
+        "name": "Hospital Service",
+        "method": "POST",
+        "url": "https://tips.vidalhealthtpa.com/rest/vidalbrokerservices/hospitalnetwork"
+      },
+      {
+        "name": "Claims Intimation",
+        "method": "POST",
+        "url": "https://tips.vidalhealthtpa.com/rest/vidalbrokerservices/claimintimation - prod"
+      },
+      {
+        "name": "INTIMATE_CLAIM",
+        "method": "POST",
+        "url": "https://uatintegrations.paramounttpa.com/BharatReAPI/Service1.svc/INTIMATE_CLAIM old"
+      }
+    ],
+    "baseUrls": [
+      "https://tips.vidalhealthtpa.com",
+      "https://uatintegrations.paramounttpa.com"
+    ],
+    "authentication": null
+  },
+  "Health Vidal MDBT": {
+    "filename": "Health Vidal MDBT.postman_collection.json",
+    "totalEndpoints": 6,
+    "endpoints": [
+      {
+        "name": "Enroll data service",
+        "method": "POST",
+        "url": "https://tips.vidalhealthtpa.com/rest/vidalbrokerservices/enrollmendataservice"
+      },
+      {
+        "name": "Claims Service",
+        "method": "POST",
+        "url": "https://tips.vidalhealthtpa.com/rest/vidalbrokerservices/claimpreauthservice"
+      },
+      {
+        "name": "Ecard Service",
+        "method": "POST",
+        "url": "https://tips.vidalhealthtpa.com/rest/vidalbrokerservices/ecardservice"
+      },
+      {
+        "name": "Hospital Service",
+        "method": "POST",
+        "url": "https://tips.vidalhealthtpa.com/rest/vidalbrokerservices/hospitalnetwork"
+      },
+      {
+        "name": "Claims Intimation",
+        "method": "POST",
+        "url": "https://tips.vidalhealthtpa.com/rest/vidalbrokerservices/claimintimation - prod"
+      },
+      {
+        "name": "INTIMATE_CLAIM",
+        "method": "POST",
+        "url": "https://uatintegrations.paramounttpa.com/BharatReAPI/Service1.svc/INTIMATE_CLAIM old"
+      }
+    ],
+    "baseUrls": [
+      "https://tips.vidalhealthtpa.com",
+      "https://uatintegrations.paramounttpa.com"
+    ],
+    "authentication": null
+  },
+  "Health VoloTPA MDBT": {
+    "filename": "Health VoloTPA MDBT.postman_collection.json",
+    "totalEndpoints": 9,
+    "endpoints": [
+      {
+        "name": "getExternaltoken",
+        "method": "POST",
+        "url": "https://uatapiadmin.ewatpa.com/external/login"
+      },
+      {
+        "name": "get active lives",
+        "method": "GET",
+        "url": "https://uatapiadmin.ewatpa.com/trueclaim/policy-bazaar/get-active-lives-dump"
+      },
+      {
+        "name": "get entity",
+        "method": "GET",
+        "url": "https://uatapiadmin.ewatpa.com/trueclaim/policy-bazaar/get-entity-from-policy"
+      },
+      {
+        "name": "get claims dump",
+        "method": "POST",
+        "url": "https://uatapiadmin.ewatpa.com/trueclaim/tpa/getTpaData"
+      },
+      {
+        "name": "Network Hospital",
+        "method": "POST",
+        "url": "https://uatapiadmin.ewatpa.com/trueclaim/policy-bazaar/hospital-network"
+      },
+      {
+        "name": "getEcard",
+        "method": "GET",
+        "url": "https://uatapiadmin.ewatpa.com/trueclaim/create-new-all-member-id-card-pdf"
+      },
+      {
+        "name": "claim intimation",
+        "method": "POST",
+        "url": "https://uatapiadmin.ewatpa.com/trueclaim/policy-bazaar/intimate-claim"
+      },
+      {
+        "name": "broker submit claim",
+        "method": "POST",
+        "url": "https://uatapiadmin.ewatpa.com/trueclaim/tpa/submit-claim"
+      },
+      {
+        "name": "Get individual claim details",
+        "method": "POST",
+        "url": "https://uatapiadmin.ewatpa.com/trueclaim/tpa/getClaimData"
+      }
+    ],
+    "baseUrls": [
+      "https://uatapiadmin.ewatpa.com"
+    ],
+    "authentication": null
+  },
+  "Heatlh EWAT": {
+    "filename": "Heatlh EWAT.postman_collection.json",
+    "totalEndpoints": 6,
+    "endpoints": [
+      {
+        "name": "getAuthToken",
+        "method": "POST",
+        "url": "https://uatapiadmin.ewatpa.com/external/login"
+      },
+      {
+        "name": "getEnrollmentDump",
+        "method": "GET",
+        "url": "https://uatapiadmin.ewatpa.com/trueclaim/tpa/get-Enroll-dump"
+      },
+      {
+        "name": "getHospitalList",
+        "method": "GET",
+        "url": "https://uatapiadmin.ewatpa.com/trueclaim/tpa/getHospitalByInsurerName"
+      },
+      {
+        "name": "getClaimsData",
+        "method": "POST",
+        "url": "https://uatapiadmin.ewatpa.com/trueclaim/tpa/getTpaData"
+      },
+      {
+        "name": "getEcard",
+        "method": "GET",
+        "url": "https://uatapiadmin.ewatpa.com/trueclaim/create-new-all-member-id-card-pdf"
+      },
+      {
+        "name": "entity id from policy",
+        "method": "GET",
+        "url": "https://uatapiadmin.ewatpa.com/trueclaim/get-entity-from-policy"
+      }
+    ],
+    "baseUrls": [
+      "https://uatapiadmin.ewatpa.com"
+    ],
+    "authentication": null
+  }
+}

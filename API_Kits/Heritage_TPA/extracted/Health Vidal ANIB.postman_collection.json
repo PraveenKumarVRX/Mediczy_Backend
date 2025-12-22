@@ -1,0 +1,535 @@
+{
+	"info": {
+		"_postman_id": "af9032af-f389-498f-9e47-f93b3886216e",
+		"name": "Health Vidal ANIB",
+		"schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json",
+		"_exporter_id": "19690377"
+	},
+	"item": [
+		{
+			"name": "Enroll data service",
+			"request": {
+				"method": "POST",
+				"header": [
+					{
+						"key": "username",
+						"value": "AN_prod36",
+						"type": "text"
+					},
+					{
+						"key": "password",
+						"value": "A~n!@i^r6#o3d",
+						"type": "text"
+					},
+					{
+						"key": "policyNo",
+						"value": "0239784258",
+						"type": "text"
+					},
+					{
+						"key": "Authorization",
+						"value": "Basic dmlkYWxicm9rZXJwcm9kbG9naW46dmlkYWxwcm9kQDEyMw==",
+						"type": "text"
+					},
+					{
+						"key": "startindex",
+						"value": "1",
+						"type": "text"
+					},
+					{
+						"key": "endindex",
+						"value": "10000",
+						"type": "text"
+					}
+				],
+				"url": {
+					"raw": "https://tips.vidalhealthtpa.com/rest/vidalbrokerservices/enrollmendataservice",
+					"protocol": "https",
+					"host": [
+						"tips",
+						"vidalhealthtpa",
+						"com"
+					],
+					"path": [
+						"rest",
+						"vidalbrokerservices",
+						"enrollmendataservice"
+					]
+				}
+			},
+			"response": []
+		},
+		{
+			"name": "Claims Service",
+			"request": {
+				"method": "POST",
+				"header": [
+					{
+						"key": "username",
+						"value": "AN_prod36",
+						"type": "text"
+					},
+					{
+						"key": "password",
+						"value": "A~n!@i^r6#o3d",
+						"type": "text"
+					},
+					{
+						"key": "policyNo",
+						"value": "0239754679",
+						"type": "text"
+					},
+					{
+						"key": "claimNo",
+						"value": "KOC-OI-P0609-002-0000007",
+						"type": "text",
+						"disabled": true
+					},
+					{
+						"key": "empNo",
+						"value": "46",
+						"type": "text",
+						"disabled": true
+					},
+					{
+						"key": "startdate",
+						"value": "01/04/2021",
+						"type": "text"
+					},
+					{
+						"key": "enddate",
+						"value": "01/04/2024",
+						"type": "text"
+					},
+					{
+						"key": "Authorization",
+						"value": "Basic dmlkYWxicm9rZXJwcm9kbG9naW46dmlkYWxwcm9kQDEyMw==",
+						"type": "text"
+					}
+				],
+				"url": {
+					"raw": "https://tips.vidalhealthtpa.com/rest/vidalbrokerservices/claimpreauthservice",
+					"protocol": "https",
+					"host": [
+						"tips",
+						"vidalhealthtpa",
+						"com"
+					],
+					"path": [
+						"rest",
+						"vidalbrokerservices",
+						"claimpreauthservice"
+					]
+				}
+			},
+			"response": []
+		},
+		{
+			"name": "Ecard Service",
+			"request": {
+				"method": "POST",
+				"header": [
+					{
+						"key": "username",
+						"value": "AN_prod36",
+						"type": "text"
+					},
+					{
+						"key": "password",
+						"value": "A~n!@i^r6#o3d",
+						"type": "text"
+					},
+					{
+						"key": "Authorization",
+						"value": "Basic dmlkYWxicm9rZXJwcm9kbG9naW46dmlkYWxwcm9kQDEyMw==",
+						"type": "text"
+					},
+					{
+						"key": "policyNo",
+						"value": "0239759696",
+						"type": "text"
+					},
+					{
+						"key": "enrollmentNo",
+						"value": "48",
+						"type": "text",
+						"disabled": true
+					}
+				],
+				"url": {
+					"raw": "https://tips.vidalhealthtpa.com/rest/vidalbrokerservices/ecardservice",
+					"protocol": "https",
+					"host": [
+						"tips",
+						"vidalhealthtpa",
+						"com"
+					],
+					"path": [
+						"rest",
+						"vidalbrokerservices",
+						"ecardservice"
+					]
+				}
+			},
+			"response": []
+		},
+		{
+			"name": "Hospital Service",
+			"request": {
+				"method": "POST",
+				"header": [
+					{
+						"key": "username",
+						"value": "AN_prod36",
+						"type": "text"
+					},
+					{
+						"key": "password",
+						"value": "A~n!@i^r6#o3d",
+						"type": "text"
+					},
+					{
+						"key": "policynumber",
+						"value": "0239759696",
+						"type": "text"
+					},
+					{
+						"key": "Authorization",
+						"value": "Basic dmlkYWxicm9rZXJwcm9kbG9naW46dmlkYWxwcm9kQDEyMw==",
+						"type": "text"
+					}
+				],
+				"url": {
+					"raw": "https://tips.vidalhealthtpa.com/rest/vidalbrokerservices/hospitalnetwork",
+					"protocol": "https",
+					"host": [
+						"tips",
+						"vidalhealthtpa",
+						"com"
+					],
+					"path": [
+						"rest",
+						"vidalbrokerservices",
+						"hospitalnetwork"
+					]
+				}
+			},
+			"response": []
+		},
+		{
+			"name": "Claims Intimation",
+			"request": {
+				"auth": {
+					"type": "basic",
+					"basic": [
+						{
+							"key": "password",
+							"value": "vidaluat@123",
+							"type": "string"
+						},
+						{
+							"key": "username",
+							"value": "vidalbrokerlogin",
+							"type": "string"
+						}
+					]
+				},
+				"method": "POST",
+				"header": [
+					{
+						"key": "username",
+						"value": "AN_prod36",
+						"type": "text"
+					},
+					{
+						"key": "password",
+						"value": "A~n!@i^r6#o3d",
+						"type": "text"
+					},
+					{
+						"key": "policyNo",
+						"value": "021800/TEST/CLAIM/A445/AS/PER/POLICY/COPY",
+						"type": "text"
+					},
+					{
+						"key": "Authorization",
+						"value": "Basic dmlkYWxicm9rZXJwcm9kbG9naW46dmlkYWxwcm9kQDEyMw==",
+						"type": "text"
+					},
+					{
+						"key": "enrolmentId",
+						"value": "BLR-UP-A445-010-0000001-A",
+						"type": "text"
+					},
+					{
+						"key": "ailmentName",
+						"value": "Fever",
+						"type": "text"
+					},
+					{
+						"key": "hospDateofAdmission",
+						"value": "07/04/2023",
+						"type": "text"
+					},
+					{
+						"key": "hospDateofDischarge",
+						"value": "10/04/2023",
+						"type": "text"
+					},
+					{
+						"key": "hospitalID",
+						"value": "HOS-PON-010474",
+						"type": "text",
+						"disabled": true
+					},
+					{
+						"key": "hospitalName",
+						"value": "Vidal HEalth",
+						"type": "text"
+					},
+					{
+						"key": "hospitalAddress",
+						"value": "EPIP zone",
+						"type": "text"
+					},
+					{
+						"key": "state",
+						"value": "Karnataka",
+						"type": "text"
+					},
+					{
+						"key": "city",
+						"value": "bangalore",
+						"type": "text"
+					},
+					{
+						"key": "hospitalPincode",
+						"value": "560037",
+						"type": "text",
+						"disabled": true
+					},
+					{
+						"key": "physicianPhoneNo",
+						"value": "5656565656",
+						"type": "text",
+						"disabled": true
+					},
+					{
+						"key": "emailId",
+						"value": "test@abc.co",
+						"type": "text",
+						"disabled": true
+					},
+					{
+						"key": "estimatedAmount",
+						"value": "16000",
+						"type": "text"
+					},
+					{
+						"key": "mobileNo",
+						"value": "7956549990",
+						"type": "text"
+					},
+					{
+						"key": "patientEmailId",
+						"value": "md.azharuddin@vidalhealthtpa.com",
+						"type": "text",
+						"disabled": true
+					},
+					{
+						"key": "nameOfPhysician",
+						"value": "XYZ",
+						"type": "text"
+					},
+					{
+						"key": "physicianPhoneNo",
+						"value": "8355334566",
+						"type": "text"
+					},
+					{
+						"key": "emailId",
+						"value": "",
+						"type": "text"
+					}
+				],
+				"url": {
+					"raw": "https://tips.vidalhealthtpa.com/rest/vidalbrokerservices/claimintimation - prod",
+					"protocol": "https",
+					"host": [
+						"tips",
+						"vidalhealthtpa",
+						"com"
+					],
+					"path": [
+						"rest",
+						"vidalbrokerservices",
+						"claimintimation - prod"
+					]
+				}
+			},
+			"response": []
+		},
+		{
+			"name": "INTIMATE_CLAIM",
+			"request": {
+				"method": "POST",
+				"header": [],
+				"body": {
+					"mode": "raw",
+					"raw": "{\r\n    \"USERNAME\":\"BHARATRE-ADMIN\",\r\n    \"PASSWORD\":\"ADMIN-USER@152\",\r\n     \"POLICY_NO\":\"001N000016400000\",\r\n    \"PHM\":\"38926991\",\r\n    \"RELATION\":\"Employee\",\r\n    \"NAME\":\"SAGAR BRAMHANE\",\r\n    \"AILMENT\":\"Sync\",\r\n    \"CLAIM_AMOUNT\":\"500\",\r\n    \"DATE_OF_ADMISSION\":\"04/05/2023\",\r\n    \"NAME_OF_HOSPITAL\":\"SANJEEVANI SURGICAL AND GENERAL HOSPITAL ( MALAD )\",\r\n    \"NAME_OF_DOCTOR\":\"\",\r\n    \"MOBILE_NO\":\"\",\r\n    \"EMAIL_ID\":\"\",\r\n    \"CLAIM_TYPE\":\"REIMBURSEMENT\"\r\n}",
+					"options": {
+						"raw": {
+							"language": "json"
+						}
+					}
+				},
+				"url": {
+					"raw": "https://uatintegrations.paramounttpa.com/BharatReAPI/Service1.svc/INTIMATE_CLAIM old",
+					"protocol": "https",
+					"host": [
+						"uatintegrations",
+						"paramounttpa",
+						"com"
+					],
+					"path": [
+						"BharatReAPI",
+						"Service1.svc",
+						"INTIMATE_CLAIM old"
+					]
+				}
+			},
+			"response": [
+				{
+					"name": "INTIMATE_CLAIM",
+					"originalRequest": {
+						"method": "POST",
+						"header": [],
+						"body": {
+							"mode": "raw",
+							"raw": "{\r\n    \"USERNAME\":\"BHARATRE-ADMIN\",\r\n    \"PASSWORD\":\"ADMIN-USER@152\",\r\n     \"POLICY_NO\":\"001N000016400000\",\r\n    \"PHM\":\"38926991\",\r\n    \"RELATION\":\"Employee\",\r\n    \"NAME\":\"SAGAR BRAMHANE\",\r\n    \"AILMENT\":\"Syncope\",\r\n    \"CLAIM_AMOUNT\":\"5000\",\r\n    \"DATE_OF_ADMISSION\":\"30/04/2023\",\r\n    \"NAME_OF_HOSPITAL\":\"SANJEEVANI SURGICAL AND GENERAL HOSPITAL ( MALAD )\",\r\n    \"NAME_OF_DOCTOR\":\"\",\r\n    \"MOBILE_NO\":\"\",\r\n    \"EMAIL_ID\":\"\",\r\n    \"CLAIM_TYPE\":\"REIMBURSEMENT\"\r\n}",
+							"options": {
+								"raw": {
+									"language": "json"
+								}
+							}
+						},
+						"url": {
+							"raw": "https://uatintegrations.paramounttpa.com/BharatReAPI/Service1.svc/INTIMATE_CLAIM",
+							"protocol": "https",
+							"host": [
+								"uatintegrations",
+								"paramounttpa",
+								"com"
+							],
+							"path": [
+								"BharatReAPI",
+								"Service1.svc",
+								"INTIMATE_CLAIM"
+							]
+						}
+					},
+					"status": "OK",
+					"code": 200,
+					"_postman_previewlanguage": "json",
+					"header": [
+						{
+							"key": "Cache-Control",
+							"value": "private"
+						},
+						{
+							"key": "Transfer-Encoding",
+							"value": "chunked"
+						},
+						{
+							"key": "Content-Type",
+							"value": "application/json; charset=utf-8"
+						},
+						{
+							"key": "Server",
+							"value": "Microsoft-IIS/10.0"
+						},
+						{
+							"key": "X-AspNet-Version",
+							"value": "4.0.30319"
+						},
+						{
+							"key": "X-Powered-By",
+							"value": "ASP.NET"
+						},
+						{
+							"key": "Date",
+							"value": "Wed, 03 May 2023 10:48:09 GMT"
+						}
+					],
+					"cookie": [],
+					"body": "{\n    \"INTIMATE_CLAIMResult\": [\n        {\n            \"CLAIM_INTIMATION_NUMBER\": \"3587657\",\n            \"MESSAGE\": \"Intimation already exist, intimation no is 3587657\",\n            \"STATUS\": \"SUCCESS\"\n        }\n    ]\n}"
+				},
+				{
+					"name": "INTIMATE_CLAIM 1",
+					"originalRequest": {
+						"method": "POST",
+						"header": [],
+						"body": {
+							"mode": "raw",
+							"raw": "{\r\n    \"USERNAME\":\"BHARATRE-ADMIN\",\r\n    \"PASSWORD\":\"ADMIN-USER@152\",\r\n     \"POLICY_NO\":\"001N000016400000\",\r\n    \"PHM\":\"38926991\",\r\n    \"RELATION\":\"Employee\",\r\n    \"NAME\":\"SAGAR BRAMHANE\",\r\n    \"AILMENT\":\"Sync\",\r\n    \"CLAIM_AMOUNT\":\"500\",\r\n    \"DATE_OF_ADMISSION\":\"04/05/2023\",\r\n    \"NAME_OF_HOSPITAL\":\"SANJEEVANI SURGICAL AND GENERAL HOSPITAL ( MALAD )\",\r\n    \"NAME_OF_DOCTOR\":\"\",\r\n    \"MOBILE_NO\":\"\",\r\n    \"EMAIL_ID\":\"\",\r\n    \"CLAIM_TYPE\":\"REIMBURSEMENT\"\r\n}",
+							"options": {
+								"raw": {
+									"language": "json"
+								}
+							}
+						},
+						"url": {
+							"raw": "https://uatintegrations.paramounttpa.com/BharatReAPI/Service1.svc/INTIMATE_CLAIM",
+							"protocol": "https",
+							"host": [
+								"uatintegrations",
+								"paramounttpa",
+								"com"
+							],
+							"path": [
+								"BharatReAPI",
+								"Service1.svc",
+								"INTIMATE_CLAIM"
+							]
+						}
+					},
+					"status": "OK",
+					"code": 200,
+					"_postman_previewlanguage": "json",
+					"header": [
+						{
+							"key": "Cache-Control",
+							"value": "private"
+						},
+						{
+							"key": "Transfer-Encoding",
+							"value": "chunked"
+						},
+						{
+							"key": "Content-Type",
+							"value": "application/json; charset=utf-8"
+						},
+						{
+							"key": "Server",
+							"value": "Microsoft-IIS/10.0"
+						},
+						{
+							"key": "X-AspNet-Version",
+							"value": "4.0.30319"
+						},
+						{
+							"key": "X-Powered-By",
+							"value": "ASP.NET"
+						},
+						{
+							"key": "Date",
+							"value": "Fri, 05 May 2023 10:00:39 GMT"
+						}
+					],
+					"cookie": [],
+					"body": "{\n    \"INTIMATE_CLAIMResult\": [\n        {\n            \"CLAIM_INTIMATION_NUMBER\": \"3587683\",\n            \"MESSAGE\": \"Data Saved Sucessfully\",\n            \"STATUS\": \"SUCCESS\"\n        }\n    ]\n}"
+				}
+			]
+		}
+	]
+}

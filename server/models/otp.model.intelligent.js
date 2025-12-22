@@ -16,7 +16,7 @@ class OTP {
    * @param {number} data.expiryMinutes - Expiry time in minutes (default: 10)
    * @returns {Promise<Object>} OTP object with code
    */
-  static async generate({ phone, email, purpose = 'login', expiryMinutes = 10 }) {
+  static async generate({ phone, email, purpose = 'login', expiryMinutes = 10, userId = null }) {
     try {
       // Generate 6-digit OTP
       const otpCode = Math.floor(100000 + Math.random() * 900000).toString();
@@ -38,11 +38,30 @@ class OTP {
         attempts: 0,
         maxAttempts: 5,
         createdAt: new Date().toISOString(),
-        lastAttemptAt: null
+        lastAttemptAt: null,
+        userId: userId || null
       };
 
-      // Store in intelligent database
-      await intelligentDb.ingest('otps_v1', otpData);
+      // Try to store in intelligent database, but don't fail if unavailable
+      try {
+        await intelligentDb.ingest('otps_v1', otpData);
+      } catch (dbError) {
+        console.warn('⚠️  IntelligentDB unavailable, OTP stored in memory only:', dbError.message);
+        // Store in memory as fallback (for demo purposes)
+        if (!global.otpMemoryStore) global.otpMemoryStore = new Map();
+        global.otpMemoryStore.set(id, otpData);
+      }
+
+      // Log OTP in development mode for testing
+      if (process.env.NODE_ENV !== 'production') {
+        console.log('🔐 Development OTP:', {
+          email: email || 'N/A',
+          phone: phone || 'N/A',
+          code: otpCode,
+          purpose,
+          expiresAt
+        });
+      }
 
       return {
         id,
@@ -79,20 +98,43 @@ class OTP {
       if (phone) query.phone = phone;
       if (email) query.email = email;
 
-      // Search in intelligent database
-      const results = await intelligentDb.search('otps_v1', {
-        filter: query,
-        limit: 1
-      });
+      let otp = null;
 
-      if (!results || results.length === 0) {
+      // Try to search in intelligent database first
+      try {
+        const results = await intelligentDb.search('otps_v1', {
+          filter: query,
+          limit: 1
+        });
+        if (results && results.length > 0) {
+          otp = results[0];
+        }
+      } catch (dbError) {
+        console.warn('⚠️  IntelligentDB search failed, checking memory store');
+      }
+
+      // Fallback to memory store if DB search failed
+      if (!otp && global.otpMemoryStore) {
+        for (const [id, storedOtp] of global.otpMemoryStore.entries()) {
+          if (
+            storedOtp.code === code &&
+            storedOtp.purpose === purpose &&
+            !storedOtp.isVerified &&
+            (phone ? storedOtp.phone === phone : true) &&
+            (email ? storedOtp.email === email : true)
+          ) {
+            otp = storedOtp;
+            break;
+          }
+        }
+      }
+
+      if (!otp) {
         return {
           success: false,
           message: 'Invalid OTP code'
         };
       }
-
-      const otp = results[0];
 
       // Check if expired
       const now = new Date();
@@ -114,10 +156,20 @@ class OTP {
       }
 
       // Mark as verified
-      await intelligentDb.update('otps_v1', otp.id, {
-        isVerified: true,
-        verifiedAt: new Date().toISOString()
-      });
+      try {
+        await intelligentDb.update('otps_v1', otp.id, {
+          isVerified: true,
+          verifiedAt: new Date().toISOString()
+        });
+      } catch (dbError) {
+        // Update in memory store if DB update fails
+        if (global.otpMemoryStore && global.otpMemoryStore.has(otp.id)) {
+          const storedOtp = global.otpMemoryStore.get(otp.id);
+          storedOtp.isVerified = true;
+          storedOtp.verifiedAt = new Date().toISOString();
+          global.otpMemoryStore.set(otp.id, storedOtp);
+        }
+      }
 
       return {
         success: true,

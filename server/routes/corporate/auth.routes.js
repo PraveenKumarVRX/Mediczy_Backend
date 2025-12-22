@@ -3,7 +3,6 @@ import jwt from 'jsonwebtoken';
 import bcrypt from 'bcryptjs';
 
 const router = express.Router();
-const JWT_SECRET = process.env.JWT_SECRET || 'mediczy-super-secret-key-2024';
 
 // Mock corporate data (replace with database later)
 const mockCorporate = {
@@ -27,6 +26,16 @@ const mockCorporate = {
 router.post('/login', async (req, res) => {
   try {
     const { email, password } = req.body;
+
+    const JWT_SECRET = process.env.JWT_SECRET;
+
+    if (!JWT_SECRET) {
+      console.error('FATAL: JWT_SECRET environment variable not set!');
+      return res.status(500).json({
+        success: false,
+        message: 'Server configuration error'
+      });
+    }
 
     // Validate input
     if (!email || !password) {
@@ -64,6 +73,8 @@ router.post('/login', async (req, res) => {
     // Generate JWT token
     const token = jwt.sign(
       {
+        // Backward-compatible: keep corporateId, but also provide id so authUser can resolve it.
+        id: mockCorporate.id,
         corporateId: mockCorporate.id,
         email: mockCorporate.email,
         companyName: mockCorporate.companyName,
@@ -108,6 +119,16 @@ router.post('/login', async (req, res) => {
 router.get('/verify', async (req, res) => {
   try {
     const token = req.headers.authorization?.split(' ')[1];
+
+    const JWT_SECRET = process.env.JWT_SECRET;
+
+    if (!JWT_SECRET) {
+      console.error('FATAL: JWT_SECRET environment variable not set!');
+      return res.status(500).json({
+        success: false,
+        message: 'Server configuration error'
+      });
+    }
 
     if (!token) {
       return res.status(401).json({

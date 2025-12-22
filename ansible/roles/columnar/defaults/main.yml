@@ -1,0 +1,5 @@
+columnar_packages:
+  - "postgresql-{{ pg_version }}-citus-columnar"
+columnar_conf_path: "/etc/postgresql/{{ pg_version }}/main/conf.d/columnar.conf"
+columnar_default_compression: lz4
+columnar_tables: []

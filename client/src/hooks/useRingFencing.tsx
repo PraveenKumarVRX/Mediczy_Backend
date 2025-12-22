@@ -14,6 +14,7 @@ const USER_TYPES: Record<string, RouteAccess> = {
       '/',
       '/login',
       '/register',
+      '/patient',
       '/profile',
       '/health-tracker',
       '/consultation',
@@ -40,6 +41,7 @@ const USER_TYPES: Record<string, RouteAccess> = {
   },
   doctor: {
     allowedPaths: [
+      '/doctor',
       '/doctor/login',
       '/doc-register',
       '/doctor-dashboard',
@@ -56,6 +58,7 @@ const USER_TYPES: Record<string, RouteAccess> = {
   },
   team: {
     allowedPaths: [
+      '/team',
       '/team/login',
       '/team/dashboard',
       '/team/profile',
@@ -81,6 +84,7 @@ const USER_TYPES: Record<string, RouteAccess> = {
   },
   nurse: {
     allowedPaths: [
+      '/nurse',
       '/nurse/login',
       '/nurse/dashboard',
       '/nurse/patients',
@@ -96,6 +100,7 @@ const USER_TYPES: Record<string, RouteAccess> = {
   },
   assistant: {
     allowedPaths: [
+      '/assistant',
       '/assistant/login',
       '/assistant/dashboard',
       '/assistant/orders',
@@ -107,6 +112,7 @@ const USER_TYPES: Record<string, RouteAccess> = {
   },
   admin: {
     allowedPaths: [
+      '/admin',
       '/admin/login',
       '/admin',
       '/admin/dashboard',
@@ -162,6 +168,7 @@ const USER_TYPES: Record<string, RouteAccess> = {
   },
   corporate: {
     allowedPaths: [
+      '/corporate',
       '/corporate/login',
       '/corporate/dashboard',
       '/corporate/benefits',
@@ -181,8 +188,68 @@ const USER_TYPES: Record<string, RouteAccess> = {
     loginPath: '/corporate/login',
     userType: 'corporate'
   },
+  tpa: {
+    allowedPaths: [
+      '/tpa',
+      '/tpa/login',
+      '/tpa/dashboard',
+      '/tpa/claims',
+      '/tpa/network',
+      '/tpa/policies',
+      '/tpa/reports',
+      '/tpa/settings'
+    ],
+    tokenKey: 'tpaToken',
+    loginPath: '/tpa/login',
+    userType: 'tpa'
+  },
+  psu: {
+    allowedPaths: [
+      '/psu',
+      '/psu/login',
+      '/psu/dashboard',
+      '/psu/employees',
+      '/psu/benefits',
+      '/psu/claims',
+      '/psu/reports',
+      '/psu/settings'
+    ],
+    tokenKey: 'psuToken',
+    loginPath: '/psu/login',
+    userType: 'psu'
+  },
+  insurer: {
+    allowedPaths: [
+      '/insurer',
+      '/insurer/login',
+      '/insurer/dashboard',
+      '/insurer/policies',
+      '/insurer/claims',
+      '/insurer/analytics',
+      '/insurer/reports',
+      '/insurer/settings'
+    ],
+    tokenKey: 'insurerToken',
+    loginPath: '/insurer/login',
+    userType: 'insurer'
+  },
+  ngo: {
+    allowedPaths: [
+      '/ngo',
+      '/ngo/login',
+      '/ngo/dashboard',
+      '/ngo/programs',
+      '/ngo/beneficiaries',
+      '/ngo/reports',
+      '/ngo/settings'
+    ],
+    tokenKey: 'ngoToken',
+    loginPath: '/ngo/login',
+    userType: 'ngo'
+  },
   hospital: {
     allowedPaths: [
+      '/hospital',
       '/hospital/login',
       '/hospital/dashboard',
       '/hospital/practice-management',
@@ -209,6 +276,7 @@ const USER_TYPES: Record<string, RouteAccess> = {
   },
   clinic: {
     allowedPaths: [
+      '/clinic',
       '/clinic/login',
       '/clinic/dashboard',
       '/clinic/appointments',
@@ -233,6 +301,7 @@ const USER_TYPES: Record<string, RouteAccess> = {
   },
   lab: {
     allowedPaths: [
+      '/lab',
       '/lab/login',
       '/lab/dashboard',
       '/lab/orders',
@@ -259,6 +328,7 @@ const USER_TYPES: Record<string, RouteAccess> = {
   },
   pharmacy: {
     allowedPaths: [
+      '/pharmacy',
       '/pharmacy/login',
       '/pharmacy/dashboard',
       '/pharmacy/pos',
@@ -272,7 +342,8 @@ const USER_TYPES: Record<string, RouteAccess> = {
       '/pharmacy/invoices',
       '/pharmacy/expiry',
       '/pharmacy/analytics',
-      '/pharmacy/settings'
+      '/pharmacy/settings',
+      '/pharmacy/support'
     ],
     tokenKey: 'pharmacyToken',
     loginPath: '/pharmacy/login',
@@ -280,6 +351,7 @@ const USER_TYPES: Record<string, RouteAccess> = {
   },
   ambulance: {
     allowedPaths: [
+      '/ambulance',
       '/ambulance/login',
       '/ambulance/dashboard',
       '/ambulance/active-trips',
@@ -302,6 +374,7 @@ const USER_TYPES: Record<string, RouteAccess> = {
   },
   homecare: {
     allowedPaths: [
+      '/homecare',
       '/homecare/login',
       '/homecare/dashboard'
     ],
@@ -332,6 +405,16 @@ export const useRingFencing = () => {
         '/assistant/login',
         '/team/login',
         '/corporate/login'
+        ,'/tpa/login'
+        ,'/psu/login'
+        ,'/insurer/login'
+        ,'/ngo/login'
+        ,'/hospital/login'
+        ,'/clinic/login'
+        ,'/lab/login'
+        ,'/pharmacy/login'
+        ,'/ambulance/login'
+        ,'/homecare/login'
       ];
       if (publicPaths.includes(currentPath)) {
         setIsChecking(false);
@@ -342,19 +425,50 @@ export const useRingFencing = () => {
       let loggedInUserType: string | null = null;
       let loggedInToken: string | null = null;
 
-      for (const [userType, config] of Object.entries(USER_TYPES)) {
-        const token = localStorage.getItem(config.tokenKey);
-        if (token) {
-          loggedInUserType = userType;
-          loggedInToken = token;
-          break;
-        }
+      const tokenCandidates = Object.entries(USER_TYPES)
+        .map(([userType, config]) => {
+          const token = localStorage.getItem(config.tokenKey);
+          return token ? { userType, config, token } : null;
+        })
+        .filter(Boolean) as { userType: string; config: PortalConfig; token: string }[];
+
+      const candidateHasAccess = (candidate: { userType: string; config: PortalConfig; token: string }) => {
+        return candidate.config.allowedPaths.some((allowedPath) => {
+          return (
+            currentPath === allowedPath ||
+            currentPath.startsWith(allowedPath + "/") ||
+            (allowedPath.includes("/:") && currentPath.startsWith(allowedPath.split("/:")[0]))
+          );
+        });
+      };
+
+      // Prefer the token that matches the route being accessed.
+      const bestCandidate = tokenCandidates.find(candidateHasAccess);
+      const selected = bestCandidate || tokenCandidates[0];
+      if (selected) {
+        loggedInUserType = selected.userType;
+        loggedInToken = selected.token;
       }
 
       // If no user is logged in and trying to access protected route
       if (!loggedInUserType && !publicPaths.includes(currentPath)) {
         console.log('🚫 No user logged in, redirecting to login');
-        navigate('/login');
+        // Route-specific login fallbacks for portal paths
+        if (currentPath.startsWith('/pharmacy')) {
+          navigate('/pharmacy/login', { replace: true });
+        } else if (currentPath.startsWith('/lab')) {
+          navigate('/lab/login', { replace: true });
+        } else if (currentPath.startsWith('/clinic')) {
+          navigate('/clinic/login', { replace: true });
+        } else if (currentPath.startsWith('/hospital')) {
+          navigate('/hospital/login', { replace: true });
+        } else if (currentPath.startsWith('/ambulance')) {
+          navigate('/ambulance/login', { replace: true });
+        } else if (currentPath.startsWith('/homecare')) {
+          navigate('/homecare/login', { replace: true });
+        } else {
+          navigate('/login', { replace: true });
+        }
         setIsChecking(false);
         return;
       }

@@ -54,6 +54,7 @@ const UsersManagement = () => {
   const [editingUser, setEditingUser] = useState<MemberUser | null>(null);
   const [viewingUser, setViewingUser] = useState<MemberUser | null>(null);
   const [viewMode, setViewMode] = useState<'grid' | 'table'>('grid');
+  const [activeTab, setActiveTab] = useState<'list' | 'create' | 'bulk'>('list');
   const token = localStorage.getItem('adminToken');
 
   const [newUser, setNewUser] = useState<MemberUser>({
@@ -107,6 +108,7 @@ const UsersManagement = () => {
       
       setResult(data);
       resetForm();
+      setActiveTab('list');
       fetchMemberUsers();
     } catch (err: any) {
       setError(err?.response?.data?.message || `Failed to ${editingUser ? 'update' : 'create'} member user`);
@@ -178,6 +180,7 @@ const UsersManagement = () => {
   const startEditUser = (user: MemberUser) => {
     setNewUser({ ...user });
     setEditingUser(user);
+    setActiveTab('create');
   };
 
   const activeUsers = memberUsers.filter(u => u.isActive);
@@ -270,7 +273,11 @@ const UsersManagement = () => {
           </div>
         )}
 
-        <Tabs defaultValue="list" className="w-full">
+        <Tabs
+          value={activeTab}
+          onValueChange={(value) => setActiveTab(value as 'list' | 'create' | 'bulk')}
+          className="w-full"
+        >
           <TabsList className="grid w-full grid-cols-3">
             <TabsTrigger value="list">Members List</TabsTrigger>
             <TabsTrigger value="create">{editingUser ? 'Edit Member' : 'Add Member'}</TabsTrigger>

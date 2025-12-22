@@ -1,5 +1,5 @@
 // Service Worker for Mediczy Healthcare Platform
-const CACHE_NAME = 'mediczy-v3'; // Updated cache version to force refresh
+const CACHE_NAME = 'mediczy-v4'; // Updated cache version to force refresh
 const ESSENTIAL_URLS = [
   '/',
   '/index.html'

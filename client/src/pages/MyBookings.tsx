@@ -13,6 +13,8 @@ import {
   MessageSquare,
   FileText,
   Star,
+  CalendarPlus,
+  Download,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
@@ -161,6 +163,52 @@ const MyBookings = () => {
       });
     },
   });
+
+  const handleDownloadCalendar = async (booking: Booking) => {
+    try {
+      const response = await api.get(`/appointments/${booking.id}/calendar`, {
+        responseType: 'blob',
+      });
+      
+      // Create download link
+      const url = window.URL.createObjectURL(new Blob([response.data]));
+      const link = document.createElement('a');
+      link.href = url;
+      link.setAttribute('download', `appointment-${booking.id}.ics`);
+      document.body.appendChild(link);
+      link.click();
+      link.remove();
+      window.URL.revokeObjectURL(url);
+      
+      toast({
+        title: "Success",
+        description: "Calendar file downloaded! Open it to add to your calendar.",
+      });
+    } catch (error: any) {
+      console.error('Calendar download error:', error);
+      toast({
+        title: "Error",
+        description: error.response?.data?.message || "Failed to download calendar file",
+        variant: "destructive",
+      });
+    }
+  };
+
+  const handleJoinVideoCall = (booking: Booking) => {
+    if (booking.meetingLink) {
+      window.open(booking.meetingLink, '_blank');
+    } else {
+      // Generate meeting link from appointment ID
+      const baseUrl = import.meta.env.VITE_MIROTALK_URL || 'http://mediqzy.com:3010';
+      const meetingUrl = `${baseUrl}/join/apt-${booking.id}?name=${encodeURIComponent(currentUser?.name || 'Patient')}`;
+      window.open(meetingUrl, '_blank');
+    }
+    
+    toast({
+      title: "Joining Video Call",
+      description: `Opening video consultation with Dr. ${booking.doctorName}`,
+    });
+  };
 
   const getStatusBadge = (status: Booking["status"]) => {
     const statusConfig: Record<string, { color: string; icon: any; label: string }> = {
@@ -324,12 +372,31 @@ const MyBookings = () => {
                 <div className="mt-6 flex items-center gap-4 flex-wrap">
                   {["scheduled", "confirmed"].includes(booking.status) && (
                     <>
+                      {booking.consultationType === 'online' ? (
+                        <Button
+                          variant="default"
+                          onClick={() => handleJoinVideoCall(booking)}
+                          className="bg-blue-600 hover:bg-blue-700"
+                        >
+                          <Video className="h-4 w-4 mr-2" />
+                          Join Video Call
+                        </Button>
+                      ) : (
+                        <Button
+                          variant="default"
+                          onClick={() => handleJoinCall(booking)}
+                        >
+                          {getConsultationTypeIcon(booking.consultationType)}
+                          <span className="ml-2">Join Consultation</span>
+                        </Button>
+                      )}
                       <Button
-                        variant="default"
-                        onClick={() => handleJoinCall(booking)}
+                        variant="outline"
+                        onClick={() => handleDownloadCalendar(booking)}
+                        className="border-blue-200 text-blue-600 hover:bg-blue-50"
                       >
-                        {getConsultationTypeIcon(booking.consultationType)}
-                        <span className="ml-2">Join Consultation</span>
+                        <CalendarPlus className="h-4 w-4 mr-2" />
+                        Add to Calendar
                       </Button>
                       {canCancel(booking) && (
                         <Button

@@ -38,9 +38,10 @@ import MainLayout from "@/components/layout/MainLayout";
 import { Link } from "react-router-dom";
 import { useAuth } from "@/auth/AuthProvider";
 import api from "@/utils/api";
+import { getToken } from "@/hooks/auth";
 
 const Index = () => {
-  const { currentUser, currentDoctor } = useAuth();
+  const { currentUser, currentDoctor, userType } = useAuth();
   const userName = currentUser?.firstName || currentDoctor?.firstName || "Guest";
   const [healthStats, setHealthStats] = useState({
     steps: 6542,
@@ -58,26 +59,24 @@ const Index = () => {
 
   useEffect(() => {
     fetchDashboardData();
-  }, []);
+  }, [currentUser, userType]);
 
   const fetchDashboardData = async () => {
     try {
-      // Try to fetch real appointments
-      const appointmentsRes = await api.get('/appointments/my-appointments').catch(() => null);
-      if (appointmentsRes?.data) {
-        setUpcomingAppointments(appointmentsRes.data.slice(0, 3));
+      const token = getToken();
+      const isPatient = userType === "user" && !!currentUser;
+
+      if (token && isPatient) {
+        // Try to fetch real appointments for authenticated patients
+        const appointmentsRes = await api.get('/appointments/my-appointments').catch(() => null);
+        if (appointmentsRes?.data) {
+          setUpcomingAppointments(appointmentsRes.data.slice(0, 3));
+        } else {
+          setUpcomingAppointments(getSampleAppointments());
+        }
       } else {
-        // Sample data if no appointments
-        setUpcomingAppointments([
-          {
-            id: 1,
-            doctorName: "Dr. Sarah Johnson",
-            specialty: "Cardiologist",
-            date: new Date(Date.now() + 86400000 * 2).toISOString(),
-            time: "10:30 AM",
-            type: "Video Consultation",
-          },
-        ]);
+        // Unauthenticated visitors see sample content without hitting protected APIs
+        setUpcomingAppointments(getSampleAppointments());
       }
 
       setRecentActivities([
@@ -91,6 +90,17 @@ const Index = () => {
       setLoading(false);
     }
   };
+
+  const getSampleAppointments = () => [
+    {
+      id: 1,
+      doctorName: "Dr. Sarah Johnson",
+      specialty: "Cardiologist",
+      date: new Date(Date.now() + 86400000 * 2).toISOString(),
+      time: "10:30 AM",
+      type: "Video Consultation",
+    },
+  ];
 
   // Health stat cards
   const healthMetrics = [

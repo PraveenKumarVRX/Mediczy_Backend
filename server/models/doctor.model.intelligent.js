@@ -1,5 +1,5 @@
 import { Op } from 'sequelize';
-import Doctor from './doctor.model.mariadb.js';
+import { Doctor } from './index.js'; // Now uses PostgreSQL via index.js
 import DoctorAvailability from './doctorAvailability.model.intelligent.js';
 import Appointment from './appointment.model.intelligent.js';
 
@@ -42,6 +42,39 @@ const parseJsonField = (value, fallback) => {
 
 const TIME_24H_REGEX = /^([01]\d|2[0-3]):[0-5]\d$/;
 const TIME_12H_REGEX = /^(\d{1,2}):(\d{2})\s*(AM|PM)$/i;
+const TIME_HHMM_REGEX = /^([01]\d|2[0-3]):[0-5]\d$/;
+
+const parseMinutes = (time) => {
+  if (!TIME_HHMM_REGEX.test(time)) return null;
+  const [hours, minutes] = time.split(':').map((value) => parseInt(value, 10));
+  return hours * 60 + minutes;
+};
+
+const formatTimeFromMinutes = (totalMinutes) => {
+  const minutes = totalMinutes % 60;
+  const hours = Math.floor(totalMinutes / 60) % 24;
+  return `${String(hours).padStart(2, '0')}:${String(minutes).padStart(2, '0')}`;
+};
+
+const generateSlotsFromWindow = (startTime, endTime, slotDurationMinutes = 30) => {
+  const startMinutes = parseMinutes(startTime);
+  const endMinutes = parseMinutes(endTime);
+  const duration = Number.isFinite(slotDurationMinutes) ? slotDurationMinutes : 30;
+
+  if (startMinutes === null || endMinutes === null || duration <= 0) return [];
+  if (startMinutes >= endMinutes) return [];
+
+  const slots = [];
+  for (let t = startMinutes; t + duration <= endMinutes; t += duration) {
+    const time = formatTimeFromMinutes(t);
+    slots.push({
+      time,
+      displayTime: formatDisplayTime(time),
+      available: true
+    });
+  }
+  return slots;
+};
 
 const normalizeTimeValue = (value = '') => {
   if (!value) return '';
@@ -142,7 +175,7 @@ const doctorModel = {
     return doctors.map(deriveVerificationStatus);
   },
 
-  getAvailableSlots: async (doctorId, date, consultationType = 'online') => {
+	  getAvailableSlots: async (doctorId, date, consultationType = 'online') => {
     if (!date) {
       throw new Error('Date is required');
     }
@@ -168,11 +201,12 @@ const doctorModel = {
       console.warn('Doctor availability lookup failed:', error.message);
     }
 
-    let rawSlots = [];
+	    let rawSlots = [];
+	    let skipDefaultSlots = false;
 
-    if (availabilityRecord?.generateTimeSlots) {
-      rawSlots = availabilityRecord.generateTimeSlots(date) || [];
-    } else {
+	    if (availabilityRecord?.generateTimeSlots) {
+	      rawSlots = availabilityRecord.generateTimeSlots(date) || [];
+	    } else {
       const weeklyAvailability = parseJsonField(doctor.weeklyAvailability, {});
       const weeklySchedule = parseJsonField(doctor.weeklySchedule, {});
       const storedSlots = parseJsonField(doctor.availableSlots, []);
@@ -180,11 +214,71 @@ const doctorModel = {
         .toLocaleDateString('en-US', { weekday: 'long' })
         .toLowerCase();
 
-      rawSlots =
-        weeklyAvailability?.[dayName]?.slots ||
-        weeklySchedule?.[dayName]?.slots ||
-        storedSlots;
-    }
+      const normalizedType = String(consultationType || 'online').toLowerCase();
+      const isInPerson =
+        normalizedType === 'walkin' ||
+        normalizedType === 'walk-in' ||
+        normalizedType === 'in-person' ||
+        normalizedType === 'homevisit' ||
+        normalizedType === 'home-visit';
+
+	      const scheduleForDay = weeklySchedule?.[dayName];
+	      const offDays = parseJsonField(doctor.offDays, []);
+	      const isOff =
+	        Boolean(scheduleForDay?.isOff) ||
+	        (Array.isArray(offDays) && offDays.includes(dayName)) ||
+	        Boolean(weeklyAvailability?.[dayName]?.isAvailable === false);
+
+	      if (isOff) {
+	        rawSlots = [];
+	        skipDefaultSlots = true;
+	      } else {
+	        // Prefer weeklySchedule time windows if present (this is what the doctor portal edits).
+	        const slotDuration = doctor.slotDuration || 30;
+	        const scheduleWindow = scheduleForDay
+	          ? (isInPerson ? scheduleForDay.inPerson : scheduleForDay.online)
+	          : null;
+
+	        if (scheduleForDay) {
+	          // If the doctor configured this day, don't invent defaults; respect toggles.
+	          if (!scheduleWindow?.enabled) {
+	            rawSlots = [];
+	            skipDefaultSlots = true;
+	          } else if (
+	            TIME_HHMM_REGEX.test(scheduleWindow.startTime || '') &&
+	            TIME_HHMM_REGEX.test(scheduleWindow.endTime || '')
+	          ) {
+	            rawSlots = generateSlotsFromWindow(
+	              scheduleWindow.startTime,
+	              scheduleWindow.endTime,
+	              slotDuration
+	            );
+	          } else {
+	            rawSlots = [];
+	            skipDefaultSlots = true;
+	          }
+	        } else {
+	          // Fall back to existing slot storage mechanisms for legacy records.
+	          rawSlots =
+	            weeklyAvailability?.[dayName]?.slots ||
+	            weeklySchedule?.[dayName]?.slots ||
+	            storedSlots;
+	        }
+	      }
+	    }
+
+	    // If no slots are configured, generate default slots
+	    if (!skipDefaultSlots && (!rawSlots || rawSlots.length === 0)) {
+	      rawSlots = [];
+	      for (let hour = 9; hour < 17; hour++) {
+	        for (let minute of [0, 30]) {
+	          rawSlots.push({
+	            time: `${hour.toString().padStart(2, '0')}:${minute.toString().padStart(2, '0')}`,
+	            available: true
+	          });
+	        }
+	      }
+	    }
 
     const appointments = await Appointment.findAll({
       where: {

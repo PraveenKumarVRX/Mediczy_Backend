@@ -325,6 +325,17 @@ async function testDoctorAppointments() {
     log('✅ Doctor appointments retrieved successfully', 'green');
     console.log(`   Total appointments: ${result.data.summary.total}`);
     console.log(`   Scheduled: ${result.data.summary.scheduled}`);
+
+    const appointments = result.data.appointments || [];
+    if (appointments.length > 0) {
+      const latest = appointments[0];
+      if (typeof latest.consultationFee === 'undefined') {
+        log('⚠️  Missing consultationFee in doctor appointment payload', 'yellow');
+      }
+      if (latest.appointmentTime && String(latest.appointmentTime).length > 5) {
+        log(`⚠️  appointmentTime is not normalized (got ${latest.appointmentTime})`, 'yellow');
+      }
+    }
   } else {
     log('❌ Failed to retrieve doctor appointments', 'red');
     console.log('   Error:', result.error);

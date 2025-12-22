@@ -1,0 +1,75 @@
+- name: Ensure kafka group exists
+  ansible.builtin.group:
+    name: "{{ kafka_group }}"
+    state: present
+
+- name: Ensure kafka user exists
+  ansible.builtin.user:
+    name: "{{ kafka_user }}"
+    group: "{{ kafka_group }}"
+    create_home: false
+    shell: /usr/sbin/nologin
+    system: true
+
+- name: Create Kafka directories
+  ansible.builtin.file:
+    path: "{{ item }}"
+    state: directory
+    owner: "{{ kafka_user }}"
+    group: "{{ kafka_group }}"
+    mode: '0755'
+  loop:
+    - "{{ kafka_install_root }}"
+    - "{{ kafka_data_dir }}"
+    - "{{ kafka_log_dir }}"
+
+- name: Download Kafka archive
+  ansible.builtin.get_url:
+    url: "{{ kafka_download_base }}/{{ kafka_version }}/kafka_{{ kafka_scala_version }}-{{ kafka_version }}.tgz"
+    dest: "{{ kafka_archive_path }}"
+    mode: '0644'
+
+- name: Unarchive Kafka
+  ansible.builtin.unarchive:
+    src: "{{ kafka_archive_path }}"
+    dest: /opt
+    remote_src: true
+    creates: "{{ kafka_install_root }}/bin/kafka-server-start.sh"
+
+- name: Ensure Kafka tree ownership
+  ansible.builtin.file:
+    path: "{{ kafka_install_root }}"
+    state: directory
+    owner: "{{ kafka_user }}"
+    group: "{{ kafka_group }}"
+    recurse: true
+
+- name: Update Kafka symlink
+  ansible.builtin.file:
+    src: "{{ kafka_install_root }}"
+    dest: "{{ kafka_install_dir }}"
+    state: link
+
+- name: Deploy server.properties
+  ansible.builtin.template:
+    src: server.properties.j2
+    dest: "{{ kafka_install_dir }}/config/server.properties"
+    owner: "{{ kafka_user }}"
+    group: "{{ kafka_group }}"
+    mode: '0640'
+  notify: restart kafka
+
+- name: Install Kafka systemd unit
+  ansible.builtin.template:
+    src: kafka.service.j2
+    dest: "/etc/systemd/system/{{ kafka_service_name }}.service"
+    mode: '0644'
+  notify:
+    - reload kafka systemd
+    - restart kafka
+
+- name: Ensure Kafka service is enabled
+  ansible.builtin.service:
+    name: "{{ kafka_service_name }}"
+    state: started
+    enabled: true

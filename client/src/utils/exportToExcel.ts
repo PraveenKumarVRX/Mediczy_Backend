@@ -1,4 +1,5 @@
-import * as XLSX from 'xlsx';
+import ExcelJS from 'exceljs';
+import { downloadArrayBuffer, downloadText } from './downloadFile';
 
 interface ExportOptions {
   filename?: string;
@@ -18,14 +19,19 @@ export const exportToExcel = (data: any[], options: ExportOptions = {}) => {
     includeTimestamp = true,
   } = options;
 
-  // Create a new workbook
-  const workbook = XLSX.utils.book_new();
+  const workbook = new ExcelJS.Workbook();
+  const worksheet = workbook.addWorksheet(sheetName);
 
-  // Convert data to worksheet
-  const worksheet = XLSX.utils.json_to_sheet(data);
+  const headers = data.length > 0 ? Object.keys(data[0]) : [];
+  worksheet.columns = headers.map((h) => ({
+    header: h,
+    key: h,
+    width: Math.min(60, Math.max(12, h.length + 4))
+  }));
 
-  // Add worksheet to workbook
-  XLSX.utils.book_append_sheet(workbook, worksheet, sheetName);
+  for (const row of data) {
+    worksheet.addRow(row);
+  }
 
   // Generate filename with timestamp if requested
   const timestamp = includeTimestamp
@@ -33,8 +39,13 @@ export const exportToExcel = (data: any[], options: ExportOptions = {}) => {
     : '';
   const finalFilename = `${filename}${timestamp}.xlsx`;
 
-  // Write the file
-  XLSX.writeFile(workbook, finalFilename);
+  workbook.xlsx.writeBuffer().then((buffer) => {
+    downloadArrayBuffer(
+      buffer as ArrayBuffer,
+      finalFilename,
+      'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'
+    );
+  });
 };
 
 /**
@@ -48,14 +59,18 @@ export const exportToCSV = (data: any[], options: ExportOptions = {}) => {
     includeTimestamp = true,
   } = options;
 
-  // Create a new workbook
-  const workbook = XLSX.utils.book_new();
+  const headers = data.length > 0 ? Object.keys(data[0]) : [];
+  const escapeCell = (value: any) => {
+    const raw = value == null ? '' : String(value);
+    const escaped = raw.replace(/"/g, '""');
+    return /[",\n\r]/.test(escaped) ? `"${escaped}"` : escaped;
+  };
 
-  // Convert data to worksheet
-  const worksheet = XLSX.utils.json_to_sheet(data);
-
-  // Add worksheet to workbook
-  XLSX.utils.book_append_sheet(workbook, worksheet, 'Sheet1');
+  const lines: string[] = [];
+  lines.push(headers.map(escapeCell).join(','));
+  for (const row of data) {
+    lines.push(headers.map((h) => escapeCell(row?.[h])).join(','));
+  }
 
   // Generate filename with timestamp if requested
   const timestamp = includeTimestamp
@@ -63,8 +78,7 @@ export const exportToCSV = (data: any[], options: ExportOptions = {}) => {
     : '';
   const finalFilename = `${filename}${timestamp}.csv`;
 
-  // Write the file as CSV
-  XLSX.writeFile(workbook, finalFilename, { bookType: 'csv' });
+  downloadText(lines.join('\n'), finalFilename, 'text/csv;charset=utf-8');
 };
 
 /**

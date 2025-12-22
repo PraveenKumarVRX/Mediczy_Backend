@@ -17,7 +17,7 @@ import { useToast } from "@/hooks/use-toast";
 import { Eye, EyeOff, HeartPulse, Stethoscope } from "lucide-react";
 import { Chrome, Facebook } from "lucide-react";
 import "../index.css";
-import { useLogin } from "../hooks/auth";
+import { useLogin, clearAuthTokens } from "@/hooks/auth";
 import { initializeFirebaseMessaging } from "@/lib/firebase-config";
 
 const API_BASE_URL =
@@ -39,15 +39,6 @@ const DoctorLogin = () => {
 
   // Check if already authenticated
   useEffect(() => {
-    // Clear any other role tokens that might interfere
-    localStorage.removeItem('adminToken');
-    localStorage.removeItem('teamToken');
-    localStorage.removeItem('nurseToken');
-    localStorage.removeItem('assistantToken');
-    localStorage.removeItem('corporateToken');
-    localStorage.removeItem('token');
-    localStorage.removeItem('userType');
-
     const token = localStorage.getItem('doctorToken');
     if (token) {
       console.log('✅ Doctor already authenticated, redirecting...');
@@ -75,22 +66,41 @@ const DoctorLogin = () => {
     window.location.href = oauthUrl;
   };
 
+  const establishDoctorSession = (token: string, doctorProfile?: any) => {
+    clearAuthTokens();
+    localStorage.setItem('doctorToken', token);
+    localStorage.setItem('token', token);
+    localStorage.setItem('userType', 'doctor');
+    if (doctorProfile) {
+      localStorage.setItem('doctorData', JSON.stringify({
+        id: doctorProfile.id,
+        email: doctorProfile.email,
+        firstName: doctorProfile.firstName,
+        lastName: doctorProfile.lastName,
+        specialty: doctorProfile.specialty,
+      }));
+    } else {
+      localStorage.removeItem('doctorData');
+    }
+    window.dispatchEvent(new Event('authChange'));
+  };
+
   const onSubmit = (values: { email: string; password: string }) => {
     // Dev bypass for testing
     const emailLower = values.email.toLowerCase().trim();
-    if (emailLower === 'doctor@mediczy.com' && values.password === 'Doctor123') {
+    if (
+      import.meta.env.DEV &&
+      emailLower === 'doctor@mediczy.com' &&
+      values.password === 'Doctor123'
+    ) {
       console.log('🚀 Doctor: Using quick authentication bypass');
-      
-      localStorage.setItem('token', 'dev-doctor-token');
-      localStorage.setItem('userType', 'doctor');
-      localStorage.setItem('doctorToken', 'dev-doctor-token');
-      localStorage.setItem('doctorData', JSON.stringify({
+      establishDoctorSession('dev-doctor-token', {
         id: 'doctor_dev',
         email: 'doctor@mediczy.com',
         firstName: 'John',
         lastName: 'Smith',
         specialty: 'General Medicine'
-      }));
+      });
       
       toast({
         title: "Success",
@@ -245,7 +255,15 @@ const DoctorLogin = () => {
                 name="password"
                 render={({ field }) => (
                   <FormItem>
-                    <FormLabel>Password</FormLabel>
+                    <div className="flex items-center justify-between">
+                      <FormLabel>Password</FormLabel>
+                      <Link
+                        to="/forgot-password?type=doctor"
+                        className="text-xs text-primary hover:underline"
+                      >
+                        Forgot password?
+                      </Link>
+                    </div>
                     <div className="relative">
                       <FormControl>
                         <Input
@@ -258,13 +276,14 @@ const DoctorLogin = () => {
                       </FormControl>
                       <button
                         type="button"
-                        className="absolute right-2 top-1/2 transform -translate-y-1/2"
+                        className="absolute right-2 top-1/2 -translate-y-1/2 rounded-md p-1 text-muted-foreground hover:text-foreground focus:outline-none focus-visible:ring-2 focus-visible:ring-primary transition"
                         onClick={() => setShowPassword(!showPassword)}
+                        aria-label={showPassword ? "Hide password" : "Show password"}
                       >
                         {showPassword ? (
-                          <EyeOff className="h-4 w-4" />
+                          <EyeOff className="h-4 w-4" aria-hidden="true" />
                         ) : (
-                          <Eye className="h-4 w-4" />
+                          <Eye className="h-4 w-4" aria-hidden="true" />
                         )}
                       </button>
                     </div>
@@ -320,6 +339,16 @@ const DoctorLogin = () => {
                 Admin Login
               </Link>
             </div>
+          </div>
+
+          <div className="text-center text-xs text-muted-foreground">
+            Trouble signing in?{" "}
+            <a
+              href="mailto:support@mediczy.com?subject=Doctor%20Portal%20Login%20Help"
+              className="font-semibold underline underline-offset-2 hover:text-primary"
+            >
+              Contact support
+            </a>
           </div>
         </div>
       </div>

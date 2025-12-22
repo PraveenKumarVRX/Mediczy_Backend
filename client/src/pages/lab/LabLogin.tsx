@@ -7,6 +7,7 @@ import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/com
 import { Alert, AlertDescription } from '@/components/ui/alert';
 import { FlaskConical, Eye, EyeOff, Activity, Lock, ArrowRight, CheckCircle2 } from 'lucide-react';
 import api from '@/utils/api';
+import { clearAuthTokens } from '@/hooks/auth';
 
 const LabLogin = () => {
   const [email, setEmail] = useState('');
@@ -33,45 +34,61 @@ const LabLogin = () => {
     setIsCheckingAuth(false);
   }, [navigate]);
 
+  const establishLabSession = (token: string, labProfile?: any) => {
+    clearAuthTokens();
+    localStorage.setItem('labToken', token);
+    localStorage.setItem('token', token);
+    localStorage.setItem('userType', 'lab');
+    if (labProfile) {
+      localStorage.setItem('labData', JSON.stringify({
+        id: labProfile.id,
+        email: labProfile.email,
+        name: labProfile.name || labProfile.labName,
+        license: labProfile.licenseNumber,
+      }));
+      if (labProfile.id) {
+        localStorage.setItem('userId', String(labProfile.id));
+      }
+    } else {
+      localStorage.removeItem('labData');
+      localStorage.removeItem('userId');
+    }
+    window.dispatchEvent(new CustomEvent('authChange'));
+  };
+
   const onSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setError(null);
     setLoading(true);
     
     console.log('Lab login attempt:', { email, password: '***' });
-    
-    // Development mode bypass - allows login without backend
-    if (email === 'lab@mediczy.com' && password === 'Lab123') {
-      console.log('🚀 Development mode: Using quick authentication bypass');
-      
-      localStorage.removeItem('token');
-      localStorage.removeItem('userType');
-      
-      localStorage.setItem('labToken', 'dev-lab-token');
-      localStorage.setItem('labData', JSON.stringify({
+
+    if (
+      import.meta.env.DEV &&
+      email === 'lab@mediczy.com' &&
+      password === 'Lab123'
+    ) {
+      console.log('🚀 Lab dev shortcut engaged');
+      establishLabSession('dev-lab-token', {
         id: 'lab_dev',
         email: 'lab@mediczy.com',
-        name: 'Sample Diagnostic Lab',
-        type: 'Diagnostic Center'
-      }));
-      
+        name: 'Demo Lab',
+      });
       setLoading(false);
-      navigate('/lab/dashboard');
+      navigate('/lab/dashboard', { replace: true });
       return;
     }
     
+    let timeoutId: ReturnType<typeof setTimeout> | null = null;
     try {
       const controller = new AbortController();
-      const timeoutId = setTimeout(() => controller.abort(), 10000);
+      timeoutId = setTimeout(() => controller.abort(), 10000);
 
       const { data } = await api.post('/lab/login', { email, password }, { signal: controller.signal, skipAuth: true });
 
-      clearTimeout(timeoutId);
-
-      localStorage.setItem('labToken', data.token);
-      localStorage.setItem('labData', JSON.stringify(data.lab));
-      
-      navigate('/lab/dashboard');
+      establishLabSession(data.token, data.lab);
+      navigate('/lab/dashboard', { replace: true });
+      if (timeoutId) clearTimeout(timeoutId);
     } catch (err: any) {
       console.error('Lab login error:', err);
       if (err?.name === 'AbortError' || err?.code === 'ERR_CANCELED') {
@@ -80,6 +97,7 @@ const LabLogin = () => {
         setError(err?.response?.data?.message || err?.message || 'Login failed. Please check your credentials.');
       }
     } finally {
+      if (timeoutId) clearTimeout(timeoutId);
       setLoading(false);
     }
   };
@@ -123,7 +141,7 @@ const LabLogin = () => {
           <CardContent>
             <form onSubmit={onSubmit} className="space-y-6">
               {error && (
-                <Alert variant="destructive" className="animate-in slide-in-from-top-2">
+                <Alert variant="destructive" className="animate-in slide-in-from-top-2" role="alert">
                   <AlertDescription className="flex items-center gap-2">
                     <Lock className="h-4 w-4" />
                     {error}
@@ -166,9 +184,10 @@ const LabLogin = () => {
                     <button
                       type="button"
                       onClick={() => setShowPassword(!showPassword)}
-                      className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-500 hover:text-gray-700 transition-colors"
+                      className="absolute right-3 top-1/2 -translate-y-1/2 rounded-md p-1 text-gray-500 hover:text-gray-700 focus:outline-none focus-visible:ring-2 focus-visible:ring-lime-500 transition-colors"
+                      aria-label={showPassword ? 'Hide password' : 'Show password'}
                     >
-                      {showPassword ? <EyeOff className="h-5 w-5" /> : <Eye className="h-5 w-5" />}
+                      {showPassword ? <EyeOff className="h-5 w-5" aria-hidden="true" /> : <Eye className="h-5 w-5" aria-hidden="true" />}
                     </button>
                   </div>
                 </div>

@@ -10,6 +10,7 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '.
 import { Label } from '../../components/ui/label';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '../../components/ui/select';
 import { parseExcelFile, downloadExcelTemplate } from '../../utils/excelParser';
+import { useToast } from '../../hooks/use-toast';
 import {
   Upload,
   Download,
@@ -192,6 +193,7 @@ const renderStars = (rating?: number) => {
 };
 
 const PharmaciesManagement = () => {
+  const { toast } = useToast();
   const [activeTab, setActiveTab] = useState('chains');
   const [error, setError] = useState<string | null>(null);
   const [result, setResult] = useState<{ message: string; count?: number } | null>(null);
@@ -346,10 +348,10 @@ const PharmaciesManagement = () => {
                       })}
                     </div>
                     <div className="flex items-center gap-2">
-                      <Button size="sm" variant="outline" onClick={() => alert(`Viewing ${chain.name}\n\nHeadquarters: ${chain.headquarters.city}, ${chain.headquarters.state}\nBranches: ${chain.branches.length}\nEstablished: ${chain.establishedYear || 'N/A'}`)}>
+                      <Button size="sm" variant="outline" onClick={() => toast({ title: chain.name, description: `Headquarters: ${chain.headquarters.city}, ${chain.headquarters.state} • Branches: ${chain.branches.length} • Established: ${chain.establishedYear || 'N/A'}` })}>
                         <Eye className="h-3 w-3 mr-2" /> View
                       </Button>
-                      <Button size="sm" variant="outline" onClick={() => alert(`Edit functionality for ${chain.name} coming soon!`)}>
+                      <Button size="sm" variant="outline" onClick={() => toast({ title: "Coming Soon", description: `Edit functionality for ${chain.name} coming soon!` })}>
                         <Edit className="h-3 w-3 mr-2" /> Edit
                       </Button>
                     </div>
@@ -450,9 +452,9 @@ const PharmaciesManagement = () => {
                             </TableCell>
                             <TableCell>
                               <div className="flex items-center gap-2">
-                                <Button size="sm" variant="outline" className="h-8 w-8 p-0" title="View" onClick={() => alert(`Viewing ${chain.name}\n\nHeadquarters: ${chain.headquarters.city}, ${chain.headquarters.state}\nBranches: ${chain.branches.length}\nEstablished: ${chain.establishedYear || 'N/A'}`)}><Eye className="h-3 w-3" /></Button>
-                                <Button size="sm" variant="outline" className="h-8 w-8 p-0" title="Edit" onClick={() => alert(`Edit functionality for ${chain.name} coming soon!`)}><Edit className="h-3 w-3" /></Button>
-                                <Button size="sm" variant="outline" className="h-8 w-8 p-0 text-red-600 hover:text-red-700" title="Delete" onClick={() => alert(`Delete functionality for ${chain.name} coming soon!`)}><Trash2 className="h-3 w-3" /></Button>
+                                <Button size="sm" variant="outline" className="h-8 w-8 p-0" title="View" onClick={() => toast({ title: chain.name, description: `Headquarters: ${chain.headquarters.city}, ${chain.headquarters.state} • Branches: ${chain.branches.length} • Established: ${chain.establishedYear || 'N/A'}` })}><Eye className="h-3 w-3" /></Button>
+                                <Button size="sm" variant="outline" className="h-8 w-8 p-0" title="Edit" onClick={() => toast({ title: "Coming Soon", description: `Edit functionality for ${chain.name} coming soon!` })}><Edit className="h-3 w-3" /></Button>
+                                <Button size="sm" variant="outline" className="h-8 w-8 p-0 text-red-600 hover:text-red-700" title="Delete" onClick={() => toast({ title: "Coming Soon", description: `Delete functionality for ${chain.name} coming soon!`, variant: "destructive" })}><Trash2 className="h-3 w-3" /></Button>
                               </div>
                             </TableCell>
                           </TableRow>
@@ -493,9 +495,9 @@ const PharmaciesManagement = () => {
                               </TableCell>
                               <TableCell>
                                 <div className="flex items-center gap-2">
-                                  <Button size="sm" variant="outline" className="h-8 w-8 p-0" title="View" onClick={() => alert(`Viewing ${branch.name}\n\nAddress: ${branch.address.street ? branch.address.street + ', ' : ''}${branch.address.city}, ${branch.address.state}\nPhone: ${branch.phoneNumber || 'N/A'}\nEmail: ${branch.email || 'N/A'}\nHours: ${branch.operatingHours || 'N/A'}\nRating: ${branch.rating || 'N/A'}`)}><Eye className="h-3 w-3" /></Button>
-                                  <Button size="sm" variant="outline" className="h-8 w-8 p-0" title="Edit" onClick={() => alert(`Edit functionality for ${branch.name} coming soon!`)}><Edit className="h-3 w-3" /></Button>
-                                  <Button size="sm" variant="outline" className="h-8 w-8 p-0 text-red-600 hover:text-red-700" title="Delete" onClick={() => alert(`Delete functionality for ${branch.name} coming soon!`)}><Trash2 className="h-3 w-3" /></Button>
+                                  <Button size="sm" variant="outline" className="h-8 w-8 p-0" title="View" onClick={() => toast({ title: branch.name, description: `${branch.address.street ? branch.address.street + ', ' : ''}${branch.address.city}, ${branch.address.state} • Phone: ${branch.phoneNumber || 'N/A'} • Hours: ${branch.operatingHours || 'N/A'}` })}><Eye className="h-3 w-3" /></Button>
+                                  <Button size="sm" variant="outline" className="h-8 w-8 p-0" title="Edit" onClick={() => toast({ title: "Coming Soon", description: `Edit functionality for ${branch.name} coming soon!` })}><Edit className="h-3 w-3" /></Button>
+                                  <Button size="sm" variant="outline" className="h-8 w-8 p-0 text-red-600 hover:text-red-700" title="Delete" onClick={() => toast({ title: "Coming Soon", description: `Delete functionality for ${branch.name} coming soon!`, variant: "destructive" })}><Trash2 className="h-3 w-3" /></Button>
                                 </div>
                               </TableCell>
                             </TableRow>
@@ -560,9 +562,9 @@ const PharmaciesManagement = () => {
             <Card>
               <CardHeader><CardTitle>Bulk Upload via Excel</CardTitle></CardHeader>
               <CardContent className="space-y-4">
-                <p className="text-sm text-muted-foreground">Upload an Excel file (.xlsx, .xls) with pharmacy branch records.</p>
+                <p className="text-sm text-muted-foreground">Upload an Excel file (.xlsx) with pharmacy branch records.</p>
                 <div className="flex items-center gap-4">
-                  <Input ref={fileInputRef} type="file" accept=".xlsx,.xls" onChange={handleExcelUpload} />
+                  <Input ref={fileInputRef} type="file" accept=".xlsx" onChange={handleExcelUpload} />
                   <Button variant="outline" onClick={() => fileInputRef.current?.click()}>
                     <FileSpreadsheet className="mr-2 h-4 w-4" /> Choose File
                   </Button>

@@ -1,0 +1,164 @@
+{
+  "name": "SIB: Email Notification",
+  "nodes": [
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "notification-email",
+        "options": {}
+      },
+      "id": "webhook-email",
+      "name": "Webhook - Email Trigger",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 1,
+      "position": [250, 300],
+      "webhookId": "sib-notification-email"
+    },
+    {
+      "parameters": {
+        "fromEmail": "{{$node[\"Webhook - Email Trigger\"].json[\"data\"][\"from\"] || \"noreply@mediczy.com\"}}",
+        "toEmail": "={{$node[\"Webhook - Email Trigger\"].json[\"data\"][\"to\"]}}",
+        "subject": "={{$node[\"Webhook - Email Trigger\"].json[\"data\"][\"subject\"]}}",
+        "emailType": "html",
+        "message": "={{$node[\"Webhook - Email Trigger\"].json[\"data\"][\"body\"] || $node[\"Webhook - Email Trigger\"].json[\"data\"][\"html\"]}}",
+        "options": {
+          "ccEmail": "",
+          "bccEmail": "",
+          "replyTo": "support@mediczy.com"
+        }
+      },
+      "id": "send-email",
+      "name": "Send Email",
+      "type": "n8n-nodes-base.emailSend",
+      "typeVersion": 2,
+      "position": [500, 300],
+      "credentials": {
+        "smtp": {
+          "id": "1",
+          "name": "SMTP Account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "url": "http://localhost:3000/api/notifications/log",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            }
+          ]
+        },
+        "sendBody": true,
+        "bodyParameters": {
+          "parameters": [
+            {
+              "name": "channel",
+              "value": "email"
+            },
+            {
+              "name": "patient_id",
+              "value": "={{$node[\"Webhook - Email Trigger\"].json[\"data\"][\"patient_id\"]}}"
+            },
+            {
+              "name": "status",
+              "value": "={{$node[\"Send Email\"].json[\"success\"] ? \"delivered\" : \"failed\"}}"
+            },
+            {
+              "name": "sent_at",
+              "value": "={{new Date().toISOString()}}"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "log-notification",
+      "name": "Log to Database",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4,
+      "position": [750, 300]
+    },
+    {
+      "parameters": {
+        "values": {
+          "string": [
+            {
+              "name": "status",
+              "value": "success"
+            },
+            {
+              "name": "channel",
+              "value": "email"
+            },
+            {
+              "name": "recipient",
+              "value": "={{$node[\"Webhook - Email Trigger\"].json[\"data\"][\"to\"]}}"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "response",
+      "name": "Respond to Webhook",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3,
+      "position": [1000, 300]
+    }
+  ],
+  "connections": {
+    "Webhook - Email Trigger": {
+      "main": [
+        [
+          {
+            "node": "Send Email",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Send Email": {
+      "main": [
+        [
+          {
+            "node": "Log to Database",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Log to Database": {
+      "main": [
+        [
+          {
+            "node": "Respond to Webhook",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": true,
+  "settings": {
+    "executionOrder": "v1"
+  },
+  "versionId": "1",
+  "id": "sib-notification-email",
+  "meta": {
+    "instanceId": "mediczy-n8n"
+  },
+  "tags": [
+    {
+      "name": "sib-automation"
+    },
+    {
+      "name": "notifications"
+    }
+  ]
+}

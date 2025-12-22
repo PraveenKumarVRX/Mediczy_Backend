@@ -1,0 +1,12 @@
+redis_bind_address: 0.0.0.0
+redis_allocate_hugepages: false
+redis_tls_enabled: false
+redis_requirepass: "{{ redis_password }}"
+redis_acl_rules:
+  - name: mediczy_ai
+    rules: "on >mediczy_helper ~* +@all"
+redis_persistence:
+  rdb: true
+  aof: false
+redis_systemd_limits:
+  LimitNOFILE: 65535

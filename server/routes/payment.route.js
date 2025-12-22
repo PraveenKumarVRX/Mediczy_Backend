@@ -44,6 +44,11 @@ router.get('/gateways', authUser, (req, res) => {
   paymentController.getGateways(req, res);
 });
 
+// Create payment gateway
+router.post('/gateways', authUser, (req, res) => {
+  paymentController.createGateway(req, res);
+});
+
 // Update gateway configuration
 router.put('/gateways/:id', authUser, (req, res) => {
   paymentController.updateGateway(req, res);

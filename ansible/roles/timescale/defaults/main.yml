@@ -1,0 +1,7 @@
+timescale_packages:
+  - "postgresql-{{ pg_version }}-timescaledb-2"
+timescale_conf_path: "/etc/postgresql/{{ pg_version }}/main/conf.d/timescale.conf"
+timescale_max_background_workers: 8
+timescale_telemetry_level: off
+timescale_databases: []
+timescale_hypertables: []

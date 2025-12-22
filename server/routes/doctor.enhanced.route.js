@@ -7,6 +7,7 @@ import jwt from 'jsonwebtoken';
 import multer from 'multer';
 import path from 'path';
 import fs from 'fs';
+import { postgresSequelize as sequelize } from '../db/postgres-sequelize.js';
 
 const router = express.Router();
 
@@ -117,19 +118,24 @@ router.post('/register', [
  * @desc    Doctor login
  * @access  Public
  */
-console.log('⭐ Registering POST /login route...');
 router.post('/login', async (req, res) => {
-  console.log('⭐⭐⭐ INSIDE LOGIN HANDLER');
   try {
-    console.log('🟡 [Doctor Login] Request received');
     const { email, password } = req.body;
-    console.log('🟡 [Doctor Login] Email:', email);
-    console.log('🟡 [Doctor Login] doctorModel:', typeof doctorModel, !!doctorModel);
+
+    if (!email || !password) {
+      return res.status(400).json({
+        success: false,
+        message: 'Email and password are required'
+      });
+    }
     
-    // Find doctor
-    console.log('🟡 [Doctor Login] Calling doctorModel.findOne...');
-    const doctor = await doctorModel.findOne({ where: { email } });
-    console.log('🟡 [Doctor Login] findOne returned:', !!doctor);
+    // Find doctor (case-insensitive email)
+    const doctor = await doctorModel.findOne({ 
+      where: sequelize.where(
+        sequelize.fn('LOWER', sequelize.col('email')),
+        sequelize.fn('LOWER', email)
+      )
+    });
     if (!doctor) {
       return res.status(401).json({
         success: false,
@@ -138,7 +144,9 @@ router.post('/login', async (req, res) => {
     }
 
     // Verify password
-    const isValidPassword = await bcrypt.compare(password, doctor.password);
+    const isValidPassword = typeof doctor.comparePassword === 'function'
+      ? await doctor.comparePassword(password)
+      : await bcrypt.compare(password, doctor.password);
     if (!isValidPassword) {
       return res.status(401).json({
         success: false,
@@ -147,21 +155,29 @@ router.post('/login', async (req, res) => {
     }
 
     // Update last login
-    await doctorModel.update(doctor.id, {
-      ...doctor,
-      lastLoginAt: new Date().toISOString()
-    });
+    try {
+      if (typeof doctor.update === 'function') {
+        await doctor.update({ lastLoginAt: new Date() });
+      } else if (typeof doctor.save === 'function') {
+        doctor.lastLoginAt = new Date();
+        await doctor.save();
+      }
+    } catch (updateError) {
+      console.warn('Doctor lastLoginAt update failed:', updateError.message);
+    }
 
     // Generate token
-    const token = jwt.sign(
-      { 
-        id: doctor.id, 
-        email: doctor.email, 
-        role: 'doctor' 
-      },
-      process.env.JWT_SECRET,
-      { expiresIn: '7d' }
-    );
+    const token = typeof doctor.generateAuthToken === 'function'
+      ? doctor.generateAuthToken()
+      : jwt.sign(
+          { 
+            id: doctor.id, 
+            email: doctor.email, 
+            role: 'doctor' 
+          },
+          process.env.JWT_SECRET,
+          { expiresIn: '7d' }
+        );
 
     res.json({
       success: true,

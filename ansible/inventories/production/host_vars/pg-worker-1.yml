@@ -1,0 +1,7 @@
+ansible_host: 10.0.0.21
+worker_az: a
+worker_storage_device: /dev/nvme1n1
+worker_mountpoint: /data/postgresql
+worker_labels:
+  - rack=a
+  - purpose=helper

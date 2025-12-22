@@ -1,7 +1,8 @@
 import passport from 'passport';
 import { Strategy as GoogleStrategy } from 'passport-google-oauth20';
 import { Strategy as FacebookStrategy } from 'passport-facebook';
-import User from '../models/user.model.mariadb.js';
+import { User } from '../models/user.model.intelligent.js';
+import { processOAuthProfilePicture } from '../utils/oauth-profile-picture.js';
 
 /**
  * OAuth2 Configuration for Mediczy
@@ -59,6 +60,16 @@ async function findOrCreateUser(profile, provider) {
       }
     }
     
+    // Download and save profile picture
+    let profileImagePath = null;
+    if (user) {
+      profileImagePath = await processOAuthProfilePicture(profile, user.id, provider);
+      if (profileImagePath) {
+        await user.update({ profileImage: profileImagePath });
+        console.log(`✅ Updated profile picture from ${provider} for user ${user.id}`);
+      }
+    }
+    
     // If still no user, create new one
     if (!user) {
       console.log(`✨ Creating new user from ${provider} OAuth: ${email}`);
@@ -77,12 +88,18 @@ async function findOrCreateUser(profile, provider) {
         [oauthIdField]: profile.id,
         oauthProvider: provider,
         emailVerified: true, // OAuth emails are pre-verified
-        profilePhoto: profile.photos && profile.photos[0] ? profile.photos[0].value : null,
         phoneNumber: '', // Will be added by user later
         dateOfBirth: new Date('1990-01-01'), // Placeholder, will be updated by user
         gender: 'Other', // Will be updated by user
         status: 'active'
       });
+      
+      // Download and save profile picture for new user
+      profileImagePath = await processOAuthProfilePicture(profile, user.id, provider);
+      if (profileImagePath) {
+        await user.update({ profileImage: profileImagePath });
+        console.log(`✅ Saved profile picture from ${provider} for new user ${user.id}`);
+      }
     }
     
     return user;
@@ -155,7 +172,7 @@ if (config.facebook.clientID && config.facebook.clientSecret) {
  * Serialize user for session (if using sessions)
  */
 passport.serializeUser((userData, done) => {
-  done(null, userData.user.userId);
+  done(null, userData.user.id);
 });
 
 /**

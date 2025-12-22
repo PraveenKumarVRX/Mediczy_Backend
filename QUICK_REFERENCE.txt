@@ -1,0 +1,128 @@
+╔════════════════════════════════════════════════════════════════════╗
+║         GOOGLE FIT OAUTH - QUICK REFERENCE CARD                    ║
+║         Keep this open while configuring!                          ║
+╚════════════════════════════════════════════════════════════════════╝
+
+┌────────────────────────────────────────────────────────────────────┐
+│ YOUR CREDENTIALS                                                   │
+├────────────────────────────────────────────────────────────────────┤
+│ Project ID:     mediczy-624ed                                      │
+│ OAuth Client:   982376166047-j975co5qc5enqhcesggbsee3obnj7tqa.    │
+│                 apps.googleusercontent.com                         │
+└────────────────────────────────────────────────────────────────────┘
+
+┌────────────────────────────────────────────────────────────────────┐
+│ STEP 1: ADD THESE 5 SCOPES (Copy & Paste Each)                    │
+├────────────────────────────────────────────────────────────────────┤
+│ 1. https://www.googleapis.com/auth/fitness.activity.read          │
+│ 2. https://www.googleapis.com/auth/fitness.heart_rate.read        │
+│ 3. https://www.googleapis.com/auth/fitness.sleep.read             │
+│ 4. https://www.googleapis.com/auth/fitness.body.read              │
+│ 5. https://www.googleapis.com/auth/fitness.location.read          │
+├────────────────────────────────────────────────────────────────────┤
+│ Where: OAuth Consent Screen > Edit App > Scopes > Add/Remove      │
+│ Link:  https://console.cloud.google.com/apis/credentials/consent  │
+└────────────────────────────────────────────────────────────────────┘
+
+┌────────────────────────────────────────────────────────────────────┐
+│ STEP 2: ADD JAVASCRIPT ORIGINS (Copy & Paste Both)                │
+├────────────────────────────────────────────────────────────────────┤
+│ 1. http://localhost:9443                                           │
+│ 2. https://mediqzy.com                                             │
+├────────────────────────────────────────────────────────────────────┤
+│ Where: Credentials > Edit OAuth Client > JavaScript origins       │
+│ Link:  https://console.cloud.google.com/apis/credentials          │
+└────────────────────────────────────────────────────────────────────┘
+
+┌────────────────────────────────────────────────────────────────────┐
+│ STEP 3: ADD REDIRECT URIs (Copy & Paste Both)                     │
+├────────────────────────────────────────────────────────────────────┤
+│ 1. http://localhost:9443                                           │
+│ 2. https://mediqzy.com                                             │
+├────────────────────────────────────────────────────────────────────┤
+│ Where: Same page as Step 2 > Redirect URIs section                │
+│ IMPORTANT: NO trailing slash (/)                                  │
+└────────────────────────────────────────────────────────────────────┘
+
+┌────────────────────────────────────────────────────────────────────┐
+│ COMMON MISTAKES - AVOID THESE!                                    │
+├────────────────────────────────────────────────────────────────────┤
+│ ❌ https://mediqzy.com/     (has trailing slash)                  │
+│ ✅ https://mediqzy.com      (correct)                              │
+│                                                                    │
+│ ❌ HTTPS://Mediqzy.com      (wrong case)                           │
+│ ✅ https://mediqzy.com      (correct - all lowercase)              │
+│                                                                    │
+│ ❌ http://mediqzy.com       (wrong protocol for production)        │
+│ ✅ https://mediqzy.com      (correct - https for production)       │
+│                                                                    │
+│ ❌ Adding only 4 scopes     (missing one)                          │
+│ ✅ All 5 scopes added       (correct)                              │
+└────────────────────────────────────────────────────────────────────┘
+
+┌────────────────────────────────────────────────────────────────────┐
+│ BROWSER POPUP SETTINGS                                             │
+├────────────────────────────────────────────────────────────────────┤
+│ Chrome:  chrome://settings/content/popups                          │
+│          Add: https://mediqzy.com                                  │
+│                                                                    │
+│ Firefox: about:preferences#privacy                                 │
+│          Permissions > Pop-ups > Exceptions                        │
+│          Add: https://mediqzy.com                                  │
+└────────────────────────────────────────────────────────────────────┘
+
+┌────────────────────────────────────────────────────────────────────┐
+│ TEST YOUR CONFIGURATION                                            │
+├────────────────────────────────────────────────────────────────────┤
+│ Test Tool: https://mediqzy.com/test-google-fit-config.html        │
+│                                                                    │
+│ Expected Result:                                                   │
+│ ✅ Popup opens                                                     │
+│ ✅ Shows "Mediczy Healthcare Platform"                             │
+│ ✅ Lists 5 permissions                                             │
+│ ✅ Click "Allow" → Success                                         │
+└────────────────────────────────────────────────────────────────────┘
+
+┌────────────────────────────────────────────────────────────────────┐
+│ TROUBLESHOOTING                                                    │
+├────────────────────────────────────────────────────────────────────┤
+│ Error "invalid_client"                                             │
+│ → Check Client ID matches exactly (including .apps.google...)     │
+│                                                                    │
+│ Error "redirect_uri_mismatch"                                      │
+│ → Check URIs have NO trailing slash                               │
+│ → Check protocol is correct (http vs https)                       │
+│                                                                    │
+│ Error "access_denied"                                              │
+│ → Check all 5 scopes are added                                    │
+│ → User must click "Allow" not "Deny"                              │
+│                                                                    │
+│ Popup blocked                                                      │
+│ → Allow popups for mediqzy.com in browser settings                │
+└────────────────────────────────────────────────────────────────────┘
+
+┌────────────────────────────────────────────────────────────────────┐
+│ CHECKLIST - Mark ✓ when done                                      │
+├────────────────────────────────────────────────────────────────────┤
+│ [ ] Opened OAuth Consent Screen link                              │
+│ [ ] Clicked "EDIT APP"                                            │
+│ [ ] Went to Scopes section                                        │
+│ [ ] Added all 5 fitness scopes                                    │
+│ [ ] Clicked UPDATE and SAVE                                       │
+│ [ ] Opened Credentials page                                       │
+│ [ ] Found and edited OAuth Client ID                              │
+│ [ ] Added 2 JavaScript origins                                    │
+│ [ ] Added 2 Redirect URIs                                         │
+│ [ ] Clicked SAVE                                                  │
+│ [ ] Allowed popups in browser                                     │
+│ [ ] Tested with test tool                                         │
+│ [ ] Got success message                                           │
+└────────────────────────────────────────────────────────────────────┘
+
+═══════════════════════════════════════════════════════════════════
+Need detailed instructions? 
+→ cat /home/ubuntu/Mediczy/STEP_BY_STEP_OAUTH_GUIDE.md
+
+Need to verify your setup?
+→ bash /home/ubuntu/Mediczy/verify-my-config.sh
+═══════════════════════════════════════════════════════════════════

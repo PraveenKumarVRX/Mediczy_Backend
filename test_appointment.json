@@ -1,0 +1,8 @@
+{
+  "doctorId": 1,
+  "appointmentDate": "2025-12-21",
+  "appointmentTime": "14:00",
+  "consultationType": "online",
+  "symptoms": "Testing video consultation system",
+  "reason": "Test appointment for calendar sync verification"
+}

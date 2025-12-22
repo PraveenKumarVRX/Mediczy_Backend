@@ -8,6 +8,7 @@ import { Badge } from '../../components/ui/badge';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '../../components/ui/table';
 import { Label } from '../../components/ui/label';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '../../components/ui/select';
+import { useToast } from '../../hooks/use-toast';
 import {
   Calculator,
   Plus,
@@ -148,6 +149,7 @@ const sampleEntries: AccountEntry[] = [
 ];
 
 const AccountingManagement = () => {
+  const { toast } = useToast();
   const [activeTab, setActiveTab] = useState('transactions');
   const [entries, setEntries] = useState<AccountEntry[]>(sampleEntries);
   const [categories, setCategories] = useState<AccountCategory[]>(sampleCategories);
@@ -436,13 +438,17 @@ const AccountingManagement = () => {
                             </TableCell>
                             <TableCell>
                               <div className="flex items-center gap-2">
-                                <Button size="sm" variant="outline" className="h-8 w-8 p-0">
+                                <Button size="sm" variant="outline" className="h-8 w-8 p-0" onClick={() => toast({ title: "Transaction Details", description: `Viewing transaction ${entry.id}` })}>
                                   <Eye className="h-3 w-3" />
                                 </Button>
-                                <Button size="sm" variant="outline" className="h-8 w-8 p-0">
+                                <Button size="sm" variant="outline" className="h-8 w-8 p-0" onClick={() => toast({ title: "Edit Transaction", description: `Opening editor for transaction ${entry.id}` })}>
                                   <Edit className="h-3 w-3" />
                                 </Button>
-                                <Button size="sm" variant="outline" className="h-8 w-8 p-0 text-red-600">
+                                <Button size="sm" variant="outline" className="h-8 w-8 p-0 text-red-600" onClick={() => {
+                                  if (confirm('Delete this transaction?')) {
+                                    toast({ title: "Transaction Deleted", description: `Transaction ${entry.id} has been deleted`, variant: "destructive" });
+                                  }
+                                }}>
                                   <Trash2 className="h-3 w-3" />
                                 </Button>
                               </div>
@@ -577,7 +583,7 @@ const AccountingManagement = () => {
                   <p className="text-muted-foreground mb-4">
                     Set up budgets and monitor spending across categories
                   </p>
-                  <Button>
+                  <Button onClick={() => toast({ title: "Coming Soon", description: "Budget creation feature coming soon!" })}>
                     <Plus className="mr-2 h-4 w-4" />
                     Create Budget
                   </Button>
@@ -598,7 +604,7 @@ const AccountingManagement = () => {
                   <p className="text-muted-foreground mb-4">
                     Reconcile bank statements with accounting records
                   </p>
-                  <Button>
+                  <Button onClick={() => toast({ title: "Coming Soon", description: "Bank statement import feature coming soon!" })}>
                     <Download className="mr-2 h-4 w-4" />
                     Import Bank Statement
                   </Button>

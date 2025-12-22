@@ -1,0 +1,75 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Clear Mediczy Tokens</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            max-width: 600px;
+            margin: 50px auto;
+            padding: 20px;
+            background: #f5f5f5;
+        }
+        .card {
+            background: white;
+            padding: 30px;
+            border-radius: 8px;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+        }
+        button {
+            background: #4CAF50;
+            color: white;
+            border: none;
+            padding: 12px 24px;
+            font-size: 16px;
+            border-radius: 4px;
+            cursor: pointer;
+            width: 100%;
+            margin-top: 10px;
+        }
+        button:hover { background: #45a049; }
+        .success { color: green; margin-top: 15px; }
+        .info { color: #666; margin-top: 10px; font-size: 14px; }
+    </style>
+</head>
+<body>
+    <div class="card">
+        <h2>🔧 Clear Mediczy Authentication Tokens</h2>
+        <p>This will clear all old tokens from your browser and force a fresh login.</p>
+        
+        <button onclick="clearTokens()">Clear All Tokens</button>
+        
+        <div id="result"></div>
+        
+        <div class="info">
+            <p><strong>After clearing tokens:</strong></p>
+            <ol>
+                <li>Close this page</li>
+                <li>Go back to your Mediczy application</li>
+                <li>Log in again with: assistant@mediczy.com / AssistantPass123</li>
+                <li>Open Chat → Team tab and click Refresh</li>
+            </ol>
+        </div>
+    </div>
+    
+    <script>
+        function clearTokens() {
+            const tokens = ['adminToken', 'userToken', 'nurseToken', 'assistantToken', 'doctorToken'];
+            
+            tokens.forEach(token => {
+                localStorage.removeItem(token);
+            });
+            
+            // Also clear any user data
+            localStorage.removeItem('nurseData');
+            localStorage.removeItem('assistantData');
+            localStorage.removeItem('doctorData');
+            localStorage.removeItem('userData');
+            localStorage.removeItem('adminData');
+            
+            document.getElementById('result').innerHTML = 
+                '<div class="success">✅ All tokens cleared successfully!<br>You can now close this page and log in again.</div>';
+        }
+    </script>
+</body>
+</html>

@@ -72,6 +72,15 @@ interface CorporatePlan {
   };
 }
 
+interface PlanUsage {
+  opdUsed: number;
+  opdLimit: number;
+  diagnosticsUsed: number;
+  diagnosticsLimit: number;
+  amountUsed: number;
+  amountLimit: number;
+}
+
 interface HealthCheckup {
   id: string;
   name: string;
@@ -118,6 +127,7 @@ const CorporateBenefits = () => {
   const [corporatePlan, setCorporatePlan] = useState<CorporatePlan | null>(null);
   const [healthCheckups, setHealthCheckups] = useState<HealthCheckup[]>([]);
   const [myAppointments, setMyAppointments] = useState<MyAppointment[]>([]);
+  const [planUsage, setPlanUsage] = useState<PlanUsage | null>(null);
   const [selectedCheckup, setSelectedCheckup] = useState<HealthCheckup | null>(null);
   const [bookingDialog, setBookingDialog] = useState(false);
   const [bookingDetails, setBookingDetails] = useState<BookingDetails>({
@@ -145,9 +155,16 @@ const CorporateBenefits = () => {
         api.get('/corporate/my-appointments').catch(() => ({ data: null }))
       ]);
 
-      setCorporatePlan(planRes.data || generateSamplePlan());
-      setHealthCheckups(checkupsRes.data?.checkups || generateSampleCheckups());
-      setMyAppointments(appointmentsRes.data?.appointments || generateSampleAppointments());
+      const planPayload = planRes?.data?.plan || planRes?.data?.data?.plan || planRes?.data || null;
+      const usagePayload = planRes?.data?.usage || planRes?.data?.data?.usage || null;
+      setCorporatePlan(planPayload || generateSamplePlan());
+      setPlanUsage(usagePayload);
+
+      const checkupsPayload = checkupsRes?.data?.checkups || checkupsRes?.data?.data?.checkups;
+      setHealthCheckups(checkupsPayload || generateSampleCheckups());
+
+      const appointmentsPayload = appointmentsRes?.data?.appointments || appointmentsRes?.data?.data?.appointments;
+      setMyAppointments(appointmentsPayload || generateSampleAppointments());
     } catch (err) {
       console.error('Failed to load data', err);
       setCorporatePlan(generateSamplePlan());
@@ -493,23 +510,53 @@ const CorporateBenefits = () => {
                       <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
                         <div className="text-center p-4 bg-white rounded-lg border border-blue-200">
                           <p className="text-sm text-gray-600">Sum Insured</p>
-                          <p className="text-2xl font-bold text-blue-600">₹{(corporatePlan.coverage.sumInsured / 100000).toFixed(1)}L</p>
+                          <p className="text-2xl font-bold text-blue-600">₹{((corporatePlan.coverage?.sumInsured ?? 500000) / 100000).toFixed(1)}L</p>
                         </div>
                         <div className="text-center p-4 bg-white rounded-lg border border-blue-200">
                           <p className="text-sm text-gray-600">Room Rent</p>
-                          <p className="text-2xl font-bold text-blue-600">₹{corporatePlan.coverage.roomRentLimit.toLocaleString()}/day</p>
+                          <p className="text-2xl font-bold text-blue-600">₹{(corporatePlan.coverage?.roomRentLimit ?? 5000).toLocaleString()}/day</p>
                         </div>
                         <div className="text-center p-4 bg-white rounded-lg border border-blue-200">
                           <p className="text-sm text-gray-600">Pre-Hospitalization</p>
-                          <p className="text-2xl font-bold text-blue-600">{corporatePlan.coverage.preHospitalizationDays} days</p>
+                          <p className="text-2xl font-bold text-blue-600">{corporatePlan.coverage?.preHospitalizationDays ?? 60} days</p>
                         </div>
                         <div className="text-center p-4 bg-white rounded-lg border border-blue-200">
                           <p className="text-sm text-gray-600">Post-Hospitalization</p>
-                          <p className="text-2xl font-bold text-blue-600">{corporatePlan.coverage.postHospitalizationDays} days</p>
+                          <p className="text-2xl font-bold text-blue-600">{corporatePlan.coverage?.postHospitalizationDays ?? 90} days</p>
                         </div>
                       </div>
-                    </CardContent>
-                  </Card>
+                  </CardContent>
+                </Card>
+
+                  {planUsage && (
+                    <Card>
+                      <CardHeader>
+                        <CardTitle>Benefit Utilization</CardTitle>
+                      </CardHeader>
+                      <CardContent>
+                        <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                          <div className="p-4 bg-white rounded-lg border border-gray-200">
+                            <p className="text-sm text-gray-600">OPD Visits</p>
+                            <p className="text-2xl font-bold text-blue-600">
+                              {planUsage.opdUsed}/{planUsage.opdLimit}
+                            </p>
+                          </div>
+                          <div className="p-4 bg-white rounded-lg border border-gray-200">
+                            <p className="text-sm text-gray-600">Diagnostics</p>
+                            <p className="text-2xl font-bold text-blue-600">
+                              {planUsage.diagnosticsUsed}/{planUsage.diagnosticsLimit}
+                            </p>
+                          </div>
+                          <div className="p-4 bg-white rounded-lg border border-gray-200">
+                            <p className="text-sm text-gray-600">Claims (₹)</p>
+                            <p className="text-2xl font-bold text-blue-600">
+                              {planUsage.amountUsed.toLocaleString()} / {planUsage.amountLimit.toLocaleString()}
+                            </p>
+                          </div>
+                        </div>
+                      </CardContent>
+                    </Card>
+                  )}
 
                   {/* Features */}
                   <Card>
@@ -518,7 +565,7 @@ const CorporateBenefits = () => {
                     </CardHeader>
                     <CardContent>
                       <div className="grid grid-cols-2 md:grid-cols-5 gap-4">
-                        {Object.entries(corporatePlan.features).map(([key, enabled]) => {
+                        {Object.entries(corporatePlan.features || {}).map(([key, enabled]) => {
                           const Icon = getFeatureIcon(key);
                           return enabled ? (
                             <div key={key} className="flex items-center gap-2 p-3 bg-green-50 rounded-lg border border-green-200">
@@ -538,7 +585,7 @@ const CorporateBenefits = () => {
                     </CardHeader>
                     <CardContent>
                       <div className="space-y-4">
-                        {corporatePlan.benefits.map((benefit, idx) => (
+                        {(corporatePlan.benefits || []).map((benefit, idx) => (
                           <div key={idx} className="p-4 bg-gray-50 rounded-lg border border-gray-200">
                             <div className="flex justify-between items-start">
                               <div className="flex-1">

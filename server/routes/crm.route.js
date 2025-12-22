@@ -1,5 +1,6 @@
 import express from 'express';
 import { authUser, requireRole } from '../middleware/auth.middleware.js';
+import { requireTenant } from '../middleware/tenant.middleware.js';
 import { 
   createLead, updateLead, listLeads, getLead, deleteLead,
   addActivity, addNote, addTask, completeTask, crmStats, crmReportsOverview
@@ -18,8 +19,8 @@ const validate = (req, res, next) => {
 
 const router = express.Router();
 
-// All CRM routes require admin role for now (later: per-role permissions)
-router.use(authUser, requireRole('admin'));
+// All CRM routes require admin access within a tenant context
+router.use(authUser, requireRole('admin'), requireTenant);
 
 // Leads CRUD
 router.post('/leads', [

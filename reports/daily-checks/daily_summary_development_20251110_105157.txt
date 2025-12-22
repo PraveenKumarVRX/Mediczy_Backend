@@ -1,0 +1,44 @@
+🏥 MEDICZY DAILY HEALTH CHECK REPORT
+=====================================
+
+Environment: development
+Timestamp: 2025-11-10 10:51:58
+Duration: 1 seconds
+
+📊 SUMMARY
+----------
+Total Tests: 13
+Passed: 3
+Failed: 10
+Success Rate: 23.07%
+
+🔍 TEST RESULTS
+---------------
+❌ User Registration
+❌ Doctor Registration
+❌ Get Available Doctors (cache/db)
+❌ Security Headers
+❌ User Login
+❌ Membership Plans (DB check)
+❌ Get Available Doctors
+❌ Doctor Login
+✅ Payment Gateway Health (23 ms)
+❌ Google Fit OAuth Endpoint
+✅ Rate Limiting Protection (232 ms)
+✅ Frontend Application (24 ms)
+❌ AI Service Health (dr-isha)
+
+⚡ PERFORMANCE METRICS
+---------------------
+Payment Gateway Health: 23 ms
+Rate Limiting Protection: 232 ms
+Frontend Application: 24 ms
+
+🚨 FAILED TESTS DETAILS
+-----------------------
+Check the full log file for error details:
+/root/Mediczy/logs/health-checks/health_check_development_20251110_105157.log
+
+📧 ALERT REQUIRED
+-----------------
+This health check has failed tests that require immediate attention.

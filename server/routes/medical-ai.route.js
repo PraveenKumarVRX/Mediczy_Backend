@@ -2,9 +2,9 @@ import express from 'express';
 import medicalAIService from '../services/medicalAI.service.js';
 import { authUser } from '../middleware/auth.middleware.js';
 import handleIntentEscalation, { getDoctorSuggestions } from '../services/intentEscalation.service.js';
-import Appointment from '../models/appointment.model.mariadb.js';
+import { Appointment } from '../models/appointment.model.intelligent.js';
 import doctorModel from '../models/doctor.model.intelligent.js';
-import userModel from '../models/user.model.mariadb.js';
+import { User } from '../models/user.model.intelligent.js';
 
 const router = express.Router();
 
@@ -241,7 +241,12 @@ router.post('/intent-escalation', authUser, async (req, res) => {
 router.get('/health', async (req, res) => {
   try {
     const healthStatus = await medicalAIService.healthCheck();
-    res.json(healthStatus);
+    const statusCode = healthStatus.status === 'healthy'
+      ? 200
+      : healthStatus.status === 'degraded'
+        ? 206
+        : 503;
+    res.status(statusCode).json(healthStatus);
   } catch (error) {
     res.status(500).json({
       status: 'error',
@@ -557,7 +562,7 @@ router.post('/book-appointment', authUser, async (req, res) => {
     }
 
     // Get patient details
-    const patient = await userModel.findByPk(req.user.id);
+    const patient = await User.findByPk(req.user.id);
     if (!patient) {
       return res.status(404).json({
         success: false,

@@ -1,0 +1,47 @@
+---
+- name: Apply common baseline
+  hosts: all
+  become: true
+  roles:
+    - common
+  tags:
+    - common
+
+- name: Configure PostgreSQL coordinators
+  hosts: pg_coordinators
+  become: true
+  roles:
+    - role: postgres
+    - role: citus
+    - role: timescale
+    - role: columnar
+    - role: pgvector
+  tags:
+    - postgres
+    - coordinators
+
+- name: Configure PostgreSQL workers
+  hosts: pg_workers
+  become: true
+  roles:
+    - role: postgres
+    - role: citus
+  tags:
+    - postgres
+    - workers
+
+- name: Configure Redis cache tier
+  hosts: redis
+  become: true
+  roles:
+    - redis
+  tags:
+    - redis
+
+- name: Configure Kafka brokers
+  hosts: kafka
+  become: true
+  roles:
+    - kafka
+  tags:
+    - kafka

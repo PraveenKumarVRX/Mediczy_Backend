@@ -1,0 +1,17 @@
+<!DOCTYPE html>
+<html>
+<body>
+<h1>Token Check</h1>
+<div id="result"></div>
+<script>
+const token = localStorage.getItem('token');
+const userType = localStorage.getItem('userType');
+document.getElementById('result').innerHTML = `
+  <p>Token: ${token ? token.substring(0, 30) + '...' : '❌ NOT FOUND'}</p>
+  <p>User Type: ${userType || '❌ NOT SET'}</p>
+  <p>Token exists: ${!!token ? '✅ YES' : '❌ NO'}</p>
+`;
+console.log('Full token:', token);
+</script>
+</body>
+</html>

@@ -8,97 +8,18 @@ import { sendAppointmentNotification, sendSystemNotification, isFirebaseInitiali
 import emailService from './emailService.js';
 import { SMSService } from './sms.service.js';
 import { publishEvent, KAFKA_TOPICS } from '../config/kafka.js';
-import { postgresSequelize } from '../db/postgres-sequelize.js';
+import { Notification } from '../models/index.js';
 import { DataTypes } from 'sequelize';
+import { postgresSequelize } from '../db/postgres-sequelize.js';
+import whatsappService from './whatsapp.service.js';
+import { generateICalFile, generateDoctorICalFile, generateICalFilename } from '../utils/icalGenerator.js';
 
 // Initialize SMS service
 const smsService = new SMSService();
 
 // ============================================
-// NOTIFICATION MODEL (In-App Notifications)
+// FCM TOKEN MODEL
 // ============================================
-
-const Notification = postgresSequelize.define('Notification', {
-  id: {
-    type: DataTypes.INTEGER,
-    primaryKey: true,
-    autoIncrement: true
-  },
-  userId: {
-    type: DataTypes.INTEGER,
-    allowNull: false
-  },
-  userType: {
-    type: DataTypes.ENUM('patient', 'doctor', 'admin'),
-    defaultValue: 'patient'
-  },
-  type: {
-    type: DataTypes.ENUM(
-      'appointment_request',
-      'appointment_accepted',
-      'appointment_rejected',
-      'payment_pending',
-      'payment_received',
-      'payment_failed',
-      'consultation_reminder',
-      'consultation_starting',
-      'consultation_completed',
-      'prescription_issued',
-      'video_ready',
-      'general'
-    ),
-    defaultValue: 'general'
-  },
-  title: {
-    type: DataTypes.STRING(255),
-    allowNull: false
-  },
-  message: {
-    type: DataTypes.TEXT,
-    allowNull: false
-  },
-  data: {
-    type: DataTypes.JSON,
-    defaultValue: {}
-  },
-  channels: {
-    type: DataTypes.JSON, // ['push', 'email', 'sms', 'whatsapp', 'in-app']
-    defaultValue: ['in-app']
-  },
-  status: {
-    type: DataTypes.ENUM('pending', 'sent', 'delivered', 'read', 'failed'),
-    defaultValue: 'pending'
-  },
-  readAt: {
-    type: DataTypes.DATE,
-    allowNull: true
-  },
-  priority: {
-    type: DataTypes.ENUM('low', 'normal', 'high', 'urgent'),
-    defaultValue: 'normal'
-  },
-  expiresAt: {
-    type: DataTypes.DATE,
-    allowNull: true
-  },
-  actionUrl: {
-    type: DataTypes.STRING(500),
-    allowNull: true
-  },
-  metadata: {
-    type: DataTypes.JSON,
-    defaultValue: {}
-  }
-}, {
-  timestamps: true,
-  tableName: 'notifications',
-  indexes: [
-    { fields: ['userId', 'userType'] },
-    { fields: ['type'] },
-    { fields: ['status'] },
-    { fields: ['createdAt'] }
-  ]
-});
 
 // FCM Token Storage Model
 const FCMToken = postgresSequelize.define('FCMToken', {
@@ -152,7 +73,15 @@ class NotificationService {
       appointment_request: {
         title: 'New Appointment Request',
         message: '{{patientName}} has requested an appointment on {{date}} at {{time}}',
-        channels: ['push', 'in-app'],
+        channels: ['push', 'email', 'whatsapp', 'in-app'],
+        priority: 'high'
+      },
+      
+      // Patient receives appointment booking confirmation
+      appointment_booked: {
+        title: 'Appointment Booked Successfully! ✅',
+        message: 'Your appointment with Dr. {{doctorName}} is scheduled for {{date}} at {{time}}. Payment status: {{paymentStatus}}',
+        channels: ['push', 'email', 'whatsapp', 'in-app'],
         priority: 'high'
       },
       
@@ -254,7 +183,7 @@ class NotificationService {
   /**
    * Send notification through multiple channels
    */
-  async send({ userId, userType, type, variables, channels, data = {}, actionUrl }) {
+  async send({ userId, userType, type, variables, channels, data = {}, actionUrl, appointmentData = null }) {
     try {
       const template = this.templates[type];
       if (!template) {
@@ -270,15 +199,16 @@ class NotificationService {
       // Create in-app notification record
       const notification = await Notification.create({
         userId,
-        userType,
         type,
         title,
         message,
-        data: { ...data, variables },
+        data: { ...data, variables, userType },
         channels: notificationChannels,
         priority,
-        actionUrl,
-        status: 'pending'
+        webRoute: actionUrl,
+        deepLink: actionUrl,
+        status: 'pending',
+        isRead: false
       });
 
       const results = {
@@ -294,10 +224,13 @@ class NotificationService {
               results.channels.push = await this.sendPush(userId, userType, title, message, data, actionUrl);
               break;
             case 'email':
-              results.channels.email = await this.sendEmail(userId, userType, title, message, type, variables);
+              results.channels.email = await this.sendEmail(userId, userType, title, message, type, variables, appointmentData);
               break;
             case 'sms':
               results.channels.sms = await this.sendSMS(userId, userType, message);
+              break;
+            case 'whatsapp':
+              results.channels.whatsapp = await this.sendWhatsApp(userId, userType, title, message, data);
               break;
             case 'in-app':
               results.channels.inApp = { success: true }; // Already created
@@ -332,7 +265,8 @@ class NotificationService {
       const allSuccessful = Object.values(results.channels).every(r => r.success);
       await notification.update({
         status: allSuccessful ? 'sent' : 'failed',
-        metadata: { channelResults: results.channels }
+        sentAt: new Date(),
+        deliveryStatus: results.channels
       });
 
       return { success: true, ...results };
@@ -400,7 +334,7 @@ class NotificationService {
   /**
    * Send Email Notification
    */
-  async sendEmail(userId, userType, title, message, type, variables) {
+  async sendEmail(userId, userType, title, message, type, variables, appointmentData = null) {
     try {
       // Get user email
       let email;
@@ -421,11 +355,39 @@ class NotificationService {
       // Build HTML email
       const htmlContent = this.buildEmailHTML(title, message, type, variables);
 
-      const result = await emailService.sendEmail({
+      // Prepare email options
+      const emailOptions = {
         to: email,
         subject: title,
         html: htmlContent
-      });
+      };
+
+      // Attach iCal file for appointment notifications
+      if (appointmentData && (type === 'appointment_request' || type === 'appointment_booked')) {
+        try {
+          // Generate iCal content based on user role
+          const icalContent = userType === 'doctor'
+            ? generateDoctorICalFile(appointmentData)
+            : generateICalFile(appointmentData);
+          
+          // Generate filename
+          const filename = generateICalFilename(appointmentData, userType);
+          
+          // Add attachment
+          emailOptions.attachments = [{
+            filename: filename,
+            content: icalContent,
+            contentType: 'text/calendar; charset=utf-8'
+          }];
+          
+          console.log(`📅 Attached calendar file: ${filename}`);
+        } catch (icalError) {
+          console.error('Error generating iCal attachment:', icalError);
+          // Continue without attachment if iCal generation fails
+        }
+      }
+
+      const result = await emailService.sendEmail(emailOptions);
 
       return { success: true, email, result };
     } catch (error) {
@@ -461,6 +423,54 @@ class NotificationService {
 
       return { success: true, phone, result };
     } catch (error) {
+      return { success: false, error: error.message };
+    }
+  }
+
+  /**
+   * Send WhatsApp Notification
+   */
+  async sendWhatsApp(userId, userType, title, message, data = {}) {
+    try {
+      // Get user phone
+      let phone, userName;
+      if (userType === 'doctor') {
+        const { Doctor } = await import('../models/index.js');
+        const doctor = await Doctor.findByPk(userId);
+        phone = doctor?.phoneNumber;
+        userName = `Dr. ${doctor?.firstName} ${doctor?.lastName}`;
+      } else {
+        const { default: userModel } = await import('../models/user.model.intelligent.js');
+        const user = await userModel.findByPk(userId);
+        phone = user?.phoneNumber || user?.phone;
+        userName = `${user?.firstName} ${user?.lastName}`;
+      }
+
+      if (!phone) {
+        return { success: false, error: 'No phone number found for WhatsApp' };
+      }
+
+      // Format phone for WhatsApp (add country code if not present)
+      let formattedPhone = phone.replace(/[^0-9+]/g, '');
+      if (!formattedPhone.startsWith('+')) {
+        formattedPhone = '+91' + formattedPhone; // India country code
+      }
+
+      // Send WhatsApp message
+      const result = await whatsappService.sendMessage({
+        to: formattedPhone,
+        type: 'text',
+        content: {
+          text: `*${title}*\n\n${message}\n\n_Mediczy Healthcare Platform_`
+        },
+        patientId: userType === 'patient' ? userId : data.patientId,
+        doctorId: userType === 'doctor' ? userId : data.doctorId,
+        appointmentId: data.appointmentId
+      });
+
+      return { success: true, phone: formattedPhone, result };
+    } catch (error) {
+      console.error('WhatsApp notification error:', error);
       return { success: false, error: error.message };
     }
   }
@@ -526,6 +536,14 @@ class NotificationService {
     let buttonUrl = baseUrl;
 
     switch (type) {
+      case 'appointment_request':
+        buttonText = 'View Appointment';
+        buttonUrl = `${baseUrl}/doctor/appointments`;
+        break;
+      case 'appointment_booked':
+        buttonText = 'View My Bookings';
+        buttonUrl = `${baseUrl}/my-bookings`;
+        break;
       case 'appointment_accepted':
       case 'payment_pending':
         buttonText = 'Complete Payment';
@@ -579,7 +597,7 @@ class NotificationService {
   /**
    * Notify doctor of new appointment request
    */
-  async notifyAppointmentRequest(appointment) {
+  async notifyAppointmentRequest(appointment, appointmentData = null) {
     // Publish to Kafka for real-time appointment event tracking
     await publishEvent(KAFKA_TOPICS.APPOINTMENT_EVENTS, {
       type: 'APPOINTMENT_REQUESTED',
@@ -602,7 +620,8 @@ class NotificationService {
         appointmentId: appointment.id
       },
       data: { appointmentId: appointment.id },
-      actionUrl: '/doctor/appointments'
+      actionUrl: '/doctor/appointments',
+      appointmentData: appointmentData
     });
   }
 

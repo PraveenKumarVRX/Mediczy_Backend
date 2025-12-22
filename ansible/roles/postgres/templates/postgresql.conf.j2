@@ -1,0 +1,18 @@
+# Managed by Ansible
+listen_addresses = '{{ postgres_listen_addresses | join(',') }}'
+port = {{ postgres_port }}
+max_connections = {{ postgres_max_connections | default(300) }}
+shared_buffers = {{ (ansible_memtotal_mb // 4) | default(2048) }}MB
+work_mem = {{ work_mem | default('64MB') }}
+maintenance_work_mem = {{ maintenance_work_mem | default('512MB') }}
+wal_level = {{ postgres_wal_level | default('logical') }}
+max_wal_senders = 20
+max_worker_processes = {{ postgres_max_worker_processes | default(32) }}
+shared_preload_libraries = '{{ postgres_shared_preload_libraries | join(',') }}'
+archive_mode = {{ postgres_archive_mode | default('off') }}
+archive_command = '{{ postgres_archive_command | default('/bin/true') }}'
+logging_collector = on
+log_min_duration_statement = 500
+ssl = on
+ssl_cert_file = '{{ pg_ssl_cert }}'
+ssl_key_file = '{{ pg_ssl_key }}'

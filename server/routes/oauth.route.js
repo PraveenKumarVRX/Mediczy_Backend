@@ -19,7 +19,7 @@ const router = express.Router();
  */
 function generateToken(user) {
   const payload = {
-    userId: user.userId,
+    userId: user.id,
     email: user.email,
     userType: 'user',
     firstName: user.firstName,
@@ -45,7 +45,7 @@ function handleOAuthSuccess(req, res, userData, provider) {
     
     // Store OAuth tokens if needed for later API calls
     // For now, we'll just log them
-    console.log(`${provider} Access Token available for user ${user.userId}`);
+    console.log(`${provider} Access Token available for user ${user.id}`);
     
     // Redirect to frontend with token
     const redirectUrl = process.env.NODE_ENV === 'production'
@@ -88,6 +88,10 @@ function handleOAuthFailure(provider, error, res) {
  */
 router.get(
   '/google',
+  (req, res, next) => {
+    console.log('🔵 Initiating Google OAuth flow...');
+    next();
+  },
   passport.authenticate('google', { 
     scope: ['profile', 'email'],
     session: false 
@@ -114,11 +118,17 @@ router.get(
  */
 router.get(
   '/google/callback',
+  (req, res, next) => {
+    console.log('🔵 Google OAuth callback received');
+    console.log('Query params:', req.query);
+    next();
+  },
   passport.authenticate('google', { 
     session: false,
     failureRedirect: '/login?error=google_auth_failed'
   }),
   (req, res) => {
+    console.log('✅ Google OAuth authentication successful');
     handleOAuthSuccess(req, res, req.user, 'google');
   }
 );

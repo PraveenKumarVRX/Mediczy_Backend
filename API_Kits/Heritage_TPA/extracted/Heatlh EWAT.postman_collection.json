@@ -1,0 +1,215 @@
+{
+	"info": {
+		"_postman_id": "d79bd281-a3d1-4c08-9326-6610039972c6",
+		"name": "Heatlh EWAT",
+		"schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json",
+		"_exporter_id": "19690377"
+	},
+	"item": [
+		{
+			"name": "getAuthToken",
+			"request": {
+				"method": "POST",
+				"header": [],
+				"body": {
+					"mode": "raw",
+					"raw": "{\r\n  \"emailId\": \"rachit@insuremyteam.com\",\r\n  \"password\": \"Welcome@1\",\r\n  \"loggedInPortal\": \"POLICY_CONFIGURATION_PORTAL\"\r\n}",
+					"options": {
+						"raw": {
+							"language": "json"
+						}
+					}
+				},
+				"url": {
+					"raw": "https://uatapiadmin.ewatpa.com/external/login",
+					"protocol": "https",
+					"host": [
+						"uatapiadmin",
+						"ewatpa",
+						"com"
+					],
+					"path": [
+						"external",
+						"login"
+					]
+				}
+			},
+			"response": []
+		},
+		{
+			"name": "getEnrollmentDump",
+			"request": {
+				"method": "GET",
+				"header": [
+					{
+						"key": "Authorization",
+						"value": "Token eyJhbGciOiJIUzUxMiJ9.eyJzdWIiOiIxOTMiLCJyb2xlIjoiMzEiLCJleHAiOjE2ODAwMjkwNzYsImlhdCI6MTY4MDAxNDY3NiwiaXNzIjoidHJ1ZWNvdmVyLmluIiwibmJmIjoxNjgwMDE0Njc2fQ.jLm1GKZo1UbWv2hgIEtJIAfegNCrS4gqYW_poRsWr6QQxGIiCpPaZFvWyAExcdUzzDdD2rJnInBbqxbles73sw",
+						"type": "text"
+					}
+				],
+				"url": {
+					"raw": "https://uatapiadmin.ewatpa.com/trueclaim/tpa/get-Enroll-dump?insurerPolicyNumber=1",
+					"protocol": "https",
+					"host": [
+						"uatapiadmin",
+						"ewatpa",
+						"com"
+					],
+					"path": [
+						"trueclaim",
+						"tpa",
+						"get-Enroll-dump"
+					],
+					"query": [
+						{
+							"key": "insurerPolicyNumber",
+							"value": "1"
+						}
+					]
+				}
+			},
+			"response": []
+		},
+		{
+			"name": "getHospitalList",
+			"request": {
+				"method": "GET",
+				"header": [
+					{
+						"key": "Authorization",
+						"value": "Token eyJhbGciOiJIUzUxMiJ9.eyJzdWIiOiIyNzYiLCJyb2xlIjoiMzAiLCJleHAiOjE2NTcyMTU0NjIsImlhdCI6MTY1NzIwMTA2MiwiaXNzIjoidHJ1ZWNvdmVyLmluIiwibmJmIjoxNjU3MjAxMDYyfQ.mc7qt6ezoBDzgnCaq_q2O5sNmaDzDztWO9IbibIv3R-Wgdi3IPzc0Z67yrVumA-QEKoj-6nk7lip0eWFlz5V8gmnvbmnmn",
+						"type": "text"
+					}
+				],
+				"url": {
+					"raw": "https://uatapiadmin.ewatpa.com/trueclaim/tpa/getHospitalByInsurerName?insurerName=HDFC ERGO General Insurance Co. Ltd.",
+					"protocol": "https",
+					"host": [
+						"uatapiadmin",
+						"ewatpa",
+						"com"
+					],
+					"path": [
+						"trueclaim",
+						"tpa",
+						"getHospitalByInsurerName"
+					],
+					"query": [
+						{
+							"key": "insurerName",
+							"value": "HDFC ERGO General Insurance Co. Ltd."
+						}
+					]
+				}
+			},
+			"response": []
+		},
+		{
+			"name": "getClaimsData",
+			"request": {
+				"method": "POST",
+				"header": [
+					{
+						"key": "Authorization",
+						"value": "Token eyJhbGciOiJIUzUxMiJ9.eyJzdWIiOiIyNzYiLCJyb2xlIjoiMzAiLCJleHAiOjE2NTcyMTU0NjIsImlhdCI6MTY1NzIwMTA2MiwiaXNzIjoidHJ1ZWNvdmVyLmluIiwibmJmIjoxNjU3MjAxMDYyfQ.mc7qt6ezoBDzgnCaq_q2O5sNmaDzDztWO9IbibIv3R-Wgdi3IPzc0Z67yrVumA-QEKoj-6nk7lip0eWFlz5V8g",
+						"type": "text"
+					}
+				],
+				"body": {
+					"mode": "raw",
+					"raw": "{\r\n    \"startDate\":\"2021-02-12\",\r\n    \"endDate\":\"2022-04-28\",\r\n    \"entityId\":\"1\"\r\n}",
+					"options": {
+						"raw": {
+							"language": "json"
+						}
+					}
+				},
+				"url": {
+					"raw": "https://uatapiadmin.ewatpa.com/trueclaim/tpa/getTpaData",
+					"protocol": "https",
+					"host": [
+						"uatapiadmin",
+						"ewatpa",
+						"com"
+					],
+					"path": [
+						"trueclaim",
+						"tpa",
+						"getTpaData"
+					]
+				}
+			},
+			"response": []
+		},
+		{
+			"name": "getEcard",
+			"request": {
+				"method": "GET",
+				"header": [
+					{
+						"key": "Authorization",
+						"value": "Token eyJhbGciOiJIUzUxMiJ9.eyJzdWIiOiIyNzYiLCJyb2xlIjoiMzAiLCJleHAiOjE2NTcyMTU0NjIsImlhdCI6MTY1Nzn,mbm,bIwMTA2MiwiaXNzIjoidHJ1ZWNvdmVyLmluIiwibmJmIjoxNjU3MjAxMDYyfQ.mc7qt6ezoBDzgnCaq_q2O5sNmaDzDztWO9IbibIv3R-Wgdi3IPzc0Z67yrVumA-QEKoj-6nk7lip0eWFlz5V8g",
+						"type": "text"
+					}
+				],
+				"url": {
+					"raw": "https://uatapiadmin.ewatpa.com/trueclaim/create-new-all-member-id-card-pdf?employeeId=9900814&entityId=69",
+					"protocol": "https",
+					"host": [
+						"uatapiadmin",
+						"ewatpa",
+						"com"
+					],
+					"path": [
+						"trueclaim",
+						"create-new-all-member-id-card-pdf"
+					],
+					"query": [
+						{
+							"key": "employeeId",
+							"value": "9900814"
+						},
+						{
+							"key": "entityId",
+							"value": "69"
+						}
+					]
+				}
+			},
+			"response": []
+		},
+		{
+			"name": "entity id from policy",
+			"request": {
+				"method": "GET",
+				"header": [
+					{
+						"key": "Authorization",
+						"value": "Token eyJhbGciOiJIUzUxMiJ9.eyJzdWIiOiIxNTgiLCJyb2xlIjoiMTEiLCJ1c2VybmFtZSI6InZpc2l0X2FwcCIsImV4cCI6MTY4MzU4ODY1NywiaWF0IjoxNjgzNTQ1NDU3LCJpc3MiOiJ0cnVlY292ZXIuaW4iLCJuYmYiOjE2ODM1NDU0NTd9.Ye7jC7d-40ccnbkrGPP1J3qYYZIO8TqhwXmV1PQSa1J1UjaZROkuepJ9ZkErHY4cmChjnEtoLqqho4lL_ie2ag",
+						"type": "text"
+					}
+				],
+				"url": {
+					"raw": "https://uatapiadmin.ewatpa.com/trueclaim/get-entity-from-policy?policyNumber=AR45",
+					"protocol": "https",
+					"host": [
+						"uatapiadmin",
+						"ewatpa",
+						"com"
+					],
+					"path": [
+						"trueclaim",
+						"get-entity-from-policy"
+					],
+					"query": [
+						{
+							"key": "policyNumber",
+							"value": "AR45"
+						}
+					]
+				}
+			},
+			"response": []
+		}
+	]
+}

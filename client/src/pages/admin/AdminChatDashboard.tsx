@@ -92,6 +92,7 @@ export default function AdminChatDashboard() {
   const [activeTab, setActiveTab] = useState('chat');
   const [selectedRoom, setSelectedRoom] = useState('general');
   const [isLoading, setIsLoading] = useState(true);
+  const [analyticsLoading, setAnalyticsLoading] = useState(false);
   const [chatMessage, setChatMessage] = useState('');
   const [searchQuery, setSearchQuery] = useState('');
   const [showRoomSettings, setShowRoomSettings] = useState(false);
@@ -349,6 +350,31 @@ export default function AdminChatDashboard() {
     ]
   });
 
+  const [dashboardOverview, setDashboardOverview] = useState<any | null>(null);
+
+  const loadDashboardOverview = async () => {
+    if (!adminToken) return;
+    try {
+      setAnalyticsLoading(true);
+      const { data } = await api.get('/chat/dashboard/overview', {
+        headers: { Authorization: `Bearer ${adminToken}` }
+      });
+
+      if (data?.success && data?.overview) {
+        setDashboardOverview(data.overview);
+      }
+    } catch (err: any) {
+      console.error('Failed to load chat dashboard overview', err);
+      toast({
+        title: 'Analytics Unavailable',
+        description: err?.response?.data?.message || 'Failed to load chat analytics',
+        variant: 'destructive'
+      });
+    } finally {
+      setAnalyticsLoading(false);
+    }
+  };
+
   // Load WhatsApp conversations
   const loadWhatsAppConversations = async () => {
     try {
@@ -589,6 +615,12 @@ export default function AdminChatDashboard() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
+  // Load admin analytics overview (doesn't block the main UI)
+  useEffect(() => {
+    loadDashboardOverview();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [adminToken]);
+
   // Load messages when room changes
   useEffect(() => {
     if (!selectedRoom) return;
@@ -698,11 +730,11 @@ export default function AdminChatDashboard() {
             </p>
           </div>
           <div className="flex items-center space-x-2">
-            <Button variant="outline" size="sm">
+            <Button variant="outline" size="sm" onClick={() => setActiveTab('analytics')}>
               <BarChart3 className="mr-2 h-4 w-4" />
               Analytics
             </Button>
-            <Button size="sm">
+            <Button size="sm" onClick={() => setActiveTab('settings')}>
               <Settings className="mr-2 h-4 w-4" />
               Settings
             </Button>
@@ -718,7 +750,9 @@ export default function AdminChatDashboard() {
                 <MessageSquare className="h-4 w-4 text-muted-foreground" />
               </div>
               <div className="space-y-1">
-                <div className="text-2xl font-bold">{stats.totalMessages.toLocaleString()}</div>
+                <div className="text-2xl font-bold">
+                  {(dashboardOverview?.totalMessages ?? stats.totalMessages).toLocaleString()}
+                </div>
                 <p className="text-xs text-muted-foreground">+12% from yesterday</p>
               </div>
             </CardContent>
@@ -730,8 +764,8 @@ export default function AdminChatDashboard() {
                 <Users className="h-4 w-4 text-muted-foreground" />
               </div>
               <div className="space-y-1">
-                <div className="text-2xl font-bold">{stats.onlineUsers}</div>
-                <p className="text-xs text-muted-foreground">{stats.activeUsers} total active</p>
+                <div className="text-2xl font-bold">{dashboardOverview?.onlineTeamMembers ?? stats.onlineUsers}</div>
+                <p className="text-xs text-muted-foreground">{dashboardOverview?.activeUsers ?? stats.activeUsers} total active</p>
               </div>
             </CardContent>
           </Card>
@@ -742,7 +776,7 @@ export default function AdminChatDashboard() {
                 <Hash className="h-4 w-4 text-muted-foreground" />
               </div>
               <div className="space-y-1">
-                <div className="text-2xl font-bold">{stats.totalChannels}</div>
+                <div className="text-2xl font-bold">{dashboardOverview?.totalRooms ?? stats.totalChannels}</div>
                 <p className="text-xs text-muted-foreground">{stats.privateChannels} private</p>
               </div>
             </CardContent>
@@ -762,7 +796,7 @@ export default function AdminChatDashboard() {
         </div>
 
         <Tabs value={activeTab} onValueChange={setActiveTab} className="flex-1 flex flex-col">
-          <TabsList className="grid w-full grid-cols-6">
+          <TabsList className="grid w-full grid-cols-7">
             <TabsTrigger value="chat" className="flex items-center space-x-2">
               <MessageSquare className="h-4 w-4" />
               <span>Chat Interface</span>
@@ -774,6 +808,10 @@ export default function AdminChatDashboard() {
             <TabsTrigger value="tickets" className="flex items-center space-x-2">
               <Ticket className="h-4 w-4" />
               <span>Support Tickets</span>
+            </TabsTrigger>
+            <TabsTrigger value="analytics" className="flex items-center space-x-2">
+              <BarChart3 className="h-4 w-4" />
+              <span>Analytics</span>
             </TabsTrigger>
             <TabsTrigger value="rooms" className="flex items-center space-x-2">
               <Hash className="h-4 w-4" />
@@ -788,6 +826,98 @@ export default function AdminChatDashboard() {
               <span>Settings</span>
             </TabsTrigger>
           </TabsList>
+
+          {/* Analytics Tab */}
+          <TabsContent value="analytics" className="space-y-6">
+            <div className="flex items-center justify-between">
+              <div className="text-sm text-muted-foreground">
+                {dashboardOverview ? 'Live server analytics' : 'Showing sample analytics'}
+              </div>
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={loadDashboardOverview}
+                disabled={!adminToken || analyticsLoading}
+              >
+                <RefreshCw className={`mr-2 h-4 w-4 ${analyticsLoading ? 'animate-spin' : ''}`} />
+                Refresh
+              </Button>
+            </div>
+
+            <div className="grid gap-4 md:grid-cols-4">
+              <Card>
+                <CardContent className="pt-6">
+                  <div className="flex items-center justify-between space-y-0 pb-2">
+                    <h3 className="tracking-tight text-sm font-medium">Total Messages</h3>
+                    <MessageSquare className="h-4 w-4 text-muted-foreground" />
+                  </div>
+                  <div className="text-2xl font-bold">
+                    {(dashboardOverview?.totalMessages ?? stats.totalMessages).toLocaleString()}
+                  </div>
+                </CardContent>
+              </Card>
+              <Card>
+                <CardContent className="pt-6">
+                  <div className="flex items-center justify-between space-y-0 pb-2">
+                    <h3 className="tracking-tight text-sm font-medium">Total Rooms</h3>
+                    <Hash className="h-4 w-4 text-muted-foreground" />
+                  </div>
+                  <div className="text-2xl font-bold">{dashboardOverview?.totalRooms ?? stats.totalChannels}</div>
+                </CardContent>
+              </Card>
+              <Card>
+                <CardContent className="pt-6">
+                  <div className="flex items-center justify-between space-y-0 pb-2">
+                    <h3 className="tracking-tight text-sm font-medium">Active Users</h3>
+                    <Users className="h-4 w-4 text-muted-foreground" />
+                  </div>
+                  <div className="text-2xl font-bold">{dashboardOverview?.activeUsers ?? stats.activeUsers}</div>
+                </CardContent>
+              </Card>
+              <Card>
+                <CardContent className="pt-6">
+                  <div className="flex items-center justify-between space-y-0 pb-2">
+                    <h3 className="tracking-tight text-sm font-medium">Online Team</h3>
+                    <Activity className="h-4 w-4 text-muted-foreground" />
+                  </div>
+                  <div className="text-2xl font-bold">{dashboardOverview?.onlineTeamMembers ?? stats.onlineUsers}</div>
+                </CardContent>
+              </Card>
+            </div>
+
+            <div className="grid gap-6 lg:grid-cols-2">
+              <Card>
+                <CardHeader>
+                  <CardTitle>Recent Activity (Last 24h)</CardTitle>
+                </CardHeader>
+                <CardContent className="space-y-3">
+                  <div className="flex items-center justify-between p-3 border rounded-lg">
+                    <div className="text-sm font-medium">Messages</div>
+                    <Badge variant="outline">{dashboardOverview?.recentActivity?.last24h?.messages ?? '—'}</Badge>
+                  </div>
+                  <div className="flex items-center justify-between p-3 border rounded-lg">
+                    <div className="text-sm font-medium">New Rooms</div>
+                    <Badge variant="outline">{dashboardOverview?.recentActivity?.last24h?.newRooms ?? '—'}</Badge>
+                  </div>
+                </CardContent>
+              </Card>
+
+              <Card>
+                <CardHeader>
+                  <CardTitle>Response Time</CardTitle>
+                </CardHeader>
+                <CardContent className="space-y-3">
+                  <div className="flex items-center justify-between p-3 border rounded-lg">
+                    <div className="text-sm font-medium">Average Response</div>
+                    <Badge variant="outline">
+                      {dashboardOverview?.analytics?.averageResponseTime ?? '—'} {dashboardOverview?.analytics?.responseTimeUnit ?? 'min'}
+                    </Badge>
+                  </div>
+                  <div className="text-xs text-muted-foreground">Calculated from user-team conversations.</div>
+                </CardContent>
+              </Card>
+            </div>
+          </TabsContent>
 
           {/* Chat Interface Tab */}
           <TabsContent value="chat" className="flex-1 flex">
@@ -1316,7 +1446,7 @@ export default function AdminChatDashboard() {
                         <Search className="mr-2 h-4 w-4" />
                         Search Tickets
                       </Button>
-                      <Button variant="outline" className="w-full">
+                      <Button variant="outline" className="w-full" onClick={() => setActiveTab('analytics')}>
                         <BarChart3 className="mr-2 h-4 w-4" />
                         View Analytics
                       </Button>

@@ -1,0 +1,255 @@
+{
+  "name": "SIB: Task Reminder Automation",
+  "nodes": [
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "task-reminder",
+        "options": {}
+      },
+      "id": "webhook-task",
+      "name": "Webhook - Task Created",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 1,
+      "position": [250, 300],
+      "webhookId": "sib-task-reminder"
+    },
+    {
+      "parameters": {
+        "unit": "hours",
+        "amount": "={{$node[\"Webhook - Task Created\"].json[\"data\"][\"reminder_schedule\"][\"24h_before\"] ? 24 : 0}}",
+        "options": {}
+      },
+      "id": "wait-24h",
+      "name": "Wait 24h Before Due",
+      "type": "n8n-nodes-base.wait",
+      "typeVersion": 1,
+      "position": [500, 200]
+    },
+    {
+      "parameters": {
+        "url": "http://localhost:8001/webhook/n8n",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={\n  \"workflow\": \"task-reminder\",\n  \"action\": \"trigger_notification\",\n  \"payload\": {\n    \"notification_data\": {\n      \"patient_id\": \"{{$node[\"Webhook - Task Created\"].json[\"data\"][\"patient_id\"]}}\",\n      \"title\": \"Task Reminder: 24h\",\n      \"message\": \"Reminder: {{$node[\"Webhook - Task Created\"].json[\"data\"][\"title\"]}} is due tomorrow\",\n      \"type\": \"task_reminder\",\n      \"channels\": [\"in_app\", \"push\"]\n    }\n  }\n}",
+        "options": {}
+      },
+      "id": "send-24h-reminder",
+      "name": "Send 24h Reminder",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4,
+      "position": [750, 200]
+    },
+    {
+      "parameters": {
+        "unit": "hours",
+        "amount": "2",
+        "options": {}
+      },
+      "id": "wait-2h",
+      "name": "Wait 2h Before Due",
+      "type": "n8n-nodes-base.wait",
+      "typeVersion": 1,
+      "position": [500, 300]
+    },
+    {
+      "parameters": {
+        "url": "http://localhost:8001/webhook/n8n",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={\n  \"workflow\": \"task-reminder\",\n  \"action\": \"trigger_notification\",\n  \"payload\": {\n    \"notification_data\": {\n      \"patient_id\": \"{{$node[\"Webhook - Task Created\"].json[\"data\"][\"patient_id\"]}}\",\n      \"title\": \"Task Reminder: 2h\",\n      \"message\": \"Reminder: {{$node[\"Webhook - Task Created\"].json[\"data\"][\"title\"]}} is due in 2 hours\",\n      \"type\": \"task_reminder\",\n      \"severity\": \"warning\",\n      \"channels\": [\"in_app\", \"push\", \"sms\"]\n    }\n  }\n}",
+        "options": {}
+      },
+      "id": "send-2h-reminder",
+      "name": "Send 2h Reminder",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4,
+      "position": [750, 300]
+    },
+    {
+      "parameters": {
+        "unit": "minutes",
+        "amount": "15",
+        "options": {}
+      },
+      "id": "wait-15min",
+      "name": "Wait 15min Before Due",
+      "type": "n8n-nodes-base.wait",
+      "typeVersion": 1,
+      "position": [500, 400]
+    },
+    {
+      "parameters": {
+        "url": "http://localhost:8001/webhook/n8n",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={\n  \"workflow\": \"task-reminder\",\n  \"action\": \"trigger_notification\",\n  \"payload\": {\n    \"notification_data\": {\n      \"patient_id\": \"{{$node[\"Webhook - Task Created\"].json[\"data\"][\"patient_id\"]}}\",\n      \"title\": \"Task Reminder: URGENT\",\n      \"message\": \"URGENT: {{$node[\"Webhook - Task Created\"].json[\"data\"][\"title\"]}} is due in 15 minutes!\",\n      \"type\": \"task_reminder\",\n      \"severity\": \"critical\",\n      \"channels\": [\"in_app\", \"push\", \"sms\"]\n    }\n  }\n}",
+        "options": {}
+      },
+      "id": "send-15min-reminder",
+      "name": "Send 15min Urgent Reminder",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4,
+      "position": [750, 400]
+    },
+    {
+      "parameters": {
+        "values": {
+          "string": [
+            {
+              "name": "status",
+              "value": "success"
+            },
+            {
+              "name": "task_id",
+              "value": "={{$node[\"Webhook - Task Created\"].json[\"data\"][\"task_id\"]}}"
+            },
+            {
+              "name": "reminders_scheduled",
+              "value": "3"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "response-task",
+      "name": "Respond to Webhook",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3,
+      "position": [1000, 300]
+    }
+  ],
+  "connections": {
+    "Webhook - Task Created": {
+      "main": [
+        [
+          {
+            "node": "Wait 24h Before Due",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Wait 2h Before Due",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Wait 15min Before Due",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Wait 24h Before Due": {
+      "main": [
+        [
+          {
+            "node": "Send 24h Reminder",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Wait 2h Before Due": {
+      "main": [
+        [
+          {
+            "node": "Send 2h Reminder",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Wait 15min Before Due": {
+      "main": [
+        [
+          {
+            "node": "Send 15min Urgent Reminder",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Send 24h Reminder": {
+      "main": [
+        [
+          {
+            "node": "Respond to Webhook",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Send 2h Reminder": {
+      "main": [
+        [
+          {
+            "node": "Respond to Webhook",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Send 15min Urgent Reminder": {
+      "main": [
+        [
+          {
+            "node": "Respond to Webhook",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": true,
+  "settings": {
+    "executionOrder": "v1"
+  },
+  "versionId": "1",
+  "id": "sib-task-reminder",
+  "meta": {
+    "instanceId": "mediczy-n8n"
+  },
+  "tags": [
+    {
+      "name": "sib-automation"
+    },
+    {
+      "name": "tasks"
+    }
+  ]
+}

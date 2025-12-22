@@ -1,0 +1,326 @@
+{
+	"info": {
+		"_postman_id": "6d461da3-581f-414f-aba8-bd7674f8f587",
+		"name": "Health ICICI MDBT PROD",
+		"schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json",
+		"_exporter_id": "19690377"
+	},
+	"item": [
+		{
+			"name": "token",
+			"request": {
+				"method": "POST",
+				"header": [
+					{
+						"key": "Content-Type",
+						"value": "application/x-www-form-urlencoded",
+						"type": "text"
+					}
+				],
+				"body": {
+					"mode": "urlencoded",
+					"urlencoded": [
+						{
+							"key": "grant_type",
+							"value": "password",
+							"type": "text"
+						},
+						{
+							"key": "username",
+							"value": "Bharat_Re",
+							"type": "text"
+						},
+						{
+							"key": "password",
+							"value": "OYWOq5CUMfHBlIw",
+							"type": "text"
+						},
+						{
+							"key": "scope",
+							"value": "esbhealth",
+							"type": "text"
+						},
+						{
+							"key": "client_id",
+							"value": "Bharat_Re",
+							"type": "text"
+						},
+						{
+							"key": "client_secret",
+							"value": "vX8uB8HoODB4jlfRnTVNOuaMGKE9MxW1VwgH9RFhmKdV4k5nYsi9TvlgaiXDfkCm",
+							"type": "text"
+						},
+						{
+							"key": "scope",
+							"value": "esbgenus-UHIDPolicyDetails",
+							"type": "text",
+							"disabled": true
+						}
+					]
+				},
+				"url": {
+					"raw": "https://ilesbapigee.insurancearticlez.com/generate-jwt-token",
+					"protocol": "https",
+					"host": [
+						"ilesbapigee",
+						"insurancearticlez",
+						"com"
+					],
+					"path": [
+						"generate-jwt-token"
+					]
+				}
+			},
+			"response": []
+		},
+		{
+			"name": "Hospital List",
+			"protocolProfileBehavior": {
+				"disableBodyPruning": true
+			},
+			"request": {
+				"auth": {
+					"type": "bearer",
+					"bearer": [
+						{
+							"key": "token",
+							"value": "eyJ0eXAiOiJKV1QiLCJhbGciOiJSUzI1NiJ9.eyJzdWIiOiJzdWJqZWN0IiwiYW1yIjpbImN1c3RvbSJdLCJpc19hcGlnZWUiOnRydWUsImlzcyI6Imh0dHBzOi8vaWxlc2JzYW5pdHkuaW5zdXJhbmNlYXJ0aWNsZXouY29tL2NlcmJlcnVzIiwiY2xpZW50X2lkIjoiQmhhcmF0X1JlIiwiYXVkIjpbImh0dHBzOi8vaWxlc2JzYW5pdHkuaW5zdXJhbmNlYXJ0aWNsZXouY29tL2NlcmJlcnVzL3Jlc291cmNlcnMiLCJlc2JoZWFsdGgiXSwibmJmIjoxNzYyNDMxODk5LCJpZHAiOiJsb2NhbCIsInNjb3BlIjpbImVzYmhlYWx0aCJdLCJhdXRoX3RpbWUiOjE3NjI0MzE4OTksInBiayI6Ii0tLS0tQkVHSU4gUFVCTElDIEtFWS0tLS0tICBNSUdmTUEwR0NTcUdTSWIzRFFFQkFRVUFBNEdOQURDQmlRS0JnUUNVL3pUYXNubm1DTkd1Y01ad0Y2TG5mRWhDICBPOW5KZ3RxdEhHUjk5T3dwcHJ3ZmhKYnVGR1RtdTZzZWxWVUVHbUtYRjB5YmFtWVl6VmFPVG03dlJzZWRMaUhPICBobFZNM2FLOWI3WnkwQWF5M3U1Wmxqc3hxOXRrVUc4Wjhhei9iSDR4MUtnakdFOHpTVmZVOEhaSkVhb1pLWjJZICBaT3RWSVNYend0K3FLSmo4dXdJREFRQUIgIC0tLS0tRU5EIFBVQkxJQyBLRVktLS0tLSIsImV4cCI6MTc2MjQzMjQ5OSwiaWF0IjoxNzYyNDMxODk5LCJqdGkiOiJhNGRkZjI1My1kNTY4LTQyOWQtOTIyYy03MzU0NzFjMzhhZDkifQ.FryYKqSy0imjFJAR5b5fv_JMgNRyIMyjzT2HMRO9GcOxh7QC_sfnTLDzHhZ2CvAXX5RfY155hrGccgW8iOCCBE_-neVOXjmZWJjzy4MWaajGlRoLjgA-pK-eEs3D7KsY3mSwcven57jCuQ7uXH1KO43NcNfCpopT8lMbq-SspM9M8R3Tbp0rhHhc5YmcKaw_hB4zRwjj-kKuRALyu2JP73wl_ttm_Ph5EKWdupxIs4DTwznGRpb66AdLxkQhE_MU7WEytMf3e5VyfcnwH1SQ0EM33d5a9Y5X_JGB8cDKZj-J3mz8j_zXttLt2JSRBjBcN-46SvWRzQ6aJyvtG8MzNg",
+							"type": "string"
+						}
+					]
+				},
+				"method": "GET",
+				"header": [
+					{
+						"key": "Content-Type",
+						"value": "application/x-www-form-urlencoded",
+						"type": "text",
+						"disabled": true
+					},
+					{
+						"key": "X-CorrelationId",
+						"value": "GUID (Header)",
+						"type": "text"
+					},
+					{
+						"key": "Accept",
+						"value": "application/json",
+						"type": "text"
+					}
+				],
+				"body": {
+					"mode": "urlencoded",
+					"urlencoded": [
+						{
+							"key": "grant_type",
+							"value": "password",
+							"type": "text"
+						},
+						{
+							"key": "username",
+							"value": "Bharat_Re",
+							"type": "text"
+						},
+						{
+							"key": "password",
+							"value": "OYWOq5CUMfHBlIww",
+							"type": "text"
+						},
+						{
+							"key": "scope",
+							"value": "esbhealth",
+							"type": "text"
+						},
+						{
+							"key": "client_id",
+							"value": "Bharat_Re",
+							"type": "text"
+						},
+						{
+							"key": "client_secret",
+							"value": "vX8uB8HoODB4jlfRnTVNOuaMGKE9MxW1VwgH9RFhmKdV4k5nYsi9TvlgaiXDfkCm",
+							"type": "text"
+						}
+					]
+				},
+				"url": {
+					"raw": "https://ilesbapigee.insurancearticlez.com/health/ilservices/health/v1/generic/hospitalnetworklist",
+					"protocol": "https",
+					"host": [
+						"ilesbapigee",
+						"insurancearticlez",
+						"com"
+					],
+					"path": [
+						"health",
+						"ilservices",
+						"health",
+						"v1",
+						"generic",
+						"hospitalnetworklist"
+					]
+				}
+			},
+			"response": []
+		},
+		{
+			"name": "UHIDPolicyDetails",
+			"request": {
+				"auth": {
+					"type": "bearer",
+					"bearer": [
+						{
+							"key": "token",
+							"value": "eyJ0eXAiOiJKV1QiLCJhbGciOiJSUzI1NiJ9.eyJzdWIiOiJzdWJqZWN0IiwiYW1yIjpbImN1c3RvbSJdLCJpc19hcGlnZWUiOnRydWUsImlzcyI6Imh0dHBzOi8vaWxlc2JzYW5pdHkuaW5zdXJhbmNlYXJ0aWNsZXouY29tL2NlcmJlcnVzIiwiY2xpZW50X2lkIjoiQmhhcmF0X1JlIiwiYXVkIjpbImh0dHBzOi8vaWxlc2JzYW5pdHkuaW5zdXJhbmNlYXJ0aWNsZXouY29tL2NlcmJlcnVzL3Jlc291cmNlcnMiLCJlc2JnZW51cy1VSElEUG9saWN5RGV0YWlscyJdLCJuYmYiOjE3NjI4NTIzOTgsImlkcCI6ImxvY2FsIiwic2NvcGUiOlsiZXNiZ2VudXMtVUhJRFBvbGljeURldGFpbHMiXSwiYXV0aF90aW1lIjoxNzYyODUyMzk4LCJwYmsiOiItLS0tLUJFR0lOIFBVQkxJQyBLRVktLS0tLSAgTUlHZk1BMEdDU3FHU0liM0RRRUJBUVVBQTRHTkFEQ0JpUUtCZ1FDVS96VGFzbm5tQ05HdWNNWndGNkxuZkVoQyAgTzluSmd0cXRIR1I5OU93cHByd2ZoSmJ1RkdUbXU2c2VsVlVFR21LWEYweWJhbVlZelZhT1RtN3ZSc2VkTGlITyAgaGxWTTNhSzliN1p5MEFheTN1NVpsanN4cTl0a1VHOFo4YXovYkg0eDFLZ2pHRTh6U1ZmVThIWkpFYW9aS1oyWSAgWk90VklTWHp3dCtxS0pqOHV3SURBUUFCICAtLS0tLUVORCBQVUJMSUMgS0VZLS0tLS0iLCJleHAiOjE3NjI4NTI5OTgsImlhdCI6MTc2Mjg1MjM5OCwianRpIjoiN2ViYWZkNjYtMGZiNS00ZDE0LWE3ODEtNDdiMzcxYzMxZWU3In0.Dy58Giu1t_cGfwQxrQkOOEXysYEINrsm57ycfFj-nIJqa6I90tzLXL1QpWgFyUBRKVDCn4P3j8Vdc-mlY6g-lNvcOhXXg3CG0o-1YK0G8RzxHpVHRaxl_mbEefh2k1SYi45kcNBOGZuisSqIcQjie0vYDXEDCmRP7e4_O2lFudTISoht5Gcz4amSmSgq8wIFyWEcoGoio2w43AgMclLAgiwTP4gikDNopDwz4JQw8cEINLllgin0Yuh9VR295VdgFQ51eaTD3HTAeA9LcM2_ajubHUzTCHtLyw4_nRd9RxfhhxHY5vYqsfQrZRr7LjO2ewkzI6H5d-kjcnWbX_YcBA",
+							"type": "string"
+						}
+					]
+				},
+				"method": "POST",
+				"header": [],
+				"body": {
+					"mode": "raw",
+					"raw": "{\r\n    \"PolicyNumber\": \"4016/X/401173656/00/000\",\r\n    \"CustomerId\": \"1004592198350001\",\r\n    \"IMID\": \"201580517901\",\r\n    \"PageSize\": \"99999\",\r\n    \"PageNumber\": \"1\",\r\n    \"CorrelationId\": \"7e9a36ee-70b2-4920-9cc3-942172a4d1d3\"\r\n}\r\n",
+					"options": {
+						"raw": {
+							"language": "json"
+						}
+					}
+				},
+				"url": {
+					"raw": "https://ilesbapigee.insurancearticlez.com/misc-generic/ilservices/misc/v2/genus/getuhidreport?grant_type=password&username=Bharat_Re&password=OYWOq5CUMfHBlIw&scope=esbgenus-UHIDPolicyDetails&client_id=Bharat_Re&client_secret=vX8uB8HoODB4jlfRnTVNOuaMGKE9MxW1VwgH9RFhmKdV4k5nYsi9TvlgaiXDfkCm",
+					"protocol": "https",
+					"host": [
+						"ilesbapigee",
+						"insurancearticlez",
+						"com"
+					],
+					"path": [
+						"misc-generic",
+						"ilservices",
+						"misc",
+						"v2",
+						"genus",
+						"getuhidreport"
+					],
+					"query": [
+						{
+							"key": "grant_type",
+							"value": "password"
+						},
+						{
+							"key": "username",
+							"value": "Bharat_Re"
+						},
+						{
+							"key": "password",
+							"value": "OYWOq5CUMfHBlIw"
+						},
+						{
+							"key": "scope",
+							"value": "esbgenus-UHIDPolicyDetails"
+						},
+						{
+							"key": "client_id",
+							"value": "Bharat_Re"
+						},
+						{
+							"key": "client_secret",
+							"value": "vX8uB8HoODB4jlfRnTVNOuaMGKE9MxW1VwgH9RFhmKdV4k5nYsi9TvlgaiXDfkCm"
+						}
+					]
+				}
+			},
+			"response": []
+		},
+		{
+			"name": "ecard",
+			"protocolProfileBehavior": {
+				"disabledSystemHeaders": {
+					"accept": true,
+					"accept-encoding": true
+				}
+			},
+			"request": {
+				"auth": {
+					"type": "bearer",
+					"bearer": [
+						{
+							"key": "token",
+							"value": "eyJ0eXAiOiJKV1QiLCJhbGciOiJSUzI1NiJ9.eyJzdWIiOiJzdWJqZWN0IiwiYW1yIjpbImN1c3RvbSJdLCJpc19hcGlnZWUiOnRydWUsImlzcyI6Imh0dHBzOi8vaWxlc2JzYW5pdHkuaW5zdXJhbmNlYXJ0aWNsZXouY29tL2NlcmJlcnVzIiwiY2xpZW50X2lkIjoiQmhhcmF0X1JlIiwiYXVkIjpbImh0dHBzOi8vaWxlc2JzYW5pdHkuaW5zdXJhbmNlYXJ0aWNsZXouY29tL2NlcmJlcnVzL3Jlc291cmNlcnMiLCJlc2JoZWFsdGgiXSwibmJmIjoxNzU5NzQxNTY5LCJpZHAiOiJsb2NhbCIsInNjb3BlIjpbImVzYmhlYWx0aCJdLCJhdXRoX3RpbWUiOjE3NTk3NDE1NjksInBiayI6Ii0tLS0tQkVHSU4gUFVCTElDIEtFWS0tLS0tICBNSUdmTUEwR0NTcUdTSWIzRFFFQkFRVUFBNEdOQURDQmlRS0JnUUNVL3pUYXNubm1DTkd1Y01ad0Y2TG5mRWhDICBPOW5KZ3RxdEhHUjk5T3dwcHJ3ZmhKYnVGR1RtdTZzZWxWVUVHbUtYRjB5YmFtWVl6VmFPVG03dlJzZWRMaUhPICBobFZNM2FLOWI3WnkwQWF5M3U1Wmxqc3hxOXRrVUc4Wjhhei9iSDR4MUtnakdFOHpTVmZVOEhaSkVhb1pLWjJZICBaT3RWSVNYend0K3FLSmo4dXdJREFRQUIgIC0tLS0tRU5EIFBVQkxJQyBLRVktLS0tLSIsImV4cCI6MTc1OTc0MjE2OSwiaWF0IjoxNzU5NzQxNTY5LCJqdGkiOiJhOWI1MWFiNS0yYjVjLTQ1ZWQtYmVmMi05ZDYyNWY5NTZiZWEifQ.Tz-WRN7E7qECejuXHivLNL2bn8zn8_TzC3hbtlkaOIBxtilGUMpUWiNfWUsDuoJOBvjPJanvIACykKOt2dwqU98sCdBLGXZ9AEx-f3NUzF6L_ciCDIG_M-zHshiSF5Q2Px8NPYlUDBqBmEK3cWVS6-zxRS2cQOM68ioZfAIukgL5TTKwylPgH9blkoSDXrjW2u0kYEjxBNfJeeHEoPp-6kJV2kOxWTK3V5QGTbUBwD4Hc_KLKo9qGvYkuWwOuflpSYxxNdbhbw_zJJzjecm8-JK9daBdryjBcKkxGwyr2U05UOgxQ5W4hWue56wzVH-edExl7k291M6C6vFBm9pIuQ",
+							"type": "string"
+						}
+					]
+				},
+				"method": "POST",
+				"header": [
+					{
+						"key": "Accept",
+						"value": "application/pdf",
+						"type": "text",
+						"disabled": true
+					}
+				],
+				"body": {
+					"mode": "raw",
+					"raw": "{\r\n    \"UhidNo\": \"IL0000854322420\",\r\n    \"PolicyType\": \"Corporate\",\r\n    \"DOB\": \"15-Feb-1990\",\r\n    \"CorrelationId\": \"86383c78-4c67-4e4d-9aa0-8f926fb0d55f\"\r\n}",
+					"options": {
+						"raw": {
+							"language": "json"
+						}
+					}
+				},
+				"url": {
+					"raw": "https://ilesbapigee.insurancearticlez.com/health/ilservices/health/v2/healthcard/fetch",
+					"protocol": "https",
+					"host": [
+						"ilesbapigee",
+						"insurancearticlez",
+						"com"
+					],
+					"path": [
+						"health",
+						"ilservices",
+						"health",
+						"v2",
+						"healthcard",
+						"fetch"
+					]
+				}
+			},
+			"response": []
+		}
+	],
+	"auth": {
+		"type": "bearer",
+		"bearer": [
+			{
+				"key": "token",
+				"value": "eyJ0eXAiOiJKV1QiLCJhbGciOiJSUzI1NiJ9.eyJzdWIiOiJzdWJqZWN0IiwiYW1yIjpbImN1c3RvbSJdLCJpc19hcGlnZWUiOnRydWUsImlzcyI6Imh0dHBzOi8vaWxlc2JzYW5pdHkuaW5zdXJhbmNlYXJ0aWNsZXouY29tL2NlcmJlcnVzIiwiY2xpZW50X2lkIjoiQmhhcmF0X1JlIiwiYXVkIjpbImh0dHBzOi8vaWxlc2JzYW5pdHkuaW5zdXJhbmNlYXJ0aWNsZXouY29tL2NlcmJlcnVzL3Jlc291cmNlcnMiLCJlc2JoZWFsdGgiXSwibmJmIjoxNzQ4NTE3NzYwLCJpZHAiOiJsb2NhbCIsInNjb3BlIjpbImVzYmhlYWx0aCJdLCJhdXRoX3RpbWUiOjE3NDg1MTc3NjAsInBiayI6Ii0tLS0tQkVHSU4gUFVCTElDIEtFWS0tLS0tICBNSUdmTUEwR0NTcUdTSWIzRFFFQkFRVUFBNEdOQURDQmlRS0JnUUNVL3pUYXNubm1DTkd1Y01ad0Y2TG5mRWhDICBPOW5KZ3RxdEhHUjk5T3dwcHJ3ZmhKYnVGR1RtdTZzZWxWVUVHbUtYRjB5YmFtWVl6VmFPVG03dlJzZWRMaUhPICBobFZNM2FLOWI3WnkwQWF5M3U1Wmxqc3hxOXRrVUc4Wjhhei9iSDR4MUtnakdFOHpTVmZVOEhaSkVhb1pLWjJZICBaT3RWSVNYend0K3FLSmo4dXdJREFRQUIgIC0tLS0tRU5EIFBVQkxJQyBLRVktLS0tLSIsImV4cCI6MTc0ODUxODM2MCwiaWF0IjoxNzQ4NTE3NzYwLCJqdGkiOiIwYzEzZDQxNC1mZWI3LTQ0ZDgtYmJkZC00NjJjMjhkYmM4ZTUifQ.aq8jaRH0FEYIBXxxuLQJPpSD_a6msJdnlTeOBaoTqRFt6M7il33pqvF4-KT1-DEe8eeFRUbk89JhI8nvtCRTVv81svHKLdRDZi4m8v8JCz9NJB-_nWxwb2OZUmly0RS3BLAfvi6i0qxCAT-5hspwcwMFtOdOP0uKxU1ezXGVVjoodtS2HOV0xsAEppJhEEMHhBWtRKIts8h1Tc14ZofVR-w495zJRftjq5lTeR7r_2KDTGubUya1zV_QrRXMY-vDG7tQal7CcTWmMQ3enOwFTN3psZ7WZOFZOrjPPwVJErF061DEX_KvendZRD2eIP7zvZZBPS4Jbffw2YGWgP2wHA",
+				"type": "string"
+			}
+		]
+	},
+	"event": [
+		{
+			"listen": "prerequest",
+			"script": {
+				"type": "text/javascript",
+				"packages": {},
+				"exec": [
+					""
+				]
+			}
+		},
+		{
+			"listen": "test",
+			"script": {
+				"type": "text/javascript",
+				"packages": {},
+				"exec": [
+					""
+				]
+			}
+		}
+	]
+}

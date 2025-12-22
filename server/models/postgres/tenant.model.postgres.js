@@ -49,7 +49,11 @@ const Tenant = sequelize.define('Tenant', {
       'pharmacy',
       'ambulance',
       'corporate',
-      'homecare'
+      'homecare',
+      'tpa',        // Third Party Administrator
+      'psu',        // Public Sector Undertaking
+      'ngo',        // Non-Governmental Organization
+      'insurer'     // Insurance Company
     ),
     allowNull: false,
     comment: 'Type of healthcare organization'
@@ -203,7 +207,26 @@ const Tenant = sequelize.define('Tenant', {
   owner_id: {
     type: DataTypes.INTEGER,
     allowNull: true,
-    comment: 'Primary admin user ID'
+    comment: 'Primary admin user ID (references users table)'
+  },
+  admin_user_id: {
+    type: DataTypes.INTEGER,
+    allowNull: true,
+    comment: 'Primary organization admin user ID (same as owner_id)',
+    references: {
+      model: 'users',
+      key: 'id'
+    }
+  },
+  admin_email: {
+    type: DataTypes.STRING(255),
+    allowNull: true,
+    comment: 'Primary admin email for organization setup'
+  },
+  admin_users: {
+    type: DataTypes.JSONB,
+    defaultValue: [],
+    comment: 'Array of admin user IDs for this organization (supports multi-admin)'
   },
   
   // Status

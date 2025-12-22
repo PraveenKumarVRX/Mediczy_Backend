@@ -1,0 +1,36 @@
+- name: Install Citus packages
+  ansible.builtin.package:
+    name: "{{ citus_packages }}"
+    state: present
+
+- name: Ensure coordinator metadata db exists
+  become_user: postgres
+  community.postgresql.postgresql_db:
+    name: "{{ citus_metadata_db }}"
+    encoding: UTF8
+  when: pg_role == 'coordinator'
+
+- name: Create distributed metadata schema
+  become_user: postgres
+  community.postgresql.postgresql_query:
+    db: "{{ citus_metadata_db }}"
+    query: "SELECT 1;"
+  when: pg_role == 'coordinator'
+
+- name: Register workers on coordinator
+  become_user: postgres
+  community.postgresql.postgresql_query:
+    db: "{{ citus_metadata_db }}"
+    query: "SELECT master_add_node('{{ item.host }}', {{ item.port | default(5432) }});"
+  loop: "{{ citus_worker_nodes }}"
+  register: add_node
+  failed_when: add_node.failed and ('already exists' not in add_node.msg | default(''))
+  when: pg_role == 'coordinator'
+
+- name: Convert helper tables to distributed
+  become_user: postgres
+  community.postgresql.postgresql_query:
+    db: "{{ item.database }}"
+    query: "SELECT create_distributed_table('{{ item.table }}', '{{ item.dist_column | default('session_id') }}', colocate_with => NULL);"
+  loop: "{{ citus_distributed_tables | default([]) }}"
+  when: pg_role == 'coordinator'

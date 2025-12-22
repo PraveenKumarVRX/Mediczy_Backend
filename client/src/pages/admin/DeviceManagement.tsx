@@ -4,10 +4,21 @@ import axios from 'axios';
 import AdminLayout from '../../components/admin/AdminLayout';
 import DeviceRegistrationForm from '../../components/admin/DeviceRegistrationForm';
 import {
-  FiTablet, FiPlus, FiSearch, FiFilter, FiPhone, FiBattery,
-  FiWifi, FiCheckCircle, FiAlertCircle, FiDollarSign, FiBarChart2,
-  FiEdit2, FiRefreshCw, FiActivity
-} from 'react-icons/fi';
+  Tablet,
+  Plus,
+  Search,
+  Filter,
+  Phone,
+  Battery,
+  Wifi,
+  CheckCircle,
+  AlertCircle,
+  DollarSign,
+  BarChart2,
+  Pencil,
+  RefreshCw,
+  Activity
+} from 'lucide-react';
 
 const DeviceManagement = () => {
   const navigate = useNavigate();
@@ -110,7 +121,7 @@ const DeviceManagement = () => {
           <div className="flex items-center justify-between">
             <div>
               <h1 className="text-3xl font-bold text-gray-900 flex items-center gap-2">
-                <FiTablet className="text-blue-600" />
+                <Tablet className="text-blue-600" />
                 Device Management
               </h1>
               <p className="text-gray-600 mt-1">Smart tablets with SIM + Software + AMC</p>
@@ -119,7 +130,7 @@ const DeviceManagement = () => {
               onClick={() => setShowRegisterModal(true)}
               className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 flex items-center gap-2"
             >
-              <FiPlus /> Register Device
+              <Plus /> Register Device
             </button>
           </div>
         </div>
@@ -132,7 +143,7 @@ const DeviceManagement = () => {
                 <p className="text-sm text-gray-600">Total Devices</p>
                 <p className="text-2xl font-bold text-gray-900">{stats.total_devices}</p>
               </div>
-              <FiTablet className="text-3xl text-blue-600" />
+              <Tablet className="text-3xl text-blue-600" />
             </div>
           </div>
 
@@ -142,7 +153,7 @@ const DeviceManagement = () => {
                 <p className="text-sm text-gray-600">Active AMCs</p>
                 <p className="text-2xl font-bold text-gray-900">{stats.active_amcs}</p>
               </div>
-              <FiCheckCircle className="text-3xl text-green-600" />
+              <CheckCircle className="text-3xl text-green-600" />
             </div>
           </div>
 
@@ -154,7 +165,7 @@ const DeviceManagement = () => {
                   {formatCurrency(stats.monthly_recurring_revenue)}
                 </p>
               </div>
-              <FiDollarSign className="text-3xl text-purple-600" />
+              <DollarSign className="text-3xl text-purple-600" />
             </div>
           </div>
 
@@ -166,7 +177,7 @@ const DeviceManagement = () => {
                   {formatCurrency(stats.annual_recurring_revenue || stats.monthly_recurring_revenue * 12)}
                 </p>
               </div>
-              <FiBarChart2 className="text-3xl text-orange-600" />
+              <BarChart2 className="text-3xl text-orange-600" />
             </div>
           </div>
         </div>
@@ -175,7 +186,7 @@ const DeviceManagement = () => {
         <div className="bg-white p-4 rounded-lg shadow mb-6">
           <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
             <div className="relative">
-              <FiSearch className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400" />
+              <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400" />
               <input
                 type="text"
                 placeholder="Search by device ID, name, phone..."
@@ -231,7 +242,7 @@ const DeviceManagement = () => {
                 <tr>
                   <td colSpan="7" className="px-6 py-12 text-center">
                     <div className="flex justify-center items-center">
-                      <FiRefreshCw className="animate-spin text-3xl text-blue-600" />
+                      <RefreshCw className="animate-spin text-3xl text-blue-600" />
                     </div>
                   </td>
                 </tr>
@@ -246,12 +257,12 @@ const DeviceManagement = () => {
                   <tr key={device.id} className="hover:bg-gray-50">
                     <td className="px-6 py-4">
                       <div className="flex items-center gap-3">
-                        <FiTablet className="text-2xl text-gray-400" />
+                        <Tablet className="text-2xl text-gray-400" />
                         <div>
                           <div className="font-medium text-gray-900">{device.device_name}</div>
                           <div className="text-sm text-gray-500">{device.device_id}</div>
                           <div className="text-sm text-gray-500 flex items-center gap-1">
-                            <FiPhone size={12} />
+                            <Phone size={12} />
                             {device.phone_number || 'N/A'}
                           </div>
                         </div>
@@ -288,7 +299,7 @@ const DeviceManagement = () => {
                       <div className="flex items-center gap-2">
                         {device.battery_level !== null && (
                           <div className="flex items-center gap-1 text-sm">
-                            <FiBattery
+                            <Battery
                               className={device.battery_level > 20 ? 'text-green-600' : 'text-red-600'}
                             />
                             {device.battery_level}%
@@ -296,7 +307,7 @@ const DeviceManagement = () => {
                         )}
                         {device.last_online && (
                           <div className="flex items-center gap-1 text-xs text-gray-500">
-                            <FiActivity size={12} />
+                            <Activity size={12} />
                             {new Date(device.last_online).toLocaleDateString()}
                           </div>
                         )}
@@ -306,12 +317,12 @@ const DeviceManagement = () => {
                     <td className="px-6 py-4">
                       {device.amc_active ? (
                         <span className="flex items-center gap-1 text-sm text-green-600">
-                          <FiCheckCircle />
+                          <CheckCircle />
                           Active
                         </span>
                       ) : (
                         <span className="flex items-center gap-1 text-sm text-red-600">
-                          <FiAlertCircle />
+                          <AlertCircle />
                           Expired
                         </span>
                       )}
@@ -323,7 +334,7 @@ const DeviceManagement = () => {
                         className="text-blue-600 hover:text-blue-800 mr-3"
                         title="View Details"
                       >
-                        <FiEdit2 />
+                        <Pencil />
                       </button>
                     </td>
                   </tr>

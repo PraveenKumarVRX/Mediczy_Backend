@@ -889,11 +889,18 @@ const EmailManagement = () => {
                     <div className="text-xs text-blue-200">Emails Sent</div>
                   </div>
                 </div>
-                <Button variant="outline" className="bg-white/20 hover:bg-white/30 border-white/30 text-white">
+                <Button
+                  variant="outline"
+                  className="bg-white/20 hover:bg-white/30 border-white/30 text-white"
+                  onClick={handleExportData}
+                >
                   <Download className="mr-2 h-4 w-4" />
                   Export Logs
                 </Button>
-                <Button className="bg-white/20 hover:bg-white/30 border border-white/30 backdrop-blur-sm text-white shadow-lg transition-all duration-200 hover:scale-105">
+                <Button
+                  className="bg-white/20 hover:bg-white/30 border border-white/30 backdrop-blur-sm text-white shadow-lg transition-all duration-200 hover:scale-105"
+                  onClick={() => setShowQuickSendDialog(true)}
+                >
                   <Plus className="mr-2 h-4 w-4" />
                   Quick Send
                 </Button>

@@ -1,0 +1,28 @@
+---
+- name: Base packages for database nodes
+  hosts: pg_coordinators:pg_workers
+  become: true
+  roles:
+    - common
+  tags:
+    - common
+
+- name: Configure coordinators
+  hosts: pg_coordinators
+  become: true
+  roles:
+    - role: postgres
+    - role: citus
+  tags:
+    - postgres
+    - coordinators
+
+- name: Configure workers
+  hosts: pg_workers
+  become: true
+  roles:
+    - role: postgres
+    - role: citus
+  tags:
+    - postgres
+    - workers

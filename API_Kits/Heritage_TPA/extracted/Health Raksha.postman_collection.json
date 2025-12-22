@@ -1,0 +1,170 @@
+{
+	"info": {
+		"_postman_id": "97dfc4b3-f543-47a1-af89-789f49edcd66",
+		"name": "Health Raksha",
+		"schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json",
+		"_exporter_id": "19690377"
+	},
+	"item": [
+		{
+			"name": "Get Active Data",
+			"request": {
+				"method": "POST",
+				"header": [],
+				"body": {
+					"mode": "raw",
+					"raw": "{\r\n    \"USERNAME\": \"TEST\",\r\n    \"PASSWORD\": \"welcome$123\",\r\n    \"POLICY_NUMBER\": \"124200/48/08/17524\"\r\n}",
+					"options": {
+						"raw": {
+							"language": "json"
+						}
+					}
+				},
+				"url": {
+					"raw": "http://115.241.23.168/RakshaWST/RakshaServices/ActiveDataService",
+					"protocol": "http",
+					"host": [
+						"115",
+						"241",
+						"23",
+						"168"
+					],
+					"path": [
+						"RakshaWST",
+						"RakshaServices",
+						"ActiveDataService"
+					]
+				}
+			},
+			"response": []
+		},
+		{
+			"name": "EcardDownloadService",
+			"request": {
+				"method": "POST",
+				"header": [],
+				"body": {
+					"mode": "raw",
+					"raw": "{\r\n    \"USERNAME\": \"TEST\",\r\n    \"PASSWORD\": \"welcome$123\",\r\n    \"POLICY_NUMBER\": \"124200/48/08/17524\",\r\n    \"EMPLOYEE_NUMBER\": \"102\"\r\n}",
+					"options": {
+						"raw": {
+							"language": "json"
+						}
+					}
+				},
+				"url": {
+					"raw": "http://115.241.23.168/RakshaWST/RakshaServices/EcardDownloadService",
+					"protocol": "http",
+					"host": [
+						"115",
+						"241",
+						"23",
+						"168"
+					],
+					"path": [
+						"RakshaWST",
+						"RakshaServices",
+						"EcardDownloadService"
+					]
+				}
+			},
+			"response": []
+		},
+		{
+			"name": "ClaimDetailService",
+			"request": {
+				"method": "POST",
+				"header": [],
+				"body": {
+					"mode": "raw",
+					"raw": "{\r\n    \"USERNAME\": \"TEST\",\r\n    \"PASSWORD\": \"welcome$123\",\r\n    \"POLICY_NUMBER\": \"124200/48/08/17524\",\r\n    \"START_INDEX\": \"1\",\r\n    \"RANGE\": \"20\"\r\n}",
+					"options": {
+						"raw": {
+							"language": "json"
+						}
+					}
+				},
+				"url": {
+					"raw": "http://115.241.23.168/RakshaWST/RakshaServices/ClaimDetailService",
+					"protocol": "http",
+					"host": [
+						"115",
+						"241",
+						"23",
+						"168"
+					],
+					"path": [
+						"RakshaWST",
+						"RakshaServices",
+						"ClaimDetailService"
+					]
+				}
+			},
+			"response": []
+		},
+		{
+			"name": "ClaimIntimationService",
+			"request": {
+				"method": "POST",
+				"header": [],
+				"body": {
+					"mode": "raw",
+					"raw": "{\r\n    \"user\": \"TEST\",\r\n    \"password\": \"welcome$123\",\r\n    \"claimtype\": \"REIMBURSEMENT\",\r\n    \"hospitalName\": \"ABHAYA HOSPITAL\",\r\n    \"DOA\": \"23-JUN-2022\",\r\n    \"DOD\": \"24-JUN-2022\",\r\n    \"Diagnosis\": \"TEST\",\r\n    \"amount\": \"50000\",\r\n    \"PolicyNumber\": \"124200/48/08/17524\",\r\n    \"memberName\": \"Mavinkurve Ashwini\",\r\n    \"city\": \"ganjam\"\r\n}",
+					"options": {
+						"raw": {
+							"language": "json"
+						}
+					}
+				},
+				"url": {
+					"raw": "http://115.241.23.168/RakshaWST/RakshaServices/ClaimIntimationService",
+					"protocol": "http",
+					"host": [
+						"115",
+						"241",
+						"23",
+						"168"
+					],
+					"path": [
+						"RakshaWST",
+						"RakshaServices",
+						"ClaimIntimationService"
+					]
+				}
+			},
+			"response": []
+		},
+		{
+			"name": "NetworkHospitalListService",
+			"request": {
+				"method": "POST",
+				"header": [],
+				"body": {
+					"mode": "raw",
+					"raw": "{\r\n    \"USERNAME\": \"TEST\",\r\n    \"PASSWORD\": \"welcome$123\",\r\n    \"INSURER_ID\": \"I2\"\r\n}",
+					"options": {
+						"raw": {
+							"language": "json"
+						}
+					}
+				},
+				"url": {
+					"raw": "http://115.241.23.168/RakshaWST/RakshaServices/NetworkHospitalListService",
+					"protocol": "http",
+					"host": [
+						"115",
+						"241",
+						"23",
+						"168"
+					],
+					"path": [
+						"RakshaWST",
+						"RakshaServices",
+						"NetworkHospitalListService"
+					]
+				}
+			},
+			"response": []
+		}
+	]
+}

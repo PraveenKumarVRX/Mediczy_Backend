@@ -1,0 +1,40 @@
+{"id": "1", "category": "Symptom", "name": "Fever", "description": "Body temperature above 100.4°F (38°C). Can be caused by infections, heat exhaustion, or inflammation."}
+{"id": "2", "category": "Symptom", "name": "Cough", "description": "A reflex action to clear the airways of mucus, smoke, or irritants."}
+{"id": "3", "category": "Disease", "name": "Diabetes Type 2", "description": "A chronic condition that affects the way the body processes blood sugar (glucose)."}
+{"id": "4", "category": "Disease", "name": "Hypertension", "description": "A condition in which the force of the blood against the artery walls is too high."}
+{"id": "5", "category": "Test", "name": "Fasting Blood Sugar", "description": "Measures blood sugar levels after fasting for at least 8 hours."}
+{"id": "6", "category": "Test", "name": "ECG", "description": "Electrocardiogram measures the electrical activity of the heart."}
+{"id": "7", "category": "Medication", "name": "Metformin", "description": "Medication used to treat Type 2 Diabetes by lowering blood sugar levels."}
+{"id": "8", "category": "Medication", "name": "Amlodipine", "description": "Calcium channel blocker used to treat high blood pressure."}
+{"id": "9", "category": "Treatment", "name": "Lifestyle Modification", "description": "Includes regular exercise, healthy diet, and stress management."}
+{"id": "10", "category": "Treatment", "name": "Insulin Therapy", "description": "Used to regulate blood sugar levels in diabetes patients."}
+{"id": "11", "category": "Guideline", "name": "Hypertension Management", "description": "Reduce salt intake, increase physical activity, and take prescribed medications."}
+{"id": "12", "category": "Guideline", "name": "Diabetes Care", "description": "Monitor blood sugar regularly, maintain a balanced diet, and exercise."}
+{"id": "13", "category": "Symptom", "name": "Shortness of Breath", "description": "Difficulty breathing or feeling suffocated."}
+{"id": "14", "category": "Symptom", "name": "Chest Pain", "description": "Pain or discomfort in the chest, which may indicate heart-related issues."}
+{"id": "15", "category": "Disease", "name": "Asthma", "description": "A condition in which your airways narrow and swell and may produce extra mucus."}
+{"id": "16", "category": "Disease", "name": "Chronic Kidney Disease", "description": "A long-term condition where the kidneys do not work effectively."}
+{"id": "17", "category": "Test", "name": "Lipid Profile", "description": "Measures cholesterol and triglyceride levels in the blood."}
+{"id": "18", "category": "Test", "name": "Creatinine Test", "description": "Measures the level of creatinine in your blood to check kidney function."}
+{"id": "19", "category": "Medication", "name": "Statins", "description": "Used to lower cholesterol levels and reduce the risk of heart disease."}
+{"id": "20", "category": "Medication", "name": "Albuterol", "description": "Medication used to treat or prevent bronchospasm in asthma."}
+{"id": "21", "category": "Treatment", "name": "Physical Therapy", "description": "Helps improve mobility and reduce pain through exercise."}
+{"id": "22", "category": "Treatment", "name": "Dialysis", "description": "Artificial process of removing waste and excess fluid from the blood."}
+{"id": "23", "category": "Guideline", "name": "COPD Management", "description": "Stop smoking, use inhalers, and avoid lung irritants."}
+{"id": "24", "category": "Symptom", "name": "Fatigue", "description": "Extreme tiredness and lack of energy."}
+{"id": "25", "category": "Symptom", "name": "Weight Loss", "description": "Unintentional weight loss can be a sign of underlying health issues."}
+{"id": "26", "category": "Disease", "name": "Obesity", "description": "Excess body fat that may impair health."}
+{"id": "27", "category": "Disease", "name": "Liver Cirrhosis", "description": "Severe scarring of the liver caused by long-term damage."}
+{"id": "28", "category": "Test", "name": "Liver Function Test", "description": "Measures enzymes and proteins produced by the liver."}
+{"id": "29", "category": "Medication", "name": "Losartan", "description": "Used to treat high blood pressure and protect the kidneys."}
+{"id": "30", "category": "Medication", "name": "Omeprazole", "description": "Reduces stomach acid production to treat ulcers and acid reflux."}
+{"id": "31", "category": "Treatment", "name": "Surgery", "description": "Medical procedure to treat injury, disease, or other health conditions."}
+{"id": "32", "category": "Treatment", "name": "Chemotherapy", "description": "Drug treatment that uses chemicals to kill cancer cells."}
+{"id": "33", "category": "Guideline", "name": "Cancer Management", "description": "Includes surgery, radiation, chemotherapy, and targeted therapy."}
+{"id": "34", "category": "Guideline", "name": "Diabetes Prevention", "description": "Maintain a healthy diet, exercise regularly, and monitor blood sugar."}
+{"id": "35", "category": "Symptom", "name": "Headache", "description": "Pain or discomfort in the head or upper neck."}
+{"id": "36", "category": "Symptom", "name": "Nausea", "description": "Feeling of sickness with an inclination to vomit."}
+{"id": "37", "category": "Symptom", "name": "Blurred Vision", "description": "Loss of sharpness of eyesight."}
+{"id": "38", "category": "Disease", "name": "Anemia", "description": "Lack of enough healthy red blood cells to carry oxygen to tissues."}
+{"id": "39", "category": "Disease", "name": "Stroke", "description": "Occurs when blood supply to part of the brain is interrupted or reduced."}
+{"id": "40", "category": "Guideline", "name": "Stroke Management", "description": "Emergency medical care, blood thinners, and physical therapy."}

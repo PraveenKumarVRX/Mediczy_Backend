@@ -11,7 +11,7 @@ import {
   Microscope, CheckCircle, AlertCircle, Package, ClipboardList,
   ArrowRight, Timer, Beaker, Edit, Trash2, Eye, CreditCard,
   BarChart3, UserCog, Bell, Settings, HelpCircle, Phone, Mail,
-  MapPin, AlertTriangle, TrendingDown
+  MapPin, AlertTriangle, TrendingDown, Receipt
 } from 'lucide-react';
 import { Input } from '@/components/ui/input';
 import { Textarea } from '@/components/ui/textarea';
@@ -712,7 +712,7 @@ const LabDashboard = () => {
           <h2 className="text-2xl font-bold">Patients</h2>
           <p className="text-muted-foreground">Patient records and test history</p>
         </div>
-        <Button className="gap-2">
+        <Button className="gap-2" onClick={() => toast({ title: "Register Patient", description: "Opening patient registration form..." })}>
           <Plus className="h-4 w-4" />
           Register Patient
         </Button>
@@ -738,7 +738,7 @@ const LabDashboard = () => {
                     <p className="text-sm text-muted-foreground">ID: PAT{1000 + i} • Age: {25 + i} • Male</p>
                   </div>
                 </div>
-                <Button variant="outline" size="sm">View History</Button>
+                <Button variant="outline" size="sm" onClick={() => toast({ title: "View History", description: `Viewing history for Patient ${i + 1}` })}>View History</Button>
               </div>
             ))}
           </div>
@@ -968,7 +968,7 @@ const LabDashboard = () => {
     <div className="space-y-6">
       <div className="flex justify-between items-center">
         <h2 className="text-2xl font-bold">Inventory Management</h2>
-        <Button className="gap-2">
+        <Button className="gap-2" onClick={() => toast({ title: "Add Item", description: "Opening add inventory item form..." })}>
           <Plus className="h-4 w-4" />
           Add Item
         </Button>
@@ -1016,8 +1016,8 @@ const LabDashboard = () => {
                   <p className="text-sm text-muted-foreground">Stock: {150 + i * 50} units</p>
                 </div>
                 <div className="flex gap-2">
-                  <Button variant="outline" size="sm"><Edit className="h-4 w-4" /></Button>
-                  <Button variant="outline" size="sm"><Plus className="h-4 w-4" /></Button>
+                  <Button variant="outline" size="sm" onClick={() => toast({ title: "Edit Item", description: `Editing ${item}` })}><Edit className="h-4 w-4" /></Button>
+                  <Button variant="outline" size="sm" onClick={() => toast({ title: "Add Stock", description: `Adding stock to ${item}` })}><Plus className="h-4 w-4" /></Button>
                 </div>
               </div>
             ))}
@@ -1206,7 +1206,7 @@ const LabDashboard = () => {
     <div className="space-y-6">
       <div className="flex justify-between items-center">
         <h2 className="text-2xl font-bold">Staff Management</h2>
-        <Button className="gap-2">
+        <Button className="gap-2" onClick={() => toast({ title: "Add Staff", description: "Opening add staff member form..." })}>
           <Plus className="h-4 w-4" />
           Add Staff Member
         </Button>
@@ -1229,8 +1229,8 @@ const LabDashboard = () => {
                   </div>
                 </div>
                 <div className="flex gap-2">
-                  <Button variant="outline" size="sm"><Edit className="h-4 w-4" /></Button>
-                  <Button variant="outline" size="sm">View Details</Button>
+                  <Button variant="outline" size="sm" onClick={() => toast({ title: "Edit Staff", description: `Editing staff member ${i + 1}` })}><Edit className="h-4 w-4" /></Button>
+                  <Button variant="outline" size="sm" onClick={() => toast({ title: "View Details", description: `Viewing staff member ${i + 1} details` })}>View Details</Button>
                 </div>
               </div>
             ))}

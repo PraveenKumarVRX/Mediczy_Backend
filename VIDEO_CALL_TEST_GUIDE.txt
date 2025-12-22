@@ -1,0 +1,103 @@
+╔═══════════════════════════════════════════════════════════════════════╗
+║                  MEDICZY VIDEO CONSULTATION - TEST GUIDE              ║
+║                        MiroTalk SFU Integration                       ║
+╚═══════════════════════════════════════════════════════════════════════╝
+
+🎯 SYSTEM STATUS
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+✅ MiroTalk SFU: RUNNING (Port 3010)
+✅ Backend Server: RUNNING (Port 8000)  
+✅ Frontend: ACCESSIBLE (http://mediqzy.com)
+✅ Redis: CONNECTED
+✅ Nginx Reverse Proxy: CONFIGURED
+
+📋 QUICK TEST - Copy These Links
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+🔗 Test Room ID: mediczy_quicktest_$(date +%s)
+
+👨‍⚕️ Doctor Link:
+http://mediqzy.com/mirotalk/join/mediczy_quicktest_$(date +%s)?name=Dr.Johnson
+
+👤 Patient Link:
+http://mediqzy.com/mirotalk/join/mediczy_quicktest_$(date +%s)?name=Patient.Smith
+
+🧪 TESTING STEPS
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+Step 1: Open Doctor Link
+  • Copy the Doctor Link above
+  • Open in Chrome, Firefox, or Edge
+  • Click "Allow" when prompted for camera/microphone permissions
+  • You should see yourself in the video preview
+  • Wait in the room
+
+Step 2: Open Patient Link (in different browser/tab)
+  • Copy the Patient Link above
+  • Open in a DIFFERENT browser or incognito window
+  • Click "Allow" for camera/microphone permissions
+  • You should join the same room as the doctor
+
+Step 3: Verify Connection
+  • Both users should see each other's video
+  • Test audio by speaking
+  • Try screen sharing (if needed)
+  • Check text chat feature
+
+✅ WHAT SHOULD WORK
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+✓ Real-time audio/video streaming (WebRTC + SFU)
+✓ Multiple participants in same room
+✓ Screen sharing
+✓ Text chat messaging
+✓ Recording (if enabled)
+✓ Low latency via Selective Forwarding Unit
+
+⚠️ COMMON ISSUES & SOLUTIONS
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+Issue: "Page Not Loading"
+  → Check internet connection
+  → Verify: http://mediqzy.com is accessible
+  → Clear browser cache and try again
+
+Issue: "Camera/Microphone Not Working"  
+  → Click the lock icon in browser address bar
+  → Allow camera and microphone permissions
+  → Refresh the page
+
+Issue: "Can't See Other Person"
+  → Make sure BOTH users are in the SAME room (same Room ID)
+  → Check that both have allowed camera permissions
+  → Verify both users clicked "Join" button
+
+Issue: "No Audio"
+  → Check system volume is not muted
+  → Verify correct microphone/speaker selected in browser
+  → Test audio in browser settings
+
+🔧 BACKEND INTEGRATION
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+When a user books an "Online Consultation" appointment via the app:
+
+1. Backend generates unique room ID
+2. Meeting link created: http://mediqzy.com/mirotalk/join/[ROOM_ID]
+3. Doctor receives link with ?name=Dr.[DoctorName]
+4. Patient receives link with ?name=[PatientName]
+5. Both click their links at appointment time
+6. MiroTalk SFU handles the video streaming
+
+📱 PRODUCTION USAGE
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+Go to: http://mediqzy.com
+  → Login/Register
+  → Book Appointment
+  → Select "Online Consultation"
+  → System auto-generates video link
+  → Receive link via email/SMS
+  → Click link at appointment time
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+Generated: $(date)
+System: Mediczy Healthcare Platform v2.0
+Video Provider: MiroTalk SFU (WebRTC + Mediasoup)
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━

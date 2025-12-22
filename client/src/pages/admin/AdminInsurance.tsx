@@ -10,6 +10,7 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from ".
 import { Badge } from "../../components/ui/badge";
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger, DropdownMenuSeparator } from "../../components/ui/dropdown-menu";
 import AdminLayout from '../../components/layout/AdminLayout';
+import { useToast } from '../../hooks/use-toast';
 import { 
   Download, Upload, Plus, FileSpreadsheet, UserPlus,
   Search, Eye, Edit, Trash2, MoreVertical, Star, Building2, Phone, Mail, Shield,
@@ -166,6 +167,7 @@ const sampleInsuranceData: InsuranceProvider[] = [
 ];
 
 const AdminInsurance = () => {
+  const { toast } = useToast();
   // Form and upload state
   const [loading, setLoading] = useState(false);
   const [result, setResult] = useState<{ message: string; count?: number } | null>(null);
@@ -518,13 +520,13 @@ const AdminInsurance = () => {
                                     <Edit className="mr-2 h-4 w-4" />
                                     Edit Insurer
                                   </DropdownMenuItem>
-                                  <DropdownMenuItem onClick={() => alert(`View details for ${insurer.insurerName}`)}>
+                                  <DropdownMenuItem onClick={() => toast({ title: "Insurer Details", description: `Viewing details for ${insurer.insurerName}` })}>
                                     <Eye className="mr-2 h-4 w-4" />
                                     View Details
                                   </DropdownMenuItem>
                                   <DropdownMenuSeparator />
                                   <DropdownMenuItem 
-                                    onClick={() => alert(`Delete ${insurer.insurerName}?`)} 
+                                    onClick={() => toast({ title: "Confirm Delete", description: `Are you sure you want to delete ${insurer.insurerName}?`, variant: "destructive" })} 
                                     className="text-destructive focus:text-destructive"
                                   >
                                     <Trash2 className="mr-2 h-4 w-4" />
@@ -663,13 +665,13 @@ const AdminInsurance = () => {
               <CardContent>
                 <div className="space-y-4">
                   <p className="text-sm text-muted-foreground">
-                    Upload an Excel file (.xlsx, .xls) with insurance provider records.
+                    Upload an Excel file (.xlsx) with insurance provider records.
                   </p>
                   <div className="flex items-center gap-4">
                     <Input 
                       ref={fileInputRef} 
                       type="file" 
-                      accept=".xlsx,.xls" 
+                      accept=".xlsx" 
                       onChange={handleExcelUpload} 
                       disabled={loading} 
                     />

@@ -63,6 +63,11 @@ async function startServer() {
   // Initialize device monitoring cron jobs
   scheduleDeviceMonitoring();
   
+  // Initialize membership validation cron jobs
+  console.log('👤 Starting membership validation cron jobs...');
+  const { startMembershipCronJobs } = await import('./services/membership-cron.service.js');
+  startMembershipCronJobs();
+  
   // Start server
   server.listen(PORT, '0.0.0.0', (err) => {
     if (err) {

@@ -1,0 +1,42 @@
+{
+	"info": {
+		"_postman_id": "5a99565f-578e-402b-bf5b-586fd1ef4f36",
+		"name": "Health Heritage 2",
+		"schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json",
+		"_exporter_id": "19690377"
+	},
+	"item": [
+		{
+			"name": "GetClaimsList",
+			"request": {
+				"method": "POST",
+				"header": [],
+				"body": {
+					"mode": "raw",
+					"raw": "{\r\n    \"InsCo\": \"IBN\",\r\n    \"PolicyNumber\": \"251100502110000189\",\r\n    \"FromDate\": \"01/10/2021\",\r\n    \"ToDate\": \"30/09/2022\",\r\n    \"AuthId\": \"\",\r\n    \"EmployeeNumber\": \"625191\",\r\n    \"MemberID\": \"\"\r\n}",
+					"options": {
+						"raw": {
+							"language": "json"
+						}
+					}
+				},
+				"url": {
+					"raw": "http://223.31.103.204/HeritageMobileAppNew/MobileAppAPI.svc/GetClaimsList",
+					"protocol": "http",
+					"host": [
+						"223",
+						"31",
+						"103",
+						"204"
+					],
+					"path": [
+						"HeritageMobileAppNew",
+						"MobileAppAPI.svc",
+						"GetClaimsList"
+					]
+				}
+			},
+			"response": []
+		}
+	]
+}

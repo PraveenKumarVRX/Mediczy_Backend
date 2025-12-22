@@ -1,0 +1,8 @@
+common_packages:
+  - curl
+  - ca-certificates
+  - gnupg
+  - lsb-release
+  - python3-pip
+  - net-tools
+systemd_journal_persistent: true

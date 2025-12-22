@@ -5,6 +5,9 @@
 
 import Tenant from '../models/postgres/tenant.model.postgres.js';
 
+// RULE: Tenant context must come from domain/JWT; header override is opt-in only.
+const allowHeaderTenant = process.env.ALLOW_TENANT_HEADER === 'true';
+
 /**
  * Extract tenant from subdomain or custom domain
  * Examples:
@@ -33,12 +36,21 @@ export async function extractTenant(req, res, next) {
       });
     }
     
-    // Try X-Tenant-ID header (for API clients)
-    if (!tenant && req.get('X-Tenant-ID')) {
-      const tenantId = parseInt(req.get('X-Tenant-ID'));
-      tenant = await Tenant.findOne({
-        where: { id: tenantId, status: 'active' }
-      });
+    // Try X-Tenant-ID header (for API clients) - guarded by env flag
+    const headerTenantId = req.get('X-Tenant-ID');
+    if (!tenant && headerTenantId) {
+      if (!allowHeaderTenant) {
+        console.warn(
+          `[tenant] Ignored X-Tenant-ID override for host=${host || 'unknown'}`
+        );
+      } else {
+        const tenantId = parseInt(headerTenantId, 10);
+        if (!Number.isNaN(tenantId)) {
+          tenant = await Tenant.findOne({
+            where: { id: tenantId, status: 'active' }
+          });
+        }
+      }
     }
     
     // Attach tenant to request

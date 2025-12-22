@@ -16,9 +16,9 @@ import {
   LayoutGrid, List, FileSpreadsheet,
 } from 'lucide-react';
 import axios from 'axios';
-import * as XLSX from 'xlsx';
-import { exportProviders } from '@/utils/exportToExcel';
+import { exportToCSV, exportToExcel } from '@/utils/exportToExcel';
 import { generateDoctorTemplate } from '@/utils/excelTemplates';
+import { parseExcelFile } from '@/utils/excelParser';
 import ProviderDetailModal from '@/components/providers/ProviderDetailModal';
 import ProviderAnalytics from '@/components/providers/ProviderAnalytics';
 
@@ -150,16 +150,11 @@ const DoctorsManagement = () => {
       'Quality Score': doctor.quality_score || '',
     }));
     
+    const filename = `doctors_${doctors.length}_records_${Date.now()}`;
     if (format === 'csv') {
-      const ws = XLSX.utils.json_to_sheet(preparedData);
-      const wb = XLSX.utils.book_new();
-      XLSX.utils.book_append_sheet(wb, ws, 'Doctors');
-      XLSX.writeFile(wb, `doctors_${doctors.length}_records_${Date.now()}.csv`, { bookType: 'csv' });
+      exportToCSV(preparedData, { filename, includeTimestamp: false });
     } else {
-      const ws = XLSX.utils.json_to_sheet(preparedData);
-      const wb = XLSX.utils.book_new();
-      XLSX.utils.book_append_sheet(wb, ws, 'Doctors');
-      XLSX.writeFile(wb, `doctors_${doctors.length}_records_${Date.now()}.xlsx`);
+      exportToExcel(preparedData, { filename, sheetName: 'Doctors', includeTimestamp: false });
     }
     
     setResult({ message: `Exported ${doctors.length} doctors as ${format.toUpperCase()}` });
@@ -245,10 +240,7 @@ const DoctorsManagement = () => {
       setError(null);
       setResult(null);
 
-      const data = await file.arrayBuffer();
-      const workbook = XLSX.read(data);
-      const worksheet = workbook.Sheets[workbook.SheetNames[0]];
-      const jsonData = XLSX.utils.sheet_to_json(worksheet);
+      const jsonData = await parseExcelFile(file);
 
       const doctors = jsonData.map((row: any) => ({
         name: row['Doctor Name'],
@@ -925,7 +917,7 @@ const DoctorsManagement = () => {
                         id="excel-upload"
                         ref={fileInputRef}
                         type="file"
-                        accept=".xlsx,.xls"
+                        accept=".xlsx"
                         onChange={handleExcelUpload}
                         className="flex-1"
                       />
@@ -935,7 +927,7 @@ const DoctorsManagement = () => {
                       </Button>
                     </div>
                     <p className="text-xs text-muted-foreground">
-                      Accepted formats: .xlsx, .xls | Maximum: 1000 doctors per upload
+                      Accepted format: .xlsx | Maximum: 1000 doctors per upload
                     </p>
                   </div>
                 </div>

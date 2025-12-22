@@ -1,0 +1,42 @@
+# Managed by Ansible
+{% set broker_index = (groups['kafka'].index(inventory_hostname)) if ('kafka' in groups and inventory_hostname in groups['kafka']) else 0 %}
+broker.id={{ kafka_broker_id | default(kafka_broker_id_offset + broker_index) }}
+process.roles=broker
+log.dirs={{ kafka_data_dir }}
+num.network.threads=3
+num.io.threads=8
+socket.send.buffer.bytes=102400
+socket.receive.buffer.bytes=102400
+socket.request.max.bytes=104857600
+log.retention.hours={{ kafka_log_retention_hours }}
+log.segment.bytes=1073741824
+log.cleaner.enable=true
+zookeeper.connect={{ kafka_zookeeper_connect }}
+{% set listener_entries = kafka_listeners | default([]) %}
+{% set listener_strings = [] %}
+{% set advertised_strings = [] %}
+{% for listener in listener_entries %}
+{% set _ = listener_strings.append(listener.name ~ ':' ~ listener.type ~ '://' ~ listener.bind_address ~ ':' ~ listener.port) %}
+{% set advertised_host = listener.advertised_host | default(kafka_advertised_domain) %}
+{% set _ = advertised_strings.append(listener.name ~ ':' ~ listener.type ~ '://' ~ advertised_host ~ ':' ~ listener.port) %}
+{% endfor %}
+{% if listener_strings | length > 0 %}
+listeners={{ listener_strings | join(',') }}
+advertised.listeners={{ advertised_strings | join(',') }}
+listener.security.protocol.map={% for listener in listener_entries %}{{ listener.name }}:{{ listener.type }}{% if not loop.last %},{% endif %}{% endfor %}
+inter.broker.listener.name={{ kafka_inter_broker_listener }}
+{% else %}
+listeners=PLAINTEXT://0.0.0.0:9092
+advertised.listeners=PLAINTEXT://{{ kafka_advertised_domain }}:9092
+listener.security.protocol.map=PLAINTEXT:PLAINTEXT
+inter.broker.listener.name=PLAINTEXT
+{% endif %}
+offsets.topic.replication.factor={{ kafka_offsets_topic_replication }}
+transaction.state.log.replication.factor={{ kafka_transaction_state_log_replication }}
+transaction.state.log.min.isr=1
+ssl.keystore.location={{ kafka_ssl_keystore_location }}
+ssl.keystore.password={{ kafka_ssl_keystore_password }}
+ssl.truststore.location={{ kafka_ssl_truststore_location }}
+ssl.truststore.password={{ kafka_ssl_truststore_password }}
+ssl.client.auth=required
+confluent.support.metrics.enable=false

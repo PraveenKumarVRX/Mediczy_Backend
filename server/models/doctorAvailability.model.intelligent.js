@@ -1,48 +1,86 @@
-import { connectToDb } from '../db/mariadb.js';
+import { postgresSequelize as sequelize } from '../db/postgres-sequelize.js';
+import { DataTypes } from 'sequelize';
 
-let intelligentDB = null;
-
-async function getDB() {
-  if (!intelligentDB) {
-    intelligentDB = await connectToDb();
+// Define DoctorAvailability model - NOW USING POSTGRESQL
+const DoctorAvailabilityModel = sequelize.define('DoctorAvailability', {
+  id: {
+    type: DataTypes.INTEGER,
+    primaryKey: true,
+    autoIncrement: true
+  },
+  doctorId: {
+    type: DataTypes.INTEGER,
+    allowNull: false
+  },
+  dayOfWeek: {
+    type: DataTypes.INTEGER,
+    allowNull: false,
+    validate: { min: 0, max: 6 }
+  },
+  startTime: {
+    type: DataTypes.TIME,
+    allowNull: false
+  },
+  endTime: {
+    type: DataTypes.TIME,
+    allowNull: false
+  },
+  slotDuration: {
+    type: DataTypes.INTEGER,
+    defaultValue: 30
+  },
+  isAvailable: {
+    type: DataTypes.BOOLEAN,
+    defaultValue: true
+  },
+  consultationType: {
+    type: DataTypes.STRING(50),
+    defaultValue: 'both'
+  },
+  maxAppointments: {
+    type: DataTypes.INTEGER,
+    allowNull: true
+  },
+  metadata: {
+    type: DataTypes.JSONB,
+    defaultValue: {}
   }
-  return intelligentDB;
-}
+}, {
+  tableName: 'doctor_availability',
+  timestamps: true
+});
 
 const DoctorAvailability = {
   findOne: async (options) => {
-    const db = await getDB();
-    return await db.DoctorAvailability.findOne(options);
+    return await DoctorAvailabilityModel.findOne(options);
   },
 
   findByPk: async (id, options = {}) => {
-    const db = await getDB();
-    return await db.DoctorAvailability.findByPk(id, options);
+    return await DoctorAvailabilityModel.findByPk(id, options);
   },
 
   create: async (availabilityData) => {
-    const db = await getDB();
-    return await db.DoctorAvailability.create(availabilityData);
+    return await DoctorAvailabilityModel.create(availabilityData);
   },
 
   findAll: async (options = {}) => {
-    const db = await getDB();
-    return await db.DoctorAvailability.findAll(options);
+    return await DoctorAvailabilityModel.findAll(options);
   },
 
   update: async (values, options) => {
-    const db = await getDB();
-    return await db.DoctorAvailability.update(values, options);
+    return await DoctorAvailabilityModel.update(values, options);
   },
 
   destroy: async (options) => {
-    const db = await getDB();
-    return await db.DoctorAvailability.destroy(options);
+    return await DoctorAvailabilityModel.destroy(options);
   },
 
   count: async (options = {}) => {
-    const db = await getDB();
-    return await db.DoctorAvailability.count(options);
+    return await DoctorAvailabilityModel.count(options);
+  },
+  
+  bulkCreate: async (records, options = {}) => {
+    return await DoctorAvailabilityModel.bulkCreate(records, options);
   }
 };
 

@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import axios from 'axios';
-import { FiX, FiSave, FiAlertCircle } from 'react-icons/fi';
+import { X, Save, AlertCircle } from 'lucide-react';
 
 interface DeviceRegistrationFormProps {
   onClose: () => void;
@@ -120,7 +120,7 @@ const DeviceRegistrationForm: React.FC<DeviceRegistrationFormProps> = ({ onClose
             onClick={onClose}
             className="text-gray-400 hover:text-gray-600"
           >
-            <FiX size={24} />
+            <X size={24} />
           </button>
         </div>
 
@@ -129,7 +129,7 @@ const DeviceRegistrationForm: React.FC<DeviceRegistrationFormProps> = ({ onClose
           {/* Error Message */}
           {error && (
             <div className="bg-red-50 border border-red-200 rounded-lg p-4 flex items-center gap-2 text-red-800">
-              <FiAlertCircle />
+              <AlertCircle />
               {error}
             </div>
           )}
@@ -309,7 +309,7 @@ const DeviceRegistrationForm: React.FC<DeviceRegistrationFormProps> = ({ onClose
               disabled={loading}
               className="flex-1 px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 font-medium flex items-center justify-center gap-2 disabled:opacity-50"
             >
-              <FiSave />
+              <Save />
               {loading ? 'Registering...' : 'Register Device'}
             </button>
           </div>

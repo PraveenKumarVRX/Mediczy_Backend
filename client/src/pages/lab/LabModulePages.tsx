@@ -469,6 +469,7 @@ export const LabOrdersPage = () => {
 // Patients Page
 export const LabPatientsPage = () => {
   const { toast } = useToast();
+  const location = useLocation();
   const [patients, setPatients] = useLocalStorageState<LabPatient[]>("lab.patients", [
     {
       uhid: "UHID001234",
@@ -489,6 +490,10 @@ export const LabPatientsPage = () => {
 
   const [form, setForm] = useState({ name: "", age: "", gender: "M" as LabPatient["gender"], phone: "" });
   const [editForm, setEditForm] = useState({ name: "", age: "", gender: "M" as LabPatient["gender"], phone: "", status: "Active" as LabPatient["status"] });
+
+  useEffect(() => {
+    if (location.pathname === "/lab/patients/new") setOpenAdd(true);
+  }, [location.pathname]);
 
   const filtered = useMemo(() => {
     const q = query.trim().toLowerCase();
@@ -769,6 +774,7 @@ export const LabPatientsPage = () => {
 // Appointments Page
 export const LabAppointmentsPage = () => {
   const { toast } = useToast();
+  const location = useLocation();
   const [appointments, setAppointments] = useLocalStorageState<LabAppointment[]>("lab.appointments", [
     {
       id: "APT-001",
@@ -782,6 +788,10 @@ export const LabAppointmentsPage = () => {
 
   const [openNew, setOpenNew] = useState(false);
   const [form, setForm] = useState({ patientName: "", tests: "", date: today(), time: "09:00" });
+
+  useEffect(() => {
+    if (location.pathname === "/lab/appointments/new") setOpenNew(true);
+  }, [location.pathname]);
 
   const stats = useMemo(() => {
     const todayCount = appointments.filter((a) => a.date === today()).length;
@@ -912,6 +922,7 @@ export const LabAppointmentsPage = () => {
 // Sample Queue Page
 export const LabQueuePage = () => {
   const { toast } = useToast();
+  const location = useLocation();
   const [samples, setSamples] = useLocalStorageState<LabSample[]>("lab.samples", [
     {
       sampleId: "SAMP-001",
@@ -924,6 +935,10 @@ export const LabQueuePage = () => {
 
   const [openAdd, setOpenAdd] = useState(false);
   const [form, setForm] = useState({ patientName: "", tests: "", priority: "Normal" as Priority });
+
+  useEffect(() => {
+    if (location.pathname === "/lab/queue/new") setOpenAdd(true);
+  }, [location.pathname]);
 
   const stats = useMemo(() => {
     const inQueue = samples.filter((s) => s.status === "Pending").length;
@@ -1193,12 +1208,17 @@ export const LabQueuePage = () => {
 // Sample Collection Page
 export const LabSamplesPage = () => {
   const { toast } = useToast();
+  const location = useLocation();
   const [samples, setSamples] = useLocalStorageState<LabSample[]>("lab.samples", []);
 
   const [openCollect, setOpenCollect] = useState(false);
   const [form, setForm] = useState({ patientName: "", tests: "", priority: "Normal" as Priority, sampleType: "blood", containerType: "tube" });
   const [lastCreated, setLastCreated] = useState<LabSample | null>(null);
   const [openBarcode, setOpenBarcode] = useState(false);
+
+  useEffect(() => {
+    if (location.pathname === "/lab/samples/new") setOpenCollect(true);
+  }, [location.pathname]);
 
   const counts = useMemo(() => {
     const todayIso = today();
@@ -1386,11 +1406,16 @@ export const LabSamplesPage = () => {
 // Processing Page
 export const LabProcessingPage = () => {
   const { toast } = useToast();
+  const location = useLocation();
   const [samples, setSamples] = useLocalStorageState<LabSample[]>("lab.samples", []);
   const [processing, setProcessing] = useLocalStorageState<ProcessingItem[]>("lab.processing", []);
 
   const [openStart, setOpenStart] = useState(false);
   const [form, setForm] = useState({ sampleId: "", test: "", technician: "" });
+
+  useEffect(() => {
+    if (location.pathname === "/lab/processing/new") setOpenStart(true);
+  }, [location.pathname]);
 
   const availableSamples = useMemo(() => samples.filter((s) => s.status === "Collected" || s.status === "Processing"), [samples]);
 
@@ -1551,10 +1576,15 @@ export const LabProcessingPage = () => {
 // Results Entry Page
 export const LabResultsPage = () => {
   const { toast } = useToast();
+  const location = useLocation();
   const [samples, setSamples] = useLocalStorageState<LabSample[]>("lab.samples", []);
   const [results, setResults] = useLocalStorageState<ResultItem[]>("lab.results", []);
   const [openEntry, setOpenEntry] = useState(false);
   const [form, setForm] = useState({ sampleId: "", patientName: "", test: "", value: "", unit: "", flag: "Normal" as ResultItem["flag"] });
+
+  useEffect(() => {
+    if (location.pathname === "/lab/results/new") setOpenEntry(true);
+  }, [location.pathname]);
 
   const readySamples = useMemo(() => samples.filter((s) => s.status === "Processing" || s.status === "Collected"), [samples]);
 
@@ -1728,6 +1758,7 @@ export const LabResultsPage = () => {
 // Reports Page
 export const LabReportsPage = () => {
   const { toast } = useToast();
+  const location = useLocation();
   const [reports, setReports] = useLocalStorageState<ReportItem[]>("lab.reports", [
     { id: "REP-001", patientName: "Rajesh Kumar", tests: "CBC, Lipid Profile", generatedAt: "2024-12-10", status: "Delivered" },
   ]);
@@ -1735,6 +1766,10 @@ export const LabReportsPage = () => {
   const [form, setForm] = useState({ patientName: "", tests: "", status: "Ready" as ReportItem["status"] });
   const [openView, setOpenView] = useState(false);
   const [selected, setSelected] = useState<ReportItem | null>(null);
+
+  useEffect(() => {
+    if (location.pathname === "/lab/reports/new") setOpenGen(true);
+  }, [location.pathname]);
 
   const stats = useMemo(() => {
     const generated = reports.length;
@@ -1901,6 +1936,7 @@ export const LabReportsPage = () => {
 // Inventory Page
 export const LabInventoryPage = () => {
   const { toast } = useToast();
+  const location = useLocation();
   const [inventory, setInventory] = useLocalStorageState<InventoryItem[]>("lab.inventory", [
     { code: "CBC-KIT-001", name: "CBC Test Kit", category: "Hematology", stock: 45, expiry: "2025-06-15" },
   ]);
@@ -1909,6 +1945,10 @@ export const LabInventoryPage = () => {
   const [selected, setSelected] = useState<InventoryItem | null>(null);
   const [form, setForm] = useState({ code: "", name: "", category: "", stock: "", expiry: "" });
   const [updateStock, setUpdateStock] = useState("");
+
+  useEffect(() => {
+    if (location.pathname === "/lab/inventory/new") setOpenAdd(true);
+  }, [location.pathname]);
 
   const lowStockCount = inventory.filter((i) => i.stock <= 20).length;
   const expiredCount = inventory.filter((i) => i.expiry && i.expiry < today()).length;
@@ -2093,6 +2133,7 @@ export const LabInventoryPage = () => {
 // Billing Page
 export const LabBillingPage = () => {
   const { toast } = useToast();
+  const location = useLocation();
   const [bills, setBills] = useLocalStorageState<BillItem[]>("lab.bills", [
     { id: "BILL-001", patientName: "Rajesh Kumar", amount: 2450, status: "Paid", date: "2024-12-10" },
   ]);
@@ -2100,6 +2141,10 @@ export const LabBillingPage = () => {
   const [openView, setOpenView] = useState(false);
   const [selected, setSelected] = useState<BillItem | null>(null);
   const [form, setForm] = useState({ patientName: "", amount: "", status: "Unpaid" as BillStatus, notes: "" });
+
+  useEffect(() => {
+    if (location.pathname === "/lab/billing/new") setOpenGen(true);
+  }, [location.pathname]);
 
   const stats = useMemo(() => {
     const revenueToday = bills.filter((b) => b.date === today()).reduce((sum, b) => sum + b.amount, 0);
@@ -2268,6 +2313,7 @@ export const LabBillingPage = () => {
 // Payments Page
 export const LabPaymentsPage = () => {
   const { toast } = useToast();
+  const location = useLocation();
   const [payments, setPayments] = useLocalStorageState<PaymentItem[]>("lab.payments", [
     { id: "TXN-001", patientName: "Rajesh Kumar", amount: 2450, method: "Cash", status: "Completed", date: "2024-12-10" },
   ]);
@@ -2275,6 +2321,10 @@ export const LabPaymentsPage = () => {
 
   const [openRec, setOpenRec] = useState(false);
   const [form, setForm] = useState({ billId: "", patientName: "", amount: "", method: "Cash" as PaymentItem["method"], status: "Completed" as PaymentItem["status"] });
+
+  useEffect(() => {
+    if (location.pathname === "/lab/payments/new") setOpenRec(true);
+  }, [location.pathname]);
 
   const stats = useMemo(() => {
     const total = payments.reduce((sum, p) => sum + p.amount, 0);
@@ -2549,6 +2599,7 @@ export const LabAnalyticsPage = () => {
 // Staff Page
 export const LabStaffPage = () => {
   const { toast } = useToast();
+  const location = useLocation();
   const [staff, setStaff] = useLocalStorageState<StaffMember[]>("lab.staff", [
     { id: "EMP-001", name: "Dr. Rajiv Sharma", role: "Pathologist", department: "Hematology", status: "Active" },
   ]);
@@ -2559,6 +2610,10 @@ export const LabStaffPage = () => {
   const [selected, setSelected] = useState<StaffMember | null>(null);
   const [form, setForm] = useState({ name: "", role: "Technician", department: "General" });
   const [editForm, setEditForm] = useState({ name: "", role: "", department: "", status: "Active" as StaffMember["status"] });
+
+  useEffect(() => {
+    if (location.pathname === "/lab/staff/new") setOpenAdd(true);
+  }, [location.pathname]);
 
   const stats = useMemo(() => {
     const total = staff.length;

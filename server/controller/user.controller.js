@@ -1,9 +1,10 @@
 import { validationResult } from "express-validator";
-import userModel, { generateAuthTokenForUser } from "../models/user.model.intelligent.js";
+import userModel, { generateAuthTokenForUser, User } from "../models/user.model.intelligent.js";
 import jwt from "jsonwebtoken";
 import { auditLoginAttempt } from "../middleware/audit.middleware.js";
 import Consent from "../models/consent.model.intelligent.js";
 import intelligentDb from "../utils/intelligentDbClient.js";
+import { col, fn, where as sequelizeWhere } from "sequelize";
 
 export async function registerUser(req, res) {
   // Validate request
@@ -12,24 +13,55 @@ export async function registerUser(req, res) {
     return res.status(400).json({ errors: errors.array() });
   }
 
-  const { password, email } = req.body;
-  console.log(email);
+  const email = String(req.body.email || "").trim().toLowerCase();
+  const password = req.body.password;
+  const firstName = req.body.firstName;
+  const lastName = req.body.lastName;
+  const phoneNumber = req.body.phoneNumber ? String(req.body.phoneNumber).trim() : null;
+  const dateOfBirth = req.body.dateOfBirth;
+  const gender = req.body.gender;
+  
+  // Corporate employment fields (optional)
+  const employerName = req.body.employerName || null;
+  const employeeId = req.body.employeeId || null;
+  const corporateId = req.body.corporateId || null;
+  const membershipType = req.body.membershipType || 'individual';
 
   try {
     // Check if user already exists
-    const isUser = await userModel.findOne({ where: { email } });
-    if (isUser) {
-      console.log(isUser);
+    const existingByEmail = await User.findOne({
+      where: sequelizeWhere(fn("lower", col("email")), email),
+    });
+    if (existingByEmail) {
       return res.status(409).json({ message: "Email already exists" }); // 409 Conflict
+    }
+
+    if (phoneNumber) {
+      const existingByPhone = await userModel.findOne({ where: { phoneNumber } });
+      if (existingByPhone) {
+        return res.status(409).json({ message: "Phone number already exists" });
+      }
     }
 
     // Create user (password will be hashed automatically by the beforeCreate hook)
     const newUser = await userModel.create({
-      ...req.body,
-      password // Password will be hashed by the model hook
+      email,
+      password,
+      firstName,
+      lastName,
+      phoneNumber,
+      dateOfBirth,
+      gender,
+      // Corporate employment fields
+      employerName,
+      employeeId,
+      corporateId,
+      membershipType,
+      // Prevent privilege escalation / self-verification via extra body fields
+      isAdmin: false,
+      status: "active",
+      emailVerified: false,
     });
-
-    console.log(newUser);
 
     // Generate JWT Token including role/corporateId
     const token = generateAuthTokenForUser(newUser);
@@ -81,8 +113,13 @@ export async function registerUser(req, res) {
         phoneNumber: newUser.phoneNumber,
         dateOfBirth: newUser.dateOfBirth,
         gender: newUser.gender,
-        role: newUser.role || 'user',
-        corporateId: newUser.corporateId || null
+        status: newUser.status,
+        emailVerified: newUser.emailVerified,
+        role: newUser.isAdmin ? "admin" : "user",
+        employerName: newUser.employerName,
+        employeeId: newUser.employeeId,
+        corporateId: newUser.corporateId,
+        membershipType: newUser.membershipType
       },
     });
   } catch (error) {
@@ -101,11 +138,14 @@ export async function signInUser(req, res) {
     return res.status(400).json({ errors: errors.array() });
   }
 
-  const { email, password } = req.body;
+  const email = String(req.body.email || "").trim().toLowerCase();
+  const password = req.body.password;
 
   try {
     // Check if user exists
-    const user = await userModel.findOne({ where: { email } });
+    const user = await User.findOne({
+      where: sequelizeWhere(fn("lower", col("email")), email),
+    });
     if (!user) {
       // Audit failed login attempt
       await auditLoginAttempt(req, null, email, false, 'User not found');
@@ -120,9 +160,8 @@ export async function signInUser(req, res) {
       return res.status(401).json({ message: "Invalid email or password" }); // Unauthorized
     }
 
-    // Update last login
-    user.lastLogin = new Date();
-    await user.save();
+    // Update last login (PostgreSQL uses lastLoginAt)
+    user.lastLoginAt = new Date();
     await user.save();
 
     // Generate authentication token including role/corporateId
@@ -143,10 +182,16 @@ export async function signInUser(req, res) {
         phoneNumber: user.phoneNumber,
         dateOfBirth: user.dateOfBirth,
         gender: user.gender,
+        status: user.status,
+        emailVerified: user.emailVerified,
         isActive: user.isActive,
+        lastLoginAt: user.lastLoginAt,
         lastLogin: user.lastLogin,
-        role: user.role || 'user',
-        corporateId: user.corporateId || null
+        role: user.isAdmin ? "admin" : "user",
+        employerName: user.employerName,
+        employeeId: user.employeeId,
+        corporateId: user.corporateId,
+        membershipType: user.membershipType
       },
     });
   } catch (error) {
@@ -158,7 +203,46 @@ export async function signInUser(req, res) {
 export const getUserProfile = async (req, res, next) => {
   console.log('profile called');
   
-  return res.status(200).json(req.user);
+  try {
+    // Calculate age from dateOfBirth
+    let age = null;
+    if (req.user.dateOfBirth) {
+      const birthDate = new Date(req.user.dateOfBirth);
+      const today = new Date();
+      age = today.getFullYear() - birthDate.getFullYear();
+      const monthDiff = today.getMonth() - birthDate.getMonth();
+      if (monthDiff < 0 || (monthDiff === 0 && today.getDate() < birthDate.getDate())) {
+        age--;
+      }
+    }
+
+    // Prepare base profile
+    const profile = {
+      ...req.user,
+      age
+    };
+
+    // If user belongs to a corporate, fetch corporate details
+    if (req.user.corporateId) {
+      const { Corporate } = await import('../models/insurance-company.model.intelligent.js');
+      const corporate = await Corporate.findByPk(req.user.corporateId, {
+        attributes: ['id', 'companyName', 'cin', 'industry', 'employeeCount']
+      });
+      
+      if (corporate) {
+        profile.corporate = corporate;
+      }
+    }
+    
+    // Return user profile with age and corporate info
+    return res.status(200).json(profile);
+  } catch (error) {
+    console.error('Get user profile error:', error);
+    return res.status(500).json({
+      success: false,
+      message: 'Error fetching user profile'
+    });
+  }
 };
 
 

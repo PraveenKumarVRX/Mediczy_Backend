@@ -1,4 +1,4 @@
-import { useCallback, useState, useEffect } from "react";
+import { useState, useEffect } from "react";
 import { Link, useNavigate } from "react-router-dom";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
@@ -46,19 +46,10 @@ const Login = () => {
 
   // Check if already authenticated
   useEffect(() => {
-    // Clear any other role tokens that might interfere
-    localStorage.removeItem('adminToken');
-    localStorage.removeItem('teamToken');
-    localStorage.removeItem('nurseToken');
-    localStorage.removeItem('assistantToken');
-    localStorage.removeItem('corporateToken');
-    localStorage.removeItem('doctorToken');
-    localStorage.removeItem('userType');
-
     const token = localStorage.getItem('token');
     if (token) {
       console.log('✅ User already authenticated, redirecting...');
-      navigate('/dashboard');
+      navigate('/', { replace: true });
       return;
     }
 
@@ -88,7 +79,11 @@ const Login = () => {
   const onSubmit = (values: { email: string; password: string }) => {
     // Dev bypass for testing
     const emailLower = values.email.toLowerCase().trim();
-    if (emailLower === 'user@mediczy.com' && values.password === 'User123') {
+    if (
+      import.meta.env.DEV &&
+      emailLower === 'user@mediczy.com' &&
+      values.password === 'User123'
+    ) {
       console.log('🚀 User: Using quick authentication bypass');
       
       const devToken = 'dev-user-token';
@@ -237,7 +232,15 @@ const Login = () => {
                 name="password"
                 render={({ field }) => (
                   <FormItem>
-                    <FormLabel>Password</FormLabel>
+                    <div className="flex items-center justify-between">
+                      <FormLabel>Password</FormLabel>
+                      <Link
+                        to="/forgot-password?type=user"
+                        className="text-xs text-primary hover:underline"
+                      >
+                        Forgot password?
+                      </Link>
+                    </div>
                     <div className="relative">
                       <FormControl>
                         <Input

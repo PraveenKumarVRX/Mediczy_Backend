@@ -1,0 +1,17 @@
+VIDEO CONSULTATION TEST - Sat Dec 20 16:47:32 UTC 2025
+=================================================================
+
+Doctor Join Link:
+http://mediqzy.com/mirotalk/join/mediczy_LIVE_TEST_1766249252?name=Dr.%20Johnson
+
+Patient Join Link:
+http://mediqzy.com/mirotalk/join/mediczy_LIVE_TEST_1766249252?name=Patient%20Smith
+
+Room ID: mediczy_LIVE_TEST_1766249252
+=================================================================
+
+To test:
+1. Open Doctor link in Chrome/Firefox
+2. Open Patient link in another browser/incognito
+3. Allow camera/microphone permissions
+4. Test video call features

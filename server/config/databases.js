@@ -1,78 +1,43 @@
-import mysql from 'mysql2/promise';
 import { exec } from 'child_process';
 import { promisify } from 'util';
 import dotenv from 'dotenv';
-import { connectPostgres, closePostgres } from '../db/postgres.js';
+import { connectPostgres, closePostgres, getPool as getPostgresPool } from '../db/postgres.js';
 
 dotenv.config();
 
 const execPromise = promisify(exec);
 
 // ============================================================================
-// MULTI-DATABASE ARCHITECTURE
+// DATABASE ARCHITECTURE (PostgreSQL Primary)
 // ============================================================================
-// MariaDB   - PRIMARY DATABASE (Relational, Transactional, ACID)
-// PostgreSQL - HELPER DATABASE (Document-style JSONB, contextual cache)
-// DuckDB    - ANALYTICS ENGINE (OLAP, Reporting, Data Warehouse)
+// PostgreSQL - PRIMARY DATABASE (Relational, JSONB, Full-text search)
+// DuckDB     - ANALYTICS ENGINE (OLAP, Reporting, Data Warehouse)
 // ============================================================================
 
 // ============================
-// 1. MARIADB (Primary Database)
+// 1. POSTGRESQL (Primary Database)
 // ============================
-// Purpose: Core application data, user accounts, appointments, medical records
-// Use Cases: CRUD operations, transactions, relationships, authentication
-
-let mariaDBPool = null;
-
-export const initMariaDB = async () => {
-  try {
-    mariaDBPool = mysql.createPool({
-      host: process.env.DB_HOST || 'localhost',
-      port: parseInt(process.env.DB_PORT || '3306'),
-      user: process.env.DB_USER || 'mediczy',
-      password: process.env.DB_PASSWORD,
-      database: process.env.DB_NAME || 'mediczy',
-      waitForConnections: true,
-      connectionLimit: 20,
-      maxIdle: 10,
-      idleTimeout: 60000,
-      queueLimit: 0,
-      enableKeepAlive: true,
-      keepAliveInitialDelay: 0
-    });
-
-    // Test connection
-    const [rows] = await mariaDBPool.execute('SELECT 1 as test');
-    console.log('✅ MariaDB (Primary DB) connected successfully');
-    return mariaDBPool;
-  } catch (error) {
-    console.error('❌ MariaDB connection failed:', error.message);
-    throw error;
-  }
-};
-
-export const getMariaDB = () => mariaDBPool;
-
-// ============================
-// 2. POSTGRESQL (Helper Database)
-// ============================
-// Purpose: JSONB-powered helper store for chat sessions, logs, contextual data
-// Use Cases: Semi-structured documents, helper replicas, real-time context cache
+// Purpose: All application data - users, appointments, medical records, JSONB docs
+// Use Cases: CRUD, transactions, JSONB, full-text search, relationships
 
 let postgresPool = null;
 
-export const initPostgresHelper = async () => {
+export const initPostgres = async () => {
   try {
     postgresPool = await connectPostgres();
-    console.log('✅ PostgreSQL (Helper DB) connected successfully');
+    console.log('✅ PostgreSQL (Primary DB) connected successfully');
     return postgresPool;
   } catch (error) {
-    console.error('❌ PostgreSQL helper connection failed:', error.message);
+    console.error('❌ PostgreSQL connection failed:', error.message);
     throw error;
   }
 };
 
-export const getPostgresHelper = () => postgresPool;
+export const getPostgres = () => postgresPool || getPostgresPool();
+
+// Aliases for backward compatibility
+export const initPostgresHelper = initPostgres;
+export const getPostgresHelper = getPostgres;
 
 // ============================
 // 3. DUCKDB (Analytics Engine)
@@ -114,7 +79,7 @@ export const executeDuckDBQuery = async (query) => {
 // ============================
 
 export const DATABASE_USAGE = {
-  MariaDB: {
+  PostgreSQL: {
     useCases: [
       'User accounts and authentication',
       'Patient records and medical history',
@@ -123,22 +88,12 @@ export const DATABASE_USAGE = {
       'Prescriptions and billing',
       'Hospital and clinic data',
       'Insurance policies',
-      'Transactional operations (ACID)'
-    ],
-    operations: ['INSERT', 'UPDATE', 'DELETE', 'SELECT', 'JOIN', 'TRANSACTION']
-  },
-  
-  PostgreSQL: {
-    useCases: [
       'Chatbot session history (JSONB)',
       'Audit trails and contextual logs',
-      'Helper replicas from MariaDB',
-      'Flexible semi-structured documents',
-      'Real-time context cache',
-      'Feature toggles and metadata',
-      'Analytics staging before DuckDB'
+      'Transactional operations (ACID)',
+      'Full-text search'
     ],
-    operations: ['INSERT', 'UPDATE', 'UPSERT', 'JSONB query', 'CTE', 'INDEXED SEARCH']
+    operations: ['INSERT', 'UPDATE', 'DELETE', 'SELECT', 'JOIN', 'TRANSACTION', 'JSONB', 'CTE']
   },
   
   DuckDB: {
@@ -161,28 +116,19 @@ export const DATABASE_USAGE = {
 // ============================
 
 export const initAllDatabases = async () => {
-  console.log('🔄 Initializing multi-database architecture...\n');
+  console.log('🔄 Initializing database architecture...\n');
   
   const results = {
-    mariadb: false,
     postgres: false,
     duckdb: false
   };
 
   try {
-    // Initialize MariaDB (Primary)
-    await initMariaDB();
-    results.mariadb = true;
-  } catch (error) {
-    console.error('⚠️  MariaDB initialization failed, continuing...');
-  }
-
-  try {
-    // Initialize PostgreSQL helper (Documents)
-    await initPostgresHelper();
+    // Initialize PostgreSQL (Primary)
+    await initPostgres();
     results.postgres = true;
   } catch (error) {
-    console.error('⚠️  PostgreSQL helper initialization failed, continuing...');
+    console.error('⚠️  PostgreSQL initialization failed, continuing...');
   }
 
   try {
@@ -194,11 +140,10 @@ export const initAllDatabases = async () => {
   }
 
   console.log('\n📊 Database Architecture Status:');
-  console.log(`   MariaDB    (Primary):    ${results.mariadb ? '✅' : '❌'}`);
-  console.log(`   PostgreSQL (Helper):     ${results.postgres ? '✅' : '❌'}`);
+  console.log(`   PostgreSQL (Primary):    ${results.postgres ? '✅' : '❌'}`);
   console.log(`   DuckDB     (Analytics):  ${results.duckdb ? '✅' : '❌'}\n`);
 
-  if (results.mariadb && results.postgres && results.duckdb) {
+  if (results.postgres && results.duckdb) {
     console.log('🎉 All databases initialized successfully!\n');
   } else {
     console.warn('⚠️  Some databases failed to initialize\n');
@@ -211,26 +156,21 @@ export const initAllDatabases = async () => {
 export const closeAllDatabases = async () => {
   console.log('Closing all database connections...');
   
-  if (mariaDBPool) {
-    await mariaDBPool.end();
-    console.log('✅ MariaDB closed');
-  }
-  
   if (postgresPool) {
     await closePostgres();
     postgresPool = null;
-    console.log('✅ PostgreSQL helper closed');
+    console.log('✅ PostgreSQL closed');
   }
   
   console.log('✅ All databases closed');
 };
 
 export default {
-  initMariaDB,
+  initPostgres,
   initPostgresHelper,
   initDuckDB,
   initAllDatabases,
-  getMariaDB,
+  getPostgres,
   getPostgresHelper,
   executeDuckDBQuery,
   closeAllDatabases,

@@ -53,6 +53,7 @@ import {
   TabsTrigger,
 } from '@/components/ui/tabs';
 import { useToast } from '@/hooks/use-toast';
+import api from '@/utils/api';
 
 export default function WhatsAppManagement() {
   const { toast } = useToast();
@@ -62,6 +63,8 @@ export default function WhatsAppManagement() {
   const [providers, setProviders] = useState([]);
   const [currentProvider, setCurrentProvider] = useState('gupshup');
   const [setupGuide, setSetupGuide] = useState(null);
+  const [setupGuideDialogOpen, setSetupGuideDialogOpen] = useState(false);
+  const [setupGuideLoading, setSetupGuideLoading] = useState(false);
   const [stats, setStats] = useState(null);
   const [testResults, setTestResults] = useState({});
   const [configDialogOpen, setConfigDialogOpen] = useState(false);
@@ -645,6 +648,23 @@ export default function WhatsAppManagement() {
     );
   }
 
+  const openSetupGuide = async () => {
+    try {
+      setSetupGuideLoading(true);
+      const { data } = await api.get('/whatsapp-config/setup-guide');
+      setSetupGuide(data?.data || null);
+      setSetupGuideDialogOpen(true);
+    } catch (error: any) {
+      toast({
+        title: 'Failed to load setup guide',
+        description: error?.response?.data?.message || error?.message || 'Please try again.',
+        variant: 'destructive'
+      });
+    } finally {
+      setSetupGuideLoading(false);
+    }
+  };
+
   return (
     <AdminLayout>
       <div className="space-y-6">
@@ -656,11 +676,34 @@ export default function WhatsAppManagement() {
               Configure WhatsApp Business providers for healthcare communication
             </p>
           </div>
-          <Button onClick={() => window.open('/docs/whatsapp-setup', '_blank')}>
+          <Button onClick={openSetupGuide} disabled={setupGuideLoading}>
             <FileText className="mr-2 h-4 w-4" />
-            Setup Guide
+            {setupGuideLoading ? 'Loading…' : 'Setup Guide'}
           </Button>
         </div>
+
+        <Dialog open={setupGuideDialogOpen} onOpenChange={setSetupGuideDialogOpen}>
+          <DialogContent className="max-w-3xl">
+            <DialogHeader>
+              <DialogTitle>WhatsApp Setup Guide</DialogTitle>
+              <DialogDescription>
+                Provider steps and compliance notes (admin-only).
+              </DialogDescription>
+            </DialogHeader>
+            <ScrollArea className="h-[60vh] rounded-md border p-4">
+              {setupGuide ? (
+                <pre className="text-xs whitespace-pre-wrap">{JSON.stringify(setupGuide, null, 2)}</pre>
+              ) : (
+                <div className="text-sm text-muted-foreground">No guide data available.</div>
+              )}
+            </ScrollArea>
+            <DialogFooter>
+              <Button variant="outline" onClick={() => setSetupGuideDialogOpen(false)}>
+                Close
+              </Button>
+            </DialogFooter>
+          </DialogContent>
+        </Dialog>
 
         {/* Stats Cards */}
         <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-4">

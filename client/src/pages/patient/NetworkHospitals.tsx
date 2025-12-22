@@ -3,6 +3,8 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/com
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Badge } from '@/components/ui/badge';
+import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
+import { useToast } from '@/hooks/use-toast';
 import { MapPin, Phone, Clock, Star, Navigation, Search, Filter, Building2, Hospital, CheckCircle } from 'lucide-react';
 
 interface NetworkHospital {
@@ -24,6 +26,7 @@ interface NetworkHospital {
 }
 
 const NetworkHospitals: React.FC = () => {
+  const { toast } = useToast();
   const [hospitals, setHospitals] = useState<NetworkHospital[]>([
     {
       id: '1',
@@ -115,6 +118,48 @@ const NetworkHospitals: React.FC = () => {
   const [searchTerm, setSearchTerm] = useState('');
   const [selectedType, setSelectedType] = useState<string>('all');
   const [selectedCity, setSelectedCity] = useState<string>('all');
+  const [detailsOpen, setDetailsOpen] = useState(false);
+  const [selectedHospitalDetails, setSelectedHospitalDetails] = useState<NetworkHospital | null>(null);
+
+  const handleCallNow = (phone: string) => {
+    const sanitized = (phone || "").replace(/[^\d+]/g, "");
+    if (!sanitized) {
+      toast({ title: "Phone number missing", variant: "destructive" });
+      return;
+    }
+    window.location.href = `tel:${sanitized}`;
+  };
+
+  const handleDirections = (hospital: NetworkHospital) => {
+    const query = encodeURIComponent(
+      [hospital.name, hospital.address, hospital.city, hospital.state].filter(Boolean).join(", ")
+    );
+    window.open(`https://www.google.com/maps/search/?api=1&query=${query}`, "_blank", "noopener,noreferrer");
+  };
+
+  const handleUseMyLocation = () => {
+    if (!("geolocation" in navigator)) {
+      toast({ title: "Location not supported", description: "Your browser does not support geolocation.", variant: "destructive" });
+      return;
+    }
+
+    navigator.geolocation.getCurrentPosition(
+      (pos) => {
+        toast({
+          title: "Location detected",
+          description: `Lat ${pos.coords.latitude.toFixed(4)}, Lng ${pos.coords.longitude.toFixed(4)}`,
+        });
+      },
+      (err) => {
+        toast({
+          title: "Location permission denied",
+          description: err.message,
+          variant: "destructive",
+        });
+      },
+      { enableHighAccuracy: true, timeout: 10000 }
+    );
+  };
 
   const hospitalTypes = [
     { value: 'all', label: 'All', icon: Building2 },
@@ -153,7 +198,7 @@ const NetworkHospitals: React.FC = () => {
           <h1 className="text-3xl font-bold">Network Hospitals</h1>
           <p className="text-gray-600 mt-1">Find cashless and network hospitals near you</p>
         </div>
-        <Button variant="outline">
+        <Button variant="outline" onClick={handleUseMyLocation}>
           <Navigation className="mr-2 h-4 w-4" />
           Use My Location
         </Button>
@@ -335,15 +380,23 @@ const NetworkHospitals: React.FC = () => {
 
                   {/* Actions */}
                   <div className="flex gap-2 pt-2">
-                    <Button className="flex-1">
+                    <Button className="flex-1" onClick={() => handleCallNow(hospital.phone)}>
                       <Phone className="mr-2 h-4 w-4" />
                       Call Now
                     </Button>
-                    <Button variant="outline">
+                    <Button variant="outline" onClick={() => handleDirections(hospital)}>
                       <Navigation className="mr-2 h-4 w-4" />
                       Directions
                     </Button>
-                    <Button variant="outline">View Details</Button>
+                    <Button
+                      variant="outline"
+                      onClick={() => {
+                        setSelectedHospitalDetails(hospital);
+                        setDetailsOpen(true);
+                      }}
+                    >
+                      View Details
+                    </Button>
                   </div>
                 </div>
               </CardContent>
@@ -351,6 +404,64 @@ const NetworkHospitals: React.FC = () => {
           ))
         )}
       </div>
+
+      <Dialog open={detailsOpen} onOpenChange={setDetailsOpen}>
+        <DialogContent className="max-w-xl">
+          <DialogHeader>
+            <DialogTitle>{selectedHospitalDetails?.name || "Hospital Details"}</DialogTitle>
+          </DialogHeader>
+
+          {selectedHospitalDetails && (
+            <div className="space-y-4">
+              <div className="text-sm text-gray-600">
+                {selectedHospitalDetails.address}, {selectedHospitalDetails.city}, {selectedHospitalDetails.state}
+              </div>
+
+              <div className="flex flex-wrap gap-2">
+                {getAvailabilityBadge(selectedHospitalDetails.availability)}
+                {selectedHospitalDetails.insurance_accepted && (
+                  <Badge className="bg-blue-100 text-blue-800">Insurance Accepted</Badge>
+                )}
+                {selectedHospitalDetails.cashless && (
+                  <Badge className="bg-green-100 text-green-800">
+                    <CheckCircle className="h-3 w-3 mr-1" />
+                    Cashless
+                  </Badge>
+                )}
+              </div>
+
+              <div className="space-y-2">
+                <div className="text-sm font-medium text-gray-700">Specialities</div>
+                <div className="flex flex-wrap gap-2">
+                  {selectedHospitalDetails.specialities.map((spec) => (
+                    <Badge key={spec} variant="secondary">{spec}</Badge>
+                  ))}
+                </div>
+              </div>
+
+              <div className="space-y-2">
+                <div className="text-sm font-medium text-gray-700">Facilities</div>
+                <div className="flex flex-wrap gap-2">
+                  {selectedHospitalDetails.facilities.map((facility) => (
+                    <Badge key={facility} variant="outline">{facility}</Badge>
+                  ))}
+                </div>
+              </div>
+
+              <div className="flex gap-2">
+                <Button className="flex-1" onClick={() => handleCallNow(selectedHospitalDetails.phone)}>
+                  <Phone className="mr-2 h-4 w-4" />
+                  Call
+                </Button>
+                <Button className="flex-1" variant="outline" onClick={() => handleDirections(selectedHospitalDetails)}>
+                  <Navigation className="mr-2 h-4 w-4" />
+                  Directions
+                </Button>
+              </div>
+            </div>
+          )}
+        </DialogContent>
+      </Dialog>
     </div>
   );
 };

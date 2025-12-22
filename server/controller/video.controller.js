@@ -1,5 +1,6 @@
 import { validationResult } from 'express-validator';
 import jwt from 'jsonwebtoken';
+import { Appointment, Prescription, Doctor, User } from '../models/index.js';
 
 // Simple WebRTC video calling controller
 class VideoController {
@@ -122,18 +123,116 @@ class VideoController {
   };
 
   // Leave video room
-  static leaveRoom = (req, res) => {
+  static leaveRoom = async (req, res) => {
     try {
       const { roomId } = req.params;
       const userId = req.user.id;
+      const userRole = req.user.role || 'user';
+      const { appointmentId, duration } = req.body; // Optional appointment ID and call duration
 
-      // In a real implementation, you'd clean up room resources
+      let prescriptionCreated = false;
+      let prescriptionData = null;
+
+      // If doctor is leaving and appointmentId is provided, auto-create prescription draft
+      if (userRole === 'doctor' && appointmentId) {
+        try {
+          const appointment = await Appointment.findByPk(appointmentId);
+          
+          if (appointment && appointment.doctorId === userId) {
+            // Check if consultation was online and no prescription exists yet
+            const existingPrescription = await Prescription.findOne({
+              where: { appointmentId: parseInt(appointmentId) }
+            });
+
+            if (!existingPrescription && ['video', 'audio', 'chat'].includes(appointment.consultationType)) {
+              // Get doctor details
+              const doctor = await Doctor.findByPk(userId);
+              
+              // Get patient details
+              const patient = await User.findByPk(appointment.userId);
+              
+              if (doctor && patient) {
+                // Calculate patient age
+                let patientAge = null;
+                if (patient.dateOfBirth) {
+                  const dob = new Date(patient.dateOfBirth);
+                  const today = new Date();
+                  patientAge = today.getFullYear() - dob.getFullYear();
+                }
+
+                // Auto-create prescription draft
+                const prescription = await Prescription.create({
+                  appointmentId: appointment.id,
+                  patientId: appointment.userId,
+                  patientName: `${patient.firstName || ''} ${patient.lastName || ''}`.trim() || appointment.patientName,
+                  patientAge,
+                  patientGender: patient.gender || 'Not specified',
+                  patientPhone: patient.phoneNumber || patient.phone || appointment.patientPhone,
+                  doctorId: doctor.id,
+                  doctorName: `${doctor.firstName || ''} ${doctor.lastName || ''}`.trim(),
+                  doctorQualifications: Array.isArray(doctor.qualifications) 
+                    ? doctor.qualifications.join(', ') 
+                    : (doctor.qualifications || doctor.qualification || 'MBBS'),
+                  doctorRegNo: doctor.registrationNumber || doctor.licenseNumber || 'N/A',
+                  specialty: doctor.specialization || 'General Medicine',
+                  clinicName: doctor.clinicHospitalName || doctor.clinicName || 'Mediczy Healthcare',
+                  clinicAddress: 'Online Consultation / Telemedicine',
+                  clinicPhone: doctor.phone || doctor.phoneNumber || doctor.clinicPhone,
+                  clinicEmail: doctor.email,
+                  clinicDetails: {
+                    name: doctor.clinicHospitalName || doctor.clinicName || 'Mediczy Healthcare',
+                    address: 'Online Consultation / Telemedicine',
+                    phone: doctor.phone || doctor.phoneNumber,
+                    email: doctor.email,
+                    specialty: doctor.specialization,
+                    consultationType: appointment.consultationType
+                  },
+                  diagnosis: 'To be filled by doctor',
+                  chiefComplaints: appointment.symptoms || ['As discussed during consultation'],
+                  medications: [],
+                  labTests: [],
+                  instructions: [
+                    'Complete the full course of medications',
+                    'Take medicines as directed',
+                    'Contact doctor if symptoms worsen'
+                  ],
+                  vitals: {},
+                  validityDays: 30,
+                  notes: duration ? `Video consultation duration: ${duration}` : 'Consultation completed via video call',
+                  status: 'draft'
+                });
+
+                // Update appointment status
+                await appointment.update({
+                  status: 'completed',
+                  prescription: prescription.prescriptionId,
+                  notes: duration ? `Video consultation completed (${duration})` : 'Video consultation completed'
+                });
+
+                prescriptionCreated = true;
+                prescriptionData = {
+                  prescriptionId: prescription.prescriptionId,
+                  status: 'draft',
+                  message: 'Prescription draft created. Please add diagnosis and medications.',
+                  editUrl: `/api/prescriptions/${prescription.prescriptionId}`
+                };
+              }
+            }
+          }
+        } catch (prescriptionError) {
+          console.error('Auto-prescription creation failed:', prescriptionError);
+          // Don't fail the leave request if prescription creation fails
+        }
+      }
+
       res.json({
         success: true,
         message: 'Successfully left video room',
         roomId,
         userId,
-        leftAt: new Date().toISOString()
+        leftAt: new Date().toISOString(),
+        prescriptionCreated,
+        prescription: prescriptionData
       });
 
     } catch (error) {

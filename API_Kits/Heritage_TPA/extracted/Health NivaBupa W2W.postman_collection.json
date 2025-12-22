@@ -1,0 +1,44 @@
+{
+	"info": {
+		"_postman_id": "86618565-1e3a-4050-b3fd-566030a9adb0",
+		"name": "Health NivaBupa W2W",
+		"schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json",
+		"_exporter_id": "19690377"
+	},
+	"item": [
+		{
+			"name": "Health NivaBupa W2W",
+			"protocolProfileBehavior": {
+				"disableBodyPruning": true
+			},
+			"request": {
+				"method": "GET",
+				"header": [],
+				"body": {
+					"mode": "raw",
+					"raw": "{\r\n    \"partnerCode\":\"\",\r\n    \"accessCode\":\"\",\r\n    \"policyNumber\":\"\"\r\n}",
+					"options": {
+						"raw": {
+							"language": "json"
+						}
+					}
+				},
+				"url": {
+					"raw": "https://serviceuat.nivabupa.com:8088/UploadService.svc/PolicyMemberDataDump",
+					"protocol": "https",
+					"host": [
+						"serviceuat",
+						"nivabupa",
+						"com"
+					],
+					"port": "8088",
+					"path": [
+						"UploadService.svc",
+						"PolicyMemberDataDump"
+					]
+				}
+			},
+			"response": []
+		}
+	]
+}

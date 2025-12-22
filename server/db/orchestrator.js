@@ -1,9 +1,8 @@
 /**
- * Database Orchestrator - PostgreSQL Migration
- * Transitioning: MariaDB → PostgreSQL as primary database
+ * Database Orchestrator - PostgreSQL Only
+ * MariaDB completely retired - PostgreSQL is the sole database
  */
 
-import { sequelize } from './mariadb.js';
 import { postgresSequelize, connectToPostgresDB } from './postgres-sequelize.js';
 import { connectPostgres, closePostgres, testPostgres, getPostgresStatus } from './postgres.js';
 import { connectDuckDB, closeDuckDB, getDuckDBStatus, testDuckDB } from './duckdb.js';
@@ -12,17 +11,15 @@ import { connectRedis, closeRedis, getRedisStatus, testRedis } from './redis.js'
 class DatabaseOrchestrator {
   constructor() {
     this.connections = {
-      mariadb: null,
-      postgresSequelize: null,  // NEW: PostgreSQL with Sequelize (PRIMARY)
-      postgres: null,            // Existing: PostgreSQL raw connection (HELPER)
+      postgresSequelize: null,  // PostgreSQL with Sequelize (PRIMARY)
+      postgres: null,            // PostgreSQL raw connection (HELPER)
       duckdb: null,
       redis: null
     };
 
-    // Updated roles - PostgreSQL is PRIMARY with extensions
+    // PostgreSQL is the sole database
     this.roles = {
       postgresSequelize: 'PRIMARY',  // Main transactional database (JSONB, TimescaleDB ready)
-      mariadb: 'LEGACY',             // MariaDB is now legacy/backup
       postgres: 'HELPER',            // Document storage, pgvector, Citus distribution
       duckdb: 'OPTIONAL',            // Optional: Analytics compute engine for heavy OLAP
       redis: 'CACHE'                 // Session and cache storage
@@ -30,7 +27,6 @@ class DatabaseOrchestrator {
 
     this.healthStatus = {
       postgresSequelize: false,
-      mariadb: false,
       postgres: false,
       pgvector: false,
       citus: false,
@@ -48,15 +44,13 @@ class DatabaseOrchestrator {
    */
   async initializeAll() {
     console.log('🚀 Initializing Database Orchestrator...');
-    console.log('📊 NEW Architecture: PostgreSQL Sequelize (PRIMARY) → MariaDB (LEGACY PHASE-OUT)');
-    console.log('🔄 Migration: PostgreSQL taking the lead, MariaDB support maintained for backward compatibility');
+    console.log('📊 Architecture: PostgreSQL (PRIMARY) - MariaDB retired');
 
     let criticalFailures = 0;
 
     // Initialize health status
     this.healthStatus = {
       postgresSequelize: false,
-      mariadb: false,
       postgres: false,
       pgvector: false,
       citus: false,
@@ -65,7 +59,7 @@ class DatabaseOrchestrator {
       lastCheck: Date.now()
     };
 
-    // Connect to PostgreSQL Sequelize (NEW PRIMARY DATABASE)
+    // Connect to PostgreSQL Sequelize (PRIMARY DATABASE)
     try {
       console.log('🔌 Connecting to PostgreSQL Sequelize (PRIMARY Database)...');
       await connectToPostgresDB();
@@ -75,18 +69,6 @@ class DatabaseOrchestrator {
     } catch (error) {
       console.error('❌ PostgreSQL Sequelize connection failed:', error.message);
       criticalFailures++;
-    }
-
-    // Connect to MariaDB (LEGACY - Backward Compatibility)
-    try {
-      console.log('🔌 Connecting to MariaDB (Legacy Database - Backward Compatibility)...');
-      await sequelize.authenticate();
-      this.connections.mariadb = sequelize;
-      this.healthStatus.mariadb = true;
-      console.log('✅ MariaDB connected successfully (LEGACY MODE)');
-    } catch (error) {
-      console.warn('⚠️  MariaDB connection failed (continuing with PostgreSQL only):', error.message);
-      // Don't increment criticalFailures - MariaDB is no longer critical
     }
 
     // Connect to PostgreSQL (HELPER - Optional but recommended)
@@ -175,7 +157,7 @@ class DatabaseOrchestrator {
    * Route query to appropriate database
    */
   async routeQuery(operation, options = {}) {
-    const { database, fallback = 'mariadb' } = options;
+    const { database, fallback = 'postgresSequelize' } = options;
 
     // Direct database specification
     if (database && this.connections[database]) {
@@ -233,8 +215,7 @@ class DatabaseOrchestrator {
     }
 
     // Test all connections
-    const [maria, postgres, duck, redis] = await Promise.allSettled([
-      this.testMariaDB(),
+    const [postgres, duck, redis] = await Promise.allSettled([
       this.testPostgresDB(),
       this.testDuckDB(),
       this.testRedis()
@@ -243,7 +224,6 @@ class DatabaseOrchestrator {
     const postgresHealthy = postgres.status === 'fulfilled' && postgres.value.success;
     const postgresMetadata = postgresHealthy ? postgres.value.metadata || {} : {};
     this.healthStatus = {
-      mariadb: maria.status === 'fulfilled' && maria.value.success,
       postgres: postgresHealthy,
       pgvector: !!postgresMetadata.pgvector,
       citus: !!postgresMetadata.citus,
@@ -258,16 +238,6 @@ class DatabaseOrchestrator {
   /**
    * Test individual database connections
    */
-  async testMariaDB() {
-    try {
-      if (!this.connections.mariadb) return { success: false, message: 'Not connected' };
-      await this.connections.mariadb.authenticate();
-      return { success: true, message: 'MariaDB operational' };
-    } catch (error) {
-      return { success: false, message: error.message };
-    }
-  }
-
   async testPostgresDB() {
     try {
       return await testPostgres();
@@ -318,9 +288,9 @@ class DatabaseOrchestrator {
       ));
     }
 
-    if (this.connections.mariadb) {
-      closePromises.push(this.connections.mariadb.close().catch(err => 
-        console.warn('⚠️  MariaDB close warning:', err.message)
+    if (this.connections.postgresSequelize) {
+      closePromises.push(this.connections.postgresSequelize.close().catch(err => 
+        console.warn('⚠️  PostgreSQL Sequelize close warning:', err.message)
       ));
     }
 

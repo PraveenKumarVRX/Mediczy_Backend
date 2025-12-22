@@ -50,9 +50,9 @@ const PharmacyLayout = ({ children, title, subtitle }: PharmacyLayoutProps) => {
   };
 
   return (
-    <div className="min-h-screen bg-slate-50">
+    <div className="min-h-screen bg-slate-50 flex">
       <PharmacySidebar />
-      <div className="ml-64 transition-all duration-300">
+      <div className="flex-1 min-w-0">
         <header className="sticky top-0 z-30 h-16 bg-white border-b border-slate-200 flex items-center justify-between px-6">
           <div className="flex items-center gap-4">
             {title && (

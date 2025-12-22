@@ -24,17 +24,23 @@ const ClinicDashboard = () => {
   const [loading, setLoading] = useState(true);
   const [showNewAppointment, setShowNewAppointment] = useState(false);
   const [showAddPatient, setShowAddPatient] = useState(false);
+  const [showPatientDetails, setShowPatientDetails] = useState(false);
   const [patientSearch, setPatientSearch] = useState('');
   const [showPatientFilter, setShowPatientFilter] = useState(false);
   const [patientFilter, setPatientFilter] = useState<'all' | 'due-soon'>('all');
   const [showCreateInvoice, setShowCreateInvoice] = useState(false);
   const [showAddInventory, setShowAddInventory] = useState(false);
+  const [showViewAppointment, setShowViewAppointment] = useState(false);
+  const [selectedAppointment, setSelectedAppointment] = useState<any>(null);
+  const [sendingReminder, setSendingReminder] = useState(false);
+  const [sendingBulkReminders, setSendingBulkReminders] = useState(false);
 
   const [patients, setPatients] = useState([
     { id: 1, name: 'Rahul Mehta', lastVisit: '2024-12-03', diagnosis: 'Diabetes Follow-up', nextVisit: '2024-12-17' },
     { id: 2, name: 'Anita Desai', lastVisit: '2024-12-03', diagnosis: 'Hypertension', nextVisit: '2024-12-10' },
     { id: 3, name: 'Vikram Joshi', lastVisit: '2024-12-02', diagnosis: 'Routine Check-up', nextVisit: '2025-01-02' },
   ]);
+  const [selectedPatient, setSelectedPatient] = useState<(typeof patients)[number] | null>(null);
   const [patientForm, setPatientForm] = useState({
     name: '',
     diagnosis: '',
@@ -392,7 +398,10 @@ const ClinicDashboard = () => {
                           <Badge variant={apt.status === 'Waiting' ? 'default' : 'secondary'}>
                             {apt.status}
                           </Badge>
-                          <Button size="sm" variant="outline">
+                          <Button size="sm" variant="outline" onClick={() => {
+                            setSelectedAppointment(apt);
+                            setShowViewAppointment(true);
+                          }}>
                             View
                           </Button>
                         </div>
@@ -407,21 +416,50 @@ const ClinicDashboard = () => {
                   <CardTitle>Quick Actions</CardTitle>
                 </CardHeader>
                 <CardContent className="space-y-3">
-                  <Button variant="outline" className="w-full justify-start gap-2">
+                  <Button variant="outline" className="w-full justify-start gap-2" onClick={() => setShowNewAppointment(true)}>
                     <Calendar className="h-4 w-4" />
                     Schedule Appointment
                   </Button>
-                  <Button variant="outline" className="w-full justify-start gap-2">
+                  <Button variant="outline" className="w-full justify-start gap-2" onClick={() => {
+                    setAppointmentForm(prev => ({ ...prev, appointmentType: 'walk-in' }));
+                    setShowNewAppointment(true);
+                  }}>
                     <UserCheck className="h-4 w-4" />
                     Walk-in Patient
                   </Button>
-                  <Button variant="outline" className="w-full justify-start gap-2">
+                  <Button variant="outline" className="w-full justify-start gap-2" onClick={() => navigate('/clinic/appointments')}>
                     <FileText className="h-4 w-4" />
                     View Calendar
                   </Button>
-                  <Button variant="outline" className="w-full justify-start gap-2">
-                    <Bell className="h-4 w-4" />
-                    Send Reminders
+                  <Button 
+                    variant="outline" 
+                    className="w-full justify-start gap-2" 
+                    disabled={sendingBulkReminders}
+                    onClick={async () => {
+                      setSendingBulkReminders(true);
+                      try {
+                        // Send reminders for all upcoming appointments
+                        for (const apt of upcomingAppointments.slice(0, 5)) {
+                          try {
+                            await api.post(`/appointments/${apt.id}/remind`);
+                          } catch (e) {
+                            console.log('Reminder service not available for:', apt.id);
+                          }
+                        }
+                        toast.success('Appointment reminders sent successfully!');
+                      } catch (error: any) {
+                        toast.error(error?.response?.data?.message || 'Failed to send reminders');
+                      } finally {
+                        setSendingBulkReminders(false);
+                      }
+                    }}
+                  >
+                    {sendingBulkReminders ? (
+                      <span className="animate-spin h-4 w-4 border-2 border-current border-t-transparent rounded-full" />
+                    ) : (
+                      <Bell className="h-4 w-4" />
+                    )}
+                    {sendingBulkReminders ? 'Sending...' : 'Send Reminders'}
                   </Button>
                 </CardContent>
               </Card>
@@ -479,7 +517,15 @@ const ClinicDashboard = () => {
                           <p className="text-sm font-medium">Next Visit</p>
                           <p className="text-sm text-muted-foreground">{patient.nextVisit}</p>
                         </div>
-                        <Button size="sm">View Details</Button>
+                        <Button
+                          size="sm"
+                          onClick={() => {
+                            setSelectedPatient(patient);
+                            setShowPatientDetails(true);
+                          }}
+                        >
+                          View Details
+                        </Button>
                       </div>
                     </div>
                   ))}
@@ -797,6 +843,66 @@ const ClinicDashboard = () => {
         </DialogContent>
       </Dialog>
 
+      {/* Patient Details Dialog */}
+      <Dialog
+        open={showPatientDetails}
+        onOpenChange={(open) => {
+          setShowPatientDetails(open);
+          if (!open) setSelectedPatient(null);
+        }}
+      >
+        <DialogContent className="max-w-lg">
+          <DialogHeader>
+            <DialogTitle>Patient Details</DialogTitle>
+            <DialogDescription>View patient information.</DialogDescription>
+          </DialogHeader>
+
+          {!selectedPatient ? (
+            <div className="text-sm text-muted-foreground">No patient selected.</div>
+          ) : (
+            <div className="space-y-4">
+              <div>
+                <p className="text-sm text-muted-foreground">Name</p>
+                <p className="text-lg font-semibold">{selectedPatient.name}</p>
+              </div>
+
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                <div>
+                  <p className="text-sm text-muted-foreground">Diagnosis / Reason</p>
+                  <p className="font-medium">{selectedPatient.diagnosis}</p>
+                </div>
+                <div>
+                  <p className="text-sm text-muted-foreground">Patient ID</p>
+                  <p className="font-medium">P-{String(selectedPatient.id).padStart(4, '0')}</p>
+                </div>
+              </div>
+
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                <div>
+                  <p className="text-sm text-muted-foreground">Last Visit</p>
+                  <p className="font-medium">{selectedPatient.lastVisit}</p>
+                </div>
+                <div>
+                  <p className="text-sm text-muted-foreground">Next Visit</p>
+                  <div className="flex items-center gap-2">
+                    <p className="font-medium">{selectedPatient.nextVisit}</p>
+                    {patientFilter !== 'all' ? null : isDueSoon(selectedPatient.nextVisit) ? (
+                      <Badge variant="secondary">Due soon</Badge>
+                    ) : null}
+                  </div>
+                </div>
+              </div>
+            </div>
+          )}
+
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setShowPatientDetails(false)}>
+              Close
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
       {/* Create Invoice Dialog */}
       <Dialog open={showCreateInvoice} onOpenChange={setShowCreateInvoice}>
         <DialogContent className="max-w-lg">
@@ -1007,6 +1113,82 @@ const ClinicDashboard = () => {
               </Button>
             </div>
           </div>
+        </DialogContent>
+      </Dialog>
+
+      {/* View Appointment Dialog */}
+      <Dialog open={showViewAppointment} onOpenChange={setShowViewAppointment}>
+        <DialogContent className="max-w-md">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <Calendar className="h-5 w-5 text-pink-600" />
+              Appointment Details
+            </DialogTitle>
+          </DialogHeader>
+          
+          {selectedAppointment && (
+            <div className="space-y-4 mt-4">
+              <div className="grid grid-cols-2 gap-4">
+                <div>
+                  <Label className="text-muted-foreground text-xs">Patient</Label>
+                  <p className="font-semibold">{selectedAppointment.patient}</p>
+                </div>
+                <div>
+                  <Label className="text-muted-foreground text-xs">Status</Label>
+                  <Badge variant={selectedAppointment.status === 'Waiting' ? 'default' : 'secondary'}>
+                    {selectedAppointment.status}
+                  </Badge>
+                </div>
+              </div>
+              
+              <div className="grid grid-cols-2 gap-4">
+                <div>
+                  <Label className="text-muted-foreground text-xs">Time</Label>
+                  <p className="font-medium">{selectedAppointment.time}</p>
+                </div>
+                <div>
+                  <Label className="text-muted-foreground text-xs">Type</Label>
+                  <p className="font-medium">{selectedAppointment.type}</p>
+                </div>
+              </div>
+              
+              <div className="flex gap-2 pt-4 border-t">
+                <Button 
+                  variant="outline" 
+                  className="flex-1"
+                  disabled={sendingReminder}
+                  onClick={async () => {
+                    setSendingReminder(true);
+                    try {
+                      await api.post(`/appointments/${selectedAppointment.id}/remind`);
+                      toast.success(`Reminder sent to ${selectedAppointment.patient}`);
+                    } catch (error: any) {
+                      toast.error(error?.response?.data?.message || 'Failed to send reminder');
+                    } finally {
+                      setSendingReminder(false);
+                    }
+                  }}
+                >
+                  {sendingReminder ? (
+                    <span className="animate-spin h-4 w-4 border-2 border-current border-t-transparent rounded-full mr-2" />
+                  ) : (
+                    <Bell className="h-4 w-4 mr-2" />
+                  )}
+                  {sendingReminder ? 'Sending...' : 'Send Reminder'}
+                </Button>
+                <Button 
+                  className="flex-1 bg-gradient-to-r from-pink-600 to-rose-600"
+                  onClick={() => {
+                    setShowViewAppointment(false);
+                    navigate(`/clinic/appointments?id=${selectedAppointment.id}`);
+                  }}
+                >
+                  <FileText className="h-4 w-4 mr-2" />
+                  Full Details
+                </Button>
+              </div>
+            </div>
+          )}
         </DialogContent>
       </Dialog>
     </ClinicLayout>

@@ -555,10 +555,10 @@ export default function AdminWorkflowAutomation() {
                             )}
                           </div>
                           <div className="flex gap-2 ml-4">
-                            <Button variant="ghost" size="sm">
+                            <Button variant="ghost" size="sm" onClick={() => toast({ title: "Task Details", description: `Viewing task ${task.id}` })}>
                               <Eye className="h-4 w-4" />
                             </Button>
-                            <Button variant="ghost" size="sm">
+                            <Button variant="ghost" size="sm" onClick={() => toast({ title: "Edit Task", description: `Opening editor for task ${task.id}` })}>
                               <Edit className="h-4 w-4" />
                             </Button>
                             <Button
@@ -751,7 +751,7 @@ export default function AdminWorkflowAutomation() {
                             <p className="text-xs text-muted-foreground mb-2">
                               Automatically accept appointments during business hours (9 AM - 5 PM)
                             </p>
-                            <Button size="sm" variant="outline">
+                            <Button size="sm" variant="outline" onClick={() => toast({ title: "Template Loaded", description: "Auto-Accept Appointments template loaded!" })}>
                               Use Template
                             </Button>
                           </div>
@@ -772,7 +772,7 @@ export default function AdminWorkflowAutomation() {
                             <p className="text-xs text-muted-foreground mb-2">
                               Send reminders at 24h, 2h, and 30min before appointments
                             </p>
-                            <Button size="sm" variant="outline">
+                            <Button size="sm" variant="outline" onClick={() => toast({ title: "Template Loaded", description: "Multi-Level Reminders template loaded!" })}>
                               Use Template
                             </Button>
                           </div>
@@ -793,7 +793,7 @@ export default function AdminWorkflowAutomation() {
                             <p className="text-xs text-muted-foreground mb-2">
                               Create video meeting links instantly on payment confirmation
                             </p>
-                            <Button size="sm" variant="outline">
+                            <Button size="sm" variant="outline" onClick={() => toast({ title: "Template Loaded", description: "Auto-Generate Meeting Links template loaded!" })}>
                               Use Template
                             </Button>
                           </div>
@@ -814,7 +814,7 @@ export default function AdminWorkflowAutomation() {
                             <p className="text-xs text-muted-foreground mb-2">
                               Auto-detect missed appointments and send rescheduling links
                             </p>
-                            <Button size="sm" variant="outline">
+                            <Button size="sm" variant="outline" onClick={() => toast({ title: "Template Loaded", description: "No-Show Detection template loaded!" })}>
                               Use Template
                             </Button>
                           </div>
@@ -835,7 +835,7 @@ export default function AdminWorkflowAutomation() {
                             <p className="text-xs text-muted-foreground mb-2">
                               Create follow-up tasks automatically after consultations
                             </p>
-                            <Button size="sm" variant="outline">
+                            <Button size="sm" variant="outline" onClick={() => toast({ title: "Template Loaded", description: "Post-Consultation Follow-up template loaded!" })}>
                               Use Template
                             </Button>
                           </div>
@@ -856,7 +856,7 @@ export default function AdminWorkflowAutomation() {
                             <p className="text-xs text-muted-foreground mb-2">
                               Request patient feedback 1 hour after consultation
                             </p>
-                            <Button size="sm" variant="outline">
+                            <Button size="sm" variant="outline" onClick={() => toast({ title: "Template Loaded", description: "Feedback Collection template loaded!" })}>
                               Use Template
                             </Button>
                           </div>
@@ -951,7 +951,7 @@ export default function AdminWorkflowAutomation() {
                                 </>
                               )}
                             </Button>
-                            <Button variant="ghost" size="sm">
+                            <Button variant="ghost" size="sm" onClick={() => toast({ title: "Configure Rule", description: `Opening settings for rule ${rule.id}` })}>
                               <Settings className="h-4 w-4" />
                             </Button>
                           </div>

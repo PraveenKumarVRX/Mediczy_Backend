@@ -1,0 +1,37 @@
+CREATE EXTENSION IF NOT EXISTS vector;
+
+{% set metric_map = {
+  'cosine': 'vector_cosine_ops',
+  'euclidean': 'vector_l2_ops',
+  'l2': 'vector_l2_ops',
+  'inner': 'vector_innerproduct_ops'
+} %}
+{% for idx in pgvector_indexes | default([]) %}
+{% if idx.database is defined and idx.database == pgvector_current_db %}
+{% set idx_metric = idx.metric | default(pgvector_distance_metric | default('cosine')) %}
+{% set opclass = metric_map.get(idx_metric, 'vector_cosine_ops') %}
+{% set probe_suffix = (idx.probes is defined) | ternary(', probes = ' ~ idx.probes, '') %}
+DO $$
+BEGIN
+  IF NOT EXISTS (
+    SELECT 1
+    FROM pg_indexes
+    WHERE schemaname = '{{ idx.schema | default('public') }}'
+      AND tablename = '{{ idx.table }}'
+      AND indexname = '{{ idx.name }}'
+  ) THEN
+    EXECUTE format(
+      'CREATE INDEX %I ON %I.%I USING ivfflat (%I %s) WITH (lists = %s%s)',
+      '{{ idx.name }}',
+      '{{ idx.schema | default('public') }}',
+      '{{ idx.table }}',
+      '{{ idx.column }}',
+      '{{ opclass }}',
+      '{{ idx.lists | default(pgvector_ivfflat_lists) }}',
+      '{{ probe_suffix }}'
+    );
+  END IF;
+END;
+$$ LANGUAGE plpgsql;
+{% endif %}
+{% endfor %}

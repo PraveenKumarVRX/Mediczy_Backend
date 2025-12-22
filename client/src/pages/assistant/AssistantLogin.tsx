@@ -15,6 +15,7 @@ import {
   Calendar
 } from 'lucide-react';
 import api from '@/utils/api';
+import { clearAuthTokens } from '@/hooks/auth';
 
 const AssistantLogin = () => {
   const navigate = useNavigate();
@@ -29,15 +30,6 @@ const AssistantLogin = () => {
 
   // Check if already authenticated and setup dev credentials
   useEffect(() => {
-    // Clear any other role tokens that might interfere
-    localStorage.removeItem('adminToken');
-    localStorage.removeItem('teamToken');
-    localStorage.removeItem('nurseToken');
-    localStorage.removeItem('corporateToken');
-    localStorage.removeItem('doctorToken');
-    localStorage.removeItem('token');
-    localStorage.removeItem('userType');
-
     const token = localStorage.getItem('assistantToken');
     if (token) {
       console.log('✅ Assistant already authenticated, redirecting...');
@@ -64,18 +56,55 @@ const AssistantLogin = () => {
     if (error) setError('');
   };
 
+  const establishAssistantSession = (token: string, assistantProfile?: any) => {
+    clearAuthTokens();
+    localStorage.setItem('assistantToken', token);
+    localStorage.setItem('token', token);
+    localStorage.setItem('userType', 'assistant');
+    if (assistantProfile) {
+      localStorage.setItem('assistantData', JSON.stringify({
+        id: assistantProfile.id,
+        email: assistantProfile.email,
+        firstName: assistantProfile.firstName,
+        lastName: assistantProfile.lastName,
+        role: assistantProfile.role,
+        clinic: assistantProfile.clinic || assistantProfile.organization,
+      }));
+    } else {
+      localStorage.removeItem('assistantData');
+    }
+    window.dispatchEvent(new Event('authChange'));
+  };
+
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setLoading(true);
     setError('');
 
+    if (
+      import.meta.env.DEV &&
+      formData.email === 'assistant@mediczy.com' &&
+      formData.password === 'AssistantPass123'
+    ) {
+      console.log('🚀 Assistant development mode: quick auth bypass');
+      establishAssistantSession('dev-assistant-token', {
+        id: 'assistant_dev',
+        email: 'assistant@mediczy.com',
+        firstName: 'Assist',
+        lastName: 'Member',
+        role: 'Assistant'
+      });
+      setLoading(false);
+      navigate('/assistant/dashboard', { replace: true });
+      return;
+    }
+
     try {
-      const { data } = await api.post('/assistant/login', formData);
+      const { data } = await api.post('/assistant/login', formData, { skipAuth: true });
       
       if (data.success && data.token && data.assistant) {
-        localStorage.setItem('assistantToken', data.token);
-        localStorage.setItem('assistantData', JSON.stringify(data.assistant));
-        navigate('/assistant/dashboard');
+        establishAssistantSession(data.token, data.assistant);
+        navigate('/assistant/dashboard', { replace: true });
       } else {
         setError('Invalid login response from server');
       }
@@ -141,7 +170,7 @@ const AssistantLogin = () => {
 
           <CardContent className="space-y-6">
             {error && (
-              <Alert variant="destructive" className="animate-in fade-in slide-in-from-top-2">
+              <Alert variant="destructive" className="animate-in fade-in slide-in-from-top-2" role="alert">
                 <AlertDescription>{error}</AlertDescription>
               </Alert>
             )}
@@ -180,20 +209,19 @@ const AssistantLogin = () => {
                     className="h-11 pr-10"
                     disabled={loading}
                   />
-                  <Button
+                  <button
                     type="button"
-                    variant="ghost"
-                    size="sm"
-                    className="absolute right-0 top-0 h-11 px-3 hover:bg-transparent"
+                    className="absolute right-2 top-1/2 -translate-y-1/2 rounded-md p-1 text-muted-foreground hover:text-foreground focus:outline-none focus-visible:ring-2 focus-visible:ring-purple-500"
                     onClick={() => setShowPassword(!showPassword)}
-                    tabIndex={-1}
+                    disabled={loading}
+                    aria-label={showPassword ? 'Hide password' : 'Show password'}
                   >
                     {showPassword ? (
-                      <EyeOff className="h-4 w-4 text-muted-foreground" />
+                      <EyeOff className="h-4 w-4" aria-hidden="true" />
                     ) : (
-                      <Eye className="h-4 w-4 text-muted-foreground" />
+                      <Eye className="h-4 w-4" aria-hidden="true" />
                     )}
-                  </Button>
+                  </button>
                 </div>
               </div>
 
@@ -253,6 +281,16 @@ const AssistantLogin = () => {
                 </Button>
               </div>
             </div>
+
+            <p className="text-center text-xs text-muted-foreground">
+              Trouble signing in?{' '}
+              <a
+                href="mailto:support@mediczy.com?subject=Assistant%20Portal%20Login%20Help"
+                className="font-semibold underline underline-offset-2 hover:text-purple-600"
+              >
+                Contact support
+              </a>
+            </p>
           </CardContent>
         </Card>
 

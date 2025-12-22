@@ -11,6 +11,12 @@ import fileUpload from 'express-fileupload';
 import compression from 'compression';
 import orchestrator from "./db/orchestrator.js";
 import userRouter from "./routes/user.route.js";
+import addressRouter from "./routes/address.route.js";
+import familyMemberRouter from "./routes/family-member.route.js";
+import walletRouter from "./routes/wallet.route.js";
+import membershipPlansRouter from "./routes/membership-plans.route.js";
+import leaderboardRouter from "./routes/leaderboard.route.js";
+import passwordResetRouter from "./routes/password-reset.route.js";
 import doctorRoutes from './routes/doctor.route.js';
 import doctorEnhancedRoutes from './routes/doctor.enhanced.route.js';
 import doctorAvailabilityRoutes from './routes/doctor-availability.route.js';
@@ -21,6 +27,9 @@ import fitnessDataRouter from "./routes/fitnessData.js";
 import appleHealthRouter from "./routes/apple-health.route.js";
 import aiRouter from "./routes/ai.js";
 import medicalAIRouter from "./routes/medical-ai.route.js";
+import aiHealthRouter from "./routes/ai-health.route.js";
+import aiScribeRouter from "./routes/ai-scribe.route.js";
+import recordingRouter from "./routes/recording.route.js";
 import ayushmanRouter from "./routes/ayushman.route.js";
 import placesRouter from './routes/places.js';
 
@@ -38,6 +47,10 @@ import assistantRouter from './routes/assistant.route.js';
 import prometheus from './config/prometheus.js';
 import patientRouter from './routes/patient.route.js';
 import insuranceRouter from './routes/insurance.route.js';
+import insurancePolicyRouter from './routes/insurance-policy.route.js';
+import insuranceCompanyRouter from './routes/insurance-company.route.js';
+import insuranceBrokerRouter from './routes/insurance-broker.route.js';
+import tpaRouter from './routes/tpa.route.js';
 import privacyRouter from './routes/privacy.route.js';
 import videoRouter from './routes/video.route.js';
 import smsRouter from './routes/sms.route.js';
@@ -46,6 +59,7 @@ import voiceConfigRouter from './routes/voiceConfig.route.js';
 import whatsappConfigRouter from './routes/whatsapp.config.route.js';
 import whatsappBusinessRouter from './routes/whatsapp.business.route.js';
 import whatsappProductionRouter from './routes/whatsapp-production.route.js';
+import whatsappNumbersRouter from './routes/whatsapp-numbers.route.js';
 import chatRouter from './routes/chat.route.js';
 import ticketsRouter from './routes/tickets.route.js';
 import tenantRouter from './routes/tenant.route.js';
@@ -58,6 +72,7 @@ import otpRouter from './routes/otp.route.js';
 import enhancedLabRouter from './routes/lab.route.enhanced.js';
 import corporateRouter from './routes/corporate.route.js';
 import hospitalRouter from './routes/hospital.route.js';
+import hospitalAuthRouter from './routes/hospital-auth.route.js';
 import clinicRouter from './routes/clinic.route.js';
 import pharmacyRouter from './routes/pharmacy.route.js';
 import ambulanceRouter from './routes/ambulance.route.js';
@@ -79,6 +94,9 @@ import circuitBreakerRouter from './routes/circuit-breaker.route.js';
 import n8nCallbackRouter from './routes/webhooks/n8n-callback.route.js';
 import oauthRouter from './routes/oauth.route.js';
 import doctorOAuthRouter from './routes/doctor-oauth.route.js';
+import communicationRouter from './routes/communication.route.js';
+import consultationRecordingRouter from './routes/consultation-recording.route.js';
+import billingRouter from './routes/billing.route.js';
 
 // MariaDB models completely replaced with Intelligent Database models
 // Legacy MariaDB models removed - all data now flows through intelligent database
@@ -93,13 +111,14 @@ import "./models/consent.model.intelligent.js";
 import "./models/admin.model.intelligent.js";
 import "./models/appointment.model.intelligent.js";
 import "./models/doctorAvailability.model.intelligent.js";
-import "./models/membershipPlan.model.intelligent.js";
+import "./models/postgres/membershipPlan.model.postgres.js";
 import "./models/insurance.model.intelligent.js";
 import "./models/auditLog.model.intelligent.js";
 import "./models/crm.model.intelligent.js";
 import "./models/ticket.model.intelligent.js";
 import "./models/FitnessData.model.intelligent.js";
 import "./models/chat.model.intelligent.js";
+import "./models/consultationRecording.model.intelligent.js";
 
 // Import async infrastructure (optional - gracefully degrades if services unavailable)
 import './config/redis.js';
@@ -209,9 +228,9 @@ app.use((req, res, next) => {
   next();
 });
 
-// 2. CORS - Strict whitelist (SECURITY FIX)
+// 2. CORS - Strict whitelist (no silent allow-all)
 const allowedOrigins = process.env.CORS_ORIGIN 
-  ? process.env.CORS_ORIGIN.split(',') 
+  ? process.env.CORS_ORIGIN.split(',').map(o => o.trim()).filter(Boolean)
   : process.env.NODE_ENV === 'production'
   ? ['https://mediqzy.com', 'https://www.mediqzy.com']
   : [
@@ -227,17 +246,29 @@ const allowedOrigins = process.env.CORS_ORIGIN
       'http://192.168.1.72'
     ]; // Default for development
 
+// Block disallowed origins early with 403 (both preflight and actual requests)
+app.use((req, res, next) => {
+  const origin = req.get('Origin');
+  if (origin && !allowedOrigins.includes(origin)) {
+    if (req.method === 'OPTIONS') {
+      return res.status(403).end();
+    }
+    return res.status(403).json({ error: 'CORS blocked', origin });
+  }
+  next();
+});
+
 app.use(cors({
   origin: function (origin, callback) {
     // Allow requests with no origin (mobile apps, Postman, etc.)
     if (!origin) return callback(null, true);
     
-    // Check if origin is in allowed list or allow all in development
-    if (allowedOrigins.includes(origin) || process.env.NODE_ENV === 'development') {
+    if (allowedOrigins.includes(origin)) {
       return callback(null, true);
-    } else {
-      return callback(null, true); // Allow all for testing
     }
+
+    // Already blocked by the pre-check middleware; return false to skip headers
+    return callback(null, false);
   },
   methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS', 'PATCH'],
   allowedHeaders: ['Content-Type', 'Authorization', 'X-Requested-With', 'Accept', 'Origin'],
@@ -249,6 +280,9 @@ app.use(cors({
 // Handle preflight requests explicitly BEFORE rate limiting
 app.options('*', (req, res) => {
   const origin = req.get('Origin');
+  if (origin && !allowedOrigins.includes(origin)) {
+    return res.status(403).end();
+  }
   res.header('Access-Control-Allow-Origin', origin || '*');
   res.header('Access-Control-Allow-Methods', 'GET, POST, PUT, DELETE, OPTIONS, PATCH');
   res.header('Access-Control-Allow-Headers', 'Content-Type, Authorization, X-Requested-With, Accept, Origin');
@@ -259,7 +293,7 @@ app.options('*', (req, res) => {
 // 3. Rate Limiting - Global and Authentication-specific
 const globalLimiter = rateLimit({
   windowMs: 15 * 60 * 1000, // 15 minutes
-  max: 1000, // 1000 requests per 15 minutes per IP (increased for development)
+  max: 300, // tighter global cap to reduce abuse
   message: 'Too many requests from this IP, please try again later.',
   standardHeaders: true,
   legacyHeaders: false,
@@ -267,9 +301,25 @@ const globalLimiter = rateLimit({
 
 const authLimiter = rateLimit({
   windowMs: 15 * 60 * 1000, // 15 minutes
-  max: 50, // 50 login attempts per 15 minutes (increased from 5)
+  max: 10, // stricter auth attempts to curb brute-force
   message: 'Too many authentication attempts, please try again later.',
   skipSuccessfulRequests: true,
+});
+
+const aiLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000,
+  max: 60,
+  message: 'Too many AI requests, please slow down.',
+  standardHeaders: true,
+  legacyHeaders: false,
+});
+
+const aiImageLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000,
+  max: 10,
+  message: 'Image analysis limit reached. Please retry later.',
+  standardHeaders: true,
+  legacyHeaders: false,
 });
 
 app.use('/api/', globalLimiter);
@@ -279,6 +329,10 @@ app.use('/api/doctors/login', authLimiter);
 app.use('/api/doctors/register', authLimiter);
 app.use('/api/nurse/login', authLimiter);
 app.use('/api/assistant/login', authLimiter);
+app.use('/api/ai', aiLimiter);
+app.use('/api/medical-ai', aiLimiter);
+app.use('/api/ai/working-medical-consult', aiLimiter);
+app.use('/api/ai/analyze-image', aiImageLimiter);
 
 // Prometheus metrics middleware
 app.use(metricsMiddleware);
@@ -354,19 +408,16 @@ app.get('/health/ready', async (req, res) => {
   try {
     const health = await orchestrator.healthCheck();
     const dbStates = health.databases || {
-      mariadb: health.mariadb,
       postgres: health.postgres
     };
 
-    const mariaOnline = Boolean(dbStates.mariadb);
     const postgresOnline = Boolean(dbStates.postgres);
-    const isReady = mariaOnline && postgresOnline;
+    const isReady = postgresOnline;
 
     const response = {
       status: isReady ? 'ready' : 'not-ready',
       timestamp: new Date().toISOString(),
       databases: {
-        mariadb: mariaOnline ? 'connected' : 'disconnected',
         postgres: postgresOnline ? 'connected' : 'disconnected'
       }
     };
@@ -387,7 +438,6 @@ app.get('/health', async (req, res) => {
     const health = await orchestrator.healthCheck();
     const mem = process.memoryUsage();
     const dbStates = health.databases || {
-      mariadb: health.mariadb,
       postgres: health.postgres,
       duckdb: health.duckdb,
       redis: health.redis
@@ -400,7 +450,7 @@ app.get('/health', async (req, res) => {
       ])
     );
 
-    const criticalHealthy = Boolean(dbStates.mariadb) && Boolean(dbStates.postgres);
+    const criticalHealthy = Boolean(dbStates.postgres);
 
     const healthCheck = {
       status: criticalHealthy ? 'healthy' : 'degraded',
@@ -550,25 +600,40 @@ app.use('/api/auth', oauthRouter);
 app.use('/api/auth/doctor', doctorOAuthRouter);
 
 app.use("/api/users", userRouter);
+app.use("/api/addresses", addressRouter);
+app.use("/api/family-members", familyMemberRouter);
+app.use("/api/wallet", walletRouter);
+app.use("/api/membership-plans", membershipPlansRouter);
+app.use("/api/leaderboard", leaderboardRouter);
+app.use("/api/password-reset", passwordResetRouter);
 app.use("/api/doctors", doctorRoutes); // Doctor routes (login, register, profile)
 app.use("/api/doctors", doctorEnhancedRoutes); // Enhanced doctor routes (search, public profiles)
 app.use("/api/doctors", availabilityRouter); // Availability routes
+app.use("/api/ai", aiScribeRouter); // AI Scribe for prescription generation
+app.use("/api/recordings", recordingRouter); // Consultation recording management
 app.use("/api/doctors/availability", doctorAvailabilityRoutes); // Doctor availability management
 app.use("/api/doctor-settings", doctorSettingsRoutes); // Doctor appointment configuration
 app.use("/api/enhanced-appointments", enhancedAppointmentRoutes); // Enhanced appointment booking
 app.use("/api/membership", membershipRouter);
 app.use("/api/insurance", insuranceRouter);
+app.use("/api/insurance-policies", insurancePolicyRouter); // Comprehensive insurance policy & rule engine
+app.use("/api/insurance-company", insuranceCompanyRouter); // Insurance company & corporate login
+app.use("/api/insurance-broker", insuranceBrokerRouter); // Insurance broker/intermediary login
+app.use("/api/tpa", tpaRouter); // TPA (Third Party Administrator) login
 app.use("/api/appointments", appointmentRouter);
 app.use("/api/prescriptions", prescriptionRouter); // Prescription CRUD and PDF generation
 app.use("/api/ehr", ehrRouter); // Electronic Health Records - admin access to patient records
 app.use("/api/health-diary", healthDiaryRouter); // Patient health journal and diary entries
 app.use("/api/consultation", onlineConsultationRouter); // Online consultation booking flow
+app.use("/api/consultation-recordings", consultationRecordingRouter); // Consultation recording and AI transcription
+app.use("/api/billing", billingRouter); // Billing, orders, invoices, and payments
 app.use("/api/notifications", notificationRouter); // In-app notification management
 app.use("/api/fitness", fitnessRouter);
 app.use("/api/fitness-data", fitnessDataRouter); // Health and fitness tracking data
 app.use("/api/apple-health", appleHealthRouter); // Apple HealthKit integration for iOS
 app.use("/api/ai", aiRouter);
 app.use("/api/medical-ai", medicalAIRouter);
+app.use("/api/ai-health", aiHealthRouter); // AI health assistant, diet plans, Dr. ISHA
 app.use("/api/ayushman", ayushmanRouter);
 app.use('/api/places', placesRouter);
 
@@ -595,6 +660,7 @@ app.use('/api/sms', smsRouter); // SMS gateway management
 app.use('/api/video-config', videoConfigRouter); // Video configuration management
 app.use('/api/voice-config', voiceConfigRouter); // Voice call configuration management
 app.use('/api/whatsapp-config', whatsappConfigRouter); // WhatsApp provider configuration management
+app.use('/api/whatsapp-numbers', whatsappNumbersRouter); // WhatsApp multiple numbers management
 app.use('/api/payments', paymentRouter); // Payment gateway management
 app.use('/api/whatsapp-business', whatsappBusinessRouter); // WhatsApp Business API integration
 app.use('/api/whatsapp-production', whatsappProductionRouter); // Production WhatsApp messaging with templates
@@ -605,6 +671,7 @@ app.use('/api/tenants', tenantRouter); // Multi-tenant organization management
 app.use('/api/tenant-domains', tenantDomainRouter); // Custom domain management
 app.use('/api/corporate', corporateRouter); // Corporate benefits and plans
 app.use('/api', hospitalRouter); // Hospital directory and SPN network
+app.use('/api/hospital/auth', hospitalAuthRouter); // Hospital authentication & corporate onboarding
 app.use('/api/clinics', clinicRouter); // Clinics directory (labs, dental, etc.)
 app.use('/api/labs', enhancedLabRouter); // Enhanced laboratory management with comprehensive search
 app.use('/api/pharmacy', pharmacyRouter); // Pharmacy authentication and management
@@ -659,9 +726,8 @@ import corporateAuthRouter from './routes/corporate/auth.routes.js';
 
 app.use('/api/corporate', corporateAuthRouter); // Corporate authentication (login, logout, verify)
 
-// Hospital Service Routes
-import hospitalAuthRouter from './routes/hospital/auth.routes.js';
-
+// Hospital Service Routes - Using hospital-auth.route.js imported at top
+// (hospitalAuthRouter already imported at line 74)
 app.use('/api/hospital', hospitalAuthRouter); // Hospital authentication (login, logout, verify)
 
 // Lab Service Routes
@@ -670,9 +736,36 @@ import labAuthRouter from './routes/lab/auth.routes.js';
 app.use('/api/lab', labAuthRouter); // Lab authentication (login, logout, verify)
 
 // Pharmacy Service Routes
-import pharmacyAuthRouter from './routes/pharmacy/auth.routes.js';
+// NOTE: Pharmacy routes already registered at line 616 with pharmacyRouter
+// import pharmacyAuthRouter from './routes/pharmacy/auth.routes.js';
+// app.use('/api/pharmacy', pharmacyAuthRouter); // Pharmacy authentication (login, logout, verify) - DISABLED: Duplicate route
 
-app.use('/api/pharmacy', pharmacyAuthRouter); // Pharmacy authentication (login, logout, verify)
+// TPA Service Routes - DISABLED: Using main tpa.route.js at line 586 instead
+// import tpaAuthRouter from './routes/tpa/auth.routes.js';
+// app.use('/api/tpa', tpaAuthRouter); // TPA authentication (login, logout, verify)
+
+// PSU Service Routes
+import psuAuthRouter from './routes/psu/auth.routes.js';
+
+app.use('/api/psu', psuAuthRouter); // PSU authentication (login, logout, verify)
+
+// Insurer Service Routes
+import insurerAuthRouter from './routes/insurer/auth.routes.js';
+
+app.use('/api/insurer', insurerAuthRouter); // Insurer authentication (login, logout, verify)
+
+// NGO Service Routes
+import ngoAuthRouter from './routes/ngo/auth.routes.js';
+
+app.use('/api/ngo', ngoAuthRouter); // NGO authentication (login, logout, verify)
+
+// Communication Module Routes (Email, SMS, WhatsApp) - Available for all user types
+app.use('/api/hospital/communication', communicationRouter); // Hospital communication
+app.use('/api/tpa/communication', communicationRouter); // TPA communication
+app.use('/api/broker/communication', communicationRouter); // Insurance Broker communication
+app.use('/api/insurance/communication', communicationRouter); // Insurance Company communication
+app.use('/api/insurer/communication', communicationRouter); // Insurer communication (alias)
+app.use('/api/admin/communication', communicationRouter); // Admin communication
 
 // Token Management Routes (refresh, revoke)
 import authTokenRouter from './routes/auth.token.route.js';

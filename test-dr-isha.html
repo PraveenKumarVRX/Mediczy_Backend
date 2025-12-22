@@ -1,0 +1,227 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Test Dr. Isha Integration</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            max-width: 800px;
+            margin: 0 auto;
+            padding: 20px;
+            background: #f0f2f5;
+        }
+        .container {
+            background: white;
+            border-radius: 10px;
+            padding: 20px;
+            box-shadow: 0 2px 10px rgba(0,0,0,0.1);
+        }
+        .chat-container {
+            border: 1px solid #ddd;
+            border-radius: 8px;
+            height: 400px;
+            overflow-y: auto;
+            padding: 15px;
+            margin: 10px 0;
+            background: #fafafa;
+        }
+        .message {
+            margin: 10px 0;
+            padding: 10px;
+            border-radius: 8px;
+        }
+        .user-message {
+            background: #007bff;
+            color: white;
+            margin-left: 20%;
+        }
+        .assistant-message {
+            background: #e8f5e8;
+            color: #333;
+            margin-right: 20%;
+        }
+        .input-area {
+            display: flex;
+            gap: 10px;
+            margin-top: 15px;
+        }
+        input[type="text"] {
+            flex: 1;
+            padding: 10px;
+            border: 1px solid #ddd;
+            border-radius: 5px;
+        }
+        button {
+            padding: 10px 20px;
+            background: #007bff;
+            color: white;
+            border: none;
+            border-radius: 5px;
+            cursor: pointer;
+        }
+        button:hover {
+            background: #0056b3;
+        }
+        .loading {
+            color: #666;
+            font-style: italic;
+        }
+        .test-buttons {
+            margin: 15px 0;
+        }
+        .test-buttons button {
+            margin: 5px;
+            background: #28a745;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>🏥 Dr. Isha Integration Test</h1>
+        <p>Testing the Dr. Isha (DocsGPT) integration with Mediczy AI Doctor</p>
+        
+        <div class="test-buttons">
+            <button onclick="testHealthCheck()">Test Health Check</button>
+            <button onclick="testConsultation()">Test Sample Consultation</button>
+            <button onclick="testSymptomAnalysis()">Test Symptom Analysis</button>
+            <button onclick="clearChat()">Clear Chat</button>
+        </div>
+
+        <div class="chat-container" id="chatContainer">
+            <div class="message assistant-message">
+                <strong>Dr. Isha:</strong> Hello! I'm Dr. Isha, your AI medical assistant powered by DocsGPT. 
+                How can I help you with your health concerns today?
+            </div>
+        </div>
+
+        <div class="input-area">
+            <input type="text" id="messageInput" placeholder="Type your medical question here..." 
+                   onkeypress="if(event.key==='Enter') sendMessage()">
+            <button onclick="sendMessage()">Send</button>
+        </div>
+
+        <div id="status"></div>
+    </div>
+
+    <script>
+        const API_BASE = 'http://localhost:8000';
+        const TOKEN = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpZCI6MiwiZW1haWwiOiJ0ZXN0QGV4YW1wbGUuY29tIiwiaWF0IjoxNzYyNjYzMjIzLCJleHAiOjE3NjMyNjgwMjN9.jm3hxB5MZ_aRCQ64dkFmVynCJ7VjzxWo1HOhqjBwCqY';
+
+        function addMessage(sender, message, isLoading = false) {
+            const chatContainer = document.getElementById('chatContainer');
+            const messageDiv = document.createElement('div');
+            messageDiv.className = `message ${sender === 'user' ? 'user-message' : 'assistant-message'}${isLoading ? ' loading' : ''}`;
+            messageDiv.innerHTML = `<strong>${sender === 'user' ? 'You' : 'Dr. Isha'}:</strong> ${message}`;
+            chatContainer.appendChild(messageDiv);
+            chatContainer.scrollTop = chatContainer.scrollHeight;
+            return messageDiv;
+        }
+
+        function updateStatus(message) {
+            document.getElementById('status').innerHTML = message;
+        }
+
+        async function sendMessage() {
+            const input = document.getElementById('messageInput');
+            const message = input.value.trim();
+            if (!message) return;
+
+            addMessage('user', message);
+            input.value = '';
+
+            const loadingMsg = addMessage('Dr. Isha', 'Thinking...', true);
+            updateStatus('Consulting Dr. Isha...');
+
+            try {
+                const response = await fetch(`${API_BASE}/api/dr-isha/consult`, {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                        'Authorization': `Bearer ${TOKEN}`
+                    },
+                    body: JSON.stringify({
+                        query: message,
+                        language: 'English',
+                        sessionId: 'test-web-session-' + Date.now()
+                    })
+                });
+
+                const data = await response.json();
+                loadingMsg.remove();
+
+                if (data.success !== false) {
+                    addMessage('Dr. Isha', data.response || data.message);
+                    updateStatus(`Response from ${data.doctor || 'Dr. Isha'}`);
+                } else {
+                    addMessage('Dr. Isha', data.response || data.error);
+                    updateStatus('Using fallback response (DocsGPT unavailable)');
+                }
+            } catch (error) {
+                loadingMsg.remove();
+                addMessage('Dr. Isha', 'Sorry, I\'m having trouble connecting right now. Please try again.');
+                updateStatus('Connection error: ' + error.message);
+            }
+        }
+
+        async function testHealthCheck() {
+            updateStatus('Testing health check...');
+            try {
+                const response = await fetch(`${API_BASE}/api/dr-isha/health`);
+                const data = await response.json();
+                addMessage('System', `Health Check: ${data.status} | DocsGPT: ${data.docsgpt ? 'Available' : 'Unavailable'}`);
+                updateStatus('Health check completed');
+            } catch (error) {
+                updateStatus('Health check failed: ' + error.message);
+            }
+        }
+
+        async function testConsultation() {
+            const testMessage = "I have been having a headache and feeling tired for 2 days. What could be causing this?";
+            document.getElementById('messageInput').value = testMessage;
+            sendMessage();
+        }
+
+        async function testSymptomAnalysis() {
+            updateStatus('Testing symptom analysis...');
+            try {
+                const response = await fetch(`${API_BASE}/api/dr-isha/analyze-symptoms`, {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                        'Authorization': `Bearer ${TOKEN}`
+                    },
+                    body: JSON.stringify({
+                        symptoms: ['headache', 'fatigue', 'fever'],
+                        description: 'Experiencing persistent headache with fatigue and mild fever',
+                        language: 'English',
+                        severity: 'moderate',
+                        sessionId: 'symptom-test-' + Date.now()
+                    })
+                });
+
+                const data = await response.json();
+                addMessage('Dr. Isha (Symptom Analysis)', data.response || data.error);
+                updateStatus('Symptom analysis completed');
+            } catch (error) {
+                updateStatus('Symptom analysis failed: ' + error.message);
+            }
+        }
+
+        function clearChat() {
+            const chatContainer = document.getElementById('chatContainer');
+            chatContainer.innerHTML = `
+                <div class="message assistant-message">
+                    <strong>Dr. Isha:</strong> Hello! I'm Dr. Isha, your AI medical assistant powered by DocsGPT. 
+                    How can I help you with your health concerns today?
+                </div>
+            `;
+            updateStatus('Chat cleared');
+        }
+
+        // Initialize
+        updateStatus('Dr. Isha integration test ready');
+    </script>
+</body>
+</html>

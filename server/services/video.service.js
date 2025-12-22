@@ -166,7 +166,7 @@ class VideoService {
         return true; // WebRTC is always available
         
       case 'mirotalk':
-        return !!(providerConfig.settings.serverUrl && providerConfig.settings.apiKey);
+        return !!providerConfig.settings.serverUrl; // MiroTalk only needs server URL for basic usage
         
       case 'jitsi':
         return !!providerConfig.settings.domain;
