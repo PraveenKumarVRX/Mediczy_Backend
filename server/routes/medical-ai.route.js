@@ -148,12 +148,12 @@ router.post('/analyze-symptoms', authUser, async (req, res) => {
 
 /**
  * @route   POST /api/medical-ai/emergency-triage
- * @desc    Emergency triage assessment
+ * @desc    Emergency triage assessment (routed through SIB)
  * @access  Private
  */
 router.post('/emergency-triage', authUser, async (req, res) => {
   try {
-    const { symptoms, description, language = 'en' } = req.body;
+    const { symptoms, description, language = 'en', multimodalContext } = req.body;
 
     if (!symptoms || !description) {
       return res.status(400).json({
@@ -162,25 +162,80 @@ router.post('/emergency-triage', authUser, async (req, res) => {
       });
     }
 
-    const sessionId = `mediczy_emergency_${req.user.id}_${Date.now()}`;
+    // Try SIB first for centralized triage
+    const SIB_URL = process.env.SIB_URL || 'http://localhost:8001';
+    let triage;
+    let sibUsed = false;
 
-    const triage = await medicalAIService.emergencyTriage(
-      symptoms,
-      description,
-      sessionId,
-      language,
-      {
-        userId: req.user.id,
-        userName: `${req.user.firstName || 'Patient'} ${req.user.lastName || ''}`.trim(),
-        intentType: 'emergency'
+    try {
+      const sibResponse = await fetch(`${SIB_URL}/emergency-triage`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          symptoms,
+          description,
+          language,
+          patient_id: req.user.id,
+          patient_data: {
+            patient_id: req.user.id,
+            name: `${req.user.firstName || 'Patient'} ${req.user.lastName || ''}`.trim(),
+            age: req.user.age || null,
+            gender: req.user.gender || null,
+            conditions: req.user.medicalConditions || null
+          },
+          multimodal_context: multimodalContext || null
+        })
+      });
+
+      if (sibResponse.ok) {
+        const sibResult = await sibResponse.json();
+        sibUsed = true;
+        
+        // Map SIB response to existing format
+        triage = {
+          success: true,
+          urgencyLevel: sibResult.urgency_level,
+          urgencyDetails: sibResult.urgency_details,
+          response: sibResult.ai_assessment?.response || sibResult.response,
+          requiresImmediateAttention: sibResult.requires_immediate_attention,
+          callAmbulance: sibResult.call_ambulance,
+          recommendedActions: sibResult.recommended_actions || sibResult.urgency_details?.actions,
+          followUpQuestions: sibResult.follow_up_questions || [],
+          triageId: sibResult.triage_id,
+          sibUsed: true,
+          processingTime: sibResult.processing_time_ms
+        };
       }
-    );
+    } catch (sibError) {
+      console.warn('SIB emergency triage fallback:', sibError.message);
+    }
+
+    // Fallback to local medicalAIService if SIB fails
+    if (!sibUsed) {
+      const sessionId = `mediczy_emergency_${req.user.id}_${Date.now()}`;
+      const localResult = await medicalAIService.emergencyTriage(
+        symptoms,
+        description,
+        sessionId,
+        language,
+        {
+          userId: req.user.id,
+          userName: `${req.user.firstName || 'Patient'} ${req.user.lastName || ''}`.trim(),
+          intentType: 'emergency'
+        }
+      );
+      triage = {
+        ...localResult,
+        sibUsed: false
+      };
+    }
 
     // Log emergency triage attempts for audit
     console.log(`🚨 Emergency triage requested by user ${req.user.id}:`, {
       symptoms,
       description,
       urgencyLevel: triage.urgencyLevel,
+      sibUsed,
       timestamp: new Date().toISOString()
     });
 
@@ -192,6 +247,187 @@ router.post('/emergency-triage', authUser, async (req, res) => {
       error: 'Emergency triage service temporarily unavailable',
       urgencyLevel: 'UNKNOWN',
       requiresImmediateAttention: true
+    });
+  }
+});
+
+/**
+ * @route   GET /api/medical-ai/triage-doctors
+ * @desc    Get available online triage doctors for instant consultation
+ * @access  Private
+ */
+router.get('/triage-doctors', authUser, async (req, res) => {
+  try {
+    const { Doctor } = await import('../models/index.js');
+    
+    // Find doctors who are online and available for triage
+    const availableDoctors = await Doctor.findAll({
+      where: {
+        isOnline: true,
+        isVerified: true,
+        isAvailable: true
+      },
+      attributes: [
+        'id', 'prefix', 'firstName', 'lastName', 'profileImage',
+        'specialization', 'qualifications', 'experience',
+        'onlineConsultationFee', 'consultationFees', 'averageRating',
+        'languages', 'isOnline'
+      ],
+      order: [
+        ['averageRating', 'DESC'],
+        ['experience', 'DESC']
+      ],
+      limit: 10
+    });
+
+    // Mark doctors who accept emergency/triage consultations
+    const triageDoctors = availableDoctors.map(doc => ({
+      id: doc.id,
+      name: `${doc.prefix || 'Dr.'} ${doc.firstName} ${doc.lastName}`,
+      profileImage: doc.profileImage,
+      specialization: doc.specialization,
+      qualifications: doc.qualifications,
+      experience: doc.experience,
+      consultationFee: doc.onlineConsultationFee || doc.consultationFees || 500,
+      rating: doc.averageRating || 4.5,
+      languages: doc.languages || ['English'],
+      isOnline: true,
+      acceptsEmergency: true // All online doctors accept emergency triage
+    }));
+
+    res.json({
+      success: true,
+      count: triageDoctors.length,
+      doctors: triageDoctors,
+      message: triageDoctors.length > 0 
+        ? `${triageDoctors.length} doctor(s) available for instant triage consultation`
+        : 'No doctors currently online. AI triage will continue to assist you.'
+    });
+  } catch (error) {
+    console.error('Triage doctors fetch error:', error);
+    res.status(500).json({
+      success: false,
+      error: 'Failed to fetch available triage doctors',
+      doctors: []
+    });
+  }
+});
+
+/**
+ * @route   POST /api/medical-ai/instant-triage-call
+ * @desc    Create instant video call room with triage doctor
+ * @access  Private
+ */
+router.post('/instant-triage-call', authUser, async (req, res) => {
+  try {
+    const { doctorId, symptoms, urgencyLevel, triageId } = req.body;
+    const { Doctor, Appointment } = await import('../models/index.js');
+    const crypto = await import('crypto');
+    
+    // If no doctor specified, find first available online doctor
+    let doctor;
+    if (doctorId) {
+      doctor = await Doctor.findByPk(doctorId);
+    } else {
+      doctor = await Doctor.findOne({
+        where: {
+          isOnline: true,
+          isVerified: true,
+          isAvailable: true
+        },
+        order: [['averageRating', 'DESC']]
+      });
+    }
+
+    if (!doctor) {
+      return res.status(404).json({
+        success: false,
+        error: 'No doctors available for instant consultation',
+        aiTriageAvailable: true,
+        message: 'Continue with AI triage or try again in a few minutes'
+      });
+    }
+
+    // Generate unique room ID for MiroTalk SFU
+    const roomId = `triage_${crypto.randomBytes(8).toString('hex')}_${Date.now()}`;
+    
+    // Create emergency appointment record
+    const appointment = await Appointment.create({
+      patientId: req.user.id,
+      doctorId: doctor.id,
+      appointmentDate: new Date(),
+      appointmentTime: new Date().toTimeString().slice(0, 5),
+      type: 'emergency_triage',
+      status: 'in_progress',
+      reason: `Emergency Triage: ${symptoms || 'Immediate consultation requested'}`,
+      notes: JSON.stringify({
+        triageId,
+        urgencyLevel,
+        symptoms,
+        roomId,
+        initiatedAt: new Date().toISOString()
+      }),
+      consultationType: 'video',
+      isPaid: false, // Emergency triage - payment handled later
+      videoRoomId: roomId
+    });
+
+    // MiroTalk SFU URL
+    const mirotalkBaseUrl = process.env.MIROTALK_SFU_URL || 'https://video.mediqzy.com';
+    const patientJoinUrl = `${mirotalkBaseUrl}/join/${roomId}`;
+    const doctorJoinUrl = `${mirotalkBaseUrl}/join/${roomId}`;
+
+    // Notify doctor via notification service
+    try {
+      const notificationService = (await import('../services/notification.service.js')).default;
+      await notificationService.sendNotification({
+        userId: doctor.id,
+        userType: 'doctor',
+        type: 'emergency_triage',
+        title: '🚨 Emergency Triage Request',
+        message: `Patient ${req.user.firstName || 'Patient'} needs immediate consultation. Urgency: ${urgencyLevel || 'HIGH'}`,
+        data: {
+          appointmentId: appointment.id,
+          roomId,
+          patientId: req.user.id,
+          patientName: `${req.user.firstName || ''} ${req.user.lastName || ''}`.trim(),
+          symptoms,
+          urgencyLevel,
+          joinUrl: doctorJoinUrl
+        },
+        channels: ['push', 'socket', 'sms']
+      });
+    } catch (notifyError) {
+      console.warn('Doctor notification failed:', notifyError.message);
+    }
+
+    res.json({
+      success: true,
+      appointment: {
+        id: appointment.id,
+        status: 'in_progress',
+        type: 'emergency_triage'
+      },
+      doctor: {
+        id: doctor.id,
+        name: `${doctor.prefix || 'Dr.'} ${doctor.firstName} ${doctor.lastName}`,
+        profileImage: doctor.profileImage,
+        specialization: doctor.specialization
+      },
+      videoCall: {
+        roomId,
+        patientJoinUrl,
+        doctorJoinUrl,
+        platform: 'MiroTalk SFU'
+      },
+      message: `Connecting you with ${doctor.prefix || 'Dr.'} ${doctor.firstName} ${doctor.lastName}. Doctor has been notified.`
+    });
+  } catch (error) {
+    console.error('Instant triage call error:', error);
+    res.status(500).json({
+      success: false,
+      error: 'Failed to create instant consultation',
+      aiTriageAvailable: true
     });
   }
 });

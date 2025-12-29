@@ -542,12 +542,12 @@ const HealthMonitoringDashboard = () => {
                 </div>
 
                 {/* Latest Vitals */}
-                <div className="grid grid-cols-4 gap-3 p-3 bg-muted/50 rounded-lg">
+                <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 sm:gap-3 p-2 sm:p-3 bg-muted/50 rounded-lg">
                   <div className="text-center">
-                    <Heart className={`h-5 w-5 mx-auto mb-1 ${getVitalStatus('heartRate', patient.latestVitals.heartRate).color}`} />
-                    <p className="text-xs text-muted-foreground">Heart Rate</p>
-                    <p className="text-sm font-bold">{Math.round(patient.latestVitals.heartRate)}</p>
-                    <p className="text-xs text-muted-foreground">bpm</p>
+                    <Heart className={`h-4 w-4 sm:h-5 sm:w-5 mx-auto mb-1 ${getVitalStatus('heartRate', patient.latestVitals.heartRate).color}`} />
+                    <p className="text-[10px] sm:text-xs text-muted-foreground">Heart Rate</p>
+                    <p className="text-xs sm:text-sm font-bold">{Math.round(patient.latestVitals.heartRate)}</p>
+                    <p className="text-[10px] sm:text-xs text-muted-foreground">bpm</p>
                   </div>
                   <div className="text-center">
                     <Activity className={`h-5 w-5 mx-auto mb-1 ${getVitalStatus('bloodPressure', patient.latestVitals.bloodPressureSystolic).color}`} />
@@ -648,11 +648,11 @@ const HealthMonitoringDashboard = () => {
 
           {selectedPatient && (
             <Tabs defaultValue="vitals" className="mt-4">
-              <TabsList className="grid w-full grid-cols-4">
-                <TabsTrigger value="vitals">Vitals</TabsTrigger>
-                <TabsTrigger value="trends">Trends</TabsTrigger>
-                <TabsTrigger value="devices">Devices</TabsTrigger>
-                <TabsTrigger value="alerts">Alerts</TabsTrigger>
+              <TabsList className="grid w-full grid-cols-2 sm:grid-cols-4 h-auto">
+                <TabsTrigger value="vitals" className="text-xs sm:text-sm py-1.5 sm:py-2">Vitals</TabsTrigger>
+                <TabsTrigger value="trends" className="text-xs sm:text-sm py-1.5 sm:py-2">Trends</TabsTrigger>
+                <TabsTrigger value="devices" className="text-xs sm:text-sm py-1.5 sm:py-2">Devices</TabsTrigger>
+                <TabsTrigger value="alerts" className="text-xs sm:text-sm py-1.5 sm:py-2">Alerts</TabsTrigger>
               </TabsList>
 
               <TabsContent value="vitals" className="space-y-4">

@@ -159,7 +159,8 @@ const login = async ({ credentials, loginType }) => {
     endpoint = `/ngo/login`;
   }
 
-  const { data } = await api.post(endpoint, credentials);
+  // Use skipAuth to prevent existing tokens from being sent with login requests
+  const { data } = await api.post(endpoint, credentials, { skipAuth: true } as any);
   
   // Extract userId based on login type
   let userId: string | number | undefined;

@@ -7,6 +7,8 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Checkbox } from '@/components/ui/checkbox';
 import { Badge } from '@/components/ui/badge';
+import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog';
+import { Label } from '@/components/ui/label';
 import {
   FlaskConical, Search, Eye, Download, MapPin, CheckCircle2, AlertCircle,
   ChevronLeft, ChevronRight, BarChart3, Square, LayoutGrid, List,
@@ -15,6 +17,7 @@ import axios from 'axios';
 import { exportProviders } from '@/utils/exportToExcel';
 import ProviderDetailModal from '@/components/providers/ProviderDetailModal';
 import ProviderAnalytics from '@/components/providers/ProviderAnalytics';
+import api from '@/utils/api';
 
 // Get API base URL from environment
 const API_BASE_URL = import.meta.env.VITE_API_URL || '/api';
@@ -48,9 +51,37 @@ const LabsManagement = () => {
   // Detail modal
   const [selectedLab, setSelectedLab] = useState<any>(null);
   const [showDetailModal, setShowDetailModal] = useState(false);
+  const [editModalOpen, setEditModalOpen] = useState(false);
+  const [editForm, setEditForm] = useState({
+    id: '',
+    name: '',
+    email: '',
+    phone: '',
+    city: '',
+    state: '',
+    area: '',
+    locality: '',
+    pincode: '',
+    type: '',
+    website: '',
+  });
   
   // Active tab
   const [activeTab, setActiveTab] = useState('list');
+
+  const token = localStorage.getItem('adminToken');
+
+  // Helper to format complete address
+  const formatFullAddress = (lab: any) => {
+    const parts = [
+      lab.address,
+      lab.area,
+      lab.city,
+      lab.state,
+      lab.pincode
+    ].filter(Boolean);
+    return parts.length > 0 ? parts.join(', ') : 'Address not available';
+  };
 
   useEffect(() => {
     fetchLabs();
@@ -76,7 +107,7 @@ const LabsManagement = () => {
       if (selectedState) params.state = selectedState;
       if (selectedArea) params.area = selectedArea;
       
-      const { data } = await axios.get(`${API_BASE_URL}/masterdata/labs`, { params });
+      const { data } = await api.get(`/masterdata/labs`, { params });
       
       if (data.success) {
         setLabs(data.data);
@@ -94,15 +125,15 @@ const LabsManagement = () => {
   const fetchFilterOptions = async () => {
     try {
       const [citiesRes, statesRes] = await Promise.all([
-        axios.get(`${API_BASE_URL}/masterdata/cities`),
-        axios.get(`${API_BASE_URL}/masterdata/states`),
+        api.get(`/masterdata/cities`),
+        api.get(`/masterdata/states`),
       ]);
       
       if (citiesRes.data.success) setCities(citiesRes.data.data);
       if (statesRes.data.success) setStates(statesRes.data.data);
       
       if (selectedCity) {
-        const areasRes = await axios.get(`${API_BASE_URL}/masterdata/areas`, {
+        const areasRes = await api.get(`/masterdata/areas`, {
           params: { city: selectedCity }
         });
         if (areasRes.data.success) setAreas(areasRes.data.data);
@@ -138,6 +169,46 @@ const LabsManagement = () => {
   const handleViewDetails = (lab: any) => {
     setSelectedLab(lab);
     setShowDetailModal(true);
+  };
+
+  const handleOpenEdit = (lab: any) => {
+    setEditForm({
+      id: lab.id || '',
+      name: lab.name || '',
+      email: lab.email || lab.contact?.email || '',
+      phone: lab.phone || lab.mobile || lab.contact?.phone || '',
+      city: lab.city || lab.basic_info?.city || '',
+      state: lab.state || lab.basic_info?.state || '',
+      area: lab.area || lab.basic_info?.area || '',
+      locality: lab.locality || lab.basic_info?.locality || '',
+      pincode: lab.pincode || lab.basic_info?.pincode || '',
+      type: lab.sub_type || lab.classification || lab.type || '',
+      website: lab.website || lab.metadata?.website || '',
+    });
+    setEditModalOpen(true);
+  };
+
+  const handleUpdateLab = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!editForm.id) return;
+    try {
+      setLoading(true);
+      setError(null);
+      const headers = token ? { Authorization: `Bearer ${token}` } : {};
+      const { data } = await axios.patch(`${API_BASE_URL}/admin/labs/${editForm.id}/details`, { updates: editForm }, { headers });
+      if (data?.success && data.data) {
+        const updated = data.data;
+        setLabs(prev => prev.map(l => l.id === updated.id ? { ...l, ...updated } : l));
+        setResult({ message: data.message || 'Lab updated successfully' });
+        setEditModalOpen(false);
+      } else {
+        setError(data?.message || 'Failed to update lab');
+      }
+    } catch (err: any) {
+      setError(err?.response?.data?.message || 'Failed to update lab');
+    } finally {
+      setLoading(false);
+    }
   };
 
   // Stats calculations
@@ -377,10 +448,9 @@ const LabsManagement = () => {
                           <div className="flex items-start justify-between">
                             <div className="flex-1">
                               <h3 className="text-lg font-semibold">{lab.name}</h3>
-                              <div className="flex items-center gap-2 mt-2 text-sm text-muted-foreground">
-                                <MapPin className="h-3 w-3" />
-                                {lab.area && `${lab.area}, `}
-                                {lab.city}{lab.state && `, ${lab.state}`}
+                              <div className="flex items-start gap-2 mt-2 text-sm text-muted-foreground">
+                                <MapPin className="h-3 w-3 mt-0.5 flex-shrink-0" />
+                                <p className="line-clamp-2">{formatFullAddress(lab)}</p>
                               </div>
                             </div>
                             {lab.pincode_mapped && (
@@ -420,6 +490,9 @@ const LabsManagement = () => {
                             <Button size="sm" variant="outline" onClick={() => handleViewDetails(lab)}>
                               <Eye className="mr-2 h-4 w-4" />
                               View Details
+                            </Button>
+                            <Button size="sm" variant="secondary" onClick={() => handleOpenEdit(lab)}>
+                              Edit
                             </Button>
                           </div>
                         </div>
@@ -463,11 +536,12 @@ const LabsManagement = () => {
                                 )}
                                 <td className="p-4">
                                   <div className="font-semibold">{lab.name}</div>
+                                  <div className="text-xs text-blue-600 mt-1">ID: {lab.id}</div>
                                 </td>
-                                <td className="p-4 text-sm">
-                                  <div className="flex items-center gap-1">
-                                    <MapPin className="h-3 w-3 text-muted-foreground" />
-                                    <span>{lab.area && `${lab.area}, `}{lab.city}{lab.state && `, ${lab.state}`}</span>
+                                <td className="p-4 text-sm max-w-md">
+                                  <div className="flex items-start gap-1">
+                                    <MapPin className="h-3 w-3 text-muted-foreground mt-0.5 flex-shrink-0" />
+                                    <span className="line-clamp-2">{formatFullAddress(lab)}</span>
                                   </div>
                                 </td>
                                 <td className="p-4 text-sm">
@@ -493,6 +567,9 @@ const LabsManagement = () => {
                                 <td className="p-4">
                                   <Button size="sm" variant="outline" onClick={() => handleViewDetails(lab)}>
                                     <Eye className="h-4 w-4" />
+                                  </Button>
+                                  <Button size="sm" variant="secondary" className="ml-2" onClick={() => handleOpenEdit(lab)}>
+                                    Edit
                                   </Button>
                                 </td>
                               </tr>
@@ -582,6 +659,61 @@ const LabsManagement = () => {
           onClose={() => setShowDetailModal(false)}
           type="lab"
         />
+        <Dialog open={editModalOpen} onOpenChange={setEditModalOpen}>
+          <DialogContent className="max-w-2xl">
+            <DialogHeader>
+              <DialogTitle>Edit Lab</DialogTitle>
+            </DialogHeader>
+            <form onSubmit={handleUpdateLab} className="space-y-4">
+              <div className="grid md:grid-cols-2 gap-3">
+                <div>
+                  <Label>Name</Label>
+                  <Input value={editForm.name} onChange={(e) => setEditForm({...editForm, name: e.target.value})} required />
+                </div>
+                <div>
+                  <Label>Email</Label>
+                  <Input type="email" value={editForm.email} onChange={(e) => setEditForm({...editForm, email: e.target.value})} />
+                </div>
+                <div>
+                  <Label>Phone</Label>
+                  <Input value={editForm.phone} onChange={(e) => setEditForm({...editForm, phone: e.target.value})} />
+                </div>
+                <div>
+                  <Label>Type</Label>
+                  <Input value={editForm.type} onChange={(e) => setEditForm({...editForm, type: e.target.value})} />
+                </div>
+                <div>
+                  <Label>City</Label>
+                  <Input value={editForm.city} onChange={(e) => setEditForm({...editForm, city: e.target.value})} />
+                </div>
+                <div>
+                  <Label>State</Label>
+                  <Input value={editForm.state} onChange={(e) => setEditForm({...editForm, state: e.target.value})} />
+                </div>
+                <div>
+                  <Label>Area</Label>
+                  <Input value={editForm.area} onChange={(e) => setEditForm({...editForm, area: e.target.value})} />
+                </div>
+                <div>
+                  <Label>Locality</Label>
+                  <Input value={editForm.locality} onChange={(e) => setEditForm({...editForm, locality: e.target.value})} />
+                </div>
+                <div>
+                  <Label>Pincode</Label>
+                  <Input value={editForm.pincode} onChange={(e) => setEditForm({...editForm, pincode: e.target.value})} />
+                </div>
+                <div>
+                  <Label>Website</Label>
+                  <Input value={editForm.website} onChange={(e) => setEditForm({...editForm, website: e.target.value})} />
+                </div>
+              </div>
+              <DialogFooter>
+                <Button variant="outline" type="button" onClick={() => setEditModalOpen(false)}>Cancel</Button>
+                <Button type="submit" disabled={loading}>{loading ? 'Saving...' : 'Save Changes'}</Button>
+              </DialogFooter>
+            </form>
+          </DialogContent>
+        </Dialog>
       </div>
     </AdminLayout>
   );

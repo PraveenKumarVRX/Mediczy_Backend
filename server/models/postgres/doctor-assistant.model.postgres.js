@@ -2,6 +2,7 @@ import { DataTypes } from 'sequelize';
 import bcrypt from 'bcryptjs';
 import jwt from 'jsonwebtoken';
 import postgresSequelize from '../../db/postgres-sequelize.js';
+import { generateUniqueId } from '../../utils/uniqueIdGenerator.js';
 
 /**
  * DoctorAssistant Model (PostgreSQL)
@@ -20,6 +21,12 @@ const DoctorAssistant = postgresSequelize.define('DoctorAssistant', {
     type: DataTypes.INTEGER,
     primaryKey: true,
     autoIncrement: true
+  },
+  unique_id: {
+    type: DataTypes.STRING(6),
+    unique: true,
+    allowNull: true,
+    comment: 'Public-facing unique ID with A prefix'
   },
   doctorId: {
     type: DataTypes.INTEGER,
@@ -149,6 +156,11 @@ const DoctorAssistant = postgresSequelize.define('DoctorAssistant', {
   ],
   hooks: {
     beforeCreate: async (assistant) => {
+      // Generate unique ID if not set
+      if (!assistant.unique_id) {
+        assistant.unique_id = generateUniqueId('assistant');
+      }
+      
       if (assistant.password) {
         assistant.password = await bcrypt.hash(assistant.password, 10);
       }

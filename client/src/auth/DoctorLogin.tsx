@@ -154,201 +154,212 @@ const DoctorLogin = () => {
   }
 
   return (
-    <div className="container relative min-h-screen flex-col items-center justify-center grid lg:max-w-none lg:grid-cols-2 lg:px-0">
-      {/* Left Side with Background */}
-      <div
-        style={{ backgroundImage: `url("../../aiH.jpg")` }}
-        className="relative hidden h-full bg-cover bg-center flex-col bg-muted p-10 text-white dark:border-r lg:flex"
-      >
-        <div className="relative z-20 flex items-center gap-2 text-lg font-bold primary-grad">
-          <HeartPulse className="h-6 w-6" />
-          Mediqzy
-        </div>
-        <div className="relative z-20 mt-auto">
-          <blockquote className="space-y-2">
-            <p className="text-lg">
-              "Mediqzy streamlines my practice workflow and improves patient
-              care outcomes significantly."
-            </p>
-            <footer className="text-sm">Dr. Michael Chen</footer>
-          </blockquote>
-        </div>
-      </div>
-
-      {/* Right Side Login Form */}
-      <div className="p-4 lg:p-8 h-full flex items-center">
-        <div className="mx-auto flex w-full flex-col justify-center space-y-6 sm:w-[350px]">
-          {/* Header */}
-          <div className="flex flex-col space-y-2 text-center">
-            <div className="flex justify-center mb-4">
-              <div className="bg-primary/10 p-3 rounded-full">
-                <Stethoscope className="h-8 w-8 text-primary" />
-              </div>
-            </div>
-            <h1 className="text-2xl font-semibold tracking-tight">
-              Doctor Login
-            </h1>
-            <p className="text-sm text-muted-foreground">
-              Enter your credentials to access your practice dashboard
-            </p>
+    <div className="auth-shell min-h-screen flex items-center justify-center p-4">
+      <div className="grid w-full max-w-5xl grid-cols-1 lg:grid-cols-2 overflow-hidden brand-panel">
+        {/* Left Side with Brand Hero */}
+        <div className="hidden lg:flex flex-col p-10 text-white brand-hero">
+          <div
+            className="relative z-20 flex items-center gap-2 text-lg font-bold cursor-pointer"
+            role="button"
+            tabIndex={0}
+            onClick={() => navigate("/doctor-dashboard")}
+            onKeyDown={(event) => {
+              if (event.key === "Enter" || event.key === " ") {
+                event.preventDefault();
+                navigate("/doctor-dashboard");
+              }
+            }}
+            aria-label="Go to doctor dashboard"
+            title="Go to dashboard"
+          >
+            <HeartPulse className="h-6 w-6" />
+            Mediqzy
+            <span className="ml-2 text-[10px] uppercase bg-white/20 px-2 py-0.5 rounded-full">Doctor</span>
           </div>
+          <div className="mt-auto space-y-3">
+            <h2 className="text-3xl font-semibold">Welcome back</h2>
+            <p className="text-white/80">
+              Sign in to manage your clinic, appointments, and consults with a consistent, secure experience.
+            </p>
+            <ul className="space-y-2 text-sm text-white/85">
+              <li className="flex items-center gap-2"><Stethoscope className="h-4 w-4" /> Confirm and manage schedules</li>
+              <li className="flex items-center gap-2"><HeartPulse className="h-4 w-4" /> Keep patient access ring-fenced</li>
+              <li className="flex items-center gap-2"><Eye className="h-4 w-4" /> Track consultation history quickly</li>
+            </ul>
+          </div>
+        </div>
 
-          {/* Login Form */}
-          <Form {...form}>
-            <form onSubmit={form.handleSubmit(onSubmit)} className="space-y-4">
-              {/* OAuth Login Buttons */}
-              <div className="grid grid-cols-2 gap-3 mb-4">
-                <Button
-                  type="button"
-                  variant="outline"
-                  onClick={() => handleOAuthLogin('google')}
-                  className="w-full"
-                >
-                  <Chrome className="mr-2 h-4 w-4" />
-                  Google
-                </Button>
-                <Button
-                  type="button"
-                  variant="outline"
-                  onClick={() => handleOAuthLogin('facebook')}
-                  className="w-full"
-                >
-                  <Facebook className="mr-2 h-4 w-4" />
-                  Facebook
-                </Button>
+        {/* Right Side Login Form */}
+        <div className="p-6 lg:p-10 h-full flex items-center bg-white">
+          <div className="mx-auto flex w-full flex-col justify-center space-y-6 sm:w-[360px]">
+            {/* Header */}
+            <div className="flex flex-col space-y-2">
+              <div className="inline-flex items-center gap-2 self-start rounded-full bg-primary/10 px-3 py-1 text-xs font-semibold text-primary">
+                Doctor Portal
               </div>
+              <h1 className="text-2xl font-semibold tracking-tight">Welcome Back</h1>
+              <p className="text-sm text-muted-foreground">
+                Enter your credentials to access your practice dashboard.
+              </p>
+            </div>
 
-              {/* Divider */}
-              <div className="relative">
-                <div className="absolute inset-0 flex items-center">
-                  <span className="w-full border-t" />
-                </div>
-                <div className="relative flex justify-center text-xs uppercase">
-                  <span className="bg-background px-2 text-muted-foreground">
-                    Or continue with email
-                  </span>
-                </div>
-              </div>
-
-              {/* Email Field */}
-              <FormField
-                control={form.control}
-                name="email"
-                render={({ field }) => (
-                  <FormItem>
-                    <FormLabel>Email</FormLabel>
-                    <FormControl>
-                      <Input
-                        type="email"
-                        placeholder="doctor@hospital.com"
-                        {...field}
-                      />
-                    </FormControl>
-                    <FormMessage />
-                  </FormItem>
-                )}
-              />
-
-              {/* Password Field */}
-              <FormField
-                control={form.control}
-                name="password"
-                render={({ field }) => (
-                  <FormItem>
-                    <div className="flex items-center justify-between">
-                      <FormLabel>Password</FormLabel>
-                      <Link
-                        to="/forgot-password?type=doctor"
-                        className="text-xs text-primary hover:underline"
-                      >
-                        Forgot password?
-                      </Link>
-                    </div>
-                    <div className="relative">
+            {/* Login Form */}
+            <Form {...form}>
+              <form onSubmit={form.handleSubmit(onSubmit)} className="space-y-4">
+                {/* Email Field */}
+                <FormField
+                  control={form.control}
+                  name="email"
+                  render={({ field }) => (
+                    <FormItem>
+                      <FormLabel>Email</FormLabel>
                       <FormControl>
                         <Input
-                          type={showPassword ? "text" : "password"}
-                          placeholder="••••••••"
-                          className="placeholder:text-gray-300"
+                          type="email"
+                          placeholder="doctor@mediczy.com"
                           {...field}
-                          autoComplete="current-password"
                         />
                       </FormControl>
-                      <button
-                        type="button"
-                        className="absolute right-2 top-1/2 -translate-y-1/2 rounded-md p-1 text-muted-foreground hover:text-foreground focus:outline-none focus-visible:ring-2 focus-visible:ring-primary transition"
-                        onClick={() => setShowPassword(!showPassword)}
-                        aria-label={showPassword ? "Hide password" : "Show password"}
-                      >
-                        {showPassword ? (
-                          <EyeOff className="h-4 w-4" aria-hidden="true" />
-                        ) : (
-                          <Eye className="h-4 w-4" aria-hidden="true" />
-                        )}
-                      </button>
-                    </div>
-                    <FormMessage />
-                  </FormItem>
-                )}
-              />
+                      <FormMessage />
+                    </FormItem>
+                  )}
+                />
 
-              {/* Submit Button */}
-              <Button
-                type="submit"
-                className="w-full"
-                disabled={loginMutation.isPending}
-              >
-                {loginMutation.isPending ? "Signing in..." : "Sign in"}
-              </Button>
-            </form>
-          </Form>
+                {/* Password Field */}
+                <FormField
+                  control={form.control}
+                  name="password"
+                  render={({ field }) => (
+                    <FormItem>
+                      <div className="flex items-center justify-between">
+                        <FormLabel>Password</FormLabel>
+                        <Link
+                          to="/forgot-password?type=doctor"
+                          className="text-xs text-primary hover:underline"
+                        >
+                          Forgot password?
+                        </Link>
+                      </div>
+                      <div className="relative">
+                        <FormControl>
+                          <Input
+                            type={showPassword ? "text" : "password"}
+                            placeholder="••••••••"
+                            className="placeholder:text-gray-300"
+                            {...field}
+                            autoComplete="current-password"
+                          />
+                        </FormControl>
+                        <button
+                          type="button"
+                          className="absolute right-2 top-1/2 -translate-y-1/2 rounded-md p-1 text-muted-foreground hover:text-foreground focus:outline-none focus-visible:ring-2 focus-visible:ring-primary transition"
+                          onClick={() => setShowPassword(!showPassword)}
+                          aria-label={showPassword ? "Hide password" : "Show password"}
+                        >
+                          {showPassword ? (
+                            <EyeOff className="h-4 w-4" aria-hidden="true" />
+                          ) : (
+                            <Eye className="h-4 w-4" aria-hidden="true" />
+                          )}
+                        </button>
+                      </div>
+                      <FormMessage />
+                    </FormItem>
+                  )}
+                />
 
-          {/* Links */}
-          <div className="space-y-2 text-center text-sm">
-            <div className="text-muted-foreground">
-              Don't have an account?{" "}
-              <Link
-                to="/doc-register"
-                className="underline underline-offset-4 hover:text-primary font-medium"
-              >
-                Register as a doctor
-              </Link>
-            </div>
-            <div className="text-muted-foreground">
-              Are you a user?{" "}
-              <Link
-                to="/login"
-                className="underline underline-offset-4 hover:text-primary font-medium"
-              >
-                Login here
-              </Link>
-            </div>
-            <div className="text-muted-foreground">
-              Team member?{" "}
-              <Link
-                to="/team/login"
-                className="underline underline-offset-4 hover:text-purple-600 font-medium text-purple-600"
-              >
-                Team Login
-              </Link>
-              {" "}•{" "}
-              <Link
-                to="/admin/login"
-                className="underline underline-offset-4 hover:text-amber-600 font-medium text-amber-600"
-              >
-                Admin Login
-              </Link>
-            </div>
-          </div>
+                {/* Submit Button */}
+                <Button
+                  type="submit"
+                  className="w-full"
+                  disabled={loginMutation.isPending}
+                >
+                  {loginMutation.isPending ? "Signing in..." : "Sign in"}
+                </Button>
 
-          <div className="text-center text-xs text-muted-foreground">
-            Trouble signing in?{" "}
-            <a
-              href="mailto:support@mediczy.com?subject=Doctor%20Portal%20Login%20Help"
-              className="font-semibold underline underline-offset-2 hover:text-primary"
-            >
-              Contact support
-            </a>
+                {/* OAuth Divider */}
+                <div className="relative">
+                  <div className="absolute inset-0 flex items-center">
+                    <span className="w-full border-t" />
+                  </div>
+                  <div className="relative flex justify-center text-xs uppercase">
+                    <span className="bg-white px-2 text-muted-foreground">
+                      Or continue with
+                    </span>
+                  </div>
+                </div>
+
+                {/* OAuth Buttons */}
+                <div className="grid grid-cols-2 gap-3">
+                  <Button
+                    type="button"
+                    variant="outline"
+                    onClick={() => handleOAuthLogin('google')}
+                    className="w-full"
+                  >
+                    <Chrome className="mr-2 h-4 w-4" />
+                    Google
+                  </Button>
+                  <Button
+                    type="button"
+                    variant="outline"
+                    onClick={() => handleOAuthLogin('facebook')}
+                    className="w-full"
+                  >
+                    <Facebook className="mr-2 h-4 w-4" />
+                    Facebook
+                  </Button>
+                </div>
+              </form>
+            </Form>
+
+            {/* Links */}
+            <div className="space-y-2 text-center text-sm">
+              <div className="text-muted-foreground">
+                Don't have an account?{" "}
+                <Link
+                  to="/doc-register"
+                  className="underline underline-offset-4 hover:text-primary font-medium"
+                >
+                  Register as a doctor
+                </Link>
+              </div>
+              <div className="text-muted-foreground">
+                Are you a user?{" "}
+                <Link
+                  to="/login"
+                  className="underline underline-offset-4 hover:text-primary font-medium"
+                >
+                  Login here
+                </Link>
+              </div>
+              <div className="text-muted-foreground">
+                Team member?{" "}
+                <Link
+                  to="/team/login"
+                  className="underline underline-offset-4 hover:text-purple-600 font-medium text-purple-600"
+                >
+                  Team Login
+                </Link>
+                {" "}•{" "}
+                <Link
+                  to="/admin/login"
+                  className="underline underline-offset-4 hover:text-amber-600 font-medium text-amber-600"
+                >
+                  Admin Login
+                </Link>
+              </div>
+            </div>
+
+            <div className="text-center text-xs text-muted-foreground">
+              Trouble signing in?{" "}
+              <a
+                href="mailto:support@mediczy.com?subject=Doctor%20Portal%20Login%20Help"
+                className="font-semibold underline underline-offset-2 hover:text-primary"
+              >
+                Contact support
+              </a>
+            </div>
           </div>
         </div>
       </div>

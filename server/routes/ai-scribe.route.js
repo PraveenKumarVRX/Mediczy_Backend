@@ -282,21 +282,119 @@ function extractLabTests(text) {
   return tests;
 }
 
-function getMedicalSuggestions(text, type) {
+async function getMedicalSuggestions(text, type) {
   const lowerText = text.toLowerCase();
   
+  // Primary: Use AI model for intelligent suggestions
+  try {
+    if (type === 'medications') {
+      const suggestionPrompt = `Based on the following patient symptoms/condition, suggest appropriate medications with dosages and frequencies.
+
+Patient description: "${text}"
+
+IMPORTANT:
+- Only suggest medications that are clinically appropriate for these symptoms
+- Include medication name, dosage, and frequency (e.g., "Paracetamol 500mg BD")
+- Suggest 3-5 most relevant medications
+- Format as a JSON array: ["Med1 dosage freq", "Med2 dosage freq", ...]
+- Be specific and medically accurate`;
+
+      const aiResponse = await medicalAIService.consultMedical(
+        suggestionPrompt,
+        `med_suggestion_${Date.now()}`,
+        'en',
+        { analysisType: 'medication_suggestion' }
+      );
+
+      if (aiResponse.success && aiResponse.response) {
+        try {
+          // Parse JSON from AI response
+          const jsonMatch = aiResponse.response.match(/\[[\s\S]*\]/);
+          if (jsonMatch) {
+            const suggestions = JSON.parse(jsonMatch[0]);
+            if (Array.isArray(suggestions) && suggestions.length > 0) {
+              return suggestions;
+            }
+          }
+        } catch (parseError) {
+          console.warn('Failed to parse AI medication suggestions:', parseError.message);
+        }
+      }
+    } else if (type === 'diagnosis') {
+      const suggestionPrompt = `Based on the following patient symptoms, suggest possible diagnoses.
+
+Symptoms: "${text}"
+
+IMPORTANT:
+- Suggest 3-5 possible diagnoses
+- Include both common and serious conditions
+- Format as a JSON array: ["Diagnosis1", "Diagnosis2", ...]
+- Include both provisional and differential diagnoses`;
+
+      const aiResponse = await medicalAIService.consultMedical(
+        suggestionPrompt,
+        `diag_suggestion_${Date.now()}`,
+        'en',
+        { analysisType: 'diagnosis_suggestion' }
+      );
+
+      if (aiResponse.success && aiResponse.response) {
+        try {
+          const jsonMatch = aiResponse.response.match(/\[[\s\S]*\]/);
+          if (jsonMatch) {
+            const suggestions = JSON.parse(jsonMatch[0]);
+            if (Array.isArray(suggestions) && suggestions.length > 0) {
+              return suggestions;
+            }
+          }
+        } catch (parseError) {
+          console.warn('Failed to parse AI diagnosis suggestions:', parseError.message);
+        }
+      }
+    }
+  } catch (error) {
+    console.error('AI suggestion error:', error.message);
+  }
+
+  // Fallback: Use pattern matching if AI fails
   if (type === 'diagnosis') {
-    if (lowerText.includes('fever')) return ['Viral Fever', 'Typhoid', 'Dengue'];
-    if (lowerText.includes('cough')) return ['URTI', 'Bronchitis', 'Pneumonia'];
-    if (lowerText.includes('pain')) return ['Gastritis', 'Migraine', 'Arthritis'];
+    if (lowerText.includes('fever')) return ['Viral Fever', 'Typhoid Fever', 'Dengue Fever', 'Influenza'];
+    if (lowerText.includes('cough') || lowerText.includes('cold')) return ['Upper Respiratory Tract Infection', 'Bronchitis', 'Common Cold', 'Pneumonia'];
+    if (lowerText.includes('pain') && lowerText.includes('stomach')) return ['Gastritis', 'Peptic Ulcer', 'Indigestion', 'IBS'];
+    if (lowerText.includes('headache')) return ['Migraine', 'Tension Headache', 'Sinusitis', 'Cluster Headache'];
+    if (lowerText.includes('nausea') || lowerText.includes('vomit')) return ['Gastroenteritis', 'Food Poisoning', 'Migraine', 'Pregnancy'];
+    if (lowerText.includes('diarrhea')) return ['Gastroenteritis', 'IBS', 'Food Poisoning', 'Dysentery'];
+    if (lowerText.includes('rash')) return ['Urticaria', 'Eczema', 'Contact Dermatitis', 'Chickenpox'];
   } else if (type === 'medications') {
     if (lowerText.includes('fever') || lowerText.includes('pain')) {
-      return ['Paracetamol 500mg', 'Ibuprofen 400mg', 'Diclofenac 50mg'];
+      return ['Paracetamol 500mg BD', 'Ibuprofen 400mg BD', 'Diclofenac 50mg BD after meals'];
     }
-    if (lowerText.includes('antibiotic')) {
-      return ['Amoxicillin 500mg', 'Azithromycin 500mg', 'Ciprofloxacin 500mg'];
+    if (lowerText.includes('cough') || lowerText.includes('cold')) {
+      return ['Cough Syrup (Dextromethorphan) 10ml TDS', 'Cetirizine 10mg OD at bedtime', 'Amoxicillin 500mg TDS after meals'];
+    }
+    if (lowerText.includes('antibiotic') || lowerText.includes('infection')) {
+      return ['Amoxicillin 500mg TDS', 'Azithromycin 500mg OD', 'Ciprofloxacin 500mg BD after meals'];
+    }
+    if (lowerText.includes('nausea') || lowerText.includes('vomit')) {
+      return ['Metoclopramide 10mg TDS', 'Ondansetron 4mg BD', 'Domperidone 10mg TDS'];
+    }
+    if (lowerText.includes('diarrhea')) {
+      return ['Loperamide 2mg after each loose motion', 'Metronidazole 400mg TDS', 'ORS (Oral Rehydration Solution)'];
+    }
+    if (lowerText.includes('stomach') || lowerText.includes('acidity')) {
+      return ['Pantoprazole 40mg OD before meals', 'Omeprazole 20mg OD', 'Ranitidine 150mg BD after meals'];
+    }
+    if (lowerText.includes('headache')) {
+      return ['Paracetamol 500mg TDS', 'Aspirin 500mg BD', 'Propranolol 40mg BD (for migraine prevention)'];
+    }
+    if (lowerText.includes('allergy') || lowerText.includes('rash')) {
+      return ['Cetirizine 10mg OD', 'Loratadine 10mg OD', 'Hydrocortisone cream 1% (topical) BD'];
+    }
+    if (lowerText.includes('cold') || lowerText.includes('running nose')) {
+      return ['Saline nasal drops', 'Cetirizine 10mg OD', 'Amoxicillin 500mg TDS after meals'];
     }
   }
+  
   return [];
 }
 

@@ -237,11 +237,14 @@ export const adminLogin = async (req, res) => {
         lastLoginIP: clientIP 
       });
       
+      // Generate token with adminId and userType for ring-fencing
       const token = jwt.sign(
         { 
-          id: adminUser.id, 
+          id: adminUser.id,
+          adminId: adminUser.id,  // Explicit adminId for ring-fencing
           email: adminUser.email, 
           role: 'admin',
+          userType: 'admin',  // userType for ring-fencing middleware
           isAdmin: true,
           loginTime: new Date().toISOString(),
           clientIP
@@ -273,6 +276,7 @@ export const adminLogin = async (req, res) => {
           lastName: adminUser.lastName,
           fullName: `${adminUser.firstName} ${adminUser.lastName}`,
           role: 'admin',
+          userType: 'admin',
           isAdmin: true,
           lastLogin: adminUser.lastLogin,
           permissions: [

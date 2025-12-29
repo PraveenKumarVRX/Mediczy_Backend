@@ -1,5 +1,5 @@
 import React, { useEffect, useMemo, useState } from 'react';
-import { Building2, Users, TrendingUp, Calendar, Plus, Search, Edit, Trash2, Eye } from 'lucide-react';
+import { Building2, Users, TrendingUp, Calendar, Plus, Search, Edit, Trash2, Eye, RefreshCw } from 'lucide-react';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -9,6 +9,8 @@ import { Label } from '@/components/ui/label';
 import { Textarea } from '@/components/ui/textarea';
 import { useToast } from '@/hooks/use-toast';
 import api from '@/utils/api';
+import CorporateLayout from '@/components/corporate/CorporateLayout';
+import CorporatePageHeader from '@/components/corporate/CorporatePageHeader';
 
 interface Department {
   id: string;
@@ -203,19 +205,33 @@ const CorporateDepartments: React.FC = () => {
   };
 
   return (
-    <div className="space-y-6">
-      <div className="flex justify-between items-center">
-        <div>
-          <h1 className="text-3xl font-bold">Department Management</h1>
-          <p className="text-gray-500 mt-1">Manage departments and track their health metrics</p>
-        </div>
+    <CorporateLayout title="Departments">
+      <div className="space-y-6">
+        <CorporatePageHeader
+          icon={Building2}
+          title="Department Management"
+          description="Manage departments, allocate health budgets, and track health metrics"
+          gradient="from-indigo-500 to-indigo-700"
+          badge={`${departments.length} Departments`}
+          showSearch={true}
+          searchPlaceholder="Search departments by name, manager, or location..."
+          searchValue={searchQuery}
+          onSearchChange={setSearchQuery}
+          showRefresh={true}
+          onRefresh={loadDepartments}
+          isRefreshing={isLoading}
+          showAdd={true}
+          addLabel="Add Department"
+          onAdd={() => { setForm(emptyDepartmentForm()); setIsAddDialogOpen(true); }}
+          stats={[
+            { label: 'Total Departments', value: totalStats.totalDepartments },
+            { label: 'Total Employees', value: totalStats.totalEmployees },
+            { label: 'Avg Health Score', value: `${totalStats.avgHealthScore}%` },
+            { label: 'Avg Checkup Rate', value: `${totalStats.avgCheckupCompletion}%` },
+          ]}
+        />
+
         <Dialog open={isAddDialogOpen} onOpenChange={setIsAddDialogOpen}>
-          <DialogTrigger asChild>
-            <Button>
-              <Plus className="h-4 w-4 mr-2" />
-              Add Department
-            </Button>
-          </DialogTrigger>
           <DialogContent className="sm:max-w-[525px]">
             <DialogHeader>
               <DialogTitle>Add New Department</DialogTitle>
@@ -281,9 +297,8 @@ const CorporateDepartments: React.FC = () => {
             </DialogFooter>
           </DialogContent>
         </Dialog>
-      </div>
 
-      {/* Edit Dialog */}
+        {/* Edit Dialog */}
       <Dialog open={isEditDialogOpen} onOpenChange={setIsEditDialogOpen}>
         <DialogContent className="sm:max-w-[525px]">
           <DialogHeader>
@@ -526,7 +541,8 @@ const CorporateDepartments: React.FC = () => {
           )}
         </CardContent>
       </Card>
-    </div>
+      </div>
+    </CorporateLayout>
   );
 };
 

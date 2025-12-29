@@ -290,27 +290,52 @@ const ActivityLog = () => {
   };
 
   const exportLogs = async () => {
-    const csv = [
-      ['Timestamp', 'User Type', 'Activity', 'Action', 'Resource', 'Result', 'Details', 'IP Address'].join(','),
-      ...filteredActivities.map(log => [
-        log.timestamp,
-        log.userType,
-        log.activity,
-        log.action,
-        log.resource,
-        log.result,
-        `"${log.details.replace(/"/g, '""')}"`,
-        log.ipAddress || ''
-      ].join(','))
-    ].join('\n');
+    const token = localStorage.getItem('adminToken') || localStorage.getItem('token') || '';
+    try {
+      const { data } = await api.get('/admin/activity/export', {
+        responseType: 'blob',
+        params: {
+          userType: selectedUserType !== 'all' ? selectedUserType : undefined,
+          result: selectedResult !== 'all' ? selectedResult : undefined,
+          action: selectedAction !== 'all' ? selectedAction : undefined,
+          from: dateRange.from || undefined,
+          to: dateRange.to || undefined,
+          search: searchTerm || undefined,
+        },
+        headers: token ? { Authorization: `Bearer ${token}` } : undefined,
+      });
+      const filename = `activity-logs-${new Date().toISOString().split('T')[0]}.csv`;
+      const blob = data instanceof Blob ? data : new Blob([data], { type: 'text/csv' });
+      const url = window.URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = filename;
+      a.click();
+      window.URL.revokeObjectURL(url);
+    } catch (err) {
+      console.warn('Activity export API failed, falling back to client export', err);
+      const csv = [
+        ['Timestamp', 'User Type', 'Activity', 'Action', 'Resource', 'Result', 'Details', 'IP Address'].join(','),
+        ...filteredActivities.map(log => [
+          log.timestamp,
+          log.userType,
+          log.activity,
+          log.action,
+          log.resource,
+          log.result,
+          `"${log.details.replace(/"/g, '""')}"`,
+          log.ipAddress || ''
+        ].join(','))
+      ].join('\n');
 
-    const blob = new Blob([csv], { type: 'text/csv' });
-    const url = window.URL.createObjectURL(blob);
-    const a = document.createElement('a');
-    a.href = url;
-    a.download = `activity-logs-${new Date().toISOString().split('T')[0]}.csv`;
-    a.click();
-    window.URL.revokeObjectURL(url);
+      const blob = new Blob([csv], { type: 'text/csv' });
+      const url = window.URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `activity-logs-${new Date().toISOString().split('T')[0]}.csv`;
+      a.click();
+      window.URL.revokeObjectURL(url);
+    }
   };
 
   const clearFilters = () => {

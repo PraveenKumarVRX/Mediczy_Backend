@@ -344,6 +344,15 @@ let corporateBillingHistory = [
 // ---------------------------------------------------------------------------
 
 router.post(
+  '/login',
+  [
+    body('email').isEmail().withMessage('Valid email is required'),
+    body('password').notEmpty().withMessage('Password is required'),
+  ],
+  corporateLogin
+);
+
+router.post(
   '/auth/login',
   [
     body('email').isEmail().withMessage('Valid email is required'),

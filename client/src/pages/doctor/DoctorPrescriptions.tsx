@@ -733,11 +733,11 @@ const DoctorPrescriptions = () => {
             </DialogHeader>
 
             <Tabs defaultValue="patient" className="w-full">
-              <TabsList className="grid w-full grid-cols-4">
-                <TabsTrigger value="patient">Patient</TabsTrigger>
-                <TabsTrigger value="vitals">Vitals</TabsTrigger>
-                <TabsTrigger value="diagnosis">Diagnosis</TabsTrigger>
-                <TabsTrigger value="medications">Medications</TabsTrigger>
+              <TabsList className="grid w-full grid-cols-2 sm:grid-cols-4 h-auto">
+                <TabsTrigger value="patient" className="text-xs sm:text-sm py-1.5 sm:py-2">Patient</TabsTrigger>
+                <TabsTrigger value="vitals" className="text-xs sm:text-sm py-1.5 sm:py-2">Vitals</TabsTrigger>
+                <TabsTrigger value="diagnosis" className="text-xs sm:text-sm py-1.5 sm:py-2">Diagnosis</TabsTrigger>
+                <TabsTrigger value="medications" className="text-xs sm:text-sm py-1.5 sm:py-2">Medications</TabsTrigger>
               </TabsList>
 
               <TabsContent value="patient" className="space-y-4">

@@ -1,5 +1,5 @@
 import React, { useEffect, useMemo, useState } from 'react';
-import { MessageSquare, AlertCircle, Clock, CheckCircle, XCircle, Search, Filter, Plus, Eye } from 'lucide-react';
+import { MessageSquare, AlertCircle, Clock, CheckCircle, XCircle, Search, Filter, Plus, Eye, MessagesSquare } from 'lucide-react';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -10,6 +10,9 @@ import { Textarea } from '@/components/ui/textarea';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { useToast } from '@/hooks/use-toast';
 import api from '@/utils/api';
+import CorporateLayout from '@/components/corporate/CorporateLayout';
+import CorporatePageHeader from '@/components/corporate/CorporatePageHeader';
+import CorporateStatusBadge from '@/components/corporate/CorporateStatusBadge';
 
 interface Complaint {
   id: string;
@@ -212,19 +215,34 @@ const CorporateComplaints: React.FC = () => {
   };
 
   return (
-    <div className="space-y-6">
-      <div className="flex justify-between items-center">
-        <div>
-          <h1 className="text-3xl font-bold">Complaints & Grievances</h1>
-          <p className="text-gray-500 mt-1">Manage employee complaints and feedback</p>
-        </div>
+    <CorporateLayout title="Complaints">
+      <div className="space-y-6">
+        <CorporatePageHeader
+          icon={MessagesSquare}
+          title="Complaints & Grievances"
+          description="Manage employee complaints, feedback, and grievance resolutions"
+          gradient="from-orange-500 to-orange-700"
+          badge={`${complaints.length} Complaints`}
+          showSearch={true}
+          searchPlaceholder="Search by employee name, subject, or category..."
+          searchValue={searchQuery}
+          onSearchChange={setSearchQuery}
+          showRefresh={true}
+          onRefresh={loadComplaints}
+          isRefreshing={isLoading}
+          stats={[
+            { label: 'Total', value: stats.total },
+            { label: 'Open', value: stats.open },
+            { label: 'In Progress', value: stats.inProgress },
+            { label: 'Urgent', value: stats.urgent },
+          ]}
+          showAdd={true}
+          addLabel="Submit Complaint"
+          onAdd={() => setIsSubmitDialogOpen(true)}
+        />
+
+        {/* Submit Complaint Dialog */}
         <Dialog open={isSubmitDialogOpen} onOpenChange={setIsSubmitDialogOpen}>
-          <DialogTrigger asChild>
-            <Button>
-              <Plus className="h-4 w-4 mr-2" />
-              Submit Complaint
-            </Button>
-          </DialogTrigger>
           <DialogContent className="sm:max-w-[525px]">
             <DialogHeader>
               <DialogTitle>Submit New Complaint</DialogTitle>
@@ -292,15 +310,14 @@ const CorporateComplaints: React.FC = () => {
             </DialogFooter>
           </DialogContent>
         </Dialog>
-      </div>
 
-      {/* Statistics Cards */}
-      <div className="grid gap-4 md:grid-cols-5">
-        <Card>
-          <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-            <CardTitle className="text-sm font-medium">Total</CardTitle>
-            <MessageSquare className="h-4 w-4 text-blue-600" />
-          </CardHeader>
+        {/* Statistics Cards */}
+        <div className="grid gap-4 md:grid-cols-5">
+          <Card>
+            <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+              <CardTitle className="text-sm font-medium">Total</CardTitle>
+              <MessageSquare className="h-4 w-4 text-blue-600" />
+            </CardHeader>
           <CardContent>
             <div className="text-2xl font-bold">{stats.total}</div>
             <p className="text-xs text-muted-foreground">All complaints</p>
@@ -563,7 +580,8 @@ const CorporateComplaints: React.FC = () => {
           )}
         </CardContent>
       </Card>
-    </div>
+      </div>
+    </CorporateLayout>
   );
 };
 

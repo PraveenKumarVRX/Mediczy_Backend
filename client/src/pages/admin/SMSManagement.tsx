@@ -21,6 +21,8 @@ import {
   AlertTriangle
 } from 'lucide-react';
 import AdminLayout from '@/components/layout/AdminLayout';
+import { cn } from '@/lib/utils';
+import { MODULE_COLORS } from '@/constants/admin-branding';
 import api from '@/utils/api';
 
 const SMSManagement = () => {
@@ -238,66 +240,94 @@ const SMSManagement = () => {
     setLoading(false);
   };
 
-  const StatCard = ({ title, value, subtitle, icon: Icon, color = "blue" }) => (
-    <Card className="shadow-lg border-0 bg-white/80 backdrop-blur-xl">
-      <CardContent className="p-6">
-        <div className="flex items-center justify-between">
-          <div>
-            <p className="text-sm font-medium text-gray-600">{title}</p>
-            <p className={`text-3xl font-bold text-${color}-600`}>{value}</p>
-            {subtitle && <p className="text-xs text-gray-500">{subtitle}</p>}
+  const StatCard = ({ title, value, subtitle, icon: Icon, color = "green" }) => {
+    const colorClasses = {
+      green: { text: 'text-green-600', bg: 'bg-green-500/10', border: 'border-green-500/20' },
+      blue: { text: 'text-blue-600', bg: 'bg-blue-500/10', border: 'border-blue-500/20' },
+      red: { text: 'text-red-600', bg: 'bg-red-500/10', border: 'border-red-500/20' },
+      amber: { text: 'text-amber-600', bg: 'bg-amber-500/10', border: 'border-amber-500/20' },
+    };
+    const colors = colorClasses[color] || colorClasses.green;
+    
+    return (
+      <Card className="border border-border/50 shadow-sm">
+        <CardContent className="p-4">
+          <div className="flex items-center justify-between">
+            <div className={cn("p-2 rounded-lg", colors.bg)}>
+              <Icon className={cn("h-4 w-4", colors.text)} />
+            </div>
           </div>
-          <div className={`h-12 w-12 bg-${color}-100 rounded-xl flex items-center justify-center`}>
-            <Icon className={`h-6 w-6 text-${color}-600`} />
+          <div className="mt-3">
+            <p className={cn("text-2xl font-bold", colors.text)}>{value}</p>
+            <p className="text-sm text-muted-foreground">{title}</p>
+            {subtitle && <p className="text-xs text-muted-foreground mt-1">{subtitle}</p>}
           </div>
-        </div>
-      </CardContent>
-    </Card>
-  );
+        </CardContent>
+      </Card>
+    );
+  };
+  
+  const colors = MODULE_COLORS.sms;
 
   return (
     <AdminLayout>
-      <div className="min-h-screen bg-gradient-to-br from-gray-50 via-blue-50/30 to-purple-50/20 p-6">
-        <div className="max-w-7xl mx-auto space-y-6">
-          {/* Header */}
-          <div className="text-center mb-8">
-            <div className="mx-auto w-16 h-16 bg-gradient-to-r from-green-600 to-blue-600 rounded-2xl flex items-center justify-center mb-4 shadow-lg">
-              <MessageSquare className="h-8 w-8 text-white" />
+      <div className="space-y-6">
+        {/* Standardized Header */}
+        <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
+          <div className="flex items-start gap-4">
+            <div className={cn(
+              "p-3 rounded-xl bg-gradient-to-br border shadow-sm",
+              colors.bg,
+              colors.border
+            )}>
+              <MessageSquare className={cn("h-6 w-6", colors.text)} />
             </div>
-            <h1 className="text-3xl font-bold bg-gradient-to-r from-green-600 to-blue-600 bg-clip-text text-transparent">
-              SMS Management
-            </h1>
-            <p className="text-gray-600 mt-2">
-              Configure and manage SMS notifications and marketing campaigns
-            </p>
+            <div>
+              <h1 className="text-2xl md:text-3xl font-bold tracking-tight text-foreground">SMS Management</h1>
+              <p className="text-muted-foreground text-sm md:text-base">Configure and manage SMS notifications and marketing campaigns</p>
+            </div>
           </div>
+          <div className="flex items-center gap-2">
+            <Button variant="outline" size="sm" className="gap-2" onClick={loadData}>
+              <RefreshCw className="h-4 w-4" />
+              Refresh
+            </Button>
+            <Button variant="outline" size="sm" className="gap-2" onClick={testSMS}>
+              <Smartphone className="h-4 w-4" />
+              Test SMS
+            </Button>
+          </div>
+        </div>
 
-          {/* Configuration Status */}
-          {!config.isConfigured && (
-            <Card className="shadow-lg border-0 bg-gradient-to-r from-yellow-50 to-orange-50 border-yellow-200">
-              <CardContent className="p-4">
-                <div className="flex items-center gap-3">
-                  <AlertTriangle className="h-5 w-5 text-yellow-600" />
-                  <div>
-                    <h3 className="font-semibold text-yellow-800">SMS Service Not Configured</h3>
-                    <p className="text-sm text-yellow-700">
-                      Please configure your SMS gateway settings in the Configuration tab to start sending SMS.
-                    </p>
-                  </div>
-                  <Button 
-                    onClick={() => setActiveTab('config')}
-                    variant="outline" 
-                    className="ml-auto border-yellow-300 text-yellow-700 hover:bg-yellow-100"
-                  >
-                    Configure Now
-                  </Button>
+        {/* Configuration Status - Standardized */}
+        {!config.isConfigured && (
+          <Card className="border border-amber-500/30 bg-amber-500/5">
+            <CardContent className="p-4">
+              <div className="flex items-center gap-3">
+                <div className="p-2 rounded-lg bg-amber-500/10">
+                  <AlertTriangle className="h-5 w-5 text-amber-600" />
                 </div>
-              </CardContent>
-            </Card>
-          )}
+                <div className="flex-1">
+                  <h3 className="font-semibold text-foreground">SMS Service Not Configured</h3>
+                  <p className="text-sm text-muted-foreground">
+                    Please configure your SMS gateway settings in the Configuration tab to start sending SMS.
+                  </p>
+                </div>
+                <Button 
+                  onClick={() => setActiveTab('config')}
+                  variant="outline" 
+                  size="sm"
+                  className="border-amber-500/30 text-amber-600 hover:bg-amber-500/10"
+                >
+                  Configure Now
+                </Button>
+              </div>
+            </CardContent>
+          </Card>
+        )}
 
-          <Tabs value={activeTab} onValueChange={setActiveTab}>
-            <TabsList className="grid w-full grid-cols-6 bg-white/80 backdrop-blur-xl shadow-lg">
+        <Tabs value={activeTab} onValueChange={setActiveTab}>
+          <TabsList className="grid w-full grid-cols-6 bg-muted/50 p-1 rounded-lg">
               <TabsTrigger value="dashboard">Dashboard</TabsTrigger>
               <TabsTrigger value="send">Send SMS</TabsTrigger>
               <TabsTrigger value="bulk">Bulk SMS</TabsTrigger>
@@ -784,7 +814,6 @@ const SMSManagement = () => {
               </Card>
             </TabsContent>
           </Tabs>
-        </div>
       </div>
     </AdminLayout>
   );

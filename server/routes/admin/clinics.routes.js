@@ -19,6 +19,25 @@ async function ensureDirectory() {
     }
 }
 
+const formatClinicProfile = (profile) => ({
+    id: profile.id,
+    name: profile.basic_info?.name || '',
+    city: profile.basic_info?.city || '',
+    state: profile.basic_info?.state || '',
+    area: profile.basic_info?.area || '',
+    pincode: profile.basic_info?.pincode || '',
+    address: profile.basic_info?.address || '',
+    phone: profile.basic_info?.contact?.phone || '',
+    email: profile.basic_info?.contact?.email || '',
+    clinic_type: profile.classification?.sub_type || profile.classification?.type || 'clinic',
+    sub_type: profile.classification?.sub_type || '',
+    specialization: Array.isArray(profile.services) ? profile.services[0] : profile.services || '',
+    quality_score: profile.quality_indicators?.completeness,
+    metadata: profile.metadata,
+    basic_info: profile.basic_info,
+    classification_info: profile.classification,
+});
+
 router.post('/', async (req, res) => {
     try {
         await ensureDirectory();
@@ -85,6 +104,63 @@ router.post('/', async (req, res) => {
             message: 'Failed to create clinic',
             error: error.message 
         });
+    }
+});
+
+router.patch('/:id/details', async (req, res) => {
+    try {
+        await ensureDirectory();
+        const { id } = req.params;
+        const { updates = {} } = req.body || {};
+        const filePath = path.join(CLINICS_BASE, `${id}.json`);
+
+        const exists = await fs.stat(filePath).then(() => true).catch(() => false);
+        if (!exists) {
+            return res.status(404).json({ success: false, message: 'Clinic not found' });
+        }
+
+        const profile = JSON.parse(await fs.readFile(filePath, 'utf-8'));
+
+        profile.basic_info = {
+            ...profile.basic_info,
+            name: updates.name ?? profile.basic_info?.name,
+            city: updates.city ?? profile.basic_info?.city,
+            state: updates.state ?? profile.basic_info?.state,
+            address: updates.address || profile.basic_info?.address,
+            pincode: updates.pincode ?? profile.basic_info?.pincode,
+            area: updates.area ?? profile.basic_info?.area,
+            contact: {
+                ...profile.basic_info?.contact,
+                phone: updates.phone ?? profile.basic_info?.contact?.phone,
+                email: updates.email ?? profile.basic_info?.contact?.email,
+            },
+        };
+
+        profile.classification = {
+            ...profile.classification,
+            type: 'clinic',
+            sub_type: updates.type ?? updates.specialization ?? profile.classification?.sub_type,
+        };
+
+        profile.services = updates.specialization
+            ? Array.isArray(updates.specialization) ? updates.specialization : [updates.specialization]
+            : profile.services;
+
+        profile.metadata = {
+            ...profile.metadata,
+            doctor_name: updates.doctorName ?? profile.metadata?.doctor_name,
+            consultation_fee: updates.consultationFee ?? profile.metadata?.consultation_fee,
+            website: updates.website ?? profile.metadata?.website,
+            active: updates.isActive !== undefined ? !!updates.isActive : profile.metadata?.active,
+        };
+
+        await fs.writeFile(filePath, JSON.stringify(profile, null, 2));
+
+        const formatted = formatClinicProfile(profile);
+        res.json({ success: true, message: 'Clinic updated successfully', data: formatted });
+    } catch (error) {
+        console.error('Error updating clinic:', error);
+        res.status(500).json({ success: false, message: 'Failed to update clinic', error: error.message });
     }
 });
 

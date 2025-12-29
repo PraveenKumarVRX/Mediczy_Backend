@@ -1,5 +1,5 @@
 import React, { useEffect, useMemo, useState } from 'react';
-import { FileText, Download, Calendar, TrendingUp, Users, FileBarChart, Filter, Eye, Search } from 'lucide-react';
+import { FileText, Download, Calendar, TrendingUp, Users, FileBarChart, Filter, Eye, Search, BarChart3 } from 'lucide-react';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
@@ -8,6 +8,8 @@ import { Input } from '@/components/ui/input';
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import api from '@/utils/api';
 import { useToast } from '@/hooks/use-toast';
+import CorporateLayout from '@/components/corporate/CorporateLayout';
+import CorporatePageHeader from '@/components/corporate/CorporatePageHeader';
 
 interface Report {
   id: string;
@@ -33,6 +35,15 @@ const CorporateReports: React.FC = () => {
 
   const [previewReport, setPreviewReport] = useState<Report | null>(null);
   const [previewOpen, setPreviewOpen] = useState(false);
+
+  const focusOnCategory = (category: string) => {
+    setCategoryFilter(category);
+    setSearchQuery('');
+    setTimeout(() => {
+      const el = document.getElementById('reports-list');
+      if (el) el.scrollIntoView({ behavior: 'smooth' });
+    }, 50);
+  };
 
   const loadReports = async () => {
     try {
@@ -170,37 +181,54 @@ const CorporateReports: React.FC = () => {
   };
 
   return (
-    <div className="space-y-6">
-      <div className="flex justify-between items-center">
-        <div>
-          <h1 className="text-3xl font-bold">Analytics & Reports</h1>
-          <p className="text-gray-500 mt-1">Generate and download comprehensive health reports</p>
-        </div>
-        <Button onClick={() => handleGenerate('Custom Report')} disabled={isGenerating}>
-          <FileBarChart className="h-4 w-4 mr-2" />
-          Generate Custom Report
-        </Button>
-      </div>
+    <CorporateLayout title="Reports">
+      <div className="space-y-6">
+        <CorporatePageHeader
+          icon={BarChart3}
+          title="Analytics & Reports"
+          description="Generate and download comprehensive health reports and analytics"
+          gradient="from-violet-500 to-violet-700"
+          badge={`${reports.length} Reports`}
+          showSearch={true}
+          searchPlaceholder="Search reports by title or category..."
+          searchValue={searchQuery}
+          onSearchChange={setSearchQuery}
+          showRefresh={true}
+          onRefresh={loadReports}
+          isRefreshing={isLoading}
+          stats={[
+            { label: 'Available Reports', value: stats.totalReports },
+            { label: 'This Month', value: stats.thisMonth },
+            { label: 'Scheduled', value: stats.scheduled },
+            { label: 'Generating', value: stats.generating },
+          ]}
+          actions={
+            <Button size="sm" onClick={() => handleGenerate('Custom Report')} disabled={isGenerating} className="bg-white text-violet-700 hover:bg-white/90 shadow-lg">
+              <FileBarChart className="h-4 w-4 mr-2" />
+              Generate Report
+            </Button>
+          }
+        />
 
-      <Dialog open={previewOpen} onOpenChange={setPreviewOpen}>
-        <DialogContent className="sm:max-w-[520px]">
-          <DialogHeader>
-            <DialogTitle>Report Preview</DialogTitle>
-            <DialogDescription>Basic metadata preview. Download for export.</DialogDescription>
-          </DialogHeader>
-          {previewReport && (
-            <div className="space-y-3 text-sm">
-              <div className="font-semibold text-base">{previewReport.title}</div>
-              <div className="text-gray-600">{previewReport.description}</div>
-              <div className="grid grid-cols-2 gap-3">
-                <div>
-                  <div className="text-gray-600">Category</div>
-                  <div className="font-medium">{previewReport.category}</div>
-                </div>
-                <div>
-                  <div className="text-gray-600">Period</div>
-                  <div className="font-medium">{previewReport.period}</div>
-                </div>
+        <Dialog open={previewOpen} onOpenChange={setPreviewOpen}>
+          <DialogContent className="sm:max-w-[520px]">
+            <DialogHeader>
+              <DialogTitle>Report Preview</DialogTitle>
+              <DialogDescription>Basic metadata preview. Download for export.</DialogDescription>
+            </DialogHeader>
+            {previewReport && (
+              <div className="space-y-3 text-sm">
+                <div className="font-semibold text-base">{previewReport.title}</div>
+                <div className="text-gray-600">{previewReport.description}</div>
+                <div className="grid grid-cols-2 gap-3">
+                  <div>
+                    <div className="text-gray-600">Category</div>
+                    <div className="font-medium">{previewReport.category}</div>
+                  </div>
+                  <div>
+                    <div className="text-gray-600">Period</div>
+                    <div className="font-medium">{previewReport.period}</div>
+                  </div>
                 <div>
                   <div className="text-gray-600">Generated</div>
                   <div className="font-medium">{previewReport.generatedDate}</div>
@@ -298,11 +326,27 @@ const CorporateReports: React.FC = () => {
               <FileText className="h-4 w-4 mr-2" />
               Health Metrics
             </Button>
-            <Button className="self-end" variant="outline" onClick={() => handleGenerate('Claims Summary')} disabled={isGenerating}>
+            <Button
+              className="self-end"
+              variant="outline"
+              onClick={() => {
+                focusOnCategory('Claims');
+                handleGenerate('Claims Summary');
+              }}
+              disabled={isGenerating}
+            >
               <FileBarChart className="h-4 w-4 mr-2" />
               Claims Summary
             </Button>
-            <Button className="self-end" variant="outline" onClick={() => handleGenerate('Risk Analysis')} disabled={isGenerating}>
+            <Button
+              className="self-end"
+              variant="outline"
+              onClick={() => {
+                focusOnCategory('Risk Analysis');
+                handleGenerate('Risk Analysis');
+              }}
+              disabled={isGenerating}
+            >
               <TrendingUp className="h-4 w-4 mr-2" />
               Risk Analysis
             </Button>
@@ -311,7 +355,7 @@ const CorporateReports: React.FC = () => {
       </Card>
 
       {/* Reports List */}
-      <Card>
+      <Card id="reports-list">
         <CardHeader>
           <CardTitle>Report Library</CardTitle>
           <CardDescription>Browse and download generated reports</CardDescription>
@@ -424,7 +468,8 @@ const CorporateReports: React.FC = () => {
           )}
         </CardContent>
       </Card>
-    </div>
+      </div>
+    </CorporateLayout>
   );
 };
 

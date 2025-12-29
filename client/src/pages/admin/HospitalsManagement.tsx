@@ -11,6 +11,7 @@ import { Label } from '@/components/ui/label';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Switch } from '@/components/ui/switch';
 import { Checkbox } from '@/components/ui/checkbox';
+import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { exportProviders } from '@/utils/exportToExcel';
 import ProviderDetailModal from '@/components/providers/ProviderDetailModal';
 import ProviderAnalytics from '@/components/providers/ProviderAnalytics';
@@ -86,6 +87,24 @@ const HospitalsManagement = () => {
   // Detail modal
   const [selectedHospital, setSelectedHospital] = useState<any>(null);
   const [showDetailModal, setShowDetailModal] = useState(false);
+  const [editModalOpen, setEditModalOpen] = useState(false);
+  const [editForm, setEditForm] = useState({
+    id: '',
+    name: '',
+    email: '',
+    phone: '',
+    classification: '',
+    address: '',
+    city: '',
+    state: '',
+    area: '',
+    pincode: '',
+    registrationNumber: '',
+    totalBeds: '',
+    availableBeds: '',
+    website: '',
+    emergencyServices: false,
+  });
   
   // Active tab
   const [activeTab, setActiveTab] = useState('list');
@@ -104,6 +123,17 @@ const HospitalsManagement = () => {
     emergencyServices: false,
     isActive: true
   });
+
+  // Helper to format complete address
+  const formatFullAddress = (hospital: any) => {
+    const parts = [
+      hospital.address,
+      hospital.city,
+      hospital.state,
+      hospital.pincode
+    ].filter(Boolean);
+    return parts.length > 0 ? parts.join(', ') : 'Address not available';
+  };
 
   useEffect(() => {
     fetchHospitals();
@@ -130,7 +160,7 @@ const HospitalsManagement = () => {
       if (selectedState && selectedState !== 'all') params.state = selectedState;
       if (selectedArea && selectedArea !== 'all') params.area = selectedArea;
       
-      const { data } = await axios.get(`${API_BASE_URL}/masterdata/hospitals`, { params });
+      const { data } = await api.get(`/masterdata/hospitals`, { params });
       
       if (data.success) {
         setHospitals(data.data);
@@ -148,8 +178,8 @@ const HospitalsManagement = () => {
   const fetchFilterOptions = async () => {
     try {
       const [citiesRes, statesRes] = await Promise.all([
-        axios.get(`${API_BASE_URL}/masterdata/cities`),
-        axios.get(`${API_BASE_URL}/masterdata/states`),
+        api.get(`/masterdata/cities`),
+        api.get(`/masterdata/states`),
       ]);
       
       if (citiesRes.data.success) setCities(citiesRes.data.data);
@@ -157,7 +187,7 @@ const HospitalsManagement = () => {
       
       // Fetch areas if city is selected
       if (selectedCity) {
-        const areasRes = await axios.get(`${API_BASE_URL}/masterdata/areas`, {
+        const areasRes = await api.get(`/masterdata/areas`, {
           params: { city: selectedCity }
         });
         if (areasRes.data.success) setAreas(areasRes.data.data);
@@ -212,6 +242,55 @@ const HospitalsManagement = () => {
   const handleViewDetails = (hospital: any) => {
     setSelectedHospital(hospital);
     setShowDetailModal(true);
+  };
+
+  const handleOpenEdit = (hospital: any) => {
+    const addr = hospital.address || hospital.basic_info?.address || '';
+    setEditForm({
+      id: hospital.id || '',
+      name: hospital.name || hospital.basic_info?.name || '',
+      email: hospital.email || hospital.contact?.email || '',
+      phone: hospital.phone || hospital.contact?.phone || '',
+      classification: hospital.classification || hospital.basic_info?.type || '',
+      address: addr,
+      city: hospital.city || hospital.basic_info?.city || '',
+      state: hospital.state || hospital.basic_info?.state || '',
+      area: hospital.area || hospital.basic_info?.area || '',
+      pincode: hospital.pincode || hospital.basic_info?.pincode || '',
+      registrationNumber: hospital.registrationNumber || hospital.metadata?.registration_number || '',
+      totalBeds: hospital.totalBeds?.toString() || hospital.capabilities?.bed_count?.toString() || '',
+      availableBeds: hospital.availableBeds?.toString() || hospital.capabilities?.available_beds?.toString() || '',
+      website: hospital.website || hospital.metadata?.website || '',
+      emergencyServices: !!(hospital.emergencyServices || hospital.capabilities?.emergency_services),
+    });
+    setEditModalOpen(true);
+  };
+
+  const handleUpdateHospital = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!editForm.id) return;
+    try {
+      setLoading(true);
+      setError(null);
+      const payload = {
+        ...editForm,
+        totalBeds: editForm.totalBeds ? Number(editForm.totalBeds) : '',
+        availableBeds: editForm.availableBeds ? Number(editForm.availableBeds) : '',
+      };
+      const { data } = await api.patch(`/admin/hospitals/${editForm.id}/details`, { updates: payload });
+      if (data?.success && data.data) {
+        const updated = data.data;
+        setHospitals(prev => prev.map(h => h.id === updated.id ? { ...h, ...updated } : h));
+        setResult({ message: data.message || 'Hospital updated successfully' });
+        setEditModalOpen(false);
+      } else {
+        setError(data?.message || 'Failed to update hospital');
+      }
+    } catch (err: any) {
+      setError(err?.response?.data?.message || 'Failed to update hospital');
+    } finally {
+      setLoading(false);
+    }
   };
 
   const handleSingleHospitalSubmit = async (e: React.FormEvent) => {
@@ -662,7 +741,7 @@ const HospitalsManagement = () => {
                               <div className="flex items-start gap-2 text-sm">
                                 <MapPin className="h-4 w-4 text-muted-foreground mt-0.5 flex-shrink-0" />
                                 <p className="line-clamp-3 text-gray-700">
-                                  {hospital.address || 'Address not available'}
+                                  {formatFullAddress(hospital)}
                                 </p>
                               </div>
                               
@@ -724,6 +803,9 @@ const HospitalsManagement = () => {
                               <Eye className="mr-2 h-4 w-4" />
                               View Details
                             </Button>
+                            <Button size="sm" variant="secondary" onClick={() => handleOpenEdit(hospital)}>
+                              Edit
+                            </Button>
                           </div>
                         </div>
                       </CardContent>
@@ -765,7 +847,7 @@ const HospitalsManagement = () => {
                                 )}
                                 <td className="p-4 max-w-md">
                                   <div className="font-medium text-sm line-clamp-2">
-                                    {hospital.address || 'Address not available'}
+                                    {formatFullAddress(hospital)}
                                   </div>
                                   {hospital.name && hospital.name !== 'Unknown' && (
                                     <div className="text-xs text-muted-foreground mt-1">
@@ -812,6 +894,9 @@ const HospitalsManagement = () => {
                                 <td className="p-4">
                                   <Button size="sm" variant="outline" onClick={() => handleViewDetails(hospital)}>
                                     <Eye className="h-4 w-4" />
+                                  </Button>
+                                  <Button size="sm" variant="secondary" className="ml-2" onClick={() => handleOpenEdit(hospital)}>
+                                    Edit
                                   </Button>
                                 </td>
                               </tr>
@@ -1136,6 +1221,77 @@ const HospitalsManagement = () => {
           onClose={() => setShowDetailModal(false)}
           type="hospital"
         />
+        <Dialog open={editModalOpen} onOpenChange={setEditModalOpen}>
+          <DialogContent className="max-w-3xl">
+            <DialogHeader>
+              <DialogTitle>Edit Hospital</DialogTitle>
+            </DialogHeader>
+            <form onSubmit={handleUpdateHospital} className="space-y-4">
+              <div className="grid md:grid-cols-2 gap-3">
+                <div>
+                  <Label>Name</Label>
+                  <Input value={editForm.name} onChange={(e) => setEditForm({...editForm, name: e.target.value})} required />
+                </div>
+                <div>
+                  <Label>Email</Label>
+                  <Input type="email" value={editForm.email} onChange={(e) => setEditForm({...editForm, email: e.target.value})} />
+                </div>
+                <div>
+                  <Label>Phone</Label>
+                  <Input value={editForm.phone} onChange={(e) => setEditForm({...editForm, phone: e.target.value})} />
+                </div>
+                <div>
+                  <Label>Classification</Label>
+                  <Input value={editForm.classification} onChange={(e) => setEditForm({...editForm, classification: e.target.value})} />
+                </div>
+                <div>
+                  <Label>City</Label>
+                  <Input value={editForm.city} onChange={(e) => setEditForm({...editForm, city: e.target.value})} />
+                </div>
+                <div>
+                  <Label>State</Label>
+                  <Input value={editForm.state} onChange={(e) => setEditForm({...editForm, state: e.target.value})} />
+                </div>
+                <div>
+                  <Label>Area</Label>
+                  <Input value={editForm.area} onChange={(e) => setEditForm({...editForm, area: e.target.value})} />
+                </div>
+                <div>
+                  <Label>Pincode</Label>
+                  <Input value={editForm.pincode} onChange={(e) => setEditForm({...editForm, pincode: e.target.value})} />
+                </div>
+                <div>
+                  <Label>Registration Number</Label>
+                  <Input value={editForm.registrationNumber} onChange={(e) => setEditForm({...editForm, registrationNumber: e.target.value})} />
+                </div>
+                <div>
+                  <Label>Total Beds</Label>
+                  <Input type="number" value={editForm.totalBeds} onChange={(e) => setEditForm({...editForm, totalBeds: e.target.value})} />
+                </div>
+                <div>
+                  <Label>Available Beds</Label>
+                  <Input type="number" value={editForm.availableBeds} onChange={(e) => setEditForm({...editForm, availableBeds: e.target.value})} />
+                </div>
+                <div className="md:col-span-2">
+                  <Label>Address</Label>
+                  <Input value={editForm.address} onChange={(e) => setEditForm({...editForm, address: e.target.value})} />
+                </div>
+                <div className="md:col-span-2">
+                  <Label>Website</Label>
+                  <Input value={editForm.website} onChange={(e) => setEditForm({...editForm, website: e.target.value})} />
+                </div>
+                <div className="flex items-center space-x-2 md:col-span-2">
+                  <Switch checked={editForm.emergencyServices} onCheckedChange={(checked) => setEditForm({...editForm, emergencyServices: checked})} />
+                  <Label>Emergency Services</Label>
+                </div>
+              </div>
+              <DialogFooter>
+                <Button variant="outline" type="button" onClick={() => setEditModalOpen(false)}>Cancel</Button>
+                <Button type="submit" disabled={loading}>{loading ? 'Saving...' : 'Save Changes'}</Button>
+              </DialogFooter>
+            </form>
+          </DialogContent>
+        </Dialog>
       </div>
     </AdminLayout>
   );

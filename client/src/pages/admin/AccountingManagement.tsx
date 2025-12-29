@@ -9,6 +9,7 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '.
 import { Label } from '../../components/ui/label';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '../../components/ui/select';
 import { useToast } from '../../hooks/use-toast';
+import api from '../../utils/api';
 import {
   Calculator,
   Plus,
@@ -157,6 +158,7 @@ const AccountingManagement = () => {
   const [typeFilter, setTypeFilter] = useState<'all' | AccountEntry['type']>('all');
   const [statusFilter, setStatusFilter] = useState<'all' | AccountEntry['status']>('all');
   const [categoryFilter, setCategoryFilter] = useState<'all' | string>('all');
+  const token = typeof window !== 'undefined' ? (localStorage.getItem('adminToken') || localStorage.getItem('token') || '') : '';
 
   const filteredEntries = entries.filter(entry => {
     const matchesSearch = searchTerm
@@ -211,6 +213,16 @@ const AccountingManagement = () => {
       cancelled: { className: 'bg-red-100 text-red-700 border-red-200', label: 'Cancelled' }
     };
     return badges[status];
+  };
+
+  const startBankReconciliation = async () => {
+    try {
+      await api.post('/admin/accounting/reconciliation', { mode: 'bank' }, token ? { headers: { Authorization: `Bearer ${token}` } } : undefined);
+      toast({ title: 'Reconciliation started', description: 'Matching bank statements with ledger entries.' });
+    } catch (error: any) {
+      console.warn('Bank reconciliation fallback', error);
+      toast({ title: 'Offline reconciliation', description: 'Could not reach the server; please retry later.', variant: 'destructive' });
+    }
   };
 
   return (
@@ -604,7 +616,7 @@ const AccountingManagement = () => {
                   <p className="text-muted-foreground mb-4">
                     Reconcile bank statements with accounting records
                   </p>
-                  <Button onClick={() => toast({ title: "Coming Soon", description: "Bank statement import feature coming soon!" })}>
+                  <Button onClick={startBankReconciliation}>
                     <Download className="mr-2 h-4 w-4" />
                     Import Bank Statement
                   </Button>

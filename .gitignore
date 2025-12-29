@@ -69,3 +69,9 @@ temp/
 *.deb
 *.tar.gz
 cloudflared-*
+
+# Large binary files
+server/core
+server/prometheus-2.48.0.linux-amd64/
+client/dist-new/
+client/dist-new.bak/

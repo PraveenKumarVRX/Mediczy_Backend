@@ -214,7 +214,7 @@ interface PatientRegistrationFormProps {
 ### Test Patient Registration
 
 #### As Nurse:
-1. Login: http://localhost:9443/nurse/login (nurse@mediczy.com / NursePass123)
+1. Login: http://localhost:9443/nurse/login (nurse@mediczy.com / Nurse123)
 2. Click "Register Patient" quick action
 3. Fill form and submit
 4. Patient created with `registeredByRole: 'nurse'`

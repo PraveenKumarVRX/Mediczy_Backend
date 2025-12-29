@@ -4,7 +4,6 @@ import {
   LayoutDashboard,
   Users,
   CalendarCheck,
-  Activity,
   Building2,
   HeartPulse,
   FileText,
@@ -17,6 +16,9 @@ import {
   Wallet,
   Bell,
   HelpCircle,
+  ShieldAlert,
+  Trophy,
+  CalendarDays,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { useState } from "react";
@@ -34,8 +36,10 @@ const mainNavItems: SidebarItem[] = [
   { icon: Bell, label: "Notifications", href: "/corporate/notifications", badge: 3 },
   { icon: Users, label: "Employees", href: "/corporate/employees" },
   { icon: CalendarCheck, label: "Appointments", href: "/corporate/appointments" },
+  { icon: CalendarDays, label: "Wellness Calendar", href: "/corporate/wellness-calendar" },
   { icon: HeartPulse, label: "Health Analysis", href: "/corporate/health-analysis" },
-  { icon: Activity, label: "Risk Monitor", href: "/corporate/risk-monitor" },
+  { icon: ShieldAlert, label: "Health Risk Assessment", href: "/corporate/health-risk-assessment" },
+  { icon: Trophy, label: "Challenges & Leaderboards", href: "/corporate/gamification" },
   { icon: Building2, label: "Departments", href: "/corporate/departments" },
 ];
 
@@ -70,21 +74,24 @@ const CorporateSidebar = () => {
       <Link
         to={item.href}
         className={cn(
-          "flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium transition-all duration-200",
+          "group flex items-center gap-3 px-3 py-2.5 rounded-xl text-sm font-medium transition-all duration-200",
           isActive
-            ? "bg-blue-600 text-white shadow-md shadow-blue-600/20"
-            : "text-slate-600 hover:bg-slate-100 hover:text-slate-900",
+            ? "bg-gradient-to-r from-emerald-500/20 to-emerald-600/10 text-emerald-600 dark:text-emerald-400 border border-emerald-500/30 shadow-sm"
+            : "text-slate-600 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800/60 hover:text-slate-900 dark:hover:text-white",
           collapsed && "justify-center px-2"
         )}
       >
-        <item.icon className={cn("w-5 h-5 flex-shrink-0", isActive && "text-white")} />
+        <item.icon className={cn(
+          "w-5 h-5 flex-shrink-0 transition-colors",
+          isActive ? "text-emerald-600 dark:text-emerald-400" : "text-slate-500 group-hover:text-emerald-500 dark:group-hover:text-emerald-400"
+        )} />
         {!collapsed && (
           <>
             <span className="flex-1">{item.label}</span>
             {item.badge && (
               <span className={cn(
                 "px-2 py-0.5 text-xs font-bold rounded-full",
-                isActive ? "bg-white/20 text-white" : "bg-blue-100 text-blue-600"
+                isActive ? "bg-emerald-100 dark:bg-emerald-500/20 text-emerald-600 dark:text-emerald-300" : "bg-emerald-100 dark:bg-emerald-500/20 text-emerald-600 dark:text-emerald-400"
               )}>
                 {item.badge}
               </span>
@@ -98,25 +105,25 @@ const CorporateSidebar = () => {
   return (
     <aside
       className={cn(
-        "fixed left-0 top-0 z-40 h-screen bg-white border-r border-slate-200 flex flex-col transition-all duration-300",
+        "fixed left-0 top-0 z-40 h-screen bg-white dark:bg-gradient-to-b dark:from-slate-900 dark:via-slate-900 dark:to-slate-800 border-r border-slate-200 dark:border-slate-700/50 flex flex-col transition-all duration-300 shadow-sm dark:shadow-xl",
         collapsed ? "w-16" : "w-64"
       )}
     >
       {/* Header */}
-      <div className="flex items-center justify-between p-4 border-b border-slate-200">
+      <div className="flex items-center justify-between p-4 border-b border-slate-200 dark:border-slate-700/50">
         {!collapsed && (
-          <div className="flex items-center gap-2">
-            <div className="w-9 h-9 bg-gradient-to-br from-blue-600 to-indigo-600 rounded-lg flex items-center justify-center shadow-lg shadow-blue-600/20">
+          <div className="flex items-center gap-3">
+            <div className="p-2 rounded-xl bg-gradient-to-br from-emerald-500 to-emerald-600 shadow-lg shadow-emerald-500/20">
               <HeartPulse className="w-5 h-5 text-white" />
             </div>
             <div>
-              <h1 className="text-base font-bold text-slate-900">Mediqzy</h1>
-              <p className="text-[10px] text-slate-500 font-medium uppercase tracking-wider">Corporate Portal</p>
+              <h1 className="text-lg font-bold text-slate-900 dark:text-white tracking-tight">Mediqzy</h1>
+              <p className="text-[10px] text-slate-500 dark:text-slate-400 font-medium uppercase tracking-wider">Corporate Portal</p>
             </div>
           </div>
         )}
         {collapsed && (
-          <div className="w-9 h-9 mx-auto bg-gradient-to-br from-blue-600 to-indigo-600 rounded-lg flex items-center justify-center">
+          <div className="p-2 mx-auto rounded-xl bg-gradient-to-br from-emerald-500 to-emerald-600 shadow-lg shadow-emerald-500/20">
             <HeartPulse className="w-5 h-5 text-white" />
           </div>
         )}
@@ -127,7 +134,7 @@ const CorporateSidebar = () => {
         {/* Main */}
         <div>
           {!collapsed && (
-            <p className="px-3 mb-2 text-[10px] font-semibold text-slate-400 uppercase tracking-wider">
+            <p className="px-3 mb-2 text-[10px] font-semibold text-slate-400 dark:text-slate-500 uppercase tracking-wider">
               Main Menu
             </p>
           )}
@@ -141,7 +148,7 @@ const CorporateSidebar = () => {
         {/* Management */}
         <div>
           {!collapsed && (
-            <p className="px-3 mb-2 text-[10px] font-semibold text-slate-400 uppercase tracking-wider">
+            <p className="px-3 mb-2 text-[10px] font-semibold text-slate-400 dark:text-slate-500 uppercase tracking-wider">
               Management
             </p>
           )}
@@ -155,7 +162,7 @@ const CorporateSidebar = () => {
         {/* System */}
         <div>
           {!collapsed && (
-            <p className="px-3 mb-2 text-[10px] font-semibold text-slate-400 uppercase tracking-wider">
+            <p className="px-3 mb-2 text-[10px] font-semibold text-slate-400 dark:text-slate-500 uppercase tracking-wider">
               System
             </p>
           )}
@@ -168,14 +175,14 @@ const CorporateSidebar = () => {
       </nav>
 
       {/* Footer */}
-      <div className="p-3 border-t border-slate-200 space-y-2">
+      <div className="p-3 border-t border-slate-200 dark:border-slate-700/50 space-y-2">
         {/* Collapse Toggle */}
         <Button
           variant="ghost"
           size="sm"
           onClick={() => setCollapsed(!collapsed)}
           className={cn(
-            "w-full justify-center text-slate-500 hover:text-slate-900 hover:bg-slate-100",
+            "w-full justify-center text-slate-500 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white hover:bg-slate-100 dark:hover:bg-slate-800/60",
             !collapsed && "justify-start"
           )}
         >
@@ -195,7 +202,7 @@ const CorporateSidebar = () => {
           size="sm"
           onClick={handleLogout}
           className={cn(
-            "w-full text-red-600 hover:text-red-700 hover:bg-red-50",
+            "w-full text-red-600 dark:text-red-400 hover:text-red-700 dark:hover:text-red-300 hover:bg-red-50 dark:hover:bg-red-900/20",
             collapsed ? "justify-center" : "justify-start"
           )}
         >

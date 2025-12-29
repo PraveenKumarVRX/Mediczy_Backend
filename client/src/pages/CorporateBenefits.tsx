@@ -6,6 +6,7 @@ import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
+import CorporatePageHeader from "@/components/corporate/CorporatePageHeader";
 import { 
   Building2,
   Shield,
@@ -33,7 +34,8 @@ import {
   Search,
   User,
   IndianRupee,
-  AlertCircle
+  AlertCircle,
+  Gift
 } from "lucide-react";
 import api from "@/utils/api";
 import { useAuth } from "@/auth/AuthProvider";
@@ -453,23 +455,21 @@ const CorporateBenefits = () => {
 
   return (
     <CorporateLayout>
-      <div className="min-h-screen bg-gray-50 p-6">
-        <div className="max-w-7xl mx-auto space-y-6">
-          {/* Header */}
-          <div className="flex justify-between items-start">
-            <div>
-              <h1 className="text-3xl font-bold text-gray-900">Corporate Benefits</h1>
-              <p className="text-gray-600 mt-1">
-                View your benefits and book health checkups
-              </p>
-            </div>
-            {corporatePlan && (
-              <Badge className="bg-green-500/10 text-green-700 border-green-500/20 border px-4 py-2">
-                <Building2 className="w-4 h-4 mr-2" />
-                {corporatePlan.corporateName}
-              </Badge>
-            )}
-          </div>
+      <div className="min-h-screen bg-gray-50/50">
+        <div className="container mx-auto p-6">
+          <CorporatePageHeader
+            icon={Gift}
+            title="Corporate Benefits"
+            description="View your benefits, book health checkups, and manage appointments"
+            gradient="from-emerald-600 to-emerald-800"
+            badge={corporatePlan ? { text: corporatePlan.corporateName, variant: "emerald" } : undefined}
+            stats={[
+              { label: 'Plan Type', value: corporatePlan?.planType || 'Premium' },
+              { label: 'Sum Insured', value: `₹${(corporatePlan?.coverage.sumInsured || 500000).toLocaleString()}` },
+              { label: 'OPD Used', value: `₹${planUsage.opdUsed.toLocaleString()}/${planUsage.opdLimit.toLocaleString()}` },
+              { label: 'Valid Till', value: corporatePlan?.validTo ? new Date(corporatePlan.validTo).toLocaleDateString() : 'Dec 2024' },
+            ]}
+          />
 
           <Tabs value={activeTab} onValueChange={setActiveTab} className="space-y-6">
             <TabsList className="grid w-full grid-cols-3 lg:w-auto lg:inline-grid">

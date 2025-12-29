@@ -4,11 +4,14 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Badge } from '@/components/ui/badge';
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle, DialogTrigger } from '@/components/ui/dialog';
-import { Users, Search, Plus, Mail, Phone, MapPin, Briefcase, Calendar, Activity, Upload, Download, FileSpreadsheet, CheckCircle, XCircle } from 'lucide-react';
+import { Users, Search, Plus, Mail, Phone, MapPin, Briefcase, Calendar, Activity, Upload, Download, FileSpreadsheet, CheckCircle, XCircle, Eye, Edit, Trash2, RefreshCw } from 'lucide-react';
 import { Label } from '@/components/ui/label';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import api from '@/utils/api';
 import { useToast } from '@/hooks/use-toast';
+import CorporateLayout from '@/components/corporate/CorporateLayout';
+import CorporatePageHeader from '@/components/corporate/CorporatePageHeader';
+import CorporateStatusBadge from '@/components/corporate/CorporateStatusBadge';
 
 interface Employee {
   id: string;
@@ -286,34 +289,45 @@ const CorporateEmployees: React.FC = () => {
   };
 
   return (
-    <div className="container mx-auto p-6">
-      <div className="flex justify-between items-center mb-6">
-        <div>
-          <h1 className="text-3xl font-bold flex items-center gap-2">
-            <Users className="h-8 w-8 text-blue-600" />
-            Employee Management
-          </h1>
-          <p className="text-gray-600 mt-1">Manage employee health profiles and insurance</p>
-        </div>
-        <div className="flex gap-2">
-          <Button onClick={openCreate}>
-            <Plus className="mr-2 h-4 w-4" />
-            Add Employee
-          </Button>
-          <Button onClick={() => setIsBulkUploadOpen(true)} variant="outline">
-            <Upload className="mr-2 h-4 w-4" />
-            Bulk Upload
-          </Button>
-        </div>
-      </div>
+    <CorporateLayout title="Employee Management">
+      <div className="space-y-6">
+        <CorporatePageHeader
+          icon={Users}
+          title="Employee Management"
+          description="Manage employee health profiles, insurance enrollments, and health status monitoring"
+          gradient="from-teal-500 to-teal-700"
+          badge={`${employees.length} Employees`}
+          showSearch={true}
+          searchPlaceholder="Search employees by name, ID, or email..."
+          searchValue={searchTerm}
+          onSearchChange={setSearchTerm}
+          showRefresh={true}
+          onRefresh={loadEmployees}
+          isRefreshing={isLoading}
+          showAdd={true}
+          addLabel="Add Employee"
+          onAdd={openCreate}
+          stats={[
+            { label: 'Total Employees', value: employees.length },
+            { label: 'Excellent Health', value: employees.filter(e => e.healthStatus === 'excellent').length },
+            { label: 'Good Health', value: employees.filter(e => e.healthStatus === 'good').length },
+            { label: 'Needs Attention', value: employees.filter(e => e.healthStatus === 'moderate' || e.healthStatus === 'poor').length },
+          ]}
+          actions={
+            <Button onClick={() => setIsBulkUploadOpen(true)} variant="outline" size="sm" className="bg-white/10 hover:bg-white/20 text-white border-white/20">
+              <Upload className="mr-2 h-4 w-4" />
+              Bulk Upload
+            </Button>
+          }
+        />
 
-      {/* Add/Edit Dialog */}
-      <Dialog open={isUpsertDialogOpen} onOpenChange={setIsUpsertDialogOpen}>
-        <DialogContent className="sm:max-w-[600px]">
-          <DialogHeader>
-            <DialogTitle>{editingEmployeeId ? 'Edit Employee' : 'Add Employee'}</DialogTitle>
-            <DialogDescription>Enter employee details to manage corporate enrollment.</DialogDescription>
-          </DialogHeader>
+        {/* Add/Edit Dialog */}
+        <Dialog open={isUpsertDialogOpen} onOpenChange={setIsUpsertDialogOpen}>
+          <DialogContent className="sm:max-w-[600px]">
+            <DialogHeader>
+              <DialogTitle>{editingEmployeeId ? 'Edit Employee' : 'Add Employee'}</DialogTitle>
+              <DialogDescription>Enter employee details to manage corporate enrollment.</DialogDescription>
+            </DialogHeader>
 
           <div className="grid gap-4 py-4">
             <div className="grid grid-cols-2 gap-4">
@@ -693,7 +707,8 @@ const CorporateEmployees: React.FC = () => {
           </DialogFooter>
         </DialogContent>
       </Dialog>
-    </div>
+      </div>
+    </CorporateLayout>
   );
 };
 

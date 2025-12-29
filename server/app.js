@@ -5,7 +5,6 @@ import cors from "cors";
 import helmet from "helmet";
 import crypto from 'crypto';
 import hpp from "hpp";
-import mongoSanitize from "express-mongo-sanitize";
 import rateLimit from "express-rate-limit";
 import fileUpload from 'express-fileupload';
 import compression from 'compression';
@@ -32,6 +31,7 @@ import aiScribeRouter from "./routes/ai-scribe.route.js";
 import recordingRouter from "./routes/recording.route.js";
 import ayushmanRouter from "./routes/ayushman.route.js";
 import placesRouter from './routes/places.js';
+import ttsRouter from './routes/tts.route.js';
 
 import adminRouter from './routes/admin.route.js';
 import fcmRouter from './routes/fcm.route.js';
@@ -89,6 +89,7 @@ import healthDiaryRouter from './routes/health-diary.route.js';
 import onlineConsultationRouter from './routes/online-consultation.route.js';
 import notificationRouter from './routes/notification.route.js';
 import embeddingsRouter from './routes/embeddings.route.js';
+import cdssKnowledgeRouter from './routes/cdss-knowledge.route.js';
 import documentationRouter from './routes/documentation.route.js';
 import circuitBreakerRouter from './routes/circuit-breaker.route.js';
 import n8nCallbackRouter from './routes/webhooks/n8n-callback.route.js';
@@ -97,6 +98,8 @@ import doctorOAuthRouter from './routes/doctor-oauth.route.js';
 import communicationRouter from './routes/communication.route.js';
 import consultationRecordingRouter from './routes/consultation-recording.route.js';
 import billingRouter from './routes/billing.route.js';
+import moduleAccessRouter from './routes/module-access.route.js';
+import hospitalPracticeRouter from './routes/hospital/practice.route.js';
 
 // MariaDB models completely replaced with Intelligent Database models
 // Legacy MariaDB models removed - all data now flows through intelligent database
@@ -246,6 +249,12 @@ const allowedOrigins = process.env.CORS_ORIGIN
       'http://192.168.1.72'
     ]; // Default for development
 
+// Debug CORS configuration
+console.log('🔒 CORS Configuration:');
+console.log('   NODE_ENV:', process.env.NODE_ENV);
+console.log('   CORS_ORIGIN env:', process.env.CORS_ORIGIN);
+console.log('   Allowed Origins:', allowedOrigins);
+
 // Block disallowed origins early with 403 (both preflight and actual requests)
 app.use((req, res, next) => {
   const origin = req.get('Origin');
@@ -359,8 +368,8 @@ app.use(fileUpload({
   tempFileDir: '/tmp/'
 }));
 
-// 6. Input Sanitization (prevent NoSQL injection and HPP)
-app.use(mongoSanitize());
+// 6. Input Sanitization (HTTP Parameter Pollution protection)
+// Note: NoSQL injection protection removed - using PostgreSQL with parameterized queries
 app.use(hpp());
 
 // 7. Audit Logging (HIPAA/GDPR/DPDP Compliance)
@@ -638,6 +647,8 @@ app.use('/api/places', placesRouter);
 
 app.use('/stats', adminStatsRouter); // Admin dashboard statistics (public stats endpoint, outside /api to bypass middleware)
 app.use('/api/admin', adminRouter);
+app.use('/api/admin/module-access', moduleAccessRouter);
+app.use('/api/module-access', moduleAccessRouter); // Public endpoint for checking user's own module access
 app.use('/api/team', teamRouter);
 app.use('/api/nurse', nurseRouter);
 app.use('/api/assistant', assistantRouter);
@@ -646,6 +657,7 @@ app.use('/api', activityLogRoutes); // Activity logging routes
 app.use('/api/crm', crmRouter);
 app.use('/api/fcm', fcmRouter);
 app.use('/api/firebase', firebaseStatusRouter);
+app.use('/api/tts', ttsRouter); // Eleven Labs Text-to-Speech
 app.use('/api/async', asyncRouter);
 app.use('/api/privacy', privacyRouter); // GDPR/DPDP/HIPAA compliance endpoints
 app.use('/api/video', videoRouter); // Video calling endpoints
@@ -665,11 +677,13 @@ app.use('/api/whatsapp-business', whatsappBusinessRouter); // WhatsApp Business 
 app.use('/api/whatsapp-production', whatsappProductionRouter); // Production WhatsApp messaging with templates
 app.use('/api/chat', chatRouter); // Chat system endpoints
 app.use('/api/embeddings', embeddingsRouter); // Embeddings management via PGVector
+app.use('/api/cdss/knowledge', cdssKnowledgeRouter); // CDSS Knowledge base (Gale Encyclopedia, medical PDFs)
 app.use('/api/tickets', ticketsRouter); // Support ticket management system
 app.use('/api/tenants', tenantRouter); // Multi-tenant organization management
 app.use('/api/tenant-domains', tenantDomainRouter); // Custom domain management
 app.use('/api/corporate', corporateRouter); // Corporate benefits and plans
 app.use('/api', hospitalRouter); // Hospital directory and SPN network
+app.use('/api/hospital/practice', hospitalPracticeRouter); // Hospital practice management (appointments, patients, staff, resources)
 app.use('/api/hospital/auth', hospitalAuthRouter); // Hospital authentication & corporate onboarding
 app.use('/api/clinics', clinicRouter); // Clinics directory (labs, dental, etc.)
 app.use('/api/labs', enhancedLabRouter); // Enhanced laboratory management with comprehensive search
@@ -696,12 +710,14 @@ import adminLabsRouter from './routes/admin/labs.routes.js';
 import adminClinicsRouter from './routes/admin/clinics.routes.js';
 import adminPharmaciesRouter from './routes/admin/pharmacies.routes.js';
 import adminDoctorsRouter from './routes/admin/doctors.routes.js';
+import adminAppointmentsRouter from './routes/admin/appointments.routes.js';
 
 app.use('/api/admin/hospitals', adminHospitalsRouter); // Admin hospital CRUD operations
 app.use('/api/admin/labs', adminLabsRouter); // Admin lab CRUD operations
 app.use('/api/admin/clinics', adminClinicsRouter); // Admin clinic CRUD operations
 app.use('/api/admin/pharmacies', adminPharmaciesRouter); // Admin pharmacy CRUD operations
 app.use('/api/admin/doctors', adminDoctorsRouter); // Admin doctor CRUD operations
+app.use('/api/admin/appointments', adminAppointmentsRouter); // Admin appointment oversight
 
 // Clinic Portal Routes
 import clinicAuthRouter from './routes/clinic/auth.routes.js';

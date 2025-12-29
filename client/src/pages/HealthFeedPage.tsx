@@ -152,7 +152,7 @@ export default function HealthFeedPage() {
   };
 
   const ShortsView = () => (
-    <div className="fixed inset-0 bg-black">
+    <div className="fixed inset-0 bg-slate-900 dark:bg-slate-950">
       <div className="relative h-full flex items-center justify-center">
         <div className="absolute h-full w-full max-w-sm mx-auto">
           {shortsVideos.length > 0 && (
@@ -169,7 +169,7 @@ export default function HealthFeedPage() {
             <Button
               variant="ghost"
               size="icon"
-              className="rounded-full bg-black/50 text-white hover:bg-black/70"
+              className="rounded-full bg-slate-800/70 text-white hover:bg-teal-600 hover:text-white transition-colors"
               onClick={() => setIsMuted(!isMuted)}
             >
               {isMuted ? <VolumeX className="h-6 w-6" /> : <Volume2 className="h-6 w-6" />}
@@ -180,7 +180,7 @@ export default function HealthFeedPage() {
             <Button
               variant="ghost"
               size="icon"
-              className="rounded-full bg-black/50 text-white hover:bg-black/70"
+              className="rounded-full bg-slate-800/70 text-white hover:bg-teal-600 hover:text-white transition-colors disabled:opacity-40"
               onClick={previousShort}
               disabled={currentShortIndex === 0}
             >
@@ -189,7 +189,7 @@ export default function HealthFeedPage() {
             <Button
               variant="ghost"
               size="icon"
-              className="rounded-full bg-black/50 text-white hover:bg-black/70"
+              className="rounded-full bg-slate-800/70 text-white hover:bg-teal-600 hover:text-white transition-colors disabled:opacity-40"
               onClick={nextShort}
               disabled={currentShortIndex === shortsVideos.length - 1}
             >
@@ -198,9 +198,9 @@ export default function HealthFeedPage() {
           </div>
 
           {/* Video Info */}
-          <div className="absolute bottom-4 left-4 right-16 text-white">
-            <h3 className="font-semibold">{shortsVideos[currentShortIndex]?.title}</h3>
-            <p className="text-sm opacity-80">{shortsVideos[currentShortIndex]?.channelTitle}</p>
+          <div className="absolute bottom-4 left-4 right-16 text-white bg-gradient-to-t from-slate-900/90 to-transparent p-4 rounded-lg">
+            <h3 className="font-semibold text-white">{shortsVideos[currentShortIndex]?.title}</h3>
+            <p className="text-sm text-slate-300">{shortsVideos[currentShortIndex]?.channelTitle}</p>
           </div>
         </div>
       </div>
@@ -210,17 +210,17 @@ export default function HealthFeedPage() {
   const RegularVideoGrid = () => (
     <>
       {selectedVideo && (
-        <div className="fixed inset-0 z-[100] bg-black/90 flex items-center justify-center">
+        <div className="fixed inset-0 z-[100] bg-slate-900/95 dark:bg-slate-950/95 flex items-center justify-center backdrop-blur-sm">
           <div className="relative w-full max-w-7xl mx-auto p-4">
             <Button
               variant="outline"
               size="icon"
-              className="absolute top-4 right-4 z-50"
+              className="absolute top-4 right-4 z-50 bg-slate-800 border-slate-700 text-white hover:bg-teal-600 hover:border-teal-600 hover:text-white transition-colors"
               onClick={() => setSelectedVideo(null)}
             >
               <X className="h-5 w-5" />
             </Button>
-            <div className="aspect-video w-full">
+            <div className="aspect-video w-full rounded-lg overflow-hidden shadow-2xl">
               <VideoPlayer 
                 videoId={selectedVideo.id} 
                 isShort={false} 
@@ -229,9 +229,9 @@ export default function HealthFeedPage() {
               />
             </div>
             <div className="mt-4 text-white">
-              <h2 className="text-xl font-semibold">{selectedVideo.title}</h2>
-              <div className="flex items-center justify-between mt-2 text-sm opacity-80">
-                <span>{selectedVideo.channelTitle}</span>
+              <h2 className="text-xl font-semibold text-white">{selectedVideo.title}</h2>
+              <div className="flex items-center justify-between mt-2 text-sm text-slate-300">
+                <span className="text-teal-400">{selectedVideo.channelTitle}</span>
                 <span>{selectedVideo.publishedAt}</span>
               </div>
             </div>
@@ -243,7 +243,7 @@ export default function HealthFeedPage() {
         {longVideos.map((video) => (
           <Card 
             key={video.id} 
-            className="overflow-hidden hover:shadow-lg transition-shadow cursor-pointer"
+            className="overflow-hidden bg-white dark:bg-slate-800/50 border-slate-200 dark:border-slate-700 hover:shadow-lg hover:shadow-teal-500/10 dark:hover:shadow-teal-500/20 transition-all duration-300 cursor-pointer group"
             onClick={() => setSelectedVideo(video)}
           >
             <div className="aspect-video relative">
@@ -252,14 +252,14 @@ export default function HealthFeedPage() {
                 alt={video.title}
                 className="w-full h-full object-cover"
               />
-              <div className="absolute inset-0 bg-black/20 opacity-0 hover:opacity-100 transition-opacity flex items-center justify-center">
-                <Button variant="secondary" size="sm">Play Video</Button>
+              <div className="absolute inset-0 bg-teal-600/30 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center">
+                <Button className="bg-teal-600 hover:bg-teal-700 text-white border-0" size="sm">Play Video</Button>
               </div>
             </div>
-            <CardContent className="p-4">
-              <h3 className="font-semibold line-clamp-2 mb-2">{video.title}</h3>
-              <div className="flex items-center justify-between text-sm text-muted-foreground">
-                <span>{video.channelTitle}</span>
+            <CardContent className="p-4 bg-white dark:bg-slate-800/50">
+              <h3 className="font-semibold line-clamp-2 mb-2 text-slate-800 dark:text-white">{video.title}</h3>
+              <div className="flex items-center justify-between text-sm text-slate-500 dark:text-slate-400">
+                <span className="text-teal-600 dark:text-teal-400">{video.channelTitle}</span>
                 <span>{video.publishedAt}</span>
               </div>
             </CardContent>
@@ -271,10 +271,16 @@ export default function HealthFeedPage() {
 
   if (error) {
     return (
-      <Card>
+      <Card className="bg-white dark:bg-slate-800/50 border-slate-200 dark:border-slate-700">
         <CardContent className="flex flex-col items-center justify-center p-6 text-center">
-          <p className="text-destructive mb-4">{error}</p>
-          <Button variant="outline" onClick={fetchHealthVideos}>Try Again</Button>
+          <p className="text-red-500 dark:text-red-400 mb-4">{error}</p>
+          <Button 
+            variant="outline" 
+            onClick={fetchHealthVideos}
+            className="border-teal-500 text-teal-600 hover:bg-teal-50 dark:border-teal-400 dark:text-teal-400 dark:hover:bg-teal-900/20"
+          >
+            Try Again
+          </Button>
         </CardContent>
       </Card>
     );
@@ -282,23 +288,24 @@ export default function HealthFeedPage() {
 
   if (loading) {
     return (
-      <Card>
+      <Card className="bg-white dark:bg-slate-800/50 border-slate-200 dark:border-slate-700">
         <CardContent className="flex items-center justify-center p-6">
-          <Loader2 className="h-8 w-8 animate-spin text-primary" />
+          <Loader2 className="h-8 w-8 animate-spin text-teal-500 dark:text-teal-400" />
         </CardContent>
       </Card>
     );
   }
 
   return (
-    <div className="container py-6 space-y-6">
+    <div className="container py-6 space-y-6 bg-slate-50 dark:bg-slate-900 min-h-screen">
       <div className="flex items-center justify-between">
-        <h1 className="text-3xl font-bold">Doctor's Health Feed</h1>
+        <h1 className="text-3xl font-bold text-slate-800 dark:text-white">Doctor's Health Feed</h1>
         <Button 
           variant="outline" 
           size="sm"
           onClick={fetchHealthVideos}
           disabled={loading}
+          className="border-teal-500 text-teal-600 hover:bg-teal-50 dark:border-teal-400 dark:text-teal-400 dark:hover:bg-teal-900/20 disabled:opacity-50"
         >
           <RefreshCw className={cn("h-4 w-4 mr-2", loading && "animate-spin")} />
           Refresh Feed
@@ -306,9 +313,19 @@ export default function HealthFeedPage() {
       </div>
 
       <Tabs defaultValue="videos" className="space-y-6">
-        <TabsList>
-          <TabsTrigger value="videos">Doctor's Videos</TabsTrigger>
-          <TabsTrigger value="shorts">Quick Tips</TabsTrigger>
+        <TabsList className="bg-slate-100 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 p-1">
+          <TabsTrigger 
+            value="videos" 
+            className="data-[state=active]:bg-teal-500 data-[state=active]:text-white dark:data-[state=active]:bg-teal-600 text-slate-600 dark:text-slate-300"
+          >
+            Doctor's Videos
+          </TabsTrigger>
+          <TabsTrigger 
+            value="shorts" 
+            className="data-[state=active]:bg-teal-500 data-[state=active]:text-white dark:data-[state=active]:bg-teal-600 text-slate-600 dark:text-slate-300"
+          >
+            Quick Tips
+          </TabsTrigger>
         </TabsList>
         
         <TabsContent value="videos" className="space-y-4">

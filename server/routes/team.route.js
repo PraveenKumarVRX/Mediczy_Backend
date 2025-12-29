@@ -41,8 +41,23 @@ router.post('/login', [
       });
     }
 
-    // ROLE GUARD: Only users with isTeam flag or isAdmin can login to team portal
-    if (!user.isTeam && !user.isAdmin) {
+    // ROLE GUARD: allow explicit team/admin roles or membershipType flag
+    let metadata = {};
+    try {
+      metadata = user.metadata ? JSON.parse(user.metadata) : {};
+    } catch (err) {
+      metadata = {};
+    }
+
+    const hasTeamAccess = Boolean(
+      user.isAdmin ||
+      user.isTeam ||
+      user.role === 'team' ||
+      user.membershipType === 'team' ||
+      metadata.isTeam === true
+    );
+
+    if (!hasTeamAccess) {
       console.log('🔴 [Team Login] Access denied: User lacks team permissions');
       return res.status(403).json({ 
         success: false,
@@ -66,9 +81,9 @@ router.post('/login', [
       email: user.email,
       firstName: user.firstName,
       lastName: user.lastName,
-      role: 'Team Member',
-      designation: 'Healthcare Staff',
-      department: 'Healthcare Operations',
+      role: user.role || 'Team Member',
+      designation: user.designation || 'Healthcare Staff',
+      department: user.department || 'Healthcare Operations',
       permissions: [
         'User Management',
         'Doctor Management',
@@ -173,25 +188,35 @@ router.get('/directory', authTeam, async (req, res) => {
   try {
     // Fetch all active team members
     const users = await userModel.findAll({
-      where: { 
-        isActive: true,
-        role: ['team', 'staff', 'nurse', 'assistant']
-      },
-      attributes: ['id', 'firstName', 'lastName', 'email', 'phoneNumber', 'department', 'designation', 'role', 'isActive', 'lastLogin']
+      where: { status: 'active' }
     });
 
-    const members = users.map(user => ({
-      id: user.id,
-      firstName: user.firstName,
-      lastName: user.lastName,
-      email: user.email,
-      phone: user.phoneNumber || 'N/A',
-      department: user.department || 'Healthcare',
-      designation: user.designation || 'Staff',
-      role: user.role === 'team' ? 'Team Member' : (user.role === 'nurse' ? 'Nurse' : 'Staff'),
-      isActive: user.isActive,
-      avatar: null
-    }));
+    const members = users
+      .map(user => {
+        let metadata = {};
+        try {
+          metadata = user.metadata ? JSON.parse(user.metadata) : {};
+        } catch (err) {
+          metadata = {};
+        }
+
+        const role = user.role || metadata.role || 'team';
+        const isTeamMember = role === 'team' || user.membershipType === 'team' || metadata.isTeam === true;
+
+        return isTeamMember ? {
+          id: user.id,
+          firstName: user.firstName,
+          lastName: user.lastName,
+          email: user.email,
+          phone: user.phoneNumber || metadata.phoneNumber || metadata.phone || 'N/A',
+          department: user.department || metadata.department || 'Healthcare',
+          designation: user.designation || metadata.designation || 'Staff',
+          role: role === 'team' ? 'Team Member' : (role || 'Staff'),
+          isActive: user.isActive,
+          avatar: null
+        } : null;
+      })
+      .filter(Boolean);
 
     res.status(200).json({
       success: true,

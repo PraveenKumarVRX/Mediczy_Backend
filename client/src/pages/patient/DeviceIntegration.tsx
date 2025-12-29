@@ -2,7 +2,8 @@ import React, { useState } from 'react';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
-import { Watch, Activity, Smartphone, Bluetooth, CheckCircle, XCircle, RefreshCw, Plus, Settings } from 'lucide-react';
+import { Watch, Activity, Smartphone, Bluetooth, CheckCircle, XCircle, RefreshCw, Plus, Settings, Heart, Footprints, Moon, Zap, ShieldCheck } from 'lucide-react';
+import { Link } from 'react-router-dom';
 
 interface Device {
   id: string;
@@ -42,36 +43,37 @@ const DeviceIntegration: React.FC = () => {
     },
     {
       id: '3',
-      name: 'Omron BP Monitor',
-      type: 'bp_monitor',
-      brand: 'Omron',
-      model: 'HEM-7156T',
+      name: 'Oura Ring Gen 3',
+      type: 'smart_ring',
+      brand: 'Oura',
+      model: 'Generation 3',
       status: 'disconnected',
       lastSync: new Date('2025-01-12T19:00:00'),
-      dataTypes: ['Blood Pressure']
+      battery: 45,
+      dataTypes: ['Sleep', 'Heart Rate', 'Activity', 'Temperature']
     }
   ]);
 
   const [availableDevices] = useState([
-    { type: 'smartwatch', icon: Watch, brands: ['Apple Watch', 'Samsung Galaxy Watch', 'Fitbit Versa'] },
-    { type: 'fitness_band', icon: Activity, brands: ['Mi Band', 'Fitbit Charge', 'Garmin Vivosmart'] },
-    { type: 'smart_ring', icon: Watch, brands: ['Oura Ring', 'Circular Ring'] },
-    { type: 'bp_monitor', icon: Activity, brands: ['Omron', 'iHealth', 'Withings'] },
-    { type: 'glucometer', icon: Activity, brands: ['Accu-Chek', 'OneTouch', 'FreeStyle'] },
-    { type: 'weight_scale', icon: Activity, brands: ['Withings', 'Fitbit Aria', 'Eufy Smart Scale'] }
+    { type: 'smartwatch', emoji: '⌚', brands: ['Apple Watch', 'Samsung Galaxy Watch', 'Fitbit Versa', 'Garmin Venu'] },
+    { type: 'fitness_band', emoji: '📱', brands: ['Mi Band', 'Fitbit Charge', 'Garmin Vivosmart', 'Honor Band'] },
+    { type: 'smart_ring', emoji: '💍', brands: ['Oura Ring', 'Circular Ring', 'Ultrahuman Ring'] },
+    { type: 'bp_monitor', emoji: '🩺', brands: ['Omron', 'iHealth', 'Withings BPM'] },
+    { type: 'glucometer', emoji: '💉', brands: ['Accu-Chek', 'OneTouch', 'FreeStyle Libre'] },
+    { type: 'weight_scale', emoji: '⚖️', brands: ['Withings Body', 'Fitbit Aria', 'Eufy Smart Scale'] }
   ]);
 
   const getStatusBadge = (status: string) => {
     const variants: Record<string, { label: string; icon: any; color: string }> = {
-      connected: { label: 'Connected', icon: CheckCircle, color: 'bg-green-100 text-green-800' },
-      disconnected: { label: 'Disconnected', icon: XCircle, color: 'bg-red-100 text-red-800' },
-      syncing: { label: 'Syncing...', icon: RefreshCw, color: 'bg-blue-100 text-blue-800' }
+      connected: { label: 'Connected', icon: CheckCircle, color: 'bg-teal-100 text-teal-800 dark:bg-teal-900/30 dark:text-teal-400' },
+      disconnected: { label: 'Disconnected', icon: XCircle, color: 'bg-red-100 text-red-800 dark:bg-red-900/30 dark:text-red-400' },
+      syncing: { label: 'Syncing...', icon: RefreshCw, color: 'bg-blue-100 text-blue-800 dark:bg-blue-900/30 dark:text-blue-400' }
     };
     const variant = variants[status];
     const Icon = variant.icon;
     return (
       <Badge className={`${variant.color} flex items-center gap-1`}>
-        <Icon className="h-3 w-3" />
+        <Icon className={`h-3 w-3 ${status === 'syncing' ? 'animate-spin' : ''}`} />
         {variant.label}
       </Badge>
     );
@@ -85,7 +87,7 @@ const DeviceIntegration: React.FC = () => {
     ));
 
     setTimeout(() => {
-      setDevices(devices.map(device => 
+      setDevices(prev => prev.map(device => 
         device.id === deviceId 
           ? { ...device, status: 'connected' as const, lastSync: new Date() }
           : device
@@ -109,197 +111,240 @@ const DeviceIntegration: React.FC = () => {
     ));
   };
 
-  const getDeviceIcon = (type: string) => {
+  const getDeviceEmoji = (type: string) => {
     switch (type) {
-      case 'smartwatch':
-      case 'fitness_band':
-      case 'smart_ring':
-        return Watch;
-      case 'bp_monitor':
-      case 'glucometer':
-      case 'weight_scale':
-        return Activity;
-      default:
-        return Smartphone;
+      case 'smartwatch': return '⌚';
+      case 'fitness_band': return '📱';
+      case 'smart_ring': return '💍';
+      case 'bp_monitor': return '🩺';
+      case 'glucometer': return '💉';
+      case 'weight_scale': return '⚖️';
+      default: return '📱';
     }
   };
 
+  const connectedDevicesCount = devices.filter(d => d.status === 'connected').length;
+
   return (
-    <div className="container mx-auto p-6">
-      <div className="flex justify-between items-center mb-6">
-        <div>
-          <h1 className="text-3xl font-bold">Device Integration</h1>
-          <p className="text-gray-600 mt-1">Connect and sync your health devices</p>
+    <div className="max-w-7xl mx-auto space-y-6 animate-in fade-in duration-500 px-4 md:px-6 py-6">
+      {/* Hero Header */}
+      <div className="relative overflow-hidden rounded-2xl bg-gradient-to-r from-slate-800 via-slate-900 to-slate-800 p-6 md:p-8 text-white shadow-2xl">
+        <div className="absolute inset-0 bg-[url('data:image/svg+xml;base64,PHN2ZyB3aWR0aD0iNjAiIGhlaWdodD0iNjAiIHZpZXdCb3g9IjAgMCA2MCA2MCIgeG1sbnM9Imh0dHA6Ly93d3cudzMub3JnLzIwMDAvc3ZnIj48ZyBmaWxsPSJub25lIiBmaWxsLXJ1bGU9ImV2ZW5vZGQiPjxwYXRoIGQ9Ik0zNiAxOGMzLjMxNCAwIDYgMi42ODYgNiA2cy0yLjY4NiA2LTYgNi02LTIuNjg2LTYtNiAyLjY4Ni02IDYtNiIgc3Ryb2tlPSJyZ2JhKDI1NSwyNTUsMjU1LDAuMSkiLz48L2c+PC9zdmc+')] opacity-30" />
+        <div className="absolute top-0 right-0 w-64 h-64 bg-gradient-to-br from-teal-500/20 to-transparent rounded-full blur-3xl" />
+        <div className="relative flex flex-col md:flex-row md:items-center md:justify-between gap-4">
+          <div>
+            <div className="flex items-center gap-3 mb-3">
+              <div className="p-2.5 rounded-xl bg-gradient-to-br from-teal-500 to-teal-600 shadow-lg shadow-teal-500/30">
+                <Watch className="w-6 h-6" />
+              </div>
+              <Badge className="bg-white/10 text-white/90 border-white/20 font-medium">
+                {connectedDevicesCount} Connected
+              </Badge>
+            </div>
+            <h1 className="text-2xl md:text-3xl font-bold mb-2">Smart Device Integration</h1>
+            <p className="text-slate-300 text-sm md:text-base">
+              Connect your smartwatch, fitness band, or smart ring to automatically track your health data
+            </p>
+          </div>
+          <div className="flex gap-3">
+            <Button className="bg-gradient-to-r from-teal-500 to-teal-600 hover:from-teal-600 hover:to-teal-700 text-white shadow-lg shadow-teal-500/30">
+              <Bluetooth className="mr-2 h-4 w-4" />
+              Pair New Device
+            </Button>
+          </div>
         </div>
-        <Button>
-          <Plus className="mr-2 h-4 w-4" />
-          Add Device
-        </Button>
+      </div>
+
+      {/* Quick Stats */}
+      <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+        {[
+          { icon: Watch, label: 'Devices Connected', value: connectedDevicesCount, colorClass: 'text-teal-600 dark:text-teal-400 bg-teal-100 dark:bg-teal-900/30' },
+          { icon: Heart, label: 'Heart Rate', value: '72 bpm', colorClass: 'text-red-600 dark:text-red-400 bg-red-100 dark:bg-red-900/30' },
+          { icon: Footprints, label: 'Steps Today', value: '6,542', colorClass: 'text-blue-600 dark:text-blue-400 bg-blue-100 dark:bg-blue-900/30' },
+          { icon: Moon, label: 'Sleep Score', value: '85%', colorClass: 'text-purple-600 dark:text-purple-400 bg-purple-100 dark:bg-purple-900/30' },
+        ].map((stat, idx) => (
+          <Card key={idx} className="bg-white dark:bg-slate-800/50 border-slate-200/80 dark:border-slate-700/50">
+            <CardContent className="p-4">
+              <div className="flex items-center gap-3">
+                <div className={`p-2 rounded-lg ${stat.colorClass.split(' ').slice(2).join(' ')}`}>
+                  <stat.icon className={`w-5 h-5 ${stat.colorClass.split(' ').slice(0, 2).join(' ')}`} />
+                </div>
+                <div>
+                  <p className="text-xs text-slate-500 dark:text-slate-400">{stat.label}</p>
+                  <p className="text-lg font-bold text-slate-800 dark:text-white">{stat.value}</p>
+                </div>
+              </div>
+            </CardContent>
+          </Card>
+        ))}
       </div>
 
       {/* Connected Devices */}
-      <div className="mb-8">
-        <h2 className="text-xl font-semibold mb-4">Connected Devices</h2>
-        <div className="grid md:grid-cols-2 gap-4">
-          {devices.map((device) => {
-            const Icon = getDeviceIcon(device.type);
-            return (
-              <Card key={device.id}>
-                <CardHeader>
-                  <div className="flex items-start justify-between">
-                    <div className="flex items-start gap-3">
-                      <div className="p-2 bg-blue-100 rounded-lg">
-                        <Icon className="h-6 w-6 text-blue-600" />
-                      </div>
-                      <div>
-                        <CardTitle className="text-lg">{device.name}</CardTitle>
-                        <CardDescription>
-                          {device.brand} • {device.model}
-                        </CardDescription>
-                      </div>
+      <div className="space-y-4">
+        <div className="flex items-center justify-between">
+          <h2 className="text-xl font-semibold text-slate-800 dark:text-white">Your Devices</h2>
+          <Link to="/health-risk-assessment">
+            <Button variant="outline" size="sm" className="border-teal-500/30 text-teal-600 dark:text-teal-400 hover:bg-teal-50 dark:hover:bg-teal-900/20">
+              <ShieldCheck className="mr-2 h-4 w-4" />
+              Run Health Assessment
+            </Button>
+          </Link>
+        </div>
+        <div className="grid md:grid-cols-2 lg:grid-cols-3 gap-4">
+          {devices.map((device) => (
+            <Card key={device.id} className="bg-white dark:bg-slate-800/50 border-slate-200/80 dark:border-slate-700/50 hover:border-teal-200 dark:hover:border-teal-500/50 transition-all">
+              <CardHeader className="pb-2">
+                <div className="flex items-start justify-between">
+                  <div className="flex items-start gap-3">
+                    <div className="p-2.5 bg-gradient-to-br from-teal-50 to-teal-100 dark:from-teal-900/30 dark:to-teal-800/20 rounded-xl">
+                      <span className="text-2xl">{getDeviceEmoji(device.type)}</span>
                     </div>
-                    {getStatusBadge(device.status)}
-                  </div>
-                </CardHeader>
-                <CardContent>
-                  <div className="space-y-4">
-                    {/* Battery Level */}
-                    {device.battery !== undefined && (
-                      <div>
-                        <div className="flex justify-between text-sm mb-1">
-                          <span className="text-gray-600">Battery</span>
-                          <span className="font-medium">{device.battery}%</span>
-                        </div>
-                        <div className="w-full bg-gray-200 rounded-full h-2">
-                          <div
-                            className={`h-2 rounded-full ${
-                              device.battery > 50 ? 'bg-green-500' : 
-                              device.battery > 20 ? 'bg-yellow-500' : 'bg-red-500'
-                            }`}
-                            style={{ width: `${device.battery}%` }}
-                          />
-                        </div>
-                      </div>
-                    )}
-
-                    {/* Last Sync */}
-                    {device.lastSync && (
-                      <div className="text-sm text-gray-600">
-                        Last synced: {new Date(device.lastSync).toLocaleString()}
-                      </div>
-                    )}
-
-                    {/* Data Types */}
                     <div>
-                      <p className="text-sm text-gray-600 mb-2">Data Types:</p>
-                      <div className="flex flex-wrap gap-2">
-                        {device.dataTypes.map((dataType, index) => (
-                          <Badge key={index} variant="secondary">
-                            {dataType}
-                          </Badge>
-                        ))}
-                      </div>
-                    </div>
-
-                    {/* Actions */}
-                    <div className="flex gap-2 pt-2">
-                      {device.status === 'connected' ? (
-                        <>
-                          <Button
-                            variant="outline"
-                            size="sm"
-                            onClick={() => handleSync(device.id)}
-                            disabled={device.status === 'syncing'}
-                          >
-                            <RefreshCw className={`mr-2 h-4 w-4 ${device.status === 'syncing' ? 'animate-spin' : ''}`} />
-                            Sync Now
-                          </Button>
-                          <Button
-                            variant="outline"
-                            size="sm"
-                            onClick={() => handleDisconnect(device.id)}
-                          >
-                            Disconnect
-                          </Button>
-                        </>
-                      ) : (
-                        <Button
-                          size="sm"
-                          onClick={() => handleConnect(device.id)}
-                        >
-                          <Bluetooth className="mr-2 h-4 w-4" />
-                          Connect
-                        </Button>
-                      )}
-                      <Button variant="ghost" size="sm">
-                        <Settings className="h-4 w-4" />
-                      </Button>
+                      <CardTitle className="text-base text-slate-800 dark:text-white">{device.name}</CardTitle>
+                      <CardDescription className="text-slate-500 dark:text-slate-400">
+                        {device.brand} • {device.model}
+                      </CardDescription>
                     </div>
                   </div>
-                </CardContent>
-              </Card>
-            );
-          })}
+                  {getStatusBadge(device.status)}
+                </div>
+              </CardHeader>
+              <CardContent>
+                <div className="space-y-4">
+                  {device.battery !== undefined && (
+                    <div>
+                      <div className="flex justify-between text-sm mb-1">
+                        <span className="text-slate-600 dark:text-slate-400">Battery</span>
+                        <span className="font-medium text-slate-800 dark:text-white">{device.battery}%</span>
+                      </div>
+                      <div className="w-full bg-slate-200 dark:bg-slate-700 rounded-full h-2">
+                        <div
+                          className={`h-2 rounded-full transition-all ${
+                            device.battery > 50 ? 'bg-teal-500' : 
+                            device.battery > 20 ? 'bg-yellow-500' : 'bg-red-500'
+                          }`}
+                          style={{ width: `${device.battery}%` }}
+                        />
+                      </div>
+                    </div>
+                  )}
+                  {device.lastSync && (
+                    <div className="text-sm text-slate-600 dark:text-slate-400">
+                      Last synced: {new Date(device.lastSync).toLocaleString()}
+                    </div>
+                  )}
+                  <div>
+                    <p className="text-sm text-slate-600 dark:text-slate-400 mb-2">Tracks:</p>
+                    <div className="flex flex-wrap gap-2">
+                      {device.dataTypes.map((dataType, index) => (
+                        <Badge key={index} variant="secondary" className="bg-slate-100 dark:bg-slate-700 text-slate-700 dark:text-slate-300">
+                          {dataType}
+                        </Badge>
+                      ))}
+                    </div>
+                  </div>
+                  <div className="flex gap-2 pt-2">
+                    {device.status === 'connected' ? (
+                      <>
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          onClick={() => handleSync(device.id)}
+                          disabled={device.status === 'syncing'}
+                          className="border-teal-500/30 text-teal-600 dark:text-teal-400 hover:bg-teal-50 dark:hover:bg-teal-900/20"
+                        >
+                          <RefreshCw className={`mr-2 h-4 w-4 ${device.status === 'syncing' ? 'animate-spin' : ''}`} />
+                          Sync Now
+                        </Button>
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          onClick={() => handleDisconnect(device.id)}
+                          className="text-slate-600 dark:text-slate-400"
+                        >
+                          Disconnect
+                        </Button>
+                      </>
+                    ) : (
+                      <Button
+                        size="sm"
+                        onClick={() => handleConnect(device.id)}
+                        className="bg-gradient-to-r from-teal-500 to-teal-600 hover:from-teal-600 hover:to-teal-700 text-white"
+                      >
+                        <Bluetooth className="mr-2 h-4 w-4" />
+                        Connect
+                      </Button>
+                    )}
+                    <Button variant="ghost" size="sm" className="text-slate-500">
+                      <Settings className="h-4 w-4" />
+                    </Button>
+                  </div>
+                </div>
+              </CardContent>
+            </Card>
+          ))}
         </div>
       </div>
 
-      {/* Available Devices */}
-      <div>
-        <h2 className="text-xl font-semibold mb-4">Available Device Types</h2>
-        <div className="grid md:grid-cols-3 gap-4">
-          {availableDevices.map((device, index) => {
-            const Icon = device.icon;
-            return (
-              <Card key={index} className="cursor-pointer hover:shadow-md transition-shadow">
-                <CardHeader>
-                  <div className="flex items-center gap-3">
-                    <div className="p-2 bg-gray-100 rounded-lg">
-                      <Icon className="h-6 w-6 text-gray-600" />
-                    </div>
-                    <CardTitle className="text-base capitalize">
-                      {device.type.replace('_', ' ')}
-                    </CardTitle>
+      {/* Available Device Types */}
+      <div className="space-y-4">
+        <h2 className="text-xl font-semibold text-slate-800 dark:text-white">Add New Device</h2>
+        <div className="grid md:grid-cols-2 lg:grid-cols-3 gap-4">
+          {availableDevices.map((device, index) => (
+            <Card key={index} className="bg-white dark:bg-slate-800/50 border-slate-200/80 dark:border-slate-700/50 cursor-pointer hover:border-teal-200 dark:hover:border-teal-500/50 hover:shadow-lg transition-all group">
+              <CardHeader className="pb-2">
+                <div className="flex items-center gap-3">
+                  <div className="p-3 bg-gradient-to-br from-slate-100 to-slate-50 dark:from-slate-700 dark:to-slate-800 rounded-xl group-hover:from-teal-50 group-hover:to-teal-100/50 dark:group-hover:from-teal-900/30 dark:group-hover:to-teal-800/20 transition-colors">
+                    <span className="text-3xl">{device.emoji}</span>
                   </div>
-                </CardHeader>
-                <CardContent>
-                  <p className="text-sm text-gray-600 mb-3">Supported brands:</p>
-                  <div className="space-y-1">
-                    {device.brands.map((brand, brandIndex) => (
-                      <div key={brandIndex} className="text-sm text-gray-700">
-                        • {brand}
-                      </div>
-                    ))}
-                  </div>
-                  <Button variant="outline" className="w-full mt-4" size="sm">
-                    <Plus className="mr-2 h-4 w-4" />
-                    Add Device
-                  </Button>
-                </CardContent>
-              </Card>
-            );
-          })}
+                  <CardTitle className="text-base capitalize text-slate-800 dark:text-white">
+                    {device.type.replace('_', ' ')}
+                  </CardTitle>
+                </div>
+              </CardHeader>
+              <CardContent>
+                <p className="text-sm text-slate-600 dark:text-slate-400 mb-3">Supported brands:</p>
+                <div className="flex flex-wrap gap-2 mb-4">
+                  {device.brands.map((brand, brandIndex) => (
+                    <Badge key={brandIndex} variant="outline" className="text-xs text-slate-600 dark:text-slate-400">
+                      {brand}
+                    </Badge>
+                  ))}
+                </div>
+                <Button variant="outline" className="w-full border-teal-500/30 text-teal-600 dark:text-teal-400 hover:bg-teal-50 dark:hover:bg-teal-900/20" size="sm">
+                  <Plus className="mr-2 h-4 w-4" />
+                  Add {device.type.replace('_', ' ')}
+                </Button>
+              </CardContent>
+            </Card>
+          ))}
         </div>
       </div>
 
       {/* Integration Info */}
-      <Card className="mt-8">
+      <Card className="bg-gradient-to-br from-slate-800 via-slate-900 to-slate-800 border-slate-700/50">
         <CardHeader>
-          <CardTitle>How Device Integration Works</CardTitle>
+          <CardTitle className="text-white flex items-center gap-2">
+            <Zap className="w-5 h-5 text-teal-400" />
+            How Device Integration Works
+          </CardTitle>
         </CardHeader>
         <CardContent>
-          <div className="space-y-3 text-sm text-gray-600">
-            <p>
-              <strong>Automatic Sync:</strong> Connected devices automatically sync data when in range
-            </p>
-            <p>
-              <strong>Data Privacy:</strong> All health data is encrypted and stored securely
-            </p>
-            <p>
-              <strong>Battery Monitoring:</strong> Track device battery levels to ensure continuous monitoring
-            </p>
-            <p>
-              <strong>Multiple Devices:</strong> Connect multiple devices to track different health metrics
-            </p>
+          <div className="grid md:grid-cols-2 gap-4">
+            {[
+              { title: 'Automatic Sync', desc: 'Connected devices automatically sync data when in range via Bluetooth' },
+              { title: 'Data Privacy', desc: 'All health data is encrypted and stored securely on our servers' },
+              { title: 'Health Assessment', desc: 'Synced data is used for personalized health risk assessment' },
+              { title: 'Multiple Devices', desc: 'Connect multiple devices to track different health metrics' },
+            ].map((item, idx) => (
+              <div key={idx} className="flex items-start gap-3 p-3 rounded-lg bg-slate-800/50">
+                <CheckCircle className="w-5 h-5 text-teal-400 mt-0.5 flex-shrink-0" />
+                <div>
+                  <p className="text-white font-medium text-sm">{item.title}</p>
+                  <p className="text-slate-400 text-sm">{item.desc}</p>
+                </div>
+              </div>
+            ))}
           </div>
         </CardContent>
       </Card>

@@ -1,11 +1,13 @@
 import React, { useState } from 'react';
-import { Activity, TrendingUp, TrendingDown, Users, Heart, Brain, Stethoscope, Calendar, Download, Filter } from 'lucide-react';
+import { Activity, TrendingUp, TrendingDown, Users, Heart, Brain, Stethoscope, Calendar, Download, Filter, HeartPulse } from 'lucide-react';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Progress } from '@/components/ui/progress';
 import { Badge } from '@/components/ui/badge';
 import { exportToCSV } from '@/utils/exportToExcel';
+import CorporateLayout from '@/components/corporate/CorporateLayout';
+import CorporatePageHeader from '@/components/corporate/CorporatePageHeader';
 
 interface HealthMetric {
   category: string;
@@ -192,12 +194,22 @@ const CorporateHealthAnalysis: React.FC = () => {
   };
 
   return (
-    <div className="space-y-6">
-      <div className="flex justify-between items-center">
-        <div>
-          <h1 className="text-3xl font-bold">Health Analysis Dashboard</h1>
-          <p className="text-gray-500 mt-1">Comprehensive health analytics for your workforce</p>
-        </div>
+    <CorporateLayout title="Health Analysis">
+      <div className="space-y-6">
+        <CorporatePageHeader
+          icon={HeartPulse}
+          title="Health Analysis Dashboard"
+          description="Comprehensive health analytics and insights for your workforce"
+          gradient="from-rose-500 to-rose-700"
+          showExport={true}
+          onExport={handleExport}
+          stats={[
+            { label: 'Avg Health Score', value: `${overallStats.averageHealthScore}%`, trend: 'up', trendValue: '3%' },
+            { label: 'Total Employees', value: overallStats.totalEmployees },
+            { label: 'Checkup Rate', value: `${overallStats.checkupCompletionRate}%`, trend: 'up', trendValue: '5%' },
+            { label: 'High Risk', value: overallStats.highRiskEmployees, trend: 'down', trendValue: '2' },
+          ]}
+        />
         <div className="flex gap-3">
           <Select value={timeRange} onValueChange={setTimeRange}>
             <SelectTrigger className="w-[150px]">
@@ -230,7 +242,6 @@ const CorporateHealthAnalysis: React.FC = () => {
             Export Report
           </Button>
         </div>
-      </div>
 
       {/* Overall Statistics */}
       <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-4">
@@ -439,7 +450,8 @@ const CorporateHealthAnalysis: React.FC = () => {
           </div>
         </CardContent>
       </Card>
-    </div>
+      </div>
+    </CorporateLayout>
   );
 };
 

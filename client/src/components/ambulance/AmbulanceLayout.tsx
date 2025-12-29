@@ -1,7 +1,7 @@
 import { ReactNode, useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import AmbulanceSidebar from "./AmbulanceSidebar";
-import { Bell, Search, ChevronDown, Ambulance, Sun, Moon } from "lucide-react";
+import { Bell, HeartPulse, ChevronDown, Ambulance, Sun, Moon } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import {
@@ -57,17 +57,22 @@ const AmbulanceLayout = ({ children, title, subtitle }: AmbulanceLayoutProps) =>
       {/* Main Content Area */}
       <div className="ml-64 transition-all duration-300">
         {/* Top Header */}
-        <header className="sticky top-0 z-30 h-16 bg-white border-b border-slate-200 flex items-center justify-between px-6">
-          <div className="flex items-center gap-4">
+        <header className="sticky top-0 z-30 h-16 bg-white/90 backdrop-blur border-b border-slate-200 flex items-center justify-between px-6">
+          <div className="flex items-center gap-3">
+            <div className="flex items-center gap-2 text-primary font-semibold">
+              <HeartPulse className="h-5 w-5" />
+              <span className="text-sm">Mediqzy</span>
+              <span className="text-[11px] uppercase bg-primary/10 text-primary px-2 py-0.5 rounded-full">Ambulance</span>
+            </div>
             {title && (
-              <div>
-                <h1 className="text-xl font-bold text-slate-900">{title}</h1>
-                {subtitle && <p className="text-sm text-slate-500">{subtitle}</p>}
+              <div className="pl-3 border-l border-slate-200">
+                <h1 className="text-lg font-semibold text-slate-900">{title}</h1>
+                {subtitle && <p className="text-xs text-slate-500">{subtitle}</p>}
               </div>
             )}
           </div>
 
-          <div className="flex items-center gap-4">
+          <div className="flex items-center gap-2">
             <Button variant="ghost" size="icon" onClick={toggleTheme}>
               {theme === "light" ? (
                 <Sun className="w-5 h-5 text-slate-600" />
@@ -75,26 +80,33 @@ const AmbulanceLayout = ({ children, title, subtitle }: AmbulanceLayoutProps) =>
                 <Moon className="w-5 h-5 text-slate-600" />
               )}
             </Button>
-            {/* Search */}
-            <div className="relative hidden md:block">
-              <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 text-slate-400 w-4 h-4" />
-              <Input
-                type="text"
-                placeholder="Search trips, drivers..."
-                className="w-64 pl-10 bg-slate-50 border-slate-200 focus:bg-white"
-              />
-            </div>
 
-            {/* Notifications */}
-            <Button variant="ghost" size="icon" className="relative">
-              <Bell className="w-5 h-5 text-slate-600" />
-              <span className="absolute top-1 right-1 w-2 h-2 bg-red-500 rounded-full" />
-            </Button>
-
-            {/* User Menu */}
             <DropdownMenu>
               <DropdownMenuTrigger asChild>
-                <Button variant="ghost" className="flex items-center gap-2">
+                <Button variant="ghost" size="icon" className="relative">
+                  <Bell className="w-5 h-5 text-slate-600" />
+                  <span className="absolute -top-1 -right-1 inline-flex h-4 min-w-[1rem] items-center justify-center rounded-full bg-destructive text-white text-[10px] px-1">
+                    2
+                  </span>
+                </Button>
+              </DropdownMenuTrigger>
+              <DropdownMenuContent align="end" className="w-72">
+                <DropdownMenuLabel className="text-xs text-muted-foreground">Notifications</DropdownMenuLabel>
+                <DropdownMenuSeparator />
+                <DropdownMenuItem className="flex flex-col items-start gap-0.5">
+                  <span className="text-sm font-medium">New dispatch request</span>
+                  <span className="text-xs text-muted-foreground">Just now</span>
+                </DropdownMenuItem>
+                <DropdownMenuItem className="flex flex-col items-start gap-0.5">
+                  <span className="text-sm font-medium">Driver check-in</span>
+                  <span className="text-xs text-muted-foreground">Today</span>
+                </DropdownMenuItem>
+              </DropdownMenuContent>
+            </DropdownMenu>
+
+            <DropdownMenu>
+              <DropdownMenuTrigger asChild>
+                <Button variant="ghost" className="flex items-center gap-2 border border-slate-200 rounded-full px-3 py-1.5">
                   <div className="w-8 h-8 bg-gradient-to-br from-red-500 to-orange-600 rounded-full flex items-center justify-center">
                     <Ambulance className="w-4 h-4 text-white" />
                   </div>

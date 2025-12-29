@@ -1,5 +1,7 @@
 import { useEffect, useMemo, useState } from 'react';
+import { useLocation } from 'react-router-dom';
 import AdminLayout from '@/components/layout/AdminLayout';
+import MainLayout from '@/components/layout/MainLayout';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
@@ -127,6 +129,9 @@ const generateMockHistory = (baseScore: number): RiskTrendPoint[] => {
 };
 
 const HealthRiskAssessment = () => {
+  const location = useLocation();
+  const isUserPortal = !location.pathname.startsWith('/admin');
+  const Layout = isUserPortal ? MainLayout : AdminLayout;
   const [memberId, setMemberId] = useState(mockMembers[0].id);
   const [responses, setResponses] = useState<RiskResponses>({});
   const [history, setHistory] = useState<RiskTrendPoint[]>([]);
@@ -318,12 +323,14 @@ const HealthRiskAssessment = () => {
   }, [memberId, selectedMember.lastScore]);
 
   return (
-    <AdminLayout>
-      <div className="space-y-6">
+    <Layout>
+      <div className="space-y-6 max-w-7xl mx-auto px-4 py-6">
         <div className="flex flex-col gap-2">
           <div className="flex items-center gap-3">
             <Badge className="rounded-full bg-blue-500/10 text-blue-600">Clinical AI</Badge>
-            <span className="text-sm text-muted-foreground">Admin • Health Risk Engine</span>
+            <span className="text-sm text-muted-foreground">
+              {isUserPortal ? 'Personalized Health Risk' : 'Admin • Health Risk Engine'}
+            </span>
           </div>
           <div className="flex flex-col gap-2 md:flex-row md:items-end md:justify-between">
             <div>
@@ -704,7 +711,7 @@ const HealthRiskAssessment = () => {
           </TabsContent>
         </Tabs>
       </div>
-    </AdminLayout>
+    </Layout>
   );
 };
 

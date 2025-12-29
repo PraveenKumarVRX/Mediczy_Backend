@@ -7,12 +7,21 @@ import { DataTypes } from 'sequelize';
 import { postgresSequelize as sequelize } from '../../db/postgres-sequelize.js';
 import bcrypt from 'bcrypt';
 import jwt from 'jsonwebtoken';
+import { generateUniqueId } from '../../utils/uniqueIdGenerator.js';
 
 const Doctor = sequelize.define('Doctor', {
   id: {
     type: DataTypes.INTEGER,
     primaryKey: true,
     autoIncrement: true
+  },
+  
+  // Unique alphanumeric ID (e.g., D4K7NP)
+  unique_id: {
+    type: DataTypes.STRING(6),
+    unique: true,
+    allowNull: true,
+    comment: 'Public-facing unique ID with D prefix'
   },
   
   // Multi-Tenant Fields
@@ -285,6 +294,20 @@ const Doctor = sequelize.define('Doctor', {
     comment: 'Registration certificate, degrees, etc.'
   },
   
+  // Document Templates as JSONB Array
+  documentTemplates: {
+    type: DataTypes.JSONB,
+    defaultValue: [],
+    comment: 'Array of document templates (prescriptions, referrals, certificates)'
+  },
+  
+  // Template Settings as JSONB
+  templateSettings: {
+    type: DataTypes.JSONB,
+    defaultValue: {},
+    comment: 'Template settings including logo, seal, signature, clinic info'
+  },
+  
   // Status
   status: {
     type: DataTypes.ENUM('active', 'inactive', 'suspended', 'pending'),
@@ -310,6 +333,41 @@ const Doctor = sequelize.define('Doctor', {
     type: DataTypes.JSONB,
     defaultValue: {},
     comment: 'Additional flexible metadata'
+  },
+  
+  // === SERVICE ENROLLMENT ===
+  // Second Opinion Service
+  offersSecondOpinion: {
+    type: DataTypes.BOOLEAN,
+    defaultValue: false,
+    field: 'offers_second_opinion',
+    comment: 'Doctor offers second opinion consultations'
+  },
+  secondOpinionFee: {
+    type: DataTypes.DECIMAL(10, 2),
+    allowNull: true,
+    field: 'second_opinion_fee',
+    comment: 'Fee for second opinion consultation'
+  },
+  
+  // Home Visit Service (Homecare)
+  offersHomeVisits: {
+    type: DataTypes.BOOLEAN,
+    defaultValue: false,
+    field: 'offers_home_visits',
+    comment: 'Doctor offers home visit consultations'
+  },
+  homeVisitFee: {
+    type: DataTypes.DECIMAL(10, 2),
+    allowNull: true,
+    field: 'home_visit_fee',
+    comment: 'Fee for home visit consultation'
+  },
+  homeVisitRadiusKm: {
+    type: DataTypes.INTEGER,
+    defaultValue: 10,
+    field: 'home_visit_radius_km',
+    comment: 'Maximum distance doctor will travel for home visits (in km)'
   },
   
   // Full-Text Search
@@ -385,6 +443,11 @@ const Doctor = sequelize.define('Doctor', {
   
   hooks: {
     beforeCreate: async (doctor) => {
+      // Generate unique ID if not set
+      if (!doctor.unique_id) {
+        doctor.unique_id = generateUniqueId('doctor');
+      }
+      
       if (doctor.password) {
         doctor.password = await bcrypt.hash(doctor.password, 10);
       }
@@ -403,6 +466,7 @@ Doctor.prototype.comparePassword = async function(candidatePassword) {
   return await bcrypt.compare(candidatePassword, this.password);
 };
 
+// Generate authentication token with userId (doctorId) and userType for ring-fencing
 Doctor.prototype.generateAuthToken = function() {
   if (!process.env.JWT_SECRET) {
     throw new Error('FATAL: JWT_SECRET not configured');
@@ -410,9 +474,11 @@ Doctor.prototype.generateAuthToken = function() {
   
   return jwt.sign(
     { 
-      id: this.id, 
+      id: this.id,
+      doctorId: this.id,  // Explicit doctorId for ring-fencing
       email: this.email, 
       role: 'doctor',
+      userType: 'doctor',  // userType for ring-fencing middleware
       organization_id: this.organization_id
     },
     process.env.JWT_SECRET,

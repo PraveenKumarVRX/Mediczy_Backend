@@ -49,13 +49,23 @@ router.delete('/admin/plans/:id', authUser, requireRole('admin'), [ param('id').
 
 // -------- User Endpoints --------
 router.get('/plans', async (_req,res) => {
-  const plans = await MembershipPlan.findAll({ where:{ isActive:true }, order:[['priceINR','ASC']] });
-  res.json({ plans });
+  try {
+    const plans = await MembershipPlan.findAll({ where:{ isActive:true }, order:[['price','ASC']] });
+    res.json({ plans });
+  } catch(e) {
+    console.error(e);
+    res.status(500).json({ message:'Failed to get plans', error:e.message });
+  }
 });
 
 router.get('/my/current', authUser, async (req,res) => {
-  const userPlan = await UserPlan.findOne({ where:{ userId:req.user.id, status:'active' }, order:[['createdAt','DESC']] });
-  res.json({ userPlan });
+  try {
+    const userPlan = await UserPlan.findOne({ where:{ userId:req.user.id, status:'active' }, order:[['createdAt','DESC']] });
+    res.json({ userPlan });
+  } catch(e) {
+    console.error(e);
+    res.status(500).json({ message:'Failed to get current plan', error:e.message });
+  }
 });
 
 router.post('/subscribe/:planId', authUser, [ param('planId').isInt() ], async (req,res) => {
@@ -69,20 +79,23 @@ router.post('/subscribe/:planId', authUser, [ param('planId').isInt() ], async (
     if(!plan || !plan.isActive) return res.status(404).json({ message:'Plan not available' });
 
     const startDate = new Date();
-    const endDate = new Date(startDate.getTime() + plan.durationDays*24*60*60*1000);
+    // durationMonths is in months, convert to days (approx 30 days per month)
+    const durationDays = (plan.durationMonths || 1) * 30;
+    const endDate = new Date(startDate.getTime() + durationDays*24*60*60*1000);
 
     const userPlan = await UserPlan.create({
       userId: req.user.id,
       membershipPlanId: plan.id,
       startDate: startDate.toISOString().slice(0,10),
       endDate: endDate.toISOString().slice(0,10),
-      appliedLimits: {
-        benefitLimits: plan.benefitLimits,
-        teleConsultLimits: plan.teleConsultLimits,
-        healthCheckPackage: plan.healthCheckPackage,
-        priceINR: plan.priceINR
-      },
-      usage: {}
+      paidAmount: plan.discountedPrice || plan.price,
+      metadata: {
+        planName: plan.name,
+        features: plan.features,
+        benefits: plan.benefits,
+        limitations: plan.limitations,
+        usage: {}
+      }
     });
 
     res.status(201).json({ userPlan });
@@ -94,15 +107,21 @@ router.post('/subscribe/:planId', authUser, [ param('planId').isInt() ], async (
 
 // Usage summary (remaining limits)
 router.get('/my/usage', authUser, async (req,res) => {
-  const active = await UserPlan.findOne({ where:{ userId:req.user.id, status:'active' } });
-  if(!active) return res.json({ active:null, remaining:null });
-  const limits = active.appliedLimits?.benefitLimits || {};
-  const usage = active.usage || {};
-  const remaining = Object.keys(limits).reduce((acc,key)=>{
-    acc[key] = Math.max(limits[key] - (usage[key]||0),0);
-    return acc;
-  },{});
-  res.json({ active, remaining });
+  try {
+    const active = await UserPlan.findOne({ where:{ userId:req.user.id, status:'active' } });
+    if(!active) return res.json({ active:null, remaining:null });
+    const meta = active.metadata || {};
+    const limits = meta.appliedLimits?.benefitLimits || {};
+    const usage = meta.usage || {};
+    const remaining = Object.keys(limits).reduce((acc,key)=>{
+      acc[key] = Math.max(limits[key] - (usage[key]||0),0);
+      return acc;
+    },{});
+    res.json({ active, remaining });
+  } catch(e) {
+    console.error(e);
+    res.status(500).json({ message:'Failed to get usage', error:e.message });
+  }
 });
 
 // -------- Usage Increment Endpoints --------
@@ -116,9 +135,10 @@ router.post('/usage/teleconsult', authUser, [
     const active = await UserPlan.findOne({ where: { userId: req.user.id, status: 'active' } });
     if (!active) { return res.status(400).json({ message: 'No active plan' }); }
 
-    const applied = active.appliedLimits || {};
+    const meta = active.metadata || {};
+    const applied = meta.appliedLimits || {};
     const teleLimits = applied.teleConsultLimits || {};
-    const usage = active.usage || {};
+    const usage = meta.usage || {};
     usage.teleConsult = usage.teleConsult || {};
 
     // Determine allowed for this specialty
@@ -136,8 +156,9 @@ router.post('/usage/teleconsult', authUser, [
       usage.teleConsult[specialty] = specUsed + Number(count);
     }
 
-    await active.update({ usage });
-    return res.json({ success: true, usage: active.usage });
+    meta.usage = usage;
+    await active.update({ metadata: meta });
+    return res.json({ success: true, usage: meta.usage });
   } catch (e) {
     console.error(e);
     return res.status(500).json({ message: 'Failed to increment teleconsult usage', error: e.message });
@@ -154,10 +175,11 @@ router.post('/usage/benefit', authUser, [
     const active = await UserPlan.findOne({ where: { userId: req.user.id, status: 'active' } });
     if (!active) { return res.status(400).json({ message: 'No active plan' }); }
 
-    const usage = active.usage || {};
+    const meta = active.metadata || {};
+    const usage = meta.usage || {};
     usage.benefitINR = usage.benefitINR || { pharmacyINR: 0, homeCareINR: 0, ambulanceINR: 0 };
 
-    const limits = (active.appliedLimits?.benefitLimits) || {};
+    const limits = (meta.appliedLimits?.benefitLimits) || {};
     const map = {
       pharmacyINR: Number(limits.pharmacyLimitINR || 0),
       homeCareINR: Number(limits.homeCareLimitINR || 0),
@@ -169,8 +191,9 @@ router.post('/usage/benefit', authUser, [
     if (current + Number(amount) > allowed) { return res.status(400).json({ message: 'Benefit limit exceeded' }); }
 
     usage.benefitINR[type] = current + Number(amount);
-    await active.update({ usage });
-    return res.json({ success: true, usage: active.usage });
+    meta.usage = usage;
+    await active.update({ metadata: meta });
+    return res.json({ success: true, usage: meta.usage });
   } catch (e) {
     console.error(e);
     return res.status(500).json({ message: 'Failed to increment benefit usage', error: e.message });

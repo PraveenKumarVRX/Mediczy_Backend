@@ -9,6 +9,7 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from ".
 import { Badge } from "../../components/ui/badge";
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "../../components/ui/dropdown-menu";
 import { useToast } from '../../hooks/use-toast';
+import api from '../../utils/api';
 import AdminLayout from '../../components/layout/AdminLayout';
 import { 
   Plus, Search, Eye, Edit, Trash2, MoreVertical, Truck, Plane, Phone, Mail,
@@ -135,6 +136,8 @@ const MedivacManagement = () => {
   const [currentPage, setCurrentPage] = useState(1);
   const itemsPerPage = 10;
   const [newMedivac, setNewMedivac] = useState<MedivacFormState>(createEmptyMedivac());
+  const [activeTab, setActiveTab] = useState<'list' | 'add'>('list');
+  const [editingId, setEditingId] = useState<string | null>(null);
 
   const filteredMedivacs = useMemo(() => {
     return medivacs.filter(medivac => {
@@ -163,9 +166,19 @@ const MedivacManagement = () => {
     return <Badge variant={variants[status] || "default"}>{status}</Badge>;
   };
 
-  const resetMedivacForm = () => setNewMedivac(createEmptyMedivac());
+  const resetMedivacForm = () => {
+    setNewMedivac(createEmptyMedivac());
+    setEditingId(null);
+  };
 
-  const handleAddMedivac = () => {
+  const upsertMedivac = (provider: MedivacProvider) => {
+    setMedivacs(prev => {
+      const exists = prev.some(m => m.id === provider.id);
+      return exists ? prev.map(m => (m.id === provider.id ? provider : m)) : [provider, ...prev];
+    });
+  };
+
+  const handleAddMedivac = async () => {
     if (!newMedivac.providerName.trim() || !newMedivac.phoneNumber.trim()) {
       toast({
         title: "Missing details",
@@ -176,7 +189,7 @@ const MedivacManagement = () => {
     }
 
     const provider: MedivacProvider = {
-      id: `MED${Date.now()}`,
+      id: editingId || `MED${Date.now()}`,
       providerName: newMedivac.providerName.trim(),
       registrationNumber: newMedivac.registrationNumber.trim() || `MEDV-${new Date().getFullYear()}`,
       email: newMedivac.email.trim(),
@@ -198,13 +211,62 @@ const MedivacManagement = () => {
       rating: 4.5,
     };
 
-    setMedivacs(prev => [provider, ...prev]);
-    toast({
-      title: "Provider added",
-      description: `${provider.providerName} has been added to the directory.`
-    });
+    const token = localStorage.getItem('adminToken');
+    const headers = token ? { Authorization: `Bearer ${token}` } : undefined;
+
+    try {
+      if (editingId) {
+        await api.put(`/admin/medivac/providers/${editingId}`, provider, { headers });
+        toast({ title: 'Provider updated', description: `${provider.providerName} updated successfully.` });
+      } else {
+        await api.post('/admin/medivac/providers', provider, { headers });
+        toast({ title: 'Provider added', description: `${provider.providerName} has been added to the directory.` });
+      }
+    } catch (err) {
+      console.warn('Medivac provider API fallback, using local state', err);
+      toast({ title: 'Offline mode', description: 'Saved locally because the API was unavailable.' });
+    }
+
+    upsertMedivac(provider);
     resetMedivacForm();
     setStatusFilter('all');
+    setActiveTab('list');
+  };
+
+  const handleEditMedivac = (medivac: MedivacProvider) => {
+    setEditingId(medivac.id);
+    setNewMedivac({
+      providerName: medivac.providerName,
+      registrationNumber: medivac.registrationNumber,
+      email: medivac.email,
+      phoneNumber: medivac.phoneNumber,
+      contactPerson: medivac.contactPerson,
+      city: medivac.city,
+      state: medivac.state,
+      vehicleTypes: medivac.vehicleTypes.join(', '),
+      aircraftCount: medivac.aircraftCount.toString(),
+      groundVehicleCount: medivac.groundVehicleCount.toString(),
+      coverageArea: medivac.coverageArea,
+      responseTime: medivac.responseTime,
+      status: medivac.status,
+    });
+    setActiveTab('add');
+  };
+
+  const handleDeleteMedivac = async (medivac: MedivacProvider) => {
+    if (!confirm(`Delete ${medivac.providerName}?`)) return;
+    const token = localStorage.getItem('adminToken');
+    const headers = token ? { Authorization: `Bearer ${token}` } : undefined;
+
+    try {
+      await api.delete(`/admin/medivac/providers/${medivac.id}`, { headers });
+      toast({ title: 'Provider deleted', description: `${medivac.providerName} removed.` });
+    } catch (err) {
+      console.warn('Medivac delete fallback', err);
+      toast({ title: 'Offline delete', description: 'Removed locally; API delete failed.' });
+    }
+
+    setMedivacs(prev => prev.filter(m => m.id !== medivac.id));
   };
 
   return (
@@ -258,7 +320,7 @@ const MedivacManagement = () => {
           </Card>
         </div>
 
-        <Tabs defaultValue="list" className="space-y-4">
+        <Tabs value={activeTab} onValueChange={v => setActiveTab(v as typeof activeTab)} className="space-y-4">
           <TabsList>
             <TabsTrigger value="list">Medivac Providers</TabsTrigger>
             <TabsTrigger value="add">Add New Provider</TabsTrigger>
@@ -365,11 +427,11 @@ const MedivacManagement = () => {
                                 <Eye className="mr-2 h-4 w-4" />
                                 View Details
                               </DropdownMenuItem>
-                              <DropdownMenuItem>
+                              <DropdownMenuItem onClick={() => handleEditMedivac(medivac)}>
                                 <Edit className="mr-2 h-4 w-4" />
                                 Edit
                               </DropdownMenuItem>
-                              <DropdownMenuItem className="text-red-600">
+                              <DropdownMenuItem className="text-red-600" onClick={() => handleDeleteMedivac(medivac)}>
                                 <Trash2 className="mr-2 h-4 w-4" />
                                 Delete
                               </DropdownMenuItem>

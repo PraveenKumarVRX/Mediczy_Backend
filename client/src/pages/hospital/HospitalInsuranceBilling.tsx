@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useMemo } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
@@ -22,6 +22,7 @@ import {
   Mail, IndianRupee, TrendingUp, TrendingDown, PieChart,
   BarChart3, Filter, MoreVertical, Copy, ExternalLink
 } from 'lucide-react';
+import { useToast } from '@/hooks/use-toast';
 
 // Types
 interface InsuranceClaim {
@@ -98,6 +99,7 @@ interface InsuranceStats {
 
 const HospitalInsuranceBilling = () => {
   const navigate = useNavigate();
+  const { toast } = useToast();
   const [loading, setLoading] = useState(true);
   const [activeTab, setActiveTab] = useState('claims');
   const [searchQuery, setSearchQuery] = useState('');
@@ -106,18 +108,26 @@ const HospitalInsuranceBilling = () => {
   const [showNewClaimDialog, setShowNewClaimDialog] = useState(false);
   const [showPreAuthDialog, setShowPreAuthDialog] = useState(false);
   const [selectedClaim, setSelectedClaim] = useState<InsuranceClaim | null>(null);
-
-  useEffect(() => {
-    const token = localStorage.getItem('hospitalToken');
-    if (!token) {
-      navigate('/hospital/login');
-      return;
-    }
-    setLoading(false);
-  }, [navigate]);
-
-  // Sample data
-  const claims: InsuranceClaim[] = [
+  const [editingClaim, setEditingClaim] = useState<InsuranceClaim | null>(null);
+  const [claimForm, setClaimForm] = useState<{ status: InsuranceClaim['status']; approvedAmount?: number; remarks?: string }>({
+    status: 'Under Review',
+    approvedAmount: undefined,
+    remarks: ''
+  });
+  const [selectedPreAuth, setSelectedPreAuth] = useState<PreAuthorization | null>(null);
+  const [showCodeDialog, setShowCodeDialog] = useState(false);
+  const [editingCodeId, setEditingCodeId] = useState<string | null>(null);
+  const [codeForm, setCodeForm] = useState<BillingCode>({
+    id: '',
+    code: '',
+    type: 'ICD-10',
+    description: '',
+    category: 'Consultation',
+    baseRate: 0,
+    insuranceRate: undefined,
+    isActive: true,
+  });
+  const initialClaims: InsuranceClaim[] = [
     {
       id: 'CLM001',
       claimNumber: 'MED-2024-001234',
@@ -251,6 +261,17 @@ const HospitalInsuranceBilling = () => {
       ]
     },
   ];
+  const [claims, setClaims] = useState<InsuranceClaim[]>(initialClaims);
+
+  useEffect(() => {
+    const token = localStorage.getItem('hospitalToken');
+    if (!token) {
+      navigate('/hospital/login');
+      return;
+    }
+    setLoading(false);
+  }, [navigate]);
+
 
   const preAuthorizations: PreAuthorization[] = [
     { id: 'PA001', preAuthNumber: 'PA-2024-5001', patientName: 'Vijay Sharma', insurerName: 'Star Health', procedureName: 'Angioplasty', estimatedCost: 250000, approvedAmount: 240000, validFrom: '2024-12-05', validTo: '2024-12-15', status: 'Approved', requestDate: '2024-12-03', responseDate: '2024-12-04' },
@@ -266,18 +287,158 @@ const HospitalInsuranceBilling = () => {
     { id: 'BC005', code: 'ROOM-PRIV', type: 'Custom', description: 'Private Room Per Day', category: 'Room Charges', baseRate: 5000, insuranceRate: 4500, isActive: true },
   ];
 
+  const escapeCsvCell = (value: unknown) => {
+    if (value === null || value === undefined) return '';
+    const str = String(value);
+    if (/[",\n\r]/.test(str)) {
+      return `"${str.replace(/"/g, '""')}"`;
+    }
+    return str;
+  };
+
+  const downloadCsv = (filename: string, headers: string[], rows: string[][]) => {
+    const csv = [headers.map(escapeCsvCell).join(','), ...rows.map((r) => r.map(escapeCsvCell).join(','))].join('\n');
+    const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = filename;
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+    URL.revokeObjectURL(url);
+  };
+
+  const exportClaims = () => {
+    downloadCsv(
+      'claims.csv',
+      ['Claim #', 'Patient', 'UHID', 'Insurer', 'Type', 'Status', 'Estimated', 'Approved'],
+      claims.map(c => [
+        c.claimNumber,
+        c.patientName,
+        c.uhid,
+        c.insurerName,
+        c.claimType,
+        c.status,
+        c.estimatedAmount,
+        c.approvedAmount || ''
+      ])
+    );
+    toast({ title: 'Export started', description: 'Claims CSV downloaded.' });
+  };
+
+  const handlePrintClaim = (claim: InsuranceClaim) => {
+    const win = window.open('', '_blank');
+    if (!win) {
+      toast({ title: 'Popup blocked', description: 'Allow popups to print claim.', variant: 'destructive' });
+      return;
+    }
+    win.document.write(`
+      <html><head><title>Claim ${claim.claimNumber}</title></head>
+      <body style="font-family:Arial;padding:16px">
+        <h2>Claim ${claim.claimNumber}</h2>
+        <p><strong>Patient:</strong> ${claim.patientName} (${claim.uhid})</p>
+        <p><strong>Insurer:</strong> ${claim.insurerName}</p>
+        <p><strong>Type:</strong> ${claim.claimType}</p>
+        <p><strong>Status:</strong> ${claim.status}</p>
+        <p><strong>Amount:</strong> ₹${claim.estimatedAmount.toLocaleString()}</p>
+        ${claim.approvedAmount ? `<p><strong>Approved:</strong> ₹${claim.approvedAmount.toLocaleString()}</p>` : ''}
+      </body></html>
+    `);
+    win.document.close();
+    win.print();
+    win.close();
+  };
+
+  const handleDownloadDoc = (doc: string, claim?: InsuranceClaim) => {
+    const blob = new Blob([`Document: ${doc}\nClaim: ${claim?.claimNumber || ''}`], { type: 'text/plain' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `${doc.replace(/\\s+/g, '_') || 'document'}.txt`;
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+    URL.revokeObjectURL(url);
+    toast({ title: 'Download started', description: `${doc} is downloading.` });
+  };
+
+  const openEditClaim = (claim: InsuranceClaim) => {
+    setEditingClaim(claim);
+    setClaimForm({
+      status: claim.status,
+      approvedAmount: claim.approvedAmount ?? claim.estimatedAmount,
+      remarks: claim.remarks || '',
+    });
+  };
+
+  const handleSaveClaim = () => {
+    if (!editingClaim) return;
+    const today = new Date().toISOString().split('T')[0];
+    setClaims(prev => prev.map(c => c.id === editingClaim.id ? {
+      ...c,
+      status: claimForm.status,
+      approvedAmount: claimForm.approvedAmount,
+      remarks: claimForm.remarks,
+      updatedAt: today,
+      timeline: [
+        ...c.timeline,
+        {
+          date: today,
+          status: claimForm.status,
+          remarks: claimForm.remarks || 'Status updated',
+          updatedBy: 'Hospital Admin',
+        }
+      ]
+    } : c));
+    toast({ title: 'Claim updated', description: `${editingClaim.claimNumber} updated with new status.` });
+    setEditingClaim(null);
+  };
+
+  const handleOpenPreAuth = (pa: PreAuthorization) => setSelectedPreAuth(pa);
+  const handleFollowUp = (pa: PreAuthorization) => {
+    toast({ title: 'Follow-up created', description: `Reminder set for ${pa.preAuthNumber}` });
+  };
+
+  const handleSaveCode = () => {
+    if (!codeForm.code || !codeForm.description) {
+      toast({ title: 'Missing fields', description: 'Code and description are required.', variant: 'destructive' });
+      return;
+    }
+    if (editingCodeId) {
+      const updated = billingCodes.map(c => c.id === editingCodeId ? { ...codeForm, id: editingCodeId } : c);
+      billingCodes.splice(0, billingCodes.length, ...updated);
+      toast({ title: 'Code updated', description: `${codeForm.code} saved.` });
+    } else {
+      const newCode: BillingCode = { ...codeForm, id: `CODE-${Date.now()}` };
+      billingCodes.unshift(newCode);
+      toast({ title: 'Code added', description: `${newCode.code} created.` });
+    }
+    setShowCodeDialog(false);
+    setEditingCodeId(null);
+    setCodeForm({ id: '', code: '', type: 'ICD-10', description: '', category: 'Consultation', baseRate: 0, insuranceRate: undefined, isActive: true });
+  };
+
   const insurers = ['Star Health Insurance', 'HDFC Ergo', 'ICICI Lombard', 'Max Bupa', 'Bajaj Allianz', 'New India Assurance'];
 
-  const stats: InsuranceStats = {
-    totalClaims: claims.length,
-    pendingClaims: claims.filter(c => ['Submitted', 'Pre-Auth Pending', 'Under Review', 'Query Raised'].includes(c.status)).length,
-    approvedClaims: claims.filter(c => ['Approved', 'Partially Approved', 'Settled'].includes(c.status)).length,
-    rejectedClaims: claims.filter(c => ['Rejected', 'Pre-Auth Rejected'].includes(c.status)).length,
-    totalClaimValue: claims.reduce((sum, c) => sum + c.estimatedAmount, 0),
-    totalSettled: claims.reduce((sum, c) => sum + (c.settledAmount || 0), 0),
-    avgProcessingDays: 5.2,
-    approvalRate: 78.5,
-  };
+  const stats: InsuranceStats = useMemo(() => {
+    const pending = claims.filter(c => ['Submitted', 'Pre-Auth Pending', 'Under Review', 'Query Raised'].includes(c.status)).length;
+    const approved = claims.filter(c => ['Approved', 'Partially Approved', 'Settled'].includes(c.status)).length;
+    const rejected = claims.filter(c => ['Rejected', 'Pre-Auth Rejected'].includes(c.status)).length;
+    const totalValue = claims.reduce((sum, c) => sum + c.estimatedAmount, 0);
+    const totalSettled = claims.reduce((sum, c) => sum + (c.settledAmount || 0), 0);
+    const approvalRate = claims.length ? Math.round((approved / claims.length) * 1000) / 10 : 0;
+    return {
+      totalClaims: claims.length,
+      pendingClaims: pending,
+      approvedClaims: approved,
+      rejectedClaims: rejected,
+      totalClaimValue: totalValue,
+      totalSettled,
+      avgProcessingDays: claims.length ? 5.2 : 0,
+      approvalRate,
+    };
+  }, [claims]);
 
   const getStatusColor = (status: string) => {
     switch (status) {
@@ -352,7 +513,7 @@ const HospitalInsuranceBilling = () => {
                   {claims.filter(c => c.status === 'Query Raised').length}
                 </span>
               </Button>
-              <Button variant="outline" size="icon">
+              <Button variant="outline" size="icon" onClick={exportClaims}>
                 <RefreshCw className="h-5 w-5" />
               </Button>
             </div>
@@ -479,7 +640,7 @@ const HospitalInsuranceBilling = () => {
             <div className="flex items-center justify-between">
               <h2 className="text-xl font-bold">Insurance Claims</h2>
               <div className="flex gap-2">
-                <Button variant="outline" className="gap-2">
+                <Button variant="outline" className="gap-2" onClick={exportClaims}>
                   <Download className="h-4 w-4" /> Export
                 </Button>
                 <Dialog open={showNewClaimDialog} onOpenChange={setShowNewClaimDialog}>
@@ -647,10 +808,10 @@ const HospitalInsuranceBilling = () => {
                             <Button variant="ghost" size="icon" onClick={() => setSelectedClaim(claim)}>
                               <Eye className="h-4 w-4" />
                             </Button>
-                            <Button variant="ghost" size="icon">
+                            <Button variant="ghost" size="icon" onClick={() => openEditClaim(claim)}>
                               <Edit className="h-4 w-4" />
                             </Button>
-                            <Button variant="ghost" size="icon">
+                            <Button variant="ghost" size="icon" onClick={() => handlePrintClaim(claim)}>
                               <Printer className="h-4 w-4" />
                             </Button>
                           </div>
@@ -734,7 +895,7 @@ const HospitalInsuranceBilling = () => {
                           {selectedClaim.documents.map((doc, idx) => (
                             <div key={idx} className="flex items-center justify-between p-2 border rounded">
                               <span className="text-sm">{doc}</span>
-                              <Button variant="ghost" size="sm">
+                              <Button variant="ghost" size="sm" onClick={() => handleDownloadDoc(doc, selectedClaim)}>
                                 <Download className="h-4 w-4" />
                               </Button>
                             </div>
@@ -765,9 +926,56 @@ const HospitalInsuranceBilling = () => {
                     {selectedClaim.status === 'Query Raised' && (
                       <Button className="bg-orange-600 hover:bg-orange-700">Respond to Query</Button>
                     )}
-                    <Button variant="outline" className="gap-2">
+                    <Button variant="outline" className="gap-2" onClick={() => handlePrintClaim(selectedClaim)}>
                       <Printer className="h-4 w-4" /> Print
                     </Button>
+                  </DialogFooter>
+                </DialogContent>
+              </Dialog>
+            )}
+
+            {editingClaim && (
+              <Dialog open={!!editingClaim} onOpenChange={(open) => { if (!open) setEditingClaim(null); }}>
+                <DialogContent className="max-w-lg">
+                  <DialogHeader>
+                    <DialogTitle>Edit Claim - {editingClaim.claimNumber}</DialogTitle>
+                    <DialogDescription>Update status, approved amount, or remarks.</DialogDescription>
+                  </DialogHeader>
+                  <div className="space-y-4 py-2">
+                    <div className="space-y-2">
+                      <Label>Status</Label>
+                      <Select value={claimForm.status} onValueChange={(v) => setClaimForm(prev => ({ ...prev, status: v as InsuranceClaim['status'] }))}>
+                        <SelectTrigger>
+                          <SelectValue />
+                        </SelectTrigger>
+                        <SelectContent>
+                          {['Draft', 'Submitted', 'Pre-Auth Pending', 'Pre-Auth Approved', 'Pre-Auth Rejected', 'Under Review', 'Query Raised', 'Approved', 'Partially Approved', 'Rejected', 'Settled', 'Closed'].map(status => (
+                            <SelectItem key={status} value={status}>{status}</SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
+                    </div>
+                    <div className="space-y-2">
+                      <Label>Approved Amount</Label>
+                      <Input
+                        type="number"
+                        value={claimForm.approvedAmount ?? ''}
+                        onChange={(e) => setClaimForm(prev => ({ ...prev, approvedAmount: e.target.value === '' ? undefined : Number(e.target.value) }))}
+                        placeholder="₹"
+                      />
+                    </div>
+                    <div className="space-y-2">
+                      <Label>Remarks</Label>
+                      <Textarea
+                        value={claimForm.remarks ?? ''}
+                        onChange={(e) => setClaimForm(prev => ({ ...prev, remarks: e.target.value }))}
+                        placeholder="Notes for insurer or internal team"
+                      />
+                    </div>
+                  </div>
+                  <DialogFooter>
+                    <Button variant="outline" onClick={() => setEditingClaim(null)}>Cancel</Button>
+                    <Button onClick={handleSaveClaim}>Save Changes</Button>
                   </DialogFooter>
                 </DialogContent>
               </Dialog>
@@ -859,22 +1067,46 @@ const HospitalInsuranceBilling = () => {
                       {pa.validTo && <p className="text-green-600">Valid until: {pa.validTo}</p>}
                     </div>
                     <div className="flex gap-2">
-                      <Button variant="outline" className="flex-1">View</Button>
+                      <Button variant="outline" className="flex-1" onClick={() => handleOpenPreAuth(pa)}>View</Button>
                       {pa.status === 'Pending' && (
-                        <Button variant="outline" className="flex-1">Follow Up</Button>
+                        <Button variant="outline" className="flex-1" onClick={() => handleFollowUp(pa)}>Follow Up</Button>
                       )}
                     </div>
                   </CardContent>
                 </Card>
               ))}
             </div>
+
+            {selectedPreAuth && (
+              <Dialog open={!!selectedPreAuth} onOpenChange={() => setSelectedPreAuth(null)}>
+                <DialogContent className="max-w-xl">
+                  <DialogHeader>
+                    <DialogTitle>Pre-Auth {selectedPreAuth.preAuthNumber}</DialogTitle>
+                    <DialogDescription>{selectedPreAuth.patientName} • {selectedPreAuth.insurerName}</DialogDescription>
+                  </DialogHeader>
+                  <div className="space-y-2 text-sm">
+                    <p><strong>Procedure:</strong> {selectedPreAuth.procedureName}</p>
+                    <p><strong>Estimate:</strong> ₹{selectedPreAuth.estimatedCost.toLocaleString()}</p>
+                    {selectedPreAuth.approvedAmount && <p><strong>Approved:</strong> ₹{selectedPreAuth.approvedAmount.toLocaleString()}</p>}
+                    <p><strong>Status:</strong> {selectedPreAuth.status}</p>
+                    <p><strong>Request Date:</strong> {selectedPreAuth.requestDate}</p>
+                    {selectedPreAuth.responseDate && <p><strong>Response:</strong> {selectedPreAuth.responseDate}</p>}
+                    {selectedPreAuth.validTo && <p><strong>Valid To:</strong> {selectedPreAuth.validTo}</p>}
+                  </div>
+                  <DialogFooter>
+                    <Button variant="outline" onClick={() => setSelectedPreAuth(null)}>Close</Button>
+                    <Button onClick={() => { handleFollowUp(selectedPreAuth); setSelectedPreAuth(null); }}>Follow Up</Button>
+                  </DialogFooter>
+                </DialogContent>
+              </Dialog>
+            )}
           </TabsContent>
 
           {/* Billing Codes Tab */}
           <TabsContent value="codes" className="space-y-6">
             <div className="flex items-center justify-between">
               <h2 className="text-xl font-bold">Billing Codes (ICD-10, CPT, HCPCS)</h2>
-              <Button className="gap-2 bg-gradient-to-r from-green-600 to-emerald-600">
+              <Button className="gap-2 bg-gradient-to-r from-green-600 to-emerald-600" onClick={() => { setEditingCodeId(null); setCodeForm({ id: '', code: '', type: 'ICD-10', description: '', category: 'Consultation', baseRate: 0, insuranceRate: undefined, isActive: true }); setShowCodeDialog(true); }}>
                 <Plus className="h-4 w-4" /> Add Code
               </Button>
             </div>
@@ -912,10 +1144,10 @@ const HospitalInsuranceBilling = () => {
                         </TableCell>
                         <TableCell className="text-right">
                           <div className="flex justify-end gap-2">
-                            <Button variant="ghost" size="icon">
+                            <Button variant="ghost" size="icon" onClick={() => { setEditingCodeId(code.id); setCodeForm({ ...code }); setShowCodeDialog(true); }}>
                               <Edit className="h-4 w-4" />
                             </Button>
-                            <Button variant="ghost" size="icon">
+                            <Button variant="ghost" size="icon" onClick={() => { setEditingCodeId(null); setCodeForm({ ...code, id: '', code: `${code.code}-COPY` }); setShowCodeDialog(true); }}>
                               <Copy className="h-4 w-4" />
                             </Button>
                           </div>
@@ -926,13 +1158,64 @@ const HospitalInsuranceBilling = () => {
                 </Table>
               </CardContent>
             </Card>
+
+            <Dialog open={showCodeDialog} onOpenChange={setShowCodeDialog}>
+              <DialogContent>
+                <DialogHeader>
+                  <DialogTitle>{editingCodeId ? 'Edit Code' : 'Add Code'}</DialogTitle>
+                  <DialogDescription>ICD/CPT/Custom billing codes</DialogDescription>
+                </DialogHeader>
+                <div className="grid grid-cols-2 gap-3 py-3">
+                  <div className="space-y-1">
+                    <Label>Code</Label>
+                    <Input value={codeForm.code} onChange={(e) => setCodeForm(prev => ({ ...prev, code: e.target.value }))} />
+                  </div>
+                  <div className="space-y-1">
+                    <Label>Type</Label>
+                    <Select value={codeForm.type} onValueChange={(v) => setCodeForm(prev => ({ ...prev, type: v as BillingCode['type'] }))}>
+                      <SelectTrigger><SelectValue /></SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="ICD-10">ICD-10</SelectItem>
+                        <SelectItem value="CPT">CPT</SelectItem>
+                        <SelectItem value="HCPCS">HCPCS</SelectItem>
+                        <SelectItem value="Custom">Custom</SelectItem>
+                      </SelectContent>
+                    </Select>
+                  </div>
+                  <div className="space-y-1 col-span-2">
+                    <Label>Description</Label>
+                    <Input value={codeForm.description} onChange={(e) => setCodeForm(prev => ({ ...prev, description: e.target.value }))} />
+                  </div>
+                  <div className="space-y-1">
+                    <Label>Category</Label>
+                    <Input value={codeForm.category} onChange={(e) => setCodeForm(prev => ({ ...prev, category: e.target.value }))} />
+                  </div>
+                  <div className="space-y-1">
+                    <Label>Base Rate</Label>
+                    <Input type="number" value={codeForm.baseRate} onChange={(e) => setCodeForm(prev => ({ ...prev, baseRate: Number(e.target.value) }))} />
+                  </div>
+                  <div className="space-y-1">
+                    <Label>Insurance Rate</Label>
+                    <Input type="number" value={codeForm.insuranceRate ?? ''} onChange={(e) => setCodeForm(prev => ({ ...prev, insuranceRate: e.target.value ? Number(e.target.value) : undefined }))} />
+                  </div>
+                  <div className="col-span-2 flex items-center gap-2">
+                    <Checkbox checked={codeForm.isActive} onCheckedChange={(v) => setCodeForm(prev => ({ ...prev, isActive: !!v }))} />
+                    <span className="text-sm">Active</span>
+                  </div>
+                </div>
+                <DialogFooter>
+                  <Button variant="outline" onClick={() => setShowCodeDialog(false)}>Cancel</Button>
+                  <Button onClick={handleSaveCode}>{editingCodeId ? 'Save Changes' : 'Add Code'}</Button>
+                </DialogFooter>
+              </DialogContent>
+            </Dialog>
           </TabsContent>
 
           {/* Reports Tab */}
           <TabsContent value="reports" className="space-y-6">
             <div className="flex items-center justify-between">
               <h2 className="text-xl font-bold">Insurance Reports & Analytics</h2>
-              <Button variant="outline" className="gap-2">
+              <Button variant="outline" className="gap-2" onClick={exportClaims}>
                 <Download className="h-4 w-4" /> Export Report
               </Button>
             </div>

@@ -4,7 +4,7 @@ import { authUser, requireRole } from '../middleware/auth.middleware.js';
 import bcrypt from 'bcrypt';
 import userModel, { generateAuthTokenForUser } from '../models/user.model.intelligent.js';
 import { Corporate } from '../models/crm.model.intelligent.js';
-import { Corporate as InsuranceCorporate } from '../models/insurance-company.model.intelligent.js';
+import { Corporate as InsuranceCorporate, InsuranceCompany } from '../models/insurance-company.model.intelligent.js';
 import Nurse from '../models/nurse.model.intelligent.js';
 import Assistant from '../models/assistant.model.intelligent.js';
 import { Op } from 'sequelize';
@@ -18,6 +18,9 @@ import {
   getDashboardStats,
   listUsers,
   listDoctors,
+  getDoctorCities,
+  getDoctorStates,
+  getDoctorSpecialties,
   listLabs,
   listPharmacies,
   listCorporates,
@@ -288,9 +291,9 @@ router.get('/health-risk/members/:memberId', authUser, requireRole('admin'), get
 router.post('/health-risk/members/:memberId/assessments', authUser, requireRole('admin'), createHealthRiskAssessment);
 router.post('/health-risk/inference', authUser, requireRole('admin'), runHealthRiskInference);
 
-router.get('/doctors', authUser, requireRole('admin'), (req, res, next) => {
-  return res.json({ success: true, data: demoDoctors, total: demoDoctors.length });
-});
+// Note: /doctors routes are handled by adminDoctorsRouter mounted at /api/admin/doctors in app.js
+// This includes GET /doctors, /doctors/filters/*, POST /doctors/:id/create-login, PATCH /doctors/:id/status
+
 router.get('/labs', authUser, requireRole('admin'), listLabs);
 router.get('/pharmacies', authUser, requireRole('admin'), listPharmacies);
 router.get('/corporates', authUser, requireRole('admin'), (req, res) => {
@@ -1019,10 +1022,11 @@ router.post('/team', authUser, requireRole('admin'), async (req, res) => {
       lastName: userData.lastName,
       email: userData.email,
       password: userData.password || 'TempPassword123!', // Will be hashed by model
-      phone: userData.phoneNumber || '',
+      phoneNumber: userData.phoneNumber || '',
       role: 'team',
+      membershipType: 'team',
       metadata: JSON.stringify(teamMetadata),
-      isActive: userData.isActive !== undefined ? userData.isActive : true
+      status: userData.isActive === false ? 'inactive' : 'active'
     });
 
     return res.status(201).json({
@@ -1037,7 +1041,8 @@ router.post('/team', authUser, requireRole('admin'), async (req, res) => {
         department: newUser.department,
         designation: newUser.designation,
         role: newUser.role,
-        phoneNumber: newUser.phone,
+        membershipType: newUser.membershipType,
+        phoneNumber: newUser.phoneNumber,
         isActive: newUser.isActive,
         canLogin: newUser.canLogin,
         joiningDate: newUser.joiningDate,
@@ -1094,10 +1099,11 @@ router.post('/team/bulk', authUser, requireRole('admin'), async (req, res) => {
           lastName: userData.lastName,
           email: userData.email,
           password: userData.password || 'TempPassword123!',
-          phone: userData.phoneNumber || '',
+          phoneNumber: userData.phoneNumber || '',
           role: 'team',
+          membershipType: 'team',
           metadata: JSON.stringify(teamMetadata),
-          isActive: userData.isActive !== undefined ? userData.isActive : true
+          status: userData.isActive === false ? 'inactive' : 'active'
         });
 
         created.push(newUser.id);
@@ -1160,10 +1166,11 @@ router.put('/team/:id', authUser, requireRole('admin'), async (req, res) => {
       firstName: userData.firstName || teamUser.firstName,
       lastName: userData.lastName || teamUser.lastName,
       email: userData.email || teamUser.email,
-      phone: userData.phoneNumber || teamUser.phone,
-      role: userData.role || teamUser.role,
+      phoneNumber: userData.phoneNumber || teamUser.phoneNumber,
+      role: userData.role || teamUser.role || 'team',
+      membershipType: 'team',
       metadata: JSON.stringify(updatedMetadata),
-      isActive: userData.isActive !== undefined ? userData.isActive : teamUser.isActive
+      status: userData.isActive === false ? 'inactive' : 'active'
     };
 
     // Only update password if provided
@@ -1782,6 +1789,108 @@ router.get('/membership/inactive-users', authUser, requireRole('admin'), async (
     return res.status(500).json({
       success: false,
       message: 'Failed to fetch inactive users',
+      error: error.message
+    });
+  }
+});
+
+// --------------------------------------------------------------------------
+// Insurance companies / Insurers (Admin managed)
+// --------------------------------------------------------------------------
+
+router.get('/insurers', authUser, requireRole('admin'), async (req, res) => {
+  try {
+    const limit = Math.min(parseInt(req.query.limit, 10) || 50, 200);
+    const insurers = await InsuranceCompany.findAll({
+      order: [['createdAt', 'DESC']],
+      limit
+    });
+
+    return res.json({ success: true, insurers });
+  } catch (error) {
+    console.error('Failed to fetch insurers:', error);
+    return res.status(500).json({
+      success: false,
+      message: 'Failed to load insurers',
+      error: error.message
+    });
+  }
+});
+
+router.post('/insurers', authUser, requireRole('admin'), async (req, res) => {
+  try {
+    const payload = req.body?.insurer || req.body || {};
+    const {
+      insurerName,
+      registrationNumber,
+      email,
+      phoneNumber,
+      contactPerson,
+      city,
+      state,
+      insuranceTypes = [],
+      claimSettlementRatio,
+      networkHospitals,
+      status = 'Active',
+      joinedDate,
+      website,
+      companyCode
+    } = payload;
+
+    if (!insurerName || !email) {
+      return res.status(400).json({
+        success: false,
+        message: 'Insurer name and email are required'
+      });
+    }
+
+    // Prevent duplicates
+    const existing = await InsuranceCompany.findOne({
+      where: { email: email.toLowerCase() }
+    });
+    if (existing) {
+      return res.status(409).json({
+        success: false,
+        message: 'An insurer with this email already exists'
+      });
+    }
+
+    const normalizedPolicies = Array.isArray(insuranceTypes)
+      ? insuranceTypes.map((t) => String(t).toLowerCase().replace(/\s+/g, '_')).filter(Boolean)
+      : String(insuranceTypes || '')
+          .split(',')
+          .map((t) => t.trim().toLowerCase().replace(/\s+/g, '_'))
+          .filter(Boolean);
+
+    const passwordToUse = payload.password || 'Insurer123';
+
+    const insurer = await InsuranceCompany.create({
+      companyName: insurerName,
+      companyCode: companyCode || registrationNumber || insurerName?.slice(0, 12)?.toUpperCase(),
+      email: email.toLowerCase(),
+      password: passwordToUse,
+      phone: phoneNumber,
+      website: website || '',
+      address: { city: city || '', state: state || '' },
+      irdaiRegistrationNumber: registrationNumber,
+      contactPerson: { name: contactPerson || '', phone: phoneNumber || '', city: city || '', state: state || '' },
+      supportedPolicyTypes: normalizedPolicies.length ? normalizedPolicies : undefined,
+      networkHospitals: typeof networkHospitals === 'number' ? { count: networkHospitals } : networkHospitals || [],
+      isActive: status !== 'Inactive',
+      isVerified: status === 'Active',
+      description: payload.description || '',
+      metadata: {
+        claimSettlementRatio: claimSettlementRatio || null,
+        joinedDate: joinedDate || null
+      }
+    });
+
+    return res.status(201).json({ success: true, insurer });
+  } catch (error) {
+    console.error('Failed to create insurer:', error);
+    return res.status(500).json({
+      success: false,
+      message: 'Failed to create insurer',
       error: error.message
     });
   }

@@ -9,6 +9,7 @@ import { Textarea } from '@/components/ui/textarea';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { useToast } from '@/hooks/use-toast';
 import { ticketService } from '@/services/ticketService';
+import CorporateLayout from '@/components/corporate/CorporateLayout';
 
 const CorporateSupport: React.FC = () => {
   const { toast } = useToast();
@@ -67,7 +68,8 @@ const CorporateSupport: React.FC = () => {
   };
 
   return (
-    <div className="space-y-6">
+    <CorporateLayout title="Support">
+      <div className="space-y-6">
       <div className="flex items-center gap-3">
         <HelpCircle className="h-8 w-8 text-blue-600" />
         <div>
@@ -201,7 +203,8 @@ const CorporateSupport: React.FC = () => {
           </div>
         </CardContent>
       </Card>
-    </div>
+      </div>
+    </CorporateLayout>
   );
 };
 

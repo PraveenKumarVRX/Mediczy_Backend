@@ -14,45 +14,54 @@ const router = express.Router();
  */
 
 // Configure Google Strategy for Doctors
-const googleDoctorStrategy = new GoogleStrategy(
-  {
-    clientID: process.env.GOOGLE_CLIENT_ID || '',
-    clientSecret: process.env.GOOGLE_CLIENT_SECRET || '',
-    callbackURL: process.env.GOOGLE_DOCTOR_CALLBACK_URL || 'https://mediqzy.com/api/auth/doctor/google/callback',
-    scope: ['profile', 'email']
-  },
-  async (accessToken, refreshToken, profile, done) => {
-    try {
-      console.log('🔵 Doctor Google OAuth callback received:', profile.id);
-      const doctor = await findOrCreateDoctor(profile, 'google');
-      return done(null, { doctor, accessToken, refreshToken });
-    } catch (error) {
-      console.error('Doctor Google OAuth error:', error);
-      return done(error, null);
+if (process.env.GOOGLE_CLIENT_ID && process.env.GOOGLE_CLIENT_SECRET) {
+  const googleDoctorStrategy = new GoogleStrategy(
+    {
+      clientID: process.env.GOOGLE_CLIENT_ID,
+      clientSecret: process.env.GOOGLE_CLIENT_SECRET,
+      callbackURL: process.env.GOOGLE_DOCTOR_CALLBACK_URL || 'https://mediqzy.com/api/auth/doctor/google/callback',
+      scope: ['profile', 'email']
+    },
+    async (accessToken, refreshToken, profile, done) => {
+      try {
+        console.log('🔵 Doctor Google OAuth callback received:', profile.id);
+        const doctor = await findOrCreateDoctor(profile, 'google');
+        return done(null, { doctor, accessToken, refreshToken });
+      } catch (error) {
+        console.error('Doctor Google OAuth error:', error);
+        return done(error, null);
+      }
     }
-  }
-);
+  );
+} else {
+  console.warn('⚠️  Google OAuth not configured for doctors - skipping Google strategy');
+}
 
 // Configure Facebook Strategy for Doctors
-const facebookDoctorStrategy = new FacebookStrategy(
-  {
-    clientID: process.env.FACEBOOK_APP_ID || '',
-    clientSecret: process.env.FACEBOOK_APP_SECRET || '',
-    callbackURL: process.env.FACEBOOK_DOCTOR_CALLBACK_URL || 'https://mediqzy.com/api/auth/doctor/facebook/callback',
-    profileFields: ['id', 'emails', 'name', 'picture.type(large)'],
-    scope: ['email', 'public_profile']
-  },
-  async (accessToken, refreshToken, profile, done) => {
-    try {
-      console.log('🔵 Doctor Facebook OAuth callback received:', profile.id);
-      const doctor = await findOrCreateDoctor(profile, 'facebook');
-      return done(null, { doctor, accessToken, refreshToken });
-    } catch (error) {
-      console.error('Doctor Facebook OAuth error:', error);
-      return done(error, null);
+if (process.env.FACEBOOK_APP_ID && process.env.FACEBOOK_APP_SECRET) {
+  const facebookDoctorStrategy = new FacebookStrategy(
+    {
+      clientID: process.env.FACEBOOK_APP_ID,
+      clientSecret: process.env.FACEBOOK_APP_SECRET,
+      callbackURL: process.env.FACEBOOK_DOCTOR_CALLBACK_URL || 'https://mediqzy.com/api/auth/doctor/facebook/callback',
+      profileFields: ['id', 'emails', 'name', 'picture.type(large)'],
+      scope: ['email', 'public_profile']
+    },
+    async (accessToken, refreshToken, profile, done) => {
+      try {
+        console.log('🔵 Doctor Facebook OAuth callback received:', profile.id);
+        const doctor = await findOrCreateDoctor(profile, 'facebook');
+        return done(null, { doctor, accessToken, refreshToken });
+      } catch (error) {
+        console.error('Doctor Facebook OAuth error:', error);
+        return done(error, null);
+      }
     }
-  }
-);
+  );
+  passport.use('facebook-doctor', facebookDoctorStrategy);
+} else {
+  console.warn('⚠️  Facebook OAuth not configured for doctors - skipping Facebook strategy');
+}
 
 /**
  * Find or create doctor from OAuth profile
@@ -176,10 +185,6 @@ function handleOAuthSuccess(req, res, doctorData, provider) {
     res.redirect(errorUrl);
   }
 }
-
-// Register strategies with unique names
-passport.use('google-doctor', googleDoctorStrategy);
-passport.use('facebook-doctor', facebookDoctorStrategy);
 
 // ==================== GOOGLE OAUTH2 FOR DOCTORS ====================
 

@@ -66,13 +66,13 @@ router.post('/login', [
   try {
     const { email, password } = req.body;
 
-    // DEV-ONLY: Test/Demo assistant credentials (disabled in production)
-    if (process.env.NODE_ENV !== 'production') {
+    // DEV/DEMO: Allow known test assistants to log in even if DB is empty
+    if (process.env.NODE_ENV !== 'production' || process.env.ALLOW_ASSISTANT_DEMO === 'true') {
       const testAssistants = {
         'assistant@mediczy.com': {
           id: 'asst_001',
           email: 'assistant@mediczy.com',
-          password: 'AssistantPass123',
+          password: 'Assistant123',
           firstName: 'Emily',
           lastName: 'Davis',
           roleTitle: 'Medical Secretary',
@@ -108,18 +108,19 @@ router.post('/login', [
       };
 
     // Check test credentials first
-    const testAssistant = testAssistants[email];
-    if (testAssistant && testAssistant.password === password) {
-      const token = jwt.sign(
-        {
-          id: testAssistant.id,
-          email: testAssistant.email,
-          role: 'assistant',
-          linkedDoctorIds: testAssistant.linkedDoctorIds,
-          primaryDoctorId: testAssistant.primaryDoctorId,
-          linkedFacilityId: testAssistant.linkedFacilityId,
-          linkedFacilityType: testAssistant.linkedFacilityType,
-          linkedFacilityName: testAssistant.linkedFacilityName,
+      const testAssistant = testAssistants[email];
+      if (testAssistant && testAssistant.password === password) {
+        const token = jwt.sign(
+          {
+            id: testAssistant.id,
+            email: testAssistant.email,
+            role: 'assistant',
+            userType: 'assistant',
+            linkedDoctorIds: testAssistant.linkedDoctorIds,
+            primaryDoctorId: testAssistant.primaryDoctorId,
+            linkedFacilityId: testAssistant.linkedFacilityId,
+            linkedFacilityType: testAssistant.linkedFacilityType,
+            linkedFacilityName: testAssistant.linkedFacilityName,
           canAccessDoctorCalendar: testAssistant.canAccessDoctorCalendar,
           canManagePatients: testAssistant.canManagePatients
         },

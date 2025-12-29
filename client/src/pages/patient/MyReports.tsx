@@ -1,10 +1,11 @@
 import { useState } from 'react';
-import { FileText, Download, Eye, Upload, Search, Calendar, Filter } from 'lucide-react';
+import { FileText, Download, Eye, Upload, Search, Calendar, Filter, FileStack } from 'lucide-react';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Badge } from '@/components/ui/badge';
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, DialogTrigger } from '@/components/ui/dialog';
+import MainLayout from '@/components/layout/MainLayout';
 
 interface Report {
   id: string;
@@ -104,21 +105,27 @@ const MyReports = () => {
   };
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-purple-50 via-white to-pink-50 p-6">
-      <div className="max-w-7xl mx-auto">
+      <div className="max-w-7xl mx-auto space-y-6 animate-in fade-in duration-500 px-4 md:px-6 py-6">
         {/* Header */}
-        <div className="mb-6">
-          <div className="flex items-center justify-between">
+        <div className="relative overflow-hidden rounded-2xl bg-gradient-to-r from-slate-800 via-slate-900 to-slate-800 p-6 md:p-8 text-white shadow-2xl">
+          <div className="absolute inset-0 bg-[url('data:image/svg+xml;base64,PHN2ZyB3aWR0aD0iNjAiIGhlaWdodD0iNjAiIHZpZXdCb3g9IjAgMCA2MCA2MCIgeG1sbnM9Imh0dHA6Ly93d3cudzMub3JnLzIwMDAvc3ZnIj48ZyBmaWxsPSJub25lIiBmaWxsLXJ1bGU9ImV2ZW5vZGQiPjxwYXRoIGQ9Ik0zNiAxOGMzLjMxNCAwIDYgMi42ODYgNiA2cy0yLjY4NiA2LTYgNi02LTIuNjg2LTYtNiAyLjY4Ni02IDYtNiIgc3Ryb2tlPSJyZ2JhKDI1NSwyNTUsMjU1LDAuMSkiLz48L2c+PC9zdmc+')] opacity-30" />
+          <div className="absolute top-0 right-0 w-64 h-64 bg-gradient-to-br from-teal-500/20 to-transparent rounded-full blur-3xl" />
+          <div className="relative flex flex-col md:flex-row md:items-center md:justify-between gap-4">
             <div>
-              <div className="flex items-center gap-3 mb-2">
-                <FileText className="h-8 w-8 text-purple-600" />
-                <h1 className="text-3xl font-bold text-gray-900">My Reports</h1>
+              <div className="flex items-center gap-3 mb-3">
+                <div className="p-2.5 rounded-xl bg-gradient-to-br from-teal-500 to-teal-600 shadow-lg shadow-teal-500/30">
+                  <FileStack className="w-6 h-6" />
+                </div>
+                <Badge className="bg-white/10 text-white/90 border-white/20 font-medium">
+                  Medical Records
+                </Badge>
               </div>
-              <p className="text-gray-600">Access all your medical reports and documents</p>
+              <h1 className="text-2xl md:text-3xl font-bold mb-2">My Reports</h1>
+              <p className="text-slate-300 text-sm md:text-base">Access all your medical reports and documents</p>
             </div>
             <Dialog>
               <DialogTrigger asChild>
-                <Button className="bg-purple-600 hover:bg-purple-700">
+                <Button className="bg-gradient-to-r from-teal-500 to-teal-600 hover:from-teal-600 hover:to-teal-700 text-white shadow-lg shadow-teal-500/30">
                   <Upload className="h-4 w-4 mr-2" />
                   Upload Report
                 </Button>
@@ -137,7 +144,7 @@ const MyReports = () => {
                   </div>
                   <div>
                     <label className="block text-sm font-medium mb-2">Report Type</label>
-                    <select className="w-full border rounded-md p-2">
+                    <select className="w-full border border-slate-200 dark:border-slate-600 rounded-md p-2 bg-white dark:bg-slate-700">
                       <option value="lab">Lab Report</option>
                       <option value="prescription">Prescription</option>
                       <option value="imaging">Imaging/Scan</option>
@@ -149,7 +156,7 @@ const MyReports = () => {
                     <label className="block text-sm font-medium mb-2">File</label>
                     <Input type="file" accept=".pdf,.jpg,.jpeg,.png" />
                   </div>
-                  <Button className="w-full bg-purple-600 hover:bg-purple-700">
+                  <Button className="w-full bg-gradient-to-r from-teal-500 to-teal-600 hover:from-teal-600 hover:to-teal-700">
                     Upload Report
                   </Button>
                 </div>
@@ -288,17 +295,18 @@ const MyReports = () => {
         </div>
 
         {filteredReports.length === 0 && (
-          <Card>
+          <Card className="bg-white dark:bg-slate-800/50 border-slate-200/80 dark:border-slate-700/50">
             <CardContent className="py-12">
-              <div className="text-center text-gray-500">
-                <FileText className="h-12 w-12 mx-auto mb-4 opacity-20" />
-                <p>No reports found</p>
+              <div className="text-center">
+                <div className="w-16 h-16 mx-auto mb-4 rounded-2xl bg-slate-100 dark:bg-slate-700/50 flex items-center justify-center">
+                  <FileText className="h-8 w-8 text-slate-400" />
+                </div>
+                <p className="text-slate-500 dark:text-slate-400">No reports found</p>
               </div>
             </CardContent>
           </Card>
         )}
       </div>
-    </div>
   );
 };
 

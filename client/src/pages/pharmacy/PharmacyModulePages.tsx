@@ -21,6 +21,28 @@ import {
   ShoppingCart, Truck, AlertTriangle, DollarSign, Phone, Mail
 } from "lucide-react";
 
+const escapeCsvCell = (value: unknown) => {
+  if (value === null || value === undefined) return '';
+  const str = String(value);
+  if (/[",\n\r]/.test(str)) {
+    return `"${str.replace(/"/g, '""')}"`;
+  }
+  return str;
+};
+
+const downloadCsv = (filename: string, headers: string[], rows: string[][]) => {
+  const csv = [headers.map(escapeCsvCell).join(','), ...rows.map((r) => r.map(escapeCsvCell).join(','))].join('\n');
+  const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = filename;
+  document.body.appendChild(a);
+  a.click();
+  a.remove();
+  URL.revokeObjectURL(url);
+};
+
 interface StatCardProps {
   title: string;
   value: string;
@@ -722,6 +744,7 @@ export const PharmacyInventoryPage = () => {
 export const PharmacyStockAlertsPage = () => {
   const { toast } = useToast();
   const [showCreateOrder, setShowCreateOrder] = useState(false);
+  const [orderForm, setOrderForm] = useState({ medicine: '', qty: '', supplier: '' });
 
   const alerts = [
     { medicine: "Amoxicillin 250mg", currentStock: 75, minStock: 100, supplier: "MedCorp Ltd", priority: "High" },
@@ -826,6 +849,37 @@ export const PharmacyStockAlertsPage = () => {
             </Table>
           </CardContent>
         </Card>
+
+        <Dialog open={showCreateOrder} onOpenChange={setShowCreateOrder}>
+          <DialogContent>
+            <DialogHeader>
+              <DialogTitle>Create Purchase Order</DialogTitle>
+              <DialogDescription>Replenish low-stock medicine</DialogDescription>
+            </DialogHeader>
+            <div className="space-y-3 py-2">
+              <div className="space-y-1">
+                <Label>Medicine</Label>
+                <Input value={orderForm.medicine} onChange={(e) => setOrderForm(prev => ({ ...prev, medicine: e.target.value }))} placeholder="Amoxicillin 250mg" />
+              </div>
+              <div className="space-y-1">
+                <Label>Quantity</Label>
+                <Input type="number" value={orderForm.qty} onChange={(e) => setOrderForm(prev => ({ ...prev, qty: e.target.value }))} />
+              </div>
+              <div className="space-y-1">
+                <Label>Supplier</Label>
+                <Input value={orderForm.supplier} onChange={(e) => setOrderForm(prev => ({ ...prev, supplier: e.target.value }))} placeholder="MedCorp Ltd" />
+              </div>
+            </div>
+            <DialogFooter>
+              <Button variant="outline" onClick={() => setShowCreateOrder(false)}>Cancel</Button>
+              <Button onClick={() => {
+                toast({ title: 'Order created', description: `${orderForm.qty || '0'} units of ${orderForm.medicine || 'item'} with ${orderForm.supplier || 'supplier'}` });
+                setShowCreateOrder(false);
+                setOrderForm({ medicine: '', qty: '', supplier: '' });
+              }}>Create</Button>
+            </DialogFooter>
+          </DialogContent>
+        </Dialog>
       </div>
     </PharmacyLayout>
   );
@@ -834,6 +888,8 @@ export const PharmacyStockAlertsPage = () => {
 // Pharmacy Batches Page
 export const PharmacyBatchesPage = () => {
   const { toast } = useToast();
+  const [showAddBatch, setShowAddBatch] = useState(false);
+  const [batchForm, setBatchForm] = useState({ medicine: '', qty: '', expiry: '' });
   const batches = [
     { batchId: "BAT001", medicine: "Paracetamol 500mg", quantity: 1000, expiry: "2026-06-15", supplier: "MedCorp Ltd", status: "Active" },
     { batchId: "BAT002", medicine: "Amoxicillin 250mg", quantity: 500, expiry: "2026-03-20", supplier: "PharmaPlus", status: "Active" },
@@ -848,7 +904,7 @@ export const PharmacyBatchesPage = () => {
             <h1 className="text-2xl font-bold text-slate-900">Batch Management</h1>
             <p className="text-muted-foreground">Track medicine batches and expiry dates</p>
           </div>
-          <Button onClick={() => toast({ title: "Add Batch", description: "Opening batch form..." })}>
+          <Button onClick={() => setShowAddBatch(true)}>
             <Plus className="w-4 h-4 mr-2" />
             Add Batch
           </Button>
@@ -962,6 +1018,8 @@ export const PharmacyBatchesPage = () => {
 // Pharmacy Purchase Orders Page
 export const PharmacyPurchaseOrdersPage = () => {
   const { toast } = useToast();
+  const [showNewOrder, setShowNewOrder] = useState(false);
+  const [poForm, setPoForm] = useState({ supplier: '', items: '', total: '' });
   const orders = [
     { id: "PO001", supplier: "MedCorp Ltd", items: 25, total: "₹45,000", status: "Delivered", date: "2025-12-08" },
     { id: "PO002", supplier: "PharmaPlus", items: 18, total: "₹32,500", status: "In Transit", date: "2025-12-09" },
@@ -976,7 +1034,7 @@ export const PharmacyPurchaseOrdersPage = () => {
             <h1 className="text-2xl font-bold text-slate-900">Purchase Orders</h1>
             <p className="text-muted-foreground">Manage supplier orders and procurement</p>
           </div>
-          <Button onClick={() => toast({ title: "New Order", description: "Creating new purchase order..." })}>
+          <Button onClick={() => setShowNewOrder(true)}>
             <Plus className="w-4 h-4 mr-2" />
             New Order
           </Button>
@@ -1082,6 +1140,37 @@ export const PharmacyPurchaseOrdersPage = () => {
             </Table>
           </CardContent>
         </Card>
+
+        <Dialog open={showNewOrder} onOpenChange={setShowNewOrder}>
+          <DialogContent>
+            <DialogHeader>
+              <DialogTitle>New Purchase Order</DialogTitle>
+              <DialogDescription>Create a supplier order</DialogDescription>
+            </DialogHeader>
+            <div className="space-y-3 py-2">
+              <div className="space-y-1">
+                <Label>Supplier</Label>
+                <Input value={poForm.supplier} onChange={(e) => setPoForm(prev => ({ ...prev, supplier: e.target.value }))} />
+              </div>
+              <div className="space-y-1">
+                <Label>Items Count</Label>
+                <Input type="number" value={poForm.items} onChange={(e) => setPoForm(prev => ({ ...prev, items: e.target.value }))} />
+              </div>
+              <div className="space-y-1">
+                <Label>Total Amount (₹)</Label>
+                <Input type="number" value={poForm.total} onChange={(e) => setPoForm(prev => ({ ...prev, total: e.target.value }))} />
+              </div>
+            </div>
+            <DialogFooter>
+              <Button variant="outline" onClick={() => setShowNewOrder(false)}>Cancel</Button>
+              <Button onClick={() => {
+                toast({ title: 'PO created', description: `${poForm.items || 0} items with ${poForm.supplier || 'supplier'} (₹${poForm.total || 0})` });
+                setShowNewOrder(false);
+                setPoForm({ supplier: '', items: '', total: '' });
+              }}>Create</Button>
+            </DialogFooter>
+          </DialogContent>
+        </Dialog>
       </div>
     </PharmacyLayout>
   );
@@ -1090,6 +1179,8 @@ export const PharmacyPurchaseOrdersPage = () => {
 // Pharmacy Customers Page
 export const PharmacyCustomersPage = () => {
   const { toast } = useToast();
+  const [showAddCustomer, setShowAddCustomer] = useState(false);
+  const [customerForm, setCustomerForm] = useState({ name: '', phone: '' });
   const customers = [
     { id: "C001", name: "John Doe", phone: "+91 9876543210", prescriptions: 12, lastVisit: "2025-12-09", status: "Active" },
     { id: "C002", name: "Jane Smith", phone: "+91 9876543211", prescriptions: 8, lastVisit: "2025-12-08", status: "Active" },
@@ -1104,7 +1195,7 @@ export const PharmacyCustomersPage = () => {
             <h1 className="text-2xl font-bold text-slate-900">Customer Management</h1>
             <p className="text-muted-foreground">Manage customer profiles and prescription history</p>
           </div>
-          <Button onClick={() => toast({ title: "Add Customer", description: "Opening new customer form..." })}>
+          <Button onClick={() => setShowAddCustomer(true)}>
             <Plus className="w-4 h-4 mr-2" />
             Add Customer
           </Button>
@@ -1198,6 +1289,33 @@ export const PharmacyCustomersPage = () => {
             </Table>
           </CardContent>
         </Card>
+
+        <Dialog open={showAddCustomer} onOpenChange={setShowAddCustomer}>
+          <DialogContent>
+            <DialogHeader>
+              <DialogTitle>Add Customer</DialogTitle>
+              <DialogDescription>Create a customer profile</DialogDescription>
+            </DialogHeader>
+            <div className="space-y-3 py-2">
+              <div className="space-y-1">
+                <Label>Name</Label>
+                <Input value={customerForm.name} onChange={(e) => setCustomerForm(prev => ({ ...prev, name: e.target.value }))} />
+              </div>
+              <div className="space-y-1">
+                <Label>Phone</Label>
+                <Input value={customerForm.phone} onChange={(e) => setCustomerForm(prev => ({ ...prev, phone: e.target.value }))} />
+              </div>
+            </div>
+            <DialogFooter>
+              <Button variant="outline" onClick={() => setShowAddCustomer(false)}>Cancel</Button>
+              <Button onClick={() => {
+                toast({ title: 'Customer added', description: `${customerForm.name || 'Customer'} saved.` });
+                setShowAddCustomer(false);
+                setCustomerForm({ name: '', phone: '' });
+              }}>Save</Button>
+            </DialogFooter>
+          </DialogContent>
+        </Dialog>
       </div>
     </PharmacyLayout>
   );
@@ -1206,6 +1324,10 @@ export const PharmacyCustomersPage = () => {
 // Pharmacy Reports Page
 export const PharmacyReportsPage = () => {
   const { toast } = useToast();
+  const exportReport = () => {
+    downloadCsv('pharmacy-report.csv', ['Type', 'Value'], [['Sales', '12450'], ['Customers', '1247']]);
+    toast({ title: 'Export started', description: 'Report CSV downloaded.' });
+  };
   return (
     <PharmacyLayout>
       <div className="space-y-6">
@@ -1214,7 +1336,7 @@ export const PharmacyReportsPage = () => {
             <h1 className="text-2xl font-bold text-slate-900">Reports & Analytics</h1>
             <p className="text-muted-foreground">Generate reports and analyze pharmacy performance</p>
           </div>
-          <Button onClick={() => toast({ title: "Export Report", description: "Generating report for export..." })}>
+          <Button onClick={exportReport}>
             <Download className="w-4 h-4 mr-2" />
             Export Report
           </Button>
@@ -1286,7 +1408,7 @@ export const PharmacyReportsPage = () => {
               </div>
             </div>
             <div className="mt-4">
-              <Button>Generate Report</Button>
+              <Button onClick={exportReport}>Generate Report</Button>
             </div>
           </CardContent>
         </Card>
@@ -1298,6 +1420,8 @@ export const PharmacyReportsPage = () => {
 // Pharmacy Invoices Page
 export const PharmacyInvoicesPage = () => {
   const { toast } = useToast();
+  const [showInvoiceDialog, setShowInvoiceDialog] = useState(false);
+  const [invoiceForm, setInvoiceForm] = useState({ customer: '', amount: '', payment: 'Cash' });
   const invoices = [
     { id: "INV001", customer: "John Doe", amount: "₹450", date: "2025-12-10", status: "Paid", payment: "Cash" },
     { id: "INV002", customer: "Jane Smith", amount: "₹280", date: "2025-12-09", status: "Paid", payment: "Card" },
@@ -1312,7 +1436,7 @@ export const PharmacyInvoicesPage = () => {
             <h1 className="text-2xl font-bold text-slate-900">Invoices</h1>
             <p className="text-muted-foreground">Manage billing and payment records</p>
           </div>
-          <Button>
+          <Button onClick={() => setShowInvoiceDialog(true)}>
             <Plus className="w-4 h-4 mr-2" />
             Create Invoice
           </Button>
@@ -1407,6 +1531,9 @@ export const PharmacyInvoicesPage = () => {
                         <Button size="sm" variant="outline" onClick={() => toast({ title: "Download", description: `Downloading invoice ${invoice.id}` })}>
                           <Download className="w-4 h-4" />
                         </Button>
+                        <Button size="sm" variant="outline" onClick={() => { setInvoiceForm({ customer: invoice.customer, amount: invoice.amount.replace(/[^0-9.]/g, ''), payment: invoice.payment }); setShowInvoiceDialog(true); }}>
+                          <Edit className="w-4 h-4" />
+                        </Button>
                       </div>
                     </TableCell>
                   </TableRow>
@@ -1415,6 +1542,44 @@ export const PharmacyInvoicesPage = () => {
             </Table>
           </CardContent>
         </Card>
+
+        <Dialog open={showInvoiceDialog} onOpenChange={setShowInvoiceDialog}>
+          <DialogContent>
+            <DialogHeader>
+              <DialogTitle>Create Invoice</DialogTitle>
+              <DialogDescription>Generate a bill for the customer</DialogDescription>
+            </DialogHeader>
+            <div className="space-y-3 py-2">
+              <div className="space-y-1">
+                <Label>Customer</Label>
+                <Input value={invoiceForm.customer} onChange={(e) => setInvoiceForm(prev => ({ ...prev, customer: e.target.value }))} />
+              </div>
+              <div className="space-y-1">
+                <Label>Amount (₹)</Label>
+                <Input type="number" value={invoiceForm.amount} onChange={(e) => setInvoiceForm(prev => ({ ...prev, amount: e.target.value }))} />
+              </div>
+              <div className="space-y-1">
+                <Label>Payment Method</Label>
+                <Select value={invoiceForm.payment} onValueChange={(v) => setInvoiceForm(prev => ({ ...prev, payment: v }))}>
+                  <SelectTrigger><SelectValue /></SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="Cash">Cash</SelectItem>
+                    <SelectItem value="Card">Card</SelectItem>
+                    <SelectItem value="UPI">UPI</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+            </div>
+            <DialogFooter>
+              <Button variant="outline" onClick={() => setShowInvoiceDialog(false)}>Cancel</Button>
+              <Button onClick={() => {
+                toast({ title: 'Invoice saved', description: `${invoiceForm.customer || 'Customer'} • ₹${invoiceForm.amount || 0} via ${invoiceForm.payment}` });
+                setShowInvoiceDialog(false);
+                setInvoiceForm({ customer: '', amount: '', payment: 'Cash' });
+              }}>Save</Button>
+            </DialogFooter>
+          </DialogContent>
+        </Dialog>
       </div>
     </PharmacyLayout>
   );
@@ -1554,6 +1719,11 @@ export const PharmacyExpiryPage = () => {
 
 // Pharmacy Analytics Page
 export const PharmacyAnalyticsPage = () => {
+  const { toast } = useToast();
+  const exportAnalytics = () => {
+    downloadCsv('pharmacy-analytics.csv', ['Metric', 'Value'], [['Revenue', '245000'], ['Orders', '1234']]);
+    toast({ title: 'Export started', description: 'Analytics CSV downloaded.' });
+  };
   return (
     <PharmacyLayout>
       <div className="space-y-6">
@@ -1574,7 +1744,7 @@ export const PharmacyAnalyticsPage = () => {
                 <SelectItem value="1y">1 Year</SelectItem>
               </SelectContent>
             </Select>
-            <Button variant="outline">
+            <Button variant="outline" onClick={exportAnalytics}>
               <Download className="w-4 h-4 mr-2" />
               Export
             </Button>
@@ -1659,6 +1829,37 @@ export const PharmacyAnalyticsPage = () => {
             </CardContent>
           </Card>
         </div>
+
+        <Dialog open={showAddBatch} onOpenChange={setShowAddBatch}>
+          <DialogContent>
+            <DialogHeader>
+              <DialogTitle>Add Batch</DialogTitle>
+              <DialogDescription>Capture batch details for inventory</DialogDescription>
+            </DialogHeader>
+            <div className="space-y-3 py-2">
+              <div className="space-y-1">
+                <Label>Medicine</Label>
+                <Input value={batchForm.medicine} onChange={(e) => setBatchForm(prev => ({ ...prev, medicine: e.target.value }))} />
+              </div>
+              <div className="space-y-1">
+                <Label>Quantity</Label>
+                <Input type="number" value={batchForm.qty} onChange={(e) => setBatchForm(prev => ({ ...prev, qty: e.target.value }))} />
+              </div>
+              <div className="space-y-1">
+                <Label>Expiry</Label>
+                <Input type="date" value={batchForm.expiry} onChange={(e) => setBatchForm(prev => ({ ...prev, expiry: e.target.value }))} />
+              </div>
+            </div>
+            <DialogFooter>
+              <Button variant="outline" onClick={() => setShowAddBatch(false)}>Cancel</Button>
+              <Button onClick={() => {
+                toast({ title: 'Batch added', description: `${batchForm.medicine || 'Batch'} saved (${batchForm.qty || 0} units, exp ${batchForm.expiry || '-'})` });
+                setShowAddBatch(false);
+                setBatchForm({ medicine: '', qty: '', expiry: '' });
+              }}>Save</Button>
+            </DialogFooter>
+          </DialogContent>
+        </Dialog>
       </div>
     </PharmacyLayout>
   );

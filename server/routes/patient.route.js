@@ -1,11 +1,14 @@
 import express from 'express';
 import { body, validationResult } from 'express-validator';
 import userModel from '../models/user.model.intelligent.js';
+import Appointment from '../models/appointment.model.intelligent.js';
+import Doctor from '../models/doctor.model.intelligent.js';
 import bcrypt from 'bcryptjs';
 import { authUser } from '../middleware/auth.middleware.js';
 import { authTeam } from '../middleware/team.middleware.js';
 import { authNurse } from '../routes/nurse.route.js';
 import { authAssistant } from '../routes/assistant.route.js';
+import { Op, Sequelize } from 'sequelize';
 
 const router = express.Router();
 
@@ -95,7 +98,9 @@ router.post(
       // Hash password
       const hashedPassword = await bcrypt.hash(password, 10);
 
-      // Create patient
+      // Create patient - Default primary doctor is CMO Dr. Nandita Agarwal (ID: 5)
+      const DEFAULT_PRIMARY_DOCTOR_ID = 5; // CMO Dr. Nandita Agarwal
+      
       const patient = await userModel.create({
         email,
         password: hashedPassword,
@@ -112,7 +117,8 @@ router.post(
         role: 'patient',
         isActive: true,
         registeredBy: req.user.id,
-        registeredByRole: 'admin'
+        registeredByRole: 'admin',
+        primaryDoctorId: DEFAULT_PRIMARY_DOCTOR_ID
       });
 
       res.status(201).json({
@@ -189,7 +195,17 @@ router.post(
       // Hash password
       const hashedPassword = await bcrypt.hash(password, 10);
 
-      // Create patient
+      // Get doctor's ID to set as primary doctor (Family Doctor concept)
+      // When a doctor registers a patient, that doctor becomes the primary doctor
+      let primaryDoctorId = req.user.id;
+      
+      // If req.user.id is the user account ID (not doctor ID), find the doctor record
+      const doctorRecord = await Doctor.findOne({ where: { userId: req.user.id } });
+      if (doctorRecord) {
+        primaryDoctorId = doctorRecord.id;
+      }
+
+      // Create patient with the registering doctor as primary doctor
       const patient = await userModel.create({
         email,
         password: hashedPassword,
@@ -207,7 +223,7 @@ router.post(
         isActive: true,
         registeredBy: req.user.id,
         registeredByRole: 'doctor',
-        assignedDoctorId: req.user.id
+        primaryDoctorId: primaryDoctorId
       });
 
       res.status(201).json({
@@ -277,7 +293,9 @@ router.post(
       // Hash password
       const hashedPassword = await bcrypt.hash(password, 10);
 
-      // Create patient
+      // Create patient - Default primary doctor is CMO Dr. Nandita Agarwal (ID: 5)
+      const DEFAULT_PRIMARY_DOCTOR_ID = 5; // CMO Dr. Nandita Agarwal
+      
       const patient = await userModel.create({
         email,
         password: hashedPassword,
@@ -294,7 +312,8 @@ router.post(
         role: 'patient',
         isActive: true,
         registeredBy: req.nurse.id,
-        registeredByRole: 'nurse'
+        registeredByRole: 'nurse',
+        primaryDoctorId: DEFAULT_PRIMARY_DOCTOR_ID
       });
 
       res.status(201).json({
@@ -363,9 +382,12 @@ router.post(
       // Hash password
       const hashedPassword = await bcrypt.hash(password, 10);
 
-      // Create patient - assign to primary doctor if available
-      const assignedDoctorId = req.assistant.primaryDoctorId || 
-                               (req.assistant.linkedDoctorIds && req.assistant.linkedDoctorIds[0]);
+      // Create patient - assign to assistant's linked doctor as primary doctor
+      // If assistant has a linked doctor, use that; otherwise default to CMO
+      const DEFAULT_PRIMARY_DOCTOR_ID = 5; // CMO Dr. Nandita Agarwal
+      const primaryDoctorId = req.assistant.primaryDoctorId || 
+                               (req.assistant.linkedDoctorIds && req.assistant.linkedDoctorIds[0]) ||
+                               DEFAULT_PRIMARY_DOCTOR_ID;
       
       const patient = await userModel.create({
         email,
@@ -384,7 +406,7 @@ router.post(
         isActive: true,
         registeredBy: req.assistant.id,
         registeredByRole: 'assistant',
-        assignedDoctorId: assignedDoctorId
+        primaryDoctorId: primaryDoctorId
       });
 
       res.status(201).json({
@@ -398,7 +420,7 @@ router.post(
           phoneNumber: patient.phoneNumber,
           dateOfBirth: patient.dateOfBirth,
           gender: patient.gender,
-          assignedDoctorId: patient.assignedDoctorId
+          primaryDoctorId: patient.primaryDoctorId
         }
       });
     } catch (error) {
@@ -466,32 +488,81 @@ router.get('/admin/patients', authUser, async (req, res) => {
   }
 });
 
-// Get patients list - Doctor (their assigned patients)
+// Get patients list - Doctor (their patients from appointments OR primary doctor relationship)
 router.get('/doctor/patients', authUser, async (req, res) => {
   try {
+    console.log('[/doctor/patients] Request received, user:', req.user?.id, 'role:', req.user?.role);
+    
     if (!req.user || req.user.role !== 'doctor') {
+      console.log('[/doctor/patients] Access denied - not a doctor');
       return res.status(403).json({
         success: false,
         message: 'Doctor access required'
       });
     }
 
+    // For doctors, req.user.id IS the doctor ID (doctors table)
+    const doctorId = req.user.id;
+    console.log('[/doctor/patients] Doctor ID:', doctorId);
+
+    // Get unique patient IDs from appointments for this doctor
+    const appointments = await Appointment.findAll({
+      where: {
+        doctorId: doctorId
+      },
+      attributes: [[Sequelize.fn('DISTINCT', Sequelize.col('patientId')), 'patientId']],
+      raw: true
+    });
+
+    const appointmentPatientIds = appointments.map(a => a.patientId).filter(id => id != null);
+
+    // Also get patients where this doctor is the primary doctor (Family Doctor concept)
+    const primaryPatients = await userModel.findAll({
+      where: {
+        primary_doctor_id: doctorId
+      },
+      attributes: ['id'],
+      raw: true
+    });
+
+    const primaryPatientIds = primaryPatients.map(p => p.id);
+
+    // Combine both sets of patient IDs (unique)
+    const allPatientIds = [...new Set([...appointmentPatientIds, ...primaryPatientIds])];
+    console.log('[/doctor/patients] Found patient IDs:', allPatientIds.length);
+
+    if (allPatientIds.length === 0) {
+      return res.status(200).json({
+        success: true,
+        patients: [],
+        count: 0
+      });
+    }
+
     const patients = await userModel.findAll({
       where: {
-        role: 'patient',
-        assignedDoctorId: req.user.id
+        id: {
+          [Op.in]: allPatientIds
+        }
       },
       attributes: { exclude: ['password'] },
       order: [['createdAt', 'DESC']]
     });
 
+    // Add a flag to indicate if this doctor is the primary doctor
+    const patientsWithPrimaryFlag = patients.map(p => ({
+      ...p.toJSON(),
+      isPrimaryDoctor: p.primary_doctor_id === doctorId
+    }));
+
     res.status(200).json({
       success: true,
-      patients,
-      count: patients.length
+      patients: patientsWithPrimaryFlag,
+      count: patientsWithPrimaryFlag.length
     });
   } catch (error) {
-    console.error('Get doctor patients error:', error);
+    console.error('[/doctor/patients] Error:', error.message);
+    console.error('[/doctor/patients] Stack:', error.stack);
     res.status(500).json({
       success: false,
       message: 'Server error',

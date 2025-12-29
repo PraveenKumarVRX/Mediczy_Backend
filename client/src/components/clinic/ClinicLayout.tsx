@@ -1,7 +1,7 @@
 import { ReactNode, useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import ClinicSidebar from "./ClinicSidebar";
-import { Bell, Search, User, ChevronDown, Building, Calendar, UserPlus, AlertCircle, CheckCircle, Clock, Sun, Moon } from "lucide-react";
+import { Bell, HeartPulse, User, ChevronDown, Building, Calendar, UserPlus, AlertCircle, CheckCircle, Clock, Sun, Moon } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
@@ -89,17 +89,22 @@ const ClinicLayout = ({ children, title, subtitle }: ClinicLayoutProps) => {
       {/* Main Content Area */}
       <div className="ml-64 transition-all duration-300">
         {/* Top Header */}
-        <header className="sticky top-0 z-30 h-16 bg-white border-b border-slate-200 flex items-center justify-between px-6">
-          <div className="flex items-center gap-4">
+        <header className="sticky top-0 z-30 h-16 bg-white/90 backdrop-blur border-b border-slate-200 flex items-center justify-between px-6">
+          <div className="flex items-center gap-3">
+            <div className="flex items-center gap-2 text-primary font-semibold">
+              <HeartPulse className="h-5 w-5" />
+              <span className="text-sm">Mediqzy</span>
+              <span className="text-[11px] uppercase bg-primary/10 text-primary px-2 py-0.5 rounded-full">Clinic</span>
+            </div>
             {title && (
-              <div>
-                <h1 className="text-xl font-bold text-slate-900">{title}</h1>
-                {subtitle && <p className="text-sm text-slate-500">{subtitle}</p>}
+              <div className="pl-3 border-l border-slate-200">
+                <h1 className="text-lg font-semibold text-slate-900">{title}</h1>
+                {subtitle && <p className="text-xs text-slate-500">{subtitle}</p>}
               </div>
             )}
           </div>
 
-          <div className="flex items-center gap-4">
+          <div className="flex items-center gap-2">
             <Button variant="ghost" size="icon" onClick={toggleTheme}>
               {theme === "light" ? (
                 <Sun className="w-5 h-5 text-slate-600" />
@@ -107,15 +112,6 @@ const ClinicLayout = ({ children, title, subtitle }: ClinicLayoutProps) => {
                 <Moon className="w-5 h-5 text-slate-600" />
               )}
             </Button>
-            {/* Search */}
-            <div className="relative hidden md:block">
-              <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 text-slate-400 w-4 h-4" />
-              <Input
-                type="text"
-                placeholder="Search patients..."
-                className="w-64 pl-10 bg-slate-50 border-slate-200 focus:bg-white"
-              />
-            </div>
 
             {/* Notifications */}
             <DropdownMenu>
@@ -123,23 +119,21 @@ const ClinicLayout = ({ children, title, subtitle }: ClinicLayoutProps) => {
                 <Button variant="ghost" size="icon" className="relative">
                   <Bell className="w-5 h-5 text-slate-600" />
                   {unreadCount > 0 && (
-                    <Badge className="absolute -top-1 -right-1 h-5 w-5 flex items-center justify-center p-0 bg-red-500 text-white text-xs">
+                    <Badge className="absolute -top-1 -right-1 h-5 min-w-[1.1rem] flex items-center justify-center p-0 bg-destructive text-white text-[10px]">
                       {unreadCount}
                     </Badge>
                   )}
                 </Button>
               </DropdownMenuTrigger>
-              <DropdownMenuContent align="end" className="w-80">
-                <DropdownMenuLabel className="flex items-center justify-between">
-                  <span>Notifications</span>
-                  {unreadCount > 0 && (
-                    <Button variant="ghost" size="sm" className="text-xs h-6 text-pink-600" onClick={markAllAsRead}>
-                      Mark all as read
-                    </Button>
-                  )}
+              <DropdownMenuContent align="end" className="w-72">
+                <DropdownMenuLabel className="flex items-center justify-between text-xs text-muted-foreground">
+                  Notifications
+                  <Button variant="ghost" size="sm" className="text-[11px] h-7" onClick={markAllAsRead}>
+                    Mark all
+                  </Button>
                 </DropdownMenuLabel>
                 <DropdownMenuSeparator />
-                <div className="max-h-80 overflow-y-auto">
+                <div className="max-h-72 overflow-y-auto">
                   {notifications.length === 0 ? (
                     <div className="p-4 text-center text-slate-500 text-sm">
                       No notifications
@@ -148,10 +142,10 @@ const ClinicLayout = ({ children, title, subtitle }: ClinicLayoutProps) => {
                     notifications.map((notification) => (
                       <DropdownMenuItem 
                         key={notification.id} 
-                        className={`flex items-start gap-3 p-3 cursor-pointer ${!notification.read ? 'bg-pink-50' : ''}`}
+                        className="flex items-start gap-3 p-3 cursor-pointer"
                         onClick={() => markAsRead(notification.id)}
                       >
-                        <div className="mt-0.5">
+                        <div className={`p-2 rounded-md ${notification.read ? 'bg-slate-50' : 'bg-primary/10'}`}>
                           {getNotificationIcon(notification.type)}
                         </div>
                         <div className="flex-1 min-w-0">
@@ -162,23 +156,19 @@ const ClinicLayout = ({ children, title, subtitle }: ClinicLayoutProps) => {
                           <p className="text-xs text-slate-400 mt-1">{notification.time}</p>
                         </div>
                         {!notification.read && (
-                          <div className="w-2 h-2 bg-pink-500 rounded-full mt-1.5" />
+                          <div className="w-2 h-2 bg-blue-500 rounded-full mt-1.5" />
                         )}
                       </DropdownMenuItem>
                     ))
                   )}
                 </div>
-                <DropdownMenuSeparator />
-                <DropdownMenuItem className="text-center text-pink-600 justify-center font-medium" onClick={() => navigate('/clinic/notifications')}>
-                  View All Notifications
-                </DropdownMenuItem>
               </DropdownMenuContent>
             </DropdownMenu>
 
             {/* User Menu */}
             <DropdownMenu>
               <DropdownMenuTrigger asChild>
-                <Button variant="ghost" className="flex items-center gap-2">
+                <Button variant="ghost" className="flex items-center gap-2 border border-slate-200 rounded-full px-3 py-1.5">
                   <div className="w-8 h-8 bg-gradient-to-br from-pink-500 to-rose-600 rounded-full flex items-center justify-center">
                     <Building className="w-4 h-4 text-white" />
                   </div>

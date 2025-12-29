@@ -18,6 +18,12 @@ export const validateMembership = async (req, res, next) => {
     return next();
   }
 
+  // Allow read-only profile access without membership (for onboarding/account management)
+  const isProfileRead = req.method === 'GET' && req.path === '/profile';
+  if (isProfileRead) {
+    return next();
+  }
+
   try {
     const userId = req.user?.id;
     

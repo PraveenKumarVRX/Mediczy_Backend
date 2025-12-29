@@ -14,12 +14,21 @@ import { DataTypes } from 'sequelize';
 import { postgresSequelize as sequelize } from '../../db/postgres-sequelize.js';
 import bcrypt from 'bcrypt';
 import jwt from 'jsonwebtoken';
+import { generateUniqueId } from '../../utils/uniqueIdGenerator.js';
 
 const User = sequelize.define('User', {
   id: {
     type: DataTypes.INTEGER,
     primaryKey: true,
     autoIncrement: true
+  },
+  
+  // Unique alphanumeric ID (e.g., U4K7NP)
+  unique_id: {
+    type: DataTypes.STRING(6),
+    unique: true,
+    allowNull: true,
+    comment: 'Public-facing unique ID with role prefix'
   },
   
   // Basic Information
@@ -322,6 +331,11 @@ const User = sequelize.define('User', {
   // Hooks
   hooks: {
     beforeCreate: async (user) => {
+      // Generate unique ID if not set
+      if (!user.unique_id) {
+        user.unique_id = generateUniqueId(user.role || 'user');
+      }
+      
       // Hash password
       if (user.password) {
         user.password = await bcrypt.hash(user.password, 10);

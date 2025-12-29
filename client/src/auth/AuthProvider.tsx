@@ -111,6 +111,25 @@ export const AuthProvider = ({ children }) => {
     // Check if it's an admin route - admin routes bypass normal auth
     const isAdminRoute = location.pathname.startsWith('/admin');
     
+    // Preload common tokens so we can reroute before generic login redirects
+    const adminToken = localStorage.getItem('adminToken');
+    const teamToken = localStorage.getItem('teamToken');
+    
+    // If an admin or team member is already authenticated and clicks a generic
+    // appointments link, send them to their portal instead of the patient login.
+    if (!isAdminRoute && location.pathname === '/appointments') {
+      if (adminToken) {
+        setAuthState(prev => ({ ...prev, hasCheckedAuth: true }));
+        navigate('/admin/appointments', { replace: true });
+        return;
+      }
+      if (teamToken) {
+        setAuthState(prev => ({ ...prev, hasCheckedAuth: true }));
+        navigate('/team/appointments', { replace: true });
+        return;
+      }
+    }
+    
     // Check if it's a corporate route - corporate routes have their own auth flow
     const isCorporateRoute = location.pathname.startsWith('/corporate');
     
@@ -156,8 +175,6 @@ export const AuthProvider = ({ children }) => {
     
     // Admin portal routes use their own token (adminToken) and must not fall back to user login.
     if (isAdminRoute) {
-      const adminToken = localStorage.getItem('adminToken');
-      const teamToken = localStorage.getItem('teamToken');
       const isAdminLoginRoute = location.pathname === '/admin/login';
 
       if (!isAdminLoginRoute && !adminToken && !teamToken) {

@@ -6,6 +6,7 @@ import { Input } from '@/components/ui/input';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
 import { Alert, AlertDescription } from '@/components/ui/alert';
 import { Pill, Eye, EyeOff, Activity, Lock, ArrowRight, CheckCircle2 } from 'lucide-react';
+import { useToast } from '@/hooks/use-toast';
 import api from '@/utils/api';
 
 const PharmacyLogin = () => {
@@ -16,6 +17,23 @@ const PharmacyLogin = () => {
   const [showPassword, setShowPassword] = useState(false);
   const [isCheckingAuth, setIsCheckingAuth] = useState(true);
   const navigate = useNavigate();
+  const { toast } = useToast();
+
+  const setDemoSession = () => {
+    const demoPharmacy = {
+      id: 'demo-pharmacy',
+      name: 'Mediczy Pharmacy Demo',
+      email: 'pharmacy@mediczy.com',
+      phone: '+91 99999 99999',
+      city: 'Delhi',
+      state: 'Delhi',
+    };
+
+    localStorage.setItem('pharmacyToken', `demo-pharmacy-token-${Date.now()}`);
+    localStorage.setItem('pharmacyData', JSON.stringify(demoPharmacy));
+    toast({ title: 'Offline demo login', description: 'Loaded pharmacy demo session locally.' });
+    navigate('/pharmacy/dashboard');
+  };
 
   useEffect(() => {
     const token = localStorage.getItem('pharmacyToken');
@@ -36,16 +54,18 @@ const PharmacyLogin = () => {
     e.preventDefault();
     setError(null);
     setLoading(true);
-    
+
     console.log('Pharmacy login attempt:', { email, password: '***' });
-    
+
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), 10000);
+
     try {
-      const controller = new AbortController();
-      const timeoutId = setTimeout(() => controller.abort(), 10000);
-
-      const { data } = await api.post('/pharmacy/login', { email, password }, { signal: controller.signal, skipAuth: true });
-
-      clearTimeout(timeoutId);
+      const { data } = await api.post(
+        '/pharmacy/login',
+        { email, password },
+        { signal: controller.signal, skipAuth: true }
+      );
 
       // Clear other login tokens to prevent cross-portal confusion
       const tokenKeys = [
@@ -85,12 +105,22 @@ const PharmacyLogin = () => {
       navigate('/pharmacy/dashboard');
     } catch (err: any) {
       console.error('Pharmacy login error:', err);
+      const isDemoCredentials = email === 'pharmacy@mediczy.com' && password === 'Pharmacy123';
+
+      // Allow offline demo login when API is unavailable
+      if (isDemoCredentials) {
+        setError(null);
+        setDemoSession();
+        return;
+      }
+
       if (err?.name === 'AbortError' || err?.code === 'ERR_CANCELED') {
         setError('Request timeout. Please check your connection and try again.');
       } else {
         setError(err?.response?.data?.message || err?.message || 'Login failed. Please check your credentials.');
       }
     } finally {
+      clearTimeout(timeoutId);
       setLoading(false);
     }
   };

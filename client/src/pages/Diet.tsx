@@ -496,43 +496,43 @@ const Diet = () => {
     // <MainLayout>
       <div className="max-w-7xl mx-auto p-6">
         <div className="flex justify-between items-center mb-8">
-          <h1 className="text-4xl font-bold text-foreground">
+          <h1 className="text-4xl font-bold text-slate-800 dark:text-white">
             Personalized Diet Plan
           </h1>
           <div className="flex gap-2">
             <Dialog>
               <DialogTrigger asChild>
-                <Button variant="outline" className="flex items-center gap-2">
-                  <List className="h-5 w-5" />
+                <Button variant="outline" className="flex items-center gap-2 border-slate-200 dark:border-slate-700 dark:bg-slate-800/50 dark:text-white hover:bg-teal-50 dark:hover:bg-teal-900/20 hover:border-teal-300 dark:hover:border-teal-600">
+                  <List className="h-5 w-5 text-teal-600 dark:text-teal-400" />
                   Saved Meals
                 </Button>
               </DialogTrigger>
-              <DialogContent className="max-w-2xl max-h-[80vh] overflow-y-auto">
+              <DialogContent className="max-w-2xl max-h-[80vh] overflow-y-auto bg-white dark:bg-slate-800 border-slate-200 dark:border-slate-700">
                 <DialogHeader>
                   <DialogTitle>Your Saved Meals</DialogTitle>
                 </DialogHeader>
                 <div className="space-y-4 mt-4">
                   {savedMeals.length === 0 ? (
-                    <p className="text-center text-muted-foreground">No saved meals yet</p>
+                    <p className="text-center text-slate-500 dark:text-slate-400">No saved meals yet</p>
                   ) : (
                     savedMeals.map((meal, index) => (
-                      <Card key={index} className="p-4">
+                      <Card key={index} className="p-4 bg-white dark:bg-slate-800/50 border-slate-200 dark:border-slate-700">
                         <div className="flex justify-between items-start mb-2">
-                          <h3 className="text-lg font-semibold">{meal.name}</h3>
-                          <Badge variant="secondary">{meal.totalCalories} cal</Badge>
+                          <h3 className="text-lg font-semibold text-slate-800 dark:text-white">{meal.name}</h3>
+                          <Badge className="bg-teal-100 text-teal-700 dark:bg-teal-900/30 dark:text-teal-400">{meal.totalCalories} cal</Badge>
                         </div>
                         <div className="space-y-2">
                           {meal.foods.map((food, foodIndex) => (
-                            <div key={foodIndex} className="flex items-center gap-2 text-sm">
+                            <div key={foodIndex} className="flex items-center gap-2 text-sm text-slate-700 dark:text-slate-300">
                               <span>{food.image}</span>
                               <span className="flex-1">{food.name}</span>
-                              <span className="text-muted-foreground">
+                              <span className="text-slate-500 dark:text-slate-400">
                                 {food.quantity} × {food.calories} cal
                               </span>
                             </div>
                           ))}
                         </div>
-                        <div className="text-xs text-muted-foreground mt-2">
+                        <div className="text-xs text-slate-500 dark:text-slate-400 mt-2">
                           Saved on {new Date(meal.date).toLocaleDateString()}
                         </div>
                       </Card>
@@ -543,10 +543,10 @@ const Diet = () => {
             </Dialog>
             <Button
               onClick={() => navigate("/calorie-calculator")}
-              className="flex items-center gap-2"
+              className="flex items-center gap-2 border-slate-200 dark:border-slate-700 dark:bg-slate-800/50 dark:text-white hover:bg-teal-50 dark:hover:bg-teal-900/20 hover:border-teal-300 dark:hover:border-teal-600"
               variant="outline"
             >
-              <Calculator className="h-5 w-5" />
+              <Calculator className="h-5 w-5 text-teal-600 dark:text-teal-400" />
               Calorie Calculator
             </Button>
           </div>
@@ -554,14 +554,14 @@ const Diet = () => {
 
         {/* BMI and Diet Plan Section */}
         <div className="grid md:grid-cols-2 gap-8">
-          <Card className="p-6 shadow-lg hover:shadow-xl transition-shadow duration-300">
-            <h2 className="text-2xl font-semibold mb-6 flex items-center gap-2">
-              <Scale className="h-6 w-6 text-primary" />
+          <Card className="p-6 shadow-lg hover:shadow-xl transition-shadow duration-300 bg-white dark:bg-slate-800/50 border-slate-200 dark:border-slate-700">
+            <h2 className="text-2xl font-semibold mb-6 flex items-center gap-2 text-slate-800 dark:text-white">
+              <Scale className="h-6 w-6 text-teal-600 dark:text-teal-400" />
               Calculate Your Needs
             </h2>
             <div className="space-y-5">
               <div className="group">
-                <Label htmlFor="weight" className="text-sm font-medium mb-1.5 block">
+                <Label htmlFor="weight" className="text-sm font-medium mb-1.5 block text-slate-700 dark:text-slate-300">
                   Weight (kg)
                 </Label>
                 <Input
@@ -570,19 +570,19 @@ const Diet = () => {
                   value={weight}
                   onChange={(e) => setWeight(e.target.value)}
                   placeholder="Enter your weight"
-                  className="transition-all duration-200 focus:ring-2 focus:ring-primary/20"
+                  className="transition-all duration-200 focus:ring-2 focus:ring-teal-500/20 bg-white dark:bg-slate-900/50 border-slate-200 dark:border-slate-600 text-slate-800 dark:text-white placeholder:text-slate-400 dark:placeholder:text-slate-500"
                 />
               </div>
               <div className="group">
                 <div className="flex items-center justify-between mb-1.5">
-                  <Label className="text-sm font-medium">Height</Label>
+                  <Label className="text-sm font-medium text-slate-700 dark:text-slate-300">Height</Label>
                   <Select value={heightUnit} onValueChange={setHeightUnit}>
-                    <SelectTrigger className="w-[100px] focus:ring-2 focus:ring-primary/20">
+                    <SelectTrigger className="w-[100px] focus:ring-2 focus:ring-teal-500/20 bg-white dark:bg-slate-900/50 border-slate-200 dark:border-slate-600 text-slate-800 dark:text-white">
                       <SelectValue placeholder="Unit" />
                     </SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value="cm">cm</SelectItem>
-                      <SelectItem value="ft">ft/in</SelectItem>
+                    <SelectContent className="bg-white dark:bg-slate-800 border-slate-200 dark:border-slate-700">
+                      <SelectItem value="cm" className="text-slate-800 dark:text-white focus:bg-teal-50 dark:focus:bg-teal-900/20">cm</SelectItem>
+                      <SelectItem value="ft" className="text-slate-800 dark:text-white focus:bg-teal-50 dark:focus:bg-teal-900/20">ft/in</SelectItem>
                     </SelectContent>
                   </Select>
                 </div>
@@ -592,7 +592,7 @@ const Diet = () => {
                     value={height}
                     onChange={(e) => setHeight(e.target.value)}
                     placeholder="Enter height in cm"
-                    className="transition-all duration-200 focus:ring-2 focus:ring-primary/20"
+                    className="transition-all duration-200 focus:ring-2 focus:ring-teal-500/20 bg-white dark:bg-slate-900/50 border-slate-200 dark:border-slate-600 text-slate-800 dark:text-white placeholder:text-slate-400 dark:placeholder:text-slate-500"
                   />
                 ) : (
                   <div className="flex gap-3">
@@ -602,7 +602,7 @@ const Diet = () => {
                         value={feet}
                         onChange={(e) => setFeet(e.target.value)}
                         placeholder="Feet"
-                        className="transition-all duration-200 focus:ring-2 focus:ring-primary/20"
+                        className="transition-all duration-200 focus:ring-2 focus:ring-teal-500/20 bg-white dark:bg-slate-900/50 border-slate-200 dark:border-slate-600 text-slate-800 dark:text-white placeholder:text-slate-400 dark:placeholder:text-slate-500"
                       />
                     </div>
                     <div className="flex-1">
@@ -611,14 +611,14 @@ const Diet = () => {
                         value={inches}
                         onChange={(e) => setInches(e.target.value)}
                         placeholder="Inches"
-                        className="transition-all duration-200 focus:ring-2 focus:ring-primary/20"
+                        className="transition-all duration-200 focus:ring-2 focus:ring-teal-500/20 bg-white dark:bg-slate-900/50 border-slate-200 dark:border-slate-600 text-slate-800 dark:text-white placeholder:text-slate-400 dark:placeholder:text-slate-500"
                       />
                     </div>
                   </div>
                 )}
               </div>
               <div className="group">
-                <Label htmlFor="age" className="text-sm font-medium mb-1.5 block">
+                <Label htmlFor="age" className="text-sm font-medium mb-1.5 block text-slate-700 dark:text-slate-300">
                   Age
                 </Label>
                 <Input
@@ -627,33 +627,33 @@ const Diet = () => {
                   value={age}
                   onChange={(e) => setAge(e.target.value)}
                   placeholder="Enter your age"
-                  className="transition-all duration-200 focus:ring-2 focus:ring-primary/20"
+                  className="transition-all duration-200 focus:ring-2 focus:ring-teal-500/20 bg-white dark:bg-slate-900/50 border-slate-200 dark:border-slate-600 text-slate-800 dark:text-white placeholder:text-slate-400 dark:placeholder:text-slate-500"
                 />
               </div>
               <div className="group">
-                <Label className="text-sm font-medium mb-1.5 block">Gender</Label>
+                <Label className="text-sm font-medium mb-1.5 block text-slate-700 dark:text-slate-300">Gender</Label>
                 <Select value={gender} onValueChange={setGender}>
-                  <SelectTrigger className="w-full focus:ring-2 focus:ring-primary/20">
+                  <SelectTrigger className="w-full focus:ring-2 focus:ring-teal-500/20 bg-white dark:bg-slate-900/50 border-slate-200 dark:border-slate-600 text-slate-800 dark:text-white">
                     <SelectValue placeholder="Select gender" />
                   </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="male">Male</SelectItem>
-                    <SelectItem value="female">Female</SelectItem>
+                  <SelectContent className="bg-white dark:bg-slate-800 border-slate-200 dark:border-slate-700">
+                    <SelectItem value="male" className="text-slate-800 dark:text-white focus:bg-teal-50 dark:focus:bg-teal-900/20">Male</SelectItem>
+                    <SelectItem value="female" className="text-slate-800 dark:text-white focus:bg-teal-50 dark:focus:bg-teal-900/20">Female</SelectItem>
                   </SelectContent>
                 </Select>
               </div>
               <div className="group">
-                <Label className="text-sm font-medium mb-1.5 block">Activity Level</Label>
+                <Label className="text-sm font-medium mb-1.5 block text-slate-700 dark:text-slate-300">Activity Level</Label>
                 <Select value={activityLevel} onValueChange={setActivityLevel}>
-                  <SelectTrigger className="w-full focus:ring-2 focus:ring-primary/20">
+                  <SelectTrigger className="w-full focus:ring-2 focus:ring-teal-500/20 bg-white dark:bg-slate-900/50 border-slate-200 dark:border-slate-600 text-slate-800 dark:text-white">
                     <SelectValue placeholder="Select activity level" />
                   </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="sedentary">Sedentary (little or no exercise)</SelectItem>
-                    <SelectItem value="light">Light (exercise 1-3 times/week)</SelectItem>
-                    <SelectItem value="moderate">Moderate (exercise 3-5 times/week)</SelectItem>
-                    <SelectItem value="active">Active (exercise 6-7 times/week)</SelectItem>
-                    <SelectItem value="veryActive">Very Active (hard exercise daily)</SelectItem>
+                  <SelectContent className="bg-white dark:bg-slate-800 border-slate-200 dark:border-slate-700">
+                    <SelectItem value="sedentary" className="text-slate-800 dark:text-white focus:bg-teal-50 dark:focus:bg-teal-900/20">Sedentary (little or no exercise)</SelectItem>
+                    <SelectItem value="light" className="text-slate-800 dark:text-white focus:bg-teal-50 dark:focus:bg-teal-900/20">Light (exercise 1-3 times/week)</SelectItem>
+                    <SelectItem value="moderate" className="text-slate-800 dark:text-white focus:bg-teal-50 dark:focus:bg-teal-900/20">Moderate (exercise 3-5 times/week)</SelectItem>
+                    <SelectItem value="active" className="text-slate-800 dark:text-white focus:bg-teal-50 dark:focus:bg-teal-900/20">Active (exercise 6-7 times/week)</SelectItem>
+                    <SelectItem value="veryActive" className="text-slate-800 dark:text-white focus:bg-teal-50 dark:focus:bg-teal-900/20">Very Active (hard exercise daily)</SelectItem>
                   </SelectContent>
                 </Select>
               </div>
@@ -661,31 +661,31 @@ const Diet = () => {
 
             {bmi && tdee && (
               <div className="mt-8 space-y-4">
-                <div className="p-5 bg-primary/5 rounded-xl border border-primary/10 hover:border-primary/20 transition-colors">
+                <div className="p-5 bg-teal-50 dark:bg-teal-900/20 rounded-xl border border-teal-200 dark:border-teal-800 hover:border-teal-300 dark:hover:border-teal-700 transition-colors">
                   <div className="flex items-center justify-between">
                     <div>
-                      <p className="text-sm text-muted-foreground font-medium">Your BMI</p>
-                      <p className="text-3xl font-bold text-primary mt-1">{bmi}</p>
+                      <p className="text-sm text-slate-600 dark:text-slate-400 font-medium">Your BMI</p>
+                      <p className="text-3xl font-bold text-teal-600 dark:text-teal-400 mt-1">{bmi}</p>
                     </div>
-                    <Badge className="bg-primary/10 text-primary hover:bg-primary/20 transition-colors text-sm py-1.5">
+                    <Badge className="bg-teal-100 dark:bg-teal-900/40 text-teal-700 dark:text-teal-300 hover:bg-teal-200 dark:hover:bg-teal-900/60 transition-colors text-sm py-1.5">
                       {getBMICategory(parseFloat(bmi))}
                     </Badge>
                   </div>
                 </div>
-                <div className="p-5 bg-primary/5 rounded-xl border border-primary/10 hover:border-primary/20 transition-colors">
-                  <p className="text-sm text-muted-foreground font-medium">Daily Calorie Needs (TDEE)</p>
+                <div className="p-5 bg-teal-50 dark:bg-teal-900/20 rounded-xl border border-teal-200 dark:border-teal-800 hover:border-teal-300 dark:hover:border-teal-700 transition-colors">
+                  <p className="text-sm text-slate-600 dark:text-slate-400 font-medium">Daily Calorie Needs (TDEE)</p>
                   <div className="flex items-baseline gap-2 mt-1">
-                    <p className="text-3xl font-bold text-primary">{tdee}</p>
-                    <span className="text-muted-foreground">calories</span>
+                    <p className="text-3xl font-bold text-teal-600 dark:text-teal-400">{tdee}</p>
+                    <span className="text-slate-500 dark:text-slate-400">calories</span>
                   </div>
                 </div>
               </div>
             )}
           </Card>
 
-          <Card className="p-6 shadow-lg hover:shadow-xl transition-shadow duration-300">
-            <h2 className="text-2xl font-semibold mb-6 flex items-center gap-2">
-              <Apple className="h-6 w-6 text-primary" />
+          <Card className="p-6 shadow-lg hover:shadow-xl transition-shadow duration-300 bg-white dark:bg-slate-800/50 border-slate-200 dark:border-slate-700">
+            <h2 className="text-2xl font-semibold mb-6 flex items-center gap-2 text-slate-800 dark:text-white">
+              <Apple className="h-6 w-6 text-teal-600 dark:text-teal-400" />
               Your Diet Plan
             </h2>
             <Tabs
@@ -693,16 +693,16 @@ const Diet = () => {
               className="w-full"
               onValueChange={(value) => handlePlanChange(value as "weight_loss" | "weight_gain" | "maintenance")}
             >
-              <TabsList className="grid w-full grid-cols-3 mb-6">
-                <TabsTrigger value="weight_loss" className="flex items-center gap-2 data-[state=active]:bg-primary/20">
+              <TabsList className="grid w-full grid-cols-3 mb-6 bg-slate-100 dark:bg-slate-900/50 p-1 rounded-lg">
+                <TabsTrigger value="weight_loss" className="flex items-center gap-2 text-slate-600 dark:text-slate-400 data-[state=active]:bg-gradient-to-r data-[state=active]:from-teal-500 data-[state=active]:to-teal-600 data-[state=active]:text-white data-[state=active]:shadow-md rounded-md transition-all">
                   <TrendingDown className="h-4 w-4" />
                   Loss
                 </TabsTrigger>
-                <TabsTrigger value="maintenance" className="flex items-center gap-2 data-[state=active]:bg-primary/20">
+                <TabsTrigger value="maintenance" className="flex items-center gap-2 text-slate-600 dark:text-slate-400 data-[state=active]:bg-gradient-to-r data-[state=active]:from-teal-500 data-[state=active]:to-teal-600 data-[state=active]:text-white data-[state=active]:shadow-md rounded-md transition-all">
                   <Minus className="h-4 w-4" />
                   Maintain
                 </TabsTrigger>
-                <TabsTrigger value="weight_gain" className="flex items-center gap-2 data-[state=active]:bg-primary/20">
+                <TabsTrigger value="weight_gain" className="flex items-center gap-2 text-slate-600 dark:text-slate-400 data-[state=active]:bg-gradient-to-r data-[state=active]:from-teal-500 data-[state=active]:to-teal-600 data-[state=active]:text-white data-[state=active]:shadow-md rounded-md transition-all">
                   <TrendingUp className="h-4 w-4" />
                   Gain
                 </TabsTrigger>
@@ -711,8 +711,8 @@ const Diet = () => {
 
             <div className="mt-6">
               <div className="flex items-center justify-between mb-6">
-                <h3 className="text-xl font-medium">Daily Calories</h3>
-                <Badge variant="secondary" className="text-lg px-4 py-1">
+                <h3 className="text-xl font-medium text-slate-800 dark:text-white">Daily Calories</h3>
+                <Badge className="text-lg px-4 py-1 bg-gradient-to-r from-teal-500 to-teal-600 text-white">
                   {dietPlans[selectedPlan]?.dailyCalories} cal
                 </Badge>
               </div>
@@ -721,19 +721,19 @@ const Diet = () => {
                 {dietPlans[selectedPlan]?.meals.map((meal, index) => (
                   <div
                     key={index}
-                    className="p-4 border border-primary/10 rounded-xl hover:border-primary/30 hover:bg-primary/5 transition-all duration-200 group"
+                    className="p-4 border border-slate-200 dark:border-slate-700 rounded-xl hover:border-teal-300 dark:hover:border-teal-600 hover:bg-teal-50 dark:hover:bg-teal-900/20 transition-all duration-200 group"
                   >
                     <div className="flex items-center justify-between mb-2">
                       <div className="flex items-center gap-2">
-                        <Clock className="h-4 w-4 text-primary/60 group-hover:text-primary transition-colors" />
-                        <span className="text-sm text-muted-foreground group-hover:text-foreground transition-colors">{meal.time}</span>
+                        <Clock className="h-4 w-4 text-teal-500 dark:text-teal-400 group-hover:text-teal-600 dark:group-hover:text-teal-300 transition-colors" />
+                        <span className="text-sm text-slate-500 dark:text-slate-400 group-hover:text-slate-700 dark:group-hover:text-slate-200 transition-colors">{meal.time}</span>
                       </div>
-                      <Badge variant="outline" className="bg-background group-hover:bg-primary/10 transition-colors">
+                      <Badge variant="outline" className="bg-white dark:bg-slate-800 border-slate-200 dark:border-slate-600 text-slate-700 dark:text-slate-300 group-hover:bg-teal-100 dark:group-hover:bg-teal-900/30 group-hover:border-teal-300 dark:group-hover:border-teal-600 group-hover:text-teal-700 dark:group-hover:text-teal-300 transition-colors">
                         {meal.calories} cal
                       </Badge>
                     </div>
-                    <h4 className="font-medium text-foreground group-hover:text-primary transition-colors">{meal.meal}</h4>
-                    <p className="text-sm text-muted-foreground mt-1 group-hover:text-foreground/80 transition-colors">
+                    <h4 className="font-medium text-slate-800 dark:text-white group-hover:text-teal-600 dark:group-hover:text-teal-400 transition-colors">{meal.meal}</h4>
+                    <p className="text-sm text-slate-500 dark:text-slate-400 mt-1 group-hover:text-slate-700 dark:group-hover:text-slate-300 transition-colors">
                       {meal.description}
                     </p>
                   </div>
@@ -742,14 +742,14 @@ const Diet = () => {
 
               {dietPlans[selectedPlan]?.suggestions.length > 0 && (
                 <div className="mt-8">
-                  <h3 className="text-xl font-medium mb-4 flex items-center gap-2">
-                    <Utensils className="h-5 w-5 text-primary" />
+                  <h3 className="text-xl font-medium mb-4 flex items-center gap-2 text-slate-800 dark:text-white">
+                    <Utensils className="h-5 w-5 text-teal-600 dark:text-teal-400" />
                     Personalized Suggestions
                   </h3>
                   <ul className="space-y-3">
                     {dietPlans[selectedPlan]?.suggestions.map((suggestion, index) => (
-                      <li key={index} className="flex items-center gap-3 text-sm text-muted-foreground hover:text-foreground transition-colors p-2 rounded-lg hover:bg-primary/5">
-                        <Info className="h-4 w-4 text-primary shrink-0" />
+                      <li key={index} className="flex items-center gap-3 text-sm text-slate-600 dark:text-slate-400 hover:text-slate-800 dark:hover:text-white transition-colors p-2 rounded-lg hover:bg-teal-50 dark:hover:bg-teal-900/20">
+                        <Info className="h-4 w-4 text-teal-600 dark:text-teal-400 shrink-0" />
                         {suggestion}
                       </li>
                     ))}
@@ -759,10 +759,10 @@ const Diet = () => {
             </div>
           </Card>
 
-          <Card className="md:col-span-2 p-6 shadow-lg">
+          <Card className="md:col-span-2 p-6 shadow-lg bg-white dark:bg-slate-800/50 border-slate-200 dark:border-slate-700">
             <div className="flex items-center justify-between mb-6">
-              <h2 className="text-2xl font-semibold flex items-center gap-2">
-                <Info className="h-6 w-6 text-primary" />
+              <h2 className="text-2xl font-semibold flex items-center gap-2 text-slate-800 dark:text-white">
+                <Info className="h-6 w-6 text-teal-600 dark:text-teal-400" />
                 Diet Tips
               </h2>
             </div>
@@ -770,13 +770,13 @@ const Diet = () => {
             <div className="space-y-4">
               <div className="grid md:grid-cols-2 gap-4">
                 {selectedPlan && dietPlans[selectedPlan]?.tips.map((tip, index) => (
-                  <div key={index} className="flex items-start gap-3 p-3 rounded-lg bg-primary/5">
+                  <div key={index} className="flex items-start gap-3 p-3 rounded-lg bg-teal-50 dark:bg-teal-900/20 border border-teal-100 dark:border-teal-800/50">
                     <div className="mt-1">
-                      <Badge variant="outline" className="w-6 h-6 flex items-center justify-center rounded-full">
+                      <Badge className="w-6 h-6 flex items-center justify-center rounded-full bg-gradient-to-r from-teal-500 to-teal-600 text-white text-xs">
                         {index + 1}
                       </Badge>
                     </div>
-                    <p className="text-sm">{tip}</p>
+                    <p className="text-sm text-slate-700 dark:text-slate-300">{tip}</p>
                   </div>
                 ))}
               </div>

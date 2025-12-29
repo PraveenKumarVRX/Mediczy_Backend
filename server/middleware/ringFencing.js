@@ -24,7 +24,14 @@ const USER_TYPE_PERMISSIONS = {
       '/api/bookings',
       '/api/health-feed',
       '/api/video',
-      '/api/ayushman'
+      '/api/ayushman',
+      '/api/membership',  // Membership plans and subscriptions
+      '/api/membership-plans', // Membership plans (alternative route)
+      '/api/wallet',  // User wallet and payments
+      '/api/fitness',  // Fitness tracking
+      '/api/fitness-data',  // Health and fitness data
+      '/api/apple-health',  // Apple Health integration
+      '/api/health-diary'  // Health diary entries
     ],
     tokenField: 'userId'
   },
@@ -38,7 +45,9 @@ const USER_TYPE_PERMISSIONS = {
       '/api/video',
       '/api/chat',
       '/api/ai-scribe',
-      '/api/recording'
+      '/api/recording',
+      '/api/cdss',  // Clinical Decision Support System
+      '/api/billing'  // Billing and invoices
     ],
     tokenField: 'doctorId'
   },
@@ -75,7 +84,8 @@ const USER_TYPE_PERMISSIONS = {
       '/api/health-risk',
       '/api/crm',
       '/api/reports',
-      '/api/settings'
+      '/api/settings',
+      '/api/masterdata'
     ],
     tokenField: 'adminId'
   },
@@ -222,10 +232,13 @@ const PUBLIC_ENDPOINTS = [
   '/api/users/register',
   '/api/doctors/login',
   '/api/doctors/register',
+  '/api/doctors/search', // Public doctor search
+  '/api/doctors/available', // Public available doctors list
   '/api/admin/login',
   '/api/team/login',
   '/api/nurse/login',
   '/api/assistants/login',
+  '/api/corporate/login',
   '/api/corporate/auth/login',
   '/api/hospital/login',
   '/api/clinic/login',
@@ -235,10 +248,18 @@ const PUBLIC_ENDPOINTS = [
   '/api/tpa/login',
   '/api/psu/login',
   '/api/insurer/login',
+  '/api/insurance-company/login',
+  '/api/insurance-company/corporate/login',
+  '/api/insurance-broker/login',
   '/api/homecare/login',
   '/api/ngo/login',
   '/api/oauth',
-  '/api/otp'
+  '/api/otp',
+  '/api/masterdata', // Public read-only provider data (hospitals, labs, clinics)
+  '/api/medical-ai/test', // AI medical consultation test endpoint (for demos and testing)
+  '/api/tts', // Text-to-Speech for emergency triage (Eleven Labs)
+  '/api/membership/plans', // Public membership plans listing
+  '/api/membership-plans' // Public membership plans (alternative route)
 ];
 
 /**
@@ -247,10 +268,26 @@ const PUBLIC_ENDPOINTS = [
  */
 const ringFencingMiddleware = (req, res, next) => {
   const requestPath = req.path;
+  const requestMethod = req.method;
   
   // Allow public endpoints
   if (PUBLIC_ENDPOINTS.some(endpoint => requestPath.startsWith(endpoint))) {
     return next();
+  }
+
+  // Allow public GET requests to /api/doctors for listing/browsing
+  if (requestMethod === 'GET' && (requestPath === '/api/doctors' || requestPath.startsWith('/api/doctors/'))) {
+    // Allow public access to doctor listing, search, and public profiles
+    const publicDoctorPaths = [
+      '/api/doctors',
+      '/api/doctors/search',
+      '/api/doctors/available'
+    ];
+    const isDoctorIdPath = /^\/api\/doctors\/\d+/.test(requestPath); // Match /api/doctors/123, /api/doctors/123/slots, etc.
+    
+    if (publicDoctorPaths.some(path => requestPath.startsWith(path)) || isDoctorIdPath) {
+      return next();
+    }
   }
 
   // Get token from header
@@ -293,11 +330,11 @@ const ringFencingMiddleware = (req, res, next) => {
     }
 
     // Check if user has access to this endpoint
-    const hasAccess = permissions.allowedPaths.some(allowedPath => 
+    const hasPathAccess = permissions.allowedPaths.some(allowedPath => 
       requestPath.startsWith(allowedPath)
     );
 
-    if (!hasAccess) {
+    if (!hasPathAccess) {
       console.log(`🚫 Ring-fencing: ${userType} attempted unauthorized access to: ${requestPath}`);
       console.log(`   Allowed paths for ${userType}:`, permissions.allowedPaths);
       return res.status(403).json({ 
@@ -312,7 +349,113 @@ const ringFencingMiddleware = (req, res, next) => {
     req.user = decoded;
     req.userType = userType;
     
-    console.log(`✅ Ring-fencing: ${userType} accessing ${requestPath}`);
+    // =========================================================================
+    // USER ID-BASED RING-FENCING
+    // Ensures users can only access their own resources
+    // =========================================================================
+    
+    // Get the authenticated user's ID based on their role
+    const authenticatedUserId = decoded.id || decoded.userId || decoded.doctorId || 
+                                decoded.nurseId || decoded.assistantId || decoded.adminId ||
+                                decoded.corporateId || decoded.hospitalId || decoded.clinicId ||
+                                decoded.labId || decoded.pharmacyId || decoded.tpaId ||
+                                decoded.psuId || decoded.insurerId || decoded.ngoId;
+    
+    // Admin bypass - admins can access any resource
+    if (userType === 'admin' || userType === 'team') {
+      console.log(`✅ Ring-fencing: ${userType} (admin bypass) accessing ${requestPath}`);
+      return next();
+    }
+    
+    // Check for user ID in URL path - patterns like /api/users/:id, /api/patients/:id, etc.
+    const userIdPatterns = [
+      { pattern: /^\/api\/users\/(\d+)/, ownerTypes: ['user', 'admin'] },
+      { pattern: /^\/api\/user\/(\d+)/, ownerTypes: ['user', 'admin'] },
+      { pattern: /^\/api\/patients\/(\d+)/, ownerTypes: ['user', 'doctor', 'nurse', 'admin'] },
+      { pattern: /^\/api\/doctor\/(\d+)/, ownerTypes: ['doctor', 'admin'] },
+      { pattern: /^\/api\/doctors\/(\d+)\/private/, ownerTypes: ['doctor', 'admin'] }, // Private doctor routes
+      { pattern: /^\/api\/nurse\/(\d+)/, ownerTypes: ['nurse', 'admin'] },
+      { pattern: /^\/api\/assistant\/(\d+)/, ownerTypes: ['assistant', 'admin'] },
+      { pattern: /^\/api\/corporate\/(\d+)/, ownerTypes: ['corporate', 'admin'] },
+      { pattern: /^\/api\/hospital\/(\d+)/, ownerTypes: ['hospital', 'admin'] },
+      { pattern: /^\/api\/clinic\/(\d+)/, ownerTypes: ['clinic', 'admin'] },
+      { pattern: /^\/api\/lab\/(\d+)/, ownerTypes: ['lab', 'admin'] },
+      { pattern: /^\/api\/pharmacy\/(\d+)/, ownerTypes: ['pharmacy', 'admin'] },
+      { pattern: /^\/api\/tpa\/(\d+)/, ownerTypes: ['tpa', 'admin'] },
+      { pattern: /^\/api\/psu\/(\d+)/, ownerTypes: ['psu', 'admin'] },
+      { pattern: /^\/api\/insurer\/(\d+)/, ownerTypes: ['insurer', 'admin'] },
+      { pattern: /^\/api\/ngo\/(\d+)/, ownerTypes: ['ngo', 'admin'] },
+    ];
+    
+    for (const { pattern, ownerTypes } of userIdPatterns) {
+      const match = requestPath.match(pattern);
+      if (match) {
+        const requestedResourceId = parseInt(match[1], 10);
+        
+        // Check if the user type is allowed to access this resource type
+        if (!ownerTypes.includes(userType)) {
+          console.log(`🚫 Ring-fencing: ${userType} cannot access ${pattern.source} resources`);
+          return res.status(403).json({
+            error: 'Access denied - resource type not allowed for your role',
+            code: 'RESOURCE_TYPE_DENIED',
+            userType: userType
+          });
+        }
+        
+        // For own-resource access, verify the ID matches
+        // Exception: doctors/nurses can access patient resources they're assigned to
+        const isOwnResource = requestedResourceId === authenticatedUserId;
+        const isDoctorAccessingPatient = userType === 'doctor' && pattern.source.includes('patients');
+        const isNurseAccessingPatient = userType === 'nurse' && pattern.source.includes('patients');
+        
+        if (!isOwnResource && !isDoctorAccessingPatient && !isNurseAccessingPatient) {
+          console.log(`🚫 Ring-fencing: ${userType} (ID: ${authenticatedUserId}) attempted to access resource ID: ${requestedResourceId}`);
+          return res.status(403).json({
+            error: 'Access denied - you can only access your own resources',
+            code: 'OWN_RESOURCE_ONLY',
+            userType: userType
+          });
+        }
+        
+        // For doctor/nurse accessing patient, we'll let the route handler verify the relationship
+        if (isDoctorAccessingPatient || isNurseAccessingPatient) {
+          req.requirePatientRelationshipCheck = true;
+          req.requestedPatientId = requestedResourceId;
+        }
+        
+        break;
+      }
+    }
+    
+    // Check for user ID in query parameters
+    const queryUserId = req.query.userId || req.query.user_id || req.query.patientId || req.query.patient_id;
+    if (queryUserId && userType === 'user') {
+      const requestedQueryUserId = parseInt(queryUserId, 10);
+      if (requestedQueryUserId !== authenticatedUserId) {
+        console.log(`🚫 Ring-fencing: User ${authenticatedUserId} attempted to query data for user ${requestedQueryUserId}`);
+        return res.status(403).json({
+          error: 'Access denied - you can only query your own data',
+          code: 'OWN_DATA_ONLY'
+        });
+      }
+    }
+    
+    // Check for user ID in request body (for POST/PUT/PATCH requests)
+    if (['POST', 'PUT', 'PATCH'].includes(requestMethod) && req.body) {
+      const bodyUserId = req.body.userId || req.body.user_id || req.body.targetUserId;
+      if (bodyUserId && userType === 'user') {
+        const requestedBodyUserId = parseInt(bodyUserId, 10);
+        if (requestedBodyUserId !== authenticatedUserId) {
+          console.log(`🚫 Ring-fencing: User ${authenticatedUserId} attempted to modify data for user ${requestedBodyUserId}`);
+          return res.status(403).json({
+            error: 'Access denied - you can only modify your own data',
+            code: 'OWN_DATA_ONLY'
+          });
+        }
+      }
+    }
+    
+    console.log(`✅ Ring-fencing: ${userType} (ID: ${authenticatedUserId}) accessing ${requestPath}`);
     next();
 
   } catch (error) {
@@ -416,11 +559,117 @@ const hasAccess = (userType, path) => {
   );
 };
 
+/**
+ * Middleware to verify doctor-patient or nurse-patient relationship
+ * Use this after ringFencingMiddleware for routes that need relationship verification
+ */
+const verifyPatientRelationship = (relationshipModel) => {
+  return async (req, res, next) => {
+    // Skip if no relationship check is required
+    if (!req.requirePatientRelationshipCheck) {
+      return next();
+    }
+    
+    const userType = req.userType;
+    const userId = req.user.id || req.user.doctorId || req.user.nurseId;
+    const patientId = req.requestedPatientId;
+    
+    try {
+      // For doctors, check if they have an appointment or consultation with this patient
+      if (userType === 'doctor' && relationshipModel) {
+        const hasRelationship = await relationshipModel.findOne({
+          where: {
+            doctorId: userId,
+            patientId: patientId
+          }
+        });
+        
+        if (!hasRelationship) {
+          console.log(`🚫 Ring-fencing: Doctor ${userId} has no relationship with patient ${patientId}`);
+          return res.status(403).json({
+            error: 'Access denied - no patient relationship found',
+            code: 'NO_PATIENT_RELATIONSHIP'
+          });
+        }
+      }
+      
+      // For nurses, similar check can be added based on ward assignment
+      if (userType === 'nurse' && relationshipModel) {
+        const hasRelationship = await relationshipModel.findOne({
+          where: {
+            nurseId: userId,
+            patientId: patientId
+          }
+        });
+        
+        if (!hasRelationship) {
+          console.log(`🚫 Ring-fencing: Nurse ${userId} has no relationship with patient ${patientId}`);
+          return res.status(403).json({
+            error: 'Access denied - no patient relationship found',
+            code: 'NO_PATIENT_RELATIONSHIP'
+          });
+        }
+      }
+      
+      next();
+    } catch (error) {
+      console.error('🚫 Ring-fencing: Error verifying patient relationship:', error.message);
+      return res.status(500).json({
+        error: 'Error verifying access permissions',
+        code: 'RELATIONSHIP_CHECK_ERROR'
+      });
+    }
+  };
+};
+
+/**
+ * Middleware to extract and validate user ID from various sources
+ * Useful for routes that need to ensure user is accessing their own data
+ */
+const extractAndValidateUserId = (req, res, next) => {
+  const userType = req.userType;
+  const authenticatedUserId = req.user?.id || req.user?.userId;
+  
+  // Extract user ID from various sources
+  const sourceUserId = 
+    req.params.userId || req.params.id ||
+    req.query.userId || req.query.user_id ||
+    req.body?.userId || req.body?.user_id;
+  
+  if (sourceUserId) {
+    const requestedUserId = parseInt(sourceUserId, 10);
+    
+    // Admin bypass
+    if (userType === 'admin' || userType === 'team') {
+      req.targetUserId = requestedUserId;
+      return next();
+    }
+    
+    // Verify user is accessing their own data
+    if (userType === 'user' && requestedUserId !== authenticatedUserId) {
+      console.log(`🚫 Ring-fencing: User ${authenticatedUserId} attempted to access user ${requestedUserId}'s data`);
+      return res.status(403).json({
+        error: 'Access denied - you can only access your own data',
+        code: 'OWN_DATA_ONLY'
+      });
+    }
+    
+    req.targetUserId = requestedUserId;
+  } else {
+    // If no user ID specified, default to authenticated user
+    req.targetUserId = authenticatedUserId;
+  }
+  
+  next();
+};
+
 export {
   ringFencingMiddleware,
   checkPrivilege,
   ensureOwnResource,
   hasAccess,
+  verifyPatientRelationship,
+  extractAndValidateUserId,
   USER_TYPE_PERMISSIONS
 };
 

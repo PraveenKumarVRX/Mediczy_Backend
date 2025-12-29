@@ -5,6 +5,7 @@
  */
 
 import { HealthDiary } from '../models/postgres/ehr.model.postgres.js';
+import { Op } from 'sequelize';
 
 class HealthDiaryService {
   /**

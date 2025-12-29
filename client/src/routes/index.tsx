@@ -46,6 +46,8 @@ import NetworkHospitals from "@/pages/patient/NetworkHospitals";
 import BuyInsurance from "@/pages/patient/BuyInsurance";
 import ClaimsManagement from "@/pages/patient/ClaimsManagement";
 import AIHealthAnalysis from "@/pages/patient/AIHealthAnalysis";
+import EmployeeGamification from "@/pages/patient/EmployeeGamification";
+import EmployeeWellnessCalendar from "@/pages/patient/EmployeeWellnessCalendar";
 import DoctorDashboard from "@/pages/doctor/DoctorDashboard";
 import DoctorAppointments from "@/pages/doctor/DoctorAppointments";
 import DoctorAppointmentSettings from "@/pages/doctor/DoctorAppointmentSettings";
@@ -56,7 +58,20 @@ import DoctorVideoConsultation from "@/pages/doctor/DoctorVideoConsultation";
 import RecordingTest from "@/pages/doctor/RecordingTest";
 import VideoConsultation from "@/pages/VideoConsultation";
 import DoctorPatients from "@/pages/doctor/DoctorPatients";
+import DoctorTriage from "@/pages/doctor/DoctorTriage";
+import RemoteHealthMonitoring from "@/pages/doctor/RemoteHealthMonitoring";
+import DoctorAssist from "@/pages/doctor/DoctorAssist";
 import HealthMonitoringDashboardWrapper from "@/pages/doctor/HealthMonitoringDashboardWrapper";
+import DoctorAnalytics from "@/pages/doctor/DoctorAnalytics";
+import DoctorReports from "@/pages/doctor/DoctorReports";
+import DoctorSettings from "@/pages/doctor/DoctorSettings";
+import DoctorDocumentTemplates from "@/pages/doctor/DoctorDocumentTemplates";
+import DoctorTemplateSettings from "@/pages/doctor/DoctorTemplateSettings";
+import DoctorSpecialtyTemplates from "@/pages/doctor/DoctorSpecialtyTemplates";
+import PrescriptionWriter from "@/pages/doctor/PrescriptionWriter";
+import DoctorServices from "@/pages/doctor/DoctorServices";
+import DoctorBilling from "@/pages/doctor/DoctorBilling";
+import PatientEMR from "@/pages/doctor/PatientEMR";
 import AdminLogin from "@/pages/admin/AdminLogin";
 import AdminChatDashboard from "@/pages/admin/AdminChatDashboard";
 import AdminTestPage from '@/pages/admin/AdminTestPage';
@@ -131,8 +146,10 @@ import PaymentManagement from '@/pages/admin/PaymentManagement';
 import OrderCheckout from '@/pages/billing/OrderCheckout';
 import OrderHistory from '@/pages/billing/OrderHistory';
 import OrderDetails from '@/pages/billing/OrderDetails';
+import MyInvoices from '@/pages/billing/MyInvoices';
 import EmailManagement from '@/pages/admin/EmailManagement';
 import ActivityLog from '@/pages/admin/ActivityLog';
+import ModuleAccessControl from '@/pages/admin/ModuleAccessControl';
 import ConnectionDiagnostic from '@/pages/ConnectionDiagnostic';
 import AdminAuthTest from '@/pages/admin/AdminAuthTest';
 import SMSManagement from '@/pages/admin/SMSManagement';
@@ -140,7 +157,8 @@ import WhatsAppManagement from '@/pages/admin/WhatsAppManagement';
 import VideoManagement from '@/pages/admin/VideoManagement';
 import VoiceCallManagement from '@/pages/admin/VoiceCallManagement';
 import TicketManagement from '@/pages/admin/TicketManagement';
-import HealthRiskAssessment from '@/pages/admin/HealthRiskAssessment';
+import AdminHealthRiskAssessment from '@/pages/admin/HealthRiskAssessment';
+import UserHealthRiskAssessment from '@/pages/UserHealthRiskAssessment';
 // Placeholder pages (reports still from AdminPlaceholders, new SettingsPage)
 import { ReportsPage } from "@/pages/admin/AdminPlaceholders";
 import SettingsPage from "@/pages/admin/SettingsPage";
@@ -156,13 +174,15 @@ import CorporateNotifications from "@/pages/corporate/CorporateNotifications";
 import CorporateEmployees from "@/pages/corporate/CorporateEmployees";
 import CorporateAppointments from "@/pages/corporate/CorporateAppointments";
 import CorporateHealthAnalysis from "@/pages/corporate/CorporateHealthAnalysis";
-import CorporateRiskMonitor from "@/pages/corporate/CorporateRiskMonitor";
 import CorporateDepartments from "@/pages/corporate/CorporateDepartments";
 import CorporateClaims from "@/pages/corporate/CorporateClaims";
 import CorporateReports from "@/pages/corporate/CorporateReports";
 import CorporateComplaints from "@/pages/corporate/CorporateComplaints";
 import CorporateSettings from "@/pages/corporate/CorporateSettings";
 import CorporateHelp from "@/pages/corporate/CorporateHelp";
+import CorporateHealthRiskAssessment from "@/pages/corporate/CorporateHealthRiskAssessment";
+import CorporateGamification from "@/pages/corporate/CorporateGamification";
+import CorporateWellnessCalendar from "@/pages/corporate/CorporateWellnessCalendar";
 import TpaLogin from "@/pages/tpa/TpaLogin";
 import TPADashboard from "@/pages/tpa/TPADashboard";
 import TPAClaims from "@/pages/tpa/TPAClaims";
@@ -317,7 +337,7 @@ const AppRoutes = () => {
 
   return (
     <Routes>
-        <Route path="/" element={<Index />} />
+        <Route path="/" element={<MainLayout><Index /></MainLayout>} />
         <Route path="/video-test" element={<VideoCallTestSimple />} />
         <Route path="/video-test-basic" element={<VideoCallTestBasic />} />
       <Route path="/login" element={<Login />} />
@@ -475,12 +495,25 @@ const AppRoutes = () => {
       <Route path="/doctor/availability" element={<DoctorAppointmentSettings />} />
       <Route path="/doctor/prescriptions" element={<DoctorPrescriptions />} />
       <Route path="/doctor/patients" element={<DoctorPatients />} />
+      <Route path="/doctor/triage" element={<DoctorTriage />} />
+      <Route path="/doctor/remote-monitoring" element={<RemoteHealthMonitoring />} />
+      <Route path="/doctor/assist" element={<DoctorAssist />} />
       <Route path="/doctor/health-monitoring" element={<HealthMonitoringDashboardWrapper />} />
       <Route path="/doctor/contact" element={<DoctorContact />} />
       <Route path="/doctor/alerts" element={<DoctorAlerts />} />
       <Route path="/doctor/video" element={<DoctorVideoConsultation />} />
       <Route path="/doctor/recording-test" element={<RecordingTest />} />
       <Route path="/doctor/chat" element={<ChatCall />} />
+      <Route path="/doctor/analytics" element={<DoctorAnalytics />} />
+      <Route path="/doctor/reports" element={<DoctorReports />} />
+      <Route path="/doctor/settings" element={<DoctorSettings />} />
+      <Route path="/doctor/templates" element={<DoctorDocumentTemplates />} />
+      <Route path="/doctor/template-settings" element={<DoctorTemplateSettings />} />
+      <Route path="/doctor/specialty-templates" element={<DoctorSpecialtyTemplates />} />
+      <Route path="/doctor/prescription-writer" element={<PrescriptionWriter />} />
+      <Route path="/doctor/services" element={<DoctorServices />} />
+      <Route path="/doctor/billing" element={<DoctorBilling />} />
+      <Route path="/doctor/health-records" element={<PatientEMR />} />
       <Route path="/video-consultation" element={<MainLayout><VideoConsultation /></MainLayout>} />
       <Route path="/nurse/dashboard" element={<MainLayout><NurseDashboard /></MainLayout>} />
       <Route path="/assistant/dashboard" element={<MainLayout><AssistantDashboard /></MainLayout>} />
@@ -525,10 +558,16 @@ const AppRoutes = () => {
       <Route path="/patient/buy-insurance" element={<MainLayout><BuyInsurance /></MainLayout>} />
       <Route path="/patient/claims" element={<MainLayout><ClaimsManagement /></MainLayout>} />
       <Route path="/patient/ai-health-analysis" element={<MainLayout><AIHealthAnalysis /></MainLayout>} />
+      <Route path="/patient/wellness-challenges" element={<EmployeeGamification />} />
+      <Route path="/wellness-challenges" element={<EmployeeGamification />} />
+      <Route path="/patient/wellness-calendar" element={<EmployeeWellnessCalendar />} />
+      <Route path="/wellness-calendar" element={<EmployeeWellnessCalendar />} />
+      <Route path="/health-risk-assessment" element={<UserHealthRiskAssessment />} />
   
   {/* Billing */}
   <Route path="/billing/checkout" element={<MainLayout><OrderCheckout /></MainLayout>} />
   <Route path="/billing/orders" element={<MainLayout><OrderHistory /></MainLayout>} />
+  <Route path="/billing/invoices" element={<MainLayout><MyInvoices /></MainLayout>} />
   <Route path="/billing/orders/:orderId" element={<MainLayout><OrderDetails /></MainLayout>} />
   
   {/* Team */}
@@ -620,6 +659,7 @@ const AppRoutes = () => {
   <Route path="/admin/payments" element={<PaymentManagement />} />
   <Route path="/admin/email" element={<EmailManagement />} />
   <Route path="/admin/activity-log" element={<ActivityLog />} />
+  <Route path="/admin/module-access" element={<ModuleAccessControl />} />
   <Route path="/admin/auth-test" element={<AdminAuthTest />} />
   <Route path="/admin/sms" element={<SMSManagement />} />
   <Route path="/admin/whatsapp" element={<WhatsAppManagement />} />
@@ -627,7 +667,7 @@ const AppRoutes = () => {
   <Route path="/admin/voice" element={<VoiceCallManagement />} />
   <Route path="/admin/tickets" element={<TicketManagement />} />
   <Route path="/admin/tickets/:id" element={<TicketManagement />} />
-  <Route path="/admin/health-risk" element={<HealthRiskAssessment />} />
+  <Route path="/admin/health-risk" element={<AdminHealthRiskAssessment />} />
   <Route path="/diagnostic" element={<ConnectionDiagnostic />} />
   <Route path="/admin/reports" element={<ReportsPage />} />
   <Route path="/admin/crm" element={<CRMPage />} />
@@ -642,7 +682,6 @@ const AppRoutes = () => {
   <Route path="/corporate/employees" element={<CorporateEmployees />} />
   <Route path="/corporate/appointments" element={<CorporateAppointments />} />
   <Route path="/corporate/health-analysis" element={<CorporateHealthAnalysis />} />
-  <Route path="/corporate/risk-monitor" element={<CorporateRiskMonitor />} />
   <Route path="/corporate/departments" element={<CorporateDepartments />} />
   <Route path="/corporate/claims" element={<CorporateClaims />} />
   <Route path="/corporate/reports" element={<CorporateReports />} />
@@ -651,6 +690,9 @@ const AppRoutes = () => {
   <Route path="/corporate/notifications" element={<CorporateNotifications />} />
   <Route path="/corporate/settings" element={<CorporateSettings />} />
   <Route path="/corporate/help" element={<CorporateHelp />} />
+  <Route path="/corporate/health-risk-assessment" element={<CorporateHealthRiskAssessment />} />
+  <Route path="/corporate/gamification" element={<CorporateGamification />} />
+  <Route path="/corporate/wellness-calendar" element={<CorporateWellnessCalendar />} />
   {/* TPA Routes - Main routes defined above */}
   {/* PSU Routes */}
   <Route path="/psu/login" element={<PSULogin />} />

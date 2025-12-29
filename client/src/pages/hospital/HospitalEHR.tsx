@@ -333,6 +333,34 @@ const HospitalEHR = () => {
     }
   };
 
+  const handlePrintChart = () => {
+    window.print();
+    toast({ title: 'Print started', description: 'EHR print dialog opened.' });
+  };
+
+  const handleShareChart = async () => {
+    const sharePayload = {
+      title: 'Patient EHR',
+      text: selectedPatient ? `Sharing chart for ${selectedPatient.name}` : 'Sharing patient chart',
+      url: window.location.href,
+    };
+
+    try {
+      if (navigator.share) {
+        await navigator.share(sharePayload);
+        toast({ title: 'Shared', description: 'Chart shared successfully.' });
+      } else if (navigator.clipboard?.writeText) {
+        await navigator.clipboard.writeText(sharePayload.url);
+        toast({ title: 'Link copied', description: 'Shareable link copied to clipboard.' });
+      } else {
+        toast({ title: 'Share unavailable', description: 'Sharing not supported in this browser.', variant: 'destructive' });
+      }
+    } catch (err) {
+      console.error('Share failed', err);
+      toast({ title: 'Share failed', description: 'Unable to share chart right now.', variant: 'destructive' });
+    }
+  };
+
   if (loading) {
     return (
       <div className="min-h-screen flex items-center justify-center">
@@ -420,10 +448,10 @@ const HospitalEHR = () => {
                     </div>
                   )}
                   <div className="flex gap-2">
-                    <Button variant="outline" size="sm" className="gap-2">
+                    <Button variant="outline" size="sm" className="gap-2" onClick={handlePrintChart}>
                       <Printer className="h-4 w-4" /> Print
                     </Button>
-                    <Button variant="outline" size="sm" className="gap-2">
+                    <Button variant="outline" size="sm" className="gap-2" onClick={handleShareChart}>
                       <Share2 className="h-4 w-4" /> Share
                     </Button>
                     <Button 

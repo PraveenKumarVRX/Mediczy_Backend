@@ -91,6 +91,17 @@ const User = sequelize.define('User', {
     type: DataTypes.STRING(50),
     defaultValue: 'individual',
     field: 'membership_type'
+  },
+  // Primary Doctor (Family Doctor concept)
+  primaryDoctorId: {
+    type: DataTypes.INTEGER,
+    allowNull: true,
+    field: 'primary_doctor_id',
+    references: {
+      model: 'doctors',
+      key: 'id'
+    },
+    comment: 'Default family doctor assigned to patient. CMO Dr. Nandita Agarwal (ID: 5) if not specified'
   }
 }, {
   tableName: 'users',
@@ -164,6 +175,7 @@ const userModel = {
 };
 
 // Helper to generate JWT for intelligent DB users
+// Includes userId and userType for ring-fencing middleware
 export const generateAuthTokenForUser = (userInstance) => {
   if (!process.env.JWT_SECRET) {
     throw new Error('JWT_SECRET is not configured');
@@ -171,8 +183,12 @@ export const generateAuthTokenForUser = (userInstance) => {
 
   const payload = {
     id: userInstance.id,
+    userId: userInstance.id,  // Explicit userId for ring-fencing
     email: userInstance.email,
-    role: userInstance.isAdmin ? 'admin' : 'user'
+    role: userInstance.isAdmin ? 'admin' : 'user',
+    userType: userInstance.isAdmin ? 'admin' : 'user',  // userType for ring-fencing
+    isAdmin: userInstance.isAdmin || false,
+    corporateId: userInstance.corporateId || null
   };
 
   return jwt.sign(payload, process.env.JWT_SECRET, {

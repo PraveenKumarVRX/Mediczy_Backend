@@ -21,6 +21,9 @@ const app = initializeApp(firebaseConfig);
 // Initialize Firebase Cloud Messaging (only in supported environments)
 let messaging: any = null;
 
+// Feature flag: gate FCM until Installations API is enabled
+const ENABLE_FCM = (import.meta.env.VITE_ENABLE_FCM ?? 'false') === 'true';
+
 // Check if messaging is supported before initializing
 // Enhanced check for FCM browser support
 export const isMessagingSupported = (): boolean => {
@@ -67,13 +70,15 @@ export const isMessagingSupported = (): boolean => {
   }
 };
 
-// Initialize messaging only if supported
-if (isMessagingSupported()) {
+// Initialize messaging only if supported and enabled via flag
+if (ENABLE_FCM && isMessagingSupported()) {
   try {
     messaging = getMessaging(app);
   } catch (error) {
     console.warn('Firebase Messaging not supported in this browser:', error);
   }
+} else {
+  console.log('🔔 Firebase messaging initialization skipped (feature flag or unsupported).');
 }
 
 export { messaging };
@@ -84,6 +89,11 @@ export { firebaseConfig };
 // Get FCM registration token
 export const getFCMToken = async (): Promise<string | null> => {
   try {
+    // Respect feature flag
+    if (!ENABLE_FCM) {
+      console.log('🔔 FCM is disabled by configuration (VITE_ENABLE_FCM=false)');
+      return null;
+    }
     // Check if messaging is supported and initialized
     if (!messaging) {
       console.warn('Firebase messaging is not available');
@@ -131,7 +141,16 @@ export const getFCMToken = async (): Promise<string | null> => {
       }
       return null;
     }
-  } catch (error) {
+  } catch (error: any) {
+    // Handle Firebase Installations API errors gracefully
+    if (error?.code === 'installations/request-failed' || 
+        error?.message?.includes('PERMISSION_DENIED') ||
+        error?.message?.includes('Firebase Installations API')) {
+      console.warn('⚠️ Firebase Installations API not enabled. Push notifications disabled.');
+      console.warn('   To enable: Visit https://console.developers.google.com/apis/api/firebaseinstallations.googleapis.com/overview');
+      console.warn('   App will continue without push notifications.');
+      return null;
+    }
     console.error('❌ Error retrieving FCM token:', error);
     return null;
   }
@@ -140,6 +159,10 @@ export const getFCMToken = async (): Promise<string | null> => {
 // Listen for foreground messages
 export const onMessageListener = (): Promise<MessagePayload> => {
   return new Promise((resolve, reject) => {
+    if (!ENABLE_FCM) {
+      reject(new Error('FCM disabled by configuration'));
+      return;
+    }
     if (!messaging) {
       reject(new Error('Firebase messaging not initialized'));
       return;
@@ -203,6 +226,11 @@ export const handleNotificationClick = (data: Record<string, any>) => {
 // Initialize Firebase messaging for the app
 export const initializeFirebaseMessaging = async () => {
   try {
+    // Respect feature flag
+    if (!ENABLE_FCM) {
+      console.log('🔔 Firebase messaging disabled by configuration - skipping init');
+      return;
+    }
     // Check if messaging is available
     if (!isMessagingSupported()) {
       console.log('🔔 Firebase messaging not supported in this browser - push notifications disabled');
@@ -251,7 +279,14 @@ export const initializeFirebaseMessaging = async () => {
         console.log('🔔 Firebase messaging listener not available:', error.message);
       });
     
-  } catch (error) {
+  } catch (error: any) {
+    // Handle Firebase Installations API errors gracefully
+    if (error?.code === 'installations/request-failed' || 
+        error?.message?.includes('PERMISSION_DENIED') ||
+        error?.message?.includes('Firebase Installations API')) {
+      console.warn('⚠️ Firebase push notifications unavailable - Installations API not enabled');
+      return;
+    }
     console.error('❌ Error initializing Firebase messaging:', error);
   }
 };

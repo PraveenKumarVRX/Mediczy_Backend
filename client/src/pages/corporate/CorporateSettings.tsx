@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from 'react';
-import { Settings, Bell, Lock, Users, Building2, CreditCard, Globe, Save } from 'lucide-react';
+import { Settings, Bell, Lock, Users, Building2, CreditCard, Globe, Save, Cog } from 'lucide-react';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -12,6 +12,8 @@ import { Textarea } from '@/components/ui/textarea';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { useToast } from '@/hooks/use-toast';
 import api from '@/utils/api';
+import CorporateLayout from '@/components/corporate/CorporateLayout';
+import CorporatePageHeader from '@/components/corporate/CorporatePageHeader';
 
 interface Invoice {
   id: string;
@@ -96,17 +98,20 @@ const CorporateSettings: React.FC = () => {
   };
 
   return (
-    <div className="space-y-6">
-      <div className="flex justify-between items-center">
-        <div>
-          <h1 className="text-3xl font-bold">Corporate Settings</h1>
-          <p className="text-gray-500 mt-1">Configure your organization's health platform settings</p>
-        </div>
-        <Button onClick={handleSaveSettings}>
-          <Save className="h-4 w-4 mr-2" />
-          Save Changes
-        </Button>
-      </div>
+    <CorporateLayout title="Settings">
+      <div className="space-y-6">
+        <CorporatePageHeader
+          icon={Cog}
+          title="Corporate Settings"
+          description="Configure your organization's health platform settings and preferences"
+          gradient="from-gray-600 to-gray-800"
+          actions={
+            <Button size="sm" onClick={handleSaveSettings} className="bg-white text-gray-700 hover:bg-white/90 shadow-lg">
+              <Save className="h-4 w-4 mr-2" />
+              Save Changes
+            </Button>
+          }
+        />
 
       <Tabs value={activeTab} onValueChange={setActiveTab} className="space-y-6">
         <TabsList className="grid w-full grid-cols-5">
@@ -535,7 +540,8 @@ const CorporateSettings: React.FC = () => {
           </Card>
         </TabsContent>
       </Tabs>
-    </div>
+      </div>
+    </CorporateLayout>
   );
 };
 

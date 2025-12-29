@@ -170,10 +170,40 @@ class OrchestratorAPI {
       });
 
       // Transform the working medical consultation response to match expected format
+      // Debug the actual response
+      console.log('🔍 Backend Response Data:', {
+        status: response.data?.status,
+        hasResponse: !!response.data?.response,
+        hasPrimaryResponse: !!response.data?.primary_response,
+        responseType: typeof response.data?.response,
+        primaryResponseType: typeof response.data?.primary_response,
+        allKeys: Object.keys(response.data || {})
+      });
+
+      // Handle different response structures from backend
+      const primaryResponse = response.data?.primary_response || 
+                             response.data?.response || 
+                             response.data?.message ||
+                             null;
+
+      if (!primaryResponse) {
+        console.error('❌ No response content found in backend response:', response.data);
+        return {
+          success: false,
+          error: {
+            message: 'Invalid response from Dr. iSHA',
+            details: 'No response content received from server',
+            type: 'invalid_response'
+          },
+          data: null,
+          sessionId: sessionId,
+        };
+      }
+
       const transformedData = {
         success: response.data?.status === 'success',
-        primary_response: response.data?.primary_response,
-        response: response.data?.primary_response, // Fallback
+        primary_response: primaryResponse,
+        response: primaryResponse,
         urgency_score: response.data?.urgency_score,
         symptoms_detected: response.data?.symptoms_detected,
         coordinated_by: response.data?.coordinated_by,

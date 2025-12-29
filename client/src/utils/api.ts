@@ -30,6 +30,23 @@ const resolveBaseURL = () => {
   return envBase || "/api";
 };
 
+// Resolve tenant id from env or localStorage
+const resolveTenantId = (): string | undefined => {
+  try {
+    const envTenant = import.meta.env.VITE_TENANT_ID as string | undefined;
+    // Prefer explicit env variable when set
+    if (envTenant && envTenant.trim()) return envTenant.trim();
+    // Fall back to localStorage if available in browser
+    if (typeof window !== "undefined") {
+      const lsTenant = window.localStorage.getItem("tenantId") || window.localStorage.getItem("X-Tenant-ID");
+      if (lsTenant && lsTenant.trim()) return lsTenant.trim();
+    }
+  } catch (e) {
+    // no-op: keep requests working even if storage not accessible
+  }
+  return undefined;
+};
+
 // Create an Axios instance
 const api = axios.create({
   baseURL: resolveBaseURL(),
@@ -51,6 +68,15 @@ api.interceptors.request.use(
       const token = getToken();
       if (token) {
         config.headers = { ...(config.headers || {}), Authorization: `Bearer ${token}` } as any;
+      }
+    }
+
+    // Inject tenant header when available and not already provided
+    const hasTenantHeader = config.headers && (config.headers as any)["X-Tenant-ID"];
+    if (!hasTenantHeader) {
+      const tenantId = resolveTenantId();
+      if (tenantId) {
+        config.headers = { ...(config.headers || {}), "X-Tenant-ID": tenantId } as any;
       }
     }
     return config;

@@ -305,24 +305,30 @@ const TeamDirectory = () => {
 
                 <div className="pt-3 flex gap-2">
                   <Button
+                    asChild
                     size="sm"
                     variant="outline"
                     className="flex-1"
-                    onClick={() => handleSendEmail(member.email, `${member.firstName} ${member.lastName}`.trim())}
                     disabled={!member.email}
                   >
-                    <Mail className="h-3 w-3 mr-1" />
-                    Email
+                    <a
+                      href={`mailto:${member.email}?subject=${encodeURIComponent('Hello from Mediczy Team')}&body=${encodeURIComponent(`Hi ${`${member.firstName} ${member.lastName}`.trim() || 'there'},\n\n`)}`}
+                    >
+                      <Mail className="h-3 w-3 mr-1 inline" />
+                      Email
+                    </a>
                   </Button>
                   <Button
+                    asChild
                     size="sm"
                     variant="outline"
                     className="flex-1"
-                    onClick={() => window.location.href = `tel:${member.phone}`}
                     disabled={!member.phone}
                   >
-                    <Phone className="h-3 w-3 mr-1" />
-                    Call
+                    <a href={`tel:${member.phone}`}>
+                      <Phone className="h-3 w-3 mr-1 inline" />
+                      Call
+                    </a>
                   </Button>
                 </div>
               </CardContent>

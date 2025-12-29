@@ -1,5 +1,5 @@
 import React, { useEffect, useMemo, useState } from 'react';
-import { FileText, DollarSign, Clock, CheckCircle, XCircle, AlertCircle, Search, Filter, Upload, Download, Eye } from 'lucide-react';
+import { FileText, DollarSign, Clock, CheckCircle, XCircle, AlertCircle, Search, Filter, Upload, Download, Eye, Receipt } from 'lucide-react';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -10,6 +10,9 @@ import { Textarea } from '@/components/ui/textarea';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { useToast } from '@/hooks/use-toast';
 import api from '@/utils/api';
+import CorporateLayout from '@/components/corporate/CorporateLayout';
+import CorporatePageHeader from '@/components/corporate/CorporatePageHeader';
+import CorporateStatusBadge from '@/components/corporate/CorporateStatusBadge';
 
 interface Claim {
   id: string;
@@ -173,19 +176,33 @@ const CorporateClaims: React.FC = () => {
   };
 
   return (
-    <div className="space-y-6">
-      <div className="flex justify-between items-center">
-        <div>
-          <h1 className="text-3xl font-bold">Insurance Claims Management</h1>
-          <p className="text-gray-500 mt-1">Track and manage employee insurance claims</p>
-        </div>
+    <CorporateLayout title="Claims Management">
+      <div className="space-y-6">
+        <CorporatePageHeader
+          icon={Receipt}
+          title="Insurance Claims Management"
+          description="Track, manage, and process employee insurance claims and reimbursements"
+          gradient="from-cyan-500 to-cyan-700"
+          badge={`${claims.length} Claims`}
+          showSearch={true}
+          searchPlaceholder="Search by employee name, claim ID, or type..."
+          searchValue={searchQuery}
+          onSearchChange={setSearchQuery}
+          showRefresh={true}
+          onRefresh={loadClaims}
+          isRefreshing={isLoading}
+          stats={[
+            { label: 'Total Claims', value: stats.totalClaims },
+            { label: 'Pending', value: stats.pending },
+            { label: 'Approved', value: stats.approved },
+            { label: 'Total Amount', value: `₹${stats.totalAmount.toLocaleString()}` },
+          ]}
+          showAdd={true}
+          addLabel="Submit New Claim"
+          onAdd={() => setIsSubmitDialogOpen(true)}
+        />
+
         <Dialog open={isSubmitDialogOpen} onOpenChange={setIsSubmitDialogOpen}>
-          <DialogTrigger asChild>
-            <Button>
-              <Upload className="h-4 w-4 mr-2" />
-              Submit New Claim
-            </Button>
-          </DialogTrigger>
           <DialogContent className="sm:max-w-[525px]">
             <DialogHeader>
               <DialogTitle>Submit Insurance Claim</DialogTitle>
@@ -255,9 +272,8 @@ const CorporateClaims: React.FC = () => {
             </DialogFooter>
           </DialogContent>
         </Dialog>
-      </div>
 
-      <Dialog open={viewOpen} onOpenChange={setViewOpen}>
+        <Dialog open={viewOpen} onOpenChange={setViewOpen}>
         <DialogContent className="sm:max-w-[600px]">
           <DialogHeader>
             <DialogTitle>Claim Details</DialogTitle>
@@ -313,8 +329,8 @@ const CorporateClaims: React.FC = () => {
         </DialogContent>
       </Dialog>
 
-      {/* Statistics Cards */}
-      <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-5">
+        {/* Statistics Cards */}
+        <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-5">
         <Card>
           <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
             <CardTitle className="text-sm font-medium">Total Claims</CardTitle>
@@ -369,15 +385,15 @@ const CorporateClaims: React.FC = () => {
             <p className="text-xs text-muted-foreground">Claimed amount</p>
           </CardContent>
         </Card>
-      </div>
+        </div>
 
-      {/* Claims List */}
-      <Card>
-        <CardHeader>
-          <CardTitle>Claims Management</CardTitle>
-          <CardDescription>View and process all insurance claims</CardDescription>
-        </CardHeader>
-        <CardContent>
+        {/* Claims List */}
+        <Card>
+          <CardHeader>
+            <CardTitle>Claims Management</CardTitle>
+            <CardDescription>View and process all insurance claims</CardDescription>
+          </CardHeader>
+          <CardContent>
           <div className="flex gap-4 mb-6">
             <div className="flex-1 relative">
               <Search className="absolute left-2 top-2.5 h-4 w-4 text-muted-foreground" />
@@ -501,7 +517,8 @@ const CorporateClaims: React.FC = () => {
           )}
         </CardContent>
       </Card>
-    </div>
+      </div>
+    </CorporateLayout>
   );
 };
 

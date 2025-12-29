@@ -7,6 +7,8 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Checkbox } from '@/components/ui/checkbox';
 import { Badge } from '@/components/ui/badge';
+import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog';
+import { Label } from '@/components/ui/label';
 import {
   Building, Search, Eye, Download, MapPin, CheckCircle2, AlertCircle,
   ChevronLeft, ChevronRight, Square, LayoutGrid, List,
@@ -15,6 +17,7 @@ import axios from 'axios';
 import { exportProviders } from '@/utils/exportToExcel';
 import ProviderDetailModal from '@/components/providers/ProviderDetailModal';
 import ProviderAnalytics from '@/components/providers/ProviderAnalytics';
+import api from '@/utils/api';
 
 // Get API base URL from environment
 const API_BASE_URL = import.meta.env.VITE_API_URL || '/api';
@@ -43,7 +46,23 @@ const ClinicsManagement = () => {
   
   const [selectedClinic, setSelectedClinic] = useState<any>(null);
   const [showDetailModal, setShowDetailModal] = useState(false);
+  const [editModalOpen, setEditModalOpen] = useState(false);
+  const [editForm, setEditForm] = useState({
+    id: '',
+    name: '',
+    email: '',
+    phone: '',
+    city: '',
+    state: '',
+    type: '',
+    specialization: '',
+    doctorName: '',
+    consultationFee: '',
+    website: '',
+  });
   const [activeTab, setActiveTab] = useState('list');
+
+  const token = localStorage.getItem('adminToken');
 
   useEffect(() => {
     fetchClinics();
@@ -64,7 +83,7 @@ const ClinicsManagement = () => {
       if (selectedState) params.state = selectedState;
       if (selectedType) params.type = selectedType;
       
-      const { data } = await axios.get(`${API_BASE_URL}/masterdata/clinics`, { params });
+      const { data } = await api.get(`/masterdata/clinics`, { params });
       
       if (data.success) {
         setClinics(data.data);
@@ -82,8 +101,8 @@ const ClinicsManagement = () => {
   const fetchFilterOptions = async () => {
     try {
       const [citiesRes, statesRes] = await Promise.all([
-        axios.get(`${API_BASE_URL}/masterdata/cities`),
-        axios.get(`${API_BASE_URL}/masterdata/states`),
+        api.get(`/masterdata/cities`),
+        api.get(`/masterdata/states`),
       ]);
       
       if (citiesRes.data.success) setCities(citiesRes.data.data);
@@ -117,6 +136,45 @@ const ClinicsManagement = () => {
   const handleViewDetails = (clinic: any) => {
     setSelectedClinic(clinic);
     setShowDetailModal(true);
+  };
+
+  const handleOpenEdit = (clinic: any) => {
+    setEditForm({
+      id: clinic.id || '',
+      name: clinic.name || '',
+      email: clinic.email || clinic.contact?.email || '',
+      phone: clinic.phone || clinic.mobile || clinic.contact?.phone || '',
+      city: clinic.city || clinic.basic_info?.city || '',
+      state: clinic.state || clinic.basic_info?.state || '',
+      type: clinic.clinic_type || clinic.type || clinic.sub_type || '',
+      specialization: clinic.specialization || clinic.specialty || clinic.sub_type || '',
+      doctorName: clinic.doctor_name || clinic.metadata?.doctor_name || '',
+      consultationFee: clinic.consultation_fee || clinic.metadata?.consultation_fee || '',
+      website: clinic.website || clinic.metadata?.website || '',
+    });
+    setEditModalOpen(true);
+  };
+
+  const handleUpdateClinic = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!editForm.id) return;
+    try {
+      setLoading(true);
+      setError(null);
+      const { data } = await api.patch(`/admin/clinics/${editForm.id}/details`, { updates: editForm });
+      if (data?.success && data.data) {
+        const updated = data.data;
+        setClinics(prev => prev.map(c => c.id === updated.id ? { ...c, ...updated } : c));
+        setResult({ message: data.message || 'Clinic updated successfully' });
+        setEditModalOpen(false);
+      } else {
+        setError(data?.message || 'Failed to update clinic');
+      }
+    } catch (err: any) {
+      setError(err?.response?.data?.message || 'Failed to update clinic');
+    } finally {
+      setLoading(false);
+    }
   };
 
   return (
@@ -317,9 +375,9 @@ const ClinicsManagement = () => {
                             <div className="flex-1">
                               <h3 className="text-lg font-semibold">{clinic.name}</h3>
                               {clinic.sub_type && <Badge variant="outline" className="mt-2">{clinic.sub_type}</Badge>}
-                              <div className="flex items-center gap-2 mt-2 text-sm text-muted-foreground">
-                                <MapPin className="h-3 w-3" />
-                                {clinic.city}{clinic.state && `, ${clinic.state}`}
+                              <div className="flex items-start gap-2 mt-2 text-sm text-muted-foreground">
+                                <MapPin className="h-3 w-3 mt-0.5 flex-shrink-0" />
+                                <p className="line-clamp-2">{[clinic.address, clinic.city, clinic.state, clinic.pincode].filter(Boolean).join(', ') || 'Address not available'}</p>
                               </div>
                             </div>
                           </div>
@@ -335,9 +393,14 @@ const ClinicsManagement = () => {
                             </div>
                           )}
 
-                          <Button size="sm" variant="outline" onClick={() => handleViewDetails(clinic)}>
-                            <Eye className="mr-2 h-4 w-4" />View Details
-                          </Button>
+                          <div className="flex gap-2">
+                            <Button size="sm" variant="outline" onClick={() => handleViewDetails(clinic)}>
+                              <Eye className="mr-2 h-4 w-4" />View Details
+                            </Button>
+                            <Button size="sm" variant="secondary" onClick={() => handleOpenEdit(clinic)}>
+                              Edit
+                            </Button>
+                          </div>
                         </div>
                       </CardContent>
                     </Card>
@@ -384,7 +447,7 @@ const ClinicsManagement = () => {
                                 <td className="p-4 text-sm">
                                   <div className="flex items-center gap-1">
                                     <MapPin className="h-3 w-3 text-muted-foreground" />
-                                    <span>{clinic.city}{clinic.state && `, ${clinic.state}`}</span>
+                                    <span className="line-clamp-2">{[clinic.address, clinic.city, clinic.state, clinic.pincode].filter(Boolean).join(', ') || 'Address not available'}</span>
                                   </div>
                                 </td>
                                 <td className="p-4 text-sm">
@@ -399,6 +462,9 @@ const ClinicsManagement = () => {
                                 <td className="p-4">
                                   <Button size="sm" variant="outline" onClick={() => handleViewDetails(clinic)}>
                                     <Eye className="h-4 w-4" />
+                                  </Button>
+                                  <Button size="sm" variant="secondary" className="ml-2" onClick={() => handleOpenEdit(clinic)}>
+                                    Edit
                                   </Button>
                                 </td>
                               </tr>
@@ -456,6 +522,61 @@ const ClinicsManagement = () => {
         </Tabs>
         
         <ProviderDetailModal provider={selectedClinic} open={showDetailModal} onClose={() => setShowDetailModal(false)} type="clinic" />
+        <Dialog open={editModalOpen} onOpenChange={setEditModalOpen}>
+          <DialogContent className="max-w-2xl">
+            <DialogHeader>
+              <DialogTitle>Edit Clinic</DialogTitle>
+            </DialogHeader>
+            <form onSubmit={handleUpdateClinic} className="space-y-4">
+              <div className="grid md:grid-cols-2 gap-3">
+                <div>
+                  <Label>Name</Label>
+                  <Input value={editForm.name} onChange={(e) => setEditForm({...editForm, name: e.target.value})} required />
+                </div>
+                <div>
+                  <Label>Email</Label>
+                  <Input type="email" value={editForm.email} onChange={(e) => setEditForm({...editForm, email: e.target.value})} />
+                </div>
+                <div>
+                  <Label>Phone</Label>
+                  <Input value={editForm.phone} onChange={(e) => setEditForm({...editForm, phone: e.target.value})} />
+                </div>
+                <div>
+                  <Label>Type</Label>
+                  <Input value={editForm.type} onChange={(e) => setEditForm({...editForm, type: e.target.value})} />
+                </div>
+                <div>
+                  <Label>Specialization</Label>
+                  <Input value={editForm.specialization} onChange={(e) => setEditForm({...editForm, specialization: e.target.value})} />
+                </div>
+                <div>
+                  <Label>Doctor Name</Label>
+                  <Input value={editForm.doctorName} onChange={(e) => setEditForm({...editForm, doctorName: e.target.value})} />
+                </div>
+                <div>
+                  <Label>Consultation Fee</Label>
+                  <Input value={editForm.consultationFee} onChange={(e) => setEditForm({...editForm, consultationFee: e.target.value})} />
+                </div>
+                <div>
+                  <Label>City</Label>
+                  <Input value={editForm.city} onChange={(e) => setEditForm({...editForm, city: e.target.value})} />
+                </div>
+                <div>
+                  <Label>State</Label>
+                  <Input value={editForm.state} onChange={(e) => setEditForm({...editForm, state: e.target.value})} />
+                </div>
+                <div>
+                  <Label>Website</Label>
+                  <Input value={editForm.website} onChange={(e) => setEditForm({...editForm, website: e.target.value})} />
+                </div>
+              </div>
+              <DialogFooter>
+                <Button variant="outline" type="button" onClick={() => setEditModalOpen(false)}>Cancel</Button>
+                <Button type="submit" disabled={loading}>{loading ? 'Saving...' : 'Save Changes'}</Button>
+              </DialogFooter>
+            </form>
+          </DialogContent>
+        </Dialog>
       </div>
     </AdminLayout>
   );

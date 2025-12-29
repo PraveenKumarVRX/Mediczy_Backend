@@ -49,6 +49,12 @@ if pm2 describe bullmq-workers &>/dev/null; then
     pm2 restart bullmq-workers --update-env
 fi
 
+# Restart SIB FastAPI if exists
+if pm2 describe sib-fastapi &>/dev/null; then
+    echo "→ Restarting sib-fastapi..."
+    pm2 restart sib-fastapi --update-env
+fi
+
 # Restart LLM orchestrator if exists
 if pm2 describe llm-orchestrator &>/dev/null; then
     echo "→ Restarting llm-orchestrator..."
@@ -87,9 +93,11 @@ echo "  pm2 monit"
 echo ""
 echo "Verifying health endpoints..."
 if command -v curl >/dev/null 2>&1; then
-    echo "→ API /health"
+    echo "→ SIB API /health"
+    curl -s http://localhost:8001/health | sed 's/{.*}/OK/g' || true
+    echo "→ Backend API /health"
     curl -s http://localhost:8000/health | sed 's/{.*}/OK/g' || true
-    echo "→ API /api/db/health"
+    echo "→ Database /api/db/health"
     curl -s http://localhost:8000/api/db/health | sed 's/{.*}/OK/g' || true
 else
     echo "curl not available; skip health checks"

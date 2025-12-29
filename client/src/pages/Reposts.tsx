@@ -216,17 +216,17 @@ ${text}`;
   };
 
   return (
-    <div className="container py-6 space-y-6">
-      <div className="flex items-center justify-between">
-        <h1 className="text-3xl font-bold">Report</h1>
+    <div className="container py-6 space-y-6 bg-slate-50 dark:bg-slate-900 min-h-screen">
+      <div className="flex items-center justify-between bg-white dark:bg-slate-800/50 rounded-xl p-4 shadow-sm border border-slate-200 dark:border-slate-700">
+        <h1 className="text-3xl font-bold text-slate-800 dark:text-white">Report</h1>
         <Select value={language} onValueChange={setLanguage}>
-          <SelectTrigger className="w-[180px]">
-            <Languages className="h-4 w-4 mr-2" />
+          <SelectTrigger className="w-[180px] bg-white dark:bg-slate-700 border-slate-200 dark:border-slate-600 text-slate-800 dark:text-white">
+            <Languages className="h-4 w-4 mr-2 text-teal-500" />
             <SelectValue placeholder="Select Language" />
           </SelectTrigger>
-          <SelectContent>
+          <SelectContent className="bg-white dark:bg-slate-800 border-slate-200 dark:border-slate-700">
             {languages.map((lang) => (
-              <SelectItem key={lang.value} value={lang.value}>
+              <SelectItem key={lang.value} value={lang.value} className="text-slate-800 dark:text-white hover:bg-teal-50 dark:hover:bg-slate-700">
                 {lang.label}
               </SelectItem>
             ))}
@@ -234,17 +234,17 @@ ${text}`;
         </Select>
       </div>
 
-      <Card>
+      <Card className="bg-white dark:bg-slate-800/50 border-slate-200 dark:border-slate-700 shadow-sm">
         <CardContent className="p-6">
           <div className="flex flex-col items-center space-y-4">
             {!imagePreview ? (
               <label className="w-full">
-                <div className="border-2 border-dashed rounded-lg p-8 text-center cursor-pointer hover:border-primary transition-colors">
-                  <Upload className="h-8 w-8 mx-auto mb-4 text-muted-foreground" />
-                  <p className="text-muted-foreground">
+                <div className="border-2 border-dashed border-slate-300 dark:border-slate-600 rounded-lg p-8 text-center cursor-pointer hover:border-teal-500 dark:hover:border-teal-400 transition-colors bg-slate-50 dark:bg-slate-900/50">
+                  <Upload className="h-8 w-8 mx-auto mb-4 text-teal-500 dark:text-teal-400" />
+                  <p className="text-slate-600 dark:text-slate-300">
                     Click to upload an image or drag and drop
                   </p>
-                  <p className="text-sm text-muted-foreground mt-1">
+                  <p className="text-sm text-slate-500 dark:text-slate-400 mt-1">
                     PNG, JPG up to 10MB
                   </p>
                 </div>
@@ -260,12 +260,12 @@ ${text}`;
                 <img
                   src={imagePreview}
                   alt="Preview"
-                  className="w-full rounded-lg"
+                  className="w-full rounded-lg border border-slate-200 dark:border-slate-700"
                 />
                 <Button
                   variant="destructive"
                   size="icon"
-                  className="absolute top-2 right-2"
+                  className="absolute top-2 right-2 bg-red-500 hover:bg-red-600 dark:bg-red-600 dark:hover:bg-red-700"
                   onClick={clearImage}
                 >
                   <X className="h-4 w-4" />
@@ -274,28 +274,31 @@ ${text}`;
             )}
 
             {error && (
-              <p className="text-destructive text-sm">{error}</p>
+              <p className="text-red-500 dark:text-red-400 text-sm bg-red-50 dark:bg-red-900/20 px-4 py-2 rounded-lg border border-red-200 dark:border-red-800">{error}</p>
             )}
 
             {imagePreview && !loading && !aiResponse && (
-              <Button onClick={analyzeImage} className="w-full">
+              <Button onClick={analyzeImage} className="w-full bg-teal-500 hover:bg-teal-600 dark:bg-teal-600 dark:hover:bg-teal-700 text-white font-semibold">
                 Analyze Image
               </Button>
             )}
 
             {loading && (
-              <div className="flex items-center justify-center w-full p-4">
-                <Loader2 className="h-6 w-6 animate-spin text-primary" />
-                <span className="ml-2">Analyzing image...</span>
+              <div className="flex items-center justify-center w-full p-4 bg-teal-50 dark:bg-teal-900/20 rounded-lg border border-teal-200 dark:border-teal-800">
+                <Loader2 className="h-6 w-6 animate-spin text-teal-500 dark:text-teal-400" />
+                <span className="ml-2 text-slate-700 dark:text-slate-300">Analyzing image...</span>
               </div>
             )}
 
             {aiResponse && (
-              <div className="w-full space-y-4 border rounded-lg p-4">
-                <h3 className="font-semibold">AI Analysis</h3>
-                <div className="text-muted-foreground whitespace-pre-wrap">
+              <div className="w-full space-y-4 border border-slate-200 dark:border-slate-700 rounded-lg p-4 bg-slate-50 dark:bg-slate-900/50">
+                <h3 className="font-semibold text-slate-800 dark:text-white flex items-center gap-2">
+                  <span className="w-2 h-2 bg-teal-500 rounded-full"></span>
+                  AI Analysis
+                </h3>
+                <div className="text-slate-600 dark:text-slate-300 whitespace-pre-wrap">
                   {aiResponse.description.split('\n').map((line, index) => (
-                    <p key={index} className="mb-2">
+                    <p key={index} className="mb-2 pl-4 border-l-2 border-teal-500/30 dark:border-teal-400/30">
                       {line}
                     </p>
                   ))}

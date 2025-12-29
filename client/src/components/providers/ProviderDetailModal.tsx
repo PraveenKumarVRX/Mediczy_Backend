@@ -340,6 +340,12 @@ const ProviderDetailModal: React.FC<ProviderDetailModalProps> = ({
                       <span className="font-mono text-sm">{provider.registration_number}</span>
                     </div>
                   )}
+                  {provider.medicalCouncil && (
+                    <div className="flex justify-between">
+                      <span className="text-muted-foreground">Medical Council:</span>
+                      <span>{provider.medicalCouncil}</span>
+                    </div>
+                  )}
                   {provider.is_spn !== undefined && (
                     <div className="flex justify-between">
                       <span className="text-muted-foreground">Network Provider:</span>

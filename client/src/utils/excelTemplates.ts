@@ -33,6 +33,7 @@ export const generateDoctorTemplate = () => {
             'Qualification': 'MBBS, MD (Cardiology)',
             'Experience (Years)': 15,
             'Registration Number': 'MCI-12345',
+            'Medical Council': 'Maharashtra Medical Council',
             'City': 'Mumbai',
             'State': 'Maharashtra',
             'Mobile Number': '+91-9876543210',
@@ -48,6 +49,7 @@ export const generateDoctorTemplate = () => {
             'Qualification': 'MBBS, DCH',
             'Experience (Years)': 10,
             'Registration Number': 'MCI-67890',
+            'Medical Council': 'Delhi Medical Council',
             'City': 'Delhi',
             'State': 'Delhi',
             'Mobile Number': '+91-9123456789',
@@ -61,7 +63,7 @@ export const generateDoctorTemplate = () => {
     downloadXlsx(
         'Doctors',
         templateData,
-        [25, 12, 20, 30, 18, 20, 15, 15, 18, 25, 25, 35, 18],
+        [25, 12, 20, 30, 18, 20, 24, 15, 15, 18, 25, 25, 35, 18],
         'Doctors_Upload_Template.xlsx'
     );
 };

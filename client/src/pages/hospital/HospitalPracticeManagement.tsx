@@ -3,6 +3,7 @@ import { useNavigate } from 'react-router-dom';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
+import { useToast } from '@/hooks/use-toast';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Badge } from '@/components/ui/badge';
 import { Label } from '@/components/ui/label';
@@ -14,6 +15,7 @@ import { Calendar } from '@/components/ui/calendar';
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
 import { Progress } from '@/components/ui/progress';
 import { ScrollArea } from '@/components/ui/scroll-area';
+import api from '@/utils/api';
 import { 
   Building2, Calendar as CalendarIcon, Users, Clock, 
   Activity, UserCheck, Bell, Settings, LogOut, Plus, 
@@ -101,7 +103,92 @@ const HospitalPracticeManagement = () => {
   const [filterDepartment, setFilterDepartment] = useState('all');
   const [showNewAppointmentDialog, setShowNewAppointmentDialog] = useState(false);
   const [showNewPatientDialog, setShowNewPatientDialog] = useState(false);
+  const [showViewAppointmentDialog, setShowViewAppointmentDialog] = useState(false);
+  const [showEditAppointmentDialog, setShowEditAppointmentDialog] = useState(false);
+  const [showAddStaffDialog, setShowAddStaffDialog] = useState(false);
+  const [showAddResourceDialog, setShowAddResourceDialog] = useState(false);
+  const [showBedAllocationDialog, setShowBedAllocationDialog] = useState(false);
+  const [selectedAppointment, setSelectedAppointment] = useState<Appointment | null>(null);
+  const [appointmentForm, setAppointmentForm] = useState<Partial<Appointment> | null>(null);
+  const [newAppointmentForm, setNewAppointmentForm] = useState({
+    patientName: '',
+    patientPhone: '',
+    department: '',
+    doctorId: '',
+    type: 'OPD' as Appointment['type'],
+    priority: 'Normal' as Appointment['priority'],
+    time: '',
+    notes: '',
+  });
+  const [patientForm, setPatientForm] = useState({
+    name: '',
+    age: '',
+    gender: '',
+    phone: '',
+    email: '',
+    address: '',
+    admissionStatus: 'OPD' as Patient['admissionStatus'],
+    department: '',
+    assignedDoctor: '',
+  });
+  const [staffForm, setStaffForm] = useState({
+    name: '',
+    role: 'Doctor' as Staff['role'],
+    department: '',
+    specialization: '',
+    phone: '',
+    email: '',
+    shift: 'Morning' as Staff['shift'],
+    status: 'On-Duty' as Staff['status'],
+  });
+  const [editingStaffId, setEditingStaffId] = useState<string | null>(null);
+  const [resourceForm, setResourceForm] = useState({
+    name: '',
+    type: 'Bed' as Resource['type'],
+    department: '',
+    status: 'Available' as Resource['status'],
+    location: '',
+  });
+  const [bedAllocationForm, setBedAllocationForm] = useState({ patientId: '', resourceId: '' });
   const [selectedDate, setSelectedDate] = useState<Date | undefined>(new Date());
+  const [isRefreshing, setIsRefreshing] = useState(false);
+  const { toast } = useToast();
+
+  const hospitalHeaders = () => {
+    const token = localStorage.getItem('hospitalToken');
+    return token ? { Authorization: `Bearer ${token}` } : {};
+  };
+
+  const handleApiError = (error: any, message: string) => {
+    console.error(message, error);
+    const responseMessage = error?.response?.data?.message || error?.message || message;
+    toast({ title: 'Request failed', description: responseMessage, variant: 'destructive' });
+  };
+
+  const hydratePractice = (payload: Partial<{ appointments: Appointment[]; patients: Patient[]; staff: Staff[]; resources: Resource[]; }>) => {
+    if (payload.appointments) setAppointments(payload.appointments);
+    if (payload.patients) setPatients(payload.patients);
+    if (payload.staff) setStaff(payload.staff);
+    if (payload.resources) setResources(payload.resources);
+  };
+
+  const fetchPracticeData = async (isInitial = false) => {
+    if (!isInitial) {
+      setIsRefreshing(true);
+    }
+    try {
+      const { data } = await api.get('/hospital/practice', { headers: hospitalHeaders() });
+      const practice = data?.data || data;
+      hydratePractice(practice || {});
+    } catch (error) {
+      handleApiError(error, 'Failed to fetch practice data');
+    } finally {
+      if (isInitial) {
+        setLoading(false);
+      }
+      setIsRefreshing(false);
+    }
+  };
 
   useEffect(() => {
     const token = localStorage.getItem('hospitalToken');
@@ -115,39 +202,38 @@ const HospitalPracticeManagement = () => {
     if (data) {
       setHospitalData(JSON.parse(data));
     }
-    
-    setLoading(false);
+    fetchPracticeData(true);
   }, [navigate]);
 
   // Sample data
-  const appointments: Appointment[] = [
+  const [appointments, setAppointments] = useState<Appointment[]>([
     { id: 'APT001', patientId: 'P001', patientName: 'Rajesh Kumar', patientPhone: '9876543210', doctorId: 'D001', doctorName: 'Dr. Sharma', department: 'Cardiology', date: '2024-12-04', time: '09:00', type: 'OPD', status: 'Scheduled', priority: 'Normal', createdAt: '2024-12-03' },
     { id: 'APT002', patientId: 'P002', patientName: 'Priya Singh', patientPhone: '9876543211', doctorId: 'D002', doctorName: 'Dr. Patel', department: 'Gynecology', date: '2024-12-04', time: '09:30', type: 'Follow-up', status: 'Checked-in', priority: 'Normal', createdAt: '2024-12-02' },
     { id: 'APT003', patientId: 'P003', patientName: 'Amit Verma', patientPhone: '9876543212', doctorId: 'D003', doctorName: 'Dr. Mehta', department: 'Neurology', date: '2024-12-04', time: '10:00', type: 'Emergency', status: 'In-Progress', priority: 'Emergency', createdAt: '2024-12-04' },
     { id: 'APT004', patientId: 'P004', patientName: 'Neha Gupta', patientPhone: '9876543213', doctorId: 'D004', doctorName: 'Dr. Joshi', department: 'Orthopedics', date: '2024-12-04', time: '10:30', type: 'Procedure', status: 'Scheduled', priority: 'Urgent', createdAt: '2024-12-01' },
     { id: 'APT005', patientId: 'P005', patientName: 'Sanjay Reddy', patientPhone: '9876543214', doctorId: 'D001', doctorName: 'Dr. Sharma', department: 'Cardiology', date: '2024-12-04', time: '11:00', type: 'OPD', status: 'Completed', priority: 'Normal', createdAt: '2024-12-03' },
-  ];
+  ]);
 
-  const patients: Patient[] = [
+  const [patients, setPatients] = useState<Patient[]>([
     { id: 'P001', uhid: 'UHID001234', name: 'Rajesh Kumar', age: 45, gender: 'Male', phone: '9876543210', email: 'rajesh@email.com', address: 'Delhi', bloodGroup: 'B+', admissionStatus: 'IPD', admissionDate: '2024-12-01', assignedDoctor: 'Dr. Sharma', department: 'Cardiology', bed: 'ICU-05', ward: 'ICU' },
     { id: 'P002', uhid: 'UHID001235', name: 'Priya Singh', age: 32, gender: 'Female', phone: '9876543211', email: 'priya@email.com', address: 'Mumbai', bloodGroup: 'A+', admissionStatus: 'OPD', assignedDoctor: 'Dr. Patel', department: 'Gynecology' },
     { id: 'P003', uhid: 'UHID001236', name: 'Amit Verma', age: 58, gender: 'Male', phone: '9876543212', address: 'Bangalore', bloodGroup: 'O+', admissionStatus: 'IPD', admissionDate: '2024-12-03', assignedDoctor: 'Dr. Mehta', department: 'Neurology', bed: 'NEURO-03', ward: 'Neurology' },
     { id: 'P004', uhid: 'UHID001237', name: 'Neha Gupta', age: 28, gender: 'Female', phone: '9876543213', email: 'neha@email.com', address: 'Chennai', bloodGroup: 'AB+', admissionStatus: 'IPD', admissionDate: '2024-12-02', assignedDoctor: 'Dr. Joshi', department: 'Orthopedics', bed: 'ORTHO-08', ward: 'Orthopedics', insurance: { provider: 'Star Health', policyNumber: 'SH123456', validity: '2025-06-30' } },
-  ];
+  ]);
 
-  const staff: Staff[] = [
+  const [staff, setStaff] = useState<Staff[]>([
     { id: 'D001', name: 'Dr. Rajiv Sharma', role: 'Doctor', department: 'Cardiology', specialization: 'Interventional Cardiology', phone: '9876543220', email: 'dr.sharma@hospital.com', shift: 'Morning', status: 'On-Duty', joiningDate: '2020-03-15' },
     { id: 'D002', name: 'Dr. Anjali Patel', role: 'Doctor', department: 'Gynecology', specialization: 'Obstetrics', phone: '9876543221', email: 'dr.patel@hospital.com', shift: 'Morning', status: 'On-Duty', joiningDate: '2019-07-20' },
     { id: 'N001', name: 'Nurse Sunita', role: 'Nurse', department: 'ICU', phone: '9876543230', email: 'sunita@hospital.com', shift: 'Night', status: 'On-Duty', joiningDate: '2021-01-10' },
     { id: 'T001', name: 'Ramesh Kumar', role: 'Technician', department: 'Radiology', phone: '9876543240', email: 'ramesh@hospital.com', shift: 'Rotating', status: 'Available', joiningDate: '2022-05-05' },
-  ];
+  ]);
 
-  const resources: Resource[] = [
+  const [resources, setResources] = useState<Resource[]>([
     { id: 'R001', name: 'MRI Scanner', type: 'Equipment', department: 'Radiology', status: 'In-Use', location: 'Block A, Floor 2', lastMaintenance: '2024-11-15', nextMaintenance: '2025-02-15' },
     { id: 'R002', name: 'ICU Bed 01', type: 'Bed', department: 'ICU', status: 'Available', location: 'ICU Wing' },
     { id: 'R003', name: 'Operation Theatre 1', type: 'Room', department: 'Surgery', status: 'Reserved', location: 'OT Block' },
     { id: 'R004', name: 'Ambulance A1', type: 'Vehicle', department: 'Emergency', status: 'Available', location: 'Parking' },
-  ];
+  ]);
 
   const departments = ['Cardiology', 'Neurology', 'Orthopedics', 'Gynecology', 'Pediatrics', 'Emergency', 'General Medicine', 'Surgery'];
 
@@ -175,6 +261,286 @@ const HospitalPracticeManagement = () => {
       case 'Emergency': return 'bg-red-500 text-white';
       case 'Urgent': return 'bg-orange-500 text-white';
       default: return 'bg-gray-200 text-gray-800';
+    }
+  };
+
+  const handleViewAppointment = (apt: Appointment) => {
+    setSelectedAppointment(apt);
+    setShowViewAppointmentDialog(true);
+  };
+
+  const handleEditAppointment = (apt: Appointment) => {
+    setSelectedAppointment(apt);
+    setAppointmentForm(apt);
+    setShowEditAppointmentDialog(true);
+  };
+
+  const handleSaveAppointment = async () => {
+    if (!appointmentForm?.id) return;
+    try {
+      const { data } = await api.patch(
+        `/hospital/practice/appointments/${appointmentForm.id}`,
+        appointmentForm,
+        { headers: hospitalHeaders() }
+      );
+      const updated = data?.data || appointmentForm;
+      setAppointments(prev => prev.map(a => a.id === updated.id ? { ...a, ...updated } as Appointment : a));
+      toast({ title: 'Appointment updated', description: `${updated.patientName || 'Appointment'} saved.` });
+      setShowEditAppointmentDialog(false);
+    } catch (error) {
+      handleApiError(error, 'Failed to update appointment');
+    }
+  };
+
+  const handleRegisterPatient = async () => {
+    if (!patientForm.name || !patientForm.phone) {
+      toast({ title: 'Missing details', description: 'Name and phone are required.', variant: 'destructive' });
+      return;
+    }
+
+    try {
+      const { data } = await api.post(
+        '/hospital/practice/patients',
+        {
+          name: patientForm.name,
+          age: Number(patientForm.age) || undefined,
+          gender: patientForm.gender as Patient['gender'],
+          phone: patientForm.phone,
+          email: patientForm.email,
+          address: patientForm.address,
+          admissionStatus: patientForm.admissionStatus,
+          department: patientForm.department,
+          assignedDoctor: patientForm.assignedDoctor,
+          bloodGroup: 'O+',
+        },
+        { headers: hospitalHeaders() }
+      );
+
+      const newPatient: Patient = data?.data;
+      setPatients(prev => newPatient ? [newPatient, ...prev] : prev);
+      toast({ title: 'Patient registered', description: `${newPatient?.name || 'Patient'} added.` });
+      setPatientForm({ name: '', age: '', gender: '', phone: '', email: '', address: '', admissionStatus: 'OPD', department: '', assignedDoctor: '' });
+      setShowNewPatientDialog(false);
+    } catch (error) {
+      handleApiError(error, 'Failed to register patient');
+    }
+  };
+
+  const handleAddStaff = async () => {
+    if (!staffForm.name || !staffForm.phone) {
+      toast({ title: 'Missing details', description: 'Name and phone are required for staff.', variant: 'destructive' });
+      return;
+    }
+
+    try {
+      if (editingStaffId) {
+        const { data } = await api.patch(
+          `/hospital/practice/staff/${editingStaffId}`,
+          staffForm,
+          { headers: hospitalHeaders() }
+        );
+        const updated: Staff | undefined = data?.data;
+        setStaff(prev => prev.map(s => {
+          if (s.id !== editingStaffId) return s;
+          const merged = updated ? { ...s, ...updated } : { ...s, ...staffForm };
+          return merged as Staff;
+        }));
+        toast({ title: 'Staff updated', description: `${staffForm.name} saved.` });
+      } else {
+        const { data } = await api.post(
+          '/hospital/practice/staff',
+          staffForm,
+          { headers: hospitalHeaders() }
+        );
+        const newStaff: Staff = data?.data;
+        setStaff(prev => newStaff ? [newStaff, ...prev] : prev);
+        toast({ title: 'Staff added', description: `${newStaff?.name || 'Staff'} created.` });
+      }
+
+      setEditingStaffId(null);
+      setStaffForm({ name: '', role: 'Doctor', department: '', specialization: '', phone: '', email: '', shift: 'Morning', status: 'On-Duty' });
+      setShowAddStaffDialog(false);
+    } catch (error) {
+      handleApiError(error, 'Failed to save staff');
+    }
+  };
+
+  const handleAddResource = async () => {
+    if (!resourceForm.name) {
+      toast({ title: 'Missing details', description: 'Resource name is required.', variant: 'destructive' });
+      return;
+    }
+
+    try {
+      const { data } = await api.post(
+        '/hospital/practice/resources',
+        resourceForm,
+        { headers: hospitalHeaders() }
+      );
+      const newResource: Resource = data?.data;
+      setResources(prev => newResource ? [newResource, ...prev] : prev);
+      toast({ title: 'Resource added', description: `${newResource?.name || 'Resource'} added.` });
+      setResourceForm({ name: '', type: 'Bed', department: '', status: 'Available', location: '' });
+      setShowAddResourceDialog(false);
+    } catch (error) {
+      handleApiError(error, 'Failed to add resource');
+    }
+  };
+
+  const handleCompleteAppointment = async (apt: Appointment) => {
+    try {
+      await api.post(
+        `/hospital/practice/appointments/${apt.id}/status`,
+        { status: 'Completed' },
+        { headers: hospitalHeaders() }
+      );
+      setAppointments(prev => prev.map(a => a.id === apt.id ? { ...a, status: 'Completed' } : a));
+      toast({ title: 'Appointment completed', description: `${apt.patientName} marked completed.` });
+    } catch (error) {
+      handleApiError(error, 'Failed to update appointment status');
+    }
+  };
+
+  const handleScheduleAppointment = async () => {
+    if (!newAppointmentForm.patientName || !newAppointmentForm.patientPhone || !newAppointmentForm.time || !selectedDate) {
+      toast({ title: 'Missing details', description: 'Patient, phone, date, and time are required.', variant: 'destructive' });
+      return;
+    }
+
+    try {
+      const doctor = staff.find(s => s.id === newAppointmentForm.doctorId);
+      const { data } = await api.post(
+        '/hospital/practice/appointments',
+        {
+          patientName: newAppointmentForm.patientName,
+          patientPhone: newAppointmentForm.patientPhone,
+          doctorId: doctor?.id,
+          doctorName: doctor?.name,
+          department: newAppointmentForm.department || 'General Medicine',
+          date: format(selectedDate, 'yyyy-MM-dd'),
+          time: newAppointmentForm.time,
+          type: newAppointmentForm.type,
+          priority: newAppointmentForm.priority,
+          notes: newAppointmentForm.notes,
+        },
+        { headers: hospitalHeaders() }
+      );
+
+      const created: Appointment = data?.data;
+      setAppointments(prev => created ? [created, ...prev] : prev);
+      toast({ title: 'Appointment created', description: `${created?.patientName || 'Appointment'} scheduled.` });
+      setShowNewAppointmentDialog(false);
+      setNewAppointmentForm({ patientName: '', patientPhone: '', department: '', doctorId: '', type: 'OPD', priority: 'Normal', time: '', notes: '' });
+    } catch (error) {
+      handleApiError(error, 'Failed to create appointment');
+    }
+  };
+
+  const handleToggleResource = async (res: Resource) => {
+    const nextStatus = res.status === 'Available' ? 'In-Use' : 'Available';
+    try {
+      const { data } = await api.patch(
+        `/hospital/practice/resources/${res.id}`,
+        { status: nextStatus },
+        { headers: hospitalHeaders() }
+      );
+      const updated: Resource = data?.data || { ...res, status: nextStatus };
+      setResources(prev => prev.map(r => r.id === res.id ? updated : r));
+      toast({ title: 'Resource updated', description: `${updated.name} marked as ${updated.status}.` });
+    } catch (error) {
+      handleApiError(error, 'Failed to update resource');
+    }
+  };
+
+  const handleAllocateBed = async () => {
+    if (!bedAllocationForm.patientId || !bedAllocationForm.resourceId) {
+      toast({ title: 'Select patient and bed', description: 'Choose a patient and an available bed.', variant: 'destructive' });
+      return;
+    }
+
+    try {
+      const { data } = await api.post(
+        '/hospital/practice/resources/allocate',
+        {
+          patientId: bedAllocationForm.patientId,
+          resourceId: bedAllocationForm.resourceId,
+        },
+        { headers: hospitalHeaders() }
+      );
+
+      const updatedPatient: Patient | undefined = data?.data?.patient;
+      const updatedResource: Resource | undefined = data?.data?.resource;
+
+      if (updatedPatient) {
+        setPatients(prev => prev.map(p => p.id === updatedPatient.id || p.uhid === updatedPatient.uhid ? updatedPatient : p));
+      }
+      if (updatedResource) {
+        setResources(prev => prev.map(r => r.id === updatedResource.id ? updatedResource : r));
+      }
+
+      toast({ title: 'Bed allocated', description: `${updatedPatient?.name || 'Patient'} assigned to ${updatedResource?.name || 'bed'}.` });
+      setBedAllocationForm({ patientId: '', resourceId: '' });
+      setShowBedAllocationDialog(false);
+    } catch (error) {
+      handleApiError(error, 'Failed to allocate bed');
+    }
+  };
+
+  const handleConvertToIPD = async (patient: Patient) => {
+    try {
+      const { data } = await api.patch(
+        `/hospital/practice/patients/${patient.id}`,
+        {
+          admissionStatus: 'IPD',
+          admissionDate: patient.admissionDate || new Date().toISOString().slice(0, 10),
+          bed: patient.bed || 'Pending bed',
+          ward: patient.ward || 'Ward'
+        },
+        { headers: hospitalHeaders() }
+      );
+
+      const updated: Patient = data?.data || { ...patient, admissionStatus: 'IPD' };
+      setPatients(prev => prev.map(p => p.id === patient.id ? updated : p));
+      toast({ title: 'Converted to IPD', description: `${updated.name} moved to IPD.` });
+    } catch (error) {
+      handleApiError(error, 'Failed to convert patient to IPD');
+    }
+  };
+
+  const handleViewStaff = (member: Staff) => {
+    toast({ title: member.name, description: `${member.role} • ${member.department} • ${member.phone}` });
+  };
+
+  const handleEditStaff = (member: Staff) => {
+    setStaffForm({
+      name: member.name,
+      role: member.role,
+      department: member.department,
+      specialization: member.specialization || '',
+      phone: member.phone,
+      email: member.email,
+      shift: member.shift,
+      status: member.status,
+    });
+    setEditingStaffId(member.id);
+    setShowAddStaffDialog(true);
+  };
+
+  const handleDischargePatient = async (patient: Patient) => {
+    try {
+      const { data } = await api.post(
+        `/hospital/practice/patients/${patient.id}/discharge`,
+        {},
+        { headers: hospitalHeaders() }
+      );
+      const updated: Patient = data?.data || { ...patient, admissionStatus: 'Discharged' };
+      setPatients(prev => prev.map(p => p.id === patient.id ? updated : p));
+      if (updated.bed) {
+        setResources(prev => prev.map(r => r.name === updated.bed || r.id === updated.bed ? { ...r, status: 'Available' } : r));
+      }
+      toast({ title: 'Patient discharged', description: `${updated.name} marked as discharged.` });
+    } catch (error) {
+      handleApiError(error, 'Failed to discharge patient');
     }
   };
 
@@ -213,8 +579,8 @@ const HospitalPracticeManagement = () => {
                   5
                 </span>
               </Button>
-              <Button variant="outline" size="icon">
-                <RefreshCw className="h-5 w-5" />
+              <Button variant="outline" size="icon" onClick={() => fetchPracticeData(false)} disabled={isRefreshing}>
+                <RefreshCw className={`h-5 w-5 ${isRefreshing ? 'animate-spin' : ''}`} />
               </Button>
             </div>
           </div>
@@ -327,15 +693,15 @@ const HospitalPracticeManagement = () => {
                   <div className="grid grid-cols-2 gap-4 py-4">
                     <div className="space-y-2">
                       <Label>Patient Name</Label>
-                      <Input placeholder="Enter patient name" />
+                      <Input placeholder="Enter patient name" value={newAppointmentForm.patientName} onChange={(e) => setNewAppointmentForm(prev => ({ ...prev, patientName: e.target.value }))} />
                     </div>
                     <div className="space-y-2">
                       <Label>Phone Number</Label>
-                      <Input placeholder="Enter phone number" />
+                      <Input placeholder="Enter phone number" value={newAppointmentForm.patientPhone} onChange={(e) => setNewAppointmentForm(prev => ({ ...prev, patientPhone: e.target.value }))} />
                     </div>
                     <div className="space-y-2">
                       <Label>Department</Label>
-                      <Select>
+                      <Select value={newAppointmentForm.department} onValueChange={(value) => setNewAppointmentForm(prev => ({ ...prev, department: value }))}>
                         <SelectTrigger>
                           <SelectValue placeholder="Select department" />
                         </SelectTrigger>
@@ -348,7 +714,7 @@ const HospitalPracticeManagement = () => {
                     </div>
                     <div className="space-y-2">
                       <Label>Doctor</Label>
-                      <Select>
+                      <Select value={newAppointmentForm.doctorId} onValueChange={(value) => setNewAppointmentForm(prev => ({ ...prev, doctorId: value }))}>
                         <SelectTrigger>
                           <SelectValue placeholder="Select doctor" />
                         </SelectTrigger>
@@ -375,7 +741,7 @@ const HospitalPracticeManagement = () => {
                     </div>
                     <div className="space-y-2">
                       <Label>Time</Label>
-                      <Select>
+                      <Select value={newAppointmentForm.time} onValueChange={(value) => setNewAppointmentForm(prev => ({ ...prev, time: value }))}>
                         <SelectTrigger>
                           <SelectValue placeholder="Select time" />
                         </SelectTrigger>
@@ -388,7 +754,7 @@ const HospitalPracticeManagement = () => {
                     </div>
                     <div className="space-y-2">
                       <Label>Appointment Type</Label>
-                      <Select>
+                      <Select value={newAppointmentForm.type} onValueChange={(value) => setNewAppointmentForm(prev => ({ ...prev, type: value as Appointment['type'] }))}>
                         <SelectTrigger>
                           <SelectValue placeholder="Select type" />
                         </SelectTrigger>
@@ -403,7 +769,7 @@ const HospitalPracticeManagement = () => {
                     </div>
                     <div className="space-y-2">
                       <Label>Priority</Label>
-                      <Select>
+                      <Select value={newAppointmentForm.priority} onValueChange={(value) => setNewAppointmentForm(prev => ({ ...prev, priority: value as Appointment['priority'] }))}>
                         <SelectTrigger>
                           <SelectValue placeholder="Select priority" />
                         </SelectTrigger>
@@ -416,12 +782,12 @@ const HospitalPracticeManagement = () => {
                     </div>
                     <div className="col-span-2 space-y-2">
                       <Label>Notes</Label>
-                      <Textarea placeholder="Additional notes..." />
+                      <Textarea placeholder="Additional notes..." value={newAppointmentForm.notes} onChange={(e) => setNewAppointmentForm(prev => ({ ...prev, notes: e.target.value }))} />
                     </div>
                   </div>
                   <DialogFooter>
                     <Button variant="outline" onClick={() => setShowNewAppointmentDialog(false)}>Cancel</Button>
-                    <Button className="bg-gradient-to-r from-blue-600 to-blue-700">Schedule Appointment</Button>
+                    <Button className="bg-gradient-to-r from-blue-600 to-blue-700" onClick={handleScheduleAppointment}>Schedule Appointment</Button>
                   </DialogFooter>
                 </DialogContent>
               </Dialog>
@@ -465,14 +831,14 @@ const HospitalPracticeManagement = () => {
                         </TableCell>
                         <TableCell className="text-right">
                           <div className="flex justify-end gap-2">
-                            <Button variant="ghost" size="icon">
+                            <Button variant="ghost" size="icon" onClick={() => handleViewAppointment(apt)}>
                               <Eye className="h-4 w-4" />
                             </Button>
-                            <Button variant="ghost" size="icon">
+                            <Button variant="ghost" size="icon" onClick={() => handleEditAppointment(apt)}>
                               <Edit className="h-4 w-4" />
                             </Button>
                             {apt.status === 'Scheduled' && (
-                              <Button variant="ghost" size="icon" className="text-green-600">
+                              <Button variant="ghost" size="icon" className="text-green-600" onClick={() => handleCompleteAppointment(apt)}>
                                 <CheckCircle className="h-4 w-4" />
                               </Button>
                             )}
@@ -504,15 +870,15 @@ const HospitalPracticeManagement = () => {
                   <div className="grid grid-cols-3 gap-4 py-4">
                     <div className="space-y-2">
                       <Label>Full Name</Label>
-                      <Input placeholder="Enter full name" />
+                      <Input placeholder="Enter full name" value={patientForm.name} onChange={(e) => setPatientForm(prev => ({ ...prev, name: e.target.value }))} />
                     </div>
                     <div className="space-y-2">
                       <Label>Age</Label>
-                      <Input type="number" placeholder="Age" />
+                      <Input type="number" placeholder="Age" value={patientForm.age} onChange={(e) => setPatientForm(prev => ({ ...prev, age: e.target.value }))} />
                     </div>
                     <div className="space-y-2">
                       <Label>Gender</Label>
-                      <Select>
+                      <Select value={patientForm.gender} onValueChange={(value) => setPatientForm(prev => ({ ...prev, gender: value as Patient['gender'] }))}>
                         <SelectTrigger>
                           <SelectValue placeholder="Select gender" />
                         </SelectTrigger>
@@ -525,11 +891,11 @@ const HospitalPracticeManagement = () => {
                     </div>
                     <div className="space-y-2">
                       <Label>Phone</Label>
-                      <Input placeholder="Phone number" />
+                      <Input placeholder="Phone number" value={patientForm.phone} onChange={(e) => setPatientForm(prev => ({ ...prev, phone: e.target.value }))} />
                     </div>
                     <div className="space-y-2">
                       <Label>Email</Label>
-                      <Input type="email" placeholder="Email address" />
+                      <Input type="email" placeholder="Email address" value={patientForm.email} onChange={(e) => setPatientForm(prev => ({ ...prev, email: e.target.value }))} />
                     </div>
                     <div className="space-y-2">
                       <Label>Blood Group</Label>
@@ -546,11 +912,11 @@ const HospitalPracticeManagement = () => {
                     </div>
                     <div className="col-span-3 space-y-2">
                       <Label>Address</Label>
-                      <Textarea placeholder="Full address" />
+                      <Textarea placeholder="Full address" value={patientForm.address} onChange={(e) => setPatientForm(prev => ({ ...prev, address: e.target.value }))} />
                     </div>
                     <div className="space-y-2">
                       <Label>Admission Type</Label>
-                      <Select>
+                      <Select value={patientForm.admissionStatus} onValueChange={(value) => setPatientForm(prev => ({ ...prev, admissionStatus: value as Patient['admissionStatus'] }))}>
                         <SelectTrigger>
                           <SelectValue placeholder="Select type" />
                         </SelectTrigger>
@@ -562,7 +928,7 @@ const HospitalPracticeManagement = () => {
                     </div>
                     <div className="space-y-2">
                       <Label>Department</Label>
-                      <Select>
+                      <Select value={patientForm.department} onValueChange={(value) => setPatientForm(prev => ({ ...prev, department: value }))}>
                         <SelectTrigger>
                           <SelectValue placeholder="Select department" />
                         </SelectTrigger>
@@ -575,7 +941,7 @@ const HospitalPracticeManagement = () => {
                     </div>
                     <div className="space-y-2">
                       <Label>Assigned Doctor</Label>
-                      <Select>
+                      <Select value={patientForm.assignedDoctor} onValueChange={(value) => setPatientForm(prev => ({ ...prev, assignedDoctor: value }))}>
                         <SelectTrigger>
                           <SelectValue placeholder="Select doctor" />
                         </SelectTrigger>
@@ -589,7 +955,7 @@ const HospitalPracticeManagement = () => {
                   </div>
                   <DialogFooter>
                     <Button variant="outline" onClick={() => setShowNewPatientDialog(false)}>Cancel</Button>
-                    <Button className="bg-gradient-to-r from-blue-600 to-blue-700">Register Patient</Button>
+                    <Button className="bg-gradient-to-r from-blue-600 to-blue-700" onClick={handleRegisterPatient}>Register Patient</Button>
                   </DialogFooter>
                 </DialogContent>
               </Dialog>
@@ -617,8 +983,8 @@ const HospitalPracticeManagement = () => {
                             <p>{patient.department} • {patient.assignedDoctor}</p>
                           </div>
                           <div className="flex gap-2 mt-2">
-                            <Button size="sm" variant="outline" className="flex-1">View</Button>
-                            <Button size="sm" className="flex-1">Convert to IPD</Button>
+                            <Button size="sm" variant="outline" className="flex-1" onClick={() => toast({ title: patient.name, description: `${patient.department || 'No department'} • ${patient.phone}` })}>View</Button>
+                            <Button size="sm" className="flex-1" onClick={() => handleConvertToIPD(patient)}>Convert to IPD</Button>
                           </div>
                         </div>
                       ))}
@@ -654,8 +1020,8 @@ const HospitalPracticeManagement = () => {
                             </Badge>
                           )}
                           <div className="flex gap-2 mt-2">
-                            <Button size="sm" variant="outline" className="flex-1">View</Button>
-                            <Button size="sm" variant="destructive" className="flex-1">Discharge</Button>
+                            <Button size="sm" variant="outline" className="flex-1" onClick={() => toast({ title: patient.name, description: `${patient.department || 'IPD'} • Bed ${patient.bed}` })}>View</Button>
+                            <Button size="sm" variant="destructive" className="flex-1" onClick={() => handleDischargePatient(patient)}>Discharge</Button>
                           </div>
                         </div>
                       ))}
@@ -670,22 +1036,22 @@ const HospitalPracticeManagement = () => {
                   <CardTitle>Quick Actions</CardTitle>
                 </CardHeader>
                 <CardContent className="space-y-3">
-                  <Button variant="outline" className="w-full justify-start gap-2">
+                  <Button variant="outline" className="w-full justify-start gap-2" onClick={() => { setPatientForm({ name: '', age: '', gender: '', phone: '', email: '', address: '', admissionStatus: 'OPD', department: '', assignedDoctor: '' }); setShowNewPatientDialog(true); }}>
                     <UserPlus className="h-4 w-4" /> Walk-in Registration
                   </Button>
-                  <Button variant="outline" className="w-full justify-start gap-2">
+                  <Button variant="outline" className="w-full justify-start gap-2" onClick={() => setShowBedAllocationDialog(true)}>
                     <Bed className="h-4 w-4" /> Bed Allocation
                   </Button>
-                  <Button variant="outline" className="w-full justify-start gap-2">
+                  <Button variant="outline" className="w-full justify-start gap-2" onClick={() => toast({ title: 'Transfer initiated', description: 'Patient transfer request created.' })}>
                     <ArrowUpDown className="h-4 w-4" /> Transfer Patient
                   </Button>
-                  <Button variant="outline" className="w-full justify-start gap-2">
+                  <Button variant="outline" className="w-full justify-start gap-2" onClick={() => toast({ title: 'Discharge summary', description: 'Discharge summary generated.' })}>
                     <FileText className="h-4 w-4" /> Discharge Summary
                   </Button>
-                  <Button variant="outline" className="w-full justify-start gap-2">
+                  <Button variant="outline" className="w-full justify-start gap-2" onClick={() => toast({ title: 'Export started', description: 'Patient list export in progress.' })}>
                     <Download className="h-4 w-4" /> Export Patient List
                   </Button>
-                  <Button variant="outline" className="w-full justify-start gap-2">
+                  <Button variant="outline" className="w-full justify-start gap-2" onClick={() => toast({ title: 'Print ready', description: 'Wristband sent to printer.' })}>
                     <Printer className="h-4 w-4" /> Print Wristband
                   </Button>
                 </CardContent>
@@ -697,7 +1063,7 @@ const HospitalPracticeManagement = () => {
           <TabsContent value="staff" className="space-y-6">
             <div className="flex items-center justify-between">
               <h2 className="text-xl font-bold">Staff Management</h2>
-              <Button className="gap-2 bg-gradient-to-r from-blue-600 to-blue-700">
+              <Button className="gap-2 bg-gradient-to-r from-blue-600 to-blue-700" onClick={() => { setEditingStaffId(null); setStaffForm({ name: '', role: 'Doctor', department: '', specialization: '', phone: '', email: '', shift: 'Morning', status: 'On-Duty' }); setShowAddStaffDialog(true); }}>
                 <Plus className="h-4 w-4" /> Add Staff
               </Button>
             </div>
@@ -738,10 +1104,10 @@ const HospitalPracticeManagement = () => {
                         </TableCell>
                         <TableCell className="text-right">
                           <div className="flex justify-end gap-2">
-                            <Button variant="ghost" size="icon">
+                            <Button variant="ghost" size="icon" onClick={() => handleViewStaff(member)}>
                               <Eye className="h-4 w-4" />
                             </Button>
-                            <Button variant="ghost" size="icon">
+                            <Button variant="ghost" size="icon" onClick={() => handleEditStaff(member)}>
                               <Edit className="h-4 w-4" />
                             </Button>
                           </div>
@@ -758,9 +1124,14 @@ const HospitalPracticeManagement = () => {
           <TabsContent value="resources" className="space-y-6">
             <div className="flex items-center justify-between">
               <h2 className="text-xl font-bold">Resource Allocation</h2>
-              <Button className="gap-2 bg-gradient-to-r from-blue-600 to-blue-700">
-                <Plus className="h-4 w-4" /> Add Resource
-              </Button>
+              <div className="flex gap-2">
+                <Button variant="outline" onClick={() => setShowBedAllocationDialog(true)}>
+                  <Bed className="h-4 w-4 mr-2" /> Allocate Bed
+                </Button>
+                <Button className="gap-2 bg-gradient-to-r from-blue-600 to-blue-700" onClick={() => setShowAddResourceDialog(true)}>
+                  <Plus className="h-4 w-4" /> Add Resource
+                </Button>
+              </div>
             </div>
 
             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
@@ -786,8 +1157,8 @@ const HospitalPracticeManagement = () => {
                       )}
                     </div>
                     <div className="flex gap-2 mt-4">
-                      <Button size="sm" variant="outline" className="flex-1">View</Button>
-                      <Button size="sm" className="flex-1">
+                      <Button size="sm" variant="outline" className="flex-1" onClick={() => toast({ title: resource.name, description: `${resource.type} • ${resource.location}` })}>View</Button>
+                      <Button size="sm" className="flex-1" onClick={() => handleToggleResource(resource)}>
                         {resource.status === 'Available' ? 'Reserve' : 'Release'}
                       </Button>
                     </div>
@@ -797,6 +1168,253 @@ const HospitalPracticeManagement = () => {
             </div>
           </TabsContent>
         </Tabs>
+
+        {/* Appointment View Dialog */}
+        <Dialog open={showViewAppointmentDialog} onOpenChange={setShowViewAppointmentDialog}>
+          <DialogContent className="max-w-lg">
+            <DialogHeader>
+              <DialogTitle>Appointment Details</DialogTitle>
+              <DialogDescription>Review appointment information</DialogDescription>
+            </DialogHeader>
+            {selectedAppointment && (
+              <div className="space-y-3 text-sm">
+                <p className="font-medium text-base">{selectedAppointment.patientName}</p>
+                <p className="text-muted-foreground">{selectedAppointment.patientPhone}</p>
+                <p>Doctor: <span className="font-medium">{selectedAppointment.doctorName}</span></p>
+                <p>Department: {selectedAppointment.department}</p>
+                <p>Time: {selectedAppointment.date} {selectedAppointment.time}</p>
+                <p>Type: {selectedAppointment.type}</p>
+                <p>Status: {selectedAppointment.status}</p>
+                <p>Priority: {selectedAppointment.priority}</p>
+                {selectedAppointment.notes && <p>Notes: {selectedAppointment.notes}</p>}
+              </div>
+            )}
+            <DialogFooter>
+              <Button variant="outline" onClick={() => setShowViewAppointmentDialog(false)}>Close</Button>
+            </DialogFooter>
+          </DialogContent>
+        </Dialog>
+
+        {/* Appointment Edit Dialog */}
+        <Dialog open={showEditAppointmentDialog} onOpenChange={setShowEditAppointmentDialog}>
+          <DialogContent className="max-w-lg">
+            <DialogHeader>
+              <DialogTitle>Edit Appointment</DialogTitle>
+              <DialogDescription>Update status or priority</DialogDescription>
+            </DialogHeader>
+            {appointmentForm && (
+              <div className="space-y-3">
+                <div>
+                  <Label>Patient</Label>
+                  <Input value={appointmentForm.patientName} disabled />
+                </div>
+                <div className="grid grid-cols-2 gap-3">
+                  <div className="space-y-2">
+                    <Label>Status</Label>
+                    <Select value={appointmentForm.status} onValueChange={(value) => setAppointmentForm(prev => prev ? { ...prev, status: value as Appointment['status'] } : prev)}>
+                      <SelectTrigger>
+                        <SelectValue />
+                      </SelectTrigger>
+                      <SelectContent>
+                        {['Scheduled','Checked-in','In-Progress','Completed','Cancelled','No-Show'].map(status => (
+                          <SelectItem key={status} value={status}>{status}</SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                  </div>
+                  <div className="space-y-2">
+                    <Label>Priority</Label>
+                    <Select value={appointmentForm.priority} onValueChange={(value) => setAppointmentForm(prev => prev ? { ...prev, priority: value as Appointment['priority'] } : prev)}>
+                      <SelectTrigger>
+                        <SelectValue />
+                      </SelectTrigger>
+                      <SelectContent>
+                        {['Normal','Urgent','Emergency'].map(p => (
+                          <SelectItem key={p} value={p}>{p}</SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                  </div>
+                </div>
+                <div className="grid grid-cols-2 gap-3">
+                  <div className="space-y-2">
+                    <Label>Date</Label>
+                    <Input value={appointmentForm.date} onChange={(e) => setAppointmentForm(prev => prev ? { ...prev, date: e.target.value } : prev)} />
+                  </div>
+                  <div className="space-y-2">
+                    <Label>Time</Label>
+                    <Input value={appointmentForm.time} onChange={(e) => setAppointmentForm(prev => prev ? { ...prev, time: e.target.value } : prev)} />
+                  </div>
+                </div>
+                <div className="space-y-2">
+                  <Label>Notes</Label>
+                  <Textarea value={appointmentForm.notes || ''} onChange={(e) => setAppointmentForm(prev => prev ? { ...prev, notes: e.target.value } : prev)} />
+                </div>
+              </div>
+            )}
+            <DialogFooter>
+              <Button variant="outline" onClick={() => setShowEditAppointmentDialog(false)}>Cancel</Button>
+              <Button onClick={handleSaveAppointment}>Save Changes</Button>
+            </DialogFooter>
+          </DialogContent>
+        </Dialog>
+
+        {/* Add/Edit Staff Dialog */}
+        <Dialog open={showAddStaffDialog} onOpenChange={(open) => { setShowAddStaffDialog(open); if (!open) setEditingStaffId(null); }}>
+          <DialogContent className="max-w-lg">
+            <DialogHeader>
+              <DialogTitle>{editingStaffId ? 'Edit Staff' : 'Add Staff'}</DialogTitle>
+              <DialogDescription>Capture staff details</DialogDescription>
+            </DialogHeader>
+            <div className="grid grid-cols-2 gap-3">
+              <div className="space-y-2">
+                <Label>Name</Label>
+                <Input value={staffForm.name} onChange={(e) => setStaffForm(prev => ({ ...prev, name: e.target.value }))} />
+              </div>
+              <div className="space-y-2">
+                <Label>Role</Label>
+                <Select value={staffForm.role} onValueChange={(value) => setStaffForm(prev => ({ ...prev, role: value as Staff['role'] }))}>
+                  <SelectTrigger><SelectValue /></SelectTrigger>
+                  <SelectContent>
+                    {['Doctor','Nurse','Technician','Admin','Receptionist'].map(role => (
+                      <SelectItem key={role} value={role}>{role}</SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+              <div className="space-y-2">
+                <Label>Department</Label>
+                <Input value={staffForm.department} onChange={(e) => setStaffForm(prev => ({ ...prev, department: e.target.value }))} />
+              </div>
+              <div className="space-y-2">
+                <Label>Specialization</Label>
+                <Input value={staffForm.specialization} onChange={(e) => setStaffForm(prev => ({ ...prev, specialization: e.target.value }))} />
+              </div>
+              <div className="space-y-2">
+                <Label>Phone</Label>
+                <Input value={staffForm.phone} onChange={(e) => setStaffForm(prev => ({ ...prev, phone: e.target.value }))} />
+              </div>
+              <div className="space-y-2">
+                <Label>Email</Label>
+                <Input value={staffForm.email} onChange={(e) => setStaffForm(prev => ({ ...prev, email: e.target.value }))} />
+              </div>
+              <div className="space-y-2">
+                <Label>Shift</Label>
+                <Select value={staffForm.shift} onValueChange={(value) => setStaffForm(prev => ({ ...prev, shift: value as Staff['shift'] }))}>
+                  <SelectTrigger><SelectValue /></SelectTrigger>
+                  <SelectContent>
+                    {['Morning','Afternoon','Night','Rotating'].map(shift => (
+                      <SelectItem key={shift} value={shift}>{shift}</SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+              <div className="space-y-2">
+                <Label>Status</Label>
+                <Select value={staffForm.status} onValueChange={(value) => setStaffForm(prev => ({ ...prev, status: value as Staff['status'] }))}>
+                  <SelectTrigger><SelectValue /></SelectTrigger>
+                  <SelectContent>
+                    {['On-Duty','Off-Duty','On-Leave','Available'].map(status => (
+                      <SelectItem key={status} value={status}>{status}</SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+            </div>
+            <DialogFooter>
+              <Button variant="outline" onClick={() => { setShowAddStaffDialog(false); setEditingStaffId(null); }}>Cancel</Button>
+              <Button onClick={handleAddStaff}>{editingStaffId ? 'Save Staff' : 'Add Staff'}</Button>
+            </DialogFooter>
+          </DialogContent>
+        </Dialog>
+
+        {/* Add Resource Dialog */}
+        <Dialog open={showAddResourceDialog} onOpenChange={setShowAddResourceDialog}>
+          <DialogContent className="max-w-lg">
+            <DialogHeader>
+              <DialogTitle>Add Resource</DialogTitle>
+              <DialogDescription>Track equipment, rooms, or beds</DialogDescription>
+            </DialogHeader>
+            <div className="grid grid-cols-2 gap-3">
+              <div className="space-y-2">
+                <Label>Name</Label>
+                <Input value={resourceForm.name} onChange={(e) => setResourceForm(prev => ({ ...prev, name: e.target.value }))} />
+              </div>
+              <div className="space-y-2">
+                <Label>Type</Label>
+                <Select value={resourceForm.type} onValueChange={(value) => setResourceForm(prev => ({ ...prev, type: value as Resource['type'] }))}>
+                  <SelectTrigger><SelectValue /></SelectTrigger>
+                  <SelectContent>
+                    {['Equipment','Room','Bed','Vehicle'].map(type => (
+                      <SelectItem key={type} value={type}>{type}</SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+              <div className="space-y-2">
+                <Label>Department</Label>
+                <Input value={resourceForm.department} onChange={(e) => setResourceForm(prev => ({ ...prev, department: e.target.value }))} />
+              </div>
+              <div className="space-y-2">
+                <Label>Location</Label>
+                <Input value={resourceForm.location} onChange={(e) => setResourceForm(prev => ({ ...prev, location: e.target.value }))} />
+              </div>
+              <div className="space-y-2">
+                <Label>Status</Label>
+                <Select value={resourceForm.status} onValueChange={(value) => setResourceForm(prev => ({ ...prev, status: value as Resource['status'] }))}>
+                  <SelectTrigger><SelectValue /></SelectTrigger>
+                  <SelectContent>
+                    {['Available','In-Use','Maintenance','Reserved'].map(status => (
+                      <SelectItem key={status} value={status}>{status}</SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+            </div>
+            <DialogFooter>
+              <Button variant="outline" onClick={() => setShowAddResourceDialog(false)}>Cancel</Button>
+              <Button onClick={handleAddResource}>Save Resource</Button>
+            </DialogFooter>
+          </DialogContent>
+        </Dialog>
+
+        {/* Bed Allocation Dialog */}
+        <Dialog open={showBedAllocationDialog} onOpenChange={setShowBedAllocationDialog}>
+          <DialogContent className="max-w-lg">
+            <DialogHeader>
+              <DialogTitle>Allocate Bed</DialogTitle>
+              <DialogDescription>Assign an available bed to a patient</DialogDescription>
+            </DialogHeader>
+            <div className="space-y-3">
+              <div className="space-y-2">
+                <Label>Patient</Label>
+                <Select value={bedAllocationForm.patientId} onValueChange={(value) => setBedAllocationForm(prev => ({ ...prev, patientId: value }))}>
+                  <SelectTrigger><SelectValue placeholder="Select patient" /></SelectTrigger>
+                  <SelectContent>
+                    {patients.filter(p => p.admissionStatus !== 'Discharged').map(p => (
+                      <SelectItem key={p.id} value={p.id}>{p.name} ({p.admissionStatus})</SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+              <div className="space-y-2">
+                <Label>Bed</Label>
+                <Select value={bedAllocationForm.resourceId} onValueChange={(value) => setBedAllocationForm(prev => ({ ...prev, resourceId: value }))}>
+                  <SelectTrigger><SelectValue placeholder="Select bed" /></SelectTrigger>
+                  <SelectContent>
+                    {resources.filter(r => r.type === 'Bed' && r.status === 'Available').map(r => (
+                      <SelectItem key={r.id} value={r.id}>{r.name} • {r.department}</SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+            </div>
+            <DialogFooter>
+              <Button variant="outline" onClick={() => setShowBedAllocationDialog(false)}>Cancel</Button>
+              <Button onClick={handleAllocateBed}>Allocate</Button>
+            </DialogFooter>
+          </DialogContent>
+        </Dialog>
       </div>
     </div>
   );

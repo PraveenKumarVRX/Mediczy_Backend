@@ -1,5 +1,5 @@
-import React, { useState } from 'react';
-import { Calendar, Clock, MapPin, Search, Filter, Plus, CheckCircle, XCircle, AlertCircle, Users } from 'lucide-react';
+import React, { useMemo, useState } from 'react';
+import { Calendar, Clock, MapPin, Search, Filter, Plus, CheckCircle, XCircle, AlertCircle, Users, RefreshCw, CalendarCheck, Eye, Edit2, Ban, RotateCcw } from 'lucide-react';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -9,6 +9,9 @@ import { Label } from '@/components/ui/label';
 import { Textarea } from '@/components/ui/textarea';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { useToast } from '@/hooks/use-toast';
+import CorporateLayout from '@/components/corporate/CorporateLayout';
+import CorporatePageHeader from '@/components/corporate/CorporatePageHeader';
+import CorporateStatusBadge from '@/components/corporate/CorporateStatusBadge';
 
 interface Appointment {
   id: string;
@@ -29,6 +32,8 @@ const CorporateAppointments: React.FC = () => {
   const [searchQuery, setSearchQuery] = useState('');
   const [statusFilter, setStatusFilter] = useState<string>('all');
   const [isScheduleDialogOpen, setIsScheduleDialogOpen] = useState(false);
+  const [selectedAppointment, setSelectedAppointment] = useState<Appointment | null>(null);
+  const [isDetailsOpen, setIsDetailsOpen] = useState(false);
 
   // Sample appointment data
   const [appointments, setAppointments] = useState<Appointment[]>([
@@ -106,7 +111,7 @@ const CorporateAppointments: React.FC = () => {
     noShows: appointments.filter(a => a.status === 'no-show').length
   };
 
-  const filteredAppointments = appointments.filter(appointment => {
+  const filteredAppointments = useMemo(() => appointments.filter(appointment => {
     const matchesSearch = 
       appointment.employeeName.toLowerCase().includes(searchQuery.toLowerCase()) ||
       appointment.employeeId.toLowerCase().includes(searchQuery.toLowerCase()) ||
@@ -116,7 +121,7 @@ const CorporateAppointments: React.FC = () => {
     const matchesStatus = statusFilter === 'all' || appointment.status === statusFilter;
     
     return matchesSearch && matchesStatus;
-  });
+  }), [appointments, searchQuery, statusFilter]);
 
   const getStatusColor = (status: string) => {
     switch (status) {
@@ -156,20 +161,65 @@ const CorporateAppointments: React.FC = () => {
     setIsScheduleDialogOpen(false);
   };
 
+  const handleViewDetails = (appointment: Appointment) => {
+    setSelectedAppointment(appointment);
+    setIsDetailsOpen(true);
+  };
+
+  const handleCancel = (appointment: Appointment) => {
+    if (!window.confirm(`Cancel appointment ${appointment.id} for ${appointment.employeeName}?`)) return;
+    setAppointments((prev) => prev.map((a) => a.id === appointment.id ? { ...a, status: 'cancelled', notes: 'Cancelled by admin' } : a));
+    toast({ title: 'Appointment cancelled', description: `${appointment.employeeName}'s appointment was cancelled.` });
+  };
+
+  const handleReschedule = (appointment: Appointment) => {
+    const newDate = window.prompt('Enter new date (YYYY-MM-DD)', appointment.date);
+    const newTime = window.prompt('Enter new time (e.g., 09:30 AM)', appointment.time);
+    if (!newDate || !newTime) {
+      toast({ title: 'Reschedule cancelled', description: 'No changes were made.' });
+      return;
+    }
+    setAppointments((prev) => prev.map((a) => a.id === appointment.id ? { ...a, date: newDate, time: newTime, status: 'scheduled' } : a));
+    toast({ title: 'Appointment rescheduled', description: `${appointment.employeeName} moved to ${newDate} at ${newTime}.` });
+  };
+
+  const handleMarkCompleted = (appointment: Appointment) => {
+    setAppointments((prev) => prev.map((a) => a.id === appointment.id ? { ...a, status: 'completed' } : a));
+    toast({ title: 'Marked as completed', description: `${appointment.employeeName}'s appointment marked completed.` });
+  };
+
+  const handleRefresh = () => {
+    toast({ title: 'Appointments refreshed', description: 'Showing the latest appointment list.' });
+  };
+
   return (
-    <div className="space-y-6">
-      <div className="flex justify-between items-center">
-        <div>
-          <h1 className="text-3xl font-bold">Corporate Appointments</h1>
-          <p className="text-gray-500 mt-1">Manage employee health appointments and checkups</p>
-        </div>
+    <CorporateLayout title="Corporate Appointments">
+      <div className="space-y-6">
+        <CorporatePageHeader
+          icon={CalendarCheck}
+          title="Corporate Appointments"
+          description="Manage employee health appointments, checkups, and consultations"
+          gradient="from-purple-500 to-purple-700"
+          badge={`${appointments.length} Total`}
+          showSearch={true}
+          searchPlaceholder="Search by employee name, ID, or department..."
+          searchValue={searchQuery}
+          onSearchChange={setSearchQuery}
+          showRefresh={true}
+          onRefresh={handleRefresh}
+          stats={[
+            { label: 'Scheduled', value: stats.totalScheduled },
+            { label: 'Completed', value: stats.completedThisMonth },
+            { label: 'Cancelled', value: stats.cancelled },
+            { label: 'No Shows', value: stats.noShows },
+          ]}
+          showAdd={true}
+          addLabel="Schedule Appointment"
+          onAdd={() => setIsScheduleDialogOpen(true)}
+        />
+
+        {/* Schedule Dialog */}
         <Dialog open={isScheduleDialogOpen} onOpenChange={setIsScheduleDialogOpen}>
-          <DialogTrigger asChild>
-            <Button>
-              <Plus className="h-4 w-4 mr-2" />
-              Schedule Appointment
-            </Button>
-          </DialogTrigger>
           <DialogContent className="sm:max-w-[525px]">
             <DialogHeader>
               <DialogTitle>Schedule New Appointment</DialogTitle>
@@ -243,10 +293,9 @@ const CorporateAppointments: React.FC = () => {
             </DialogFooter>
           </DialogContent>
         </Dialog>
-      </div>
 
-      {/* Statistics Cards */}
-      <div className="grid gap-4 md:grid-cols-4">
+        {/* Statistics Cards */}
+        <div className="grid gap-4 md:grid-cols-4">
         <Card>
           <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
             <CardTitle className="text-sm font-medium">Scheduled</CardTitle>
@@ -324,6 +373,10 @@ const CorporateAppointments: React.FC = () => {
                 <SelectItem value="no-show">No Show</SelectItem>
               </SelectContent>
             </Select>
+            <Button variant="outline" onClick={handleRefresh}>
+              <RefreshCw className="h-4 w-4 mr-2" />
+              Refresh
+            </Button>
           </div>
 
           {/* Appointments List */}
@@ -378,11 +431,14 @@ const CorporateAppointments: React.FC = () => {
                     <div className="flex gap-2">
                       {appointment.status === 'scheduled' && (
                         <>
-                          <Button variant="outline" size="sm">Reschedule</Button>
-                          <Button variant="outline" size="sm">Cancel</Button>
+                          <Button variant="outline" size="sm" onClick={() => handleReschedule(appointment)}>Reschedule</Button>
+                          <Button variant="outline" size="sm" onClick={() => handleCancel(appointment)}>Cancel</Button>
                         </>
                       )}
-                      <Button variant="outline" size="sm">View Details</Button>
+                      <Button variant="outline" size="sm" onClick={() => handleViewDetails(appointment)}>View Details</Button>
+                      {appointment.status !== 'completed' && (
+                        <Button size="sm" onClick={() => handleMarkCompleted(appointment)}>Mark Completed</Button>
+                      )}
                     </div>
                   </div>
                 </CardContent>
@@ -398,7 +454,34 @@ const CorporateAppointments: React.FC = () => {
           )}
         </CardContent>
       </Card>
-    </div>
+
+        <Dialog open={isDetailsOpen} onOpenChange={setIsDetailsOpen}>
+          <DialogContent className="sm:max-w-[500px]">
+            <DialogHeader>
+              <DialogTitle>Appointment Details</DialogTitle>
+              <DialogDescription>
+                Review the appointment information for the selected employee.
+              </DialogDescription>
+            </DialogHeader>
+            {selectedAppointment && (
+              <div className="space-y-3 text-sm">
+                <div className="flex justify-between"><span className="text-gray-600">Employee</span><span className="font-semibold">{selectedAppointment.employeeName} ({selectedAppointment.employeeId})</span></div>
+                <div className="flex justify-between"><span className="text-gray-600">Department</span><span className="font-semibold">{selectedAppointment.department}</span></div>
+                <div className="flex justify-between"><span className="text-gray-600">Type</span><span className="font-semibold">{selectedAppointment.appointmentType}</span></div>
+                <div className="flex justify-between"><span className="text-gray-600">Doctor</span><span className="font-semibold">{selectedAppointment.doctorName}</span></div>
+                <div className="flex justify-between"><span className="text-gray-600">Facility</span><span className="font-semibold">{selectedAppointment.facility}</span></div>
+                <div className="flex justify-between"><span className="text-gray-600">Date & Time</span><span className="font-semibold">{new Date(selectedAppointment.date).toLocaleDateString()} at {selectedAppointment.time}</span></div>
+                <div className="flex justify-between"><span className="text-gray-600">Status</span><span className="font-semibold capitalize">{selectedAppointment.status.replace('-', ' ')}</span></div>
+                {selectedAppointment.notes && <p className="text-gray-600">Notes: <span className="font-semibold">{selectedAppointment.notes}</span></p>}
+              </div>
+            )}
+            <DialogFooter>
+              <Button variant="outline" onClick={() => setIsDetailsOpen(false)}>Close</Button>
+            </DialogFooter>
+          </DialogContent>
+        </Dialog>
+      </div>
+    </CorporateLayout>
   );
 };
 

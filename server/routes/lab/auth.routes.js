@@ -49,12 +49,24 @@ router.post('/login', async (req, res) => {
       });
     }
 
-    // DEV-ONLY: Mock lab authentication (disabled in production)
-    if (process.env.NODE_ENV !== 'production' && email === mockLab.email) {
-      console.warn('⚠️ Using mock lab credentials (development only)');
+    const allowDemo = process.env.NODE_ENV !== 'production' || process.env.ALLOW_LAB_DEMO === 'true';
+    const fallbackPassword = process.env.LAB_DEFAULT_PASSWORD || 'Lab123';
+
+    // DEV/DEMO: Mock lab authentication (can be enabled in production via ALLOW_LAB_DEMO)
+    if (allowDemo && email.toLowerCase() === mockLab.email.toLowerCase()) {
+      console.warn('⚠️ Using mock lab credentials (demo mode)');
       
       // Verify password
-      const isPasswordValid = await bcrypt.compare(password, mockLab.password);
+      let isPasswordValid = false;
+      try {
+        isPasswordValid = await bcrypt.compare(password, mockLab.password);
+      } catch (e) {
+        isPasswordValid = password === fallbackPassword;
+      }
+      if (!isPasswordValid && password === fallbackPassword) {
+        // allow fallback for cleartext demo password
+        isPasswordValid = true;
+      }
       if (!isPasswordValid) {
         return res.status(401).json({
           success: false,

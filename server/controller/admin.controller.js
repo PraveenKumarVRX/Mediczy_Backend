@@ -3,7 +3,7 @@ import doctorModel from '../models/doctor.model.intelligent.js';
 import bcrypt from 'bcrypt';
 import jwt from 'jsonwebtoken';
 import { postgresSequelize as sequelize } from '../db/postgres-sequelize.js';
-import { QueryTypes } from 'sequelize';
+import { QueryTypes, Op } from 'sequelize';
 
 // Production-level rate limiting store (would be Redis in production cluster)
 const loginAttempts = new Map();
@@ -12,7 +12,7 @@ const loginAttempts = new Map();
 const SECURITY_CONFIG = {
   MAX_LOGIN_ATTEMPTS: 5,
   LOCKOUT_DURATION: 15 * 60 * 1000, // 15 minutes
-  PASSWORD_MIN_LENGTH: 8,
+  PASSWORD_MIN_LENGTH: 4,
   EMAIL_REGEX: /^[^\s@]+@[^\s@]+\.[^\s@]+$/
 };
 
@@ -135,11 +135,14 @@ export const adminLogin = async (req, res) => {
         lastLogin: new Date()
       });
       
+      // Generate token with adminId and userType for ring-fencing
       const token = jwt.sign(
         { 
-          id: adminUser.id, 
+          id: adminUser.id,
+          adminId: adminUser.id,  // Explicit adminId for ring-fencing
           email: adminUser.email, 
           role: 'admin',
+          userType: 'admin',  // userType for ring-fencing middleware
           isAdmin: true,
           loginTime: new Date().toISOString()
         },
@@ -163,6 +166,7 @@ export const adminLogin = async (req, res) => {
           firstName: adminUser.firstName,
           lastName: adminUser.lastName,
           role: 'admin',
+          userType: 'admin',
           isAdmin: true,
           lastLogin: adminUser.lastLogin
         } 
@@ -586,3 +590,64 @@ export const listDoctors = async (req, res) => {
     return res.status(500).json({ message: "Failed to fetch doctors", error: e.message });
   }
 };
+
+// Get unique cities from doctors (for filter dropdown)
+export const getDoctorCities = async (req, res) => {
+  try {
+    // Get from database
+    const doctors = await doctorModel.findAll({
+      attributes: ['city'],
+      where: { city: { [Op.ne]: null } },
+      group: ['city'],
+      order: [['city', 'ASC']]
+    });
+    const cities = doctors.map(d => d.city).filter(Boolean);
+    
+    // In future, can merge with other sources here
+    return res.json({ success: true, data: cities });
+  } catch (e) {
+    console.error('Failed to fetch cities:', e);
+    return res.status(500).json({ success: false, error: e.message });
+  }
+};
+
+// Get unique states from doctors (for filter dropdown)
+export const getDoctorStates = async (req, res) => {
+  try {
+    // Get from database
+    const doctors = await doctorModel.findAll({
+      attributes: ['state'],
+      where: { state: { [Op.ne]: null } },
+      group: ['state'],
+      order: [['state', 'ASC']]
+    });
+    const states = doctors.map(d => d.state).filter(Boolean);
+    
+    // In future, can merge with other sources here
+    return res.json({ success: true, data: states });
+  } catch (e) {
+    console.error('Failed to fetch states:', e);
+    return res.status(500).json({ success: false, error: e.message });
+  }
+};
+
+// Get unique specialties from doctors (for filter dropdown)
+export const getDoctorSpecialties = async (req, res) => {
+  try {
+    // Get from database
+    const doctors = await doctorModel.findAll({
+      attributes: ['specialization'],
+      where: { specialization: { [Op.ne]: null } },
+      group: ['specialization'],
+      order: [['specialization', 'ASC']]
+    });
+    const specialties = doctors.map(d => d.specialization).filter(Boolean);
+    
+    // In future, can merge with other sources here
+    return res.json({ success: true, data: specialties });
+  } catch (e) {
+    console.error('Failed to fetch specialties:', e);
+    return res.status(500).json({ success: false, error: e.message });
+  }
+};
+

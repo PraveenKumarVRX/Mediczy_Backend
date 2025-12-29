@@ -1,4 +1,4 @@
-import { useState, useRef, useEffect } from 'react';
+import { useState, useEffect } from 'react';
 import AdminLayout from '@/components/layout/AdminLayout';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
@@ -12,6 +12,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { Switch } from '@/components/ui/switch';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from '@/components/ui/dialog';
 import { Badge } from '@/components/ui/badge';
+import { useToast } from '@/hooks/use-toast';
 
 interface TeamUser {
   id?: number;
@@ -68,10 +69,12 @@ const permissions = [
 ];
 
 const TeamManagement = () => {
+  const { toast } = useToast();
   const [loading, setLoading] = useState(false);
   const [result, setResult] = useState<{ message: string; count?: number } | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [teamUsers, setTeamUsers] = useState<TeamUser[]>([]);
+  const [activeTab, setActiveTab] = useState<'list' | 'create' | 'bulk'>('list');
   const [jsonInput, setJsonInput] = useState('');
   const [editingUser, setEditingUser] = useState<TeamUser | null>(null);
   const [viewingUser, setViewingUser] = useState<TeamUser | null>(null);
@@ -122,19 +125,44 @@ const TeamManagement = () => {
       setError(null);
       setResult(null);
 
-      const endpoint = editingUser ? `/admin/team/${editingUser.id}` : '/admin/team';
+      const editId = editingUser?.id || (newUser as any).id;
+      if (editingUser && !editId) {
+        throw new Error('Missing team member id for update');
+      }
+
+      const endpoint = editingUser ? `/admin/team/${editId}` : '/admin/team';
       const method = editingUser ? api.put : api.post;
 
+      const payload: any = {
+        ...newUser,
+        role: newUser.role || 'team',
+        membershipType: 'team'
+      };
+
+      if (editingUser && !payload.password) {
+        delete payload.password;
+      }
+
       const { data } = await method(endpoint,
-        { user: newUser },
+        { user: payload },
         { headers: token ? { Authorization: `Bearer ${token}` } : undefined }
       );
       
       setResult(data);
+      toast({
+        title: editingUser ? 'Team member updated' : 'Team member added',
+        description: 'Changes saved successfully.',
+      });
       resetForm();
+      setActiveTab('list');
       fetchTeamUsers();
     } catch (err: any) {
       setError(err?.response?.data?.message || `Failed to ${editingUser ? 'update' : 'create'} team user`);
+      toast({
+        variant: 'destructive',
+        title: 'Action failed',
+        description: err?.response?.data?.message || 'Could not save team member',
+      });
     } finally {
       setLoading(false);
     }
@@ -210,8 +238,9 @@ const TeamManagement = () => {
   };
 
   const startEditUser = (user: TeamUser) => {
-    setNewUser({ ...user });
+    setNewUser({ ...user, password: '' });
     setEditingUser(user);
+    setActiveTab('create');
   };
 
   return (
@@ -295,7 +324,7 @@ const TeamManagement = () => {
           </div>
         )}
 
-        <Tabs defaultValue="list" className="w-full">
+        <Tabs value={activeTab} onValueChange={(v) => setActiveTab(v as typeof activeTab)} className="w-full">
           <TabsList className="grid w-full grid-cols-3">
             <TabsTrigger value="list">Team List</TabsTrigger>
             <TabsTrigger value="create">{editingUser ? 'Edit User' : 'Add User'}</TabsTrigger>

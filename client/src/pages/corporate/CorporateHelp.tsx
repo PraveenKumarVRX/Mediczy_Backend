@@ -1,5 +1,5 @@
 import React, { useMemo, useState } from 'react';
-import { HelpCircle, Search, Book, MessageCircle, Phone, Mail, FileText, Video, ChevronDown, ChevronRight } from 'lucide-react';
+import { HelpCircle, Search, Book, MessageCircle, Phone, Mail, FileText, Video, ChevronDown, ChevronRight, LifeBuoy } from 'lucide-react';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -10,6 +10,8 @@ import { Textarea } from '@/components/ui/textarea';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { useToast } from '@/hooks/use-toast';
 import { ticketService } from '@/services/ticketService';
+import CorporateLayout from '@/components/corporate/CorporateLayout';
+import CorporatePageHeader from '@/components/corporate/CorporatePageHeader';
 
 interface FAQItem {
   question: string;
@@ -149,13 +151,13 @@ const CorporateHelp: React.FC = () => {
       title: 'Documentation',
       description: 'Comprehensive guides and tutorials',
       icon: <Book className="h-6 w-6 text-blue-600" />,
-      link: '/docs'
+      link: 'https://docs.mediczy.com'
     },
     {
       title: 'Video Tutorials',
       description: 'Step-by-step video guides',
       icon: <Video className="h-6 w-6 text-purple-600" />,
-      link: '/docs'
+      link: 'https://www.youtube.com/results?search_query=mediczy+corporate+guide'
     },
     {
       title: 'Live Chat',
@@ -179,7 +181,7 @@ const CorporateHelp: React.FC = () => {
       title: 'Knowledge Base',
       description: 'Browse articles and guides',
       icon: <FileText className="h-6 w-6 text-indigo-600" />,
-      link: '/api-docs'
+      link: 'https://support.mediczy.com/knowledge-base'
     }
   ];
 
@@ -189,29 +191,18 @@ const CorporateHelp: React.FC = () => {
   );
 
   return (
-    <div className="space-y-6">
-      <div className="flex items-center gap-3">
-        <HelpCircle className="h-8 w-8 text-blue-600" />
-        <div>
-          <h1 className="text-3xl font-bold">Help & Support</h1>
-          <p className="text-gray-500 mt-1">Find answers and get support for your health platform</p>
-        </div>
-      </div>
-
-      {/* Search Bar */}
-      <Card>
-        <CardContent className="pt-6">
-          <div className="relative">
-            <Search className="absolute left-3 top-3 h-5 w-5 text-gray-400" />
-            <Input
-              placeholder="Search for help topics, FAQs, or guides..."
-              value={searchQuery}
-              onChange={(e) => setSearchQuery(e.target.value)}
-              className="pl-10 h-12 text-base"
-            />
-          </div>
-        </CardContent>
-      </Card>
+    <CorporateLayout title="Help & Support">
+      <div className="space-y-6">
+        <CorporatePageHeader
+          icon={LifeBuoy}
+          title="Help & Support"
+          description="Find answers, browse FAQs, and get support for your health platform"
+          gradient="from-sky-500 to-sky-700"
+          showSearch={true}
+          searchPlaceholder="Search for help topics, FAQs, or guides..."
+          searchValue={searchQuery}
+          onSearchChange={setSearchQuery}
+        />
 
       {/* Help Resources */}
       <Card>
@@ -432,7 +423,8 @@ const CorporateHelp: React.FC = () => {
           </DialogFooter>
         </DialogContent>
       </Dialog>
-    </div>
+      </div>
+    </CorporateLayout>
   );
 };
 

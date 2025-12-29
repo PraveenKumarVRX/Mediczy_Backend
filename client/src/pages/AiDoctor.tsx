@@ -513,6 +513,14 @@ const AiDoctor = () => {
         }
       );
 
+      console.log('🔍 Chat Response Debug:', {
+        success: response.success,
+        hasData: !!response.data,
+        dataKeys: response.data ? Object.keys(response.data) : [],
+        primaryResponse: response.data?.primary_response?.substring(0, 50),
+        error: response.error
+      });
+
       if (response.success && response.data?.primary_response) {
         const messageId = 'assistant_' + Date.now();
         const assistantMessage: Message = {
@@ -543,7 +551,11 @@ const AiDoctor = () => {
           return;
         }
         
-        throw new Error(response.error?.message || response.error || 'Orchestrator returned no response');
+        // Handle error response - don't render undefined
+        const errorMsg = response.error?.message || response.error || 'Unknown error';
+        console.error('❌ Dr. iSHA error:', errorMsg);
+        
+        throw new Error(typeof errorMsg === 'string' ? errorMsg : JSON.stringify(errorMsg));
       }
     } catch (error) {
       console.error('AI request error:', error);
@@ -566,9 +578,14 @@ const AiDoctor = () => {
         duration: 5000
       });
       
+      // Add error message to chat with helpful text
+      const errorText = errorMessage.includes('Network') 
+        ? `I apologize, but I'm having trouble connecting right now. Please check your internet connection and try again. If you're experiencing a medical emergency, please call emergency services immediately.`
+        : `I apologize, but I'm having trouble processing your request right now. Please try again in a moment. If you're experiencing a medical emergency, please call emergency services immediately.`;
+
       setMessages(prev => [...prev, {
         role: "assistant",
-        content: `I apologize, but I'm having trouble processing your request right now. ${errorMessage.includes('Network') ? 'Please check your internet connection and try again.' : 'Please try again in a moment.'} If you're experiencing a medical emergency, please call emergency services immediately.`,
+        content: errorText,
         language: currentLanguage.code,
         id: 'error_' + Date.now()
       }]);
@@ -579,28 +596,28 @@ const AiDoctor = () => {
 
   return (
     <MainLayout>
-      <div className="fixed inset-0 top-16 bottom-16 md:bottom-0 md:left-64 flex flex-col bg-background">
+      <div className="fixed inset-0 top-16 bottom-16 md:bottom-0 md:left-64 flex flex-col bg-slate-50 dark:bg-slate-900">
         {/* Header - Fixed at top */}
-        <div className="flex-shrink-0 flex items-center justify-between px-4 py-3 border-b bg-background/95 backdrop-blur-sm">
+        <div className="flex-shrink-0 flex items-center justify-between px-4 py-3 border-b border-slate-200 dark:border-slate-700 bg-white/95 dark:bg-slate-800/95 backdrop-blur-sm">
           <div className="flex items-center gap-3">
-            <div className="w-10 h-10 md:w-12 md:h-12 rounded-full bg-gradient-to-br from-blue-500 to-purple-600 flex items-center justify-center shadow-lg">
+            <div className="w-10 h-10 md:w-12 md:h-12 rounded-full bg-gradient-to-br from-teal-500 to-teal-600 flex items-center justify-center shadow-lg">
               <Stethoscope className="w-5 h-5 md:w-6 md:h-6 text-white" />
             </div>
             <div>
-              <h1 className="text-lg md:text-xl font-bold text-foreground">{t('title')}</h1>
-              <p className="text-xs md:text-sm text-muted-foreground">{t('subtitle')}</p>
+              <h1 className="text-lg md:text-xl font-bold text-slate-800 dark:text-white">{t('title')}</h1>
+              <p className="text-xs md:text-sm text-slate-500 dark:text-slate-400">{t('subtitle')}</p>
             </div>
           </div>
           
           {/* Language Selector */}
           <DropdownMenu>
             <DropdownMenuTrigger asChild>
-              <Button variant="outline" size="sm" className="gap-2">
+              <Button variant="outline" size="sm" className="gap-2 border-slate-200 dark:border-slate-600 bg-white dark:bg-slate-700 text-slate-700 dark:text-slate-200 hover:bg-slate-100 dark:hover:bg-slate-600">
                 <Globe2 className="h-4 w-4" />
                 <span>{currentLanguage.flag}</span>
               </Button>
             </DropdownMenuTrigger>
-            <DropdownMenuContent align="end">
+            <DropdownMenuContent align="end" className="bg-white dark:bg-slate-800 border-slate-200 dark:border-slate-700">
               {languages.map((lang) => (
                 <DropdownMenuItem
                   key={lang.code}
@@ -626,18 +643,18 @@ const AiDoctor = () => {
                   animate={{ opacity: 1, y: 0 }}
                   className="text-center w-full max-w-sm"
                 >
-                  <div className="w-16 h-16 md:w-20 md:h-20 mx-auto mb-4 md:mb-6 rounded-full bg-gradient-to-br from-blue-500/20 to-purple-600/20 flex items-center justify-center">
-                    <Heart className="w-8 h-8 md:w-10 md:h-10 text-primary animate-pulse" />
+                  <div className="w-16 h-16 md:w-20 md:h-20 mx-auto mb-4 md:mb-6 rounded-full bg-gradient-to-br from-teal-500/20 to-teal-600/20 dark:from-teal-400/20 dark:to-teal-500/20 flex items-center justify-center">
+                    <Heart className="w-8 h-8 md:w-10 md:h-10 text-teal-500 dark:text-teal-400 animate-pulse" />
                   </div>
                   
-                  <h2 className="text-xl md:text-2xl font-semibold mb-2">{t('title')}</h2>
-                  <p className="text-sm md:text-base text-muted-foreground mb-6">{t('greeting')}</p>
+                  <h2 className="text-xl md:text-2xl font-semibold mb-2 text-slate-800 dark:text-white">{t('title')}</h2>
+                  <p className="text-sm md:text-base text-slate-600 dark:text-slate-400 mb-6">{t('greeting')}</p>
                   
                   {/* Quick Actions */}
                   <div className="grid grid-cols-2 gap-2 md:gap-3">
                     <Button
                       variant="outline"
-                      className="h-auto py-3 md:py-4 flex flex-col items-center gap-1 md:gap-2 hover:bg-primary/5 hover:border-primary/30"
+                      className="h-auto py-3 md:py-4 flex flex-col items-center gap-1 md:gap-2 bg-white dark:bg-slate-800 border-slate-200 dark:border-slate-700 hover:bg-teal-50 dark:hover:bg-teal-900/20 hover:border-teal-300 dark:hover:border-teal-600 text-slate-700 dark:text-slate-200"
                       onClick={() => handleQuickAction('symptoms')}
                     >
                       <ThermometerSun className="h-4 w-4 md:h-5 md:w-5 text-orange-500" />
@@ -645,23 +662,23 @@ const AiDoctor = () => {
                     </Button>
                     <Button
                       variant="outline"
-                      className="h-auto py-3 md:py-4 flex flex-col items-center gap-1 md:gap-2 hover:bg-primary/5 hover:border-primary/30"
+                      className="h-auto py-3 md:py-4 flex flex-col items-center gap-1 md:gap-2 bg-white dark:bg-slate-800 border-slate-200 dark:border-slate-700 hover:bg-teal-50 dark:hover:bg-teal-900/20 hover:border-teal-300 dark:hover:border-teal-600 text-slate-700 dark:text-slate-200"
                       onClick={() => handleQuickAction('wellness')}
                     >
-                      <Activity className="h-4 w-4 md:h-5 md:w-5 text-green-500" />
+                      <Activity className="h-4 w-4 md:h-5 md:w-5 text-teal-500" />
                       <span className="text-xs md:text-sm">{t('wellness')}</span>
                     </Button>
                     <Button
                       variant="outline"
-                      className="h-auto py-3 md:py-4 flex flex-col items-center gap-1 md:gap-2 hover:bg-primary/5 hover:border-primary/30"
+                      className="h-auto py-3 md:py-4 flex flex-col items-center gap-1 md:gap-2 bg-white dark:bg-slate-800 border-slate-200 dark:border-slate-700 hover:bg-teal-50 dark:hover:bg-teal-900/20 hover:border-teal-300 dark:hover:border-teal-600 text-slate-700 dark:text-slate-200"
                       onClick={() => handleQuickAction('medications')}
                     >
-                      <Pill className="h-4 w-4 md:h-5 md:w-5 text-blue-500" />
+                      <Pill className="h-4 w-4 md:h-5 md:w-5 text-teal-600" />
                       <span className="text-xs md:text-sm">{t('medications')}</span>
                     </Button>
                     <Button
                       variant="outline"
-                      className="h-auto py-3 md:py-4 flex flex-col items-center gap-1 md:gap-2 hover:bg-primary/5 hover:border-primary/30"
+                      className="h-auto py-3 md:py-4 flex flex-col items-center gap-1 md:gap-2 bg-white dark:bg-slate-800 border-slate-200 dark:border-slate-700 hover:bg-teal-50 dark:hover:bg-teal-900/20 hover:border-teal-300 dark:hover:border-teal-600 text-slate-700 dark:text-slate-200"
                       onClick={() => handleQuickAction('emergency')}
                     >
                       <Sparkles className="h-4 w-4 md:h-5 md:w-5 text-red-500" />
@@ -690,8 +707,8 @@ const AiDoctor = () => {
                     <div className={cn(
                       "w-7 h-7 md:w-8 md:h-8 rounded-full flex items-center justify-center flex-shrink-0 mt-1",
                       message.role === "user" 
-                        ? "bg-primary text-primary-foreground" 
-                        : "bg-gradient-to-br from-blue-500 to-purple-600 text-white"
+                        ? "bg-teal-500 text-white" 
+                        : "bg-gradient-to-br from-teal-500 to-teal-600 text-white"
                     )}>
                       {message.role === "user" ? (
                         <User className="w-3.5 h-3.5 md:w-4 md:h-4" />
@@ -705,17 +722,33 @@ const AiDoctor = () => {
                       <div className={cn(
                         "rounded-2xl px-3 py-2 md:px-4 md:py-3",
                         message.role === "user"
-                          ? "bg-primary text-primary-foreground rounded-tr-sm"
-                          : "bg-muted rounded-tl-sm"
+                          ? "bg-teal-500 text-white rounded-tr-sm"
+                          : "bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-slate-800 dark:text-slate-200 rounded-tl-sm"
                       )}>
                         {message.role === "assistant" ? (
                           <div className="prose prose-sm dark:prose-invert max-w-none text-sm md:text-base">
-                            <ReactMarkdown remarkPlugins={[remarkGfm]}>
-                              {message.content}
-                            </ReactMarkdown>
+                            {(() => {
+                              const safeContent =
+                                typeof message.content === 'string' && message.content.trim().length > 0
+                                  ? message.content
+                                  : "I'm here to help with your symptoms. Please try asking again or describe how you're feeling.";
+                              return (
+                                <ReactMarkdown remarkPlugins={[remarkGfm]}>
+                                  {safeContent}
+                                </ReactMarkdown>
+                              );
+                            })()}
                           </div>
                         ) : (
-                          <p className="text-sm md:text-base whitespace-pre-wrap">{message.content}</p>
+                          (() => {
+                            const safeContent =
+                              typeof message.content === 'string' && message.content.trim().length > 0
+                                ? message.content
+                                : '...';
+                            return (
+                              <p className="text-sm md:text-base whitespace-pre-wrap">{safeContent}</p>
+                            );
+                          })()
                         )}
                       </div>
                       
@@ -726,8 +759,8 @@ const AiDoctor = () => {
                             variant="ghost"
                             size="sm"
                             className={cn(
-                              "h-6 w-6 p-0 rounded-full",
-                              speakingMessageId === message.id && "text-primary bg-primary/10"
+                              "h-6 w-6 p-0 rounded-full text-slate-500 dark:text-slate-400 hover:text-teal-600 dark:hover:text-teal-400 hover:bg-teal-50 dark:hover:bg-teal-900/20",
+                              speakingMessageId === message.id && "text-teal-500 dark:text-teal-400 bg-teal-50 dark:bg-teal-900/20"
                             )}
                             onClick={() => speakMessage(message.id!, message.content)}
                             disabled={isTTSLoading && speakingMessageId !== message.id}
@@ -740,7 +773,7 @@ const AiDoctor = () => {
                               <Volume2 className="h-3.5 w-3.5" />
                             )}
                           </Button>
-                          <span className="text-xs text-muted-foreground">
+                          <span className="text-xs text-slate-500 dark:text-slate-400">
                             {speakingMessageId === message.id ? 'Stop' : 'Listen'}
                           </span>
                         </div>
@@ -757,14 +790,14 @@ const AiDoctor = () => {
                   animate={{ opacity: 1 }}
                   className="flex gap-2 md:gap-3"
                 >
-                  <div className="w-7 h-7 md:w-8 md:h-8 rounded-full bg-gradient-to-br from-blue-500 to-purple-600 flex items-center justify-center">
+                  <div className="w-7 h-7 md:w-8 md:h-8 rounded-full bg-gradient-to-br from-teal-500 to-teal-600 flex items-center justify-center">
                     <Bot className="w-3.5 h-3.5 md:w-4 md:h-4 text-white" />
                   </div>
-                  <div className="bg-muted rounded-2xl rounded-tl-sm px-3 py-2 md:px-4 md:py-3">
+                  <div className="bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-2xl rounded-tl-sm px-3 py-2 md:px-4 md:py-3">
                     <div className="flex gap-1">
-                      <span className="w-2 h-2 bg-foreground/40 rounded-full animate-bounce" style={{ animationDelay: '0ms' }} />
-                      <span className="w-2 h-2 bg-foreground/40 rounded-full animate-bounce" style={{ animationDelay: '150ms' }} />
-                      <span className="w-2 h-2 bg-foreground/40 rounded-full animate-bounce" style={{ animationDelay: '300ms' }} />
+                      <span className="w-2 h-2 bg-teal-500 dark:bg-teal-400 rounded-full animate-bounce" style={{ animationDelay: '0ms' }} />
+                      <span className="w-2 h-2 bg-teal-500 dark:bg-teal-400 rounded-full animate-bounce" style={{ animationDelay: '150ms' }} />
+                      <span className="w-2 h-2 bg-teal-500 dark:bg-teal-400 rounded-full animate-bounce" style={{ animationDelay: '300ms' }} />
                     </div>
                   </div>
                 </motion.div>
@@ -773,20 +806,20 @@ const AiDoctor = () => {
           </ScrollArea>
 
           {/* Input Area - Fixed at bottom */}
-          <div className="flex-shrink-0 border-t bg-background/95 backdrop-blur-sm p-3 md:p-4">
+          <div className="flex-shrink-0 border-t border-slate-200 dark:border-slate-700 bg-white/95 dark:bg-slate-800/95 backdrop-blur-sm p-3 md:p-4">
             {/* Attached File Preview */}
             {uploadedFile && (
-              <div className="mb-2 flex items-center gap-2 bg-muted/50 rounded-lg px-3 py-2">
+              <div className="mb-2 flex items-center gap-2 bg-slate-100 dark:bg-slate-700/50 rounded-lg px-3 py-2">
                 {uploadedFile.type.startsWith('image/') ? (
-                  <ImageIcon className="h-4 w-4 text-muted-foreground" />
+                  <ImageIcon className="h-4 w-4 text-slate-500 dark:text-slate-400" />
                 ) : (
-                  <FileText className="h-4 w-4 text-muted-foreground" />
+                  <FileText className="h-4 w-4 text-slate-500 dark:text-slate-400" />
                 )}
-                <span className="text-sm flex-1 truncate">{uploadedFile.name}</span>
+                <span className="text-sm flex-1 truncate text-slate-700 dark:text-slate-300">{uploadedFile.name}</span>
                 <Button
                   variant="ghost"
                   size="sm"
-                  className="h-6 w-6 p-0"
+                  className="h-6 w-6 p-0 text-slate-500 dark:text-slate-400 hover:text-slate-700 dark:hover:text-slate-200"
                   onClick={() => setUploadedFile(null)}
                 >
                   <X className="h-4 w-4" />
@@ -801,7 +834,7 @@ const AiDoctor = () => {
                   type="button"
                   variant="ghost"
                   size="icon"
-                  className="h-9 w-9 md:h-10 md:w-10 rounded-full"
+                  className="h-9 w-9 md:h-10 md:w-10 rounded-full text-slate-500 dark:text-slate-400 hover:text-teal-600 dark:hover:text-teal-400 hover:bg-teal-50 dark:hover:bg-teal-900/20"
                   onClick={() => setShowSymptomDialog(true)}
                 >
                   <Activity className="h-4 w-4 md:h-5 md:w-5" />
@@ -810,7 +843,7 @@ const AiDoctor = () => {
                   type="button"
                   variant="ghost"
                   size="icon"
-                  className="h-9 w-9 md:h-10 md:w-10 rounded-full"
+                  className="h-9 w-9 md:h-10 md:w-10 rounded-full text-slate-500 dark:text-slate-400 hover:text-teal-600 dark:hover:text-teal-400 hover:bg-teal-50 dark:hover:bg-teal-900/20"
                   onClick={() => fileInputRef.current?.click()}
                 >
                   <Paperclip className="h-4 w-4 md:h-5 md:w-5" />
@@ -836,7 +869,7 @@ const AiDoctor = () => {
                   placeholder={isListening ? "🎤 Listening..." : t('placeholder')}
                   disabled={isLoading}
                   className={cn(
-                    "pr-10 md:pr-12 h-10 rounded-full bg-muted/50 border-0 focus-visible:ring-1 focus-visible:ring-primary text-sm",
+                    "pr-10 md:pr-12 h-10 rounded-full bg-slate-100 dark:bg-slate-700 border border-slate-200 dark:border-slate-600 focus-visible:ring-1 focus-visible:ring-teal-500 focus-visible:border-teal-500 text-sm text-slate-800 dark:text-slate-200 placeholder:text-slate-400 dark:placeholder:text-slate-500",
                     currentLanguage.rtl && "text-right",
                     isListening && "border-red-500 ring-1 ring-red-500"
                   )}
@@ -847,7 +880,7 @@ const AiDoctor = () => {
                   variant="ghost"
                   size="icon"
                   className={cn(
-                    "absolute right-1 top-1/2 -translate-y-1/2 h-7 w-7 md:h-8 md:w-8 rounded-full transition-all",
+                    "absolute right-1 top-1/2 -translate-y-1/2 h-7 w-7 md:h-8 md:w-8 rounded-full transition-all text-slate-500 dark:text-slate-400 hover:text-teal-600 dark:hover:text-teal-400",
                     isListening && "text-red-500 bg-red-500/10 animate-pulse"
                   )}
                   onClick={toggleListening}
@@ -864,7 +897,7 @@ const AiDoctor = () => {
               <Button
                 type="submit"
                 size="icon"
-                className="flex-shrink-0 h-9 w-9 md:h-10 md:w-10 rounded-full"
+                className="flex-shrink-0 h-9 w-9 md:h-10 md:w-10 rounded-full bg-teal-500 hover:bg-teal-600 text-white disabled:bg-slate-300 dark:disabled:bg-slate-600"
                 disabled={isLoading || (!input.trim() && !uploadedFile)}
               >
                 <Send className="h-4 w-4 md:h-5 md:w-5" />
@@ -875,13 +908,13 @@ const AiDoctor = () => {
 
         {/* Symptom Selection Dialog */}
         <Dialog open={showSymptomDialog} onOpenChange={setShowSymptomDialog}>
-          <DialogContent className="sm:max-w-md">
+          <DialogContent className="sm:max-w-md bg-white dark:bg-slate-800 border-slate-200 dark:border-slate-700">
             <DialogHeader>
-              <DialogTitle className="flex items-center gap-2">
+              <DialogTitle className="flex items-center gap-2 text-slate-800 dark:text-white">
                 <ThermometerSun className="h-5 w-5 text-orange-500" />
                 {t('symptoms')}
               </DialogTitle>
-              <DialogDescription>
+              <DialogDescription className="text-slate-600 dark:text-slate-400">
                 Select the symptoms you are experiencing
               </DialogDescription>
             </DialogHeader>
@@ -891,7 +924,12 @@ const AiDoctor = () => {
                 <Button
                   key={symptom.id}
                   variant={selectedSymptoms.includes(symptom.id) ? "default" : "outline"}
-                  className="h-auto py-3 flex flex-col items-center gap-1"
+                  className={cn(
+                    "h-auto py-3 flex flex-col items-center gap-1",
+                    selectedSymptoms.includes(symptom.id)
+                      ? "bg-teal-500 hover:bg-teal-600 text-white border-teal-500"
+                      : "bg-white dark:bg-slate-700 border-slate-200 dark:border-slate-600 text-slate-700 dark:text-slate-200 hover:bg-teal-50 dark:hover:bg-teal-900/20 hover:border-teal-300 dark:hover:border-teal-600"
+                  )}
                   onClick={() => handleSymptomSelect(symptom.id)}
                 >
                   <span className="text-xl">{symptom.icon}</span>
@@ -901,12 +939,13 @@ const AiDoctor = () => {
             </div>
 
             <div className="flex justify-end gap-2">
-              <Button variant="outline" onClick={() => setShowSymptomDialog(false)}>
+              <Button variant="outline" onClick={() => setShowSymptomDialog(false)} className="border-slate-200 dark:border-slate-600 text-slate-700 dark:text-slate-200 hover:bg-slate-100 dark:hover:bg-slate-700">
                 Cancel
               </Button>
               <Button 
                 onClick={submitSymptoms}
                 disabled={selectedSymptoms.length === 0}
+                className="bg-teal-500 hover:bg-teal-600 text-white disabled:bg-slate-300 dark:disabled:bg-slate-600"
               >
                 Add Symptoms
               </Button>

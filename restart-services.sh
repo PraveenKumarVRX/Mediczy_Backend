@@ -33,9 +33,10 @@ echo "✅ PM2 Processes: $PM2_STATUS online"
 echo ""
 echo "🔍 Port Status:"
 echo "==============="
-echo "Port 80:  $(ss -tlnp | grep :80 | wc -l) listeners"
-echo "Port 443: $(ss -tlnp | grep :443 | wc -l) listeners"
-echo "Port 8000: $(ss -tlnp | grep :8000 | wc -l) listeners"
+echo "Port 80:   $(ss -tlnp | grep :80 | wc -l) listeners"
+echo "Port 443:  $(ss -tlnp | grep :443 | wc -l) listeners"
+echo "Port 8000: $(ss -tlnp | grep :8000 | wc -l) listeners (Node.js)"
+echo "Port 8001: $(ss -tlnp | grep :8001 | wc -l) listeners (SIB FastAPI)"
 
 # Test local access
 echo ""

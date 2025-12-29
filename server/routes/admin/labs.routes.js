@@ -19,6 +19,28 @@ async function ensureDirectory() {
     }
 }
 
+const formatLabProfile = (profile) => ({
+    id: profile.id,
+    name: profile.basic_info?.name || '',
+    area: profile.basic_info?.area || '',
+    locality: profile.basic_info?.locality || '',
+    city: profile.basic_info?.city || '',
+    state: profile.basic_info?.state || '',
+    pincode: profile.basic_info?.pincode || '',
+    address: profile.basic_info?.address || '',
+    phone: profile.basic_info?.contact?.phone || '',
+    email: profile.basic_info?.contact?.email || '',
+    sub_type: profile.classification?.sub_type || '',
+    classification: profile.classification?.type || 'lab',
+    website: profile.metadata?.website || '',
+    pincode_mapped: profile.metadata?.pincode_mapped || false,
+    metadata: profile.metadata,
+    basic_info: profile.basic_info,
+    classification_info: profile.classification,
+    services: profile.services,
+    quality_indicators: profile.quality_indicators,
+});
+
 router.post('/', async (req, res) => {
     try {
         await ensureDirectory();
@@ -88,6 +110,58 @@ router.post('/', async (req, res) => {
             message: 'Failed to create lab',
             error: error.message 
         });
+    }
+});
+
+router.patch('/:id/details', async (req, res) => {
+    try {
+        await ensureDirectory();
+        const { id } = req.params;
+        const { updates = {} } = req.body || {};
+        const filePath = path.join(LABS_BASE, `${id}.json`);
+
+        const exists = await fs.stat(filePath).then(() => true).catch(() => false);
+        if (!exists) {
+            return res.status(404).json({ success: false, message: 'Lab not found' });
+        }
+
+        const profile = JSON.parse(await fs.readFile(filePath, 'utf-8'));
+
+        profile.basic_info = {
+            ...profile.basic_info,
+            name: updates.name ?? profile.basic_info?.name,
+            city: updates.city ?? profile.basic_info?.city,
+            state: updates.state ?? profile.basic_info?.state,
+            area: updates.area ?? profile.basic_info?.area,
+            locality: updates.locality ?? profile.basic_info?.locality,
+            pincode: updates.pincode ?? profile.basic_info?.pincode,
+            address: updates.address || profile.basic_info?.address,
+            contact: {
+                ...profile.basic_info?.contact,
+                phone: updates.phone ?? profile.basic_info?.contact?.phone,
+                email: updates.email ?? profile.basic_info?.contact?.email,
+            },
+        };
+
+        profile.classification = {
+            ...profile.classification,
+            type: 'lab',
+            sub_type: updates.type ?? profile.classification?.sub_type,
+        };
+
+        profile.metadata = {
+            ...profile.metadata,
+            website: updates.website ?? profile.metadata?.website,
+            active: updates.isActive !== undefined ? !!updates.isActive : profile.metadata?.active,
+        };
+
+        await fs.writeFile(filePath, JSON.stringify(profile, null, 2));
+
+        const formatted = formatLabProfile(profile);
+        res.json({ success: true, message: 'Lab updated successfully', data: formatted });
+    } catch (error) {
+        console.error('Error updating lab:', error);
+        res.status(500).json({ success: false, message: 'Failed to update lab', error: error.message });
     }
 });
 

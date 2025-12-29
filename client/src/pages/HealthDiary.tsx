@@ -1,7 +1,12 @@
 import React, { useState, useEffect } from 'react';
 import { motion } from 'framer-motion';
-import { Calendar, MessageSquare, Pill, Activity, Heart, Moon, Utensils, FileText, Filter, Search, ChevronDown } from 'lucide-react';
+import { Calendar, MessageSquare, Pill, Activity, Heart, Moon, Utensils, FileText, Filter, Search, ChevronDown, BookHeart } from 'lucide-react';
 import { toast } from 'react-hot-toast';
+import MainLayout from '@/components/layout/MainLayout';
+import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
+import { Badge } from '@/components/ui/badge';
+import { Input } from '@/components/ui/input';
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 
 interface HealthDiaryEntry {
   id: number;
@@ -309,107 +314,120 @@ const HealthDiary: React.FC = () => {
   };
 
   return (
-    <div className="min-h-screen bg-gray-50 py-8 px-4 sm:px-6 lg:px-8">
-      <div className="max-w-7xl mx-auto">
+      <div className="max-w-7xl mx-auto space-y-6 animate-in fade-in duration-500 px-4 md:px-6 py-6">
         {/* Header */}
         <motion.div
           initial={{ opacity: 0, y: -20 }}
           animate={{ opacity: 1, y: 0 }}
-          className="mb-8"
+          className="relative overflow-hidden rounded-2xl bg-gradient-to-r from-slate-800 via-slate-900 to-slate-800 p-6 md:p-8 text-white shadow-2xl"
         >
-          <h1 className="text-4xl font-bold text-gray-900 mb-2">Health Diary</h1>
-          <p className="text-gray-600">Track your health journey, AI consultations, and wellness activities</p>
+          <div className="absolute inset-0 bg-[url('data:image/svg+xml;base64,PHN2ZyB3aWR0aD0iNjAiIGhlaWdodD0iNjAiIHZpZXdCb3g9IjAgMCA2MCA2MCIgeG1sbnM9Imh0dHA6Ly93d3cudzMub3JnLzIwMDAvc3ZnIj48ZyBmaWxsPSJub25lIiBmaWxsLXJ1bGU9ImV2ZW5vZGQiPjxwYXRoIGQ9Ik0zNiAxOGMzLjMxNCAwIDYgMi42ODYgNiA2cy0yLjY4NiA2LTYgNi02LTIuNjg2LTYtNiAyLjY4Ni02IDYtNiIgc3Ryb2tlPSJyZ2JhKDI1NSwyNTUsMjU1LDAuMSkiLz48L2c+PC9zdmc+')] opacity-30" />
+          <div className="absolute top-0 right-0 w-64 h-64 bg-gradient-to-br from-teal-500/20 to-transparent rounded-full blur-3xl" />
+          <div className="relative">
+            <div className="flex items-center gap-3 mb-3">
+              <div className="p-2.5 rounded-xl bg-gradient-to-br from-teal-500 to-teal-600 shadow-lg shadow-teal-500/30">
+                <BookHeart className="w-6 h-6" />
+              </div>
+              <Badge className="bg-white/10 text-white/90 border-white/20 font-medium">
+                Personal Health Log
+              </Badge>
+            </div>
+            <h1 className="text-2xl md:text-3xl font-bold mb-2">Health Diary</h1>
+            <p className="text-slate-300 text-sm md:text-base">
+              Track your health journey, AI consultations, and wellness activities
+            </p>
+          </div>
         </motion.div>
 
         {/* Filters */}
-        <motion.div
-          initial={{ opacity: 0, y: 20 }}
-          animate={{ opacity: 1, y: 0 }}
-          className="bg-white rounded-lg shadow p-6 mb-6"
-        >
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-            {/* Entry Type Filter */}
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-2">
-                <Filter className="inline w-4 h-4 mr-1" />
-                Filter by Type
-              </label>
-              <select
-                value={selectedType}
-                onChange={(e) => setSelectedType(e.target.value)}
-                className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-              >
-                {entryTypes.map(type => (
-                  <option key={type.value} value={type.value}>
-                    {type.label}
-                  </option>
-                ))}
-              </select>
-            </div>
+        <Card className="bg-white dark:bg-slate-800/50 border-slate-200/80 dark:border-slate-700/50 shadow-sm">
+          <CardContent className="pt-6">
+            <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
+              {/* Entry Type Filter */}
+              <div>
+                <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-2">
+                  <Filter className="inline w-4 h-4 mr-1" />
+                  Filter by Type
+                </label>
+                <select
+                  value={selectedType}
+                  onChange={(e) => setSelectedType(e.target.value)}
+                  className="w-full px-4 py-2 bg-white dark:bg-slate-700 border border-slate-200 dark:border-slate-600 rounded-lg text-slate-800 dark:text-slate-200 focus:ring-2 focus:ring-teal-500 focus:border-transparent"
+                >
+                  {entryTypes.map(type => (
+                    <option key={type.value} value={type.value}>
+                      {type.label}
+                    </option>
+                  ))}
+                </select>
+              </div>
 
-            {/* Date Range */}
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-2">
-                <Calendar className="inline w-4 h-4 mr-1" />
-                Start Date
-              </label>
-              <input
-                type="date"
-                value={dateRange.start}
-                onChange={(e) => setDateRange({ ...dateRange, start: e.target.value })}
-                className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-              />
-            </div>
+              {/* Date Range */}
+              <div>
+                <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-2">
+                  <Calendar className="inline w-4 h-4 mr-1" />
+                  Start Date
+                </label>
+                <input
+                  type="date"
+                  value={dateRange.start}
+                  onChange={(e) => setDateRange({ ...dateRange, start: e.target.value })}
+                  className="w-full px-4 py-2 bg-white dark:bg-slate-700 border border-slate-200 dark:border-slate-600 rounded-lg text-slate-800 dark:text-slate-200 focus:ring-2 focus:ring-teal-500 focus:border-transparent"
+                />
+              </div>
 
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-2">
-                <Calendar className="inline w-4 h-4 mr-1" />
-                End Date
-              </label>
-              <input
-                type="date"
-                value={dateRange.end}
-                onChange={(e) => setDateRange({ ...dateRange, end: e.target.value })}
-                className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-              />
-            </div>
-          </div>
+              <div>
+                <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-2">
+                  <Calendar className="inline w-4 h-4 mr-1" />
+                  End Date
+                </label>
+                <input
+                  type="date"
+                  value={dateRange.end}
+                  onChange={(e) => setDateRange({ ...dateRange, end: e.target.value })}
+                  className="w-full px-4 py-2 bg-white dark:bg-slate-700 border border-slate-200 dark:border-slate-600 rounded-lg text-slate-800 dark:text-slate-200 focus:ring-2 focus:ring-teal-500 focus:border-transparent"
+                />
+              </div>
 
-          {/* Search */}
-          <div className="mt-4">
-            <label className="block text-sm font-medium text-gray-700 mb-2">
-              <Search className="inline w-4 h-4 mr-1" />
-              Search
-            </label>
-            <input
-              type="text"
-              placeholder="Search your health diary..."
-              value={searchQuery}
-              onChange={(e) => setSearchQuery(e.target.value)}
-              className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-            />
-          </div>
-        </motion.div>
+              {/* Search */}
+              <div>
+                <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-2">
+                  <Search className="inline w-4 h-4 mr-1" />
+                  Search
+                </label>
+                <input
+                  type="text"
+                  placeholder="Search your health diary..."
+                  value={searchQuery}
+                  onChange={(e) => setSearchQuery(e.target.value)}
+                  className="w-full px-4 py-2 bg-white dark:bg-slate-700 border border-slate-200 dark:border-slate-600 rounded-lg text-slate-800 dark:text-slate-200 placeholder-slate-400 focus:ring-2 focus:ring-teal-500 focus:border-transparent"
+                />
+              </div>
+            </div>
+          </CardContent>
+        </Card>
 
         {/* Entries List */}
         {loading ? (
           <div className="flex justify-center items-center py-12">
-            <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-500"></div>
+            <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-teal-500"></div>
           </div>
         ) : filteredEntries.length === 0 ? (
-          <motion.div
-            initial={{ opacity: 0 }}
-            animate={{ opacity: 1 }}
-            className="bg-white rounded-lg shadow p-12 text-center"
-          >
-            <FileText className="w-16 h-16 text-gray-300 mx-auto mb-4" />
-            <h3 className="text-xl font-semibold text-gray-700 mb-2">No entries found</h3>
-            <p className="text-gray-500">
-              {searchQuery
-                ? 'Try adjusting your search or filters'
-                : 'Start by chatting with Dr. iSHA or add a health diary entry'}
-            </p>
-          </motion.div>
+          <Card className="bg-white dark:bg-slate-800/50 border-slate-200/80 dark:border-slate-700/50">
+            <CardContent className="py-12">
+              <div className="text-center">
+                <div className="w-16 h-16 mx-auto mb-4 rounded-2xl bg-slate-100 dark:bg-slate-700/50 flex items-center justify-center">
+                  <FileText className="w-8 h-8 text-slate-400" />
+                </div>
+                <h3 className="text-xl font-semibold text-slate-700 dark:text-slate-300 mb-2">No entries found</h3>
+                <p className="text-slate-500 dark:text-slate-400">
+                  {searchQuery
+                    ? 'Try adjusting your search or filters'
+                    : 'Start by chatting with Dr. iSHA or add a health diary entry'}
+                </p>
+              </div>
+            </CardContent>
+          </Card>
         ) : (
           <div className="space-y-4">
             {filteredEntries.map((entry, index) => {
@@ -422,33 +440,35 @@ const HealthDiary: React.FC = () => {
                   initial={{ opacity: 0, y: 20 }}
                   animate={{ opacity: 1, y: 0 }}
                   transition={{ delay: index * 0.05 }}
-                  className="bg-white rounded-lg shadow hover:shadow-lg transition-shadow p-6"
                 >
-                  <div className="flex items-start gap-4">
-                    <div className={`p-3 bg-${color}-100 rounded-lg`}>
-                      <Icon className={`w-6 h-6 text-${color}-600`} />
-                    </div>
-                    <div className="flex-1">
-                      <div className="flex items-start justify-between">
-                        <div>
-                          <h3 className="text-lg font-semibold text-gray-900">{entry.title}</h3>
-                          <p className="text-sm text-gray-500 mt-1">{formatDate(entry.createdAt)}</p>
+                  <Card className="bg-white dark:bg-slate-800/50 border-slate-200/80 dark:border-slate-700/50 hover:border-teal-200 dark:hover:border-teal-500/50 hover:shadow-lg transition-all duration-300">
+                    <CardContent className="p-6">
+                      <div className="flex items-start gap-4">
+                        <div className="p-3 rounded-xl bg-gradient-to-br from-slate-100 to-slate-50 dark:from-slate-700 dark:to-slate-800">
+                          <Icon className="w-6 h-6 text-teal-600 dark:text-teal-400" />
                         </div>
-                        <span className={`px-3 py-1 text-xs font-medium bg-${color}-100 text-${color}-800 rounded-full`}>
-                          {entry.entryType}
-                        </span>
+                        <div className="flex-1 min-w-0">
+                          <div className="flex items-start justify-between gap-4">
+                            <div>
+                              <h3 className="text-lg font-semibold text-slate-800 dark:text-white">{entry.title}</h3>
+                              <p className="text-sm text-slate-500 dark:text-slate-400 mt-1">{formatDate(entry.createdAt)}</p>
+                            </div>
+                            <Badge variant="outline" className="bg-teal-50 dark:bg-teal-900/30 text-teal-700 dark:text-teal-400 border-teal-200 dark:border-teal-700 shrink-0">
+                              {entry.entryType}
+                            </Badge>
+                          </div>
+                          <p className="text-slate-700 dark:text-slate-300 mt-3">{entry.description}</p>
+                          {renderEntryData(entry)}
+                        </div>
                       </div>
-                      <p className="text-gray-700 mt-3">{entry.description}</p>
-                      {renderEntryData(entry)}
-                    </div>
-                  </div>
+                    </CardContent>
+                  </Card>
                 </motion.div>
               );
             })}
           </div>
         )}
       </div>
-    </div>
   );
 };
 

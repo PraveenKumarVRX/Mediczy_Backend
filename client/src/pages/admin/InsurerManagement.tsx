@@ -13,7 +13,8 @@ import {
   Plus, Search, Eye, Edit, Trash2, MoreVertical, Shield, Building2, Phone, Mail,
   ChevronLeft, ChevronRight, TrendingUp, Activity
 } from 'lucide-react';
-import axios from 'axios';
+import { useToast } from '../../hooks/use-toast';
+import api from '../../utils/api';
 
 interface Insurer {
   id: string;
@@ -93,6 +94,24 @@ const InsurerManagement = () => {
   const [statusFilter, setStatusFilter] = useState<string>('all');
   const [currentPage, setCurrentPage] = useState(1);
   const itemsPerPage = 10;
+  const { toast } = useToast();
+  const [adding, setAdding] = useState(false);
+  const [newInsurer, setNewInsurer] = useState<Insurer>({
+    id: '',
+    insurerName: '',
+    registrationNumber: '',
+    email: '',
+    phoneNumber: '',
+    contactPerson: '',
+    city: '',
+    state: '',
+    insuranceTypes: [],
+    claimSettlementRatio: 0,
+    networkHospitals: 0,
+    status: 'Active',
+    joinedDate: new Date().toISOString().split('T')[0],
+    website: '',
+  });
 
   const filteredInsurers = useMemo(() => {
     return insurers.filter(insurer => {
@@ -111,6 +130,54 @@ const InsurerManagement = () => {
   }, [filteredInsurers, currentPage]);
 
   const totalPages = Math.ceil(filteredInsurers.length / itemsPerPage);
+
+  const token = typeof window !== 'undefined' ? (localStorage.getItem('adminToken') || localStorage.getItem('token') || '') : '';
+
+  const handleAddInsurer = async () => {
+    if (!newInsurer.insurerName.trim() || !newInsurer.phoneNumber.trim()) {
+      toast({ title: 'Missing details', description: 'Insurer name and phone are required.', variant: 'destructive' });
+      return;
+    }
+
+    const payload = {
+      ...newInsurer,
+      id: newInsurer.id || `INS${Date.now()}`,
+      insuranceTypes: Array.isArray(newInsurer.insuranceTypes)
+        ? newInsurer.insuranceTypes
+        : (newInsurer.insuranceTypes as any)?.toString().split(',').map((t: string) => t.trim()).filter(Boolean),
+      joinedDate: newInsurer.joinedDate || new Date().toISOString().split('T')[0],
+    } as Insurer;
+
+    try {
+      setAdding(true);
+      const { data } = await api.post('/admin/insurers', payload, token ? { headers: { Authorization: `Bearer ${token}` } } : undefined);
+      const created = (data as any)?.insurer || payload;
+      setInsurers(prev => [created, ...prev]);
+      toast({ title: 'Insurer added', description: `${created.insurerName} saved successfully.` });
+      setNewInsurer({
+        id: '',
+        insurerName: '',
+        registrationNumber: '',
+        email: '',
+        phoneNumber: '',
+        contactPerson: '',
+        city: '',
+        state: '',
+        insuranceTypes: [],
+        claimSettlementRatio: 0,
+        networkHospitals: 0,
+        status: 'Active',
+        joinedDate: new Date().toISOString().split('T')[0],
+        website: '',
+      });
+    } catch (err: any) {
+      console.warn('Insurer API unavailable, using local state', err);
+      setInsurers(prev => [payload, ...prev]);
+      toast({ title: 'Offline save', description: 'Saved locally because the API was unreachable.' });
+    } finally {
+      setAdding(false);
+    }
+  };
 
   const getStatusBadge = (status: string) => {
     const variants: Record<string, "default" | "secondary" | "destructive"> = {
@@ -318,44 +385,94 @@ const InsurerManagement = () => {
                 <div className="grid gap-4 md:grid-cols-2">
                   <div className="space-y-2">
                     <Label htmlFor="insurerName">Insurer Name</Label>
-                    <Input id="insurerName" placeholder="Enter insurer name" />
+                    <Input
+                      id="insurerName"
+                      placeholder="Enter insurer name"
+                      value={newInsurer.insurerName}
+                      onChange={(e) => setNewInsurer(prev => ({ ...prev, insurerName: e.target.value }))}
+                    />
                   </div>
                   <div className="space-y-2">
                     <Label htmlFor="regNumber">Registration Number</Label>
-                    <Input id="regNumber" placeholder="IRDAI registration number" />
+                    <Input
+                      id="regNumber"
+                      placeholder="IRDAI registration number"
+                      value={newInsurer.registrationNumber}
+                      onChange={(e) => setNewInsurer(prev => ({ ...prev, registrationNumber: e.target.value }))}
+                    />
                   </div>
                   <div className="space-y-2">
                     <Label htmlFor="email">Email</Label>
-                    <Input id="email" type="email" placeholder="contact@insurer.com" />
+                    <Input
+                      id="email"
+                      type="email"
+                      placeholder="contact@insurer.com"
+                      value={newInsurer.email}
+                      onChange={(e) => setNewInsurer(prev => ({ ...prev, email: e.target.value }))}
+                    />
                   </div>
                   <div className="space-y-2">
                     <Label htmlFor="phone">Phone Number</Label>
-                    <Input id="phone" placeholder="+91-XXX-XXXXXXX" />
+                    <Input
+                      id="phone"
+                      placeholder="+91-XXX-XXXXXXX"
+                      value={newInsurer.phoneNumber}
+                      onChange={(e) => setNewInsurer(prev => ({ ...prev, phoneNumber: e.target.value }))}
+                    />
                   </div>
                   <div className="space-y-2">
                     <Label htmlFor="contactPerson">Contact Person</Label>
-                    <Input id="contactPerson" placeholder="Contact person name" />
+                    <Input
+                      id="contactPerson"
+                      placeholder="Contact person name"
+                      value={newInsurer.contactPerson}
+                      onChange={(e) => setNewInsurer(prev => ({ ...prev, contactPerson: e.target.value }))}
+                    />
                   </div>
                   <div className="space-y-2">
                     <Label htmlFor="website">Website</Label>
-                    <Input id="website" placeholder="https://insurer.com" />
+                    <Input
+                      id="website"
+                      placeholder="https://insurer.com"
+                      value={newInsurer.website || ''}
+                      onChange={(e) => setNewInsurer(prev => ({ ...prev, website: e.target.value }))}
+                    />
                   </div>
                   <div className="space-y-2">
                     <Label htmlFor="city">City</Label>
-                    <Input id="city" placeholder="City" />
+                    <Input
+                      id="city"
+                      placeholder="City"
+                      value={newInsurer.city}
+                      onChange={(e) => setNewInsurer(prev => ({ ...prev, city: e.target.value }))}
+                    />
                   </div>
                   <div className="space-y-2">
                     <Label htmlFor="state">State</Label>
-                    <Input id="state" placeholder="State" />
+                    <Input
+                      id="state"
+                      placeholder="State"
+                      value={newInsurer.state}
+                      onChange={(e) => setNewInsurer(prev => ({ ...prev, state: e.target.value }))}
+                    />
                   </div>
                   <div className="space-y-2 md:col-span-2">
                     <Label htmlFor="insuranceTypes">Insurance Types</Label>
-                    <Input id="insuranceTypes" placeholder="Health, Critical Illness, Family Floater (comma separated)" />
+                    <Input
+                      id="insuranceTypes"
+                      placeholder="Health, Critical Illness, Family Floater (comma separated)"
+                      value={(Array.isArray(newInsurer.insuranceTypes) ? newInsurer.insuranceTypes.join(', ') : '')}
+                      onChange={(e) => setNewInsurer(prev => ({ ...prev, insuranceTypes: e.target.value }))}
+                    />
                   </div>
                 </div>
                 <div className="flex justify-end gap-2 mt-6">
-                  <Button variant="outline">Cancel</Button>
-                  <Button>Add Insurer</Button>
+                  <Button variant="outline" onClick={() => setNewInsurer({
+                    id: '', insurerName: '', registrationNumber: '', email: '', phoneNumber: '', contactPerson: '', city: '', state: '', insuranceTypes: [], claimSettlementRatio: 0, networkHospitals: 0, status: 'Active', joinedDate: new Date().toISOString().split('T')[0], website: '',
+                  })}>Cancel</Button>
+                  <Button onClick={handleAddInsurer} disabled={adding}>
+                    {adding ? 'Saving...' : 'Add Insurer'}
+                  </Button>
                 </div>
               </CardContent>
             </Card>

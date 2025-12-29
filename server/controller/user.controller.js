@@ -46,6 +46,9 @@ export async function registerUser(req, res) {
       }
     }
 
+    // Family Doctor concept: Default primary doctor is CMO Dr. Nandita Agarwal (ID: 5)
+    const DEFAULT_PRIMARY_DOCTOR_ID = 5; // CMO Dr. Nandita Agarwal, MBBS MD General Physician
+
     // Create user (password will be hashed automatically by the beforeCreate hook)
     const newUser = await userModel.create({
       email,
@@ -60,6 +63,8 @@ export async function registerUser(req, res) {
       employeeId,
       corporateId,
       membershipType,
+      // Primary doctor (Family Doctor concept)
+      primaryDoctorId: DEFAULT_PRIMARY_DOCTOR_ID,
       // Prevent privilege escalation / self-verification via extra body fields
       isAdmin: false,
       status: "active",
@@ -201,21 +206,8 @@ export async function signInUser(req, res) {
     user.lastLoginAt = new Date();
     await user.save();
 
-    // Generate authentication token including role/corporateId
+    // Generate authentication token including userId, userType, role for ring-fencing
     const token = generateAuthTokenForUser(user);
-    
-    // Enhance token with userType for ring-fencing
-    const enhancedToken = jwt.sign(
-      {
-        userId: user.id,
-        email: user.email,
-        role: user.role || 'user',
-        userType: 'user',
-        isAdmin: user.isAdmin || false
-      },
-      process.env.JWT_SECRET || 'fallback_secret',
-      { expiresIn: '24h' }
-    );
 
     // Audit successful login
     await auditLoginAttempt(req, user.id, email, true);

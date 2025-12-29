@@ -132,13 +132,25 @@ const SettingsPage = () => {
     }
   };
 
-  const handleRegenerateApiKey = () => {
-    const newKey = `medi_live_${Math.random().toString(36).substring(2, 15)}${Math.random().toString(36).substring(2, 15)}`;
-    setApiSettings({ ...apiSettings, apiKey: newKey });
-    toast({
-      title: 'API Key Regenerated',
-      description: 'New API key generated. Make sure to update your applications.',
-    });
+  const handleRegenerateApiKey = async () => {
+    const token = typeof window !== 'undefined' ? (localStorage.getItem('adminToken') || localStorage.getItem('token') || '') : '';
+    try {
+      const { data } = await api.post('/admin/settings/api/regenerate', {}, token ? { headers: { Authorization: `Bearer ${token}` } } : undefined);
+      const newKey = data?.apiKey || `medi_live_${Math.random().toString(36).substring(2, 15)}${Math.random().toString(36).substring(2, 15)}`;
+      setApiSettings({ ...apiSettings, apiKey: newKey });
+      toast({
+        title: 'API Key Regenerated',
+        description: 'New API key generated. Make sure to update your applications.',
+      });
+    } catch (error: any) {
+      const fallbackKey = `medi_live_${Math.random().toString(36).substring(2, 15)}${Math.random().toString(36).substring(2, 15)}`;
+      setApiSettings({ ...apiSettings, apiKey: fallbackKey });
+      toast({
+        title: 'Offline regeneration',
+        description: error?.response?.data?.message || 'Generated a local key because the API was unreachable.',
+        variant: 'destructive'
+      });
+    }
   };
 
   const copyToClipboard = (text: string) => {

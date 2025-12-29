@@ -183,7 +183,6 @@ const MyPlans = () => {
   const isLoading = loadingCurrent || loadingUsage || loadingPlans;
 
   return (
-    <MainLayout>
       <div className="space-y-6 animate-in">
         <div>
           <h1 className="primary-grad text-3xl font-bold">My Plans</h1>
@@ -385,7 +384,6 @@ const MyPlans = () => {
           </>
         )}
       </div>
-    </MainLayout>
   );
 };
 

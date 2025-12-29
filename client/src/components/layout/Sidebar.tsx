@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useRef } from 'react';
 import { Link, useLocation } from "react-router-dom";
 import {
   Activity,
@@ -27,7 +27,20 @@ import {
   UserCircle,
   Shield,
   Database,
-  FileText
+  FileText,
+  Wallet,
+  CreditCard,
+  ShieldCheck,
+  Crown,
+  Bell,
+  CalendarCheck,
+  FileHeart,
+  FlaskRound,
+  FileStack,
+  BookHeart,
+  Watch,
+  Trophy,
+  CalendarDays
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
@@ -42,24 +55,39 @@ interface SidebarItem {
 }
 
 const sidebarItems: SidebarItem[] = [
-  { icon: Home, label: "Dashboard", path: "/" },
-  {
-    icon: AlignCenterVertical,
-    label: "Health Tracker",
-    path: "/health-tracker",
-  },
-  { icon: Users, label: "Find Doctors", path: "/doctors" },
-  { icon: Stethoscope, label: "Consult Doctor", path: "/consultation" },
-  {
-    icon: Apple,
-    label: "Diet Plans",
-    path: "/diet",
-  },
-  { icon: Award, label: "Ayushman", path: "/ayushman" },
-  { icon: Bot, label: "AI Doctor", path: "/ai-doctor" },
-  { icon: Youtube, label: "Health Feed", path: "/health-feed" },
-  { icon: FileSearch, label: "Scan Report", path: "/reposts" },
-  { icon: AlertCircle, label: "Emergency", path: "/emergency" },
+  // Core Navigation
+  { icon: Home, label: "Dashboard", path: "/", category: "Main" },
+  { icon: UserCircle, label: "My Profile", path: "/profile", category: "Main" },
+  { icon: Bell, label: "Notifications", path: "/patient/notifications", category: "Main" },
+  
+  // Health Management
+  { icon: AlignCenterVertical, label: "Health Tracker", path: "/health-tracker", category: "Health" },
+  { icon: Watch, label: "Smart Devices", path: "/patient/devices", category: "Health" },
+  { icon: BookHeart, label: "Health Diary", path: "/health-diary", category: "Health" },
+  { icon: ShieldCheck, label: "Health Risk Assessment", path: "/health-risk-assessment", category: "Health" },
+  { icon: Trophy, label: "Wellness Challenges", path: "/wellness-challenges", category: "Health" },
+  { icon: CalendarDays, label: "Wellness Calendar", path: "/wellness-calendar", category: "Health" },
+  { icon: Apple, label: "Diet Plans", path: "/diet", category: "Health" },
+  { icon: Bot, label: "AI Doctor", path: "/ai-doctor", category: "Health" },
+  
+  // Appointments & Consultations
+  { icon: CalendarCheck, label: "My Appointments", path: "/appointments", category: "Appointments" },
+  { icon: Users, label: "Find & Book Doctor", path: "/doctors", category: "Appointments" },
+  { icon: FileHeart, label: "My Prescriptions", path: "/my-prescriptions", category: "Appointments" },
+  
+  // Medical Records
+  { icon: FlaskRound, label: "Lab Tests", path: "/patient/lab-tests", category: "Records" },
+  { icon: FileStack, label: "My Reports", path: "/patient/my-reports", category: "Records" },
+  { icon: FileSearch, label: "Scan & Share Reports", path: "/reposts", category: "Records" },
+  
+  // Services & Support
+  { icon: Award, label: "Ayushman", path: "/ayushman", category: "Services" },
+  { icon: Youtube, label: "Health Feed", path: "/health-feed", category: "Services" },
+  { icon: AlertCircle, label: "Emergency", path: "/emergency", category: "Services" },
+  
+  // Wallet & Plans
+  { icon: Wallet, label: "Wallet", path: "/wallet", category: "Finance" },
+  { icon: Crown, label: "Membership Plans", path: "/my-plans", category: "Finance" },
 ];
 
 const teamSidebarItems: SidebarItem[] = [
@@ -83,9 +111,11 @@ const teamSidebarItems: SidebarItem[] = [
 
 export function Sidebar() {
   const location = useLocation();
-  const [toggleState, setToggleState] = useState(true);
+  const [isOpen, setIsOpen] = useState(false);
+  const [isDesktop, setIsDesktop] = useState(false);
   const [isTeamUser, setIsTeamUser] = useState(false);
   const [isNurseUser, setIsNurseUser] = useState(false);
+  const scrollAreaRef = useRef<HTMLDivElement>(null);
 
   // Check if user is a team member
   useEffect(() => {
@@ -98,15 +128,43 @@ export function Sidebar() {
     setIsNurseUser(!!nurseToken && isNurseRoute);
   }, [location.pathname]);
 
-  // Function to toggle sidebar using CSS class
+  // Track viewport for responsive open/close
+  useEffect(() => {
+    const updateViewport = () => {
+      const desktop = typeof window !== 'undefined' && window.innerWidth >= 768;
+      setIsDesktop(desktop);
+      setIsOpen(desktop); // default open on desktop, closed on mobile
+    };
+    updateViewport();
+    window.addEventListener('resize', updateViewport);
+    return () => window.removeEventListener('resize', updateViewport);
+  }, []);
+
+  // Preserve sidebar scroll position on route change
+  useEffect(() => {
+    const scrollViewport = scrollAreaRef.current?.querySelector('[data-radix-scroll-area-viewport]');
+    if (scrollViewport) {
+      const savedScrollTop = sessionStorage.getItem('sidebarScrollTop');
+      if (savedScrollTop) {
+        scrollViewport.scrollTop = parseInt(savedScrollTop, 10);
+      }
+    }
+  }, [location.pathname]);
+
+  // Save scroll position before navigation
+  const handleNavClick = () => {
+    const scrollViewport = scrollAreaRef.current?.querySelector('[data-radix-scroll-area-viewport]');
+    if (scrollViewport) {
+      sessionStorage.setItem('sidebarScrollTop', scrollViewport.scrollTop.toString());
+    }
+    if (window.innerWidth < 768) {
+      toggleSidebar();
+    }
+  };
+
+  // Function to toggle sidebar
   const toggleSidebar = () => {
-    const sidebar = document.getElementById("sidebar");
-    sidebar.classList.toggle("sidebar-open");
-    setToggleState(!toggleState);
-    // Toggle aria-expanded attribute for accessibility
-    const toggleButton = document.getElementById("sidebar-toggle");
-    const isExpanded = toggleButton.getAttribute("aria-expanded") === "true";
-    toggleButton.setAttribute("aria-expanded", (!isExpanded).toString());
+    setIsOpen(prev => !prev);
   };
 
   // Get sidebar items based on user type
@@ -135,10 +193,7 @@ export function Sidebar() {
         id="sidebar-toggle"
         onClick={toggleSidebar}
         className="fixed top-4 left-4 z-50 p-2 rounded-md bg-primary text-white md:hidden"
-        style={{
-          visibility: !toggleState === true ? "hidden" : "visible",
-        }}
-        aria-expanded="false"
+        aria-expanded={isOpen}
         aria-controls="sidebar"
         aria-label="Toggle navigation menu"
       >
@@ -148,53 +203,203 @@ export function Sidebar() {
       {/* Sidebar */}
       <div
         id="sidebar"
-        className="fixed inset-y-0 left-0 flex flex-col w-64 bg-primary/5 backdrop-blur-xl transform -translate-x-full transition-transform duration-300 ease-in-out md:translate-x-0 z-40 sidebar-closed"
+        className={cn(
+          "fixed inset-y-0 left-0 flex flex-col w-64 bg-gradient-to-b from-slate-900 via-slate-900 to-slate-800 transform transition-transform duration-300 ease-in-out z-40 shadow-xl",
+          (isDesktop || isOpen) ? "translate-x-0" : "-translate-x-full"
+        )}
       >
         {/* Close button - visible only on mobile */}
         <button
           onClick={toggleSidebar}
-          className="absolute top-4 right-4 p-1 rounded-md md:hidden"
+          className="absolute top-4 right-4 p-1 rounded-md text-slate-400 hover:text-white md:hidden"
           aria-label="Close navigation menu"
         >
           <X className="h-5 w-5" />
         </button>
 
         {/* Logo */}
-        <div className="flex items-center gap-2 border-b px-6 py-4">
-          <HeartPulse className="h-6 w-6 text-primary" />
-          <span className="text-lg font-semibold">Mediqzy</span>
+        <div className="flex items-center gap-3 border-b border-slate-700/50 px-6 py-5">
+          <div className="p-2 rounded-xl bg-gradient-to-br from-teal-500 to-teal-600 shadow-lg shadow-teal-500/20">
+            <HeartPulse className="h-5 w-5 text-white" />
+          </div>
+          <span className="text-lg font-bold text-white tracking-tight">Mediqzy</span>
         </div>
 
         {/* Sidebar Links */}
-        <ScrollArea className="flex-1 px-3 py-4">
+        <ScrollArea ref={scrollAreaRef} className="flex-1 px-3 py-4">
           <div className="space-y-1">
             {/* Team Section Header */}
             {(isTeamUser || isNurseUser) && (
               <div className="px-3 py-2 mb-2">
-                <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">
+                <p className="text-xs font-semibold text-slate-400 uppercase tracking-wider">
                   {isTeamUser ? 'Team Dashboard' : 'Nurse Portal'}
                 </p>
               </div>
             )}
             
-            {/* Main navigation items */}
-            {items.filter(item => !item.category).map((item) => (
+            {/* Regular User Navigation with Categories */}
+            {!isTeamUser && !isNurseUser && (
+              <>
+                {/* Main Section */}
+                {items.filter(item => item.category === 'Main').map((item) => (
+                  <Link
+                    key={item.path}
+                    to={item.path}
+                    className={cn(
+                      "group flex items-center gap-3 rounded-xl px-3 py-2.5 text-sm font-medium transition-all duration-200",
+                      location.pathname === item.path
+                        ? "bg-gradient-to-r from-teal-500/20 to-teal-600/10 text-teal-400 border border-teal-500/30 shadow-sm"
+                        : "text-slate-400 hover:bg-slate-800/60 hover:text-white"
+                    )}
+                    onClick={handleNavClick}
+                  >
+                    <item.icon className={cn(
+                      "h-4 w-4 transition-colors",
+                      location.pathname === item.path ? "text-teal-400" : "text-slate-500 group-hover:text-teal-400"
+                    )} />
+                    <span>{item.label}</span>
+                  </Link>
+                ))}
+
+                {/* Health Section */}
+                <div className="px-3 py-2 mt-4">
+                  <p className="text-xs font-semibold text-slate-500 uppercase tracking-wider">Health</p>
+                </div>
+                {items.filter(item => item.category === 'Health').map((item) => (
+                  <Link
+                    key={item.path}
+                    to={item.path}
+                    className={cn(
+                      "group flex items-center gap-3 rounded-xl px-3 py-2.5 text-sm font-medium transition-all duration-200",
+                      location.pathname === item.path
+                        ? "bg-gradient-to-r from-teal-500/20 to-teal-600/10 text-teal-400 border border-teal-500/30 shadow-sm"
+                        : "text-slate-400 hover:bg-slate-800/60 hover:text-white"
+                    )}
+                    onClick={handleNavClick}
+                  >
+                    <item.icon className={cn(
+                      "h-4 w-4 transition-colors",
+                      location.pathname === item.path ? "text-teal-400" : "text-slate-500 group-hover:text-teal-400"
+                    )} />
+                    <span>{item.label}</span>
+                  </Link>
+                ))}
+
+                {/* Appointments Section */}
+                <div className="px-3 py-2 mt-4">
+                  <p className="text-xs font-semibold text-slate-500 uppercase tracking-wider">Appointments</p>
+                </div>
+                {items.filter(item => item.category === 'Appointments').map((item) => (
+                  <Link
+                    key={item.path}
+                    to={item.path}
+                    className={cn(
+                      "group flex items-center gap-3 rounded-xl px-3 py-2.5 text-sm font-medium transition-all duration-200",
+                      location.pathname === item.path
+                        ? "bg-gradient-to-r from-teal-500/20 to-teal-600/10 text-teal-400 border border-teal-500/30 shadow-sm"
+                        : "text-slate-400 hover:bg-slate-800/60 hover:text-white"
+                    )}
+                    onClick={handleNavClick}
+                  >
+                    <item.icon className={cn(
+                      "h-4 w-4 transition-colors",
+                      location.pathname === item.path ? "text-teal-400" : "text-slate-500 group-hover:text-teal-400"
+                    )} />
+                    <span>{item.label}</span>
+                  </Link>
+                ))}
+
+                {/* Records Section */}
+                <div className="px-3 py-2 mt-4">
+                  <p className="text-xs font-semibold text-slate-500 uppercase tracking-wider">Records</p>
+                </div>
+                {items.filter(item => item.category === 'Records').map((item) => (
+                  <Link
+                    key={item.path}
+                    to={item.path}
+                    className={cn(
+                      "group flex items-center gap-3 rounded-xl px-3 py-2.5 text-sm font-medium transition-all duration-200",
+                      location.pathname === item.path
+                        ? "bg-gradient-to-r from-teal-500/20 to-teal-600/10 text-teal-400 border border-teal-500/30 shadow-sm"
+                        : "text-slate-400 hover:bg-slate-800/60 hover:text-white"
+                    )}
+                    onClick={handleNavClick}
+                  >
+                    <item.icon className={cn(
+                      "h-4 w-4 transition-colors",
+                      location.pathname === item.path ? "text-teal-400" : "text-slate-500 group-hover:text-teal-400"
+                    )} />
+                    <span>{item.label}</span>
+                  </Link>
+                ))}
+
+                {/* Services Section */}
+                <div className="px-3 py-2 mt-4">
+                  <p className="text-xs font-semibold text-slate-500 uppercase tracking-wider">Services</p>
+                </div>
+                {items.filter(item => item.category === 'Services').map((item) => (
+                  <Link
+                    key={item.path}
+                    to={item.path}
+                    className={cn(
+                      "group flex items-center gap-3 rounded-xl px-3 py-2.5 text-sm font-medium transition-all duration-200",
+                      location.pathname === item.path
+                        ? "bg-gradient-to-r from-teal-500/20 to-teal-600/10 text-teal-400 border border-teal-500/30 shadow-sm"
+                        : "text-slate-400 hover:bg-slate-800/60 hover:text-white"
+                    )}
+                    onClick={handleNavClick}
+                  >
+                    <item.icon className={cn(
+                      "h-4 w-4 transition-colors",
+                      location.pathname === item.path ? "text-teal-400" : "text-slate-500 group-hover:text-teal-400"
+                    )} />
+                    <span>{item.label}</span>
+                  </Link>
+                ))}
+
+                {/* Finance Section */}
+                <div className="px-3 py-2 mt-4">
+                  <p className="text-xs font-semibold text-slate-500 uppercase tracking-wider">Wallet & Plans</p>
+                </div>
+                {items.filter(item => item.category === 'Finance').map((item) => (
+                  <Link
+                    key={item.path}
+                    to={item.path}
+                    className={cn(
+                      "group flex items-center gap-3 rounded-xl px-3 py-2.5 text-sm font-medium transition-all duration-200",
+                      location.pathname === item.path
+                        ? "bg-gradient-to-r from-teal-500/20 to-teal-600/10 text-teal-400 border border-teal-500/30 shadow-sm"
+                        : "text-slate-400 hover:bg-slate-800/60 hover:text-white"
+                    )}
+                    onClick={handleNavClick}
+                  >
+                    <item.icon className={cn(
+                      "h-4 w-4 transition-colors",
+                      location.pathname === item.path ? "text-teal-400" : "text-slate-500 group-hover:text-teal-400"
+                    )} />
+                    <span>{item.label}</span>
+                  </Link>
+                ))}
+              </>
+            )}
+            
+            {/* Team/Nurse user navigation - items without category */}
+            {(isTeamUser || isNurseUser) && items.filter(item => !item.category).map((item) => (
               <Link
                 key={item.path}
                 to={item.path}
                 className={cn(
-                  "group flex items-center gap-3 rounded-lg px-3 py-2 text-sm text-muted-foreground transition-colors hover:bg-primary/10 hover:text-primary",
-                  location.pathname === item.path &&
-                    "bg-primary/10 text-primary font-medium"
+                  "group flex items-center gap-3 rounded-xl px-3 py-2.5 text-sm font-medium transition-all duration-200",
+                  location.pathname === item.path
+                    ? "bg-gradient-to-r from-teal-500/20 to-teal-600/10 text-teal-400 border border-teal-500/30 shadow-sm"
+                    : "text-slate-400 hover:bg-slate-800/60 hover:text-white"
                 )}
-                onClick={() => {
-                  // Close sidebar on mobile when a link is clicked
-                  if (window.innerWidth < 768) {
-                    toggleSidebar();
-                  }
-                }}
+                onClick={handleNavClick}
               >
-                <item.icon className="h-4 w-4" />
+                <item.icon className={cn(
+                  "h-4 w-4 transition-colors",
+                  location.pathname === item.path ? "text-teal-400" : "text-slate-500 group-hover:text-teal-400"
+                )} />
                 <span>{item.label}</span>
               </Link>
             ))}
@@ -203,8 +408,8 @@ export function Sidebar() {
             {isTeamUser && (
               <>
                 {/* Management Modules */}
-                <div className="px-3 py-2 mt-4">
-                  <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">
+                <div className="px-3 py-2 mt-6">
+                  <p className="text-xs font-semibold text-slate-500 uppercase tracking-wider">
                     Management
                   </p>
                 </div>
@@ -213,24 +418,24 @@ export function Sidebar() {
                     key={item.path}
                     to={item.path}
                     className={cn(
-                      "group flex items-center gap-3 rounded-lg px-3 py-2 text-sm text-muted-foreground transition-colors hover:bg-primary/10 hover:text-primary",
-                      location.pathname === item.path &&
-                        "bg-primary/10 text-primary font-medium"
+                      "group flex items-center gap-3 rounded-xl px-3 py-2.5 text-sm font-medium transition-all duration-200",
+                      location.pathname === item.path
+                        ? "bg-gradient-to-r from-teal-500/20 to-teal-600/10 text-teal-400 border border-teal-500/30 shadow-sm"
+                        : "text-slate-400 hover:bg-slate-800/60 hover:text-white"
                     )}
-                    onClick={() => {
-                      if (window.innerWidth < 768) {
-                        toggleSidebar();
-                      }
-                    }}
+                    onClick={handleNavClick}
                   >
-                    <item.icon className="h-4 w-4" />
+                    <item.icon className={cn(
+                      "h-4 w-4 transition-colors",
+                      location.pathname === item.path ? "text-teal-400" : "text-slate-500 group-hover:text-teal-400"
+                    )} />
                     <span>{item.label}</span>
                   </Link>
                 ))}
 
                 {/* Operations Modules */}
-                <div className="px-3 py-2 mt-4">
-                  <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">
+                <div className="px-3 py-2 mt-6">
+                  <p className="text-xs font-semibold text-slate-500 uppercase tracking-wider">
                     Operations
                   </p>
                 </div>
@@ -239,17 +444,17 @@ export function Sidebar() {
                     key={item.path}
                     to={item.path}
                     className={cn(
-                      "group flex items-center gap-3 rounded-lg px-3 py-2 text-sm text-muted-foreground transition-colors hover:bg-primary/10 hover:text-primary",
-                      location.pathname === item.path &&
-                        "bg-primary/10 text-primary font-medium"
+                      "group flex items-center gap-3 rounded-xl px-3 py-2.5 text-sm font-medium transition-all duration-200",
+                      location.pathname === item.path
+                        ? "bg-gradient-to-r from-teal-500/20 to-teal-600/10 text-teal-400 border border-teal-500/30 shadow-sm"
+                        : "text-slate-400 hover:bg-slate-800/60 hover:text-white"
                     )}
-                    onClick={() => {
-                      if (window.innerWidth < 768) {
-                        toggleSidebar();
-                      }
-                    }}
+                    onClick={handleNavClick}
                   >
-                    <item.icon className="h-4 w-4" />
+                    <item.icon className={cn(
+                      "h-4 w-4 transition-colors",
+                      location.pathname === item.path ? "text-teal-400" : "text-slate-500 group-hover:text-teal-400"
+                    )} />
                     <span>{item.label}</span>
                   </Link>
                 ))}
@@ -257,8 +462,8 @@ export function Sidebar() {
                 {/* Other Modules */}
                 {items.filter(item => item.category && !['Management', 'Operations', 'Support'].includes(item.category)).length > 0 && (
                   <>
-                    <div className="px-3 py-2 mt-4">
-                      <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">
+                    <div className="px-3 py-2 mt-6">
+                      <p className="text-xs font-semibold text-slate-500 uppercase tracking-wider">
                         Other Modules
                       </p>
                     </div>
@@ -267,17 +472,17 @@ export function Sidebar() {
                         key={item.path}
                         to={item.path}
                         className={cn(
-                          "group flex items-center gap-3 rounded-lg px-3 py-2 text-sm text-muted-foreground transition-colors hover:bg-primary/10 hover:text-primary",
-                          location.pathname === item.path &&
-                            "bg-primary/10 text-primary font-medium"
+                          "group flex items-center gap-3 rounded-xl px-3 py-2.5 text-sm font-medium transition-all duration-200",
+                          location.pathname === item.path
+                            ? "bg-gradient-to-r from-teal-500/20 to-teal-600/10 text-teal-400 border border-teal-500/30 shadow-sm"
+                            : "text-slate-400 hover:bg-slate-800/60 hover:text-white"
                         )}
-                        onClick={() => {
-                          if (window.innerWidth < 768) {
-                            toggleSidebar();
-                          }
-                        }}
+                        onClick={handleNavClick}
                       >
-                        <item.icon className="h-4 w-4" />
+                        <item.icon className={cn(
+                          "h-4 w-4 transition-colors",
+                          location.pathname === item.path ? "text-teal-400" : "text-slate-500 group-hover:text-teal-400"
+                        )} />
                         <span>{item.label}</span>
                       </Link>
                     ))}
@@ -290,9 +495,9 @@ export function Sidebar() {
 
         {/* Chat with Doctor - Hide for team and nurse users */}
         {!isTeamUser && !isNurseUser && (
-          <div className="border-t p-4">
-            <Button asChild className="w-full" variant="outline">
-              <Link to="/chat" className="flex items-center gap-2 hover:bg-primary">
+          <div className="border-t border-slate-700/50 p-4">
+            <Button asChild className="w-full bg-gradient-to-r from-teal-500 to-teal-600 hover:from-teal-600 hover:to-teal-700 text-white shadow-lg shadow-teal-500/20 border-0">
+              <Link to="/chat" className="flex items-center gap-2">
                 <MessageSquare className="h-4 w-4" />
                 Chat with Doctor
               </Link>

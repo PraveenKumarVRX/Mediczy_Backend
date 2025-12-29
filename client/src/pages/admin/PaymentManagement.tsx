@@ -493,6 +493,18 @@ const PaymentManagement = () => {
     return type === 'user' ? Users : Building;
   };
 
+  const startReconciliation = async () => {
+    try {
+      const token = getToken();
+      await api.post('/admin/payments/reconciliation/start', { range: 'last_30_days' }, token ? { headers: { Authorization: `Bearer ${token}` } } : undefined);
+      toast({ title: 'Reconciliation started', description: 'We will refresh once matching completes.' });
+      fetchTransactions();
+    } catch (error: any) {
+      console.warn('Reconciliation fallback', error);
+      toast({ title: 'Offline reconciliation', description: 'Could not reach server; run reconciliation manually.', variant: 'destructive' });
+    }
+  };
+
   return (
     <AdminLayout>
       <div className="space-y-6">
@@ -1001,7 +1013,7 @@ const PaymentManagement = () => {
                   <p className="text-muted-foreground mb-4">
                     Match payment records with gateway settlements
                   </p>
-                  <Button onClick={() => toast({ title: "Coming Soon", description: "Payment reconciliation feature coming soon!" })}>
+                  <Button onClick={startReconciliation}>
                     <CheckCircle className="mr-2 h-4 w-4" />
                     Start Reconciliation
                   </Button>

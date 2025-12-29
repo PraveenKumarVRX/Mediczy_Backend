@@ -2,6 +2,7 @@ import { DataTypes } from 'sequelize';
 import bcrypt from 'bcryptjs';
 import jwt from 'jsonwebtoken';
 import postgresSequelize from '../../db/postgres-sequelize.js';
+import { generateUniqueId } from '../../utils/uniqueIdGenerator.js';
 
 /**
  * Nurse Model (PostgreSQL)
@@ -20,6 +21,12 @@ const Nurse = postgresSequelize.define('Nurse', {
     type: DataTypes.INTEGER,
     primaryKey: true,
     autoIncrement: true
+  },
+  unique_id: {
+    type: DataTypes.STRING(6),
+    unique: true,
+    allowNull: true,
+    comment: 'Public-facing unique ID with N prefix'
   },
   firstName: {
     type: DataTypes.STRING(100),
@@ -184,6 +191,11 @@ const Nurse = postgresSequelize.define('Nurse', {
   ],
   hooks: {
     beforeCreate: async (nurse) => {
+      // Generate unique ID if not set
+      if (!nurse.unique_id) {
+        nurse.unique_id = generateUniqueId('nurse');
+      }
+      
       if (nurse.password) {
         nurse.password = await bcrypt.hash(nurse.password, 10);
       }

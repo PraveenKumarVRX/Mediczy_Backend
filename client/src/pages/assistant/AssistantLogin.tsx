@@ -41,7 +41,7 @@ const AssistantLogin = () => {
     if (import.meta.env.DEV) {
       setFormData({
         email: 'assistant@mediczy.com',
-        password: 'AssistantPass123'
+        password: 'Assistant123'
       });
     }
 
@@ -67,8 +67,13 @@ const AssistantLogin = () => {
         email: assistantProfile.email,
         firstName: assistantProfile.firstName,
         lastName: assistantProfile.lastName,
-        role: assistantProfile.role,
+        role: assistantProfile.role || assistantProfile.roleTitle || 'Assistant',
+        roleTitle: assistantProfile.roleTitle || assistantProfile.role || 'Assistant',
         clinic: assistantProfile.clinic || assistantProfile.organization,
+        linkedDoctorIds: assistantProfile.linkedDoctorIds || [],
+        primaryDoctorId: assistantProfile.primaryDoctorId,
+        linkedFacilityName: assistantProfile.linkedFacilityName,
+        permissions: assistantProfile.permissions || []
       }));
     } else {
       localStorage.removeItem('assistantData');
@@ -84,7 +89,7 @@ const AssistantLogin = () => {
     if (
       import.meta.env.DEV &&
       formData.email === 'assistant@mediczy.com' &&
-      formData.password === 'AssistantPass123'
+      formData.password === 'Assistant123'
     ) {
       console.log('🚀 Assistant development mode: quick auth bypass');
       establishAssistantSession('dev-assistant-token', {

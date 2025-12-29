@@ -66,6 +66,712 @@ router.put("/status", updateDoctorStatus);
 router.get("/available", getAvailableDoctors);
 
 /**
+ * @route   GET /api/doctors/alerts
+ * @desc    Get doctor alerts/notifications
+ * @access  Private (Doctor only)
+ */
+router.get("/alerts", authDoctor, async (req, res) => {
+  try {
+    const doctorId = req.doctor.id;
+    
+    // Get pending appointments (needs attention)
+    const pendingAppointments = await Appointment.count({
+      where: {
+        doctorId,
+        status: 'pending'
+      }
+    });
+
+    // Get today's appointments
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
+    const tomorrow = new Date(today);
+    tomorrow.setDate(tomorrow.getDate() + 1);
+
+    const todayAppointments = await Appointment.count({
+      where: {
+        doctorId,
+        appointmentDate: { [Op.gte]: today, [Op.lt]: tomorrow }
+      }
+    });
+
+    const alerts = [];
+    
+    if (pendingAppointments > 0) {
+      alerts.push({
+        id: 'pending-appointments',
+        type: 'warning',
+        title: 'Pending Appointments',
+        message: `You have ${pendingAppointments} appointment(s) awaiting confirmation`,
+        count: pendingAppointments
+      });
+    }
+
+    if (todayAppointments > 0) {
+      alerts.push({
+        id: 'today-appointments',
+        type: 'info',
+        title: "Today's Schedule",
+        message: `You have ${todayAppointments} appointment(s) scheduled for today`,
+        count: todayAppointments
+      });
+    }
+
+    res.json({
+      success: true,
+      alerts,
+      unreadCount: alerts.length
+    });
+
+  } catch (error) {
+    console.error('Get alerts error:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Failed to fetch alerts',
+      error: error.message
+    });
+  }
+});
+
+/**
+ * @route   GET /api/doctors/dashboard/stats
+ * @desc    Get doctor dashboard statistics
+ * @access  Private (Doctor only)
+ */
+router.get("/dashboard/stats", authDoctor, async (req, res) => {
+  try {
+    const doctorId = req.doctor.id;
+
+    // Get total unique patients
+    const totalPatients = await Appointment.count({
+      where: { doctorId },
+      distinct: true,
+      col: 'patientId'
+    });
+
+    // Get consultations this month
+    const startOfMonth = new Date();
+    startOfMonth.setDate(1);
+    startOfMonth.setHours(0, 0, 0, 0);
+
+    const totalConsultations = await Appointment.count({
+      where: {
+        doctorId,
+        status: 'completed',
+        appointmentDate: { [Op.gte]: startOfMonth }
+      }
+    });
+
+    // Get last month's stats for comparison
+    const startOfLastMonth = new Date(startOfMonth);
+    startOfLastMonth.setMonth(startOfLastMonth.getMonth() - 1);
+    const endOfLastMonth = new Date(startOfMonth);
+    endOfLastMonth.setDate(0);
+
+    const lastMonthPatients = await Appointment.count({
+      where: {
+        doctorId,
+        appointmentDate: { [Op.between]: [startOfLastMonth, endOfLastMonth] }
+      },
+      distinct: true,
+      col: 'patientId'
+    });
+
+    const lastMonthConsultations = await Appointment.count({
+      where: {
+        doctorId,
+        status: 'completed',
+        appointmentDate: { [Op.between]: [startOfLastMonth, endOfLastMonth] }
+      }
+    });
+
+    // Calculate growth percentages
+    const patientGrowth = lastMonthPatients > 0 
+      ? Math.round(((totalPatients - lastMonthPatients) / lastMonthPatients) * 100) 
+      : 0;
+    const consultationGrowth = lastMonthConsultations > 0 
+      ? Math.round(((totalConsultations - lastMonthConsultations) / lastMonthConsultations) * 100) 
+      : 0;
+
+    // Get doctor's rating (from profile or calculate)
+    const doctor = await Doctor.findByPk(doctorId);
+    const rating = doctor?.rating || 4.5;
+    const ratingGrowth = 0.1; // Placeholder
+
+    // Response rate (appointments accepted vs total)
+    const totalRequests = await Appointment.count({ where: { doctorId } });
+    const acceptedRequests = await Appointment.count({ 
+      where: { doctorId, status: { [Op.ne]: 'cancelled' } } 
+    });
+    const responseRate = totalRequests > 0 ? Math.round((acceptedRequests / totalRequests) * 100) : 95;
+
+    res.json({
+      success: true,
+      totalPatients,
+      totalConsultations,
+      rating,
+      responseRate,
+      patientGrowth,
+      consultationGrowth,
+      ratingGrowth,
+      responseRateGrowth: 2
+    });
+
+  } catch (error) {
+    console.error('Get dashboard stats error:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Failed to fetch dashboard stats',
+      error: error.message
+    });
+  }
+});
+
+/**
+ * @route   GET /api/doctors/analytics
+ * @desc    Get doctor analytics data
+ * @access  Private (Doctor only)
+ */
+router.get("/analytics", authDoctor, async (req, res) => {
+  try {
+    const doctorId = req.doctor.id;
+    const { period = '30' } = req.query;
+    
+    // Handle period as days number or string like 'week', 'month', 'year'
+    let days;
+    if (period === 'week') days = 7;
+    else if (period === 'month') days = 30;
+    else if (period === 'year') days = 365;
+    else days = parseInt(period) || 30;
+
+    const startDate = new Date();
+    startDate.setDate(startDate.getDate() - days);
+
+    // Appointments by status
+    const appointmentsByStatus = await Appointment.findAll({
+      where: {
+        doctorId,
+        appointmentDate: { [Op.gte]: startDate }
+      },
+      attributes: ['status', [Appointment.sequelize.fn('COUNT', '*'), 'count']],
+      group: ['status']
+    });
+
+    // Appointments by day
+    const appointmentsByDay = await Appointment.findAll({
+      where: {
+        doctorId,
+        appointmentDate: { [Op.gte]: startDate }
+      },
+      attributes: [
+        [Appointment.sequelize.fn('DATE', Appointment.sequelize.col('appointmentDate')), 'date'],
+        [Appointment.sequelize.fn('COUNT', '*'), 'count']
+      ],
+      group: [Appointment.sequelize.fn('DATE', Appointment.sequelize.col('appointmentDate'))],
+      order: [[Appointment.sequelize.fn('DATE', Appointment.sequelize.col('appointmentDate')), 'ASC']]
+    });
+
+    // Revenue (from completed consultations)
+    const completedAppointments = await Appointment.findAll({
+      where: {
+        doctorId,
+        status: 'completed',
+        appointmentDate: { [Op.gte]: startDate }
+      },
+      attributes: ['paymentAmount']
+    });
+
+    const totalRevenue = completedAppointments.reduce((sum, apt) => sum + (parseFloat(apt.paymentAmount) || 0), 0);
+
+    res.json({
+      success: true,
+      analytics: {
+        appointmentsByStatus: appointmentsByStatus.map(s => ({ status: s.status, count: parseInt(s.dataValues.count) })),
+        appointmentsByDay: appointmentsByDay.map(d => ({ date: d.dataValues.date, count: parseInt(d.dataValues.count) })),
+        totalRevenue,
+        period: `${days} days`
+      }
+    });
+
+  } catch (error) {
+    console.error('Get analytics error:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Failed to fetch analytics',
+      error: error.message
+    });
+  }
+});
+
+/**
+ * @route   GET /api/doctors/settings
+ * @desc    Get doctor settings
+ * @access  Private (Doctor only)
+ */
+router.get("/settings", authDoctor, async (req, res) => {
+  try {
+    const doctor = await Doctor.findByPk(req.doctor.id, {
+      attributes: { exclude: ['password'] }
+    });
+
+    if (!doctor) {
+      return res.status(404).json({ success: false, message: 'Doctor not found' });
+    }
+
+    res.json({
+      success: true,
+      settings: {
+        profile: {
+          firstName: doctor.firstName,
+          lastName: doctor.lastName,
+          email: doctor.email,
+          phoneNumber: doctor.phoneNumber,
+          specialization: doctor.specialization,
+          experience: doctor.experience,
+          qualifications: doctor.qualifications,
+          bio: doctor.bio
+        },
+        practice: {
+          consultationFee: doctor.consultationFee,
+          slotDuration: doctor.slotDuration,
+          weeklySchedule: doctor.weeklySchedule,
+          practiceLocations: doctor.practiceLocations,
+          isAvailable: doctor.isAvailable
+        },
+        notifications: {
+          emailNotifications: doctor.emailNotifications ?? true,
+          smsNotifications: doctor.smsNotifications ?? true,
+          pushNotifications: doctor.pushNotifications ?? true
+        }
+      }
+    });
+
+  } catch (error) {
+    console.error('Get settings error:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Failed to fetch settings',
+      error: error.message
+    });
+  }
+});
+
+/**
+ * @route   PUT /api/doctors/settings
+ * @desc    Update doctor settings
+ * @access  Private (Doctor only)
+ */
+router.put("/settings", authDoctor, async (req, res) => {
+  try {
+    const doctor = await Doctor.findByPk(req.doctor.id);
+
+    if (!doctor) {
+      return res.status(404).json({ success: false, message: 'Doctor not found' });
+    }
+
+    const { profile, practice, notifications } = req.body;
+
+    // Update profile fields
+    if (profile) {
+      const allowedProfileFields = ['firstName', 'lastName', 'phoneNumber', 'specialization', 'experience', 'qualifications', 'bio'];
+      allowedProfileFields.forEach(field => {
+        if (profile[field] !== undefined) doctor[field] = profile[field];
+      });
+    }
+
+    // Update practice fields
+    if (practice) {
+      const allowedPracticeFields = ['consultationFee', 'slotDuration', 'weeklySchedule', 'practiceLocations', 'isAvailable'];
+      allowedPracticeFields.forEach(field => {
+        if (practice[field] !== undefined) doctor[field] = practice[field];
+      });
+    }
+
+    // Update notification preferences
+    if (notifications) {
+      if (notifications.emailNotifications !== undefined) doctor.emailNotifications = notifications.emailNotifications;
+      if (notifications.smsNotifications !== undefined) doctor.smsNotifications = notifications.smsNotifications;
+      if (notifications.pushNotifications !== undefined) doctor.pushNotifications = notifications.pushNotifications;
+    }
+
+    await doctor.save();
+
+    res.json({
+      success: true,
+      message: 'Settings updated successfully'
+    });
+
+  } catch (error) {
+    console.error('Update settings error:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Failed to update settings',
+      error: error.message
+    });
+  }
+});
+
+/**
+ * @route   GET /api/doctors/patients
+ * @desc    Get doctor's patients (from appointments)
+ * @access  Private (Doctor only)
+ */
+router.get("/patients", authDoctor, async (req, res) => {
+  try {
+    const doctorId = req.doctor.id;
+    const { search, limit = 20 } = req.query;
+
+    // Get unique patients from appointments
+    const whereClause = { doctorId };
+    
+    let appointments = await Appointment.findAll({
+      where: whereClause,
+      include: [{
+        model: User,
+        as: 'patient',
+        attributes: ['id', 'firstName', 'lastName', 'email', 'phoneNumber', 'gender', 'dateOfBirth', 'bloodGroup', 'allergies', 'address', 'profileImage']
+      }],
+      order: [['createdAt', 'DESC']]
+    });
+
+    // Get unique patients
+    const patientMap = new Map();
+    appointments.forEach(apt => {
+      if (apt.patient && !patientMap.has(apt.patient.id)) {
+        patientMap.set(apt.patient.id, apt.patient);
+      }
+    });
+
+    let patients = Array.from(patientMap.values());
+
+    // Apply search filter if provided
+    if (search) {
+      const searchLower = search.toLowerCase();
+      patients = patients.filter(p => 
+        (p.firstName && p.firstName.toLowerCase().includes(searchLower)) ||
+        (p.lastName && p.lastName.toLowerCase().includes(searchLower)) ||
+        (p.phoneNumber && p.phoneNumber.includes(search)) ||
+        (p.email && p.email.toLowerCase().includes(searchLower))
+      );
+    }
+
+    // Apply limit
+    patients = patients.slice(0, parseInt(limit));
+
+    res.json({
+      success: true,
+      patients: patients.map(p => ({
+        id: p.id,
+        firstName: p.firstName,
+        lastName: p.lastName,
+        email: p.email,
+        phoneNumber: p.phoneNumber,
+        gender: p.gender,
+        dateOfBirth: p.dateOfBirth,
+        bloodGroup: p.bloodGroup,
+        allergies: p.allergies || [],
+        address: p.address,
+        profileImage: p.profileImage
+      }))
+    });
+
+  } catch (error) {
+    console.error('Get patients error:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Failed to fetch patients',
+      error: error.message
+    });
+  }
+});
+
+/**
+ * @route   GET /api/doctors/templates
+ * @desc    Get doctor's document templates
+ * @access  Private (Doctor only)
+ */
+router.get("/templates", authDoctor, async (req, res) => {
+  try {
+    const doctorId = req.doctor.id;
+    const { type } = req.query;
+
+    const doctor = await Doctor.findByPk(doctorId);
+    if (!doctor) {
+      return res.status(404).json({ success: false, message: 'Doctor not found' });
+    }
+
+    let templates = doctor.documentTemplates || [];
+    
+    // Filter by type if specified
+    if (type) {
+      templates = templates.filter(t => t.type === type);
+    }
+
+    res.json({
+      success: true,
+      templates
+    });
+
+  } catch (error) {
+    console.error('Get templates error:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Failed to fetch templates',
+      error: error.message
+    });
+  }
+});
+
+/**
+ * @route   POST /api/doctors/templates
+ * @desc    Create a new document template
+ * @access  Private (Doctor only)
+ */
+router.post("/templates", authDoctor, async (req, res) => {
+  try {
+    const doctorId = req.doctor.id;
+    const { name, type, content, isDefault, specialty, sections, diagram } = req.body;
+
+    if (!name || !type || !content) {
+      return res.status(400).json({ 
+        success: false, 
+        message: 'Name, type, and content are required' 
+      });
+    }
+
+    const doctor = await Doctor.findByPk(doctorId);
+    if (!doctor) {
+      return res.status(404).json({ success: false, message: 'Doctor not found' });
+    }
+
+    const templates = doctor.documentTemplates || [];
+    
+    // If setting as default, unset other defaults of same type
+    if (isDefault) {
+      templates.forEach(t => {
+        if (t.type === type) t.isDefault = false;
+      });
+    }
+
+    const newTemplate = {
+      id: `template_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`,
+      name,
+      type,
+      content,
+      isDefault: isDefault || false,
+      specialty: specialty || null,
+      sections: sections || null,
+      diagram: diagram || null,
+      createdAt: new Date().toISOString(),
+      updatedAt: new Date().toISOString()
+    };
+
+    templates.push(newTemplate);
+    doctor.documentTemplates = [...templates]; // Create new array to trigger Sequelize change detection
+    doctor.changed('documentTemplates', true);
+    await doctor.save();
+
+    res.status(201).json({
+      success: true,
+      template: newTemplate
+    });
+
+  } catch (error) {
+    console.error('Create template error:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Failed to create template',
+      error: error.message
+    });
+  }
+});
+
+/**
+ * @route   PUT /api/doctors/templates/:templateId
+ * @desc    Update a document template
+ * @access  Private (Doctor only)
+ */
+router.put("/templates/:templateId", authDoctor, async (req, res) => {
+  try {
+    const doctorId = req.doctor.id;
+    const { templateId } = req.params;
+    const { name, type, content, isDefault } = req.body;
+
+    const doctor = await Doctor.findByPk(doctorId);
+    if (!doctor) {
+      return res.status(404).json({ success: false, message: 'Doctor not found' });
+    }
+
+    const templates = doctor.documentTemplates || [];
+    const templateIndex = templates.findIndex(t => t.id === templateId);
+    
+    if (templateIndex === -1) {
+      return res.status(404).json({ success: false, message: 'Template not found' });
+    }
+
+    // If setting as default, unset other defaults of same type
+    if (isDefault) {
+      templates.forEach(t => {
+        if (t.type === (type || templates[templateIndex].type)) t.isDefault = false;
+      });
+    }
+
+    templates[templateIndex] = {
+      ...templates[templateIndex],
+      name: name || templates[templateIndex].name,
+      type: type || templates[templateIndex].type,
+      content: content || templates[templateIndex].content,
+      isDefault: isDefault !== undefined ? isDefault : templates[templateIndex].isDefault,
+      updatedAt: new Date().toISOString()
+    };
+
+    doctor.documentTemplates = [...templates];
+    doctor.changed('documentTemplates', true);
+    await doctor.save();
+
+    res.json({
+      success: true,
+      template: templates[templateIndex]
+    });
+
+  } catch (error) {
+    console.error('Update template error:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Failed to update template',
+      error: error.message
+    });
+  }
+});
+
+/**
+ * @route   DELETE /api/doctors/templates/:templateId
+ * @desc    Delete a document template
+ * @access  Private (Doctor only)
+ */
+router.delete("/templates/:templateId", authDoctor, async (req, res) => {
+  try {
+    const doctorId = req.doctor.id;
+    const { templateId } = req.params;
+
+    const doctor = await Doctor.findByPk(doctorId);
+    if (!doctor) {
+      return res.status(404).json({ success: false, message: 'Doctor not found' });
+    }
+
+    const templates = doctor.documentTemplates || [];
+    const templateIndex = templates.findIndex(t => t.id === templateId);
+    
+    if (templateIndex === -1) {
+      return res.status(404).json({ success: false, message: 'Template not found' });
+    }
+
+    templates.splice(templateIndex, 1);
+    doctor.documentTemplates = [...templates];
+    doctor.changed('documentTemplates', true);
+    await doctor.save();
+
+    res.json({
+      success: true,
+      message: 'Template deleted successfully'
+    });
+
+  } catch (error) {
+    console.error('Delete template error:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Failed to delete template',
+      error: error.message
+    });
+  }
+});
+
+/**
+ * @route   GET /api/doctors/template-settings
+ * @desc    Get doctor's template settings (logo, seal, signature, etc.)
+ * @access  Private (Doctor only)
+ */
+router.get("/template-settings", authDoctor, async (req, res) => {
+  try {
+    const doctorId = req.doctor.id;
+
+    const doctor = await Doctor.findByPk(doctorId);
+    if (!doctor) {
+      return res.status(404).json({ success: false, message: 'Doctor not found' });
+    }
+
+    const defaultSettings = {
+      logo: null,
+      logoPosition: "left",
+      clinicName: doctor.clinicName || "",
+      clinicAddress: "",
+      clinicPhone: doctor.phoneNumber || "",
+      clinicEmail: doctor.email || "",
+      clinicWebsite: "",
+      registrationNumber: doctor.registrationNumber || "",
+      seal: null,
+      signature: null,
+      signatureName: `Dr. ${doctor.firstName} ${doctor.lastName}`,
+      footerText: "This is a computer-generated document.",
+      headerColor: "#1a56db",
+      showWatermark: false
+    };
+
+    res.json({
+      success: true,
+      settings: doctor.templateSettings || defaultSettings
+    });
+
+  } catch (error) {
+    console.error('Get template settings error:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Failed to fetch template settings',
+      error: error.message
+    });
+  }
+});
+
+/**
+ * @route   PUT /api/doctors/template-settings
+ * @desc    Update doctor's template settings
+ * @access  Private (Doctor only)
+ */
+router.put("/template-settings", authDoctor, async (req, res) => {
+  try {
+    const doctorId = req.doctor.id;
+    const settings = req.body;
+
+    const doctor = await Doctor.findByPk(doctorId);
+    if (!doctor) {
+      return res.status(404).json({ success: false, message: 'Doctor not found' });
+    }
+
+    doctor.templateSettings = {
+      ...(doctor.templateSettings || {}),
+      ...settings,
+      updatedAt: new Date().toISOString()
+    };
+    doctor.changed('templateSettings', true);
+    await doctor.save();
+
+    res.json({
+      success: true,
+      message: 'Template settings updated successfully',
+      settings: doctor.templateSettings
+    });
+
+  } catch (error) {
+    console.error('Update template settings error:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Failed to update template settings',
+      error: error.message
+    });
+  }
+});
+
+/**
  * @route   GET /api/doctors/:doctorId/user-slots
  * @desc    Get doctor's available slots for user booking (public endpoint)
  * @access  Public
@@ -584,6 +1290,355 @@ router.get('/my-patients', authDoctor, async (req, res) => {
     res.status(500).json({
       success: false,
       message: 'Failed to fetch patients',
+      error: error.message
+    });
+  }
+});
+
+// ============================================
+// TRIAGE ROUTES
+// ============================================
+
+/**
+ * @route   GET /api/doctors/triage/cases
+ * @desc    Get triage cases for doctor
+ * @access  Private (Doctor only)
+ */
+router.get("/triage/cases", authDoctor, async (req, res) => {
+  try {
+    const doctorId = req.doctor.id;
+    const { status } = req.query;
+
+    // Build query conditions
+    const whereConditions = {
+      [Op.or]: [
+        { doctorId: null }, // Unassigned cases
+        { doctorId } // Cases assigned to this doctor
+      ],
+      type: 'emergency_triage'
+    };
+
+    if (status && status !== 'all') {
+      if (status === 'pending') {
+        whereConditions.status = { [Op.in]: ['pending', 'scheduled'] };
+      } else if (status === 'in_progress') {
+        whereConditions.status = { [Op.in]: ['in_progress', 'confirmed'] };
+      } else if (status === 'resolved') {
+        whereConditions.status = { [Op.in]: ['completed', 'cancelled'] };
+      }
+    }
+
+    // Fetch triage appointments
+    const triageAppointments = await Appointment.findAll({
+      where: whereConditions,
+      include: [{
+        model: User,
+        as: 'patient',
+        attributes: ['id', 'firstName', 'lastName', 'email', 'phoneNumber', 'dateOfBirth', 'gender', 'address']
+      }],
+      order: [
+        ['createdAt', 'DESC']
+      ],
+      limit: 50
+    });
+
+    // Transform to triage case format
+    const triageCases = triageAppointments.map(apt => {
+      const notes = apt.notes ? (typeof apt.notes === 'string' ? JSON.parse(apt.notes) : apt.notes) : {};
+      const patient = apt.patient || {};
+      
+      // Calculate age
+      let age = 0;
+      if (patient.dateOfBirth) {
+        const dob = new Date(patient.dateOfBirth);
+        const today = new Date();
+        age = today.getFullYear() - dob.getFullYear();
+      }
+
+      // Map appointment status to triage status
+      let triageStatus = 'pending';
+      if (apt.status === 'in_progress' || apt.status === 'confirmed') triageStatus = 'in_review';
+      if (apt.status === 'completed') triageStatus = 'resolved';
+      if (apt.status === 'cancelled') triageStatus = 'resolved';
+
+      return {
+        id: apt.id.toString(),
+        patientId: patient.id,
+        patientName: `${patient.firstName || ''} ${patient.lastName || ''}`.trim() || 'Unknown Patient',
+        patientAge: age,
+        patientGender: patient.gender || 'Unknown',
+        patientPhone: patient.phoneNumber || '',
+        patientLocation: patient.address || notes.location || '',
+        symptoms: apt.reason || notes.symptoms || 'Not specified',
+        description: apt.symptoms || notes.description || apt.reason || '',
+        urgencyLevel: notes.urgencyLevel || 'URGENT',
+        aiAssessment: notes.aiAssessment || null,
+        aiRecommendation: notes.aiRecommendation || null,
+        vitalSigns: notes.vitalSigns || null,
+        status: triageStatus,
+        createdAt: apt.createdAt,
+        appointmentId: apt.id,
+        videoRoomId: apt.videoRoomId || notes.roomId || null,
+        notes: apt.doctorNotes || null
+      };
+    });
+
+    res.json({
+      success: true,
+      count: triageCases.length,
+      cases: triageCases
+    });
+
+  } catch (error) {
+    console.error('Get triage cases error:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Failed to fetch triage cases',
+      error: error.message
+    });
+  }
+});
+
+/**
+ * @route   GET /api/doctors/triage/stats
+ * @desc    Get triage statistics for doctor
+ * @access  Private (Doctor only)
+ */
+router.get("/triage/stats", authDoctor, async (req, res) => {
+  try {
+    const doctorId = req.doctor.id;
+
+    const baseWhere = {
+      type: 'emergency_triage',
+      [Op.or]: [
+        { doctorId: null },
+        { doctorId }
+      ]
+    };
+
+    const [total, pending, inProgress, resolved] = await Promise.all([
+      Appointment.count({ where: baseWhere }),
+      Appointment.count({ where: { ...baseWhere, status: { [Op.in]: ['pending', 'scheduled'] } } }),
+      Appointment.count({ where: { ...baseWhere, status: { [Op.in]: ['in_progress', 'confirmed'] } } }),
+      Appointment.count({ where: { ...baseWhere, status: { [Op.in]: ['completed', 'cancelled'] } } })
+    ]);
+
+    // Count by urgency (from notes JSON)
+    const allTriageCases = await Appointment.findAll({
+      where: { ...baseWhere, status: { [Op.in]: ['pending', 'scheduled', 'in_progress'] } },
+      attributes: ['notes']
+    });
+
+    let immediate = 0;
+    let urgent = 0;
+    allTriageCases.forEach(apt => {
+      try {
+        const notes = apt.notes ? (typeof apt.notes === 'string' ? JSON.parse(apt.notes) : apt.notes) : {};
+        if (notes.urgencyLevel === 'IMMEDIATE') immediate++;
+        if (notes.urgencyLevel === 'URGENT') urgent++;
+      } catch (e) {}
+    });
+
+    res.json({
+      success: true,
+      stats: {
+        total,
+        pending,
+        inProgress,
+        resolved,
+        immediate,
+        urgent
+      }
+    });
+
+  } catch (error) {
+    console.error('Get triage stats error:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Failed to fetch triage stats',
+      error: error.message
+    });
+  }
+});
+
+/**
+ * @route   POST /api/doctors/triage/cases/:caseId/accept
+ * @desc    Accept a triage case
+ * @access  Private (Doctor only)
+ */
+router.post("/triage/cases/:caseId/accept", authDoctor, async (req, res) => {
+  try {
+    const doctorId = req.doctor.id;
+    const { caseId } = req.params;
+
+    const appointment = await Appointment.findByPk(caseId);
+    if (!appointment) {
+      return res.status(404).json({
+        success: false,
+        message: 'Triage case not found'
+      });
+    }
+
+    // Assign doctor and update status
+    await appointment.update({
+      doctorId,
+      status: 'in_progress'
+    });
+
+    // Notify patient that doctor has accepted
+    try {
+      const notificationService = (await import('../services/notification.service.js')).default;
+      await notificationService.sendNotification({
+        userId: appointment.patientId,
+        userType: 'user',
+        type: 'triage_accepted',
+        title: '👨‍⚕️ Doctor Reviewing Your Case',
+        message: `Dr. ${req.doctor.firstName} ${req.doctor.lastName} is now reviewing your triage request.`,
+        data: {
+          appointmentId: appointment.id,
+          doctorId,
+          doctorName: `${req.doctor.firstName} ${req.doctor.lastName}`
+        },
+        channels: ['push', 'socket']
+      });
+    } catch (notifyError) {
+      console.warn('Patient notification failed:', notifyError.message);
+    }
+
+    res.json({
+      success: true,
+      message: 'Triage case accepted',
+      appointment: {
+        id: appointment.id,
+        status: 'in_progress',
+        doctorId
+      }
+    });
+
+  } catch (error) {
+    console.error('Accept triage case error:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Failed to accept triage case',
+      error: error.message
+    });
+  }
+});
+
+/**
+ * @route   POST /api/doctors/triage/cases/:caseId/respond
+ * @desc    Respond to a triage case
+ * @access  Private (Doctor only)
+ */
+router.post("/triage/cases/:caseId/respond", authDoctor, async (req, res) => {
+  try {
+    const doctorId = req.doctor.id;
+    const { caseId } = req.params;
+    const { action, notes } = req.body;
+
+    const appointment = await Appointment.findByPk(caseId, {
+      include: [{
+        model: User,
+        as: 'patient'
+      }]
+    });
+
+    if (!appointment) {
+      return res.status(404).json({
+        success: false,
+        message: 'Triage case not found'
+      });
+    }
+
+    // Determine status based on action
+    let newStatus = 'completed';
+    let notificationTitle = '';
+    let notificationMessage = '';
+
+    switch (action) {
+      case 'prescribe':
+        notificationTitle = '💊 Prescription Ready';
+        notificationMessage = `Dr. ${req.doctor.firstName} has prescribed medication for you. ${notes || ''}`;
+        break;
+      case 'schedule_appointment':
+        newStatus = 'scheduled';
+        notificationTitle = '📅 Appointment Scheduled';
+        notificationMessage = `Dr. ${req.doctor.firstName} has scheduled a follow-up appointment. ${notes || ''}`;
+        break;
+      case 'refer_hospital':
+        notificationTitle = '🏥 Hospital Referral';
+        notificationMessage = `Dr. ${req.doctor.firstName} recommends hospital visit. ${notes || ''}`;
+        break;
+      case 'call_ambulance':
+        notificationTitle = '🚑 Emergency - Ambulance Called';
+        notificationMessage = `URGENT: Ambulance has been requested. ${notes || ''}`;
+        break;
+      case 'self_care':
+        notificationTitle = '✅ Self-Care Instructions';
+        notificationMessage = `Dr. ${req.doctor.firstName} has provided self-care instructions. ${notes || ''}`;
+        break;
+      case 'escalate':
+        newStatus = 'in_progress';
+        notificationTitle = '👨‍⚕️ Specialist Referral';
+        notificationMessage = `Your case has been escalated to a specialist. ${notes || ''}`;
+        break;
+      default:
+        notificationTitle = '📋 Triage Response';
+        notificationMessage = notes || 'Doctor has responded to your triage request.';
+    }
+
+    // Update appointment
+    const existingNotes = appointment.notes ? (typeof appointment.notes === 'string' ? JSON.parse(appointment.notes) : appointment.notes) : {};
+    await appointment.update({
+      status: newStatus,
+      doctorNotes: notes,
+      notes: JSON.stringify({
+        ...existingNotes,
+        doctorResponse: {
+          action,
+          notes,
+          respondedAt: new Date().toISOString(),
+          respondedBy: doctorId
+        }
+      })
+    });
+
+    // Notify patient
+    try {
+      const notificationService = (await import('../services/notification.service.js')).default;
+      await notificationService.sendNotification({
+        userId: appointment.patientId,
+        userType: 'user',
+        type: 'triage_response',
+        title: notificationTitle,
+        message: notificationMessage,
+        data: {
+          appointmentId: appointment.id,
+          action,
+          doctorId,
+          doctorName: `${req.doctor.firstName} ${req.doctor.lastName}`
+        },
+        channels: ['push', 'socket', 'sms']
+      });
+    } catch (notifyError) {
+      console.warn('Patient notification failed:', notifyError.message);
+    }
+
+    res.json({
+      success: true,
+      message: 'Response sent successfully',
+      appointment: {
+        id: appointment.id,
+        status: newStatus,
+        action
+      }
+    });
+
+  } catch (error) {
+    console.error('Respond to triage case error:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Failed to respond to triage case',
       error: error.message
     });
   }

@@ -11,7 +11,15 @@ const router = express.Router();
 
 // Base paths for provider data
 const PROVIDERS_BASE = '/tmp/rag_cache/all_providers';
-const LABS_BASE = '/tmp/rag_cache/profiles_enhanced';
+const HOSPITALS_BASE = path.join(PROVIDERS_BASE, 'hospitals');
+const LABS_BASE = path.join(PROVIDERS_BASE, 'labs');
+const CLINICS_BASE = path.join(PROVIDERS_BASE, 'clinics');
+const PHARMACIES_BASE = path.join(PROVIDERS_BASE, 'pharmacies');
+
+// Ensure provider directories exist to avoid ENOENT on first read
+async function ensureDirectory(dirPath) {
+    await fs.mkdir(dirPath, { recursive: true });
+}
 
 /**
  * Get all hospitals with pagination, search, and filtering
@@ -20,16 +28,18 @@ router.get('/hospitals', async (req, res) => {
     try {
         const { page = 1, limit = 50, search = '', city = '', state = '', area = '' } = req.query;
         
-        const hospitalsDir = path.join(PROVIDERS_BASE, 'hospitals');
-        const files = await fs.readdir(hospitalsDir);
+        await ensureDirectory(HOSPITALS_BASE);
+        const files = await fs.readdir(HOSPITALS_BASE);
         
         // Load all hospital profiles
-        let hospitals = await Promise.all(
-            files.map(async (file) => {
-                const content = await fs.readFile(path.join(hospitalsDir, file), 'utf-8');
-                return JSON.parse(content);
-            })
-        );
+        let hospitals = files.length > 0
+            ? await Promise.all(
+                files.map(async (file) => {
+                    const content = await fs.readFile(path.join(HOSPITALS_BASE, file), 'utf-8');
+                    return JSON.parse(content);
+                })
+            )
+            : [];
         
         // Filter hospitals
         if (search) {
@@ -114,16 +124,18 @@ router.get('/labs', async (req, res) => {
     try {
         const { page = 1, limit = 50, search = '', city = '', state = '', area = '' } = req.query;
         
-        const labsDir = LABS_BASE;
-        const files = await fs.readdir(labsDir);
+        await ensureDirectory(LABS_BASE);
+        const files = await fs.readdir(LABS_BASE);
         
         // Load lab profiles
-        let labs = await Promise.all(
-            files.map(async (file) => {
-                const content = await fs.readFile(path.join(labsDir, file), 'utf-8');
-                return JSON.parse(content);
-            })
-        );
+        let labs = files.length > 0
+            ? await Promise.all(
+                files.map(async (file) => {
+                    const content = await fs.readFile(path.join(LABS_BASE, file), 'utf-8');
+                    return JSON.parse(content);
+                })
+            )
+            : [];
         
         // Filter labs
         if (search) {
@@ -200,16 +212,18 @@ router.get('/clinics', async (req, res) => {
     try {
         const { page = 1, limit = 50, search = '', city = '', type = '' } = req.query;
         
-        const clinicsDir = path.join(PROVIDERS_BASE, 'clinics');
-        const files = await fs.readdir(clinicsDir);
+        await ensureDirectory(CLINICS_BASE);
+        const files = await fs.readdir(CLINICS_BASE);
         
         // Load clinic profiles
-        let clinics = await Promise.all(
-            files.map(async (file) => {
-                const content = await fs.readFile(path.join(clinicsDir, file), 'utf-8');
-                return JSON.parse(content);
-            })
-        );
+        let clinics = files.length > 0
+            ? await Promise.all(
+                files.map(async (file) => {
+                    const content = await fs.readFile(path.join(CLINICS_BASE, file), 'utf-8');
+                    return JSON.parse(content);
+                })
+            )
+            : [];
         
         // Filter clinics
         if (search) {

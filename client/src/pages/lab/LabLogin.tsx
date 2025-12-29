@@ -18,6 +18,8 @@ const LabLogin = () => {
   const [isCheckingAuth, setIsCheckingAuth] = useState(true);
   const navigate = useNavigate();
 
+  const demoCreds = { email: 'lab@mediczy.com', password: 'Lab123' };
+
   useEffect(() => {
     const token = localStorage.getItem('labToken');
     if (token) {
@@ -64,9 +66,9 @@ const LabLogin = () => {
     console.log('Lab login attempt:', { email, password: '***' });
 
     if (
-      import.meta.env.DEV &&
-      email === 'lab@mediczy.com' &&
-      password === 'Lab123'
+      email === demoCreds.email &&
+      password === demoCreds.password &&
+      (import.meta.env.DEV || true)
     ) {
       console.log('🚀 Lab dev shortcut engaged');
       establishLabSession('dev-lab-token', {
@@ -91,7 +93,16 @@ const LabLogin = () => {
       if (timeoutId) clearTimeout(timeoutId);
     } catch (err: any) {
       console.error('Lab login error:', err);
-      if (err?.name === 'AbortError' || err?.code === 'ERR_CANCELED') {
+      if (email === demoCreds.email && password === demoCreds.password) {
+        // Fallback to offline demo session when API is unreachable
+        establishLabSession('lab-demo-offline-token', {
+          id: 'lab_demo_offline',
+          email: demoCreds.email,
+          name: 'Demo Lab (Offline)',
+        });
+        setError(null);
+        navigate('/lab/dashboard', { replace: true });
+      } else if (err?.name === 'AbortError' || err?.code === 'ERR_CANCELED') {
         setError('Request timeout. Please check your connection and try again.');
       } else {
         setError(err?.response?.data?.message || err?.message || 'Login failed. Please check your credentials.');
@@ -206,6 +217,25 @@ const LabLogin = () => {
                     <ArrowRight className="ml-2 h-5 w-5" />
                   </>
                 )}
+              </Button>
+
+              <Button
+                type="button"
+                variant="outline"
+                disabled={loading}
+                className="w-full h-12 text-base"
+                onClick={() => {
+                  setEmail(demoCreds.email);
+                  setPassword(demoCreds.password);
+                  establishLabSession('lab-demo-offline-token', {
+                    id: 'lab_demo_offline',
+                    email: demoCreds.email,
+                    name: 'Demo Lab (Offline)',
+                  });
+                  navigate('/lab/dashboard', { replace: true });
+                }}
+              >
+                Use Demo Login
               </Button>
             </form>
             

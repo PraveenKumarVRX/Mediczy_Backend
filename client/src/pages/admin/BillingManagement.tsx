@@ -32,6 +32,8 @@ import {
   Receipt,
   Calculator
 } from 'lucide-react';
+import { useToast } from '../../hooks/use-toast';
+import api from '../../utils/api';
 
 interface Invoice {
   id: string;
@@ -256,6 +258,7 @@ const gstRates: GSTRate[] = [
 ];
 
 const BillingManagement = () => {
+  const { toast } = useToast();
   const [activeTab, setActiveTab] = useState('invoices');
   const [invoices, setInvoices] = useState<Invoice[]>(sampleInvoices);
   const [hsnSacCodes, setHsnSacCodes] = useState<HSNSACCode[]>(sampleHSNSACCodes);
@@ -267,6 +270,7 @@ const BillingManagement = () => {
   const [editingHsnSac, setEditingHsnSac] = useState<HSNSACCode | null>(null);
   const [hsnSacSearchTerm, setHsnSacSearchTerm] = useState('');
   const [hsnSacTypeFilter, setHsnSacTypeFilter] = useState<'all' | 'HSN' | 'SAC'>('all');
+  const token = typeof window !== 'undefined' ? (localStorage.getItem('adminToken') || localStorage.getItem('token') || '') : '';
   
   const [newInvoice, setNewInvoice] = useState<Partial<Invoice>>({
     clientType: 'user',
@@ -302,6 +306,44 @@ const BillingManagement = () => {
 
     return matchesSearch && matchesType;
   });
+
+  const startNewHsnSac = () => {
+    const now = new Date().toISOString();
+    setEditingHsnSac({
+      id: '',
+      code: '',
+      type: 'HSN',
+      description: '',
+      category: 'goods',
+      gstRate: 18,
+      isActive: true,
+      createdAt: now,
+      updatedAt: now
+    });
+  };
+
+  const updateEditingHsnSac = (updates: Partial<HSNSACCode>) => {
+    setEditingHsnSac(prev => prev ? { ...prev, ...updates, updatedAt: new Date().toISOString() } : prev);
+  };
+
+  const handleSaveHsnSac = () => {
+    if (!editingHsnSac || !editingHsnSac.code.trim() || !editingHsnSac.description.trim()) return;
+    const now = new Date().toISOString();
+    if (editingHsnSac.id) {
+      setHsnSacCodes(prev => prev.map(code => code.id === editingHsnSac.id ? { ...editingHsnSac, updatedAt: now } : code));
+    } else {
+      setHsnSacCodes(prev => [
+        {
+          ...editingHsnSac,
+          id: `hsn_${Date.now()}`,
+          createdAt: now,
+          updatedAt: now
+        },
+        ...prev
+      ]);
+    }
+    setEditingHsnSac(null);
+  };
 
   const stats: BillingStats = {
     totalRevenue: invoices.reduce((sum, inv) => sum + (inv.status === 'paid' ? inv.totalAmount : 0), 0),
@@ -343,6 +385,61 @@ const BillingManagement = () => {
     const totalAmount = amount + taxAmount;
     return { amount, taxAmount, totalAmount };
   };
+
+  useEffect(() => {
+    const fetchInvoices = async () => {
+      try {
+        const { data } = await api.get('/admin/invoices', token ? { headers: { Authorization: `Bearer ${token}` } } : undefined);
+        if (Array.isArray(data?.invoices)) {
+          setInvoices(data.invoices as Invoice[]);
+        }
+      } catch (err) {
+        console.warn('Invoice API unavailable, showing sample data', err);
+      }
+    };
+    fetchInvoices();
+  }, [token]);
+
+  const downloadBlob = (blob: Blob, filename: string) => {
+    const url = window.URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = filename;
+    a.click();
+    window.URL.revokeObjectURL(url);
+  };
+
+  const handleExportInvoice = async (invoice: Invoice) => {
+    try {
+      const { data } = await api.get(`/admin/invoices/${invoice.id}/export`, {
+        responseType: 'blob',
+        headers: token ? { Authorization: `Bearer ${token}` } : undefined,
+      });
+      downloadBlob(data, `${invoice.invoiceNumber}.pdf`);
+      toast({ title: 'Export ready', description: `${invoice.invoiceNumber} downloaded.` });
+    } catch (err) {
+      console.warn('Invoice export failed, falling back to client PDF', err);
+      const blob = new Blob([
+        JSON.stringify(invoice, null, 2)
+      ], { type: 'application/json' });
+      downloadBlob(blob, `${invoice.invoiceNumber}.json`);
+      toast({ title: 'Offline export', description: 'Downloaded JSON because PDF export failed.' });
+    }
+  };
+
+  const handleSendInvoice = async (invoice: Invoice) => {
+    try {
+      await api.post(`/admin/invoices/${invoice.id}/send`, { email: invoice.clientEmail }, token ? { headers: { Authorization: `Bearer ${token}` } } : undefined);
+      setInvoices(prev => prev.map(inv => inv.id === invoice.id ? { ...inv, status: 'sent' } : inv));
+      toast({ title: 'Invoice sent', description: `Sent to ${invoice.clientEmail || invoice.clientName}.` });
+    } catch (err) {
+      console.warn('Invoice send failed, updating status locally', err);
+      setInvoices(prev => prev.map(inv => inv.id === invoice.id ? { ...inv, status: 'sent' } : inv));
+      toast({ title: 'Offline send', description: 'Marked as sent locally because API failed.' });
+    }
+  };
+
+  const handleDownloadFromDialog = (invoice: Invoice) => handleExportInvoice(invoice);
 
   return (
     <AdminLayout>
@@ -619,14 +716,23 @@ const BillingManagement = () => {
                                 <Button size="sm" variant="outline" className="h-8 w-8 p-0" onClick={() => setEditingInvoice(invoice)}>
                                   <Edit className="h-3 w-3" />
                                 </Button>
-                                <Button size="sm" variant="outline" className="h-8 w-8 p-0" onClick={() => {
-                                  // Export invoice as PDF
-                                  alert(`Exporting invoice ${invoice.invoiceNumber}`);
-                                }}>
+                                <Button
+                                  size="sm"
+                                  variant="outline"
+                                  className="h-8 w-8 p-0"
+                                  onClick={() => handleExportInvoice(invoice)}
+                                  title="Download invoice"
+                                >
                                   <Download className="h-3 w-3" />
                                 </Button>
                                 {invoice.status === 'draft' && (
-                                  <Button size="sm" variant="outline" className="h-8 w-8 p-0 text-blue-600">
+                                  <Button
+                                    size="sm"
+                                    variant="outline"
+                                    className="h-8 w-8 p-0 text-blue-600"
+                                    onClick={() => handleSendInvoice(invoice)}
+                                    title="Send invoice"
+                                  >
                                     <Send className="h-3 w-3" />
                                   </Button>
                                 )}
@@ -696,7 +802,7 @@ const BillingManagement = () => {
                       <SelectItem value="SAC">SAC (Services)</SelectItem>
                     </SelectContent>
                   </Select>
-                  <Button className="bg-green-600 hover:bg-green-700" onClick={() => setEditingHsnSac({} as HSNSACCode)}>
+                  <Button className="bg-green-600 hover:bg-green-700" onClick={startNewHsnSac}>
                     <Plus className="mr-2 h-4 w-4" />
                     Add HSN/SAC Code
                   </Button>
@@ -821,7 +927,7 @@ const BillingManagement = () => {
                         : 'Add HSN/SAC codes to manage GST rates for different products and services'
                       }
                     </p>
-                    <Button className="bg-green-600 hover:bg-green-700">
+                    <Button className="bg-green-600 hover:bg-green-700" onClick={startNewHsnSac}>
                       <Plus className="mr-2 h-4 w-4" />
                       Add First HSN/SAC Code
                     </Button>
@@ -924,7 +1030,7 @@ const BillingManagement = () => {
 
         {/* View Invoice Dialog */}
         {viewingInvoice && (
-          <Dialog open={!!viewingInvoice} onOpenChange={() => setViewingInvoice(null)}>
+          <Dialog open={!!viewingInvoice} onOpenChange={(open) => !open && setViewingInvoice(null)}>
             <DialogContent className="max-w-4xl max-h-[90vh] overflow-y-auto">
               <DialogHeader>
                 <DialogTitle>Invoice Details - {viewingInvoice.invoiceNumber}</DialogTitle>
@@ -993,11 +1099,17 @@ const BillingManagement = () => {
                   </div>
                 </div>
                 
-                <div className="flex gap-2">
-                  <Button><Download className="mr-2 h-4 w-4" />Download PDF</Button>
-                  <Button variant="outline"><Send className="mr-2 h-4 w-4" />Send Email</Button>
+                <div className="flex gap-2 flex-wrap">
+                  <Button onClick={() => handleDownloadFromDialog(viewingInvoice)}><Download className="mr-2 h-4 w-4" />Download PDF</Button>
+                  <Button variant="outline" onClick={() => handleSendInvoice(viewingInvoice)}><Send className="mr-2 h-4 w-4" />Send Email</Button>
+                  <Button variant="outline" onClick={() => handleDownloadFromDialog(viewingInvoice)}>
+                    <Download className="mr-2 h-4 w-4" />Export Invoice
+                  </Button>
                   <Button variant="outline" onClick={() => setEditingInvoice(viewingInvoice)}>
                     <Edit className="mr-2 h-4 w-4" />Edit
+                  </Button>
+                  <Button variant="ghost" onClick={() => setViewingInvoice(null)}>
+                    Close
                   </Button>
                 </div>
               </div>
@@ -1007,7 +1119,7 @@ const BillingManagement = () => {
 
         {/* Edit HSN/SAC Dialog */}
         {editingHsnSac && (
-          <Dialog open={!!editingHsnSac} onOpenChange={() => setEditingHsnSac(null)}>
+          <Dialog open={!!editingHsnSac} onOpenChange={(open) => !open && setEditingHsnSac(null)}>
             <DialogContent className="max-w-md">
               <DialogHeader>
                 <DialogTitle>{editingHsnSac.id ? 'Edit' : 'Add'} HSN/SAC Code</DialogTitle>
@@ -1015,7 +1127,7 @@ const BillingManagement = () => {
               <div className="space-y-4">
                 <div>
                   <Label>Code Type</Label>
-                  <Select defaultValue={editingHsnSac.type}>
+                  <Select value={editingHsnSac.type} onValueChange={(value) => updateEditingHsnSac({ type: value as HSNSACCode['type'] })}>
                     <SelectTrigger>
                       <SelectValue />
                     </SelectTrigger>
@@ -1032,7 +1144,8 @@ const BillingManagement = () => {
                 <div>
                   <Label>Code</Label>
                   <Input 
-                    defaultValue={editingHsnSac.code} 
+                    value={editingHsnSac.code}
+                    onChange={(e) => updateEditingHsnSac({ code: e.target.value })}
                     placeholder={editingHsnSac.type === 'HSN' ? "e.g., 9021" : "e.g., 99613"}
                   />
                   <p className="text-xs text-muted-foreground mt-1">
@@ -1045,12 +1158,16 @@ const BillingManagement = () => {
                 
                 <div>
                   <Label>Description</Label>
-                  <Input defaultValue={editingHsnSac.description} placeholder="Enter detailed description" />
+                  <Input 
+                    value={editingHsnSac.description}
+                    onChange={(e) => updateEditingHsnSac({ description: e.target.value })}
+                    placeholder="Enter detailed description" 
+                  />
                 </div>
                 
                 <div>
                   <Label>Category</Label>
-                  <Select defaultValue={editingHsnSac.category}>
+                  <Select value={editingHsnSac.category} onValueChange={(value) => updateEditingHsnSac({ category: value as HSNSACCode['category'] })}>
                     <SelectTrigger>
                       <SelectValue />
                     </SelectTrigger>
@@ -1063,7 +1180,7 @@ const BillingManagement = () => {
                 
                 <div>
                   <Label>GST Rate (%)</Label>
-                  <Select defaultValue={editingHsnSac.gstRate.toString()}>
+                  <Select value={editingHsnSac.gstRate.toString()} onValueChange={(value) => updateEditingHsnSac({ gstRate: Number(value) })}>
                     <SelectTrigger>
                       <SelectValue />
                     </SelectTrigger>
@@ -1082,7 +1199,7 @@ const BillingManagement = () => {
                 </div>
                 
                 <div className="flex items-center space-x-2">
-                  <Switch defaultChecked={editingHsnSac.isActive} />
+                  <Switch checked={editingHsnSac.isActive} onCheckedChange={(checked) => updateEditingHsnSac({ isActive: checked })} />
                   <Label>Active</Label>
                   <p className="text-xs text-muted-foreground ml-2">
                     Only active codes will be available for billing
@@ -1090,7 +1207,11 @@ const BillingManagement = () => {
                 </div>
                 
                 <div className="flex gap-2 pt-4">
-                  <Button className="flex-1 bg-green-600 hover:bg-green-700">
+                  <Button 
+                    className="flex-1 bg-green-600 hover:bg-green-700"
+                    onClick={handleSaveHsnSac}
+                    disabled={!editingHsnSac.code.trim() || !editingHsnSac.description.trim()}
+                  >
                     {editingHsnSac.id ? 'Update' : 'Create'} Code
                   </Button>
                   <Button variant="outline" className="flex-1" onClick={() => setEditingHsnSac(null)}>

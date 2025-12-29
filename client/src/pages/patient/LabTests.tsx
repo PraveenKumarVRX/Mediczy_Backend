@@ -7,6 +7,7 @@ import { Badge } from '@/components/ui/badge';
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, DialogTrigger } from '@/components/ui/dialog';
 import { Label } from '@/components/ui/label';
 import { Textarea } from '@/components/ui/textarea';
+import MainLayout from '@/components/layout/MainLayout';
 
 interface LabTest {
   id: string;
@@ -84,21 +85,27 @@ const LabTests = () => {
   };
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-cyan-50 via-white to-blue-50 p-6">
-      <div className="max-w-7xl mx-auto">
+      <div className="max-w-7xl mx-auto space-y-6 animate-in fade-in duration-500 px-4 md:px-6 py-6">
         {/* Header */}
-        <div className="mb-6">
-          <div className="flex items-center justify-between">
+        <div className="relative overflow-hidden rounded-2xl bg-gradient-to-r from-slate-800 via-slate-900 to-slate-800 p-6 md:p-8 text-white shadow-2xl">
+          <div className="absolute inset-0 bg-[url('data:image/svg+xml;base64,PHN2ZyB3aWR0aD0iNjAiIGhlaWdodD0iNjAiIHZpZXdCb3g9IjAgMCA2MCA2MCIgeG1sbnM9Imh0dHA6Ly93d3cudzMub3JnLzIwMDAvc3ZnIj48ZyBmaWxsPSJub25lIiBmaWxsLXJ1bGU9ImV2ZW5vZGQiPjxwYXRoIGQ9Ik0zNiAxOGMzLjMxNCAwIDYgMi42ODYgNiA2cy0yLjY4NiA2LTYgNi02LTIuNjg2LTYtNiAyLjY4Ni02IDYtNiIgc3Ryb2tlPSJyZ2JhKDI1NSwyNTUsMjU1LDAuMSkiLz48L2c+PC9zdmc+')] opacity-30" />
+          <div className="absolute top-0 right-0 w-64 h-64 bg-gradient-to-br from-teal-500/20 to-transparent rounded-full blur-3xl" />
+          <div className="relative flex flex-col md:flex-row md:items-center md:justify-between gap-4">
             <div>
-              <div className="flex items-center gap-3 mb-2">
-                <FlaskConical className="h-8 w-8 text-cyan-600" />
-                <h1 className="text-3xl font-bold text-gray-900">Lab Tests</h1>
+              <div className="flex items-center gap-3 mb-3">
+                <div className="p-2.5 rounded-xl bg-gradient-to-br from-teal-500 to-teal-600 shadow-lg shadow-teal-500/30">
+                  <FlaskConical className="w-6 h-6" />
+                </div>
+                <Badge className="bg-white/10 text-white/90 border-white/20 font-medium">
+                  Lab Management
+                </Badge>
               </div>
-              <p className="text-gray-600">Manage and track your laboratory tests</p>
+              <h1 className="text-2xl md:text-3xl font-bold mb-2">Lab Tests</h1>
+              <p className="text-slate-300 text-sm md:text-base">Manage and track your laboratory tests</p>
             </div>
             <Dialog open={showBookDialog} onOpenChange={setShowBookDialog}>
               <DialogTrigger asChild>
-                <Button className="bg-cyan-600 hover:bg-cyan-700">
+                <Button className="bg-gradient-to-r from-teal-500 to-teal-600 hover:from-teal-600 hover:to-teal-700 text-white shadow-lg shadow-teal-500/30">
                   <Plus className="h-4 w-4 mr-2" />
                   Book Lab Test
                 </Button>
@@ -127,7 +134,7 @@ const LabTests = () => {
                     <Label>Special Instructions</Label>
                     <Textarea placeholder="Any fasting requirements or special notes..." />
                   </div>
-                  <Button className="w-full bg-cyan-600 hover:bg-cyan-700">
+                  <Button className="w-full bg-gradient-to-r from-teal-500 to-teal-600 hover:from-teal-600 hover:to-teal-700">
                     Book Appointment
                   </Button>
                 </div>
@@ -277,17 +284,18 @@ const LabTests = () => {
         </div>
 
         {filteredTests.length === 0 && (
-          <Card>
+          <Card className="bg-white dark:bg-slate-800/50 border-slate-200/80 dark:border-slate-700/50">
             <CardContent className="py-12">
-              <div className="text-center text-gray-500">
-                <FlaskConical className="h-12 w-12 mx-auto mb-4 opacity-20" />
-                <p>No lab tests found</p>
+              <div className="text-center">
+                <div className="w-16 h-16 mx-auto mb-4 rounded-2xl bg-slate-100 dark:bg-slate-700/50 flex items-center justify-center">
+                  <FlaskConical className="h-8 w-8 text-slate-400" />
+                </div>
+                <p className="text-slate-500 dark:text-slate-400">No lab tests found</p>
               </div>
             </CardContent>
           </Card>
         )}
       </div>
-    </div>
   );
 };
 

@@ -4,6 +4,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { 
   Building2, 
   Users, 
@@ -34,12 +35,18 @@ import {
   MessageSquare,
   Settings,
   HelpCircle,
-  ArrowRight
+  ArrowRight,
+  Sparkles,
+  Zap,
+  Star,
+  ChevronRight,
+  Briefcase
 } from "lucide-react";
 import { getUserType } from "@/hooks/auth";
 import api from "@/utils/api";
 import { PieChart as RechartsPieChart, Pie, Cell, BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer } from 'recharts';
 import CorporateLayout from "@/components/corporate/CorporateLayout";
+import { cn } from "@/lib/utils";
 
 interface EmployeeHealth {
   id: string;
@@ -129,6 +136,7 @@ interface CorporateAppointment {
 const CorporateDashboard = () => {
   const navigate = useNavigate();
   const [loading, setLoading] = useState(true);
+  const [isRefreshing, setIsRefreshing] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [activeTab, setActiveTab] = useState('overview');
   const [searchQuery, setSearchQuery] = useState('');
@@ -138,6 +146,23 @@ const CorporateDashboard = () => {
   const [filteredAppointments, setFilteredAppointments] = useState<CorporateAppointment[]>([]);
   const [appointmentStatusFilter, setAppointmentStatusFilter] = useState('all');
   const [appointmentTypeFilter, setAppointmentTypeFilter] = useState('all');
+  const [currentTime, setCurrentTime] = useState(new Date());
+  
+  // Corporate profile - could be fetched from API
+  const corporateProfile = {
+    companyName: "TechCorp Industries",
+    logo: null,
+    adminName: "Corporate Admin",
+    plan: "Enterprise Wellness",
+  };
+  
+  // Time-based greeting like DoctorDashboard
+  const getGreeting = () => {
+    const hour = currentTime.getHours();
+    if (hour < 12) return "Good morning";
+    if (hour < 17) return "Good afternoon";
+    return "Good evening";
+  };
   
   const [summary, setSummary] = useState<{
     KPIs: {
@@ -161,12 +186,12 @@ const CorporateDashboard = () => {
   const [filteredEmployees, setFilteredEmployees] = useState<EmployeeHealth[]>([]);
 
   useEffect(() => {
-    fetchDashboardData();
+    fetchDashboardData(true);
     
-    // Auto-refresh every 60 seconds
-    const interval = setInterval(fetchDashboardData, 60000);
+    // Auto-refresh every 5 minutes (300000ms) instead of every minute
+    const interval = setInterval(() => fetchDashboardData(false), 300000);
     return () => clearInterval(interval);
-  }, [navigate]);
+  }, []);
 
   useEffect(() => {
     filterEmployees();
@@ -176,9 +201,13 @@ const CorporateDashboard = () => {
     filterAppointments();
   }, [appointments, searchQuery, appointmentStatusFilter, appointmentTypeFilter, departmentFilter]);
 
-  const fetchDashboardData = async () => {
+  const fetchDashboardData = async (isInitialLoad = false) => {
     try {
-      setLoading(true);
+      if (isInitialLoad) {
+        setLoading(true);
+      } else {
+        setIsRefreshing(true);
+      }
       setError(null);
       
       const [summaryRes, healthRes, employeesRes, appointmentsRes] = await Promise.all([
@@ -201,6 +230,7 @@ const CorporateDashboard = () => {
       setAppointments(generateSampleAppointments());
     } finally {
       setLoading(false);
+      setIsRefreshing(false);
     }
   };
 
@@ -678,8 +708,8 @@ const CorporateDashboard = () => {
       <CorporateLayout title="Dashboard" subtitle="Loading...">
         <div className="flex items-center justify-center min-h-[60vh]">
           <div className="text-center">
-            <div className="w-16 h-16 border-4 border-t-blue-600 border-gray-300 rounded-full animate-spin mx-auto"></div>
-            <p className="mt-4 text-gray-600">Loading corporate dashboard...</p>
+            <div className="w-16 h-16 border-4 border-t-emerald-500 border-slate-200 dark:border-slate-700 rounded-full animate-spin mx-auto"></div>
+            <p className="mt-4 text-slate-600 dark:text-slate-400">Loading corporate dashboard...</p>
           </div>
         </div>
       </CorporateLayout>
@@ -688,71 +718,279 @@ const CorporateDashboard = () => {
 
   return (
     <CorporateLayout title="Health Dashboard" subtitle="Real-time employee health monitoring and risk analysis">
-      <div className="space-y-6">
-        {/* Action Bar */}
-        <div className="flex justify-end">
-          <Button onClick={fetchDashboardData} variant="outline" size="sm">
-            <RefreshCw className="w-4 h-4 mr-2" />
-            Refresh
-          </Button>
+      <div className="max-w-7xl mx-auto space-y-6 animate-in fade-in duration-500">
+        {/* Welcome Section - Hero Banner (DoctorDashboard Style) */}
+        <div className="relative overflow-hidden rounded-2xl bg-gradient-to-r from-slate-800 via-slate-900 to-slate-800 p-6 md:p-8 text-white shadow-2xl">
+          {/* Background Pattern */}
+          <div className="absolute inset-0 bg-[url('data:image/svg+xml;base64,PHN2ZyB3aWR0aD0iNjAiIGhlaWdodD0iNjAiIHZpZXdCb3g9IjAgMCA2MCA2MCIgeG1sbnM9Imh0dHA6Ly93d3cudzMub3JnLzIwMDAvc3ZnIj48ZyBmaWxsPSJub25lIiBmaWxsLXJ1bGU9ImV2ZW5vZGQiPjxwYXRoIGQ9Ik0zNiAxOGMzLjMxNCAwIDYgMi42ODYgNiA2cy0yLjY4NiA2LTYgNi02LTIuNjg2LTYtNiAyLjY4Ni02IDYtNiIgc3Ryb2tlPSJyZ2JhKDI1NSwyNTUsMjU1LDAuMSkiLz48L2c+PC9zdmc+')] opacity-30" />
+          <div className="absolute top-0 right-0 w-64 h-64 bg-gradient-to-br from-emerald-500/20 to-transparent rounded-full blur-3xl" />
+          <div className="absolute bottom-0 left-0 w-48 h-48 bg-gradient-to-tr from-blue-400/10 to-transparent rounded-full blur-2xl" />
+          
+          <div className="relative flex flex-col md:flex-row md:items-center md:justify-between gap-4">
+            <div className="flex items-start gap-4">
+              <Avatar className="h-16 w-16 border-2 border-white/20 shadow-xl">
+                <AvatarImage src={corporateProfile.logo || undefined} />
+                <AvatarFallback className="bg-gradient-to-br from-emerald-500 to-emerald-600 text-white text-xl">
+                  <Building2 className="w-8 h-8" />
+                </AvatarFallback>
+              </Avatar>
+              <div>
+                <div className="flex items-center gap-3 mb-2">
+                  <div className="p-2 rounded-xl bg-gradient-to-br from-emerald-500 to-emerald-600 shadow-lg shadow-emerald-500/30">
+                    <Briefcase className="w-5 h-5" />
+                  </div>
+                  <Badge className="bg-white/10 text-white/90 border-white/20 font-medium">
+                    {currentTime.toLocaleDateString('en-US', { weekday: 'long', month: 'short', day: 'numeric' })}
+                  </Badge>
+                  <Badge className="bg-emerald-500/20 text-emerald-300 border-emerald-500/30">
+                    <Sparkles className="w-3 h-3 mr-1" />
+                    Live
+                  </Badge>
+                </div>
+                <h1 className="text-2xl md:text-3xl font-bold mb-1">
+                  {getGreeting()}, {corporateProfile.adminName}!
+                </h1>
+                <p className="text-slate-300 text-sm md:text-base flex items-center gap-2">
+                  <span>{corporateProfile.companyName}</span>
+                  <span className="w-1.5 h-1.5 rounded-full bg-emerald-400"></span>
+                  <span className="flex items-center gap-1">
+                    <Star className="w-4 h-4 text-amber-400 fill-amber-400" />
+                    {corporateProfile.plan}
+                  </span>
+                </p>
+              </div>
+            </div>
+            
+            <div className="flex gap-3">
+              <Button onClick={fetchDashboardData} variant="outline" className="bg-white/10 hover:bg-white/20 text-white border-white/20 hover:border-white/30">
+                <RefreshCw className="w-4 h-4 mr-2" />
+                Refresh
+              </Button>
+              <Button className="bg-gradient-to-r from-emerald-500 to-emerald-600 hover:from-emerald-600 hover:to-emerald-700 text-white shadow-lg shadow-emerald-500/30 border-0">
+                <Download className="w-4 h-4 mr-2" />
+                Export Report
+              </Button>
+            </div>
+          </div>
         </div>
 
-        {error && (
-          <div className="bg-yellow-50 border border-yellow-200 rounded-lg p-4">
-            <p className="text-yellow-800 text-sm">{error}</p>
+        {/* Stats Grid (Below Hero - Like DoctorDashboard) */}
+        {healthAnalytics && (
+          <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-4">
+            <Card className="bg-white dark:bg-slate-800/50 border-slate-200/80 dark:border-slate-700/50 hover:border-emerald-200 dark:hover:border-emerald-500/50 hover:shadow-lg hover:shadow-emerald-500/5 transition-all duration-300 overflow-hidden group">
+              <CardContent className="p-4">
+                <div className="flex items-center justify-between mb-3">
+                  <div className={cn("p-2 rounded-xl transition-colors bg-blue-500/10 group-hover:bg-emerald-500/20")}>
+                    <Users className={cn("w-5 h-5 transition-colors text-blue-500 group-hover:text-emerald-500")} />
+                  </div>
+                  <Badge variant="outline" className="text-xs border bg-emerald-50 dark:bg-emerald-900/30 text-emerald-600 dark:text-emerald-400 border-emerald-200 dark:border-emerald-700">
+                    <TrendingUp className="w-3 h-3 mr-1" />
+                    +5%
+                  </Badge>
+                </div>
+                <div>
+                  <p className="text-xs text-slate-500 dark:text-slate-400 font-medium mb-1">Total Employees</p>
+                  <div className="flex items-baseline gap-1">
+                    <span className="text-2xl font-bold text-slate-800 dark:text-white">{healthAnalytics.totalEmployees}</span>
+                  </div>
+                  <p className="text-xs text-slate-400 dark:text-slate-500 mt-1">All departments</p>
+                </div>
+              </CardContent>
+            </Card>
+
+            <Card className="bg-white dark:bg-slate-800/50 border-slate-200/80 dark:border-slate-700/50 hover:border-emerald-200 dark:hover:border-emerald-500/50 hover:shadow-lg hover:shadow-emerald-500/5 transition-all duration-300 overflow-hidden group">
+              <CardContent className="p-4">
+                <div className="flex items-center justify-between mb-3">
+                  <div className={cn("p-2 rounded-xl transition-colors bg-emerald-500/10 group-hover:bg-emerald-500/20")}>
+                    <Activity className={cn("w-5 h-5 transition-colors text-emerald-500")} />
+                  </div>
+                  <Badge variant="outline" className="text-xs border bg-emerald-50 dark:bg-emerald-900/30 text-emerald-600 dark:text-emerald-400 border-emerald-200 dark:border-emerald-700">
+                    <TrendingUp className="w-3 h-3 mr-1" />
+                    +8%
+                  </Badge>
+                </div>
+                <div>
+                  <p className="text-xs text-slate-500 dark:text-slate-400 font-medium mb-1">Monitored</p>
+                  <div className="flex items-baseline gap-1">
+                    <span className="text-2xl font-bold text-slate-800 dark:text-white">{healthAnalytics.monitoredEmployees}</span>
+                  </div>
+                  <p className="text-xs text-emerald-500 mt-1">{((healthAnalytics.monitoredEmployees / healthAnalytics.totalEmployees) * 100).toFixed(0)}% Coverage</p>
+                </div>
+              </CardContent>
+            </Card>
+
+            <Card className="bg-white dark:bg-slate-800/50 border-slate-200/80 dark:border-slate-700/50 hover:border-emerald-200 dark:hover:border-emerald-500/50 hover:shadow-lg hover:shadow-emerald-500/5 transition-all duration-300 overflow-hidden group">
+              <CardContent className="p-4">
+                <div className="flex items-center justify-between mb-3">
+                  <div className={cn("p-2 rounded-xl transition-colors bg-green-500/10 group-hover:bg-emerald-500/20")}>
+                    <CheckCircle className={cn("w-5 h-5 transition-colors text-green-500 group-hover:text-emerald-500")} />
+                  </div>
+                  <Badge variant="outline" className="text-xs border bg-emerald-50 dark:bg-emerald-900/30 text-emerald-600 dark:text-emerald-400 border-emerald-200 dark:border-emerald-700">
+                    <TrendingUp className="w-3 h-3 mr-1" />
+                    +12%
+                  </Badge>
+                </div>
+                <div>
+                  <p className="text-xs text-slate-500 dark:text-slate-400 font-medium mb-1">Healthy</p>
+                  <div className="flex items-baseline gap-1">
+                    <span className="text-2xl font-bold text-green-600 dark:text-green-400">{healthAnalytics.healthyEmployees}</span>
+                  </div>
+                  <p className="text-xs text-slate-400 dark:text-slate-500 mt-1">Low risk score</p>
+                </div>
+              </CardContent>
+            </Card>
+
+            <Card className="bg-white dark:bg-slate-800/50 border-slate-200/80 dark:border-slate-700/50 hover:border-amber-200 dark:hover:border-amber-500/50 hover:shadow-lg hover:shadow-amber-500/5 transition-all duration-300 overflow-hidden group">
+              <CardContent className="p-4">
+                <div className="flex items-center justify-between mb-3">
+                  <div className={cn("p-2 rounded-xl transition-colors bg-amber-500/10 group-hover:bg-amber-500/20")}>
+                    <AlertTriangle className={cn("w-5 h-5 transition-colors text-amber-500")} />
+                  </div>
+                  <Badge variant="outline" className="text-xs border bg-amber-50 dark:bg-amber-900/30 text-amber-600 dark:text-amber-400 border-amber-200 dark:border-amber-700">
+                    <TrendingDown className="w-3 h-3 mr-1" />
+                    -3%
+                  </Badge>
+                </div>
+                <div>
+                  <p className="text-xs text-slate-500 dark:text-slate-400 font-medium mb-1">At Risk</p>
+                  <div className="flex items-baseline gap-1">
+                    <span className="text-2xl font-bold text-amber-600 dark:text-amber-400">{healthAnalytics.atRiskEmployees}</span>
+                  </div>
+                  <p className="text-xs text-slate-400 dark:text-slate-500 mt-1">Needs attention</p>
+                </div>
+              </CardContent>
+            </Card>
+
+            <Card className="bg-white dark:bg-slate-800/50 border-slate-200/80 dark:border-slate-700/50 hover:border-red-200 dark:hover:border-red-500/50 hover:shadow-lg hover:shadow-red-500/5 transition-all duration-300 overflow-hidden group">
+              <CardContent className="p-4">
+                <div className="flex items-center justify-between mb-3">
+                  <div className={cn("p-2 rounded-xl transition-colors bg-red-500/10 group-hover:bg-red-500/20")}>
+                    <Shield className={cn("w-5 h-5 transition-colors text-red-500")} />
+                  </div>
+                  <Badge variant="outline" className="text-xs border bg-red-50 dark:bg-red-900/30 text-red-600 dark:text-red-400 border-red-200 dark:border-red-700">
+                    <TrendingDown className="w-3 h-3 mr-1" />
+                    -2
+                  </Badge>
+                </div>
+                <div>
+                  <p className="text-xs text-slate-500 dark:text-slate-400 font-medium mb-1">Critical</p>
+                  <div className="flex items-baseline gap-1">
+                    <span className="text-2xl font-bold text-red-600 dark:text-red-400">{healthAnalytics.criticalCases}</span>
+                  </div>
+                  <p className="text-xs text-slate-400 dark:text-slate-500 mt-1">Immediate action</p>
+                </div>
+              </CardContent>
+            </Card>
+
+            <Card className="bg-white dark:bg-slate-800/50 border-slate-200/80 dark:border-slate-700/50 hover:border-emerald-200 dark:hover:border-emerald-500/50 hover:shadow-lg hover:shadow-emerald-500/5 transition-all duration-300 overflow-hidden group">
+              <CardContent className="p-4">
+                <div className="flex items-center justify-between mb-3">
+                  <div className={cn("p-2 rounded-xl transition-colors bg-slate-500/10 group-hover:bg-emerald-500/20")}>
+                    <BarChart3 className={cn("w-5 h-5 transition-colors text-slate-500 group-hover:text-emerald-500")} />
+                  </div>
+                  <Badge variant="outline" className="text-xs border bg-emerald-50 dark:bg-emerald-900/30 text-emerald-600 dark:text-emerald-400 border-emerald-200 dark:border-emerald-700">
+                    <TrendingDown className="w-3 h-3 mr-1" />
+                    -2.5
+                  </Badge>
+                </div>
+                <div>
+                  <p className="text-xs text-slate-500 dark:text-slate-400 font-medium mb-1">Avg Risk Score</p>
+                  <div className="flex items-baseline gap-1">
+                    <span className={`text-2xl font-bold ${getRiskScoreColor(healthAnalytics.averageRiskScore)}`}>
+                      {healthAnalytics.averageRiskScore.toFixed(1)}
+                    </span>
+                  </div>
+                  <p className="text-xs text-slate-400 dark:text-slate-500 mt-1">Company avg</p>
+                </div>
+              </CardContent>
+            </Card>
           </div>
         )}
 
-        {/* Quick Actions Grid */}
-        <div className="grid md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6 mb-8">
-          {quickActions.map((action, index) => (
-            <Link 
-              key={index} 
-              to={action.link}
-              className="group"
-            >
-              <Card className={`
-                h-full transition-all duration-500
-                hover:shadow-xl ${action.color}
-                backdrop-blur-xl relative overflow-hidden
-                transform hover:-translate-y-1
-              `}>
-                <div className="absolute inset-0" style={{ background: action.pattern }} />
-                <CardContent className="p-6 relative">
-                  <div className="flex items-start justify-between mb-6">
-                    <div className={`
-                      p-3 rounded-xl ${action.color}
-                      transform transition-transform duration-300
-                      group-hover:scale-110 group-hover:rotate-3
-                    `}>
-                      <action.icon className={`w-8 h-8 ${action.iconColor}`} />
-                    </div>
-                    <ArrowRight className={`w-5 h-5 ${action.iconColor} transition-transform duration-300 group-hover:translate-x-2`} />
-                  </div>
-                  
-                  <h3 className="text-xl font-semibold mb-2">{action.title}</h3>
-                  <p className="text-muted-foreground">{action.description}</p>
-                </CardContent>
-              </Card>
+        {/* Quick Actions Section (DoctorDashboard Style) */}
+        <div>
+          <div className="flex items-center justify-between mb-4">
+            <h2 className="text-xl font-semibold text-slate-800 dark:text-white flex items-center gap-2">
+              <Zap className="w-5 h-5 text-amber-500" />
+              Quick Actions
+            </h2>
+            <Link to="/corporate/settings">
+              <Button variant="ghost" size="sm" className="text-emerald-600 hover:text-emerald-700">
+                Settings <ChevronRight className="w-4 h-4 ml-1" />
+              </Button>
             </Link>
-          ))}
+          </div>
+          <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-6 gap-4">
+            {quickActions.slice(0, 6).map((action, index) => (
+              <Link key={index} to={action.link} className="group">
+                <Card className="h-full bg-white dark:bg-slate-800/50 border-slate-200/80 dark:border-slate-700/50 hover:border-emerald-200 dark:hover:border-emerald-500/50 hover:shadow-lg hover:shadow-emerald-500/10 transition-all duration-300">
+                  <CardContent className="p-4">
+                    <div className={cn("p-3 rounded-xl w-fit mb-3 transition-all duration-300", action.color, "group-hover:scale-110")}>
+                      <action.icon className={cn("w-6 h-6", action.iconColor)} />
+                    </div>
+                    <h3 className="font-semibold text-slate-800 dark:text-white mb-1 group-hover:text-emerald-600 dark:group-hover:text-emerald-400 transition-colors text-sm">
+                      {action.title}
+                    </h3>
+                    <p className="text-xs text-slate-500 dark:text-slate-400 line-clamp-2">{action.description}</p>
+                  </CardContent>
+                </Card>
+              </Link>
+            ))}
+          </div>
         </div>
 
+        {/* More Actions Grid */}
+        <div>
+          <div className="flex items-center justify-between mb-4">
+            <h2 className="text-xl font-semibold text-slate-800 dark:text-white flex items-center gap-2">
+              <Activity className="w-5 h-5 text-emerald-500" />
+              Management Modules
+            </h2>
+          </div>
+          <div className="grid md:grid-cols-2 lg:grid-cols-3 gap-4">
+            {quickActions.slice(6).map((action, index) => (
+              <Link key={index} to={action.link} className="group">
+                <Card className="h-full bg-white dark:bg-slate-800/50 border-slate-200/80 dark:border-slate-700/50 hover:border-emerald-200 dark:hover:border-emerald-500/50 hover:shadow-lg hover:shadow-emerald-500/10 transition-all duration-300 overflow-hidden">
+                  <div className="absolute inset-0 opacity-0 group-hover:opacity-100 transition-opacity" style={{ background: action.pattern }} />
+                  <CardContent className="p-5 relative flex items-center gap-4">
+                    <div className={cn("p-3 rounded-xl transition-all duration-300", action.color, "group-hover:scale-110 group-hover:rotate-3")}>
+                      <action.icon className={cn("w-6 h-6", action.iconColor)} />
+                    </div>
+                    <div className="flex-1">
+                      <h3 className="font-semibold text-slate-800 dark:text-white group-hover:text-emerald-600 dark:group-hover:text-emerald-400 transition-colors">
+                        {action.title}
+                      </h3>
+                      <p className="text-sm text-slate-500 dark:text-slate-400">{action.description}</p>
+                    </div>
+                    <ArrowRight className={cn("w-5 h-5 text-slate-400 transition-all duration-300 group-hover:translate-x-2", action.iconColor)} />
+                  </CardContent>
+                </Card>
+              </Link>
+            ))}
+          </div>
+        </div>
+
+        {error && (
+          <div className="bg-amber-50 dark:bg-amber-900/20 border border-amber-200 dark:border-amber-700 rounded-lg p-4">
+            <p className="text-amber-800 dark:text-amber-200 text-sm">{error}</p>
+          </div>
+        )}
+
         <Tabs value={activeTab} onValueChange={setActiveTab} className="space-y-6">
-          <TabsList className="grid w-full grid-cols-4 lg:w-auto lg:inline-grid">
-            <TabsTrigger value="overview">
+          <TabsList className="grid w-full grid-cols-4 lg:w-auto lg:inline-grid bg-white dark:bg-slate-800/50 border border-slate-200/80 dark:border-slate-700/50 p-1 rounded-xl">
+            <TabsTrigger value="overview" className="data-[state=active]:bg-emerald-500 data-[state=active]:text-white rounded-lg">
               <BarChart3 className="w-4 h-4 mr-2" />
               Overview
             </TabsTrigger>
-            <TabsTrigger value="employees">
+            <TabsTrigger value="employees" className="data-[state=active]:bg-emerald-500 data-[state=active]:text-white rounded-lg">
               <Users className="w-4 h-4 mr-2" />
               Employees
             </TabsTrigger>
-            <TabsTrigger value="appointments">
+            <TabsTrigger value="appointments" className="data-[state=active]:bg-emerald-500 data-[state=active]:text-white rounded-lg">
               <CalendarCheck className="w-4 h-4 mr-2" />
               Appointments
             </TabsTrigger>
-            <TabsTrigger value="departments">
+            <TabsTrigger value="departments" className="data-[state=active]:bg-emerald-500 data-[state=active]:text-white rounded-lg">
               <Activity className="w-4 h-4 mr-2" />
               Departments
             </TabsTrigger>
@@ -760,82 +998,12 @@ const CorporateDashboard = () => {
 
           {/* Overview Tab */}
           <TabsContent value="overview" className="space-y-6">
-            {/* Key Stats */}
-            {healthAnalytics && (
-              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-6 gap-4">
-                <Card className="p-4">
-                  <div className="flex items-center justify-between">
-                    <div>
-                      <p className="text-xs text-muted">Total Employees</p>
-                      <p className="text-2xl font-bold mt-1">{healthAnalytics.totalEmployees}</p>
-                    </div>
-                    <Users className="w-8 h-8 text-primary" />
-                  </div>
-                </Card>
-
-                <Card className="p-4">
-                  <div className="flex items-center justify-between">
-                    <div>
-                      <p className="text-xs text-muted">Monitored</p>
-                      <p className="text-2xl font-bold mt-1">{healthAnalytics.monitoredEmployees}</p>
-                      <p className="text-xs text-success">
-                        {((healthAnalytics.monitoredEmployees / healthAnalytics.totalEmployees) * 100).toFixed(0)}% Coverage
-                      </p>
-                    </div>
-                    <Activity className="w-8 h-8 text-success" />
-                  </div>
-                </Card>
-
-                <Card className="p-4 bg-green-50">
-                  <div className="flex items-center justify-between">
-                    <div>
-                      <p className="text-xs text-green-700">Healthy</p>
-                      <p className="text-2xl font-bold text-green-700 mt-1">{healthAnalytics.healthyEmployees}</p>
-                    </div>
-                    <CheckCircle className="w-8 h-8 text-green-600" />
-                  </div>
-                </Card>
-
-                <Card className="p-4 bg-yellow-50">
-                  <div className="flex items-center justify-between">
-                    <div>
-                      <p className="text-xs text-yellow-700">At Risk</p>
-                      <p className="text-2xl font-bold text-yellow-700 mt-1">{healthAnalytics.atRiskEmployees}</p>
-                    </div>
-                    <AlertTriangle className="w-8 h-8 text-yellow-600" />
-                  </div>
-                </Card>
-
-                <Card className="p-4 bg-red-50">
-                  <div className="flex items-center justify-between">
-                    <div>
-                      <p className="text-xs text-red-700">Critical Cases</p>
-                      <p className="text-2xl font-bold text-red-700 mt-1">{healthAnalytics.criticalCases}</p>
-                    </div>
-                    <Shield className="w-8 h-8 text-red-600" />
-                  </div>
-                </Card>
-
-                <Card className="p-4">
-                  <div className="flex items-center justify-between">
-                    <div>
-                      <p className="text-xs text-gray-600">Avg Risk Score</p>
-                      <p className={`text-2xl font-bold mt-1 ${getRiskScoreColor(healthAnalytics.averageRiskScore)}`}>
-                        {healthAnalytics.averageRiskScore.toFixed(1)}
-                      </p>
-                    </div>
-                    <TrendingDown className="w-8 h-8 text-gray-500" />
-                  </div>
-                </Card>
-              </div>
-            )}
-
             {/* Charts Row */}
             {healthAnalytics && (
               <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
                 {/* Risk Distribution */}
-                <Card className="p-6">
-                  <h3 className="text-lg font-semibold mb-4">Risk Distribution</h3>
+                <Card className="p-6 bg-white dark:bg-slate-800/50 border-slate-200/80 dark:border-slate-700/50">
+                  <h3 className="text-lg font-semibold mb-4 text-slate-800 dark:text-white">Risk Distribution</h3>
                   <ResponsiveContainer width="100%" height={300}>
                     <RechartsPieChart>
                       <Pie
@@ -863,22 +1031,22 @@ const CorporateDashboard = () => {
                 </Card>
 
                 {/* Common Health Conditions */}
-                <Card className="p-6">
-                  <h3 className="text-lg font-semibold mb-4">Common Health Conditions</h3>
+                <Card className="p-6 bg-white dark:bg-slate-800/50 border-slate-200/80 dark:border-slate-700/50">
+                  <h3 className="text-lg font-semibold mb-4 text-slate-800 dark:text-white">Common Health Conditions</h3>
                   <ResponsiveContainer width="100%" height={300}>
                     <BarChart data={healthAnalytics.commonConditions}>
                       <CartesianGrid strokeDasharray="3 3" />
                       <XAxis dataKey="condition" angle={-45} textAnchor="end" height={100} />
                       <YAxis />
                       <Tooltip />
-                      <Bar dataKey="count" fill="#3b82f6" />
+                      <Bar dataKey="count" fill="#10b981" />
                     </BarChart>
                   </ResponsiveContainer>
                 </Card>
 
                 {/* Health Trend */}
-                <Card className="p-6 lg:col-span-2">
-                  <h3 className="text-lg font-semibold mb-4">Health Risk Trends (Last 6 Months)</h3>
+                <Card className="p-6 lg:col-span-2 bg-white dark:bg-slate-800/50 border-slate-200/80 dark:border-slate-700/50">
+                  <h3 className="text-lg font-semibold mb-4 text-slate-800 dark:text-white">Health Risk Trends (Last 6 Months)</h3>
                   <ResponsiveContainer width="100%" height={300}>
                     <BarChart data={healthAnalytics.trendData}>
                       <CartesianGrid strokeDasharray="3 3" />
@@ -898,23 +1066,23 @@ const CorporateDashboard = () => {
           {/* Employees Tab */}
           <TabsContent value="employees" className="space-y-4">
             {/* Filters */}
-            <Card className="p-4">
+            <Card className="p-4 bg-white dark:bg-slate-800/50 border-slate-200/80 dark:border-slate-700/50">
               <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
                 <div className="relative">
-                  <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
+                  <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400" />
                   <input
                     type="text"
                     placeholder="Search employees..."
                     value={searchQuery}
                     onChange={(e) => setSearchQuery(e.target.value)}
-                    className="w-full pl-10 pr-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                    className="w-full pl-10 pr-4 py-2 border border-slate-200 dark:border-slate-700 rounded-lg bg-white dark:bg-slate-800 text-slate-800 dark:text-white placeholder:text-slate-400 focus:ring-2 focus:ring-emerald-500 focus:border-transparent"
                   />
                 </div>
 
                 <select
                   value={riskFilter}
                   onChange={(e) => setRiskFilter(e.target.value)}
-                  className="px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                  className="px-4 py-2 border border-slate-200 dark:border-slate-700 rounded-lg bg-white dark:bg-slate-800 text-slate-800 dark:text-white focus:ring-2 focus:ring-emerald-500 focus:border-transparent"
                 >
                   <option value="all">All Risk Levels</option>
                   <option value="low">Low Risk</option>
@@ -926,7 +1094,7 @@ const CorporateDashboard = () => {
                 <select
                   value={departmentFilter}
                   onChange={(e) => setDepartmentFilter(e.target.value)}
-                  className="px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                  className="px-4 py-2 border border-slate-200 dark:border-slate-700 rounded-lg bg-white dark:bg-slate-800 text-slate-800 dark:text-white focus:ring-2 focus:ring-emerald-500 focus:border-transparent"
                 >
                   <option value="all">All Departments</option>
                   {healthAnalytics?.departmentRisks.map(dept => (
@@ -934,7 +1102,7 @@ const CorporateDashboard = () => {
                   ))}
                 </select>
 
-                <Button variant="outline" onClick={() => {
+                <Button variant="outline" className="border-slate-200 dark:border-slate-700 hover:bg-slate-100 dark:hover:bg-slate-700" onClick={() => {
                   setSearchQuery('');
                   setRiskFilter('all');
                   setDepartmentFilter('all');
@@ -948,16 +1116,16 @@ const CorporateDashboard = () => {
             {/* Employee List */}
             <div className="grid grid-cols-1 gap-4">
               {filteredEmployees.map(employee => (
-                <Card key={employee.id} className="p-6 hover:shadow-lg transition-shadow">
+                <Card key={employee.id} className="p-6 bg-white dark:bg-slate-800/50 border-slate-200/80 dark:border-slate-700/50 hover:shadow-lg hover:border-emerald-200 dark:hover:border-emerald-500/30 transition-all">
                   <div className="flex justify-between items-start">
                     <div className="flex-1">
                       <div className="flex items-center gap-3 mb-2">
-                        <h3 className="text-lg font-semibold">{employee.name}</h3>
+                        <h3 className="text-lg font-semibold text-slate-800 dark:text-white">{employee.name}</h3>
                         <Badge className={`${getRiskColor(employee.riskLevel)} border`}>
                           {employee.riskLevel.toUpperCase()}
                         </Badge>
                         {employee.deviceConnected && (
-                          <Badge variant="outline" className="bg-blue-50">
+                          <Badge variant="outline" className="bg-blue-50 dark:bg-blue-900/30 text-blue-700 dark:text-blue-400 border-blue-200 dark:border-blue-700">
                             <Activity className="w-3 h-3 mr-1" />
                             Device Active
                           </Badge>
@@ -965,19 +1133,19 @@ const CorporateDashboard = () => {
                       </div>
                       <div className="grid grid-cols-2 md:grid-cols-4 gap-4 text-sm">
                         <div>
-                          <p className="text-gray-600">Employee ID</p>
-                          <p className="font-medium">{employee.employeeId}</p>
+                          <p className="text-slate-500 dark:text-slate-400">Employee ID</p>
+                          <p className="font-medium text-slate-800 dark:text-white">{employee.employeeId}</p>
                         </div>
                         <div>
-                          <p className="text-gray-600">Department</p>
-                          <p className="font-medium">{employee.department}</p>
+                          <p className="text-slate-500 dark:text-slate-400">Department</p>
+                          <p className="font-medium text-slate-800 dark:text-white">{employee.department}</p>
                         </div>
                         <div>
-                          <p className="text-gray-600">Designation</p>
-                          <p className="font-medium">{employee.designation}</p>
+                          <p className="text-slate-500 dark:text-slate-400">Designation</p>
+                          <p className="font-medium text-slate-800 dark:text-white">{employee.designation}</p>
                         </div>
                         <div>
-                          <p className="text-gray-600">Risk Score</p>
+                          <p className="text-slate-500 dark:text-slate-400">Risk Score</p>
                           <p className={`font-bold ${getRiskScoreColor(employee.riskScore)}`}>
                             {employee.riskScore}/100
                           </p>
@@ -985,34 +1153,34 @@ const CorporateDashboard = () => {
                       </div>
 
                       <div className="mt-3 grid grid-cols-2 md:grid-cols-5 gap-3">
-                        <div className="bg-gray-50 p-2 rounded">
-                          <p className="text-xs text-gray-600">BMI</p>
-                          <p className="font-semibold">{employee.bmi}</p>
+                        <div className="bg-slate-50 dark:bg-slate-800 p-2 rounded-lg border border-slate-100 dark:border-slate-700">
+                          <p className="text-xs text-slate-500 dark:text-slate-400">BMI</p>
+                          <p className="font-semibold text-slate-800 dark:text-white">{employee.bmi}</p>
                         </div>
-                        <div className="bg-gray-50 p-2 rounded">
-                          <p className="text-xs text-gray-600">BP</p>
-                          <p className="font-semibold">{employee.bloodPressure}</p>
+                        <div className="bg-slate-50 dark:bg-slate-800 p-2 rounded-lg border border-slate-100 dark:border-slate-700">
+                          <p className="text-xs text-slate-500 dark:text-slate-400">BP</p>
+                          <p className="font-semibold text-slate-800 dark:text-white">{employee.bloodPressure}</p>
                         </div>
-                        <div className="bg-gray-50 p-2 rounded">
-                          <p className="text-xs text-gray-600">Blood Sugar</p>
-                          <p className="font-semibold">{employee.bloodSugar} mg/dL</p>
+                        <div className="bg-slate-50 dark:bg-slate-800 p-2 rounded-lg border border-slate-100 dark:border-slate-700">
+                          <p className="text-xs text-slate-500 dark:text-slate-400">Blood Sugar</p>
+                          <p className="font-semibold text-slate-800 dark:text-white">{employee.bloodSugar} mg/dL</p>
                         </div>
-                        <div className="bg-gray-50 p-2 rounded">
-                          <p className="text-xs text-gray-600">Cholesterol</p>
-                          <p className="font-semibold">{employee.cholesterol} mg/dL</p>
+                        <div className="bg-slate-50 dark:bg-slate-800 p-2 rounded-lg border border-slate-100 dark:border-slate-700">
+                          <p className="text-xs text-slate-500 dark:text-slate-400">Cholesterol</p>
+                          <p className="font-semibold text-slate-800 dark:text-white">{employee.cholesterol} mg/dL</p>
                         </div>
-                        <div className="bg-gray-50 p-2 rounded">
-                          <p className="text-xs text-gray-600">Absenteeism</p>
-                          <p className="font-semibold">{employee.absenteeismDays} days</p>
+                        <div className="bg-slate-50 dark:bg-slate-800 p-2 rounded-lg border border-slate-100 dark:border-slate-700">
+                          <p className="text-xs text-slate-500 dark:text-slate-400">Absenteeism</p>
+                          <p className="font-semibold text-slate-800 dark:text-white">{employee.absenteeismDays} days</p>
                         </div>
                       </div>
 
                       {employee.healthConditions.length > 0 && (
                         <div className="mt-3">
-                          <p className="text-xs text-gray-600 mb-1">Health Conditions:</p>
+                          <p className="text-xs text-slate-500 dark:text-slate-400 mb-1">Health Conditions:</p>
                           <div className="flex flex-wrap gap-1">
                             {employee.healthConditions.map((condition, idx) => (
-                              <Badge key={idx} variant="outline" className="text-xs">
+                              <Badge key={idx} variant="outline" className="text-xs border-slate-200 dark:border-slate-700 text-slate-600 dark:text-slate-300">
                                 {condition}
                               </Badge>
                             ))}
@@ -1022,7 +1190,7 @@ const CorporateDashboard = () => {
                     </div>
 
                     <Link to={`/corporate/employee/${employee.id}/health`}>
-                      <Button variant="outline" size="sm">
+                      <Button variant="outline" size="sm" className="border-slate-200 dark:border-slate-700 hover:border-emerald-300 dark:hover:border-emerald-600">
                         <Eye className="w-4 h-4 mr-2" />
                         View Details
                       </Button>
@@ -1033,9 +1201,9 @@ const CorporateDashboard = () => {
             </div>
 
             {filteredEmployees.length === 0 && (
-              <Card className="p-8 text-center">
-                <UserX className="w-12 h-12 text-gray-400 mx-auto mb-2" />
-                <p className="text-gray-600">No employees found matching your filters</p>
+              <Card className="p-8 text-center bg-white dark:bg-slate-800/50 border-slate-200/80 dark:border-slate-700/50">
+                <UserX className="w-12 h-12 text-slate-400 dark:text-slate-500 mx-auto mb-2" />
+                <p className="text-slate-600 dark:text-slate-400">No employees found matching your filters</p>
               </Card>
             )}
           </TabsContent>
@@ -1044,71 +1212,71 @@ const CorporateDashboard = () => {
           <TabsContent value="appointments" className="space-y-4">
             {/* Appointment Stats */}
             <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
-              <Card className="p-4">
+              <Card className="p-4 bg-white dark:bg-slate-800/50 border-slate-200/80 dark:border-slate-700/50">
                 <div className="flex items-center justify-between">
                   <div>
-                    <p className="text-xs text-muted">Total Appointments</p>
-                    <p className="text-2xl font-bold mt-1">{appointments.length}</p>
+                    <p className="text-xs text-slate-500 dark:text-slate-400">Total Appointments</p>
+                    <p className="text-2xl font-bold mt-1 text-slate-800 dark:text-white">{appointments.length}</p>
                   </div>
-                  <CalendarCheck className="w-8 h-8 text-primary" />
+                  <CalendarCheck className="w-8 h-8 text-emerald-500" />
                 </div>
               </Card>
 
-              <Card className="p-4 card-info">
+              <Card className="p-4 bg-blue-50 dark:bg-blue-900/20 border-blue-200 dark:border-blue-800">
                 <div className="flex items-center justify-between">
                   <div>
-                    <p className="text-xs text-info">Scheduled</p>
-                    <p className="text-2xl font-bold text-info mt-1">
+                    <p className="text-xs text-blue-600 dark:text-blue-400">Scheduled</p>
+                    <p className="text-2xl font-bold text-blue-700 dark:text-blue-300 mt-1">
                       {appointments.filter(a => a.status === 'scheduled').length}
                     </p>
                   </div>
-                  <Clock className="w-8 h-8 text-info" />
+                  <Clock className="w-8 h-8 text-blue-500" />
                 </div>
               </Card>
 
-              <Card className="p-4 bg-green-50">
+              <Card className="p-4 bg-green-50 dark:bg-green-900/20 border-green-200 dark:border-green-800">
                 <div className="flex items-center justify-between">
                   <div>
-                    <p className="text-xs text-green-700">Completed</p>
-                    <p className="text-2xl font-bold text-green-700 mt-1">
+                    <p className="text-xs text-green-600 dark:text-green-400">Completed</p>
+                    <p className="text-2xl font-bold text-green-700 dark:text-green-300 mt-1">
                       {appointments.filter(a => a.status === 'completed').length}
                     </p>
                   </div>
-                  <CheckCircle className="w-8 h-8 text-green-600" />
+                  <CheckCircle className="w-8 h-8 text-green-500" />
                 </div>
               </Card>
 
-              <Card className="p-4">
+              <Card className="p-4 bg-white dark:bg-slate-800/50 border-slate-200/80 dark:border-slate-700/50">
                 <div className="flex items-center justify-between">
                   <div>
-                    <p className="text-xs text-gray-600">Total Claims</p>
-                    <p className="text-2xl font-bold mt-1">
+                    <p className="text-xs text-slate-500 dark:text-slate-400">Total Claims</p>
+                    <p className="text-2xl font-bold mt-1 text-slate-800 dark:text-white">
                       ₹{appointments.reduce((sum, a) => sum + a.claimAmount, 0).toLocaleString()}
                     </p>
                   </div>
-                  <FileText className="w-8 h-8 text-gray-500" />
+                  <FileText className="w-8 h-8 text-slate-500 dark:text-slate-400" />
                 </div>
               </Card>
             </div>
 
             {/* Filters */}
-            <Card className="p-4">
+            <Card className="p-4 bg-white dark:bg-slate-800/50 border-slate-200/80 dark:border-slate-700/50">
               <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
                 <div className="relative">
-                  <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
+                  <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400" />
                   <input
                     type="text"
                     placeholder="Search appointments..."
                     value={searchQuery}
                     onChange={(e) => setSearchQuery(e.target.value)}
-                    className="w-full pl-10 pr-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                    className="w-full pl-10 pr-4 py-2 border border-slate-200 dark:border-slate-700 rounded-lg bg-white dark:bg-slate-800 text-slate-800 dark:text-white placeholder:text-slate-400 focus:ring-2 focus:ring-emerald-500 focus:border-transparent"
                   />
                 </div>
 
                 <select
                   value={appointmentStatusFilter}
                   onChange={(e) => setAppointmentStatusFilter(e.target.value)}
-                  className="px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                  className="px-4 py-2 border border-slate-200 dark:border-slate-700 rounded-lg bg-white dark:bg-slate-800 text-slate-800 dark:text-white focus:ring-2 focus:ring-emerald-500 focus:border-transparent"
                 >
                   <option value="all">All Statuses</option>
                   <option value="scheduled">Scheduled</option>
@@ -1120,7 +1288,7 @@ const CorporateDashboard = () => {
                 <select
                   value={appointmentTypeFilter}
                   onChange={(e) => setAppointmentTypeFilter(e.target.value)}
-                  className="px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                  className="px-4 py-2 border border-slate-200 dark:border-slate-700 rounded-lg bg-white dark:bg-slate-800 text-slate-800 dark:text-white focus:ring-2 focus:ring-emerald-500 focus:border-transparent"
                 >
                   <option value="all">All Types</option>
                   <option value="Annual Checkup">Annual Checkup</option>
@@ -1133,7 +1301,7 @@ const CorporateDashboard = () => {
                 <select
                   value={departmentFilter}
                   onChange={(e) => setDepartmentFilter(e.target.value)}
-                  className="px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                  className="px-4 py-2 border border-slate-200 dark:border-slate-700 rounded-lg bg-white dark:bg-slate-800 text-slate-800 dark:text-white focus:ring-2 focus:ring-emerald-500 focus:border-transparent"
                 >
                   <option value="all">All Departments</option>
                   {healthAnalytics?.departmentRisks.map(dept => (
@@ -1146,23 +1314,23 @@ const CorporateDashboard = () => {
             {/* Appointments List */}
             <div className="grid grid-cols-1 gap-4">
               {filteredAppointments.map(appointment => (
-                <Card key={appointment.id} className="p-6 hover:shadow-lg transition-shadow">
+                <Card key={appointment.id} className="p-6 bg-white dark:bg-slate-800/50 border-slate-200/80 dark:border-slate-700/50 hover:shadow-lg hover:border-emerald-200 dark:hover:border-emerald-500/30 transition-all">
                   <div className="flex justify-between items-start">
                     <div className="flex-1">
                       <div className="flex items-center gap-3 mb-3">
                         <Badge className={`${getStatusColor(appointment.status)} border`}>
                           {appointment.status.toUpperCase()}
                         </Badge>
-                        <Badge variant="outline" className="bg-blue-50">
+                        <Badge variant="outline" className="bg-blue-50 dark:bg-blue-900/30 text-blue-700 dark:text-blue-400 border-blue-200 dark:border-blue-700">
                           {appointment.appointmentType}
                         </Badge>
-                        <span className="text-sm text-gray-600">#{appointment.appointmentId}</span>
+                        <span className="text-sm text-slate-500 dark:text-slate-400">#{appointment.appointmentId}</span>
                       </div>
 
                       <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-3">
                         <div>
-                          <h3 className="text-lg font-semibold mb-1">{appointment.employeeName}</h3>
-                          <div className="space-y-1 text-sm text-gray-600">
+                          <h3 className="text-lg font-semibold mb-1 text-slate-800 dark:text-white">{appointment.employeeName}</h3>
+                          <div className="space-y-1 text-sm text-slate-500 dark:text-slate-400">
                             <div className="flex items-center gap-2">
                               <Users className="w-4 h-4" />
                               <span>{appointment.employeeId} • {appointment.department}</span>
@@ -1179,8 +1347,8 @@ const CorporateDashboard = () => {
                         </div>
 
                         <div>
-                          <h4 className="font-semibold text-gray-900 mb-1">Appointment Details</h4>
-                          <div className="space-y-1 text-sm text-gray-600">
+                          <h4 className="font-semibold text-slate-800 dark:text-white mb-1">Appointment Details</h4>
+                          <div className="space-y-1 text-sm text-slate-500 dark:text-slate-400">
                             <div className="flex items-center gap-2">
                               <Stethoscope className="w-4 h-4" />
                               <span>{appointment.doctor} ({appointment.specialty})</span>
@@ -1201,30 +1369,30 @@ const CorporateDashboard = () => {
                         </div>
                       </div>
 
-                      <div className="flex items-center justify-between pt-3 border-t border-gray-200">
+                      <div className="flex items-center justify-between pt-3 border-t border-slate-200 dark:border-slate-700">
                         <div className="flex items-center gap-4 text-sm">
                           <div>
-                            <span className="text-gray-600">Benefit Type: </span>
-                            <span className="font-medium">{appointment.benefitType}</span>
+                            <span className="text-slate-500 dark:text-slate-400">Benefit Type: </span>
+                            <span className="font-medium text-slate-700 dark:text-slate-300">{appointment.benefitType}</span>
                           </div>
                           <div>
-                            <span className="text-gray-600">Claim Amount: </span>
-                            <span className="font-bold text-green-600">₹{appointment.claimAmount.toLocaleString()}</span>
+                            <span className="text-slate-500 dark:text-slate-400">Claim Amount: </span>
+                            <span className="font-bold text-green-600 dark:text-green-400">₹{appointment.claimAmount.toLocaleString()}</span>
                           </div>
                           <div>
-                            <span className="text-gray-600">Booked On: </span>
-                            <span className="font-medium">{new Date(appointment.bookedOn).toLocaleDateString('en-IN')}</span>
+                            <span className="text-slate-500 dark:text-slate-400">Booked On: </span>
+                            <span className="font-medium text-slate-700 dark:text-slate-300">{new Date(appointment.bookedOn).toLocaleDateString('en-IN')}</span>
                           </div>
                         </div>
 
-                        <Button variant="outline" size="sm">
+                        <Button variant="outline" size="sm" className="border-slate-200 dark:border-slate-700 hover:border-emerald-300 dark:hover:border-emerald-600">
                           <Eye className="w-4 h-4 mr-2" />
                           View Details
                         </Button>
                       </div>
 
                       {appointment.notes && (
-                        <div className="mt-3 p-2 bg-gray-50 rounded text-sm text-gray-700">
+                        <div className="mt-3 p-2 bg-slate-50 dark:bg-slate-800 rounded-lg text-sm text-slate-600 dark:text-slate-300 border border-slate-100 dark:border-slate-700">
                           <span className="font-medium">Notes: </span>{appointment.notes}
                         </div>
                       )}
@@ -1235,9 +1403,9 @@ const CorporateDashboard = () => {
             </div>
 
             {filteredAppointments.length === 0 && (
-              <Card className="p-8 text-center">
-                <CalendarCheck className="w-12 h-12 text-gray-400 mx-auto mb-2" />
-                <p className="text-gray-600">No appointments found matching your filters</p>
+              <Card className="p-8 text-center bg-white dark:bg-slate-800/50 border-slate-200/80 dark:border-slate-700/50">
+                <CalendarCheck className="w-12 h-12 text-slate-400 dark:text-slate-500 mx-auto mb-2" />
+                <p className="text-slate-600 dark:text-slate-400">No appointments found matching your filters</p>
               </Card>
             )}
           </TabsContent>
@@ -1245,16 +1413,16 @@ const CorporateDashboard = () => {
           {/* Departments Tab */}
           <TabsContent value="departments" className="space-y-4">
             {healthAnalytics?.departmentRisks.map(dept => (
-              <Card key={dept.department} className="p-6">
+              <Card key={dept.department} className="p-6 bg-white dark:bg-slate-800/50 border-slate-200/80 dark:border-slate-700/50 hover:shadow-lg hover:border-emerald-200 dark:hover:border-emerald-500/30 transition-all">
                 <div className="flex justify-between items-start mb-4">
                   <div>
-                    <h3 className="text-xl font-semibold">{dept.department}</h3>
-                    <p className="text-sm text-gray-600 mt-1">
+                    <h3 className="text-xl font-semibold text-slate-800 dark:text-white">{dept.department}</h3>
+                    <p className="text-sm text-slate-500 dark:text-slate-400 mt-1">
                       {dept.totalEmployees} employees • {dept.highRisk} at high risk
                     </p>
                   </div>
                   <div className="text-right">
-                    <p className="text-sm text-gray-600">Avg Risk Score</p>
+                    <p className="text-sm text-slate-500 dark:text-slate-400">Avg Risk Score</p>
                     <p className={`text-2xl font-bold ${getRiskScoreColor(dept.avgRiskScore)}`}>
                       {dept.avgRiskScore.toFixed(1)}
                     </p>
@@ -1262,19 +1430,19 @@ const CorporateDashboard = () => {
                 </div>
 
                 <div className="grid grid-cols-3 gap-4">
-                  <div className="bg-green-50 p-3 rounded-lg">
-                    <p className="text-sm text-green-700">Low Risk</p>
-                    <p className="text-2xl font-bold text-green-700">
+                  <div className="bg-green-50 dark:bg-green-900/20 p-3 rounded-lg border border-green-100 dark:border-green-800">
+                    <p className="text-sm text-green-600 dark:text-green-400">Low Risk</p>
+                    <p className="text-2xl font-bold text-green-700 dark:text-green-300">
                       {dept.totalEmployees - dept.highRisk}
                     </p>
                   </div>
-                  <div className="bg-orange-50 p-3 rounded-lg">
-                    <p className="text-sm text-orange-700">High Risk</p>
-                    <p className="text-2xl font-bold text-orange-700">{dept.highRisk}</p>
+                  <div className="bg-orange-50 dark:bg-orange-900/20 p-3 rounded-lg border border-orange-100 dark:border-orange-800">
+                    <p className="text-sm text-orange-600 dark:text-orange-400">High Risk</p>
+                    <p className="text-2xl font-bold text-orange-700 dark:text-orange-300">{dept.highRisk}</p>
                   </div>
-                  <div className="bg-blue-50 p-3 rounded-lg">
-                    <p className="text-sm text-blue-700">Coverage</p>
-                    <p className="text-2xl font-bold text-blue-700">
+                  <div className="bg-blue-50 dark:bg-blue-900/20 p-3 rounded-lg border border-blue-100 dark:border-blue-800">
+                    <p className="text-sm text-blue-600 dark:text-blue-400">Coverage</p>
+                    <p className="text-2xl font-bold text-blue-700 dark:text-blue-300">
                       {((dept.totalEmployees / (healthAnalytics?.totalEmployees || 1)) * 100).toFixed(0)}%
                     </p>
                   </div>

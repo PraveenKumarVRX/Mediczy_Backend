@@ -54,6 +54,7 @@ const UsersManagement = () => {
   const [editingUser, setEditingUser] = useState<MemberUser | null>(null);
   const [viewingUser, setViewingUser] = useState<MemberUser | null>(null);
   const [viewMode, setViewMode] = useState<'grid' | 'table'>('grid');
+  const firstNameInputRef = useRef<HTMLInputElement | null>(null);
   const [activeTab, setActiveTab] = useState<'list' | 'create' | 'bulk'>('list');
   const token = localStorage.getItem('adminToken');
 
@@ -201,6 +202,14 @@ const UsersManagement = () => {
             <div className="text-sm text-muted-foreground">
               Total: {memberUsers.length} members
             </div>
+            <Button
+              onClick={() => {
+                setActiveTab('create');
+                setTimeout(() => firstNameInputRef.current?.focus(), 50);
+              }}
+            >
+              Add / Invite Member
+            </Button>
           </div>
         </div>
 
@@ -612,6 +621,7 @@ const UsersManagement = () => {
                       <div>
                         <Label>First Name *</Label>
                         <Input
+                          ref={firstNameInputRef}
                           required
                           value={newUser.firstName}
                           onChange={(e) => setNewUser({...newUser, firstName: e.target.value})}

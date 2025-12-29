@@ -30,6 +30,7 @@ const ClinicDashboard = () => {
   const [patientFilter, setPatientFilter] = useState<'all' | 'due-soon'>('all');
   const [showCreateInvoice, setShowCreateInvoice] = useState(false);
   const [showAddInventory, setShowAddInventory] = useState(false);
+  const [showManageInventory, setShowManageInventory] = useState(false);
   const [showViewAppointment, setShowViewAppointment] = useState(false);
   const [selectedAppointment, setSelectedAppointment] = useState<any>(null);
   const [sendingReminder, setSendingReminder] = useState(false);
@@ -70,6 +71,12 @@ const ClinicDashboard = () => {
     name: '',
     qty: '',
   });
+  const [manageInventoryForm, setManageInventoryForm] = useState({
+    name: '',
+    qty: '',
+    status: 'In Stock' as 'In Stock' | 'Low Stock' | 'Out of Stock',
+  });
+  const [selectedInventoryItem, setSelectedInventoryItem] = useState<(typeof inventoryItems)[number] | null>(null);
   const [appointmentForm, setAppointmentForm] = useState({
     patientName: '',
     patientPhone: '',
@@ -221,6 +228,31 @@ const ClinicDashboard = () => {
     setShowAddInventory(false);
     setInventoryForm({ name: '', qty: '' });
     toast.success('Inventory item added');
+  };
+
+  const openManageInventory = (item: (typeof inventoryItems)[number]) => {
+    setSelectedInventoryItem(item);
+    setManageInventoryForm({ name: item.name, qty: String(item.qty), status: item.status });
+    setShowManageInventory(true);
+  };
+
+  const handleUpdateInventoryItem = () => {
+    if (!selectedInventoryItem) return;
+    if (!manageInventoryForm.name.trim() || !manageInventoryForm.qty.trim()) {
+      toast.error('Item name and quantity are required');
+      return;
+    }
+    const qty = Number(manageInventoryForm.qty);
+    if (!Number.isFinite(qty) || qty < 0) {
+      toast.error('Enter a valid quantity');
+      return;
+    }
+    setInventoryItems((prev) => prev.map((item) => item.id === selectedInventoryItem.id
+      ? { ...item, name: manageInventoryForm.name.trim(), qty, status: manageInventoryForm.status }
+      : item));
+    setShowManageInventory(false);
+    setSelectedInventoryItem(null);
+    toast.success('Inventory item updated');
   };
 
   const handleExportDashboardReports = () => {
@@ -684,7 +716,7 @@ const ClinicDashboard = () => {
                         >
                           {item.status}
                         </Badge>
-                        <Button size="sm" variant="outline">Manage</Button>
+                        <Button size="sm" variant="outline" onClick={() => openManageInventory(item)}>Manage</Button>
                       </div>
                     </div>
                   ))}
@@ -961,6 +993,46 @@ const ClinicDashboard = () => {
           <DialogFooter>
             <Button variant="outline" onClick={() => setShowAddInventory(false)}>Cancel</Button>
             <Button className="bg-gradient-to-r from-pink-600 to-rose-600" onClick={handleAddInventoryItem}>Add</Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Manage Inventory Dialog */}
+      <Dialog open={showManageInventory} onOpenChange={(open) => {
+        setShowManageInventory(open);
+        if (!open) setSelectedInventoryItem(null);
+      }}>
+        <DialogContent className="max-w-lg">
+          <DialogHeader>
+            <DialogTitle>Manage Inventory Item</DialogTitle>
+            <DialogDescription>Update quantity, status, or name for this item.</DialogDescription>
+          </DialogHeader>
+          <div className="space-y-4">
+            <div className="space-y-2">
+              <Label>Item Name *</Label>
+              <Input value={manageInventoryForm.name} onChange={(e) => setManageInventoryForm({ ...manageInventoryForm, name: e.target.value })} />
+            </div>
+            <div className="space-y-2">
+              <Label>Quantity *</Label>
+              <Input type="number" value={manageInventoryForm.qty} onChange={(e) => setManageInventoryForm({ ...manageInventoryForm, qty: e.target.value })} />
+            </div>
+            <div className="space-y-2">
+              <Label>Status</Label>
+              <Select value={manageInventoryForm.status} onValueChange={(v) => setManageInventoryForm({ ...manageInventoryForm, status: v as any })}>
+                <SelectTrigger>
+                  <SelectValue placeholder="Select status" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="In Stock">In Stock</SelectItem>
+                  <SelectItem value="Low Stock">Low Stock</SelectItem>
+                  <SelectItem value="Out of Stock">Out of Stock</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setShowManageInventory(false)}>Cancel</Button>
+            <Button className="bg-gradient-to-r from-pink-600 to-rose-600" onClick={handleUpdateInventoryItem}>Save Changes</Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>

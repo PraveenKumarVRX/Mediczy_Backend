@@ -21,6 +21,25 @@ async function ensureDirectory() {
     }
 }
 
+const formatHospitalProfile = (profile) => ({
+    id: profile.id,
+    name: profile.basic_info?.name || profile.name || '',
+    address: profile.basic_info?.address || '',
+    city: profile.basic_info?.city || '',
+    state: profile.basic_info?.state || '',
+    area: profile.basic_info?.area || '',
+    pincode: profile.basic_info?.pincode || '',
+    contact: profile.basic_info?.contact || profile.contact || {},
+    phone: profile.basic_info?.contact?.phone || '',
+    email: profile.basic_info?.contact?.email || '',
+    classification: profile.classification?.type || 'hospital',
+    sub_type: profile.classification?.sub_type || '',
+    services: profile.services || [],
+    quality_score: profile.quality_indicators?.overall_score || profile.quality_indicators?.completeness,
+    metadata: profile.metadata,
+    capabilities: profile.capabilities,
+});
+
 /**
  * Create a single hospital
  * POST /api/admin/hospitals
@@ -125,6 +144,66 @@ router.post('/', async (req, res) => {
             message: 'Failed to create hospital',
             error: error.message 
         });
+    }
+});
+
+router.patch('/:id/details', async (req, res) => {
+    try {
+        await ensureDirectory();
+        const { id } = req.params;
+        const { updates = {} } = req.body || {};
+        const filePath = path.join(HOSPITALS_BASE, `${id}.json`);
+
+        const exists = await fs.stat(filePath).then(() => true).catch(() => false);
+        if (!exists) {
+            return res.status(404).json({ success: false, message: 'Hospital not found' });
+        }
+
+        const profile = JSON.parse(await fs.readFile(filePath, 'utf-8'));
+
+        profile.basic_info = {
+            ...profile.basic_info,
+            name: updates.name ?? profile.basic_info?.name,
+            address: updates.address || profile.basic_info?.address,
+            city: updates.city ?? profile.basic_info?.city,
+            state: updates.state ?? profile.basic_info?.state,
+            pincode: updates.pincode ?? profile.basic_info?.pincode,
+            area: updates.area ?? profile.basic_info?.area,
+            contact: {
+                ...profile.basic_info?.contact,
+                phone: updates.phone ?? profile.basic_info?.contact?.phone,
+                email: updates.email ?? profile.basic_info?.contact?.email,
+            },
+        };
+
+        profile.classification = {
+            ...profile.classification,
+            type: updates.classification || profile.classification?.type || 'hospital',
+            sub_type: updates.type || updates.classification || profile.classification?.sub_type,
+            confidence: profile.classification?.confidence || 1.0,
+        };
+
+        profile.metadata = {
+            ...profile.metadata,
+            registration_number: updates.registrationNumber ?? profile.metadata?.registration_number,
+            website: updates.website ?? profile.metadata?.website,
+            active: updates.isActive !== undefined ? !!updates.isActive : profile.metadata?.active,
+        };
+
+        profile.capabilities = {
+            ...profile.capabilities,
+            emergency_services: updates.emergencyServices !== undefined ? !!updates.emergencyServices : profile.capabilities?.emergency_services,
+            bed_count: updates.totalBeds !== undefined ? updates.totalBeds : profile.capabilities?.bed_count,
+            available_beds: updates.availableBeds !== undefined ? updates.availableBeds : profile.capabilities?.available_beds,
+        };
+
+        await fs.writeFile(filePath, JSON.stringify(profile, null, 2));
+
+        const formatted = formatHospitalProfile(profile);
+        res.json({ success: true, message: 'Hospital updated successfully', data: formatted });
+    } catch (error) {
+        console.error('Error updating hospital:', error);
+        res.status(500).json({ success: false, message: 'Failed to update hospital', error: error.message });
     }
 });
 

@@ -501,23 +501,92 @@ router.post('/working-medical-consult', auth, async (req, res) => {
 
     console.log(`🏥 Medical consultation request received for user ${userId}`);
 
+    // ===== FETCH USER PROFILE & MEDICAL CONTEXT =====
+    let userProfile = null;
+    let recentConsultations = [];
+    let medicalContext = '';
+    
+    try {
+      // Get user info from request (already populated by auth middleware)
+      userProfile = {
+        id: req.user.id,
+        firstName: req.user.firstName || 'User',
+        lastName: req.user.lastName || '',
+        email: req.user.email,
+        phone: req.user.phone,
+        dateOfBirth: req.user.dateOfBirth,
+        gender: req.user.gender,
+        bloodGroup: req.user.bloodGroup,
+        allergies: req.user.allergies,
+        chronicConditions: req.user.chronicConditions,
+        currentMedications: req.user.currentMedications
+      };
+
+      // Get recent AI consultations from health diary (last 7 days)
+      const sevenDaysAgo = new Date();
+      sevenDaysAgo.setDate(sevenDaysAgo.getDate() - 7);
+      
+      recentConsultations = await healthDiaryService.getUserHealthDiary(userId, {
+        entryType: 'ai_consultation',
+        startDate: sevenDaysAgo,
+        limit: 10
+      });
+
+      // Build medical context string
+      const userName = userProfile.firstName || 'there';
+      const userAge = userProfile.dateOfBirth 
+        ? Math.floor((new Date() - new Date(userProfile.dateOfBirth)) / (365.25 * 24 * 60 * 60 * 1000))
+        : null;
+      
+      // Build recent health history
+      let recentHistory = '';
+      if (recentConsultations && recentConsultations.length > 0) {
+        const summaries = recentConsultations.slice(0, 5).map(c => {
+          const data = c.data || {};
+          return `- ${new Date(c.entryDate).toLocaleDateString()}: "${data.userMessage?.substring(0, 50)}..."`;
+        });
+        recentHistory = `\nRecent conversations (last 7 days):\n${summaries.join('\n')}`;
+      }
+
+      medicalContext = `
+PATIENT PROFILE:
+- Name: ${userName}${userProfile.lastName ? ' ' + userProfile.lastName : ''}
+${userAge ? `- Age: ${userAge} years` : ''}
+${userProfile.gender ? `- Gender: ${userProfile.gender}` : ''}
+${userProfile.bloodGroup ? `- Blood Group: ${userProfile.bloodGroup}` : ''}
+${userProfile.allergies ? `- Known Allergies: ${userProfile.allergies}` : ''}
+${userProfile.chronicConditions ? `- Chronic Conditions: ${userProfile.chronicConditions}` : ''}
+${userProfile.currentMedications ? `- Current Medications: ${userProfile.currentMedications}` : ''}
+${recentHistory}
+`.trim();
+
+      console.log(`📋 Loaded patient context for ${userName}`);
+      console.log(`📋 Medical Context:\n${medicalContext.substring(0, 300)}`);
+    } catch (profileError) {
+      console.warn('⚠️ Could not load full patient profile:', profileError.message);
+    }
+
     // Check if this is a simple greeting or casual chat
     const greetingPatterns = /^(hi+|hello+|hey+|hola|namaste|good\s*(morning|afternoon|evening)|greetings?|how are you|what'?s up|yo|sup)[\s!.,?]*$/i;
     const casualPatterns = /^(hi+\s*(isha|doctor|dr)?|hello+\s*(isha|doctor|dr)?|hey+\s*(isha|doctor|dr)?)[\s!.,?]*$/i;
     const isGreeting = greetingPatterns.test(query.trim()) || casualPatterns.test(query.trim());
 
-    // For greetings, return a simple friendly response directly
+    // For greetings, return a personalized response
     if (isGreeting) {
-      const greetingResponses = [
-        "Hey there! 👋 I'm Dr. iSHA, your AI health buddy powered by Mediczy's Synthetic Intelligence Brain. What's on your mind today?",
-        "Hi! 😊 I'm Dr. iSHA. How can I help you feel better today?",
-        "Hello! 👋 Great to meet you! I'm Dr. iSHA - tell me what's going on with your health.",
-        "Hey! 😊 I'm Dr. iSHA, here to help. What would you like to chat about?"
-      ];
-      const randomGreeting = greetingResponses[Math.floor(Math.random() * greetingResponses.length)];
+      const userName = userProfile?.firstName || 'there';
+      const hasHistory = recentConsultations && recentConsultations.length > 0;
+      
+      let greetingResponse;
+      if (hasHistory) {
+        const lastConsult = recentConsultations[0];
+        const lastSymptom = lastConsult.data?.userMessage?.substring(0, 40) || 'your health';
+        greetingResponse = `Hey ${userName}! 👋 Good to see you again. Last time we discussed "${lastSymptom}..." - how's that going? Or is there something new today?`;
+      } else {
+        greetingResponse = `Hey ${userName}! 👋 I'm Dr. iSHA, your AI health buddy. What's bothering you today?`;
+      }
       
       // Save greeting to health diary using service
-      await healthDiaryService.logAIConsultation(userId, query, randomGreeting, {
+      await healthDiaryService.logAIConsultation(userId, query, greetingResponse, {
         sessionId,
         isGreeting: true,
         language
@@ -525,12 +594,14 @@ router.post('/working-medical-consult', auth, async (req, res) => {
       
       return res.json({
         status: 'success',
-        primary_response: randomGreeting,
+        primary_response: greetingResponse,
         metadata: {
           confidence: 1.0,
           urgency_score: 0,
           detected_symptoms: [],
-          recommended_specialists: []
+          recommended_specialists: [],
+          patientName: userName,
+          hasHistory
         },
         session_id: sessionId
       });
@@ -560,7 +631,21 @@ router.post('/working-medical-consult', auth, async (req, res) => {
 
       if (sibResponse.ok) {
         const sibData = await sibResponse.json();
-        aiResponse = sibData.response || sibData.message || sibData.result;
+        // Accept multiple possible response keys from SIB
+        aiResponse = sibData.response 
+          || sibData.primary_response 
+          || sibData.chat_answer 
+          || sibData.message 
+          || sibData.result;
+
+        // Defensive fallback to avoid rendering 'undefined'
+        if (!aiResponse || (typeof aiResponse === 'string' && aiResponse.trim().length === 0)) {
+          console.warn('⚠️ SIB response missing content field; using friendly default');
+          aiResponse = language === 'en'
+            ? "It sounds like you're experiencing cold symptoms like sneezing and a runny nose. Common causes include viral colds or allergies. Rest, fluids, steam inhalation, and over‑the‑counter remedies (like antihistamines for allergies or paracetamol for fever) can help. If symptoms persist beyond 7–10 days, or you develop high fever, severe facial pain, or breathing difficulty, please seek medical care."
+            : "ऐसा लगता है कि आपको छींक और नाक बहने जैसे सर्दी के लक्षण हैं। ये वायरल सर्दी या एलर्जी के कारण हो सकते हैं। आराम करें, पर्याप्त तरल लें, भाप लें, और ओवर‑द‑काउंटर दवाएँ (एलर्जी के लिए एंटीहिस्टामिन या बुखार के लिए पैरासिटामोल) मदद कर सकती हैं। यदि लक्षण 7–10 दिनों से अधिक रहें या तेज बुखार, चेहरे में तेज दर्द या सांस लेने में कठिनाई हो, तो डॉक्टर से संपर्क करें।";
+        }
+
         sibUsed = true;
         modelUsed = sibData.model || 'SIB-Llama-3.1';
         console.log(`✅ SIB processed consultation successfully for user ${userId}`);
@@ -574,28 +659,36 @@ router.post('/working-medical-consult', auth, async (req, res) => {
       const queryLength = query.length;
       const hasDetailedContext = userContext && (userContext.conversationHistory?.length > 0 || userContext.symptoms?.length > 0);
       
+      // Increased tokens to allow for detailed medication suggestions
       let maxTokens = 250;
       if (queryLength > 200 || hasDetailedContext) {
-        maxTokens = 350;
-      }
-      if (queryLength > 400) {
-        maxTokens = 400;
+        maxTokens = 300;
       }
 
-      const medicalPrompt = `You are Dr. iSHA, a friendly and caring AI health assistant. Respond conversationally like a helpful friend who happens to be a doctor.
+      // Build personalized prompt with patient context
+      const userName = userProfile?.firstName || '';
+      const patientContextSection = medicalContext ? `\n${medicalContext}\n` : '';
+      
+      const medicalPrompt = `You are Dr. iSHA, a doctor having a SOAP-style conversation with ${userName || 'a patient'}.
+${patientContextSection}
+Patient says: "${query}"
 
-Patient's message: "${query}"
+RESPONSE RULES:
+1. Address patient by name if known
+2. Be CONCISE - max 3-4 lines total
+3. If they have allergies/conditions, consider them
+4. If recent history exists, ask follow-up
+5. For clear symptoms, give medication directly
 
-Guidelines:
-- Be warm, friendly, and conversational (NOT clinical or formal)
-- Keep response SHORT (2-4 sentences for simple questions, max 100 words)
-- Use simple language, not medical jargon
-- Add a relevant emoji or two
-- If it's a health question, give practical advice
-- Don't use bullet points or structured formats for simple questions
-- Only use structured format for complex symptom descriptions
+RESPONSE FORMAT:
+"[Name], [brief response]. [Medicine + dose if needed]. [One tip]."
 
-Now respond naturally to their message:`;
+Examples:
+- "Hi Rahul, sounds like a cold. Take Cetirizine 10mg daily + Paracetamol if fever. Steam helps."
+- "Sarah, how's that headache from yesterday? Still bothering you?"
+- "How long have you had this? Any fever?"
+
+Keep it SHORT like a real doctor chat.`;
 
       assertGroqConfigured();
 
@@ -603,7 +696,7 @@ Now respond naturally to their message:`;
         messages: [
           {
             role: "system",
-            content: "You are Dr. iSHA, a friendly AI health assistant. Respond like a caring friend who is also a doctor - warm, helpful, and conversational. Keep responses SHORT and natural. NO formal medical report formats. Just friendly, practical health advice in 2-4 sentences."
+            content: `You are Dr. iSHA. Address patient by name. Give SHORT, direct advice. Consider their medical history/allergies if mentioned. For symptoms: acknowledge, prescribe meds with dosages, one tip. Max 3-4 lines. If they had recent issues, ask follow-up.`
           },
           {
             role: "user",
@@ -616,10 +709,22 @@ Now respond naturally to their message:`;
       });
 
       aiResponse = chatCompletion.choices[0]?.message?.content || "I apologize, but I'm unable to provide a response at this moment. Please try again.";
+      
+      // Final safety check - never return undefined
+      if (!aiResponse || aiResponse === 'undefined') {
+        aiResponse = "I'm here to help with your health concerns. However, I'm experiencing technical difficulties right now. For immediate medical concerns, please contact your healthcare provider or emergency services.";
+      }
+      
       modelUsed = 'llama-3.3-70b-versatile (Groq Fallback)';
     }
 
-    const finalResponse = aiResponse;
+    // Final safety check on aiResponse
+    let finalResponse = aiResponse;
+    if (!finalResponse || finalResponse === 'undefined') {
+      finalResponse = language === 'en'
+        ? "I'm here to help with your health concerns. However, I'm experiencing technical difficulties right now. For immediate medical concerns, please contact your healthcare provider or emergency services. I'll be back to assist you shortly!"
+        : "मैं आपकी स्वास्थ्य संबंधी चिंताओं में मदद करने के लिए यहाँ हूँ। हालांकि, मुझे अभी तकनीकी कठिनाइयों का सामना कर रहा हूँ। तत्काल चिकित्सा चिंताओं के लिए, कृपया अपने स्वास्थ्य सेवा प्रदाता या आपातकालीन सेवाओं से संपर्क करें।";
+    }
 
     // Analyze urgency (simple keyword-based analysis)
     const urgencyKeywords = ['emergency', 'urgent', 'severe', 'chest pain', 'difficulty breathing', 'unconscious', 'bleeding heavily'];
@@ -711,6 +816,16 @@ Now respond naturally to their message:`;
     });
 
     console.log(`✅ Medical consultation completed for user ${userId}, session ${sessionId}`);
+    // Ultimate safety: never send undefined/empty primary_response
+    if (
+      typeof responseData.primary_response !== 'string' ||
+      responseData.primary_response.trim().length === 0 ||
+      responseData.primary_response.trim() === 'undefined'
+    ) {
+      responseData.primary_response = language === 'en'
+        ? "I'm here to help with your health concerns. However, I'm experiencing technical difficulties right now. For immediate medical concerns, please contact your healthcare provider or emergency services."
+        : "मैं आपकी स्वास्थ्य संबंधी चिंताओं में मदद करने के लिए यहाँ हूँ। हालांकि, मुझे अभी तकनीकी कठिनाइयों का सामना कर रहा हूँ। तत्काल चिकित्सा चिंताओं के लिए, कृपया अपने स्वास्थ्य सेवा प्रदाता या आपातकालीन सेवाओं से संपर्क करें।";
+    }
 
     res.json(responseData);
 

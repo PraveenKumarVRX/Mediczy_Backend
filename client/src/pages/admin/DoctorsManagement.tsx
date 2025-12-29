@@ -10,6 +10,7 @@ import { Checkbox } from '@/components/ui/checkbox';
 import { Badge } from '@/components/ui/badge';
 import { Label } from '@/components/ui/label';
 import { Switch } from '@/components/ui/switch';
+import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import {
   UserCog, Search, Eye, Download, MapPin, CheckCircle2, AlertCircle,
   ChevronLeft, ChevronRight, Square, Stethoscope, Award, GraduationCap, Plus, Upload,
@@ -50,6 +51,23 @@ const DoctorsManagement = () => {
   const [selectedDoctor, setSelectedDoctor] = useState<any>(null);
   const [showDetailModal, setShowDetailModal] = useState(false);
   const [activeTab, setActiveTab] = useState('list');
+  const [editModalOpen, setEditModalOpen] = useState(false);
+  const [editForm, setEditForm] = useState({
+    id: '',
+    name: '',
+    email: '',
+    phone: '',
+    city: '',
+    state: '',
+    clinicName: '',
+    clinicAddress: '',
+    qualification: '',
+    registrationNumber: '',
+    medicalCouncil: '',
+    consultationType: 'regular' as 'online' | 'regular' | 'both',
+    consultationFee: 0,
+    currency: 'INR',
+  });
   
   // Add doctor form state
   const [jsonInput, setJsonInput] = useState('');
@@ -68,6 +86,9 @@ const DoctorsManagement = () => {
     clinicName: '',
     clinicAddress: '',
     consultationFee: 0,
+    consultationType: 'regular' as 'online' | 'regular' | 'both',
+    currency: 'INR',
+    medicalCouncil: '',
     verified: false,
   });
   
@@ -85,6 +106,7 @@ const DoctorsManagement = () => {
   const fetchDoctors = async () => {
     try {
       setLoading(true);
+      setError(null);
       const params: any = { page: currentPage, limit: itemsPerPage };
       
       if (searchQuery) params.search = searchQuery;
@@ -92,11 +114,17 @@ const DoctorsManagement = () => {
       if (selectedState && selectedState !== 'all') params.state = selectedState;
       if (selectedSpecialty && selectedSpecialty !== 'all') params.specialty = selectedSpecialty;
       
-      const { data } = await axios.get(`${API_BASE_URL}/masterdata/doctors`, { params });
+      const { data } = await axios.get(`${API_BASE_URL}/admin/doctors`, { 
+        params,
+        headers: token ? { 'Authorization': `Bearer ${token}` } : {}
+      });
       
       if (data.success) {
         setDoctors(data.data);
         setTotalCount(data.pagination.total);
+        setError(null);
+      } else {
+        setError(data.message || 'Failed to load doctors');
       }
     } catch (err: any) {
       console.error('Failed to fetch doctors:', err);
@@ -109,10 +137,12 @@ const DoctorsManagement = () => {
   
   const fetchFilterOptions = async () => {
     try {
+      const headers = token ? { 'Authorization': `Bearer ${token}` } : {};
+      
       const [citiesRes, statesRes, specialtiesRes] = await Promise.all([
-        axios.get(`${API_BASE_URL}/masterdata/cities`),
-        axios.get(`${API_BASE_URL}/masterdata/states`),
-        axios.get(`${API_BASE_URL}/masterdata/specialties`),
+        axios.get(`${API_BASE_URL}/admin/doctors/filters/cities`, { headers }),
+        axios.get(`${API_BASE_URL}/admin/doctors/filters/states`, { headers }),
+        axios.get(`${API_BASE_URL}/admin/doctors/filters/specialties`, { headers }),
       ]);
       
       if (citiesRes.data.success) setCities(citiesRes.data.data);
@@ -120,6 +150,90 @@ const DoctorsManagement = () => {
       if (specialtiesRes.data.success) setSpecialties(specialtiesRes.data.data);
     } catch (err) {
       console.error('Failed to fetch filter options:', err);
+    }
+  };
+
+  const handleToggleActive = async (doctor: any) => {
+    if (!doctor?.id) return;
+    try {
+      const headers = token ? { 'Authorization': `Bearer ${token}` } : {};
+      const { data } = await axios.patch(`${API_BASE_URL}/admin/doctors/${doctor.id}/status`, {
+        isActive: !doctor.isActive,
+        contractStatus: doctor.contractStatus,
+        verificationStatus: doctor.verificationStatus
+      }, { headers });
+
+      if (data?.success) {
+        const updated = data.data;
+        setDoctors(prev => prev.map(d => d.id === doctor.id ? { ...d, ...updated } : d));
+      }
+    } catch (err) {
+      console.error('Failed to toggle active status:', err);
+    }
+  };
+
+  const handleStatusChange = async (doctor: any, status: string) => {
+    if (!doctor?.id) return;
+    try {
+      const headers = token ? { 'Authorization': `Bearer ${token}` } : {};
+      const { data } = await axios.patch(`${API_BASE_URL}/admin/doctors/${doctor.id}/status`, {
+        isActive: doctor.isActive,
+        contractStatus: status,
+        verificationStatus: status
+      }, { headers });
+
+      if (data?.success) {
+        const updated = data.data;
+        setDoctors(prev => prev.map(d => d.id === doctor.id ? { ...d, ...updated } : d));
+      }
+    } catch (err) {
+      console.error('Failed to update status:', err);
+    }
+  };
+
+  const handleOpenEdit = (doctor: any) => {
+    if (!doctor?.id) return;
+    setEditForm({
+      id: doctor.id,
+      name: doctor.name || '',
+      email: doctor.email || '',
+      phone: doctor.phone || doctor.mobile || '',
+      city: doctor.city || '',
+      state: doctor.state || '',
+      clinicName: doctor.clinicName || '',
+      clinicAddress: doctor.clinicAddress || '',
+      qualification: doctor.qualification || '',
+      registrationNumber: doctor.registration_number || doctor.registrationNumber || '',
+      medicalCouncil: doctor.medicalCouncil || '',
+      consultationType: (doctor.consultationType || 'regular') as 'online' | 'regular' | 'both',
+      consultationFee: Number(doctor.consultationFee) || 0,
+      currency: doctor.currency || 'INR',
+    });
+    setEditModalOpen(true);
+  };
+
+  const handleUpdateDoctor = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!editForm.id) return;
+    try {
+      setLoading(true);
+      setError(null);
+      const headers = token ? { 'Authorization': `Bearer ${token}` } : {};
+      const { data } = await axios.patch(`${API_BASE_URL}/admin/doctors/${editForm.id}/details`, {
+        updates: editForm
+      }, { headers });
+      if (data?.success && data.data) {
+        const updated = data.data;
+        setDoctors(prev => prev.map(d => d.id === updated.id ? { ...d, ...updated } : d));
+        setResult({ message: data.message || 'Doctor updated successfully' });
+        setEditModalOpen(false);
+      } else {
+        setError(data?.message || 'Failed to update doctor');
+      }
+    } catch (err: any) {
+      setError(err?.response?.data?.message || 'Failed to update doctor');
+    } finally {
+      setLoading(false);
     }
   };
   
@@ -147,6 +261,7 @@ const DoctorsManagement = () => {
       Phone: doctor.phone || doctor.mobile,
       Email: doctor.email,
       'Registration Number': doctor.registration_number || '',
+      'Medical Council': doctor.medicalCouncil || '',
       'Quality Score': doctor.quality_score || '',
     }));
     
@@ -168,6 +283,10 @@ const DoctorsManagement = () => {
   const handleSingleDoctorSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     try {
+      if (!token) {
+        setError('Admin session required. Please log in again.');
+        return;
+      }
       setLoading(true);
       setError(null);
       setResult(null);
@@ -193,6 +312,9 @@ const DoctorsManagement = () => {
         clinicName: '',
         clinicAddress: '',
         consultationFee: 0,
+        consultationType: 'regular',
+        currency: 'INR',
+        medicalCouncil: '',
         verified: false,
       });
       fetchDoctors();
@@ -257,7 +379,10 @@ const DoctorsManagement = () => {
         email: row['Email'],
         clinicName: row['Clinic Name'],
         clinicAddress: row['Clinic Address'],
-        consultationFee: parseInt(row['Consultation Fee']) || 0
+        consultationFee: parseInt(row['Consultation Fee']) || 0,
+        consultationType: ((row['Consultation Type'] || 'regular').toString().toLowerCase()) as 'online' | 'regular' | 'both',
+        currency: row['Currency'] || 'INR',
+        medicalCouncil: row['Medical Council'] || row['Medical Council Name'] || ''
       }));
 
       const response = await axios.post(
@@ -529,6 +654,12 @@ const DoctorsManagement = () => {
                                 <MapPin className="h-3 w-3" />
                                 {doctor.city}{doctor.state && `, ${doctor.state}`}
                               </div>
+
+                              {doctor.clinicAddress && (
+                                <div className="text-sm text-muted-foreground">
+                                  {doctor.clinicAddress}
+                                </div>
+                              )}
                             </div>
                           </div>
 
@@ -536,6 +667,12 @@ const DoctorsManagement = () => {
                             <div className="flex items-center gap-2 text-sm">
                               <GraduationCap className="h-4 w-4 text-muted-foreground" />
                               <span className="font-medium">Qualification:</span> {doctor.qualification}
+                            </div>
+                          )}
+                          {(doctor.consultationType || doctor.consultationFee) && (
+                            <div className="text-sm text-muted-foreground">
+                              {(doctor.consultationType && doctor.consultationType !== 'both') ? `${doctor.consultationType === 'online' ? 'Online' : 'Regular'} consults` : 'Online & Regular'}
+                              {doctor.consultationFee ? ` • Fee: ${doctor.currency || 'INR'} ${doctor.consultationFee}` : ''}
                             </div>
                           )}
                           
@@ -556,7 +693,19 @@ const DoctorsManagement = () => {
                               <span className="font-medium">Reg. No:</span> {doctor.registration_number}
                             </div>
                           )}
+                          {doctor.medicalCouncil && (
+                            <div className="text-sm text-muted-foreground">
+                              Medical Council: {doctor.medicalCouncil}
+                            </div>
+                          )}
                           
+                          {(doctor.phone || doctor.email) && (
+                            <div className="text-sm text-muted-foreground">
+                              {doctor.phone || doctor.mobile || ''}
+                              {doctor.email && <span className="ml-2">• {doctor.email}</span>}
+                            </div>
+                          )}
+
                           {doctor.quality_score && (
                             <div className="flex items-center gap-2">
                               <span className="text-sm font-medium">Quality Score:</span>
@@ -564,8 +713,29 @@ const DoctorsManagement = () => {
                             </div>
                           )}
 
+                          <div className="flex items-center gap-3">
+                            <div className="flex items-center gap-2 text-sm">
+                              <span className="font-medium">Active</span>
+                              <Switch checked={doctor.isActive !== false} onCheckedChange={() => handleToggleActive(doctor)} />
+                            </div>
+                            <div className="flex items-center gap-2 text-sm">
+                              <span className="font-medium">Status</span>
+                              <Select value={(doctor.verificationStatus || doctor.contractStatus || 'pending') as string} onValueChange={(val) => handleStatusChange(doctor, val)}>
+                                <SelectTrigger className="w-32"><SelectValue /></SelectTrigger>
+                                <SelectContent>
+                                  <SelectItem value="pending">Pending</SelectItem>
+                                  <SelectItem value="approved">Approved</SelectItem>
+                                  <SelectItem value="rejected">Rejected</SelectItem>
+                                </SelectContent>
+                              </Select>
+                            </div>
+                          </div>
+
                           <Button size="sm" variant="outline" onClick={() => handleViewDetails(doctor)}>
                             <Eye className="mr-2 h-4 w-4" />View Details
+                          </Button>
+                          <Button size="sm" variant="secondary" onClick={() => handleOpenEdit(doctor)}>
+                            Edit
                           </Button>
                         </div>
                       </CardContent>
@@ -639,14 +809,28 @@ const DoctorsManagement = () => {
                                     <MapPin className="h-3 w-3 text-muted-foreground" />
                                     <span>{doctor.city}{doctor.state && `, ${doctor.state}`}</span>
                                   </div>
-                                </td>
-                                <td className="p-4 text-sm">
-                                  {doctor.phone || doctor.mobile || '-'}
-                                  {doctor.email && (
-                                    <div className="text-xs text-muted-foreground">{doctor.email}</div>
+                                  {doctor.clinicAddress && (
+                                    <div className="text-xs text-muted-foreground mt-1">{doctor.clinicAddress}</div>
                                   )}
                                 </td>
-                                <td className="p-4">
+                                <td className="p-4 text-sm space-y-1">
+                                  <div>
+                                    {doctor.phone || doctor.mobile || '-'}
+                                    {doctor.email && (
+                                      <div className="text-xs text-muted-foreground">{doctor.email}</div>
+                                    )}
+                                  </div>
+                                  {(doctor.consultationType || doctor.consultationFee) && (
+                                    <div className="text-xs text-muted-foreground">
+                                      {(doctor.consultationType && doctor.consultationType !== 'both') ? `${doctor.consultationType === 'online' ? 'Online' : 'Regular'}` : 'Online & Regular'}
+                                      {doctor.consultationFee ? ` • ${doctor.currency || 'INR'} ${doctor.consultationFee}` : ''}
+                                    </div>
+                                  )}
+                                  {doctor.medicalCouncil && (
+                                    <div className="text-xs text-muted-foreground">Council: {doctor.medicalCouncil}</div>
+                                  )}
+                                </td>
+                                <td className="p-4 space-y-1">
                                   {(doctor.registration_number || doctor.verified) && (
                                     <Badge variant="secondary" className="text-xs">
                                       <Award className="h-3 w-3 mr-1" />
@@ -654,14 +838,32 @@ const DoctorsManagement = () => {
                                     </Badge>
                                   )}
                                   {doctor.quality_score && (
-                                    <div className="text-xs text-muted-foreground mt-1">
+                                    <div className="text-xs text-muted-foreground">
                                       Score: {doctor.quality_score}
                                     </div>
                                   )}
+                                  <div className="flex items-center gap-2 text-sm">
+                                    <span className="font-medium">Active</span>
+                                    <Switch checked={doctor.isActive !== false} onCheckedChange={() => handleToggleActive(doctor)} />
+                                  </div>
+                                  <div className="flex items-center gap-2 text-sm">
+                                    <span className="font-medium">Status</span>
+                                    <Select value={(doctor.verificationStatus || doctor.contractStatus || 'pending') as string} onValueChange={(val) => handleStatusChange(doctor, val)}>
+                                      <SelectTrigger className="w-28"><SelectValue /></SelectTrigger>
+                                      <SelectContent>
+                                        <SelectItem value="pending">Pending</SelectItem>
+                                        <SelectItem value="approved">Approved</SelectItem>
+                                        <SelectItem value="rejected">Rejected</SelectItem>
+                                      </SelectContent>
+                                    </Select>
+                                  </div>
                                 </td>
                                 <td className="p-4">
                                   <Button size="sm" variant="outline" onClick={() => handleViewDetails(doctor)}>
                                     <Eye className="h-4 w-4" />
+                                  </Button>
+                                  <Button size="sm" variant="secondary" className="ml-2" onClick={() => handleOpenEdit(doctor)}>
+                                    Edit
                                   </Button>
                                 </td>
                               </tr>
@@ -809,13 +1011,43 @@ const DoctorsManagement = () => {
                       />
                     </div>
                     <div>
-                      <Label>Consultation Fee (₹)</Label>
+                      <Label>Medical Council</Label>
                       <Input
-                        type="number"
-                        value={newDoctor.consultationFee}
-                        onChange={(e) => setNewDoctor({...newDoctor, consultationFee: parseInt(e.target.value) || 0})}
-                        placeholder="500"
+                        value={newDoctor.medicalCouncil}
+                        onChange={(e) => setNewDoctor({...newDoctor, medicalCouncil: e.target.value})}
+                        placeholder="State or Council Name"
                       />
+                    </div>
+                    <div>
+                      <Label>Consultation Type</Label>
+                      <Select value={newDoctor.consultationType} onValueChange={(val: 'online' | 'regular' | 'both') => setNewDoctor({...newDoctor, consultationType: val})}>
+                        <SelectTrigger><SelectValue /></SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value="online">Online</SelectItem>
+                          <SelectItem value="regular">Regular</SelectItem>
+                          <SelectItem value="both">Both</SelectItem>
+                        </SelectContent>
+                      </Select>
+                    </div>
+                    <div>
+                      <Label>Consultation Fee</Label>
+                      <div className="flex gap-2">
+                        <Select value={newDoctor.currency} onValueChange={(val) => setNewDoctor({...newDoctor, currency: val})}>
+                          <SelectTrigger className="w-24"><SelectValue /></SelectTrigger>
+                          <SelectContent>
+                            {['INR','USD','EUR','GBP','SGD','AUD'].map(c => (
+                              <SelectItem key={c} value={c}>{c}</SelectItem>
+                            ))}
+                          </SelectContent>
+                        </Select>
+                        <Input
+                          type="number"
+                          className="flex-1"
+                          value={newDoctor.consultationFee}
+                          onChange={(e) => setNewDoctor({...newDoctor, consultationFee: parseInt(e.target.value) || 0})}
+                          placeholder="500"
+                        />
+                      </div>
                     </div>
                   </div>
 
@@ -964,6 +1196,91 @@ const DoctorsManagement = () => {
         </Tabs>
         
         <ProviderDetailModal provider={selectedDoctor} open={showDetailModal} onClose={() => setShowDetailModal(false)} type="clinic" />
+        <Dialog open={editModalOpen} onOpenChange={setEditModalOpen}>
+          <DialogContent className="max-w-2xl">
+            <DialogHeader>
+              <DialogTitle>Edit Doctor</DialogTitle>
+            </DialogHeader>
+            <form onSubmit={handleUpdateDoctor} className="space-y-4">
+              <div className="grid md:grid-cols-2 gap-3">
+                <div>
+                  <Label>Full Name</Label>
+                  <Input value={editForm.name} onChange={(e) => setEditForm({...editForm, name: e.target.value})} required />
+                </div>
+                <div>
+                  <Label>Email</Label>
+                  <Input type="email" value={editForm.email} onChange={(e) => setEditForm({...editForm, email: e.target.value})} required />
+                </div>
+                <div>
+                  <Label>Phone</Label>
+                  <Input value={editForm.phone} onChange={(e) => setEditForm({...editForm, phone: e.target.value})} required />
+                </div>
+                <div>
+                  <Label>Qualification</Label>
+                  <Input value={editForm.qualification} onChange={(e) => setEditForm({...editForm, qualification: e.target.value})} />
+                </div>
+                <div>
+                  <Label>Registration Number</Label>
+                  <Input value={editForm.registrationNumber} onChange={(e) => setEditForm({...editForm, registrationNumber: e.target.value})} />
+                </div>
+                <div>
+                  <Label>Medical Council</Label>
+                  <Input value={editForm.medicalCouncil} onChange={(e) => setEditForm({...editForm, medicalCouncil: e.target.value})} />
+                </div>
+                <div>
+                  <Label>City</Label>
+                  <Input value={editForm.city} onChange={(e) => setEditForm({...editForm, city: e.target.value})} />
+                </div>
+                <div>
+                  <Label>State</Label>
+                  <Input value={editForm.state} onChange={(e) => setEditForm({...editForm, state: e.target.value})} />
+                </div>
+                <div>
+                  <Label>Clinic Name</Label>
+                  <Input value={editForm.clinicName} onChange={(e) => setEditForm({...editForm, clinicName: e.target.value})} />
+                </div>
+                <div>
+                  <Label>Clinic Address</Label>
+                  <Input value={editForm.clinicAddress} onChange={(e) => setEditForm({...editForm, clinicAddress: e.target.value})} />
+                </div>
+                <div>
+                  <Label>Consultation Type</Label>
+                  <Select value={editForm.consultationType} onValueChange={(val: 'online' | 'regular' | 'both') => setEditForm({...editForm, consultationType: val})}>
+                    <SelectTrigger><SelectValue /></SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="online">Online</SelectItem>
+                      <SelectItem value="regular">Regular</SelectItem>
+                      <SelectItem value="both">Both</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
+                <div>
+                  <Label>Consultation Fee</Label>
+                  <div className="flex gap-2">
+                    <Select value={editForm.currency} onValueChange={(val) => setEditForm({...editForm, currency: val})}>
+                      <SelectTrigger className="w-24"><SelectValue /></SelectTrigger>
+                      <SelectContent>
+                        {['INR','USD','EUR','GBP','SGD','AUD'].map(c => (
+                          <SelectItem key={c} value={c}>{c}</SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                    <Input
+                      type="number"
+                      className="flex-1"
+                      value={editForm.consultationFee}
+                      onChange={(e) => setEditForm({...editForm, consultationFee: parseInt(e.target.value) || 0})}
+                    />
+                  </div>
+                </div>
+              </div>
+              <DialogFooter>
+                <Button variant="outline" type="button" onClick={() => setEditModalOpen(false)}>Cancel</Button>
+                <Button type="submit" disabled={loading}>{loading ? 'Saving...' : 'Save Changes'}</Button>
+              </DialogFooter>
+            </form>
+          </DialogContent>
+        </Dialog>
       </div>
     </AdminLayout>
   );

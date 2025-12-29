@@ -44,6 +44,93 @@ const upload = multer({
 });
 
 // ==========================================================================
+// DOCTOR LISTING & SEARCH
+// ==========================================================================
+
+/**
+ * @route   GET /api/doctors
+ * @desc    List all doctors with optional filters
+ * @access  Public
+ */
+router.get('/', [
+  query('search').optional().trim(),
+  query('specialization').optional().notEmpty(),
+  query('city').optional().notEmpty(),
+  query('consultationType').optional().isIn(['online', 'walkIn', 'homeVisit']),
+  query('isVerified').optional().isBoolean(),
+  query('page').optional().isInt({ min: 1 }),
+  query('limit').optional().isInt({ min: 1, max: 100 })
+], async (req, res) => {
+  try {
+    const {
+      search,
+      specialization,
+      city,
+      consultationType,
+      isVerified,
+      page = 1,
+      limit = 20
+    } = req.query;
+
+    // Build where clause
+    const whereClause = {};
+    
+    if (specialization) {
+      whereClause.specialization = specialization;
+    }
+    
+    if (city) {
+      whereClause.city = city;
+    }
+    
+    if (isVerified !== undefined) {
+      whereClause.isVerified = isVerified === 'true';
+    }
+
+    // Search in name or specialization
+    if (search) {
+      whereClause[sequelize.Sequelize.Op.or] = [
+        { firstName: { [sequelize.Sequelize.Op.iLike]: `%${search}%` } },
+        { lastName: { [sequelize.Sequelize.Op.iLike]: `%${search}%` } },
+        { specialization: { [sequelize.Sequelize.Op.iLike]: `%${search}%` } }
+      ];
+    }
+
+    const offset = (parseInt(page) - 1) * parseInt(limit);
+
+    const { count, rows: doctors } = await doctorModel.findAndCountAll({
+      where: whereClause,
+      attributes: { exclude: ['password', 'verificationDocuments'] },
+      limit: parseInt(limit),
+      offset,
+      order: [
+        ['isVerified', 'DESC'],
+        ['rating', 'DESC'],
+        ['createdAt', 'DESC']
+      ]
+    });
+
+    res.json({
+      success: true,
+      doctors,
+      pagination: {
+        page: parseInt(page),
+        limit: parseInt(limit),
+        total: count,
+        pages: Math.ceil(count / parseInt(limit))
+      }
+    });
+  } catch (error) {
+    console.error('List doctors error:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Failed to fetch doctors',
+      error: error.message
+    });
+  }
+});
+
+// ==========================================================================
 // DOCTOR AUTHENTICATION & REGISTRATION
 // ==========================================================================
 
@@ -664,6 +751,151 @@ router.put('/admin/:doctorId/verification', authUser, requireRole('admin'), [
     res.status(500).json({
       success: false,
       message: 'Failed to update verification status',
+      error: error.message
+    });
+  }
+});
+
+// ==========================================================================
+// SERVICE ENROLLMENT (Second Opinion & Home Visits)
+// ==========================================================================
+
+/**
+ * @route   PUT /api/doctors/services
+ * @desc    Update doctor service enrollment (Second Opinion, Home Visits)
+ * @access  Private (Doctor)
+ */
+router.put('/services', authUser, [
+  body('offersSecondOpinion').optional().isBoolean(),
+  body('secondOpinionFee').optional().isFloat({ min: 0 }),
+  body('offersHomeVisits').optional().isBoolean(),
+  body('homeVisitFee').optional().isFloat({ min: 0 }),
+  body('homeVisitRadiusKm').optional().isInt({ min: 1, max: 100 })
+], async (req, res) => {
+  try {
+    if (req.user.role !== 'doctor') {
+      return res.status(403).json({
+        success: false,
+        message: 'Access denied. Doctor role required.'
+      });
+    }
+
+    const {
+      offersSecondOpinion,
+      secondOpinionFee,
+      offersHomeVisits,
+      homeVisitFee,
+      homeVisitRadiusKm
+    } = req.body;
+
+    // Update doctor services
+    const updateData = {};
+    if (typeof offersSecondOpinion === 'boolean') updateData.offersSecondOpinion = offersSecondOpinion;
+    if (secondOpinionFee !== undefined) updateData.secondOpinionFee = secondOpinionFee;
+    if (typeof offersHomeVisits === 'boolean') updateData.offersHomeVisits = offersHomeVisits;
+    if (homeVisitFee !== undefined) updateData.homeVisitFee = homeVisitFee;
+    if (homeVisitRadiusKm !== undefined) updateData.homeVisitRadiusKm = homeVisitRadiusKm;
+
+    await doctorModel.update(req.user.id, updateData);
+    
+    res.json({
+      success: true,
+      message: 'Service preferences updated successfully',
+      data: updateData
+    });
+  } catch (error) {
+    console.error('Update doctor services error:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Failed to update service preferences',
+      error: error.message
+    });
+  }
+});
+
+/**
+ * @route   GET /api/doctors/services/second-opinion
+ * @desc    Get doctors offering second opinion service
+ * @access  Public
+ */
+router.get('/services/second-opinion', async (req, res) => {
+  try {
+    const { specialization, page = 1, limit = 20 } = req.query;
+    
+    const whereClause = {
+      offersSecondOpinion: true,
+      isVerified: true,
+      status: 'active'
+    };
+    
+    if (specialization) {
+      whereClause.specialization = specialization;
+    }
+
+    const doctors = await doctorModel.findAll({
+      where: whereClause,
+      limit: parseInt(limit),
+      offset: (parseInt(page) - 1) * parseInt(limit),
+      order: [['rating', 'DESC']]
+    });
+    
+    res.json({
+      success: true,
+      data: doctors,
+      pagination: {
+        page: parseInt(page),
+        limit: parseInt(limit)
+      }
+    });
+  } catch (error) {
+    console.error('Get second opinion doctors error:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Failed to fetch doctors',
+      error: error.message
+    });
+  }
+});
+
+/**
+ * @route   GET /api/doctors/services/home-visits
+ * @desc    Get doctors offering home visit service
+ * @access  Public
+ */
+router.get('/services/home-visits', async (req, res) => {
+  try {
+    const { specialization, page = 1, limit = 20 } = req.query;
+    
+    const whereClause = {
+      offersHomeVisits: true,
+      isVerified: true,
+      status: 'active'
+    };
+    
+    if (specialization) {
+      whereClause.specialization = specialization;
+    }
+
+    const doctors = await doctorModel.findAll({
+      where: whereClause,
+      limit: parseInt(limit),
+      offset: (parseInt(page) - 1) * parseInt(limit),
+      order: [['rating', 'DESC']]
+    });
+    
+    res.json({
+      success: true,
+      data: doctors,
+      pagination: {
+        page: parseInt(page),
+        limit: parseInt(limit)
+      }
+    });
+  } catch (error) {
+    console.error('Get home visit doctors error:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Failed to fetch doctors',
       error: error.message
     });
   }

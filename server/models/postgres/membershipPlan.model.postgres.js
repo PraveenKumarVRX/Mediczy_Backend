@@ -3,8 +3,7 @@ import { postgresSequelize as sequelize } from '../../db/postgres-sequelize.js';
 
 /**
  * Membership plans + user subscriptions (PostgreSQL)
- * Mirrors the legacy MariaDB schema but uses JSONB columns so we can
- * attach richer metadata (coverage, features, benefits, etc.).
+ * Model reflects actual database schema with camelCase columns
  */
 
 export const MembershipPlan = sequelize.define('MembershipPlan', {
@@ -17,77 +16,66 @@ export const MembershipPlan = sequelize.define('MembershipPlan', {
     type: DataTypes.STRING(150),
     allowNull: false
   },
+  code: {
+    type: DataTypes.STRING,
+    allowNull: true
+  },
   description: {
     type: DataTypes.TEXT,
     allowNull: true
   },
-  planType: {
-    type: DataTypes.ENUM('standard', 'premium', 'elite', 'enterprise', 'custom'),
-    allowNull: false,
-    defaultValue: 'standard',
-    field: 'plan_type'
+  type: {
+    type: DataTypes.STRING,
+    allowNull: true
   },
-  durationDays: {
-    type: DataTypes.INTEGER,
-    allowNull: false,
-    field: 'duration_days',
-    validate: {
-      min: 1,
-      max: 3650
-    }
-  },
-  priceINR: {
+  price: {
     type: DataTypes.DECIMAL(10, 2),
     allowNull: false,
-    defaultValue: 0,
-    field: 'price_inr'
+    defaultValue: 0
   },
-  coverage: {
-    type: DataTypes.JSONB,
-    allowNull: false,
-    defaultValue: {},
-    comment: 'Coverage summary (sum insured, room rent limits, etc.)'
+  discountedPrice: {
+    type: DataTypes.DECIMAL(10, 2),
+    allowNull: true
+  },
+  durationMonths: {
+    type: DataTypes.INTEGER,
+    allowNull: true
   },
   features: {
     type: DataTypes.JSONB,
     allowNull: false,
-    defaultValue: {},
-    comment: 'Feature flags for the customer experience'
+    defaultValue: {}
   },
   benefits: {
     type: DataTypes.JSONB,
     allowNull: false,
-    defaultValue: [],
-    comment: 'Benefit catalog used by the corporate UI'
+    defaultValue: []
   },
-  benefitLimits: {
+  limitations: {
     type: DataTypes.JSONB,
-    allowNull: false,
-    defaultValue: {},
-    field: 'benefit_limits'
+    allowNull: true,
+    defaultValue: {}
   },
-  teleConsultLimits: {
-    type: DataTypes.JSONB,
-    allowNull: false,
-    defaultValue: {},
-    field: 'tele_consult_limits'
-  },
-  healthCheckPackage: {
-    type: DataTypes.JSONB,
-    allowNull: false,
-    defaultValue: {},
-    field: 'health_check_package'
+  maxUsers: {
+    type: DataTypes.INTEGER,
+    allowNull: true
   },
   isActive: {
     type: DataTypes.BOOLEAN,
-    defaultValue: true,
-    field: 'is_active'
+    defaultValue: true
+  },
+  isFeatured: {
+    type: DataTypes.BOOLEAN,
+    defaultValue: false
+  },
+  sortOrder: {
+    type: DataTypes.INTEGER,
+    defaultValue: 0
   },
   metadata: {
     type: DataTypes.JSONB,
     allowNull: false,
-    defaultValue: {},
-    comment: 'Any additional custom data needed for downstream rendering'
+    defaultValue: {}
   }
 }, {
   tableName: 'membership_plans',
@@ -102,39 +90,44 @@ export const UserPlan = sequelize.define('UserPlan', {
   },
   userId: {
     type: DataTypes.INTEGER,
-    allowNull: false,
-    field: 'user_id'
+    allowNull: false
   },
   membershipPlanId: {
     type: DataTypes.INTEGER,
-    allowNull: false,
-    field: 'membership_plan_id'
+    allowNull: false
   },
   startDate: {
     type: DataTypes.DATEONLY,
-    allowNull: false,
-    field: 'start_date'
+    allowNull: false
   },
   endDate: {
     type: DataTypes.DATEONLY,
-    allowNull: false,
-    field: 'end_date'
+    allowNull: false
   },
   status: {
-    type: DataTypes.ENUM('active', 'expired', 'cancelled'),
+    type: DataTypes.STRING,
     defaultValue: 'active'
   },
-  usage: {
-    type: DataTypes.JSONB,
-    allowNull: false,
-    defaultValue: {},
-    comment: 'Runtime counters (tele-consults consumed, reimbursements, etc.)'
+  autoRenew: {
+    type: DataTypes.BOOLEAN,
+    defaultValue: false
   },
-  appliedLimits: {
+  paymentId: {
+    type: DataTypes.STRING,
+    allowNull: true
+  },
+  paymentMethod: {
+    type: DataTypes.STRING,
+    allowNull: true
+  },
+  paidAmount: {
+    type: DataTypes.DECIMAL(10, 2),
+    allowNull: true
+  },
+  metadata: {
     type: DataTypes.JSONB,
     allowNull: false,
-    defaultValue: {},
-    field: 'applied_limits'
+    defaultValue: {}
   }
 }, {
   tableName: 'user_plans',
@@ -142,7 +135,7 @@ export const UserPlan = sequelize.define('UserPlan', {
 });
 
 UserPlan.belongsTo(MembershipPlan, {
-  foreignKey: 'membership_plan_id',
+  foreignKey: 'membershipPlanId',
   as: 'plan'
 });
 

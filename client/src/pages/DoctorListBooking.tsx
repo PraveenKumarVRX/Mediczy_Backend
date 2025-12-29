@@ -28,7 +28,8 @@ import {
   Badge as BadgeIcon,
   Shield,
   SlidersHorizontal,
-  Sparkles
+  Sparkles,
+  Loader2
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -63,12 +64,14 @@ import { format, addDays, isBefore, startOfDay, parse } from "date-fns";
 import { cn } from "@/lib/utils";
 import api from "@/utils/api";
 import MainLayout from "@/components/layout/MainLayout";
+import { getToken, getUserType } from "@/hooks/auth";
 
 interface Doctor {
   _id: string;
   firstName: string;
   lastName: string;
   profileImage?: string;
+  isLive?: boolean;
   specialization: string;
   experience: number;
   education: string[];
@@ -228,6 +231,7 @@ const normalizeDoctorFromApi = (doctor: any): Doctor => {
 
   return {
     _id: String(fallbackId),
+    isLive: true,
     firstName: doctor?.firstName || "Doctor",
     lastName: doctor?.lastName || "",
     profileImage: doctor?.profileImage || "",
@@ -252,6 +256,48 @@ const normalizeDoctorFromApi = (doctor: any): Doctor => {
   } as Doctor;
 };
 
+const normalizeMasterDoctor = (doc: any): Doctor => {
+  const fullName = doc?.name || "Doctor";
+  const [firstName, ...rest] = fullName.split(" ");
+  const lastName = rest.join(" ");
+  const specialization =
+    doc?.specialty ||
+    doc?.specialties?.[0] ||
+    doc?.specialities?.[0] ||
+    doc?.specialities ||
+    "General Medicine";
+
+  return {
+    _id: String(doc?.id || `master-${Math.random().toString(36).slice(2)}`),
+    isLive: true,
+    firstName: firstName || "Doctor",
+    lastName,
+    profileImage: "",
+    specialization,
+    experience: Number(doc?.experience || 8),
+    education: toArray(doc?.qualification, ["MBBS"]),
+    languages: ["English"],
+    rating: 4.6,
+    reviewCount: 0,
+    consultationFee: {
+      online: toNumber(doc?.consultationFees, 700),
+      inPerson: toNumber(doc?.consultationFees, 900),
+    },
+    availability: {
+      status: "Available",
+      nextAvailableSlot: "Slots available this week",
+    },
+    clinic: {
+      name: doc?.clinic_name || "Mediczy Partner Clinic",
+      address: doc?.address || doc?.clinic_name || "Across partner locations",
+      city: doc?.city || "Multiple",
+      state: doc?.state || "India",
+    },
+    services: toArray(doc?.services, ["Consultation"]),
+    verified: Boolean(doc?.isVerified ?? true),
+  };
+};
+
 const DoctorListBooking = () => {
   const [doctors, setDoctors] = useState<Doctor[]>([]);
   const [filteredDoctors, setFilteredDoctors] = useState<Doctor[]>([]);
@@ -270,9 +316,16 @@ const DoctorListBooking = () => {
   const [viewMode, setViewMode] = useState<"all" | "categories">("all");
   const [doctorSlots, setDoctorSlots] = useState<any>(null);
   const [loadingSlots, setLoadingSlots] = useState(false);
+  const [userType, setUserType] = useState<string | null>(() => getUserType());
   
   const { toast } = useToast();
   const navigate = useNavigate();
+
+  useEffect(() => {
+    const handler = () => setUserType(getUserType());
+    window.addEventListener('authChange', handler);
+    return () => window.removeEventListener('authChange', handler);
+  }, []);
 
   useEffect(() => {
     fetchDoctors();
@@ -299,37 +352,67 @@ const DoctorListBooking = () => {
       category.doctors.forEach((doctor) => categorizedIds.add(doctor._id));
     });
 
-    const uncategorized = filteredDoctors.filter(
-      (doctor) => !categorizedIds.has(doctor._id)
-    );
+  const uncategorized = filteredDoctors.filter(
+    (doctor) => !categorizedIds.has(doctor._id)
+  );
 
-    return { categories, uncategorized };
+  return { categories, uncategorized };
   }, [filteredDoctors]);
+
+  const fetchDoctorsFromApi = async (path: string, params?: Record<string, any>) => {
+    const response = await api.get(path, params ? { params } : undefined);
+    const apiDoctors = Array.isArray(response.data?.data)
+      ? response.data.data
+      : Array.isArray(response.data?.doctors)
+      ? response.data.doctors
+      : [];
+    return apiDoctors.map(normalizeDoctorFromApi).filter(Boolean);
+  };
 
   const fetchDoctors = async () => {
     try {
       setLoading(true);
-      const response = await api.get("/doctors/available");
-      const apiDoctors = Array.isArray(response.data?.data)
-        ? response.data.data
-        : Array.isArray(response.data?.doctors)
-        ? response.data.doctors
-        : [];
+      const primaryDoctors = await fetchDoctorsFromApi("/doctors/available");
 
-      const normalizedDoctors = apiDoctors.map(normalizeDoctorFromApi).filter(Boolean);
-
-      if (!normalizedDoctors.length) {
-        setDoctors(mockDoctors);
-        toast({
-          title: "Showing test doctors",
-          description: "No live doctor profiles were returned. Displaying demo doctors instead.",
-        });
-      } else {
-        setDoctors(normalizedDoctors);
+      if (primaryDoctors.length) {
+        setDoctors(primaryDoctors);
+        return;
       }
+
+      const secondaryDoctors = await fetchDoctorsFromApi("/doctors", { limit: 100 });
+      if (secondaryDoctors.length) {
+        setDoctors(secondaryDoctors);
+        toast({
+          title: "Loaded live doctors",
+          description: "Showing doctor profiles directly from the database.",
+        });
+        return;
+      }
+
+      // Third fallback: masterdata providers list
+      try {
+        const masterRes = await api.get("/masterdata/doctors", { params: { limit: 50 } });
+        const masterList = Array.isArray(masterRes.data?.data) ? masterRes.data.data : [];
+        const normalizedMaster = masterList.map(normalizeMasterDoctor).filter(Boolean);
+        if (normalizedMaster.length) {
+          setDoctors(normalizedMaster);
+          toast({
+            title: "Showing provider network doctors",
+            description: "Loaded doctors from the master provider directory.",
+          });
+          return;
+        }
+      } catch (e) {
+        console.error("Master data doctors fetch failed:", e);
+      }
+
+      setDoctors(mockDoctors);
+      toast({
+        title: "Showing test doctors",
+        description: "No live doctor profiles were returned. Displaying demo doctors instead.",
+      });
     } catch (error) {
       console.error("Error fetching doctors:", error);
-      // Mock data for development
       setDoctors(mockDoctors);
       toast({
         title: "Info",
@@ -358,10 +441,12 @@ const DoctorListBooking = () => {
     }
 
     if (selectedLocation) {
-      filtered = filtered.filter(doctor =>
-        doctor.clinic.city.toLowerCase().includes(selectedLocation.toLowerCase()) ||
-        doctor.clinic.state.toLowerCase().includes(selectedLocation.toLowerCase())
-      );
+      const loc = selectedLocation.toLowerCase();
+      filtered = filtered.filter(doctor => {
+        const city = doctor.clinic?.city?.toLowerCase?.() || '';
+        const state = doctor.clinic?.state?.toLowerCase?.() || '';
+        return city.includes(loc) || state.includes(loc);
+      });
     }
 
     // Sort doctors
@@ -396,6 +481,36 @@ const DoctorListBooking = () => {
   };
 
   const handleBookAppointment = (doctor: Doctor) => {
+    if (userType === "doctor") {
+      toast({
+        title: "Not available for doctors",
+        description: "Doctor accounts cannot book patient appointments. Please sign in as a patient.",
+        variant: "destructive",
+      });
+      navigate("/login", { state: { redirect: "/doctors" } });
+      return;
+    }
+
+    const token = getToken();
+    if (!token) {
+      toast({
+        title: "Login required",
+        description: "Please sign in as a patient to book an appointment.",
+        variant: "destructive",
+      });
+      navigate("/login", { state: { redirect: "/doctors" } });
+      return;
+    }
+
+    if (!doctor.isLive) {
+      toast({
+        title: "Still loading doctors",
+        description: "Please choose a doctor from the live database list once it finishes loading.",
+        variant: "destructive",
+      });
+      return;
+    }
+
     setSelectedDoctor(doctor);
     setShowBookingModal(true);
     setDoctorSlots(null); // Reset slots when opening modal
@@ -458,14 +573,14 @@ const DoctorListBooking = () => {
         <CardContent className="p-6">
           <div className="flex gap-5">
             <div className="relative shrink-0">
-              <Avatar className="h-24 w-24 ring-4 ring-gray-100 shadow-md">
+              <Avatar className="h-24 w-24 ring-4 ring-slate-100 dark:ring-slate-700 shadow-md">
                 <AvatarImage src={doctor.profileImage} />
-                <AvatarFallback className="bg-gradient-to-br from-blue-500 to-green-500 text-white text-xl font-bold">
+                <AvatarFallback className="bg-gradient-to-br from-teal-500 to-teal-600 text-white text-xl font-bold">
                   {firstInitial}{lastInitial}
                 </AvatarFallback>
               </Avatar>
               {doctor.verified && (
-                <div className="absolute -bottom-1 -right-1 bg-blue-600 rounded-full p-1.5 shadow-md">
+                <div className="absolute -bottom-1 -right-1 bg-teal-500 rounded-full p-1.5 shadow-md">
                   <CheckCircle className="h-4 w-4 text-white" />
                 </div>
               )}
@@ -473,28 +588,28 @@ const DoctorListBooking = () => {
             
             <div className="flex-1 min-w-0">
               <div className="mb-2">
-                <h3 className="font-bold text-xl text-gray-900 group-hover:text-blue-600 transition-colors">
+                <h3 className="font-bold text-xl text-slate-900 dark:text-white group-hover:text-teal-600 dark:group-hover:text-teal-400 transition-colors">
                   Dr. {doctor.firstName} {doctor.lastName}
                 </h3>
                 <div className="flex items-center gap-2 mt-1">
                   <SpecIcon className={cn("h-4 w-4", getSpecializationColor(doctor.specialization))} />
-                  <span className="text-gray-600 font-medium">{doctor.specialization}</span>
+                  <span className="text-slate-600 dark:text-slate-400 font-medium">{doctor.specialization}</span>
                 </div>
               </div>
 
               <div className="flex flex-wrap gap-4 mb-4">
-                <div className="flex items-center gap-1.5 bg-yellow-50 px-3 py-1.5 rounded-full">
+                <div className="flex items-center gap-1.5 bg-yellow-50 dark:bg-yellow-900/20 px-3 py-1.5 rounded-full">
                   <Star className="h-4 w-4 text-yellow-500 fill-yellow-500" />
-                  <span className="font-semibold text-gray-900">{doctor.rating}</span>
-                  <span className="text-gray-500 text-sm">({doctor.reviewCount})</span>
+                  <span className="font-semibold text-slate-900 dark:text-white">{doctor.rating}</span>
+                  <span className="text-slate-500 dark:text-slate-400 text-sm">({doctor.reviewCount})</span>
                 </div>
-                <div className="flex items-center gap-1.5 bg-blue-50 px-3 py-1.5 rounded-full">
-                  <Award className="h-4 w-4 text-blue-500" />
-                  <span className="text-gray-700">{doctor.experience} years</span>
+                <div className="flex items-center gap-1.5 bg-teal-50 dark:bg-teal-900/20 px-3 py-1.5 rounded-full">
+                  <Award className="h-4 w-4 text-teal-500" />
+                  <span className="text-slate-700 dark:text-slate-300">{doctor.experience} years</span>
                 </div>
-                <div className="flex items-center gap-1.5 bg-gray-50 px-3 py-1.5 rounded-full">
-                  <MapPin className="h-4 w-4 text-gray-500" />
-                  <span className="text-gray-700">{doctor.clinic.city}</span>
+                <div className="flex items-center gap-1.5 bg-slate-50 dark:bg-slate-700/50 px-3 py-1.5 rounded-full">
+                  <MapPin className="h-4 w-4 text-slate-500" />
+                  <span className="text-slate-700 dark:text-slate-300">{doctor.clinic.city}</span>
                 </div>
               </div>
 
@@ -503,31 +618,37 @@ const DoctorListBooking = () => {
                 <span>Speaks: {doctor.languages.join(", ")}</span>
               </div>
 
-              <div className="flex items-center justify-between pt-4 border-t border-gray-100">
+              <div className="flex items-center justify-between pt-4 border-t border-slate-100 dark:border-slate-700">
                 <div className="flex gap-6">
                   <div>
-                    <div className="flex items-center gap-1.5 text-blue-600">
+                    <div className="flex items-center gap-1.5 text-teal-600 dark:text-teal-400">
                       <Video className="h-4 w-4" />
                       <span className="text-sm font-medium">Video</span>
                     </div>
-                    <div className="text-lg font-bold text-gray-900">₹{doctor.consultationFee.online}</div>
+                    <div className="text-lg font-bold text-slate-900 dark:text-white">₹{doctor.consultationFee.online}</div>
                   </div>
-                  <div className="border-l border-gray-200 pl-6">
-                    <div className="flex items-center gap-1.5 text-green-600">
+                  <div className="border-l border-slate-200 dark:border-slate-700 pl-6">
+                    <div className="flex items-center gap-1.5 text-green-600 dark:text-green-400">
                       <User className="h-4 w-4" />
                       <span className="text-sm font-medium">Clinic</span>
                     </div>
-                    <div className="text-lg font-bold text-gray-900">₹{doctor.consultationFee.inPerson}</div>
+                    <div className="text-lg font-bold text-slate-900 dark:text-white">₹{doctor.consultationFee.inPerson}</div>
                   </div>
                 </div>
                 
-                <Button 
-                  onClick={() => handleBookAppointment(doctor)}
-                  className="bg-gradient-to-r from-blue-600 to-green-600 hover:from-blue-700 hover:to-green-700 shadow-lg hover:shadow-xl transition-all rounded-full px-6"
-                >
-                  Book Now
-                  <ArrowRight className="h-4 w-4 ml-2" />
-                </Button>
+                {userType === "doctor" ? (
+                  <div className="text-sm text-muted-foreground">
+                    Doctor accounts cannot book from the patient view. Please sign in as a patient to book.
+                  </div>
+                ) : (
+                  <Button 
+                    onClick={() => handleBookAppointment(doctor)}
+                    className="bg-gradient-to-r from-teal-500 to-teal-600 hover:from-teal-600 hover:to-teal-700 text-white shadow-lg hover:shadow-xl transition-all rounded-full px-6"
+                  >
+                    Book Now
+                    <ArrowRight className="h-4 w-4 ml-2" />
+                  </Button>
+                )}
               </div>
             </div>
           </div>
@@ -569,6 +690,15 @@ const DoctorListBooking = () => {
         return;
       }
 
+      if (!selectedDoctor.isLive) {
+        toast({
+          title: "Live doctor required",
+          description: "Please select a doctor from the live database list to continue.",
+          variant: "destructive",
+        });
+        return;
+      }
+
       // Convert doctor ID to number if possible, otherwise use as string
       let doctorId: number | string;
       if (/^\d+$/.test(doctorIdentifier)) {
@@ -593,11 +723,16 @@ const DoctorListBooking = () => {
       
       toast({
         title: "Success!",
-        description: "Your appointment has been booked successfully",
+        description: "Your appointment has been booked successfully. View your bookings to check status.",
+        action: {
+          label: "View my bookings",
+          onClick: () => navigate("/my-bookings"),
+        },
       });
 
       setShowBookingModal(false);
-      navigate("/my-bookings");
+      // Stay on the doctors page after booking; patient can navigate to My Bookings manually
+      // navigate("/my-bookings");
       
     } catch (error: any) {
       console.error("Error booking appointment:", error);
@@ -627,57 +762,74 @@ const DoctorListBooking = () => {
 
   return (
     <MainLayout>
-      <div className="min-h-screen bg-gradient-to-br from-blue-50/50 via-background to-green-50/30">
+      <div className="min-h-screen bg-gradient-to-br from-slate-50 via-white to-slate-50/80 dark:from-slate-900 dark:via-slate-900 dark:to-slate-800">
         {/* Hero Header */}
-        <div className="bg-gradient-to-r from-blue-600 via-blue-700 to-green-600 text-white">
+        <div className="bg-gradient-to-r from-slate-800 via-slate-900 to-slate-800 text-white">
           <div className="container mx-auto px-4 py-8">
             <div className="max-w-3xl">
-              <div className="flex items-center gap-2 text-blue-100 mb-2">
+              <div className="flex items-center gap-2 text-teal-400 mb-2">
                 <Sparkles className="h-4 w-4" />
                 <span className="text-sm font-medium">Find Your Perfect Doctor</span>
               </div>
               <h1 className="text-3xl md:text-4xl font-bold mb-3">
                 Book Appointments with Top Doctors
               </h1>
-              <p className="text-blue-100 text-lg">
+              <p className="text-slate-300 text-lg">
                 Connect with verified healthcare professionals for online and in-person consultations
               </p>
             </div>
             
             {/* Search Bar in Header */}
-            <div className="mt-6 bg-white rounded-2xl p-2 shadow-xl max-w-4xl">
+            <div className="mt-6 bg-white dark:bg-slate-800 rounded-2xl p-2 shadow-xl max-w-4xl">
               <div className="flex flex-col md:flex-row gap-2">
                 <div className="relative flex-1">
-                  <Search className="absolute left-4 top-1/2 -translate-y-1/2 h-5 w-5 text-gray-400" />
+                  <Search className="absolute left-4 top-1/2 -translate-y-1/2 h-5 w-5 text-slate-400" />
                   <Input
                     placeholder="Search doctors, specialties..."
                     value={searchTerm}
                     onChange={(e) => setSearchTerm(e.target.value)}
-                    className="pl-12 h-12 border-0 bg-gray-50 rounded-xl text-gray-900 placeholder:text-gray-500 focus-visible:ring-blue-500"
+                    className="pl-12 h-12 border-0 bg-slate-50 dark:bg-slate-700 rounded-xl text-slate-900 dark:text-white placeholder:text-slate-500 focus-visible:ring-teal-500"
                   />
                 </div>
-                <div className="relative flex-1 md:border-l border-gray-200">
-                  <MapPin className="absolute left-4 top-1/2 -translate-y-1/2 h-5 w-5 text-gray-400" />
+                <div className="relative flex-1 md:border-l border-slate-200 dark:border-slate-600">
+                  <MapPin className="absolute left-4 top-1/2 -translate-y-1/2 h-5 w-5 text-slate-400" />
                   <Input
                     placeholder="City or location..."
                     value={selectedLocation}
                     onChange={(e) => setSelectedLocation(e.target.value)}
-                    className="pl-12 h-12 border-0 bg-gray-50 rounded-xl text-gray-900 placeholder:text-gray-500 focus-visible:ring-blue-500"
+                    className="pl-12 h-12 border-0 bg-slate-50 dark:bg-slate-700 rounded-xl text-slate-900 dark:text-white placeholder:text-slate-500 focus-visible:ring-teal-500"
                   />
                 </div>
                 <Button 
                   size="lg"
-                  className="h-12 px-8 bg-gradient-to-r from-blue-600 to-green-600 hover:from-blue-700 hover:to-green-700 rounded-xl"
+                  className="h-12 px-8 bg-gradient-to-r from-teal-500 to-teal-600 hover:from-teal-600 hover:to-teal-700 rounded-xl text-white"
+                  onClick={() => {
+                    filterDoctors();
+                  }}
                 >
                   <Search className="h-5 w-5 mr-2" />
                   Search
                 </Button>
               </div>
+                <div className="flex justify-end mt-3 pr-1">
+                  <Button
+                    variant="outline"
+                    className="rounded-full"
+                    onClick={() => navigate("/my-bookings")}
+                  >
+                    View my bookings
+                  </Button>
+                </div>
             </div>
           </div>
         </div>
 
         <div className="container mx-auto px-4 py-6">
+          {userType === "doctor" && (
+            <div className="mb-4 rounded-xl border border-yellow-200 bg-yellow-50 text-yellow-800 px-4 py-3 text-sm">
+              Doctor accounts cannot book appointments from the patient view. Please sign in as a patient to book.
+            </div>
+          )}
           {/* Quick Specialty Filters */}
           <div className="mb-6">
             <ScrollArea className="w-full whitespace-nowrap">
@@ -687,7 +839,7 @@ const DoctorListBooking = () => {
                   onClick={() => setSelectedSpecialization("")}
                   className={cn(
                     "rounded-full px-5 shrink-0",
-                    selectedSpecialization === "" && "bg-gradient-to-r from-blue-600 to-green-600"
+                    selectedSpecialization === "" && "bg-gradient-to-r from-teal-500 to-teal-600 text-white"
                   )}
                 >
                   All Specialists
@@ -702,7 +854,7 @@ const DoctorListBooking = () => {
                       onClick={() => setSelectedSpecialization(isSelected ? "" : spec.label)}
                       className={cn(
                         "rounded-full px-5 shrink-0 gap-2",
-                        isSelected && "bg-gradient-to-r from-blue-600 to-green-600"
+                        isSelected && "bg-gradient-to-r from-teal-500 to-teal-600 text-white"
                       )}
                     >
                       <Icon className={cn("h-4 w-4", !isSelected && spec.color)} />
@@ -717,9 +869,9 @@ const DoctorListBooking = () => {
 
           {/* Filter Bar */}
           <div className="flex flex-wrap items-center justify-between gap-4 mb-6">
-            <p className="text-muted-foreground">
-              Found <span className="font-semibold text-foreground">{filteredDoctors.length}</span> doctor{filteredDoctors.length !== 1 ? 's' : ''} 
-              {selectedSpecialization && <span> in <span className="font-medium text-blue-600">{selectedSpecialization}</span></span>}
+            <p className="text-slate-500 dark:text-slate-400">
+              Found <span className="font-semibold text-slate-800 dark:text-white">{filteredDoctors.length}</span> doctor{filteredDoctors.length !== 1 ? 's' : ''} 
+              {selectedSpecialization && <span> in <span className="font-medium text-teal-600 dark:text-teal-400">{selectedSpecialization}</span></span>}
             </p>
             
             <div className="flex items-center gap-3">
@@ -757,16 +909,16 @@ const DoctorListBooking = () => {
             onValueChange={(value) => setViewMode(value as "all" | "categories")}
             className="space-y-6"
           >
-            <TabsList className="bg-white rounded-full p-1 shadow-md w-full max-w-md">
+            <TabsList className="bg-white dark:bg-slate-800 rounded-full p-1 shadow-md w-full max-w-md border border-slate-200 dark:border-slate-700">
               <TabsTrigger
                 value="all"
-                className="rounded-full px-6 data-[state=active]:bg-gradient-to-r data-[state=active]:from-blue-600 data-[state=active]:to-green-600 data-[state=active]:text-white"
+                className="rounded-full px-6 data-[state=active]:bg-gradient-to-r data-[state=active]:from-teal-500 data-[state=active]:to-teal-600 data-[state=active]:text-white"
               >
                 All Doctors
               </TabsTrigger>
               <TabsTrigger
                 value="categories"
-                className="rounded-full px-6 data-[state=active]:bg-gradient-to-r data-[state=active]:from-blue-600 data-[state=active]:to-green-600 data-[state=active]:text-white"
+                className="rounded-full px-6 data-[state=active]:bg-gradient-to-r data-[state=active]:from-teal-500 data-[state=active]:to-teal-600 data-[state=active]:text-white"
               >
                 Category View
               </TabsTrigger>
@@ -1318,6 +1470,6 @@ const mockDoctors: Doctor[] = [
     services: ["Acne Treatment", "Skin Allergies", "Hair Loss"],
     verified: true
   }
-];
+].map((doctor) => ({ ...doctor, isLive: doctor.isLive ?? false }));
 
 export default DoctorListBooking;

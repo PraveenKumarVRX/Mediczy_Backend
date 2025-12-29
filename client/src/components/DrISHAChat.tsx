@@ -142,6 +142,50 @@ export const DrISHAChat: React.FC<DrISHAChatProps> = ({
 
         setMessages(prev => [...prev, assistantMessage]);
 
+        // ===== INTELLIGENT INTENT HANDLING =====
+        const response_data = response.data;
+
+        // Handle Emergency Intent
+        if (response_data.intentType === 'emergency') {
+          toast.error('EMERGENCY DETECTED - Call emergency services immediately!', {
+            duration: 5000
+          });
+          setTimeout(() => {
+            window.location.href = response_data.redirectUrl || '/emergency';
+          }, 2000);
+        }
+        // Handle Appointment Intent
+        else if (response_data.intentType === 'appointment') {
+          toast.success('Let me help you book an appointment!', {
+            duration: 3000
+          });
+          setTimeout(() => {
+            window.location.href = response_data.redirectUrl || '/appointments';
+          }, 1500);
+        }
+        // Handle Doctor Search Intent
+        else if (response_data.intentType === 'doctor_search') {
+          toast.info('Browse our network of doctors', {
+            duration: 3000
+          });
+          setTimeout(() => {
+            window.location.href = response_data.redirectUrl || '/doctors';
+          }, 1500);
+        }
+        // Handle Specialist Referral (Pregnancy, Mental Health, Pediatric)
+        else if (response_data.intentType === 'pregnancy' || 
+                 response_data.intentType === 'mental_health' || 
+                 response_data.intentType === 'pediatric') {
+          const specialistName = response_data.suggestedSpecialist || 'Specialist';
+          toast.info(`Connecting you with a ${specialistName}`, {
+            duration: 3000
+          });
+          setTimeout(() => {
+            const searchPath = `/doctors?specialty=${response_data.specialization || ''}`;
+            window.location.href = searchPath;
+          }, 1500);
+        }
+
         // Call onResponseReceived callback
         if (onResponseReceived) {
           onResponseReceived(assistantMessage);

@@ -9,7 +9,7 @@ Created comprehensive login systems and dashboards for **Nurse** and **Doctor As
 
 ### Login Credentials (Development)
 - **Email:** nurse@mediczy.com
-- **Password:** NursePass123
+- **Password:** Nurse123
 - **Access URL:** http://localhost:9443/nurse/login
 
 ### Features & Permissions
@@ -192,7 +192,7 @@ client/src/
 
 ### Access Nurse Portal
 1. Navigate to http://localhost:9443/nurse/login
-2. Login with nurse@mediczy.com / NursePass123
+2. Login with nurse@mediczy.com / Nurse123
 3. Access dashboard with patient management features
 
 ### Access Assistant Portal

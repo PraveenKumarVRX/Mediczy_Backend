@@ -305,6 +305,41 @@ const HospitalMRD = () => {
     setShowDigitizationDialog(true);
   };
 
+  const handlePrintRecord = (record: MedicalRecord) => {
+    const win = window.open('', '_blank');
+    if (!win) {
+      toast({ title: 'Popup blocked', description: 'Allow popups to print the record.', variant: 'destructive' });
+      return;
+    }
+    const docHtml = `
+      <html>
+        <head>
+          <title>MRD Record - ${record.mrdNumber}</title>
+          <style>
+            body { font-family: Arial, sans-serif; padding: 16px; }
+            h1 { margin-bottom: 4px; }
+            .meta { color: #475569; margin-bottom: 12px; }
+            .section { margin-bottom: 12px; }
+            .label { font-weight: bold; }
+          </style>
+        </head>
+        <body>
+          <h1>${record.patientName} (${record.uhid})</h1>
+          <div class="meta">MRD: ${record.mrdNumber} • ${record.recordType} • ${record.department}</div>
+          <div class="section"><span class="label">Doctor:</span> ${record.attendingDoctor || 'N/A'}</div>
+          <div class="section"><span class="label">Admission:</span> ${record.admissionDate || '-'} | <span class="label">Discharge:</span> ${record.dischargeDate || '-'}</div>
+          <div class="section"><span class="label">Location:</span> ${record.fileLocation || '-'} (${record.shelf || '-'} / ${record.rack || '-'})</div>
+          <div class="section"><span class="label">Diagnosis:</span> ${record.diagnosis || '—'}</div>
+        </body>
+      </html>
+    `;
+    win.document.write(docHtml);
+    win.document.close();
+    win.focus();
+    win.print();
+    win.close();
+  };
+
   const escapeCsvCell = (value: unknown) => {
     if (value === null || value === undefined) return '';
     const str = String(value);
@@ -865,7 +900,7 @@ const HospitalMRD = () => {
                               <ScanLine className="h-4 w-4" />
                               Add to Queue
                             </Button>
-                            <Button variant="ghost" size="icon">
+                            <Button variant="ghost" size="icon" onClick={() => handlePrintRecord(record)}>
                               <Printer className="h-4 w-4" />
                             </Button>
                           </div>

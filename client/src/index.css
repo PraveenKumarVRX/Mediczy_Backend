@@ -103,6 +103,11 @@
     --sidebar-ring: 190 95% 42%;
   }
 
+  body {
+    @apply bg-slate-50 text-foreground antialiased;
+    font-family: 'Inter', system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+  }
+
   .scrollbar-none {
     -ms-overflow-style: none;
     scrollbar-width: none;
@@ -139,6 +144,53 @@
   -webkit-background-clip: text;
   color: transparent;
   width: fit-content;
+}
+
+/* Shared brand surfaces for auth shells */
+.auth-shell {
+  min-height: 100vh;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 1.25rem;
+  background: radial-gradient(circle at 20% 20%, rgba(59, 130, 246, 0.08), transparent 32%),
+              radial-gradient(circle at 80% 0%, rgba(16, 185, 129, 0.08), transparent 28%),
+              linear-gradient(145deg, #f6fbff 0%, #eef4ff 45%, #eafdf5 100%);
+}
+
+.brand-hero {
+  position: relative;
+  isolation: isolate;
+  overflow: hidden;
+  background-image: linear-gradient(135deg, rgba(6, 56, 95, 0.82), rgba(4, 149, 133, 0.78)), url("/aiH.jpg");
+  background-size: cover;
+  background-position: center;
+  background-repeat: no-repeat;
+  color: #fff;
+}
+
+.brand-hero::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  background: radial-gradient(circle at 20% 20%, rgba(255, 255, 255, 0.12), transparent 32%),
+              radial-gradient(circle at 80% 0%, rgba(255, 255, 255, 0.1), transparent 28%),
+              linear-gradient(180deg, rgba(15, 23, 42, 0.25), rgba(15, 23, 42, 0.4));
+  z-index: 0;
+}
+
+.brand-hero > * {
+  position: relative;
+  z-index: 1;
+}
+
+.brand-panel {
+  position: relative;
+  background: rgba(255, 255, 255, 0.96);
+  border: 1px solid hsl(var(--border));
+  box-shadow: 0 25px 60px rgba(15, 23, 42, 0.08), 0 8px 20px rgba(15, 23, 42, 0.04);
+  border-radius: 18px;
+  backdrop-filter: blur(4px);
 }
 
 @media (max-width: 768px) {

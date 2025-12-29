@@ -82,23 +82,23 @@ const DoctorAlerts: React.FC = () => {
   const getAlertColor = (type: string) => {
     switch (type) {
       case 'critical':
-        return 'border-red-500 bg-red-50';
+        return 'border-red-500 bg-red-50 dark:bg-red-950/30';
       case 'warning':
-        return 'border-yellow-500 bg-yellow-50';
+        return 'border-yellow-500 bg-yellow-50 dark:bg-yellow-950/30';
       case 'success':
-        return 'border-green-500 bg-green-50';
+        return 'border-green-500 bg-green-50 dark:bg-green-950/30';
       default:
-        return 'border-blue-500 bg-blue-50';
+        return 'border-blue-500 bg-blue-50 dark:bg-blue-950/30';
     }
   };
 
   const getCategoryBadge = (category: string) => {
     const colors: Record<string, string> = {
-      patient: 'bg-blue-100 text-blue-800',
-      appointment: 'bg-purple-100 text-purple-800',
-      system: 'bg-gray-100 text-gray-800',
-      medication: 'bg-orange-100 text-orange-800',
-      lab: 'bg-red-100 text-red-800'
+      patient: 'bg-blue-100 text-blue-800 dark:bg-blue-900/50 dark:text-blue-300',
+      appointment: 'bg-purple-100 text-purple-800 dark:bg-purple-900/50 dark:text-purple-300',
+      system: 'bg-gray-100 text-gray-800 dark:bg-gray-800 dark:text-gray-300',
+      medication: 'bg-orange-100 text-orange-800 dark:bg-orange-900/50 dark:text-orange-300',
+      lab: 'bg-red-100 text-red-800 dark:bg-red-900/50 dark:text-red-300'
     };
     return <Badge className={colors[category]}>{category}</Badge>;
   };

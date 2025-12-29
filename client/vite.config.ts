@@ -81,7 +81,7 @@ export default defineConfig(({ mode }) => ({
   },
   build: {
     // Production build optimization
-    chunkSizeWarningLimit: 1000,
+    chunkSizeWarningLimit: 2000,
     sourcemap: false,
     minify: 'esbuild',
     rollupOptions: {
@@ -90,6 +90,9 @@ export default defineConfig(({ mode }) => ({
           vendor: ['react', 'react-dom'],
           router: ['react-router-dom'],
           ui: ['lucide-react', '@radix-ui/react-toast'],
+          markdown: ['react-markdown', 'remark-gfm'],
+          motion: ['framer-motion'],
+          notifications: ['sonner'],
         },
         assetFileNames: 'assets/[name]-[hash][extname]',
         chunkFileNames: 'assets/[name]-[hash].js',
