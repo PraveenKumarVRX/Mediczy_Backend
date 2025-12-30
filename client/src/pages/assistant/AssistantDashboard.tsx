@@ -40,6 +40,20 @@ interface AssistantData {
   canAccessDoctorCalendar: boolean;
 }
 
+// Normalize permissions - convert object format to array of permission names
+const normalizePermissions = (permissions: any): string[] => {
+  if (Array.isArray(permissions)) {
+    return permissions;
+  }
+  if (permissions && typeof permissions === 'object') {
+    // Convert {canViewAppointments: true, canManagePatients: false} to ['canViewAppointments']
+    return Object.entries(permissions)
+      .filter(([, value]) => value === true)
+      .map(([key]) => key);
+  }
+  return [];
+};
+
 const AssistantDashboard = () => {
   const navigate = useNavigate();
   const [assistantData, setAssistantData] = useState<AssistantData | null>(null);
@@ -63,7 +77,7 @@ const AssistantDashboard = () => {
       const safeData: AssistantData = {
         ...parsed,
         linkedDoctorIds: parsed?.linkedDoctorIds ?? [],
-        permissions: parsed?.permissions ?? [],
+        permissions: normalizePermissions(parsed?.permissions),
       };
       setAssistantData(safeData);
       fetchAppointments();

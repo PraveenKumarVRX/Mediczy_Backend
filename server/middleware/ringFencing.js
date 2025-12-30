@@ -31,7 +31,8 @@ const USER_TYPE_PERMISSIONS = {
       '/api/fitness',  // Fitness tracking
       '/api/fitness-data',  // Health and fitness data
       '/api/apple-health',  // Apple Health integration
-      '/api/health-diary'  // Health diary entries
+      '/api/health-diary',  // Health diary entries
+      '/api/mobile'  // Mobile API gateway
     ],
     tokenField: 'userId'
   },
@@ -47,7 +48,8 @@ const USER_TYPE_PERMISSIONS = {
       '/api/ai-scribe',
       '/api/recording',
       '/api/cdss',  // Clinical Decision Support System
-      '/api/billing'  // Billing and invoices
+      '/api/billing',  // Billing and invoices
+      '/api/v2/doctors'  // Enterprise API v2 doctor endpoints
     ],
     tokenField: 'doctorId'
   },
@@ -121,7 +123,13 @@ const USER_TYPE_PERMISSIONS = {
     allowedPaths: [
       '/api/assistant',
       '/api/patients',
-      '/api/orders'
+      '/api/orders',
+      '/api/appointments',
+      '/api/prescriptions',
+      '/api/billing',
+      '/api/messages',
+      '/api/reports',
+      '/api/v2/assistants'  // Enterprise API v2 assistant endpoints
     ],
     tokenField: 'assistantId'
   },
@@ -237,7 +245,7 @@ const PUBLIC_ENDPOINTS = [
   '/api/admin/login',
   '/api/team/login',
   '/api/nurse/login',
-  '/api/assistants/login',
+  '/api/assistant/login',
   '/api/corporate/login',
   '/api/corporate/auth/login',
   '/api/hospital/login',
@@ -259,7 +267,20 @@ const PUBLIC_ENDPOINTS = [
   '/api/medical-ai/test', // AI medical consultation test endpoint (for demos and testing)
   '/api/tts', // Text-to-Speech for emergency triage (Eleven Labs)
   '/api/membership/plans', // Public membership plans listing
-  '/api/membership-plans' // Public membership plans (alternative route)
+  '/api/membership-plans', // Public membership plans (alternative route)
+  // Platform Admin API public endpoints
+  '/api/platform/health',
+  // Enterprise API v2 public endpoints
+  '/api/v2/health',
+  '/api/v2/',
+  '/api/v2/auth/login',
+  '/api/v2/auth/refresh',
+  '/api/v2/assistants/login',
+  // Mobile API public endpoints
+  '/api/mobile/health',
+  '/api/mobile/status',
+  '/api/mobile/auth',
+  '/api/mobile/doctors'  // Public doctor search for mobile
 ];
 
 /**

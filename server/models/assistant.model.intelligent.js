@@ -2,12 +2,28 @@ import { postgresSequelize as sequelize } from '../db/postgres-sequelize.js';
 import { DataTypes } from 'sequelize';
 import bcrypt from 'bcrypt';
 
+// Generate 6-character alphanumeric ID starting with 'A'
+const generateAssistantId = () => {
+  const chars = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789';
+  let result = 'A'; // Always start with A
+  for (let i = 0; i < 5; i++) {
+    result += chars.charAt(Math.floor(Math.random() * chars.length));
+  }
+  return result;
+};
+
 // Define Assistant model - NOW USING POSTGRESQL
 const Assistant = sequelize.define('Assistant', {
   id: {
     type: DataTypes.INTEGER,
     primaryKey: true,
     autoIncrement: true
+  },
+  assistantId: {
+    type: DataTypes.STRING(10),
+    unique: true,
+    allowNull: false,
+    defaultValue: () => generateAssistantId()
   },
   doctorId: {
     type: DataTypes.INTEGER,
@@ -65,7 +81,15 @@ const Assistant = sequelize.define('Assistant', {
   }
 }, {
   tableName: 'doctor_assistants',
-  timestamps: true
+  timestamps: true,
+  hooks: {
+    beforeCreate: async (assistant) => {
+      // Generate assistantId if not provided
+      if (!assistant.assistantId) {
+        assistant.assistantId = generateAssistantId();
+      }
+    }
+  }
 });
 
 // Add instance method to compare passwords

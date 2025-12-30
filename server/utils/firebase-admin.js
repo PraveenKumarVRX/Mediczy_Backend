@@ -243,6 +243,82 @@ const sendVideoCallNotification = async (recipientToken, callData) => {
 };
 
 /**
+ * Send triage call notification to doctor
+ * @param {string} recipientToken - FCM token of doctor
+ * @param {object} callData - Triage call information
+ */
+const sendTriageCallNotification = async (recipientToken, callData) => {
+  const notification = {
+    title: '🚨 Emergency Triage Call',
+    body: `${callData.patientName} needs urgent medical attention`,
+    icon: '/emergency-icon.png',
+    requireInteraction: true,
+    category: 'CALL'
+  };
+
+  const data = {
+    type: FCM_NOTIFICATION_TYPES.VIDEO_CALL,
+    appointmentId: String(callData.appointmentId),
+    roomId: callData.roomId,
+    patientId: String(callData.patientId),
+    patientName: callData.patientName,
+    patientPhone: callData.patientPhone || '',
+    symptoms: callData.symptoms || '',
+    urgencyLevel: callData.urgencyLevel || 'MEDIUM',
+    joinUrl: callData.joinUrl || '',
+    clickAction: 'answer_triage_call'
+  };
+
+  return sendPushNotification(recipientToken, notification, data);
+};
+
+/**
+ * Send call accepted notification to patient
+ * @param {string} recipientToken - FCM token of patient
+ * @param {object} acceptData - Call acceptance data
+ */
+const sendCallAcceptedNotification = async (recipientToken, acceptData) => {
+  const notification = {
+    title: '✅ Doctor Accepted Your Call',
+    body: `${acceptData.doctorName} is joining the video call`,
+    icon: '/doctor-icon.png',
+    requireInteraction: true
+  };
+
+  const data = {
+    type: FCM_NOTIFICATION_TYPES.VIDEO_CALL,
+    appointmentId: String(acceptData.appointmentId),
+    roomId: acceptData.roomId,
+    doctorName: acceptData.doctorName,
+    clickAction: 'join_call'
+  };
+
+  return sendPushNotification(recipientToken, notification, data);
+};
+
+/**
+ * Send call rejected notification to patient
+ * @param {string} recipientToken - FCM token of patient
+ * @param {object} rejectData - Call rejection data
+ */
+const sendCallRejectedNotification = async (recipientToken, rejectData) => {
+  const notification = {
+    title: '❌ Call Not Available',
+    body: rejectData.reason || 'Doctor is currently unavailable',
+    icon: '/info-icon.png'
+  };
+
+  const data = {
+    type: FCM_NOTIFICATION_TYPES.SYSTEM,
+    appointmentId: String(rejectData.appointmentId),
+    reason: rejectData.reason || 'unavailable',
+    clickAction: 'try_again'
+  };
+
+  return sendPushNotification(recipientToken, notification, data);
+};
+
+/**
  * Send message notification
  * @param {string} recipientToken - FCM token of message recipient
  * @param {object} messageData - Message information
@@ -367,6 +443,9 @@ export {
   sendPushNotification,
   sendMulticastNotification,
   sendVideoCallNotification,
+  sendTriageCallNotification,
+  sendCallAcceptedNotification,
+  sendCallRejectedNotification,
   sendMessageNotification,
   sendAppointmentNotification,
   sendSystemNotification,

@@ -1309,13 +1309,13 @@ router.get("/triage/cases", authDoctor, async (req, res) => {
     const doctorId = req.doctor.id;
     const { status } = req.query;
 
-    // Build query conditions
+    // Build query conditions - look for emergency triage appointments
     const whereConditions = {
       [Op.or]: [
         { doctorId: null }, // Unassigned cases
         { doctorId } // Cases assigned to this doctor
       ],
-      type: 'emergency_triage'
+      sourceChannel: 'emergency_triage'
     };
 
     if (status && status !== 'all') {
@@ -1328,14 +1328,9 @@ router.get("/triage/cases", authDoctor, async (req, res) => {
       }
     }
 
-    // Fetch triage appointments
+    // Fetch triage appointments (without include as User association may not exist)
     const triageAppointments = await Appointment.findAll({
       where: whereConditions,
-      include: [{
-        model: User,
-        as: 'patient',
-        attributes: ['id', 'firstName', 'lastName', 'email', 'phoneNumber', 'dateOfBirth', 'gender', 'address']
-      }],
       order: [
         ['createdAt', 'DESC']
       ],
@@ -1344,13 +1339,12 @@ router.get("/triage/cases", authDoctor, async (req, res) => {
 
     // Transform to triage case format
     const triageCases = triageAppointments.map(apt => {
-      const notes = apt.notes ? (typeof apt.notes === 'string' ? JSON.parse(apt.notes) : apt.notes) : {};
-      const patient = apt.patient || {};
+      const notesJson = apt.notes_json ? (typeof apt.notes_json === 'string' ? JSON.parse(apt.notes_json) : apt.notes_json) : {};
       
-      // Calculate age
+      // Calculate age from patientDetails if available
       let age = 0;
-      if (patient.dateOfBirth) {
-        const dob = new Date(patient.dateOfBirth);
+      if (apt.patientDetails && apt.patientDetails.dateOfBirth) {
+        const dob = new Date(apt.patientDetails.dateOfBirth);
         const today = new Date();
         age = today.getFullYear() - dob.getFullYear();
       }
@@ -1363,23 +1357,23 @@ router.get("/triage/cases", authDoctor, async (req, res) => {
 
       return {
         id: apt.id.toString(),
-        patientId: patient.id,
-        patientName: `${patient.firstName || ''} ${patient.lastName || ''}`.trim() || 'Unknown Patient',
+        patientId: apt.userId,
+        patientName: apt.patientName || 'Unknown Patient',
         patientAge: age,
-        patientGender: patient.gender || 'Unknown',
-        patientPhone: patient.phoneNumber || '',
-        patientLocation: patient.address || notes.location || '',
-        symptoms: apt.reason || notes.symptoms || 'Not specified',
-        description: apt.symptoms || notes.description || apt.reason || '',
-        urgencyLevel: notes.urgencyLevel || 'URGENT',
-        aiAssessment: notes.aiAssessment || null,
-        aiRecommendation: notes.aiRecommendation || null,
-        vitalSigns: notes.vitalSigns || null,
+        patientGender: (apt.patientDetails && apt.patientDetails.gender) || 'Unknown',
+        patientPhone: apt.patientPhone || '',
+        patientLocation: (apt.patientDetails && apt.patientDetails.address) || notesJson.location || '',
+        symptoms: apt.symptoms || notesJson.symptoms || 'Not specified',
+        description: apt.reason || notesJson.description || '',
+        urgencyLevel: notesJson.urgencyLevel || 'URGENT',
+        aiAssessment: notesJson.aiAssessment || null,
+        aiRecommendation: notesJson.aiRecommendation || null,
+        vitalSigns: notesJson.vitalSigns || null,
         status: triageStatus,
         createdAt: apt.createdAt,
         appointmentId: apt.id,
-        videoRoomId: apt.videoRoomId || notes.roomId || null,
-        notes: apt.doctorNotes || null
+        videoRoomId: apt.meetingId || notesJson.roomId || null,
+        notes: apt.notes || null
       };
     });
 
@@ -1409,7 +1403,7 @@ router.get("/triage/stats", authDoctor, async (req, res) => {
     const doctorId = req.doctor.id;
 
     const baseWhere = {
-      type: 'emergency_triage',
+      sourceChannel: 'emergency_triage',
       [Op.or]: [
         { doctorId: null },
         { doctorId }
@@ -1423,17 +1417,17 @@ router.get("/triage/stats", authDoctor, async (req, res) => {
       Appointment.count({ where: { ...baseWhere, status: { [Op.in]: ['completed', 'cancelled'] } } })
     ]);
 
-    // Count by urgency (from notes JSON)
+    // Count by urgency (from notes_json)
     const allTriageCases = await Appointment.findAll({
-      where: { ...baseWhere, status: { [Op.in]: ['pending', 'scheduled', 'in_progress'] } },
-      attributes: ['notes']
+      where: { ...baseWhere, status: { [Op.in]: ['pending', 'scheduled', 'in_progress', 'confirmed'] } },
+      attributes: ['notes_json']
     });
 
     let immediate = 0;
     let urgent = 0;
     allTriageCases.forEach(apt => {
       try {
-        const notes = apt.notes ? (typeof apt.notes === 'string' ? JSON.parse(apt.notes) : apt.notes) : {};
+        const notes = apt.notes_json ? (typeof apt.notes_json === 'string' ? JSON.parse(apt.notes_json) : apt.notes_json) : {};
         if (notes.urgencyLevel === 'IMMEDIATE') immediate++;
         if (notes.urgencyLevel === 'URGENT') urgent++;
       } catch (e) {}
@@ -1645,3 +1639,101 @@ router.post("/triage/cases/:caseId/respond", authDoctor, async (req, res) => {
 });
 
 export default router;
+
+/**
+ * @route   POST /api/doctors/triage/accept-call
+ * @desc    Doctor accepts incoming triage call request (Hybrid: Socket.IO + FCM)
+ * @access  Private (Doctor only)
+ */
+router.post("/triage/accept-call", authDoctor, async (req, res) => {
+  try {
+    const { appointmentId } = req.body;
+    const doctorId = req.doctor.id;
+
+    const appointment = await Appointment.findByPk(appointmentId);
+    
+    if (!appointment) {
+      return res.status(404).json({ success: false, message: 'Appointment not found' });
+    }
+
+    if (appointment.doctorId !== doctorId) {
+      return res.status(403).json({ success: false, message: 'Unauthorized' });
+    }
+
+    // Update appointment status
+    await appointment.update({ status: 'in_progress' });
+
+    // Notify patient via hybrid notification (Socket.IO + FCM)
+    const { emitCallAccepted } = await import('../chat/chathandler.controller.js');
+    const acceptData = {
+      appointmentId: appointment.id,
+      doctorName: `Dr. ${req.doctor.firstName} ${req.doctor.lastName}`,
+      roomId: appointment.meetingId,
+      timestamp: new Date().toISOString()
+    };
+    
+    const notificationResult = await emitCallAccepted(appointment.userId, acceptData);
+    console.log(`📲 Hybrid notification sent - Socket: ${notificationResult.socketSent}, FCM: ${notificationResult.fcmSent}`);
+
+    res.json({
+      success: true,
+      appointment: {
+        id: appointment.id,
+        status: appointment.status,
+        roomId: appointment.meetingId
+      },
+      notification: notificationResult
+    });
+  } catch (error) {
+    console.error('Accept call error:', error);
+    res.status(500).json({ success: false, message: 'Failed to accept call' });
+  }
+});
+
+/**
+ * @route   POST /api/doctors/triage/reject-call
+ * @desc    Doctor rejects incoming triage call request (Hybrid: Socket.IO + FCM)
+ * @access  Private (Doctor only)
+ */
+router.post("/triage/reject-call", authDoctor, async (req, res) => {
+  try {
+    const { appointmentId, reason } = req.body;
+    const doctorId = req.doctor.id;
+
+    const appointment = await Appointment.findByPk(appointmentId);
+    
+    if (!appointment) {
+      return res.status(404).json({ success: false, message: 'Appointment not found' });
+    }
+
+    if (appointment.doctorId !== doctorId) {
+      return res.status(403).json({ success: false, message: 'Unauthorized' });
+    }
+
+    // Update appointment status
+    await appointment.update({ 
+      status: 'cancelled',
+      notes: `Doctor declined: ${reason || 'No reason provided'}`
+    });
+
+    // Notify patient via hybrid notification (Socket.IO + FCM)
+    const { emitCallRejected } = await import('../chat/chathandler.controller.js');
+    const rejectData = {
+      appointmentId: appointment.id,
+      reason: reason || 'Doctor is unavailable',
+      timestamp: new Date().toISOString()
+    };
+    
+    const notificationResult = await emitCallRejected(appointment.userId, rejectData);
+    console.log(`📲 Hybrid notification sent - Socket: ${notificationResult.socketSent}, FCM: ${notificationResult.fcmSent}`);
+
+    res.json({
+      success: true,
+      message: 'Call rejected successfully',
+      notification: notificationResult
+    });
+  } catch (error) {
+    console.error('Reject call error:', error);
+    res.status(500).json({ success: false, message: 'Failed to reject call' });
+  }
+});

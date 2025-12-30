@@ -137,6 +137,12 @@ import NurseAppointments from '@/pages/nurse/NurseAppointments';
 import AssistantLogin from '@/pages/assistant/AssistantLogin';
 import AssistantDashboard from '@/pages/assistant/AssistantDashboard';
 import AssistantRegisterPatient from '@/pages/assistant/AssistantRegisterPatient';
+import AssistantPatients from '@/pages/assistant/AssistantPatients';
+import AssistantAppointments from '@/pages/assistant/AssistantAppointments';
+import AssistantPrescriptions from '@/pages/assistant/AssistantPrescriptions';
+import AssistantBilling from '@/pages/assistant/AssistantBilling';
+import AssistantMessages from '@/pages/assistant/AssistantMessages';
+import AssistantReports from '@/pages/assistant/AssistantReports';
 import MainLayout from '@/components/layout/MainLayout';
 import AdminRegisterPatient from '@/pages/admin/AdminRegisterPatient';
 import AdminManageAssistants from '@/pages/admin/AdminManageAssistants';
@@ -516,8 +522,6 @@ const AppRoutes = () => {
       <Route path="/doctor/health-records" element={<PatientEMR />} />
       <Route path="/video-consultation" element={<MainLayout><VideoConsultation /></MainLayout>} />
       <Route path="/nurse/dashboard" element={<MainLayout><NurseDashboard /></MainLayout>} />
-      <Route path="/assistant/dashboard" element={<MainLayout><AssistantDashboard /></MainLayout>} />
-      <Route path="/assistant/orders" element={<MainLayout><OrderTasks /></MainLayout>} />
       <Route path="/profile" element={<MainLayout><ProfileEnhanced /></MainLayout>} />
       <Route path="/wallet" element={<MainLayout><Wallet /></MainLayout>} />
       <Route path="/health-tracker" element={<MainLayout><HealthTracker /></MainLayout>} />
@@ -619,8 +623,16 @@ const AppRoutes = () => {
   <Route path="/nurse/register-patient" element={<MainLayout><NurseRegisterPatient /></MainLayout>} />
   {/* Assistant */}
   <Route path="/assistant/login" element={<AssistantLogin />} />
-  <Route path="/assistant/dashboard" element={<AssistantDashboard />} />
-  <Route path="/assistant/register-patient" element={<AssistantRegisterPatient />} />
+  <Route path="/assistant/dashboard" element={<MainLayout><AssistantDashboard /></MainLayout>} />
+  <Route path="/assistant/register-patient" element={<MainLayout><AssistantRegisterPatient /></MainLayout>} />
+  <Route path="/assistant/patients" element={<MainLayout><AssistantPatients /></MainLayout>} />
+  <Route path="/assistant/appointments" element={<MainLayout><AssistantAppointments /></MainLayout>} />
+  <Route path="/assistant/prescriptions" element={<MainLayout><AssistantPrescriptions /></MainLayout>} />
+  <Route path="/assistant/billing" element={<MainLayout><AssistantBilling /></MainLayout>} />
+  <Route path="/assistant/messages" element={<MainLayout><AssistantMessages /></MainLayout>} />
+  <Route path="/assistant/orders" element={<MainLayout><OrderTasks /></MainLayout>} />
+  <Route path="/assistant/reports" element={<MainLayout><AssistantReports /></MainLayout>} />
+  <Route path="/assistant/profile" element={<MainLayout><AssistantDashboard /></MainLayout>} />
   {/* Patient Registration */}
   <Route path="/admin/register-patient" element={<AdminRegisterPatient />} />
   {/* Admin */}

@@ -264,17 +264,15 @@ router.get('/triage-doctors', authUser, async (req, res) => {
     const availableDoctors = await Doctor.findAll({
       where: {
         isOnline: true,
-        isVerified: true,
-        isAvailable: true
+        isVerified: true
       },
       attributes: [
         'id', 'prefix', 'firstName', 'lastName', 'profileImage',
         'specialization', 'qualifications', 'experience',
-        'onlineConsultationFee', 'consultationFees', 'averageRating',
+        'onlineConsultationFee', 'consultationFees',
         'languages', 'isOnline'
       ],
       order: [
-        ['averageRating', 'DESC'],
         ['experience', 'DESC']
       ],
       limit: 10
@@ -289,7 +287,7 @@ router.get('/triage-doctors', authUser, async (req, res) => {
       qualifications: doc.qualifications,
       experience: doc.experience,
       consultationFee: doc.onlineConsultationFee || doc.consultationFees || 500,
-      rating: doc.averageRating || 4.5,
+      rating: 4.5, // Default rating
       languages: doc.languages || ['English'],
       isOnline: true,
       acceptsEmergency: true // All online doctors accept emergency triage
@@ -324,19 +322,27 @@ router.post('/instant-triage-call', authUser, async (req, res) => {
     const { Doctor, Appointment } = await import('../models/index.js');
     const crypto = await import('crypto');
     
-    // If no doctor specified, find first available online doctor
+    // Default emergency triage doctor: Dr. Nandita Agarwal (doctor@mediczy.com)
+    const DEFAULT_TRIAGE_DOCTOR_ID = 70;
+    
+    // If no doctor specified, use default triage doctor or find first available
     let doctor;
     if (doctorId) {
       doctor = await Doctor.findByPk(doctorId);
     } else {
-      doctor = await Doctor.findOne({
-        where: {
-          isOnline: true,
-          isVerified: true,
-          isAvailable: true
-        },
-        order: [['averageRating', 'DESC']]
-      });
+      // First try the default triage doctor
+      doctor = await Doctor.findByPk(DEFAULT_TRIAGE_DOCTOR_ID);
+      
+      // If default not available, find any online doctor
+      if (!doctor || !doctor.isVerified) {
+        doctor = await Doctor.findOne({
+          where: {
+            isOnline: true,
+            isVerified: true
+          },
+          order: [['experience', 'DESC']]
+        });
+      }
     }
 
     if (!doctor) {
@@ -353,23 +359,31 @@ router.post('/instant-triage-call', authUser, async (req, res) => {
     
     // Create emergency appointment record
     const appointment = await Appointment.create({
-      patientId: req.user.id,
+      userId: req.user.id,
+      patientName: `${req.user.firstName || ''} ${req.user.lastName || ''}`.trim() || 'Patient',
+      patientEmail: req.user.email,
+      patientPhone: req.user.phoneNumber || '',
       doctorId: doctor.id,
+      doctorName: `${doctor.prefix || 'Dr.'} ${doctor.firstName} ${doctor.lastName}`,
+      specialization: doctor.specialization,
       appointmentDate: new Date(),
       appointmentTime: new Date().toTimeString().slice(0, 5),
-      type: 'emergency_triage',
-      status: 'in_progress',
+      status: 'confirmed',
       reason: `Emergency Triage: ${symptoms || 'Immediate consultation requested'}`,
-      notes: JSON.stringify({
+      symptoms: Array.isArray(symptoms) ? symptoms : (symptoms ? [symptoms] : ['Emergency triage consultation']),
+      notes: `Emergency Triage Request - Urgency: ${urgencyLevel || 'HIGH'}`,
+      notes_json: {
         triageId,
         urgencyLevel,
         symptoms,
         roomId,
+        type: 'emergency_triage',
         initiatedAt: new Date().toISOString()
-      }),
+      },
       consultationType: 'video',
-      isPaid: false, // Emergency triage - payment handled later
-      videoRoomId: roomId
+      meetingId: roomId,
+      paymentStatus: 'pending',
+      sourceChannel: 'emergency_triage'
     });
 
     // MiroTalk SFU URL
@@ -377,7 +391,29 @@ router.post('/instant-triage-call', authUser, async (req, res) => {
     const patientJoinUrl = `${mirotalkBaseUrl}/join/${roomId}`;
     const doctorJoinUrl = `${mirotalkBaseUrl}/join/${roomId}`;
 
-    // Notify doctor via notification service
+    // Send real-time socket notification to doctor (WhatsApp-style call notification)
+    try {
+      const { emitTriageCallRequest } = await import('../chat/chathandler.controller.js');
+      const callData = {
+        appointmentId: appointment.id,
+        roomId,
+        patientId: req.user.id,
+        patientName: `${req.user.firstName || ''} ${req.user.lastName || ''}`.trim() || 'Patient',
+        patientPhone: req.user.phoneNumber || '',
+        symptoms: symptoms || 'Emergency consultation',
+        urgencyLevel: urgencyLevel || 'HIGH',
+        joinUrl: doctorJoinUrl,
+        timestamp: new Date().toISOString(),
+        status: 'pending'
+      };
+      
+      const socketSent = emitTriageCallRequest(doctor.id, callData);
+      console.log(socketSent ? '✅ Socket notification sent to doctor' : '⚠️ Doctor not connected to socket');
+    } catch (socketError) {
+      console.warn('Socket notification failed:', socketError.message);
+    }
+
+    // Notify doctor via notification service (fallback)
     try {
       const notificationService = (await import('../services/notification.service.js')).default;
       await notificationService.sendNotification({

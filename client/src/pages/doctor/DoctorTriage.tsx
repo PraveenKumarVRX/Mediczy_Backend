@@ -82,6 +82,8 @@ import { useToast } from "@/hooks/use-toast";
 import { cn } from "@/lib/utils";
 import { Link } from "react-router-dom";
 import { analyzeVideoFrame, initializeVisionAI, cleanupVisionAI, getTriageSummary, type VisionAnalysisResult } from '@/services/visionAI';
+import socketService from '@/services/socket.service';
+import { IncomingCallNotification } from '@/components/IncomingCallNotification';
 
 interface TriageCase {
   id: string;
@@ -239,7 +241,8 @@ const StableVideoFrame = memo(({ url, iframeRef }: StableVideoFrameProps) => {
       ref={iframeRef}
       src={url}
       className="w-full h-full border-0"
-      allow="camera; microphone; display-capture; fullscreen; autoplay"
+      allow="camera *; microphone *; display-capture *; fullscreen *; autoplay *; encrypted-media *; picture-in-picture *; clipboard-write *"
+      allowFullScreen
       title="Triage Video Consultation"
     />
   );
@@ -284,6 +287,10 @@ const DoctorTriage = () => {
   const [isRecording, setIsRecording] = useState(false);
   const [showScribePanel, setShowScribePanel] = useState(true);
   const [consultationNotes, setConsultationNotes] = useState<string>('');
+  
+  // Incoming call state
+  const [incomingCall, setIncomingCall] = useState<any | null>(null);
+  const [isSocketConnected, setIsSocketConnected] = useState(false);
   
   // Refs
   const audioRef = useRef<HTMLAudioElement | null>(null);
@@ -400,6 +407,53 @@ const DoctorTriage = () => {
     };
   }, []);
 
+  // Socket.IO connection for real-time triage call notifications
+  useEffect(() => {
+    if (!currentDoctor?.id) return;
+
+    console.log('🔌 Connecting Socket.IO for doctor:', currentDoctor.id);
+    
+    // Connect to Socket.IO
+    socketService.connect(currentDoctor.id, 'doctor');
+    setIsSocketConnected(true);
+
+    // Listen for incoming triage call requests
+    const handleTriageCallRequest = (callData: any) => {
+      console.log('📞 Incoming triage call request:', callData);
+      setIncomingCall(callData);
+      
+      // Play notification sound
+      playNotificationSound();
+      
+      // Show browser notification
+      if ('Notification' in window && Notification.permission === 'granted') {
+        new Notification('🚨 Emergency Triage Call', {
+          body: `${callData.patientName} needs urgent medical attention`,
+          icon: '/emergency-icon.png',
+          tag: `call-${callData.appointmentId}`,
+          requireInteraction: true,
+        });
+      } else if ('Notification' in window && Notification.permission === 'default') {
+        Notification.requestPermission();
+      }
+    };
+
+    socketService.on('triage-call-request', handleTriageCallRequest);
+
+    // Listen for user status changes
+    socketService.on('user-status-change', (data: any) => {
+      console.log('👤 User status changed:', data);
+    });
+
+    // Cleanup on unmount
+    return () => {
+      console.log('🔌 Disconnecting Socket.IO');
+      socketService.off('triage-call-request', handleTriageCallRequest);
+      socketService.disconnect();
+      setIsSocketConnected(false);
+    };
+  }, [currentDoctor?.id]);
+
   const playNotificationSound = () => {
     try {
       if (!audioRef.current) {
@@ -407,6 +461,71 @@ const DoctorTriage = () => {
       }
       audioRef.current.play().catch(() => {});
     } catch (e) {}
+  };
+
+  // Accept incoming triage call
+  const handleAcceptIncomingCall = async (appointmentId: number) => {
+    try {
+      console.log('✅ Accepting call:', appointmentId);
+      
+      const response = await api.post('/doctors/triage/accept-call', { appointmentId });
+      
+      toast({
+        title: "✅ Call Accepted",
+        description: "Joining video consultation...",
+      });
+
+      // Close incoming call notification
+      setIncomingCall(null);
+
+      // Join video room
+      const roomId = response.data.appointment.roomId;
+      const doctorName = encodeURIComponent(`Dr.${currentDoctor?.firstName || 'Doctor'}`);
+      const videoUrl = `${MIROTALK_BASE_URL}/join/${roomId}?name=${doctorName}&audio=1&video=1&notify=0`;
+      
+      setCurrentVideoUrl(videoUrl);
+      setIsInVideoCall(true);
+      setConnectionStatus('connecting');
+      
+      // Start AI features
+      startAIFeatures();
+      
+      setTimeout(() => setConnectionStatus('connected'), 3000);
+    } catch (error: any) {
+      console.error('Failed to accept call:', error);
+      toast({
+        title: "Error",
+        description: error.response?.data?.message || "Failed to accept call",
+        variant: "destructive",
+      });
+    }
+  };
+
+  // Reject incoming triage call
+  const handleRejectIncomingCall = async (appointmentId: number, reason?: string) => {
+    try {
+      console.log('❌ Rejecting call:', appointmentId, reason);
+      
+      await api.post('/doctors/triage/reject-call', { 
+        appointmentId, 
+        reason: reason || 'Doctor is busy'
+      });
+      
+      toast({
+        title: "Call Rejected",
+        description: "Patient has been notified",
+      });
+
+      // Close incoming call notification
+      setIncomingCall(null);
+    } catch (error: any) {
+      console.error('Failed to reject call:', error);
+      toast({
+        title: "Error",
+        description: error.response?.data?.message || "Failed to reject call",
+        variant: "destructive",
+      });
+    }
   };
 
   const handleAcceptCase = (caseItem: TriageCase) => {
@@ -1040,6 +1159,16 @@ const DoctorTriage = () => {
 
   return (
     <MainLayout>
+      {/* Incoming Call Notification - Fullscreen overlay */}
+      {incomingCall && (
+        <IncomingCallNotification
+          callData={incomingCall}
+          onAccept={handleAcceptIncomingCall}
+          onReject={handleRejectIncomingCall}
+          autoRejectTimeout={60}
+        />
+      )}
+
       {/* Video Call Overlay */}
       {renderVideoConsultationPanel()}
       

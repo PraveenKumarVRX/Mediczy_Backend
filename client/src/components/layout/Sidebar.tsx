@@ -40,7 +40,10 @@ import {
   BookHeart,
   Watch,
   Trophy,
-  CalendarDays
+  CalendarDays,
+  UserPlus,
+  ClipboardList,
+  Receipt
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
@@ -115,17 +118,21 @@ export function Sidebar() {
   const [isDesktop, setIsDesktop] = useState(false);
   const [isTeamUser, setIsTeamUser] = useState(false);
   const [isNurseUser, setIsNurseUser] = useState(false);
+  const [isAssistantUser, setIsAssistantUser] = useState(false);
   const scrollAreaRef = useRef<HTMLDivElement>(null);
 
-  // Check if user is a team member
+  // Check if user is a team member, nurse, or assistant
   useEffect(() => {
     const teamToken = localStorage.getItem('teamToken');
     const nurseToken = localStorage.getItem('nurseToken');
+    const assistantToken = localStorage.getItem('assistantToken');
     const isTeamRoute = location.pathname.startsWith('/team') || 
                        (location.pathname.startsWith('/admin') && !!teamToken);
     const isNurseRoute = location.pathname.startsWith('/nurse');
+    const isAssistantRoute = location.pathname.startsWith('/assistant');
     setIsTeamUser(!!teamToken && isTeamRoute);
     setIsNurseUser(!!nurseToken && isNurseRoute);
+    setIsAssistantUser(!!assistantToken && isAssistantRoute);
   }, [location.pathname]);
 
   // Track viewport for responsive open/close
@@ -178,9 +185,24 @@ export function Sidebar() {
     { icon: UserCircle, label: 'Register Patient', path: '/nurse/register-patient' },
   ];
 
+  // Assistant Portal Sidebar Items
+  const assistantSidebarItems: SidebarItem[] = [
+    { icon: Home, label: 'Dashboard', path: '/assistant/dashboard' },
+    { icon: Users, label: 'My Patients', path: '/assistant/patients' },
+    { icon: UserPlus, label: 'Register Patient', path: '/assistant/register-patient' },
+    { icon: Calendar, label: 'Appointments', path: '/assistant/appointments' },
+    { icon: FileText, label: 'Prescriptions', path: '/assistant/prescriptions' },
+    { icon: Receipt, label: 'Billing', path: '/assistant/billing' },
+    { icon: MessageSquare, label: 'Messages', path: '/assistant/messages' },
+    { icon: ClipboardList, label: 'Orders & Tasks', path: '/assistant/orders' },
+    { icon: BarChart3, label: 'Reports', path: '/assistant/reports' },
+    { icon: UserCircle, label: 'Profile', path: '/assistant/profile' },
+  ];
+
   const getSidebarItems = () => {
     if (isTeamUser) return teamSidebarItems;
     if (isNurseUser) return nurseSidebarItems;
+    if (isAssistantUser) return assistantSidebarItems;
     return sidebarItems;
   };
 
@@ -229,16 +251,16 @@ export function Sidebar() {
         <ScrollArea ref={scrollAreaRef} className="flex-1 px-3 py-4">
           <div className="space-y-1">
             {/* Team Section Header */}
-            {(isTeamUser || isNurseUser) && (
+            {(isTeamUser || isNurseUser || isAssistantUser) && (
               <div className="px-3 py-2 mb-2">
                 <p className="text-xs font-semibold text-slate-400 uppercase tracking-wider">
-                  {isTeamUser ? 'Team Dashboard' : 'Nurse Portal'}
+                  {isTeamUser ? 'Team Dashboard' : isNurseUser ? 'Nurse Portal' : 'Assistant Portal'}
                 </p>
               </div>
             )}
             
             {/* Regular User Navigation with Categories */}
-            {!isTeamUser && !isNurseUser && (
+            {!isTeamUser && !isNurseUser && !isAssistantUser && (
               <>
                 {/* Main Section */}
                 {items.filter(item => item.category === 'Main').map((item) => (
@@ -383,8 +405,29 @@ export function Sidebar() {
               </>
             )}
             
-            {/* Team/Nurse user navigation - items without category */}
+            {/* Team/Nurse/Assistant user navigation - items without category */}
             {(isTeamUser || isNurseUser) && items.filter(item => !item.category).map((item) => (
+              <Link
+                key={item.path}
+                to={item.path}
+                className={cn(
+                  "group flex items-center gap-3 rounded-xl px-3 py-2.5 text-sm font-medium transition-all duration-200",
+                  location.pathname === item.path
+                    ? "bg-gradient-to-r from-teal-500/20 to-teal-600/10 text-teal-400 border border-teal-500/30 shadow-sm"
+                    : "text-slate-400 hover:bg-slate-800/60 hover:text-white"
+                )}
+                onClick={handleNavClick}
+              >
+                <item.icon className={cn(
+                  "h-4 w-4 transition-colors",
+                  location.pathname === item.path ? "text-teal-400" : "text-slate-500 group-hover:text-teal-400"
+                )} />
+                <span>{item.label}</span>
+              </Link>
+            ))}
+
+            {/* Assistant Portal Navigation - render all items */}
+            {isAssistantUser && items.map((item) => (
               <Link
                 key={item.path}
                 to={item.path}
@@ -493,8 +536,8 @@ export function Sidebar() {
           </div>
         </ScrollArea>
 
-        {/* Chat with Doctor - Hide for team and nurse users */}
-        {!isTeamUser && !isNurseUser && (
+        {/* Chat with Doctor - Hide for team, nurse, and assistant users */}
+        {!isTeamUser && !isNurseUser && !isAssistantUser && (
           <div className="border-t border-slate-700/50 p-4">
             <Button asChild className="w-full bg-gradient-to-r from-teal-500 to-teal-600 hover:from-teal-600 hover:to-teal-700 text-white shadow-lg shadow-teal-500/20 border-0">
               <Link to="/chat" className="flex items-center gap-2">

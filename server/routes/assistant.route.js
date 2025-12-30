@@ -70,7 +70,7 @@ router.post('/login', [
     if (process.env.NODE_ENV !== 'production' || process.env.ALLOW_ASSISTANT_DEMO === 'true') {
       const testAssistants = {
         'assistant@mediczy.com': {
-          id: 'asst_001',
+          id: 'A7X9K2',  // 6-char alphanumeric starting with A
           email: 'assistant@mediczy.com',
           password: 'Assistant123',
           firstName: 'Emily',
@@ -88,7 +88,7 @@ router.post('/login', [
           phoneNumber: '+91 9876543210'
         },
         'secretary@mediczy.com': {
-          id: 'asst_002',
+          id: 'A3M8P5',  // 6-char alphanumeric starting with A
           email: 'secretary@mediczy.com',
           password: 'SecretaryPass123',
           firstName: 'Sarah',
@@ -192,8 +192,8 @@ router.post('/login', [
     // Generate JWT token
     const token = jwt.sign(
       {
-        id: assistant.id,
-        assistantId: assistant.id,
+        id: assistant.assistantId || assistant.id,
+        assistantId: assistant.assistantId || assistant.id,
         email: assistant.email,
         role: 'assistant',
         userType: 'assistant',
@@ -214,7 +214,7 @@ router.post('/login', [
       message: 'Assistant login successful',
       token,
       assistant: {
-        id: assistant.id,
+        id: assistant.assistantId || assistant.id,
         email: assistant.email,
         firstName: assistant.firstName,
         lastName: assistant.lastName,
@@ -246,10 +246,10 @@ router.get('/profile', authAssistant, async (req, res) => {
   try {
     let assistant;
     
-    // Handle test assistant
-    if (req.assistant.id === 'asst_001') {
+    // Handle test assistant (IDs starting with A are test assistants)
+    if (req.assistant.id === 'A7X9K2' || req.assistant.id === 'A7X9K2' || req.assistant.id === 'A3M8P5' || req.assistant.id === 'asst_001') {
       assistant = {
-        id: 'asst_001',
+        id: 'A7X9K2',
         email: 'assistant@mediczy.com',
         firstName: 'Emily',
         lastName: 'Davis',
@@ -313,7 +313,7 @@ router.put('/profile', authAssistant, async (req, res) => {
   try {
     const { firstName, lastName, phoneNumber, emergencyContact } = req.body;
 
-    if (req.assistant.id === 'asst_001') {
+    if (req.assistant.id === 'A7X9K2' || req.assistant.id === 'A3M8P5' || req.assistant.id === 'asst_001') {
       return res.status(200).json({
         success: true,
         message: 'Test assistant profile updated (mock)',
@@ -554,7 +554,8 @@ router.post('/notify', authAssistant, async (req, res) => {
 // Get linked doctors
 router.get('/linked-doctors', authAssistant, async (req, res) => {
   try {
-    if (req.assistant.id === 'asst_001') {
+    // Handle test assistants (IDs starting with 'A' are test assistants)
+    if (req.assistant.id === 'A7X9K2' || req.assistant.id === 'A3M8P5' || req.assistant.id === 'A7X9K2' || req.assistant.id === 'A3M8P5' || req.assistant.id === 'asst_001') {
       // Mock doctors for test assistant
       const doctors = [
         {
@@ -618,7 +619,7 @@ router.post('/link-doctor', async (req, res) => {
     }
 
     // For test assistant
-    if (assistantId === 'asst_001') {
+    if (assistantId === 'A7X9K2' || assistantId === 'A3M8P5' || assistantId === 'asst_001') {
       return res.status(200).json({
         success: true,
         message: 'Doctor linked successfully (mock)',
@@ -704,7 +705,7 @@ router.post('/unlink-doctor', async (req, res) => {
     }
 
     // For test assistant
-    if (assistantId === 'asst_001') {
+    if (assistantId === 'A7X9K2' || assistantId === 'A3M8P5' || assistantId === 'asst_001') {
       return res.status(200).json({
         success: true,
         message: 'Doctor unlinked successfully (mock)'
@@ -777,7 +778,7 @@ router.post('/set-primary-doctor', async (req, res) => {
     }
 
     // For test assistant
-    if (assistantId === 'asst_001') {
+    if (assistantId === 'A7X9K2' || assistantId === 'A3M8P5' || assistantId === 'asst_001') {
       return res.status(200).json({
         success: true,
         message: 'Primary doctor set successfully (mock)'
@@ -845,7 +846,7 @@ router.post('/link-facility', async (req, res) => {
     }
 
     // For test assistant
-    if (assistantId === 'asst_001') {
+    if (assistantId === 'A7X9K2' || assistantId === 'A3M8P5' || assistantId === 'asst_001') {
       return res.status(200).json({
         success: true,
         message: 'Facility linked successfully (mock)',
@@ -907,7 +908,7 @@ router.post('/unlink-facility', async (req, res) => {
     }
 
     // For test assistant
-    if (assistantId === 'asst_001') {
+    if (assistantId === 'A7X9K2' || assistantId === 'A3M8P5' || assistantId === 'asst_001') {
       return res.status(200).json({
         success: true,
         message: 'Facility unlinked successfully (mock)',

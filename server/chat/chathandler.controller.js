@@ -6,8 +6,10 @@ import { sendMessageNotification, sendVideoCallNotification } from "../utils/fir
 const onlineUsers = new Map();
 const userFCMTokens = new Map(); // userId -> fcmToken
 
+let io; // Store io instance for external use
+
 export function setupSocketIO(server) {
-  const io = new Server(server, {
+  io = new Server(server, {
     cors: {
       origin: "*", // Allow all origins for testing
       methods: ["GET", "POST"],
@@ -325,3 +327,107 @@ export function setupSocketIO(server) {
 
   return io;
 }
+
+
+// Export function to get Socket.IO instance
+export function getIO() {
+  return io;
+}
+
+// Export function to get online users
+export function getOnlineUsers() {
+  return onlineUsers;
+}
+
+// Export function to get user FCM token
+export function getUserFCMToken(userId) {
+  return userFCMTokens.get(userId);
+}
+
+// Export function to emit triage call request (Hybrid: Socket.IO + FCM)
+export async function emitTriageCallRequest(doctorId, callData) {
+  let socketSent = false;
+  let fcmSent = false;
+
+  // Try Socket.IO first (instant for active connections)
+  const doctorSocket = onlineUsers.get(doctorId);
+  if (doctorSocket && io) {
+    io.to(doctorSocket.socketId).emit("triage-call-request", callData);
+    console.log(`✅ Socket.IO notification sent to doctor ${doctorId}`);
+    socketSent = true;
+  }
+
+  // Send FCM as backup (for mobile apps or background)
+  const fcmToken = userFCMTokens.get(doctorId);
+  if (fcmToken) {
+    try {
+      const { sendTriageCallNotification } = await import('../utils/firebase-admin.js');
+      await sendTriageCallNotification(fcmToken, callData);
+      console.log(`✅ FCM push notification sent to doctor ${doctorId}`);
+      fcmSent = true;
+    } catch (error) {
+      console.error('FCM notification failed:', error.message);
+    }
+  }
+
+  return { socketSent, fcmSent, method: socketSent ? 'socket.io' : (fcmSent ? 'fcm' : 'none') };
+}
+
+// Emit call accepted notification (Hybrid)
+export async function emitCallAccepted(patientId, acceptData) {
+  let socketSent = false;
+  let fcmSent = false;
+
+  // Socket.IO (instant)
+  const patientSocket = onlineUsers.get(patientId);
+  if (patientSocket && io) {
+    io.to(patientSocket.socketId).emit("triage-call-accepted", acceptData);
+    console.log(`✅ Socket.IO call accepted sent to patient ${patientId}`);
+    socketSent = true;
+  }
+
+  // FCM (mobile backup)
+  const fcmToken = userFCMTokens.get(patientId);
+  if (fcmToken) {
+    try {
+      const { sendCallAcceptedNotification } = await import('../utils/firebase-admin.js');
+      await sendCallAcceptedNotification(fcmToken, acceptData);
+      console.log(`✅ FCM call accepted sent to patient ${patientId}`);
+      fcmSent = true;
+    } catch (error) {
+      console.error('FCM notification failed:', error.message);
+    }
+  }
+
+  return { socketSent, fcmSent };
+}
+
+// Emit call rejected notification (Hybrid)
+export async function emitCallRejected(patientId, rejectData) {
+  let socketSent = false;
+  let fcmSent = false;
+
+  // Socket.IO (instant)
+  const patientSocket = onlineUsers.get(patientId);
+  if (patientSocket && io) {
+    io.to(patientSocket.socketId).emit("triage-call-rejected", rejectData);
+    console.log(`✅ Socket.IO call rejected sent to patient ${patientId}`);
+    socketSent = true;
+  }
+
+  // FCM (mobile backup)
+  const fcmToken = userFCMTokens.get(patientId);
+  if (fcmToken) {
+    try {
+      const { sendCallRejectedNotification } = await import('../utils/firebase-admin.js');
+      await sendCallRejectedNotification(fcmToken, rejectData);
+      console.log(`✅ FCM call rejected sent to patient ${patientId}`);
+      fcmSent = true;
+    } catch (error) {
+      console.error('FCM notification failed:', error.message);
+    }
+  }
+
+  return { socketSent, fcmSent };
+}
+

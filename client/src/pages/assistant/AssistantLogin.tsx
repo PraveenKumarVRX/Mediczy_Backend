@@ -56,8 +56,36 @@ const AssistantLogin = () => {
     if (error) setError('');
   };
 
+  // Normalize permissions - convert object format to array of permission names
+  const normalizePermissions = (permissions: any): string[] => {
+    if (Array.isArray(permissions)) {
+      return permissions;
+    }
+    if (permissions && typeof permissions === 'object') {
+      // Convert {canViewAppointments: true, canManagePatients: false} to ['canViewAppointments']
+      return Object.entries(permissions)
+        .filter(([, value]) => value === true)
+        .map(([key]) => key);
+    }
+    return [];
+  };
+
   const establishAssistantSession = (token: string, assistantProfile?: any) => {
+    // Clear ALL auth tokens and data first
     clearAuthTokens();
+    // Also clear any leftover data from other user types
+    localStorage.removeItem('doctorToken');
+    localStorage.removeItem('doctorData');
+    localStorage.removeItem('teamToken');
+    localStorage.removeItem('teamData');
+    localStorage.removeItem('nurseToken');
+    localStorage.removeItem('nurseData');
+    localStorage.removeItem('adminToken');
+    localStorage.removeItem('adminData');
+    localStorage.removeItem('corporateToken');
+    localStorage.removeItem('corporateData');
+    
+    // Set assistant-specific auth
     localStorage.setItem('assistantToken', token);
     localStorage.setItem('token', token);
     localStorage.setItem('userType', 'assistant');
@@ -73,7 +101,7 @@ const AssistantLogin = () => {
         linkedDoctorIds: assistantProfile.linkedDoctorIds || [],
         primaryDoctorId: assistantProfile.primaryDoctorId,
         linkedFacilityName: assistantProfile.linkedFacilityName,
-        permissions: assistantProfile.permissions || []
+        permissions: normalizePermissions(assistantProfile.permissions)
       }));
     } else {
       localStorage.removeItem('assistantData');
@@ -93,11 +121,11 @@ const AssistantLogin = () => {
     ) {
       console.log('🚀 Assistant development mode: quick auth bypass');
       establishAssistantSession('dev-assistant-token', {
-        id: 'assistant_dev',
+        id: 'A7X9K2',  // 6-char alphanumeric starting with A
         email: 'assistant@mediczy.com',
-        firstName: 'Assist',
-        lastName: 'Member',
-        role: 'Assistant'
+        firstName: 'Emily',
+        lastName: 'Davis',
+        roleTitle: 'Medical Secretary'
       });
       setLoading(false);
       navigate('/assistant/dashboard', { replace: true });

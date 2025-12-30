@@ -18,6 +18,7 @@ import axios from 'axios';
 import { Badge } from "@/components/ui/badge";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { analyzeVideoFrame, initializeVisionAI, cleanupVisionAI, getTriageSummary, type VisionAnalysisResult } from '@/services/visionAI';
+import socketService from '@/services/socket.service';
 
 // Fix Leaflet icon issue
 delete (L.Icon.Default.prototype as any)._getIconUrl;
@@ -208,6 +209,10 @@ const Emergency = () => {
   const visionIntervalRef = useRef<NodeJS.Timeout | null>(null);
   const localVideoRef = useRef<HTMLVideoElement | null>(null);
   
+  // Socket.IO States for call notifications
+  const [isSocketConnected, setIsSocketConnected] = useState(false);
+  const [waitingForDoctor, setWaitingForDoctor] = useState(false);
+  
   // Refs for media
   const mediaRecorderRef = useRef<MediaRecorder | null>(null);
   const audioChunksRef = useRef<Blob[]>([]);
@@ -315,6 +320,76 @@ const Emergency = () => {
       window.speechSynthesis?.cancel();
     };
   }, []);
+
+  // Socket.IO connection for real-time call notifications
+  useEffect(() => {
+    // Get user from localStorage
+    const userStr = localStorage.getItem('user');
+    if (!userStr) return;
+
+    try {
+      const user = JSON.parse(userStr);
+      if (!user.id) return;
+
+      console.log('🔌 Connecting Socket.IO for patient:', user.id);
+      
+      // Connect to Socket.IO
+      socketService.connect(user.id, 'user');
+      setIsSocketConnected(true);
+
+      // Listen for call accepted event
+      const handleCallAccepted = (data: any) => {
+        console.log('✅ Doctor accepted call:', data);
+        
+        setWaitingForDoctor(false);
+        
+        toast({
+          title: "✅ Doctor Accepted Your Call!",
+          description: `${data.doctorName} is joining the video call`,
+          duration: 5000,
+        });
+
+        // Auto-join the video room
+        if (videoCallInfo?.joinUrl) {
+          setShowEmbeddedVideoCall(true);
+          // Scroll to video section
+          setTimeout(() => {
+            document.getElementById('video-call-section')?.scrollIntoView({ behavior: 'smooth' });
+          }, 100);
+        }
+      };
+
+      // Listen for call rejected event
+      const handleCallRejected = (data: any) => {
+        console.log('❌ Doctor rejected call:', data);
+        
+        setWaitingForDoctor(false);
+        setVideoCallInfo(null);
+        setShowEmbeddedVideoCall(false);
+        
+        toast({
+          title: "❌ Call Not Available",
+          description: data.reason || 'Doctor is currently unavailable. Please try again.',
+          variant: "destructive",
+          duration: 7000,
+        });
+      };
+
+      socketService.on('triage-call-accepted', handleCallAccepted);
+      socketService.on('triage-call-rejected', handleCallRejected);
+
+      // Cleanup on unmount
+      return () => {
+        console.log('🔌 Disconnecting Socket.IO');
+        socketService.off('triage-call-accepted', handleCallAccepted);
+        socketService.off('triage-call-rejected', handleCallRejected);
+        socketService.disconnect();
+        setIsSocketConnected(false);
+      };
+    } catch (error) {
+      console.error('Failed to parse user from localStorage:', error);
+    }
+  }, [videoCallInfo]);
 
   // Attach video stream to video element when video mode is active
   useEffect(() => {
@@ -842,24 +917,32 @@ Hello, I'm Dr. iSHA, your AI emergency medical assistant powered by multimodal i
         setVideoCallInfo({
           roomId: response.data.videoCall.roomId,
           joinUrl: response.data.videoCall.patientJoinUrl,
-          doctor: response.data.doctor
+          doctor: response.data.doctor,
+          appointmentId: response.data.videoCall.appointmentId
         });
         
+        // Set waiting state - doctor will get notification
+        setWaitingForDoctor(true);
+        
         toast({
-          title: "🎥 Connecting to Doctor",
-          description: response.data.message,
+          title: "🔔 Notifying Doctor",
+          description: `Dr. ${response.data.doctor.name} is being notified...`,
+          duration: 5000,
         });
         
         // Add system message to chat
         const connectMessage: TriageChatMessage = {
           id: `connect_${Date.now()}`,
           role: 'system',
-          content: `🎥 **Video Consultation Started**\n\nConnecting you with **${response.data.doctor.name}** (${response.data.doctor.specialization || 'General Practice'})\n\nClick "Join Video Call" to enter the consultation room.`,
+          content: `🔔 **Doctor Notification Sent**\n\nWaiting for **${response.data.doctor.name}** (${response.data.doctor.specialization || 'General Practice'}) to accept your call...\n\nYou will be notified when the doctor joins.`,
           timestamp: new Date(),
           type: 'text',
         };
         setTriageChatMessages(prev => [...prev, connectMessage]);
         setShowDoctorList(false);
+        
+        // Auto-open the triage dialog
+        setShowTriageChat(true);
       } else {
         throw new Error(response.data.error || 'Failed to connect');
       }
@@ -2278,6 +2361,211 @@ This is for emergency medical guidance. Please prioritize safety and immediate c
               </CardContent>
             </Card>
 
+            {/* Connect to Online Emergency Doctor - NEW PROMINENT SECTION */}
+            <Card className="border-green-200 dark:border-green-700 bg-gradient-to-br from-green-50 via-emerald-50 to-white dark:from-green-900/20 dark:via-slate-800 dark:to-slate-800 shadow-lg overflow-hidden">
+              <CardContent className="p-6">
+                <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
+                  <div className="flex items-center gap-3">
+                    <div className="relative">
+                      <div className="flex h-14 w-14 items-center justify-center rounded-full bg-gradient-to-br from-green-500 to-emerald-600 shadow-lg">
+                        <Video className="h-7 w-7 text-white" />
+                      </div>
+                      <div className="absolute -bottom-1 -right-1 h-5 w-5 rounded-full bg-green-500 border-2 border-white dark:border-slate-800 flex items-center justify-center animate-pulse">
+                        <span className="h-2 w-2 rounded-full bg-white" />
+                      </div>
+                    </div>
+                    <div>
+                      <h2 className="text-xl font-bold text-slate-800 dark:text-white">Connect to Online Doctor</h2>
+                      <p className="text-sm text-slate-600 dark:text-slate-400">Video consultation with emergency physician</p>
+                    </div>
+                  </div>
+                  {availableTriageDoctors.length > 0 && (
+                    <Badge className="bg-green-500 text-white px-3 py-1 animate-pulse">
+                      {availableTriageDoctors.length} Doctor(s) Online
+                    </Badge>
+                  )}
+                </div>
+
+                <div className="mt-4 p-3 rounded-lg bg-green-100/50 dark:bg-green-900/20 border border-green-200 dark:border-green-700">
+                  <p className="text-sm text-green-800 dark:text-green-300">
+                    <strong>🩺 Instant Video Consultation:</strong> Connect directly with an emergency doctor for immediate medical guidance through video call.
+                  </p>
+                </div>
+
+                {/* Doctor Connection Buttons */}
+                <div className="mt-4 grid grid-cols-1 sm:grid-cols-2 gap-3">
+                  <Button
+                    onClick={async () => {
+                      await fetchTriageDoctors();
+                      if (availableTriageDoctors.length === 0) {
+                        // If no doctors fetched yet, try connecting directly
+                        setShowTriageChat(true);
+                        setShowDoctorList(true);
+                      }
+                    }}
+                    disabled={isLoadingDoctors}
+                    className="w-full bg-gradient-to-r from-green-600 to-emerald-600 hover:from-green-700 hover:to-emerald-700 text-white shadow-md h-12"
+                  >
+                    {isLoadingDoctors ? (
+                      <Loader2 className="mr-2 h-5 w-5 animate-spin" />
+                    ) : (
+                      <Users className="mr-2 h-5 w-5" />
+                    )}
+                    View Available Doctors
+                  </Button>
+                  <Button
+                    onClick={() => connectToTriageDoctor()}
+                    disabled={connectingToDoctor}
+                    variant="outline"
+                    className="w-full border-green-500 text-green-700 dark:text-green-400 hover:bg-green-50 dark:hover:bg-green-900/30 h-12"
+                  >
+                    {connectingToDoctor ? (
+                      <Loader2 className="mr-2 h-5 w-5 animate-spin" />
+                    ) : (
+                      <Video className="mr-2 h-5 w-5" />
+                    )}
+                    Connect Now (Next Available)
+                  </Button>
+                </div>
+
+                {/* Video Call Ready Banner - Shows when connected */}
+                {videoCallInfo && (
+                  <div className="mt-4 p-4 rounded-lg bg-green-100 dark:bg-green-900/30 border-2 border-green-500 animate-pulse">
+                    <div className="flex items-center justify-between flex-wrap gap-3">
+                      <div className="flex items-center gap-3">
+                        <div className="h-10 w-10 rounded-full bg-green-500 flex items-center justify-center">
+                          <Video className="h-5 w-5 text-white" />
+                        </div>
+                        <div>
+                          {waitingForDoctor ? (
+                            <>
+                              <p className="font-semibold text-green-800 dark:text-green-200">
+                                🔔 Waiting for {videoCallInfo.doctor?.name}
+                              </p>
+                              <p className="text-xs text-green-700 dark:text-green-300 flex items-center gap-1">
+                                <Loader2 className="h-3 w-3 animate-spin" />
+                                Doctor is being notified... Please wait
+                              </p>
+                            </>
+                          ) : (
+                            <>
+                              <p className="font-semibold text-green-800 dark:text-green-200">
+                                ✅ Doctor Accepted! Ready to Join
+                              </p>
+                              <p className="text-xs text-green-700 dark:text-green-300">
+                                Click to join • AI transcription enabled
+                              </p>
+                            </>
+                          )}
+                        </div>
+                      </div>
+                      <div className="flex gap-2">
+                        {!waitingForDoctor ? (
+                          <>
+                            <Button
+                              onClick={joinVideoCall}
+                              className="bg-green-600 hover:bg-green-700 text-white animate-pulse"
+                            >
+                              <Video className="h-4 w-4 mr-2" />
+                              Join Video Call
+                            </Button>
+                            <Button
+                              variant="ghost"
+                              size="icon"
+                              onClick={openVideoInNewTab}
+                              title="Open in new tab"
+                            >
+                              <ExternalLink className="h-4 w-4" />
+                            </Button>
+                          </>
+                        ) : (
+                          <Badge variant="outline" className="bg-yellow-50 text-yellow-700 border-yellow-300">
+                            <Clock className="h-3 w-3 mr-1" />
+                            Pending
+                          </Badge>
+                        )}
+                      </div>
+                    </div>
+                  </div>
+                )}
+
+                {/* Available Doctors List - Inline Display */}
+                {showDoctorList && availableTriageDoctors.length > 0 && !showTriageChat && (
+                  <div className="mt-4 space-y-2">
+                    <div className="flex items-center justify-between">
+                      <h4 className="text-sm font-semibold text-slate-800 dark:text-white flex items-center gap-2">
+                        <Users className="h-4 w-4 text-green-600" />
+                        Online Emergency Doctors ({availableTriageDoctors.length})
+                      </h4>
+                      <Button
+                        size="sm"
+                        variant="ghost"
+                        onClick={() => setShowDoctorList(false)}
+                        className="h-6 w-6 p-0"
+                      >
+                        <X className="h-4 w-4" />
+                      </Button>
+                    </div>
+                    <div className="max-h-48 overflow-y-auto space-y-2 pr-1">
+                      {availableTriageDoctors.map((doctor) => (
+                        <div
+                          key={doctor.id}
+                          className="flex items-center justify-between bg-white dark:bg-slate-800 rounded-lg p-3 shadow-sm border border-slate-200 dark:border-slate-700"
+                        >
+                          <div className="flex items-center gap-3">
+                            <div className="h-10 w-10 rounded-full bg-green-100 dark:bg-green-900 flex items-center justify-center overflow-hidden">
+                              {doctor.profileImage ? (
+                                <img src={doctor.profileImage} alt={doctor.name} className="h-10 w-10 rounded-full object-cover" />
+                              ) : (
+                                <Stethoscope className="h-5 w-5 text-green-600" />
+                              )}
+                            </div>
+                            <div>
+                              <p className="text-sm font-medium text-slate-800 dark:text-white">{doctor.name}</p>
+                              <p className="text-xs text-slate-500 dark:text-slate-400">
+                                {doctor.specialization || 'General Practice'} • ⭐ {doctor.rating} • ₹{doctor.consultationFee}
+                              </p>
+                            </div>
+                          </div>
+                          <Button
+                            size="sm"
+                            onClick={() => connectToTriageDoctor(doctor.id)}
+                            disabled={connectingToDoctor}
+                            className="bg-green-600 hover:bg-green-700 text-white"
+                          >
+                            {connectingToDoctor ? (
+                              <Loader2 className="h-4 w-4 animate-spin" />
+                            ) : (
+                              <>
+                                <Video className="h-4 w-4 mr-1" />
+                                Connect
+                              </>
+                            )}
+                          </Button>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                )}
+
+                {/* Features List */}
+                <div className="mt-4 grid grid-cols-2 gap-2 text-xs">
+                  <div className="flex items-center gap-2 text-slate-600 dark:text-slate-400">
+                    <span className="text-green-500">✓</span> Instant video connection
+                  </div>
+                  <div className="flex items-center gap-2 text-slate-600 dark:text-slate-400">
+                    <span className="text-green-500">✓</span> AI-powered transcription
+                  </div>
+                  <div className="flex items-center gap-2 text-slate-600 dark:text-slate-400">
+                    <span className="text-green-500">✓</span> Vision AI symptom analysis
+                  </div>
+                  <div className="flex items-center gap-2 text-slate-600 dark:text-slate-400">
+                    <span className="text-green-500">✓</span> Emergency priority queue
+                  </div>
+                </div>
+              </CardContent>
+            </Card>
+
             {/* SOS + Contacts */}
             <Card className="border-red-200 dark:border-red-800 bg-gradient-to-br from-red-50 via-orange-50 to-white dark:from-red-900/30 dark:via-slate-800 dark:to-slate-800 shadow-sm">
               <CardContent className="space-y-5 p-6">
@@ -2821,9 +3109,10 @@ This is for emergency medical guidance. Please prioritize safety and immediate c
           stopSpeaking();
           setVideoCallInfo(null);
           setShowDoctorList(false);
+          setShowEmbeddedVideoCall(false);
         }
       }}>
-        <DialogContent className="sm:max-w-[600px] h-[85vh] max-h-[800px] p-0 bg-white dark:bg-slate-800 border-slate-200 dark:border-slate-700 flex flex-col">
+        <DialogContent className={`${showEmbeddedVideoCall ? 'sm:max-w-[900px] h-[90vh]' : 'sm:max-w-[600px] h-[85vh]'} max-h-[900px] p-0 bg-white dark:bg-slate-800 border-slate-200 dark:border-slate-700 flex flex-col`}>
           {/* Header */}
           <div className="flex items-center justify-between p-4 border-b border-slate-200 dark:border-slate-700 bg-gradient-to-r from-teal-600 to-teal-500">
             <div className="flex items-center gap-3">
@@ -2944,44 +3233,48 @@ This is for emergency medical guidance. Please prioritize safety and immediate c
             </div>
           )}
 
-          {/* Video Call Join Banner */}
+          {/* Video Call Join Banner - PROMINENT */}
           {videoCallInfo && !showEmbeddedVideoCall && (
-            <div className="border-b border-slate-200 dark:border-slate-700 bg-green-50 dark:bg-green-900/20 p-3">
-              <div className="flex items-center justify-between">
-                <div className="flex items-center gap-2">
-                  <div className="h-8 w-8 rounded-full bg-green-500 flex items-center justify-center animate-pulse">
-                    <Video className="h-4 w-4 text-white" />
+            <div className="border-b-4 border-green-500 bg-gradient-to-r from-green-100 to-emerald-100 dark:from-green-900/40 dark:to-emerald-900/40 p-4 shadow-lg">
+              <div className="flex flex-col gap-3">
+                <div className="flex items-center justify-center gap-3">
+                  <div className="h-12 w-12 rounded-full bg-green-500 flex items-center justify-center animate-pulse shadow-lg">
+                    <Video className="h-6 w-6 text-white" />
                   </div>
-                  <div>
-                    <p className="text-sm font-medium text-slate-800 dark:text-white">
-                      Video Call Ready with {videoCallInfo.doctor?.name}
+                  <div className="text-center flex-1">
+                    <p className="text-lg font-bold text-green-800 dark:text-green-200 animate-pulse">
+                      🎥 Video Call Room Ready!
                     </p>
-                    <p className="text-xs text-slate-500 dark:text-slate-400">
-                      🧠 AI transcription & analysis enabled
+                    <p className="text-sm font-medium text-slate-800 dark:text-white">
+                      Dr. {videoCallInfo.doctor?.name} is waiting
+                    </p>
+                    <p className="text-xs text-slate-600 dark:text-slate-400">
+                      🧠 AI-powered transcription & analysis enabled
                     </p>
                   </div>
                 </div>
-                <div className="flex gap-2">
+                <div className="flex gap-2 justify-center">
                   <Button
-                    size="sm"
-                    onClick={joinVideoCall}
-                    className="bg-green-600 hover:bg-green-700 text-white"
-                  >
-                    <Video className="h-4 w-4 mr-1" />
-                    Join with AI
-                  </Button>
-                  <Button
-                    size="sm"
-                    variant="ghost"
+                    size="lg"
                     onClick={openVideoInNewTab}
-                    title="Open in new tab"
-                    className="text-xs"
+                    className="bg-green-600 hover:bg-green-700 text-white shadow-lg animate-pulse"
                   >
-                    <ExternalLink className="h-3 w-3" />
+                    <Video className="h-5 w-5 mr-2" />
+                    Join Video Call (Recommended)
                   </Button>
                   <Button
                     size="sm"
                     variant="outline"
+                    onClick={joinVideoCall}
+                    title="Open embedded (may have restrictions)"
+                    className="text-xs border-green-500"
+                  >
+                    <Video className="h-3 w-3 mr-1" />
+                    Embed
+                  </Button>
+                  <Button
+                    size="sm"
+                    variant="ghost"
                     onClick={() => setVideoCallInfo(null)}
                   >
                     <X className="h-4 w-4" />
@@ -2993,13 +3286,14 @@ This is for emergency medical guidance. Please prioritize safety and immediate c
 
           {/* Embedded AI-Powered Video Consultation */}
           {showEmbeddedVideoCall && videoCallInfo && (
-            <div className="flex-1 flex flex-col bg-slate-900">
+            <div className="flex-1 flex flex-col bg-slate-900 min-h-[400px]">
               {/* Video Frame */}
-              <div className="relative flex-1 min-h-[250px]">
+              <div className="relative flex-1 min-h-[350px]">
                 <iframe
                   src={videoCallInfo.joinUrl}
-                  className="w-full h-full border-0"
-                  allow="camera; microphone; display-capture; fullscreen"
+                  className="w-full h-full border-0 min-h-[350px]"
+                  allow="camera *; microphone *; display-capture *; fullscreen *; autoplay *; encrypted-media *; picture-in-picture *; clipboard-write *"
+                  allowFullScreen
                   title="Video Consultation"
                 />
                 
@@ -3503,6 +3797,26 @@ This is for emergency medical guidance. Please prioritize safety and immediate c
           </div>
         </DialogContent>
       </Dialog>
+      
+      {/* Floating Video Call Button - Always Visible */}
+      {videoCallInfo && !showEmbeddedVideoCall && (
+        <div className="fixed bottom-20 right-6 z-50 animate-bounce">
+          <Button
+            size="lg"
+            onClick={openVideoInNewTab}
+            className="bg-green-600 hover:bg-green-700 text-white shadow-2xl rounded-full h-16 w-16 p-0 flex flex-col items-center justify-center"
+          >
+            <Video className="h-8 w-8 animate-pulse" />
+          </Button>
+          <div className="absolute -top-2 -right-2 h-6 w-6 bg-red-500 rounded-full animate-pulse flex items-center justify-center">
+            <span className="text-white text-xs font-bold">!</span>
+          </div>
+          <div className="absolute top-0 left-full ml-3 bg-green-600 text-white px-4 py-2 rounded-lg shadow-lg whitespace-nowrap">
+            <p className="font-bold">Video Call Ready!</p>
+            <p className="text-xs">Click to join</p>
+          </div>
+        </div>
+      )}
       </>
     // </Layout>
   );

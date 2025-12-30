@@ -85,6 +85,13 @@ const MainLayout = ({ children }: MainLayoutProps) => {
   const nurseData = nurseToken ? JSON.parse(localStorage.getItem('nurseData') || '{}') : null;
   const isNurseRoute = location.pathname.startsWith('/nurse');
 
+  // Check if user is an assistant
+  const assistantToken = localStorage.getItem('assistantToken');
+  const assistantDataRaw = localStorage.getItem('assistantData');
+  const assistantData = assistantDataRaw ? JSON.parse(assistantDataRaw) : null;
+  const isAssistantRoute = location.pathname.startsWith('/assistant');
+  const isAssistantUser = !!assistantToken && isAssistantRoute;
+
   const toggleTheme = () => {
     setTheme(theme === "dark" ? "light" : "dark");
   }
@@ -96,6 +103,8 @@ const MainLayout = ({ children }: MainLayoutProps) => {
           navigate('/team/login');
         } else if (isNurseRoute) {
           navigate('/nurse/login');
+        } else if (isAssistantRoute) {
+          navigate('/assistant/login');
         } else {
           navigate("/login");
         }
@@ -135,6 +144,15 @@ const MainLayout = ({ children }: MainLayoutProps) => {
       };
     }
 
+    if (isAssistantUser) {
+      return {
+        name: buildName(assistantData?.firstName, assistantData?.lastName, "Assistant"),
+        email: assistantData?.email || "assistant@mediczy.com",
+        avatarSrc: assistantData?.profileImage,
+        initials: buildInitials(assistantData?.firstName, assistantData?.lastName, "AS"),
+      };
+    }
+
     if (userType === "user") {
       return {
         name: buildName(currentUser?.firstName, currentUser?.lastName, "Mediczy User"),
@@ -155,6 +173,8 @@ const MainLayout = ({ children }: MainLayoutProps) => {
     teamUser,
     isNurseRoute,
     nurseData,
+    isAssistantUser,
+    assistantData,
     userType,
     currentUser,
     currentDoctor,

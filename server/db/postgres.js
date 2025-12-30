@@ -1,7 +1,15 @@
 import dotenv from 'dotenv';
 import pkg from 'pg';
+import { fileURLToPath } from 'url';
+import { dirname, join } from 'path';
 
-dotenv.config();
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = dirname(__filename);
+
+// Load .env from project root first (Mediczy/.env has all settings)
+dotenv.config({ path: join(__dirname, '..', '..', '.env') });
+// server/.env can override (but only if variable not already set)
+dotenv.config({ path: join(__dirname, '..', '.env') });
 
 const { Pool } = pkg;
 
@@ -39,6 +47,9 @@ const TIMESCALE_ENABLED = process.env.TIMESCALE_ENABLED === 'true';
 
 // Columnar Storage Configuration
 const COLUMNAR_ENABLED = process.env.COLUMNAR_ENABLED === 'true';
+
+// Debug: Log extension config at load time
+console.log(`🔧 PostgreSQL Extension Config: CITUS=${CITUS_ENABLED}, TIMESCALE=${TIMESCALE_ENABLED}, COLUMNAR=${COLUMNAR_ENABLED}, PGVECTOR=${PGVECTOR_ENABLED}`);
 
 // JSONB is native to PostgreSQL - always enabled
 const JSONB_ENABLED = true;
@@ -177,39 +188,51 @@ async function enableExtensions(client) {
     return;
   }
 
-  try {
-    // Enable pgvector for AI embeddings
-    if (PGVECTOR_ENABLED) {
+  // Enable pgvector for AI embeddings
+  if (PGVECTOR_ENABLED) {
+    try {
       await client.query('CREATE EXTENSION IF NOT EXISTS vector');
       pgvectorEnabled = true;
       console.log('✅ PostgreSQL: PGVector extension ensured');
+    } catch (error) {
+      console.warn('⚠️  PostgreSQL pgvector extension warning:', error.message);
     }
+  }
 
-    // Enable TimescaleDB for time-series data
-    if (TIMESCALE_ENABLED) {
+  // Enable TimescaleDB for time-series data
+  if (TIMESCALE_ENABLED) {
+    try {
       await client.query('CREATE EXTENSION IF NOT EXISTS timescaledb CASCADE');
       timescaleConfigured = true;
       console.log('✅ PostgreSQL: TimescaleDB extension ensured');
+    } catch (error) {
+      console.warn('⚠️  PostgreSQL TimescaleDB extension warning:', error.message);
     }
+  }
 
-    // Enable Citus for distributed PostgreSQL
-    if (CITUS_ENABLED) {
+  // Enable Citus for distributed PostgreSQL
+  if (CITUS_ENABLED) {
+    try {
       await client.query('CREATE EXTENSION IF NOT EXISTS citus');
       citusConfigured = true;
       console.log('✅ PostgreSQL: Citus extension ensured');
+    } catch (error) {
+      console.warn('⚠️  PostgreSQL Citus extension warning:', error.message);
     }
+  }
 
-    // Enable Columnar for analytics
-    if (COLUMNAR_ENABLED) {
-      await client.query('CREATE EXTENSION IF NOT EXISTS columnar');
+  // Enable Columnar for analytics (citus_columnar in Citus 11+)
+  if (COLUMNAR_ENABLED) {
+    try {
+      await client.query('CREATE EXTENSION IF NOT EXISTS citus_columnar');
       columnarEnabled = true;
       console.log('✅ PostgreSQL: Columnar storage ensured');
+    } catch (error) {
+      console.warn('⚠️  PostgreSQL Columnar extension warning:', error.message);
     }
-
-    extensionsEnabled = true;
-  } catch (error) {
-    console.warn('⚠️  PostgreSQL extension warning:', error.message);
   }
+
+  extensionsEnabled = true;
 }
 
 function getVectorOperatorClass() {

@@ -161,15 +161,9 @@ uploadDirs.forEach(dir => {
 app.set('trust proxy', 1); // Trust first proxy only
 
 // SSL/HTTPS compatibility middleware
-// Ensure req.protocol respects X-Forwarded-Proto from Cloudflare/Nginx
-app.use((req, res, next) => {
-  // Trust the X-Forwarded-Proto header from proxy
-  if (req.headers['x-forwarded-proto'] === 'https') {
-    req.secure = true;
-    req.protocol = 'https';
-  }
-  next();
-});
+// With trust proxy enabled, Express automatically reads X-Forwarded-Proto
+// No need to manually set req.secure or req.protocol (they're read-only)
+// The 'trust proxy' setting above handles this correctly
 
 // All models now use Intelligent Database - MariaDB connection removed
 
@@ -790,5 +784,24 @@ app.use('/api/auth', authTokenRouter); // Token refresh and revocation endpoints
 // Temporarily disabled - requires ringFencing middleware
 // import authUniversalRouter from './routes/auth.universal.route.js';
 // app.use('/api/auth', authUniversalRouter); // Universal auth endpoints (logout, session-info, token revocation)
+
+// ============== ENTERPRISE API v2 (New Architecture) ==============
+// API v2 - Enterprise-grade endpoints with proper MVC pattern
+import apiV2Router from './api/v2/index.js';
+app.use('/api/v2', apiV2Router);
+
+// Mobile API Gateway - Dedicated endpoints for iOS/Android apps
+import mobileApiRouter from './api/mobile/index.js';
+app.use('/api/mobile', mobileApiRouter);
+
+// ============== PLATFORM ADMIN API (PaaS Control Plane) ==============
+// Platform API - Super Super Admin (admin@mediqzy.com) management endpoints
+import platformApiRouter from './api/platform/index.js';
+app.use('/api/platform', platformApiRouter);
+
+// ============== DOMAIN RESOLVER MIDDLEWARE ==============
+// Resolve tenant from domain/headers for multi-tenant routing
+import { domainResolver } from './middleware/domainResolver.middleware.js';
+app.use(domainResolver);
 
 export default app;
