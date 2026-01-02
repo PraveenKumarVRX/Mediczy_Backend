@@ -27,17 +27,22 @@ export async function extractTenant(req, res, next) {
     
     // Only query database for production domains
     if (!isDev) {
+      // Specify which columns to select to avoid column-not-exists errors
+      const attributes = ['id', 'name', 'slug', 'subdomain', 'custom_domain', 'status'];
+      
       // Try custom domain first
       if (!subdomain || subdomain === 'www') {
         tenant = await Tenant.findOne({
-          where: { custom_domain: host, status: 'active' }
+          where: { custom_domain: host, status: 'active' },
+          attributes
         });
       }
       
       // Try subdomain
       if (!tenant && subdomain && subdomain !== 'www') {
         tenant = await Tenant.findOne({
-          where: { subdomain, status: 'active' }
+          where: { subdomain, status: 'active' },
+          attributes
         });
       }
     }
@@ -53,7 +58,8 @@ export async function extractTenant(req, res, next) {
         const tenantId = parseInt(headerTenantId, 10);
         if (!Number.isNaN(tenantId)) {
           tenant = await Tenant.findOne({
-            where: { id: tenantId, status: 'active' }
+            where: { id: tenantId, status: 'active' },
+            attributes: ['id', 'name', 'slug', 'subdomain', 'custom_domain', 'status']
           });
         }
       }
