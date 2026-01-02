@@ -70,6 +70,7 @@ const ClinicSidebar = () => {
   const handleLogout = () => {
     localStorage.removeItem("clinicToken");
     localStorage.removeItem("clinicData");
+    localStorage.removeItem("userType");
     navigate("/clinic/login");
   };
 
@@ -83,7 +84,7 @@ const ClinicSidebar = () => {
           "flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium transition-all duration-200",
           isActive
             ? "bg-teal-500 text-white shadow-md shadow-teal-500/20"
-            : "text-slate-600 hover:bg-slate-100 hover:text-slate-900",
+            : "text-slate-400 hover:bg-slate-800 hover:text-white",
           collapsed && "justify-center px-2"
         )}
       >
@@ -94,7 +95,7 @@ const ClinicSidebar = () => {
             {item.badge && (
               <span className={cn(
                 "px-2 py-0.5 text-xs font-bold rounded-full",
-                isActive ? "bg-white/20 text-white" : "bg-teal-100 text-teal-600"
+                isActive ? "bg-white/20 text-white" : "bg-teal-500/20 text-teal-400"
               )}>
                 {item.badge}
               </span>
@@ -108,20 +109,20 @@ const ClinicSidebar = () => {
   return (
     <aside
       className={cn(
-        "fixed left-0 top-0 z-40 h-screen bg-white border-r border-slate-200 flex flex-col transition-all duration-300",
+        "fixed left-0 top-0 z-40 h-screen bg-gradient-to-b from-slate-900 via-slate-900 to-slate-800 border-r border-slate-700 flex flex-col transition-all duration-300",
         collapsed ? "w-16" : "w-64"
       )}
     >
       {/* Header */}
-      <div className="flex items-center justify-between p-4 border-b border-slate-200">
+      <div className="flex items-center justify-between p-4 border-b border-slate-700">
         {!collapsed && (
           <div className="flex items-center gap-2">
             <div className="w-9 h-9 bg-gradient-to-br from-teal-500 to-cyan-600 rounded-lg flex items-center justify-center shadow-lg shadow-teal-500/20">
               <Building className="w-5 h-5 text-white" />
             </div>
             <div>
-              <h1 className="text-base font-bold text-slate-900">Mediqzy</h1>
-              <p className="text-[10px] text-slate-500 font-medium uppercase tracking-wider">Clinic Portal</p>
+              <h1 className="text-base font-bold text-white">Mediqzy</h1>
+              <p className="text-[10px] text-slate-400 font-medium uppercase tracking-wider">Clinic Portal</p>
             </div>
           </div>
         )}
@@ -137,7 +138,7 @@ const ClinicSidebar = () => {
         {/* Main */}
         <div>
           {!collapsed && (
-            <p className="px-3 mb-2 text-[10px] font-semibold text-slate-400 uppercase tracking-wider">
+            <p className="px-3 mb-2 text-[10px] font-semibold text-slate-500 uppercase tracking-wider">
               Main Menu
             </p>
           )}
@@ -151,7 +152,7 @@ const ClinicSidebar = () => {
         {/* Clinical */}
         <div>
           {!collapsed && (
-            <p className="px-3 mb-2 text-[10px] font-semibold text-slate-400 uppercase tracking-wider">
+            <p className="px-3 mb-2 text-[10px] font-semibold text-slate-500 uppercase tracking-wider">
               Clinical
             </p>
           )}
@@ -165,7 +166,7 @@ const ClinicSidebar = () => {
         {/* Billing */}
         <div>
           {!collapsed && (
-            <p className="px-3 mb-2 text-[10px] font-semibold text-slate-400 uppercase tracking-wider">
+            <p className="px-3 mb-2 text-[10px] font-semibold text-slate-500 uppercase tracking-wider">
               Billing & Reports
             </p>
           )}
@@ -179,7 +180,7 @@ const ClinicSidebar = () => {
         {/* System */}
         <div>
           {!collapsed && (
-            <p className="px-3 mb-2 text-[10px] font-semibold text-slate-400 uppercase tracking-wider">
+            <p className="px-3 mb-2 text-[10px] font-semibold text-slate-500 uppercase tracking-wider">
               System
             </p>
           )}
@@ -192,14 +193,14 @@ const ClinicSidebar = () => {
       </nav>
 
       {/* Footer */}
-      <div className="p-3 border-t border-slate-200 space-y-2">
+      <div className="p-3 border-t border-slate-700 space-y-2">
         {/* Collapse Toggle */}
         <Button
           variant="ghost"
           size="sm"
           onClick={() => setCollapsed(!collapsed)}
           className={cn(
-            "w-full justify-center text-slate-500 hover:text-slate-900 hover:bg-slate-100",
+            "w-full justify-center text-slate-400 hover:text-white hover:bg-slate-800",
             !collapsed && "justify-start"
           )}
         >
@@ -219,7 +220,7 @@ const ClinicSidebar = () => {
           size="sm"
           onClick={handleLogout}
           className={cn(
-            "w-full text-red-600 hover:text-red-700 hover:bg-red-50",
+            "w-full text-red-400 hover:text-red-300 hover:bg-red-900/30",
             collapsed ? "justify-center" : "justify-start"
           )}
         >

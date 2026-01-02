@@ -19,12 +19,12 @@ interface StatCardProps {
 const StatGrid = ({ items }: { items: StatCardProps[] }) => (
   <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-4">
     {items.map((item) => (
-      <Card key={item.title}>
+      <Card key={item.title} className="bg-white dark:bg-slate-800/50 border-slate-200 dark:border-slate-700">
         <CardHeader className="pb-2">
           <CardTitle className="text-sm text-muted-foreground">{item.title}</CardTitle>
         </CardHeader>
         <CardContent>
-          <p className="text-2xl font-semibold text-slate-900">{item.value}</p>
+          <p className="text-2xl font-semibold text-slate-900 dark:text-white">{item.value}</p>
           {item.helper && <p className="text-xs text-muted-foreground mt-1">{item.helper}</p>}
         </CardContent>
       </Card>
@@ -39,9 +39,9 @@ const PlaceholderList = ({
 }) => (
   <div className="space-y-3">
     {items.map((item) => (
-      <div key={item.label} className="flex items-center justify-between p-3 border rounded-lg">
+      <div key={item.label} className="flex items-center justify-between p-3 border border-slate-200 dark:border-slate-700 rounded-lg bg-slate-50 dark:bg-slate-800/50">
         <div>
-          <p className="font-medium text-sm text-slate-900">{item.label}</p>
+          <p className="font-medium text-sm text-slate-900 dark:text-white">{item.label}</p>
           {item.meta && <p className="text-xs text-muted-foreground">{item.meta}</p>}
         </div>
         {item.status && <Badge variant="outline">{item.status}</Badge>}
@@ -134,7 +134,7 @@ const ActionPage = ({
         <Card>
           <CardHeader className="flex flex-row items-center justify-between">
             <div>
-              <CardTitle className="text-lg text-slate-900">{title} Overview</CardTitle>
+              <CardTitle className="text-lg text-slate-900 dark:text-white">{title} Overview</CardTitle>
               <p className="text-sm text-muted-foreground">Latest pulse from this module</p>
             </div>
             {action && (

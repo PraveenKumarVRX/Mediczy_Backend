@@ -58,10 +58,17 @@ const ClinicLayout = ({ children, title, subtitle }: ClinicLayoutProps) => {
   useEffect(() => {
     const token = localStorage.getItem("clinicToken");
     const data = localStorage.getItem("clinicData");
+    const userType = localStorage.getItem("userType");
     
     if (!token) {
       navigate("/clinic/login");
       return;
+    }
+    
+    // Fix old sessions without userType set
+    if (!userType || userType !== 'clinic') {
+      console.log('⚠️ Fixing clinic session: setting userType to clinic');
+      localStorage.setItem('userType', 'clinic');
     }
     
     if (data) {
@@ -72,6 +79,7 @@ const ClinicLayout = ({ children, title, subtitle }: ClinicLayoutProps) => {
   const handleLogout = () => {
     localStorage.removeItem("clinicToken");
     localStorage.removeItem("clinicData");
+    localStorage.removeItem("userType");
     navigate("/clinic/login");
   };
 
@@ -82,26 +90,26 @@ const ClinicLayout = ({ children, title, subtitle }: ClinicLayoutProps) => {
   };
 
   return (
-    <div className="min-h-screen bg-slate-50">
+    <div className="min-h-screen bg-slate-50 dark:bg-slate-950">
       {/* Sidebar */}
       <ClinicSidebar />
 
       {/* Main Content Area */}
       <div className="ml-64 transition-all duration-300">
         {/* Top Header */}
-        <header className="sticky top-0 z-30 h-16 bg-white/90 backdrop-blur border-b border-slate-200 flex items-center justify-between px-6">
+        <header className="sticky top-0 z-30 h-16 bg-white/90 dark:bg-slate-900/90 backdrop-blur border-b border-slate-200 dark:border-slate-700 flex items-center justify-between px-6">
           <div className="flex items-center gap-3">
-            <div className="flex items-center gap-2 text-teal-600 font-semibold">
+            <div className="flex items-center gap-2 text-teal-600 dark:text-teal-400 font-semibold">
               <div className="w-8 h-8 bg-gradient-to-br from-teal-500 to-cyan-600 rounded-lg flex items-center justify-center">
                 <HeartPulse className="h-5 w-5 text-white" />
               </div>
               <span className="text-sm">Mediqzy</span>
-              <span className="text-[11px] uppercase bg-teal-100 text-teal-600 px-2 py-0.5 rounded-full font-semibold">Clinic</span>
+              <span className="text-[11px] uppercase bg-teal-100 dark:bg-teal-900/50 text-teal-600 dark:text-teal-400 px-2 py-0.5 rounded-full font-semibold">Clinic</span>
             </div>
             {title && (
-              <div className="pl-3 border-l border-slate-200">
-                <h1 className="text-lg font-semibold text-slate-900">{title}</h1>
-                {subtitle && <p className="text-xs text-slate-500">{subtitle}</p>}
+              <div className="pl-3 border-l border-slate-200 dark:border-slate-700">
+                <h1 className="text-lg font-semibold text-slate-900 dark:text-white">{title}</h1>
+                {subtitle && <p className="text-xs text-slate-500 dark:text-slate-400">{subtitle}</p>}
               </div>
             )}
           </div>
@@ -109,9 +117,9 @@ const ClinicLayout = ({ children, title, subtitle }: ClinicLayoutProps) => {
           <div className="flex items-center gap-2">
             <Button variant="ghost" size="icon" onClick={toggleTheme}>
               {theme === "light" ? (
-                <Sun className="w-5 h-5 text-slate-600" />
+                <Sun className="w-5 h-5 text-slate-600 dark:text-slate-400" />
               ) : (
-                <Moon className="w-5 h-5 text-slate-600" />
+                <Moon className="w-5 h-5 text-slate-600 dark:text-slate-400" />
               )}
             </Button>
 
@@ -119,7 +127,7 @@ const ClinicLayout = ({ children, title, subtitle }: ClinicLayoutProps) => {
             <DropdownMenu>
               <DropdownMenuTrigger asChild>
                 <Button variant="ghost" size="icon" className="relative">
-                  <Bell className="w-5 h-5 text-slate-600" />
+                  <Bell className="w-5 h-5 text-slate-600 dark:text-slate-400" />
                   {unreadCount > 0 && (
                     <Badge className="absolute -top-1 -right-1 h-5 min-w-[1.1rem] flex items-center justify-center p-0 bg-destructive text-white text-[10px]">
                       {unreadCount}
@@ -170,15 +178,15 @@ const ClinicLayout = ({ children, title, subtitle }: ClinicLayoutProps) => {
             {/* User Menu */}
             <DropdownMenu>
               <DropdownMenuTrigger asChild>
-                <Button variant="ghost" className="flex items-center gap-2 border border-slate-200 rounded-full px-3 py-1.5">
-                  <div className="w-8 h-8 bg-gradient-to-br from-pink-500 to-rose-600 rounded-full flex items-center justify-center">
+                <Button variant="ghost" className="flex items-center gap-2 border border-slate-200 dark:border-slate-700 rounded-full px-3 py-1.5">
+                  <div className="w-8 h-8 bg-gradient-to-br from-teal-500 to-cyan-600 rounded-full flex items-center justify-center">
                     <Building className="w-4 h-4 text-white" />
                   </div>
                   <div className="hidden md:block text-left">
-                    <p className="text-sm font-medium text-slate-900">
+                    <p className="text-sm font-medium text-slate-900 dark:text-white">
                       {clinicData?.name || "Clinic Admin"}
                     </p>
-                    <p className="text-xs text-slate-500">Administrator</p>
+                    <p className="text-xs text-slate-500 dark:text-slate-400">Administrator</p>
                   </div>
                   <ChevronDown className="w-4 h-4 text-slate-400" />
                 </Button>
@@ -202,7 +210,7 @@ const ClinicLayout = ({ children, title, subtitle }: ClinicLayoutProps) => {
         </header>
 
         {/* Page Content */}
-        <main className="p-6">{children}</main>
+        <main className="p-6 min-h-[calc(100vh-4rem)]">{children}</main>
       </div>
     </div>
   );

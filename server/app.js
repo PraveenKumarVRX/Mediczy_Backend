@@ -80,6 +80,7 @@ import homecareRouter from './routes/homecare.route.js';
 import deviceRouter from './routes/device.route.js';
 import wearableRouter from './routes/wearable.route.js';
 import pocDeviceRouter from './routes/poc-device.route.js';
+import healthDataRouter from './routes/healthData.route.js';
 import healthCampRouter from './routes/health-camp.route.js';
 import adminStatsRouter from './routes/admin-stats.route.js';
 import queueRouter from './routes/queue.route.js';
@@ -686,6 +687,7 @@ app.use('/api/ambulance', ambulanceRouter); // Ambulance service authentication 
 app.use('/api/homecare', homecareRouter); // Homecare provider authentication and management
 app.use('/api/devices', deviceRouter); // Device management (smart tablets with SIM)
 app.use('/api/wearables', wearableRouter); // Wearable devices (smartwatch, band, ring)
+app.use('/api/health-data', healthDataRouter); // BLE device health data sync
 app.use('/api/poc-devices', pocDeviceRouter); // Point-of-care diagnostic devices (BLE)
 app.use('/api/health-camps', healthCampRouter); // Outdoor health camp management
 app.use('/api/email', emailRouter); // Production-ready email management system

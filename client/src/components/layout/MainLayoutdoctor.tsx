@@ -197,6 +197,8 @@ const MainLayoutdoctor = ({ children }) => {
   };
 
   const handleLogout = () => {
+    // Clear userType on logout to prevent stale sessions
+    localStorage.removeItem('userType');
     logoutFun.mutate(undefined, {
       onSuccess: () => {
         navigate("/doctor/login");

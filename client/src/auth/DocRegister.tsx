@@ -25,6 +25,8 @@ import axios from "axios";
 import * as z from "zod";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { useDocRegister } from "@/hooks/auth";
+import { generateDoctorSeal } from "@/components/doctor/DoctorSealGenerator";
+import api from "@/utils/api";
 
 const API_BASE_URL =
   import.meta.env.VITE_API_BASE_URL ||
@@ -200,13 +202,49 @@ const Register = () => {
     const newQualifications = qualifications.filter((_, i) => i !== index);
     setQualifications(newQualifications);
   };
+
+  // Function to auto-generate seal for new doctors
+  const autoGenerateSeal = async (doctorData: z.infer<typeof formSchema>) => {
+    try {
+      const canvas = document.createElement('canvas');
+      const doctorName = `${doctorData.firstName} ${doctorData.lastName}`.trim();
+      const qualifications = doctorData.qualifications?.filter(q => q)?.join(', ') || 'MBBS';
+      const regNo = doctorData.registrationNumber || doctorData.medicalCouncilRegistrationNumber || 'PENDING';
+      const specialization = doctorData.specialization || '';
+
+      const sealDataUrl = generateDoctorSeal(
+        canvas,
+        doctorName,
+        qualifications,
+        regNo,
+        specialization,
+        200
+      );
+
+      // Save the seal to template settings
+      await api.put('/doctors/template-settings', {
+        seal: sealDataUrl,
+        registrationNumber: doctorData.registrationNumber || doctorData.medicalCouncilRegistrationNumber || '',
+        signatureName: `Dr. ${doctorName}`
+      });
+
+      console.log('✅ Auto-generated doctor seal saved successfully');
+    } catch (error) {
+      console.warn('Failed to auto-generate seal:', error);
+      // Don't block registration if seal generation fails
+    }
+  };
+
   const onSubmit = (values: z.infer<typeof formSchema>) => {
     docRegister.mutate(values as any, {
-      onSuccess: () => {
+      onSuccess: async () => {
+        // Auto-generate seal for the new doctor
+        await autoGenerateSeal(values);
+        
         toast({
           title: "Success",
           description:
-            "Doctor account created successfully. Redirecting to login...",
+            "Doctor account created successfully. Your digital seal has been generated. Redirecting to dashboard...",
         });
         navigate("/doctor-dashboard");
       },

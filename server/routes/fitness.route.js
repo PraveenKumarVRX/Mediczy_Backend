@@ -168,4 +168,122 @@ router.route("/google-fitness")
     }
   });
 
+// Import auth middleware and FitnessData model for local endpoints
+import auth from '../middleware/auth.js';
+import FitnessData from '../models/FitnessData.model.intelligent.js';
+
+// Store fitness data locally
+router.post('/store', auth, async (req, res) => {
+  try {
+    const { fitnessData } = req.body;
+    
+    if (!fitnessData || !Array.isArray(fitnessData)) {
+      return res.status(400).json({ error: 'Invalid fitness data format' });
+    }
+
+    // Prepare bulk operations
+    const operations = fitnessData.map(data => ({
+      updateOne: {
+        filter: { 
+          userId: req.user.id,
+          date: new Date(data.date)
+        },
+        update: {
+          $set: {
+            steps: data.steps || 0,
+            calories: data.calories || 0,
+            activeMinutes: data.activeMinutes || 0,
+            distance: data.distance || 0,
+            heartRate: data.heartRate || null,
+            sleepHours: data.sleepHours || null,
+            updatedAt: new Date()
+          }
+        },
+        upsert: true
+      }
+    }));
+
+    // Perform bulk write operation
+    await FitnessData.bulkWrite(operations);
+
+    res.status(200).json({ message: 'Fitness data stored successfully' });
+  } catch (error) {
+    console.error('Error storing fitness data:', error);
+    res.status(500).json({ error: 'Failed to store fitness data' });
+  }
+});
+
+// Get user's fitness data
+router.get('/data', auth, async (req, res) => {
+  try {
+    const { startDate, endDate } = req.query;
+    
+    const options = {
+      where: { userId: req.user.id }
+    };
+
+    // Add date filtering if provided
+    if (startDate && endDate) {
+      options.where.date = { startDate, endDate };
+    }
+
+    const fitnessData = await FitnessData.findAll(options);
+
+    res.json(fitnessData || []);
+  } catch (error) {
+    console.error('Error fetching fitness data:', error);
+    res.status(500).json({ error: 'Failed to fetch fitness data' });
+  }
+});
+
+// Get user's latest fitness data
+router.get('/latest', auth, async (req, res) => {
+  try {
+    const latestData = await FitnessData.getUserLatestData(req.user.id);
+
+    res.json(latestData || null);
+  } catch (error) {
+    console.error('Error fetching latest fitness data:', error);
+    res.status(500).json({ error: 'Failed to fetch latest fitness data' });
+  }
+});
+
+// Get user's fitness summary
+router.get('/summary', auth, async (req, res) => {
+  try {
+    const { days = 7 } = req.query;
+    const daysNum = parseInt(days);
+    
+    const endDate = new Date();
+    const startDate = new Date();
+    startDate.setDate(startDate.getDate() - daysNum);
+
+    // Try to get stats from the database
+    let summary;
+    try {
+      summary = await FitnessData.getWeeklyStats(req.user.id, startDate, endDate);
+    } catch (dbError) {
+      console.warn('Could not fetch from database, returning default summary:', dbError.message);
+      // Return a default summary if database is unavailable
+      summary = {
+        totalSteps: 0,
+        totalCalories: 0,
+        totalActiveMinutes: 0,
+        totalDistance: 0,
+        avgSteps: 0,
+        avgCalories: 0,
+        avgActiveMinutes: 0,
+        avgDistance: 0,
+        daysTracked: 0,
+        dailyData: []
+      };
+    }
+
+    res.json(summary);
+  } catch (error) {
+    console.error('Error fetching fitness summary:', error);
+    res.status(500).json({ error: 'Failed to fetch fitness summary' });
+  }
+});
+
 export default router; 

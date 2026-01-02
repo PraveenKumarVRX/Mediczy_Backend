@@ -310,10 +310,17 @@ const ClinicDashboard = () => {
   useEffect(() => {
     const token = localStorage.getItem('clinicToken');
     const data = localStorage.getItem('clinicData');
+    const userType = localStorage.getItem('userType');
     
     if (!token) {
       navigate('/clinic/login');
       return;
+    }
+    
+    // Ensure userType is set for API calls to work
+    if (!userType || userType !== 'clinic') {
+      console.log('⚠️ Dashboard: Fixing clinic session - setting userType to clinic');
+      localStorage.setItem('userType', 'clinic');
     }
     
     if (data) {
@@ -343,8 +350,8 @@ const ClinicDashboard = () => {
 
   if (loading) {
     return (
-      <div className="min-h-screen flex items-center justify-center">
-        <Activity className="h-8 w-8 animate-spin text-pink-600" />
+      <div className="min-h-screen flex items-center justify-center bg-slate-50 dark:bg-slate-950">
+        <Activity className="h-8 w-8 animate-spin text-teal-600" />
       </div>
     );
   }
@@ -370,14 +377,14 @@ const ClinicDashboard = () => {
       {/* Stats Cards */}
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6 mb-8">
         {stats.map((stat, index) => (
-          <Card key={index} className="hover:shadow-lg transition-shadow">
+          <Card key={index} className="hover:shadow-lg transition-shadow bg-white dark:bg-slate-800/50 border-slate-200 dark:border-slate-700">
             <CardContent className="pt-6">
               <div className="flex items-center justify-between">
                 <div>
                   <p className="text-sm text-muted-foreground mb-1">{stat.label}</p>
-                  <p className="text-3xl font-bold">{stat.value}</p>
+                  <p className="text-3xl font-bold text-slate-900 dark:text-white">{stat.value}</p>
                 </div>
-                <div className={`${stat.bg} p-4 rounded-xl`}>
+                <div className={`${stat.bg} dark:bg-opacity-20 p-4 rounded-xl`}>
                   <stat.icon className={`h-6 w-6 ${stat.color}`} />
                 </div>
               </div>
@@ -415,7 +422,7 @@ const ClinicDashboard = () => {
                 <CardContent>
                   <div className="space-y-4">
                     {upcomingAppointments.map((apt) => (
-                      <div key={apt.id} className="flex items-center justify-between p-4 bg-gray-50 rounded-lg hover:bg-gray-100 transition-colors">
+                      <div key={apt.id} className="flex items-center justify-between p-4 bg-slate-50 dark:bg-slate-800/50 rounded-lg hover:bg-slate-100 dark:hover:bg-slate-700/50 transition-colors">
                         <div className="flex items-center gap-4">
                           <div className="bg-teal-100 p-3 rounded-lg">
                             <Clock className="h-5 w-5 text-teal-600" />
@@ -530,7 +537,7 @@ const ClinicDashboard = () => {
               <CardContent>
                 <div className="space-y-4">
                   {filteredPatients.map((patient) => (
-                    <div key={patient.id} className="flex items-center justify-between p-4 bg-gray-50 rounded-lg">
+                    <div key={patient.id} className="flex items-center justify-between p-4 bg-slate-50 dark:bg-slate-800/50 rounded-lg">
                       <div className="flex items-center gap-4">
                         <div className="bg-teal-100 p-3 rounded-full">
                           <Users className="h-5 w-5 text-teal-600" />
@@ -618,7 +625,7 @@ const ClinicDashboard = () => {
               <CardContent>
                 <div className="space-y-3">
                   {invoices.map((invoice) => (
-                    <div key={invoice.id} className="flex items-center justify-between p-3 bg-gray-50 rounded-lg">
+                    <div key={invoice.id} className="flex items-center justify-between p-3 bg-slate-50 dark:bg-slate-800/50 rounded-lg">
                       <div className="flex items-center gap-3">
                         <div className="bg-cyan-100 p-2 rounded">
                           <FileText className="h-4 w-4 text-cyan-600" />
@@ -700,7 +707,7 @@ const ClinicDashboard = () => {
               <CardContent>
                 <div className="space-y-3">
                   {inventoryItems.map((item) => (
-                    <div key={item.id} className="flex items-center justify-between p-3 bg-gray-50 rounded-lg">
+                    <div key={item.id} className="flex items-center justify-between p-3 bg-slate-50 dark:bg-slate-800/50 rounded-lg">
                       <div className="flex items-center gap-3">
                         <div className="bg-teal-100 p-2 rounded">
                           <Pill className="h-4 w-4 text-teal-600" />
@@ -1042,7 +1049,7 @@ const ClinicDashboard = () => {
         <DialogContent className="max-w-2xl max-h-[90vh] overflow-y-auto">
           <DialogHeader>
             <DialogTitle className="flex items-center gap-2">
-              <Calendar className="h-5 w-5 text-pink-600" />
+              <Calendar className="h-5 w-5 text-teal-600" />
               Schedule New Appointment
             </DialogTitle>
             <DialogDescription>
@@ -1193,7 +1200,7 @@ const ClinicDashboard = () => {
         <DialogContent className="max-w-md">
           <DialogHeader>
             <DialogTitle className="flex items-center gap-2">
-              <Calendar className="h-5 w-5 text-pink-600" />
+              <Calendar className="h-5 w-5 text-teal-600" />
               Appointment Details
             </DialogTitle>
           </DialogHeader>

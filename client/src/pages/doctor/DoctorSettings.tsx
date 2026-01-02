@@ -7,11 +7,12 @@ import { Label } from "@/components/ui/label";
 import { Switch } from "@/components/ui/switch";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Textarea } from "@/components/ui/textarea";
-import { Settings, User, Bell, Shield, Clock, Loader2, Save, CheckCircle } from "lucide-react";
-import { useState, useEffect } from "react";
+import { Settings, User, Bell, Shield, Clock, Loader2, Save, CheckCircle, FileSignature, Stamp, Upload, X, RefreshCw } from "lucide-react";
+import { useState, useEffect, useRef, useCallback } from "react";
 import api from "@/utils/api";
 import { useToast } from "@/hooks/use-toast";
 import { useAuth } from "@/auth/AuthProvider";
+import { DoctorSealGenerator, generateDoctorSeal } from "@/components/doctor/DoctorSealGenerator";
 
 const DoctorSettings = () => {
   const { toast } = useToast();
@@ -41,6 +42,15 @@ const DoctorSettings = () => {
     pushNotifications: true
   });
 
+  const [documents, setDocuments] = useState({
+    signature: '',
+    seal: '',
+    registrationNumber: ''
+  });
+
+  const signatureInputRef = useRef<HTMLInputElement>(null);
+  const sealCanvasRef = useRef<HTMLCanvasElement>(null);
+
   const { data: settings, isLoading } = useQuery({
     queryKey: ['doctor-settings'],
     queryFn: async () => {
@@ -55,7 +65,35 @@ const DoctorSettings = () => {
     staleTime: 5 * 60 * 1000,
   });
 
+  // Fetch template settings for signature/seal
+  const { data: templateSettings } = useQuery({
+    queryKey: ['doctor-template-settings'],
+    queryFn: async () => {
+      try {
+        const response = await api.get('/doctors/template-settings');
+        return response.data.settings;
+      } catch (err) {
+        console.warn('Failed to fetch template settings:', err);
+        return null;
+      }
+    },
+    staleTime: 5 * 60 * 1000,
+  });
+
   useEffect(() => {
+    if (templateSettings) {
+      const doctorWithExtra = currentDoctor as any; // Extended properties may exist on runtime
+      setDocuments(prev => ({
+        ...prev,
+        signature: templateSettings.signature || '',
+        seal: templateSettings.seal || '',
+        registrationNumber: templateSettings.registrationNumber || doctorWithExtra?.registrationNumber || ''
+      }));
+    }
+  }, [templateSettings, currentDoctor]);
+
+  useEffect(() => {
+    const doctorWithExtra = currentDoctor as any; // Extended properties may exist on runtime
     if (settings) {
       setProfile(settings.profile || {});
       setPractice(settings.practice || {});
@@ -68,8 +106,8 @@ const DoctorSettings = () => {
         phoneNumber: currentDoctor.phoneNumber || '',
         specialization: currentDoctor.specialization || '',
         experience: currentDoctor.experience || 0,
-        qualifications: currentDoctor.qualifications || '',
-        bio: currentDoctor.bio || ''
+        qualifications: doctorWithExtra?.qualifications || '',
+        bio: doctorWithExtra?.bio || ''
       });
     }
   }, [settings, currentDoctor]);
@@ -95,6 +133,28 @@ const DoctorSettings = () => {
     }
   });
 
+  // Mutation for template settings (signature/seal)
+  const updateTemplateSettings = useMutation({
+    mutationFn: async (data: any) => {
+      const response = await api.put('/doctors/template-settings', data);
+      return response.data;
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['doctor-template-settings'] });
+      toast({
+        title: "Documents Saved",
+        description: "Your signature and seal have been updated successfully",
+      });
+    },
+    onError: (error: any) => {
+      toast({
+        variant: "destructive",
+        title: "Error",
+        description: error.response?.data?.message || "Failed to save documents",
+      });
+    }
+  });
+
   const handleSaveProfile = () => {
     updateSettings.mutate({ profile });
   };
@@ -105,6 +165,79 @@ const DoctorSettings = () => {
 
   const handleSaveNotifications = () => {
     updateSettings.mutate({ notifications });
+  };
+
+  const handleSaveDocuments = () => {
+    updateTemplateSettings.mutate({
+      ...templateSettings,
+      signature: documents.signature,
+      seal: documents.seal,
+      registrationNumber: documents.registrationNumber
+    });
+  };
+
+  // Handle signature file upload
+  const handleSignatureUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (file) {
+      if (file.size > 2 * 1024 * 1024) {
+        toast({
+          variant: "destructive",
+          title: "File too large",
+          description: "Signature image must be less than 2MB"
+        });
+        return;
+      }
+
+      const reader = new FileReader();
+      reader.onload = (event) => {
+        const result = event.target?.result as string;
+        setDocuments(prev => ({ ...prev, signature: result }));
+      };
+      reader.readAsDataURL(file);
+    }
+  };
+
+  // Generate seal using canvas
+  const handleGenerateSeal = useCallback(() => {
+    const canvas = document.createElement('canvas');
+    const doctorWithExtra = currentDoctor as any;
+    const doctorName = `${profile.firstName || currentDoctor?.firstName || ''} ${profile.lastName || currentDoctor?.lastName || ''}`.trim();
+    const qualifications = profile.qualifications || doctorWithExtra?.qualifications || 'MBBS';
+    const regNo = documents.registrationNumber || doctorWithExtra?.registrationNumber || 'XXXXXX';
+    const specialization = profile.specialization || currentDoctor?.specialization || '';
+
+    if (!doctorName) {
+      toast({
+        variant: "destructive",
+        title: "Missing Information",
+        description: "Please fill in your name to generate a seal"
+      });
+      return;
+    }
+
+    const sealDataUrl = generateDoctorSeal(
+      canvas,
+      doctorName,
+      qualifications,
+      regNo,
+      specialization,
+      200
+    );
+    
+    setDocuments(prev => ({ ...prev, seal: sealDataUrl }));
+    toast({
+      title: "Seal Generated",
+      description: "Your digital seal has been created. Click Save to apply it."
+    });
+  }, [profile, currentDoctor, documents.registrationNumber, toast]);
+
+  const handleRemoveSignature = () => {
+    setDocuments(prev => ({ ...prev, signature: '' }));
+  };
+
+  const handleRemoveSeal = () => {
+    setDocuments(prev => ({ ...prev, seal: '' }));
   };
 
   if (isLoading) {
@@ -127,10 +260,14 @@ const DoctorSettings = () => {
         </div>
 
         <Tabs defaultValue="profile" className="space-y-6">
-          <TabsList className="grid w-full grid-cols-4 lg:w-auto lg:inline-grid">
+          <TabsList className="grid w-full grid-cols-5 lg:w-auto lg:inline-grid">
             <TabsTrigger value="profile" className="flex items-center gap-2">
               <User className="h-4 w-4" />
               <span className="hidden sm:inline">Profile</span>
+            </TabsTrigger>
+            <TabsTrigger value="documents" className="flex items-center gap-2">
+              <FileSignature className="h-4 w-4" />
+              <span className="hidden sm:inline">Documents</span>
             </TabsTrigger>
             <TabsTrigger value="practice" className="flex items-center gap-2">
               <Clock className="h-4 w-4" />
@@ -245,6 +382,228 @@ const DoctorSettings = () => {
                 </Button>
               </CardContent>
             </Card>
+          </TabsContent>
+
+          {/* Documents Tab - Signature & Seal */}
+          <TabsContent value="documents">
+            <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+              {/* Registration Number Card */}
+              <Card className="lg:col-span-2">
+                <CardHeader>
+                  <CardTitle className="flex items-center gap-2">
+                    <FileSignature className="h-5 w-5" />
+                    Medical Registration
+                  </CardTitle>
+                  <CardDescription>Your medical council registration details</CardDescription>
+                </CardHeader>
+                <CardContent>
+                  <div className="space-y-2">
+                    <Label htmlFor="regNo">Registration Number</Label>
+                    <Input
+                      id="regNo"
+                      value={documents.registrationNumber}
+                      onChange={(e) => setDocuments(prev => ({ ...prev, registrationNumber: e.target.value }))}
+                      placeholder="e.g., MCI-12345 or SMC/2020/1234"
+                      className="max-w-md"
+                    />
+                    <p className="text-sm text-muted-foreground">
+                      Your medical council registration number will appear on all prescriptions and documents
+                    </p>
+                  </div>
+                </CardContent>
+              </Card>
+
+              {/* Signature Upload Card */}
+              <Card>
+                <CardHeader>
+                  <CardTitle className="flex items-center gap-2">
+                    <FileSignature className="h-5 w-5" />
+                    Digital Signature
+                  </CardTitle>
+                  <CardDescription>Upload your signature for prescriptions</CardDescription>
+                </CardHeader>
+                <CardContent className="space-y-4">
+                  {documents.signature ? (
+                    <div className="space-y-4">
+                      <div className="border rounded-lg p-4 bg-white dark:bg-slate-800">
+                        <img
+                          src={documents.signature}
+                          alt="Your Signature"
+                          className="max-h-24 object-contain mx-auto"
+                        />
+                      </div>
+                      <div className="flex gap-2">
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          onClick={() => signatureInputRef.current?.click()}
+                        >
+                          <RefreshCw className="h-4 w-4 mr-2" />
+                          Change
+                        </Button>
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          onClick={handleRemoveSignature}
+                        >
+                          <X className="h-4 w-4 mr-2" />
+                          Remove
+                        </Button>
+                      </div>
+                    </div>
+                  ) : (
+                    <div
+                      className="border-2 border-dashed rounded-lg p-8 text-center cursor-pointer hover:border-primary hover:bg-primary/5 transition-colors"
+                      onClick={() => signatureInputRef.current?.click()}
+                    >
+                      <Upload className="h-10 w-10 mx-auto mb-3 text-muted-foreground" />
+                      <p className="font-medium text-foreground">Upload Signature</p>
+                      <p className="text-sm text-muted-foreground mt-1">
+                        PNG with transparent background recommended
+                      </p>
+                      <p className="text-xs text-muted-foreground">Max 2MB</p>
+                    </div>
+                  )}
+                  <input
+                    ref={signatureInputRef}
+                    type="file"
+                    accept="image/png,image/jpeg,image/jpg"
+                    onChange={handleSignatureUpload}
+                    className="hidden"
+                  />
+                  <p className="text-sm text-muted-foreground">
+                    Sign on white paper, scan or photograph it. For best results, use a transparent PNG.
+                  </p>
+                </CardContent>
+              </Card>
+
+              {/* Seal/Stamp Card */}
+              <Card>
+                <CardHeader>
+                  <CardTitle className="flex items-center gap-2">
+                    <Stamp className="h-5 w-5" />
+                    Doctor's Seal
+                  </CardTitle>
+                  <CardDescription>Auto-generated seal with your details</CardDescription>
+                </CardHeader>
+                <CardContent className="space-y-4">
+                  {documents.seal ? (
+                    <div className="space-y-4">
+                      <div className="border rounded-lg p-4 bg-white dark:bg-slate-800 flex justify-center">
+                        <img
+                          src={documents.seal}
+                          alt="Doctor's Seal"
+                          className="w-40 h-40 object-contain"
+                        />
+                      </div>
+                      <div className="flex gap-2 flex-wrap">
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          onClick={handleGenerateSeal}
+                        >
+                          <RefreshCw className="h-4 w-4 mr-2" />
+                          Regenerate
+                        </Button>
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          onClick={handleRemoveSeal}
+                        >
+                          <X className="h-4 w-4 mr-2" />
+                          Remove
+                        </Button>
+                      </div>
+                    </div>
+                  ) : (
+                    <div className="space-y-4">
+                      <div
+                        className="border-2 border-dashed rounded-lg p-8 text-center cursor-pointer hover:border-primary hover:bg-primary/5 transition-colors"
+                        onClick={handleGenerateSeal}
+                      >
+                        <Stamp className="h-10 w-10 mx-auto mb-3 text-muted-foreground" />
+                        <p className="font-medium text-foreground">Generate Digital Seal</p>
+                        <p className="text-sm text-muted-foreground mt-1">
+                          Click to create your professional seal
+                        </p>
+                      </div>
+                    </div>
+                  )}
+                  <p className="text-sm text-muted-foreground">
+                    Your seal will include: Name, Qualifications, Registration Number, and Specialization
+                  </p>
+                </CardContent>
+              </Card>
+
+              {/* Preview Card */}
+              <Card className="lg:col-span-2">
+                <CardHeader>
+                  <CardTitle>Prescription Footer Preview</CardTitle>
+                  <CardDescription>How your signature and seal will appear on prescriptions</CardDescription>
+                </CardHeader>
+                <CardContent>
+                  <div className="border rounded-lg p-6 bg-white dark:bg-slate-800">
+                    <div className="flex justify-between items-end">
+                      {/* Seal */}
+                      <div className="text-center">
+                        {documents.seal ? (
+                          <img
+                            src={documents.seal}
+                            alt="Seal"
+                            className="w-20 h-20 object-contain opacity-80"
+                          />
+                        ) : (
+                          <div className="w-20 h-20 border border-dashed rounded-full flex items-center justify-center text-xs text-muted-foreground">
+                            No Seal
+                          </div>
+                        )}
+                      </div>
+
+                      {/* Signature & Details */}
+                      <div className="text-right">
+                        {documents.signature ? (
+                          <img
+                            src={documents.signature}
+                            alt="Signature"
+                            className="max-w-32 h-12 object-contain ml-auto"
+                          />
+                        ) : (
+                          <div className="h-12 w-32 border border-dashed rounded flex items-center justify-center text-xs text-muted-foreground ml-auto">
+                            No Signature
+                          </div>
+                        )}
+                        <p className="font-bold mt-2 text-foreground">
+                          Dr. {profile.firstName || currentDoctor?.firstName || 'First'} {profile.lastName || currentDoctor?.lastName || 'Last'}
+                        </p>
+                        <p className="text-sm text-muted-foreground">
+                          {profile.qualifications || (currentDoctor as any)?.qualifications || 'MBBS'}
+                        </p>
+                        <p className="text-sm text-muted-foreground">
+                          {profile.specialization || currentDoctor?.specialization || 'General Practitioner'}
+                        </p>
+                        {documents.registrationNumber && (
+                          <p className="text-xs text-muted-foreground">
+                            Reg. No: {documents.registrationNumber}
+                          </p>
+                        )}
+                      </div>
+                    </div>
+                  </div>
+                </CardContent>
+              </Card>
+
+              {/* Save Button */}
+              <div className="lg:col-span-2">
+                <Button onClick={handleSaveDocuments} disabled={updateTemplateSettings.isPending}>
+                  {updateTemplateSettings.isPending ? (
+                    <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+                  ) : (
+                    <Save className="h-4 w-4 mr-2" />
+                  )}
+                  Save Documents
+                </Button>
+              </div>
+            </div>
           </TabsContent>
 
           {/* Practice Tab */}

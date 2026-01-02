@@ -907,7 +907,21 @@ const VoiceNavigation: React.FC = () => {
               navigate(-1);
               break;
             case 'home':
-              navigate('/');
+              // Navigate to appropriate home based on userType
+              const userType = localStorage.getItem('userType');
+              if (userType === 'doctor') {
+                navigate('/doctor/dashboard');
+              } else if (userType === 'clinic') {
+                navigate('/clinic/dashboard');
+              } else if (userType === 'lab') {
+                navigate('/lab/dashboard');
+              } else if (userType === 'pharmacy') {
+                navigate('/pharmacy/dashboard');
+              } else if (userType === 'hospital') {
+                navigate('/hospital/dashboard');
+              } else {
+                navigate('/');
+              }
               break;
           }
         }

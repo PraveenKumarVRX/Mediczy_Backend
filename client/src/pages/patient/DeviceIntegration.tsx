@@ -1,58 +1,128 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { Watch, Activity, Smartphone, Bluetooth, CheckCircle, XCircle, RefreshCw, Plus, Settings, Heart, Footprints, Moon, Zap, ShieldCheck } from 'lucide-react';
-import { Link } from 'react-router-dom';
+import { Link, useSearchParams } from 'react-router-dom';
+import { toast } from 'sonner';
 
 interface Device {
   id: string;
   name: string;
-  type: 'smartwatch' | 'fitness_band' | 'smart_ring' | 'bp_monitor' | 'glucometer' | 'weight_scale';
+  type: 'smartwatch' | 'fitness_band' | 'smart_ring' | 'bp_monitor' | 'glucometer' | 'weight_scale' | string;
   brand: string;
   model: string;
   status: 'connected' | 'disconnected' | 'syncing';
   lastSync: Date | null;
   battery?: number;
   dataTypes: string[];
+  icon?: string;
 }
 
 const DeviceIntegration: React.FC = () => {
-  const [devices, setDevices] = useState<Device[]>([
-    {
-      id: '1',
-      name: 'Apple Watch Series 9',
-      type: 'smartwatch',
-      brand: 'Apple',
-      model: 'Series 9',
-      status: 'connected',
-      lastSync: new Date('2025-01-15T08:30:00'),
-      battery: 85,
-      dataTypes: ['Heart Rate', 'Steps', 'Sleep', 'Calories', 'Activity']
-    },
-    {
-      id: '2',
-      name: 'Mi Band 7',
-      type: 'fitness_band',
-      brand: 'Xiaomi',
-      model: 'Mi Band 7',
-      status: 'connected',
-      lastSync: new Date('2025-01-15T07:15:00'),
-      battery: 62,
-      dataTypes: ['Steps', 'Heart Rate', 'Sleep']
-    },
-    {
-      id: '3',
-      name: 'Oura Ring Gen 3',
-      type: 'smart_ring',
-      brand: 'Oura',
-      model: 'Generation 3',
-      status: 'disconnected',
-      lastSync: new Date('2025-01-12T19:00:00'),
-      battery: 45,
-      dataTypes: ['Sleep', 'Heart Rate', 'Activity', 'Temperature']
+  const [searchParams] = useSearchParams();
+  const [devices, setDevices] = useState<Device[]>([]);
+  const [loading, setLoading] = useState(true);
+
+  // Load devices from localStorage on mount
+  useEffect(() => {
+    loadDevices();
+    
+    // Handle URL actions (from Bluetooth pairing redirect)
+    const action = searchParams.get('action');
+    const connect = searchParams.get('connect');
+    
+    if (action === 'add-manual') {
+      toast.info('Manual device entry coming soon!');
     }
-  ]);
+    if (connect === 'apple-health') {
+      toast.info('Apple Health integration coming soon!');
+    }
+  }, [searchParams]);
+
+  const loadDevices = () => {
+    try {
+      // Load devices from localStorage (saved by Bluetooth pairing)
+      const savedDevices = JSON.parse(localStorage.getItem('connectedDevices') || '[]');
+      
+      // Sample devices for demo
+      const sampleDevices: Device[] = [
+        {
+          id: 'sample-1',
+          name: 'Apple Watch Series 9',
+          type: 'smartwatch',
+          brand: 'Apple',
+          model: 'Series 9',
+          status: 'connected',
+          lastSync: new Date(Date.now() - 2 * 60 * 60 * 1000), // 2 hours ago
+          battery: 85,
+          dataTypes: ['Heart Rate', 'Steps', 'Sleep', 'Calories', 'Activity']
+        }
+      ];
+
+      // Merge saved devices with sample (if user has paired any)
+      const mergedDevices: Device[] = savedDevices.map((saved: any) => ({
+        id: saved.id,
+        name: saved.name || 'Unknown Device',
+        type: saved.type || 'fitness_band',
+        brand: getBrandFromName(saved.name),
+        model: getModelFromName(saved.name),
+        status: 'connected' as const,
+        lastSync: saved.connectedAt ? new Date(saved.connectedAt) : new Date(),
+        battery: Math.floor(Math.random() * 30) + 60, // Random 60-90%
+        dataTypes: getDataTypesForDevice(saved.type),
+        icon: saved.icon
+      }));
+
+      // Show sample devices only if no paired devices exist
+      if (mergedDevices.length === 0) {
+        setDevices(sampleDevices);
+      } else {
+        setDevices(mergedDevices);
+      }
+    } catch (error) {
+      console.error('Failed to load devices:', error);
+      setDevices([]);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const getBrandFromName = (name: string): string => {
+    const nameLower = (name || '').toLowerCase();
+    if (nameLower.includes('apple') || nameLower.includes('watch')) return 'Apple';
+    if (nameLower.includes('samsung') || nameLower.includes('galaxy')) return 'Samsung';
+    if (nameLower.includes('mi') || nameLower.includes('xiaomi')) return 'Xiaomi';
+    if (nameLower.includes('fitbit')) return 'Fitbit';
+    if (nameLower.includes('garmin')) return 'Garmin';
+    if (nameLower.includes('oura')) return 'Oura';
+    if (nameLower.includes('omron')) return 'Omron';
+    return 'Generic';
+  };
+
+  const getModelFromName = (name: string): string => {
+    // Try to extract model from device name
+    return name || 'Unknown Model';
+  };
+
+  const getDataTypesForDevice = (type: string): string[] => {
+    switch (type) {
+      case 'smartwatch':
+        return ['Heart Rate', 'Steps', 'Sleep', 'Calories', 'Activity'];
+      case 'fitness_band':
+        return ['Steps', 'Heart Rate', 'Sleep'];
+      case 'smart_ring':
+        return ['Sleep', 'Heart Rate', 'Activity', 'Temperature'];
+      case 'bp_monitor':
+        return ['Blood Pressure', 'Heart Rate'];
+      case 'glucometer':
+        return ['Blood Glucose'];
+      case 'weight_scale':
+        return ['Weight', 'BMI', 'Body Fat'];
+      default:
+        return ['Heart Rate', 'Steps'];
+    }
+  };
 
   const [availableDevices] = useState([
     { type: 'smartwatch', emoji: '⌚', brands: ['Apple Watch', 'Samsung Galaxy Watch', 'Fitbit Versa', 'Garmin Venu'] },
@@ -92,6 +162,7 @@ const DeviceIntegration: React.FC = () => {
           ? { ...device, status: 'connected' as const, lastSync: new Date() }
           : device
       ));
+      toast.success('Device synced successfully!');
     }, 2000);
   };
 
@@ -101,6 +172,14 @@ const DeviceIntegration: React.FC = () => {
         ? { ...device, status: 'connected' as const, lastSync: new Date() }
         : device
     ));
+    
+    // Update localStorage
+    const savedDevices = JSON.parse(localStorage.getItem('connectedDevices') || '[]');
+    const updatedDevices = savedDevices.map((d: any) => 
+      d.id === deviceId ? { ...d, status: 'connected' } : d
+    );
+    localStorage.setItem('connectedDevices', JSON.stringify(updatedDevices));
+    toast.success('Device connected!');
   };
 
   const handleDisconnect = (deviceId: string) => {
@@ -109,6 +188,23 @@ const DeviceIntegration: React.FC = () => {
         ? { ...device, status: 'disconnected' as const }
         : device
     ));
+    toast.info('Device disconnected');
+  };
+
+  const handleRemoveDevice = (deviceId: string) => {
+    // Remove from state
+    setDevices(prev => prev.filter(d => d.id !== deviceId));
+    
+    // Remove from localStorage
+    const savedDevices = JSON.parse(localStorage.getItem('connectedDevices') || '[]');
+    const updatedDevices = savedDevices.filter((d: any) => d.id !== deviceId);
+    localStorage.setItem('connectedDevices', JSON.stringify(updatedDevices));
+    toast.success('Device removed');
+  };
+
+  const handleStartPairing = () => {
+    // Navigate to dashboard and trigger pairing
+    window.location.href = '/?action=pair-device';
   };
 
   const getDeviceEmoji = (type: string) => {
@@ -147,7 +243,7 @@ const DeviceIntegration: React.FC = () => {
             </p>
           </div>
           <div className="flex gap-3">
-            <Button className="bg-gradient-to-r from-teal-500 to-teal-600 hover:from-teal-600 hover:to-teal-700 text-white shadow-lg shadow-teal-500/30">
+            <Button onClick={handleStartPairing} className="bg-gradient-to-r from-teal-500 to-teal-600 hover:from-teal-600 hover:to-teal-700 text-white shadow-lg shadow-teal-500/30">
               <Bluetooth className="mr-2 h-4 w-4" />
               Pair New Device
             </Button>
@@ -190,6 +286,36 @@ const DeviceIntegration: React.FC = () => {
             </Button>
           </Link>
         </div>
+        
+        {/* Loading State */}
+        {loading && (
+          <div className="flex items-center justify-center py-12">
+            <RefreshCw className="h-8 w-8 text-teal-500 animate-spin" />
+            <span className="ml-3 text-slate-600 dark:text-slate-400">Loading devices...</span>
+          </div>
+        )}
+        
+        {/* Empty State */}
+        {!loading && devices.length === 0 && (
+          <Card className="bg-white dark:bg-slate-800/50 border-slate-200/80 dark:border-slate-700/50">
+            <CardContent className="flex flex-col items-center justify-center py-12">
+              <div className="p-4 bg-slate-100 dark:bg-slate-700 rounded-full mb-4">
+                <Bluetooth className="h-8 w-8 text-slate-400" />
+              </div>
+              <h3 className="text-lg font-semibold text-slate-800 dark:text-white mb-2">No Devices Connected</h3>
+              <p className="text-slate-500 dark:text-slate-400 text-center mb-4 max-w-md">
+                Connect your smartwatch, fitness band, or other Bluetooth health devices to start tracking your health data automatically.
+              </p>
+              <Button onClick={handleStartPairing} className="bg-gradient-to-r from-teal-500 to-teal-600 hover:from-teal-600 hover:to-teal-700 text-white">
+                <Bluetooth className="mr-2 h-4 w-4" />
+                Pair Your First Device
+              </Button>
+            </CardContent>
+          </Card>
+        )}
+        
+        {/* Device Grid */}
+        {!loading && devices.length > 0 && (
         <div className="grid md:grid-cols-2 lg:grid-cols-3 gap-4">
           {devices.map((device) => (
             <Card key={device.id} className="bg-white dark:bg-slate-800/50 border-slate-200/80 dark:border-slate-700/50 hover:border-teal-200 dark:hover:border-teal-500/50 transition-all">
@@ -275,8 +401,8 @@ const DeviceIntegration: React.FC = () => {
                         Connect
                       </Button>
                     )}
-                    <Button variant="ghost" size="sm" className="text-slate-500">
-                      <Settings className="h-4 w-4" />
+                    <Button variant="ghost" size="sm" className="text-slate-500" onClick={() => handleRemoveDevice(device.id)}>
+                      <XCircle className="h-4 w-4" />
                     </Button>
                   </div>
                 </div>
@@ -284,6 +410,7 @@ const DeviceIntegration: React.FC = () => {
             </Card>
           ))}
         </div>
+        )}
       </div>
 
       {/* Available Device Types */}

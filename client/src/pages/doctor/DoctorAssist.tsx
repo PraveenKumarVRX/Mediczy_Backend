@@ -1,4 +1,5 @@
 import { useState, useEffect, useRef, useCallback } from "react";
+import { useNavigate } from "react-router-dom";
 import { useAuth } from "@/auth/AuthProvider";
 import MainLayout from "@/components/layout/MainLayoutdoctor";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
@@ -975,47 +976,59 @@ const DrugCard = ({ drug }: { drug: DrugInformation }) => (
         <div>
           <CardTitle className="text-lg flex items-center gap-2">
             <Pill className="h-5 w-5 text-teal-500" />
-            {drug.name}
+            {drug.name || 'Unknown Drug'}
           </CardTitle>
-          <CardDescription>{drug.genericName} • {drug.drugClass}</CardDescription>
+          <CardDescription>{drug.genericName || 'N/A'} • {drug.drugClass || 'N/A'}</CardDescription>
         </div>
-        <Badge className={cn(
-          drug.pregnancyCategory === 'A' || drug.pregnancyCategory === 'B' ? 'bg-green-100 text-green-700' :
-          drug.pregnancyCategory === 'C' ? 'bg-amber-100 text-amber-700' :
-          'bg-red-100 text-red-700'
-        )}>
-          Pregnancy Cat. {drug.pregnancyCategory}
-        </Badge>
+        {drug.pregnancyCategory && (
+          <Badge className={cn(
+            drug.pregnancyCategory === 'A' || drug.pregnancyCategory === 'B' ? 'bg-green-100 text-green-700' :
+            drug.pregnancyCategory === 'C' ? 'bg-amber-100 text-amber-700' :
+            'bg-red-100 text-red-700'
+          )}>
+            Pregnancy Cat. {drug.pregnancyCategory}
+          </Badge>
+        )}
       </div>
     </CardHeader>
     <CardContent className="space-y-3">
-      <div>
-        <h4 className="text-sm font-semibold text-teal-600 dark:text-teal-400 mb-1">Dosage</h4>
-        <p className="text-sm bg-teal-50 dark:bg-teal-950/30 p-2 rounded">{drug.dosage}</p>
-      </div>
+      {drug.dosage && (
+        <div>
+          <h4 className="text-sm font-semibold text-teal-600 dark:text-teal-400 mb-1">Dosage</h4>
+          <p className="text-sm bg-teal-50 dark:bg-teal-950/30 p-2 rounded">{drug.dosage}</p>
+        </div>
+      )}
       
       <div className="grid grid-cols-2 gap-3">
         <div>
           <h4 className="text-sm font-semibold text-green-600 dark:text-green-400 mb-1">Indications</h4>
           <ul className="text-xs space-y-0.5">
-            {drug.indications.map((ind, i) => (
-              <li key={i} className="flex items-center gap-1">
-                <CheckCircle className="h-3 w-3 text-green-500" />
-                {ind}
-              </li>
-            ))}
+            {(drug.indications || []).length > 0 ? (
+              drug.indications.map((ind, i) => (
+                <li key={i} className="flex items-center gap-1">
+                  <CheckCircle className="h-3 w-3 text-green-500" />
+                  {ind}
+                </li>
+              ))
+            ) : (
+              <li className="text-muted-foreground">No indications available</li>
+            )}
           </ul>
         </div>
         
         <div>
           <h4 className="text-sm font-semibold text-red-600 dark:text-red-400 mb-1">Contraindications</h4>
           <ul className="text-xs space-y-0.5">
-            {drug.contraindications.slice(0, 3).map((contra, i) => (
-              <li key={i} className="flex items-center gap-1">
-                <X className="h-3 w-3 text-red-500" />
-                {contra}
-              </li>
-            ))}
+            {(drug.contraindications || []).length > 0 ? (
+              drug.contraindications.slice(0, 3).map((contra, i) => (
+                <li key={i} className="flex items-center gap-1">
+                  <X className="h-3 w-3 text-red-500" />
+                  {contra}
+                </li>
+              ))
+            ) : (
+              <li className="text-muted-foreground">No contraindications listed</li>
+            )}
           </ul>
         </div>
       </div>
@@ -1027,13 +1040,19 @@ const DrugCard = ({ drug }: { drug: DrugInformation }) => (
             <div className="space-y-2">
               <div>
                 <h5 className="text-xs font-semibold text-amber-600">Side Effects</h5>
-                <p className="text-xs text-muted-foreground">{drug.sideEffects.join(', ')}</p>
+                <p className="text-xs text-muted-foreground">
+                  {(drug.sideEffects || []).length > 0 ? drug.sideEffects.join(', ') : 'No side effects listed'}
+                </p>
               </div>
               <div>
                 <h5 className="text-xs font-semibold text-purple-600">Interactions</h5>
-                <p className="text-xs text-muted-foreground">{drug.interactions.join(', ')}</p>
+                <p className="text-xs text-muted-foreground">
+                  {(drug.interactions || []).length > 0 ? drug.interactions.join(', ') : 'No interactions listed'}
+                </p>
               </div>
-              <p className="text-[10px] text-muted-foreground italic">Source: {drug.source}</p>
+              {drug.source && (
+                <p className="text-[10px] text-muted-foreground italic">Source: {drug.source}</p>
+              )}
             </div>
           </AccordionContent>
         </AccordionItem>
@@ -1098,19 +1117,21 @@ const GuidelineCard = ({ guideline }: { guideline: ClinicalGuideline }) => {
 
 // Differential Diagnosis Card
 const DifferentialCard = ({ differential }: { differential: DifferentialDiagnosis }) => {
-  const probColors = {
+  const probColors: Record<string, string> = {
     'High': 'bg-red-100 text-red-700 border-red-300',
     'Moderate': 'bg-amber-100 text-amber-700 border-amber-300',
     'Low': 'bg-green-100 text-green-700 border-green-300'
   };
   
+  const probability = differential.probability || 'Moderate';
+  
   return (
     <Card className="bg-white dark:bg-slate-800/50">
       <CardHeader className="pb-2">
         <div className="flex items-center justify-between">
-          <CardTitle className="text-base">{differential.condition}</CardTitle>
-          <Badge className={cn("border", probColors[differential.probability])}>
-            {differential.probability} Probability
+          <CardTitle className="text-base">{differential.condition || 'Unknown Condition'}</CardTitle>
+          <Badge className={cn("border", probColors[probability] || probColors['Moderate'])}>
+            {probability} Probability
           </Badge>
         </div>
       </CardHeader>
@@ -1118,14 +1139,22 @@ const DifferentialCard = ({ differential }: { differential: DifferentialDiagnosi
         <div>
           <h4 className="text-xs font-semibold text-muted-foreground mb-1">Key Features</h4>
           <div className="flex flex-wrap gap-1">
-            {differential.keyFeatures.map((feature, i) => (
-              <Badge key={i} variant="outline" className="text-xs">{feature}</Badge>
-            ))}
+            {(differential.keyFeatures || []).length > 0 ? (
+              differential.keyFeatures.map((feature, i) => (
+                <Badge key={i} variant="outline" className="text-xs">{feature}</Badge>
+              ))
+            ) : (
+              <span className="text-xs text-muted-foreground">No key features listed</span>
+            )}
           </div>
         </div>
         <div>
           <h4 className="text-xs font-semibold text-muted-foreground mb-1">Ruling Out Tests</h4>
-          <p className="text-xs">{differential.rulingOutTests.join(', ')}</p>
+          <p className="text-xs">
+            {(differential.rulingOutTests || []).length > 0 
+              ? differential.rulingOutTests.join(', ') 
+              : 'No ruling out tests specified'}
+          </p>
         </div>
       </CardContent>
     </Card>
@@ -1137,8 +1166,27 @@ const DifferentialCard = ({ differential }: { differential: DifferentialDiagnosi
 // ==========================================
 
 const DoctorAssist = () => {
-  const { currentDoctor } = useAuth();
+  const navigate = useNavigate();
+  const { currentDoctor, userType } = useAuth();
   const { toast } = useToast();
+  
+  // Ring-fencing: Redirect non-doctor users
+  useEffect(() => {
+    const storedUserType = localStorage.getItem('userType');
+    const doctorToken = localStorage.getItem('doctorToken');
+    
+    // If not a doctor, redirect to appropriate page
+    if (storedUserType !== 'doctor' && userType !== 'doctor' && !doctorToken) {
+      console.log('[DoctorAssist] Non-doctor user detected, redirecting...');
+      if (storedUserType === 'user' || !storedUserType) {
+        navigate('/', { replace: true });
+      } else if (storedUserType === 'clinic') {
+        navigate('/clinic/dashboard', { replace: true });
+      } else {
+        navigate('/doctor/login', { replace: true });
+      }
+    }
+  }, [userType, navigate]);
   
   // State
   const [query, setQuery] = useState('');

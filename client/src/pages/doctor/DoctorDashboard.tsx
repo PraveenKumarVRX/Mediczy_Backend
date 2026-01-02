@@ -1,4 +1,5 @@
 import { useState, useEffect } from "react";
+import { useNavigate } from "react-router-dom";
 import { useAuth } from "@/auth/AuthProvider";
 import MainLayout from "@/components/layout/MainLayoutdoctor";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -41,9 +42,28 @@ import { useToast } from "@/hooks/use-toast";
 import { cn } from "@/lib/utils";
 
 const DoctorDashboard = () => {
-  const { currentDoctor } = useAuth();
+  const navigate = useNavigate();
+  const { currentDoctor, userType } = useAuth();
   const { toast } = useToast();
   const [currentTime, setCurrentTime] = useState(new Date());
+
+  // Ring-fencing: Redirect non-doctor users
+  useEffect(() => {
+    const storedUserType = localStorage.getItem('userType');
+    const doctorToken = localStorage.getItem('doctorToken');
+    
+    // If not a doctor, redirect to appropriate page
+    if (storedUserType !== 'doctor' && userType !== 'doctor' && !doctorToken) {
+      console.log('[DoctorDashboard] Non-doctor user detected, redirecting...');
+      if (storedUserType === 'user' || !storedUserType) {
+        navigate('/', { replace: true });
+      } else if (storedUserType === 'clinic') {
+        navigate('/clinic/dashboard', { replace: true });
+      } else {
+        navigate('/doctor/login', { replace: true });
+      }
+    }
+  }, [userType, navigate]);
 
   useEffect(() => {
     const timer = setInterval(() => setCurrentTime(new Date()), 60000);

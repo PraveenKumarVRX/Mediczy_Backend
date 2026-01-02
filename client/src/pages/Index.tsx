@@ -49,14 +49,42 @@ import {
 } from "@/components/ui/dialog";
 import { X, Loader2, WifiOff, CheckCircle, Smartphone } from "lucide-react";
 import MainLayout from "@/components/layout/MainLayout";
-import { Link } from "react-router-dom";
+import { Link, useNavigate, useSearchParams } from "react-router-dom";
 import { useAuth } from "@/auth/AuthProvider";
 import api from "@/utils/api";
 import { getToken } from "@/hooks/auth";
 
 const Index = () => {
+  const navigate = useNavigate();
+  const [searchParams, setSearchParams] = useSearchParams();
   const { currentUser, currentDoctor, userType } = useAuth();
-  const userName = currentUser?.firstName || currentDoctor?.firstName || "Guest";
+  
+  // Redirect non-patient users to their appropriate dashboards
+  useEffect(() => {
+    const storedUserType = localStorage.getItem('userType');
+    if (storedUserType === 'doctor' || userType === 'doctor') {
+      navigate('/doctor/dashboard', { replace: true });
+      return;
+    }
+    if (storedUserType === 'clinic') {
+      navigate('/clinic/dashboard', { replace: true });
+      return;
+    }
+    if (storedUserType === 'lab') {
+      navigate('/lab/dashboard', { replace: true });
+      return;
+    }
+    if (storedUserType === 'pharmacy') {
+      navigate('/pharmacy/dashboard', { replace: true });
+      return;
+    }
+    if (storedUserType === 'hospital') {
+      navigate('/hospital/dashboard', { replace: true });
+      return;
+    }
+  }, [userType, navigate]);
+
+  const userName = currentUser?.firstName || "Guest";
   const [healthStats, setHealthStats] = useState({
     steps: 6542,
     stepsGoal: 10000,
@@ -95,6 +123,19 @@ const Index = () => {
   }>>([]);
   const [selectedDevice, setSelectedDevice] = useState<string | null>(null);
   const [pairingProgress, setPairingProgress] = useState(0);
+
+  // Handle URL action parameters (e.g., ?action=pair-device)
+  useEffect(() => {
+    const action = searchParams.get('action');
+    if (action === 'pair-device') {
+      // Open the Bluetooth pairing modal
+      setShowPairingModal(true);
+      setPairingStep('scanning');
+      // Clear the action param from URL without causing a re-render loop
+      searchParams.delete('action');
+      setSearchParams(searchParams, { replace: true });
+    }
+  }, [searchParams, setSearchParams]);
 
   useEffect(() => {
     fetchDashboardData();
@@ -352,7 +393,6 @@ const Index = () => {
   // Bluetooth Pairing Functions - Cross-Platform Support
   const startBluetoothScan = async () => {
     setShowPairingModal(true);
-    setPairingStep('scanning');
     setDiscoveredDevices([]);
     setSelectedDevice(null);
     setPairingProgress(0);
@@ -368,6 +408,7 @@ const Index = () => {
         const BleClient = (window as any).CapacitorBluetooth?.BleClient;
         
         if (BleClient) {
+          setPairingStep('scanning');
           await BleClient.initialize();
           
           // Request permissions on Android
@@ -430,8 +471,13 @@ const Index = () => {
     }
 
     // Web Bluetooth (Chrome, Edge, Android Chrome)
+    // Note: Web Bluetooth opens a browser-native device picker, not a background scan
     if (platform.hasWebBluetooth) {
+      // Show instructions while browser picker opens
+      setPairingStep('scanning');
+      
       try {
+        // This will open the browser's native Bluetooth device picker
         const device = await navigator.bluetooth.requestDevice({
           acceptAllDevices: true,
           optionalServices: [
@@ -488,7 +534,8 @@ const Index = () => {
         }
       } catch (error: any) {
         console.log('Bluetooth scan error:', error);
-        if (error.name === 'NotFoundError') {
+        if (error.name === 'NotFoundError' || error.name === 'NotAllowedError') {
+          // User cancelled or no device selected
           setPairingStep('found');
           setDiscoveredDevices([]);
         } else {
@@ -645,14 +692,37 @@ const Index = () => {
     const newDevice = {
       id: deviceData.id,
       name: deviceData.name,
-      type: deviceData.type,
+      type: deviceData.type || 'smartwatch',
+      brand: deviceData.brand || getBrandFromName(deviceData.name),
+      model: deviceData.model || getModelFromName(deviceData.name),
+      status: 'connected',
       icon: deviceData.icon,
+      battery: deviceData.battery || 75,
+      dataTypes: deviceData.dataTypes || ['Heart Rate', 'Steps', 'Sleep'],
       connectedAt: new Date().toISOString(),
+      lastSync: new Date().toISOString(),
     };
     
     const filtered = connectedDevices.filter((d: any) => d.id !== deviceData.id);
     filtered.push(newDevice);
     localStorage.setItem('connectedDevices', JSON.stringify(filtered));
+  };
+
+  // Helper function to extract brand from device name
+  const getBrandFromName = (name: string): string => {
+    const brands = ['Apple', 'Samsung', 'Fitbit', 'Garmin', 'Mi', 'Xiaomi', 'Oura', 'Withings', 'Omron', 'Honor'];
+    for (const brand of brands) {
+      if (name.toLowerCase().includes(brand.toLowerCase())) {
+        return brand;
+      }
+    }
+    return 'Generic';
+  };
+
+  // Helper function to extract model from device name
+  const getModelFromName = (name: string): string => {
+    // Return the full name if no specific model found
+    return name.replace(/^(Apple|Samsung|Fitbit|Garmin|Mi|Xiaomi|Oura|Withings|Omron|Honor)\s*/i, '') || name;
   };
 
   const closePairingModal = () => {
@@ -996,14 +1066,14 @@ const Index = () => {
                     <div className="p-2 rounded-lg bg-gradient-to-br from-teal-500 to-teal-600">
                       <Bluetooth className="w-5 h-5" />
                     </div>
-                    {pairingStep === 'scanning' && 'Scanning for Devices'}
+                    {pairingStep === 'scanning' && 'Select Your Device'}
                     {pairingStep === 'found' && 'Available Devices'}
                     {pairingStep === 'pairing' && 'Pairing Device'}
                     {pairingStep === 'success' && 'Device Connected!'}
                     {pairingStep === 'error' && 'Connection Failed'}
                   </DialogTitle>
                   <DialogDescription className="text-slate-400">
-                    {pairingStep === 'scanning' && 'Looking for nearby Bluetooth devices...'}
+                    {pairingStep === 'scanning' && 'A browser dialog should appear - select your device from the list'}
                     {pairingStep === 'found' && 'Select a device to pair with'}
                     {pairingStep === 'pairing' && 'Establishing secure connection...'}
                     {pairingStep === 'success' && 'Your device is now connected and syncing'}
@@ -1012,7 +1082,7 @@ const Index = () => {
                 </DialogHeader>
 
                 <div className="py-4">
-                  {/* Scanning Animation */}
+                  {/* Scanning Animation - Shows while browser picker is open */}
                   {pairingStep === 'scanning' && (
                     <div className="flex flex-col items-center py-8">
                       <div className="relative w-24 h-24">
@@ -1023,8 +1093,16 @@ const Index = () => {
                           <Bluetooth className="w-6 h-6 text-white" />
                         </div>
                       </div>
-                      <p className="mt-6 text-sm text-slate-400">Searching for nearby devices...</p>
-                      <p className="mt-2 text-xs text-slate-500">Enable Bluetooth on your device</p>
+                      <p className="mt-6 text-sm text-slate-300 text-center">Look for the browser's Bluetooth dialog</p>
+                      <p className="mt-2 text-xs text-slate-500 text-center">Select your device from the popup list that appears</p>
+                      <div className="mt-4 p-3 bg-slate-800 rounded-lg text-xs text-slate-400">
+                        <p className="font-medium text-teal-400 mb-1">💡 Tips:</p>
+                        <ul className="space-y-1 list-disc list-inside">
+                          <li>Enable Bluetooth on your wearable device</li>
+                          <li>Put device in pairing mode if required</li>
+                          <li>Keep device close to your computer/phone</li>
+                        </ul>
+                      </div>
                     </div>
                   )}
 

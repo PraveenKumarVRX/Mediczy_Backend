@@ -480,8 +480,8 @@ const PrescriptionWriter = () => {
           {/* Header */}
           <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4">
             <div>
-              <h1 className="text-3xl font-bold text-brand">Write Prescription</h1>
-              <p className="text-muted mt-1">Create a prescription with auto-filled patient and doctor information</p>
+              <h1 className="text-3xl font-bold text-slate-800 dark:text-white">Write Prescription</h1>
+              <p className="text-slate-600 dark:text-slate-400 mt-1">Create a prescription with auto-filled patient and doctor information</p>
             </div>
             <div className="flex gap-2">
               <Button variant="outline" onClick={() => setPreviewOpen(true)}>
@@ -560,7 +560,7 @@ const PrescriptionWriter = () => {
 
                   {/* Patient Details - Auto-filled */}
                   {selectedPatient && (
-                    <div className="grid grid-cols-2 md:grid-cols-4 gap-4 p-4 bg-muted/50 rounded-lg">
+                    <div className="grid grid-cols-2 md:grid-cols-4 gap-4 p-4 bg-slate-100 dark:bg-slate-800/50 rounded-lg">
                       <div>
                         <Label className="text-xs text-muted-foreground">Name</Label>
                         <p className="font-medium">{selectedPatient.name}</p>
@@ -868,10 +868,10 @@ const PrescriptionWriter = () => {
                   <CardDescription>Auto-filled from your profile</CardDescription>
                 </CardHeader>
                 <CardContent className="space-y-3">
-                  <div className="p-4 bg-muted/50 rounded-lg space-y-2">
-                    <p className="font-bold text-lg">{doctorStamp.name}</p>
-                    <p className="text-sm text-muted-foreground">{doctorStamp.qualifications}</p>
-                    <p className="text-sm">{doctorStamp.specialization}</p>
+                  <div className="p-4 bg-slate-100 dark:bg-slate-800/50 rounded-lg space-y-2">
+                    <p className="font-bold text-lg text-slate-800 dark:text-white">{doctorStamp.name}</p>
+                    <p className="text-sm text-slate-600 dark:text-slate-400">{doctorStamp.qualifications}</p>
+                    <p className="text-sm text-slate-700 dark:text-slate-300">{doctorStamp.specialization}</p>
                     {doctorStamp.registrationNo && (
                       <p className="text-xs text-muted-foreground">Reg. No: {doctorStamp.registrationNo}</p>
                     )}
@@ -917,7 +917,7 @@ const PrescriptionWriter = () => {
                   <CardDescription>From template settings</CardDescription>
                 </CardHeader>
                 <CardContent>
-                  <div className="p-4 bg-muted/50 rounded-lg space-y-2">
+                  <div className="p-4 bg-slate-100 dark:bg-slate-800/50 rounded-lg space-y-2">
                     {templateSettings?.logo && (
                       <img 
                         src={templateSettings.logo} 
@@ -925,10 +925,10 @@ const PrescriptionWriter = () => {
                         className="max-h-12 object-contain mb-2"
                       />
                     )}
-                    <p className="font-bold">{clinicInfo.name}</p>
-                    {clinicInfo.address && <p className="text-sm text-muted-foreground">{clinicInfo.address}</p>}
-                    {clinicInfo.phone && <p className="text-sm">📞 {clinicInfo.phone}</p>}
-                    {clinicInfo.email && <p className="text-sm">✉️ {clinicInfo.email}</p>}
+                    <p className="font-bold text-slate-800 dark:text-white">{clinicInfo.name}</p>
+                    {clinicInfo.address && <p className="text-sm text-slate-600 dark:text-slate-400">{clinicInfo.address}</p>}
+                    {clinicInfo.phone && <p className="text-sm text-slate-700 dark:text-slate-300">📞 {clinicInfo.phone}</p>}
+                    {clinicInfo.email && <p className="text-sm text-slate-700 dark:text-slate-300">✉️ {clinicInfo.email}</p>}
                   </div>
                 </CardContent>
               </Card>
@@ -1176,8 +1176,8 @@ const PrescriptionWriter = () => {
           <Dialog open={previewOpen} onOpenChange={setPreviewOpen}>
             <DialogContent className="max-w-4xl max-h-[90vh] overflow-auto">
               <DialogHeader>
-                <DialogTitle>Prescription Preview</DialogTitle>
-                <DialogDescription>Review before printing</DialogDescription>
+                <DialogTitle className="text-slate-900 dark:text-white">Prescription Preview</DialogTitle>
+                <DialogDescription className="text-slate-600 dark:text-slate-400">Review before printing</DialogDescription>
               </DialogHeader>
               
               <div className="border rounded-lg p-6 bg-white">
@@ -1209,11 +1209,11 @@ const PrescriptionWriter = () => {
                   </div>
 
                   {/* Patient Info */}
-                  <div className="bg-gray-50 p-3 rounded mb-4">
-                    <div className="flex flex-wrap gap-4 text-sm">
-                      <span><strong>Patient:</strong> {prescription.patientInfo.name}</span>
-                      <span><strong>Age/Gender:</strong> {prescription.patientInfo.age} yrs / {prescription.patientInfo.gender}</span>
-                      <span><strong>Date:</strong> {new Date().toLocaleDateString('en-IN')}</span>
+                  <div className="bg-slate-100 dark:bg-slate-800 p-3 rounded mb-4">
+                    <div className="flex flex-wrap gap-4 text-sm text-slate-700 dark:text-slate-300">
+                      <span><strong className="text-slate-900 dark:text-white">Patient:</strong> {prescription.patientInfo.name}</span>
+                      <span><strong className="text-slate-900 dark:text-white">Age/Gender:</strong> {prescription.patientInfo.age} yrs / {prescription.patientInfo.gender}</span>
+                      <span><strong className="text-slate-900 dark:text-white">Date:</strong> {new Date().toLocaleDateString('en-IN')}</span>
                     </div>
                   </div>
 
@@ -1299,8 +1299,5 @@ const PrescriptionWriter = () => {
     </MainLayout>
   );
 };
-
-// Missing import
-import { Activity } from "lucide-react";
 
 export default PrescriptionWriter;
