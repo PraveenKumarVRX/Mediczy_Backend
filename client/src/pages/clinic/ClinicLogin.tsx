@@ -45,8 +45,8 @@ const ClinicLogin = () => {
       console.log('🚀 Development mode: Using quick authentication bypass');
       
       localStorage.removeItem('token');
-      localStorage.removeItem('userType');
       
+      localStorage.setItem('userType', 'clinic');
       localStorage.setItem('clinicToken', 'dev-clinic-token');
       localStorage.setItem('clinicData', JSON.stringify({
         id: 'clinic_dev',
@@ -68,6 +68,7 @@ const ClinicLogin = () => {
 
       clearTimeout(timeoutId);
 
+      localStorage.setItem('userType', 'clinic');
       localStorage.setItem('clinicToken', data.token);
       localStorage.setItem('clinicData', JSON.stringify(data.clinic));
       
