@@ -91,10 +91,12 @@ const ClinicLayout = ({ children, title, subtitle }: ClinicLayoutProps) => {
         {/* Top Header */}
         <header className="sticky top-0 z-30 h-16 bg-white/90 backdrop-blur border-b border-slate-200 flex items-center justify-between px-6">
           <div className="flex items-center gap-3">
-            <div className="flex items-center gap-2 text-primary font-semibold">
-              <HeartPulse className="h-5 w-5" />
+            <div className="flex items-center gap-2 text-teal-600 font-semibold">
+              <div className="w-8 h-8 bg-gradient-to-br from-teal-500 to-cyan-600 rounded-lg flex items-center justify-center">
+                <HeartPulse className="h-5 w-5 text-white" />
+              </div>
               <span className="text-sm">Mediqzy</span>
-              <span className="text-[11px] uppercase bg-primary/10 text-primary px-2 py-0.5 rounded-full">Clinic</span>
+              <span className="text-[11px] uppercase bg-teal-100 text-teal-600 px-2 py-0.5 rounded-full font-semibold">Clinic</span>
             </div>
             {title && (
               <div className="pl-3 border-l border-slate-200">
