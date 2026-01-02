@@ -350,10 +350,10 @@ const ClinicDashboard = () => {
   }
 
   const stats = [
-    { label: 'Today\'s Appointments', value: '24', icon: Calendar, color: 'text-blue-600', bg: 'bg-blue-50' },
-    { label: 'Patients Waiting', value: '8', icon: UserCheck, color: 'text-orange-600', bg: 'bg-orange-50' },
-    { label: 'Total Patients', value: '1,847', icon: Users, color: 'text-green-600', bg: 'bg-green-50' },
-    { label: 'Today\'s Revenue', value: '₹45,890', icon: DollarSign, color: 'text-purple-600', bg: 'bg-purple-50' },
+    { label: 'Today\'s Appointments', value: '24', icon: Calendar, color: 'text-teal-600', bg: 'bg-teal-50' },
+    { label: 'Patients Waiting', value: '8', icon: UserCheck, color: 'text-blue-600', bg: 'bg-blue-50' },
+    { label: 'Total Patients', value: '1,847', icon: Users, color: 'text-cyan-600', bg: 'bg-cyan-50' },
+    { label: 'Today\'s Revenue', value: '₹45,890', icon: DollarSign, color: 'text-amber-600', bg: 'bg-amber-50' },
   ];
 
   const upcomingAppointments = [
@@ -400,7 +400,7 @@ const ClinicDashboard = () => {
         <TabsContent value="appointments" className="space-y-6">
           <div className="flex items-center justify-between">
             <h2 className="text-2xl font-bold">Appointment Management</h2>
-            <Button className="bg-gradient-to-r from-pink-600 to-rose-600 gap-2" onClick={() => setShowNewAppointment(true)}>
+            <Button className="bg-gradient-to-r from-teal-600 to-cyan-600 hover:from-teal-700 hover:to-cyan-700 gap-2" onClick={() => setShowNewAppointment(true)}>
               <Plus className="h-4 w-4" />
               New Appointment
               </Button>
@@ -417,8 +417,8 @@ const ClinicDashboard = () => {
                     {upcomingAppointments.map((apt) => (
                       <div key={apt.id} className="flex items-center justify-between p-4 bg-gray-50 rounded-lg hover:bg-gray-100 transition-colors">
                         <div className="flex items-center gap-4">
-                          <div className="bg-pink-100 p-3 rounded-lg">
-                            <Clock className="h-5 w-5 text-pink-600" />
+                          <div className="bg-teal-100 p-3 rounded-lg">
+                            <Clock className="h-5 w-5 text-teal-600" />
                           </div>
                           <div>
                             <p className="font-semibold">{apt.patient}</p>
@@ -502,7 +502,7 @@ const ClinicDashboard = () => {
           <TabsContent value="patients" className="space-y-6">
             <div className="flex items-center justify-between">
               <h2 className="text-2xl font-bold">Patient Management</h2>
-              <Button className="bg-gradient-to-r from-pink-600 to-rose-600 gap-2" onClick={() => setShowAddPatient(true)}>
+              <Button className="bg-gradient-to-r from-teal-600 to-cyan-600 gap-2" onClick={() => setShowAddPatient(true)}>
                 <Plus className="h-4 w-4" />
                 Add Patient
               </Button>
@@ -532,8 +532,8 @@ const ClinicDashboard = () => {
                   {filteredPatients.map((patient) => (
                     <div key={patient.id} className="flex items-center justify-between p-4 bg-gray-50 rounded-lg">
                       <div className="flex items-center gap-4">
-                        <div className="bg-pink-100 p-3 rounded-full">
-                          <Users className="h-5 w-5 text-pink-600" />
+                        <div className="bg-teal-100 p-3 rounded-full">
+                          <Users className="h-5 w-5 text-teal-600" />
                         </div>
                         <div>
                           <p className="font-semibold">{patient.name}</p>
@@ -573,7 +573,7 @@ const ClinicDashboard = () => {
           <TabsContent value="billing" className="space-y-6">
             <div className="flex items-center justify-between">
               <h2 className="text-2xl font-bold">Billing & Payments</h2>
-              <Button className="bg-gradient-to-r from-pink-600 to-rose-600 gap-2" onClick={() => setShowCreateInvoice(true)}>
+              <Button className="bg-gradient-to-r from-teal-600 to-cyan-600 gap-2" onClick={() => setShowCreateInvoice(true)}>
                 <Plus className="h-4 w-4" />
                 Create Invoice
               </Button>
@@ -620,8 +620,8 @@ const ClinicDashboard = () => {
                   {invoices.map((invoice) => (
                     <div key={invoice.id} className="flex items-center justify-between p-3 bg-gray-50 rounded-lg">
                       <div className="flex items-center gap-3">
-                        <div className="bg-purple-100 p-2 rounded">
-                          <FileText className="h-4 w-4 text-purple-600" />
+                        <div className="bg-cyan-100 p-2 rounded">
+                          <FileText className="h-4 w-4 text-cyan-600" />
                         </div>
                         <div>
                           <p className="font-medium">{invoice.number}</p>
@@ -648,7 +648,7 @@ const ClinicDashboard = () => {
           <TabsContent value="inventory" className="space-y-6">
             <div className="flex items-center justify-between">
               <h2 className="text-2xl font-bold">Inventory Management</h2>
-              <Button className="bg-gradient-to-r from-pink-600 to-rose-600 gap-2" onClick={() => setShowAddInventory(true)}>
+              <Button className="bg-gradient-to-r from-teal-600 to-cyan-600 gap-2" onClick={() => setShowAddInventory(true)}>
                 <Plus className="h-4 w-4" />
                 Add Item
               </Button>
@@ -843,7 +843,7 @@ const ClinicDashboard = () => {
           </div>
           <DialogFooter>
             <Button variant="outline" onClick={() => setShowAddPatient(false)}>Cancel</Button>
-            <Button className="bg-gradient-to-r from-pink-600 to-rose-600" onClick={handleAddPatient}>Save</Button>
+            <Button className="bg-gradient-to-r from-teal-600 to-cyan-600" onClick={handleAddPatient}>Save</Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>
@@ -968,7 +968,7 @@ const ClinicDashboard = () => {
           </div>
           <DialogFooter>
             <Button variant="outline" onClick={() => setShowCreateInvoice(false)}>Cancel</Button>
-            <Button className="bg-gradient-to-r from-pink-600 to-rose-600" onClick={handleCreateInvoice}>Create</Button>
+            <Button className="bg-gradient-to-r from-teal-600 to-cyan-600" onClick={handleCreateInvoice}>Create</Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>
@@ -992,7 +992,7 @@ const ClinicDashboard = () => {
           </div>
           <DialogFooter>
             <Button variant="outline" onClick={() => setShowAddInventory(false)}>Cancel</Button>
-            <Button className="bg-gradient-to-r from-pink-600 to-rose-600" onClick={handleAddInventoryItem}>Add</Button>
+            <Button className="bg-gradient-to-r from-teal-600 to-cyan-600" onClick={handleAddInventoryItem}>Add</Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>
@@ -1032,7 +1032,7 @@ const ClinicDashboard = () => {
           </div>
           <DialogFooter>
             <Button variant="outline" onClick={() => setShowManageInventory(false)}>Cancel</Button>
-            <Button className="bg-gradient-to-r from-pink-600 to-rose-600" onClick={handleUpdateInventoryItem}>Save Changes</Button>
+            <Button className="bg-gradient-to-r from-teal-600 to-cyan-600" onClick={handleUpdateInventoryItem}>Save Changes</Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>
@@ -1167,7 +1167,7 @@ const ClinicDashboard = () => {
                 Cancel
               </Button>
               <Button
-                className="flex-1 bg-gradient-to-r from-pink-600 to-rose-600"
+                className="flex-1 bg-gradient-to-r from-teal-600 to-cyan-600"
                 onClick={handleCreateAppointment}
                 disabled={saving}
               >
@@ -1249,7 +1249,7 @@ const ClinicDashboard = () => {
                   {sendingReminder ? 'Sending...' : 'Send Reminder'}
                 </Button>
                 <Button 
-                  className="flex-1 bg-gradient-to-r from-pink-600 to-rose-600"
+                  className="flex-1 bg-gradient-to-r from-teal-600 to-cyan-600"
                   onClick={() => {
                     setShowViewAppointment(false);
                     navigate(`/clinic/appointments?id=${selectedAppointment.id}`);
