@@ -91,42 +91,42 @@ const getPersonalizedSuggestions = (
   // Base suggestions based on BMI
   if (bmiCategory === "Underweight") {
     suggestions.push(
-      "Focus on nutrient-dense foods to gain healthy weight",
-      "Include healthy fats like avocados, nuts, and olive oil",
-      "Eat more frequently throughout the day"
+      "Focus on nutrient-dense Indian foods like ghee, dry fruits, and paneer",
+      "Include healthy fats like desi ghee, coconut, and groundnuts",
+      "Eat more frequently - add mid-morning and evening snacks"
     );
   } else if (bmiCategory === "Overweight" || bmiCategory === "Obese") {
     suggestions.push(
-      "Focus on portion control and mindful eating",
-      "Choose lean proteins and whole grains",
-      "Increase fiber intake through vegetables and fruits"
+      "Practice portion control using small katoris instead of large plates",
+      "Choose lean proteins like dal, fish, chicken and reduce fried foods",
+      "Increase fiber intake through sabzis, salads, and whole grains like jowar, bajra"
     );
   }
 
   // Goal-specific suggestions
   if (goal === "weight_loss") {
     suggestions.push(
-      "Create a caloric deficit of 500-750 calories per day",
-      "Increase protein intake to preserve muscle mass",
-      "Include more fiber-rich foods to feel fuller",
-      "Consider intermittent fasting under medical supervision",
-      "Track your food intake using a food diary"
+      "Replace white rice with brown rice or millets (ragi, jowar, bajra)",
+      "Include protein-rich dal, sprouts, or paneer in every meal",
+      "Avoid fried snacks - choose roasted makhana, chana instead",
+      "Drink jeera water or methi water to boost metabolism",
+      "Have an early dinner before 8 PM"
     );
   } else if (goal === "weight_gain") {
     suggestions.push(
-      "Aim for a caloric surplus of 300-500 calories per day",
-      "Consume protein-rich foods with each meal",
-      "Add healthy calorie-dense foods to your meals",
-      "Consider weight training to build muscle mass",
-      "Drink calories through smoothies and protein shakes"
+      "Add ghee to rotis and rice for healthy calories",
+      "Include paneer, eggs, or chicken in every meal",
+      "Drink banana shake, badam milk, or lassi between meals",
+      "Eat soaked almonds, dates, and anjeer (figs) daily",
+      "Have haldi doodh (turmeric milk) before bed"
     );
   } else {
     suggestions.push(
-      "Maintain balanced macronutrient ratios",
-      "Focus on food quality rather than quantity",
-      "Stay consistent with meal timing",
-      "Adjust portions based on activity level",
-      "Regular monitoring of weight and measurements"
+      "Follow a balanced thali - dal, sabzi, roti/rice, salad, curd",
+      "Use traditional spices like turmeric, cumin for health benefits",
+      "Stay consistent with Indian meal timings",
+      "Include seasonal local fruits and vegetables",
+      "Drink buttermilk (chaas) or coconut water for hydration"
     );
   }
 
@@ -150,44 +150,44 @@ const dietPlans: Record<string, DietPlan> = {
         time: "7:00 AM",
         meal: "Breakfast",
         calories: 300,
-        description: "Oatmeal with berries, 1 scoop protein powder, and almonds",
+        description: "Vegetable poha with peanuts, or 2 idlis with sambar and coconut chutney",
       },
       {
         time: "10:00 AM",
         meal: "Morning Snack",
         calories: 150,
-        description: "Greek yogurt with honey and chia seeds",
+        description: "1 cup buttermilk (chaas) with roasted chana or a small bowl of sprouts chaat",
       },
       {
         time: "1:00 PM",
         meal: "Lunch",
         calories: 400,
-        description: "Grilled chicken salad with olive oil dressing",
+        description: "2 rotis with dal, mixed vegetable sabzi, cucumber raita, and salad",
       },
       {
         time: "4:00 PM",
         meal: "Evening Snack",
         calories: 150,
-        description: "Apple with 1 tablespoon peanut butter",
+        description: "Green tea with roasted makhana (fox nuts) or 1 small fruit",
       },
       {
         time: "7:00 PM",
         meal: "Dinner",
         calories: 500,
-        description: "Baked salmon with quinoa and roasted vegetables",
+        description: "1 bowl khichdi with vegetables, or grilled fish with steamed vegetables and 1 roti",
       },
     ],
     tips: [
-      "Create a caloric deficit by consuming 500-750 fewer calories than your TDEE",
-      "Include high-protein foods to preserve muscle mass and feel fuller",
-      "Eat plenty of fiber-rich vegetables to control hunger",
-      "Stay hydrated - drink water before meals to reduce appetite",
-      "Practice portion control using smaller plates",
-      "Get adequate sleep (7-9 hours) to regulate hunger hormones",
-      "Plan your meals ahead to avoid impulsive eating",
-      "Include strength training to maintain muscle mass",
-      "Track your food intake using a food diary or app",
-      "Allow yourself occasional treats to maintain motivation"
+      "Replace white rice with brown rice, millets (jowar, bajra, ragi) for better fiber",
+      "Use mustard oil or cold-pressed coconut oil instead of refined oils",
+      "Include dal or legumes in every meal for protein and satiety",
+      "Drink jeera water or ajwain water to boost metabolism",
+      "Avoid fried snacks like samosas, pakoras - opt for roasted alternatives",
+      "Have an early dinner before 8 PM and maintain a 12-hour fasting window",
+      "Replace sugar with jaggery (gur) in moderation",
+      "Include plenty of sabzis (vegetables) with minimal oil",
+      "Drink warm water with lemon and honey in the morning",
+      "Avoid sugary drinks, choose nimbu pani or coconut water instead"
     ],
     suggestions: []
   },
@@ -199,44 +199,44 @@ const dietPlans: Record<string, DietPlan> = {
         time: "7:00 AM",
         meal: "Breakfast",
         calories: 600,
-        description: "4 eggs, whole grain toast, avocado, and banana smoothie",
+        description: "Paneer paratha (2) with curd, banana shake with dry fruits and honey",
       },
       {
         time: "10:00 AM",
         meal: "Morning Snack",
         calories: 400,
-        description: "Trail mix with nuts and dried fruits, protein shake",
+        description: "Handful of mixed dry fruits (almonds, cashews, dates) with a glass of full-fat milk",
       },
       {
         time: "1:00 PM",
         meal: "Lunch",
         calories: 800,
-        description: "Brown rice, grilled chicken breast, sweet potatoes, and vegetables",
+        description: "Rice with rajma/chole curry, paneer sabzi, roti, curd, and pickle",
       },
       {
         time: "4:00 PM",
         meal: "Evening Snack",
         calories: 400,
-        description: "Peanut butter sandwich with banana and honey",
+        description: "Banana milkshake with peanut butter, or aloo paratha with butter",
       },
       {
         time: "7:00 PM",
         meal: "Dinner",
         calories: 800,
-        description: "Pasta with meat sauce, garlic bread, and mixed vegetables",
+        description: "Chicken biryani or veg pulao with raita, dal makhani, and 2 rotis with ghee",
       },
     ],
     tips: [
-      "Aim for a caloric surplus of 300-500 calories above your TDEE",
-      "Eat larger portions and increase meal frequency",
-      "Include healthy calorie-dense foods like nuts, avocados, and olive oil",
-      "Drink your calories through smoothies and protein shakes",
-      "Focus on compound exercises to stimulate muscle growth",
-      "Have protein-rich foods with every meal",
-      "Eat before bed to prevent muscle breakdown during sleep",
-      "Track your progress with both scale weight and measurements",
-      "Don't skip meals - set reminders if needed",
-      "Choose nutrient-dense foods over empty calories"
+      "Add ghee or white butter to rotis and rice for healthy calories",
+      "Include protein-rich foods like paneer, eggs, chicken, and dal in every meal",
+      "Drink lassi, milkshakes, or badam milk between meals",
+      "Eat soaked almonds, walnuts, and dates daily",
+      "Include calorie-dense foods like dry fruits, ghee, and full-fat dairy",
+      "Have a glass of warm milk with turmeric (haldi doodh) before bed",
+      "Add peanuts and sesame seeds (til) to your meals",
+      "Eat banana with milk and honey as a pre-workout or evening snack",
+      "Include eggs (if non-vegetarian) - 3-4 per day",
+      "Don't skip meals - eat 5-6 times a day with proper portions"
     ],
     suggestions: []
   },
@@ -248,114 +248,159 @@ const dietPlans: Record<string, DietPlan> = {
         time: "7:00 AM",
         meal: "Breakfast",
         calories: 400,
-        description: "Whole grain toast with eggs and avocado, fruit",
+        description: "Upma with vegetables and coconut chutney, or stuffed moong dal cheela with mint chutney",
       },
       {
         time: "10:00 AM",
         meal: "Morning Snack",
         calories: 200,
-        description: "Mixed nuts and an apple",
+        description: "Fresh fruit (papaya, guava, or apple) with a handful of mixed nuts",
       },
       {
         time: "1:00 PM",
         meal: "Lunch",
         calories: 500,
-        description: "Turkey sandwich with vegetables and hummus",
+        description: "2 rotis with dal, seasonal vegetable sabzi, salad, and buttermilk",
       },
       {
         time: "4:00 PM",
         meal: "Evening Snack",
         calories: 200,
-        description: "Greek yogurt with granola",
+        description: "Roasted chana or makhana with masala chai (less sugar)",
       },
       {
         time: "7:00 PM",
         meal: "Dinner",
         calories: 700,
-        description: "Grilled fish with brown rice and steamed vegetables",
+        description: "Rice/roti with fish curry or palak paneer, dal, raita, and salad",
       },
     ],
     tips: [
-      "Focus on balanced macronutrient ratios (40% carbs, 30% protein, 30% fat)",
-      "Maintain consistent meal timing day to day",
-      "Adjust portions based on your activity level",
-      "Monitor your weight weekly to catch any trends",
-      "Practice mindful eating - pay attention to hunger cues",
-      "Include a variety of foods to ensure nutrient adequacy",
-      "Stay active with a mix of cardio and strength training",
-      "Plan for social events and holidays to maintain balance",
-      "Get regular health check-ups to monitor overall wellness",
-      "Make sustainable food choices you can maintain long-term"
+      "Follow a balanced thali approach - dal, sabzi, roti/rice, salad, and curd",
+      "Use traditional cooking methods - pressure cooking, steaming, tadka",
+      "Include seasonal fruits and vegetables available locally",
+      "Maintain regular meal timings aligned with Indian meal patterns",
+      "Include curd or buttermilk daily for gut health",
+      "Use a variety of spices like turmeric, cumin, and coriander for health benefits",
+      "Practice portion control - eat in katoris instead of large plates",
+      "Include traditional superfoods like amla, tulsi, and moringa",
+      "Balance your meals with 50% vegetables, 25% protein, 25% carbs",
+      "Stay hydrated with water, coconut water, and herbal drinks like kahwa"
     ],
     suggestions: []
   },
 };
 
 const commonFoods: FoodItem[] = [
-  { name: "Apple", calories: 95, image: "🍎", quantity: 0 },
-  { name: "Banana", calories: 105, image: "🍌", quantity: 0 },
-  { name: "Rice (100g)", calories: 130, image: "🍚", quantity: 0 },
-  { name: "Chicken Breast (100g)", calories: 165, image: "🍗", quantity: 0 },
+  { name: "Roti (1 piece)", calories: 120, image: "🫓", quantity: 0 },
+  { name: "Rice (1 katori)", calories: 130, image: "🍚", quantity: 0 },
+  { name: "Dal (1 katori)", calories: 150, image: "🥘", quantity: 0 },
+  { name: "Sabzi (1 katori)", calories: 80, image: "🥗", quantity: 0 },
+  { name: "Dahi/Curd (1 katori)", calories: 100, image: "🍶", quantity: 0 },
+  { name: "Paneer (100g)", calories: 265, image: "🧀", quantity: 0 },
   { name: "Egg", calories: 70, image: "🥚", quantity: 0 },
-  { name: "Bread Slice", calories: 80, image: "🍞", quantity: 0 },
-  { name: "Milk (250ml)", calories: 120, image: "🥛", quantity: 0 },
-  { name: "Pizza Slice", calories: 285, image: "🍕", quantity: 0 },
-  { name: "Salad Bowl", calories: 100, image: "🥗", quantity: 0 },
-  { name: "Yogurt (200g)", calories: 150, image: "🍶", quantity: 0 },
+  { name: "Banana", calories: 105, image: "🍌", quantity: 0 },
+  { name: "Milk (1 glass)", calories: 120, image: "🥛", quantity: 0 },
+  { name: "Poha (1 plate)", calories: 250, image: "🍛", quantity: 0 },
 ];
 
 const foodCategories = [
   {
-    name: "Indian Foods",
+    name: "Indian Staples",
     items: [
-      { name: "Roti", calories: 120, image: "🫓", quantity: 0 },
-      { name: "Dal (1 cup)", calories: 150, image: "🥘", quantity: 0 },
-      { name: "Rice (1 cup)", calories: 130, image: "🍚", quantity: 0 },
-      { name: "Paneer Curry (100g)", calories: 265, image: "🍛", quantity: 0 },
-      { name: "Samosa", calories: 260, image: "🔺", quantity: 0 },
-      { name: "Butter Chicken (150g)", calories: 290, image: "🍗", quantity: 0 },
-      { name: "Biryani (1 cup)", calories: 250, image: "🍛", quantity: 0 },
-      { name: "Dosa", calories: 120, image: "🥞", quantity: 0 },
+      { name: "Roti/Chapati", calories: 120, image: "🫓", quantity: 0 },
+      { name: "Paratha (plain)", calories: 180, image: "🫓", quantity: 0 },
+      { name: "Rice (1 katori)", calories: 130, image: "🍚", quantity: 0 },
+      { name: "Dal (1 katori)", calories: 150, image: "🥘", quantity: 0 },
+      { name: "Rajma (1 katori)", calories: 170, image: "🥘", quantity: 0 },
+      { name: "Chole (1 katori)", calories: 180, image: "🥘", quantity: 0 },
+      { name: "Khichdi (1 katori)", calories: 200, image: "🍛", quantity: 0 },
+      { name: "Pulao (1 katori)", calories: 220, image: "🍛", quantity: 0 },
+      { name: "Biryani (1 katori)", calories: 250, image: "🍛", quantity: 0 },
+    ],
+  },
+  {
+    name: "Indian Breakfast",
+    items: [
+      { name: "Poha (1 plate)", calories: 250, image: "🍛", quantity: 0 },
+      { name: "Upma (1 plate)", calories: 230, image: "🍛", quantity: 0 },
       { name: "Idli (2 pieces)", calories: 80, image: "⚪", quantity: 0 },
+      { name: "Dosa (plain)", calories: 120, image: "🥞", quantity: 0 },
+      { name: "Masala Dosa", calories: 250, image: "🥞", quantity: 0 },
+      { name: "Uttapam", calories: 200, image: "🥞", quantity: 0 },
+      { name: "Paratha (stuffed)", calories: 300, image: "🫓", quantity: 0 },
+      { name: "Moong Dal Cheela", calories: 150, image: "🥞", quantity: 0 },
+      { name: "Besan Cheela", calories: 180, image: "🥞", quantity: 0 },
     ],
   },
   {
-    name: "Vegetables",
+    name: "Indian Curries & Sabzis",
     items: [
-      { name: "Carrot (100g)", calories: 41, image: "🥕", quantity: 0 },
-      { name: "Broccoli (100g)", calories: 34, image: "🥦", quantity: 0 },
-      { name: "Spinach (100g)", calories: 23, image: "🥬", quantity: 0 },
-      { name: "Potato (100g)", calories: 77, image: "🥔", quantity: 0 },
-      { name: "Tomato", calories: 22, image: "🍅", quantity: 0 },
-      { name: "Cucumber (100g)", calories: 15, image: "🥒", quantity: 0 },
-      { name: "Bell Pepper", calories: 30, image: "🫑", quantity: 0 },
-      { name: "Onion (100g)", calories: 40, image: "🧅", quantity: 0 },
+      { name: "Paneer Bhurji (100g)", calories: 265, image: "🧀", quantity: 0 },
+      { name: "Palak Paneer (1 katori)", calories: 280, image: "🍛", quantity: 0 },
+      { name: "Butter Chicken (1 katori)", calories: 290, image: "🍗", quantity: 0 },
+      { name: "Chicken Curry (1 katori)", calories: 250, image: "🍗", quantity: 0 },
+      { name: "Fish Curry (1 katori)", calories: 200, image: "🐟", quantity: 0 },
+      { name: "Aloo Gobi (1 katori)", calories: 150, image: "🥔", quantity: 0 },
+      { name: "Bhindi Sabzi (1 katori)", calories: 100, image: "🥬", quantity: 0 },
+      { name: "Baingan Bharta (1 katori)", calories: 120, image: "🍆", quantity: 0 },
+      { name: "Mixed Veg (1 katori)", calories: 130, image: "🥗", quantity: 0 },
     ],
   },
   {
-    name: "Fast Foods",
+    name: "Indian Snacks",
     items: [
-      { name: "Burger", calories: 350, image: "🍔", quantity: 0 },
-      { name: "Pizza Slice", calories: 285, image: "🍕", quantity: 0 },
-      { name: "French Fries", calories: 365, image: "🍟", quantity: 0 },
-      { name: "Hot Dog", calories: 290, image: "🌭", quantity: 0 },
-      { name: "Sandwich", calories: 250, image: "🥪", quantity: 0 },
-      { name: "Fried Chicken", calories: 320, image: "🍗", quantity: 0 },
-      { name: "Taco", calories: 210, image: "🌮", quantity: 0 },
-      { name: "Burrito", calories: 380, image: "🌯", quantity: 0 },
+      { name: "Samosa (1 piece)", calories: 260, image: "🔺", quantity: 0 },
+      { name: "Pakora (5 pieces)", calories: 200, image: "🍘", quantity: 0 },
+      { name: "Vada (1 piece)", calories: 180, image: "🍩", quantity: 0 },
+      { name: "Dhokla (2 pieces)", calories: 120, image: "🟨", quantity: 0 },
+      { name: "Kachori (1 piece)", calories: 280, image: "🔴", quantity: 0 },
+      { name: "Roasted Chana (50g)", calories: 180, image: "🥜", quantity: 0 },
+      { name: "Makhana (1 katori)", calories: 100, image: "⚪", quantity: 0 },
+      { name: "Sprouts Chaat", calories: 150, image: "🥗", quantity: 0 },
+      { name: "Pani Puri (6 pieces)", calories: 200, image: "🟡", quantity: 0 },
     ],
   },
   {
-    name: "Common Foods",
+    name: "Dairy & Drinks",
+    items: [
+      { name: "Milk (1 glass)", calories: 120, image: "🥛", quantity: 0 },
+      { name: "Dahi/Curd (1 katori)", calories: 100, image: "🍶", quantity: 0 },
+      { name: "Buttermilk/Chaas (1 glass)", calories: 40, image: "🥛", quantity: 0 },
+      { name: "Lassi (sweet)", calories: 180, image: "🥤", quantity: 0 },
+      { name: "Paneer (100g)", calories: 265, image: "🧀", quantity: 0 },
+      { name: "Badam Milk (1 glass)", calories: 200, image: "🥛", quantity: 0 },
+      { name: "Chai (1 cup)", calories: 80, image: "☕", quantity: 0 },
+      { name: "Coconut Water (1 glass)", calories: 45, image: "🥥", quantity: 0 },
+      { name: "Nimbu Pani (1 glass)", calories: 30, image: "🍋", quantity: 0 },
+    ],
+  },
+  {
+    name: "Fruits & Dry Fruits",
     items: [
       { name: "Apple", calories: 95, image: "🍎", quantity: 0 },
       { name: "Banana", calories: 105, image: "🍌", quantity: 0 },
-      { name: "Egg", calories: 70, image: "🥚", quantity: 0 },
-      { name: "Bread Slice", calories: 80, image: "🍞", quantity: 0 },
-      { name: "Milk (250ml)", calories: 120, image: "🥛", quantity: 0 },
-      { name: "Yogurt (200g)", calories: 150, image: "🍶", quantity: 0 },
-      { name: "Chicken Breast (100g)", calories: 165, image: "🍗", quantity: 0 },
+      { name: "Mango", calories: 150, image: "🥭", quantity: 0 },
+      { name: "Papaya (1 katori)", calories: 60, image: "🍈", quantity: 0 },
+      { name: "Guava", calories: 70, image: "🍐", quantity: 0 },
+      { name: "Almonds (10 pieces)", calories: 70, image: "🌰", quantity: 0 },
+      { name: "Cashews (10 pieces)", calories: 90, image: "🥜", quantity: 0 },
+      { name: "Dates (3 pieces)", calories: 80, image: "🌴", quantity: 0 },
+      { name: "Walnuts (5 halves)", calories: 90, image: "🌰", quantity: 0 },
+    ],
+  },
+  {
+    name: "Proteins",
+    items: [
+      { name: "Egg (boiled)", calories: 70, image: "🥚", quantity: 0 },
+      { name: "Egg Bhurji (2 eggs)", calories: 180, image: "🍳", quantity: 0 },
+      { name: "Chicken (100g)", calories: 165, image: "🍗", quantity: 0 },
       { name: "Fish (100g)", calories: 140, image: "🐟", quantity: 0 },
+      { name: "Paneer (100g)", calories: 265, image: "🧀", quantity: 0 },
+      { name: "Tofu (100g)", calories: 80, image: "🧊", quantity: 0 },
+      { name: "Soya Chunks (50g dry)", calories: 170, image: "🫘", quantity: 0 },
+      { name: "Sprouts (1 katori)", calories: 100, image: "🌱", quantity: 0 },
+      { name: "Moong Dal (1 katori)", calories: 150, image: "🥘", quantity: 0 },
     ],
   },
 ];

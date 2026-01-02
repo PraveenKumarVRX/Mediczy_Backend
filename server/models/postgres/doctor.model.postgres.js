@@ -16,6 +16,15 @@ const Doctor = sequelize.define('Doctor', {
     autoIncrement: true
   },
   
+  // UUID for public-facing identifier
+  uid: {
+    type: DataTypes.UUID,
+    defaultValue: DataTypes.UUIDV4,
+    unique: true,
+    allowNull: false,
+    comment: 'Public-facing unique identifier (UUID)'
+  },
+  
   // Unique alphanumeric ID (e.g., D4K7NP)
   unique_id: {
     type: DataTypes.STRING(6),
@@ -368,6 +377,20 @@ const Doctor = sequelize.define('Doctor', {
     defaultValue: 10,
     field: 'home_visit_radius_km',
     comment: 'Maximum distance doctor will travel for home visits (in km)'
+  },
+  
+  // Emergency Services
+  acceptsEmergencyCalls: {
+    type: DataTypes.BOOLEAN,
+    defaultValue: false,
+    field: 'accepts_emergency_calls',
+    comment: 'Doctor is available to accept emergency triage video calls'
+  },
+  emergencyAvailableUntil: {
+    type: DataTypes.DATE,
+    allowNull: true,
+    field: 'emergency_available_until',
+    comment: 'Timestamp until which doctor is available for emergency calls'
   },
   
   // Full-Text Search

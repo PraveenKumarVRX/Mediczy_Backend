@@ -22,6 +22,13 @@ const Nurse = postgresSequelize.define('Nurse', {
     primaryKey: true,
     autoIncrement: true
   },
+  uid: {
+    type: DataTypes.UUID,
+    defaultValue: DataTypes.UUIDV4,
+    unique: true,
+    allowNull: false,
+    comment: 'Public-facing unique identifier (UUID)'
+  },
   unique_id: {
     type: DataTypes.STRING(6),
     unique: true,

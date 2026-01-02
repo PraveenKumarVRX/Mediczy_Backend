@@ -18,6 +18,13 @@ const Corporate = postgresSequelize.define('Corporate', {
     primaryKey: true,
     autoIncrement: true
   },
+  uid: {
+    type: DataTypes.UUID,
+    defaultValue: DataTypes.UUIDV4,
+    unique: true,
+    allowNull: false,
+    comment: 'Public-facing unique identifier (UUID)'
+  },
   companyName: {
     type: DataTypes.STRING(255),
     allowNull: false,

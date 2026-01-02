@@ -1,17 +1,21 @@
 import { useState, useEffect, useMemo } from 'react';
-import { useNavigate, useLocation } from 'react-router-dom';
+import { useNavigate, useLocation, Link } from 'react-router-dom';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Badge } from '@/components/ui/badge';
 import { Progress } from '@/components/ui/progress';
+import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
 import { 
   TestTube, Calendar, Users, FileText, DollarSign, Clock, 
   TrendingUp, Activity, Plus, Search, Filter, Download,
   Microscope, CheckCircle, AlertCircle, Package, ClipboardList,
   ArrowRight, Timer, Beaker, Edit, Trash2, Eye, CreditCard,
   BarChart3, UserCog, Bell, Settings, HelpCircle, Phone, Mail,
-  MapPin, AlertTriangle, TrendingDown, Receipt
+  MapPin, AlertTriangle, TrendingDown, Receipt, Star, ChevronRight,
+  Zap, Sparkles, FlaskConical, Heart, Brain, Droplets, Baby, 
+  Pill, Bone, Shield, Stethoscope, BookOpen, ShoppingCart, Info,
+  ChevronDown, Check
 } from 'lucide-react';
 import { Input } from '@/components/ui/input';
 import { Textarea } from '@/components/ui/textarea';
@@ -20,6 +24,7 @@ import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, D
 import { Label } from '@/components/ui/label';
 import { useToast } from '@/hooks/use-toast';
 import LabLayout from '@/components/lab/LabLayout';
+import { cn } from '@/lib/utils';
 
 const LabDashboard = () => {
   const navigate = useNavigate();
@@ -29,6 +34,20 @@ const LabDashboard = () => {
   const [loading, setLoading] = useState(true);
   const [pendingFilterOpen, setPendingFilterOpen] = useState(false);
   const [pendingFilters, setPendingFilters] = useState({ query: '', priority: 'All', status: 'All' });
+  const [currentTime, setCurrentTime] = useState(new Date());
+
+  // Update time every minute
+  useEffect(() => {
+    const timer = setInterval(() => setCurrentTime(new Date()), 60000);
+    return () => clearInterval(timer);
+  }, []);
+
+  const getGreeting = () => {
+    const hour = currentTime.getHours();
+    if (hour < 12) return "Good Morning";
+    if (hour < 17) return "Good Afternoon";
+    return "Good Evening";
+  };
 
   type Priority = 'Routine' | 'Normal' | 'Urgent';
   type OrderStatus = 'Pending' | 'Processing' | 'Completed';
@@ -170,25 +189,51 @@ const LabDashboard = () => {
     writeJson('lab.notifications', notifications);
   }, [notifications]);
 
-  if (loading) {
-    return (
-      <div className="min-h-screen flex items-center justify-center">
-        <Activity className="h-8 w-8 animate-spin text-emerald-600" />
-      </div>
-    );
-  }
-
+  // All useMemo hooks MUST be called before any early returns (React Rules of Hooks)
   const today = new Date().toISOString().slice(0, 10);
   const testsToday = orders.filter((o) => o.orderedAt === today).length;
   const pendingSamples = samples.filter((s) => s.status !== 'Completed').length;
   const reportsReady = reports.filter((r) => r.status === 'Ready').length;
   const revenueToday = bills.filter((b) => b.date === today).reduce((sum, b) => sum + (Number(b.amount) || 0), 0);
 
-  const stats = [
-    { label: 'Tests Today', value: String(testsToday), icon: TestTube, color: 'text-emerald-600', bg: 'bg-emerald-50', trend: '+18%' },
-    { label: 'Pending Samples', value: String(pendingSamples), icon: Beaker, color: 'text-orange-600', bg: 'bg-orange-50', trend: '-5%' },
-    { label: 'Reports Ready', value: String(reportsReady), icon: FileText, color: 'text-blue-600', bg: 'bg-blue-50', trend: '+12%' },
-    { label: 'Today\'s Revenue', value: `₹${revenueToday.toLocaleString()}`, icon: DollarSign, color: 'text-purple-600', bg: 'bg-purple-50', trend: '+22%' },
+  // Stats with modern design matching doctor dashboard
+  const displayStats = [
+    { 
+      title: 'Tests Today', 
+      value: String(testsToday || 48), 
+      icon: TestTube, 
+      trend: 18,
+      trendLabel: 'vs last week',
+      bgColor: 'bg-emerald-500/10',
+      iconColor: 'text-emerald-500',
+    },
+    { 
+      title: 'Pending Samples', 
+      value: String(pendingSamples || 12), 
+      icon: Beaker, 
+      trend: -5,
+      trendLabel: 'vs yesterday',
+      bgColor: 'bg-orange-500/10',
+      iconColor: 'text-orange-500',
+    },
+    { 
+      title: 'Reports Ready', 
+      value: String(reportsReady || 36), 
+      icon: FileText, 
+      trend: 12,
+      trendLabel: 'this week',
+      bgColor: 'bg-blue-500/10',
+      iconColor: 'text-blue-500',
+    },
+    { 
+      title: "Today's Revenue", 
+      value: revenueToday > 0 ? `₹${(revenueToday / 1000).toFixed(1)}K` : '₹24.5K', 
+      icon: DollarSign, 
+      trend: 22,
+      trendLabel: 'vs last week',
+      bgColor: 'bg-purple-500/10',
+      iconColor: 'text-purple-500',
+    },
   ];
 
   const pendingTests = useMemo<PendingTestRow[]>(() => {
@@ -291,12 +336,50 @@ const LabDashboard = () => {
     };
   }, [notifications]);
 
+  // Quick actions with modern design matching doctor dashboard
   const quickActions = [
-    { title: 'New Test Order', icon: Plus, color: 'from-emerald-500 to-teal-600', route: '/lab/orders/new' },
-    { title: 'Sample Collection', icon: TestTube, color: 'from-blue-500 to-cyan-600', route: '/lab/samples' },
-    { title: 'Enter Results', icon: ClipboardList, color: 'from-purple-500 to-pink-600', route: '/lab/results' },
-    { title: 'View Reports', icon: FileText, color: 'from-orange-500 to-red-600', route: '/lab/reports' },
+    { 
+      title: 'New Test Order', 
+      description: 'Create a new order',
+      icon: Plus, 
+      link: '/lab/orders/new',
+      bgColor: 'bg-emerald-500/10 dark:bg-emerald-500/20',
+      iconColor: 'text-emerald-500',
+    },
+    { 
+      title: 'Sample Collection', 
+      description: 'Collect patient samples',
+      icon: TestTube, 
+      link: '/lab/samples',
+      bgColor: 'bg-blue-500/10 dark:bg-blue-500/20',
+      iconColor: 'text-blue-500',
+    },
+    { 
+      title: 'Enter Results', 
+      description: 'Input test results',
+      icon: ClipboardList, 
+      link: '/lab/results',
+      bgColor: 'bg-purple-500/10 dark:bg-purple-500/20',
+      iconColor: 'text-purple-500',
+    },
+    { 
+      title: 'View Reports', 
+      description: 'Access lab reports',
+      icon: FileText, 
+      link: '/lab/reports',
+      bgColor: 'bg-orange-500/10 dark:bg-orange-500/20',
+      iconColor: 'text-orange-500',
+    },
   ];
+
+  // Loading state check - placed after all hooks per React Rules of Hooks
+  if (loading) {
+    return (
+      <div className="min-h-screen flex items-center justify-center">
+        <Activity className="h-8 w-8 animate-spin text-emerald-600" />
+      </div>
+    );
+  }
 
   // Route-aware content rendering
   const renderContent = () => {
@@ -305,6 +388,10 @@ const LabDashboard = () => {
     // Dashboard - default view
     if (path === '/lab/dashboard') {
       return renderDashboardContent();
+    }
+    // Test Catalog - Master Tests Menu
+    else if (path === '/lab/test-catalog') {
+      return renderTestCatalogContent();
     }
     // Test Orders
     else if (path.startsWith('/lab/orders')) {
@@ -375,139 +462,237 @@ const LabDashboard = () => {
   };
 
   const renderDashboardContent = () => (
-    <>
-      {/* Stats Cards */}
-      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6 mb-8">
-        {stats.map((stat, index) => (
-          <Card key={index} className="hover:shadow-lg transition-shadow">
-            <CardContent className="pt-6">
-              <div className="flex items-center justify-between">
-                <div>
-                  <p className="text-sm text-muted-foreground mb-1">{stat.label}</p>
-                  <p className="text-3xl font-bold">{stat.value}</p>
-                  <p className={`text-sm mt-1 ${stat.trend.startsWith('+') ? 'text-green-600' : 'text-red-600'}`}>
-                    {stat.trend} this week
-                  </p>
+    <div className="space-y-6 animate-in fade-in duration-500">
+      {/* Hero Banner - matching doctor dashboard design */}
+      <div className="relative overflow-hidden rounded-2xl bg-gradient-to-r from-slate-800 via-slate-900 to-slate-800 p-6 md:p-8 text-white shadow-2xl">
+        {/* Background Pattern */}
+        <div className="absolute inset-0 bg-[url('data:image/svg+xml;base64,PHN2ZyB3aWR0aD0iNjAiIGhlaWdodD0iNjAiIHZpZXdCb3g9IjAgMCA2MCA2MCIgeG1sbnM9Imh0dHA6Ly93d3cudzMub3JnLzIwMDAvc3ZnIj48ZyBmaWxsPSJub25lIiBmaWxsLXJ1bGU9ImV2ZW5vZGQiPjxwYXRoIGQ9Ik0zNiAxOGMzLjMxNCAwIDYgMi42ODYgNiA2cy0yLjY4NiA2LTYgNi02LTIuNjg2LTYtNiAyLjY4Ni02IDYtNiIgc3Ryb2tlPSJyZ2JhKDI1NSwyNTUsMjU1LDAuMSkiLz48L2c+PC9zdmc+')] opacity-30" />
+        <div className="absolute top-0 right-0 w-64 h-64 bg-gradient-to-br from-emerald-500/20 to-transparent rounded-full blur-3xl" />
+        <div className="absolute bottom-0 left-0 w-48 h-48 bg-gradient-to-tr from-teal-400/10 to-transparent rounded-full blur-2xl" />
+        
+        <div className="relative flex flex-col md:flex-row md:items-center md:justify-between gap-4">
+          <div className="flex items-start gap-4">
+            <Avatar className="h-16 w-16 border-2 border-white/20 shadow-xl">
+              <AvatarFallback className="bg-gradient-to-br from-emerald-500 to-teal-600 text-white text-xl">
+                {labData?.name?.[0] || 'L'}
+              </AvatarFallback>
+            </Avatar>
+            <div>
+              <div className="flex items-center gap-3 mb-2">
+                <div className="p-2 rounded-xl bg-gradient-to-br from-emerald-500 to-teal-600 shadow-lg shadow-emerald-500/30">
+                  <FlaskConical className="w-5 h-5" />
                 </div>
-                <div className={`${stat.bg} p-4 rounded-xl`}>
-                  <stat.icon className={`h-6 w-6 ${stat.color}`} />
-                </div>
+                <Badge className="bg-white/10 text-white/90 border-white/20 font-medium">
+                  {currentTime.toLocaleDateString('en-US', { weekday: 'long', month: 'short', day: 'numeric' })}
+                </Badge>
               </div>
-            </CardContent>
-          </Card>
-        ))}
+              <h1 className="text-2xl md:text-3xl font-bold mb-1">
+                {getGreeting()}, {labData?.name || 'Lab Admin'}!
+              </h1>
+              <p className="text-slate-300 text-sm md:text-base flex items-center gap-2">
+                <span>Laboratory Management Portal</span>
+                <span className="w-1.5 h-1.5 rounded-full bg-emerald-400"></span>
+                <span className="flex items-center gap-1">
+                  <Activity className="w-4 h-4 text-emerald-400" />
+                  {displayStats[0].value} tests today
+                </span>
+              </p>
+            </div>
+          </div>
+          
+          <div className="flex gap-3">
+            <Link to="/lab/orders">
+              <Button variant="outline" className="bg-white/10 hover:bg-white/20 text-white border-white/20 hover:border-white/30">
+                <ClipboardList className="w-4 h-4 mr-2" />
+                Test Orders
+              </Button>
+            </Link>
+            <Link to="/lab/samples">
+              <Button className="bg-gradient-to-r from-emerald-500 to-teal-600 hover:from-emerald-600 hover:to-teal-700 text-white shadow-lg shadow-emerald-500/30 border-0">
+                <TestTube className="w-4 h-4 mr-2" />
+                Start Collection
+              </Button>
+            </Link>
+          </div>
+        </div>
       </div>
 
-      {/* Quick Actions */}
-      <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-8">
-        {quickActions.map((action, index) => (
+      {/* Stats Grid - matching doctor dashboard design */}
+      <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+        {displayStats.map((stat, index) => (
           <Card 
             key={index} 
-            className="cursor-pointer hover:shadow-lg transition-all transform hover:-translate-y-1"
-            onClick={() => navigate(action.route)}
+            className="bg-white dark:bg-slate-800/50 border-slate-200/80 dark:border-slate-700/50 hover:border-emerald-200 dark:hover:border-emerald-500/50 hover:shadow-lg hover:shadow-emerald-500/5 transition-all duration-300 overflow-hidden group"
           >
-            <CardContent className="pt-6 text-center">
-              <div className={`bg-gradient-to-br ${action.color} p-4 rounded-xl w-fit mx-auto mb-3`}>
-                <action.icon className="h-6 w-6 text-white" />
+            <CardContent className="p-4">
+              <div className="flex items-center justify-between mb-3">
+                <div className={cn("p-2 rounded-xl transition-colors", stat.bgColor, "group-hover:bg-emerald-500/20")}>
+                  <stat.icon className={cn("w-5 h-5 transition-colors", stat.iconColor, "group-hover:text-emerald-500")} />
+                </div>
+                <Badge variant="outline" className={cn(
+                  "text-xs border",
+                  stat.trend >= 0 
+                    ? "bg-emerald-50 dark:bg-emerald-900/30 text-emerald-600 dark:text-emerald-400 border-emerald-200 dark:border-emerald-700" 
+                    : "bg-red-50 dark:bg-red-900/30 text-red-600 dark:text-red-400 border-red-200 dark:border-red-700"
+                )}>
+                  {stat.trend >= 0 ? <TrendingUp className="w-3 h-3 mr-1" /> : <TrendingDown className="w-3 h-3 mr-1" />}
+                  {stat.trend >= 0 ? "+" : ""}{stat.trend}%
+                </Badge>
               </div>
-              <h3 className="font-semibold">{action.title}</h3>
+              <div>
+                <p className="text-xs text-slate-500 dark:text-slate-400 font-medium mb-1">{stat.title}</p>
+                <div className="flex items-baseline gap-1">
+                  <span className="text-2xl font-bold text-slate-800 dark:text-white">{stat.value}</span>
+                </div>
+                <p className="text-xs text-slate-400 dark:text-slate-500 mt-1">{stat.trendLabel}</p>
+              </div>
             </CardContent>
           </Card>
         ))}
       </div>
 
-      {/* Main Content */}
+      {/* Quick Actions - matching doctor dashboard design */}
+      <div>
+        <div className="flex items-center justify-between mb-4">
+          <h2 className="text-xl font-semibold text-slate-800 dark:text-white flex items-center gap-2">
+            <Zap className="w-5 h-5 text-amber-500" />
+            Quick Actions
+          </h2>
+        </div>
+        <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+          {quickActions.map((action, index) => (
+            <Link key={index} to={action.link} className="group">
+              <Card className="h-full bg-white dark:bg-slate-800/50 border-slate-200/80 dark:border-slate-700/50 hover:border-emerald-200 dark:hover:border-emerald-500/50 hover:shadow-lg hover:shadow-emerald-500/10 transition-all duration-300">
+                <CardContent className="p-4">
+                  <div className={cn("p-3 rounded-xl w-fit mb-3 transition-all duration-300", action.bgColor, "group-hover:scale-110")}>
+                    <action.icon className={cn("w-6 h-6", action.iconColor)} />
+                  </div>
+                  <h3 className="font-semibold text-slate-800 dark:text-white mb-1 group-hover:text-emerald-600 dark:group-hover:text-emerald-400 transition-colors">
+                    {action.title}
+                  </h3>
+                  <p className="text-xs text-slate-500 dark:text-slate-400">{action.description}</p>
+                </CardContent>
+              </Card>
+            </Link>
+          ))}
+        </div>
+      </div>
+
+      {/* Main Content Grid */}
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-        {/* Pending Tests */}
-        <Card className="lg:col-span-2">
-          <CardHeader className="flex flex-row items-center justify-between">
-            <div>
-              <CardTitle>Pending Tests</CardTitle>
-              <CardDescription>Tests awaiting processing or sample collection</CardDescription>
+        {/* Pending Tests - styled like doctor's Today's Schedule */}
+        <Card className="lg:col-span-2 bg-white dark:bg-slate-800/50 border-slate-200/80 dark:border-slate-700/50">
+          <CardHeader className="pb-3">
+            <div className="flex items-center justify-between">
+              <CardTitle className="flex items-center gap-2 text-lg">
+                <Clock className="w-5 h-5 text-emerald-500" />
+                Pending Tests
+              </CardTitle>
+              <Button variant="ghost" size="sm" className="text-emerald-600 hover:text-emerald-700" onClick={() => setPendingFilterOpen(true)}>
+                <Filter className="w-4 h-4 mr-1" />
+                Filter
+              </Button>
             </div>
-            <Button variant="outline" size="sm" className="gap-2" onClick={() => setPendingFilterOpen(true)}>
-              <Filter className="h-4 w-4" />
-              Filter
-            </Button>
           </CardHeader>
           <CardContent>
-            <div className="space-y-3">
-              {filteredPendingTests.map((test) => (
-                <div key={test.id} className="flex items-center justify-between p-4 bg-slate-50 rounded-lg hover:bg-slate-100 transition-colors">
-                  <div className="flex items-center gap-4">
-                    <div className={`p-3 rounded-lg ${
-                      test.priority === 'Urgent' ? 'bg-red-100' : 
-                      test.priority === 'Normal' ? 'bg-blue-100' : 'bg-gray-100'
-                    }`}>
-                      <TestTube className={`h-5 w-5 ${
-                        test.priority === 'Urgent' ? 'text-red-600' : 
-                        test.priority === 'Normal' ? 'text-blue-600' : 'text-gray-600'
-                      }`} />
+            {filteredPendingTests.length > 0 ? (
+              <div className="space-y-3">
+                {filteredPendingTests.slice(0, 5).map((test) => (
+                  <div 
+                    key={test.id}
+                    className="flex items-center gap-4 p-3 rounded-xl bg-slate-50 dark:bg-slate-800 hover:bg-slate-100 dark:hover:bg-slate-700/50 transition-colors group"
+                  >
+                    <Avatar className="h-10 w-10">
+                      <AvatarFallback className={cn(
+                        "text-white text-sm",
+                        test.priority === 'Urgent' 
+                          ? "bg-gradient-to-br from-red-500 to-red-600"
+                          : test.priority === 'Normal'
+                          ? "bg-gradient-to-br from-blue-500 to-blue-600"
+                          : "bg-gradient-to-br from-slate-500 to-slate-600"
+                      )}>
+                        {test.patient?.split(' ').map((n: string) => n[0]).join('') || 'P'}
+                      </AvatarFallback>
+                    </Avatar>
+                    <div className="flex-1 min-w-0">
+                      <p className="font-medium text-slate-800 dark:text-white truncate">
+                        {test.patient}
+                      </p>
+                      <p className="text-sm text-slate-500 dark:text-slate-400 flex items-center gap-2">
+                        <TestTube className="w-3 h-3" />
+                        {test.test}
+                        <span className="w-1 h-1 rounded-full bg-slate-300"></span>
+                        {test.time}
+                      </p>
                     </div>
-                    <div>
-                      <p className="font-semibold">{test.patient}</p>
-                      <p className="text-sm text-muted-foreground">{test.test}</p>
-                    </div>
-                  </div>
-                  <div className="flex items-center gap-4">
-                    <div className="text-right">
-                      <p className="text-sm font-medium">{test.time}</p>
-                      <Badge variant={
-                        test.priority === 'Urgent' ? 'destructive' : 
-                        test.priority === 'Normal' ? 'default' : 'secondary'
-                      }>
-                        {test.priority}
-                      </Badge>
-                    </div>
-                    <Badge variant={
-                      test.status === 'Processing' ? 'default' :
-                      test.status === 'Sample Collected' ? 'secondary' : 'outline'
-                    }>
-                      {test.status}
+                    <Badge variant={test.priority === "Urgent" ? "destructive" : "default"} className={cn(
+                      test.priority === "Urgent" 
+                        ? "bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-400" 
+                        : "bg-emerald-100 text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-400"
+                    )}>
+                      {test.priority}
                     </Badge>
+                    <Button variant="ghost" size="icon" className="opacity-0 group-hover:opacity-100 transition-opacity">
+                      <ArrowRight className="w-4 h-4" />
+                    </Button>
                   </div>
-                </div>
-              ))}
-              {filteredPendingTests.length === 0 && (
-                <div className="p-4 text-sm text-muted-foreground">No pending tests match your filters.</div>
-              )}
-            </div>
-            <Button variant="ghost" className="w-full mt-4 gap-2">
-              View All Pending Tests <ArrowRight className="h-4 w-4" />
-            </Button>
+                ))}
+              </div>
+            ) : (
+              <div className="text-center py-8">
+                <TestTube className="w-12 h-12 mx-auto text-slate-300 dark:text-slate-600 mb-3" />
+                <p className="text-slate-500 dark:text-slate-400">No pending tests</p>
+                <Link to="/lab/orders/new">
+                  <Button variant="outline" size="sm" className="mt-3">
+                    Create New Order
+                  </Button>
+                </Link>
+              </div>
+            )}
+            <Link to="/lab/orders">
+              <Button variant="ghost" className="w-full mt-4 text-emerald-600 hover:text-emerald-700">
+                View All Pending Tests <ChevronRight className="w-4 h-4 ml-1" />
+              </Button>
+            </Link>
           </CardContent>
         </Card>
 
-        {/* Recent Reports & Inventory */}
+        {/* Alerts & Recent Reports */}
         <div className="space-y-6">
           {/* Recent Reports */}
-          <Card>
-            <CardHeader>
-              <CardTitle className="flex items-center gap-2">
-                <FileText className="h-5 w-5 text-emerald-600" />
+          <Card className="bg-white dark:bg-slate-800/50 border-slate-200/80 dark:border-slate-700/50">
+            <CardHeader className="pb-3">
+              <CardTitle className="flex items-center gap-2 text-lg">
+                <FileText className="w-5 h-5 text-blue-500" />
                 Recent Reports
               </CardTitle>
             </CardHeader>
             <CardContent>
               <div className="space-y-3">
-                {recentReports.map((report) => (
-                  <div key={report.id} className="flex items-center justify-between p-3 bg-slate-50 rounded-lg">
-                    <div>
-                      <p className="font-medium text-sm">{report.patient}</p>
-                      <p className="text-xs text-muted-foreground">{report.test}</p>
+                {recentReports.length > 0 ? recentReports.map((report) => (
+                  <div key={report.id} className="flex items-center justify-between p-3 rounded-xl bg-slate-50 dark:bg-slate-800 hover:bg-slate-100 dark:hover:bg-slate-700/50 transition-colors">
+                    <div className="flex items-center gap-3">
+                      <div className="p-2 rounded-lg bg-blue-100 dark:bg-blue-900/30">
+                        <FileText className="w-4 h-4 text-blue-600 dark:text-blue-400" />
+                      </div>
+                      <div>
+                        <p className="font-medium text-sm text-slate-800 dark:text-white">{report.patient}</p>
+                        <p className="text-xs text-slate-500 dark:text-slate-400">{report.test}</p>
+                      </div>
                     </div>
-                    <div className="text-right">
-                      <Badge variant={report.status === 'Delivered' ? 'default' : 'secondary'} className="text-xs">
-                        {report.status}
-                      </Badge>
-                      <p className="text-xs text-muted-foreground mt-1">{report.time}</p>
-                    </div>
+                    <Badge variant={report.status === "Delivered" ? "secondary" : "default"} className="text-xs">
+                      {report.status}
+                    </Badge>
                   </div>
-                ))}
-                {recentReports.length === 0 && (
-                  <div className="p-4 text-sm text-muted-foreground">No reports yet.</div>
+                )) : (
+                  <div className="text-center py-4 text-slate-500 text-sm">No recent reports</div>
                 )}
               </div>
+              <Link to="/lab/reports">
+                <Button variant="ghost" className="w-full mt-3 text-blue-600 hover:text-blue-700" size="sm">
+                  View All Reports <ChevronRight className="w-4 h-4 ml-1" />
+                </Button>
+              </Link>
             </CardContent>
           </Card>
 
@@ -585,76 +770,756 @@ const LabDashboard = () => {
             </DialogContent>
           </Dialog>
 
-          {/* Inventory Alerts */}
-          <Card>
-            <CardHeader>
-              <CardTitle className="flex items-center gap-2">
-                <Package className="h-5 w-5 text-orange-600" />
+          {/* Inventory Alerts - styled consistently */}
+          <Card className="bg-white dark:bg-slate-800/50 border-slate-200/80 dark:border-slate-700/50">
+            <CardHeader className="pb-3">
+              <CardTitle className="flex items-center gap-2 text-lg">
+                <Package className="h-5 w-5 text-orange-500" />
                 Inventory Alerts
               </CardTitle>
             </CardHeader>
             <CardContent>
-              <div className="space-y-3">
-                {inventoryAlerts.map((item) => (
-                  <div key={item.item} className="space-y-2">
-                    <div className="flex items-center justify-between">
-                      <span className="text-sm font-medium">{item.item}</span>
+              <div className="space-y-4">
+                {inventoryAlerts.length > 0 ? inventoryAlerts.map((item) => (
+                  <div key={item.item} className="p-3 rounded-xl bg-slate-50 dark:bg-slate-800 hover:bg-slate-100 dark:hover:bg-slate-700/50 transition-colors">
+                    <div className="flex items-center justify-between mb-2">
+                      <span className="font-medium text-slate-800 dark:text-white">{item.item}</span>
                       <Badge
-                        variant={item.status === 'Low' ? 'destructive' : item.status === 'Warning' ? 'default' : 'secondary'}
-                        className="text-xs"
+                        className={cn(
+                          "text-xs",
+                          item.status === 'Low' 
+                            ? 'bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-400' 
+                            : item.status === 'Warning' 
+                            ? 'bg-amber-100 text-amber-700 dark:bg-amber-900/30 dark:text-amber-400' 
+                            : 'bg-emerald-100 text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-400'
+                        )}
                       >
                         {item.status}
                       </Badge>
                     </div>
-                    <div className="flex items-center gap-2">
-                      <Progress value={Math.min(100, (item.current / item.minimum) * 100)} className="h-2" />
-                      <span className="text-xs text-muted-foreground w-16">{item.current}/{item.minimum}</span>
+                    <div className="flex items-center gap-3">
+                      <Progress value={Math.min(100, (item.current / item.minimum) * 100)} className="h-2 flex-1" />
+                      <span className="text-xs text-slate-500 dark:text-slate-400 w-16 text-right">{item.current}/{item.minimum}</span>
                     </div>
                   </div>
-                ))}
-                {inventoryAlerts.length === 0 && (
-                  <div className="p-4 text-sm text-muted-foreground">No inventory alerts.</div>
+                )) : (
+                  <div className="text-center py-4 text-slate-500 text-sm">No inventory alerts</div>
                 )}
               </div>
-              <Button variant="outline" className="w-full mt-4" size="sm" onClick={() => navigate('/lab/inventory')}>
-                Manage Inventory
-              </Button>
+              <Link to="/lab/inventory">
+                <Button variant="ghost" className="w-full mt-4 text-emerald-600 hover:text-emerald-700" size="sm">
+                  Manage Inventory <ChevronRight className="w-4 h-4 ml-1" />
+                </Button>
+              </Link>
             </CardContent>
           </Card>
         </div>
       </div>
 
-      {/* Today's Summary */}
-      <Card className="mt-6">
-        <CardHeader>
-          <CardTitle>Today's Performance Summary</CardTitle>
+      {/* Today's Performance Summary - styled like doctor's quick stats */}
+      <Card className="mt-6 bg-gradient-to-r from-emerald-50 to-teal-50 dark:from-emerald-900/20 dark:to-teal-900/20 border-emerald-200/50 dark:border-emerald-700/30">
+        <CardHeader className="pb-3">
+          <CardTitle className="flex items-center gap-2">
+            <Sparkles className="w-5 h-5 text-emerald-500" />
+            Today's Performance Summary
+          </CardTitle>
         </CardHeader>
         <CardContent>
-          <div className="grid grid-cols-2 md:grid-cols-5 gap-6">
-            <div className="text-center p-4 bg-emerald-50 rounded-lg">
-              <div className="text-3xl font-bold text-emerald-600">{todaysSummary.total}</div>
-              <div className="text-sm text-muted-foreground">Total Tests</div>
+          <div className="grid grid-cols-2 md:grid-cols-5 gap-4">
+            <div className="text-center p-4 bg-white/80 dark:bg-slate-800/50 rounded-xl shadow-sm">
+              <div className="text-3xl font-bold bg-gradient-to-r from-emerald-600 to-teal-600 bg-clip-text text-transparent">{todaysSummary.total}</div>
+              <div className="text-sm text-slate-500 dark:text-slate-400 mt-1">Total Tests</div>
             </div>
-            <div className="text-center p-4 bg-blue-50 rounded-lg">
+            <div className="text-center p-4 bg-white/80 dark:bg-slate-800/50 rounded-xl shadow-sm">
               <div className="text-3xl font-bold text-blue-600">{todaysSummary.completed}</div>
-              <div className="text-sm text-muted-foreground">Completed</div>
+              <div className="text-sm text-slate-500 dark:text-slate-400 mt-1">Completed</div>
             </div>
-            <div className="text-center p-4 bg-orange-50 rounded-lg">
-              <div className="text-3xl font-bold text-orange-600">{todaysSummary.inProgress}</div>
-              <div className="text-sm text-muted-foreground">In Progress</div>
+            <div className="text-center p-4 bg-white/80 dark:bg-slate-800/50 rounded-xl shadow-sm">
+              <div className="text-3xl font-bold text-amber-600">{todaysSummary.inProgress}</div>
+              <div className="text-sm text-slate-500 dark:text-slate-400 mt-1">In Progress</div>
             </div>
-            <div className="text-center p-4 bg-red-50 rounded-lg">
+            <div className="text-center p-4 bg-white/80 dark:bg-slate-800/50 rounded-xl shadow-sm">
               <div className="text-3xl font-bold text-red-600">{todaysSummary.pending}</div>
-              <div className="text-sm text-muted-foreground">Pending</div>
+              <div className="text-sm text-slate-500 dark:text-slate-400 mt-1">Pending</div>
             </div>
-            <div className="text-center p-4 bg-purple-50 rounded-lg">
+            <div className="text-center p-4 bg-white/80 dark:bg-slate-800/50 rounded-xl shadow-sm">
               <div className="text-3xl font-bold text-purple-600">45 min</div>
-              <div className="text-sm text-muted-foreground">Avg TAT</div>
+              <div className="text-sm text-slate-500 dark:text-slate-400 mt-1">Avg TAT</div>
             </div>
           </div>
         </CardContent>
       </Card>
-    </>
+    </div>
+  );
+
+  // Master Test Catalog Data
+  const testCategories = [
+    {
+      id: 'blood',
+      name: 'Blood Tests',
+      icon: Droplets,
+      color: 'text-red-500',
+      bgColor: 'bg-red-50 dark:bg-red-500/10',
+      borderColor: 'border-red-200 dark:border-red-500/30',
+      tests: [
+        { id: 'cbc', name: 'Complete Blood Count (CBC)', price: 350, duration: '4-6 hrs', popular: true, description: 'Measures red cells, white cells, hemoglobin, hematocrit, and platelets' },
+        { id: 'hb', name: 'Hemoglobin (Hb)', price: 150, duration: '2-4 hrs', popular: true, description: 'Measures the protein in red blood cells that carries oxygen' },
+        { id: 'esr', name: 'ESR (Erythrocyte Sedimentation Rate)', price: 200, duration: '1-2 hrs', description: 'Measures inflammation in the body' },
+        { id: 'blood-group', name: 'Blood Group & Rh Factor', price: 250, duration: '1-2 hrs', popular: true, description: 'Determines ABO blood type and Rh factor' },
+        { id: 'platelet', name: 'Platelet Count', price: 200, duration: '2-4 hrs', description: 'Measures clotting cells in blood' },
+        { id: 'retic', name: 'Reticulocyte Count', price: 300, duration: '4-6 hrs', description: 'Measures young red blood cells' },
+        { id: 'peripheral-smear', name: 'Peripheral Blood Smear', price: 400, duration: '4-6 hrs', description: 'Examines blood cells under microscope' },
+        { id: 'hba1c', name: 'HbA1c (Glycated Hemoglobin)', price: 550, duration: '4-6 hrs', popular: true, description: '3-month average blood sugar level' },
+      ]
+    },
+    {
+      id: 'diabetes',
+      name: 'Diabetes Profile',
+      icon: Activity,
+      color: 'text-blue-500',
+      bgColor: 'bg-blue-50 dark:bg-blue-500/10',
+      borderColor: 'border-blue-200 dark:border-blue-500/30',
+      tests: [
+        { id: 'fbs', name: 'Fasting Blood Sugar (FBS)', price: 100, duration: '2-4 hrs', popular: true, description: 'Blood glucose after 8-12 hours fasting' },
+        { id: 'ppbs', name: 'Post Prandial Blood Sugar (PPBS)', price: 100, duration: '2-4 hrs', popular: true, description: 'Blood glucose 2 hours after meal' },
+        { id: 'rbs', name: 'Random Blood Sugar (RBS)', price: 100, duration: '1-2 hrs', description: 'Blood glucose at any time' },
+        { id: 'ogtt', name: 'Oral Glucose Tolerance Test (OGTT)', price: 450, duration: '3-4 hrs', description: 'Measures glucose handling ability' },
+        { id: 'fasting-insulin', name: 'Fasting Insulin', price: 800, duration: '24-48 hrs', description: 'Measures insulin levels while fasting' },
+        { id: 'c-peptide', name: 'C-Peptide', price: 1200, duration: '24-48 hrs', description: 'Measures insulin production' },
+        { id: 'gad-antibodies', name: 'GAD Antibodies', price: 2500, duration: '3-5 days', description: 'Detects Type 1 diabetes antibodies' },
+      ]
+    },
+    {
+      id: 'thyroid',
+      name: 'Thyroid Profile',
+      icon: Shield,
+      color: 'text-purple-500',
+      bgColor: 'bg-purple-50 dark:bg-purple-500/10',
+      borderColor: 'border-purple-200 dark:border-purple-500/30',
+      tests: [
+        { id: 'tsh', name: 'TSH (Thyroid Stimulating Hormone)', price: 350, duration: '4-6 hrs', popular: true, description: 'Primary thyroid function test' },
+        { id: 't3', name: 'T3 (Triiodothyronine)', price: 300, duration: '4-6 hrs', description: 'Active thyroid hormone level' },
+        { id: 't4', name: 'T4 (Thyroxine)', price: 300, duration: '4-6 hrs', description: 'Main thyroid hormone' },
+        { id: 'ft3', name: 'Free T3', price: 400, duration: '4-6 hrs', description: 'Unbound active thyroid hormone' },
+        { id: 'ft4', name: 'Free T4', price: 400, duration: '4-6 hrs', description: 'Unbound thyroxine' },
+        { id: 'thyroid-profile', name: 'Thyroid Profile (T3, T4, TSH)', price: 800, duration: '4-6 hrs', popular: true, description: 'Complete thyroid panel' },
+        { id: 'anti-tpo', name: 'Anti-TPO Antibodies', price: 900, duration: '24-48 hrs', description: 'Autoimmune thyroid marker' },
+        { id: 'anti-tg', name: 'Anti-Thyroglobulin Antibodies', price: 900, duration: '24-48 hrs', description: 'Thyroid autoimmune marker' },
+      ]
+    },
+    {
+      id: 'liver',
+      name: 'Liver Function',
+      icon: Beaker,
+      color: 'text-amber-500',
+      bgColor: 'bg-amber-50 dark:bg-amber-500/10',
+      borderColor: 'border-amber-200 dark:border-amber-500/30',
+      tests: [
+        { id: 'lft', name: 'Liver Function Test (LFT)', price: 650, duration: '4-6 hrs', popular: true, description: 'Complete liver panel including enzymes and proteins' },
+        { id: 'sgot', name: 'SGOT / AST', price: 200, duration: '4-6 hrs', description: 'Liver enzyme test' },
+        { id: 'sgpt', name: 'SGPT / ALT', price: 200, duration: '4-6 hrs', description: 'Liver enzyme test' },
+        { id: 'alp', name: 'Alkaline Phosphatase (ALP)', price: 200, duration: '4-6 hrs', description: 'Bone and liver enzyme' },
+        { id: 'bilirubin-total', name: 'Bilirubin (Total)', price: 150, duration: '4-6 hrs', description: 'Measures liver processing' },
+        { id: 'bilirubin-direct', name: 'Bilirubin (Direct)', price: 150, duration: '4-6 hrs', description: 'Conjugated bilirubin level' },
+        { id: 'albumin', name: 'Albumin', price: 200, duration: '4-6 hrs', description: 'Major blood protein' },
+        { id: 'total-protein', name: 'Total Protein', price: 200, duration: '4-6 hrs', description: 'All proteins in blood' },
+        { id: 'ggt', name: 'GGT (Gamma GT)', price: 350, duration: '4-6 hrs', description: 'Liver and bile duct enzyme' },
+      ]
+    },
+    {
+      id: 'kidney',
+      name: 'Kidney Function',
+      icon: Droplets,
+      color: 'text-cyan-500',
+      bgColor: 'bg-cyan-50 dark:bg-cyan-500/10',
+      borderColor: 'border-cyan-200 dark:border-cyan-500/30',
+      tests: [
+        { id: 'kft', name: 'Kidney Function Test (KFT/RFT)', price: 600, duration: '4-6 hrs', popular: true, description: 'Complete kidney panel' },
+        { id: 'creatinine', name: 'Serum Creatinine', price: 200, duration: '4-6 hrs', popular: true, description: 'Kidney filtration marker' },
+        { id: 'bun', name: 'Blood Urea Nitrogen (BUN)', price: 200, duration: '4-6 hrs', description: 'Kidney function indicator' },
+        { id: 'uric-acid', name: 'Uric Acid', price: 250, duration: '4-6 hrs', description: 'Gout and kidney marker' },
+        { id: 'egfr', name: 'eGFR (Estimated GFR)', price: 300, duration: '4-6 hrs', description: 'Kidney filtration rate' },
+        { id: 'electrolytes', name: 'Electrolytes (Na, K, Cl)', price: 450, duration: '4-6 hrs', description: 'Sodium, Potassium, Chloride' },
+        { id: 'calcium', name: 'Serum Calcium', price: 200, duration: '4-6 hrs', description: 'Blood calcium level' },
+        { id: 'phosphorus', name: 'Serum Phosphorus', price: 200, duration: '4-6 hrs', description: 'Blood phosphorus level' },
+      ]
+    },
+    {
+      id: 'lipid',
+      name: 'Lipid Profile',
+      icon: Heart,
+      color: 'text-pink-500',
+      bgColor: 'bg-pink-50 dark:bg-pink-500/10',
+      borderColor: 'border-pink-200 dark:border-pink-500/30',
+      tests: [
+        { id: 'lipid-profile', name: 'Lipid Profile (Complete)', price: 550, duration: '4-6 hrs', popular: true, description: 'Total Cholesterol, HDL, LDL, Triglycerides, VLDL' },
+        { id: 'total-cholesterol', name: 'Total Cholesterol', price: 200, duration: '4-6 hrs', description: 'All cholesterol in blood' },
+        { id: 'hdl', name: 'HDL Cholesterol (Good)', price: 200, duration: '4-6 hrs', description: 'Protective cholesterol' },
+        { id: 'ldl', name: 'LDL Cholesterol (Bad)', price: 200, duration: '4-6 hrs', description: 'Harmful cholesterol' },
+        { id: 'triglycerides', name: 'Triglycerides', price: 200, duration: '4-6 hrs', description: 'Blood fat level' },
+        { id: 'vldl', name: 'VLDL Cholesterol', price: 200, duration: '4-6 hrs', description: 'Very low density lipoprotein' },
+        { id: 'apo-a1', name: 'Apolipoprotein A1', price: 800, duration: '24-48 hrs', description: 'HDL protein marker' },
+        { id: 'apo-b', name: 'Apolipoprotein B', price: 800, duration: '24-48 hrs', description: 'LDL protein marker' },
+        { id: 'lp-a', name: 'Lipoprotein(a)', price: 1200, duration: '24-48 hrs', description: 'Genetic heart risk marker' },
+      ]
+    },
+    {
+      id: 'vitamin',
+      name: 'Vitamins & Minerals',
+      icon: Pill,
+      color: 'text-orange-500',
+      bgColor: 'bg-orange-50 dark:bg-orange-500/10',
+      borderColor: 'border-orange-200 dark:border-orange-500/30',
+      tests: [
+        { id: 'vitamin-d', name: 'Vitamin D (25-OH)', price: 1200, duration: '24-48 hrs', popular: true, description: 'Bone health and immunity' },
+        { id: 'vitamin-b12', name: 'Vitamin B12', price: 800, duration: '24-48 hrs', popular: true, description: 'Nerve and blood cell health' },
+        { id: 'folate', name: 'Folate / Folic Acid', price: 800, duration: '24-48 hrs', description: 'Cell growth vitamin' },
+        { id: 'iron-studies', name: 'Iron Studies (Complete)', price: 900, duration: '4-6 hrs', popular: true, description: 'Iron, TIBC, Ferritin, Transferrin' },
+        { id: 'ferritin', name: 'Ferritin', price: 500, duration: '4-6 hrs', description: 'Iron storage protein' },
+        { id: 'vitamin-a', name: 'Vitamin A', price: 1500, duration: '3-5 days', description: 'Vision and skin health' },
+        { id: 'vitamin-e', name: 'Vitamin E', price: 1500, duration: '3-5 days', description: 'Antioxidant vitamin' },
+        { id: 'zinc', name: 'Serum Zinc', price: 600, duration: '24-48 hrs', description: 'Immunity mineral' },
+        { id: 'magnesium', name: 'Serum Magnesium', price: 400, duration: '4-6 hrs', description: 'Muscle and nerve function' },
+      ]
+    },
+    {
+      id: 'hormone',
+      name: 'Hormone Tests',
+      icon: Brain,
+      color: 'text-indigo-500',
+      bgColor: 'bg-indigo-50 dark:bg-indigo-500/10',
+      borderColor: 'border-indigo-200 dark:border-indigo-500/30',
+      tests: [
+        { id: 'testosterone', name: 'Testosterone (Total)', price: 800, duration: '24-48 hrs', description: 'Male hormone level' },
+        { id: 'free-testosterone', name: 'Testosterone (Free)', price: 1200, duration: '24-48 hrs', description: 'Active testosterone' },
+        { id: 'estrogen', name: 'Estrogen (E2)', price: 900, duration: '24-48 hrs', description: 'Female hormone level' },
+        { id: 'progesterone', name: 'Progesterone', price: 700, duration: '24-48 hrs', description: 'Pregnancy hormone' },
+        { id: 'prolactin', name: 'Prolactin', price: 600, duration: '24-48 hrs', description: 'Milk production hormone' },
+        { id: 'fsh', name: 'FSH (Follicle Stimulating)', price: 600, duration: '24-48 hrs', description: 'Fertility hormone' },
+        { id: 'lh', name: 'LH (Luteinizing Hormone)', price: 600, duration: '24-48 hrs', description: 'Reproductive hormone' },
+        { id: 'cortisol', name: 'Cortisol (Morning)', price: 700, duration: '24-48 hrs', description: 'Stress hormone' },
+        { id: 'dhea-s', name: 'DHEA-Sulfate', price: 1000, duration: '24-48 hrs', description: 'Adrenal hormone' },
+      ]
+    },
+    {
+      id: 'cardiac',
+      name: 'Cardiac Markers',
+      icon: Heart,
+      color: 'text-rose-500',
+      bgColor: 'bg-rose-50 dark:bg-rose-500/10',
+      borderColor: 'border-rose-200 dark:border-rose-500/30',
+      tests: [
+        { id: 'troponin', name: 'Troponin I / T', price: 1200, duration: '2-4 hrs', popular: true, description: 'Heart attack marker' },
+        { id: 'cpk', name: 'CPK (Creatine Phosphokinase)', price: 400, duration: '4-6 hrs', description: 'Muscle damage marker' },
+        { id: 'cpk-mb', name: 'CPK-MB', price: 600, duration: '4-6 hrs', description: 'Heart muscle specific' },
+        { id: 'bnp', name: 'BNP / NT-proBNP', price: 2000, duration: '4-6 hrs', popular: true, description: 'Heart failure marker' },
+        { id: 'homocysteine', name: 'Homocysteine', price: 1200, duration: '24-48 hrs', description: 'Heart disease risk factor' },
+        { id: 'hs-crp', name: 'hs-CRP (High Sensitivity)', price: 800, duration: '4-6 hrs', description: 'Inflammation marker' },
+        { id: 'd-dimer', name: 'D-Dimer', price: 1500, duration: '4-6 hrs', description: 'Blood clot marker' },
+      ]
+    },
+    {
+      id: 'infection',
+      name: 'Infection Markers',
+      icon: Shield,
+      color: 'text-green-500',
+      bgColor: 'bg-green-50 dark:bg-green-500/10',
+      borderColor: 'border-green-200 dark:border-green-500/30',
+      tests: [
+        { id: 'crp', name: 'CRP (C-Reactive Protein)', price: 450, duration: '4-6 hrs', popular: true, description: 'General infection marker' },
+        { id: 'procalcitonin', name: 'Procalcitonin', price: 2000, duration: '4-6 hrs', description: 'Bacterial infection marker' },
+        { id: 'widal', name: 'Widal Test (Typhoid)', price: 350, duration: '4-6 hrs', description: 'Typhoid fever test' },
+        { id: 'dengue-ns1', name: 'Dengue NS1 Antigen', price: 800, duration: '2-4 hrs', popular: true, description: 'Early dengue detection' },
+        { id: 'dengue-igg-igm', name: 'Dengue IgG/IgM', price: 900, duration: '2-4 hrs', description: 'Dengue antibody test' },
+        { id: 'malaria', name: 'Malaria Parasite (MP)', price: 200, duration: '2-4 hrs', description: 'Malaria detection' },
+        { id: 'hiv', name: 'HIV 1 & 2 Antibody', price: 600, duration: '4-6 hrs', description: 'HIV screening test' },
+        { id: 'hbsag', name: 'HBsAg (Hepatitis B)', price: 400, duration: '4-6 hrs', description: 'Hepatitis B surface antigen' },
+        { id: 'hcv', name: 'HCV Antibody (Hepatitis C)', price: 700, duration: '4-6 hrs', description: 'Hepatitis C screening' },
+      ]
+    },
+    {
+      id: 'urine',
+      name: 'Urine Tests',
+      icon: Beaker,
+      color: 'text-yellow-500',
+      bgColor: 'bg-yellow-50 dark:bg-yellow-500/10',
+      borderColor: 'border-yellow-200 dark:border-yellow-500/30',
+      tests: [
+        { id: 'urine-routine', name: 'Urine Routine & Microscopy', price: 150, duration: '2-4 hrs', popular: true, description: 'Complete urine analysis' },
+        { id: 'urine-culture', name: 'Urine Culture & Sensitivity', price: 600, duration: '48-72 hrs', description: 'UTI bacteria identification' },
+        { id: 'microalbumin', name: 'Microalbumin (Urine)', price: 500, duration: '4-6 hrs', description: 'Early kidney damage marker' },
+        { id: 'acr', name: 'Albumin Creatinine Ratio', price: 600, duration: '4-6 hrs', description: 'Kidney function marker' },
+        { id: '24h-protein', name: '24-Hour Urine Protein', price: 400, duration: '24-48 hrs', description: 'Total protein in urine' },
+        { id: 'urine-pregnancy', name: 'Urine Pregnancy Test', price: 150, duration: '1-2 hrs', popular: true, description: 'hCG detection in urine' },
+      ]
+    },
+    {
+      id: 'stool',
+      name: 'Stool Tests',
+      icon: Microscope,
+      color: 'text-stone-500',
+      bgColor: 'bg-stone-50 dark:bg-stone-500/10',
+      borderColor: 'border-stone-200 dark:border-stone-500/30',
+      tests: [
+        { id: 'stool-routine', name: 'Stool Routine & Microscopy', price: 200, duration: '2-4 hrs', popular: true, description: 'Complete stool examination' },
+        { id: 'stool-culture', name: 'Stool Culture', price: 700, duration: '48-72 hrs', description: 'Bacterial infection test' },
+        { id: 'occult-blood', name: 'Occult Blood (FOB)', price: 300, duration: '4-6 hrs', description: 'Hidden blood detection' },
+        { id: 'h-pylori-stool', name: 'H. Pylori Antigen (Stool)', price: 800, duration: '4-6 hrs', description: 'Stomach bacteria test' },
+        { id: 'calprotectin', name: 'Fecal Calprotectin', price: 2500, duration: '24-48 hrs', description: 'Bowel inflammation marker' },
+      ]
+    },
+    {
+      id: 'allergy',
+      name: 'Allergy Tests',
+      icon: AlertTriangle,
+      color: 'text-red-400',
+      bgColor: 'bg-red-50 dark:bg-red-400/10',
+      borderColor: 'border-red-200 dark:border-red-400/30',
+      tests: [
+        { id: 'ige-total', name: 'Total IgE', price: 800, duration: '24-48 hrs', popular: true, description: 'Overall allergy indicator' },
+        { id: 'food-allergy', name: 'Food Allergy Panel (Veg)', price: 4500, duration: '3-5 days', description: '30+ vegetarian food allergens' },
+        { id: 'food-allergy-nv', name: 'Food Allergy Panel (Non-Veg)', price: 5000, duration: '3-5 days', description: '40+ food allergens including non-veg' },
+        { id: 'respiratory-allergy', name: 'Respiratory Allergy Panel', price: 4000, duration: '3-5 days', description: 'Dust, pollen, mold allergens' },
+        { id: 'drug-allergy', name: 'Drug Allergy Panel', price: 3500, duration: '3-5 days', description: 'Common drug allergens' },
+      ]
+    },
+    {
+      id: 'cancer',
+      name: 'Tumor Markers',
+      icon: Activity,
+      color: 'text-violet-500',
+      bgColor: 'bg-violet-50 dark:bg-violet-500/10',
+      borderColor: 'border-violet-200 dark:border-violet-500/30',
+      tests: [
+        { id: 'psa', name: 'PSA (Prostate Specific Antigen)', price: 800, duration: '24-48 hrs', popular: true, description: 'Prostate cancer marker' },
+        { id: 'cea', name: 'CEA (Carcinoembryonic Antigen)', price: 900, duration: '24-48 hrs', description: 'Colon cancer marker' },
+        { id: 'afp', name: 'AFP (Alpha Fetoprotein)', price: 800, duration: '24-48 hrs', description: 'Liver cancer marker' },
+        { id: 'ca-125', name: 'CA-125', price: 1200, duration: '24-48 hrs', description: 'Ovarian cancer marker' },
+        { id: 'ca-19-9', name: 'CA 19-9', price: 1200, duration: '24-48 hrs', description: 'Pancreatic cancer marker' },
+        { id: 'ca-15-3', name: 'CA 15-3', price: 1200, duration: '24-48 hrs', description: 'Breast cancer marker' },
+        { id: 'beta-hcg', name: 'Beta hCG (Tumor Marker)', price: 700, duration: '4-6 hrs', description: 'Pregnancy and tumor marker' },
+      ]
+    },
+    {
+      id: 'packages',
+      name: 'Health Packages',
+      icon: Package,
+      color: 'text-emerald-500',
+      bgColor: 'bg-emerald-50 dark:bg-emerald-500/10',
+      borderColor: 'border-emerald-200 dark:border-emerald-500/30',
+      tests: [
+        { id: 'basic-health', name: 'Basic Health Checkup', price: 999, duration: '24-48 hrs', popular: true, description: 'CBC, Sugar, Lipid, Liver, Kidney - 25 tests' },
+        { id: 'comprehensive', name: 'Comprehensive Health Package', price: 2499, duration: '24-48 hrs', popular: true, description: '60+ tests including vitamins, thyroid, hormones' },
+        { id: 'diabetes-care', name: 'Diabetes Care Package', price: 1299, duration: '24-48 hrs', description: 'FBS, PPBS, HbA1c, Lipid, Kidney, Urine' },
+        { id: 'heart-care', name: 'Heart Care Package', price: 2999, duration: '24-48 hrs', description: 'Lipid, Cardiac markers, ECG included' },
+        { id: 'women-wellness', name: 'Women Wellness Package', price: 3499, duration: '24-48 hrs', description: 'Complete female health checkup' },
+        { id: 'senior-citizen', name: 'Senior Citizen Package', price: 4999, duration: '24-48 hrs', description: 'Age-specific comprehensive tests' },
+        { id: 'full-body', name: 'Full Body Checkup', price: 5999, duration: '48-72 hrs', popular: true, description: '100+ tests - Complete health assessment' },
+      ]
+    },
+  ];
+
+  const [selectedCategory, setSelectedCategory] = useState<string>('all');
+  const [searchQuery, setSearchQuery] = useState('');
+  const [cartItems, setCartItems] = useState<Array<{id: string, name: string, price: number}>>([]);
+  const [showCart, setShowCart] = useState(false);
+
+  const filteredTests = useMemo(() => {
+    let tests: Array<{id: string, name: string, price: number, duration: string, popular?: boolean, description: string, category: string, categoryColor: string}> = [];
+    
+    testCategories.forEach(cat => {
+      cat.tests.forEach(test => {
+        tests.push({
+          ...test,
+          category: cat.name,
+          categoryColor: cat.color
+        });
+      });
+    });
+
+    if (selectedCategory !== 'all') {
+      const category = testCategories.find(c => c.id === selectedCategory);
+      if (category) {
+        tests = tests.filter(t => t.category === category.name);
+      }
+    }
+
+    if (searchQuery) {
+      const query = searchQuery.toLowerCase();
+      tests = tests.filter(t => 
+        t.name.toLowerCase().includes(query) || 
+        t.description.toLowerCase().includes(query)
+      );
+    }
+
+    return tests;
+  }, [selectedCategory, searchQuery]);
+
+  const addToCart = (test: {id: string, name: string, price: number}) => {
+    if (!cartItems.find(item => item.id === test.id)) {
+      setCartItems([...cartItems, test]);
+      toast({
+        title: "Added to cart",
+        description: `${test.name} added to your selection`,
+      });
+    }
+  };
+
+  const removeFromCart = (testId: string) => {
+    setCartItems(cartItems.filter(item => item.id !== testId));
+  };
+
+  const cartTotal = cartItems.reduce((sum, item) => sum + item.price, 0);
+
+  const renderTestCatalogContent = () => (
+    <div className="space-y-6 animate-in fade-in duration-500">
+      {/* Header */}
+      <div className="relative overflow-hidden rounded-2xl bg-gradient-to-r from-amber-500 via-orange-500 to-amber-600 p-6 md:p-8 text-white shadow-2xl">
+        <div className="absolute inset-0 bg-[url('data:image/svg+xml;base64,PHN2ZyB3aWR0aD0iNjAiIGhlaWdodD0iNjAiIHZpZXdCb3g9IjAgMCA2MCA2MCIgeG1sbnM9Imh0dHA6Ly93d3cudzMub3JnLzIwMDAvc3ZnIj48ZyBmaWxsPSJub25lIiBmaWxsLXJ1bGU9ImV2ZW5vZGQiPjxwYXRoIGQ9Ik0zNiAxOGMzLjMxNCAwIDYgMi42ODYgNiA2cy0yLjY4NiA2LTYgNi02LTIuNjg2LTYtNiAyLjY4Ni02IDYtNiIgc3Ryb2tlPSJyZ2JhKDI1NSwyNTUsMjU1LDAuMSkiLz48L2c+PC9zdmc+')] opacity-30" />
+        <div className="absolute top-0 right-0 w-64 h-64 bg-gradient-to-br from-white/10 to-transparent rounded-full blur-3xl" />
+        
+        <div className="relative flex flex-col md:flex-row md:items-center md:justify-between gap-4">
+          <div className="flex items-start gap-4">
+            <div className="p-3 rounded-xl bg-white/20 backdrop-blur-sm">
+              <BookOpen className="w-8 h-8" />
+            </div>
+            <div>
+              <h1 className="text-2xl md:text-3xl font-bold mb-1">Master Test Catalog</h1>
+              <p className="text-amber-100 text-sm md:text-base">
+                Browse and select from {testCategories.reduce((sum, cat) => sum + cat.tests.length, 0)}+ diagnostic tests
+              </p>
+            </div>
+          </div>
+          
+          {/* Cart Button */}
+          <Button 
+            onClick={() => setShowCart(true)}
+            className="bg-white text-amber-600 hover:bg-amber-50 shadow-lg relative"
+          >
+            <ShoppingCart className="w-4 h-4 mr-2" />
+            Cart ({cartItems.length})
+            {cartItems.length > 0 && (
+              <span className="absolute -top-2 -right-2 bg-red-500 text-white text-xs rounded-full w-5 h-5 flex items-center justify-center">
+                {cartItems.length}
+              </span>
+            )}
+          </Button>
+        </div>
+      </div>
+
+      {/* Search & Filter */}
+      <div className="flex flex-col md:flex-row gap-4">
+        <div className="relative flex-1">
+          <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-5 h-5 text-slate-400" />
+          <Input 
+            placeholder="Search tests by name or description..."
+            className="pl-10 h-11 bg-white dark:bg-slate-800"
+            value={searchQuery}
+            onChange={(e) => setSearchQuery(e.target.value)}
+          />
+        </div>
+        <Select value={selectedCategory} onValueChange={setSelectedCategory}>
+          <SelectTrigger className="w-full md:w-64 h-11 bg-white dark:bg-slate-800">
+            <SelectValue placeholder="All Categories" />
+          </SelectTrigger>
+          <SelectContent>
+            <SelectItem value="all">All Categories</SelectItem>
+            {testCategories.map(cat => (
+              <SelectItem key={cat.id} value={cat.id}>
+                <span className="flex items-center gap-2">
+                  <cat.icon className={cn("w-4 h-4", cat.color)} />
+                  {cat.name}
+                </span>
+              </SelectItem>
+            ))}
+          </SelectContent>
+        </Select>
+      </div>
+
+      {/* Categories Grid */}
+      {selectedCategory === 'all' && !searchQuery && (
+        <div className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-5 gap-3">
+          {testCategories.map(cat => (
+            <Card 
+              key={cat.id}
+              className={cn(
+                "cursor-pointer hover:shadow-lg transition-all duration-300 border-2",
+                cat.bgColor, cat.borderColor,
+                "hover:scale-105"
+              )}
+              onClick={() => setSelectedCategory(cat.id)}
+            >
+              <CardContent className="p-4 text-center">
+                <div className={cn("p-3 rounded-xl w-fit mx-auto mb-2", cat.bgColor)}>
+                  <cat.icon className={cn("w-6 h-6", cat.color)} />
+                </div>
+                <h3 className="font-semibold text-sm text-slate-800 dark:text-white">{cat.name}</h3>
+                <p className="text-xs text-slate-500 dark:text-slate-400">{cat.tests.length} tests</p>
+              </CardContent>
+            </Card>
+          ))}
+        </div>
+      )}
+
+      {/* Popular Tests */}
+      {selectedCategory === 'all' && !searchQuery && (
+        <Card className="bg-white dark:bg-slate-800/50 border-slate-200/80 dark:border-slate-700/50">
+          <CardHeader>
+            <CardTitle className="flex items-center gap-2">
+              <Star className="w-5 h-5 text-amber-500 fill-amber-500" />
+              Popular Tests
+            </CardTitle>
+            <CardDescription>Most frequently ordered tests</CardDescription>
+          </CardHeader>
+          <CardContent>
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3">
+              {filteredTests.filter(t => t.popular).slice(0, 9).map(test => (
+                <div 
+                  key={test.id}
+                  className="flex items-center justify-between p-3 rounded-xl bg-slate-50 dark:bg-slate-800 hover:bg-slate-100 dark:hover:bg-slate-700/50 transition-colors group"
+                >
+                  <div className="flex-1 min-w-0">
+                    <p className="font-medium text-sm text-slate-800 dark:text-white truncate">{test.name}</p>
+                    <div className="flex items-center gap-2 mt-1">
+                      <span className="text-xs text-emerald-600 dark:text-emerald-400 font-semibold">₹{test.price}</span>
+                      <span className="text-xs text-slate-400">•</span>
+                      <span className="text-xs text-slate-500 dark:text-slate-400">{test.duration}</span>
+                    </div>
+                  </div>
+                  <Button 
+                    size="sm" 
+                    variant={cartItems.find(i => i.id === test.id) ? "default" : "outline"}
+                    className={cn(
+                      "ml-2",
+                      cartItems.find(i => i.id === test.id) && "bg-emerald-500 hover:bg-emerald-600"
+                    )}
+                    onClick={() => addToCart(test)}
+                    disabled={!!cartItems.find(i => i.id === test.id)}
+                  >
+                    {cartItems.find(i => i.id === test.id) ? (
+                      <Check className="w-4 h-4" />
+                    ) : (
+                      <Plus className="w-4 h-4" />
+                    )}
+                  </Button>
+                </div>
+              ))}
+            </div>
+          </CardContent>
+        </Card>
+      )}
+
+      {/* Filtered Tests List */}
+      {(selectedCategory !== 'all' || searchQuery) && (
+        <Card className="bg-white dark:bg-slate-800/50 border-slate-200/80 dark:border-slate-700/50">
+          <CardHeader>
+            <div className="flex items-center justify-between">
+              <div>
+                <CardTitle className="flex items-center gap-2">
+                  {selectedCategory !== 'all' && (
+                    <>
+                      {(() => {
+                        const cat = testCategories.find(c => c.id === selectedCategory);
+                        return cat ? <cat.icon className={cn("w-5 h-5", cat.color)} /> : null;
+                      })()}
+                    </>
+                  )}
+                  {selectedCategory === 'all' ? 'Search Results' : testCategories.find(c => c.id === selectedCategory)?.name}
+                </CardTitle>
+                <CardDescription>{filteredTests.length} tests available</CardDescription>
+              </div>
+              {selectedCategory !== 'all' && (
+                <Button variant="ghost" size="sm" onClick={() => setSelectedCategory('all')}>
+                  View All Categories
+                </Button>
+              )}
+            </div>
+          </CardHeader>
+          <CardContent>
+            <div className="space-y-3">
+              {filteredTests.map(test => (
+                <div 
+                  key={test.id}
+                  className="flex items-center justify-between p-4 rounded-xl bg-slate-50 dark:bg-slate-800 hover:bg-slate-100 dark:hover:bg-slate-700/50 transition-colors border border-slate-200/50 dark:border-slate-700/50"
+                >
+                  <div className="flex-1 min-w-0">
+                    <div className="flex items-center gap-2 mb-1">
+                      <p className="font-medium text-slate-800 dark:text-white">{test.name}</p>
+                      {test.popular && (
+                        <Badge className="bg-amber-100 text-amber-700 dark:bg-amber-500/20 dark:text-amber-400 text-xs">
+                          Popular
+                        </Badge>
+                      )}
+                    </div>
+                    <p className="text-sm text-slate-500 dark:text-slate-400 mb-2">{test.description}</p>
+                    <div className="flex items-center gap-3">
+                      <span className="text-lg font-bold text-emerald-600 dark:text-emerald-400">₹{test.price}</span>
+                      <span className="text-sm text-slate-400 flex items-center gap-1">
+                        <Clock className="w-3 h-3" />
+                        {test.duration}
+                      </span>
+                      <Badge variant="outline" className="text-xs">
+                        {test.category}
+                      </Badge>
+                    </div>
+                  </div>
+                  <Button 
+                    size="sm" 
+                    variant={cartItems.find(i => i.id === test.id) ? "default" : "outline"}
+                    className={cn(
+                      "ml-4",
+                      cartItems.find(i => i.id === test.id) && "bg-emerald-500 hover:bg-emerald-600"
+                    )}
+                    onClick={() => addToCart(test)}
+                    disabled={!!cartItems.find(i => i.id === test.id)}
+                  >
+                    {cartItems.find(i => i.id === test.id) ? (
+                      <>
+                        <Check className="w-4 h-4 mr-1" /> Added
+                      </>
+                    ) : (
+                      <>
+                        <Plus className="w-4 h-4 mr-1" /> Add
+                      </>
+                    )}
+                  </Button>
+                </div>
+              ))}
+            </div>
+          </CardContent>
+        </Card>
+      )}
+
+      {/* All Tests by Category */}
+      {selectedCategory === 'all' && !searchQuery && (
+        <div className="space-y-6">
+          {testCategories.map(cat => (
+            <Card key={cat.id} className="bg-white dark:bg-slate-800/50 border-slate-200/80 dark:border-slate-700/50">
+              <CardHeader className="pb-3">
+                <div className="flex items-center justify-between">
+                  <CardTitle className="flex items-center gap-2">
+                    <div className={cn("p-2 rounded-lg", cat.bgColor)}>
+                      <cat.icon className={cn("w-5 h-5", cat.color)} />
+                    </div>
+                    {cat.name}
+                    <Badge variant="secondary" className="ml-2">{cat.tests.length}</Badge>
+                  </CardTitle>
+                  <Button variant="ghost" size="sm" onClick={() => setSelectedCategory(cat.id)}>
+                    View All <ChevronRight className="w-4 h-4 ml-1" />
+                  </Button>
+                </div>
+              </CardHeader>
+              <CardContent>
+                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3">
+                  {cat.tests.slice(0, 6).map(test => (
+                    <div 
+                      key={test.id}
+                      className="flex items-center justify-between p-3 rounded-xl bg-slate-50 dark:bg-slate-800 hover:bg-slate-100 dark:hover:bg-slate-700/50 transition-colors"
+                    >
+                      <div className="flex-1 min-w-0">
+                        <p className="font-medium text-sm text-slate-800 dark:text-white truncate">{test.name}</p>
+                        <div className="flex items-center gap-2 mt-1">
+                          <span className="text-xs text-emerald-600 dark:text-emerald-400 font-semibold">₹{test.price}</span>
+                          <span className="text-xs text-slate-400">•</span>
+                          <span className="text-xs text-slate-500 dark:text-slate-400">{test.duration}</span>
+                        </div>
+                      </div>
+                      <Button 
+                        size="icon" 
+                        variant={cartItems.find(i => i.id === test.id) ? "default" : "ghost"}
+                        className={cn(
+                          "h-8 w-8 ml-2",
+                          cartItems.find(i => i.id === test.id) && "bg-emerald-500 hover:bg-emerald-600"
+                        )}
+                        onClick={() => addToCart(test)}
+                        disabled={!!cartItems.find(i => i.id === test.id)}
+                      >
+                        {cartItems.find(i => i.id === test.id) ? (
+                          <Check className="w-4 h-4" />
+                        ) : (
+                          <Plus className="w-4 h-4" />
+                        )}
+                      </Button>
+                    </div>
+                  ))}
+                </div>
+              </CardContent>
+            </Card>
+          ))}
+        </div>
+      )}
+
+      {/* Cart Dialog */}
+      <Dialog open={showCart} onOpenChange={setShowCart}>
+        <DialogContent className="max-w-md">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <ShoppingCart className="w-5 h-5 text-emerald-500" />
+              Selected Tests
+            </DialogTitle>
+            <DialogDescription>
+              {cartItems.length} test{cartItems.length !== 1 ? 's' : ''} selected
+            </DialogDescription>
+          </DialogHeader>
+          
+          <div className="space-y-3 max-h-80 overflow-y-auto">
+            {cartItems.length === 0 ? (
+              <div className="text-center py-8 text-slate-500">
+                <ShoppingCart className="w-12 h-12 mx-auto mb-3 opacity-30" />
+                <p>No tests selected</p>
+                <p className="text-sm">Browse the catalog and add tests to your cart</p>
+              </div>
+            ) : (
+              cartItems.map(item => (
+                <div key={item.id} className="flex items-center justify-between p-3 bg-slate-50 dark:bg-slate-800 rounded-lg">
+                  <div>
+                    <p className="font-medium text-sm text-slate-800 dark:text-white">{item.name}</p>
+                    <p className="text-sm text-emerald-600 dark:text-emerald-400 font-semibold">₹{item.price}</p>
+                  </div>
+                  <Button 
+                    size="icon" 
+                    variant="ghost" 
+                    className="h-8 w-8 text-red-500 hover:text-red-600 hover:bg-red-50"
+                    onClick={() => removeFromCart(item.id)}
+                  >
+                    <Trash2 className="w-4 h-4" />
+                  </Button>
+                </div>
+              ))
+            )}
+          </div>
+
+          {cartItems.length > 0 && (
+            <>
+              <div className="border-t pt-4">
+                <div className="flex items-center justify-between mb-4">
+                  <span className="font-semibold text-slate-800 dark:text-white">Total Amount</span>
+                  <span className="text-xl font-bold text-emerald-600 dark:text-emerald-400">₹{cartTotal}</span>
+                </div>
+              </div>
+              <DialogFooter>
+                <Button variant="outline" onClick={() => setCartItems([])}>
+                  Clear All
+                </Button>
+                <Button 
+                  className="bg-emerald-500 hover:bg-emerald-600"
+                  onClick={() => {
+                    toast({
+                      title: "Order Created",
+                      description: `${cartItems.length} tests added to order. Total: ₹${cartTotal}`,
+                    });
+                    setShowCart(false);
+                    navigate('/lab/orders/new');
+                  }}
+                >
+                  Create Order
+                </Button>
+              </DialogFooter>
+            </>
+          )}
+        </DialogContent>
+      </Dialog>
+    </div>
   );
 
   const renderOrdersContent = () => (

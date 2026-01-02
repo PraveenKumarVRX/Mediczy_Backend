@@ -4,6 +4,7 @@ import { DataTypes } from 'sequelize';
 // Define InsuranceProvider model - NOW USING POSTGRESQL
 const InsuranceProviderModel = sequelize.define('InsuranceProvider', {
   id: { type: DataTypes.INTEGER, primaryKey: true, autoIncrement: true },
+  uid: { type: DataTypes.UUID, defaultValue: DataTypes.UUIDV4, unique: true, allowNull: false, comment: 'Public-facing unique identifier (UUID)' },
   name: { type: DataTypes.STRING(255), allowNull: false },
   code: { type: DataTypes.STRING(50), unique: true },
   logoUrl: { type: DataTypes.STRING(500) },

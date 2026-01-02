@@ -716,9 +716,33 @@ app.use('/api/admin/appointments', adminAppointmentsRouter); // Admin appointmen
 // Clinic Portal Routes
 import clinicAuthRouter from './routes/clinic/auth.routes.js';
 import clinicDashboardRouter from './routes/clinic/dashboard.routes.js';
+import clinicStaffRouter from './routes/clinic-staff.routes.js';
+import clinicStaffAuthRouter from './routes/clinic-staff-auth.routes.js';
+import clinicPatientRouter from './routes/clinic-patient.routes.js';
+
+// Unified Patient Routes (for Mediczy Mobile App - Multi-tenant)
+import unifiedPatientRouter from './routes/unified-patient.routes.js';
+
+// Unified Hospital Staff Routes (for Mediczy Mobile App - Multi-tenant)
+import unifiedHospitalStaffRouter from './routes/unified-hospital-staff.routes.js';
+
+// Super Admin Routes
+import superadminClinicRouter from './routes/superadmin-clinic.routes.js';
 
 app.use('/api/clinic', clinicAuthRouter); // Clinic authentication (login, logout, verify)
+app.use('/api/clinic', clinicStaffAuthRouter); // Clinic staff authentication (doctor, nurse, assistant login)
+app.use('/api/clinic', clinicStaffRouter); // Clinic staff management (CRUD operations)
+app.use('/api/clinic', clinicPatientRouter); // Clinic patient management (signup, add, login, list)
 app.use('/api/clinic/dashboard', clinicDashboardRouter); // Clinic practice management dashboard
+
+// Unified Patient Routes - Single Mediczy Mobile App for all tenants
+app.use('/api/patient', unifiedPatientRouter); // Patient signup, login, profile (multi-tenant)
+
+// Unified Hospital Staff Routes - Single Mediczy Mobile App for all hospital staff
+app.use('/api/hospital/staff', unifiedHospitalStaffRouter); // Doctor, nurse, assistant, insurance coordinator (multi-tenant)
+
+// Super Admin Routes
+app.use('/api/superadmin/clinics', superadminClinicRouter); // Super admin clinic management (create, list, update, delete)
 
 // Ambulance Service Routes
 import ambulanceAuthRouter from './routes/ambulance/auth.routes.js';

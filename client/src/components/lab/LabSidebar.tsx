@@ -24,6 +24,8 @@ import {
   Package,
   CheckCircle,
   FileBarChart,
+  BookOpen,
+  Beaker,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { useState } from "react";
@@ -34,10 +36,12 @@ interface SidebarItem {
   label: string;
   href: string;
   badge?: string | number;
+  highlight?: boolean;
 }
 
 const mainNavItems: SidebarItem[] = [
   { icon: LayoutDashboard, label: "Dashboard", href: "/lab/dashboard" },
+  { icon: BookOpen, label: "Test Catalog", href: "/lab/test-catalog", highlight: true },
   { icon: ClipboardList, label: "Test Orders", href: "/lab/orders" },
   { icon: Users, label: "Patients", href: "/lab/patients" },
   { icon: CalendarCheck, label: "Appointments", href: "/lab/appointments" },
@@ -87,21 +91,29 @@ const LabSidebar = () => {
       <Link
         to={item.href}
         className={cn(
-          "flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium transition-all duration-200",
+          "relative flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium transition-all duration-200",
           isActive
-            ? "bg-emerald-600 text-white shadow-md shadow-emerald-600/20"
-            : "text-slate-600 hover:bg-slate-100 hover:text-slate-900",
+            ? "bg-gradient-to-r from-emerald-500 to-emerald-600 text-white shadow-md shadow-emerald-600/20"
+            : item.highlight
+            ? "text-amber-600 dark:text-amber-400 hover:bg-amber-50 dark:hover:bg-amber-500/10 border border-amber-200 dark:border-amber-500/30"
+            : "text-slate-600 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800/60 hover:text-slate-900 dark:hover:text-white",
           collapsed && "justify-center px-2"
         )}
       >
-        <item.icon className={cn("w-5 h-5 flex-shrink-0", isActive && "text-white")} />
+        <item.icon className={cn(
+          "w-5 h-5 flex-shrink-0", 
+          isActive ? "text-white" : item.highlight ? "text-amber-500" : "dark:text-slate-500 group-hover:dark:text-emerald-400"
+        )} />
         {!collapsed && (
           <>
             <span className="flex-1">{item.label}</span>
+            {item.highlight && !isActive && (
+              <span className="absolute top-1 right-1 flex h-2 w-2 rounded-full bg-amber-400 animate-pulse" />
+            )}
             {item.badge && (
               <span className={cn(
                 "px-2 py-0.5 text-xs font-bold rounded-full",
-                isActive ? "bg-white/20 text-white" : "bg-emerald-100 text-emerald-600"
+                isActive ? "bg-white/20 text-white" : "bg-emerald-100 dark:bg-emerald-500/20 text-emerald-600 dark:text-emerald-400"
               )}>
                 {item.badge}
               </span>
@@ -115,20 +127,20 @@ const LabSidebar = () => {
   return (
     <aside
       className={cn(
-        "fixed left-0 top-0 z-40 h-screen bg-white border-r border-slate-200 flex flex-col transition-all duration-300",
+        "fixed left-0 top-0 z-40 h-screen bg-white dark:bg-gradient-to-b dark:from-slate-900 dark:via-slate-900 dark:to-slate-800 border-r border-slate-200 dark:border-slate-700 flex flex-col transition-all duration-300",
         collapsed ? "w-16" : "w-64"
       )}
     >
       {/* Header */}
-      <div className="flex items-center justify-between p-4 border-b border-slate-200">
+      <div className="flex items-center justify-between p-4 border-b border-slate-200 dark:border-slate-700/50">
         {!collapsed && (
           <div className="flex items-center gap-2">
             <div className="w-9 h-9 bg-gradient-to-br from-emerald-500 to-teal-600 rounded-lg flex items-center justify-center shadow-lg shadow-emerald-600/20">
               <TestTube className="w-5 h-5 text-white" />
             </div>
             <div>
-              <h1 className="text-base font-bold text-slate-900">Mediqzy</h1>
-              <p className="text-[10px] text-slate-500 font-medium uppercase tracking-wider">Lab Portal</p>
+              <h1 className="text-base font-bold text-slate-900 dark:text-white">Mediqzy</h1>
+              <p className="text-[10px] text-slate-500 dark:text-slate-400 font-medium uppercase tracking-wider">Lab Portal</p>
             </div>
           </div>
         )}
@@ -144,7 +156,7 @@ const LabSidebar = () => {
         {/* Main */}
         <div>
           {!collapsed && (
-            <p className="px-3 mb-2 text-[10px] font-semibold text-slate-400 uppercase tracking-wider">
+            <p className="px-3 mb-2 text-[10px] font-semibold text-slate-400 dark:text-slate-500 uppercase tracking-wider">
               Main Menu
             </p>
           )}
@@ -158,7 +170,7 @@ const LabSidebar = () => {
         {/* Lab Work */}
         <div>
           {!collapsed && (
-            <p className="px-3 mb-2 text-[10px] font-semibold text-slate-400 uppercase tracking-wider">
+            <p className="px-3 mb-2 text-[10px] font-semibold text-slate-400 dark:text-slate-500 uppercase tracking-wider">
               Lab Work
             </p>
           )}
@@ -172,7 +184,7 @@ const LabSidebar = () => {
         {/* Management */}
         <div>
           {!collapsed && (
-            <p className="px-3 mb-2 text-[10px] font-semibold text-slate-400 uppercase tracking-wider">
+            <p className="px-3 mb-2 text-[10px] font-semibold text-slate-400 dark:text-slate-500 uppercase tracking-wider">
               Management
             </p>
           )}
@@ -186,7 +198,7 @@ const LabSidebar = () => {
         {/* System */}
         <div>
           {!collapsed && (
-            <p className="px-3 mb-2 text-[10px] font-semibold text-slate-400 uppercase tracking-wider">
+            <p className="px-3 mb-2 text-[10px] font-semibold text-slate-400 dark:text-slate-500 uppercase tracking-wider">
               System
             </p>
           )}
@@ -199,14 +211,14 @@ const LabSidebar = () => {
       </nav>
 
       {/* Footer */}
-      <div className="p-3 border-t border-slate-200 space-y-2">
+      <div className="p-3 border-t border-slate-200 dark:border-slate-700/50 space-y-2">
         {/* Collapse Toggle */}
         <Button
           variant="ghost"
           size="sm"
           onClick={() => setCollapsed(!collapsed)}
           className={cn(
-            "w-full justify-center text-slate-500 hover:text-slate-900 hover:bg-slate-100",
+            "w-full justify-center text-slate-500 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white hover:bg-slate-100 dark:hover:bg-slate-800/60",
             !collapsed && "justify-start"
           )}
         >
@@ -226,7 +238,7 @@ const LabSidebar = () => {
           size="sm"
           onClick={handleLogout}
           className={cn(
-            "w-full text-red-600 hover:text-red-700 hover:bg-red-50",
+            "w-full text-red-600 dark:text-red-400 hover:text-red-700 dark:hover:text-red-300 hover:bg-red-50 dark:hover:bg-red-500/10",
             collapsed ? "justify-center" : "justify-start"
           )}
         >

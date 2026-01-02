@@ -290,6 +290,14 @@ const Emergency = () => {
     }
   }, [triageChatMessages]);
 
+  // Auto-fetch online triage doctors on mount
+  useEffect(() => {
+    const token = localStorage.getItem('token');
+    if (token) {
+      fetchTriageDoctors();
+    }
+  }, []);
+
   // Load speech synthesis voices when available
   useEffect(() => {
     const loadVoices = () => {
@@ -2480,7 +2488,7 @@ This is for emergency medical guidance. Please prioritize safety and immediate c
                           </>
                         ) : (
                           <Badge variant="outline" className="bg-yellow-50 text-yellow-700 border-yellow-300">
-                            <Clock className="h-3 w-3 mr-1" />
+                            <Loader2 className="h-3 w-3 mr-1" />
                             Pending
                           </Badge>
                         )}
@@ -2523,7 +2531,7 @@ This is for emergency medical guidance. Please prioritize safety and immediate c
                             <div>
                               <p className="text-sm font-medium text-slate-800 dark:text-white">{doctor.name}</p>
                               <p className="text-xs text-slate-500 dark:text-slate-400">
-                                {doctor.specialization || 'General Practice'} • ⭐ {doctor.rating} • ₹{doctor.consultationFee}
+                                <span className="text-green-600 font-medium">{doctor.uniqueId}</span> • {doctor.specialization || 'General Practice'} • ⭐ {doctor.rating} • ₹{doctor.consultationFee}
                               </p>
                             </div>
                           </div>

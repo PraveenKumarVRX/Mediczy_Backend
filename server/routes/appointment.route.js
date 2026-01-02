@@ -89,6 +89,47 @@ router.get(
 );
 
 /**
+ * @route   GET /api/appointments/doctor/today
+ * @desc    Get doctor's appointments for today
+ * @access  Private (Doctor)
+ */
+router.get(
+  '/doctor/today',
+  authUser,
+  requireRole('doctor'),
+  async (req, res) => {
+    try {
+      const doctorId = req.user.id;
+      const today = new Date();
+      today.setHours(0, 0, 0, 0);
+      const tomorrow = new Date(today);
+      tomorrow.setDate(tomorrow.getDate() + 1);
+
+      const appointments = await Appointment.findAll({
+        doctorId,
+        appointmentDate: {
+          $gte: today,
+          $lt: tomorrow
+        }
+      });
+
+      return res.json({
+        success: true,
+        data: appointments || [],
+        count: appointments?.length || 0
+      });
+    } catch (error) {
+      console.error('Get today appointments error:', error);
+      return res.status(500).json({
+        success: false,
+        message: 'Failed to fetch today\'s appointments',
+        error: error.message
+      });
+    }
+  }
+);
+
+/**
  * @route   GET /api/appointments/:id
  * @desc    Get appointment by ID
  * @access  Private (User/Doctor)

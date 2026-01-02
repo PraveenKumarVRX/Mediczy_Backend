@@ -68,18 +68,24 @@ async function startServer() {
   const { startMembershipCronJobs } = await import('./services/membership-cron.service.js');
   startMembershipCronJobs();
   
-  // Start server
-  server.listen(PORT, '0.0.0.0', (err) => {
-    if (err) {
-      console.error('❌ Server startup error:', err);
+  // Handle server errors before listening
+  server.on('error', (err) => {
+    if (err.code === 'EADDRINUSE') {
+      console.error(`❌ Port ${PORT} is already in use. Please stop other processes using this port.`);
       process.exit(1);
     } else {
-      console.log(`\n🚀 Server running on PORT ${PORT} and accessible on all interfaces`);
-      console.log(`📊 Health Check: http://localhost:${PORT}/health`);
-      console.log(`📊 DB Health: http://localhost:${PORT}/api/db/health`);
-      console.log(`📊 DB Stats: http://localhost:${PORT}/api/db/stats\n`);
-      console.log(`📈 Metrics: http://localhost:${PORT}/metrics`);
+      console.error('❌ Server error:', err);
+      process.exit(1);
     }
+  });
+
+  // Start server
+  server.listen(PORT, '0.0.0.0', () => {
+    console.log(`\n🚀 Server running on PORT ${PORT} and accessible on all interfaces`);
+    console.log(`📊 Health Check: http://localhost:${PORT}/health`);
+    console.log(`📊 DB Health: http://localhost:${PORT}/api/db/health`);
+    console.log(`📊 DB Stats: http://localhost:${PORT}/api/db/stats\n`);
+    console.log(`📈 Metrics: http://localhost:${PORT}/metrics`);
   });
 }
 

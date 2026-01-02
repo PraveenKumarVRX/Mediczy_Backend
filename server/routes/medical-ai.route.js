@@ -254,23 +254,28 @@ router.post('/emergency-triage', authUser, async (req, res) => {
 /**
  * @route   GET /api/medical-ai/triage-doctors
  * @desc    Get available online triage doctors for instant consultation
+ *          Only returns doctors who are ONLINE and have opted for EMERGENCY consultations
  * @access  Private
  */
 router.get('/triage-doctors', authUser, async (req, res) => {
   try {
     const { Doctor } = await import('../models/index.js');
     
-    // Find doctors who are online and available for triage
+    // Find doctors who are:
+    // 1. Online (isOnline: true)
+    // 2. Verified (isVerified: true)
+    // 3. Have opted for emergency consultations (acceptsEmergencyCalls: true)
     const availableDoctors = await Doctor.findAll({
       where: {
         isOnline: true,
-        isVerified: true
+        isVerified: true,
+        acceptsEmergencyCalls: true  // Only doctors who opted for emergency consultations
       },
       attributes: [
-        'id', 'prefix', 'firstName', 'lastName', 'profileImage',
+        'id', 'uniqueId', 'prefix', 'firstName', 'lastName', 'profileImage',
         'specialization', 'qualifications', 'experience',
         'onlineConsultationFee', 'consultationFees',
-        'languages', 'isOnline'
+        'languages', 'isOnline', 'acceptsEmergencyCalls', 'emergencyAvailableUntil'
       ],
       order: [
         ['experience', 'DESC']
@@ -278,28 +283,36 @@ router.get('/triage-doctors', authUser, async (req, res) => {
       limit: 10
     });
 
-    // Mark doctors who accept emergency/triage consultations
-    const triageDoctors = availableDoctors.map(doc => ({
-      id: doc.id,
-      name: `${doc.prefix || 'Dr.'} ${doc.firstName} ${doc.lastName}`,
-      profileImage: doc.profileImage,
-      specialization: doc.specialization,
-      qualifications: doc.qualifications,
-      experience: doc.experience,
-      consultationFee: doc.onlineConsultationFee || doc.consultationFees || 500,
-      rating: 4.5, // Default rating
-      languages: doc.languages || ['English'],
-      isOnline: true,
-      acceptsEmergency: true // All online doctors accept emergency triage
-    }));
+    // Filter out doctors whose emergency availability has expired
+    const now = new Date();
+    const triageDoctors = availableDoctors
+      .filter(doc => {
+        // If no emergencyAvailableUntil set, assume always available
+        if (!doc.emergencyAvailableUntil) return true;
+        return new Date(doc.emergencyAvailableUntil) > now;
+      })
+      .map(doc => ({
+        id: doc.id,
+        uniqueId: doc.uniqueId,
+        name: `${doc.prefix || 'Dr.'} ${doc.firstName} ${doc.lastName}`,
+        profileImage: doc.profileImage,
+        specialization: doc.specialization,
+        qualifications: doc.qualifications,
+        experience: doc.experience,
+        consultationFee: doc.onlineConsultationFee || doc.consultationFees || 500,
+        rating: 4.5, // Default rating
+        languages: doc.languages || ['English'],
+        isOnline: true,
+        acceptsEmergency: true
+      }));
 
     res.json({
       success: true,
       count: triageDoctors.length,
       doctors: triageDoctors,
       message: triageDoctors.length > 0 
-        ? `${triageDoctors.length} doctor(s) available for instant triage consultation`
-        : 'No doctors currently online. AI triage will continue to assist you.'
+        ? `${triageDoctors.length} doctor(s) available for instant emergency consultation`
+        : 'No emergency doctors currently online. AI triage will continue to assist you.'
     });
   } catch (error) {
     console.error('Triage doctors fetch error:', error);
@@ -314,50 +327,82 @@ router.get('/triage-doctors', authUser, async (req, res) => {
 /**
  * @route   POST /api/medical-ai/instant-triage-call
  * @desc    Create instant video call room with triage doctor
+ *          Uses CREDIT SYSTEM - 1 free emergency consultation per user (pay later)
  * @access  Private
  */
 router.post('/instant-triage-call', authUser, async (req, res) => {
   try {
     const { doctorId, symptoms, urgencyLevel, triageId } = req.body;
     const { Doctor, Appointment } = await import('../models/index.js');
+    const { User } = await import('../models/user.model.intelligent.js');
     const crypto = await import('crypto');
     
-    // Default emergency triage doctor: Dr. Nandita Agarwal (doctor@mediczy.com)
-    const DEFAULT_TRIAGE_DOCTOR_ID = 70;
+    // Check user's emergency triage credit
+    const user = await User.findByPk(req.user.id);
+    if (!user) {
+      return res.status(404).json({
+        success: false,
+        error: 'User not found'
+      });
+    }
     
-    // If no doctor specified, use default triage doctor or find first available
+    const creditsUsed = user.emergencyTriageCreditsUsed || 0;
+    const creditLimit = user.emergencyTriageCreditLimit || 1;
+    const pendingAmount = parseFloat(user.emergencyTriagePendingAmount || 0);
+    
+    // Check if user has already used their emergency credit and hasn't paid
+    if (creditsUsed >= creditLimit && pendingAmount > 0) {
+      return res.status(402).json({
+        success: false,
+        error: 'Emergency credit exhausted',
+        message: `You have already used your ${creditLimit} free emergency consultation. Please pay your pending amount of ₹${pendingAmount.toFixed(2)} before requesting another emergency consultation.`,
+        pendingAmount: pendingAmount,
+        paymentRequired: true
+      });
+    }
+    
+    // Find only doctors who are online AND have opted for emergency consultations
     let doctor;
     if (doctorId) {
-      doctor = await Doctor.findByPk(doctorId);
-    } else {
-      // First try the default triage doctor
-      doctor = await Doctor.findByPk(DEFAULT_TRIAGE_DOCTOR_ID);
-      
-      // If default not available, find any online doctor
-      if (!doctor || !doctor.isVerified) {
-        doctor = await Doctor.findOne({
-          where: {
-            isOnline: true,
-            isVerified: true
-          },
-          order: [['experience', 'DESC']]
-        });
-      }
+      doctor = await Doctor.findOne({
+        where: {
+          id: doctorId,
+          isOnline: true,
+          isVerified: true,
+          acceptsEmergencyCalls: true
+        }
+      });
+    }
+    
+    // If no specific doctor or doctor not available, find any emergency-enabled doctor
+    if (!doctor) {
+      doctor = await Doctor.findOne({
+        where: {
+          isOnline: true,
+          isVerified: true,
+          acceptsEmergencyCalls: true
+        },
+        order: [['experience', 'DESC']]
+      });
     }
 
     if (!doctor) {
       return res.status(404).json({
         success: false,
-        error: 'No doctors available for instant consultation',
+        error: 'No emergency doctors available',
         aiTriageAvailable: true,
-        message: 'Continue with AI triage or try again in a few minutes'
+        message: 'No doctors with emergency consultation enabled are currently online. Continue with AI triage or try again later.'
       });
     }
+    
+    // Calculate consultation fee (for credit tracking)
+    const consultationFee = parseFloat(doctor.onlineConsultationFee || doctor.consultationFees || 500);
+    const isUsingCredit = creditsUsed < creditLimit;
 
     // Generate unique room ID for MiroTalk SFU
     const roomId = `triage_${crypto.randomBytes(8).toString('hex')}_${Date.now()}`;
     
-    // Create emergency appointment record
+    // Create emergency appointment record with credit/pay-later flag
     const appointment = await Appointment.create({
       userId: req.user.id,
       patientName: `${req.user.firstName || ''} ${req.user.lastName || ''}`.trim() || 'Patient',
@@ -371,20 +416,35 @@ router.post('/instant-triage-call', authUser, async (req, res) => {
       status: 'confirmed',
       reason: `Emergency Triage: ${symptoms || 'Immediate consultation requested'}`,
       symptoms: Array.isArray(symptoms) ? symptoms : (symptoms ? [symptoms] : ['Emergency triage consultation']),
-      notes: `Emergency Triage Request - Urgency: ${urgencyLevel || 'HIGH'}`,
+      notes: `Emergency Triage Request - Urgency: ${urgencyLevel || 'HIGH'} | Payment: ${isUsingCredit ? 'CREDIT (Pay Later)' : 'Pending'}`,
       notes_json: {
         triageId,
         urgencyLevel,
         symptoms,
         roomId,
         type: 'emergency_triage',
-        initiatedAt: new Date().toISOString()
+        initiatedAt: new Date().toISOString(),
+        paymentType: isUsingCredit ? 'credit' : 'pending',
+        creditUsed: isUsingCredit,
+        consultationFee: consultationFee
       },
       consultationType: 'video',
       meetingId: roomId,
-      paymentStatus: 'pending',
+      paymentStatus: isUsingCredit ? 'credit' : 'pending',
+      paymentAmount: consultationFee,
       sourceChannel: 'emergency_triage'
     });
+    
+    // Update user's emergency credit usage if using credit
+    if (isUsingCredit) {
+      await User.update({
+        emergencyTriageCreditsUsed: creditsUsed + 1,
+        emergencyTriagePendingAmount: pendingAmount + consultationFee
+      }, {
+        where: { id: req.user.id }
+      });
+      console.log(`✅ Emergency credit used for user ${req.user.id}. Credits: ${creditsUsed + 1}/${creditLimit}, Pending: ₹${(pendingAmount + consultationFee).toFixed(2)}`);
+    }
 
     // MiroTalk SFU URL
     const mirotalkBaseUrl = process.env.MIROTALK_SFU_URL || 'https://video.mediqzy.com';
@@ -416,12 +476,14 @@ router.post('/instant-triage-call', authUser, async (req, res) => {
     // Notify doctor via notification service (fallback)
     try {
       const notificationService = (await import('../services/notification.service.js')).default;
-      await notificationService.sendNotification({
+      await notificationService.send({
         userId: doctor.id,
         userType: 'doctor',
-        type: 'emergency_triage',
-        title: '🚨 Emergency Triage Request',
-        message: `Patient ${req.user.firstName || 'Patient'} needs immediate consultation. Urgency: ${urgencyLevel || 'HIGH'}`,
+        type: 'video_ready',
+        variables: {
+          doctorName: `${doctor.firstName} ${doctor.lastName}`,
+          patientName: req.user.firstName || 'Patient'
+        },
         data: {
           appointmentId: appointment.id,
           roomId,
@@ -431,7 +493,7 @@ router.post('/instant-triage-call', authUser, async (req, res) => {
           urgencyLevel,
           joinUrl: doctorJoinUrl
         },
-        channels: ['push', 'socket', 'sms']
+        channels: ['push', 'in-app']
       });
     } catch (notifyError) {
       console.warn('Doctor notification failed:', notifyError.message);
@@ -456,7 +518,17 @@ router.post('/instant-triage-call', authUser, async (req, res) => {
         doctorJoinUrl,
         platform: 'MiroTalk SFU'
       },
-      message: `Connecting you with ${doctor.prefix || 'Dr.'} ${doctor.firstName} ${doctor.lastName}. Doctor has been notified.`
+      billing: {
+        paymentType: isUsingCredit ? 'credit' : 'pending',
+        consultationFee: consultationFee,
+        creditUsed: isUsingCredit,
+        creditsRemaining: Math.max(0, creditLimit - (creditsUsed + (isUsingCredit ? 1 : 0))),
+        pendingAmount: isUsingCredit ? pendingAmount + consultationFee : pendingAmount,
+        message: isUsingCredit 
+          ? `This consultation is on credit. Pay ₹${consultationFee} later.`
+          : 'Payment pending for this consultation.'
+      },
+      message: `Connecting you with ${doctor.prefix || 'Dr.'} ${doctor.firstName} ${doctor.lastName}. ${isUsingCredit ? 'This emergency consultation is on credit - pay later.' : ''}`
     });
   } catch (error) {
     console.error('Instant triage call error:', error);

@@ -7,6 +7,7 @@ import { Switch } from '@/components/ui/switch';
 import { Badge } from '@/components/ui/badge';
 import { Separator } from '@/components/ui/separator';
 import { useToast } from '@/hooks/use-toast';
+import MainLayout from '@/components/layout/MainLayoutdoctor';
 import { 
   Stethoscope, 
   Home, 
@@ -48,7 +49,7 @@ export default function DoctorServices() {
 
   const fetchServiceSettings = async () => {
     try {
-      const response = await api.get('/api/doctors/profile');
+      const response = await api.get('/doctors/profile');
       if (response.data.success) {
         const doctor = response.data.doctor;
         setSettings({
@@ -69,7 +70,7 @@ export default function DoctorServices() {
   const saveSettings = async () => {
     setSaving(true);
     try {
-      const response = await api.put('/api/doctors/services', settings);
+      const response = await api.put('/doctors/services', settings);
       if (response.data.success) {
         toast({
           title: 'Settings Saved',
@@ -90,13 +91,16 @@ export default function DoctorServices() {
 
   if (loading) {
     return (
-      <div className="flex items-center justify-center h-96">
-        <Loader2 className="w-8 h-8 animate-spin text-primary" />
-      </div>
+      <MainLayout>
+        <div className="flex items-center justify-center h-96">
+          <Loader2 className="w-8 h-8 animate-spin text-primary" />
+        </div>
+      </MainLayout>
     );
   }
 
   return (
+    <MainLayout>
     <div className="p-4 md:p-6 space-y-6 max-w-4xl mx-auto">
       {/* Header */}
       <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
@@ -366,5 +370,6 @@ export default function DoctorServices() {
         )}
       </div>
     </div>
+    </MainLayout>
   );
 }

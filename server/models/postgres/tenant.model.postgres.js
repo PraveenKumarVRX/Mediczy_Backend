@@ -15,6 +15,15 @@ const Tenant = sequelize.define('Tenant', {
     autoIncrement: true
   },
   
+  // UUID for public-facing identifier
+  uid: {
+    type: DataTypes.UUID,
+    defaultValue: DataTypes.UUIDV4,
+    unique: true,
+    allowNull: false,
+    comment: 'Public-facing unique identifier (UUID)'
+  },
+  
   // Tenant Identity
   name: {
     type: DataTypes.STRING(255),
@@ -221,7 +230,24 @@ const Tenant = sequelize.define('Tenant', {
   admin_email: {
     type: DataTypes.STRING(255),
     allowNull: true,
+    unique: true,
     comment: 'Primary admin email for organization setup'
+  },
+  admin_password: {
+    type: DataTypes.STRING(255),
+    allowNull: true,
+    comment: 'Hashed password for clinic admin (bcrypt)'
+  },
+  admin_metadata: {
+    type: DataTypes.JSONB,
+    allowNull: false,
+    defaultValue: {
+      login_attempts: 0,
+      last_login: null,
+      locked_until: null,
+      last_password_change: null
+    },
+    comment: 'Admin authentication metadata (login attempts, lockout status)'
   },
   admin_users: {
     type: DataTypes.JSONB,
@@ -325,5 +351,32 @@ Tenant.prototype.resetMonthlyUsage = async function() {
   this.usage.appointments_this_month = 0;
   await this.save();
 };
+
+// Hooks for password hashing
+import bcrypt from 'bcryptjs';
+
+Tenant.beforeCreate(async (tenant) => {
+  if (tenant.admin_password) {
+    tenant.admin_password = await bcrypt.hash(tenant.admin_password, 10);
+  }
+});
+
+Tenant.beforeUpdate(async (tenant) => {
+  if (tenant.changed('admin_password') && tenant.admin_password) {
+    tenant.admin_password = await bcrypt.hash(tenant.admin_password, 10);
+  }
+});
+
+// Instance method to verify admin password
+Tenant.prototype.verifyAdminPassword = async function(password) {
+  if (!this.admin_password) return false;
+  return await bcrypt.compare(password, this.admin_password);
+};
+
+// Associations (will be set up by sequelize in initialization)
+// Tenant has many Users (staff, patients, etc)
+// Tenant.hasMany(User, { foreignKey: 'organization_id', as: 'users' });
+// Tenant belongs to User (admin_user_id)
+// Tenant.belongsTo(User, { foreignKey: 'admin_user_id', as: 'admin' });
 
 export default Tenant;

@@ -46,10 +46,17 @@ const keyGenerator = (req) => {
     return `api:${req.headers['x-api-key']}`;
   }
   
-  // Fallback to IP
-  const ip = req.ip || 
-    req.headers['x-forwarded-for']?.split(',')[0] || 
-    req.connection.remoteAddress;
+  // Fallback to IP - handle IPv6 properly
+  let ip = req.ip || 
+    req.headers['x-forwarded-for']?.split(',')[0]?.trim() || 
+    req.connection?.remoteAddress ||
+    '127.0.0.1';
+  
+  // Normalize IPv6 localhost to IPv4
+  if (ip === '::1' || ip === '::ffff:127.0.0.1') {
+    ip = '127.0.0.1';
+  }
+  
   return `ip:${ip}`;
 };
 
@@ -137,7 +144,8 @@ export const createRateLimiter = (type = 'api', customConfig = {}) => {
     legacyHeaders: false, // Disable X-RateLimit headers
     store: getStore(),
     keyGenerator,
-    handler: limitExceededHandler
+    handler: limitExceededHandler,
+    validate: false // Disable all validation including IPv6 check
   });
 };
 

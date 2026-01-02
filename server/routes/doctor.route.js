@@ -1296,6 +1296,137 @@ router.get('/my-patients', authDoctor, async (req, res) => {
 });
 
 // ============================================
+// VIDEO CONSULTATIONS ROUTES
+// ============================================
+
+/**
+ * @route   GET /api/doctors/video-consultations/stats
+ * @desc    Get video consultation statistics for doctor
+ * @access  Private (Doctor only)
+ */
+router.get("/video-consultations/stats", authDoctor, async (req, res) => {
+  try {
+    const doctorId = req.doctor.id;
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
+    
+    const [totalConsultations, todayConsultations, completedConsultations] = await Promise.all([
+      Appointment.count({
+        where: { 
+          doctorId, 
+          type: { [Op.in]: ['video', 'emergency_triage', 'telemedicine'] }
+        }
+      }),
+      Appointment.count({
+        where: { 
+          doctorId, 
+          type: { [Op.in]: ['video', 'emergency_triage', 'telemedicine'] },
+          createdAt: { [Op.gte]: today }
+        }
+      }),
+      Appointment.count({
+        where: { 
+          doctorId, 
+          type: { [Op.in]: ['video', 'emergency_triage', 'telemedicine'] },
+          status: 'completed'
+        }
+      })
+    ]);
+    
+    res.json({
+      success: true,
+      stats: {
+        total: totalConsultations,
+        today: todayConsultations,
+        completed: completedConsultations,
+        pending: totalConsultations - completedConsultations
+      }
+    });
+  } catch (error) {
+    console.error('Video consultation stats error:', error);
+    res.status(500).json({ success: false, message: 'Failed to fetch stats', error: error.message });
+  }
+});
+
+/**
+ * @route   GET /api/doctors/video-consultations/recent
+ * @desc    Get recent video consultations for doctor
+ * @access  Private (Doctor only)
+ */
+router.get("/video-consultations/recent", authDoctor, async (req, res) => {
+  try {
+    const doctorId = req.doctor.id;
+    const limit = parseInt(req.query.limit) || 10;
+    
+    const consultations = await Appointment.findAll({
+      where: { 
+        doctorId, 
+        type: { [Op.in]: ['video', 'emergency_triage', 'telemedicine'] }
+      },
+      order: [['createdAt', 'DESC']],
+      limit
+    });
+    
+    res.json({
+      success: true,
+      consultations: consultations.map(c => ({
+        id: c.id,
+        patientId: c.patientId,
+        type: c.type,
+        status: c.status,
+        date: c.appointmentDate || c.createdAt,
+        roomId: c.videoRoomId,
+        notes: c.notes
+      }))
+    });
+  } catch (error) {
+    console.error('Recent video consultations error:', error);
+    res.status(500).json({ success: false, message: 'Failed to fetch consultations', error: error.message });
+  }
+});
+
+/**
+ * @route   GET /api/doctors/video-consultations/upcoming
+ * @desc    Get upcoming video consultations for doctor
+ * @access  Private (Doctor only)
+ */
+router.get("/video-consultations/upcoming", authDoctor, async (req, res) => {
+  try {
+    const doctorId = req.doctor.id;
+    const now = new Date();
+    
+    const consultations = await Appointment.findAll({
+      where: { 
+        doctorId, 
+        type: { [Op.in]: ['video', 'emergency_triage', 'telemedicine'] },
+        status: { [Op.in]: ['pending', 'confirmed', 'scheduled'] },
+        [Op.or]: [
+          { appointmentDate: { [Op.gte]: now } },
+          { appointmentDate: null }
+        ]
+      },
+      order: [['appointmentDate', 'ASC'], ['createdAt', 'ASC']],
+      limit: 20
+    });
+    
+    res.json({
+      success: true,
+      consultations: consultations.map(c => ({
+        id: c.id,
+        patientId: c.patientId,
+        type: c.type,
+        status: c.status,
+        date: c.appointmentDate || c.createdAt,
+        roomId: c.videoRoomId
+      }))
+    });
+  } catch (error) {
+    console.error('Upcoming video consultations error:', error);
+    res.status(500).json({ success: false, message: 'Failed to fetch consultations', error: error.message });
+  }
+});
+
+// ============================================
 // TRIAGE ROUTES
 // ============================================
 

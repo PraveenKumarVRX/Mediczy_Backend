@@ -11,6 +11,13 @@ const Hospital = sequelize.define('Hospital', {
     primaryKey: true,
     autoIncrement: true
   },
+  uid: {
+    type: DataTypes.UUID,
+    defaultValue: DataTypes.UUIDV4,
+    unique: true,
+    allowNull: false,
+    comment: 'Public-facing unique identifier (UUID)'
+  },
   hospitalName: {
     type: DataTypes.STRING(255),
     allowNull: false,

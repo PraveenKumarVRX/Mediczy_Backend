@@ -10,6 +10,13 @@ const User = sequelize.define('User', {
     primaryKey: true,
     autoIncrement: true
   },
+  uid: {
+    type: DataTypes.UUID,
+    defaultValue: DataTypes.UUIDV4,
+    unique: true,
+    allowNull: false,
+    comment: 'Public-facing unique identifier (UUID)'
+  },
   firstName: {
     type: DataTypes.STRING,
     allowNull: false
@@ -102,6 +109,28 @@ const User = sequelize.define('User', {
       key: 'id'
     },
     comment: 'Default family doctor assigned to patient. CMO Dr. Nandita Agarwal (ID: 5) if not specified'
+  },
+  // Emergency Triage Credit System - Each user gets 1 free emergency consultation (pay later)
+  emergencyTriageCreditsUsed: {
+    type: DataTypes.INTEGER,
+    allowNull: false,
+    defaultValue: 0,
+    field: 'emergency_triage_credits_used',
+    comment: 'Number of emergency triage credits used (max 1 free, pay later)'
+  },
+  emergencyTriageCreditLimit: {
+    type: DataTypes.INTEGER,
+    allowNull: false,
+    defaultValue: 1,
+    field: 'emergency_triage_credit_limit',
+    comment: 'Maximum emergency triage credits allowed (default: 1)'
+  },
+  emergencyTriagePendingAmount: {
+    type: DataTypes.DECIMAL(10, 2),
+    allowNull: false,
+    defaultValue: 0,
+    field: 'emergency_triage_pending_amount',
+    comment: 'Pending amount to be paid for emergency triage consultations'
   }
 }, {
   tableName: 'users',

@@ -22,18 +22,24 @@ export async function extractTenant(req, res, next) {
     
     let tenant = null;
     
-    // Try custom domain first
-    if (!subdomain || subdomain === 'www') {
-      tenant = await Tenant.findOne({
-        where: { custom_domain: host, status: 'active' }
-      });
-    }
+    // Skip tenant resolution for development/localhost
+    const isDev = host.includes('localhost') || host.includes('127.0.0.1');
     
-    // Try subdomain
-    if (!tenant && subdomain && subdomain !== 'www') {
-      tenant = await Tenant.findOne({
-        where: { subdomain, status: 'active' }
-      });
+    // Only query database for production domains
+    if (!isDev) {
+      // Try custom domain first
+      if (!subdomain || subdomain === 'www') {
+        tenant = await Tenant.findOne({
+          where: { custom_domain: host, status: 'active' }
+        });
+      }
+      
+      // Try subdomain
+      if (!tenant && subdomain && subdomain !== 'www') {
+        tenant = await Tenant.findOne({
+          where: { subdomain, status: 'active' }
+        });
+      }
     }
     
     // Try X-Tenant-ID header (for API clients) - guarded by env flag
@@ -60,7 +66,16 @@ export async function extractTenant(req, res, next) {
     next();
   } catch (error) {
     console.error('Tenant extraction error:', error);
-    next(error);
+    // For localhost/dev, don't fail on tenant errors - allow request to proceed
+    const host = req.get('host') || '';
+    const isDev = host.includes('localhost') || host.includes('127.0.0.1');
+    if (isDev) {
+      req.tenant = null;
+      req.tenantId = null;
+      next();
+    } else {
+      next(error);
+    }
   }
 }
 

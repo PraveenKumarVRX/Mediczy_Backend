@@ -3,7 +3,7 @@ import { authUser, authDoctor } from '../middleware/auth.middleware.js';
 import { Order, Invoice, Payment, Transaction, Refund } from '../models/billing.model.intelligent.js';
 import paymentGateway from '../services/payment-gateway.service.js';
 import invoiceService from '../services/invoice.service.js';
-import userModel from '../models/user.model.intelligent.js';
+import { User } from '../models/user.model.intelligent.js';
 import doctorModel from '../models/postgres/doctor.model.postgres.js';
 import { Op } from 'sequelize';
 import { postgresSequelize as sequelize } from '../db/postgres-sequelize.js';
@@ -448,7 +448,7 @@ router.post('/invoices/generate', authUser, async (req, res) => {
     }
 
     // Get user details
-    const user = await userModel.findByPk(userId);
+    const user = await User.findByPk(userId);
 
     // Check if invoice already exists
     let invoice = await Invoice.findOne({
@@ -883,13 +883,6 @@ router.get('/doctor/invoices', authDoctor, async (req, res) => {
 
     const { count, rows: invoices } = await Invoice.findAndCountAll({
       where,
-      include: [
-        {
-          model: userModel,
-          as: 'patient',
-          attributes: ['id', 'firstName', 'lastName', 'email', 'phoneNumber']
-        }
-      ],
       order: [['createdAt', 'DESC']],
       limit: parseInt(limit),
       offset: parseInt(offset)
@@ -942,7 +935,7 @@ router.post('/doctor/invoices/create', authDoctor, async (req, res) => {
     }
 
     // Get patient info
-    const patient = await userModel.findByPk(patientId);
+    const patient = await User.findByPk(patientId);
     if (!patient) {
       return res.status(404).json({
         success: false,
@@ -1035,13 +1028,6 @@ router.get('/doctor/payments', authDoctor, async (req, res) => {
 
     const { count, rows: payments } = await Payment.findAndCountAll({
       where,
-      include: [
-        {
-          model: userModel,
-          as: 'patient',
-          attributes: ['id', 'firstName', 'lastName', 'email', 'phoneNumber']
-        }
-      ],
       order: [['createdAt', 'DESC']],
       limit: parseInt(limit),
       offset: parseInt(offset)
@@ -1128,16 +1114,9 @@ router.get('/doctor/stats', authDoctor, async (req, res) => {
       where: { doctorId, status: 'overdue' }
     });
 
-    // Recent transactions
+    // Recent transactions (without User association for now)
     const recentPayments = await Payment.findAll({
       where: { doctorId },
-      include: [
-        {
-          model: userModel,
-          as: 'patient',
-          attributes: ['id', 'firstName', 'lastName']
-        }
-      ],
       order: [['createdAt', 'DESC']],
       limit: 5
     });

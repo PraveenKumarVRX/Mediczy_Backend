@@ -794,43 +794,51 @@ const EmployeeGamification: React.FC = () => {
                   </div>
                 </CardHeader>
                 <CardContent>
-                  {/* Top 3 Podium */}
+                  {/* Top 3 Podium - Display order: Silver (2nd), Gold (1st), Bronze (3rd) */}
                   <div className="flex justify-center items-end gap-4 mb-6">
-                    {leaderboard.slice(0, 3).map((entry, index) => {
-                      const heights = ['h-20', 'h-28', 'h-16'];
-                      const positions = [1, 0, 2]; // silver, gold, bronze positions
-                      const pos = positions[index];
-                      const actualEntry = leaderboard[pos];
-                      const colors = ['bg-slate-200', 'bg-yellow-400', 'bg-amber-600'];
+                    {[1, 0, 2].map((rank) => {
+                      const entry = leaderboard[rank];
+                      if (!entry) return null;
+                      // Heights: Gold tallest, Silver medium, Bronze shortest
+                      const heights = { 0: 'h-28', 1: 'h-20', 2: 'h-16' };
+                      // Metallic gradient colors with lustre effect
+                      const podiumStyles = { 
+                        0: 'bg-gradient-to-b from-yellow-300 via-yellow-400 to-yellow-600 shadow-lg shadow-yellow-400/50', // Gold
+                        1: 'bg-gradient-to-b from-slate-200 via-slate-300 to-slate-500 shadow-lg shadow-slate-400/50', // Silver
+                        2: 'bg-gradient-to-b from-amber-400 via-amber-500 to-amber-700 shadow-lg shadow-amber-500/50' // Bronze
+                      };
+                      const badgeStyles = {
+                        0: 'bg-gradient-to-br from-yellow-300 via-yellow-400 to-yellow-600 text-yellow-900 shadow-md shadow-yellow-500/50 border border-yellow-300', // Gold
+                        1: 'bg-gradient-to-br from-slate-200 via-slate-300 to-slate-500 text-slate-800 shadow-md shadow-slate-400/50 border border-slate-200', // Silver
+                        2: 'bg-gradient-to-br from-amber-400 via-amber-500 to-amber-700 text-amber-950 shadow-md shadow-amber-500/50 border border-amber-400' // Bronze
+                      };
                       return (
-                        <div key={actualEntry.employeeId} className="flex flex-col items-center" style={{ order: index }}>
+                        <div key={entry.employeeId} className="flex flex-col items-center">
                           <div className={cn(
                             'relative mb-2',
-                            actualEntry.isMe && 'ring-2 ring-emerald-500 ring-offset-2 rounded-full'
+                            entry.isMe && 'ring-2 ring-emerald-500 ring-offset-2 rounded-full'
                           )}>
                             <Avatar className="h-12 w-12">
-                              <AvatarImage src={actualEntry.avatar} />
+                              <AvatarImage src={entry.avatar} />
                               <AvatarFallback className="bg-slate-100">
-                                {actualEntry.name.split(' ').map(n => n[0]).join('')}
+                                {entry.name.split(' ').map(n => n[0]).join('')}
                               </AvatarFallback>
                             </Avatar>
                             <div className={cn(
                               'absolute -bottom-1 -right-1 w-5 h-5 rounded-full flex items-center justify-center text-xs font-bold',
-                              pos === 0 ? 'bg-yellow-400 text-yellow-900' : 
-                              pos === 1 ? 'bg-slate-300 text-slate-700' : 
-                              'bg-amber-600 text-white'
+                              badgeStyles[rank as keyof typeof badgeStyles]
                             )}>
-                              {pos + 1}
+                              {rank + 1}
                             </div>
                           </div>
                           <p className={cn(
                             'text-sm font-medium text-center',
-                            actualEntry.isMe ? 'text-emerald-600' : 'text-slate-900 dark:text-white'
+                            entry.isMe ? 'text-emerald-600' : 'text-slate-900 dark:text-white'
                           )}>
-                            {actualEntry.name}
+                            {entry.name}
                           </p>
-                          <p className="text-xs text-slate-500">{actualEntry.score.toLocaleString()}</p>
-                          <div className={cn('w-16 rounded-t-lg mt-2', heights[pos], colors[pos])} />
+                          <p className="text-xs text-slate-500">{entry.score.toLocaleString()}</p>
+                          <div className={cn('w-16 rounded-t-lg mt-2', heights[rank as keyof typeof heights], podiumStyles[rank as keyof typeof podiumStyles])} />
                         </div>
                       );
                     })}

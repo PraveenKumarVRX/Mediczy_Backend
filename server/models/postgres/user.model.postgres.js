@@ -416,6 +416,11 @@ User.prototype.comparePassword = async function(candidatePassword) {
   return await bcrypt.compare(candidatePassword, this.password);
 };
 
+// Alias for comparePassword (used in clinic staff auth)
+User.prototype.verifyPassword = async function(candidatePassword) {
+  return await this.comparePassword(candidatePassword);
+};
+
 // Generate JWT token
 User.prototype.generateAuthToken = function() {
   if (!process.env.JWT_SECRET) {
