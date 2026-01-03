@@ -2,9 +2,12 @@ import React, { useState, useEffect } from 'react';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
-import { Watch, Activity, Smartphone, Bluetooth, CheckCircle, XCircle, RefreshCw, Plus, Settings, Heart, Footprints, Moon, Zap, ShieldCheck } from 'lucide-react';
+import { Switch } from '@/components/ui/switch';
+import { Watch, Activity, Smartphone, Bluetooth, CheckCircle, XCircle, RefreshCw, Plus, Settings, Heart, Footprints, Moon, Zap, ShieldCheck, Droplets, Thermometer, Clock, Timer } from 'lucide-react';
 import { Link, useSearchParams } from 'react-router-dom';
 import { toast } from 'sonner';
+import api from '@/utils/api';
+import { healthSyncScheduler, SyncStatus } from '@/services/health/HealthSyncScheduler';
 
 interface Device {
   id: string;
@@ -17,16 +20,54 @@ interface Device {
   battery?: number;
   dataTypes: string[];
   icon?: string;
+  isVeepooDevice?: boolean;
+}
+
+interface HealthStats {
+  heartRate: number | null;
+  steps: number | null;
+  sleepScore: number | null;
+  bloodPressure: { systolic: number; diastolic: number } | null;
+  spo2: number | null;
+  temperature: number | null;
+  bloodGlucose: number | null;
+  hrv: number | null;
+  uricAcid: number | null;
+  totalCholesterol: number | null;
+  lastUpdated: Date | null;
 }
 
 const DeviceIntegration: React.FC = () => {
   const [searchParams] = useSearchParams();
   const [devices, setDevices] = useState<Device[]>([]);
   const [loading, setLoading] = useState(true);
+  const [healthStats, setHealthStats] = useState<HealthStats>({
+    heartRate: null,
+    steps: null,
+    sleepScore: null,
+    bloodPressure: null,
+    spo2: null,
+    temperature: null,
+    bloodGlucose: null,
+    hrv: null,
+    uricAcid: null,
+    totalCholesterol: null,
+    lastUpdated: null
+  });
+  const [loadingStats, setLoadingStats] = useState(true);
+  const [syncStatus, setSyncStatus] = useState<SyncStatus | null>(null);
+  const [autoSyncEnabled, setAutoSyncEnabled] = useState(false);
+  const [syncing, setSyncing] = useState(false);
 
-  // Load devices from localStorage on mount
+  // Load devices and health data on mount
   useEffect(() => {
     loadDevices();
+    loadHealthStats();
+    updateSyncStatus();
+    
+    // Auto-start sync scheduler if enabled
+    healthSyncScheduler.autoStart();
+    setAutoSyncEnabled(healthSyncScheduler.isSchedulerRunning());
     
     // Handle URL actions (from Bluetooth pairing redirect)
     const action = searchParams.get('action');
@@ -38,7 +79,107 @@ const DeviceIntegration: React.FC = () => {
     if (connect === 'apple-health') {
       toast.info('Apple Health integration coming soon!');
     }
+
+    // Listen for sync events
+    const handleSyncEvent = () => {
+      loadHealthStats();
+      updateSyncStatus();
+    };
+    window.addEventListener('healthDataSynced', handleSyncEvent);
+
+    // Update sync status every minute
+    const statusInterval = setInterval(updateSyncStatus, 60000);
+
+    return () => {
+      window.removeEventListener('healthDataSynced', handleSyncEvent);
+      clearInterval(statusInterval);
+    };
   }, [searchParams]);
+
+  // Update sync status
+  const updateSyncStatus = () => {
+    setSyncStatus(healthSyncScheduler.getStatus());
+  };
+
+  // Toggle auto sync
+  const toggleAutoSync = (enabled: boolean) => {
+    setAutoSyncEnabled(enabled);
+    if (enabled) {
+      healthSyncScheduler.start();
+      toast.success('Auto-sync enabled! Data will sync every 30 minutes.');
+    } else {
+      healthSyncScheduler.stop();
+      toast.info('Auto-sync disabled');
+    }
+    updateSyncStatus();
+  };
+
+  // Manual sync
+  const handleSyncNow = async () => {
+    setSyncing(true);
+    toast.info('Syncing health data...');
+    try {
+      const success = await healthSyncScheduler.syncNow();
+      if (success) {
+        toast.success('Health data synced successfully!');
+        loadHealthStats();
+      } else {
+        toast.info('No new data to sync');
+      }
+    } catch (error) {
+      toast.error('Sync failed. Please try again.');
+    } finally {
+      setSyncing(false);
+      updateSyncStatus();
+    }
+  };
+
+  // Format time until next sync
+  const formatTimeUntilSync = (): string => {
+    const ms = healthSyncScheduler.getTimeUntilNextSync();
+    if (ms <= 0) return 'Now';
+    const minutes = Math.floor(ms / 60000);
+    if (minutes < 1) return 'Less than 1 min';
+    if (minutes === 1) return '1 minute';
+    return `${minutes} minutes`;
+  };
+
+  // Fetch health stats from backend
+  const loadHealthStats = async () => {
+    setLoadingStats(true);
+    try {
+      const response = await api.get('/health-data/summary');
+      const data = response.data;
+      
+      setHealthStats({
+        heartRate: data.latest?.heart_rate?.value || null,
+        steps: data.latest?.steps?.value || null,
+        sleepScore: data.latest?.sleep?.value ? Math.round(data.latest.sleep.value * 100 / 8) : null, // Convert hours to score
+        bloodPressure: data.latest?.blood_pressure_systolic?.value ? {
+          systolic: data.latest.blood_pressure_systolic.value,
+          diastolic: data.latest.blood_pressure_diastolic?.value || 80
+        } : null,
+        spo2: data.latest?.spo2?.value || null,
+        temperature: data.latest?.temperature?.value || null,
+        bloodGlucose: data.latest?.blood_glucose?.value || null,
+        hrv: data.latest?.hrv?.value || null,
+        uricAcid: data.latest?.uric_acid?.value || null,
+        totalCholesterol: data.latest?.total_cholesterol?.value || null,
+        lastUpdated: data.lastSync ? new Date(data.lastSync) : null
+      });
+    } catch (error) {
+      console.log('Health stats not available:', error);
+      // Use localStorage cached data as fallback
+      const cachedStats = localStorage.getItem('lastHealthStats');
+      if (cachedStats) {
+        try {
+          setHealthStats(JSON.parse(cachedStats));
+        } catch (e) {}
+      }
+    } finally {
+      setLoadingStats(false);
+    }
+  };
 
   const loadDevices = () => {
     try {
@@ -68,10 +209,11 @@ const DeviceIntegration: React.FC = () => {
         brand: getBrandFromName(saved.name),
         model: getModelFromName(saved.name),
         status: 'connected' as const,
-        lastSync: saved.connectedAt ? new Date(saved.connectedAt) : new Date(),
-        battery: Math.floor(Math.random() * 30) + 60, // Random 60-90%
-        dataTypes: getDataTypesForDevice(saved.type),
-        icon: saved.icon
+        lastSync: saved.lastSync ? new Date(saved.lastSync) : (saved.connectedAt ? new Date(saved.connectedAt) : new Date()),
+        battery: saved.battery || null,
+        dataTypes: saved.dataTypes?.length > 0 ? saved.dataTypes : getDataTypesForDevice(saved.type, saved.isVeepooDevice),
+        icon: saved.icon,
+        isVeepooDevice: saved.isVeepooDevice || false
       }));
 
       // Show sample devices only if no paired devices exist
@@ -90,6 +232,7 @@ const DeviceIntegration: React.FC = () => {
 
   const getBrandFromName = (name: string): string => {
     const nameLower = (name || '').toLowerCase();
+    if (nameLower.includes('ve30') || nameLower.includes('ve20') || nameLower.includes('ve40')) return 'Veepoo';
     if (nameLower.includes('apple') || nameLower.includes('watch')) return 'Apple';
     if (nameLower.includes('samsung') || nameLower.includes('galaxy')) return 'Samsung';
     if (nameLower.includes('mi') || nameLower.includes('xiaomi')) return 'Xiaomi';
@@ -105,7 +248,12 @@ const DeviceIntegration: React.FC = () => {
     return name || 'Unknown Model';
   };
 
-  const getDataTypesForDevice = (type: string): string[] => {
+  const getDataTypesForDevice = (type: string, isVeepooDevice?: boolean): string[] => {
+    // Veepoo devices (VE30, etc.) have known capabilities
+    if (isVeepooDevice) {
+      return ['Heart Rate', 'Blood Pressure', 'Blood Oxygen', 'Steps', 'Calories', 'Sleep', 'HRV'];
+    }
+    
     switch (type) {
       case 'smartwatch':
         return ['Heart Rate', 'Steps', 'Sleep', 'Calories', 'Activity'];
@@ -251,29 +399,231 @@ const DeviceIntegration: React.FC = () => {
         </div>
       </div>
 
-      {/* Quick Stats */}
+      {/* Quick Stats - Real Data from Connected Devices */}
+      <div className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-6 gap-4">
+        <Card className="bg-white dark:bg-slate-800/50 border-slate-200/80 dark:border-slate-700/50">
+          <CardContent className="p-4">
+            <div className="flex items-center gap-3">
+              <div className="p-2 rounded-lg bg-teal-100 dark:bg-teal-900/30">
+                <Watch className="w-5 h-5 text-teal-600 dark:text-teal-400" />
+              </div>
+              <div>
+                <p className="text-xs text-slate-500 dark:text-slate-400">Devices</p>
+                <p className="text-lg font-bold text-slate-800 dark:text-white">{connectedDevicesCount}</p>
+              </div>
+            </div>
+          </CardContent>
+        </Card>
+
+        <Card className="bg-white dark:bg-slate-800/50 border-slate-200/80 dark:border-slate-700/50">
+          <CardContent className="p-4">
+            <div className="flex items-center gap-3">
+              <div className="p-2 rounded-lg bg-red-100 dark:bg-red-900/30">
+                <Heart className="w-5 h-5 text-red-600 dark:text-red-400" />
+              </div>
+              <div>
+                <p className="text-xs text-slate-500 dark:text-slate-400">Heart Rate</p>
+                <p className="text-lg font-bold text-slate-800 dark:text-white">
+                  {loadingStats ? '...' : healthStats.heartRate ? `${healthStats.heartRate} bpm` : '-- bpm'}
+                </p>
+              </div>
+            </div>
+          </CardContent>
+        </Card>
+
+        <Card className="bg-white dark:bg-slate-800/50 border-slate-200/80 dark:border-slate-700/50">
+          <CardContent className="p-4">
+            <div className="flex items-center gap-3">
+              <div className="p-2 rounded-lg bg-blue-100 dark:bg-blue-900/30">
+                <Footprints className="w-5 h-5 text-blue-600 dark:text-blue-400" />
+              </div>
+              <div>
+                <p className="text-xs text-slate-500 dark:text-slate-400">Steps Today</p>
+                <p className="text-lg font-bold text-slate-800 dark:text-white">
+                  {loadingStats ? '...' : healthStats.steps ? healthStats.steps.toLocaleString() : '--'}
+                </p>
+              </div>
+            </div>
+          </CardContent>
+        </Card>
+
+        <Card className="bg-white dark:bg-slate-800/50 border-slate-200/80 dark:border-slate-700/50">
+          <CardContent className="p-4">
+            <div className="flex items-center gap-3">
+              <div className="p-2 rounded-lg bg-purple-100 dark:bg-purple-900/30">
+                <Moon className="w-5 h-5 text-purple-600 dark:text-purple-400" />
+              </div>
+              <div>
+                <p className="text-xs text-slate-500 dark:text-slate-400">Sleep Score</p>
+                <p className="text-lg font-bold text-slate-800 dark:text-white">
+                  {loadingStats ? '...' : healthStats.sleepScore ? `${healthStats.sleepScore}%` : '--%'}
+                </p>
+              </div>
+            </div>
+          </CardContent>
+        </Card>
+
+        <Card className="bg-white dark:bg-slate-800/50 border-slate-200/80 dark:border-slate-700/50">
+          <CardContent className="p-4">
+            <div className="flex items-center gap-3">
+              <div className="p-2 rounded-lg bg-pink-100 dark:bg-pink-900/30">
+                <Activity className="w-5 h-5 text-pink-600 dark:text-pink-400" />
+              </div>
+              <div>
+                <p className="text-xs text-slate-500 dark:text-slate-400">Blood Pressure</p>
+                <p className="text-lg font-bold text-slate-800 dark:text-white">
+                  {loadingStats ? '...' : healthStats.bloodPressure 
+                    ? `${healthStats.bloodPressure.systolic}/${healthStats.bloodPressure.diastolic}` 
+                    : '--/--'}
+                </p>
+              </div>
+            </div>
+          </CardContent>
+        </Card>
+
+        <Card className="bg-white dark:bg-slate-800/50 border-slate-200/80 dark:border-slate-700/50">
+          <CardContent className="p-4">
+            <div className="flex items-center gap-3">
+              <div className="p-2 rounded-lg bg-cyan-100 dark:bg-cyan-900/30">
+                <Droplets className="w-5 h-5 text-cyan-600 dark:text-cyan-400" />
+              </div>
+              <div>
+                <p className="text-xs text-slate-500 dark:text-slate-400">SpO2</p>
+                <p className="text-lg font-bold text-slate-800 dark:text-white">
+                  {loadingStats ? '...' : healthStats.spo2 ? `${healthStats.spo2}%` : '--%'}
+                </p>
+              </div>
+            </div>
+          </CardContent>
+        </Card>
+      </div>
+
+      {/* Additional Health Metrics */}
       <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-        {[
-          { icon: Watch, label: 'Devices Connected', value: connectedDevicesCount, colorClass: 'text-teal-600 dark:text-teal-400 bg-teal-100 dark:bg-teal-900/30' },
-          { icon: Heart, label: 'Heart Rate', value: '72 bpm', colorClass: 'text-red-600 dark:text-red-400 bg-red-100 dark:bg-red-900/30' },
-          { icon: Footprints, label: 'Steps Today', value: '6,542', colorClass: 'text-blue-600 dark:text-blue-400 bg-blue-100 dark:bg-blue-900/30' },
-          { icon: Moon, label: 'Sleep Score', value: '85%', colorClass: 'text-purple-600 dark:text-purple-400 bg-purple-100 dark:bg-purple-900/30' },
-        ].map((stat, idx) => (
-          <Card key={idx} className="bg-white dark:bg-slate-800/50 border-slate-200/80 dark:border-slate-700/50">
-            <CardContent className="p-4">
+        <Card className="bg-white dark:bg-slate-800/50 border-slate-200/80 dark:border-slate-700/50">
+          <CardContent className="p-4">
+            <div className="flex items-center gap-3">
+              <div className="p-2 rounded-lg bg-orange-100 dark:bg-orange-900/30">
+                <Zap className="w-5 h-5 text-orange-600 dark:text-orange-400" />
+              </div>
+              <div>
+                <p className="text-xs text-slate-500 dark:text-slate-400">Blood Sugar</p>
+                <p className="text-lg font-bold text-slate-800 dark:text-white">
+                  {loadingStats ? '...' : healthStats.bloodGlucose ? `${healthStats.bloodGlucose} mg/dL` : '-- mg/dL'}
+                </p>
+              </div>
+            </div>
+          </CardContent>
+        </Card>
+
+        <Card className="bg-white dark:bg-slate-800/50 border-slate-200/80 dark:border-slate-700/50">
+          <CardContent className="p-4">
+            <div className="flex items-center gap-3">
+              <div className="p-2 rounded-lg bg-indigo-100 dark:bg-indigo-900/30">
+                <Activity className="w-5 h-5 text-indigo-600 dark:text-indigo-400" />
+              </div>
+              <div>
+                <p className="text-xs text-slate-500 dark:text-slate-400">HRV</p>
+                <p className="text-lg font-bold text-slate-800 dark:text-white">
+                  {loadingStats ? '...' : healthStats.hrv ? `${healthStats.hrv} ms` : '-- ms'}
+                </p>
+              </div>
+            </div>
+          </CardContent>
+        </Card>
+
+        <Card className="bg-white dark:bg-slate-800/50 border-slate-200/80 dark:border-slate-700/50">
+          <CardContent className="p-4">
+            <div className="flex items-center gap-3">
+              <div className="p-2 rounded-lg bg-amber-100 dark:bg-amber-900/30">
+                <Droplets className="w-5 h-5 text-amber-600 dark:text-amber-400" />
+              </div>
+              <div>
+                <p className="text-xs text-slate-500 dark:text-slate-400">Uric Acid</p>
+                <p className="text-lg font-bold text-slate-800 dark:text-white">
+                  {loadingStats ? '...' : healthStats.uricAcid ? `${healthStats.uricAcid} mg/dL` : '-- mg/dL'}
+                </p>
+              </div>
+            </div>
+          </CardContent>
+        </Card>
+
+        <Card className="bg-white dark:bg-slate-800/50 border-slate-200/80 dark:border-slate-700/50">
+          <CardContent className="p-4">
+            <div className="flex items-center gap-3">
+              <div className="p-2 rounded-lg bg-rose-100 dark:bg-rose-900/30">
+                <Heart className="w-5 h-5 text-rose-600 dark:text-rose-400" />
+              </div>
+              <div>
+                <p className="text-xs text-slate-500 dark:text-slate-400">Total Cholesterol</p>
+                <p className="text-lg font-bold text-slate-800 dark:text-white">
+                  {loadingStats ? '...' : healthStats.totalCholesterol ? `${healthStats.totalCholesterol} mg/dL` : '-- mg/dL'}
+                </p>
+              </div>
+            </div>
+          </CardContent>
+        </Card>
+      </div>
+
+      {/* Auto-Sync Settings & Actions */}
+      <Card className="bg-gradient-to-r from-slate-50 to-teal-50/30 dark:from-slate-800/50 dark:to-teal-900/20 border-teal-200/50 dark:border-teal-700/30">
+        <CardContent className="p-4">
+          <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-4">
+            {/* Auto-sync toggle */}
+            <div className="flex items-center gap-4">
               <div className="flex items-center gap-3">
-                <div className={`p-2 rounded-lg ${stat.colorClass.split(' ').slice(2).join(' ')}`}>
-                  <stat.icon className={`w-5 h-5 ${stat.colorClass.split(' ').slice(0, 2).join(' ')}`} />
+                <div className="p-2 rounded-lg bg-teal-100 dark:bg-teal-900/30">
+                  <Timer className="w-5 h-5 text-teal-600 dark:text-teal-400" />
                 </div>
                 <div>
-                  <p className="text-xs text-slate-500 dark:text-slate-400">{stat.label}</p>
-                  <p className="text-lg font-bold text-slate-800 dark:text-white">{stat.value}</p>
+                  <p className="text-sm font-medium text-slate-800 dark:text-white">Auto-Sync</p>
+                  <p className="text-xs text-slate-500 dark:text-slate-400">
+                    Sync data every 30 minutes
+                  </p>
                 </div>
               </div>
-            </CardContent>
-          </Card>
-        ))}
-      </div>
+              <Switch
+                checked={autoSyncEnabled}
+                onCheckedChange={toggleAutoSync}
+                className="data-[state=checked]:bg-teal-500"
+              />
+            </div>
+            
+            {/* Sync status info */}
+            <div className="flex items-center gap-4 text-sm">
+              {autoSyncEnabled && syncStatus && (
+                <div className="flex items-center gap-2 text-slate-600 dark:text-slate-300">
+                  <Clock className="w-4 h-4 text-teal-500" />
+                  <span>Next sync: {formatTimeUntilSync()}</span>
+                </div>
+              )}
+              <div className="text-xs text-slate-500 dark:text-slate-400">
+                {healthStats.lastUpdated 
+                  ? `Last: ${new Date(healthStats.lastUpdated).toLocaleTimeString()}`
+                  : 'No data synced yet'
+                }
+              </div>
+              {syncStatus && syncStatus.pendingReadings > 0 && (
+                <Badge variant="secondary" className="bg-amber-100 text-amber-700 dark:bg-amber-900/30 dark:text-amber-400">
+                  {syncStatus.pendingReadings} pending
+                </Badge>
+              )}
+            </div>
+            
+            {/* Sync now button */}
+            <Button 
+              variant="outline" 
+              size="sm"
+              onClick={handleSyncNow}
+              disabled={loadingStats || syncing}
+              className="border-teal-500/30 text-teal-600 dark:text-teal-400 hover:bg-teal-50 dark:hover:bg-teal-900/20"
+            >
+              <RefreshCw className={`mr-2 h-4 w-4 ${(loadingStats || syncing) ? 'animate-spin' : ''}`} />
+              {syncing ? 'Syncing...' : 'Sync Now'}
+            </Button>
+          </div>
+        </CardContent>
+      </Card>
 
       {/* Connected Devices */}
       <div className="space-y-4">
