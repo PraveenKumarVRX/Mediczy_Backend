@@ -131,7 +131,7 @@ const Login = () => {
 
           // Warm wallet with daily reward and ensure payment gateways are reachable post-login
           try {
-            const res = await api.post('/api/wallet/earn/daily-login');
+            const res = await api.post('/wallet/earn/daily-login');
             if (res?.data?.coinsEarned) {
               toast({
                 title: "Health Coins added",

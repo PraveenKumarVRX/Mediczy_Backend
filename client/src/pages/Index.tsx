@@ -53,6 +53,7 @@ import { Link, useNavigate, useSearchParams } from "react-router-dom";
 import { useAuth } from "@/auth/AuthProvider";
 import api from "@/utils/api";
 import { getToken } from "@/hooks/auth";
+import { VeepooService, VEEPOO_SERVICE_UUID, VEEPOO_WRITE_UUID, VEEPOO_NOTIFY_UUID } from "@/services/ble/VeepooService";
 
 const Index = () => {
   const navigate = useNavigate();
@@ -123,22 +124,111 @@ const Index = () => {
   }>>([]);
   const [selectedDevice, setSelectedDevice] = useState<string | null>(null);
   const [pairingProgress, setPairingProgress] = useState(0);
+  const [connectedDevices, setConnectedDevices] = useState<Array<{
+    id: string;
+    name: string;
+    type: string;
+    icon: string;
+    brand?: string;
+    model?: string;
+    status: string;
+    battery?: number;
+    dataTypes?: string[];
+    connectedAt?: string;
+    lastSync?: string;
+  }>>([]);
+
+  // Helper function to get device icon based on type
+  const getDeviceIcon = (type: string): string => {
+    const iconMap: { [key: string]: string } = {
+      'smartwatch': '⌚',
+      'smart_watch': '⌚',
+      'fitness_band': '📱',
+      'smart_ring': '💍',
+      'weight_scale': '⚖️',
+      'bp_monitor': '🩺',
+      'blood_pressure': '🩺',
+      'glucose_meter': '🩸',
+      'thermometer': '🌡️',
+      'pulse_oximeter': '💗',
+      'integration': '❤️',
+      'manual': '➕',
+    };
+    return iconMap[type?.toLowerCase()] || '⌚';
+  };
+
+  // Helper to detect device type from name
+  const detectDeviceType = (name: string): { type: string; icon: string } => {
+    const nameLower = name.toLowerCase();
+    
+    const smartwatchPatterns = ['watch', 'galaxy', 'apple', 've30', 've20', 've40', 'gt', 'gts', 'gtr', 'amazfit', 'huawei', 'honor', 'realme', 'noise', 'boat', 'fire-boltt', 'fireboltt', 'dizo'];
+    const ringPatterns = ['ring', 'oura', 'circular', 'motiv'];
+    const scalePatterns = ['scale', 'weight', 'body', 'renpho', 'eufy', 'withings'];
+    const bpPatterns = ['bp', 'pressure', 'omron', 'sphygmo'];
+    const bandPatterns = ['band', 'mi band', 'fitbit', 'charge', 'inspire'];
+    
+    if (ringPatterns.some(p => nameLower.includes(p))) {
+      return { type: 'smart_ring', icon: '💍' };
+    } else if (scalePatterns.some(p => nameLower.includes(p))) {
+      return { type: 'weight_scale', icon: '⚖️' };
+    } else if (bpPatterns.some(p => nameLower.includes(p))) {
+      return { type: 'bp_monitor', icon: '🩺' };
+    } else if (bandPatterns.some(p => nameLower.includes(p))) {
+      return { type: 'fitness_band', icon: '📱' };
+    } else if (smartwatchPatterns.some(p => nameLower.includes(p))) {
+      return { type: 'smartwatch', icon: '⌚' };
+    }
+    // Default to smartwatch for BLE health devices
+    return { type: 'smartwatch', icon: '⌚' };
+  };
+
+  // Function to disconnect a device
+  const disconnectDevice = (deviceId: string) => {
+    const updatedDevices = connectedDevices.filter(d => d.id !== deviceId);
+    localStorage.setItem('connectedDevices', JSON.stringify(updatedDevices));
+    setConnectedDevices(updatedDevices);
+  };
 
   // Handle URL action parameters (e.g., ?action=pair-device)
   useEffect(() => {
     const action = searchParams.get('action');
     if (action === 'pair-device') {
-      // Open the Bluetooth pairing modal
-      setShowPairingModal(true);
-      setPairingStep('scanning');
-      // Clear the action param from URL without causing a re-render loop
+      // Clear the action param from URL first to prevent re-trigger
       searchParams.delete('action');
       setSearchParams(searchParams, { replace: true });
+      // Start the Bluetooth scan - this opens modal and triggers device picker
+      startBluetoothScan();
     }
   }, [searchParams, setSearchParams]);
 
   useEffect(() => {
     fetchDashboardData();
+    // Load connected devices from localStorage and fix any with wrong types
+    const storedDevices = JSON.parse(localStorage.getItem('connectedDevices') || '[]');
+    
+    // Auto-fix devices with incorrect types/icons (but don't change dataTypes)
+    const fixedDevices = storedDevices.map((device: any) => {
+      const detected = detectDeviceType(device.name);
+      const needsFix = device.type === 'fitness_band' && detected.type === 'smartwatch';
+      
+      if (needsFix) {
+        return {
+          ...device,
+          type: detected.type,
+          icon: detected.icon,
+          // Keep existing dataTypes - don't override with defaults
+        };
+      }
+      return device;
+    });
+    
+    // Save fixed devices back to localStorage if any changes
+    const hasChanges = JSON.stringify(storedDevices) !== JSON.stringify(fixedDevices);
+    if (hasChanges) {
+      localStorage.setItem('connectedDevices', JSON.stringify(fixedDevices));
+    }
+    
+    setConnectedDevices(fixedDevices);
   }, [currentUser, userType]);
 
   const fetchDashboardData = async () => {
@@ -478,50 +568,77 @@ const Index = () => {
       
       try {
         // This will open the browser's native Bluetooth device picker
+        // Use standard GATT service UUIDs - short form (16-bit) UUIDs work better
+        // Also include Veepoo/HBand service UUIDs for VE30 and similar devices
         const device = await navigator.bluetooth.requestDevice({
           acceptAllDevices: true,
           optionalServices: [
-            'heart_rate',
-            'battery_service', 
-            'device_information',
-            'health_thermometer',
-            'blood_pressure',
-            'glucose',
-            'weight_scale',
-            'body_composition',
-            'user_data',
-            'fitness_machine',
-            '0000180d-0000-1000-8000-00805f9b34fb',
-            '0000180f-0000-1000-8000-00805f9b34fb',
-            '0000180a-0000-1000-8000-00805f9b34fb',
-            '00001800-0000-1000-8000-00805f9b34fb',
-            '00001801-0000-1000-8000-00805f9b34fb',
+            // Veepoo/HBand Service UUIDs (for VE30, etc.)
+            VEEPOO_SERVICE_UUID,
+            // Standard 16-bit GATT Service UUIDs
+            0x180D, // Heart Rate
+            0x180F, // Battery Service
+            0x180A, // Device Information
+            0x1809, // Health Thermometer
+            0x1810, // Blood Pressure
+            0x1808, // Glucose
+            0x181D, // Weight Scale
+            0x181B, // Body Composition
+            0x181C, // User Data
+            0x1826, // Fitness Machine
+            0x1814, // Running Speed and Cadence
+            0x1816, // Cycling Speed and Cadence
+            0x1800, // Generic Access
+            0x1801, // Generic Attribute
           ]
         });
 
         if (device) {
           const deviceName = device.name || 'Unknown Device';
-          let deviceType = 'fitness_band';
-          let deviceIcon = '📱';
+          let deviceType = 'smartwatch'; // Default to smartwatch for unknown BLE devices
+          let deviceIcon = '⌚';
           
           const nameLower = deviceName.toLowerCase();
-          if (nameLower.includes('watch') || nameLower.includes('galaxy') || nameLower.includes('apple')) {
-            deviceType = 'smartwatch';
-            deviceIcon = '⌚';
-          } else if (nameLower.includes('ring') || nameLower.includes('oura')) {
+          
+          // Smartwatch patterns - most BLE health devices are smartwatches
+          const smartwatchPatterns = ['watch', 'galaxy', 'apple', 've30', 've20', 've40', 'gt', 'gts', 'gtr', 'amazfit', 'huawei', 'honor', 'realme', 'noise', 'boat', 'fire-boltt', 'fireboltt', 'boAt', 'dizo'];
+          const ringPatterns = ['ring', 'oura', 'circular', 'motiv'];
+          const scalePatterns = ['scale', 'weight', 'body', 'renpho', 'eufy', 'withings'];
+          const bpPatterns = ['bp', 'pressure', 'omron', 'sphygmo'];
+          const bandPatterns = ['band', 'mi band', 'fitbit', 'charge', 'inspire'];
+          const glucosePatterns = ['glucose', 'sugar', 'cgm', 'dexcom', 'libre'];
+          
+          if (ringPatterns.some(p => nameLower.includes(p))) {
             deviceType = 'smart_ring';
             deviceIcon = '💍';
-          } else if (nameLower.includes('scale') || nameLower.includes('weight')) {
+          } else if (scalePatterns.some(p => nameLower.includes(p))) {
             deviceType = 'weight_scale';
             deviceIcon = '⚖️';
-          } else if (nameLower.includes('bp') || nameLower.includes('pressure') || nameLower.includes('omron')) {
+          } else if (bpPatterns.some(p => nameLower.includes(p))) {
             deviceType = 'bp_monitor';
             deviceIcon = '🩺';
-          } else if (nameLower.includes('band') || nameLower.includes('mi band') || nameLower.includes('fitbit')) {
+          } else if (glucosePatterns.some(p => nameLower.includes(p))) {
+            deviceType = 'glucose_meter';
+            deviceIcon = '🩸';
+          } else if (bandPatterns.some(p => nameLower.includes(p))) {
             deviceType = 'fitness_band';
             deviceIcon = '📱';
+          } else if (smartwatchPatterns.some(p => nameLower.includes(p))) {
+            deviceType = 'smartwatch';
+            deviceIcon = '⌚';
           }
+          // Default is already smartwatch for unknown health devices
 
+          // Filter out already connected devices
+          const storedDevices = JSON.parse(localStorage.getItem('connectedDevices') || '[]');
+          const isAlreadyConnected = storedDevices.some((d: any) => d.id === device.id || d.name === deviceName);
+          
+          if (isAlreadyConnected) {
+            setPairingStep('found');
+            setDiscoveredDevices([]);
+            return;
+          }
+          
           setDiscoveredDevices([{
             id: device.id,
             name: deviceName,
@@ -621,11 +738,85 @@ const Index = () => {
         setPairingProgress(20);
         
         const server = await device.gatt.connect();
-        setPairingProgress(50);
+        setPairingProgress(40);
+
+        // Detect available services to determine data types
+        const detectedDataTypes: string[] = [];
+        let batteryLevel = 75;
+        let isVeepooDevice = false;
+
+        try {
+          const services = await server.getPrimaryServices();
+          setPairingProgress(50);
+          
+          for (const service of services) {
+            const serviceUUID = service.uuid.toLowerCase();
+            
+            // Check for Veepoo/HBand service (VE30, etc.)
+            if (serviceUUID.includes('ae00') || serviceUUID === VEEPOO_SERVICE_UUID.toLowerCase()) {
+              isVeepooDevice = true;
+              console.log('Veepoo device detected!');
+              // Veepoo devices support all these features via proprietary protocol
+              detectedDataTypes.push('Heart Rate');
+              detectedDataTypes.push('Blood Pressure');
+              detectedDataTypes.push('Blood Oxygen');
+              detectedDataTypes.push('Steps');
+              detectedDataTypes.push('Calories');
+              detectedDataTypes.push('Sleep');
+              detectedDataTypes.push('HRV');
+              
+              // Try to connect to Veepoo write/notify characteristics
+              try {
+                const writeChar = await service.getCharacteristic(VEEPOO_WRITE_UUID);
+                const notifyChar = await service.getCharacteristic(VEEPOO_NOTIFY_UUID);
+                console.log('Veepoo characteristics found - device supports direct data sync');
+                detectedDataTypes.push('Temperature');
+              } catch (e) {
+                console.log('Veepoo characteristics not fully accessible');
+              }
+            }
+            
+            // Map standard service UUIDs to data types
+            if (serviceUUID.includes('180d') || serviceUUID.includes('heart_rate')) {
+              detectedDataTypes.push('Heart Rate');
+              detectedDataTypes.push('HRV');
+            }
+            if (serviceUUID.includes('1810') || serviceUUID.includes('blood_pressure')) {
+              detectedDataTypes.push('Blood Pressure');
+            }
+            if (serviceUUID.includes('1808') || serviceUUID.includes('glucose')) {
+              detectedDataTypes.push('Blood Glucose');
+            }
+            if (serviceUUID.includes('1809') || serviceUUID.includes('health_thermometer')) {
+              detectedDataTypes.push('Temperature');
+            }
+            if (serviceUUID.includes('181d') || serviceUUID.includes('weight_scale')) {
+              detectedDataTypes.push('Weight');
+            }
+            if (serviceUUID.includes('181b') || serviceUUID.includes('body_composition')) {
+              detectedDataTypes.push('Body Fat');
+            }
+            if (serviceUUID.includes('1826') || serviceUUID.includes('fitness_machine')) {
+              detectedDataTypes.push('Steps');
+              detectedDataTypes.push('Calories');
+              detectedDataTypes.push('Distance');
+            }
+            if (serviceUUID.includes('1814')) {
+              detectedDataTypes.push('Running');
+            }
+            if (serviceUUID.includes('1816')) {
+              detectedDataTypes.push('Cycling');
+            }
+          }
+          console.log('Detected services:', services.map(s => s.uuid));
+        } catch (e) {
+          console.log('Could not enumerate services:', e);
+        }
+
+        setPairingProgress(60);
 
         try {
           const deviceInfoService = await server.getPrimaryService('device_information');
-          setPairingProgress(70);
           
           try {
             const manufacturerChar = await deviceInfoService.getCharacteristic('manufacturer_name_string');
@@ -637,8 +828,9 @@ const Index = () => {
           }
         } catch (e) {
           console.log('Device info service not available');
-          setPairingProgress(70);
         }
+
+        setPairingProgress(70);
 
         try {
           const heartRateService = await server.getPrimaryService('heart_rate');
@@ -650,22 +842,44 @@ const Index = () => {
             const heartRate = value.getUint8(1);
             console.log('Heart rate:', heartRate);
           });
+          if (!detectedDataTypes.includes('Heart Rate')) {
+            detectedDataTypes.push('Heart Rate');
+          }
         } catch (e) {
           console.log('Heart rate service not available');
         }
+
+        setPairingProgress(85);
 
         try {
           const batteryService = await server.getPrimaryService('battery_service');
           const batteryChar = await batteryService.getCharacteristic('battery_level');
           const batteryValue = await batteryChar.readValue();
-          const batteryLevel = batteryValue.getUint8(0);
+          batteryLevel = batteryValue.getUint8(0);
           console.log('Battery level:', batteryLevel + '%');
         } catch (e) {
           console.log('Battery service not available');
         }
 
         setPairingProgress(100);
-        saveConnectedDevice(selectedDeviceData);
+        
+        // Only show actually detected services - no defaults
+        const finalDataTypes = [...new Set(detectedDataTypes)];
+        
+        // If it's a Veepoo device but we couldn't detect services, still mark capabilities
+        if (isVeepooDevice && finalDataTypes.length === 0) {
+          finalDataTypes.push('Heart Rate', 'Blood Pressure', 'Steps', 'Sleep');
+          console.log('Veepoo device - using known capabilities');
+        } else if (finalDataTypes.length === 0) {
+          console.log('No GATT services detected. Device may require companion app for data sync.');
+        }
+
+        saveConnectedDevice({
+          ...selectedDeviceData,
+          battery: batteryLevel,
+          isVeepooDevice,
+          dataTypes: finalDataTypes
+        });
         setPairingStep('success');
       } else {
         // Fallback progress animation
@@ -689,6 +903,7 @@ const Index = () => {
 
   const saveConnectedDevice = (deviceData: any) => {
     const connectedDevices = JSON.parse(localStorage.getItem('connectedDevices') || '[]');
+    
     const newDevice = {
       id: deviceData.id,
       name: deviceData.name,
@@ -697,8 +912,9 @@ const Index = () => {
       model: deviceData.model || getModelFromName(deviceData.name),
       status: 'connected',
       icon: deviceData.icon,
-      battery: deviceData.battery || 75,
-      dataTypes: deviceData.dataTypes || ['Heart Rate', 'Steps', 'Sleep'],
+      battery: deviceData.battery || null,
+      dataTypes: deviceData.dataTypes || [], // Only show detected services
+      isVeepooDevice: deviceData.isVeepooDevice || false,
       connectedAt: new Date().toISOString(),
       lastSync: new Date().toISOString(),
     };
@@ -706,6 +922,8 @@ const Index = () => {
     const filtered = connectedDevices.filter((d: any) => d.id !== deviceData.id);
     filtered.push(newDevice);
     localStorage.setItem('connectedDevices', JSON.stringify(filtered));
+    // Update state to reflect the new device
+    setConnectedDevices(filtered);
   };
 
   // Helper function to extract brand from device name
@@ -1293,32 +1511,29 @@ const Index = () => {
                   <div className="w-2 h-2 rounded-full bg-teal-400 animate-pulse" />
                   My Active Devices
                 </h4>
-                <span className="text-xs text-slate-500">2 devices connected</span>
+                <span className="text-xs text-slate-500">{connectedDevices.length} device{connectedDevices.length !== 1 ? 's' : ''} connected</span>
               </div>
+              {connectedDevices.length === 0 ? (
+                <div className="text-center py-8 bg-slate-800/40 rounded-xl border border-dashed border-slate-700">
+                  <Bluetooth className="w-10 h-10 text-slate-600 mx-auto mb-3" />
+                  <p className="text-slate-400 text-sm mb-2">No devices connected</p>
+                  <p className="text-slate-500 text-xs mb-4">Pair a device to start syncing health data</p>
+                  <Button 
+                    onClick={startBluetoothScan}
+                    className="bg-gradient-to-r from-teal-500 to-teal-600 hover:from-teal-600 hover:to-teal-700 text-white"
+                  >
+                    <Bluetooth className="w-4 h-4 mr-2" />
+                    Pair Your First Device
+                  </Button>
+                </div>
+              ) : (
               <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-                {[
-                  { 
-                    name: "Apple Watch Series 9", 
-                    icon: "⌚", 
-                    status: "connected", 
-                    battery: 85, 
-                    lastSync: "2 min ago",
-                    data: { heartRate: 72, steps: 6542, calories: 320 }
-                  },
-                  { 
-                    name: "Mi Band 7", 
-                    icon: "📱", 
-                    status: "connected", 
-                    battery: 62, 
-                    lastSync: "5 min ago",
-                    data: { heartRate: 74, steps: 6540, calories: 318 }
-                  },
-                ].map((device, idx) => (
-                  <div key={idx} className="p-4 rounded-xl bg-slate-800/80 border border-slate-700/50 hover:border-teal-500/30 transition-all group">
+                {connectedDevices.map((device, idx) => (
+                  <div key={device.id || idx} className="p-4 rounded-xl bg-slate-800/80 border border-slate-700/50 hover:border-teal-500/30 transition-all group">
                     <div className="flex items-start justify-between mb-3">
                       <div className="flex items-center gap-3">
                         <div className="relative">
-                          <span className="text-3xl">{device.icon}</span>
+                          <span className="text-3xl">{getDeviceIcon(device.type)}</span>
                           <div className="absolute -bottom-1 -right-1 w-3 h-3 rounded-full bg-teal-500 border-2 border-slate-800" />
                         </div>
                         <div>
@@ -1326,79 +1541,60 @@ const Index = () => {
                           <p className="text-xs text-teal-400 flex items-center gap-1">
                             <CheckCircle2 className="w-3 h-3" /> Connected
                           </p>
+                          <p className="text-[10px] text-slate-500 capitalize">{device.type?.replace('_', ' ') || 'Device'}</p>
                         </div>
                       </div>
                       <div className="flex items-center gap-2">
                         <div className="text-right">
-                          <div className="flex items-center gap-1 text-xs text-slate-400">
-                            <Zap className="w-3 h-3" /> {device.battery}%
-                          </div>
-                          <p className="text-[10px] text-slate-500">Synced {device.lastSync}</p>
+                          {device.battery && (
+                            <div className="flex items-center gap-1 text-xs text-slate-400">
+                              <Zap className="w-3 h-3" /> {device.battery}%
+                            </div>
+                          )}
+                          <p className="text-[10px] text-slate-500">
+                            {device.lastSync ? `Synced ${new Date(device.lastSync).toLocaleString('en-US', { hour: 'numeric', minute: '2-digit', hour12: true })}` : 'Ready to sync'}
+                          </p>
                         </div>
-                        <Button size="sm" variant="ghost" className="h-8 w-8 p-0 text-slate-400 hover:text-teal-400 hover:bg-teal-500/10">
+                        <Button size="sm" variant="ghost" className="h-8 w-8 p-0 text-slate-400 hover:text-teal-400 hover:bg-teal-500/10" title="Sync Now">
                           <RefreshCw className="w-4 h-4" />
+                        </Button>
+                        <Button 
+                          size="sm" 
+                          variant="ghost" 
+                          className="h-8 w-8 p-0 text-slate-400 hover:text-red-400 hover:bg-red-500/10"
+                          title="Disconnect"
+                          onClick={() => disconnectDevice(device.id)}
+                        >
+                          <X className="w-4 h-4" />
                         </Button>
                       </div>
                     </div>
-                    {/* Live Data */}
-                    <div className="grid grid-cols-3 gap-2 pt-3 border-t border-slate-700/50">
-                      <div className="text-center">
-                        <Heart className="w-4 h-4 text-red-400 mx-auto mb-1" />
-                        <p className="text-sm font-semibold text-white">{device.data.heartRate}</p>
-                        <p className="text-[10px] text-slate-500">BPM</p>
+                    {/* Data Types */}
+                    {device.dataTypes && device.dataTypes.length > 0 ? (
+                      <div className="flex flex-wrap gap-1 pt-3 border-t border-slate-700/50">
+                        {device.dataTypes.slice(0, 6).map((dataType, i) => (
+                          <span key={i} className="text-[10px] px-2 py-0.5 rounded-full bg-teal-500/10 text-teal-400">
+                            {dataType}
+                          </span>
+                        ))}
+                        {device.dataTypes.length > 6 && (
+                          <span className="text-[10px] px-2 py-0.5 rounded-full bg-slate-700 text-slate-400">
+                            +{device.dataTypes.length - 6} more
+                          </span>
+                        )}
                       </div>
-                      <div className="text-center">
-                        <Footprints className="w-4 h-4 text-blue-400 mx-auto mb-1" />
-                        <p className="text-sm font-semibold text-white">{device.data.steps.toLocaleString()}</p>
-                        <p className="text-[10px] text-slate-500">Steps</p>
+                    ) : (
+                      <div className="pt-3 border-t border-slate-700/50">
+                        <p className="text-[10px] text-slate-500 flex items-center gap-1">
+                          <Info className="w-3 h-3" />
+                          Use companion app to sync data
+                        </p>
                       </div>
-                      <div className="text-center">
-                        <Zap className="w-4 h-4 text-orange-400 mx-auto mb-1" />
-                        <p className="text-sm font-semibold text-white">{device.data.calories}</p>
-                        <p className="text-[10px] text-slate-500">Cal</p>
-                      </div>
-                    </div>
+                    )}
                   </div>
                 ))}
               </div>
-            </div>
-
-            {/* My Other Devices (Inactive) */}
-            <div className="mb-6">
-              <div className="flex items-center justify-between mb-3">
-                <h4 className="text-sm font-medium text-slate-400">My Devices (Offline)</h4>
-                <span className="text-xs text-slate-500">1 device</span>
-              </div>
-              <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
-                {[
-                  { 
-                    name: "Oura Ring Gen 3", 
-                    icon: "💍", 
-                    status: "offline", 
-                    battery: 45, 
-                    lastSync: "2 days ago"
-                  },
-                ].map((device, idx) => (
-                  <div key={idx} className="p-3 rounded-xl bg-slate-800/40 border border-slate-700/30 opacity-75 hover:opacity-100 transition-all">
-                    <div className="flex items-center justify-between">
-                      <div className="flex items-center gap-3">
-                        <div className="relative">
-                          <span className="text-2xl grayscale">{device.icon}</span>
-                          <div className="absolute -bottom-1 -right-1 w-3 h-3 rounded-full bg-slate-500 border-2 border-slate-800" />
-                        </div>
-                        <div>
-                          <p className="text-sm font-medium text-slate-300">{device.name}</p>
-                          <p className="text-xs text-slate-500">Last synced {device.lastSync}</p>
-                        </div>
-                      </div>
-                      <Button size="sm" variant="outline" className="h-8 border-slate-600 text-slate-400 hover:text-teal-400 hover:border-teal-500/50">
-                        <Bluetooth className="w-3 h-3 mr-1" />
-                        Connect
-                      </Button>
-                    </div>
-                  </div>
-                ))}
-              </div>
+              )}
             </div>
 
             {/* Supported Devices / Add New */}

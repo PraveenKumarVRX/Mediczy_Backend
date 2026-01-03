@@ -43,7 +43,7 @@ export default function Wallet() {
 
   const fetchWallet = async () => {
     try {
-      const response = await api.get('/api/wallet');
+      const response = await api.get('/wallet');
       setWallet(response.data.data);
     } catch (error) {
       toast({
@@ -59,7 +59,7 @@ export default function Wallet() {
   const claimDailyReward = async () => {
     setClaiming(true);
     try {
-      const response = await api.post('/api/wallet/earn/daily-login');
+      const response = await api.post('/wallet/earn/daily-login');
       
       toast({
         title: "🎉 Daily Reward Claimed!",

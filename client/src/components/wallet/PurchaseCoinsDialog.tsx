@@ -51,7 +51,7 @@ export function PurchaseCoinsDialog({ open, onOpenChange, onSuccess }: PurchaseC
       // Simulate payment processing
       await new Promise(resolve => setTimeout(resolve, 1000));
       
-      const response = await api.post('/api/wallet/purchase', {
+      const response = await api.post('/wallet/purchase', {
         packageId: selectedPackage,
         paymentMethod: 'demo',
         paymentTransactionId: `TXN${Date.now()}`,
