@@ -55,24 +55,24 @@ const HospitalLayout = ({ children, title, subtitle }: HospitalLayoutProps) => {
   };
 
   return (
-    <div className="min-h-screen bg-slate-50">
+    <div className="min-h-screen bg-slate-50 dark:bg-slate-900">
       {/* Sidebar */}
       <HospitalSidebar />
 
       {/* Main Content Area */}
       <div className="ml-64 transition-all duration-300">
         {/* Top Header */}
-        <header className="sticky top-0 z-30 h-16 bg-white/90 backdrop-blur border-b border-slate-200 flex items-center justify-between px-6">
+        <header className="sticky top-0 z-30 h-16 bg-white/90 dark:bg-slate-800/90 backdrop-blur border-b border-slate-200 dark:border-slate-700/50 flex items-center justify-between px-6">
           <div className="flex items-center gap-3">
-            <div className="flex items-center gap-2 text-teal-600 font-semibold">
+            <div className="flex items-center gap-2 text-teal-600 dark:text-teal-400 font-semibold">
               <HeartPulse className="h-5 w-5" />
               <span className="text-sm">Mediqzy</span>
-              <span className="text-[11px] uppercase bg-teal-500/10 text-teal-600 px-2 py-0.5 rounded-full">Hospital</span>
+              <span className="text-[11px] uppercase bg-teal-500/10 text-teal-600 dark:text-teal-400 px-2 py-0.5 rounded-full">Hospital</span>
             </div>
             {title && (
-              <div className="pl-3 border-l border-slate-200">
-                <h1 className="text-lg font-semibold text-slate-900">{title}</h1>
-                {subtitle && <p className="text-xs text-slate-500">{subtitle}</p>}
+              <div className="pl-3 border-l border-slate-200 dark:border-slate-700">
+                <h1 className="text-lg font-semibold text-slate-900 dark:text-white">{title}</h1>
+                {subtitle && <p className="text-xs text-slate-500 dark:text-slate-400">{subtitle}</p>}
               </div>
             )}
           </div>
@@ -109,15 +109,15 @@ const HospitalLayout = ({ children, title, subtitle }: HospitalLayoutProps) => {
 
             <DropdownMenu>
               <DropdownMenuTrigger asChild>
-                <Button variant="ghost" className="flex items-center gap-2 border border-slate-200 rounded-full px-3 py-1.5">
+                <Button variant="ghost" className="flex items-center gap-2 border border-slate-200 dark:border-slate-700 rounded-full px-3 py-1.5">
                   <div className="w-8 h-8 bg-gradient-to-br from-teal-500 to-teal-600 rounded-full flex items-center justify-center">
                     <Building2 className="w-4 h-4 text-white" />
                   </div>
                   <div className="hidden md:block text-left">
-                    <p className="text-sm font-medium text-slate-900">
+                    <p className="text-sm font-medium text-slate-900 dark:text-white">
                       {hospitalData?.name || "Hospital Admin"}
                     </p>
-                    <p className="text-xs text-teal-600">Administrator</p>
+                    <p className="text-xs text-teal-600 dark:text-teal-400">Administrator</p>
                   </div>
                   <ChevronDown className="w-4 h-4 text-slate-400" />
                 </Button>
