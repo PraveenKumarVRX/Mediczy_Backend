@@ -213,7 +213,7 @@ import TPAHospitalsPage from "@/pages/tpa/TPAHospitalsPage";
 import PSULogin from "@/pages/psu/PSULogin";
 import InsurerLogin from "@/pages/insurer/InsurerLogin";
 import NGOLogin from "@/pages/ngo/NGOLogin";
-import HospitalCommunication from "@/pages/hospital/HospitalCommunication";
+import HospitalCommunicationHub from "@/pages/hospital/HospitalCommunicationHub";
 import BrokerCommunication from "@/pages/insurance-broker/BrokerCommunication";
 import InsuranceCommunication from "@/pages/insurance-company/InsuranceCommunication";
 import BrokerCommunication from "@/pages/insurance-broker/BrokerCommunication";
@@ -375,7 +375,7 @@ const AppRoutes = () => {
       <Route path="/hospital/billing" element={<HospitalBillingPage />} />
       <Route path="/hospital/claims" element={<HospitalClaimsPage />} />
       <Route path="/hospital/staff" element={<HospitalStaffPage />} />
-      <Route path="/hospital/communication" element={<HospitalCommunication />} />
+      <Route path="/hospital/communication" element={<HospitalCommunicationHub />} />
       <Route path="/hospital/notifications" element={<HospitalNotifications />} />
       <Route path="/hospital/settings" element={<HospitalSettingsPage />} />
       <Route path="/hospital/support" element={<HospitalSupportPage />} />

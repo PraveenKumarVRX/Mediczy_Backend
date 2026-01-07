@@ -26,6 +26,7 @@ import {
   Pill,
   FileCheck,
   ClipboardCheck,
+  MessageSquare,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { useState } from "react";
@@ -45,6 +46,7 @@ const mainNavItems: SidebarItem[] = [
   { icon: Bed, label: "Bed Management", href: "/hospital/beds" },
   { icon: Users, label: "Patients", href: "/hospital/patients" },
   { icon: Stethoscope, label: "Doctors", href: "/hospital/doctors" },
+  { icon: MessageSquare, label: "Communication Hub", href: "/hospital/communication" },
 ];
 
 const clinicalItems: SidebarItem[] = [
