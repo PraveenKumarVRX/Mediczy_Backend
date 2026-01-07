@@ -40,8 +40,8 @@ const ClinicLogin = () => {
     
     console.log('Clinic login attempt:', { email, password: '***' });
     
-    // Development mode bypass - allows login without backend
-    if (email === 'clinic@mediczy.com' && password === 'Clinic123') {
+    // Development mode bypass - allows login without backend (DEV only)
+    if (import.meta.env.DEV && email === 'clinic@mediczy.com' && password === 'Clinic123') {
       console.log('🚀 Development mode: Using quick authentication bypass');
       
       localStorage.removeItem('token');

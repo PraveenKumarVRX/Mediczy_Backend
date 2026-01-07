@@ -47,8 +47,8 @@ const AmbulanceLogin = () => {
     e.preventDefault();
     setIsLoading(true);
 
-    // Development mode bypass - allows login without backend
-    if (email === DEV_EMAIL && password === DEV_PASSWORD) {
+    // Development mode bypass - allows login without backend (DEV only)
+    if (import.meta.env.DEV && email === DEV_EMAIL && password === DEV_PASSWORD) {
       console.log('🚀 Development mode: Using quick authentication bypass for Ambulance');
       
       // Clear all other tokens for ring-fencing
