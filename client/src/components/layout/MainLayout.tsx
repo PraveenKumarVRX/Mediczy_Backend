@@ -27,6 +27,7 @@ import {
   TooltipProvider,
   TooltipTrigger,
 } from "@/components/ui/tooltip";
+import { BRAND, getShortRoleLabel } from "@/config/brand";
 
 interface Notification {
   id: number;
@@ -240,9 +241,9 @@ const MainLayout = ({ children }: MainLayoutProps) => {
               <div className="p-1.5 rounded-lg bg-gradient-to-br from-teal-500 to-teal-600 shadow-sm">
                 <HeartPulse className="h-4 w-4 text-white" />
               </div>
-              <span className="text-sm md:text-base font-semibold text-slate-800 dark:text-white">Mediqzy</span>
-              <span className="hidden sm:inline text-[10px] uppercase font-semibold bg-gradient-to-r from-slate-800 to-slate-700 dark:from-teal-600 dark:to-teal-700 text-white px-2.5 py-1 rounded-full tracking-wider">
-                {isTeamUser ? 'Team' : isNurseRoute ? 'Nurse' : userType === 'doctor' ? 'Doctor' : 'Dashboard'}
+              <span className="text-sm md:text-base font-semibold text-slate-800 dark:text-white">{BRAND.name}</span>
+              <span className="hidden sm:inline text-[10px] uppercase font-semibold bg-gradient-to-r from-teal-600 to-teal-700 text-white px-2.5 py-1 rounded-full tracking-wider">
+                {isTeamUser ? getShortRoleLabel('team') : isNurseRoute ? getShortRoleLabel('nurse') : isAssistantUser ? getShortRoleLabel('assistant') : getShortRoleLabel(userType || 'user')}
               </span>
             </div>
             <div className="ml-auto flex items-center gap-2">

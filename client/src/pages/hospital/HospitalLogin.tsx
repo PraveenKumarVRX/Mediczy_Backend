@@ -86,9 +86,9 @@ const HospitalLogin = () => {
 
   if (isCheckingAuth) {
     return (
-      <div className="min-h-screen flex items-center justify-center bg-gradient-to-br from-blue-50 via-white to-cyan-50">
+      <div className="min-h-screen flex items-center justify-center bg-gradient-to-br from-teal-50 via-white to-emerald-50">
         <div className="flex flex-col items-center gap-4">
-          <Activity className="h-8 w-8 animate-spin text-blue-600" />
+          <Activity className="h-8 w-8 animate-spin text-teal-600" />
           <p className="text-sm text-muted-foreground">Checking authentication...</p>
         </div>
       </div>
@@ -96,7 +96,7 @@ const HospitalLogin = () => {
   }
 
   return (
-    <div className="min-h-screen flex items-center justify-center bg-gradient-to-br from-blue-50 via-white to-cyan-50 p-4">
+    <div className="min-h-screen flex items-center justify-center bg-gradient-to-br from-teal-50 via-white to-emerald-50 p-4">
       <motion.div
         initial={{ opacity: 0, y: 20 }}
         animate={{ opacity: 1, y: 0 }}
@@ -107,13 +107,13 @@ const HospitalLogin = () => {
           <CardHeader className="space-y-4 pb-8">
             <div className="flex justify-center">
               <div className="relative">
-                <div className="absolute inset-0 bg-blue-500/20 blur-xl rounded-full" />
-                <div className="relative bg-gradient-to-br from-blue-500 to-cyan-600 p-4 rounded-2xl shadow-lg">
+                <div className="absolute inset-0 bg-teal-500/20 blur-xl rounded-full" />
+                <div className="relative bg-gradient-to-br from-teal-500 to-teal-600 p-4 rounded-2xl shadow-lg">
                   <Building2 className="h-12 w-12 text-white" />
                 </div>
               </div>
             </div>
-            <CardTitle className="text-3xl font-bold text-center bg-gradient-to-r from-blue-600 to-cyan-600 bg-clip-text text-transparent">
+            <CardTitle className="text-3xl font-bold text-center bg-gradient-to-r from-teal-600 to-teal-500 bg-clip-text text-transparent">
               Hospital Login
             </CardTitle>
             <CardDescription className="text-center text-base">
@@ -134,7 +134,7 @@ const HospitalLogin = () => {
               <div className="space-y-4">
                 <div className="space-y-2">
                   <label htmlFor="email" className="text-sm font-medium flex items-center gap-2">
-                    <CheckCircle2 className="h-4 w-4 text-blue-600" />
+                    <CheckCircle2 className="h-4 w-4 text-teal-600" />
                     Email Address
                   </label>
                   <Input
@@ -144,13 +144,13 @@ const HospitalLogin = () => {
                     value={email}
                     onChange={(e) => setEmail(e.target.value)}
                     required
-                    className="h-12 text-base border-2 focus:border-blue-500 transition-colors"
+                    className="h-12 text-base border-2 focus:border-teal-500 transition-colors"
                   />
                 </div>
                 
                 <div className="space-y-2">
                   <label htmlFor="password" className="text-sm font-medium flex items-center gap-2">
-                    <Lock className="h-4 w-4 text-blue-600" />
+                    <Lock className="h-4 w-4 text-teal-600" />
                     Password
                   </label>
                   <div className="relative">
@@ -161,7 +161,7 @@ const HospitalLogin = () => {
                       value={password}
                       onChange={(e) => setPassword(e.target.value)}
                       required
-                      className="h-12 text-base border-2 focus:border-blue-500 transition-colors pr-12"
+                      className="h-12 text-base border-2 focus:border-teal-500 transition-colors pr-12"
                     />
                     <button
                       type="button"
@@ -177,7 +177,7 @@ const HospitalLogin = () => {
               <Button
                 type="submit"
                 disabled={loading}
-                className="w-full h-12 text-base bg-gradient-to-r from-blue-600 to-cyan-600 hover:from-blue-700 hover:to-cyan-700 transition-all duration-200 shadow-lg hover:shadow-xl"
+                className="w-full h-12 text-base bg-gradient-to-r from-teal-500 to-teal-600 hover:from-teal-600 hover:to-teal-700 transition-all duration-200 shadow-lg hover:shadow-xl"
               >
                 {loading ? (
                   <Activity className="h-5 w-5 animate-spin" />
@@ -192,7 +192,7 @@ const HospitalLogin = () => {
             
             <div className="mt-6 text-center text-sm text-muted-foreground">
               Need help? Contact{' '}
-              <a href="mailto:support@mediczy.com" className="text-blue-600 hover:underline font-medium">
+              <a href="mailto:support@mediczy.com" className="text-teal-600 hover:underline font-medium">
                 support@mediczy.com
               </a>
             </div>

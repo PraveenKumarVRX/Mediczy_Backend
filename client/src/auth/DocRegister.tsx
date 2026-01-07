@@ -2,6 +2,7 @@ import { useState } from "react";
 import { Link, useNavigate } from "react-router-dom";
 import { useForm } from "react-hook-form";
 import { HeartPulse, Eye, EyeOff, Chrome, Facebook } from "lucide-react";
+import { BRAND } from "@/config/brand";
 import { Button } from "@/components/ui/button";
 import {
   Form,
@@ -167,7 +168,7 @@ const Register = () => {
       lastName: "",
       phoneNumber: "",
       specialization: undefined,
-      experience: undefined,
+      experience: 0,
       qualifications: [""],
       ugQualifications: [""],
       pgQualifications: [""],
@@ -268,7 +269,7 @@ const Register = () => {
         <div className="absolute inset-0" />
         <div className="relative z-20 flex items-center gap-2 text-lg font-bold">
           <HeartPulse className="h-6 w-6" />
-          Mediqzy
+          {BRAND.name}
         </div>
         <div className="relative z-20 mt-auto">
           <blockquote className="space-y-2">

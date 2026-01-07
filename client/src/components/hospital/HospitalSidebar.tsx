@@ -86,8 +86,8 @@ const HospitalSidebar = () => {
         className={cn(
           "flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium transition-all duration-200",
           isActive
-            ? "bg-blue-600 text-white shadow-md shadow-blue-600/20"
-            : "text-slate-600 hover:bg-slate-100 hover:text-slate-900",
+            ? "bg-gradient-to-r from-teal-500 to-teal-600 text-white shadow-md shadow-teal-500/20"
+            : "text-slate-600 hover:bg-teal-50 hover:text-teal-700",
           collapsed && "justify-center px-2"
         )}
       >
@@ -98,7 +98,7 @@ const HospitalSidebar = () => {
             {item.badge && (
               <span className={cn(
                 "px-2 py-0.5 text-xs font-bold rounded-full",
-                isActive ? "bg-white/20 text-white" : "bg-blue-100 text-blue-600"
+                isActive ? "bg-white/20 text-white" : "bg-teal-100 text-teal-600"
               )}>
                 {item.badge}
               </span>
@@ -120,17 +120,17 @@ const HospitalSidebar = () => {
       <div className="flex items-center justify-between p-4 border-b border-slate-200">
         {!collapsed && (
           <div className="flex items-center gap-2">
-            <div className="w-9 h-9 bg-gradient-to-br from-blue-600 to-cyan-600 rounded-lg flex items-center justify-center shadow-lg shadow-blue-600/20">
+            <div className="w-9 h-9 bg-gradient-to-br from-teal-500 to-teal-600 rounded-lg flex items-center justify-center shadow-lg shadow-teal-500/20">
               <Building2 className="w-5 h-5 text-white" />
             </div>
             <div>
               <h1 className="text-base font-bold text-slate-900">Mediqzy</h1>
-              <p className="text-[10px] text-slate-500 font-medium uppercase tracking-wider">Hospital Portal</p>
+              <p className="text-[10px] text-teal-600 font-medium uppercase tracking-wider">Hospital Portal</p>
             </div>
           </div>
         )}
         {collapsed && (
-          <div className="w-9 h-9 mx-auto bg-gradient-to-br from-blue-600 to-cyan-600 rounded-lg flex items-center justify-center">
+          <div className="w-9 h-9 mx-auto bg-gradient-to-br from-teal-500 to-teal-600 rounded-lg flex items-center justify-center">
             <Building2 className="w-5 h-5 text-white" />
           </div>
         )}

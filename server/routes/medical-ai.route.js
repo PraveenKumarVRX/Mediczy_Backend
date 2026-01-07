@@ -917,20 +917,54 @@ router.post('/book-appointment', authUser, async (req, res) => {
     // Parse time slot
     const [startTime] = timeSlot.split('-');
     
-    // Check for existing appointment
-    const existingAppointment = await Appointment.findOne({
+    // Check if doctor has an appointment at this time (prevent doctor double-booking)
+    const doctorConflict = await Appointment.findOne({
       where: {
         doctorId,
         appointmentDate,
         appointmentTime: startTime,
-        status: ['scheduled', 'confirmed']
+        status: ['scheduled', 'confirmed', 'pending', 'accepted', 'in-progress']
       }
     });
 
-    if (existingAppointment) {
-      return res.status(400).json({
+    if (doctorConflict) {
+      return res.status(409).json({
         success: false,
-        error: 'This time slot is already booked. Please choose another slot.'
+        error: 'This doctor is not available at the selected time. The time slot is already booked by another patient. Please choose another slot.',
+        conflict: 'doctor_busy',
+        aiResponse: `I'm sorry, but Dr. ${doctor.firstName} ${doctor.lastName} is not available at ${timeSlot} on ${new Date(appointmentDate).toLocaleDateString()}. That time slot is already booked by another patient. 😔\n\nWould you like me to show you other available time slots, or would you prefer to see other doctors?`
+      });
+    }
+
+    // Check if patient has an appointment at this time (prevent patient double-booking)
+    const patientConflict = await Appointment.findOne({
+      where: {
+        userId: req.user.id,
+        appointmentDate,
+        appointmentTime: startTime,
+        status: ['scheduled', 'confirmed', 'pending', 'accepted', 'in-progress']
+      }
+    });
+
+    if (patientConflict) {
+      const conflictDoctor = await doctorModel.findByPk(patientConflict.doctorId, {
+        attributes: ['firstName', 'lastName', 'specialization', 'prefix']
+      });
+      const conflictDoctorName = conflictDoctor 
+        ? `${conflictDoctor.prefix || 'Dr.'} ${conflictDoctor.firstName} ${conflictDoctor.lastName}`
+        : 'another doctor';
+
+      return res.status(409).json({
+        success: false,
+        error: `You already have an appointment at ${timeSlot} on ${new Date(appointmentDate).toLocaleDateString()}. You cannot book multiple appointments at the same time.`,
+        conflict: 'patient_busy',
+        existingAppointment: {
+          id: patientConflict.id,
+          doctorName: conflictDoctorName,
+          timeSlot: timeSlot,
+          date: appointmentDate
+        },
+        aiResponse: `I noticed you already have an appointment scheduled at ${timeSlot} on ${new Date(appointmentDate).toLocaleDateString()} with ${conflictDoctorName}. 📅\n\nYou can only have one appointment at a time. Would you like to:\n\n1️⃣ Choose a different time slot\n2️⃣ Cancel your existing appointment first\n3️⃣ See your current appointments\n\nWhat would you prefer?`
       });
     }
 

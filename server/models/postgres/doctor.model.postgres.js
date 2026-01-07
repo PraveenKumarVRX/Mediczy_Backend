@@ -200,6 +200,32 @@ const Doctor = sequelize.define('Doctor', {
     comment: 'Duration of each appointment slot in minutes'
   },
   
+  // Weekly Availability as JSONB (new format for appointment booking)
+  weeklyAvailability: {
+    type: DataTypes.JSONB,
+    defaultValue: {
+      monday: { isAvailable: true, slots: [{ startTime: '09:00', endTime: '17:00', consultationType: 'both' }] },
+      tuesday: { isAvailable: true, slots: [{ startTime: '09:00', endTime: '17:00', consultationType: 'both' }] },
+      wednesday: { isAvailable: true, slots: [{ startTime: '09:00', endTime: '17:00', consultationType: 'both' }] },
+      thursday: { isAvailable: true, slots: [{ startTime: '09:00', endTime: '17:00', consultationType: 'both' }] },
+      friday: { isAvailable: true, slots: [{ startTime: '09:00', endTime: '17:00', consultationType: 'both' }] },
+      saturday: { isAvailable: false, slots: [] },
+      sunday: { isAvailable: false, slots: [] }
+    },
+    comment: 'Weekly availability schedule with time slots for appointment booking'
+  },
+  
+  // Consultation Types and Fees as JSONB
+  consultationTypes: {
+    type: DataTypes.JSONB,
+    defaultValue: {
+      online: { available: true, fee: 500 },
+      walkIn: { available: true, fee: 600 },
+      homeVisit: { available: false, fee: 1000 }
+    },
+    comment: 'Consultation types offered and their respective fees'
+  },
+  
   // Practice Locations as JSONB Array
   practiceLocations: {
     type: DataTypes.JSONB,

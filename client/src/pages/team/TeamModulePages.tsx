@@ -28,6 +28,18 @@ interface ModuleConfig {
 }
 
 const ModuleShell = ({ title, description, metrics, initiatives, primaryAction, primaryActionHref }: ModuleConfig) => {
+  const handlePrimaryAction = () => {
+    if (title === "User Management") {
+      // Navigate to admin users page
+      window.location.href = '/admin/users';
+    } else if (title === "Doctor Network") {
+      // Navigate to admin doctors page
+      window.location.href = '/admin/doctors';
+    } else if (primaryActionHref) {
+      window.location.href = primaryActionHref;
+    }
+  };
+
   return (
     <MainLayout>
       <div className="max-w-6xl mx-auto space-y-6 animate-in fade-in">
@@ -45,7 +57,7 @@ const ModuleShell = ({ title, description, metrics, initiatives, primaryAction, 
                     <Link to={primaryActionHref}>{primaryAction}</Link>
                   </Button>
                 ) : (
-                  <Button>{primaryAction}</Button>
+                  <Button onClick={handlePrimaryAction}>{primaryAction}</Button>
                 )}
               </div>
             )}

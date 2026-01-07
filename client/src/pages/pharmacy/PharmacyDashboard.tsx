@@ -147,7 +147,10 @@ const PharmacyDashboard = () => {
               Manage your pharmacy operations efficiently
             </p>
           </div>
-          <Button className="bg-teal-600 hover:bg-teal-700">
+          <Button 
+            className="bg-teal-600 hover:bg-teal-700"
+            onClick={() => navigate('/pharmacy/pos')}
+          >
             <ShoppingCart className="mr-2 h-4 w-4" />
             New Sale
           </Button>
@@ -336,7 +339,12 @@ const PharmacyDashboard = () => {
           <h2 className="text-2xl font-bold">Point of Sale</h2>
           <p className="text-muted-foreground">Quick billing and sales</p>
         </div>
-        <Button className="gap-2">
+        <Button 
+          className="gap-2"
+          onClick={() => {
+            alert('New Sale functionality coming soon! This will open a new sales transaction.');
+          }}
+        >
           <ShoppingCart className="h-4 w-4" />
           New Sale
         </Button>
@@ -590,7 +598,12 @@ const PharmacyDashboard = () => {
     <div className="space-y-6 p-8">
       <div className="flex justify-between items-center">
         <h2 className="text-2xl font-bold">Batch Management</h2>
-        <Button className="gap-2">
+        <Button 
+          className="gap-2"
+          onClick={() => {
+            alert('Add Batch functionality coming soon! This will open a form to add a new medicine batch.');
+          }}
+        >
           <Plus className="h-4 w-4" />
           Add Batch
         </Button>
@@ -736,7 +749,12 @@ const PharmacyDashboard = () => {
     <div className="space-y-6 p-8">
       <div className="flex justify-between items-center">
         <h2 className="text-2xl font-bold">Invoices</h2>
-        <Button className="gap-2">
+        <Button 
+          className="gap-2"
+          onClick={() => {
+            alert('Create Invoice functionality coming soon! This will open a form to create a new invoice.');
+          }}
+        >
           <Plus className="h-4 w-4" />
           New Invoice
         </Button>
@@ -756,7 +774,33 @@ const PharmacyDashboard = () => {
                 </div>
                 <div className="flex gap-2">
                   <Badge>{['Paid', 'Pending', 'Overdue'][i % 3]}</Badge>
-                  <Button variant="outline" size="sm"><Download className="h-4 w-4" /></Button>
+                  <Button 
+                    variant="outline" 
+                    size="sm"
+                    onClick={() => {
+                      alert(`Viewing invoice #${3000 + i} details...`);
+                    }}
+                  >
+                    <Eye className="h-4 w-4" />
+                  </Button>
+                  <Button 
+                    variant="outline" 
+                    size="sm"
+                    onClick={() => {
+                      alert(`Editing invoice #${3000 + i}...`);
+                    }}
+                  >
+                    <Edit className="h-4 w-4" />
+                  </Button>
+                  <Button 
+                    variant="outline" 
+                    size="sm"
+                    onClick={() => {
+                      alert(`Downloading invoice #${3000 + i} as PDF...`);
+                    }}
+                  >
+                    <Download className="h-4 w-4" />
+                  </Button>
                 </div>
               </div>
             ))}

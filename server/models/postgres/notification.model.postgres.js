@@ -24,15 +24,24 @@ const Notification = postgresSequelize.define('Notification', {
     allowNull: false,
     comment: 'Recipient user ID'
   },
+  userType: {
+    type: DataTypes.STRING(20),
+    allowNull: true,
+    defaultValue: 'patient',
+    comment: 'User type: patient, doctor, admin'
+  },
   type: {
     type: DataTypes.STRING(50),
     allowNull: false,
     validate: {
       isIn: [[
-        'appointment', 'prescription', 'payment', 'reminder',
+        'appointment', 'appointment_request', 'appointment_booked', 
+        'appointment_accepted', 'appointment_rejected', 'appointment_cancelled',
+        'prescription', 'payment', 'payment_received', 'reminder',
         'message', 'alert', 'promotion', 'system', 'verification',
         'booking_confirmed', 'booking_cancelled', 'doctor_message',
-        'lab_report', 'medicine_reminder', 'health_tip'
+        'lab_report', 'medicine_reminder', 'health_tip',
+        'consultation_started', 'consultation_ended', 'prescription_ready'
       ]]
     }
   },
@@ -134,6 +143,9 @@ const Notification = postgresSequelize.define('Notification', {
   indexes: [
     {
       fields: ['userId']
+    },
+    {
+      fields: ['userId', 'userType']
     },
     {
       fields: ['type']

@@ -16,6 +16,7 @@ import { ScrollArea } from '@/components/ui/scroll-area';
 import { Checkbox } from '@/components/ui/checkbox';
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
 import { Separator } from '@/components/ui/separator';
+import HospitalLayout from '@/components/hospital/HospitalLayout';
 import { 
   FileHeart, Activity, Bell, Plus, Search, ArrowLeft, Edit, 
   Trash2, Eye, CheckCircle, XCircle, AlertCircle, RefreshCw,
@@ -328,7 +329,7 @@ const HospitalEHR = () => {
     switch (flag) {
       case 'Critical': return 'bg-red-600 text-white';
       case 'High': return 'bg-orange-100 text-orange-800';
-      case 'Low': return 'bg-blue-100 text-blue-800';
+      case 'Low': return 'bg-teal-100 text-teal-800';
       default: return 'bg-green-100 text-green-800';
     }
   };
@@ -372,47 +373,11 @@ const HospitalEHR = () => {
   const patient = selectedPatient;
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-orange-50 via-white to-amber-50">
-      {/* Header */}
-      <header className="bg-white border-b shadow-sm sticky top-0 z-50">
-        <div className="container mx-auto px-6 py-4">
-          <div className="flex items-center justify-between">
-            <div className="flex items-center gap-4">
-              <Button variant="ghost" size="icon" onClick={() => navigate('/hospital/dashboard')}>
-                <ArrowLeft className="h-5 w-5" />
-              </Button>
-              <div className="bg-gradient-to-br from-orange-500 to-amber-600 p-3 rounded-xl">
-                <FileHeart className="h-6 w-6 text-white" />
-              </div>
-              <div>
-                <h1 className="text-2xl font-bold bg-gradient-to-r from-orange-600 to-amber-600 bg-clip-text text-transparent">
-                  Electronic Health Records
-                </h1>
-                <p className="text-sm text-muted-foreground">Patient Charts & Clinical Documentation</p>
-              </div>
-            </div>
-            <div className="flex items-center gap-3">
-              <div className="relative">
-                <Search className="h-4 w-4 absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground" />
-                <Input 
-                  placeholder="Search patient by UHID or name..." 
-                  className="pl-9 w-72"
-                  value={searchQuery}
-                  onChange={(e) => setSearchQuery(e.target.value)}
-                />
-              </div>
-              <Button variant="outline" size="icon" className="relative">
-                <Bell className="h-5 w-5" />
-              </Button>
-            </div>
-          </div>
-        </div>
-      </header>
-
+    <HospitalLayout title="Electronic Health Records" subtitle="Patient Charts & Clinical Documentation">
       {patient && (
-        <div className="container mx-auto px-6 py-6">
+        <div className="space-y-6">
           {/* Patient Banner */}
-          <Card className="mb-6 bg-gradient-to-r from-orange-50 to-amber-50 border-orange-200">
+          <Card className="bg-gradient-to-r from-orange-50 to-amber-50 border-orange-200">
             <CardContent className="p-6">
               <div className="flex items-center justify-between">
                 <div className="flex items-center gap-6">
@@ -482,7 +447,7 @@ const HospitalEHR = () => {
                   <p className="text-xs text-muted-foreground">Temp</p>
                 </div>
                 <div className="text-center p-3 bg-white rounded-lg shadow-sm">
-                  <Zap className="h-5 w-5 mx-auto mb-1 text-blue-500" />
+                  <Zap className="h-5 w-5 mx-auto mb-1 text-teal-500" />
                   <p className="text-lg font-bold">{patient.vitals[0]?.oxygenSaturation}%</p>
                   <p className="text-xs text-muted-foreground">SpO2</p>
                 </div>
@@ -556,14 +521,14 @@ const HospitalEHR = () => {
                 <Card>
                   <CardHeader>
                     <CardTitle className="flex items-center gap-2">
-                      <Pill className="h-5 w-5 text-blue-500" />
+                      <Pill className="h-5 w-5 text-teal-500" />
                       Current Medications
                     </CardTitle>
                   </CardHeader>
                   <CardContent>
                     <div className="space-y-2">
                       {patient.currentMedications.slice(0, 5).map((med, idx) => (
-                        <div key={idx} className="p-2 bg-blue-50 rounded">
+                        <div key={idx} className="p-2 bg-teal-50 rounded">
                           <p className="font-medium">{med.name} {med.dosage}</p>
                           <p className="text-sm text-muted-foreground">{med.frequency}</p>
                         </div>
@@ -904,7 +869,7 @@ const HospitalEHR = () => {
                             {encounter.department} • {encounter.doctor} • {encounter.date}
                           </CardDescription>
                         </div>
-                        <Badge className={encounter.status === 'Completed' ? 'bg-green-100 text-green-800' : 'bg-blue-100 text-blue-800'}>
+                        <Badge className={encounter.status === 'Completed' ? 'bg-green-100 text-green-800' : 'bg-teal-100 text-teal-800'}>
                           {encounter.status}
                         </Badge>
                       </div>
@@ -1341,7 +1306,7 @@ const HospitalEHR = () => {
                         <p>{encounter.treatmentPlan}</p>
                       </div>
                       {encounter.followUp && (
-                        <div className="p-3 bg-blue-50 rounded-lg">
+                        <div className="p-3 bg-teal-50 rounded-lg">
                           <p className="text-sm font-medium">Follow-up: {encounter.followUp}</p>
                         </div>
                       )}
@@ -1733,7 +1698,7 @@ const HospitalEHR = () => {
           </DialogFooter>
         </DialogContent>
       </Dialog>
-    </div>
+    </HospitalLayout>
   );
 };
 

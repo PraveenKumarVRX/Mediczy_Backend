@@ -14,7 +14,9 @@ const router = express.Router();
 router.get('/', authUser, async (req, res) => {
   try {
     const userId = req.user.id || req.user.dataValues?.id;
-    const userType = req.user.role === 'doctor' ? 'doctor' : 'patient';
+    // Map role to userType: 'user' and 'patient' both map to 'patient'
+    const userType = req.user.role === 'doctor' ? 'doctor' : 
+                     req.user.role === 'admin' ? 'admin' : 'patient';
     const { page = 1, limit = 20, unreadOnly, type } = req.query;
 
     const result = await notificationService.getNotifications(userId, userType, {
@@ -46,7 +48,9 @@ router.get('/', authUser, async (req, res) => {
 router.get('/unread-count', authUser, async (req, res) => {
   try {
     const userId = req.user.id || req.user.dataValues?.id;
-    const userType = req.user.role === 'doctor' ? 'doctor' : 'patient';
+    // Map role to userType: 'user' and 'patient' both map to 'patient'
+    const userType = req.user.role === 'doctor' ? 'doctor' : 
+                     req.user.role === 'admin' ? 'admin' : 'patient';
 
     const count = await notificationService.getUnreadCount(userId, userType);
 
@@ -102,7 +106,9 @@ router.post('/:id/read', authUser, [
 router.post('/read-all', authUser, async (req, res) => {
   try {
     const userId = req.user.id || req.user.dataValues?.id;
-    const userType = req.user.role === 'doctor' ? 'doctor' : 'patient';
+    // Map role to userType: 'user' and 'patient' both map to 'patient'
+    const userType = req.user.role === 'doctor' ? 'doctor' : 
+                     req.user.role === 'admin' ? 'admin' : 'patient';
 
     const result = await notificationService.markAllAsRead(userId, userType);
 
@@ -172,7 +178,9 @@ router.post('/fcm/register', authUser, [
     }
 
     const userId = req.user.id || req.user.dataValues?.id;
-    const userType = req.user.role === 'doctor' ? 'doctor' : 'patient';
+    // Map role to userType: 'user' and 'patient' both map to 'patient'
+    const userType = req.user.role === 'doctor' ? 'doctor' : 
+                     req.user.role === 'admin' ? 'admin' : 'patient';
     const { token, deviceType = 'web' } = req.body;
 
     const result = await notificationService.registerFCMToken(userId, userType, token, deviceType);
@@ -198,7 +206,9 @@ router.post('/fcm/register', authUser, [
 router.post('/test', authUser, async (req, res) => {
   try {
     const userId = req.user.id || req.user.dataValues?.id;
-    const userType = req.user.role === 'doctor' ? 'doctor' : 'patient';
+    // Map role to userType: 'user' and 'patient' both map to 'patient'
+    const userType = req.user.role === 'doctor' ? 'doctor' : 
+                     req.user.role === 'admin' ? 'admin' : 'patient';
     const { type = 'general', title, message } = req.body;
 
     const result = await notificationService.send({

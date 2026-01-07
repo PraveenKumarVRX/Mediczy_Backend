@@ -3,11 +3,13 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/com
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { Switch } from '@/components/ui/switch';
-import { Watch, Activity, Smartphone, Bluetooth, CheckCircle, XCircle, RefreshCw, Plus, Settings, Heart, Footprints, Moon, Zap, ShieldCheck, Droplets, Thermometer, Clock, Timer } from 'lucide-react';
+import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
+import { Watch, Activity, Smartphone, Bluetooth, CheckCircle, XCircle, RefreshCw, Plus, Settings, Heart, Footprints, Moon, Zap, ShieldCheck, Droplets, Thermometer, Clock, Timer, TrendingUp, ChevronRight } from 'lucide-react';
 import { Link, useSearchParams } from 'react-router-dom';
 import { toast } from 'sonner';
 import api from '@/utils/api';
 import { healthSyncScheduler, SyncStatus } from '@/services/health/HealthSyncScheduler';
+import HealthTrendCard, { healthMetricConfigs } from '@/components/health/HealthTrendCard';
 
 interface Device {
   id: string;
@@ -58,6 +60,8 @@ const DeviceIntegration: React.FC = () => {
   const [syncStatus, setSyncStatus] = useState<SyncStatus | null>(null);
   const [autoSyncEnabled, setAutoSyncEnabled] = useState(false);
   const [syncing, setSyncing] = useState(false);
+  const [selectedMetric, setSelectedMetric] = useState<string | null>(null);
+  const [showTrendDialog, setShowTrendDialog] = useState(false);
 
   // Load devices and health data on mount
   useEffect(() => {
@@ -297,21 +301,40 @@ const DeviceIntegration: React.FC = () => {
     );
   };
 
-  const handleSync = (deviceId: string) => {
+  const handleSync = async (deviceId: string) => {
     setDevices(devices.map(device => 
       device.id === deviceId 
         ? { ...device, status: 'syncing' as const }
         : device
     ));
 
-    setTimeout(() => {
+    try {
+      // Trigger actual health data sync
+      console.log('🔄 Syncing device:', deviceId);
+      await healthSyncScheduler.triggerDeviceMeasurements();
+      const success = await healthSyncScheduler.performSync();
+      
       setDevices(prev => prev.map(device => 
         device.id === deviceId 
           ? { ...device, status: 'connected' as const, lastSync: new Date() }
           : device
       ));
-      toast.success('Device synced successfully!');
-    }, 2000);
+      
+      if (success) {
+        toast.success('Device synced successfully! Real health data updated.');
+        loadHealthStats(); // Reload health stats after sync
+      } else {
+        toast.warning('No new data available. Please ensure device is connected via Bluetooth.');
+      }
+    } catch (error) {
+      console.error('Sync error:', error);
+      setDevices(prev => prev.map(device => 
+        device.id === deviceId 
+          ? { ...device, status: 'connected' as const }
+          : device
+      ));
+      toast.error('Sync failed. Please try again.');
+    }
   };
 
   const handleConnect = (deviceId: string) => {
@@ -415,84 +438,114 @@ const DeviceIntegration: React.FC = () => {
           </CardContent>
         </Card>
 
-        <Card className="bg-white dark:bg-slate-800/50 border-slate-200/80 dark:border-slate-700/50">
+        <Card 
+          className="bg-white dark:bg-slate-800/50 border-slate-200/80 dark:border-slate-700/50 cursor-pointer hover:shadow-md hover:border-red-300 dark:hover:border-red-700 transition-all"
+          onClick={() => { setSelectedMetric('heart_rate'); setShowTrendDialog(true); }}
+        >
           <CardContent className="p-4">
-            <div className="flex items-center gap-3">
-              <div className="p-2 rounded-lg bg-red-100 dark:bg-red-900/30">
-                <Heart className="w-5 h-5 text-red-600 dark:text-red-400" />
+            <div className="flex items-center justify-between">
+              <div className="flex items-center gap-3">
+                <div className="p-2 rounded-lg bg-red-100 dark:bg-red-900/30">
+                  <Heart className="w-5 h-5 text-red-600 dark:text-red-400" />
+                </div>
+                <div>
+                  <p className="text-xs text-slate-500 dark:text-slate-400">Heart Rate</p>
+                  <p className="text-lg font-bold text-slate-800 dark:text-white">
+                    {loadingStats ? '...' : healthStats.heartRate ? `${healthStats.heartRate} bpm` : '-- bpm'}
+                  </p>
+                </div>
               </div>
-              <div>
-                <p className="text-xs text-slate-500 dark:text-slate-400">Heart Rate</p>
-                <p className="text-lg font-bold text-slate-800 dark:text-white">
-                  {loadingStats ? '...' : healthStats.heartRate ? `${healthStats.heartRate} bpm` : '-- bpm'}
-                </p>
-              </div>
+              <TrendingUp className="w-4 h-4 text-slate-400" />
             </div>
           </CardContent>
         </Card>
 
-        <Card className="bg-white dark:bg-slate-800/50 border-slate-200/80 dark:border-slate-700/50">
+        <Card 
+          className="bg-white dark:bg-slate-800/50 border-slate-200/80 dark:border-slate-700/50 cursor-pointer hover:shadow-md hover:border-blue-300 dark:hover:border-blue-700 transition-all"
+          onClick={() => { setSelectedMetric('steps'); setShowTrendDialog(true); }}
+        >
           <CardContent className="p-4">
-            <div className="flex items-center gap-3">
-              <div className="p-2 rounded-lg bg-blue-100 dark:bg-blue-900/30">
-                <Footprints className="w-5 h-5 text-blue-600 dark:text-blue-400" />
+            <div className="flex items-center justify-between">
+              <div className="flex items-center gap-3">
+                <div className="p-2 rounded-lg bg-blue-100 dark:bg-blue-900/30">
+                  <Footprints className="w-5 h-5 text-blue-600 dark:text-blue-400" />
+                </div>
+                <div>
+                  <p className="text-xs text-slate-500 dark:text-slate-400">Steps Today</p>
+                  <p className="text-lg font-bold text-slate-800 dark:text-white">
+                    {loadingStats ? '...' : healthStats.steps ? healthStats.steps.toLocaleString() : '--'}
+                  </p>
+                </div>
               </div>
-              <div>
-                <p className="text-xs text-slate-500 dark:text-slate-400">Steps Today</p>
-                <p className="text-lg font-bold text-slate-800 dark:text-white">
-                  {loadingStats ? '...' : healthStats.steps ? healthStats.steps.toLocaleString() : '--'}
-                </p>
-              </div>
+              <TrendingUp className="w-4 h-4 text-slate-400" />
             </div>
           </CardContent>
         </Card>
 
-        <Card className="bg-white dark:bg-slate-800/50 border-slate-200/80 dark:border-slate-700/50">
+        <Card 
+          className="bg-white dark:bg-slate-800/50 border-slate-200/80 dark:border-slate-700/50 cursor-pointer hover:shadow-md hover:border-purple-300 dark:hover:border-purple-700 transition-all"
+          onClick={() => { setSelectedMetric('sleep'); setShowTrendDialog(true); }}
+        >
           <CardContent className="p-4">
-            <div className="flex items-center gap-3">
-              <div className="p-2 rounded-lg bg-purple-100 dark:bg-purple-900/30">
-                <Moon className="w-5 h-5 text-purple-600 dark:text-purple-400" />
+            <div className="flex items-center justify-between">
+              <div className="flex items-center gap-3">
+                <div className="p-2 rounded-lg bg-purple-100 dark:bg-purple-900/30">
+                  <Moon className="w-5 h-5 text-purple-600 dark:text-purple-400" />
+                </div>
+                <div>
+                  <p className="text-xs text-slate-500 dark:text-slate-400">Sleep Score</p>
+                  <p className="text-lg font-bold text-slate-800 dark:text-white">
+                    {loadingStats ? '...' : healthStats.sleepScore ? `${healthStats.sleepScore}%` : '--%'}
+                  </p>
+                </div>
               </div>
-              <div>
-                <p className="text-xs text-slate-500 dark:text-slate-400">Sleep Score</p>
-                <p className="text-lg font-bold text-slate-800 dark:text-white">
-                  {loadingStats ? '...' : healthStats.sleepScore ? `${healthStats.sleepScore}%` : '--%'}
-                </p>
-              </div>
+              <TrendingUp className="w-4 h-4 text-slate-400" />
             </div>
           </CardContent>
         </Card>
 
-        <Card className="bg-white dark:bg-slate-800/50 border-slate-200/80 dark:border-slate-700/50">
+        <Card 
+          className="bg-white dark:bg-slate-800/50 border-slate-200/80 dark:border-slate-700/50 cursor-pointer hover:shadow-md hover:border-pink-300 dark:hover:border-pink-700 transition-all"
+          onClick={() => { setSelectedMetric('blood_pressure_systolic'); setShowTrendDialog(true); }}
+        >
           <CardContent className="p-4">
-            <div className="flex items-center gap-3">
-              <div className="p-2 rounded-lg bg-pink-100 dark:bg-pink-900/30">
-                <Activity className="w-5 h-5 text-pink-600 dark:text-pink-400" />
+            <div className="flex items-center justify-between">
+              <div className="flex items-center gap-3">
+                <div className="p-2 rounded-lg bg-pink-100 dark:bg-pink-900/30">
+                  <Activity className="w-5 h-5 text-pink-600 dark:text-pink-400" />
+                </div>
+                <div>
+                  <p className="text-xs text-slate-500 dark:text-slate-400">Blood Pressure</p>
+                  <p className="text-lg font-bold text-slate-800 dark:text-white">
+                    {loadingStats ? '...' : healthStats.bloodPressure 
+                      ? `${healthStats.bloodPressure.systolic}/${healthStats.bloodPressure.diastolic}` 
+                      : '--/--'}
+                  </p>
+                </div>
               </div>
-              <div>
-                <p className="text-xs text-slate-500 dark:text-slate-400">Blood Pressure</p>
-                <p className="text-lg font-bold text-slate-800 dark:text-white">
-                  {loadingStats ? '...' : healthStats.bloodPressure 
-                    ? `${healthStats.bloodPressure.systolic}/${healthStats.bloodPressure.diastolic}` 
-                    : '--/--'}
-                </p>
-              </div>
+              <TrendingUp className="w-4 h-4 text-slate-400" />
             </div>
           </CardContent>
         </Card>
 
-        <Card className="bg-white dark:bg-slate-800/50 border-slate-200/80 dark:border-slate-700/50">
+        <Card 
+          className="bg-white dark:bg-slate-800/50 border-slate-200/80 dark:border-slate-700/50 cursor-pointer hover:shadow-md hover:border-cyan-300 dark:hover:border-cyan-700 transition-all"
+          onClick={() => { setSelectedMetric('spo2'); setShowTrendDialog(true); }}
+        >
           <CardContent className="p-4">
-            <div className="flex items-center gap-3">
-              <div className="p-2 rounded-lg bg-cyan-100 dark:bg-cyan-900/30">
-                <Droplets className="w-5 h-5 text-cyan-600 dark:text-cyan-400" />
+            <div className="flex items-center justify-between">
+              <div className="flex items-center gap-3">
+                <div className="p-2 rounded-lg bg-cyan-100 dark:bg-cyan-900/30">
+                  <Droplets className="w-5 h-5 text-cyan-600 dark:text-cyan-400" />
+                </div>
+                <div>
+                  <p className="text-xs text-slate-500 dark:text-slate-400">SpO2</p>
+                  <p className="text-lg font-bold text-slate-800 dark:text-white">
+                    {loadingStats ? '...' : healthStats.spo2 ? `${healthStats.spo2}%` : '--%'}
+                  </p>
+                </div>
               </div>
-              <div>
-                <p className="text-xs text-slate-500 dark:text-slate-400">SpO2</p>
-                <p className="text-lg font-bold text-slate-800 dark:text-white">
-                  {loadingStats ? '...' : healthStats.spo2 ? `${healthStats.spo2}%` : '--%'}
-                </p>
-              </div>
+              <TrendingUp className="w-4 h-4 text-slate-400" />
             </div>
           </CardContent>
         </Card>
@@ -500,70 +553,121 @@ const DeviceIntegration: React.FC = () => {
 
       {/* Additional Health Metrics */}
       <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-        <Card className="bg-white dark:bg-slate-800/50 border-slate-200/80 dark:border-slate-700/50">
+        <Card 
+          className="bg-white dark:bg-slate-800/50 border-slate-200/80 dark:border-slate-700/50 cursor-pointer hover:shadow-md hover:border-orange-300 dark:hover:border-orange-700 transition-all"
+          onClick={() => { setSelectedMetric('blood_glucose'); setShowTrendDialog(true); }}
+        >
           <CardContent className="p-4">
-            <div className="flex items-center gap-3">
-              <div className="p-2 rounded-lg bg-orange-100 dark:bg-orange-900/30">
-                <Zap className="w-5 h-5 text-orange-600 dark:text-orange-400" />
+            <div className="flex items-center justify-between">
+              <div className="flex items-center gap-3">
+                <div className="p-2 rounded-lg bg-orange-100 dark:bg-orange-900/30">
+                  <Zap className="w-5 h-5 text-orange-600 dark:text-orange-400" />
+                </div>
+                <div>
+                  <p className="text-xs text-slate-500 dark:text-slate-400">Blood Sugar</p>
+                  <p className="text-lg font-bold text-slate-800 dark:text-white">
+                    {loadingStats ? '...' : healthStats.bloodGlucose ? `${healthStats.bloodGlucose} mg/dL` : '-- mg/dL'}
+                  </p>
+                </div>
               </div>
-              <div>
-                <p className="text-xs text-slate-500 dark:text-slate-400">Blood Sugar</p>
-                <p className="text-lg font-bold text-slate-800 dark:text-white">
-                  {loadingStats ? '...' : healthStats.bloodGlucose ? `${healthStats.bloodGlucose} mg/dL` : '-- mg/dL'}
-                </p>
-              </div>
+              <TrendingUp className="w-4 h-4 text-slate-400" />
             </div>
           </CardContent>
         </Card>
 
-        <Card className="bg-white dark:bg-slate-800/50 border-slate-200/80 dark:border-slate-700/50">
+        <Card 
+          className="bg-white dark:bg-slate-800/50 border-slate-200/80 dark:border-slate-700/50 cursor-pointer hover:shadow-md hover:border-indigo-300 dark:hover:border-indigo-700 transition-all"
+          onClick={() => { setSelectedMetric('hrv'); setShowTrendDialog(true); }}
+        >
           <CardContent className="p-4">
-            <div className="flex items-center gap-3">
-              <div className="p-2 rounded-lg bg-indigo-100 dark:bg-indigo-900/30">
-                <Activity className="w-5 h-5 text-indigo-600 dark:text-indigo-400" />
+            <div className="flex items-center justify-between">
+              <div className="flex items-center gap-3">
+                <div className="p-2 rounded-lg bg-indigo-100 dark:bg-indigo-900/30">
+                  <Activity className="w-5 h-5 text-indigo-600 dark:text-indigo-400" />
+                </div>
+                <div>
+                  <p className="text-xs text-slate-500 dark:text-slate-400">HRV</p>
+                  <p className="text-lg font-bold text-slate-800 dark:text-white">
+                    {loadingStats ? '...' : healthStats.hrv ? `${healthStats.hrv} ms` : '-- ms'}
+                  </p>
+                </div>
               </div>
-              <div>
-                <p className="text-xs text-slate-500 dark:text-slate-400">HRV</p>
-                <p className="text-lg font-bold text-slate-800 dark:text-white">
-                  {loadingStats ? '...' : healthStats.hrv ? `${healthStats.hrv} ms` : '-- ms'}
-                </p>
-              </div>
+              <TrendingUp className="w-4 h-4 text-slate-400" />
             </div>
           </CardContent>
         </Card>
 
-        <Card className="bg-white dark:bg-slate-800/50 border-slate-200/80 dark:border-slate-700/50">
+        <Card 
+          className="bg-white dark:bg-slate-800/50 border-slate-200/80 dark:border-slate-700/50 cursor-pointer hover:shadow-md hover:border-amber-300 dark:hover:border-amber-700 transition-all"
+          onClick={() => { setSelectedMetric('uric_acid'); setShowTrendDialog(true); }}
+        >
           <CardContent className="p-4">
-            <div className="flex items-center gap-3">
-              <div className="p-2 rounded-lg bg-amber-100 dark:bg-amber-900/30">
-                <Droplets className="w-5 h-5 text-amber-600 dark:text-amber-400" />
+            <div className="flex items-center justify-between">
+              <div className="flex items-center gap-3">
+                <div className="p-2 rounded-lg bg-amber-100 dark:bg-amber-900/30">
+                  <Droplets className="w-5 h-5 text-amber-600 dark:text-amber-400" />
+                </div>
+                <div>
+                  <p className="text-xs text-slate-500 dark:text-slate-400">Uric Acid</p>
+                  <p className="text-lg font-bold text-slate-800 dark:text-white">
+                    {loadingStats ? '...' : healthStats.uricAcid ? `${healthStats.uricAcid} mg/dL` : '-- mg/dL'}
+                  </p>
+                </div>
               </div>
-              <div>
-                <p className="text-xs text-slate-500 dark:text-slate-400">Uric Acid</p>
-                <p className="text-lg font-bold text-slate-800 dark:text-white">
-                  {loadingStats ? '...' : healthStats.uricAcid ? `${healthStats.uricAcid} mg/dL` : '-- mg/dL'}
-                </p>
-              </div>
+              <TrendingUp className="w-4 h-4 text-slate-400" />
             </div>
           </CardContent>
         </Card>
 
-        <Card className="bg-white dark:bg-slate-800/50 border-slate-200/80 dark:border-slate-700/50">
+        <Card 
+          className="bg-white dark:bg-slate-800/50 border-slate-200/80 dark:border-slate-700/50 cursor-pointer hover:shadow-md hover:border-rose-300 dark:hover:border-rose-700 transition-all"
+          onClick={() => { setSelectedMetric('total_cholesterol'); setShowTrendDialog(true); }}
+        >
           <CardContent className="p-4">
-            <div className="flex items-center gap-3">
-              <div className="p-2 rounded-lg bg-rose-100 dark:bg-rose-900/30">
-                <Heart className="w-5 h-5 text-rose-600 dark:text-rose-400" />
+            <div className="flex items-center justify-between">
+              <div className="flex items-center gap-3">
+                <div className="p-2 rounded-lg bg-rose-100 dark:bg-rose-900/30">
+                  <Heart className="w-5 h-5 text-rose-600 dark:text-rose-400" />
+                </div>
+                <div>
+                  <p className="text-xs text-slate-500 dark:text-slate-400">Total Cholesterol</p>
+                  <p className="text-lg font-bold text-slate-800 dark:text-white">
+                    {loadingStats ? '...' : healthStats.totalCholesterol ? `${healthStats.totalCholesterol} mg/dL` : '-- mg/dL'}
+                  </p>
+                </div>
               </div>
-              <div>
-                <p className="text-xs text-slate-500 dark:text-slate-400">Total Cholesterol</p>
-                <p className="text-lg font-bold text-slate-800 dark:text-white">
-                  {loadingStats ? '...' : healthStats.totalCholesterol ? `${healthStats.totalCholesterol} mg/dL` : '-- mg/dL'}
-                </p>
-              </div>
+              <TrendingUp className="w-4 h-4 text-slate-400" />
             </div>
           </CardContent>
         </Card>
       </div>
+
+      {/* Trend Analytics Dialog */}
+      <Dialog open={showTrendDialog} onOpenChange={setShowTrendDialog}>
+        <DialogContent className="max-w-2xl">
+          {selectedMetric && healthMetricConfigs[selectedMetric as keyof typeof healthMetricConfigs] && (
+            <HealthTrendCard
+              dataType={selectedMetric}
+              title={healthMetricConfigs[selectedMetric as keyof typeof healthMetricConfigs].title}
+              currentValue={
+                selectedMetric === 'heart_rate' ? healthStats.heartRate :
+                selectedMetric === 'steps' ? healthStats.steps :
+                selectedMetric === 'sleep' ? healthStats.sleepScore :
+                selectedMetric === 'blood_pressure_systolic' ? healthStats.bloodPressure?.systolic ?? null :
+                selectedMetric === 'spo2' ? healthStats.spo2 :
+                selectedMetric === 'blood_glucose' ? healthStats.bloodGlucose :
+                selectedMetric === 'hrv' ? healthStats.hrv :
+                selectedMetric === 'uric_acid' ? healthStats.uricAcid :
+                selectedMetric === 'total_cholesterol' ? healthStats.totalCholesterol : null
+              }
+              unit={healthMetricConfigs[selectedMetric as keyof typeof healthMetricConfigs].unit}
+              icon={healthMetricConfigs[selectedMetric as keyof typeof healthMetricConfigs].icon}
+              color={healthMetricConfigs[selectedMetric as keyof typeof healthMetricConfigs].color}
+              onClose={() => setShowTrendDialog(false)}
+            />
+          )}
+        </DialogContent>
+      </Dialog>
 
       {/* Auto-Sync Settings & Actions */}
       <Card className="bg-gradient-to-r from-slate-50 to-teal-50/30 dark:from-slate-800/50 dark:to-teal-900/20 border-teal-200/50 dark:border-teal-700/30">
@@ -621,6 +725,91 @@ const DeviceIntegration: React.FC = () => {
               <RefreshCw className={`mr-2 h-4 w-4 ${(loadingStats || syncing) ? 'animate-spin' : ''}`} />
               {syncing ? 'Syncing...' : 'Sync Now'}
             </Button>
+          </div>
+        </CardContent>
+      </Card>
+
+      {/* Activity Log from Google Fit / Apple Health */}
+      <Card className="bg-white dark:bg-slate-800/50 border-slate-200/80 dark:border-slate-700/50">
+        <CardHeader className="pb-2">
+          <div className="flex items-center justify-between">
+            <CardTitle className="text-lg font-semibold text-slate-800 dark:text-white flex items-center gap-2">
+              <Activity className="w-5 h-5 text-green-500" />
+              Activity Log
+            </CardTitle>
+            <Badge variant="secondary" className="bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400">
+              Google Fit / Apple Health
+            </Badge>
+          </div>
+          <CardDescription>Daily activity from your smartphone</CardDescription>
+        </CardHeader>
+        <CardContent>
+          <div className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-6 gap-3">
+            <Card 
+              className="bg-slate-50 dark:bg-slate-900/50 border-0 cursor-pointer hover:shadow-md transition-all"
+              onClick={() => { setSelectedMetric('walking'); setShowTrendDialog(true); }}
+            >
+              <CardContent className="p-3 text-center">
+                <Footprints className="w-6 h-6 mx-auto text-green-500 mb-1" />
+                <p className="text-xs text-slate-500">Walking</p>
+                <p className="text-sm font-bold">View Trends</p>
+              </CardContent>
+            </Card>
+            
+            <Card 
+              className="bg-slate-50 dark:bg-slate-900/50 border-0 cursor-pointer hover:shadow-md transition-all"
+              onClick={() => { setSelectedMetric('running'); setShowTrendDialog(true); }}
+            >
+              <CardContent className="p-3 text-center">
+                <Activity className="w-6 h-6 mx-auto text-red-500 mb-1" />
+                <p className="text-xs text-slate-500">Running</p>
+                <p className="text-sm font-bold">View Trends</p>
+              </CardContent>
+            </Card>
+            
+            <Card 
+              className="bg-slate-50 dark:bg-slate-900/50 border-0 cursor-pointer hover:shadow-md transition-all"
+              onClick={() => { setSelectedMetric('cycling'); setShowTrendDialog(true); }}
+            >
+              <CardContent className="p-3 text-center">
+                <Activity className="w-6 h-6 mx-auto text-blue-500 mb-1" />
+                <p className="text-xs text-slate-500">Cycling</p>
+                <p className="text-sm font-bold">View Trends</p>
+              </CardContent>
+            </Card>
+            
+            <Card 
+              className="bg-slate-50 dark:bg-slate-900/50 border-0 cursor-pointer hover:shadow-md transition-all"
+              onClick={() => { setSelectedMetric('calories'); setShowTrendDialog(true); }}
+            >
+              <CardContent className="p-3 text-center">
+                <Zap className="w-6 h-6 mx-auto text-orange-500 mb-1" />
+                <p className="text-xs text-slate-500">Calories</p>
+                <p className="text-sm font-bold">View Trends</p>
+              </CardContent>
+            </Card>
+            
+            <Card 
+              className="bg-slate-50 dark:bg-slate-900/50 border-0 cursor-pointer hover:shadow-md transition-all"
+              onClick={() => { setSelectedMetric('distance'); setShowTrendDialog(true); }}
+            >
+              <CardContent className="p-3 text-center">
+                <Activity className="w-6 h-6 mx-auto text-teal-500 mb-1" />
+                <p className="text-xs text-slate-500">Distance</p>
+                <p className="text-sm font-bold">View Trends</p>
+              </CardContent>
+            </Card>
+            
+            <Card 
+              className="bg-slate-50 dark:bg-slate-900/50 border-0 cursor-pointer hover:shadow-md transition-all"
+              onClick={() => { setSelectedMetric('active_minutes'); setShowTrendDialog(true); }}
+            >
+              <CardContent className="p-3 text-center">
+                <Timer className="w-6 h-6 mx-auto text-emerald-500 mb-1" />
+                <p className="text-xs text-slate-500">Active Time</p>
+                <p className="text-sm font-bold">View Trends</p>
+              </CardContent>
+            </Card>
           </div>
         </CardContent>
       </Card>

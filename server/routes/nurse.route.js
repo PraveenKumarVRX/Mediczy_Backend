@@ -3,7 +3,7 @@ import { body } from 'express-validator';
 import Nurse from '../models/nurse.model.intelligent.js';
 import jwt from 'jsonwebtoken';
 import bcrypt from 'bcryptjs';
-import MedicationAdministration from '../models/medication.model.intelligent.js';
+import Medication from '../models/medication.model.intelligent.js';
 import PatientNote from '../models/patientNote.model.intelligent.js';
 import VitalsRecord from '../models/vitalsRecord.model.intelligent.js';
 
@@ -316,13 +316,34 @@ router.post('/vitals', authNurse, async (req, res) => {
   try {
     const { patientId, vitals } = req.body;
 
+    // Parse blood pressure if provided as "120/80" format
+    let systolic = null;
+    let diastolic = null;
+    if (vitals?.bp || vitals?.bloodPressure) {
+      const bp = vitals?.bp ?? vitals?.bloodPressure;
+      if (typeof bp === 'string' && bp.includes('/')) {
+        const [sys, dia] = bp.split('/');
+        systolic = parseInt(sys, 10);
+        diastolic = parseInt(dia, 10);
+      } else if (vitals?.bloodPressureSystolic && vitals?.bloodPressureDiastolic) {
+        systolic = vitals.bloodPressureSystolic;
+        diastolic = vitals.bloodPressureDiastolic;
+      }
+    }
+
     const record = await VitalsRecord.create({
-      patientId,
-      nurseId: req.nurse.id,
+      userId: patientId,
+      recordedBy: req.nurse.id,
       temperature: vitals?.temperature ?? null,
-      pulse: vitals?.pulse ?? null,
-      bloodPressure: vitals?.bp ?? vitals?.bloodPressure ?? null,
+      heartRate: vitals?.pulse ?? vitals?.heartRate ?? null,
+      bloodPressureSystolic: systolic,
+      bloodPressureDiastolic: diastolic,
+      oxygenSaturation: vitals?.oxygenSaturation ?? vitals?.spO2 ?? null,
       weight: vitals?.weight ?? null,
+      bloodSugar: vitals?.bloodSugar ?? null,
+      respiratoryRate: vitals?.respiratoryRate ?? null,
+      notes: vitals?.notes ?? null,
+      source: 'nurse',
       recordedAt: new Date()
     });
 
@@ -344,13 +365,14 @@ router.post('/vitals', authNurse, async (req, res) => {
 // Get today's vitals recorded by nurse
 router.get('/vitals/today', authNurse, async (req, res) => {
   try {
+    const { Op } = await import('sequelize');
     const startOfDay = new Date();
     startOfDay.setHours(0, 0, 0, 0);
 
     const records = await VitalsRecord.findAll({
       where: {
-        nurseId: req.nurse.id,
-        recordedAt: { $gte: startOfDay.toISOString() }
+        recordedBy: req.nurse.id,
+        recordedAt: { [Op.gte]: startOfDay.toISOString() }
       },
       order: [['recordedAt', 'DESC']],
       limit: 50
@@ -367,16 +389,20 @@ router.get('/vitals/today', authNurse, async (req, res) => {
 router.post('/medications', authNurse, async (req, res) => {
   try {
     const { patientId, medication, dosage, route, frequency, notes } = req.body;
-    const record = await MedicationAdministration.create({
-      patientId,
-      nurseId: req.nurse.id,
-      medicationName: medication,
+    const record = await Medication.create({
+      name: medication,
       dosage,
-      route,
+      route: route || 'oral',
       frequency,
-      notes,
-      status: 'administered',
-      administeredAt: new Date()
+      instructions: notes,
+      isActive: true,
+      startDate: new Date(),
+      metadata: {
+        administeredBy: req.nurse.id,
+        administeredByRole: 'nurse',
+        patientId,
+        administeredAt: new Date().toISOString()
+      }
     });
     res.status(200).json({ success: true, message: 'Medication saved', data: record });
   } catch (error) {
@@ -389,9 +415,12 @@ router.post('/medications', authNurse, async (req, res) => {
 router.get('/medications/:patientId', authNurse, async (req, res) => {
   try {
     const { patientId } = req.params;
-    const records = await MedicationAdministration.findAll({
-      where: { patientId },
-      order: [['administeredAt', 'DESC']],
+    const { Op } = await import('sequelize');
+    const records = await Medication.findAll({
+      where: {
+        'metadata.patientId': { [Op.eq]: patientId }
+      },
+      order: [['createdAt', 'DESC']],
       limit: 100
     });
     res.status(200).json({ success: true, records });
@@ -439,25 +468,31 @@ router.get('/notes/:patientId', authNurse, async (req, res) => {
 router.get('/activity/recent', authNurse, async (req, res) => {
   try {
     const nurseId = req.nurse.id;
-
+    const { Op } = await import('sequelize');
     const [vitals, meds, notes] = await Promise.all([
-      VitalsRecord.findAll({ where: { nurseId }, order: [['recordedAt', 'DESC']], limit: 20 }),
-      MedicationAdministration.findAll({ where: { nurseId }, order: [['administeredAt', 'DESC']], limit: 20 }),
+      VitalsRecord.findAll({ where: { recordedBy: nurseId }, order: [['recordedAt', 'DESC']], limit: 20 }),
+      Medication.findAll({ 
+        where: { 
+          'metadata.administeredBy': { [Op.eq]: nurseId } 
+        }, 
+        order: [['createdAt', 'DESC']], 
+        limit: 20 
+      }),
       PatientNote.findAll({ where: { nurseId }, order: [['createdAt', 'DESC']], limit: 20 }),
     ]);
 
     const items = [
       ...vitals.map(v => ({
         type: 'Vitals',
-        patientId: v.patientId,
+        patientId: v.userId,
         timestamp: v.recordedAt,
-        summary: `BP ${v.bloodPressure || '-'}, Pulse ${v.pulse || '-'}, Temp ${v.temperature || '-'}°C`,
+        summary: `BP: ${v.bloodPressureSystolic || '?'}/${v.bloodPressureDiastolic || '?'}, HR: ${v.heartRate || 'N/A'}, Temp: ${v.temperature || 'N/A'}`,
       })),
       ...meds.map(m => ({
         type: 'Medication',
-        patientId: m.patientId,
-        timestamp: m.administeredAt,
-        summary: `${m.medicationName} ${m.dosage || ''} ${m.route ? '(' + m.route + ')' : ''}`.trim(),
+        patientId: m.metadata?.patientId,
+        timestamp: m.metadata?.administeredAt || m.createdAt,
+        summary: `${m.name} ${m.dosage || ''} ${m.route ? '(' + m.route + ')' : ''}`.trim(),
       })),
       ...notes.map(n => ({
         type: 'Note',

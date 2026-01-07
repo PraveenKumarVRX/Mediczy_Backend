@@ -35,7 +35,7 @@ interface PlaceholderProps {
   icon: React.ComponentType<any>;
   moduleKey?: keyof typeof MODULE_COLORS;
   stats?: { label: string; value: string | number; trend?: string; icon?: React.ComponentType<any> }[];
-  actions?: { label: string; icon: React.ComponentType<any>; primary?: boolean }[];
+  actions?: { label: string; icon: React.ComponentType<any>; primary?: boolean; onClick?: () => void }[];
   features?: string[];
 }
 
@@ -70,6 +70,7 @@ const AdminPlaceholder = ({ title, description, icon: Icon, moduleKey = 'dashboa
                   "gap-2",
                   action.primary && "bg-gradient-to-r from-blue-500 to-blue-600 hover:from-blue-600 hover:to-blue-700"
                 )}
+                onClick={action.onClick}
               >
                 <action.icon className="h-4 w-4" />
                 {action.label}
@@ -88,7 +89,12 @@ const AdminPlaceholder = ({ title, description, icon: Icon, moduleKey = 'dashboa
             <Filter className="h-4 w-4" />
             Filters
           </Button>
-          <Button variant="outline" size="default" className="gap-2">
+          <Button 
+            variant="outline" 
+            size="default" 
+            className="gap-2"
+            onClick={() => alert('Export functionality coming soon...')}
+          >
             <Download className="h-4 w-4" />
             Export
           </Button>
@@ -248,25 +254,35 @@ export const CorporatesManagementPlaceholder = () => (
   />
 );
 
-export const ReportsPage = () => (
-  <AdminPlaceholder 
-    title="Reports & Analytics" 
-    description="Comprehensive business intelligence and reporting"
-    icon={BarChart3}
-    moduleKey="reports"
-    stats={[
-      { label: 'Reports Generated', value: '156', icon: BarChart3 },
-      { label: 'Scheduled Reports', value: '12', icon: Calendar },
-      { label: 'Custom Dashboards', value: '8', icon: CheckCircle },
-      { label: 'Data Sources', value: '15', icon: Shield },
-    ]}
-    actions={[
-      { label: 'New Report', icon: Plus, primary: true },
-      { label: 'Schedule', icon: Calendar },
-    ]}
-    features={['Custom Dashboards', 'Scheduled Reports', 'Export to Excel/PDF', 'Real-time Analytics']}
-  />
-);
+export const ReportsPage = () => {
+  const handleNewReport = () => {
+    alert('Creating new report... This feature is under development.');
+  };
+
+  const handleSchedule = () => {
+    alert('Scheduling report... This feature is under development.');
+  };
+
+  return (
+    <AdminPlaceholder 
+      title="Reports & Analytics" 
+      description="Comprehensive business intelligence and reporting"
+      icon={BarChart3}
+      moduleKey="reports"
+      stats={[
+        { label: 'Reports Generated', value: '156', icon: BarChart3 },
+        { label: 'Scheduled Reports', value: '12', icon: Calendar },
+        { label: 'Custom Dashboards', value: '8', icon: CheckCircle },
+        { label: 'Data Sources', value: '15', icon: Shield },
+      ]}
+      actions={[
+        { label: 'New Report', icon: Plus, primary: true, onClick: handleNewReport },
+        { label: 'Schedule', icon: Calendar, onClick: handleSchedule },
+      ]}
+      features={['Custom Dashboards', 'Scheduled Reports', 'Export to Excel/PDF', 'Real-time Analytics']}
+    />
+  );
+};
 
 export { CRMPage };
 

@@ -188,10 +188,10 @@ const DoctorDashboard = () => {
       iconColor: "text-blue-500",
     },
     {
-      title: "Write Prescription",
-      description: "Create new prescription",
+      title: "Prescriptions",
+      description: "Write & manage prescriptions",
       icon: Pill,
-      link: "/doctor/prescription-writer",
+      link: "/doctor/prescriptions",
       bgColor: "bg-teal-500/10 dark:bg-teal-500/20",
       iconColor: "text-teal-500",
     },
@@ -235,7 +235,7 @@ const DoctorDashboard = () => {
     },
     {
       title: "Prescriptions",
-      description: "Manage prescriptions",
+      description: "Write & manage prescriptions",
       icon: FileText,
       link: "/doctor/prescriptions",
       badge: null,

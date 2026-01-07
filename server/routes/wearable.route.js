@@ -12,6 +12,98 @@ import { Op } from 'sequelize';
 const router = express.Router();
 
 /**
+ * POST /api/wearables
+ * Register a user's personal device (BLE paired device)
+ */
+router.post('/', authUser, async (req, res) => {
+  try {
+    const {
+      deviceId,
+      name,
+      type,
+      brand,
+      model,
+      batteryLevel,
+      lastSync
+    } = req.body;
+    
+    const userId = req.user.id;
+    
+    // Check if device already registered for this user
+    const existing = await Wearable.findOne({
+      where: { 
+        device_id: deviceId,
+        user_id: userId
+      }
+    });
+    
+    if (existing) {
+      // Update existing device
+      await existing.update({
+        device_name: name,
+        type,
+        brand,
+        model,
+        battery_level: batteryLevel,
+        last_sync: lastSync || new Date(),
+        status: 'active'
+      });
+      
+      return res.json({
+        success: true,
+        message: 'Device updated successfully',
+        device: existing
+      });
+    }
+    
+    // Create new device registration
+    const wearable = await Wearable.create({
+      device_id: deviceId,
+      device_name: name,
+      type,
+      brand,
+      model,
+      user_id: userId,
+      tenant_id: req.user.tenantId || null,
+      battery_level: batteryLevel,
+      last_sync: lastSync || new Date(),
+      status: 'active',
+      assignment_date: new Date()
+    });
+    
+    // Also add to user_devices table for validation
+    try {
+      const { postgresSequelize } = await import('../db/postgres-sequelize.js');
+      await postgresSequelize.query(
+        `INSERT INTO user_devices (user_id, device_id, device_name, device_type, is_active, created_at, updated_at)
+         VALUES ($1, $2, $3, $4, TRUE, NOW(), NOW())
+         ON CONFLICT (user_id, device_id) DO UPDATE SET 
+           device_name = EXCLUDED.device_name,
+           device_type = EXCLUDED.device_type,
+           is_active = TRUE,
+           updated_at = NOW()`,
+        { bind: [userId, deviceId, name, type] }
+      );
+    } catch (dbError) {
+      console.log('Note: user_devices table may not exist yet:', dbError.message);
+    }
+    
+    res.status(201).json({
+      success: true,
+      message: 'Device registered successfully',
+      device: wearable
+    });
+  } catch (error) {
+    console.error('Device registration error:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Device registration failed',
+      error: error.message
+    });
+  }
+});
+
+/**
  * POST /api/wearables/provision
  * Provision new wearable device (Admin)
  */

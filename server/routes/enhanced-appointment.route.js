@@ -40,6 +40,37 @@ const mapEnhancedConsultationTypeToDb = (requestedType) => {
   return 'online';
 };
 
+/**
+ * Resolve doctor by ID (accepts both numeric ID and alphanumeric unique_id)
+ */
+const resolveDoctorId = async (doctorIdOrUniqueId) => {
+  if (!doctorIdOrUniqueId) return null;
+  
+  const idString = String(doctorIdOrUniqueId).trim();
+  
+  // Check if it's a numeric ID
+  if (/^\d+$/.test(idString)) {
+    return await doctorModel.findByPk(parseInt(idString, 10));
+  }
+  
+  // Check if it's an alphanumeric unique_id (starts with D)
+  if (/^D[A-Z0-9]{5}$/i.test(idString)) {
+    return await doctorModel.findOne({ where: { unique_id: idString.toUpperCase() } });
+  }
+  
+  // Try both as fallback
+  const doctor = await doctorModel.findOne({
+    where: {
+      [Op.or]: [
+        { id: isNaN(idString) ? null : parseInt(idString, 10) },
+        { unique_id: idString.toUpperCase() }
+      ]
+    }
+  });
+  
+  return doctor;
+};
+
 const deriveChannelFromRequestedType = (requestedType) => {
   const normalized = String(requestedType || '').toLowerCase();
   if (normalized === 'audio' || normalized === 'phone') return 'phone';
@@ -102,14 +133,18 @@ router.post('/book', authUser, [
       insuranceDetails
     } = req.body;
     
-    // Get doctor details
-    const doctor = await doctorModel.findByPk(doctorId);
+    // Get doctor details (supports both numeric ID and alphanumeric unique_id)
+    const doctor = await resolveDoctorId(doctorId);
     if (!doctor) {
       return res.status(404).json({
         success: false,
-        message: 'Doctor not found'
+        message: 'Doctor not found',
+        hint: 'Please provide a valid doctor ID (numeric like 2 or alphanumeric like D2C193)'
       });
     }
+    
+    // Use the resolved internal ID for database operations
+    const resolvedDoctorId = doctor.id;
 
     // Check if doctor is verified
     if (!doctor.isVerified) {
@@ -169,10 +204,10 @@ router.post('/book', authUser, [
       });
     }
 
-    // Check for existing appointments at this time (DB-backed)
-    const existingAppointment = await Appointment.findOne({
+    // Check if doctor has an appointment at this time (prevent doctor double-booking)
+    const doctorConflict = await Appointment.findOne({
       where: {
-        doctorId,
+        doctorId: resolvedDoctorId,
         appointmentDate,
         appointmentTime: startTime,
         status: {
@@ -181,10 +216,46 @@ router.post('/book', authUser, [
       }
     });
 
-    if (existingAppointment) {
-      return res.status(400).json({
+    if (doctorConflict) {
+      return res.status(409).json({
         success: false,
-        message: 'Time slot already booked'
+        message: `Dr. ${doctor.firstName} ${doctor.lastName} (ID: ${doctor.unique_id || doctor.id}) is not available at the selected time. The time slot is already booked by another patient. Please select a different time slot.`,
+        conflict: 'doctor_busy',
+        doctorId: doctor.id,
+        doctorPublicId: doctor.unique_id
+      });
+    }
+
+    // Check if patient has an appointment at this time (prevent patient double-booking)
+    const patientConflict = await Appointment.findOne({
+      where: {
+        userId: req.user.id,
+        appointmentDate,
+        appointmentTime: startTime,
+        status: {
+          [Op.notIn]: ['cancelled', 'no-show']
+        }
+      }
+    });
+
+    if (patientConflict) {
+      const conflictDoctor = await doctorModel.findByPk(patientConflict.doctorId, {
+        attributes: ['firstName', 'lastName', 'specialization', 'prefix']
+      });
+      const conflictDoctorName = conflictDoctor 
+        ? `${conflictDoctor.prefix || 'Dr.'} ${conflictDoctor.firstName} ${conflictDoctor.lastName} (${conflictDoctor.specialization})`
+        : 'another doctor';
+
+      return res.status(409).json({
+        success: false,
+        message: `You already have an appointment scheduled at ${timeSlot} on ${appointmentDate} with ${conflictDoctorName}. You cannot book multiple appointments at the same time. Please select a different time slot or cancel your existing appointment first.`,
+        conflict: 'patient_busy',
+        existingAppointment: {
+          id: patientConflict.id,
+          doctorName: conflictDoctorName,
+          timeSlot: timeSlot,
+          date: appointmentDate
+        }
       });
     }
 
@@ -236,7 +307,7 @@ router.post('/book', authUser, [
     // Create DB-backed appointment (canonical fields required by the Postgres model)
     const dbAppointment = await Appointment.create({
       userId: req.user.id,
-      doctorId,
+      doctorId: resolvedDoctorId,
       appointmentDate,
       appointmentTime: normalizedStartTime,
       consultationType: dbConsultationType,
@@ -270,6 +341,7 @@ router.post('/book', authUser, [
         emergencyContact: emergencyContact || null,
         patientAddress: patientAddress || null,
         insuranceDetails: insuranceDetails || null,
+        doctorPublicId: doctor.unique_id || null,
         fees: {
           consultationFee: baseFee,
           serviceFee,
@@ -288,7 +360,8 @@ router.post('/book', authUser, [
       id: dbAppointment.id,
       appointmentNumber: `MED${String(dbAppointment.id).padStart(6, '0')}`,
       patientId: req.user.id,
-      doctorId,
+      doctorId: resolvedDoctorId,
+      doctorPublicId: doctor.unique_id,
       appointmentDate,
       timeSlot,
       consultationType,

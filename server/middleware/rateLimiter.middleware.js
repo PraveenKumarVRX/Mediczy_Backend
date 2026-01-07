@@ -6,28 +6,65 @@
 
 import rateLimit from 'express-rate-limit';
 import RedisStore from 'rate-limit-redis';
+import Redis from 'ioredis';
 
 // In-memory store for development (fallback)
 const memoryStore = new Map();
+
+// Redis client for rate limiting (singleton)
+let redisClient = null;
+let redisStore = null;
+
+/**
+ * Initialize Redis store for rate limiting
+ */
+const initRedisStore = () => {
+  if (redisStore) return redisStore;
+  
+  try {
+    // Use simple connection without password (Redis has no password set)
+    const redisHost = process.env.REDIS_HOST || 'localhost';
+    const redisPort = parseInt(process.env.REDIS_PORT) || 6379;
+    
+    redisClient = new Redis({
+      host: redisHost,
+      port: redisPort,
+      maxRetriesPerRequest: 3,
+      retryStrategy: (times) => Math.min(times * 50, 2000),
+      lazyConnect: false,
+      enableReadyCheck: true
+    });
+    
+    redisClient.on('error', (err) => {
+      console.warn('Rate limiter Redis error:', err.message);
+    });
+    
+    redisClient.on('ready', () => {
+      console.log('✅ Rate limiter Redis connected');
+    });
+    
+    redisStore = new RedisStore({
+      sendCommand: (...args) => redisClient.call(...args),
+      prefix: 'rl:'
+    });
+    
+    return redisStore;
+  } catch (error) {
+    console.warn('Redis not available for rate limiting:', error.message);
+    return undefined;
+  }
+};
 
 /**
  * Get store based on environment
  * Uses Redis in production for distributed rate limiting
  */
 const getStore = () => {
-  if (process.env.REDIS_URL && process.env.NODE_ENV === 'production') {
-    try {
-      const Redis = require('ioredis');
-      const client = new Redis(process.env.REDIS_URL);
-      
-      return new RedisStore({
-        sendCommand: (...args) => client.call(...args),
-        prefix: 'rl:'
-      });
-    } catch (error) {
-      console.warn('Redis not available, using memory store for rate limiting');
-    }
-  }
+  // Always try Redis first (saves memory)
+  const store = initRedisStore();
+  if (store) return store;
+  
+  console.warn('Falling back to memory store for rate limiting');
   return undefined; // Use default memory store
 };
 

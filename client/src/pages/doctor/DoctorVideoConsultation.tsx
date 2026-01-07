@@ -217,11 +217,48 @@ const DoctorVideoConsultation = () => {
   }, [currentDoctor, MIROTALK_BASE_URL]);
 
   // Start video call with pre-call check
-  const initiateVideoCall = useCallback((consultation?: Consultation, customRoomId?: string) => {
+  const initiateVideoCall = useCallback(async (consultation?: Consultation, customRoomId?: string) => {
     if (consultation) {
       setCurrentConsultation(consultation);
+      
+      // If this is a scheduled appointment, call backend API to initiate call and notify patient
+      if (consultation.id) {
+        try {
+          toast({
+            title: "📞 Initiating Call...",
+            description: "Notifying patient and preparing video room...",
+          });
+
+          const response = await api.post(`/doctors/appointments/${consultation.id}/initiate-call`);
+          
+          if (response.data.success) {
+            toast({
+              title: "✅ Patient Notified",
+              description: `${response.data.appointment.patientName} has been notified. Opening video room...`,
+            });
+
+            // Use the meeting link from response
+            const meetingUrl = response.data.video.directJoinUrl || response.data.video.meetingLink;
+            
+            // Open video in new window immediately for doctor
+            window.open(meetingUrl, '_blank', 'width=1280,height=720');
+            
+            // Update state
+            setRoomId(response.data.video.roomId || response.data.video.meetingId);
+            return;
+          }
+        } catch (error: any) {
+          toast({
+            variant: "destructive",
+            title: "Failed to Initiate Call",
+            description: error.response?.data?.message || "Please try again",
+          });
+          return;
+        }
+      }
     }
     
+    // For custom room ID or manual entry
     const room = customRoomId || (consultation?.roomId || consultation?.meetingLink || (consultation ? consultation.id : ''));
     
     if (!room) {

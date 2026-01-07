@@ -3,6 +3,7 @@ import { Link, useNavigate } from "react-router-dom";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import * as z from "zod";
+import { BRAND } from "@/config/brand";
 import { Button } from "@/components/ui/button";
 import {
   Form,
@@ -173,7 +174,7 @@ const DoctorLogin = () => {
             title="Go to dashboard"
           >
             <HeartPulse className="h-6 w-6" />
-            Mediqzy
+            {BRAND.name}
             <span className="ml-2 text-[10px] uppercase bg-white/20 px-2 py-0.5 rounded-full">Doctor</span>
           </div>
           <div className="mt-auto space-y-3">

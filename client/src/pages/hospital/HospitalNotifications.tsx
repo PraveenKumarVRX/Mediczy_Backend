@@ -116,7 +116,7 @@ const HospitalNotifications: React.FC = () => {
       case 'success':
         return 'bg-green-100 text-green-800 border-green-300';
       default:
-        return 'bg-blue-100 text-blue-800 border-blue-300';
+        return 'bg-teal-100 text-teal-800 border-teal-300';
     }
   };
 
@@ -129,7 +129,7 @@ const HospitalNotifications: React.FC = () => {
       case 'success':
         return <CheckCircle className="h-5 w-5 text-green-600" />;
       default:
-        return <Info className="h-5 w-5 text-blue-600" />;
+        return <Info className="h-5 w-5 text-teal-600" />;
     }
   };
 
@@ -155,7 +155,7 @@ const HospitalNotifications: React.FC = () => {
           <Card>
             <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
               <CardTitle className="text-sm font-medium">Total</CardTitle>
-              <Bell className="h-4 w-4 text-blue-600" />
+              <Bell className="h-4 w-4 text-teal-600" />
             </CardHeader>
             <CardContent>
               <div className="text-2xl font-bold">{stats.total}</div>
@@ -252,7 +252,7 @@ const HospitalNotifications: React.FC = () => {
               {filteredNotifications.map((notification) => (
                 <Card 
                   key={notification.id} 
-                  className={`transition-all ${!notification.read ? 'border-l-4 border-l-blue-500 bg-blue-50' : ''}`}
+                  className={`transition-all ${!notification.read ? 'border-l-4 border-l-teal-500 bg-teal-50' : ''}`}
                 >
                   <CardContent className="pt-6">
                     <div className="flex items-start justify-between">
@@ -264,7 +264,7 @@ const HospitalNotifications: React.FC = () => {
                           <div className="flex items-center gap-2 mb-2">
                             <h3 className="font-semibold">{notification.title}</h3>
                             {!notification.read && (
-                              <Badge className="bg-blue-600">New</Badge>
+                              <Badge className="bg-teal-600">New</Badge>
                             )}
                             <Badge className={getTypeColor(notification.type)}>
                               {notification.type.toUpperCase()}

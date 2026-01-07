@@ -47,16 +47,16 @@ const HospitalDashboard = () => {
   if (loading) {
     return (
       <div className="min-h-screen flex items-center justify-center">
-        <Activity className="h-8 w-8 animate-spin text-blue-600" />
+        <Activity className="h-8 w-8 animate-spin text-teal-600" />
       </div>
     );
   }
 
   const stats = [
-    { label: 'Total Patients', value: '12,847', icon: Users, color: 'text-blue-600', bg: 'bg-blue-50', trend: '+12%' },
-    { label: 'Today\'s Admissions', value: '47', icon: Bed, color: 'text-green-600', bg: 'bg-green-50', trend: '+8%' },
-    { label: 'Active Insurance Claims', value: '234', icon: Shield, color: 'text-purple-600', bg: 'bg-purple-50', trend: '+15%' },
-    { label: 'Today\'s Revenue', value: '₹8,45,890', icon: DollarSign, color: 'text-orange-600', bg: 'bg-orange-50', trend: '+22%' },
+    { label: 'Total Patients', value: '12,847', icon: Users, color: 'text-teal-600', bg: 'bg-teal-50', trend: '+12%' },
+    { label: 'Today\'s Admissions', value: '47', icon: Bed, color: 'text-emerald-600', bg: 'bg-emerald-50', trend: '+8%' },
+    { label: 'Active Insurance Claims', value: '234', icon: Shield, color: 'text-teal-700', bg: 'bg-teal-50', trend: '+15%' },
+    { label: 'Today\'s Revenue', value: '₹8,45,890', icon: DollarSign, color: 'text-emerald-600', bg: 'bg-emerald-50', trend: '+22%' },
   ];
 
   const quickModules = [
@@ -64,35 +64,35 @@ const HospitalDashboard = () => {
       title: 'Practice Management', 
       description: 'Appointments, OPD/IPD, Staff scheduling', 
       icon: BriefcaseMedical, 
-      color: 'from-blue-500 to-blue-600',
+      color: 'from-teal-500 to-teal-600',
       route: '/hospital/practice-management'
     },
     { 
       title: 'Insurance Billing', 
       description: 'Claims, pre-auth, settlements', 
       icon: Shield, 
-      color: 'from-green-500 to-green-600',
+      color: 'from-emerald-500 to-emerald-600',
       route: '/hospital/insurance-billing'
     },
     { 
       title: 'Medical Records (MRD)', 
       description: 'File management, retrieval, audit', 
       icon: FolderOpen, 
-      color: 'from-purple-500 to-purple-600',
+      color: 'from-teal-600 to-teal-700',
       route: '/hospital/mrd'
     },
     { 
       title: 'Electronic Health Records', 
       description: 'Patient charts, clinical docs', 
       icon: FileHeart, 
-      color: 'from-orange-500 to-orange-600',
+      color: 'from-emerald-600 to-emerald-700',
       route: '/hospital/ehr'
     },
     { 
       title: 'Lab Test Orders', 
       description: 'Order lab tests, manage results', 
       icon: FlaskConical, 
-      color: 'from-cyan-500 to-cyan-600',
+      color: 'from-teal-500 to-emerald-500',
       route: '/hospital/lab-order'
     },
     { 
@@ -106,14 +106,14 @@ const HospitalDashboard = () => {
       title: 'Prescription Creator', 
       description: 'Create and manage prescriptions', 
       icon: Pill, 
-      color: 'from-pink-500 to-pink-600',
+      color: 'from-emerald-500 to-teal-500',
       route: '/hospital/prescription-creator'
     },
     { 
       title: 'Procedure Scheduler', 
       description: 'Schedule medical procedures', 
       icon: Stethoscope, 
-      color: 'from-indigo-500 to-indigo-600',
+      color: 'from-teal-600 to-emerald-600',
       route: '/hospital/procedure-adder'
     },
   ];
@@ -132,10 +132,10 @@ const HospitalDashboard = () => {
   ];
 
   const bedOccupancy = [
-    { department: 'General Ward', total: 100, occupied: 78, color: 'bg-blue-500' },
+    { department: 'General Ward', total: 100, occupied: 78, color: 'bg-teal-500' },
     { department: 'ICU', total: 20, occupied: 18, color: 'bg-red-500' },
-    { department: 'Private Rooms', total: 50, occupied: 35, color: 'bg-green-500' },
-    { department: 'Pediatric', total: 30, occupied: 22, color: 'bg-yellow-500' },
+    { department: 'Private Rooms', total: 50, occupied: 35, color: 'bg-emerald-500' },
+    { department: 'Pediatric', total: 30, occupied: 22, color: 'bg-teal-400' },
   ];
 
   return (
@@ -174,7 +174,7 @@ const HospitalDashboard = () => {
               </div>
               <h3 className="text-lg font-bold mb-2">{module.title}</h3>
               <p className="text-sm text-muted-foreground mb-4">{module.description}</p>
-              <Button variant="ghost" className="p-0 h-auto gap-2 text-blue-600">
+              <Button variant="ghost" className="p-0 h-auto gap-2 text-teal-600">
                 Open Module <ArrowRight className="h-4 w-4" />
               </Button>
             </CardContent>
@@ -191,7 +191,7 @@ const HospitalDashboard = () => {
               <CardTitle>Recent Admissions</CardTitle>
               <CardDescription>Latest patient admissions and bed assignments</CardDescription>
             </div>
-            <Button variant="outline" size="sm" className="gap-2">
+            <Button variant="outline" size="sm" className="gap-2" onClick={() => navigate('/hospital/patients')}>
               <Plus className="h-4 w-4" /> New Admission
             </Button>
           </CardHeader>
@@ -200,8 +200,8 @@ const HospitalDashboard = () => {
               {recentAdmissions.map((admission) => (
                 <div key={admission.id} className="flex items-center justify-between p-4 bg-gray-50 rounded-lg hover:bg-gray-100 transition-colors">
                   <div className="flex items-center gap-4">
-                    <div className="bg-blue-100 p-3 rounded-lg">
-                      <Bed className="h-5 w-5 text-blue-600" />
+                    <div className="bg-teal-100 p-3 rounded-lg">
+                      <Bed className="h-5 w-5 text-teal-600" />
                     </div>
                     <div>
                       <p className="font-semibold">{admission.patient}</p>
@@ -239,7 +239,7 @@ const HospitalDashboard = () => {
                 <Progress value={(ward.occupied / ward.total) * 100} className={`h-2`} />
               </div>
             ))}
-            <Button variant="outline" className="w-full gap-2 mt-4">
+            <Button variant="outline" className="w-full gap-2 mt-4" onClick={() => navigate('/hospital/beds')}>
               <Bed className="h-4 w-4" />
               Manage Beds
             </Button>
@@ -254,7 +254,7 @@ const HospitalDashboard = () => {
             <CardTitle>Pending Insurance Claims</CardTitle>
             <CardDescription>Claims requiring attention</CardDescription>
           </div>
-          <Button onClick={() => navigate('/hospital/insurance-billing')} className="gap-2 bg-gradient-to-r from-blue-600 to-cyan-600">
+          <Button onClick={() => navigate('/hospital/insurance-billing')} className="gap-2 bg-gradient-to-r from-teal-500 to-teal-600">
             <Shield className="h-4 w-4" /> View All Claims
           </Button>
         </CardHeader>
@@ -282,28 +282,28 @@ const HospitalDashboard = () => {
 
       {/* Quick Stats */}
       <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mt-6">
-        <Card className="bg-gradient-to-br from-blue-500 to-blue-600 text-white">
+        <Card className="bg-gradient-to-br from-teal-500 to-teal-600 text-white">
           <CardContent className="pt-6 text-center">
             <Calendar className="h-8 w-8 mx-auto mb-2 opacity-80" />
             <p className="text-2xl font-bold">156</p>
             <p className="text-sm opacity-80">Today's OPD</p>
           </CardContent>
         </Card>
-        <Card className="bg-gradient-to-br from-green-500 to-green-600 text-white">
+        <Card className="bg-gradient-to-br from-emerald-500 to-emerald-600 text-white">
           <CardContent className="pt-6 text-center">
             <Stethoscope className="h-8 w-8 mx-auto mb-2 opacity-80" />
             <p className="text-2xl font-bold">42</p>
             <p className="text-sm opacity-80">Active Doctors</p>
           </CardContent>
         </Card>
-        <Card className="bg-gradient-to-br from-purple-500 to-purple-600 text-white">
+        <Card className="bg-gradient-to-br from-teal-600 to-teal-700 text-white">
           <CardContent className="pt-6 text-center">
             <FileText className="h-8 w-8 mx-auto mb-2 opacity-80" />
             <p className="text-2xl font-bold">89</p>
             <p className="text-sm opacity-80">Records Updated</p>
           </CardContent>
         </Card>
-        <Card className="bg-gradient-to-br from-orange-500 to-orange-600 text-white">
+        <Card className="bg-gradient-to-br from-emerald-600 to-emerald-700 text-white">
           <CardContent className="pt-6 text-center">
             <CreditCard className="h-8 w-8 mx-auto mb-2 opacity-80" />
             <p className="text-2xl font-bold">234</p>

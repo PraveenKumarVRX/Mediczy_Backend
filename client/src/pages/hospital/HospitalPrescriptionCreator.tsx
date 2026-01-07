@@ -10,6 +10,7 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger, Dialog
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { Badge } from '@/components/ui/badge';
 import { useToast } from '@/hooks/use-toast';
+import HospitalLayout from '@/components/hospital/HospitalLayout';
 import {
   Pill, Plus, Search, ArrowLeft, Calendar, Clock,
   User, FileText, CheckCircle, XCircle, AlertCircle,
@@ -352,30 +353,20 @@ const HospitalPrescriptionCreator = () => {
     switch (status) {
       case 'Draft': return 'bg-gray-100 text-gray-800';
       case 'Active': return 'bg-green-100 text-green-800';
-      case 'Completed': return 'bg-blue-100 text-blue-800';
+      case 'Completed': return 'bg-teal-100 text-teal-800';
       case 'Cancelled': return 'bg-red-100 text-red-800';
       default: return 'bg-gray-100 text-gray-800';
     }
   };
 
   return (
-    <div className="min-h-screen bg-gray-50">
-      <div className="max-w-7xl mx-auto p-6 space-y-6">
-        {/* Header */}
-        <div className="flex items-center justify-between">
-          <div className="flex items-center gap-4">
-            <Button variant="outline" onClick={() => navigate('/hospital/dashboard')}>
-              <ArrowLeft className="h-4 w-4 mr-2" />
-              Back to Dashboard
-            </Button>
-            <div>
-              <h1 className="text-3xl font-bold">Prescription Creator</h1>
-              <p className="text-muted-foreground">Create and manage patient prescriptions</p>
-            </div>
-          </div>
+    <HospitalLayout title="Prescription Creator" subtitle="Create and manage patient prescriptions">
+      <div className="space-y-6">
+        {/* Header Actions */}
+        <div className="flex items-center justify-end">
           <Dialog open={showCreateDialog} onOpenChange={setShowCreateDialog}>
             <DialogTrigger asChild>
-              <Button className="gap-2 bg-gradient-to-r from-blue-600 to-cyan-600">
+              <Button className="gap-2 bg-gradient-to-r from-teal-500 to-teal-600">
                 <Plus className="h-4 w-4" />
                 Create Prescription
               </Button>
@@ -406,7 +397,7 @@ const HospitalPrescriptionCreator = () => {
                         <div
                           key={patient.id}
                           className={`p-3 border-b cursor-pointer hover:bg-gray-50 ${
-                            selectedPatient?.id === patient.id ? 'bg-blue-50 border-blue-200' : ''
+                            selectedPatient?.id === patient.id ? 'bg-teal-50 border-teal-200' : ''
                           }`}
                           onClick={() => setSelectedPatient(patient)}
                         >
@@ -424,9 +415,9 @@ const HospitalPrescriptionCreator = () => {
                       ))}
                     </div>
                     {selectedPatient && (
-                      <div className="p-3 bg-blue-50 border border-blue-200 rounded-md">
-                        <p className="font-medium text-blue-900">Selected: {selectedPatient.name}</p>
-                        <p className="text-sm text-blue-700">{selectedPatient.uhid}</p>
+                      <div className="p-3 bg-teal-50 border border-teal-200 rounded-md">
+                        <p className="font-medium text-teal-900">Selected: {selectedPatient.name}</p>
+                        <p className="text-sm text-teal-700">{selectedPatient.uhid}</p>
                       </div>
                     )}
                   </CardContent>
@@ -484,7 +475,7 @@ const HospitalPrescriptionCreator = () => {
                         <div
                           key={med.id}
                           className={`p-3 border-b cursor-pointer hover:bg-gray-50 ${
-                            selectedMedication?.id === med.id ? 'bg-blue-50 border-blue-200' : ''
+                            selectedMedication?.id === med.id ? 'bg-teal-50 border-teal-200' : ''
                           }`}
                           onClick={() => setSelectedMedication(med)}
                         >
@@ -505,9 +496,9 @@ const HospitalPrescriptionCreator = () => {
                     </div>
 
                     {selectedMedication && (
-                      <div className="p-3 bg-blue-50 border border-blue-200 rounded-md">
-                        <p className="font-medium text-blue-900">Selected: {selectedMedication.name}</p>
-                        <p className="text-sm text-blue-700">{selectedMedication.genericName} • {selectedMedication.strength}</p>
+                      <div className="p-3 bg-teal-50 border border-teal-200 rounded-md">
+                        <p className="font-medium text-teal-900">Selected: {selectedMedication.name}</p>
+                        <p className="text-sm text-teal-700">{selectedMedication.genericName} • {selectedMedication.strength}</p>
                       </div>
                     )}
 
@@ -591,7 +582,7 @@ const HospitalPrescriptionCreator = () => {
                                 {item.dosage} • {item.frequency} • {item.duration} • Qty: {item.quantity}
                               </p>
                               {item.instructions && (
-                                <p className="text-sm text-blue-600">{item.instructions}</p>
+                                <p className="text-sm text-teal-600">{item.instructions}</p>
                               )}
                             </div>
                             <Button
@@ -769,7 +760,7 @@ const HospitalPrescriptionCreator = () => {
           </CardContent>
         </Card>
       </div>
-    </div>
+    </HospitalLayout>
   );
 };
 

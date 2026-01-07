@@ -101,23 +101,17 @@ router.post(
       // Create patient - Default primary doctor is CMO Dr. Nandita Agarwal (ID: 5)
       const DEFAULT_PRIMARY_DOCTOR_ID = 5; // CMO Dr. Nandita Agarwal
       
+      // Note: User model only supports basic fields
+      // Additional fields should be stored in patient_profiles table if needed
       const patient = await userModel.create({
         email,
         password: hashedPassword,
         firstName,
         lastName,
         phoneNumber,
-        dateOfBirth,
+        dateOfBirth: dateOfBirth ? new Date(dateOfBirth) : null,
         gender,
-        address,
-        emergencyContact,
-        bloodGroup,
-        allergies,
-        medicalHistory,
-        role: 'patient',
-        isActive: true,
-        registeredBy: req.user.id,
-        registeredByRole: 'admin',
+        status: 'active',
         primaryDoctorId: DEFAULT_PRIMARY_DOCTOR_ID
       });
 
@@ -206,23 +200,16 @@ router.post(
       }
 
       // Create patient with the registering doctor as primary doctor
+      // Note: User model only supports basic fields
       const patient = await userModel.create({
         email,
         password: hashedPassword,
         firstName,
         lastName,
         phoneNumber,
-        dateOfBirth,
+        dateOfBirth: dateOfBirth ? new Date(dateOfBirth) : null,
         gender,
-        address,
-        emergencyContact,
-        bloodGroup,
-        allergies,
-        medicalHistory,
-        role: 'patient',
-        isActive: true,
-        registeredBy: req.user.id,
-        registeredByRole: 'doctor',
+        status: 'active',
         primaryDoctorId: primaryDoctorId
       });
 
@@ -296,23 +283,16 @@ router.post(
       // Create patient - Default primary doctor is CMO Dr. Nandita Agarwal (ID: 5)
       const DEFAULT_PRIMARY_DOCTOR_ID = 5; // CMO Dr. Nandita Agarwal
       
+      // Note: User model only supports basic fields
       const patient = await userModel.create({
         email,
         password: hashedPassword,
         firstName,
         lastName,
         phoneNumber,
-        dateOfBirth,
+        dateOfBirth: dateOfBirth ? new Date(dateOfBirth) : null,
         gender,
-        address,
-        emergencyContact,
-        bloodGroup,
-        allergies,
-        medicalHistory,
-        role: 'patient',
-        isActive: true,
-        registeredBy: req.nurse.id,
-        registeredByRole: 'nurse',
+        status: 'active',
         primaryDoctorId: DEFAULT_PRIMARY_DOCTOR_ID
       });
 
@@ -389,23 +369,17 @@ router.post(
                                (req.assistant.linkedDoctorIds && req.assistant.linkedDoctorIds[0]) ||
                                DEFAULT_PRIMARY_DOCTOR_ID;
       
+      // Note: User model only supports basic fields. 
+      // Additional fields (address, bloodGroup, etc.) should be stored in patient_profiles table
       const patient = await userModel.create({
         email,
         password: hashedPassword,
         firstName,
         lastName,
         phoneNumber,
-        dateOfBirth,
+        dateOfBirth: dateOfBirth ? new Date(dateOfBirth) : null,
         gender,
-        address,
-        emergencyContact,
-        bloodGroup,
-        allergies,
-        medicalHistory,
-        role: 'patient',
-        isActive: true,
-        registeredBy: req.assistant.id,
-        registeredByRole: 'assistant',
+        status: 'active',  // Use status instead of isActive
         primaryDoctorId: primaryDoctorId
       });
 

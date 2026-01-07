@@ -30,12 +30,17 @@ interface MembershipPlan {
   id: number;
   name: string;
   description?: string;
-  durationDays: number;
-  priceINR: number;
+  durationMonths?: number;
+  durationDays?: number;
+  price?: string | number;
+  priceINR?: number;
   isActive: boolean;
-  benefitLimits: Record<string, number>;
-  teleConsultLimits: TeleConsultLimits;
+  benefitLimits?: Record<string, number>;
+  teleConsultLimits?: TeleConsultLimits;
   healthCheckPackage?: string;
+  features?: string[];
+  benefits?: string[];
+  limitations?: Record<string, number>;
 }
 
 type TeleAll = { mode: 'all'; allowed: number; used: number; remaining: number };
@@ -148,7 +153,9 @@ const MyPlans = () => {
     const chosen = availablePlans.find(p => p.id === planId);
     if (chosen) {
       const startDate = new Date();
-      const endDate = new Date(startDate.getTime() + chosen.durationDays * 24 * 60 * 60 * 1000);
+      // Support both durationDays and durationMonths
+      const durationDays = chosen.durationDays || ((chosen.durationMonths || 1) * 30);
+      const endDate = new Date(startDate.getTime() + durationDays * 24 * 60 * 60 * 1000);
       qc.setQueryData(optimisticKey, { userPlan: {
         id: -1,
         membershipPlanId: chosen.id,
@@ -156,10 +163,10 @@ const MyPlans = () => {
         endDate: endDate.toISOString().slice(0,10),
         status: 'active',
         appliedLimits: {
-          benefitLimits: chosen.benefitLimits,
+          benefitLimits: chosen.benefitLimits || chosen.limitations,
           teleConsultLimits: chosen.teleConsultLimits,
           healthCheckPackage: chosen.healthCheckPackage,
-          priceINR: chosen.priceINR
+          priceINR: chosen.priceINR || Number(chosen.price) || 0
         },
         usage: {},
       } as any });
@@ -345,27 +352,43 @@ const MyPlans = () => {
                 <Card className="p-6 text-center text-gray-600">No plans available at the moment.</Card>
               ) : (
                 <div className="grid md:grid-cols-2 lg:grid-cols-3 gap-6">
-                  {availablePlans.map((p) => (
+                  {availablePlans.map((p) => {
+                    const durationDays = p.durationDays || ((p.durationMonths || 1) * 30);
+                    const priceValue = p.priceINR ?? Number(p.price) ?? 0;
+                    return (
                     <Card key={p.id} className="p-6 space-y-3">
                       <div className="flex items-start justify-between">
                         <div>
                           <h3 className="text-lg font-semibold">{p.name}</h3>
-                          <p className="text-sm text-gray-600">{p.durationDays} days</p>
+                          <p className="text-sm text-gray-600">{durationDays} days</p>
                         </div>
                         <Badge className={p.isActive ? "bg-green-100 text-green-700" : "bg-gray-100 text-gray-700"}>
                           {p.isActive ? "Active" : "Inactive"}
                         </Badge>
                       </div>
-                      <div className="text-2xl font-bold">₹{Number(p.priceINR).toLocaleString("en-IN")}</div>
+                      <div className="text-2xl font-bold">₹{Number(priceValue).toLocaleString("en-IN")}</div>
                       {p.description && <p className="text-sm text-gray-600 line-clamp-3">{p.description}</p>}
                       {p.healthCheckPackage && (
                         <div className="text-sm"><span className="text-gray-500">Health Check:</span> {p.healthCheckPackage}</div>
                       )}
+                      {/* Features list */}
+                      {p.features && p.features.length > 0 && (
+                        <div className="text-sm text-gray-600">
+                          <p className="font-medium mb-1">Features:</p>
+                          <ul className="list-disc list-inside space-y-1">
+                            {p.features.slice(0, 3).map((f, i) => (
+                              <li key={i}>{f}</li>
+                            ))}
+                          </ul>
+                        </div>
+                      )}
                       <div className="text-sm text-gray-600">
                         Teleconsults: {typeof p.teleConsultLimits?.allSpecialties === "number" ? (
                           <span>{p.teleConsultLimits?.allSpecialties} for all specialties</span>
+                        ) : p.limitations?.maxConsultations ? (
+                          <span>{p.limitations.maxConsultations} consultations included</span>
                         ) : (
-                          <span>{Object.keys(p.teleConsultLimits || {}).length} specialties covered</span>
+                          <span>{Object.keys(p.teleConsultLimits || {}).length || 'Unlimited'} specialties covered</span>
                         )}
                       </div>
                       <Button
@@ -377,7 +400,7 @@ const MyPlans = () => {
                         {userPlan ? "Already Subscribed" : "Subscribe"}
                       </Button>
                     </Card>
-                  ))}
+                  )})}
                 </div>
               )}
             </div>

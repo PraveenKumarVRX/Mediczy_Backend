@@ -319,6 +319,38 @@ const sendCallRejectedNotification = async (recipientToken, rejectData) => {
 };
 
 /**
+ * Send doctor calling notification to patient
+ * @param {string} recipientToken - FCM token of patient
+ * @param {object} callData - Call data with doctor info and meeting link
+ */
+const sendDoctorCallingNotification = async (recipientToken, callData) => {
+  const notification = {
+    title: `📞 ${callData.doctorName} is calling`,
+    body: 'Your doctor has started the video consultation. Tap to join now!',
+    icon: '/doctor-calling-icon.png',
+    requireInteraction: true,
+    category: 'CALL',
+    tag: `doctor-call-${callData.appointmentId}`,
+    renotify: true,
+    vibrate: [200, 100, 200, 100, 200, 100, 200],
+    sound: 'call_ringtone'
+  };
+
+  const data = {
+    type: FCM_NOTIFICATION_TYPES.VIDEO_CALL,
+    appointmentId: String(callData.appointmentId),
+    meetingLink: callData.meetingLink || '',
+    doctorName: callData.doctorName || '',
+    doctorId: String(callData.doctorId || ''),
+    callInitiatedAt: callData.callInitiatedAt || new Date().toISOString(),
+    action: 'join_call',
+    clickAction: 'join_video_call'
+  };
+
+  return sendPushNotification(recipientToken, notification, data);
+};
+
+/**
  * Send message notification
  * @param {string} recipientToken - FCM token of message recipient
  * @param {object} messageData - Message information
@@ -446,6 +478,7 @@ export {
   sendTriageCallNotification,
   sendCallAcceptedNotification,
   sendCallRejectedNotification,
+  sendDoctorCallingNotification,
   sendMessageNotification,
   sendAppointmentNotification,
   sendSystemNotification,

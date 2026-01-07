@@ -1,5 +1,6 @@
 import React, { useRef } from 'react';
 import { Link, useLocation } from "react-router-dom";
+import { BRAND } from "@/config/brand";
 import {
   Activity,
   AlignCenterVertical,
@@ -244,7 +245,7 @@ export function Sidebar() {
           <div className="p-2 rounded-xl bg-gradient-to-br from-teal-500 to-teal-600 shadow-lg shadow-teal-500/20">
             <HeartPulse className="h-5 w-5 text-white" />
           </div>
-          <span className="text-lg font-bold text-white tracking-tight">Mediqzy</span>
+          <span className="text-lg font-bold text-white tracking-tight">{BRAND.name}</span>
         </div>
 
         {/* Sidebar Links */}

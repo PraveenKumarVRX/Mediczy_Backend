@@ -1117,6 +1117,189 @@ const BillingManagement = () => {
           </Dialog>
         )}
 
+        {/* Edit Invoice Dialog */}
+        {editingInvoice && (
+          <Dialog open={!!editingInvoice} onOpenChange={(open) => !open && setEditingInvoice(null)}>
+            <DialogContent className="max-w-2xl max-h-[90vh] overflow-y-auto">
+              <DialogHeader>
+                <DialogTitle>{editingInvoice.id ? 'Edit Invoice' : 'Create New Invoice'}</DialogTitle>
+              </DialogHeader>
+              <div className="space-y-4">
+                <div className="grid grid-cols-2 gap-4">
+                  <div>
+                    <Label>Client Type</Label>
+                    <Select
+                      value={editingInvoice.clientType}
+                      onValueChange={(value) => setEditingInvoice(prev => prev ? { ...prev, clientType: value as Invoice['clientType'] } : prev)}
+                    >
+                      <SelectTrigger>
+                        <SelectValue />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="user">User/Patient</SelectItem>
+                        <SelectItem value="doctor">Doctor</SelectItem>
+                        <SelectItem value="hospital">Hospital</SelectItem>
+                        <SelectItem value="pharmacy">Pharmacy</SelectItem>
+                        <SelectItem value="corporate">Corporate</SelectItem>
+                      </SelectContent>
+                    </Select>
+                  </div>
+                  <div>
+                    <Label>Status</Label>
+                    <Select
+                      value={editingInvoice.status}
+                      onValueChange={(value) => setEditingInvoice(prev => prev ? { ...prev, status: value as Invoice['status'] } : prev)}
+                    >
+                      <SelectTrigger>
+                        <SelectValue />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="draft">Draft</SelectItem>
+                        <SelectItem value="sent">Sent</SelectItem>
+                        <SelectItem value="paid">Paid</SelectItem>
+                        <SelectItem value="overdue">Overdue</SelectItem>
+                        <SelectItem value="cancelled">Cancelled</SelectItem>
+                      </SelectContent>
+                    </Select>
+                  </div>
+                </div>
+
+                <div>
+                  <Label>Client Name</Label>
+                  <Input
+                    value={editingInvoice.clientName || ''}
+                    onChange={(e) => setEditingInvoice(prev => prev ? { ...prev, clientName: e.target.value } : prev)}
+                    placeholder="Enter client name"
+                  />
+                </div>
+
+                <div>
+                  <Label>Client Email</Label>
+                  <Input
+                    type="email"
+                    value={editingInvoice.clientEmail || ''}
+                    onChange={(e) => setEditingInvoice(prev => prev ? { ...prev, clientEmail: e.target.value } : prev)}
+                    placeholder="client@example.com"
+                  />
+                </div>
+
+                <div>
+                  <Label>Description</Label>
+                  <Textarea
+                    value={editingInvoice.description || ''}
+                    onChange={(e) => setEditingInvoice(prev => prev ? { ...prev, description: e.target.value } : prev)}
+                    placeholder="Invoice description"
+                    rows={3}
+                  />
+                </div>
+
+                <div className="grid grid-cols-2 gap-4">
+                  <div>
+                    <Label>Issue Date</Label>
+                    <Input
+                      type="date"
+                      value={editingInvoice.issueDate || ''}
+                      onChange={(e) => setEditingInvoice(prev => prev ? { ...prev, issueDate: e.target.value } : prev)}
+                    />
+                  </div>
+                  <div>
+                    <Label>Due Date</Label>
+                    <Input
+                      type="date"
+                      value={editingInvoice.dueDate || ''}
+                      onChange={(e) => setEditingInvoice(prev => prev ? { ...prev, dueDate: e.target.value } : prev)}
+                    />
+                  </div>
+                </div>
+
+                <div className="grid grid-cols-3 gap-4">
+                  <div>
+                    <Label>Amount</Label>
+                    <Input
+                      type="number"
+                      value={editingInvoice.amount || 0}
+                      onChange={(e) => {
+                        const amount = Number(e.target.value);
+                        const taxAmount = amount * 0.18;
+                        setEditingInvoice(prev => prev ? { 
+                          ...prev, 
+                          amount,
+                          taxAmount,
+                          totalAmount: amount + taxAmount
+                        } : prev);
+                      }}
+                    />
+                  </div>
+                  <div>
+                    <Label>Tax (18%)</Label>
+                    <Input
+                      type="number"
+                      value={editingInvoice.taxAmount || 0}
+                      readOnly
+                      disabled
+                    />
+                  </div>
+                  <div>
+                    <Label>Total Amount</Label>
+                    <Input
+                      type="number"
+                      value={editingInvoice.totalAmount || 0}
+                      readOnly
+                      disabled
+                    />
+                  </div>
+                </div>
+
+                <div className="flex gap-2 pt-4">
+                  <Button
+                    className="flex-1 bg-green-600 hover:bg-green-700"
+                    onClick={() => {
+                      if (!editingInvoice.clientName || !editingInvoice.clientEmail) {
+                        toast({
+                          title: 'Validation Error',
+                          description: 'Please fill in client name and email',
+                          variant: 'destructive'
+                        });
+                        return;
+                      }
+
+                      if (editingInvoice.id) {
+                        setInvoices(prev => prev.map(inv => 
+                          inv.id === editingInvoice.id ? editingInvoice : inv
+                        ));
+                        toast({
+                          title: 'Invoice Updated',
+                          description: `Invoice ${editingInvoice.invoiceNumber} has been updated`
+                        });
+                      } else {
+                        const newInv: Invoice = {
+                          ...editingInvoice,
+                          id: `inv_${Date.now()}`,
+                          invoiceNumber: `INV-2024-${String(invoices.length + 1).padStart(3, '0')}`,
+                          currency: 'INR',
+                          createdAt: new Date().toISOString(),
+                          services: []
+                        } as Invoice;
+                        setInvoices(prev => [newInv, ...prev]);
+                        toast({
+                          title: 'Invoice Created',
+                          description: `Invoice ${newInv.invoiceNumber} has been created`
+                        });
+                      }
+                      setEditingInvoice(null);
+                    }}
+                  >
+                    {editingInvoice.id ? 'Update Invoice' : 'Create Invoice'}
+                  </Button>
+                  <Button variant="outline" className="flex-1" onClick={() => setEditingInvoice(null)}>
+                    Cancel
+                  </Button>
+                </div>
+              </div>
+            </DialogContent>
+          </Dialog>
+        )}
+
         {/* Edit HSN/SAC Dialog */}
         {editingHsnSac && (
           <Dialog open={!!editingHsnSac} onOpenChange={(open) => !open && setEditingHsnSac(null)}>

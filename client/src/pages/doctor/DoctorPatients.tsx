@@ -1,4 +1,5 @@
 import { useState, useEffect } from 'react';
+import { useNavigate } from 'react-router-dom';
 import { useAuth } from '@/auth/AuthProvider';
 import MainLayoutdoctor from '@/components/layout/MainLayoutdoctor';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
@@ -58,6 +59,8 @@ interface Patient {
   lastLogin?: string;
   status?: string;
   bloodGroup?: string;
+  address?: string;
+  emergencyContact?: string;
 }
 
 interface NewPatientForm {
@@ -90,6 +93,7 @@ const initialFormState: NewPatientForm = {
 
 const DoctorPatients = () => {
   const { currentDoctor } = useAuth();
+  const navigate = useNavigate();
   const [patients, setPatients] = useState<Patient[]>([]);
   const [filteredPatients, setFilteredPatients] = useState<Patient[]>([]);
   const [loading, setLoading] = useState(true);
@@ -221,6 +225,54 @@ const DoctorPatients = () => {
       age--;
     }
     return age;
+  };
+
+  // Action handlers for patient table
+  const handleViewPatient = (patientId: number) => {
+    navigate(`/doctor/health-records?patientId=${patientId}`);
+  };
+
+  const handleChatWithPatient = (patientId: number) => {
+    navigate(`/doctor/chat?patientId=${patientId}`);
+  };
+
+  const handleGeneratePDF = async (patient: Patient) => {
+    try {
+      toast.info('Generating patient report...');
+      
+      // Create a simple patient report
+      const reportContent = `
+        PATIENT REPORT
+        
+        Name: ${patient.firstName} ${patient.lastName}
+        Phone: ${patient.phoneNumber}
+        Email: ${patient.email}
+        ${patient.dateOfBirth ? `Age: ${calculateAge(patient.dateOfBirth)} years` : ''}
+        ${patient.gender ? `Gender: ${patient.gender}` : ''}
+        ${patient.bloodGroup ? `Blood Group: ${patient.bloodGroup}` : ''}
+        Status: ${patient.status || 'active'}
+        Registered: ${formatDate(patient.createdAt)}
+        
+        ${patient.address ? `Address: ${patient.address}` : ''}
+        ${patient.emergencyContact ? `Emergency Contact: ${patient.emergencyContact}` : ''}
+      `;
+
+      // Create blob and download
+      const blob = new Blob([reportContent], { type: 'text/plain' });
+      const url = window.URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `${patient.firstName}_${patient.lastName}_Report.txt`;
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      window.URL.revokeObjectURL(url);
+      
+      toast.success('Report downloaded successfully');
+    } catch (error) {
+      console.error('PDF generation error:', error);
+      toast.error('Failed to generate report');
+    }
   };
 
   if (loading) {
@@ -414,13 +466,31 @@ const DoctorPatients = () => {
                         </TableCell>
                         <TableCell className="text-right">
                           <div className="flex items-center justify-end gap-1">
-                            <Button size="sm" variant="ghost" className="h-8 w-8 p-0">
+                            <Button 
+                              size="sm" 
+                              variant="ghost" 
+                              className="h-8 w-8 p-0"
+                              onClick={() => handleViewPatient(patient.id)}
+                              title="View patient details"
+                            >
                               <Eye className="h-4 w-4" />
                             </Button>
-                            <Button size="sm" variant="ghost" className="h-8 w-8 p-0">
+                            <Button 
+                              size="sm" 
+                              variant="ghost" 
+                              className="h-8 w-8 p-0"
+                              onClick={() => handleChatWithPatient(patient.id)}
+                              title="Chat with patient"
+                            >
                               <MessageSquare className="h-4 w-4" />
                             </Button>
-                            <Button size="sm" variant="ghost" className="h-8 w-8 p-0">
+                            <Button 
+                              size="sm" 
+                              variant="ghost" 
+                              className="h-8 w-8 p-0"
+                              onClick={() => handleGeneratePDF(patient)}
+                              title="Generate PDF report"
+                            >
                               <FileText className="h-4 w-4" />
                             </Button>
                           </div>
@@ -493,11 +563,21 @@ const DoctorPatients = () => {
                     </div>
 
                     <div className="flex space-x-2 pt-2">
-                      <Button size="sm" variant="outline" className="flex-1">
+                      <Button 
+                        size="sm" 
+                        variant="outline" 
+                        className="flex-1"
+                        onClick={() => handleChatWithPatient(patient.id)}
+                      >
                         <MessageSquare className="h-4 w-4 mr-1" />
                         Chat
                       </Button>
-                      <Button size="sm" variant="outline" className="flex-1">
+                      <Button 
+                        size="sm" 
+                        variant="outline" 
+                        className="flex-1"
+                        onClick={() => handleViewPatient(patient.id)}
+                      >
                         <FileText className="h-4 w-4 mr-1" />
                         Records
                       </Button>

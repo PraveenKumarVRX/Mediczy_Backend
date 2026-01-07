@@ -8,6 +8,7 @@ import { col, fn, where as sequelizeWhere } from "sequelize";
 import Doctor from "../models/doctor.model.intelligent.js";
 import Nurse from "../models/nurse.model.intelligent.js";
 import Assistant from "../models/assistant.model.intelligent.js";
+import { UserPlan, MembershipPlan } from "../models/membershipPlan.model.intelligent.js";
 
 export async function registerUser(req, res) {
   // Validate request
@@ -85,6 +86,75 @@ export async function registerUser(req, res) {
       req,
       consentVersion: '1.0'
     });
+
+    // Auto-create trial membership for new users (30-day free trial)
+    try {
+      // Try to find existing free/trial plan, or create one
+      let trialPlan = await MembershipPlan.findOne({ where: { code: 'FREE_TRIAL' } });
+      
+      if (!trialPlan) {
+        // Create a free trial plan if it doesn't exist
+        trialPlan = await MembershipPlan.create({
+          name: 'Free Trial',
+          code: 'FREE_TRIAL',
+          description: '30-day free trial: 3 GP consultations OR 1 specialist consultation',
+          type: 'individual',
+          price: 0,
+          durationMonths: 1,
+          features: [
+            '3 General Physician consultations',
+            '1 Specialist consultation',
+            'Health records access',
+            'Appointment booking'
+          ],
+          benefits: [
+            'Choose between 3 GP visits or 1 specialist visit',
+            'Access to health records',
+            'Book appointments online'
+          ],
+          limitations: {
+            gpConsultations: 3,
+            specialistConsultations: 1,
+            consultationMode: 'either', // 'either' means 3 GP OR 1 specialist, not both
+            maxAppointments: 10
+          },
+          maxUsers: 1,
+          isActive: true,
+          isFeatured: false,
+          sortOrder: 0
+        });
+        console.log('✅ Created FREE_TRIAL membership plan');
+      }
+
+      // Calculate trial period dates (30 days)
+      const startDate = new Date();
+      const endDate = new Date();
+      endDate.setDate(endDate.getDate() + 30);
+
+      // Create user plan
+      await UserPlan.create({
+        userId: newUser.id,
+        membershipPlanId: trialPlan.id,
+        status: 'active',
+        startDate: startDate.toISOString().split('T')[0],
+        endDate: endDate.toISOString().split('T')[0],
+        autoRenew: false,
+        paymentMethod: 'free_trial',
+        paidAmount: 0,
+        metadata: {
+          trialStarted: true,
+          source: 'registration',
+          gpConsultationsUsed: 0,
+          specialistConsultationsUsed: 0,
+          gpConsultationsRemaining: 3,
+          specialistConsultationsRemaining: 1
+        }
+      });
+      console.log(`✅ Created trial membership for user ${newUser.id}`);
+    } catch (membershipError) {
+      // Log error but don't fail registration
+      console.error('⚠️ Failed to create trial membership:', membershipError.message);
+    }
 
     // Audit the successful login after registration
     await auditLoginAttempt(req, newUser.id, newUser.email, true);

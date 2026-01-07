@@ -163,6 +163,16 @@ class NotificationService {
         message: 'Dr. {{doctorName}} has issued your prescription. View and download it now.',
         channels: ['push', 'email', 'in-app'],
         priority: 'high'
+      },
+
+      // Doctor calling patient (new)
+      doctor_calling: {
+        title: '📞 {{doctorName}} is calling',
+        message: 'Your doctor has started the video consultation. Tap to join now!',
+        channels: ['push', 'in-app'],
+        priority: 'critical',
+        sound: 'call_ringtone',
+        requireInteraction: true
       }
     };
   }
@@ -199,6 +209,7 @@ class NotificationService {
       // Create in-app notification record
       const notification = await Notification.create({
         userId,
+        userType, // Add userType to the notification record
         type,
         title,
         message,
@@ -848,7 +859,11 @@ class NotificationService {
   async getNotifications(userId, userType, options = {}) {
     const { page = 1, limit = 20, unreadOnly = false, type } = options;
 
-    const where = { userId, userType };
+    const where = { userId };
+    // Only filter by userType if provided and not null
+    if (userType) {
+      where.userType = userType;
+    }
     if (unreadOnly) where.status = { [postgresSequelize.Sequelize.Op.ne]: 'read' };
     if (type) where.type = type;
 
@@ -859,10 +874,16 @@ class NotificationService {
       offset: (parseInt(page) - 1) * parseInt(limit)
     });
 
+    // Build unread count query
+    const unreadWhere = { userId, status: { [postgresSequelize.Sequelize.Op.ne]: 'read' } };
+    if (userType) {
+      unreadWhere.userType = userType;
+    }
+
     return {
       notifications: notifications.rows,
       total: notifications.count,
-      unread: await Notification.count({ where: { userId, userType, status: { [postgresSequelize.Sequelize.Op.ne]: 'read' } } }),
+      unread: await Notification.count({ where: unreadWhere }),
       page: parseInt(page),
       totalPages: Math.ceil(notifications.count / limit)
     };
@@ -888,9 +909,14 @@ class NotificationService {
    * Mark all notifications as read
    */
   async markAllAsRead(userId, userType) {
+    const where = { userId, status: { [postgresSequelize.Sequelize.Op.ne]: 'read' } };
+    // Only filter by userType if provided
+    if (userType) {
+      where.userType = userType;
+    }
     await Notification.update(
       { status: 'read', readAt: new Date() },
-      { where: { userId, userType, status: { [postgresSequelize.Sequelize.Op.ne]: 'read' } } }
+      { where }
     );
     return { success: true };
   }
@@ -899,9 +925,12 @@ class NotificationService {
    * Get unread count
    */
   async getUnreadCount(userId, userType) {
-    const count = await Notification.count({
-      where: { userId, userType, status: { [postgresSequelize.Sequelize.Op.ne]: 'read' } }
-    });
+    const where = { userId, status: { [postgresSequelize.Sequelize.Op.ne]: 'read' } };
+    // Only filter by userType if provided
+    if (userType) {
+      where.userType = userType;
+    }
+    const count = await Notification.count({ where });
     return count;
   }
 

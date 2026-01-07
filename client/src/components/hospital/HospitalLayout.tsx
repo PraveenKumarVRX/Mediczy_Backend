@@ -64,10 +64,10 @@ const HospitalLayout = ({ children, title, subtitle }: HospitalLayoutProps) => {
         {/* Top Header */}
         <header className="sticky top-0 z-30 h-16 bg-white/90 backdrop-blur border-b border-slate-200 flex items-center justify-between px-6">
           <div className="flex items-center gap-3">
-            <div className="flex items-center gap-2 text-primary font-semibold">
+            <div className="flex items-center gap-2 text-teal-600 font-semibold">
               <HeartPulse className="h-5 w-5" />
               <span className="text-sm">Mediqzy</span>
-              <span className="text-[11px] uppercase bg-primary/10 text-primary px-2 py-0.5 rounded-full">Hospital</span>
+              <span className="text-[11px] uppercase bg-teal-500/10 text-teal-600 px-2 py-0.5 rounded-full">Hospital</span>
             </div>
             {title && (
               <div className="pl-3 border-l border-slate-200">
@@ -110,14 +110,14 @@ const HospitalLayout = ({ children, title, subtitle }: HospitalLayoutProps) => {
             <DropdownMenu>
               <DropdownMenuTrigger asChild>
                 <Button variant="ghost" className="flex items-center gap-2 border border-slate-200 rounded-full px-3 py-1.5">
-                  <div className="w-8 h-8 bg-gradient-to-br from-blue-600 to-cyan-600 rounded-full flex items-center justify-center">
+                  <div className="w-8 h-8 bg-gradient-to-br from-teal-500 to-teal-600 rounded-full flex items-center justify-center">
                     <Building2 className="w-4 h-4 text-white" />
                   </div>
                   <div className="hidden md:block text-left">
                     <p className="text-sm font-medium text-slate-900">
                       {hospitalData?.name || "Hospital Admin"}
                     </p>
-                    <p className="text-xs text-slate-500">Administrator</p>
+                    <p className="text-xs text-teal-600">Administrator</p>
                   </div>
                   <ChevronDown className="w-4 h-4 text-slate-400" />
                 </Button>

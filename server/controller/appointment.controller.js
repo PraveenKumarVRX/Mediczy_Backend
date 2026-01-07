@@ -72,6 +72,39 @@ const mapConsultationTypeForDb = (requestedType) => {
 };
 
 /**
+ * Resolve doctor by ID (accepts both numeric ID and alphanumeric unique_id)
+ * @param {string|number} doctorIdOrUniqueId - Can be numeric (2, 3) or alphanumeric (D2C193)
+ * @returns {Promise<Object|null>} Doctor object or null
+ */
+const resolveDoctorId = async (doctorIdOrUniqueId) => {
+  if (!doctorIdOrUniqueId) return null;
+  
+  const idString = String(doctorIdOrUniqueId).trim();
+  
+  // Check if it's a numeric ID
+  if (/^\d+$/.test(idString)) {
+    return await Doctor.findByPk(parseInt(idString, 10));
+  }
+  
+  // Check if it's an alphanumeric unique_id (starts with D)
+  if (/^D[A-Z0-9]{5}$/i.test(idString)) {
+    return await Doctor.findOne({ where: { unique_id: idString.toUpperCase() } });
+  }
+  
+  // Try both as fallback
+  const doctor = await Doctor.findOne({
+    where: {
+      [Op.or]: [
+        { id: isNaN(idString) ? null : parseInt(idString, 10) },
+        { unique_id: idString.toUpperCase() }
+      ]
+    }
+  });
+  
+  return doctor;
+};
+
+/**
  * Create a new appointment
  * POST /api/appointments
  */
@@ -102,16 +135,22 @@ export const createAppointment = async (req, res) => {
       return res.status(404).json({ message: 'User not found' });
     }
 
-    // Fetch doctor details
-    const doctor = await Doctor.findByPk(doctorId);
+    // Fetch doctor details (supports both numeric ID and alphanumeric unique_id)
+    const doctor = await resolveDoctorId(doctorId);
     if (!doctor) {
-      return res.status(404).json({ message: 'Doctor not found' });
+      return res.status(404).json({ 
+        message: 'Doctor not found',
+        hint: 'Please provide a valid doctor ID (numeric like 2 or alphanumeric like D2C193)'
+      });
     }
+    
+    // Use the resolved internal ID for database operations
+    const resolvedDoctorId = doctor.id;
 
-    // Check if slot is available
-    const existingAppointment = await Appointment.findOne({
+    // Check if doctor has an appointment at this time (prevent doctor double-booking)
+    const doctorConflict = await Appointment.findOne({
       where: {
-        doctorId,
+        doctorId: resolvedDoctorId,
         appointmentDate,
         appointmentTime,
         status: {
@@ -120,9 +159,46 @@ export const createAppointment = async (req, res) => {
       }
     });
 
-    if (existingAppointment) {
+    if (doctorConflict) {
       return res.status(409).json({ 
-        message: 'This time slot is already booked. Please select another slot.' 
+        success: false,
+        message: `Dr. ${doctor.firstName} ${doctor.lastName} (ID: ${doctor.unique_id || doctor.id}) is not available at the selected time. The time slot is already booked by another patient. Please select a different time slot.`,
+        conflict: 'doctor_busy',
+        doctorId: doctor.id,
+        doctorPublicId: doctor.unique_id
+      });
+    }
+
+    // Check if patient has an appointment at this time (prevent patient double-booking)
+    const patientConflict = await Appointment.findOne({
+      where: {
+        userId,
+        appointmentDate,
+        appointmentTime,
+        status: {
+          [Op.notIn]: ['cancelled', 'no-show']
+        }
+      }
+    });
+
+    if (patientConflict) {
+      const conflictDoctor = await Doctor.findByPk(patientConflict.doctorId, {
+        attributes: ['firstName', 'lastName', 'specialization']
+      });
+      const conflictDoctorName = conflictDoctor 
+        ? `Dr. ${conflictDoctor.firstName} ${conflictDoctor.lastName} (${conflictDoctor.specialization})`
+        : 'another doctor';
+
+      return res.status(409).json({ 
+        success: false,
+        message: `You already have an appointment scheduled at ${appointmentTime} on ${appointmentDate} with ${conflictDoctorName}. You cannot book multiple appointments at the same time. Please select a different time slot or cancel your existing appointment first.`,
+        conflict: 'patient_busy',
+        existingAppointment: {
+          id: patientConflict.id,
+          doctorName: conflictDoctorName,
+          time: appointmentTime,
+          date: appointmentDate
+        }
       });
     }
 
@@ -155,7 +231,7 @@ export const createAppointment = async (req, res) => {
       patientName: `${user.firstName} ${user.lastName}`,
       patientEmail: user.email,
       patientPhone: user.phoneNumber || 'N/A',
-      doctorId,
+      doctorId: resolvedDoctorId,
       doctorName: `Dr. ${doctor.firstName} ${doctor.lastName}`,
       specialization: doctor.specialization,
       appointmentDate,
@@ -169,6 +245,7 @@ export const createAppointment = async (req, res) => {
       metadata: {
         ...(req.userTenantId ? { organizationId: req.userTenantId } : {}),
         requestedConsultationType: requestedConsultationType || null,
+        doctorPublicId: doctor.unique_id || null,
         channel:
           requestedConsultationType === 'audio'
             ? 'phone'

@@ -32,6 +32,8 @@ const USER_TYPE_PERMISSIONS = {
       '/api/fitness-data',  // Health and fitness data
       '/api/apple-health',  // Apple Health integration
       '/api/health-diary',  // Health diary entries
+      '/api/health-data',  // BLE device health data sync
+      '/api/notifications',  // User notifications
       '/api/mobile'  // Mobile API gateway
     ],
     tokenField: 'userId'
@@ -49,6 +51,7 @@ const USER_TYPE_PERMISSIONS = {
       '/api/recording',
       '/api/cdss',  // Clinical Decision Support System
       '/api/billing',  // Billing and invoices
+      '/api/notifications',  // Doctor notifications
       '/api/v2/doctors'  // Enterprise API v2 doctor endpoints
     ],
     tokenField: 'doctorId'
@@ -249,6 +252,8 @@ const PUBLIC_ENDPOINTS = [
   '/api/corporate/login',
   '/api/corporate/auth/login',
   '/api/hospital/login',
+  '/api/hospital/auth/login',
+  '/api/hospital/auth/register',
   '/api/clinic/login',
   '/api/lab/login',
   '/api/pharmacy/login',

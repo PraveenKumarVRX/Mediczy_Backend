@@ -84,7 +84,8 @@ interface Vitals {
 
 interface Prescription {
   id: number;
-  prescriptionNumber: string;
+  prescriptionNumber?: string;
+  prescriptionId?: string;
   appointmentId?: number;
   patientId: number;
   patientName: string;
@@ -217,22 +218,22 @@ const DoctorPrescriptions = () => {
 
   // Fetch prescriptions
   const { data: prescriptions = [], isLoading, refetch } = useQuery({
-    queryKey: ["doctorPrescriptions", currentDoctor?._id],
+    queryKey: ["doctorPrescriptions", currentDoctor?.id],
     queryFn: async () => {
       const { data } = await api.get("/prescriptions/doctor");
       return (data as any).prescriptions || data || [];
     },
-    enabled: !!currentDoctor?._id,
+    enabled: !!currentDoctor?.id,
   });
 
   // Fetch appointments for linking
   const { data: appointments = [] } = useQuery({
-    queryKey: ["doctorAppointmentsForPrescription", currentDoctor?._id],
+    queryKey: ["doctorAppointmentsForPrescription", currentDoctor?.id],
     queryFn: async () => {
       const { data } = await api.get("/enhanced-appointments/doctor-appointments");
       return (data as any).appointments || data || [];
     },
-    enabled: !!currentDoctor?._id,
+    enabled: !!currentDoctor?.id,
   });
 
   // Create prescription mutation
@@ -514,9 +515,10 @@ const DoctorPrescriptions = () => {
 
   // Filter prescriptions
   const filteredPrescriptions = prescriptions.filter((rx: Prescription) => {
+    const rxNumber = rx.prescriptionId || rx.prescriptionNumber || '';
     const matchesSearch =
       rx.patientName.toLowerCase().includes(searchQuery.toLowerCase()) ||
-      rx.prescriptionNumber?.toLowerCase().includes(searchQuery.toLowerCase());
+      rxNumber.toLowerCase().includes(searchQuery.toLowerCase());
     const matchesStatus = filterStatus === "all" || rx.status === filterStatus;
     return matchesSearch && matchesStatus;
   });
@@ -656,7 +658,7 @@ const DoctorPrescriptions = () => {
                 <TableBody>
                   {filteredPrescriptions.map((rx: Prescription) => (
                     <TableRow key={rx.id}>
-                      <TableCell className="font-mono text-sm">{rx.prescriptionNumber || `RX-${rx.id}`}</TableCell>
+                      <TableCell className="font-mono text-sm">{rx.prescriptionId || rx.prescriptionNumber || `RX-${rx.id}`}</TableCell>
                       <TableCell>
                         <div className="flex items-center gap-2">
                           <User className="h-4 w-4 text-muted-foreground" />

@@ -1,5 +1,5 @@
 // Service Worker for Mediczy Healthcare Platform
-const CACHE_NAME = 'mediczy-v8'; // Updated cache version to force refresh
+const CACHE_NAME = 'mediczy-v11'; // Updated cache version - branding uniformity fix
 const ESSENTIAL_URLS = [
   '/',
   '/index.html'
@@ -7,7 +7,7 @@ const ESSENTIAL_URLS = [
 
 // Install event - cache only essential files
 self.addEventListener('install', (event) => {
-  console.log('🔧 ServiceWorker v8 installing...');
+  console.log('🔧 ServiceWorker v11 installing...');
   event.waitUntil(
     caches.open(CACHE_NAME)
       .then((cache) => {
@@ -26,7 +26,7 @@ self.addEventListener('install', (event) => {
 
 // Activate event - clean up old caches and take control
 self.addEventListener('activate', (event) => {
-  console.log('🚀 ServiceWorker v8 activating...');
+  console.log('🚀 ServiceWorker v9 activating...');
   event.waitUntil(
     caches.keys().then((cacheNames) => {
       return Promise.all(

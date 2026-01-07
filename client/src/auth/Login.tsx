@@ -4,6 +4,7 @@ import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import * as z from "zod";
 import { motion } from "framer-motion";
+import { BRAND } from "@/config/brand";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import {
@@ -243,7 +244,7 @@ const Login = () => {
             <div className="p-2.5 rounded-xl bg-white/15 backdrop-blur-sm group-hover:bg-white/25 transition-all duration-300">
               <HeartPulse className="h-6 w-6" />
             </div>
-            <span className="text-xl font-bold tracking-tight">Mediqzy</span>
+            <span className="text-xl font-bold tracking-tight">{BRAND.name}</span>
           </motion.div>
           
           <div className="mt-auto space-y-6">

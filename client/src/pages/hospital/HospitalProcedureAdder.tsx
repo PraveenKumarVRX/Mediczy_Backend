@@ -11,6 +11,7 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@
 import { Badge } from '@/components/ui/badge';
 import { Checkbox } from '@/components/ui/checkbox';
 import { useToast } from '@/hooks/use-toast';
+import HospitalLayout from '@/components/hospital/HospitalLayout';
 import {
   Stethoscope, Plus, Search, ArrowLeft, Calendar, Clock,
   User, FileText, CheckCircle, XCircle, AlertCircle,
@@ -303,7 +304,7 @@ const HospitalProcedureAdder = () => {
 
   const getStatusColor = (status: string) => {
     switch (status) {
-      case 'Scheduled': return 'bg-blue-100 text-blue-800';
+      case 'Scheduled': return 'bg-teal-100 text-teal-800';
       case 'In Progress': return 'bg-yellow-100 text-yellow-800';
       case 'Completed': return 'bg-green-100 text-green-800';
       case 'Cancelled': return 'bg-red-100 text-red-800';
@@ -344,23 +345,13 @@ const HospitalProcedureAdder = () => {
   };
 
   return (
-    <div className="min-h-screen bg-gray-50">
-      <div className="max-w-7xl mx-auto p-6 space-y-6">
-        {/* Header */}
-        <div className="flex items-center justify-between">
-          <div className="flex items-center gap-4">
-            <Button variant="outline" onClick={() => navigate('/hospital/dashboard')}>
-              <ArrowLeft className="h-4 w-4 mr-2" />
-              Back to Dashboard
-            </Button>
-            <div>
-              <h1 className="text-3xl font-bold">Procedure Scheduler</h1>
-              <p className="text-muted-foreground">Schedule and manage medical procedures</p>
-            </div>
-          </div>
+    <HospitalLayout title="Procedure Scheduler" subtitle="Schedule and manage medical procedures">
+      <div className="space-y-6">
+        {/* Header Actions */}
+        <div className="flex items-center justify-end">
           <Dialog open={showScheduleDialog} onOpenChange={setShowScheduleDialog}>
             <DialogTrigger asChild>
-              <Button className="gap-2 bg-gradient-to-r from-blue-600 to-cyan-600">
+              <Button className="gap-2 bg-gradient-to-r from-teal-500 to-teal-600">
                 <Plus className="h-4 w-4" />
                 Schedule Procedure
               </Button>
@@ -391,7 +382,7 @@ const HospitalProcedureAdder = () => {
                         <div
                           key={patient.id}
                           className={`p-3 border-b cursor-pointer hover:bg-gray-50 ${
-                            selectedPatient?.id === patient.id ? 'bg-blue-50 border-blue-200' : ''
+                            selectedPatient?.id === patient.id ? 'bg-teal-50 border-teal-200' : ''
                           }`}
                           onClick={() => setSelectedPatient(patient)}
                         >
@@ -409,9 +400,9 @@ const HospitalProcedureAdder = () => {
                       ))}
                     </div>
                     {selectedPatient && (
-                      <div className="p-3 bg-blue-50 border border-blue-200 rounded-md">
-                        <p className="font-medium text-blue-900">Selected: {selectedPatient.name}</p>
-                        <p className="text-sm text-blue-700">{selectedPatient.uhid}</p>
+                      <div className="p-3 bg-teal-50 border border-teal-200 rounded-md">
+                        <p className="font-medium text-teal-900">Selected: {selectedPatient.name}</p>
+                        <p className="text-sm text-teal-700">{selectedPatient.uhid}</p>
                       </div>
                     )}
                   </CardContent>
@@ -466,7 +457,7 @@ const HospitalProcedureAdder = () => {
                         <div
                           key={proc.id}
                           className={`p-4 border-b cursor-pointer hover:bg-gray-50 ${
-                            selectedProcedure?.id === proc.id ? 'bg-blue-50 border-blue-200' : ''
+                            selectedProcedure?.id === proc.id ? 'bg-teal-50 border-teal-200' : ''
                           }`}
                           onClick={() => setSelectedProcedure(proc)}
                         >
@@ -498,9 +489,9 @@ const HospitalProcedureAdder = () => {
                     </div>
 
                     {selectedProcedure && (
-                      <div className="p-3 bg-blue-50 border border-blue-200 rounded-md">
-                        <p className="font-medium text-blue-900">Selected: {selectedProcedure.name}</p>
-                        <p className="text-sm text-blue-700">
+                      <div className="p-3 bg-teal-50 border border-teal-200 rounded-md">
+                        <p className="font-medium text-teal-900">Selected: {selectedProcedure.name}</p>
+                        <p className="text-sm text-teal-700">
                           {selectedProcedure.department} • {selectedProcedure.category} • ₹{selectedProcedure.cost.toLocaleString()}
                         </p>
                       </div>
@@ -761,7 +752,7 @@ const HospitalProcedureAdder = () => {
           </CardContent>
         </Card>
       </div>
-    </div>
+    </HospitalLayout>
   );
 };
 

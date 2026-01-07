@@ -2404,12 +2404,9 @@ This is for emergency medical guidance. Please prioritize safety and immediate c
                 <div className="mt-4 grid grid-cols-1 sm:grid-cols-2 gap-3">
                   <Button
                     onClick={async () => {
+                      // Close AI chat to show doctors list
+                      setShowTriageChat(false);
                       await fetchTriageDoctors();
-                      if (availableTriageDoctors.length === 0) {
-                        // If no doctors fetched yet, try connecting directly
-                        setShowTriageChat(true);
-                        setShowDoctorList(true);
-                      }
                     }}
                     disabled={isLoadingDoctors}
                     className="w-full bg-gradient-to-r from-green-600 to-emerald-600 hover:from-green-700 hover:to-emerald-700 text-white shadow-md h-12"

@@ -15,6 +15,7 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@
 import { Progress } from '@/components/ui/progress';
 import { ScrollArea } from '@/components/ui/scroll-area';
 import { Checkbox } from '@/components/ui/checkbox';
+import HospitalLayout from '@/components/hospital/HospitalLayout';
 import { 
   FolderOpen, Activity, Bell, Plus, Search, ArrowLeft, Edit, 
   Trash2, Eye, CheckCircle, XCircle, AlertCircle, RefreshCw,
@@ -249,17 +250,17 @@ const HospitalMRD = () => {
     switch (status) {
       case 'Active': return 'bg-green-100 text-green-800';
       case 'In-Transit': return 'bg-yellow-100 text-yellow-800';
-      case 'Requested': return 'bg-blue-100 text-blue-800';
+      case 'Requested': return 'bg-teal-100 text-teal-800';
       case 'Checked-Out': return 'bg-orange-100 text-orange-800';
       case 'Archived': return 'bg-gray-100 text-gray-800';
       case 'Digitized': return 'bg-purple-100 text-purple-800';
       case 'Pending': return 'bg-yellow-100 text-yellow-800';
-      case 'Processing': return 'bg-blue-100 text-blue-800';
-      case 'Ready': return 'bg-cyan-100 text-cyan-800';
+      case 'Processing': return 'bg-teal-100 text-teal-800';
+      case 'Ready': return 'bg-emerald-100 text-emerald-800';
       case 'Delivered': return 'bg-green-100 text-green-800';
       case 'Returned': return 'bg-gray-100 text-gray-800';
       case 'Rejected': return 'bg-red-100 text-red-800';
-      case 'In-Progress': return 'bg-blue-100 text-blue-800';
+      case 'In-Progress': return 'bg-teal-100 text-teal-800';
       case 'Quality Check': return 'bg-purple-100 text-purple-800';
       case 'Completed': return 'bg-green-100 text-green-800';
       case 'Failed': return 'bg-red-100 text-red-800';
@@ -575,48 +576,10 @@ const HospitalMRD = () => {
   }
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-purple-50 via-white to-violet-50">
-      {/* Header */}
-      <header className="bg-white border-b shadow-sm sticky top-0 z-50">
-        <div className="container mx-auto px-6 py-4">
-          <div className="flex items-center justify-between">
-            <div className="flex items-center gap-4">
-              <Button variant="ghost" size="icon" onClick={() => navigate('/hospital/dashboard')}>
-                <ArrowLeft className="h-5 w-5" />
-              </Button>
-              <div className="bg-gradient-to-br from-purple-500 to-violet-600 p-3 rounded-xl">
-                <FolderOpen className="h-6 w-6 text-white" />
-              </div>
-              <div>
-                <h1 className="text-2xl font-bold bg-gradient-to-r from-purple-600 to-violet-600 bg-clip-text text-transparent">
-                  Medical Records Department
-                </h1>
-                <p className="text-sm text-muted-foreground">File Management, Retrieval & Digitization</p>
-              </div>
-            </div>
-            <div className="flex items-center gap-3">
-              <Button
-                variant="outline"
-                size="icon"
-                className="relative"
-                onClick={() => navigate('/hospital/notifications')}
-              >
-                <Bell className="h-5 w-5" />
-                <span className="absolute -top-1 -right-1 h-5 w-5 bg-red-500 rounded-full text-xs text-white flex items-center justify-center">
-                  {stats.pendingRequests}
-                </span>
-              </Button>
-              <Button variant="outline" className="gap-2" onClick={() => setShowScanDialog(true)}>
-                <ScanLine className="h-4 w-4" /> Scan Barcode
-              </Button>
-            </div>
-          </div>
-        </div>
-      </header>
-
-      <div className="container mx-auto px-6 py-8">
+    <HospitalLayout title="Medical Records Department" subtitle="File Management, Retrieval & Digitization">
+      <div className="space-y-6">
         {/* Stats Cards */}
-        <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-4 mb-8">
+        <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-4">
           <Card className="bg-gradient-to-br from-purple-500 to-purple-600 text-white">
             <CardContent className="p-4 text-center">
               <FolderOpen className="h-6 w-6 mx-auto mb-2 opacity-80" />
@@ -645,14 +608,14 @@ const HospitalMRD = () => {
               <p className="text-xs opacity-80">Pending Requests</p>
             </CardContent>
           </Card>
-          <Card className="bg-gradient-to-br from-blue-500 to-blue-600 text-white">
+          <Card className="bg-gradient-to-br from-teal-500 to-teal-600 text-white">
             <CardContent className="p-4 text-center">
               <FileCheck className="h-6 w-6 mx-auto mb-2 opacity-80" />
               <p className="text-2xl font-bold">{stats.digitizedRecords.toLocaleString()}</p>
               <p className="text-xs opacity-80">Digitized</p>
             </CardContent>
           </Card>
-          <Card className="bg-gradient-to-br from-cyan-500 to-cyan-600 text-white">
+          <Card className="bg-gradient-to-br from-emerald-500 to-emerald-600 text-white">
             <CardContent className="p-4 text-center">
               <Activity className="h-6 w-6 mx-auto mb-2 opacity-80" />
               <p className="text-2xl font-bold">{stats.digitizationRate}%</p>
@@ -1241,7 +1204,7 @@ const HospitalMRD = () => {
                   <CardTitle className="text-sm">In Progress</CardTitle>
                 </CardHeader>
                 <CardContent>
-                  <p className="text-3xl font-bold text-blue-600">{digitizationTasks.filter(t => t.status === 'In-Progress').length}</p>
+                  <p className="text-3xl font-bold text-teal-600">{digitizationTasks.filter(t => t.status === 'In-Progress').length}</p>
                 </CardContent>
               </Card>
               <Card>
@@ -1480,7 +1443,7 @@ const HospitalMRD = () => {
           </DialogContent>
         </Dialog>
       </div>
-    </div>
+    </HospitalLayout>
   );
 };
 

@@ -516,7 +516,7 @@ const AppRoutes = () => {
       <Route path="/doctor/templates" element={<DoctorDocumentTemplates />} />
       <Route path="/doctor/template-settings" element={<DoctorTemplateSettings />} />
       <Route path="/doctor/specialty-templates" element={<DoctorSpecialtyTemplates />} />
-      <Route path="/doctor/prescription-writer" element={<PrescriptionWriter />} />
+      <Route path="/doctor/prescription-writer" element={<Navigate to="/doctor/prescriptions" replace />} />
       <Route path="/doctor/services" element={<DoctorServices />} />
       <Route path="/doctor/billing" element={<DoctorBilling />} />
       <Route path="/doctor/health-records" element={<PatientEMR />} />

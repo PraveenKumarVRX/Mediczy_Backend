@@ -16,6 +16,7 @@ import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover
 import { Progress } from '@/components/ui/progress';
 import { ScrollArea } from '@/components/ui/scroll-area';
 import api from '@/utils/api';
+import HospitalLayout from '@/components/hospital/HospitalLayout';
 import { 
   Building2, Calendar as CalendarIcon, Users, Clock, 
   Activity, UserCheck, Bell, Settings, LogOut, Plus, 
@@ -239,7 +240,7 @@ const HospitalPracticeManagement = () => {
 
   const getStatusColor = (status: string) => {
     switch (status) {
-      case 'Scheduled': return 'bg-blue-100 text-blue-800';
+      case 'Scheduled': return 'bg-teal-100 text-teal-800';
       case 'Checked-in': return 'bg-yellow-100 text-yellow-800';
       case 'In-Progress': return 'bg-purple-100 text-purple-800';
       case 'Completed': return 'bg-green-100 text-green-800';
@@ -249,7 +250,7 @@ const HospitalPracticeManagement = () => {
       case 'Off-Duty': return 'bg-gray-100 text-gray-800';
       case 'On-Leave': return 'bg-orange-100 text-orange-800';
       case 'Available': return 'bg-green-100 text-green-800';
-      case 'In-Use': return 'bg-blue-100 text-blue-800';
+      case 'In-Use': return 'bg-teal-100 text-teal-800';
       case 'Maintenance': return 'bg-yellow-100 text-yellow-800';
       case 'Reserved': return 'bg-purple-100 text-purple-800';
       default: return 'bg-gray-100 text-gray-800';
@@ -547,50 +548,17 @@ const HospitalPracticeManagement = () => {
   if (loading) {
     return (
       <div className="min-h-screen flex items-center justify-center">
-        <Activity className="h-8 w-8 animate-spin text-blue-600" />
+        <Activity className="h-8 w-8 animate-spin text-teal-600" />
       </div>
     );
   }
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-blue-50 via-white to-cyan-50">
-      {/* Header */}
-      <header className="bg-white border-b shadow-sm sticky top-0 z-50">
-        <div className="container mx-auto px-6 py-4">
-          <div className="flex items-center justify-between">
-            <div className="flex items-center gap-4">
-              <Button variant="ghost" size="icon" onClick={() => navigate('/hospital/dashboard')}>
-                <ArrowLeft className="h-5 w-5" />
-              </Button>
-              <div className="bg-gradient-to-br from-blue-500 to-blue-600 p-3 rounded-xl">
-                <BriefcaseMedical className="h-6 w-6 text-white" />
-              </div>
-              <div>
-                <h1 className="text-2xl font-bold bg-gradient-to-r from-blue-600 to-blue-800 bg-clip-text text-transparent">
-                  Practice Management
-                </h1>
-                <p className="text-sm text-muted-foreground">Appointments, Patient Flow & Resource Management</p>
-              </div>
-            </div>
-            <div className="flex items-center gap-3">
-              <Button variant="outline" size="icon" className="relative">
-                <Bell className="h-5 w-5" />
-                <span className="absolute -top-1 -right-1 h-5 w-5 bg-red-500 rounded-full text-xs text-white flex items-center justify-center">
-                  5
-                </span>
-              </Button>
-              <Button variant="outline" size="icon" onClick={() => fetchPracticeData(false)} disabled={isRefreshing}>
-                <RefreshCw className={`h-5 w-5 ${isRefreshing ? 'animate-spin' : ''}`} />
-              </Button>
-            </div>
-          </div>
-        </div>
-      </header>
-
-      <div className="container mx-auto px-6 py-8">
+    <HospitalLayout title="Practice Management" subtitle="Appointments, Patient Flow & Resource Management">
+      <div className="space-y-6">
         {/* Quick Stats */}
-        <div className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-6 gap-4 mb-8">
-          <Card className="bg-gradient-to-br from-blue-500 to-blue-600 text-white">
+        <div className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-6 gap-4">
+          <Card className="bg-gradient-to-br from-teal-500 to-teal-600 text-white">
             <CardContent className="p-4 text-center">
               <CalendarIcon className="h-6 w-6 mx-auto mb-2 opacity-80" />
               <p className="text-2xl font-bold">{appointments.filter(a => a.status === 'Scheduled').length}</p>
@@ -625,7 +593,7 @@ const HospitalPracticeManagement = () => {
               <p className="text-xs opacity-80">IPD Patients</p>
             </CardContent>
           </Card>
-          <Card className="bg-gradient-to-br from-cyan-500 to-cyan-600 text-white">
+          <Card className="bg-gradient-to-br from-teal-500 to-emerald-500 text-white">
             <CardContent className="p-4 text-center">
               <Stethoscope className="h-6 w-6 mx-auto mb-2 opacity-80" />
               <p className="text-2xl font-bold">{staff.filter(s => s.status === 'On-Duty').length}</p>
@@ -681,7 +649,7 @@ const HospitalPracticeManagement = () => {
               <h2 className="text-xl font-bold">Today's Appointments</h2>
               <Dialog open={showNewAppointmentDialog} onOpenChange={setShowNewAppointmentDialog}>
                 <DialogTrigger asChild>
-                  <Button className="gap-2 bg-gradient-to-r from-blue-600 to-blue-700">
+                  <Button className="gap-2 bg-gradient-to-r from-teal-500 to-teal-600">
                     <Plus className="h-4 w-4" /> New Appointment
                   </Button>
                 </DialogTrigger>
@@ -787,7 +755,7 @@ const HospitalPracticeManagement = () => {
                   </div>
                   <DialogFooter>
                     <Button variant="outline" onClick={() => setShowNewAppointmentDialog(false)}>Cancel</Button>
-                    <Button className="bg-gradient-to-r from-blue-600 to-blue-700" onClick={handleScheduleAppointment}>Schedule Appointment</Button>
+                    <Button className="bg-gradient-to-r from-teal-500 to-teal-600" onClick={handleScheduleAppointment}>Schedule Appointment</Button>
                   </DialogFooter>
                 </DialogContent>
               </Dialog>
@@ -858,7 +826,7 @@ const HospitalPracticeManagement = () => {
               <h2 className="text-xl font-bold">Patient Management</h2>
               <Dialog open={showNewPatientDialog} onOpenChange={setShowNewPatientDialog}>
                 <DialogTrigger asChild>
-                  <Button className="gap-2 bg-gradient-to-r from-blue-600 to-blue-700">
+                  <Button className="gap-2 bg-gradient-to-r from-teal-500 to-teal-600">
                     <UserPlus className="h-4 w-4" /> Register Patient
                   </Button>
                 </DialogTrigger>
@@ -955,7 +923,7 @@ const HospitalPracticeManagement = () => {
                   </div>
                   <DialogFooter>
                     <Button variant="outline" onClick={() => setShowNewPatientDialog(false)}>Cancel</Button>
-                    <Button className="bg-gradient-to-r from-blue-600 to-blue-700" onClick={handleRegisterPatient}>Register Patient</Button>
+                    <Button className="bg-gradient-to-r from-teal-500 to-teal-600" onClick={handleRegisterPatient}>Register Patient</Button>
                   </DialogFooter>
                 </DialogContent>
               </Dialog>
@@ -964,8 +932,8 @@ const HospitalPracticeManagement = () => {
             <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
               {/* OPD Patients */}
               <Card>
-                <CardHeader className="bg-blue-50">
-                  <CardTitle className="flex items-center gap-2 text-blue-700">
+                <CardHeader className="bg-teal-50">
+                  <CardTitle className="flex items-center gap-2 text-teal-700">
                     <Users className="h-5 w-5" /> OPD Patients
                   </CardTitle>
                 </CardHeader>
@@ -1063,7 +1031,7 @@ const HospitalPracticeManagement = () => {
           <TabsContent value="staff" className="space-y-6">
             <div className="flex items-center justify-between">
               <h2 className="text-xl font-bold">Staff Management</h2>
-              <Button className="gap-2 bg-gradient-to-r from-blue-600 to-blue-700" onClick={() => { setEditingStaffId(null); setStaffForm({ name: '', role: 'Doctor', department: '', specialization: '', phone: '', email: '', shift: 'Morning', status: 'On-Duty' }); setShowAddStaffDialog(true); }}>
+              <Button className="gap-2 bg-gradient-to-r from-teal-500 to-teal-600" onClick={() => { setEditingStaffId(null); setStaffForm({ name: '', role: 'Doctor', department: '', specialization: '', phone: '', email: '', shift: 'Morning', status: 'On-Duty' }); setShowAddStaffDialog(true); }}>
                 <Plus className="h-4 w-4" /> Add Staff
               </Button>
             </div>
@@ -1128,7 +1096,7 @@ const HospitalPracticeManagement = () => {
                 <Button variant="outline" onClick={() => setShowBedAllocationDialog(true)}>
                   <Bed className="h-4 w-4 mr-2" /> Allocate Bed
                 </Button>
-                <Button className="gap-2 bg-gradient-to-r from-blue-600 to-blue-700" onClick={() => setShowAddResourceDialog(true)}>
+                <Button className="gap-2 bg-gradient-to-r from-teal-500 to-teal-600" onClick={() => setShowAddResourceDialog(true)}>
                   <Plus className="h-4 w-4" /> Add Resource
                 </Button>
               </div>
@@ -1416,7 +1384,7 @@ const HospitalPracticeManagement = () => {
           </DialogContent>
         </Dialog>
       </div>
-    </div>
+    </HospitalLayout>
   );
 };
 

@@ -290,20 +290,52 @@ router.post('/book', authUser, [
       });
     }
 
-    // Check if slot is available
-    const existingAppointment = await Appointment.findOne({
+    // Check if doctor has an appointment at this time (prevent doctor double-booking)
+    const doctorConflict = await Appointment.findOne({
       where: {
         doctorId,
         appointmentDate,
         appointmentTime,
-        status: ['pending', 'accepted', 'confirmed', 'in-progress']
+        status: ['pending', 'accepted', 'confirmed', 'in-progress', 'scheduled']
       }
     });
 
-    if (existingAppointment) {
+    if (doctorConflict) {
       return res.status(409).json({
         success: false,
-        message: 'This slot is no longer available. Please select another time.'
+        message: 'This doctor is not available at the selected time. The time slot is already booked by another patient. Please select a different time slot.',
+        conflict: 'doctor_busy'
+      });
+    }
+
+    // Check if patient has an appointment at this time (prevent patient double-booking)
+    const patientConflict = await Appointment.findOne({
+      where: {
+        userId: patientId,
+        appointmentDate,
+        appointmentTime,
+        status: ['pending', 'accepted', 'confirmed', 'in-progress', 'scheduled']
+      }
+    });
+
+    if (patientConflict) {
+      const conflictDoctor = await Doctor.findByPk(patientConflict.doctorId, {
+        attributes: ['firstName', 'lastName', 'specialization', 'prefix']
+      });
+      const conflictDoctorName = conflictDoctor 
+        ? `${conflictDoctor.prefix || 'Dr.'} ${conflictDoctor.firstName} ${conflictDoctor.lastName} (${conflictDoctor.specialization})`
+        : 'another doctor';
+
+      return res.status(409).json({
+        success: false,
+        message: `You already have an appointment scheduled at ${appointmentTime} on ${appointmentDate} with ${conflictDoctorName}. You cannot book multiple appointments at the same time. Please select a different time slot or cancel your existing appointment first.`,
+        conflict: 'patient_busy',
+        existingAppointment: {
+          id: patientConflict.id,
+          doctorName: conflictDoctorName,
+          time: appointmentTime,
+          date: appointmentDate
+        }
       });
     }
 

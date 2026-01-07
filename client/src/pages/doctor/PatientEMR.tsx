@@ -5,6 +5,8 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/com
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Badge } from '@/components/ui/badge';
+import { Label } from '@/components/ui/label';
+import { Textarea } from '@/components/ui/textarea';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { ScrollArea } from '@/components/ui/scroll-area';
 import { Separator } from '@/components/ui/separator';
@@ -119,6 +121,31 @@ export default function PatientEMR() {
   const [searchQuery, setSearchQuery] = useState('');
   const [selectedPatient, setSelectedPatient] = useState<Patient | null>(null);
   const [activeTab, setActiveTab] = useState('overview');
+  
+  // Record Vitals Dialog State
+  const [isRecordVitalsOpen, setIsRecordVitalsOpen] = useState(false);
+  const [vitalsForm, setVitalsForm] = useState({
+    bloodPressureSystolic: '',
+    bloodPressureDiastolic: '',
+    heartRate: '',
+    temperature: '',
+    spO2: '',
+    weight: '',
+    bloodSugar: '',
+    notes: ''
+  });
+  
+  // Lab Filter State
+  const [isLabFilterOpen, setIsLabFilterOpen] = useState(false);
+  const [labFilter, setLabFilter] = useState({
+    status: 'all',
+    dateFrom: '',
+    dateTo: ''
+  });
+  
+  // Appointment View State
+  const [selectedAppointment, setSelectedAppointment] = useState<Appointment | null>(null);
+  const [isAppointmentDialogOpen, setIsAppointmentDialogOpen] = useState(false);
 
   // Fetch patients
   const { data: patientsData, isLoading: loadingPatients, refetch: refetchPatients } = useQuery({
@@ -212,6 +239,85 @@ export default function PatientEMR() {
       default: return <Activity className="w-4 h-4 text-gray-500" />;
     }
   };
+
+  // Handler functions for buttons
+  const handleRecordVitals = () => {
+    if (!selectedPatient) {
+      toast({
+        title: 'No patient selected',
+        description: 'Please select a patient first',
+        variant: 'destructive'
+      });
+      return;
+    }
+    setIsRecordVitalsOpen(true);
+  };
+
+  const handleSaveVitals = async () => {
+    try {
+      // Validate at least one vital is entered
+      const hasData = Object.entries(vitalsForm).some(([key, value]) => 
+        key !== 'notes' && value !== ''
+      );
+      
+      if (!hasData) {
+        toast({
+          title: 'No data entered',
+          description: 'Please enter at least one vital sign',
+          variant: 'destructive'
+        });
+        return;
+      }
+
+      // In a real app, you would save to the API
+      // await api.post('/vitals', { patientId: selectedPatient.id, ...vitalsForm });
+      
+      toast({
+        title: 'Success',
+        description: 'Vital signs recorded successfully'
+      });
+      
+      setIsRecordVitalsOpen(false);
+      setVitalsForm({
+        bloodPressureSystolic: '',
+        bloodPressureDiastolic: '',
+        heartRate: '',
+        temperature: '',
+        spO2: '',
+        weight: '',
+        bloodSugar: '',
+        notes: ''
+      });
+    } catch (error) {
+      toast({
+        title: 'Error',
+        description: 'Failed to record vitals',
+        variant: 'destructive'
+      });
+    }
+  };
+
+  const handleApplyLabFilter = () => {
+    // In a real app, you would filter the lab reports based on the filter criteria
+    toast({
+      title: 'Filter applied',
+      description: `Showing ${labFilter.status} results`
+    });
+    setIsLabFilterOpen(false);
+  };
+
+  const handleViewAppointment = (appointment: Appointment) => {
+    setSelectedAppointment(appointment);
+    setIsAppointmentDialogOpen(true);
+  };
+
+  // Filter lab reports based on filter
+  const filteredLabReports = mockLabReports.filter(report => {
+    if (labFilter.status !== 'all' && report.status !== labFilter.status) return false;
+    if (labFilter.dateFrom && report.date < labFilter.dateFrom) return false;
+    if (labFilter.dateTo && report.date > labFilter.dateTo) return false;
+    return true;
+  });
 
   return (
     <MainLayout>
@@ -491,7 +597,7 @@ export default function PatientEMR() {
                       <CardHeader>
                         <div className="flex items-center justify-between">
                           <CardTitle>Vital Signs History</CardTitle>
-                          <Button size="sm">
+                          <Button size="sm" onClick={handleRecordVitals}>
                             <Plus className="w-4 h-4 mr-1" />
                             Record Vitals
                           </Button>
@@ -573,7 +679,7 @@ export default function PatientEMR() {
                       <CardHeader>
                         <div className="flex items-center justify-between">
                           <CardTitle>Laboratory Reports</CardTitle>
-                          <Button variant="outline" size="sm">
+                          <Button variant="outline" size="sm" onClick={() => setIsLabFilterOpen(true)}>
                             <Filter className="w-4 h-4 mr-1" />
                             Filter
                           </Button>
@@ -592,7 +698,7 @@ export default function PatientEMR() {
                               </tr>
                             </thead>
                             <tbody>
-                              {mockLabReports.map((report) => (
+                              {filteredLabReports.map((report) => (
                                 <tr key={report.id} className="border-b hover:bg-gray-50 dark:hover:bg-gray-800">
                                   <td className="py-3 px-2 font-medium">{report.testName}</td>
                                   <td className="py-3 px-2">{report.result}</td>
@@ -650,7 +756,7 @@ export default function PatientEMR() {
                                   <p className="text-sm text-gray-600 mt-1">{apt.notes}</p>
                                 )}
                               </div>
-                              <Button variant="ghost" size="sm">
+                              <Button variant="ghost" size="sm" onClick={() => handleViewAppointment(apt)}>
                                 <Eye className="w-4 h-4" />
                               </Button>
                             </div>
@@ -677,6 +783,217 @@ export default function PatientEMR() {
           </div>
         </div>
       </div>
+
+      {/* Record Vitals Dialog */}
+      <Dialog open={isRecordVitalsOpen} onOpenChange={setIsRecordVitalsOpen}>
+        <DialogContent className="max-w-2xl max-h-[90vh] overflow-y-auto">
+          <DialogHeader>
+            <DialogTitle>Record Vital Signs</DialogTitle>
+            <DialogDescription>
+              Enter the patient's vital signs. All measurements are optional.
+            </DialogDescription>
+          </DialogHeader>
+
+          <div className="grid grid-cols-2 gap-4 py-4">
+            <div className="space-y-2">
+              <Label htmlFor="bp-systolic">Blood Pressure (Systolic)</Label>
+              <Input 
+                id="bp-systolic" 
+                type="number" 
+                placeholder="120"
+                value={vitalsForm.bloodPressureSystolic}
+                onChange={(e) => setVitalsForm({...vitalsForm, bloodPressureSystolic: e.target.value})}
+              />
+            </div>
+            <div className="space-y-2">
+              <Label htmlFor="bp-diastolic">Blood Pressure (Diastolic)</Label>
+              <Input 
+                id="bp-diastolic" 
+                type="number" 
+                placeholder="80"
+                value={vitalsForm.bloodPressureDiastolic}
+                onChange={(e) => setVitalsForm({...vitalsForm, bloodPressureDiastolic: e.target.value})}
+              />
+            </div>
+            <div className="space-y-2">
+              <Label htmlFor="heart-rate">Heart Rate (bpm)</Label>
+              <Input 
+                id="heart-rate" 
+                type="number" 
+                placeholder="72"
+                value={vitalsForm.heartRate}
+                onChange={(e) => setVitalsForm({...vitalsForm, heartRate: e.target.value})}
+              />
+            </div>
+            <div className="space-y-2">
+              <Label htmlFor="temperature">Temperature (°F)</Label>
+              <Input 
+                id="temperature" 
+                type="number" 
+                step="0.1"
+                placeholder="98.6"
+                value={vitalsForm.temperature}
+                onChange={(e) => setVitalsForm({...vitalsForm, temperature: e.target.value})}
+              />
+            </div>
+            <div className="space-y-2">
+              <Label htmlFor="spo2">SpO2 (%)</Label>
+              <Input 
+                id="spo2" 
+                type="number" 
+                placeholder="98"
+                value={vitalsForm.spO2}
+                onChange={(e) => setVitalsForm({...vitalsForm, spO2: e.target.value})}
+              />
+            </div>
+            <div className="space-y-2">
+              <Label htmlFor="weight">Weight (kg)</Label>
+              <Input 
+                id="weight" 
+                type="number" 
+                step="0.1"
+                placeholder="70"
+                value={vitalsForm.weight}
+                onChange={(e) => setVitalsForm({...vitalsForm, weight: e.target.value})}
+              />
+            </div>
+            <div className="space-y-2 col-span-2">
+              <Label htmlFor="blood-sugar">Blood Sugar (mg/dL)</Label>
+              <Input 
+                id="blood-sugar" 
+                type="number" 
+                placeholder="95"
+                value={vitalsForm.bloodSugar}
+                onChange={(e) => setVitalsForm({...vitalsForm, bloodSugar: e.target.value})}
+              />
+            </div>
+            <div className="space-y-2 col-span-2">
+              <Label htmlFor="notes">Notes</Label>
+              <Textarea 
+                id="notes" 
+                placeholder="Any additional observations..."
+                value={vitalsForm.notes}
+                onChange={(e) => setVitalsForm({...vitalsForm, notes: e.target.value})}
+              />
+            </div>
+          </div>
+
+          <div className="flex justify-end gap-2">
+            <Button variant="outline" onClick={() => setIsRecordVitalsOpen(false)}>
+              Cancel
+            </Button>
+            <Button onClick={handleSaveVitals}>
+              Save Vitals
+            </Button>
+          </div>
+        </DialogContent>
+      </Dialog>
+
+      {/* Lab Filter Dialog */}
+      <Dialog open={isLabFilterOpen} onOpenChange={setIsLabFilterOpen}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Filter Lab Reports</DialogTitle>
+            <DialogDescription>
+              Filter laboratory reports by status and date range
+            </DialogDescription>
+          </DialogHeader>
+
+          <div className="space-y-4 py-4">
+            <div className="space-y-2">
+              <Label htmlFor="status">Status</Label>
+              <Select value={labFilter.status} onValueChange={(value) => setLabFilter({...labFilter, status: value})}>
+                <SelectTrigger>
+                  <SelectValue placeholder="Select status" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="all">All</SelectItem>
+                  <SelectItem value="normal">Normal</SelectItem>
+                  <SelectItem value="abnormal">Abnormal</SelectItem>
+                  <SelectItem value="critical">Critical</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+            <div className="space-y-2">
+              <Label htmlFor="date-from">Date From</Label>
+              <Input 
+                id="date-from" 
+                type="date"
+                value={labFilter.dateFrom}
+                onChange={(e) => setLabFilter({...labFilter, dateFrom: e.target.value})}
+              />
+            </div>
+            <div className="space-y-2">
+              <Label htmlFor="date-to">Date To</Label>
+              <Input 
+                id="date-to" 
+                type="date"
+                value={labFilter.dateTo}
+                onChange={(e) => setLabFilter({...labFilter, dateTo: e.target.value})}
+              />
+            </div>
+          </div>
+
+          <div className="flex justify-end gap-2">
+            <Button variant="outline" onClick={() => setIsLabFilterOpen(false)}>
+              Cancel
+            </Button>
+            <Button onClick={handleApplyLabFilter}>
+              Apply Filter
+            </Button>
+          </div>
+        </DialogContent>
+      </Dialog>
+
+      {/* Appointment Details Dialog */}
+      <Dialog open={isAppointmentDialogOpen} onOpenChange={setIsAppointmentDialogOpen}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Appointment Details</DialogTitle>
+          </DialogHeader>
+
+          {selectedAppointment && (
+            <div className="space-y-4 py-4">
+              <div className="grid grid-cols-2 gap-4">
+                <div>
+                  <Label className="text-muted-foreground">Type</Label>
+                  <p className="font-medium">{selectedAppointment.type}</p>
+                </div>
+                <div>
+                  <Label className="text-muted-foreground">Status</Label>
+                  <Badge variant={selectedAppointment.status === 'completed' ? 'secondary' : 'default'}>
+                    {selectedAppointment.status}
+                  </Badge>
+                </div>
+                <div>
+                  <Label className="text-muted-foreground">Date</Label>
+                  <p className="font-medium">{selectedAppointment.date}</p>
+                </div>
+                <div>
+                  <Label className="text-muted-foreground">Time</Label>
+                  <p className="font-medium">{selectedAppointment.time}</p>
+                </div>
+                <div className="col-span-2">
+                  <Label className="text-muted-foreground">Doctor</Label>
+                  <p className="font-medium">{selectedAppointment.doctorName}</p>
+                </div>
+                {selectedAppointment.notes && (
+                  <div className="col-span-2">
+                    <Label className="text-muted-foreground">Notes</Label>
+                    <p className="font-medium">{selectedAppointment.notes}</p>
+                  </div>
+                )}
+              </div>
+            </div>
+          )}
+
+          <div className="flex justify-end">
+            <Button onClick={() => setIsAppointmentDialogOpen(false)}>
+              Close
+            </Button>
+          </div>
+        </DialogContent>
+      </Dialog>
     </MainLayout>
   );
 }

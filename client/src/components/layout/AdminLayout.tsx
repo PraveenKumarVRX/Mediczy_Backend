@@ -1,5 +1,6 @@
 import { ReactNode, useState, useEffect, useRef } from 'react';
 import { Link, useLocation, useNavigate } from 'react-router-dom';
+import { BRAND } from "@/config/brand";
 import { 
   LayoutDashboard, 
   Users, 
@@ -389,18 +390,23 @@ const AdminLayout = ({ children }: AdminLayoutProps) => {
         "flex items-center border-b border-border/50 py-4",
         isCollapsed && isDesktop ? "justify-center px-2" : "gap-3 px-4"
       )}>
-        <div className="p-2 rounded-xl bg-gradient-to-br from-blue-500 to-purple-600 shadow-lg shadow-blue-500/20">
-          <HeartPulse className="h-5 w-5 text-white" />
-        </div>
-        {!(isCollapsed && isDesktop) && (
-          <div className="flex-1 min-w-0">
-            <div className="flex items-center gap-2">
-              <span className="text-lg font-bold text-foreground tracking-tight">Mediqzy</span>
-              <Crown className="h-4 w-4 text-amber-500" />
-            </div>
-            <p className="text-xs text-muted-foreground">Admin Portal</p>
+        <Link 
+          to="/admin" 
+          className="flex items-center gap-3 flex-1 cursor-pointer hover:opacity-80 transition-opacity"
+        >
+          <div className="p-2 rounded-xl bg-gradient-to-br from-blue-500 to-purple-600 shadow-lg shadow-blue-500/20">
+            <HeartPulse className="h-5 w-5 text-white" />
           </div>
-        )}
+          {!(isCollapsed && isDesktop) && (
+            <div className="flex-1 min-w-0">
+              <div className="flex items-center gap-2">
+                <span className="text-lg font-bold text-foreground tracking-tight">{BRAND.name}</span>
+                <Crown className="h-4 w-4 text-amber-500" />
+              </div>
+              <p className="text-xs text-muted-foreground">Admin Portal</p>
+            </div>
+          )}
+        </Link>
         {/* Collapse Toggle - Desktop only */}
         {isDesktop && (
           <Button
@@ -531,7 +537,7 @@ const AdminLayout = ({ children }: AdminLayoutProps) => {
       <div className="border-t border-border/30 p-3">
         {!(isCollapsed && isDesktop) ? (
           <div className="text-center">
-            <p className="text-xs font-medium text-muted-foreground">Mediqzy Platform v2.0</p>
+            <p className="text-xs font-medium text-muted-foreground">{BRAND.name} Platform v2.0</p>
             <p className="text-[10px] text-muted-foreground/70">Healthcare Excellence</p>
           </div>
         ) : (
@@ -541,7 +547,7 @@ const AdminLayout = ({ children }: AdminLayoutProps) => {
                 <HeartPulse className="h-4 w-4 text-muted-foreground" />
               </div>
             </TooltipTrigger>
-            <TooltipContent side="right">Mediqzy v2.0</TooltipContent>
+            <TooltipContent side="right">{BRAND.name} v2.0</TooltipContent>
           </Tooltip>
         )}
       </div>

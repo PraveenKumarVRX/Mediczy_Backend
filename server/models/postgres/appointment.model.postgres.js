@@ -193,6 +193,18 @@ const Appointment = sequelize.define('Appointment', {
     comment: 'Video call details { platform, roomId, startedAt, endedAt, duration }'
   },
   
+  // Call Initiation Tracking
+  callInitiatedBy: {
+    type: DataTypes.ENUM('doctor', 'patient'),
+    allowNull: true,
+    comment: 'Who initiated the video call'
+  },
+  callInitiatedAt: {
+    type: DataTypes.DATE,
+    allowNull: true,
+    comment: 'When the video call was initiated'
+  },
+  
   // Prescription
   prescriptionId: {
     type: DataTypes.INTEGER,

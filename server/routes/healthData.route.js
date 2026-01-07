@@ -1,8 +1,27 @@
 import express from 'express';
 import auth from '../middleware/auth.js';
 import HealthData from '../models/HealthData.model.intelligent.js';
+import { postgresSequelize } from '../db/postgres-sequelize.js';
 
 const router = express.Router();
+
+/**
+ * Validate device ownership - ensures device is registered to user
+ */
+async function validateDeviceOwnership(userId, deviceId) {
+  if (!deviceId || deviceId === 'unknown') return false;
+  
+  try {
+    const [results] = await postgresSequelize.query(
+      `SELECT id FROM user_devices WHERE user_id = $1 AND device_id = $2 AND is_active = TRUE`,
+      { bind: [userId, deviceId] }
+    );
+    return results.length > 0;
+  } catch (e) {
+    console.error('Device validation error:', e.message);
+    return false;
+  }
+}
 
 /**
  * POST /api/health-data/ble-sync
@@ -20,6 +39,7 @@ router.post('/ble-sync', auth, async (req, res) => {
     console.log(`📱 BLE Sync: Received ${readings.length} readings from user ${userId}`);
 
     const processedReadings = [];
+    const rejectedReadings = [];
 
     for (const reading of readings) {
       const { type, value, unit, timestamp, deviceId, metadata } = reading;
@@ -27,6 +47,14 @@ router.post('/ble-sync', auth, async (req, res) => {
       // Validate required fields
       if (!type || value === undefined || !timestamp) {
         console.warn('Skipping invalid reading:', reading);
+        continue;
+      }
+
+      // Validate device ownership
+      const isValidDevice = await validateDeviceOwnership(userId, deviceId);
+      if (!isValidDevice && deviceId && deviceId !== 'unknown') {
+        console.warn(`🚫 Device ${deviceId} not registered to user ${userId}`);
+        rejectedReadings.push({ deviceId, reason: 'Device not registered to user' });
         continue;
       }
 
@@ -39,6 +67,7 @@ router.post('/ble-sync', auth, async (req, res) => {
         deviceId: deviceId || 'unknown',
         recordedAt: new Date(timestamp),
         metadata: metadata || {},
+        verified: isValidDevice,
         createdAt: new Date(),
         updatedAt: new Date()
       };
@@ -69,12 +98,27 @@ router.post('/ble-sync', auth, async (req, res) => {
       }
     }
 
+    // Update last sync time for device
+    if (processedReadings.length > 0) {
+      const deviceIds = [...new Set(processedReadings.map(r => r.deviceId).filter(d => d !== 'unknown'))];
+      for (const deviceId of deviceIds) {
+        try {
+          await postgresSequelize.query(
+            `UPDATE user_devices SET last_sync = NOW(), updated_at = NOW() WHERE user_id = $1 AND device_id = $2`,
+            { bind: [userId, deviceId] }
+          );
+        } catch (e) {}
+      }
+    }
+
     console.log(`✅ BLE Sync: Processed ${processedReadings.length}/${readings.length} readings`);
 
     res.json({
       success: true,
       processedCount: processedReadings.length,
-      totalReceived: readings.length
+      totalReceived: readings.length,
+      rejectedCount: rejectedReadings.length,
+      rejected: rejectedReadings
     });
 
   } catch (error) {
@@ -137,7 +181,7 @@ router.get('/summary', auth, async (req, res) => {
     const latestReadings = {};
     const dataTypes = [
       'heart_rate', 'hrv', 'ecg', 'steps', 'calories', 'distance', 'sleep',
-      'blood_pressure', 'blood_glucose', 'weight', 'body_fat',
+      'blood_pressure_systolic', 'blood_pressure_diastolic', 'blood_glucose', 'weight', 'body_fat',
       'temperature', 'spo2', 'activity', 'total_cholesterol', 'uric_acid'
     ];
 
@@ -148,19 +192,22 @@ router.get('/summary', auth, async (req, res) => {
             where: { userId, dataType },
             order: [['recordedAt', 'DESC']]
           });
+          console.log(`Health summary - ${dataType}: ${latest ? latest.value : 'null'}`);
           if (latest) {
             latestReadings[dataType] = {
-              value: latest.value,
+              value: parseFloat(latest.value),
               unit: latest.unit,
               timestamp: latest.recordedAt,
               deviceId: latest.deviceId
             };
           }
         } catch (e) {
-          // Skip if error
+          console.error(`Error fetching ${dataType}:`, e.message);
         }
       }
     }
+    
+    console.log('Latest readings:', JSON.stringify(latestReadings, null, 2));
 
     // Calculate averages for the period
     const averages = {};
@@ -197,6 +244,199 @@ router.get('/summary', auth, async (req, res) => {
   } catch (error) {
     console.error('Error fetching health data summary:', error);
     res.status(500).json({ error: 'Failed to fetch health data summary' });
+  }
+});
+
+/**
+ * GET /api/health-data/trends/:dataType
+ * Get historical trend data for a specific metric
+ * Query params: period (hour, day, week, month, year)
+ */
+router.get('/trends/:dataType', auth, async (req, res) => {
+  try {
+    const userId = req.user.id;
+    const { dataType } = req.params;
+    const { period = 'day' } = req.query;
+
+    let startDate, groupBy, dateFormat;
+    const now = new Date();
+
+    switch (period) {
+      case 'hour':
+        startDate = new Date(now.getTime() - 24 * 60 * 60 * 1000); // Last 24 hours
+        groupBy = "date_trunc('hour', recorded_at)";
+        dateFormat = 'HH24:MI';
+        break;
+      case 'day':
+        startDate = new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000); // Last 7 days
+        groupBy = "date_trunc('day', recorded_at)";
+        dateFormat = 'Dy';
+        break;
+      case 'week':
+        startDate = new Date(now.getTime() - 30 * 24 * 60 * 60 * 1000); // Last 30 days
+        groupBy = "date_trunc('week', recorded_at)";
+        dateFormat = 'Mon DD';
+        break;
+      case 'month':
+        startDate = new Date(now.getTime() - 365 * 24 * 60 * 60 * 1000); // Last 12 months
+        groupBy = "date_trunc('month', recorded_at)";
+        dateFormat = 'Mon';
+        break;
+      case 'year':
+        startDate = new Date(now.getTime() - 5 * 365 * 24 * 60 * 60 * 1000); // Last 5 years
+        groupBy = "date_trunc('year', recorded_at)";
+        dateFormat = 'YYYY';
+        break;
+      default:
+        startDate = new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000);
+        groupBy = "date_trunc('day', recorded_at)";
+        dateFormat = 'Dy';
+    }
+
+    // Get aggregated data
+    const [trendData] = await postgresSequelize.query(`
+      SELECT 
+        ${groupBy} as time_bucket,
+        TO_CHAR(${groupBy}, '${dateFormat}') as label,
+        ROUND(AVG(value)::numeric, 1) as avg_value,
+        ROUND(MIN(value)::numeric, 1) as min_value,
+        ROUND(MAX(value)::numeric, 1) as max_value,
+        COUNT(*) as reading_count
+      FROM health_data 
+      WHERE user_id = $1 
+        AND data_type = $2 
+        AND recorded_at >= $3
+      GROUP BY ${groupBy}
+      ORDER BY time_bucket ASC
+    `, { bind: [userId, dataType, startDate] });
+
+    // Get overall stats
+    const [stats] = await postgresSequelize.query(`
+      SELECT 
+        ROUND(AVG(value)::numeric, 1) as average,
+        ROUND(MIN(value)::numeric, 1) as minimum,
+        ROUND(MAX(value)::numeric, 1) as maximum,
+        COUNT(*) as total_readings,
+        MAX(recorded_at) as last_reading
+      FROM health_data 
+      WHERE user_id = $1 
+        AND data_type = $2 
+        AND recorded_at >= $3
+    `, { bind: [userId, dataType, startDate] });
+
+    // Calculate trend (comparing first half to second half of period)
+    const midPoint = Math.floor(trendData.length / 2);
+    let trend = 'stable';
+    let trendPercentage = 0;
+
+    if (trendData.length >= 2) {
+      const firstHalf = trendData.slice(0, midPoint);
+      const secondHalf = trendData.slice(midPoint);
+      
+      const firstAvg = firstHalf.reduce((sum, d) => sum + parseFloat(d.avg_value), 0) / (firstHalf.length || 1);
+      const secondAvg = secondHalf.reduce((sum, d) => sum + parseFloat(d.avg_value), 0) / (secondHalf.length || 1);
+      
+      if (firstAvg > 0) {
+        trendPercentage = Math.round(((secondAvg - firstAvg) / firstAvg) * 100);
+        if (trendPercentage > 5) trend = 'up';
+        else if (trendPercentage < -5) trend = 'down';
+      }
+    }
+
+    // Get unit for the data type
+    const [unitResult] = await postgresSequelize.query(`
+      SELECT unit FROM health_data WHERE user_id = $1 AND data_type = $2 ORDER BY recorded_at DESC LIMIT 1
+    `, { bind: [userId, dataType] });
+
+    res.json({
+      dataType,
+      period,
+      unit: unitResult[0]?.unit || getDefaultUnit(dataType),
+      data: trendData.map(d => ({
+        label: d.label,
+        timestamp: d.time_bucket,
+        value: parseFloat(d.avg_value),
+        min: parseFloat(d.min_value),
+        max: parseFloat(d.max_value),
+        count: parseInt(d.reading_count)
+      })),
+      stats: stats[0] ? {
+        average: parseFloat(stats[0].average) || 0,
+        minimum: parseFloat(stats[0].minimum) || 0,
+        maximum: parseFloat(stats[0].maximum) || 0,
+        totalReadings: parseInt(stats[0].total_readings) || 0,
+        lastReading: stats[0].last_reading
+      } : null,
+      trend: {
+        direction: trend,
+        percentage: trendPercentage
+      }
+    });
+
+  } catch (error) {
+    console.error('Error fetching health trends:', error);
+    res.status(500).json({ error: 'Failed to fetch health trends' });
+  }
+});
+
+/**
+ * GET /api/health-data/history/:dataType
+ * Get raw historical readings for a data type
+ */
+router.get('/history/:dataType', auth, async (req, res) => {
+  try {
+    const userId = req.user.id;
+    const { dataType } = req.params;
+    const { limit = 100, offset = 0, startDate, endDate } = req.query;
+
+    let whereClause = 'user_id = $1 AND data_type = $2';
+    const params = [userId, dataType];
+    let paramIndex = 3;
+
+    if (startDate) {
+      whereClause += ` AND recorded_at >= $${paramIndex}`;
+      params.push(startDate);
+      paramIndex++;
+    }
+    if (endDate) {
+      whereClause += ` AND recorded_at <= $${paramIndex}`;
+      params.push(endDate);
+      paramIndex++;
+    }
+
+    const [readings] = await postgresSequelize.query(`
+      SELECT id, value, unit, source, device_id, recorded_at, verified
+      FROM health_data 
+      WHERE ${whereClause}
+      ORDER BY recorded_at DESC
+      LIMIT $${paramIndex} OFFSET $${paramIndex + 1}
+    `, { bind: [...params, parseInt(limit), parseInt(offset)] });
+
+    const [countResult] = await postgresSequelize.query(`
+      SELECT COUNT(*) as total FROM health_data WHERE ${whereClause}
+    `, { bind: params });
+
+    res.json({
+      dataType,
+      readings: readings.map(r => ({
+        id: r.id,
+        value: parseFloat(r.value),
+        unit: r.unit,
+        source: r.source,
+        deviceId: r.device_id,
+        recordedAt: r.recorded_at,
+        verified: r.verified
+      })),
+      pagination: {
+        total: parseInt(countResult[0].total),
+        limit: parseInt(limit),
+        offset: parseInt(offset)
+      }
+    });
+
+  } catch (error) {
+    console.error('Error fetching health history:', error);
+    res.status(500).json({ error: 'Failed to fetch health history' });
   }
 });
 
@@ -605,6 +845,104 @@ router.post('/google-fit-sync', auth, async (req, res) => {
   } catch (error) {
     console.error('Google Fit sync error:', error);
     res.status(500).json({ error: 'Failed to sync Google Fit data' });
+  }
+});
+
+/**
+ * GET /api/health-data/devices
+ * Get user's registered devices
+ */
+router.get('/devices', auth, async (req, res) => {
+  try {
+    const userId = req.user.id;
+    
+    const [devices] = await postgresSequelize.query(
+      `SELECT id, device_id, device_name, device_type, mac_address, paired_at, is_active, last_sync 
+       FROM user_devices WHERE user_id = $1 ORDER BY paired_at DESC`,
+      { bind: [userId] }
+    );
+    
+    res.json({ devices });
+  } catch (error) {
+    console.error('Error fetching devices:', error);
+    res.status(500).json({ error: 'Failed to fetch devices' });
+  }
+});
+
+/**
+ * POST /api/health-data/devices/register
+ * Register/pair a new device to user
+ */
+router.post('/devices/register', auth, async (req, res) => {
+  try {
+    const userId = req.user.id;
+    const { deviceId, deviceName, deviceType, macAddress } = req.body;
+
+    if (!deviceId) {
+      return res.status(400).json({ error: 'Device ID is required' });
+    }
+
+    // Check if device is already registered to another user
+    const [existing] = await postgresSequelize.query(
+      `SELECT user_id FROM user_devices WHERE device_id = $1`,
+      { bind: [deviceId] }
+    );
+
+    if (existing.length > 0 && existing[0].user_id !== userId) {
+      return res.status(403).json({ 
+        error: 'Device is already registered to another user',
+        message: 'This device is paired with a different account. Please unpair it first.'
+      });
+    }
+
+    // Register or update device
+    await postgresSequelize.query(
+      `INSERT INTO user_devices (user_id, device_id, device_name, device_type, mac_address, paired_at, is_active)
+       VALUES ($1, $2, $3, $4, $5, NOW(), TRUE)
+       ON CONFLICT (device_id) DO UPDATE SET 
+         user_id = $1, device_name = $3, device_type = $4, is_active = TRUE, updated_at = NOW()`,
+      { bind: [userId, deviceId, deviceName || 'Unknown Device', deviceType || 'unknown', macAddress || null] }
+    );
+
+    console.log(`✅ Device ${deviceId} registered to user ${userId}`);
+
+    res.json({ 
+      success: true, 
+      message: 'Device registered successfully',
+      device: { deviceId, deviceName, deviceType, userId }
+    });
+
+  } catch (error) {
+    console.error('Device registration error:', error);
+    res.status(500).json({ error: 'Failed to register device' });
+  }
+});
+
+/**
+ * DELETE /api/health-data/devices/:deviceId
+ * Unpair/remove a device from user
+ */
+router.delete('/devices/:deviceId', auth, async (req, res) => {
+  try {
+    const userId = req.user.id;
+    const { deviceId } = req.params;
+
+    const [result] = await postgresSequelize.query(
+      `DELETE FROM user_devices WHERE user_id = $1 AND device_id = $2 RETURNING id`,
+      { bind: [userId, deviceId] }
+    );
+
+    if (result.length === 0) {
+      return res.status(404).json({ error: 'Device not found or not owned by user' });
+    }
+
+    console.log(`🗑️ Device ${deviceId} unpaired from user ${userId}`);
+
+    res.json({ success: true, message: 'Device unpaired successfully' });
+
+  } catch (error) {
+    console.error('Device removal error:', error);
+    res.status(500).json({ error: 'Failed to remove device' });
   }
 });
 

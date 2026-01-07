@@ -11,6 +11,7 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@
 import { Badge } from '@/components/ui/badge';
 import { Checkbox } from '@/components/ui/checkbox';
 import { useToast } from '@/hooks/use-toast';
+import HospitalLayout from '@/components/hospital/HospitalLayout';
 import {
   FlaskConical, Plus, Search, ArrowLeft, Calendar, Clock,
   User, FileText, CheckCircle, XCircle, AlertCircle,
@@ -259,7 +260,7 @@ const HospitalLabOrder = () => {
 
   const getStatusColor = (status: string) => {
     switch (status) {
-      case 'Ordered': return 'bg-blue-100 text-blue-800';
+      case 'Ordered': return 'bg-teal-100 text-teal-800';
       case 'Sample Collected': return 'bg-yellow-100 text-yellow-800';
       case 'Processing': return 'bg-purple-100 text-purple-800';
       case 'Completed': return 'bg-green-100 text-green-800';
@@ -278,23 +279,13 @@ const HospitalLabOrder = () => {
   };
 
   return (
-    <div className="min-h-screen bg-gray-50">
-      <div className="max-w-7xl mx-auto p-6 space-y-6">
-        {/* Header */}
-        <div className="flex items-center justify-between">
-          <div className="flex items-center gap-4">
-            <Button variant="outline" onClick={() => navigate('/hospital/dashboard')}>
-              <ArrowLeft className="h-4 w-4 mr-2" />
-              Back to Dashboard
-            </Button>
-            <div>
-              <h1 className="text-3xl font-bold">Lab Test Orders</h1>
-              <p className="text-muted-foreground">Order laboratory tests and manage test requests</p>
-            </div>
-          </div>
+    <HospitalLayout title="Lab Test Orders" subtitle="Order laboratory tests and manage test requests">
+      <div className="space-y-6">
+        {/* Header Actions */}
+        <div className="flex items-center justify-end">
           <Dialog open={showOrderDialog} onOpenChange={setShowOrderDialog}>
             <DialogTrigger asChild>
-              <Button className="gap-2 bg-gradient-to-r from-blue-600 to-cyan-600">
+              <Button className="gap-2 bg-gradient-to-r from-teal-500 to-teal-600">
                 <Plus className="h-4 w-4" />
                 Order Lab Test
               </Button>
@@ -325,7 +316,7 @@ const HospitalLabOrder = () => {
                         <div
                           key={patient.id}
                           className={`p-3 border-b cursor-pointer hover:bg-gray-50 ${
-                            selectedPatient?.id === patient.id ? 'bg-blue-50 border-blue-200' : ''
+                            selectedPatient?.id === patient.id ? 'bg-teal-50 border-teal-200' : ''
                           }`}
                           onClick={() => setSelectedPatient(patient)}
                         >
@@ -343,9 +334,9 @@ const HospitalLabOrder = () => {
                       ))}
                     </div>
                     {selectedPatient && (
-                      <div className="p-3 bg-blue-50 border border-blue-200 rounded-md">
-                        <p className="font-medium text-blue-900">Selected: {selectedPatient.name}</p>
-                        <p className="text-sm text-blue-700">{selectedPatient.uhid}</p>
+                      <div className="p-3 bg-teal-50 border border-teal-200 rounded-md">
+                        <p className="font-medium text-teal-900">Selected: {selectedPatient.name}</p>
+                        <p className="text-sm text-teal-700">{selectedPatient.uhid}</p>
                       </div>
                     )}
                   </CardContent>
@@ -620,7 +611,7 @@ const HospitalLabOrder = () => {
           </CardContent>
         </Card>
       </div>
-    </div>
+    </HospitalLayout>
   );
 };
 

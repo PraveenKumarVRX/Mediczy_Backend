@@ -37,10 +37,12 @@ router.post(
       .withMessage("Must be a valid mobile phone number"),
     body("specialization").notEmpty().withMessage("Specialization is required"),
     body("experience")
+      .optional()
       .isInt({ min: 0 })
       .withMessage("Experience must be at least 0 years"),
     body("qualifications")
-      .isLength({ min: 1 })
+      .optional()
+      .isArray({ min: 1 })
       .withMessage("At least one qualification is required"),
   ],
   registerDoctor
@@ -1049,25 +1051,19 @@ router.post(
       const normalizedGender = gender ? gender.charAt(0).toUpperCase() + gender.slice(1).toLowerCase() : null;
 
       // Create patient account
+      // Note: User model only supports basic fields
+      // Additional fields like bloodGroup, address, etc. should be in patient_profiles table
       const newPatient = await User.create({
         firstName,
         lastName,
         email: generatedEmail,
         password: hashedPassword,
         phoneNumber,
-        phone: phoneNumber, // Legacy field
-        dateOfBirth: dateOfBirth || null,
+        dateOfBirth: dateOfBirth ? new Date(dateOfBirth) : null,
         gender: normalizedGender,
-        bloodGroup: bloodGroup || null,
-        address: address || null,
-        emergencyContact: emergencyContact || null,
-        isActive: true,
-        isVerified: true, // Doctor-created patients are auto-verified
-        role: 'user',
-        createdBy: 'doctor',
-        referredBy: doctorId,
-        medicalHistory: medicalHistory || null,
-        allergies: allergies || null
+        status: 'active',         // Use status instead of isActive
+        emailVerified: true,      // Doctor-created patients are auto-verified
+        primaryDoctorId: doctorId // Set the creating doctor as primary doctor
       });
 
       // Get doctor info for notification
@@ -1764,6 +1760,164 @@ router.post("/triage/cases/:caseId/respond", authDoctor, async (req, res) => {
     res.status(500).json({
       success: false,
       message: 'Failed to respond to triage case',
+      error: error.message
+    });
+  }
+});
+
+/**
+ * @route   POST /api/doctors/appointments/:appointmentId/initiate-call
+ * @desc    Doctor initiates video call and notifies patient
+ * @access  Private (Doctor only)
+ */
+router.post('/appointments/:appointmentId/initiate-call', authDoctor, async (req, res) => {
+  try {
+    const { appointmentId } = req.params;
+    const doctorId = req.doctor.id;
+
+    // Get appointment with patient and doctor details
+    const appointment = await Appointment.findOne({
+      where: { id: appointmentId, doctorId },
+      include: [
+        { 
+          model: User, 
+          as: 'patient',
+          attributes: ['id', 'firstName', 'lastName', 'email', 'phoneNumber', 'fcmToken']
+        },
+        { 
+          model: Doctor, 
+          as: 'doctor',
+          attributes: ['id', 'firstName', 'lastName', 'prefix', 'specialization']
+        }
+      ]
+    });
+
+    if (!appointment) {
+      return res.status(404).json({ 
+        success: false, 
+        message: 'Appointment not found or you are not authorized' 
+      });
+    }
+
+    // Check if appointment is in valid state for call
+    if (!['confirmed', 'scheduled', 'accepted'].includes(appointment.status)) {
+      return res.status(400).json({
+        success: false,
+        message: `Cannot initiate call. Appointment status is ${appointment.status}. Only confirmed/scheduled appointments can be started.`,
+        currentStatus: appointment.status
+      });
+    }
+
+    // Check if payment is completed (if required)
+    if (appointment.consultationType === 'online' && appointment.paymentStatus !== 'paid') {
+      return res.status(402).json({
+        success: false,
+        message: 'Payment required before starting video consultation',
+        paymentStatus: appointment.paymentStatus
+      });
+    }
+
+    // Generate or get meeting link
+    let meetingLink = appointment.meetingLink;
+    let meetingId = appointment.meetingId;
+
+    if (!meetingLink) {
+      meetingId = `MEDCALL-${appointment.id}-${crypto.randomBytes(4).toString('hex').toUpperCase()}`;
+      meetingLink = `${process.env.MIROTALK_URL || 'https://video.mediczy.com'}/join/${meetingId}`;
+    }
+
+    // Update appointment status and call initiation tracking
+    await appointment.update({
+      status: 'in-progress',
+      meetingId,
+      meetingLink,
+      callInitiatedBy: 'doctor',
+      callInitiatedAt: new Date()
+    });
+
+    // Prepare doctor name
+    const doctorName = appointment.doctor 
+      ? `${appointment.doctor.prefix || 'Dr.'} ${appointment.doctor.firstName} ${appointment.doctor.lastName}`
+      : appointment.doctorName || 'Your Doctor';
+
+    const patientName = appointment.patient
+      ? `${appointment.patient.firstName} ${appointment.patient.lastName}`
+      : appointment.patientName;
+
+    // Send notification to patient
+    try {
+      const notificationService = (await import('../services/notification.service.js')).default;
+      
+      await notificationService.send({
+        userId: appointment.userId,
+        userType: 'patient',
+        type: 'doctor_calling',
+        title: `📞 ${doctorName} is calling`,
+        message: `Your doctor has started the video consultation. Tap to join now!`,
+        variables: {
+          doctorName,
+          appointmentId: appointment.id,
+          meetingLink
+        },
+        data: { 
+          appointmentId: appointment.id, 
+          meetingLink,
+          action: 'join_call',
+          callInitiatedAt: new Date().toISOString()
+        },
+        actionUrl: meetingLink,
+        channels: ['push', 'in-app'],
+        priority: 'critical'
+      });
+
+      console.log('✅ Patient notification sent successfully');
+    } catch (notifError) {
+      console.error('⚠️ Failed to send patient notification:', notifError);
+      // Don't fail the entire request if notification fails
+    }
+
+    // Emit socket event for real-time notification
+    try {
+      const io = req.app.get('io');
+      if (io) {
+        io.to(`user_${appointment.userId}`).emit('doctor-initiated-call', {
+          appointmentId: appointment.id,
+          doctorName,
+          doctorId: doctorId,
+          meetingLink,
+          callInitiatedAt: new Date().toISOString(),
+          appointmentDate: appointment.appointmentDate,
+          appointmentTime: appointment.appointmentTime
+        });
+        console.log('✅ Socket event emitted to patient');
+      }
+    } catch (socketError) {
+      console.error('⚠️ Failed to emit socket event:', socketError);
+    }
+
+    res.json({
+      success: true,
+      message: 'Call initiated successfully. Patient has been notified.',
+      video: {
+        meetingLink,
+        meetingId,
+        platform: 'MiroTalk',
+        directJoinUrl: `${meetingLink}?name=${encodeURIComponent(doctorName)}`
+      },
+      appointment: {
+        id: appointment.id,
+        status: 'in-progress',
+        patientName,
+        callInitiatedBy: 'doctor',
+        callInitiatedAt: new Date()
+      }
+    });
+
+  } catch (error) {
+    console.error('❌ Initiate call error:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Failed to initiate call',
       error: error.message
     });
   }

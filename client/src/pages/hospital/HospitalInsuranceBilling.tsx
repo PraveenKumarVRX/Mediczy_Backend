@@ -13,6 +13,7 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@
 import { Progress } from '@/components/ui/progress';
 import { ScrollArea } from '@/components/ui/scroll-area';
 import { Checkbox } from '@/components/ui/checkbox';
+import HospitalLayout from '@/components/hospital/HospitalLayout';
 import { 
   Shield, Activity, Bell, Plus, Search, ArrowLeft, Edit, 
   Trash2, Eye, CheckCircle, XCircle, AlertCircle, RefreshCw,
@@ -443,7 +444,7 @@ const HospitalInsuranceBilling = () => {
   const getStatusColor = (status: string) => {
     switch (status) {
       case 'Draft': return 'bg-gray-100 text-gray-800';
-      case 'Submitted': return 'bg-blue-100 text-blue-800';
+      case 'Submitted': return 'bg-teal-100 text-teal-800';
       case 'Pre-Auth Pending': return 'bg-yellow-100 text-yellow-800';
       case 'Pre-Auth Approved': return 'bg-green-100 text-green-800';
       case 'Pre-Auth Rejected': return 'bg-red-100 text-red-800';
@@ -474,7 +475,7 @@ const HospitalInsuranceBilling = () => {
       case 'Under Review':
         return <FileClock className="h-4 w-4 text-purple-600" />;
       default:
-        return <Clock className="h-4 w-4 text-blue-600" />;
+        return <Clock className="h-4 w-4 text-teal-600" />;
     }
   };
 
@@ -487,44 +488,11 @@ const HospitalInsuranceBilling = () => {
   }
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-green-50 via-white to-emerald-50">
-      {/* Header */}
-      <header className="bg-white border-b shadow-sm sticky top-0 z-50">
-        <div className="container mx-auto px-6 py-4">
-          <div className="flex items-center justify-between">
-            <div className="flex items-center gap-4">
-              <Button variant="ghost" size="icon" onClick={() => navigate('/hospital/dashboard')}>
-                <ArrowLeft className="h-5 w-5" />
-              </Button>
-              <div className="bg-gradient-to-br from-green-500 to-emerald-600 p-3 rounded-xl">
-                <Shield className="h-6 w-6 text-white" />
-              </div>
-              <div>
-                <h1 className="text-2xl font-bold bg-gradient-to-r from-green-600 to-emerald-600 bg-clip-text text-transparent">
-                  Insurance & Billing
-                </h1>
-                <p className="text-sm text-muted-foreground">Claims Management, Pre-Auth & Billing Codes</p>
-              </div>
-            </div>
-            <div className="flex items-center gap-3">
-              <Button variant="outline" size="icon" className="relative">
-                <Bell className="h-5 w-5" />
-                <span className="absolute -top-1 -right-1 h-5 w-5 bg-red-500 rounded-full text-xs text-white flex items-center justify-center">
-                  {claims.filter(c => c.status === 'Query Raised').length}
-                </span>
-              </Button>
-              <Button variant="outline" size="icon" onClick={exportClaims}>
-                <RefreshCw className="h-5 w-5" />
-              </Button>
-            </div>
-          </div>
-        </div>
-      </header>
-
-      <div className="container mx-auto px-6 py-8">
+    <HospitalLayout title="Insurance & Billing" subtitle="Claims Management, Pre-Auth & Billing Codes">
+      <div className="space-y-6">
         {/* Stats Cards */}
-        <div className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-8 gap-4 mb-8">
-          <Card className="bg-gradient-to-br from-blue-500 to-blue-600 text-white">
+        <div className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-8 gap-4">
+          <Card className="bg-gradient-to-br from-teal-500 to-teal-600 text-white">
             <CardContent className="p-4 text-center">
               <FileText className="h-6 w-6 mx-auto mb-2 opacity-80" />
               <p className="text-2xl font-bold">{stats.totalClaims}</p>
@@ -538,7 +506,7 @@ const HospitalInsuranceBilling = () => {
               <p className="text-xs opacity-80">Pending</p>
             </CardContent>
           </Card>
-          <Card className="bg-gradient-to-br from-green-500 to-green-600 text-white">
+          <Card className="bg-gradient-to-br from-emerald-500 to-emerald-600 text-white">
             <CardContent className="p-4 text-center">
               <CheckCircle className="h-6 w-6 mx-auto mb-2 opacity-80" />
               <p className="text-2xl font-bold">{stats.approvedClaims}</p>
@@ -552,14 +520,14 @@ const HospitalInsuranceBilling = () => {
               <p className="text-xs opacity-80">Rejected</p>
             </CardContent>
           </Card>
-          <Card className="bg-gradient-to-br from-purple-500 to-purple-600 text-white">
+          <Card className="bg-gradient-to-br from-teal-600 to-teal-700 text-white">
             <CardContent className="p-4 text-center">
               <IndianRupee className="h-6 w-6 mx-auto mb-2 opacity-80" />
               <p className="text-xl font-bold">₹{(stats.totalClaimValue / 100000).toFixed(1)}L</p>
               <p className="text-xs opacity-80">Claim Value</p>
             </CardContent>
           </Card>
-          <Card className="bg-gradient-to-br from-emerald-500 to-emerald-600 text-white">
+          <Card className="bg-gradient-to-br from-emerald-600 to-emerald-700 text-white">
             <CardContent className="p-4 text-center">
               <CreditCard className="h-6 w-6 mx-auto mb-2 opacity-80" />
               <p className="text-xl font-bold">₹{(stats.totalSettled / 100000).toFixed(1)}L</p>
@@ -573,7 +541,7 @@ const HospitalInsuranceBilling = () => {
               <p className="text-xs opacity-80">Avg Days</p>
             </CardContent>
           </Card>
-          <Card className="bg-gradient-to-br from-cyan-500 to-cyan-600 text-white">
+          <Card className="bg-gradient-to-br from-teal-500 to-emerald-500 text-white">
             <CardContent className="p-4 text-center">
               <TrendingUp className="h-6 w-6 mx-auto mb-2 opacity-80" />
               <p className="text-2xl font-bold">{stats.approvalRate}%</p>
@@ -1323,7 +1291,7 @@ const HospitalInsuranceBilling = () => {
           </TabsContent>
         </Tabs>
       </div>
-    </div>
+    </HospitalLayout>
   );
 };
 

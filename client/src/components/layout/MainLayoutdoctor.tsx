@@ -38,6 +38,7 @@ import {
   Shield,
   Briefcase
 } from "lucide-react";
+import { BRAND } from "@/config/brand";
 import { memo, useEffect, useState, useRef } from "react";
 import { Link, useNavigate, useLocation } from "react-router-dom";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
@@ -390,7 +391,7 @@ const MainLayoutdoctor = ({ children }) => {
           </div>
           {!(isCollapsed && isDesktop) && (
             <div>
-              <span className="text-lg font-bold text-white tracking-tight">Mediqzy</span>
+              <span className="text-lg font-bold text-white tracking-tight">{BRAND.name}</span>
               <p className="text-xs text-slate-500">Doctor Portal</p>
             </div>
           )}

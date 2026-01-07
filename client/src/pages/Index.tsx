@@ -54,11 +54,17 @@ import { useAuth } from "@/auth/AuthProvider";
 import api from "@/utils/api";
 import { getToken } from "@/hooks/auth";
 import { VeepooService, VEEPOO_SERVICE_UUID, VEEPOO_WRITE_UUID, VEEPOO_NOTIFY_UUID } from "@/services/ble/VeepooService";
+import { healthSyncScheduler } from "@/services/health/HealthSyncScheduler";
 
 const Index = () => {
   const navigate = useNavigate();
   const [searchParams, setSearchParams] = useSearchParams();
   const { currentUser, currentDoctor, userType } = useAuth();
+  
+  // Make healthSyncScheduler available on window for device connection
+  useEffect(() => {
+    (window as any).healthSyncScheduler = healthSyncScheduler;
+  }, []);
   
   // Redirect non-patient users to their appropriate dashboards
   useEffect(() => {
@@ -203,6 +209,8 @@ const Index = () => {
 
   useEffect(() => {
     fetchDashboardData();
+    fetchHealthStats(); // Fetch real health data from backend
+    
     // Load connected devices from localStorage and fix any with wrong types
     const storedDevices = JSON.parse(localStorage.getItem('connectedDevices') || '[]');
     
@@ -229,6 +237,17 @@ const Index = () => {
     }
     
     setConnectedDevices(fixedDevices);
+    
+    // Listen for health data updates
+    const handleHealthDataSync = () => {
+      console.log('Health data synced event received, refreshing stats...');
+      fetchHealthStats();
+    };
+    window.addEventListener('healthDataSynced', handleHealthDataSync);
+    
+    return () => {
+      window.removeEventListener('healthDataSynced', handleHealthDataSync);
+    };
   }, [currentUser, userType]);
 
   const fetchDashboardData = async () => {
@@ -264,6 +283,37 @@ const Index = () => {
       console.error("Error fetching dashboard data:", err);
     } finally {
       setLoading(false);
+    }
+  };
+
+  const fetchHealthStats = async () => {
+    try {
+      const token = getToken();
+      if (!token) {
+        console.log('No auth token, using default health stats');
+        return;
+      }
+
+      const response = await api.get('/health-data/summary');
+      const data = response.data;
+      
+      console.log('Fetched health summary:', data);
+
+      // Update health stats with real data from backend
+      if (data.latest) {
+        setHealthStats(prev => ({
+          ...prev,
+          steps: data.latest.steps?.value || prev.steps,
+          heartRate: data.latest.heart_rate?.value || prev.heartRate,
+          sleep: data.latest.sleep?.value ? data.latest.sleep.value / 3600 : prev.sleep, // Convert seconds to hours
+          // Keep goals as is
+        }));
+
+        console.log('✅ Health stats updated from backend');
+      }
+    } catch (error) {
+      console.log('Could not fetch health stats:', error);
+      // Keep using default/cached values
     }
   };
 
@@ -901,7 +951,7 @@ const Index = () => {
     }
   };
 
-  const saveConnectedDevice = (deviceData: any) => {
+  const saveConnectedDevice = async (deviceData: any) => {
     const connectedDevices = JSON.parse(localStorage.getItem('connectedDevices') || '[]');
     
     const newDevice = {
@@ -924,6 +974,38 @@ const Index = () => {
     localStorage.setItem('connectedDevices', JSON.stringify(filtered));
     // Update state to reflect the new device
     setConnectedDevices(filtered);
+
+    // Save device to backend
+    try {
+      const token = localStorage.getItem('token');
+      if (token) {
+        await api.post('/wearables', {
+          deviceId: newDevice.id,
+          name: newDevice.name,
+          type: newDevice.type,
+          brand: newDevice.brand,
+          model: newDevice.model,
+          status: 'active',
+          batteryLevel: newDevice.battery,
+          lastSync: new Date().toISOString()
+        }, {
+          headers: { Authorization: `Bearer ${token}` }
+        });
+        console.log('✅ Device saved to backend:', newDevice.name);
+
+        // Trigger initial health data sync for the new device
+        // Import is already available at the top of the file
+        if (window.healthSyncScheduler) {
+          setTimeout(async () => {
+            console.log('🔄 Triggering initial health data sync...');
+            await window.healthSyncScheduler.triggerDeviceMeasurements();
+            await window.healthSyncScheduler.performSync();
+          }, 2000); // Wait 2 seconds for device to be ready
+        }
+      }
+    } catch (error) {
+      console.warn('Failed to save device to backend (will retry on next sync):', error);
+    }
   };
 
   // Helper function to extract brand from device name

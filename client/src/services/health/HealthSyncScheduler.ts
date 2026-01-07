@@ -240,45 +240,30 @@ class HealthSyncScheduler {
 
       console.log(`✅ Measurements complete for ${device.name}`);
     } catch (error) {
-      console.error(`Failed to measure from ${device.name}:`, error);
+      console.error(`❌ Failed to measure from ${device.name}:`, error);
+      console.error('⚠️  Device must be actively connected via Bluetooth to sync data');
       
-      // If device disconnected, generate simulated data for demo
-      this.generateSimulatedReading(device);
+      // DO NOT generate simulated data for health metrics - this is dangerous
+      // Health data must always be real measurements from devices
+      throw error;
     }
   }
 
   /**
-   * Generate simulated reading when device is not actively connected
-   * This allows the app to show demo data
+   * REMOVED: Simulated data generation
+   * 
+   * Health data must NEVER be simulated - it must always come from real device measurements.
+   * Simulated health data is dangerous and could lead to incorrect medical decisions.
+   * 
+   * Users must have their devices actively connected via Bluetooth to sync real data.
    */
   private generateSimulatedReading(device: any): void {
-    const timestamp = new Date().toISOString();
+    console.error('❌ CRITICAL: Attempted to generate simulated health data');
+    console.error('⚠️  Health data simulation is DISABLED for safety reasons');
+    console.error('📱 Please connect your device via Bluetooth to sync real measurements');
     
-    // Only generate if no recent data exists
-    const recentData = this.pendingReadings.filter(r => 
-      new Date(r.timestamp).getTime() > Date.now() - 60000
-    );
-    
-    if (recentData.length > 0) return;
-
-    // Add simulated readings with realistic values
-    this.addReading({
-      type: 'heart_rate',
-      value: 68 + Math.floor(Math.random() * 20), // 68-88 bpm
-      unit: 'bpm',
-      timestamp,
-      deviceId: device.id,
-      deviceName: device.name
-    });
-
-    this.addReading({
-      type: 'steps',
-      value: Math.floor(Math.random() * 500) + 100, // 100-600 steps per interval
-      unit: 'steps',
-      timestamp,
-      deviceId: device.id,
-      deviceName: device.name
-    });
+    // DO NOTHING - never generate fake health data
+    return;
   }
 
   /**

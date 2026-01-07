@@ -6,12 +6,14 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Separator } from "@/components/ui/separator";
 import DrISHAChat from "@/components/DrISHAChat";
 import QuickAppointmentModal from "@/components/QuickAppointmentModal";
+import DoctorCallNotification from "@/components/DoctorCallNotification";
 import { drIshaAPI } from "@/services/drIsha";
 import { useState, useEffect } from "react";
 import { useQuery } from "@tanstack/react-query";
 import api from "@/utils/api";
 import { useNavigate } from "react-router-dom";
 import { useToast } from "@/hooks/use-toast";
+import { io, Socket } from "socket.io-client";
 import { 
   Calendar, 
   Clock, 
@@ -90,6 +92,18 @@ const Appointments = () => {
     timeBeforeAppointment: 30, // minutes
     channels: ['push', 'email']
   });
+
+  // Incoming doctor call state
+  const [incomingCall, setIncomingCall] = useState<{
+    appointmentId: number;
+    doctorName: string;
+    doctorId?: number;
+    meetingLink: string;
+    callInitiatedAt: string;
+    appointmentDate?: string;
+    appointmentTime?: string;
+  } | null>(null);
+  const [socket, setSocket] = useState<Socket | null>(null);
 
   const { data: analytics } = useQuery({
     queryKey: ["appointmentAnalytics"],
@@ -309,6 +323,57 @@ const Appointments = () => {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [appointments]);
 
+  // Socket.io connection for incoming doctor calls
+  useEffect(() => {
+    const socketUrl = import.meta.env.VITE_SOCKET_URL || 'http://localhost:3000';
+    const newSocket = io(socketUrl, {
+      auth: {
+        token: localStorage.getItem('token')
+      },
+      transports: ['websocket', 'polling']
+    });
+
+    setSocket(newSocket);
+
+    // Listen for doctor-initiated calls
+    newSocket.on('doctor-initiated-call', (data) => {
+      console.log('📞 Incoming call from doctor:', data);
+      
+      setIncomingCall({
+        appointmentId: data.appointmentId,
+        doctorName: data.doctorName,
+        doctorId: data.doctorId,
+        meetingLink: data.meetingLink,
+        callInitiatedAt: data.callInitiatedAt,
+        appointmentDate: data.appointmentDate,
+        appointmentTime: data.appointmentTime
+      });
+
+      // Show toast notification
+      toast({
+        title: "📞 Incoming Call",
+        description: `${data.doctorName} is calling you`,
+        duration: 10000,
+      });
+
+      // Play notification sound
+      const audio = new Audio('/sounds/notification.mp3');
+      audio.play().catch(() => console.log('Could not play notification sound'));
+    });
+
+    newSocket.on('connect', () => {
+      console.log('✅ Socket connected');
+    });
+
+    newSocket.on('disconnect', () => {
+      console.log('❌ Socket disconnected');
+    });
+
+    return () => {
+      newSocket.disconnect();
+    };
+  }, [toast]);
+
   const getStatusIcon = (status: string) => {
     switch (status) {
       case 'upcoming': return <Clock className="h-4 w-4 text-blue-500" />;
@@ -464,6 +529,35 @@ const Appointments = () => {
 
   return (
     <MainLayout>
+      {/* Incoming Call Notification */}
+      {incomingCall && (
+        <DoctorCallNotification
+          appointmentId={incomingCall.appointmentId}
+          doctorName={incomingCall.doctorName}
+          doctorId={incomingCall.doctorId}
+          meetingLink={incomingCall.meetingLink}
+          callInitiatedAt={incomingCall.callInitiatedAt}
+          appointmentDate={incomingCall.appointmentDate}
+          appointmentTime={incomingCall.appointmentTime}
+          onAccept={() => {
+            // Open meeting link in new window
+            window.open(incomingCall.meetingLink, '_blank', 'width=1280,height=720');
+            setIncomingCall(null);
+            toast({
+              title: "Joined Call",
+              description: "Opening video consultation...",
+            });
+          }}
+          onDecline={() => {
+            setIncomingCall(null);
+            toast({
+              title: "Call Declined",
+              description: "You declined the video call",
+            });
+          }}
+        />
+      )}
+
       <div className="space-y-8 animate-in fade-in duration-700">
         <div className="flex flex-col gap-4">
           <div className="flex items-center justify-between">
