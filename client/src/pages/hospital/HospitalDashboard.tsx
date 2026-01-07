@@ -89,6 +89,20 @@ const HospitalDashboard = () => {
       route: '/hospital/ehr'
     },
     { 
+      title: 'Discharge Summary', 
+      description: 'Generate and manage discharge summaries', 
+      icon: FileText, 
+      color: 'from-rose-500 to-rose-600',
+      route: '/hospital/discharge-summary'
+    },
+    { 
+      title: 'IP Sheets', 
+      description: 'Inpatient monitoring and charts', 
+      icon: ClipboardList, 
+      color: 'from-violet-500 to-violet-600',
+      route: '/hospital/ip-sheets'
+    },
+    { 
       title: 'Lab Test Orders', 
       description: 'Order lab tests, manage results', 
       icon: FlaskConical, 

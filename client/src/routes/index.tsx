@@ -228,6 +228,8 @@ import HospitalLabOrder from "@/pages/hospital/HospitalLabOrder";
 import HospitalImagingOrder from "@/pages/hospital/HospitalImagingOrder";
 import HospitalPrescriptionCreator from "@/pages/hospital/HospitalPrescriptionCreator";
 import HospitalProcedureAdder from "@/pages/hospital/HospitalProcedureAdder";
+import HospitalDischargeSummary from "@/pages/hospital/HospitalDischargeSummary";
+import HospitalIPSheets from "@/pages/hospital/HospitalIPSheets";
 import {
   HospitalAppointmentsPage,
   HospitalBedsPage,
@@ -361,6 +363,8 @@ const AppRoutes = () => {
       <Route path="/hospital/imaging-order" element={<HospitalImagingOrder />} />
       <Route path="/hospital/prescription-creator" element={<HospitalPrescriptionCreator />} />
       <Route path="/hospital/procedure-adder" element={<HospitalProcedureAdder />} />
+      <Route path="/hospital/discharge-summary" element={<HospitalDischargeSummary />} />
+      <Route path="/hospital/ip-sheets" element={<HospitalIPSheets />} />
       <Route path="/hospital/appointments" element={<HospitalAppointmentsPage />} />
       <Route path="/hospital/beds" element={<HospitalBedsPage />} />
       <Route path="/hospital/patients" element={<HospitalPatientsPage />} />

@@ -24,6 +24,8 @@ import {
   ClipboardList,
   UserCog,
   Pill,
+  FileCheck,
+  ClipboardCheck,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { useState } from "react";
@@ -49,6 +51,8 @@ const clinicalItems: SidebarItem[] = [
   { icon: FileHeart, label: "EHR", href: "/hospital/ehr" },
   { icon: FolderOpen, label: "MRD", href: "/hospital/mrd" },
   { icon: ClipboardList, label: "OPD/IPD", href: "/hospital/opd-ipd" },
+  { icon: ClipboardCheck, label: "IP Sheets", href: "/hospital/ip-sheets" },
+  { icon: FileCheck, label: "Discharge Summary", href: "/hospital/discharge-summary" },
   { icon: Pill, label: "Pharmacy", href: "/hospital/pharmacy" },
   { icon: Activity, label: "Lab Reports", href: "/hospital/lab-reports" },
 ];
