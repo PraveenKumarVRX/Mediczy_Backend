@@ -20,7 +20,6 @@ const ClinicLogin = () => {
   useEffect(() => {
     const token = localStorage.getItem('clinicToken');
     if (token) {
-      console.log('✅ Clinic already authenticated, redirecting...');
       navigate('/clinic/dashboard');
       return;
     }

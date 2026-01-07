@@ -43,7 +43,6 @@ const AdminLogin = () => {
   useEffect(() => {
     const token = localStorage.getItem('adminToken');
     if (token) {
-      console.log('✅ Admin already authenticated, redirecting...');
       localStorage.setItem('userType', 'admin');
       window.dispatchEvent(new Event('authChange'));
       navigate('/admin/dashboard');
@@ -64,8 +63,6 @@ const AdminLogin = () => {
     setError(null);
     setLoading(true);
     
-    console.log('Admin login attempt:', { email, password: '***' });
-    
     const controller = new AbortController();
     let timeoutId: ReturnType<typeof setTimeout> | undefined;
     
@@ -85,11 +82,6 @@ const AdminLogin = () => {
       }
       
       establishAdminSession(data.token, data.user);
-      
-      // Immediate verification
-      const verifyToken = localStorage.getItem('adminToken');
-      console.log('✅ Token stored successfully:', verifyToken ? 'YES' : 'NO');
-      console.log('🔒 Token length:', verifyToken?.length);
       
       // Success message and redirect
       setError(null);

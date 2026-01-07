@@ -31,7 +31,6 @@ const HomecareLogin = () => {
 
     const token = localStorage.getItem('homecareToken');
     if (token) {
-      console.log('✅ Homecare already authenticated, redirecting...');
       navigate('/homecare/dashboard');
       return;
     }

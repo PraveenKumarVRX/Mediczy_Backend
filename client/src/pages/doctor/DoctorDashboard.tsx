@@ -54,7 +54,6 @@ const DoctorDashboard = () => {
     
     // If not a doctor, redirect to appropriate page
     if (storedUserType !== 'doctor' && userType !== 'doctor' && !doctorToken) {
-      console.log('[DoctorDashboard] Non-doctor user detected, redirecting...');
       if (storedUserType === 'user' || !storedUserType) {
         navigate('/', { replace: true });
       } else if (storedUserType === 'clinic') {

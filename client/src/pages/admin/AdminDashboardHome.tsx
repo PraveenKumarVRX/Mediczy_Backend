@@ -84,29 +84,16 @@ const AdminDashboardHome = () => {
 
   useEffect(() => {
     const checkAuthAndLoadData = async () => {
-      console.log('🔍 AdminDashboardHome mounted, checking auth...');
-      console.log('📍 Current URL:', window.location.href);
-      console.log('📍 Pathname:', window.location.pathname);
-      
       // Check localStorage immediately
       const token = localStorage.getItem('adminToken');
-      const adminData = localStorage.getItem('adminData');
-      
-      console.log('🔑 Token found:', token ? 'YES' : 'NO');
-      console.log('🔑 Token length:', token?.length || 0);
-      console.log('👤 Admin data found:', adminData ? 'YES' : 'NO');
       
       if (!token) {
-        console.log('❌ No admin token found, redirecting to login');
-        console.log('🔄 Redirecting in 1 second...');
-        
         setTimeout(() => {
           window.location.href = '/admin/login';
         }, 1000);
         return;
       }
       
-      console.log('✅ Token verified, loading dashboard data...');
       setIsCheckingAuth(false);
       await fetchDashboardData();
     };
@@ -124,8 +111,6 @@ const AdminDashboardHome = () => {
     try {
       // Use environment variable for API base URL  
       const apiBaseUrl = import.meta.env.VITE_API_URL || '/api';
-      
-      console.log('🔍 Dashboard Stats API URL:', `${apiBaseUrl}/admin/dashboard/stats`);
       
       // Add timeout for API calls
       const timeoutMs = 5000; // 5 second timeout

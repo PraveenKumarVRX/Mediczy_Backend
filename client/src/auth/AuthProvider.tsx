@@ -95,16 +95,8 @@ export const AuthProvider = ({ children }) => {
 
   // Handle route protection - only run once per route change
   useEffect(() => {
-    console.log('🔒 Route Protection useEffect triggered:', {
-      path: location.pathname,
-      isLoading,
-      hasCheckedAuth: authState.hasCheckedAuth,
-      authStateToken: authState.token ? 'EXISTS' : 'MISSING',
-      authStateUserType: authState.userType
-    });
-    
+    // Skip if still loading or already checked
     if (isLoading || authState.hasCheckedAuth) {
-      console.log('⏭️ Skipping auth check:', { isLoading, hasCheckedAuth: authState.hasCheckedAuth });
       return;
     }
 
@@ -155,23 +147,6 @@ export const AuthProvider = ({ children }) => {
     const isDoctorRoute = normalizedPath === '/doctor' || (
       normalizedPath.startsWith('/doctor/') && !normalizedPath.startsWith('/doctors')
     );
-    
-    console.log('🔎 Route Type Detection:', {
-      path: location.pathname,
-      isTPARoute,
-      isHospitalRoute,
-      isClinicRoute,
-      isLabRoute,
-      isPharmacyRoute,
-      isAmbulanceRoute,
-      isHomecareRoute,
-      isDoctorRoute,
-      isAdminRoute,
-      isCorporateRoute,
-      isTeamRoute,
-      isNurseRoute,
-      isAssistantRoute
-    });
     
     // Admin portal routes use their own token (adminToken) and must not fall back to user login.
     if (isAdminRoute) {
@@ -286,33 +261,21 @@ export const AuthProvider = ({ children }) => {
     }
     
     if (isTPARoute) {
-      console.log('🔍 TPA Route Protection Check:', {
-        path: location.pathname,
-        isLoginPage: location.pathname === '/tpa/login'
-      });
-      
       // Always allow TPA login page
       if (location.pathname === '/tpa/login') {
-        console.log('✅ TPA login page - allowing access');
         setAuthState(prev => ({ ...prev, hasCheckedAuth: true }));
         return;
       }
       
       // For other TPA routes, check for token
       const tpaToken = localStorage.getItem('tpaToken');
-      console.log('🔍 TPA Route Token Check:', {
-        path: location.pathname,
-        tpaToken: tpaToken ? 'EXISTS' : 'MISSING'
-      });
       
       if (!tpaToken) {
-        console.log('❌ No TPA token, redirecting to /tpa/login');
         setAuthState(prev => ({ ...prev, hasCheckedAuth: true }));
         navigate("/tpa/login", { replace: true });
         return;
       }
       
-      console.log('✅ TPA token found, allowing access to', location.pathname);
       setAuthState(prev => ({ ...prev, hasCheckedAuth: true }));
       return;
     }
@@ -364,15 +327,7 @@ export const AuthProvider = ({ children }) => {
       "/ngo/login"
     ].includes(location.pathname);
     
-    console.log('🛡️ Fallback Auth Check:', {
-      path: location.pathname,
-      authStateToken: authState.token ? 'EXISTS' : 'MISSING',
-      isPublicRoute,
-      willRedirectToLogin: !authState.token && !isPublicRoute
-    });
-    
     if (!authState.token && !isPublicRoute) {
-      console.log('❌ No auth token for protected route, redirecting to /login');
       setAuthState(prev => ({ ...prev, hasCheckedAuth: true }));
       navigate("/login", { replace: true });
     } else if (authState.token && isAuthenticated && isPublicRoute) {
@@ -386,10 +341,8 @@ export const AuthProvider = ({ children }) => {
       } else if (authState.userType === "user") {
         redirectPath = "/";
       }
-      console.log('✅ Authenticated user on login page, redirecting to', redirectPath);
       navigate(redirectPath, { replace: true });
     } else {
-      console.log('✅ Auth check passed for', location.pathname);
       setAuthState(prev => ({ ...prev, hasCheckedAuth: true }));
     }
   }, [authState.token, authState.userType, authState.hasCheckedAuth, isAuthenticated, isLoading, location.pathname, navigate]);

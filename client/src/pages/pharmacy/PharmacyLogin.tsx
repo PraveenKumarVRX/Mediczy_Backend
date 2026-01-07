@@ -38,7 +38,6 @@ const PharmacyLogin = () => {
   useEffect(() => {
     const token = localStorage.getItem('pharmacyToken');
     if (token) {
-      console.log('✅ Pharmacy already authenticated, redirecting...');
       navigate('/pharmacy/dashboard');
       return;
     }

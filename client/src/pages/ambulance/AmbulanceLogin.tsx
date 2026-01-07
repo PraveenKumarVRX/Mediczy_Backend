@@ -31,7 +31,6 @@ const AmbulanceLogin = () => {
 
     const token = localStorage.getItem('ambulanceToken');
     if (token) {
-      console.log('✅ Ambulance already authenticated, redirecting...');
       navigate('/ambulance/dashboard');
       return;
     }

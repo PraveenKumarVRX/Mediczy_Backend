@@ -20,7 +20,6 @@ const HospitalLogin = () => {
   useEffect(() => {
     const token = localStorage.getItem('hospitalToken');
     if (token) {
-      console.log('✅ Hospital already authenticated, redirecting...');
       navigate('/hospital/dashboard');
       return;
     }

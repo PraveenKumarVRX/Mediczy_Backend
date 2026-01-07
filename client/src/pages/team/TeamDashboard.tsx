@@ -82,7 +82,6 @@ const TeamDashboard = () => {
           };
           setTeamUser(defaultTeamUser);
           localStorage.setItem('teamUserData', JSON.stringify(defaultTeamUser));
-          console.log('✅ Team user authenticated (dev mode):', defaultTeamUser.email);
           setLoading(false);
           return;
         }
@@ -95,7 +94,6 @@ const TeamDashboard = () => {
           if (data.success && data.teamUser) {
             setTeamUser(data.teamUser);
             localStorage.setItem('teamUserData', JSON.stringify(data.teamUser));
-            console.log('✅ Team profile loaded:', data.teamUser.email);
           } else {
             // Fallback to localStorage if API fails
             const userData = localStorage.getItem('teamUserData');

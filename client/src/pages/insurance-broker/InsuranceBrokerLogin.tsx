@@ -29,7 +29,6 @@ const InsuranceBrokerLogin = () => {
 
     const token = localStorage.getItem('insuranceBrokerToken');
     if (token) {
-      console.log('✅ Insurance Broker already authenticated, redirecting...');
       navigate('/insurance-broker/dashboard');
       return;
     }
@@ -48,11 +47,8 @@ const InsuranceBrokerLogin = () => {
     setError(null);
     setLoading(true);
 
-    console.log('Insurance Broker login attempt:', { email, password: '***' });
-
     // Development mode: Quick bypass for valid credentials
     if (import.meta.env.DEV && email === 'broker@mediczy.com' && password === 'SecurePass123') {
-      console.log('🚀 Development mode: Using quick authentication bypass');
 
       // Clear any other role tokens first
       localStorage.removeItem('adminToken');
@@ -115,11 +111,6 @@ const InsuranceBrokerLogin = () => {
       // Store token securely with immediate verification
       localStorage.setItem('insuranceBrokerToken', data.token);
       localStorage.setItem('insuranceBrokerData', JSON.stringify(data.user));
-
-      // Immediate verification
-      const verifyToken = localStorage.getItem('insuranceBrokerToken');
-      console.log('✅ Token stored successfully:', verifyToken ? 'YES' : 'NO');
-      console.log('🔒 Token length:', verifyToken?.length);
 
       // Success message and redirect
       setError(null);
