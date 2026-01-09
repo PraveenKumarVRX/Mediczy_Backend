@@ -25,8 +25,12 @@ router.post('/login', async (req, res) => {
       });
     }
     
-    // Find homecare by email
-    const homecare = await HomecareProvider.findOne({ where: { email } });
+    // Find homecare by email - select only needed fields for faster query
+    const homecare = await HomecareProvider.findOne({ 
+      where: { email },
+      attributes: ['id', 'name', 'email', 'password', 'phone', 'services', 'tenant_id'],
+      raw: true
+    });
     
     if (!homecare) {
       return res.status(401).json({

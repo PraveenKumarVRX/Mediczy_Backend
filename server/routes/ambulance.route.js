@@ -25,8 +25,12 @@ router.post('/login', async (req, res) => {
       });
     }
     
-    // Find ambulance by email
-    const ambulance = await Ambulance.findOne({ where: { email } });
+    // Find ambulance by email - select only needed fields for faster query
+    const ambulance = await Ambulance.findOne({ 
+      where: { email },
+      attributes: ['id', 'providerName', 'email', 'password', 'phone', 'emergencyPhone', 'vehicleNumber', 'tenant_id'],
+      raw: true
+    });
     
     if (!ambulance) {
       return res.status(401).json({
