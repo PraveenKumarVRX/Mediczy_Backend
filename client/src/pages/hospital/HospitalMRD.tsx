@@ -128,7 +128,6 @@ const HospitalMRD = () => {
   const [cameraActive, setCameraActive] = useState(false);
   const [cameraError, setCameraError] = useState<string | null>(null);
   const [selectedRecord, setSelectedRecord] = useState<MedicalRecord | null>(null);
-  const { toast } = useToast();
 
   const videoRef = useRef<HTMLVideoElement | null>(null);
   const zxingReaderRef = useRef<BrowserMultiFormatReader | null>(null);
