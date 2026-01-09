@@ -19,7 +19,7 @@ module.exports = {
     // ==================== Node.js Backend ====================
     {
       name: 'mediczy-server',
-      script: './server.js',
+      script: './index.js',
       cwd: '/home/ubuntu/Mediczy/server',
       instances: 'max',
       exec_mode: 'cluster',

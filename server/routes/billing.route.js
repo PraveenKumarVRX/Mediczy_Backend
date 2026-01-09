@@ -1033,16 +1033,6 @@ router.post('/doctor/invoices/create', authDoctor, async (req, res) => {
   }
 });
 
-  } catch (error) {
-    console.error('Create doctor invoice error:', error);
-    return res.status(500).json({
-      success: false,
-      message: 'Failed to create invoice',
-      error: error.message
-    });
-  }
-});
-
 /**
  * GET /api/billing/doctor/payments
  * Get doctor's received payments
