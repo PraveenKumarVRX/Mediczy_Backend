@@ -570,8 +570,7 @@ router.get('/users', authTeam, async (req, res) => {
       where,
       attributes: ['id', 'firstName', 'lastName', 'email', 'phoneNumber', 'role', 'department', 'designation', 'status', 'lastLogin', 'createdAt'],
       order: [['createdAt', 'DESC']],
-      limit: 100,
-      raw: true
+      limit: 100
     });
 
     const teamUsers = users.map(user => ({
@@ -694,8 +693,7 @@ router.get('/doctors', authTeam, async (req, res) => {
       where,
       attributes: ['id', 'firstName', 'lastName', 'email', 'phoneNumber', 'status', 'createdAt', 'metadata'],
       order: [['createdAt', 'DESC']],
-      limit: 200,
-      raw: true
+      limit: 200
     });
 
     // Filter and parse metadata
@@ -840,8 +838,7 @@ router.get('/pharmacies', authTeam, async (req, res) => {
       where,
       attributes: ['id', 'firstName', 'email', 'phoneNumber', 'status', 'createdAt', 'metadata'],
       order: [['createdAt', 'DESC']],
-      limit: 200,
-      raw: true
+      limit: 200
     });
 
     // Filter and parse metadata
