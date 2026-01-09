@@ -11,6 +11,7 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@
 import { Badge } from '@/components/ui/badge';
 import { Checkbox } from '@/components/ui/checkbox';
 import { useToast } from '@/hooks/use-toast';
+import api from '@/utils/api';
 import HospitalLayout from '@/components/hospital/HospitalLayout';
 import {
   Stethoscope, Plus, Search, ArrowLeft, Calendar, Clock,
@@ -57,6 +58,11 @@ interface ProcedureSchedule {
 const HospitalProcedureAdder = () => {
   const navigate = useNavigate();
   const { toast } = useToast();
+
+  const hospitalHeaders = () => {
+    const token = localStorage.getItem('hospitalToken');
+    return token ? { Authorization: `Bearer ${token}` } : {};
+  };
 
   const [activeTab, setActiveTab] = useState('schedule');
   const [searchQuery, setSearchQuery] = useState('');
@@ -272,8 +278,24 @@ const HospitalProcedureAdder = () => {
 
     setLoading(true);
     try {
-      // Simulate API call
-      await new Promise(resolve => setTimeout(resolve, 2000));
+      // Schedule procedure via API
+      const procedureData = {
+        procedureId: selectedProcedure.id,
+        patientId: selectedPatient.id,
+        scheduledDate,
+        scheduledTime,
+        priority,
+        anesthesiaType,
+        room,
+        notes: procedureNotes,
+        estimatedDuration: selectedProcedure.estimatedDuration
+      };
+
+      const { data } = await api.post(
+        '/hospital/procedures/schedule',
+        procedureData,
+        { headers: hospitalHeaders() }
+      );
 
       toast({
         title: "Procedure Scheduled",
@@ -291,10 +313,10 @@ const HospitalProcedureAdder = () => {
       setProcedureNotes('');
       setShowScheduleDialog(false);
 
-    } catch (error) {
+    } catch (error: any) {
       toast({
         title: "Scheduling Failed",
-        description: "Failed to schedule procedure. Please try again.",
+        description: error.response?.data?.message || "Failed to schedule procedure. Please try again.",
         variant: "destructive",
       });
     } finally {

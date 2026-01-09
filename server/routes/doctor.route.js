@@ -1359,21 +1359,38 @@ router.get("/video-consultations/recent", authDoctor, async (req, res) => {
         doctorId, 
         type: { [Op.in]: ['video', 'emergency_triage', 'telemedicine'] }
       },
+      include: [
+        {
+          model: User,
+          as: 'patient',
+          attributes: ['id', 'firstName', 'lastName', 'phoneNumber', 'email']
+        }
+      ],
       order: [['createdAt', 'DESC']],
       limit
     });
     
     res.json({
       success: true,
-      consultations: consultations.map(c => ({
-        id: c.id,
-        patientId: c.patientId,
-        type: c.type,
-        status: c.status,
-        date: c.appointmentDate || c.createdAt,
-        roomId: c.videoRoomId,
-        notes: c.notes
-      }))
+      consultations: consultations.map(c => {
+        const patientName = c.patient 
+          ? `${c.patient.firstName} ${c.patient.lastName}` 
+          : 'Unknown Patient';
+        const appointmentDate = c.appointmentDate || c.createdAt;
+        const formattedDate = appointmentDate.toLocaleDateString('en-IN', { month: 'short', day: 'numeric', year: 'numeric' });
+        
+        return {
+          id: c.id,
+          patientId: c.patientId,
+          patient: patientName,
+          type: c.type,
+          status: c.status,
+          date: formattedDate,
+          duration: '30 mins',
+          roomId: c.videoRoomId,
+          notes: c.notes
+        };
+      })
     });
   } catch (error) {
     console.error('Recent video consultations error:', error);
@@ -1401,20 +1418,38 @@ router.get("/video-consultations/upcoming", authDoctor, async (req, res) => {
           { appointmentDate: null }
         ]
       },
+      include: [
+        {
+          model: User,
+          as: 'patient',
+          attributes: ['id', 'firstName', 'lastName', 'phoneNumber', 'email']
+        }
+      ],
       order: [['appointmentDate', 'ASC'], ['createdAt', 'ASC']],
       limit: 20
     });
     
     res.json({
       success: true,
-      consultations: consultations.map(c => ({
-        id: c.id,
-        patientId: c.patientId,
-        type: c.type,
-        status: c.status,
-        date: c.appointmentDate || c.createdAt,
-        roomId: c.videoRoomId
-      }))
+      consultations: consultations.map(c => {
+        const patientName = c.patient 
+          ? `${c.patient.firstName} ${c.patient.lastName}` 
+          : 'Unknown Patient';
+        const appointmentTime = c.appointmentDate ? c.appointmentDate.toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit' }) : 'Not scheduled';
+        
+        return {
+          id: c.id,
+          patientId: c.patientId,
+          patient: patientName,
+          type: c.type,
+          status: c.status,
+          date: c.appointmentDate || c.createdAt,
+          time: appointmentTime,
+          duration: '30 mins',
+          roomId: c.videoRoomId,
+          meetingLink: c.meetingLink
+        };
+      })
     });
   } catch (error) {
     console.error('Upcoming video consultations error:', error);

@@ -1,5 +1,6 @@
 import { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
+import api from '@/utils/api';
 import HospitalLayout from '@/components/hospital/HospitalLayout';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
@@ -51,8 +52,12 @@ interface VitalRecord {
 
 const HospitalIPSheets = () => {
   const navigate = useNavigate();
-  const { toast } = useToast();
-  const [activeTab, setActiveTab] = useState('patients');
+  const { toast } = useToast();  
+  const hospitalHeaders = () => {
+    const token = localStorage.getItem('hospitalToken');
+    return token ? { Authorization: `Bearer ${token}` } : {};
+  };
+    const [activeTab, setActiveTab] = useState('patients');
   const [searchQuery, setSearchQuery] = useState('');
   const [filterWard, setFilterWard] = useState('all');
   const [selectedPatient, setSelectedPatient] = useState<IPPatient | null>(null);
@@ -178,11 +183,32 @@ const HospitalIPSheets = () => {
     });
   };
 
-  const handleSaveSheet = () => {
-    toast({
-      title: "Saved",
-      description: "IP Sheet data saved successfully"
-    });
+  const handleSaveSheet = async () => {
+    try {
+      const sheetData = {
+        patientId: selectedPatient?.id,
+        sheetType: activeSheet,
+        data: {}, // Sheet specific data
+        timestamp: new Date().toISOString()
+      };
+
+      const { data } = await api.post(
+        '/hospital/ip-sheets',
+        sheetData,
+        { headers: hospitalHeaders() }
+      );
+
+      toast({
+        title: "Saved",
+        description: "IP Sheet data saved successfully"
+      });
+    } catch (error: any) {
+      toast({
+        title: 'Failed to save sheet',
+        description: error.response?.data?.message || 'An error occurred',
+        variant: 'destructive'
+      });
+    }
   };
 
   const filteredPatients = ipPatients.filter(patient => {

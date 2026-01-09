@@ -15,6 +15,7 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@
 import { Progress } from '@/components/ui/progress';
 import { ScrollArea } from '@/components/ui/scroll-area';
 import { Checkbox } from '@/components/ui/checkbox';
+import api from '@/utils/api';
 import HospitalLayout from '@/components/hospital/HospitalLayout';
 import { 
   FolderOpen, Activity, Bell, Plus, Search, ArrowLeft, Edit, 
@@ -104,6 +105,13 @@ interface DigitizationTask {
 
 const HospitalMRD = () => {
   const navigate = useNavigate();
+  const { toast } = useToast();
+  
+  const hospitalHeaders = () => {
+    const token = localStorage.getItem('hospitalToken');
+    return token ? { Authorization: `Bearer ${token}` } : {};
+  };
+  
   const [loading, setLoading] = useState(true);
   const [activeTab, setActiveTab] = useState('records');
   const [searchQuery, setSearchQuery] = useState('');
@@ -556,14 +564,28 @@ const HospitalMRD = () => {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [showScanDialog]);
 
-  const handleSaveToQueue = () => {
-    if (selectedRecord) {
+  const handleSaveToQueue = async () => {
+    if (!selectedRecord) return;
+    
+    try {
+      await api.post(
+        '/hospital/mrd/digitization-queue',
+        { recordId: selectedRecord.id },
+        { headers: hospitalHeaders() }
+      );
+      
       toast({
         title: "Added to Digitization Queue",
         description: `${selectedRecord.patientName}'s record has been queued for digitization.`,
       });
       setShowDigitizationDialog(false);
       setSelectedRecord(null);
+    } catch (error: any) {
+      toast({
+        title: 'Failed to add to queue',
+        description: error.response?.data?.message || 'An error occurred',
+        variant: 'destructive'
+      });
     }
   };
 

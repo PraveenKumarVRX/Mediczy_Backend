@@ -13,6 +13,7 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@
 import { Progress } from '@/components/ui/progress';
 import { ScrollArea } from '@/components/ui/scroll-area';
 import { Checkbox } from '@/components/ui/checkbox';
+import api from '@/utils/api';
 import HospitalLayout from '@/components/hospital/HospitalLayout';
 import { 
   Shield, Activity, Bell, Plus, Search, ArrowLeft, Edit, 
@@ -101,6 +102,12 @@ interface InsuranceStats {
 const HospitalInsuranceBilling = () => {
   const navigate = useNavigate();
   const { toast } = useToast();
+  
+  const hospitalHeaders = () => {
+    const token = localStorage.getItem('hospitalToken');
+    return token ? { Authorization: `Bearer ${token}` } : {};
+  };
+  
   const [loading, setLoading] = useState(true);
   const [activeTab, setActiveTab] = useState('claims');
   const [searchQuery, setSearchQuery] = useState('');
@@ -373,27 +380,34 @@ const HospitalInsuranceBilling = () => {
     });
   };
 
-  const handleSaveClaim = () => {
+  const handleSaveClaim = async () => {
     if (!editingClaim) return;
-    const today = new Date().toISOString().split('T')[0];
-    setClaims(prev => prev.map(c => c.id === editingClaim.id ? {
-      ...c,
-      status: claimForm.status,
-      approvedAmount: claimForm.approvedAmount,
-      remarks: claimForm.remarks,
-      updatedAt: today,
-      timeline: [
-        ...c.timeline,
-        {
-          date: today,
-          status: claimForm.status,
-          remarks: claimForm.remarks || 'Status updated',
-          updatedBy: 'Hospital Admin',
-        }
-      ]
-    } : c));
-    toast({ title: 'Claim updated', description: `${editingClaim.claimNumber} updated with new status.` });
-    setEditingClaim(null);
+    
+    try {
+      const today = new Date().toISOString().split('T')[0];
+      const updatedClaim = {
+        status: claimForm.status,
+        approvedAmount: claimForm.approvedAmount,
+        remarks: claimForm.remarks,
+        updatedAt: today,
+      };
+
+      const { data } = await api.patch(
+        `/hospital/insurance/claims/${editingClaim.id}`,
+        updatedClaim,
+        { headers: hospitalHeaders() }
+      );
+
+      setClaims(prev => prev.map(c => c.id === editingClaim.id ? data : c));
+      toast({ title: 'Claim updated', description: `${editingClaim.claimNumber} updated with new status.` });
+      setEditingClaim(null);
+    } catch (error: any) {
+      toast({ 
+        title: 'Failed to update claim', 
+        description: error.response?.data?.message || 'An error occurred',
+        variant: 'destructive'
+      });
+    }
   };
 
   const handleOpenPreAuth = (pa: PreAuthorization) => setSelectedPreAuth(pa);

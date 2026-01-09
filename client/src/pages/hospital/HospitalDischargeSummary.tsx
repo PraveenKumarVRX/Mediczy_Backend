@@ -1,5 +1,6 @@
 import { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
+import api from '@/utils/api';
 import HospitalLayout from '@/components/hospital/HospitalLayout';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
@@ -38,6 +39,12 @@ interface DischargeSummary {
 const HospitalDischargeSummary = () => {
   const navigate = useNavigate();
   const { toast } = useToast();
+  
+  const hospitalHeaders = () => {
+    const token = localStorage.getItem('hospitalToken');
+    return token ? { Authorization: `Bearer ${token}` } : {};
+  };
+  
   const [activeTab, setActiveTab] = useState('list');
   const [searchQuery, setSearchQuery] = useState('');
   const [filterStatus, setFilterStatus] = useState('all');
@@ -158,18 +165,64 @@ const HospitalDischargeSummary = () => {
     setActiveTab('create');
   };
 
-  const handleSaveDraft = () => {
-    toast({
-      title: "Draft Saved",
-      description: "Discharge summary saved as draft successfully"
-    });
+  const handleSaveDraft = async () => {
+    try {
+      const draftData = {
+        patientId: selectedPatient?.id,
+        diagnosis: '',
+        procedures: [],
+        medications: [],
+        followUp: '',
+        status: 'draft'
+      };
+
+      const { data } = await api.post(
+        '/hospital/discharge-summaries',
+        draftData,
+        { headers: hospitalHeaders() }
+      );
+
+      toast({
+        title: "Draft Saved",
+        description: "Discharge summary saved as draft successfully"
+      });
+    } catch (error: any) {
+      toast({
+        title: 'Failed to save draft',
+        description: error.response?.data?.message || 'An error occurred',
+        variant: 'destructive'
+      });
+    }
   };
 
-  const handleSubmitForApproval = () => {
-    toast({
-      title: "Submitted for Approval",
-      description: "Discharge summary sent to senior doctor for review"
-    });
+  const handleSubmitForApproval = async () => {
+    try {
+      const submissionData = {
+        patientId: selectedPatient?.id,
+        diagnosis: '',
+        procedures: [],
+        medications: [],
+        followUp: '',
+        status: 'pending_approval'
+      };
+
+      const { data } = await api.post(
+        '/hospital/discharge-summaries/submit',
+        submissionData,
+        { headers: hospitalHeaders() }
+      );
+
+      toast({
+        title: "Submitted for Approval",
+        description: "Discharge summary sent to senior doctor for review"
+      });
+    } catch (error: any) {
+      toast({
+        title: 'Failed to submit',
+        description: error.response?.data?.message || 'An error occurred',
+        variant: 'destructive'
+      });
+    }
   };
 
   const handlePrint = (id: string) => {

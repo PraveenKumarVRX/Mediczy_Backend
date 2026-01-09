@@ -132,7 +132,7 @@ const DoctorPatients = () => {
   const fetchPatients = async () => {
     try {
       setLoading(true);
-      const response = await api.get('/patients/doctor/patients');
+      const response = await api.get('/doctors/my-patients');
       setPatients(response.data.patients || []);
       setError('');
     } catch (err: any) {

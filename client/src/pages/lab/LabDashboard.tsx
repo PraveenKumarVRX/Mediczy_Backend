@@ -155,6 +155,12 @@ const LabDashboard = () => {
   const [bills, setBills] = useState<BillItem[]>([]);
   const [inventory, setInventory] = useState<InventoryItem[]>([]);
   const [notifications, setNotifications] = useState<NotificationItem[]>([]);
+  
+  // Test Catalog state - moved to top level to comply with React Rules of Hooks
+  const [selectedCategory, setSelectedCategory] = useState<string>('all');
+  const [searchQuery, setSearchQuery] = useState('');
+  const [cartItems, setCartItems] = useState<Array<{id: string, name: string, price: number}>>([]);
+  const [showCart, setShowCart] = useState(false);
 
   useEffect(() => {
     const token = localStorage.getItem('labToken');
@@ -335,6 +341,83 @@ const LabDashboard = () => {
       inventory: notifications.filter(isInventory),
     };
   }, [notifications]);
+
+  // Test Catalog filtered results - moved here per React Rules of Hooks (must be before early returns)
+  // Note: testCategories is defined later but filteredTests depends on selectedCategory and searchQuery state
+  const filteredTests = useMemo(() => {
+    // testCategories is defined inline here since it can't be called before definition
+    const testCategoriesData = [
+      { id: 'blood', name: 'Blood Tests', tests: [
+        { id: 'cbc', name: 'Complete Blood Count (CBC)', price: 350, duration: '4-6 hrs', popular: true, description: 'Measures red cells, white cells, hemoglobin, hematocrit, and platelets' },
+        { id: 'hb', name: 'Hemoglobin (Hb)', price: 150, duration: '2-4 hrs', popular: true, description: 'Measures the protein in red blood cells that carries oxygen' },
+        { id: 'esr', name: 'ESR (Erythrocyte Sedimentation Rate)', price: 200, duration: '1-2 hrs', description: 'Measures inflammation in the body' },
+        { id: 'blood-group', name: 'Blood Group & Rh Factor', price: 250, duration: '1-2 hrs', popular: true, description: 'Determines ABO blood type and Rh factor' },
+        { id: 'platelet', name: 'Platelet Count', price: 200, duration: '2-4 hrs', description: 'Measures clotting cells in blood' },
+        { id: 'retic', name: 'Reticulocyte Count', price: 300, duration: '4-6 hrs', description: 'Measures young red blood cells' },
+        { id: 'peripheral-smear', name: 'Peripheral Blood Smear', price: 400, duration: '4-6 hrs', description: 'Examines blood cells under microscope' },
+        { id: 'hba1c', name: 'HbA1c (Glycated Hemoglobin)', price: 550, duration: '4-6 hrs', popular: true, description: '3-month average blood sugar level' },
+      ]},
+      { id: 'diabetes', name: 'Diabetes Profile', tests: [
+        { id: 'fbs', name: 'Fasting Blood Sugar (FBS)', price: 100, duration: '2-4 hrs', popular: true, description: 'Blood glucose after 8-12 hours fasting' },
+        { id: 'ppbs', name: 'Post Prandial Blood Sugar (PPBS)', price: 100, duration: '2-4 hrs', popular: true, description: 'Blood glucose 2 hours after meal' },
+        { id: 'rbs', name: 'Random Blood Sugar (RBS)', price: 100, duration: '1-2 hrs', description: 'Blood glucose at any time' },
+        { id: 'ogtt', name: 'Oral Glucose Tolerance Test (OGTT)', price: 450, duration: '3-4 hrs', description: 'Measures glucose handling ability' },
+      ]},
+      { id: 'thyroid', name: 'Thyroid Profile', tests: [
+        { id: 'tsh', name: 'TSH (Thyroid Stimulating Hormone)', price: 350, duration: '4-6 hrs', popular: true, description: 'Primary thyroid function test' },
+        { id: 'thyroid-profile', name: 'Thyroid Profile (T3, T4, TSH)', price: 800, duration: '4-6 hrs', popular: true, description: 'Complete thyroid panel' },
+      ]},
+      { id: 'liver', name: 'Liver Function', tests: [
+        { id: 'lft', name: 'Liver Function Test (LFT)', price: 650, duration: '4-6 hrs', popular: true, description: 'Complete liver panel including enzymes and proteins' },
+      ]},
+      { id: 'kidney', name: 'Kidney Function', tests: [
+        { id: 'kft', name: 'Kidney Function Test (KFT/RFT)', price: 600, duration: '4-6 hrs', popular: true, description: 'Complete kidney panel' },
+        { id: 'creatinine', name: 'Serum Creatinine', price: 200, duration: '4-6 hrs', popular: true, description: 'Kidney filtration marker' },
+      ]},
+      { id: 'lipid', name: 'Lipid Profile', tests: [
+        { id: 'lipid-profile', name: 'Lipid Profile (Complete)', price: 550, duration: '4-6 hrs', popular: true, description: 'Total Cholesterol, HDL, LDL, Triglycerides, VLDL' },
+      ]},
+      { id: 'vitamin', name: 'Vitamins & Minerals', tests: [
+        { id: 'vitamin-d', name: 'Vitamin D (25-OH)', price: 1200, duration: '24-48 hrs', popular: true, description: 'Bone health and immunity' },
+        { id: 'vitamin-b12', name: 'Vitamin B12', price: 800, duration: '24-48 hrs', popular: true, description: 'Nerve and blood cell health' },
+        { id: 'iron-studies', name: 'Iron Studies (Complete)', price: 900, duration: '4-6 hrs', popular: true, description: 'Iron, TIBC, Ferritin, Transferrin' },
+      ]},
+      { id: 'packages', name: 'Health Packages', tests: [
+        { id: 'basic-health', name: 'Basic Health Checkup', price: 999, duration: '24-48 hrs', popular: true, description: 'CBC, Sugar, Lipid, Liver, Kidney - 25 tests' },
+        { id: 'comprehensive', name: 'Comprehensive Health Package', price: 2499, duration: '24-48 hrs', popular: true, description: '60+ tests including vitamins, thyroid, hormones' },
+        { id: 'full-body', name: 'Full Body Checkup', price: 5999, duration: '48-72 hrs', popular: true, description: '100+ tests - Complete health assessment' },
+      ]},
+    ];
+
+    let tests: Array<{id: string, name: string, price: number, duration: string, popular?: boolean, description: string, category: string, categoryColor: string}> = [];
+    
+    testCategoriesData.forEach(cat => {
+      cat.tests.forEach(test => {
+        tests.push({
+          ...test,
+          category: cat.name,
+          categoryColor: 'text-gray-500'
+        });
+      });
+    });
+
+    if (selectedCategory !== 'all') {
+      const category = testCategoriesData.find(c => c.id === selectedCategory);
+      if (category) {
+        tests = tests.filter(t => t.category === category.name);
+      }
+    }
+
+    if (searchQuery) {
+      const query = searchQuery.toLowerCase();
+      tests = tests.filter(t => 
+        t.name.toLowerCase().includes(query) || 
+        t.description.toLowerCase().includes(query)
+      );
+    }
+
+    return tests;
+  }, [selectedCategory, searchQuery]);
 
   // Quick actions with modern design matching doctor dashboard
   const quickActions = [
@@ -1119,41 +1202,7 @@ const LabDashboard = () => {
     },
   ];
 
-  const [selectedCategory, setSelectedCategory] = useState<string>('all');
-  const [searchQuery, setSearchQuery] = useState('');
-  const [cartItems, setCartItems] = useState<Array<{id: string, name: string, price: number}>>([]);
-  const [showCart, setShowCart] = useState(false);
-
-  const filteredTests = useMemo(() => {
-    let tests: Array<{id: string, name: string, price: number, duration: string, popular?: boolean, description: string, category: string, categoryColor: string}> = [];
-    
-    testCategories.forEach(cat => {
-      cat.tests.forEach(test => {
-        tests.push({
-          ...test,
-          category: cat.name,
-          categoryColor: cat.color
-        });
-      });
-    });
-
-    if (selectedCategory !== 'all') {
-      const category = testCategories.find(c => c.id === selectedCategory);
-      if (category) {
-        tests = tests.filter(t => t.category === category.name);
-      }
-    }
-
-    if (searchQuery) {
-      const query = searchQuery.toLowerCase();
-      tests = tests.filter(t => 
-        t.name.toLowerCase().includes(query) || 
-        t.description.toLowerCase().includes(query)
-      );
-    }
-
-    return tests;
-  }, [selectedCategory, searchQuery]);
+  // Note: filteredTests useMemo moved to before loading check per React Rules of Hooks
 
   const addToCart = (test: {id: string, name: string, price: number}) => {
     if (!cartItems.find(item => item.id === test.id)) {

@@ -11,6 +11,7 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, Di
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { Switch } from '@/components/ui/switch';
 import { useToast } from '@/hooks/use-toast';
+import api from '@/utils/api';
 import HospitalLayout from '@/components/hospital/HospitalLayout';
 import {
   Building2, MapPin, Phone, Mail, Users, Clock, Activity, Plus, Search, Filter,
@@ -97,6 +98,12 @@ interface OutreachClinic {
 
 const HospitalBranchesClinic = () => {
   const { toast } = useToast();
+  
+  const hospitalHeaders = () => {
+    const token = localStorage.getItem('hospitalToken');
+    return token ? { Authorization: `Bearer ${token}` } : {};
+  };
+  
   const [activeTab, setActiveTab] = useState('branches');
   const [searchQuery, setSearchQuery] = useState('');
   const [filterStatus, setFilterStatus] = useState('all');
@@ -475,9 +482,36 @@ const HospitalBranchesClinic = () => {
                   </div>
                   <DialogFooter>
                     <Button variant="outline" onClick={() => setShowAddBranchDialog(false)}>Cancel</Button>
-                    <Button className="bg-teal-600 hover:bg-teal-700" onClick={() => {
-                      toast({ title: 'Branch Added', description: 'New hospital branch created successfully' });
-                      setShowAddBranchDialog(false);
+                    <Button className="bg-teal-600 hover:bg-teal-700" onClick={async () => {
+                      try {
+                        const branchData = {
+                          name: '',
+                          type: 'branch',
+                          address: '',
+                          city: '',
+                          state: '',
+                          pincode: '',
+                          phone: '',
+                          email: '',
+                          manager: { name: '', phone: '' }
+                        };
+
+                        const { data } = await api.post(
+                          '/hospital/branches',
+                          branchData,
+                          { headers: hospitalHeaders() }
+                        );
+
+                        setBranches(prev => [...prev, data]);
+                        toast({ title: 'Branch Added', description: 'New hospital branch created successfully' });
+                        setShowAddBranchDialog(false);
+                      } catch (error: any) {
+                        toast({ 
+                          title: 'Failed to add branch', 
+                          description: error.response?.data?.message || 'An error occurred',
+                          variant: 'destructive'
+                        });
+                      }
                     }}>
                       <Plus className="h-4 w-4 mr-2" /> Add Branch
                     </Button>
@@ -602,9 +636,35 @@ const HospitalBranchesClinic = () => {
                   </div>
                   <DialogFooter>
                     <Button variant="outline" onClick={() => setShowAddClinicDialog(false)}>Cancel</Button>
-                    <Button className="bg-teal-600 hover:bg-teal-700" onClick={() => {
-                      toast({ title: 'Clinic Added', description: 'New outreach clinic created successfully' });
-                      setShowAddClinicDialog(false);
+                    <Button className="bg-teal-600 hover:bg-teal-700" onClick={async () => {
+                      try {
+                        const clinicData = {
+                          name: '',
+                          type: 'daily',
+                          parentBranch: '',
+                          location: { name: '', address: '', city: '', state: '', pincode: '' },
+                          schedule: { days: [], startTime: '', endTime: '' },
+                          doctor: { name: '', phone: '', specialization: '' },
+                          services: [],
+                          capacity: 0
+                        };
+
+                        const { data } = await api.post(
+                          '/hospital/clinics',
+                          clinicData,
+                          { headers: hospitalHeaders() }
+                        );
+
+                        setClinics(prev => [...prev, data]);
+                        toast({ title: 'Clinic Added', description: 'New outreach clinic created successfully' });
+                        setShowAddClinicDialog(false);
+                      } catch (error: any) {
+                        toast({ 
+                          title: 'Failed to add clinic', 
+                          description: error.response?.data?.message || 'An error occurred',
+                          variant: 'destructive'
+                        });
+                      }
                     }}>
                       <Plus className="h-4 w-4 mr-2" /> Add Clinic
                     </Button>

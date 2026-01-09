@@ -934,8 +934,8 @@ router.post('/doctor/invoices/create', authDoctor, async (req, res) => {
       });
     }
 
-    // Get patient info
-    const patient = await User.findByPk(patientId);
+    // Get patient info - try Postgres first, then fallback to MongoDB
+    let patient = await User.findByPk(patientId);
     if (!patient) {
       return res.status(404).json({
         success: false,
@@ -943,8 +943,16 @@ router.post('/doctor/invoices/create', authDoctor, async (req, res) => {
       });
     }
 
-    // Get doctor info
-    const doctor = await doctorModel.findByPk(doctorId);
+    // Get doctor info - use data from authenticated request
+    let doctor = req.doctor;
+    
+    // If doctor info incomplete, try to fetch from database
+    if (!doctor || !doctor.firstName) {
+      const dbDoctor = await doctorModel.findByPk(doctorId);
+      if (dbDoctor) {
+        doctor = dbDoctor.dataValues || dbDoctor;
+      }
+    }
 
     // Calculate totals
     let subtotal = 0;
@@ -952,7 +960,7 @@ router.post('/doctor/invoices/create', authDoctor, async (req, res) => {
       const itemTotal = (parseFloat(item.quantity) || 1) * (parseFloat(item.unitPrice) || 0);
       subtotal += itemTotal;
       return {
-        description: item.description,
+        description: item.description || 'Service',
         quantity: parseFloat(item.quantity) || 1,
         unitPrice: parseFloat(item.unitPrice) || 0,
         total: itemTotal
@@ -967,12 +975,17 @@ router.post('/doctor/invoices/create', authDoctor, async (req, res) => {
     // Generate invoice number
     const invoiceNumber = `INV-${doctorId}-${Date.now().toString(36).toUpperCase()}`;
 
+    // Prepare doctor details
+    const doctorName = doctor.prefix 
+      ? `${doctor.prefix} ${doctor.firstName} ${doctor.lastName}`
+      : `Dr. ${doctor.firstName} ${doctor.lastName}`;
+
     // Create invoice
     const invoice = await Invoice.create({
       invoiceNumber,
       userId: patientId,
       doctorId,
-      appointmentId,
+      appointmentId: appointmentId || null,
       type: 'consultation',
       status: 'sent',
       items: invoiceItems,
@@ -981,26 +994,44 @@ router.post('/doctor/invoices/create', authDoctor, async (req, res) => {
       discount: discountAmount,
       total,
       currency: 'INR',
-      notes,
+      notes: notes || '',
       dueDate: dueDate || new Date(Date.now() + 7 * 24 * 60 * 60 * 1000), // 7 days from now
       billingDetails: {
-        doctorName: `Dr. ${doctor.firstName} ${doctor.lastName}`,
-        doctorSpecialization: doctor.specialization,
-        doctorRegistration: doctor.registrationNumber,
-        clinicAddress: doctor.clinicAddress
+        doctorName: doctorName,
+        doctorSpecialization: doctor.specialization || 'General',
+        doctorRegistration: doctor.registrationNumber || 'N/A',
+        clinicAddress: doctor.clinicAddress || 'N/A'
       },
       patientDetails: {
         name: `${patient.firstName} ${patient.lastName}`,
-        email: patient.email,
-        phone: patient.phoneNumber
+        email: patient.email || '',
+        phone: patient.phoneNumber || ''
       }
     });
 
     return res.status(201).json({
       success: true,
       message: 'Invoice created successfully',
-      data: { invoice }
+      data: { 
+        invoice: {
+          id: invoice.id,
+          invoiceNumber: invoice.invoiceNumber,
+          total: invoice.total,
+          status: invoice.status,
+          createdAt: invoice.createdAt
+        }
+      }
     });
+
+  } catch (error) {
+    console.error('Create doctor invoice error:', error);
+    return res.status(500).json({
+      success: false,
+      message: 'Failed to create invoice',
+      error: error.message
+    });
+  }
+});
 
   } catch (error) {
     console.error('Create doctor invoice error:', error);

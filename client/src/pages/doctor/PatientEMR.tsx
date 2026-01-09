@@ -151,7 +151,7 @@ export default function PatientEMR() {
   const { data: patientsData, isLoading: loadingPatients, refetch: refetchPatients } = useQuery({
     queryKey: ['doctor-patients-emr'],
     queryFn: async () => {
-      const response = await api.get('/patients/doctor/patients');
+      const response = await api.get('/doctors/my-patients');
       return response.data;
     }
   });

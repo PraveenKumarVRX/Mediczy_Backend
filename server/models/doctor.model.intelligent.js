@@ -160,6 +160,10 @@ const doctorModel = {
   },
 
   findByPk: async (id, options = {}) => {
+    // Validate ID before querying to prevent "undefined" errors
+    if (id === undefined || id === null || id === 'undefined' || id === '') {
+      return null;
+    }
     const doctor = await Doctor.findByPk(id, options);
     return deriveVerificationStatus(doctor);
   },

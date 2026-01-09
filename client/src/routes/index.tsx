@@ -91,6 +91,7 @@ import CorporatePlansManagement from '@/pages/admin/CorporatePlansManagement';
 import AdminPlans from "@/pages/admin/AdminPlans";
 import AdminInsurance from "@/pages/admin/AdminInsurance";
 import AdminWorkflowAutomation from "@/pages/admin/AdminWorkflowAutomation";
+import AdminTenantManagement from "@/pages/admin/AdminTenantManagement";
 import HospitalsManagement from '@/pages/admin/HospitalsManagement';
 import ClinicsManagement from '@/pages/admin/ClinicsManagement';
 import HomecareManagement from '@/pages/admin/HomecareManagement';
@@ -658,6 +659,7 @@ const AppRoutes = () => {
   <Route path="/admin/plans" element={<AdminPlans />} />
   <Route path="/admin/insurance" element={<AdminInsurance />} />
   <Route path="/admin/workflow-automation" element={<AdminWorkflowAutomation />} />
+  <Route path="/admin/tenants" element={<AdminTenantManagement />} />
   <Route path="/admin/insurer" element={<InsurerManagement />} />
   <Route path="/admin/tpa" element={<TPAManagement />} />
   <Route path="/admin/hospitals" element={<HospitalsManagement />} />

@@ -110,8 +110,18 @@ const resolveDoctorId = async (doctorIdOrUniqueId) => {
  */
 export const createAppointment = async (req, res) => {
   try {
+    // Debug logging for appointment creation
+    console.log('📅 Appointment creation request:', {
+      body: req.body,
+      userId: req.user?.id,
+      headers: {
+        contentType: req.headers['content-type']
+      }
+    });
+
     const errors = validationResult(req);
     if (!errors.isEmpty()) {
+      console.log('❌ Validation errors:', errors.array());
       return res.status(400).json({ errors: errors.array() });
     }
 
@@ -571,7 +581,10 @@ export const cancelAppointment = async (req, res) => {
   try {
     const { id } = req.params;
     const userId = req.user.id;
-    const { reason } = req.body;
+    const { reason, cancellationReason } = req.body;
+    
+    // Use either reason or cancellationReason field
+    const cancelReason = reason || cancellationReason;
 
     const appointment = await Appointment.findByPk(id);
 
@@ -591,11 +604,17 @@ export const cancelAppointment = async (req, res) => {
       });
     }
 
+    // Determine who is cancelling
+    const cancelledBy = appointment.userId === userId ? 'patient' : 'doctor';
+    const defaultReason = cancelledBy === 'patient' 
+      ? 'Cancelled by patient' 
+      : 'Cancelled by doctor';
+
     // Update appointment
     await appointment.update({
       status: 'cancelled',
-      cancelledBy: appointment.userId === userId ? 'patient' : 'doctor',
-      cancellationReason: reason || 'No reason provided',
+      cancelledBy,
+      cancellationReason: cancelReason || defaultReason,
       cancelledAt: new Date()
     });
 

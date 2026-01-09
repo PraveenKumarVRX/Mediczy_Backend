@@ -12,6 +12,7 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@
 import { ScrollArea } from '@/components/ui/scroll-area';
 import { Switch } from '@/components/ui/switch';
 import { useToast } from '@/hooks/use-toast';
+import api from '@/utils/api';
 import HospitalLayout from '@/components/hospital/HospitalLayout';
 import {
   Ambulance, MapPin, Phone, Clock, Users, AlertTriangle, CheckCircle,
@@ -77,6 +78,12 @@ interface TripLog {
 
 const HospitalAmbulance = () => {
   const { toast } = useToast();
+  
+  const hospitalHeaders = () => {
+    const token = localStorage.getItem('hospitalToken');
+    return token ? { Authorization: `Bearer ${token}` } : {};
+  };
+  
   const [activeTab, setActiveTab] = useState('dashboard');
   const [searchQuery, setSearchQuery] = useState('');
   const [filterStatus, setFilterStatus] = useState('all');
@@ -1065,9 +1072,32 @@ const HospitalAmbulance = () => {
           </div>
           <DialogFooter>
             <Button variant="outline" onClick={() => setShowAddVehicleDialog(false)}>Cancel</Button>
-            <Button className="bg-teal-600 hover:bg-teal-700" onClick={() => {
-              toast({ title: 'Vehicle Added', description: 'New ambulance added to fleet' });
-              setShowAddVehicleDialog(false);
+            <Button className="bg-teal-600 hover:bg-teal-700" onClick={async () => {
+              try {
+                const vehicleData = {
+                  vehicleNumber: '', // Get from form
+                  type: 'BLS',
+                  driver: { name: '', phone: '' },
+                  paramedic: { name: '', phone: '' },
+                  equipment: []
+                };
+
+                const { data } = await api.post(
+                  '/hospital/ambulances/vehicles',
+                  vehicleData,
+                  { headers: hospitalHeaders() }
+                );
+
+                setAmbulances(prev => [...prev, data]);
+                toast({ title: 'Vehicle Added', description: 'New ambulance added to fleet' });
+                setShowAddVehicleDialog(false);
+              } catch (error: any) {
+                toast({ 
+                  title: 'Failed to add vehicle', 
+                  description: error.response?.data?.message || 'An error occurred',
+                  variant: 'destructive'
+                });
+              }
             }}>
               <Plus className="h-4 w-4 mr-2" /> Add Vehicle
             </Button>

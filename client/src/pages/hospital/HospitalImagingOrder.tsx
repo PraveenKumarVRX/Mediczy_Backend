@@ -11,6 +11,7 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@
 import { Badge } from '@/components/ui/badge';
 import { Checkbox } from '@/components/ui/checkbox';
 import { useToast } from '@/hooks/use-toast';
+import api from '@/utils/api';
 import HospitalLayout from '@/components/hospital/HospitalLayout';
 import {
   Scan, Plus, Search, ArrowLeft, Calendar, Clock,
@@ -51,6 +52,11 @@ interface ImagingOrder {
 const HospitalImagingOrder = () => {
   const navigate = useNavigate();
   const { toast } = useToast();
+
+  const hospitalHeaders = () => {
+    const token = localStorage.getItem('hospitalToken');
+    return token ? { Authorization: `Bearer ${token}` } : {};
+  };
 
   const [activeTab, setActiveTab] = useState('order');
   const [searchQuery, setSearchQuery] = useState('');
@@ -257,10 +263,22 @@ const HospitalImagingOrder = () => {
 
     setLoading(true);
     try {
-      // Simulate API call
-      await new Promise(resolve => setTimeout(resolve, 2000));
-
+      // Create imaging test order via API
       const totalAmount = selectedTests.reduce((sum, test) => sum + test.price, 0);
+      
+      const orderData = {
+        patientId: selectedPatient.id,
+        tests: selectedTests.map(test => test.id),
+        priority,
+        notes: clinicalNotes,
+        totalAmount
+      };
+
+      const { data } = await api.post(
+        '/hospital/imaging-orders',
+        orderData,
+        { headers: hospitalHeaders() }
+      );
 
       toast({
         title: "Imaging Test Ordered",
@@ -274,10 +292,10 @@ const HospitalImagingOrder = () => {
       setClinicalNotes('');
       setShowOrderDialog(false);
 
-    } catch (error) {
+    } catch (error: any) {
       toast({
         title: "Order Failed",
-        description: "Failed to place imaging test order. Please try again.",
+        description: error.response?.data?.message || "Failed to place imaging test order. Please try again.",
         variant: "destructive",
       });
     } finally {

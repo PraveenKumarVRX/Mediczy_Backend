@@ -10,6 +10,7 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger, Dialog
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { Badge } from '@/components/ui/badge';
 import { useToast } from '@/hooks/use-toast';
+import api from '@/utils/api';
 import HospitalLayout from '@/components/hospital/HospitalLayout';
 import {
   Pill, Plus, Search, ArrowLeft, Calendar, Clock,
@@ -57,6 +58,11 @@ interface Prescription {
 const HospitalPrescriptionCreator = () => {
   const navigate = useNavigate();
   const { toast } = useToast();
+
+  const hospitalHeaders = () => {
+    const token = localStorage.getItem('hospitalToken');
+    return token ? { Authorization: `Bearer ${token}` } : {};
+  };
 
   const [activeTab, setActiveTab] = useState('create');
   const [searchQuery, setSearchQuery] = useState('');
@@ -323,8 +329,20 @@ const HospitalPrescriptionCreator = () => {
 
     setLoading(true);
     try {
-      // Simulate API call
-      await new Promise(resolve => setTimeout(resolve, 2000));
+      // Create prescription via API
+      const prescriptionData = {
+        patientId: selectedPatient.id,
+        diagnosis,
+        medications: prescriptionItems,
+        notes: prescriptionNotes,
+        doctorId: localStorage.getItem('doctorId') || 'current_doctor'
+      };
+
+      const { data } = await api.post(
+        '/hospital/prescriptions',
+        prescriptionData,
+        { headers: hospitalHeaders() }
+      );
 
       toast({
         title: "Prescription Created",
@@ -338,10 +356,10 @@ const HospitalPrescriptionCreator = () => {
       setPrescriptionItems([]);
       setShowCreateDialog(false);
 
-    } catch (error) {
+    } catch (error: any) {
       toast({
         title: "Creation Failed",
-        description: "Failed to create prescription. Please try again.",
+        description: error.response?.data?.message || "Failed to create prescription. Please try again.",
         variant: "destructive",
       });
     } finally {

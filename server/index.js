@@ -8,6 +8,7 @@ import { validateEnvironment } from "./config/env-validator.js";
 import workers from "./workers/index.js";
 import { connectKafkaProducer, connectKafkaConsumer } from "./config/kafka.js";
 import scheduleDeviceMonitoring from "./scripts/device-monitoring-cron.js";
+import scheduleAppointmentAutoCancel from "./scripts/appointment-auto-cancel-cron.js";
 
 // Validate environment before starting
 try {
@@ -62,6 +63,9 @@ async function startServer() {
   
   // Initialize device monitoring cron jobs
   scheduleDeviceMonitoring();
+  
+  // Initialize appointment auto-cancel cron jobs
+  scheduleAppointmentAutoCancel();
   
   // Initialize membership validation cron jobs
   console.log('👤 Starting membership validation cron jobs...');
