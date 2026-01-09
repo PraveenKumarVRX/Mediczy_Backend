@@ -11,6 +11,15 @@ import dashboardRouter from './pharmacy/dashboard.routes.js';
 import inventoryRouter from './pharmacy/inventory.routes.js';
 import posRouter from './pharmacy/pos.routes.js';
 import prescriptionsRouter from './pharmacy/prescriptions.routes.js';
+import transactionsRouter from './pharmacy/transactions.route.js';
+import prescriptionsDetailRouter from './pharmacy/prescriptions.route.js';
+import stockRouter from './pharmacy/stock.route.js';
+import customersRouter from './pharmacy/customers.route.js';
+import batchesRouter from './pharmacy/batches.route.js';
+import purchaseOrdersRouter from './pharmacy/purchase-orders.route.js';
+import stockAlertsRouter from './pharmacy/stock-alerts.route.js';
+import invoicesRouter from './pharmacy/invoices.route.js';
+import analyticsRouter from './pharmacy/analytics.route.js';
 
 const router = express.Router();
 
@@ -19,6 +28,15 @@ router.use('/dashboard', dashboardRouter);
 router.use('/inventory', inventoryRouter);
 router.use('/pos', posRouter);
 router.use('/prescriptions', prescriptionsRouter);
+router.use('/transactions', transactionsRouter);
+router.use('/prescriptions-detail', prescriptionsDetailRouter);
+router.use('/stock', stockRouter);
+router.use('/customers', customersRouter);
+router.use('/batches', batchesRouter);
+router.use('/purchase-orders', purchaseOrdersRouter);
+router.use('/stock-alerts', stockAlertsRouter);
+router.use('/invoices', invoicesRouter);
+router.use('/analytics', analyticsRouter);
 
 /**
  * POST /api/pharmacy/login
