@@ -31,7 +31,8 @@ export const authTeam = async (req, res, next) => {
       id: decoded.id,
       email: decoded.email,
       role: decoded.role || 'team',
-      isTeam: true
+      isTeam: true,
+      isAdmin: decoded.isAdmin || false
     };
 
     next();

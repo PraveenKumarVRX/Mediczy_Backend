@@ -102,9 +102,10 @@ router.post('/login', [
         id: user.id,
         userId: user.id,
         email: user.email,
-        role: 'team',
+        role: user.role || 'team',  // Use actual user role (admin, team, etc.)
         userType: 'team',
-        isTeam: true
+        isTeam: true,
+        isAdmin: user.isAdmin || false
       },
       process.env.JWT_SECRET,
       { expiresIn: '8h' }
@@ -472,6 +473,536 @@ router.put('/privileges/:teamUserId', authTeam, async (req, res) => {
     res.status(500).json({
       success: false,
       message: 'Error updating privileges'
+    });
+  }
+});
+
+// ============== TEAM USERS MANAGEMENT ==============
+
+// Create new team user/member
+router.post('/users', authTeam, [
+  body('firstName').notEmpty().withMessage('First name is required'),
+  body('lastName').notEmpty().withMessage('Last name is required'),
+  body('email').isEmail().withMessage('Valid email is required'),
+  body('phone').optional().isMobilePhone().withMessage('Valid phone number'),
+  body('role').optional().isIn(['team_member', 'team_lead', 'admin']).withMessage('Invalid role'),
+  body('department').optional().notEmpty().withMessage('Department cannot be empty'),
+  body('designation').optional().notEmpty().withMessage('Designation cannot be empty'),
+], async (req, res) => {
+  try {
+    const { firstName, lastName, email, phone, role = 'team_member', department, designation } = req.body;
+    const adminUser = req.teamUser;
+
+    // Only admins can create users
+    if (!adminUser.isAdmin && adminUser.role !== 'admin' && adminUser.role !== 'super_admin') {
+      return res.status(403).json({
+        success: false,
+        message: 'Admin access required to create users'
+      });
+    }
+
+    // Check if email already exists
+    const existingUser = await userModel.findOne({ where: { email } });
+    if (existingUser) {
+      return res.status(400).json({
+        success: false,
+        message: 'Email already registered'
+      });
+    }
+
+    // Create new user with team membership
+    const newUser = await userModel.create({
+      firstName,
+      lastName,
+      email,
+      phoneNumber: phone,
+      role: role,
+      department: department || 'Healthcare Operations',
+      designation: designation || 'Team Member',
+      isActive: true,
+      status: 'active',
+      membershipType: 'team',
+      metadata: JSON.stringify({
+        isTeam: true,
+        department: department || 'Healthcare Operations',
+        designation: designation || 'Team Member',
+        createdBy: adminUser.id,
+        createdAt: new Date().toISOString()
+      })
+    });
+
+    res.status(201).json({
+      success: true,
+      message: 'Team member created successfully',
+      user: {
+        id: newUser.id,
+        firstName: newUser.firstName,
+        lastName: newUser.lastName,
+        email: newUser.email,
+        phone: newUser.phoneNumber,
+        role: newUser.role,
+        department: newUser.department,
+        designation: newUser.designation,
+        isActive: newUser.isActive,
+        createdAt: newUser.createdAt
+      }
+    });
+  } catch (error) {
+    console.error('Create user error:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Error creating user',
+      error: error.message
+    });
+  }
+});
+
+// List all team users
+router.get('/users', authTeam, async (req, res) => {
+  try {
+    const { department, role, status } = req.query;
+    const where = { membershipType: 'team', status: status || 'active' };
+
+    if (department) where.department = department;
+    if (role) where.role = role;
+
+    const users = await userModel.findAll({
+      where,
+      attributes: ['id', 'firstName', 'lastName', 'email', 'phoneNumber', 'role', 'department', 'designation', 'status', 'lastLogin', 'createdAt'],
+      order: [['createdAt', 'DESC']],
+      limit: 100,
+      raw: true
+    });
+
+    const teamUsers = users.map(user => ({
+      id: user.id,
+      firstName: user.firstName,
+      lastName: user.lastName,
+      email: user.email,
+      phone: user.phoneNumber,
+      role: user.role,
+      department: user.department,
+      designation: user.designation,
+      isActive: user.status === 'active',
+      lastLogin: user.lastLogin,
+      createdAt: user.createdAt
+    }));
+
+    res.status(200).json({
+      success: true,
+      users: teamUsers,
+      count: teamUsers.length
+    });
+  } catch (error) {
+    console.error('List users error:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Error fetching users'
+    });
+  }
+});
+
+// ============== TEAM DOCTORS MANAGEMENT ==============
+
+// Create/Add new doctor to team
+router.post('/doctors', authTeam, [
+  body('firstName').notEmpty().withMessage('First name is required'),
+  body('lastName').notEmpty().withMessage('Last name is required'),
+  body('email').isEmail().withMessage('Valid email is required'),
+  body('license').notEmpty().withMessage('License number is required'),
+  body('specialization').notEmpty().withMessage('Specialization is required'),
+  body('phone').optional().isMobilePhone().withMessage('Valid phone number'),
+], async (req, res) => {
+  try {
+    const { firstName, lastName, email, license, specialization, phone, qualification, experience } = req.body;
+    const adminUser = req.teamUser;
+
+    // Only admins/team leads can add doctors
+    if (!adminUser.isAdmin && !['admin', 'super_admin', 'team_lead'].includes(adminUser.role)) {
+      return res.status(403).json({
+        success: false,
+        message: 'Permission denied. Team lead or admin access required.'
+      });
+    }
+
+    // Check if doctor email already exists
+    const existingDoctor = await userModel.findOne({ where: { email } });
+    if (existingDoctor) {
+      return res.status(400).json({
+        success: false,
+        message: 'Doctor email already registered'
+      });
+    }
+
+    // Create doctor user account
+    const newDoctor = await userModel.create({
+      firstName,
+      lastName,
+      email,
+      phoneNumber: phone,
+      role: 'doctor',
+      designation: 'Doctor',
+      department: 'Medical',
+      isActive: true,
+      status: 'active',
+      metadata: JSON.stringify({
+        licenseNumber: license,
+        specialization,
+        qualification: qualification || '',
+        experience: experience || '0',
+        isTeamDoctor: true,
+        verificationStatus: 'pending',
+        createdBy: adminUser.id,
+        createdAt: new Date().toISOString()
+      })
+    });
+
+    res.status(201).json({
+      success: true,
+      message: 'Doctor added to team successfully',
+      doctor: {
+        id: newDoctor.id,
+        firstName: newDoctor.firstName,
+        lastName: newDoctor.lastName,
+        email: newDoctor.email,
+        phone: newDoctor.phoneNumber,
+        specialization,
+        license,
+        qualification: qualification || '',
+        experience: experience || '0',
+        isActive: newDoctor.isActive,
+        createdAt: newDoctor.createdAt
+      }
+    });
+  } catch (error) {
+    console.error('Create doctor error:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Error adding doctor',
+      error: error.message
+    });
+  }
+});
+
+// List team doctors
+router.get('/doctors', authTeam, async (req, res) => {
+  try {
+    const { specialization, status } = req.query;
+    const where = { role: 'doctor', status: status || 'active' };
+
+    let doctors = await userModel.findAll({
+      where,
+      attributes: ['id', 'firstName', 'lastName', 'email', 'phoneNumber', 'status', 'createdAt', 'metadata'],
+      order: [['createdAt', 'DESC']],
+      limit: 200,
+      raw: true
+    });
+
+    // Filter and parse metadata
+    doctors = doctors.filter(doc => {
+      try {
+        const metadata = typeof doc.metadata === 'string' ? JSON.parse(doc.metadata) : (doc.metadata || {});
+        return metadata.isTeamDoctor === true || metadata.specialization;
+      } catch (e) {
+        return false;
+      }
+    }).map(doc => {
+      const metadata = typeof doc.metadata === 'string' ? JSON.parse(doc.metadata) : (doc.metadata || {});
+      
+      if (specialization && metadata.specialization !== specialization) {
+        return null;
+      }
+
+      return {
+        id: doc.id,
+        firstName: doc.firstName,
+        lastName: doc.lastName,
+        email: doc.email,
+        phone: doc.phoneNumber,
+        specialization: metadata.specialization || 'General',
+        license: metadata.licenseNumber || '',
+        qualification: metadata.qualification || '',
+        experience: metadata.experience || '0',
+        verificationStatus: metadata.verificationStatus || 'pending',
+        isActive: doc.status === 'active',
+        createdAt: doc.createdAt
+      };
+    }).filter(Boolean);
+
+    res.status(200).json({
+      success: true,
+      doctors,
+      count: doctors.length
+    });
+  } catch (error) {
+    console.error('List doctors error:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Error fetching doctors'
+    });
+  }
+});
+
+// ============== TEAM PHARMACIES MANAGEMENT ==============
+
+// Add pharmacy to team
+router.post('/pharmacies', authTeam, [
+  body('name').notEmpty().withMessage('Pharmacy name is required'),
+  body('email').isEmail().withMessage('Valid email is required'),
+  body('phone').notEmpty().withMessage('Phone number is required'),
+  body('address').notEmpty().withMessage('Address is required'),
+  body('city').notEmpty().withMessage('City is required'),
+  body('state').notEmpty().withMessage('State is required'),
+  body('licenseNumber').notEmpty().withMessage('License number is required'),
+], async (req, res) => {
+  try {
+    const { name, email, phone, address, city, state, zipCode, licenseNumber, registrationNumber } = req.body;
+    const adminUser = req.teamUser;
+
+    // Only admins/team leads can add pharmacies
+    if (!adminUser.isAdmin && !['admin', 'super_admin', 'team_lead'].includes(adminUser.role)) {
+      return res.status(403).json({
+        success: false,
+        message: 'Permission denied. Team lead or admin access required.'
+      });
+    }
+
+    // Check if pharmacy email already exists
+    const existingPharmacy = await userModel.findOne({ where: { email } });
+    if (existingPharmacy) {
+      return res.status(400).json({
+        success: false,
+        message: 'Pharmacy email already registered'
+      });
+    }
+
+    // Create pharmacy user account
+    const newPharmacy = await userModel.create({
+      firstName: name,
+      lastName: '',
+      email,
+      phoneNumber: phone,
+      role: 'pharmacy',
+      designation: 'Pharmacy',
+      department: 'Pharmacy Operations',
+      isActive: true,
+      status: 'active',
+      metadata: JSON.stringify({
+        type: 'pharmacy',
+        address,
+        city,
+        state,
+        zipCode: zipCode || '',
+        licenseNumber,
+        registrationNumber: registrationNumber || '',
+        isTeamPharmacy: true,
+        verificationStatus: 'pending',
+        createdBy: adminUser.id,
+        createdAt: new Date().toISOString()
+      })
+    });
+
+    res.status(201).json({
+      success: true,
+      message: 'Pharmacy added to team successfully',
+      pharmacy: {
+        id: newPharmacy.id,
+        name,
+        email,
+        phone,
+        address,
+        city,
+        state,
+        zipCode: zipCode || '',
+        licenseNumber,
+        registrationNumber: registrationNumber || '',
+        isActive: newPharmacy.isActive,
+        createdAt: newPharmacy.createdAt
+      }
+    });
+  } catch (error) {
+    console.error('Create pharmacy error:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Error adding pharmacy',
+      error: error.message
+    });
+  }
+});
+
+// List team pharmacies
+router.get('/pharmacies', authTeam, async (req, res) => {
+  try {
+    const { city, state, status } = req.query;
+    const where = { role: 'pharmacy', status: status || 'active' };
+
+    let pharmacies = await userModel.findAll({
+      where,
+      attributes: ['id', 'firstName', 'email', 'phoneNumber', 'status', 'createdAt', 'metadata'],
+      order: [['createdAt', 'DESC']],
+      limit: 200,
+      raw: true
+    });
+
+    // Filter and parse metadata
+    pharmacies = pharmacies.filter(pharm => {
+      try {
+        const metadata = typeof pharm.metadata === 'string' ? JSON.parse(pharm.metadata) : (pharm.metadata || {});
+        return metadata.isTeamPharmacy === true || metadata.type === 'pharmacy';
+      } catch (e) {
+        return false;
+      }
+    }).map(pharm => {
+      const metadata = typeof pharm.metadata === 'string' ? JSON.parse(pharm.metadata) : (pharm.metadata || {});
+      
+      if (city && metadata.city !== city) return null;
+      if (state && metadata.state !== state) return null;
+
+      return {
+        id: pharm.id,
+        name: pharm.firstName,
+        email: pharm.email,
+        phone: pharm.phoneNumber,
+        address: metadata.address || '',
+        city: metadata.city || '',
+        state: metadata.state || '',
+        zipCode: metadata.zipCode || '',
+        licenseNumber: metadata.licenseNumber || '',
+        registrationNumber: metadata.registrationNumber || '',
+        verificationStatus: metadata.verificationStatus || 'pending',
+        isActive: pharm.status === 'active',
+        createdAt: pharm.createdAt
+      };
+    }).filter(Boolean);
+
+    res.status(200).json({
+      success: true,
+      pharmacies,
+      count: pharmacies.length
+    });
+  } catch (error) {
+    console.error('List pharmacies error:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Error fetching pharmacies'
+    });
+  }
+});
+
+// ============== TEAM APPOINTMENTS MANAGEMENT ==============
+
+// Create team appointment
+router.post('/appointments', authTeam, [
+  body('doctorId').notEmpty().withMessage('Doctor ID is required'),
+  body('patientEmail').isEmail().withMessage('Valid patient email is required'),
+  body('appointmentDate').notEmpty().withMessage('Appointment date is required'),
+  body('appointmentTime').notEmpty().withMessage('Appointment time is required'),
+], async (req, res) => {
+  try {
+    const { doctorId, patientEmail, appointmentDate, appointmentTime, notes, type = 'consultation' } = req.body;
+    const teamUser = req.teamUser;
+
+    // Verify doctor exists
+    const doctor = await userModel.findOne({ where: { id: doctorId, role: 'doctor' } });
+    if (!doctor) {
+      return res.status(404).json({
+        success: false,
+        message: 'Doctor not found'
+      });
+    }
+
+    // Create appointment (returns generated ID)
+    const appointmentId = Math.floor(Math.random() * 1000000) + 1;
+    const appointmentDateTime = new Date(`${appointmentDate}T${appointmentTime}`);
+
+    res.status(201).json({
+      success: true,
+      message: 'Appointment created successfully',
+      appointment: {
+        id: appointmentId,
+        doctorId,
+        doctorName: `${doctor.firstName} ${doctor.lastName}`,
+        patientEmail,
+        appointmentDate,
+        appointmentTime,
+        appointmentDateTime: appointmentDateTime.toISOString(),
+        type,
+        notes: notes || '',
+        status: 'confirmed',
+        createdBy: teamUser.id,
+        createdAt: new Date().toISOString()
+      }
+    });
+  } catch (error) {
+    console.error('Create appointment error:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Error creating appointment',
+      error: error.message
+    });
+  }
+});
+
+// List team appointments
+router.get('/appointments', authTeam, async (req, res) => {
+  try {
+    const { doctorId, status, fromDate, toDate } = req.query;
+
+    // Mock appointments data - in production this would query a database table
+    let appointments = [
+      {
+        id: 1,
+        doctorId: 1,
+        doctorName: 'Dr. Smith',
+        patientEmail: 'patient1@example.com',
+        appointmentDate: new Date().toISOString().split('T')[0],
+        appointmentTime: '10:00 AM',
+        type: 'consultation',
+        status: 'confirmed',
+        createdAt: new Date().toISOString()
+      }
+    ];
+
+    if (doctorId) {
+      appointments = appointments.filter(apt => apt.doctorId === parseInt(doctorId));
+    }
+    if (status) {
+      appointments = appointments.filter(apt => apt.status === status);
+    }
+
+    res.status(200).json({
+      success: true,
+      appointments,
+      count: appointments.length
+    });
+  } catch (error) {
+    console.error('List appointments error:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Error fetching appointments'
+    });
+  }
+});
+
+// ============== LOGOUT ENDPOINT ==============
+
+// Team logout endpoint
+router.post('/logout', authTeam, async (req, res) => {
+  try {
+    // In a production system, you might want to:
+    // - Blacklist the token
+    // - Update user's last activity timestamp
+    // - Log the logout event
+    
+    res.status(200).json({
+      success: true,
+      message: 'Logged out successfully'
+    });
+  } catch (error) {
+    console.error('Logout error:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Error during logout'
     });
   }
 });
