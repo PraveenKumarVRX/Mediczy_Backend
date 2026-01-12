@@ -12,6 +12,8 @@ import Profile from "@/pages/Profile";
 import ProfileEnhanced from "@/pages/ProfileEnhanced";
 import Wallet from "@/pages/Wallet";
 import HealthTracker from "@/pages/HealthTracker";
+import HealthDashboard from "@/pages/HealthDashboard";
+import UnifiedHealthDashboard from "@/pages/UnifiedHealthDashboard";
 import HealthDiary from "@/pages/HealthDiary";
 import Symptoms from "@/pages/Symptoms";
 import Medicine from "@/pages/Medicine";
@@ -166,6 +168,7 @@ import VoiceCallManagement from '@/pages/admin/VoiceCallManagement';
 import TicketManagement from '@/pages/admin/TicketManagement';
 import AdminHealthRiskAssessment from '@/pages/admin/HealthRiskAssessment';
 import UserHealthRiskAssessment from '@/pages/UserHealthRiskAssessment';
+import HealthIntelligence from '@/pages/HealthIntelligence';
 // Placeholder pages (reports still from AdminPlaceholders, new SettingsPage)
 import { ReportsPage } from "@/pages/admin/AdminPlaceholders";
 import SettingsPage from "@/pages/admin/SettingsPage";
@@ -217,8 +220,6 @@ import NGOLogin from "@/pages/ngo/NGOLogin";
 import HospitalCommunicationHub from "@/pages/hospital/HospitalCommunicationHub";
 import HospitalAmbulance from "@/pages/hospital/HospitalAmbulance";
 import HospitalBranchesClinic from "@/pages/hospital/HospitalBranchesClinic";
-import BrokerCommunication from "@/pages/insurance-broker/BrokerCommunication";
-import InsuranceCommunication from "@/pages/insurance-company/InsuranceCommunication";
 import BrokerCommunication from "@/pages/insurance-broker/BrokerCommunication";
 import InsuranceCommunication from "@/pages/insurance-company/InsuranceCommunication";
 import HospitalLogin from "@/pages/hospital/HospitalLogin";
@@ -403,6 +404,7 @@ const AppRoutes = () => {
       <Route path="/clinic/support" element={<ClinicSupportPage />} />
       <Route path="/lab/login" element={<LabLogin />} />
       <Route path="/lab/dashboard" element={<LabDashboard />} />
+      <Route path="/lab/test-catalog" element={<LabDashboard />} />
       {/* Lab sub-routes */}
       <Route path="/lab/orders" element={<LabOrdersPage />} />
       <Route path="/lab/orders/new" element={<LabOrdersPage />} />
@@ -533,8 +535,17 @@ const AppRoutes = () => {
       <Route path="/nurse/dashboard" element={<MainLayout><NurseDashboard /></MainLayout>} />
       <Route path="/profile" element={<MainLayout><ProfileEnhanced /></MainLayout>} />
       <Route path="/wallet" element={<MainLayout><Wallet /></MainLayout>} />
+      {/* Consolidated Health Dashboard - combines health-tracker and patient/devices */}
+      {/* Unified Health Dashboard - Complete health overview */}
+      <Route path="/health-dashboard" element={<UnifiedHealthDashboard />} />
+      {/* Smart Devices Management */}
+      <Route path="/patient/devices" element={<MainLayout><HealthDashboard /></MainLayout>} />
+      {/* Manual Health Tracker (Fitness focus) */}
       <Route path="/health-tracker" element={<MainLayout><HealthTracker /></MainLayout>} />
+      {/* Health Diary */}
       <Route path="/health-diary" element={<MainLayout><HealthDiary /></MainLayout>} />
+      {/* Health Intelligence Dashboard */}
+      <Route path="/health-intelligence" element={<MainLayout><HealthIntelligence /></MainLayout>} />
       <Route path="/consultation" element={<MainLayout><Consultation /></MainLayout>} />
       <Route path="/doctors" element={<DoctorListBooking />} />
       <Route path="/symptoms" element={<MainLayout><Symptoms /></MainLayout>} />
@@ -565,7 +576,6 @@ const AppRoutes = () => {
       <Route path="/patient/my-reports" element={<MainLayout><MyReports /></MainLayout>} />
       <Route path="/patient/pharmacy" element={<MainLayout><Pharmacy /></MainLayout>} />
       <Route path="/patient/vital-reports" element={<MainLayout><VitalReports /></MainLayout>} />
-      <Route path="/patient/devices" element={<MainLayout><DeviceIntegration /></MainLayout>} />
       <Route path="/patient/documents" element={<MainLayout><UploadedDocuments /></MainLayout>} />
       <Route path="/patient/network-hospitals" element={<MainLayout><NetworkHospitals /></MainLayout>} />
       <Route path="/patient/buy-insurance" element={<MainLayout><BuyInsurance /></MainLayout>} />

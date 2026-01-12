@@ -44,7 +44,8 @@ import {
   CalendarDays,
   UserPlus,
   ClipboardList,
-  Receipt
+  Receipt,
+  Brain
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
@@ -65,8 +66,8 @@ const sidebarItems: SidebarItem[] = [
   { icon: Bell, label: "Notifications", path: "/patient/notifications", category: "Main" },
   
   // Health Management
-  { icon: AlignCenterVertical, label: "Health Tracker", path: "/health-tracker", category: "Health" },
-  { icon: Watch, label: "Smart Devices", path: "/patient/devices", category: "Health" },
+  { icon: HeartPulse, label: "Health Dashboard", path: "/health-dashboard", category: "Health" },
+  { icon: Brain, label: "Health Intelligence", path: "/health-intelligence", category: "Health" },
   { icon: BookHeart, label: "Health Diary", path: "/health-diary", category: "Health" },
   { icon: ShieldCheck, label: "Health Risk Assessment", path: "/health-risk-assessment", category: "Health" },
   { icon: Trophy, label: "Wellness Challenges", path: "/wellness-challenges", category: "Health" },

@@ -30,9 +30,56 @@ const USER_TYPE_PERMISSIONS = {
       '/api/wallet',  // User wallet and payments
       '/api/fitness',  // Fitness tracking
       '/api/fitness-data',  // Health and fitness data
+      '/api/health',  // Unified health metrics
       '/api/apple-health',  // Apple Health integration
       '/api/health-diary',  // Health diary entries
       '/api/health-data',  // BLE device health data sync
+      '/api/health-assessment',  // Health risk assessments
+      '/api/health-intelligence',  // Dr. iSHA Health Intelligence Dashboard
+      '/api/reports',  // Medical report uploads and analysis
+      '/api/labs',  // Lab tests and diagnostic centers
+      '/api/family-members',  // Family member management
+      '/api/notifications',  // User notifications
+      '/api/mobile'  // Mobile API gateway
+    ],
+    tokenField: 'userId'
+  },
+  patient: {  // Alias for 'user' - same permissions
+    allowedPaths: [
+      '/api/user',
+      '/api/auth',
+      '/api/doctors',
+      '/api/appointments',
+      '/api/prescriptions',
+      '/api/health-tracker',
+      '/api/consultation',
+      '/api/chat',
+      '/api/ai-doctor',
+      '/api/ai',  // AI doctor chat endpoints
+      '/api/medical-ai',  // Medical AI including emergency triage
+      '/api/symptoms',
+      '/api/medicine',
+      '/api/emergency',
+      '/api/diet',
+      '/api/plans',
+      '/api/bookings',
+      '/api/health-feed',
+      '/api/video',
+      '/api/ayushman',
+      '/api/membership',  // Membership plans and subscriptions
+      '/api/membership-plans', // Membership plans (alternative route)
+      '/api/wallet',  // User wallet and payments
+      '/api/fitness',  // Fitness tracking
+      '/api/fitness-data',  // Health and fitness data
+      '/api/health',  // Unified health metrics
+      '/api/apple-health',  // Apple Health integration
+      '/api/health-diary',  // Health diary entries
+      '/api/health-data',  // BLE device health data sync
+      '/api/health-assessment',  // Health risk assessments
+      '/api/health-intelligence',  // Dr. iSHA Health Intelligence Dashboard
+      '/api/reports',  // Medical report uploads and analysis
+      '/api/labs',  // Lab tests and diagnostic centers
+      '/api/family-members',  // Family member management
       '/api/notifications',  // User notifications
       '/api/mobile'  // Mobile API gateway
     ],
@@ -329,7 +376,7 @@ const ringFencingMiddleware = (req, res, next) => {
   const token = authHeader.split(' ')[1];
 
   // Allow dev tokens in development/testing (they'll be validated by route-specific middleware)
-  const devTokens = ['dev-clinic-token', 'dev-hospital-token', 'dev-lab-token', 'dev-pharmacy-token'];
+  const devTokens = ['dev-clinic-token', 'dev-hospital-token', 'dev-lab-token', 'dev-pharmacy-token', 'dev-assistant-token', 'dev-nurse-token', 'dev-corporate-token'];
   if (devTokens.includes(token)) {
     console.log(`✅ Ring-fencing: Allowing dev token bypass for ${requestPath}`);
     return next();
@@ -354,6 +401,9 @@ const ringFencingMiddleware = (req, res, next) => {
     // Get user permissions
     const permissions = USER_TYPE_PERMISSIONS[userType];
     
+    console.error(`[RING-FENCE DEBUG] User type: ${userType}, Has /api/reports: ${permissions?.allowedPaths?.includes('/api/reports')}`);
+    console.error(`[RING-FENCE DEBUG] Allowed paths:`, permissions?.allowedPaths);
+    
     if (!permissions) {
       console.log(`🚫 Ring-fencing: Unknown user type: ${userType}`);
       return res.status(403).json({ 
@@ -371,7 +421,7 @@ const ringFencingMiddleware = (req, res, next) => {
       console.log(`🚫 Ring-fencing: ${userType} attempted unauthorized access to: ${requestPath}`);
       console.log(`   Allowed paths for ${userType}:`, permissions.allowedPaths);
       return res.status(403).json({ 
-        error: 'Access denied - insufficient privileges',
+        error: 'Access denied - insufficient privileges - UPDATED VERSION TEST',
         code: 'ACCESS_DENIED',
         userType: userType,
         requestedPath: requestPath
