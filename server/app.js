@@ -29,6 +29,10 @@ import medicalAIRouter from "./routes/medical-ai.route.js";
 import aiHealthRouter from "./routes/ai-health.route.js";
 import aiScribeRouter from "./routes/ai-scribe.route.js";
 import recordingRouter from "./routes/recording.route.js";
+import uploadRouter from "./routes/upload.route.js";
+import healthAssessmentRouter from "./routes/health-assessment.route.js";
+import reportAnalysisRouter from "./routes/report-analysis.route.js";
+import dietRouter from "./routes/diet.route.js";
 import ayushmanRouter from "./routes/ayushman.route.js";
 import placesRouter from './routes/places.js';
 import ttsRouter from './routes/tts.route.js';
@@ -81,12 +85,14 @@ import deviceRouter from './routes/device.route.js';
 import wearableRouter from './routes/wearable.route.js';
 import pocDeviceRouter from './routes/poc-device.route.js';
 import healthDataRouter from './routes/healthData.route.js';
+import healthRouter from './routes/health.route.js';
 import healthCampRouter from './routes/health-camp.route.js';
 import adminStatsRouter from './routes/admin-stats.route.js';
 import queueRouter from './routes/queue.route.js';
 import prescriptionRouter from './routes/prescription.route.js';
 import ehrRouter from './routes/ehr.route.js';
 import healthDiaryRouter from './routes/health-diary.route.js';
+import healthIntelligenceRouter from './routes/health-intelligence.route.js';
 import onlineConsultationRouter from './routes/online-consultation.route.js';
 import notificationRouter from './routes/notification.route.js';
 import embeddingsRouter from './routes/embeddings.route.js';
@@ -205,8 +211,8 @@ app.use((req, res, next) => {
   // Note: Adjust connect-src/frame-src as needed for production endpoints (Cloudflare Tunnel, APIs, sockets)
   const csp = [
     "default-src 'self'",
-    // Scripts: app bundles from self + nonced inline (if any) + Cloudflare Insights
-    `script-src 'self' 'nonce-${scriptNonce}' https://static.cloudflareinsights.com`,
+    // Scripts: app bundles from self + nonced inline (if any) + Cloudflare Insights + Google Sign-In
+    `script-src 'self' 'nonce-${scriptNonce}' https://static.cloudflareinsights.com https://accounts.google.com`,
     // Styles: from self + nonced inline (if any)
     `style-src 'self' 'nonce-${styleNonce}'`,
     // Images and fonts
@@ -609,6 +615,9 @@ app.use("/api/wallet", walletRouter);
 app.use("/api/membership-plans", membershipPlansRouter);
 app.use("/api/leaderboard", leaderboardRouter);
 app.use("/api/password-reset", passwordResetRouter);
+app.use("/api/reports", uploadRouter); // Medical report upload
+app.use("/api/health-assessment", healthAssessmentRouter); // Health risk assessment
+app.use("/api/reports", reportAnalysisRouter); // Report analysis
 app.use("/api/doctors", doctorRoutes); // Doctor routes (login, register, profile)
 app.use("/api/doctors", doctorEnhancedRoutes); // Enhanced doctor routes (search, public profiles)
 app.use("/api/doctors", availabilityRouter); // Availability routes
@@ -627,6 +636,8 @@ app.use("/api/appointments", appointmentRouter);
 app.use("/api/prescriptions", prescriptionRouter); // Prescription CRUD and PDF generation
 app.use("/api/ehr", ehrRouter); // Electronic Health Records - admin access to patient records
 app.use("/api/health-diary", healthDiaryRouter); // Patient health journal and diary entries
+app.use("/api/health-intelligence", healthIntelligenceRouter); // Dr. iSHA Health Intelligence Dashboard
+app.use("/api/health", healthRouter); // Unified health metrics endpoint
 app.use("/api/consultation", onlineConsultationRouter); // Online consultation booking flow
 app.use("/api/consultation-recordings", consultationRecordingRouter); // Consultation recording and AI transcription
 app.use("/api/billing", billingRouter); // Billing, orders, invoices, and payments
@@ -637,6 +648,7 @@ app.use("/api/apple-health", appleHealthRouter); // Apple HealthKit integration 
 app.use("/api/ai", aiRouter);
 app.use("/api/medical-ai", medicalAIRouter);
 app.use("/api/ai-health", aiHealthRouter); // AI health assistant, diet plans, Dr. ISHA
+app.use("/api/diet", dietRouter); // Diet plan shortcut (alias for /api/ai-health/diet)
 app.use("/api/ayushman", ayushmanRouter);
 app.use('/api/places', placesRouter);
 
