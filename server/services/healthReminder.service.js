@@ -210,18 +210,25 @@ class HealthReminderService {
     const reminders = [];
 
     try {
-      // Fetch recent health diary entries
-      const pool = await connectPostgres();
-      const result = await pool.query(
-        `SELECT * FROM health_diaries WHERE patient_id = $1 ORDER BY date DESC LIMIT 30`,
-        [userId]
-      );
+      // Fetch recent health diary entries using Sequelize
+      const diaryEntries = await HealthDiary.findAll({
+        where: { userId: userId },
+        order: [['entryDate', 'DESC']],
+        limit: 30,
+        raw: true
+      });
 
-      const diaryEntries = result.rows;
+      // Extract sleep and stress data from JSONB data field
+      const entriesWithData = diaryEntries.map(entry => ({
+        ...entry,
+        sleep_hours: entry.data?.sleep_hours,
+        stress_level: entry.data?.stress_level,
+        date: entry.entryDate
+      }));
 
       // Sleep analysis
-      const avgSleep = this.calculateAverageSleep(diaryEntries);
-      if (avgSleep < 7) {
+      const avgSleep = this.calculateAverageSleep(entriesWithData);
+      if (avgSleep > 0 && avgSleep < 7) {
         reminders.push({
           type: this.reminderTypes.LIFESTYLE,
           priority: 7,
@@ -238,21 +245,138 @@ class HealthReminderService {
       }
 
       // Stress management
-      const avgStress = this.calculateAverageStress(diaryEntries);
+      const avgStress = this.calculateAverageStress(entriesWithData);
       if (avgStress > 6) {
         reminders.push({
           type: this.reminderTypes.LIFESTYLE,
           priority: 8,
-          title: '🧘 Stress Management Recommended',
-          message: `Your stress levels are elevated (avg: ${avgStress.toFixed(1)}/10). Dr. iSHA suggests stress reduction techniques.`,
-          suggestions: [
-            'Practice deep breathing exercises (5 min/day)',
-            'Try meditation or mindfulness apps',
-            'Engage in regular physical activity',
-            'Consider talking to a counselor'
-          ],
+          title: '🧘 High Stress Alert - Immediate Care Needed',
+          message: `Your stress levels are elevated (avg: ${avgStress.toFixed(1)}/10). Dr. iSHA suggests immediate stress reduction techniques.`,
+          recommendations: {
+            immediate: [
+              'Practice deep breathing: 4-7-8 technique (breathe in 4, hold 7, out 8)',
+              'Try a 5-minute guided meditation (Headspace, Calm, Insight Timer)',
+              'Take a brief walk outdoors (10-15 minutes)',
+              'Listen to calming music or nature sounds'
+            ],
+            daily_practices: [
+              'Morning meditation (10 minutes)',
+              'Journaling before bed',
+              'Progressive muscle relaxation',
+              'Gratitude practice (list 3 things daily)',
+              'Limit caffeine and alcohol'
+            ],
+            professional_help: [
+              'Consider talking to a mental health counselor',
+              'Explore therapy options (CBT, mindfulness-based therapy)',
+              'Join a support group',
+              'Consult doctor if stress affects daily functioning'
+            ],
+            lifestyle_changes: [
+              'Set healthy boundaries at work and home',
+              'Learn to say "no" to overwhelming commitments',
+              'Prioritize self-care activities',
+              'Maintain regular sleep schedule',
+              'Connect with supportive friends/family'
+            ]
+          },
           timestamp: new Date()
         });
+      } else if (avgStress > 3 || diaryEntries.length === 0) {
+        // Moderate stress or no data - provide general mental wellness tips
+        reminders.push({
+          type: this.reminderTypes.LIFESTYLE,
+          priority: 6,
+          title: '🧠 Mental Health & Wellness Tips',
+          message: 'Dr. iSHA recommends proactive mental health care for overall well-being.',
+          recommendations: {
+            daily_habits: [
+              'Start your day with 5 minutes of mindfulness or meditation',
+              'Practice gratitude: write down 3 positive things daily',
+              'Stay physically active (boosts mood and reduces stress)',
+              'Maintain social connections (call a friend, family time)',
+              'Limit social media and news consumption to reduce anxiety'
+            ],
+            stress_prevention: [
+              'Set realistic goals and break tasks into smaller steps',
+              'Take regular breaks during work (5-10 min every hour)',
+              'Practice time management and prioritization',
+              'Engage in hobbies you enjoy',
+              'Spend time in nature when possible'
+            ],
+            self_care: [
+              'Ensure 7-9 hours of quality sleep',
+              'Eat balanced meals at regular times',
+              'Stay hydrated throughout the day',
+              'Practice deep breathing when feeling overwhelmed',
+              'Schedule "me time" weekly for activities you love'
+            ],
+            warning_signs: [
+              '⚠️ Seek help if you experience: persistent sadness, anxiety, irritability',
+              '⚠️ Changes in appetite or sleep patterns',
+              '⚠️ Difficulty concentrating or making decisions',
+              '⚠️ Loss of interest in activities you usually enjoy',
+              '⚠️ Thoughts of self-harm (call crisis helpline immediately)'
+            ],
+            resources: [
+              'Mental health apps: Headspace, Calm, BetterHelp',
+              'Crisis helpline: 1800-599-0019 (KIRAN - India)',
+              'Talk to your doctor about mental health concerns',
+              'Explore online therapy platforms for convenient access'
+            ]
+          },
+          timestamp: new Date()
+        });
+      }
+
+      // Mental health for specific moods detected in diary
+      if (diaryEntries.length > 0) {
+        const recentEntries = diaryEntries.slice(0, 7);
+        
+        // Check for low mood ratings (1-2 out of 5) or negative mood descriptions
+        const negativeMoodCount = recentEntries.filter(e => {
+          // Low mood rating (1-2 is concerning)
+          if (e.mood && e.mood <= 2) return true;
+          
+          // Check description for negative keywords
+          const desc = e.description?.toLowerCase() || '';
+          return ['anxious', 'sad', 'depressed', 'overwhelmed', 'stressed', 'angry', 'hopeless', 'worried'].some(word => desc.includes(word));
+        }).length;
+        
+        if (negativeMoodCount >= 3) {
+          reminders.push({
+            type: this.reminderTypes.LIFESTYLE,
+            priority: 9,
+            title: '💙 Mental Health Check-In Recommended',
+            message: `Dr. iSHA noticed ${negativeMoodCount} days of challenging emotions in the past week. Your mental health matters.`,
+            recommendations: {
+              immediate_support: [
+                'Reach out to someone you trust - talk about how you\'re feeling',
+                'If thoughts of self-harm arise, call crisis helpline: 1800-599-0019',
+                'Practice grounding technique: 5-4-3-2-1 (5 things you see, 4 you touch, 3 you hear, 2 you smell, 1 you taste)',
+                'Remember: It\'s okay to not be okay. Seeking help is a sign of strength.'
+              ],
+              professional_care: [
+                'Schedule appointment with mental health professional',
+                'Consider teletherapy for convenient access',
+                'Ask your doctor about therapy or medication options',
+                'Explore employee assistance programs (EAP) if available at work'
+              ],
+              self_compassion: [
+                'Be kind to yourself - you\'re doing the best you can',
+                'Avoid self-criticism; practice self-compassion',
+                'Acknowledge your feelings without judgment',
+                'Celebrate small wins and progress'
+              ]
+            },
+            actionable: true,
+            action: {
+              type: 'mental_health_assessment',
+              priority: 'high'
+            },
+            timestamp: new Date()
+          });
+        }
       }
 
     } catch (error) {
