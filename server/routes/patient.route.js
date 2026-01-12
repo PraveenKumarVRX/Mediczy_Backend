@@ -331,6 +331,7 @@ router.post(
       if (!errors.isEmpty()) {
         return res.status(400).json({
           success: false,
+          message: 'Validation error',
           errors: errors.array()
         });
       }
@@ -350,12 +351,29 @@ router.post(
         medicalHistory
       } = req.body;
 
+      // Validate required fields
+      if (!email || !password || !firstName || !lastName || !phoneNumber) {
+        return res.status(400).json({
+          success: false,
+          message: 'Missing required fields: email, password, firstName, lastName, phoneNumber'
+        });
+      }
+
       // Check if patient already exists
       const existingUser = await userModel.findOne({ where: { email } });
       if (existingUser) {
         return res.status(409).json({
           success: false,
           message: 'Patient with this email already exists'
+        });
+      }
+
+      // Check for duplicate phone number
+      const existingPhone = await userModel.findOne({ where: { phoneNumber } });
+      if (existingPhone) {
+        return res.status(409).json({
+          success: false,
+          message: 'A patient with this phone number is already registered'
         });
       }
 
@@ -379,6 +397,7 @@ router.post(
         phoneNumber,
         dateOfBirth: dateOfBirth ? new Date(dateOfBirth) : null,
         gender,
+        role: 'patient',
         status: 'active',  // Use status instead of isActive
         primaryDoctorId: primaryDoctorId
       });

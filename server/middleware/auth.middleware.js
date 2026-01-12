@@ -9,10 +9,11 @@ import NursePostgres from "../models/postgres/nurse.model.postgres.js";
 import AssistantPostgres from "../models/postgres/doctor-assistant.model.postgres.js";
 import { validateMembership, checkMembershipExpiry } from "./membership.middleware.js";
 
-const DEV_TOKEN_ALLOWLIST = new Set(["dev-user-token", "dev-doctor-token"]);
+const DEV_TOKEN_ALLOWLIST = new Set(["dev-user-token", "dev-doctor-token", "dev-corporate-token"]);
 const ALLOW_DEV_TOKENS =
   process.env.ALLOW_DEV_TOKENS === "true" ||
   ["development", "test"].includes(process.env.NODE_ENV);
+
 const TENANT_BYPASS_ROLES = new Set(["admin", "super_admin", "system_admin", "platform_admin"]);
 
 // Organization admin roles
@@ -106,14 +107,38 @@ export const authUser = async (req, res, next) => {
       return res.status(401).json({ message: "Dev tokens disabled" });
     }
 
-    const demoRole = token === "dev-doctor-token" ? "doctor" : "user";
-    req.user = {
+    let demoRole = "user";
+    let demoData = {
       id: 1,
-      email: `${demoRole}@mediczy.com`,
+      email: "user@mediczy.com",
       firstName: "Demo",
-      lastName: demoRole === "doctor" ? "Doctor" : "User",
-      role: demoRole,
+      lastName: "User",
+      role: "user"
     };
+
+    if (token === "dev-doctor-token") {
+      demoRole = "doctor";
+      demoData = {
+        id: 1,
+        email: "doctor@mediczy.com",
+        firstName: "Demo",
+        lastName: "Doctor",
+        role: "doctor"
+      };
+    } else if (token === "dev-corporate-token") {
+      demoRole = "corporate";
+      demoData = {
+        id: "corp_dev",
+        corporateId: "corp_dev",
+        email: "corporate@mediczy.com",
+        firstName: "Demo",
+        lastName: "Corporate",
+        role: "corporate",
+        companyName: "Demo Corporate"
+      };
+    }
+
+    req.user = demoData;
     req.userRole = demoRole;
     req.userTenantId = null;
     req.guardrail = "DEV_TOKEN";
@@ -212,8 +237,9 @@ export const authUser = async (req, res, next) => {
       return next();
     }
 
-    if (decoded.role === "corporate") {
-      const corporateId = decoded.id || decoded.corporateId;
+    // Check for corporate using either role or userType field
+    if (decoded.role === "corporate" || decoded.userType === "corporate") {
+      const corporateId = decoded.id || decoded.corporateId || decoded.userId;
       req.user = {
         id: corporateId,
         corporateId,

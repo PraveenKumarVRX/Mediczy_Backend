@@ -916,6 +916,108 @@ router.post('/corporate-users', authUser, requireRole('admin'), async (req, res)
   }
 });
 
+// --------------------------------------------------------------------------
+// Filter endpoints for dropdowns and lists
+// --------------------------------------------------------------------------
+
+// Get filter options for doctors - cities
+router.get('/doctors/filters/cities', async (req, res) => {
+  try {
+    // Specialties don't require auth - they're just static data
+    const doctors = await DoctorPostgres.findAll({
+      attributes: [[sequelize.fn('DISTINCT', sequelize.col('city')), 'city']],
+      where: { city: { [Op.ne]: null } },
+      order: [['city', 'ASC']]
+    });
+    const cities = doctors.map(d => d.city).filter(Boolean);
+    res.json({
+      success: true,
+      data: cities
+    });
+  } catch (error) {
+    console.error('Error fetching cities:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Failed to fetch cities'
+    });
+  }
+});
+
+// Get filter options for doctors - states
+router.get('/doctors/filters/states', async (req, res) => {
+  try {
+    // Specialties don't require auth - they're just static data
+    const doctors = await DoctorPostgres.findAll({
+      attributes: [[sequelize.fn('DISTINCT', sequelize.col('state')), 'state']],
+      where: { state: { [Op.ne]: null } },
+      order: [['state', 'ASC']]
+    });
+    const states = doctors.map(d => d.state).filter(Boolean);
+    res.json({
+      success: true,
+      data: states
+    });
+  } catch (error) {
+    console.error('Error fetching states:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Failed to fetch states'
+    });
+  }
+});
+
+// Get filter options for doctors - specialties
+router.get('/doctors/filters/specialties', async (req, res) => {
+  try {
+    // Specialties don't require auth - they're just static data for dropdowns
+    const specialties = [
+      'General Practitioner',
+      'Cardiologist',
+      'Dermatologist',
+      'Pediatrician',
+      'Orthopedist',
+      'Neurologist',
+      'Psychiatrist',
+      'Psychologist',
+      'Gynecologist',
+      'ENT Specialist',
+      'Ophthalmologist',
+      'Rheumatologist',
+      'Pulmonologist',
+      'Physiotherapist',
+      'Occupational Therapist',
+      'Nutritionist',
+      'Dietician',
+      'Nephrologist',
+      'Urologist',
+      'Diabetologist',
+      'Intensivist',
+      'Cardio Thoracic Surgeon',
+      'Vascular Surgeon',
+      'Neuro Surgeon',
+      'Cardio Vascular Surgeon',
+      'Gastroenterologist',
+      'Gastro Surgeon',
+      'General Surgeon',
+      'Proctologist',
+      'Podiatrician',
+      'Dentist',
+      'Endocrinologist',
+      'Oncologist',
+      'Other'
+    ];
+    res.json({
+      success: true,
+      data: specialties
+    });
+  } catch (error) {
+    console.error('Error fetching specialties:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Failed to fetch specialties'
+    });
+  }
+});
 
 // --------------------------------------------------------------------------
 // Minimal stubs for admin-managed team endpoints used by frontend

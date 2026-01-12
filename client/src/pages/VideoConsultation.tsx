@@ -139,6 +139,12 @@ const VideoConsultation = () => {
       // Show preview
       if (previewVideoRef.current) {
         previewVideoRef.current.srcObject = stream;
+        // Ensure video plays after stream is attached
+        previewVideoRef.current.onloadedmetadata = () => {
+          previewVideoRef.current?.play().catch(e => console.log('Auto-play error:', e));
+        };
+        // Try to play immediately
+        previewVideoRef.current.play().catch(e => console.log('Initial play error:', e));
       }
       localStreamRef.current = stream;
       

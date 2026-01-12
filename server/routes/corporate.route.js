@@ -536,7 +536,18 @@ function addUserAppointment(userId, appointment) {
 // Get user's corporate benefits/plan
 router.get('/my-benefits', authUser, async (req, res) => {
   try {
-    const activePlan = await getActiveUserPlan(req.user.id);
+    let activePlan = null;
+    
+    // Only try to fetch active plan for numeric user IDs in production
+    if (Number.isInteger(parseInt(req.user.id))) {
+      try {
+        activePlan = await getActiveUserPlan(req.user.id);
+      } catch (error) {
+        console.log(`Note: Could not fetch active plan for user ${req.user.id}:`, error.message);
+        // Continue - corporate users might not have database records in dev/testing
+      }
+    }
+    
     const planPayload = normalizePlanPayload(activePlan?.plan?.toJSON(), activePlan?.toJSON(), req.user);
     const usage = buildUsageSnapshot(activePlan?.toJSON());
 
@@ -563,7 +574,18 @@ router.get('/my-benefits', authUser, async (req, res) => {
 
 router.get('/health-checkups', authUser, async (req, res) => {
   try {
-    const activePlan = await getActiveUserPlan(req.user.id);
+    let activePlan = null;
+    
+    // Only try to fetch active plan for numeric user IDs in production
+    if (Number.isInteger(parseInt(req.user.id))) {
+      try {
+        activePlan = await getActiveUserPlan(req.user.id);
+      } catch (error) {
+        console.log(`Note: Could not fetch active plan for user ${req.user.id}:`, error.message);
+        // Continue - corporate users might not have database records in dev/testing
+      }
+    }
+
     const planConfig = activePlan?.plan?.toJSON();
     const checkups = deriveHealthCheckups(planConfig);
     res.json({
@@ -603,18 +625,47 @@ router.get('/my-appointments', authUser, async (req, res) => {
 router.post('/book-checkup', authUser, async (req, res) => {
   try {
     const { checkupId, preferredDate, preferredTime, location, hospital, specialInstructions } = req.body || {};
+    
+    // Validate required fields
     if (!checkupId || !preferredDate || !preferredTime || !location) {
       return res.status(400).json({
         success: false,
-        message: 'checkupId, preferredDate, preferredTime, and location are required'
+        message: 'Missing required fields',
+        details: {
+          checkupId: !checkupId ? 'required' : 'provided',
+          preferredDate: !preferredDate ? 'required' : 'provided',
+          preferredTime: !preferredTime ? 'required' : 'provided',
+          location: !location ? 'required' : 'provided'
+        }
       });
     }
 
-    const activePlan = await getActiveUserPlan(req.user.id);
-    if (!activePlan) {
+    // Validate user is authenticated
+    if (!req.user || !req.user.id) {
+      return res.status(401).json({
+        success: false,
+        message: 'User authentication required'
+      });
+    }
+
+    let activePlan = null;
+    
+    // Only try to fetch active plan for numeric user IDs in production
+    if (Number.isInteger(parseInt(req.user.id))) {
+      try {
+        activePlan = await getActiveUserPlan(req.user.id);
+      } catch (error) {
+        console.log(`Note: Could not fetch active plan for user ${req.user.id}:`, error.message);
+        // Continue - corporate users might not have database records in dev/testing
+      }
+    }
+    
+    // For corporate users in development, we may not have a database record, so allow booking without an active plan
+    if (!activePlan && process.env.NODE_ENV === 'production') {
       return res.status(400).json({
         success: false,
-        message: 'No active corporate plan found for user'
+        message: 'No active corporate plan found for user',
+        userId: req.user.id
       });
     }
 
@@ -623,6 +674,7 @@ router.post('/book-checkup', authUser, async (req, res) => {
       appointmentId: `CHK-${Math.floor(Math.random() * 1e6)}`,
       userId: req.user.id,
       checkupId,
+      checkupName: `Health Checkup ${checkupId}`,
       appointmentType: 'Annual Health Checkup',
       date: preferredDate,
       time: preferredTime,
@@ -639,6 +691,7 @@ router.post('/book-checkup', authUser, async (req, res) => {
 
     res.status(201).json({
       success: true,
+      message: 'Health checkup booked successfully',
       appointment,
       data: { appointment }
     });

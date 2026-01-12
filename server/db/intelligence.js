@@ -170,7 +170,7 @@ class DatabaseIntelligence {
    */
   determineOptimalRouting(analysis) {
     const routing = {
-      targetDB: 'maria', // Default to leader
+      targetDB: 'postgres', // Default to PostgreSQL
       fallbackDB: null,
       cacheable: false,
       cacheTTL: 300,
@@ -181,7 +181,7 @@ class DatabaseIntelligence {
     // Rule 1: Analytical queries → DuckDB
     if (analysis.queryType === 'analytics' || analysis.dataVolume > 10000) {
       routing.targetDB = 'duckdb';
-      routing.fallbackDB = 'maria';
+      routing.fallbackDB = 'postgres';
       routing.cacheable = true;
       routing.cacheTTL = 600;
       routing.reason = 'Large-scale analytics query';
@@ -192,7 +192,7 @@ class DatabaseIntelligence {
     // Rule 2: Document/nested data → MongoDB
     if (analysis.queryType === 'document' || this.isFlexibleSchema(analysis)) {
       routing.targetDB = 'mongo';
-      routing.fallbackDB = 'maria';
+      routing.fallbackDB = 'postgres';
       routing.cacheable = true;
       routing.cacheTTL = 300;
       routing.reason = 'Document/flexible schema query';
@@ -213,7 +213,7 @@ class DatabaseIntelligence {
     // Rule 4: Similarity/search queries → Vector DB
     if (analysis.queryType === 'search' || this.isSimilaritySearch(analysis)) {
       routing.targetDB = 'search';
-      routing.fallbackDB = 'maria';
+      routing.fallbackDB = 'postgres';
       routing.cacheable = true;
       routing.cacheTTL = 1800;
       routing.reason = 'Similarity/semantic search';
@@ -221,16 +221,16 @@ class DatabaseIntelligence {
       return routing;
     }
 
-    // Rule 5: Transactional/write operations → MariaDB (leader)
+    // Rule 5: Transactional/write operations → PostgreSQL
     if (analysis.queryType === 'write' || analysis.urgency > 0.8) {
-      routing.targetDB = 'maria';
+      routing.targetDB = 'postgres';
       routing.cacheable = false;
       routing.reason = 'Transactional/urgent operation';
       routing.confidence = 1.0;
       return routing;
     }
 
-    // Default: MariaDB leader
+    // Default: PostgreSQL
     routing.reason = 'Default transactional database';
     routing.confidence = 0.7;
     return routing;
@@ -252,8 +252,8 @@ class DatabaseIntelligence {
           return await this.executeDuckDBQuery(db, query);
         case 'mongo':
           return await this.executeMongoQuery(db, query, context);
-        case 'maria':
-          return await this.executeMariaDBQuery(db, query, context);
+        case 'postgres':
+          return await this.executePostgresQuery(db, query, context);
         case 'cache':
         case 'search':
           return await this.executeSpecializedQuery(routing.targetDB, query, context);
@@ -269,7 +269,7 @@ class DatabaseIntelligence {
           this.mapDBToOperation(routing.fallbackDB),
           context
         );
-        return await this.executeMariaDBQuery(fallbackDB, query, context);
+        return await this.executePostgresQuery(fallbackDB, query, context);
       }
       throw error;
     }
@@ -357,16 +357,16 @@ class DatabaseIntelligence {
    */
   determineStorageStrategy(classification, metadata) {
     const strategy = {
-      primary: 'maria', // Default primary storage
+      primary: 'postgres', // Default primary storage
       replicas: [],
       requiresIndexing: false,
       vectorizable: false,
       analytics: false,
     };
 
-    // Strategy 1: Store transactional data in MariaDB (leader)
+    // Strategy 1: Store transactional data in PostgreSQL
     if (classification.type === 'transactional' || classification.relationships.length > 0) {
-      strategy.primary = 'maria';
+      strategy.primary = 'postgres';
       strategy.requiresIndexing = true;
     }
 
@@ -396,7 +396,7 @@ class DatabaseIntelligence {
   async multiDBStore(data, metadata, strategy) {
     const results = {};
 
-    // CRITICAL: MariaDB is the LEADER - primary writes must succeed
+    // CRITICAL: PostgreSQL is the PRIMARY - primary writes must succeed
     // Do NOT fallback to helpers for primary storage
     try {
       const primaryDB = await orchestrator.route(
@@ -407,7 +407,7 @@ class DatabaseIntelligence {
       console.log(`✅ Primary storage (${strategy.primary}): ${data.email || data.id || 'success'}`);
     } catch (error) {
       console.error(`❌ CRITICAL: Primary storage (${strategy.primary}) failed:`, error.message);
-      console.error(`   MariaDB (leader) must be operational for writes`);
+      console.error(`   PostgreSQL (primary) must be operational for writes`);
       throw error; // Fail fast - do not fallback to helpers for primary storage
     }
 
@@ -434,8 +434,8 @@ class DatabaseIntelligence {
    */
   async storeInDB(dbName, dbConnection, data, metadata) {
     switch (dbName) {
-      case 'maria':
-        return await this.storeInMariaDB(dbConnection, data, metadata);
+      case 'postgres':
+        return await this.storeInPostgres(dbConnection, data, metadata);
       case 'mongo':
         return await this.storeInMongoDB(dbConnection, data, metadata);
       case 'duckdb':
@@ -816,17 +816,17 @@ class DatabaseIntelligence {
     return { success: true, message: 'MongoDB query executed' };
   }
 
-  async executeMariaDBQuery(db, query, context) {
-    // Simplified - implement actual MariaDB query logic
-    return { success: true, message: 'MariaDB query executed' };
+  async executePostgresQuery(db, query, context) {
+    // Simplified - implement actual PostgreSQL query logic
+    return { success: true, message: 'PostgreSQL query executed' };
   }
 
   async executeSpecializedQuery(dbType, query, context) {
     return { success: true, message: `${dbType} query executed` };
   }
 
-  async storeInMariaDB(db, data, metadata) {
-    return { success: true, database: 'maria', id: Date.now() };
+  async storeInPostgres(db, data, metadata) {
+    return { success: true, database: 'postgres', id: Date.now() };
   }
 
   async storeInMongoDB(db, data, metadata) {

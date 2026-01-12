@@ -44,7 +44,7 @@ class DatabaseOrchestrator {
    */
   async initializeAll() {
     console.log('🚀 Initializing Database Orchestrator...');
-    console.log('📊 Architecture: PostgreSQL (PRIMARY) - MariaDB retired');
+    console.log('📊 Architecture: PostgreSQL (PRIMARY ONLY)');
 
     let criticalFailures = 0;
 

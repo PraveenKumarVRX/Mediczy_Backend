@@ -219,11 +219,15 @@ export async function signInUser(req, res) {
   const email = String(req.body.email || "").trim().toLowerCase();
   const password = req.body.password;
 
+  console.log('[LOGIN DEBUG] Email:', email, 'Password length:', password?.length);
+
   try {
     // Check if user exists
     const user = await User.findOne({
-      where: sequelizeWhere(fn("lower", col("email")), email),
+      where: { email },
     });
+    console.log('[LOGIN DEBUG] User found:', !!user, 'User ID:', user?.id);
+    
     if (!user) {
       // Audit failed login attempt
       await auditLoginAttempt(req, null, email, false, 'User not found');
@@ -331,7 +335,8 @@ export const getUserProfile = async (req, res, next) => {
     // Prepare base profile
     const profile = {
       ...req.user,
-      age
+      age,
+      role: req.user.isAdmin ? 'admin' : 'user' // Add role field for frontend
     };
 
     // If user belongs to a corporate, fetch corporate details
@@ -346,8 +351,14 @@ export const getUserProfile = async (req, res, next) => {
       }
     }
     
-    // Return user profile with age and corporate info
-    return res.status(200).json(profile);
+    // Return user profile with age, role, and corporate info
+    // Support both formats: direct profile and wrapped format
+    return res.status(200).json({
+      success: true,
+      user: profile,
+      // Also include fields at root level for backwards compatibility
+      ...profile
+    });
   } catch (error) {
     console.error('Get user profile error:', error);
     return res.status(500).json({

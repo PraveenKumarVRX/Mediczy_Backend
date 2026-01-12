@@ -43,11 +43,12 @@ module.exports = {
     // ==================== SIB FastAPI Service ====================
     {
       name: 'sib-fastapi',
-      script: 'app.py',
-      interpreter: '/home/ubuntu/Mediczy/ai-engine/doctor_bot/venv/bin/python3',
+      script: '/home/ubuntu/Mediczy/ai-engine/doctor_bot/venv/bin/uvicorn',
+      args: 'app:app --host 0.0.0.0 --port 8001',
       cwd: '/home/ubuntu/Mediczy/ai-engine/doctor_bot',
       instances: 1,
       exec_mode: 'fork',
+      interpreter: 'none',
       env: {
         PYTHONUNBUFFERED: '1',
         PORT: 8001,
@@ -65,8 +66,7 @@ module.exports = {
       watch: false,
       ignore_watch: ['node_modules', '__pycache__', '.git'],
       max_restarts: 10,
-      min_uptime: '10s',
-      args: '-m uvicorn app:app --host 0.0.0.0 --port 8001 --reload'
+      min_uptime: '10s'
     },
 
     // ==================== Background Worker ====================
@@ -89,6 +89,33 @@ module.exports = {
       ignore_watch: ['node_modules', 'logs', '.git'],
       max_restarts: 10,
       min_uptime: '10s'
+    },
+
+    // ==================== MiroTalk SFU Video Server ====================
+    {
+      name: 'mirotalk-sfu',
+      script: 'npm',
+      args: 'start',
+      cwd: '/home/ubuntu/mirotalk-sfu',
+      instances: 1,
+      exec_mode: 'fork',
+      env: {
+        NODE_ENV: 'production',
+        PORT: 3010,
+        SERVER_URL: 'https://mediqzy.com'
+      },
+      error_file: '/home/ubuntu/mirotalk-sfu/logs/mirotalk-error.log',
+      out_file: '/home/ubuntu/mirotalk-sfu/logs/mirotalk-out.log',
+      log_date_format: 'YYYY-MM-DD HH:mm:ss Z',
+      merge_logs: true,
+      max_memory_restart: '1G',
+      watch: false,
+      autorestart: true,
+      max_restarts: 20,
+      min_uptime: '10s',
+      restart_delay: 5000,
+      exp_backoff_restart_delay: 100,
+      kill_timeout: 5000
     }
   ],
 

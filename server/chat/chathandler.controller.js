@@ -37,6 +37,15 @@ export function setupSocketIO(server) {
           userFCMTokens.set(userId, fcmToken);
         }
 
+        // Join user-specific room for targeted notifications
+        if (userType === 'doctor') {
+          socket.join(`doctor-${userId}`);
+          console.log(`👨‍⚕️ Doctor ${userId} joined notification room`);
+        } else {
+          socket.join(`user-${userId}`);
+          console.log(`👤 User ${userId} joined notification room`);
+        }
+
         // Broadcast user online status
         io.emit("user-status-change", {
           userId,

@@ -234,7 +234,26 @@ export const DrISHAChat: React.FC<DrISHAChatProps> = ({
     
     recognition.continuous = false;
     recognition.interimResults = false;
-    recognition.lang = language === 'hi' ? 'hi-IN' : language === 'es' ? 'es-ES' : 'en-US';
+    
+    // Map language codes to speech recognition locales
+    const languageMap: { [key: string]: string } = {
+      'en': 'en-US',
+      'hi': 'hi-IN',
+      'ta': 'ta-IN',
+      'te': 'te-IN',
+      'bn': 'bn-IN',
+      'mr': 'mr-IN',
+      'gu': 'gu-IN',
+      'kn': 'kn-IN',
+      'ml': 'ml-IN',
+      'pa': 'pa-IN',
+      'ur': 'ur-IN',
+      'es': 'es-ES',
+      'fr': 'fr-FR',
+      'ar': 'ar-SA'
+    };
+    
+    recognition.lang = languageMap[language] || 'en-US';
 
     recognition.onstart = () => {
       setIsListening(true);

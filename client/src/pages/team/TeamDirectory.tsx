@@ -304,32 +304,54 @@ const TeamDirectory = () => {
                 </div>
 
                 <div className="pt-3 flex gap-2">
-                  <Button
-                    asChild
-                    size="sm"
-                    variant="outline"
-                    className="flex-1"
-                    disabled={!member.email}
-                  >
-                    <a
-                      href={`mailto:${member.email}?subject=${encodeURIComponent('Hello from Mediczy Team')}&body=${encodeURIComponent(`Hi ${`${member.firstName} ${member.lastName}`.trim() || 'there'},\n\n`)}`}
+                  {member.email ? (
+                    <Button
+                      asChild
+                      size="sm"
+                      variant="outline"
+                      className="flex-1"
                     >
-                      <Mail className="h-3 w-3 mr-1 inline" />
+                      <a
+                        href={`mailto:${member.email}?subject=${encodeURIComponent('Hello from Mediczy Team')}&body=${encodeURIComponent(`Hi ${`${member.firstName} ${member.lastName}`.trim() || 'there'},\n\n`)}`}
+                      >
+                        <Mail className="h-3 w-3 mr-1 inline" />
+                        Email
+                      </a>
+                    </Button>
+                  ) : (
+                    <Button
+                      size="sm"
+                      variant="outline"
+                      className="flex-1"
+                      disabled
+                    >
+                      <Mail className="h-3 w-3 mr-1" />
                       Email
-                    </a>
-                  </Button>
-                  <Button
-                    asChild
-                    size="sm"
-                    variant="outline"
-                    className="flex-1"
-                    disabled={!member.phone}
-                  >
-                    <a href={`tel:${member.phone}`}>
-                      <Phone className="h-3 w-3 mr-1 inline" />
+                    </Button>
+                  )}
+                  {member.phone ? (
+                    <Button
+                      asChild
+                      size="sm"
+                      variant="outline"
+                      className="flex-1"
+                    >
+                      <a href={`tel:${member.phone}`}>
+                        <Phone className="h-3 w-3 mr-1 inline" />
+                        Call
+                      </a>
+                    </Button>
+                  ) : (
+                    <Button
+                      size="sm"
+                      variant="outline"
+                      className="flex-1"
+                      disabled
+                    >
+                      <Phone className="h-3 w-3 mr-1" />
                       Call
-                    </a>
-                  </Button>
+                    </Button>
+                  )}
                 </div>
               </CardContent>
             </Card>

@@ -74,21 +74,47 @@ const MyBookings = () => {
   const [ratingDialogOpen, setRatingDialogOpen] = useState(false);
   const [rating, setRating] = useState(0);
   const [feedback, setFeedback] = useState("");
+  const [activeTab, setActiveTab] = useState<"upcoming" | "history" | "all">("upcoming");
 
   const { mutate: incrementTeleconsult } = useIncrementTeleconsult();
 
   const userId = currentUser?.id || currentUser?._id;
 
-  // Fetch user's appointments
-  const { data: bookings = [], isLoading: loading } = useQuery({
+  // Fetch user's appointments (all)
+  const { data: allBookings = [], isLoading: loading } = useQuery({
     queryKey: ["myBookings", userId],
     queryFn: async () => {
       const { data } = await api.get(`/appointments`);
+      // Handle multiple response formats:
+      // 1. Direct array: [appointment1, appointment2, ...]
+      // 2. Object wrapper: { success: true, appointments: [...] }
+      // 3. Object with data field: { data: { appointments: [...] } }
       if (Array.isArray(data)) return data;
-      if (Array.isArray(data.appointments)) return data.appointments;
+      if (data?.appointments && Array.isArray(data.appointments)) return data.appointments;
+      if (data?.data?.appointments && Array.isArray(data.data.appointments)) return data.data.appointments;
+      console.warn('Unexpected appointments response format:', data);
       return [];
     },
     enabled: !!userId,
+  });
+
+  // Filter bookings by tab
+  const bookings = allBookings.filter(booking => {
+    const appointmentDate = new Date(booking.appointmentDate);
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
+    
+    if (activeTab === "upcoming") {
+      return (
+        appointmentDate >= today && 
+        ["scheduled", "confirmed"].includes(booking.status)
+      );
+    } else if (activeTab === "history") {
+      // Show all appointments in history tab regardless of status
+      return true;
+    }
+    // "all" tab shows everything
+    return true;
   });
 
   // Cancel appointment mutation
@@ -289,6 +315,42 @@ const MyBookings = () => {
           <Button onClick={() => navigate("/consultation")} className="bg-teal-600 hover:bg-teal-700 text-white dark:bg-teal-500 dark:hover:bg-teal-600">
             Book New Appointment
           </Button>
+        </div>
+
+        {/* Appointment Tabs */}
+        <div className="flex gap-2 mb-6 border-b border-slate-200 dark:border-slate-700">
+          <button
+            onClick={() => setActiveTab("upcoming")}
+            className={`pb-3 px-1 font-medium text-sm transition-colors ${
+              activeTab === "upcoming"
+                ? "text-teal-600 dark:text-teal-400 border-b-2 border-teal-600 dark:border-teal-400"
+                : "text-slate-600 dark:text-slate-400 hover:text-slate-800 dark:hover:text-slate-300"
+            }`}
+          >
+            <Calendar className="inline w-4 h-4 mr-2" />
+            Upcoming
+          </button>
+          <button
+            onClick={() => setActiveTab("history")}
+            className={`pb-3 px-1 font-medium text-sm transition-colors ${
+              activeTab === "history"
+                ? "text-teal-600 dark:text-teal-400 border-b-2 border-teal-600 dark:border-teal-400"
+                : "text-slate-600 dark:text-slate-400 hover:text-slate-800 dark:hover:text-slate-300"
+            }`}
+          >
+            <Clock className="inline w-4 h-4 mr-2" />
+            History
+          </button>
+          <button
+            onClick={() => setActiveTab("all")}
+            className={`pb-3 px-1 font-medium text-sm transition-colors ${
+              activeTab === "all"
+                ? "text-teal-600 dark:text-teal-400 border-b-2 border-teal-600 dark:border-teal-400"
+                : "text-slate-600 dark:text-slate-400 hover:text-slate-800 dark:hover:text-slate-300"
+            }`}
+          >
+            All
+          </button>
         </div>
 
         {bookings.length === 0 ? (

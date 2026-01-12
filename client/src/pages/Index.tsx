@@ -374,24 +374,14 @@ const Index = () => {
   // Feature sections
   const features = [
     {
-      title: "Health Monitoring",
-      description: "Track your vital signs and health metrics in real-time",
+      title: "Health Dashboard",
+      description: "Monitor vital signs, connected devices, and personalized health insights",
       icon: HeartPulse,
       color: "primary-gradient",
       borderColor: "border-primary/20",
       iconColor: "text-primary",
-      link: "/health-tracker",
-      highlights: ["Real-time vitals", "Health trends", "Personalized insights"],
-    },
-    {
-      title: "Smart Devices",
-      description: "Sync your smartwatch, fitness band or smart ring",
-      icon: Watch,
-      color: "secondary-gradient",
-      borderColor: "border-secondary/20",
-      iconColor: "text-secondary",
-      link: "/patient/devices",
-      highlights: ["Smartwatch sync", "Fitness bands", "Auto health data"],
+      link: "/health-dashboard",
+      highlights: ["Real-time vitals", "Device integration", "AI health insights"],
     },
     {
       title: "Doctor Consultations",

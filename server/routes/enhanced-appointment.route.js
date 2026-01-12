@@ -278,6 +278,42 @@ router.post('/book', authUser, [
     // Generate meeting details
     const meetingRoom = consultationType === 'online' ? `mediczy-room-${Date.now()}` : null;
     
+    // PRE-CREATE VIDEO ROOM FOR ONLINE CONSULTATIONS
+    let roomToken = null;
+    let roomCreated = false;
+    if (meetingRoom) {
+      try {
+        console.log(`🎥 Pre-creating video room: ${meetingRoom}`);
+        // Call video service to create room and get token
+        const videoApiUrl = process.env.VIDEO_API_URL || 'http://localhost:3000';
+        const roomResponse = await fetch(`${videoApiUrl}/api/video/room/create`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            roomId: meetingRoom,
+            appointmentId: null, // Will be set after DB creation
+            doctorId: resolvedDoctorId,
+            patientId: req.user.id,
+            maxParticipants: 2,
+            duration: 30 // minutes
+          })
+        }).catch(err => {
+          console.warn('⚠️ Video room pre-creation failed:', err.message);
+          return null;
+        });
+        
+        if (roomResponse?.ok) {
+          const roomData = await roomResponse.json();
+          roomToken = roomData.roomToken || roomData.token;
+          roomCreated = roomData.success || true;
+          console.log(`✅ Video room created: ${meetingRoom}, Token: ${roomToken ? 'YES' : 'NO'}`);
+        }
+      } catch (err) {
+        console.warn('⚠️ Video room creation error:', err.message);
+        // Continue without token - patient can still access room
+      }
+    }
+    
     // Calculate fees
     const baseFee = doctor.consultationTypes[consultationType].fee;
     const serviceFee = Math.round(baseFee * 0.1); // 10% service fee
@@ -350,7 +386,9 @@ router.post('/book', authUser, [
         },
         meeting: {
           meetingLink: requestedConsultationType === 'online' ? `https://meet.mediczy.com/${meetingRoom}` : null,
-          roomId: meetingRoom
+          roomId: meetingRoom,
+          roomToken: roomToken,
+          roomCreated: roomCreated
         }
       }
     });
@@ -383,7 +421,9 @@ router.post('/book', authUser, [
       meetingDetails: {
         meetingLink: consultationType === 'online' ? `https://meet.mediczy.com/${meetingRoom}` : null,
         roomId: meetingRoom,
-        joinInstructions: consultationType === 'online' ? 'Click the meeting link 5 minutes before your appointment' : null
+        roomToken: roomToken,
+        roomCreated: roomCreated,
+        joinInstructions: consultationType === 'online' ? 'Room is ready. Click the meeting link to join or use the access code provided' : null
       },
       patient: {
         name: patientName,

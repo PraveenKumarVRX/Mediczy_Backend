@@ -12,7 +12,7 @@ import { Textarea } from "@/components/ui/textarea";
 import { Progress } from "@/components/ui/progress";
 import { useToast } from "@/hooks/use-toast";
 import { useEffect, useMemo, useState } from "react";
-import { useLocation } from "react-router-dom";
+import { useLocation, useNavigate } from "react-router-dom";
 import {
   CartesianGrid,
   Line,
@@ -1417,7 +1417,10 @@ export const LabProcessingPage = () => {
     if (location.pathname === "/lab/processing/new") setOpenStart(true);
   }, [location.pathname]);
 
-  const availableSamples = useMemo(() => samples.filter((s) => s.status === "Collected" || s.status === "Processing"), [samples]);
+  const availableSamples = useMemo(
+    () => samples.filter((s) => ["Collected", "Processing", "Pending"].includes(s.status)),
+    [samples]
+  );
 
   const stats = useMemo(() => {
     const inProgress = processing.length;
@@ -1446,7 +1449,18 @@ export const LabProcessingPage = () => {
       status: "Processing",
     };
     setProcessing((prev) => [item, ...prev]);
-    setSamples((prev) => prev.map((s) => (s.sampleId === form.sampleId ? { ...s, status: "Processing" } : s)));
+    setSamples((prev) =>
+      prev.map((s) =>
+        s.sampleId === form.sampleId
+          ? {
+              ...s,
+              status: "Processing",
+              collectedAt: s.collectedAt ?? new Date().toISOString(),
+              barcode: s.barcode ?? makeBarcode(s.sampleId),
+            }
+          : s
+      )
+    );
     setOpenStart(false);
     setForm({ sampleId: "", test: "", technician: "" });
     toast({ title: "Started", description: `${item.sampleId} processing started.` });
@@ -1692,6 +1706,54 @@ export const LabResultsPage = () => {
           </CardContent>
         </Card>
 
+        <Card>
+          <CardHeader>
+            <CardTitle>Saved Results</CardTitle>
+          </CardHeader>
+          <CardContent>
+            <Table>
+              <TableHeader>
+                <TableRow>
+                  <TableHead>Result ID</TableHead>
+                  <TableHead>Sample</TableHead>
+                  <TableHead>Patient</TableHead>
+                  <TableHead>Test</TableHead>
+                  <TableHead>Value</TableHead>
+                  <TableHead>Flag</TableHead>
+                  <TableHead>Entered</TableHead>
+                </TableRow>
+              </TableHeader>
+              <TableBody>
+                {results.map((r) => (
+                  <TableRow key={r.id}>
+                    <TableCell className="font-mono text-xs">{r.id}</TableCell>
+                    <TableCell className="font-mono text-xs">{r.sampleId}</TableCell>
+                    <TableCell>{r.patientName}</TableCell>
+                    <TableCell>{r.test}</TableCell>
+                    <TableCell>
+                      {r.value}
+                      {r.unit ? ` ${r.unit}` : ""}
+                    </TableCell>
+                    <TableCell>
+                      <Badge variant={r.flag === "Critical" ? "destructive" : "outline"}>{r.flag}</Badge>
+                    </TableCell>
+                    <TableCell className="text-xs text-muted-foreground">
+                      {new Date(r.enteredAt).toLocaleString()}
+                    </TableCell>
+                  </TableRow>
+                ))}
+                {results.length === 0 && (
+                  <TableRow>
+                    <TableCell colSpan={7} className="text-center text-sm text-muted-foreground">
+                      No results saved yet. Enter a result to see it here.
+                    </TableCell>
+                  </TableRow>
+                )}
+              </TableBody>
+            </Table>
+          </CardContent>
+        </Card>
+
         <Dialog open={openEntry} onOpenChange={setOpenEntry}>
           <DialogContent>
             <DialogHeader>
@@ -1702,14 +1764,14 @@ export const LabResultsPage = () => {
               <div className="space-y-2">
                 <Label>Sample</Label>
                 <Select value={form.sampleId} onValueChange={(v) => {
-                  const s = samples.find((x) => x.sampleId === v);
+                  const s = readySamples.find((x) => x.sampleId === v);
                   setForm((p) => ({ ...p, sampleId: v, patientName: s?.patientName ?? p.patientName, test: s?.tests.split(",")[0]?.trim() || p.test }));
                 }}>
                   <SelectTrigger>
                     <SelectValue placeholder="Select sample" />
                   </SelectTrigger>
                   <SelectContent>
-                    {samples.map((s) => (
+                    {readySamples.map((s) => (
                       <SelectItem key={s.sampleId} value={s.sampleId}>
                         {s.sampleId} — {s.patientName}
                       </SelectItem>
@@ -2827,6 +2889,7 @@ export const LabStaffPage = () => {
 // Notifications Page
 export const LabNotificationsPage = () => {
   const { toast } = useToast();
+  const navigate = useNavigate();
   const [notifications, setNotifications] = useLocalStorageState<NotificationItem[]>("lab.notifications", [
     {
       id: "NTF-001",
@@ -2859,7 +2922,7 @@ export const LabNotificationsPage = () => {
       <div className="space-y-6">
         <div className="flex items-center justify-between">
           <div className="flex items-center gap-4">
-            <Button variant="outline" size="icon">
+            <Button variant="outline" size="icon" onClick={() => navigate(-1)}>
               <ArrowLeft className="h-4 w-4" />
             </Button>
             <div>

@@ -10,6 +10,24 @@ const router = express.Router();
 export const authAssistant = async (req, res, next) => {
   try {
     const token = req.headers.authorization?.replace('Bearer ', '');
+
+    // Development bypass: allow the Vite dev token without requiring JWT signing.
+    // This keeps assistant portal pages functional in local dev environments.
+    if (token === 'dev-assistant-token' && process.env.NODE_ENV !== 'production') {
+      req.assistant = {
+        id: 'assistant_001',
+        email: 'assistant@mediczy.com',
+        role: 'assistant',
+        linkedDoctorIds: [1],
+        primaryDoctorId: 1,
+        linkedFacilityId: 1,
+        linkedFacilityType: 'hospital',
+        linkedFacilityName: 'Mediczy Hospital',
+        canAccessDoctorCalendar: true,
+        canManagePatients: true
+      };
+      return next();
+    }
     
     if (!token) {
       return res.status(401).json({ 

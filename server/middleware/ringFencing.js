@@ -106,6 +106,7 @@ const USER_TYPE_PERMISSIONS = {
   admin: {
     allowedPaths: [
       '/api/admin',
+      '/api/sib', // SIB Control Layer management
       '/api/users',
       '/api/doctors',
       '/api/team',
@@ -286,6 +287,7 @@ const PUBLIC_ENDPOINTS = [
   '/api/health-check',
   '/api/status',
   '/metrics',
+  '/api/sib/health', // SIB Control Layer health check (public monitoring)
   '/api/users/login',
   '/api/users/register',
   '/api/doctors/login',

@@ -1,6 +1,6 @@
 import express from 'express';
 import { Op } from 'sequelize';
-import Lab from '../models/lab.model.enhanced.js';
+import Lab from '../models/postgres/lab.model.postgres.js';
 import { orchestrator } from '../db/orchestrator.js';
 
 const router = express.Router();
@@ -54,7 +54,7 @@ router.get('/', async (req, res) => {
     } = req.query;
 
     // Build where conditions
-    let whereConditions = { isActive: true };
+    let whereConditions = { status: 'active' };
     
     // Text search across name, services, and test categories
     if (search) {
@@ -111,28 +111,18 @@ router.get('/', async (req, res) => {
       };
     }
     
-    // Feature filters
-    if (homeSampleCollection !== undefined) {
-      whereConditions.homeSampleCollection = homeSampleCollection === 'true';
-    }
-    
-    if (emergencyServices !== undefined) {
-      whereConditions.emergencyServices = emergencyServices === 'true';
-    }
-    
-    if (isVerified !== undefined) {
-      whereConditions.isVerified = isVerified === 'true';
-    }
-    
-    if (featured !== undefined) {
-      whereConditions.featured = featured === 'true';
-    }
+    // Feature filters - facilities is JSONB array in PostgreSQL
+    // Skip these filters for now as they require JSONB queries
     
     // Quality filters
     if (minRating) {
       whereConditions.rating = {
         [Op.gte]: parseFloat(minRating)
       };
+    }
+    
+    if (isVerified !== undefined) {
+      whereConditions.isVerified = isVerified === 'true';
     }
     
     // Pagination
@@ -143,12 +133,7 @@ router.get('/', async (req, res) => {
       where: whereConditions,
       order: [[sortBy, sortOrder.toUpperCase()]],
       limit: parseInt(limit),
-      offset: offset,
-      attributes: includeDetails === 'true' ? undefined : [
-        'id', 'name', 'phoneNumber', 'address', 'services', 'rating',
-        'totalReviews', 'homeSampleCollection', 'emergencyServices',
-        'isVerified', 'featured', 'operatingHours'
-      ]
+      offset: offset
     });
     
     // Calculate pagination info
@@ -156,29 +141,15 @@ router.get('/', async (req, res) => {
     
     res.json({
       success: true,
-      data: {
-        labs,
-        pagination: {
-          currentPage: parseInt(page),
-          totalPages,
-          totalLabs: total,
-          hasNext: parseInt(page) < totalPages,
-          hasPrev: parseInt(page) > 1
-        },
-        filters: {
-          applied: {
-            search: search || null,
-            city: city || null,
-            state: state || null,
-            services: services || null,
-            testCategories: testCategories || null,
-            minRating: minRating || null,
-            homeSampleCollection: homeSampleCollection || null,
-            emergencyServices: emergencyServices || null,
-            isVerified: isVerified || null,
-            featured: featured || null
-          }
-        }
+      total,
+      count: labs.length,
+      labs,
+      pagination: {
+        currentPage: parseInt(page),
+        totalPages,
+        totalLabs: total,
+        hasNext: parseInt(page) < totalPages,
+        hasPrev: parseInt(page) > 1
       }
     });
     

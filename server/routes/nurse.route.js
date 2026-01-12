@@ -316,6 +316,30 @@ router.post('/vitals', authNurse, async (req, res) => {
   try {
     const { patientId, vitals } = req.body;
 
+    // Validate and convert patientId to integer
+    if (!patientId) {
+      return res.status(400).json({
+        success: false,
+        message: 'Patient ID is required'
+      });
+    }
+
+    const parsedPatientId = parseInt(patientId, 10);
+    if (isNaN(parsedPatientId)) {
+      return res.status(400).json({
+        success: false,
+        message: 'Patient ID must be a valid number'
+      });
+    }
+
+    // Validate vitals object exists
+    if (!vitals || typeof vitals !== 'object') {
+      return res.status(400).json({
+        success: false,
+        message: 'Vitals data is required'
+      });
+    }
+
     // Parse blood pressure if provided as "120/80" format
     let systolic = null;
     let diastolic = null;
@@ -332,7 +356,7 @@ router.post('/vitals', authNurse, async (req, res) => {
     }
 
     const record = await VitalsRecord.create({
-      userId: patientId,
+      userId: parsedPatientId,
       recordedBy: req.nurse.id,
       temperature: vitals?.temperature ?? null,
       heartRate: vitals?.pulse ?? vitals?.heartRate ?? null,

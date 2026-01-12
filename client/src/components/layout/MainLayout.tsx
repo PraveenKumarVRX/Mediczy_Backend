@@ -28,6 +28,8 @@ import {
   TooltipTrigger,
 } from "@/components/ui/tooltip";
 import { BRAND, getShortRoleLabel } from "@/config/brand";
+import VideoCallNotification from "@/components/notifications/VideoCallNotification";
+import { useSocketConnection } from "@/hooks/useSocketConnection";
 
 interface Notification {
   id: number;
@@ -46,6 +48,9 @@ interface MainLayoutProps {
 const MainLayout = ({ children }: MainLayoutProps) => {
   const [showBookingModal, setShowBookingModal] = useState(false);
   const [notificationOpen, setNotificationOpen] = useState(false);
+  
+  // Initialize socket connection for notifications
+  useSocketConnection();
   
   // Register service worker
   useEffect(() => {
@@ -405,6 +410,9 @@ const MainLayout = ({ children }: MainLayoutProps) => {
       </main>
       <Navigation />
       <OfflineIndicator />
+      
+      {/* Video Call Notification System */}
+      <VideoCallNotification />
       
       {/* Universal Quick Appointment Booking Modal */}
       <QuickAppointmentModal 

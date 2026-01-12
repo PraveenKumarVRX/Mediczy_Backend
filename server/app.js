@@ -93,6 +93,7 @@ import prescriptionRouter from './routes/prescription.route.js';
 import ehrRouter from './routes/ehr.route.js';
 import healthDiaryRouter from './routes/health-diary.route.js';
 import healthIntelligenceRouter from './routes/health-intelligence.route.js';
+import sibControlRouter from './routes/sib-control.route.js';
 import onlineConsultationRouter from './routes/online-consultation.route.js';
 import notificationRouter from './routes/notification.route.js';
 import embeddingsRouter from './routes/embeddings.route.js';
@@ -637,6 +638,7 @@ app.use("/api/prescriptions", prescriptionRouter); // Prescription CRUD and PDF 
 app.use("/api/ehr", ehrRouter); // Electronic Health Records - admin access to patient records
 app.use("/api/health-diary", healthDiaryRouter); // Patient health journal and diary entries
 app.use("/api/health-intelligence", healthIntelligenceRouter); // Dr. iSHA Health Intelligence Dashboard
+app.use("/api/sib", sibControlRouter); // SIB Control Layer - AI decision management, kill switch, approvals
 app.use("/api/health", healthRouter); // Unified health metrics endpoint
 app.use("/api/consultation", onlineConsultationRouter); // Online consultation booking flow
 app.use("/api/consultation-recordings", consultationRecordingRouter); // Consultation recording and AI transcription

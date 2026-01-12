@@ -9,6 +9,7 @@ import workers from "./workers/index.js";
 import { connectKafkaProducer, connectKafkaConsumer } from "./config/kafka.js";
 import scheduleDeviceMonitoring from "./scripts/device-monitoring-cron.js";
 import scheduleAppointmentAutoCancel from "./scripts/appointment-auto-cancel-cron.js";
+import AppointmentNotificationService from "./services/appointment-notification.service.js";
 
 // Validate environment before starting
 try {
@@ -54,7 +55,12 @@ async function startServer() {
   const { default: app } = await import("./app.js");
   
   server = http.createServer(app);
-  setupSocketIO(server);
+  const io = setupSocketIO(server);
+  
+  // Initialize Appointment Notification Service
+  console.log('🔔 Initializing Appointment Notification Service...');
+  const notificationService = new AppointmentNotificationService(io);
+  notificationService.initialize();
   
   // Initialize Kafka for video streaming events
   console.log('📡 Connecting to Kafka...');

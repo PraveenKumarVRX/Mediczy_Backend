@@ -51,7 +51,7 @@ export const validateFamilyMemberAddition = async (userId, relationship) => {
 
   // Check current family member count
   const currentCount = await FamilyMember.count({
-    where: { userId, status: 'active' }
+    where: { userId, isActive: true }
   });
 
   if (currentCount >= limits.maxMembers) {
@@ -76,7 +76,7 @@ export const validateFamilyMemberAddition = async (userId, relationship) => {
       where: {
         userId,
         relationship: ['spouse', 'partner'],
-        status: 'active'
+        isActive: true
       }
     });
 
@@ -108,7 +108,7 @@ export const getFamilyMemberLimits = async (userId) => {
   const limits = MEMBERSHIP_LIMITS[membershipType];
 
   const currentCount = await FamilyMember.count({
-    where: { userId, status: 'active' }
+    where: { userId, isActive: true }
   });
 
   return {

@@ -1718,6 +1718,8 @@ export const PharmacyExpiryPage = () => {
 };
 
 // Pharmacy Analytics Page
+// Note: This page is protected by PharmacyLayout which requires pharmacyToken in localStorage
+// If a patient user tries to access this page, they will be redirected to /pharmacy/login
 export const PharmacyAnalyticsPage = () => {
   const { toast } = useToast();
   const exportAnalytics = () => {
@@ -1729,8 +1731,8 @@ export const PharmacyAnalyticsPage = () => {
       <div className="space-y-6">
         <div className="flex items-center justify-between">
           <div>
-            <h1 className="text-2xl font-bold text-slate-900">Analytics Dashboard</h1>
-            <p className="text-muted-foreground">Performance metrics and business insights</p>
+            <h1 className="text-2xl font-bold text-slate-900">Pharmacy Analytics Dashboard</h1>
+            <p className="text-muted-foreground">Performance metrics and business insights for pharmacy operations</p>
           </div>
           <div className="flex gap-2">
             <Select>
@@ -1838,25 +1840,88 @@ export const PharmacyAnalyticsPage = () => {
             </DialogHeader>
             <div className="space-y-3 py-2">
               <div className="space-y-1">
-                <Label>Medicine</Label>
-                <Input value={batchForm.medicine} onChange={(e) => setBatchForm(prev => ({ ...prev, medicine: e.target.value }))} />
+                <Label>Medicine Name</Label>
+                <Input 
+                  value={batchForm.medicine} 
+                  onChange={(e) => setBatchForm(prev => ({ ...prev, medicine: e.target.value }))} 
+                  placeholder="e.g., Paracetamol 500mg"
+                />
               </div>
               <div className="space-y-1">
                 <Label>Quantity</Label>
-                <Input type="number" value={batchForm.qty} onChange={(e) => setBatchForm(prev => ({ ...prev, qty: e.target.value }))} />
+                <Input 
+                  type="number" 
+                  value={batchForm.qty} 
+                  onChange={(e) => setBatchForm(prev => ({ ...prev, qty: e.target.value }))} 
+                  placeholder="Enter quantity"
+                  min="1"
+                />
               </div>
               <div className="space-y-1">
-                <Label>Expiry</Label>
-                <Input type="date" value={batchForm.expiry} onChange={(e) => setBatchForm(prev => ({ ...prev, expiry: e.target.value }))} />
+                <Label>Expiry Date</Label>
+                <Input 
+                  type="date" 
+                  value={batchForm.expiry} 
+                  onChange={(e) => setBatchForm(prev => ({ ...prev, expiry: e.target.value }))} 
+                  min={new Date().toISOString().split('T')[0]}
+                />
               </div>
             </div>
             <DialogFooter>
-              <Button variant="outline" onClick={() => setShowAddBatch(false)}>Cancel</Button>
-              <Button onClick={() => {
-                toast({ title: 'Batch added', description: `${batchForm.medicine || 'Batch'} saved (${batchForm.qty || 0} units, exp ${batchForm.expiry || '-'})` });
+              <Button variant="outline" onClick={() => {
                 setShowAddBatch(false);
                 setBatchForm({ medicine: '', qty: '', expiry: '' });
-              }}>Save</Button>
+              }}>Cancel</Button>
+              <Button onClick={async () => {
+                // Validate form
+                if (!batchForm.medicine || !batchForm.qty || !batchForm.expiry) {
+                  toast({ 
+                    title: 'Validation Error', 
+                    description: 'Please fill in all required fields',
+                    variant: 'destructive'
+                  });
+                  return;
+                }
+
+                if (parseInt(batchForm.qty) <= 0) {
+                  toast({ 
+                    title: 'Invalid Quantity', 
+                    description: 'Quantity must be greater than 0',
+                    variant: 'destructive'
+                  });
+                  return;
+                }
+
+                try {
+                  // Mock API call - Replace with actual API when backend is ready
+                  // const response = await api.post('/pharmacy/batches', {
+                  //   medicineName: batchForm.medicine,
+                  //   quantity: parseInt(batchForm.qty),
+                  //   expiryDate: batchForm.expiry,
+                  //   batchNumber: `BATCH-${Date.now().toString().slice(-6)}`,
+                  //   supplier: 'TBD'
+                  // });
+
+                  // Show success message
+                  toast({ 
+                    title: 'Batch Added Successfully', 
+                    description: `${batchForm.medicine} - ${batchForm.qty} units (Expires: ${batchForm.expiry})` 
+                  });
+
+                  // Reset form and close dialog
+                  setShowAddBatch(false);
+                  setBatchForm({ medicine: '', qty: '', expiry: '' });
+
+                  // Refresh batch list here when API is integrated
+                } catch (error: any) {
+                  console.error('Add batch error:', error);
+                  toast({ 
+                    title: 'Error Adding Batch', 
+                    description: error.response?.data?.message || 'Failed to add batch. Please try again.',
+                    variant: 'destructive'
+                  });
+                }
+              }}>Save Batch</Button>
             </DialogFooter>
           </DialogContent>
         </Dialog>

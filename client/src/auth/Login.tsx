@@ -154,7 +154,7 @@ const Login = () => {
           // Dispatch auth change event for same-tab updates
           window.dispatchEvent(new Event('authChange'));
           
-          // Navigate immediately - AuthProvider will handle the rest
+          // Navigate to patient dashboard - user login redirects here
           navigate("/", { replace: true });
         },
         onError: (error) => {

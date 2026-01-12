@@ -41,6 +41,15 @@ const DoctorLogin = () => {
   // Check if already authenticated
   useEffect(() => {
     const token = localStorage.getItem('doctorToken');
+    const userType = localStorage.getItem('userType');
+    
+    // If patient user accidentally on doctor login, redirect to patient dashboard
+    if (userType === 'user' && localStorage.getItem('token')) {
+      console.log('⚠️ Patient user attempted doctor login, redirecting...');
+      navigate('/profile', { replace: true });
+      return;
+    }
+    
     if (token) {
       console.log('✅ Doctor already authenticated, redirecting...');
       navigate('/doctor/dashboard');
