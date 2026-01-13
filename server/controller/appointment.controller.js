@@ -505,6 +505,18 @@ export const getDoctorAppointments = async (req, res) => {
     const doctorId = req.user.id; // Assuming req.user contains doctor info
     const { status, date, upcoming } = req.query;
 
+    console.log('🔍 getDoctorAppointments called with:', {
+      doctorId,
+      status,
+      date,
+      upcoming,
+      userInfo: {
+        id: req.user.id,
+        email: req.user.email,
+        role: req.user.role
+      }
+    });
+
     const whereClause = { doctorId };
 
     if (status) {
@@ -522,13 +534,28 @@ export const getDoctorAppointments = async (req, res) => {
       };
     }
 
+    console.log('🔍 Query where clause:', JSON.stringify(whereClause, null, 2));
+    console.log('🔍 Op.gte value:', whereClause.appointmentDate ? whereClause.appointmentDate[Op.gte] : 'N/A');
+
     const appointments = await Appointment.findAll({
       where: whereClause,
       order: [
         ['appointmentDate', 'ASC'],
         ['appointmentTime', 'ASC']
-      ]
+      ],
+      logging: console.log  // Enable SQL logging
     });
+
+    console.log('✅ Found appointments:', appointments.length);
+    if (appointments.length > 0) {
+      console.log('Sample appointment:', {
+        id: appointments[0].id,
+        doctorId: appointments[0].doctorId,
+        patientName: appointments[0].patientName,
+        date: appointments[0].appointmentDate,
+        time: appointments[0].appointmentTime
+      });
+    }
 
     return res.status(200).json({
       count: appointments.length,

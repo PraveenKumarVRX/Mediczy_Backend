@@ -5,7 +5,8 @@ import { fileURLToPath } from 'url';
 import jwt from 'jsonwebtoken';
 import crypto from 'crypto';
 import { postgresSequelize as sequelize } from '../../db/postgres-sequelize.js';
-import { QueryTypes } from 'sequelize';
+import { QueryTypes, Op } from 'sequelize';
+import Appointment from '../../models/postgres/appointment.model.postgres.js';
 
 const router = express.Router();
 const JWT_SECRET = process.env.JWT_SECRET || 'mediczy-super-secret-key-2024';
@@ -120,16 +121,83 @@ router.get('/summary', verifyHospitalToken, async (req, res) => {
 });
 
 router.get('/appointments', verifyHospitalToken, async (req, res) => {
-  const { date, status, department } = req.query;
-  const state = await readState();
-  const practice = getPractice(state, req.hospitalId, req.hospitalName);
-  const filtered = practice.appointments.filter((apt) => {
-    if (date && apt.date !== date) return false;
-    if (status && apt.status !== status) return false;
-    if (department && apt.department !== department) return false;
-    return true;
-  });
-  res.json({ success: true, data: filtered, total: filtered.length });
+  try {
+    const { date, status, department, upcoming } = req.query;
+    const hospitalId = req.hospitalId;
+    const organizationId = req.hospitalOrgId || hospitalId;
+
+    console.log('🏥 Hospital appointments request:', {
+      hospitalId,
+      organizationId,
+      date,
+      status,
+      department,
+      upcoming
+    });
+
+    const whereClause = {
+      organization_id: organizationId
+    };
+
+    if (status) {
+      whereClause.status = status;
+    }
+
+    if (date) {
+      whereClause.appointmentDate = date;
+    }
+
+    if (upcoming === 'true') {
+      const now = new Date();
+      whereClause.appointmentDate = {
+        [Op.gte]: now.toISOString().split('T')[0]
+      };
+    }
+
+    console.log('🏥 Query where clause:', JSON.stringify(whereClause, null, 2));
+
+    const appointments = await Appointment.findAll({
+      where: whereClause,
+      order: [
+        ['appointmentDate', 'ASC'],
+        ['appointmentTime', 'ASC']
+      ],
+      logging: console.log
+    });
+
+    console.log('✅ Found hospital appointments:', appointments.length);
+
+    // Transform appointments to match frontend expectations
+    const transformedAppointments = appointments.map(apt => ({
+      id: apt.id.toString(),
+      patientId: apt.userId?.toString() || '',
+      patientName: apt.patientName || 'Unknown',
+      patientPhone: apt.patientPhone || '',
+      doctorId: apt.doctorId?.toString() || '',
+      doctorName: apt.doctorName || 'Dr. Unknown',
+      department: apt.specialization || 'General',
+      date: apt.appointmentDate || '',
+      time: apt.appointmentTime?.substring(0, 5) || '',
+      type: 'OPD',
+      status: apt.status || 'Scheduled',
+      priority: 'Normal',
+      notes: apt.reason || '',
+      createdAt: apt.createdAt || new Date().toISOString()
+    }));
+
+    return res.json({ 
+      success: true, 
+      data: transformedAppointments, 
+      total: transformedAppointments.length 
+    });
+  } catch (error) {
+    console.error('Get hospital appointments error:', error);
+    return res.status(500).json({
+      success: false,
+      message: 'Failed to fetch appointments',
+      error: error.message
+    });
+  }
 });
 
 router.post('/appointments', verifyHospitalToken, async (req, res) => {

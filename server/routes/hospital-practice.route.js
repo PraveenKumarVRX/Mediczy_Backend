@@ -2,6 +2,9 @@ import { Router } from 'express';
 import { postgresSequelize as sequelize } from '../db/postgres-sequelize.js';
 import { QueryTypes, Op } from 'sequelize';
 import { authUser, requireRole } from '../middleware/auth.middleware.js';
+import Appointment from '../models/postgres/appointment.model.postgres.js';
+import Doctor from '../models/postgres/doctor.model.postgres.js';
+import User from '../models/postgres/user.model.postgres.js';
 
 const router = Router();
 
@@ -15,6 +18,138 @@ const requireHospitalAuth = (req, res, next) => {
   }
   next();
 };
+
+// ============================================================================
+// APPOINTMENTS MANAGEMENT
+// ============================================================================
+
+/**
+ * Get Hospital Appointments
+ * GET /api/hospital/practice/appointments
+ */
+router.get('/appointments', authUser, requireHospitalAuth, async (req, res) => {
+  try {
+    const { status, date, upcoming, department, doctorId } = req.query;
+    const hospitalId = req.user.hospitalId || req.user.id;
+    const organizationId = req.user.organization_id || hospitalId;
+
+    console.log('🏥 Hospital appointments request:', {
+      hospitalId,
+      organizationId,
+      status,
+      date,
+      upcoming,
+      department,
+      doctorId,
+      userInfo: {
+        id: req.user.id,
+        role: req.user.role,
+        email: req.user.email
+      }
+    });
+
+    const whereClause = {
+      organization_id: organizationId
+    };
+
+    if (status) {
+      whereClause.status = status;
+    }
+
+    if (date) {
+      whereClause.appointmentDate = date;
+    }
+
+    if (upcoming === 'true') {
+      const now = new Date();
+      whereClause.appointmentDate = {
+        [Op.gte]: now.toISOString().split('T')[0]
+      };
+    }
+
+    if (doctorId) {
+      whereClause.doctorId = doctorId;
+    }
+
+    console.log('🏥 Query where clause:', JSON.stringify(whereClause, null, 2));
+
+    const appointments = await Appointment.findAll({
+      where: whereClause,
+      order: [
+        ['appointmentDate', 'ASC'],
+        ['appointmentTime', 'ASC']
+      ],
+      logging: console.log
+    });
+
+    console.log('✅ Found hospital appointments:', appointments.length);
+
+    return res.status(200).json({
+      success: true,
+      count: appointments.length,
+      appointments
+    });
+  } catch (error) {
+    console.error('Get hospital appointments error:', error);
+    return res.status(500).json({
+      success: false,
+      message: 'Failed to fetch appointments',
+      error: error.message
+    });
+  }
+});
+
+/**
+ * Get Hospital Practice Summary
+ * GET /api/hospital/practice
+ */
+router.get('/', authUser, requireHospitalAuth, async (req, res) => {
+  try {
+    const hospitalId = req.user.hospitalId || req.user.id;
+    const organizationId = req.user.organization_id || hospitalId;
+
+    // Get today's date
+    const today = new Date().toISOString().split('T')[0];
+
+    // Fetch appointments
+    const [totalAppointments, todayAppointments, upcomingAppointments] = await Promise.all([
+      Appointment.count({ where: { organization_id: organizationId } }),
+      Appointment.count({ where: { organization_id: organizationId, appointmentDate: today } }),
+      Appointment.count({
+        where: {
+          organization_id: organizationId,
+          appointmentDate: { [Op.gte]: today }
+        }
+      })
+    ]);
+
+    // Fetch recent appointments
+    const recentAppointments = await Appointment.findAll({
+      where: { organization_id: organizationId },
+      order: [['createdAt', 'DESC']],
+      limit: 10
+    });
+
+    return res.status(200).json({
+      success: true,
+      data: {
+        stats: {
+          totalAppointments,
+          todayAppointments,
+          upcomingAppointments
+        },
+        recentAppointments
+      }
+    });
+  } catch (error) {
+    console.error('Get hospital practice error:', error);
+    return res.status(500).json({
+      success: false,
+      message: 'Failed to fetch practice data',
+      error: error.message
+    });
+  }
+});
 
 // ============================================================================
 // INSURANCE & BILLING - Claims Management

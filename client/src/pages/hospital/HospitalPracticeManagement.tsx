@@ -178,9 +178,43 @@ const HospitalPracticeManagement = () => {
       setIsRefreshing(true);
     }
     try {
+      // Fetch appointments from the new endpoint
+      const appointmentsRes = await api.get('/hospital/practice/appointments', { 
+        headers: hospitalHeaders(),
+        params: { upcoming: 'true' }
+      });
+      
+      const appointmentsData = appointmentsRes.data?.appointments || [];
+      
+      // Transform appointments to match frontend format
+      const transformedAppointments = appointmentsData.map((apt: any) => ({
+        id: apt.id.toString(),
+        patientId: apt.userId?.toString() || '',
+        patientName: apt.patientName || 'Unknown',
+        patientPhone: apt.patientPhone || '',
+        doctorId: apt.doctorId?.toString() || '',
+        doctorName: apt.doctorName || 'Dr. Unknown',
+        department: apt.specialization || 'General',
+        date: apt.appointmentDate || '',
+        time: apt.appointmentTime?.substring(0, 5) || '',
+        type: 'OPD' as const,
+        status: mapStatus(apt.status),
+        priority: 'Normal' as const,
+        notes: apt.reason || '',
+        createdAt: apt.createdAt || new Date().toISOString()
+      }));
+      
+      setAppointments(transformedAppointments);
+
+      // Fetch general practice data
       const { data } = await api.get('/hospital/practice', { headers: hospitalHeaders() });
       const practice = data?.data || data;
-      hydratePractice(practice || {});
+      
+      // Only update patients, staff, resources if available
+      if (practice.patients) setPatients(practice.patients);
+      if (practice.staff) setStaff(practice.staff);
+      if (practice.resources) setResources(practice.resources);
+      
     } catch (error) {
       handleApiError(error, 'Failed to fetch practice data');
     } finally {
@@ -189,6 +223,19 @@ const HospitalPracticeManagement = () => {
       }
       setIsRefreshing(false);
     }
+  };
+
+  // Helper function to map backend status to frontend status
+  const mapStatus = (backendStatus: string): Appointment['status'] => {
+    const statusMap: Record<string, Appointment['status']> = {
+      'scheduled': 'Scheduled',
+      'confirmed': 'Scheduled',
+      'in-progress': 'In-Progress',
+      'completed': 'Completed',
+      'cancelled': 'Cancelled',
+      'no-show': 'No-Show'
+    };
+    return statusMap[backendStatus] || 'Scheduled';
   };
 
   useEffect(() => {
