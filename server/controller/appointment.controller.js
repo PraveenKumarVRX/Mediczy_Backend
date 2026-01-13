@@ -235,6 +235,18 @@ export const createAppointment = async (req, res) => {
       }
     }
 
+    // Auto-assign organization_id from doctor's hospital/organization
+    const organizationId = doctor.organization_id || doctor.hospitalId || req.userTenantId || null;
+    
+    console.log('🏥 Auto-assigning organization_id:', {
+      doctorId: resolvedDoctorId,
+      doctorName: doctor.firstName + ' ' + doctor.lastName,
+      organizationId,
+      source: doctor.organization_id ? 'doctor.organization_id' : 
+              doctor.hospitalId ? 'doctor.hospitalId' : 
+              req.userTenantId ? 'tenant' : 'none'
+    });
+
     // Create appointment
     const appointment = await Appointment.create({
       userId,
@@ -252,6 +264,8 @@ export const createAppointment = async (req, res) => {
       reason,
       status: 'scheduled',
       paymentStatus: 'pending',
+      organization_id: organizationId,
+      organization_type: organizationId ? 'hospital' : null,
       metadata: {
         ...(req.userTenantId ? { organizationId: req.userTenantId } : {}),
         requestedConsultationType: requestedConsultationType || null,

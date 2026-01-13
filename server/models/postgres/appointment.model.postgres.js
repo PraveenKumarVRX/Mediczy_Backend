@@ -27,7 +27,7 @@ const Appointment = sequelize.define('Appointment', {
   // Patient Information
   userId: {
     type: DataTypes.INTEGER,
-    allowNull: false,
+    allowNull: true, // Allow null for walk-in/hospital-created appointments
     references: {
       model: 'users',
       key: 'id'
@@ -39,7 +39,7 @@ const Appointment = sequelize.define('Appointment', {
   },
   patientEmail: {
     type: DataTypes.STRING(255),
-    allowNull: false
+    allowNull: true // Allow null for walk-in patients
   },
   patientPhone: {
     type: DataTypes.STRING(20),
@@ -56,7 +56,7 @@ const Appointment = sequelize.define('Appointment', {
   // Doctor Information
   doctorId: {
     type: DataTypes.INTEGER,
-    allowNull: false,
+    allowNull: true, // Allow null for unassigned appointments
     references: {
       model: 'doctors',
       key: 'id'

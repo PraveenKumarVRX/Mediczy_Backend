@@ -122,7 +122,7 @@ router.get('/summary', verifyHospitalToken, async (req, res) => {
 
 router.get('/appointments', verifyHospitalToken, async (req, res) => {
   try {
-    const { date, status, department, upcoming } = req.query;
+    const { date, status, department, upcoming, priority, type, doctorId } = req.query;
     const hospitalId = req.hospitalId;
     const organizationId = req.hospitalOrgId || hospitalId;
 
@@ -132,7 +132,10 @@ router.get('/appointments', verifyHospitalToken, async (req, res) => {
       date,
       status,
       department,
-      upcoming
+      upcoming,
+      priority,
+      type,
+      doctorId
     });
 
     const whereClause = {
@@ -154,6 +157,11 @@ router.get('/appointments', verifyHospitalToken, async (req, res) => {
       };
     }
 
+    if (doctorId) {
+      whereClause.doctorId = doctorId;
+    }
+
+    // Note: Priority and type filters applied after fetching
     console.log('🏥 Query where clause:', JSON.stringify(whereClause, null, 2));
 
     const appointments = await Appointment.findAll({
@@ -168,7 +176,7 @@ router.get('/appointments', verifyHospitalToken, async (req, res) => {
     console.log('✅ Found hospital appointments:', appointments.length);
 
     // Transform appointments to match frontend expectations
-    const transformedAppointments = appointments.map(apt => ({
+    let transformedAppointments = appointments.map(apt => ({
       id: apt.id.toString(),
       patientId: apt.userId?.toString() || '',
       patientName: apt.patientName || 'Unknown',
@@ -178,12 +186,25 @@ router.get('/appointments', verifyHospitalToken, async (req, res) => {
       department: apt.specialization || 'General',
       date: apt.appointmentDate || '',
       time: apt.appointmentTime?.substring(0, 5) || '',
-      type: 'OPD',
+      type: apt.consultationType === 'in-person' ? 'IPD' : 'OPD',
       status: apt.status || 'Scheduled',
-      priority: 'Normal',
+      priority: 'Normal', // Default - can be enhanced with metadata
       notes: apt.reason || '',
       createdAt: apt.createdAt || new Date().toISOString()
     }));
+
+    // Apply in-memory filters for priority and type if needed
+    if (priority) {
+      transformedAppointments = transformedAppointments.filter(apt => 
+        apt.priority.toLowerCase() === priority.toLowerCase()
+      );
+    }
+
+    if (type) {
+      transformedAppointments = transformedAppointments.filter(apt => 
+        apt.type.toLowerCase() === type.toLowerCase()
+      );
+    }
 
     return res.json({ 
       success: true, 
@@ -201,46 +222,170 @@ router.get('/appointments', verifyHospitalToken, async (req, res) => {
 });
 
 router.post('/appointments', verifyHospitalToken, async (req, res) => {
-  const { patientName, patientPhone, department, doctorId, doctorName, type, priority, time, date, notes } = req.body;
-  if (!patientName || !patientPhone || !time || !date) {
-    return res.status(400).json({ success: false, message: 'Patient, phone, date, and time are required' });
+  try {
+    const { patientName, patientPhone, patientEmail, userId, doctorId, appointmentDate, appointmentTime, reason, consultationType } = req.body;
+    
+    if (!patientName || !patientPhone || !appointmentDate || !appointmentTime) {
+      return res.status(400).json({ 
+        success: false, 
+        message: 'Patient name, phone, date, and time are required' 
+      });
+    }
+
+    const hospitalId = req.hospitalId;
+    const organizationId = req.hospitalOrgId || hospitalId;
+
+    // Fetch doctor details if doctorId provided
+    let doctorName = 'Unassigned';
+    let specialization = 'General';
+    if (doctorId) {
+      const Doctor = (await import('../../models/postgres/doctor.model.postgres.js')).default;
+      const doctor = await Doctor.findByPk(doctorId);
+      if (doctor) {
+        doctorName = `Dr. ${doctor.firstName} ${doctor.lastName}`;
+        specialization = doctor.specialization || 'General';
+      }
+    }
+
+    // Create appointment in PostgreSQL
+    const appointment = await Appointment.create({
+      userId: userId || null, // Optional - for walk-in patients
+      patientName,
+      patientPhone,
+      patientEmail: patientEmail || null,
+      doctorId: doctorId || null,
+      doctorName,
+      specialization,
+      appointmentDate,
+      appointmentTime,
+      reason: reason || '',
+      consultationType: consultationType || 'online',
+      status: 'scheduled',
+      paymentStatus: 'pending',
+      organization_id: organizationId,
+      organization_type: 'hospital'
+    });
+
+    console.log('✅ Hospital created appointment:', appointment.id);
+
+    return res.status(201).json({ 
+      success: true, 
+      message: 'Appointment created successfully', 
+      data: {
+        id: appointment.id.toString(),
+        patientName: appointment.patientName,
+        doctorName: appointment.doctorName,
+        appointmentDate: appointment.appointmentDate,
+        appointmentTime: appointment.appointmentTime,
+        status: appointment.status
+      }
+    });
+  } catch (error) {
+    console.error('Create hospital appointment error:', error);
+    return res.status(500).json({
+      success: false,
+      message: 'Failed to create appointment',
+      error: error.message
+    });
   }
-
-  const state = await readState();
-  const practice = getPractice(state, req.hospitalId, req.hospitalName);
-  const now = new Date().toISOString().slice(0, 10);
-  const appointment = {
-    id: generateId('APT'),
-    patientId: generateId('P'),
-    patientName,
-    patientPhone,
-    doctorId: doctorId || 'NA',
-    doctorName: doctorName || 'Unassigned',
-    department: department || 'General Medicine',
-    date,
-    time,
-    type: type || 'OPD',
-    status: 'Scheduled',
-    priority: priority || 'Normal',
-    notes: notes || '',
-    createdAt: now
-  };
-
-  practice.appointments.unshift(appointment);
-  await writeState(state);
-  res.status(201).json({ success: true, message: 'Appointment created', data: appointment });
 });
 
 router.patch('/appointments/:id', verifyHospitalToken, async (req, res) => {
-  const state = await readState();
-  const practice = getPractice(state, req.hospitalId, req.hospitalName);
-  const index = practice.appointments.findIndex((apt) => apt.id === req.params.id);
-  if (index === -1) {
-    return res.status(404).json({ success: false, message: 'Appointment not found' });
+  try {
+    const { id } = req.params;
+    const { status, appointmentDate, appointmentTime, reason, doctorId } = req.body;
+    const hospitalId = req.hospitalId;
+    const organizationId = req.hospitalOrgId || hospitalId;
+
+    // Find appointment belonging to this hospital
+    const appointment = await Appointment.findOne({
+      where: {
+        id,
+        organization_id: organizationId
+      }
+    });
+
+    if (!appointment) {
+      return res.status(404).json({ 
+        success: false, 
+        message: 'Appointment not found or does not belong to this hospital' 
+      });
+    }
+
+    // Update allowed fields
+    const updateData = {};
+    if (status) updateData.status = status;
+    if (appointmentDate) updateData.appointmentDate = appointmentDate;
+    if (appointmentTime) updateData.appointmentTime = appointmentTime;
+    if (reason) updateData.reason = reason;
+    if (doctorId) updateData.doctorId = doctorId;
+
+    await appointment.update(updateData);
+
+    console.log('✅ Hospital updated appointment:', id);
+
+    return res.json({ 
+      success: true, 
+      message: 'Appointment updated successfully', 
+      data: {
+        id: appointment.id.toString(),
+        status: appointment.status,
+        appointmentDate: appointment.appointmentDate,
+        appointmentTime: appointment.appointmentTime
+      }
+    });
+  } catch (error) {
+    console.error('Update hospital appointment error:', error);
+    return res.status(500).json({
+      success: false,
+      message: 'Failed to update appointment',
+      error: error.message
+    });
   }
-  practice.appointments[index] = { ...practice.appointments[index], ...req.body };
-  await writeState(state);
-  res.json({ success: true, message: 'Appointment updated', data: practice.appointments[index] });
+});
+
+router.delete('/appointments/:id', verifyHospitalToken, async (req, res) => {
+  try {
+    const { id } = req.params;
+    const hospitalId = req.hospitalId;
+    const organizationId = req.hospitalOrgId || hospitalId;
+
+    // Find appointment belonging to this hospital
+    const appointment = await Appointment.findOne({
+      where: {
+        id,
+        organization_id: organizationId
+      }
+    });
+
+    if (!appointment) {
+      return res.status(404).json({ 
+        success: false, 
+        message: 'Appointment not found or does not belong to this hospital' 
+      });
+    }
+
+    // Soft delete by updating status to cancelled
+    await appointment.update({ 
+      status: 'cancelled',
+      cancellationReason: 'Cancelled by hospital',
+      cancelledAt: new Date()
+    });
+
+    console.log('✅ Hospital cancelled appointment:', id);
+
+    return res.json({ 
+      success: true, 
+      message: 'Appointment cancelled successfully'
+    });
+  } catch (error) {
+    console.error('Delete hospital appointment error:', error);
+    return res.status(500).json({
+      success: false,
+      message: 'Failed to cancel appointment',
+      error: error.message
+    });
+  }
 });
 
 router.post('/appointments/:id/status', verifyHospitalToken, async (req, res) => {
