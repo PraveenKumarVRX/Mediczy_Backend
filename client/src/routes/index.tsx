@@ -169,6 +169,7 @@ import TicketManagement from '@/pages/admin/TicketManagement';
 import AdminHealthRiskAssessment from '@/pages/admin/HealthRiskAssessment';
 import UserHealthRiskAssessment from '@/pages/UserHealthRiskAssessment';
 import HealthIntelligence from '@/pages/HealthIntelligence';
+import SIBControlDashboard from '@/pages/SIBControlDashboard';
 // Placeholder pages (reports still from AdminPlaceholders, new SettingsPage)
 import { ReportsPage } from "@/pages/admin/AdminPlaceholders";
 import SettingsPage from "@/pages/admin/SettingsPage";
@@ -546,6 +547,8 @@ const AppRoutes = () => {
       <Route path="/health-diary" element={<MainLayout><HealthDiary /></MainLayout>} />
       {/* Health Intelligence Dashboard */}
       <Route path="/health-intelligence" element={<MainLayout><HealthIntelligence /></MainLayout>} />
+      {/* SIB Control Dashboard (Admin Only) */}
+      <Route path="/sib-control" element={<MainLayout><SIBControlDashboard /></MainLayout>} />
       <Route path="/consultation" element={<MainLayout><Consultation /></MainLayout>} />
       <Route path="/doctors" element={<DoctorListBooking />} />
       <Route path="/symptoms" element={<MainLayout><Symptoms /></MainLayout>} />

@@ -13,6 +13,7 @@ import {
   countSessions
 } from '../repositories/chatbotSessions.repository.js';
 import handleIntentEscalation from './intentEscalation.service.js';
+import sibControlLayer, { DECISION_TYPES } from './sib-control-layer.service.js';
 
 /**
  * Medical AI Service - Dr. iSHA
@@ -1339,6 +1340,33 @@ I understand you're seeking medical guidance. While I'm currently experiencing s
       });
     }
 
+    // Process emergency escalation through SIB Control Layer
+    if (isEmergency && escalation) {
+      const sibDecision = {
+        type: DECISION_TYPES.ESCALATE_EMERGENCY,
+        confidence: emergencyDetection.severity === 'critical' ? 0.98 : 0.85,
+        reasoning: `Emergency detected: ${emergencyDetection.matches.join(', ')}. Severity: ${emergencyDetection.severity}`,
+        data: {
+          userId: userContext.userId,
+          sessionId,
+          symptoms,
+          description,
+          urgencyLevel: isEmergency ? 'CRITICAL' : 'MODERATE',
+          escalation
+        },
+        context: {
+          source: 'medical-ai-triage',
+          aiProvider: this.activeProvider,
+          emergencyKeywords: emergencyDetection.matches,
+          specialization: emergencyDetection.specialization,
+          timestamp: new Date().toISOString()
+        }
+      };
+
+      // Safety checks and logging
+      await sibControlLayer.processDecision(sibDecision);
+    }
+
     return {
       ...result,
       urgencyLevel: isEmergency ? 'CRITICAL' : 'MODERATE',
@@ -1737,6 +1765,91 @@ Would you like to find a Pediatrician near you?
       sessionsActive: this.conversationHistory.size,
       storedSessions,
       timestamp: new Date().toISOString()
+    };
+  }
+
+  /**
+   * Generate Health Alert (with SIB safety checks)
+   * Routes health alerts through SIB Control Layer for safety validation
+   */
+  async generateHealthAlert(userId, alertData, sessionId) {
+    const { type, severity, message, healthMetrics, recommendation } = alertData;
+    
+    // Determine confidence based on data quality and severity
+    let confidence = 0.7;
+    if (healthMetrics && Object.keys(healthMetrics).length > 3) {
+      confidence += 0.1;
+    }
+    if (severity === 'critical') {
+      confidence = Math.min(0.95, confidence + 0.15);
+    }
+
+    const sibDecision = {
+      type: DECISION_TYPES.TRIGGER_ALERT,
+      confidence,
+      reasoning: `Health alert generated: ${type}. Severity: ${severity}. Based on metrics: ${Object.keys(healthMetrics || {}).join(', ')}`,
+      data: {
+        userId,
+        alertType: type,
+        severity,
+        message,
+        recommendation,
+        healthMetrics,
+        sessionId
+      },
+      context: {
+        source: 'medical-ai-health-monitoring',
+        aiProvider: this.activeProvider,
+        timestamp: new Date().toISOString(),
+        metricsAnalyzed: Object.keys(healthMetrics || {})
+      }
+    };
+
+    // Process through SIB Control Layer
+    const result = await sibControlLayer.processDecision(sibDecision);
+    
+    return {
+      success: result.success,
+      alertId: result.decisionId,
+      message,
+      recommendation,
+      requiresApproval: result.pending,
+      approvalId: result.approvalId
+    };
+  }
+
+  /**
+   * Generate Health Recommendation (with SIB safety checks)
+   */
+  async generateHealthRecommendation(userId, recommendationData, sessionId) {
+    const { category, recommendations, confidence: providedConfidence } = recommendationData;
+    
+    const sibDecision = {
+      type: DECISION_TYPES.UPDATE_RECOMMENDATION,
+      confidence: providedConfidence || 0.75,
+      reasoning: `Health recommendation generated for category: ${category}. Provider: ${this.activeProvider}`,
+      data: {
+        userId,
+        category,
+        recommendations,
+        sessionId
+      },
+      context: {
+        source: 'medical-ai-recommendations',
+        aiProvider: this.activeProvider,
+        timestamp: new Date().toISOString()
+      }
+    };
+
+    // Process through SIB Control Layer
+    const result = await sibControlLayer.processDecision(sibDecision);
+    
+    return {
+      success: result.success,
+      recommendationId: result.decisionId,
+      recommendations,
+      requiresApproval: result.pending,
+      approvalId: result.approvalId
     };
   }
 }

@@ -30,6 +30,8 @@
 import { EventEmitter } from 'events';
 import { addJob } from '../config/queues.js';
 import { publishEvent, KAFKA_TOPICS } from '../config/kafka.js';
+import SIBDecision from '../models/sib-decision.model.js';
+import * as sibMetrics from '../config/prometheus-sib.js';
 
 // Decision types SIB can make
 export const DECISION_TYPES = {
@@ -114,6 +116,9 @@ class SIBControlLayer extends EventEmitter {
     this.logDecision(event);
     this.emit('killSwitch', event);
     
+    // Update Prometheus metric
+    sibMetrics.setKillSwitchStatus(true);
+    
     console.error('🚨 KILL SWITCH ACTIVATED:', reason, 'by', activatedBy);
     
     // Publish to Kafka for monitoring
@@ -141,6 +146,9 @@ class SIBControlLayer extends EventEmitter {
     
     this.logDecision(event);
     this.emit('killSwitchDeactivated', event);
+    
+    // Update Prometheus metric
+    sibMetrics.setKillSwitchStatus(false);
     
     console.log('✅ Kill switch deactivated by', authorizedBy);
   }
@@ -220,10 +228,21 @@ class SIBControlLayer extends EventEmitter {
       // Log failure
       this.logDecision({
         ...decision,
+        decisionId,
         status: 'rejected',
         error: error.message,
         timestamp: new Date().toISOString()
       });
+      
+      // Update database record
+      if (dbRecord) {
+        await dbRecord.reject('system', error.message).catch(err => console.error('DB error:', err));
+      }
+      
+      // Record metrics
+      const processingTime = Date.now() - startTime;
+      sibMetrics.recordDecision(decision.type, 'rejected', decision.confidence, processingTime);
+      sibMetrics.recordRejection(decision.type, error.message.substring(0, 50));
       
       // Trip circuit breaker if too many failures
       this.recordFailure(decision.type);
@@ -232,9 +251,10 @@ class SIBControlLayer extends EventEmitter {
       
       return {
         success: false,
+        decisionId,
         decision,
         error: error.message,
-        executionTime: Date.now() - startTime
+        executionTime: processingTime
       };
     }
   }
@@ -279,10 +299,14 @@ class SIBControlLayer extends EventEmitter {
     
     if (counter.count >= limit) {
       console.warn(`⚠️  Rate limit exceeded for ${decisionType}: ${counter.count}/${limit}`);
+      // Update Prometheus metric
+      sibMetrics.updateRateLimitUsage(decisionType, counter.count);
       return false;
     }
     
     counter.count++;
+    // Update Prometheus metric with current usage
+    sibMetrics.updateRateLimitUsage(decisionType, counter.count);
     return true;
   }
 
@@ -307,16 +331,38 @@ class SIBControlLayer extends EventEmitter {
   async requestHumanApproval(decision) {
     console.log('👤 Human approval required for:', decision.type);
     
+    // Generate unique approval ID
+    const approvalId = `approval_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
+    
+    // Create database record for tracking
+    try {
+      await SIBDecision.create({
+        decisionId: decision.decisionId || `decision_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`,
+        type: decision.type,
+        confidence: decision.confidence,
+        reasoning: decision.reasoning,
+        data: decision.data,
+        context: decision.context,
+        status: 'pending',
+        approvalId
+      });
+    } catch (error) {
+      console.error('Failed to create approval record:', error);
+    }
+    
     // Emit event for approval UI
     this.emit('humanApprovalRequired', decision);
     
-    // Store pending decision
-    const approvalId = `approval_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
+    // Store pending decision in memory
     this.humanOverrides.set(approvalId, {
       decision,
       status: 'pending',
       requestedAt: new Date().toISOString()
     });
+    
+    // Update Prometheus metrics
+    sibMetrics.updatePendingApprovals(this.humanOverrides.size);
+    sibMetrics.recordDecision(decision.type, 'pending', decision.confidence, 0);
     
     return {
       success: false,
@@ -349,7 +395,7 @@ class SIBControlLayer extends EventEmitter {
   /**
    * Reject pending decision
    */
-  rejectDecision(approvalId, rejectedBy, reason) {
+  async rejectDecision(approvalId, rejectedBy, reason) {
     const pending = this.humanOverrides.get(approvalId);
     if (!pending) {
       throw new Error('Approval ID not found');
@@ -361,6 +407,21 @@ class SIBControlLayer extends EventEmitter {
     pending.rejectedAt = new Date().toISOString();
     
     console.log(`❌ Decision rejected by ${rejectedBy}:`, pending.decision.type);
+    
+    // Update database record
+    try {
+      const dbRecord = await SIBDecision.findOne({ where: { approvalId } });
+      if (dbRecord) {
+        await dbRecord.reject(rejectedBy, reason);
+      }
+    } catch (error) {
+      console.error('Failed to update rejection in DB:', error);
+    }
+    
+    // Update Prometheus metrics
+    sibMetrics.recordRejection(pending.decision.type, reason);
+    sibMetrics.updatePendingApprovals(this.humanOverrides.size - 1);
+    
     this.humanOverrides.delete(approvalId);
   }
 

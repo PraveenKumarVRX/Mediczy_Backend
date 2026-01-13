@@ -68,6 +68,7 @@ const sidebarItems: SidebarItem[] = [
   // Health Management
   { icon: HeartPulse, label: "Health Dashboard", path: "/health-dashboard", category: "Health" },
   { icon: Brain, label: "Health Intelligence", path: "/health-intelligence", category: "Health" },
+  { icon: Shield, label: "SIB Control", path: "/sib-control", category: "Health" },
   { icon: BookHeart, label: "Health Diary", path: "/health-diary", category: "Health" },
   { icon: ShieldCheck, label: "Health Risk Assessment", path: "/health-risk-assessment", category: "Health" },
   { icon: Trophy, label: "Wellness Challenges", path: "/wellness-challenges", category: "Health" },
