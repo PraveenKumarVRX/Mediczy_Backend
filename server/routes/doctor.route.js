@@ -75,7 +75,7 @@ router.get("/available", getAvailableDoctors);
 router.get("/alerts", authDoctor, async (req, res) => {
   try {
     const doctorId = req.doctor.id;
-    
+
     // Get pending appointments (needs attention)
     const pendingAppointments = await Appointment.count({
       where: {
@@ -98,7 +98,7 @@ router.get("/alerts", authDoctor, async (req, res) => {
     });
 
     const alerts = [];
-    
+
     if (pendingAppointments > 0) {
       alerts.push({
         id: 'pending-appointments',
@@ -188,11 +188,11 @@ router.get("/dashboard/stats", authDoctor, async (req, res) => {
     });
 
     // Calculate growth percentages
-    const patientGrowth = lastMonthPatients > 0 
-      ? Math.round(((totalPatients - lastMonthPatients) / lastMonthPatients) * 100) 
+    const patientGrowth = lastMonthPatients > 0
+      ? Math.round(((totalPatients - lastMonthPatients) / lastMonthPatients) * 100)
       : 0;
-    const consultationGrowth = lastMonthConsultations > 0 
-      ? Math.round(((totalConsultations - lastMonthConsultations) / lastMonthConsultations) * 100) 
+    const consultationGrowth = lastMonthConsultations > 0
+      ? Math.round(((totalConsultations - lastMonthConsultations) / lastMonthConsultations) * 100)
       : 0;
 
     // Get doctor's rating (from profile or calculate)
@@ -202,8 +202,8 @@ router.get("/dashboard/stats", authDoctor, async (req, res) => {
 
     // Response rate (appointments accepted vs total)
     const totalRequests = await Appointment.count({ where: { doctorId } });
-    const acceptedRequests = await Appointment.count({ 
-      where: { doctorId, status: { [Op.ne]: 'cancelled' } } 
+    const acceptedRequests = await Appointment.count({
+      where: { doctorId, status: { [Op.ne]: 'cancelled' } }
     });
     const responseRate = totalRequests > 0 ? Math.round((acceptedRequests / totalRequests) * 100) : 95;
 
@@ -238,7 +238,7 @@ router.get("/analytics", authDoctor, async (req, res) => {
   try {
     const doctorId = req.doctor.id;
     const { period = '30' } = req.query;
-    
+
     // Handle period as days number or string like 'week', 'month', 'year'
     let days;
     if (period === 'week') days = 7;
@@ -403,7 +403,7 @@ router.put("/settings", authDoctor, async (req, res) => {
         doctor.bio = profile.bio;
         updatedFields.push('bio');
       }
-      
+
       // Handle qualifications - can be string or array
       if (profile.qualifications !== undefined) {
         if (typeof profile.qualifications === 'string') {
@@ -443,12 +443,12 @@ router.put("/settings", authDoctor, async (req, res) => {
         doctor.isAvailable = practice.isAvailable;
         updatedFields.push('isAvailable');
       }
-      
+
       // Handle JSONB fields - ensure they're properly formatted
       if (practice.weeklySchedule !== undefined) {
         // If it's a string, parse it; if it's already an object, use it
-        const weeklySchedule = typeof practice.weeklySchedule === 'string' 
-          ? JSON.parse(practice.weeklySchedule) 
+        const weeklySchedule = typeof practice.weeklySchedule === 'string'
+          ? JSON.parse(practice.weeklySchedule)
           : practice.weeklySchedule;
         doctor.weeklySchedule = weeklySchedule;
         updatedFields.push('weeklySchedule');
@@ -481,7 +481,7 @@ router.put("/settings", authDoctor, async (req, res) => {
 
     // Save changes to database
     await doctor.save();
-    
+
     console.log(`Doctor settings updated for ID ${req.doctor.id}:`, updatedFields);
 
     res.json({
@@ -512,7 +512,7 @@ router.get("/patients", authDoctor, async (req, res) => {
 
     // Get unique patients from appointments
     const whereClause = { doctorId };
-    
+
     let appointments = await Appointment.findAll({
       where: whereClause,
       include: [{
@@ -536,7 +536,7 @@ router.get("/patients", authDoctor, async (req, res) => {
     // Apply search filter if provided
     if (search) {
       const searchLower = search.toLowerCase();
-      patients = patients.filter(p => 
+      patients = patients.filter(p =>
         (p.firstName && p.firstName.toLowerCase().includes(searchLower)) ||
         (p.lastName && p.lastName.toLowerCase().includes(searchLower)) ||
         (p.phoneNumber && p.phoneNumber.includes(search)) ||
@@ -588,7 +588,7 @@ router.get("/templates", authDoctor, async (req, res) => {
     }
 
     let templates = doctor.documentTemplates || [];
-    
+
     // Filter by type if specified
     if (type) {
       templates = templates.filter(t => t.type === type);
@@ -620,9 +620,9 @@ router.post("/templates", authDoctor, async (req, res) => {
     const { name, type, content, isDefault, specialty, sections, diagram } = req.body;
 
     if (!name || !type || !content) {
-      return res.status(400).json({ 
-        success: false, 
-        message: 'Name, type, and content are required' 
+      return res.status(400).json({
+        success: false,
+        message: 'Name, type, and content are required'
       });
     }
 
@@ -632,7 +632,7 @@ router.post("/templates", authDoctor, async (req, res) => {
     }
 
     const templates = doctor.documentTemplates || [];
-    
+
     // If setting as default, unset other defaults of same type
     if (isDefault) {
       templates.forEach(t => {
@@ -691,7 +691,7 @@ router.put("/templates/:templateId", authDoctor, async (req, res) => {
 
     const templates = doctor.documentTemplates || [];
     const templateIndex = templates.findIndex(t => t.id === templateId);
-    
+
     if (templateIndex === -1) {
       return res.status(404).json({ success: false, message: 'Template not found' });
     }
@@ -748,7 +748,7 @@ router.delete("/templates/:templateId", authDoctor, async (req, res) => {
 
     const templates = doctor.documentTemplates || [];
     const templateIndex = templates.findIndex(t => t.id === templateId);
-    
+
     if (templateIndex === -1) {
       return res.status(404).json({ success: false, message: 'Template not found' });
     }
@@ -904,7 +904,7 @@ router.get("/:doctorId/user-slots", async (req, res) => {
 
         const [startHour, startMin] = startTime.split(':').map(Number);
         const [endHour, endMin] = endTime.split(':').map(Number);
-        
+
         let currentTime = startHour * 60 + startMin;
         const endTimeInMin = endHour * 60 + endMin;
 
@@ -913,10 +913,10 @@ router.get("/:doctorId/user-slots", async (req, res) => {
           const mins = currentTime % 60;
           const endHours = Math.floor((currentTime + duration) / 60);
           const endMins = (currentTime + duration) % 60;
-          
+
           const startFormatted = `${String(hours).padStart(2, '0')}:${String(mins).padStart(2, '0')}`;
           const endFormatted = `${String(endHours).padStart(2, '0')}:${String(endMins).padStart(2, '0')}`;
-          
+
           slots.push(`${startFormatted} - ${endFormatted}`);
           currentTime += duration;
         }
@@ -941,35 +941,35 @@ router.get("/:doctorId/user-slots", async (req, res) => {
       // Generate online slots
       const onlineSlots = daySchedule.online?.enabled
         ? generateTimeSlots(
-            daySchedule.online.startTime,
-            daySchedule.online.endTime,
-            slotDuration
-          ).map(slot => ({
-            time: slot,
-            available: !bookedSlotTimes.includes(slot) && !daySchedule.blockedSlots?.includes(slot),
-            blocked: daySchedule.blockedSlots?.includes(slot) || false
-          }))
+          daySchedule.online.startTime,
+          daySchedule.online.endTime,
+          slotDuration
+        ).map(slot => ({
+          time: slot,
+          available: !bookedSlotTimes.includes(slot) && !daySchedule.blockedSlots?.includes(slot),
+          blocked: daySchedule.blockedSlots?.includes(slot) || false
+        }))
         : [];
 
       // Generate in-person slots
       const inPersonSlots = daySchedule.inPerson?.enabled
         ? generateTimeSlots(
-            daySchedule.inPerson.startTime,
-            daySchedule.inPerson.endTime,
-            slotDuration
-          ).map(slot => {
-            const location = practiceLocations.find(loc => loc.id === daySchedule.inPerson?.locationId);
-            return {
-              time: slot,
-              available: !bookedSlotTimes.includes(slot) && !daySchedule.blockedSlots?.includes(slot),
-              blocked: daySchedule.blockedSlots?.includes(slot) || false,
-              location: location ? {
-                name: location.name,
-                address: location.address,
-                fee: location.consultationFee
-              } : null
-            };
-          })
+          daySchedule.inPerson.startTime,
+          daySchedule.inPerson.endTime,
+          slotDuration
+        ).map(slot => {
+          const location = practiceLocations.find(loc => loc.id === daySchedule.inPerson?.locationId);
+          return {
+            time: slot,
+            available: !bookedSlotTimes.includes(slot) && !daySchedule.blockedSlots?.includes(slot),
+            blocked: daySchedule.blockedSlots?.includes(slot) || false,
+            location: location ? {
+              name: location.name,
+              address: location.address,
+              fee: location.consultationFee
+            } : null
+          };
+        })
         : [];
 
       return res.json({
@@ -992,7 +992,7 @@ router.get("/:doctorId/user-slots", async (req, res) => {
     // If no date provided, return weekly schedule overview
     const weeklySlots = {};
     const days = ['monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday', 'sunday'];
-    
+
     for (const day of days) {
       const daySchedule = weeklySchedule[day];
       if (!daySchedule || daySchedule.isOff) {
@@ -1001,7 +1001,7 @@ router.get("/:doctorId/user-slots", async (req, res) => {
       }
 
       const location = practiceLocations.find(loc => loc.id === daySchedule.inPerson?.locationId);
-      
+
       weeklySlots[day] = {
         isOff: false,
         online: {
@@ -1066,9 +1066,9 @@ router.post(
     try {
       const errors = validationResult(req);
       if (!errors.isEmpty()) {
-        return res.status(400).json({ 
+        return res.status(400).json({
           success: false,
-          errors: errors.array() 
+          errors: errors.array()
         });
       }
 
@@ -1088,8 +1088,8 @@ router.post(
       } = req.body;
 
       // Check if phone number already exists
-      const existingUserByPhone = await User.findOne({ 
-        where: { phoneNumber } 
+      const existingUserByPhone = await User.findOne({
+        where: { phoneNumber }
       });
 
       if (existingUserByPhone) {
@@ -1107,8 +1107,8 @@ router.post(
 
       // If email provided, check if it already exists
       if (email) {
-        const existingUserByEmail = await User.findOne({ 
-          where: { email } 
+        const existingUserByEmail = await User.findOne({
+          where: { email }
         });
 
         if (existingUserByEmail) {
@@ -1390,30 +1390,30 @@ router.get("/video-consultations/stats", authDoctor, async (req, res) => {
     const doctorId = req.doctor.id;
     const today = new Date();
     today.setHours(0, 0, 0, 0);
-    
+
     const [totalConsultations, todayConsultations, completedConsultations] = await Promise.all([
       Appointment.count({
-        where: { 
-          doctorId, 
+        where: {
+          doctorId,
           type: { [Op.in]: ['video', 'emergency_triage', 'telemedicine'] }
         }
       }),
       Appointment.count({
-        where: { 
-          doctorId, 
+        where: {
+          doctorId,
           type: { [Op.in]: ['video', 'emergency_triage', 'telemedicine'] },
           createdAt: { [Op.gte]: today }
         }
       }),
       Appointment.count({
-        where: { 
-          doctorId, 
+        where: {
+          doctorId,
           type: { [Op.in]: ['video', 'emergency_triage', 'telemedicine'] },
           status: 'completed'
         }
       })
     ]);
-    
+
     res.json({
       success: true,
       stats: {
@@ -1438,10 +1438,10 @@ router.get("/video-consultations/recent", authDoctor, async (req, res) => {
   try {
     const doctorId = req.doctor.id;
     const limit = parseInt(req.query.limit) || 10;
-    
+
     const consultations = await Appointment.findAll({
-      where: { 
-        doctorId, 
+      where: {
+        doctorId,
         type: { [Op.in]: ['video', 'emergency_triage', 'telemedicine'] }
       },
       include: [
@@ -1454,16 +1454,16 @@ router.get("/video-consultations/recent", authDoctor, async (req, res) => {
       order: [['createdAt', 'DESC']],
       limit
     });
-    
+
     res.json({
       success: true,
       consultations: consultations.map(c => {
-        const patientName = c.patient 
-          ? `${c.patient.firstName} ${c.patient.lastName}` 
+        const patientName = c.patient
+          ? `${c.patient.firstName} ${c.patient.lastName}`
           : 'Unknown Patient';
         const appointmentDate = c.appointmentDate || c.createdAt;
         const formattedDate = appointmentDate.toLocaleDateString('en-IN', { month: 'short', day: 'numeric', year: 'numeric' });
-        
+
         return {
           id: c.id,
           patientId: c.patientId,
@@ -1492,10 +1492,10 @@ router.get("/video-consultations/upcoming", authDoctor, async (req, res) => {
   try {
     const doctorId = req.doctor.id;
     const now = new Date();
-    
+
     const consultations = await Appointment.findAll({
-      where: { 
-        doctorId, 
+      where: {
+        doctorId,
         type: { [Op.in]: ['video', 'emergency_triage', 'telemedicine'] },
         status: { [Op.in]: ['pending', 'confirmed', 'scheduled'] },
         [Op.or]: [
@@ -1513,15 +1513,15 @@ router.get("/video-consultations/upcoming", authDoctor, async (req, res) => {
       order: [['appointmentDate', 'ASC'], ['createdAt', 'ASC']],
       limit: 20
     });
-    
+
     res.json({
       success: true,
       consultations: consultations.map(c => {
-        const patientName = c.patient 
-          ? `${c.patient.firstName} ${c.patient.lastName}` 
+        const patientName = c.patient
+          ? `${c.patient.firstName} ${c.patient.lastName}`
           : 'Unknown Patient';
         const appointmentTime = c.appointmentDate ? c.appointmentDate.toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit' }) : 'Not scheduled';
-        
+
         return {
           id: c.id,
           patientId: c.patientId,
@@ -1587,7 +1587,7 @@ router.get("/triage/cases", authDoctor, async (req, res) => {
     // Transform to triage case format
     const triageCases = triageAppointments.map(apt => {
       const notesJson = apt.notes_json ? (typeof apt.notes_json === 'string' ? JSON.parse(apt.notes_json) : apt.notes_json) : {};
-      
+
       // Calculate age from patientDetails if available
       let age = 0;
       if (apt.patientDetails && apt.patientDetails.dateOfBirth) {
@@ -1677,7 +1677,7 @@ router.get("/triage/stats", authDoctor, async (req, res) => {
         const notes = apt.notes_json ? (typeof apt.notes_json === 'string' ? JSON.parse(apt.notes_json) : apt.notes_json) : {};
         if (notes.urgencyLevel === 'IMMEDIATE') immediate++;
         if (notes.urgencyLevel === 'URGENT') urgent++;
-      } catch (e) {}
+      } catch (e) { }
     });
 
     res.json({
@@ -1899,13 +1899,13 @@ router.post('/appointments/:appointmentId/initiate-call', authDoctor, async (req
     const appointment = await Appointment.findOne({
       where: { id: appointmentId, doctorId },
       include: [
-        { 
-          model: User, 
+        {
+          model: User,
           as: 'patient',
           attributes: ['id', 'firstName', 'lastName', 'email', 'phoneNumber', 'fcmToken']
         },
-        { 
-          model: Doctor, 
+        {
+          model: Doctor,
           as: 'doctor',
           attributes: ['id', 'firstName', 'lastName', 'prefix', 'specialization']
         }
@@ -1913,9 +1913,9 @@ router.post('/appointments/:appointmentId/initiate-call', authDoctor, async (req
     });
 
     if (!appointment) {
-      return res.status(404).json({ 
-        success: false, 
-        message: 'Appointment not found or you are not authorized' 
+      return res.status(404).json({
+        success: false,
+        message: 'Appointment not found or you are not authorized'
       });
     }
 
@@ -1956,7 +1956,7 @@ router.post('/appointments/:appointmentId/initiate-call', authDoctor, async (req
     });
 
     // Prepare doctor name
-    const doctorName = appointment.doctor 
+    const doctorName = appointment.doctor
       ? `${appointment.doctor.prefix || 'Dr.'} ${appointment.doctor.firstName} ${appointment.doctor.lastName}`
       : appointment.doctorName || 'Your Doctor';
 
@@ -1967,7 +1967,7 @@ router.post('/appointments/:appointmentId/initiate-call', authDoctor, async (req
     // Send notification to patient
     try {
       const notificationService = (await import('../services/notification.service.js')).default;
-      
+
       await notificationService.send({
         userId: appointment.userId,
         userType: 'patient',
@@ -1979,8 +1979,8 @@ router.post('/appointments/:appointmentId/initiate-call', authDoctor, async (req
           appointmentId: appointment.id,
           meetingLink
         },
-        data: { 
-          appointmentId: appointment.id, 
+        data: {
+          appointmentId: appointment.id,
           meetingLink,
           action: 'join_call',
           callInitiatedAt: new Date().toISOString()
@@ -2056,7 +2056,7 @@ router.post("/triage/accept-call", authDoctor, async (req, res) => {
     const doctorId = req.doctor.id;
 
     const appointment = await Appointment.findByPk(appointmentId);
-    
+
     if (!appointment) {
       return res.status(404).json({ success: false, message: 'Appointment not found' });
     }
@@ -2076,7 +2076,7 @@ router.post("/triage/accept-call", authDoctor, async (req, res) => {
       roomId: appointment.meetingId,
       timestamp: new Date().toISOString()
     };
-    
+
     const notificationResult = await emitCallAccepted(appointment.userId, acceptData);
     console.log(`📲 Hybrid notification sent - Socket: ${notificationResult.socketSent}, FCM: ${notificationResult.fcmSent}`);
 
@@ -2106,7 +2106,7 @@ router.post("/triage/reject-call", authDoctor, async (req, res) => {
     const doctorId = req.doctor.id;
 
     const appointment = await Appointment.findByPk(appointmentId);
-    
+
     if (!appointment) {
       return res.status(404).json({ success: false, message: 'Appointment not found' });
     }
@@ -2116,7 +2116,7 @@ router.post("/triage/reject-call", authDoctor, async (req, res) => {
     }
 
     // Update appointment status
-    await appointment.update({ 
+    await appointment.update({
       status: 'cancelled',
       notes: `Doctor declined: ${reason || 'No reason provided'}`
     });
@@ -2128,7 +2128,7 @@ router.post("/triage/reject-call", authDoctor, async (req, res) => {
       reason: reason || 'Doctor is unavailable',
       timestamp: new Date().toISOString()
     };
-    
+
     const notificationResult = await emitCallRejected(appointment.userId, rejectData);
     console.log(`📲 Hybrid notification sent - Socket: ${notificationResult.socketSent}, FCM: ${notificationResult.fcmSent}`);
 
@@ -2288,6 +2288,266 @@ router.post('/messages/reply', authDoctor, async (req, res) => {
     res.status(500).json({
       success: false,
       message: 'Failed to send reply',
+      error: error.message
+    });
+  }
+});
+
+// ============================================
+// BILLING & INVOICE ROUTES
+// ============================================
+
+/**
+ * @route   POST /api/doctors/appointments/:appointmentId/invoice
+ * @desc    Create invoice for an appointment
+ * @access  Private (Doctor only)
+ */
+router.post("/appointments/:appointmentId/invoice", authDoctor, async (req, res) => {
+  try {
+    const { appointmentId } = req.params;
+    const doctorId = req.doctor.id;
+    const { items, discount, notes, taxRate } = req.body;
+
+    // Verify appointment belongs to doctor
+    const appointment = await Appointment.findOne({
+      where: { id: appointmentId, doctorId },
+      include: [{ model: User, as: 'patient', attributes: ['id', 'firstName', 'lastName', 'email', 'phoneNumber'] }]
+    });
+
+    if (!appointment) {
+      return res.status(404).json({
+        success: false,
+        message: 'Appointment not found or access denied'
+      });
+    }
+
+    // Calculate totals
+    const subtotal = items.reduce((sum, item) => sum + (item.price * item.quantity), 0);
+    const discountAmount = discount || 0;
+    const taxAmount = ((subtotal - discountAmount) * (taxRate || 0)) / 100;
+    const total = subtotal - discountAmount + taxAmount;
+
+    // Generate invoice number
+    const invoiceNumber = `INV-${Date.now()}-${appointmentId}`;
+
+    // Create invoice record
+    const invoice = {
+      invoiceNumber,
+      appointmentId,
+      doctorId,
+      patientId: appointment.patientId,
+      items,
+      subtotal,
+      discount: discountAmount,
+      taxRate: taxRate || 0,
+      taxAmount,
+      total,
+      status: 'pending',
+      notes,
+      issuedDate: new Date(),
+      dueDate: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000) // 7 days from now
+    };
+
+    // Update appointment with invoice data
+    const appointmentNotes = appointment.notes || {};
+    await appointment.update({
+      notes: JSON.stringify({
+        ...appointmentNotes,
+        invoice: invoice
+      })
+    });
+
+    res.status(201).json({
+      success: true,
+      message: 'Invoice created successfully',
+      invoice: {
+        ...invoice,
+        patientName: appointment.patient ? `${appointment.patient.firstName} ${appointment.patient.lastName}` : 'Unknown',
+        doctorName: `Dr. ${req.doctor.firstName} ${req.doctor.lastName}`
+      }
+    });
+
+  } catch (error) {
+    console.error('Create invoice error:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Failed to create invoice',
+      error: error.message
+    });
+  }
+});
+
+/**
+ * @route   GET /api/doctors/invoices
+ * @desc    Get all invoices created by doctor
+ * @access  Private (Doctor only)
+ */
+router.get("/invoices", authDoctor, async (req, res) => {
+  try {
+    const doctorId = req.doctor.id;
+    const { status, limit = 50 } = req.query;
+
+    const whereClause = { doctorId };
+
+    // Get appointments with invoices
+    const appointments = await Appointment.findAll({
+      where: whereClause,
+      include: [{ model: User, as: 'patient', attributes: ['id', 'firstName', 'lastName', 'email'] }],
+      order: [['createdAt', 'DESC']],
+      limit: parseInt(limit)
+    });
+
+    // Extract invoices from appointment notes
+    const invoices = [];
+    for (const apt of appointments) {
+      try {
+        const notes = apt.notes ? (typeof apt.notes === 'string' ? JSON.parse(apt.notes) : apt.notes) : {};
+        if (notes.invoice) {
+          const inv = notes.invoice;
+          if (!status || inv.status === status) {
+            invoices.push({
+              ...inv,
+              appointmentDate: apt.appointmentDate,
+              patientName: apt.patient ? `${apt.patient.firstName} ${apt.patient.lastName}` : 'Unknown'
+            });
+          }
+        }
+      } catch (e) {
+        console.warn(`Failed to parse notes for appointment ${apt.id}`);
+      }
+    }
+
+    res.json({
+      success: true,
+      count: invoices.length,
+      invoices
+    });
+
+  } catch (error) {
+    console.error('Get invoices error:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Failed to fetch invoices',
+      error: error.message
+    });
+  }
+});
+
+/**
+ * @route   GET /api/doctors/invoices/:invoiceNumber
+ * @desc    Get specific invoice details
+ * @access  Private (Doctor only)
+ */
+router.get("/invoices/:invoiceNumber", authDoctor, async (req, res) => {
+  try {
+    const { invoiceNumber } = req.params;
+    const doctorId = req.doctor.id;
+
+    // Find appointment with this invoice
+    const appointments = await Appointment.findAll({
+      where: { doctorId },
+      include: [{ model: User, as: 'patient' }]
+    });
+
+    let foundInvoice = null;
+    let foundAppointment = null;
+
+    for (const apt of appointments) {
+      try {
+        const notes = apt.notes ? (typeof apt.notes === 'string' ? JSON.parse(apt.notes) : apt.notes) : {};
+        if (notes.invoice && notes.invoice.invoiceNumber === invoiceNumber) {
+          foundInvoice = notes.invoice;
+          foundAppointment = apt;
+          break;
+        }
+      } catch (e) { }
+    }
+
+    if (!foundInvoice) {
+      return res.status(404).json({
+        success: false,
+        message: 'Invoice not found'
+      });
+    }
+
+    res.json({
+      success: true,
+      invoice: {
+        ...foundInvoice,
+        appointmentDate: foundAppointment.appointmentDate,
+        patientName: foundAppointment.patient ? `${foundAppointment.patient.firstName} ${foundAppointment.patient.lastName}` : 'Unknown',
+        patientEmail: foundAppointment.patient?.email,
+        patientPhone: foundAppointment.patient?.phoneNumber,
+        doctorName: `Dr. ${req.doctor.firstName} ${req.doctor.lastName}`
+      }
+    });
+
+  } catch (error) {
+    console.error('Get invoice error:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Failed to fetch invoice',
+      error: error.message
+    });
+  }
+});
+
+/**
+ * @route   PUT /api/doctors/invoices/:invoiceNumber/status
+ * @desc    Update invoice status (mark as paid, cancelled, etc.)
+ * @access  Private (Doctor only)
+ */
+router.put("/invoices/:invoiceNumber/status", authDoctor, async (req, res) => {
+  try {
+    const { invoiceNumber } = req.params;
+    const { status } = req.body;
+    const doctorId = req.doctor.id;
+
+    if (!['pending', 'paid', 'cancelled', 'overdue'].includes(status)) {
+      return res.status(400).json({
+        success: false,
+        message: 'Invalid status. Must be: pending, paid, cancelled, or overdue'
+      });
+    }
+
+    // Find and update invoice
+    const appointments = await Appointment.findAll({ where: { doctorId } });
+
+    let updated = false;
+    for (const apt of appointments) {
+      try {
+        const notes = apt.notes ? (typeof apt.notes === 'string' ? JSON.parse(apt.notes) : apt.notes) : {};
+        if (notes.invoice && notes.invoice.invoiceNumber === invoiceNumber) {
+          notes.invoice.status = status;
+          if (status === 'paid') {
+            notes.invoice.paidDate = new Date();
+          }
+          await apt.update({ notes: JSON.stringify(notes) });
+          updated = true;
+          break;
+        }
+      } catch (e) { }
+    }
+
+    if (!updated) {
+      return res.status(404).json({
+        success: false,
+        message: 'Invoice not found'
+      });
+    }
+
+    res.json({
+      success: true,
+      message: 'Invoice status updated successfully',
+      invoiceNumber,
+      status
+    });
+
+  } catch (error) {
+    console.error('Update invoice status error:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Failed to update invoice status',
       error: error.message
     });
   }

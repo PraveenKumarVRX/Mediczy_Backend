@@ -56,7 +56,7 @@ import { JWT_CONFIG } from '../config/auth.config.js';
 //     // Validate password
 //     try {
 //       const isPasswordValid = await doctor.comparePassword(password);
-      
+
 //       if (!isPasswordValid) {
 //         return res.status(401).json({ message: "Invalid email or password" });
 //       }
@@ -119,7 +119,7 @@ import { JWT_CONFIG } from '../config/auth.config.js';
 // export const updateDoctorStatus = async (req, res) => {
 //   try {
 //     console.log('hello from asy');
-    
+
 //     // Extract token from headers
 //     const token = req.headers.authorization?.split(" ")[1];
 
@@ -326,7 +326,7 @@ export async function signInDoctor(req, res) {
     console.log('💚 [signInDoctor] About to query database...');
     let doctor;
     try {
-      doctor = await doctorModel.findOne({ where: { email } });
+      doctor = await doctorModel.findOne({ where: { email: email.toLowerCase() } });
       console.log('💚 [signInDoctor] Query completed');
     } catch (queryError) {
       console.error('❌ [signInDoctor] Database query error:', queryError);
@@ -334,7 +334,7 @@ export async function signInDoctor(req, res) {
       console.error('❌ [signInDoctor] Query error stack:', queryError.stack);
       throw queryError; // Re-throw to outer catch
     }
-    
+
     console.log('💚 [signInDoctor] Doctor found:', !!doctor);
     console.log('💚 [signInDoctor] Doctor object keys:', doctor ? Object.keys(doctor.dataValues || doctor) : 'null');
 
@@ -348,7 +348,7 @@ export async function signInDoctor(req, res) {
     try {
       const isPasswordValid = await doctor.comparePassword(password);
       console.log('💚 [signInDoctor] Password valid:', isPasswordValid);
-      
+
       if (!isPasswordValid) {
         return res.status(401).json({ message: "Invalid email or password" });
       }
@@ -415,7 +415,7 @@ export const getDoctorProfile = async (req, res) => {
 export const updateDoctorStatus = async (req, res) => {
   try {
     console.log('hello from asy');
-    
+
     // Extract token from headers
     const token = req.headers.authorization?.split(" ")[1];
 
@@ -502,7 +502,7 @@ export const getAvailableDoctors = async (req, res) => {
       attributes: [
         'id',
         'firstName',
-        'lastName', 
+        'lastName',
         'specialization',
         'experience',
         'phoneNumber',
@@ -528,6 +528,6 @@ export const getAvailableDoctors = async (req, res) => {
       success: false,
       message: "Error fetching doctors",
       error: error.message,
-    }); 
+    });
   }
 };
