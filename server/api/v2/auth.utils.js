@@ -1,10 +1,10 @@
 /**
-import { JWT_CONFIG } from '../config/auth.config.js';
  * Unified Authentication Utilities for API v2
  * JWT token generation and verification helpers
  */
 
 import jwt from 'jsonwebtoken';
+import { JWT_CONFIG } from '../../config/auth.config.js';
 
 const JWT_SECRET = JWT_CONFIG.SECRET || 'mediczy-secret-key-change-in-production';
 
@@ -23,7 +23,7 @@ const TOKEN_CONFIG = {
  */
 export const generateToken = (payload, role = 'patient') => {
   const config = TOKEN_CONFIG[role] || TOKEN_CONFIG.patient;
-  
+
   return jwt.sign(
     {
       ...payload,
@@ -59,7 +59,7 @@ export const verifyToken = (token) => {
 export const refreshAccessToken = async (refreshToken) => {
   try {
     const decoded = jwt.verify(refreshToken, JWT_SECRET);
-    
+
     if (decoded.type !== 'refresh') {
       throw new Error('Invalid refresh token');
     }
@@ -189,13 +189,13 @@ export const authorize = (requiredPermissions, options = {}) => {
  */
 const normalizePermissions = (permissions) => {
   if (Array.isArray(permissions)) return permissions;
-  
+
   if (typeof permissions === 'object' && permissions !== null) {
     return Object.entries(permissions)
       .filter(([_, value]) => value === true)
       .map(([key]) => key);
   }
-  
+
   if (typeof permissions === 'string') {
     try {
       return JSON.parse(permissions);
@@ -203,7 +203,7 @@ const normalizePermissions = (permissions) => {
       return permissions.split(',').map(p => p.trim());
     }
   }
-  
+
   return [];
 };
 
