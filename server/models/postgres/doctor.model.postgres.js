@@ -1,5 +1,4 @@
 /**
-import { JWT_CONFIG } from '../../config/auth.config.js';
  * PostgreSQL Doctor Model
  * Enhanced with PostgreSQL-specific features
  */
@@ -8,6 +7,7 @@ import { DataTypes } from 'sequelize';
 import { postgresSequelize as sequelize } from '../../db/postgres-sequelize.js';
 import bcrypt from 'bcrypt';
 import jwt from 'jsonwebtoken';
+import { JWT_CONFIG } from '../../config/auth.config.js';
 import { generateUniqueId } from '../../utils/uniqueIdGenerator.js';
 
 const Doctor = sequelize.define('Doctor', {
@@ -16,7 +16,7 @@ const Doctor = sequelize.define('Doctor', {
     primaryKey: true,
     autoIncrement: true
   },
-  
+
   // UUID for public-facing identifier
   uid: {
     type: DataTypes.UUID,
@@ -25,7 +25,7 @@ const Doctor = sequelize.define('Doctor', {
     allowNull: false,
     comment: 'Public-facing unique identifier (UUID)'
   },
-  
+
   // Unique alphanumeric ID (e.g., D4K7NP)
   unique_id: {
     type: DataTypes.STRING(6),
@@ -33,7 +33,7 @@ const Doctor = sequelize.define('Doctor', {
     allowNull: true,
     comment: 'Public-facing unique ID with D prefix'
   },
-  
+
   // Multi-Tenant Fields
   organization_id: {
     type: DataTypes.INTEGER,
@@ -45,7 +45,7 @@ const Doctor = sequelize.define('Doctor', {
     allowNull: true,
     defaultValue: 'individual'
   },
-  
+
   // Basic Information
   prefix: {
     type: DataTypes.ENUM('Dr', 'Mr', 'Ms', 'Mrs', 'Prof'),
@@ -80,32 +80,32 @@ const Doctor = sequelize.define('Doctor', {
     type: DataTypes.STRING(500),
     allowNull: true
   },
-  
+
   // Professional Information
   specialization: {
     type: DataTypes.STRING(100),
     allowNull: false
   },
-  
+
   // Specializations as Array (PostgreSQL native)
   specializations: {
     type: DataTypes.ARRAY(DataTypes.STRING),
     defaultValue: [],
     comment: 'Multiple specializations supported'
   },
-  
+
   qualification: {
     type: DataTypes.TEXT,
     allowNull: true
   },
-  
+
   // Qualifications as Array
   qualifications: {
     type: DataTypes.ARRAY(DataTypes.STRING),
     defaultValue: [],
     comment: 'Array of degrees/certifications (MBBS, MD, etc.)'
   },
-  
+
   experience: {
     type: DataTypes.INTEGER,
     allowNull: true,
@@ -116,39 +116,39 @@ const Doctor = sequelize.define('Doctor', {
     allowNull: true,
     unique: true
   },
-  
+
   // Clinic/Practice Information
   clinicAddress: {
     type: DataTypes.TEXT,
     allowNull: true
   },
-  
+
   // Clinic Address as JSONB
   clinicAddress_json: {
     type: DataTypes.JSONB,
     defaultValue: {},
     comment: 'Full clinic address in structured format'
   },
-  
+
   consultationFees: {
     type: DataTypes.DECIMAL(10, 2),
     allowNull: true
   },
-  
+
   // Fee Structure as JSONB
   feeStructure: {
     type: DataTypes.JSONB,
     defaultValue: {},
     comment: 'Detailed fee structure { online: 500, inPerson: 800, followUp: 300 }'
   },
-  
+
   // Availability
   availableSlots: {
     type: DataTypes.TEXT,
     allowNull: true,
     comment: 'Legacy text field for compatibility'
   },
-  
+
   // Weekly Schedule as JSONB (PostgreSQL structured data)
   weeklySchedule: {
     type: DataTypes.JSONB,
@@ -190,7 +190,7 @@ const Doctor = sequelize.define('Doctor', {
       }
     }
   },
-  
+
   // Slot Duration in minutes (15, 30, 45, or 60)
   slotDuration: {
     type: DataTypes.INTEGER,
@@ -200,7 +200,7 @@ const Doctor = sequelize.define('Doctor', {
     },
     comment: 'Duration of each appointment slot in minutes'
   },
-  
+
   // Weekly Availability as JSONB (new format for appointment booking)
   weeklyAvailability: {
     type: DataTypes.JSONB,
@@ -215,7 +215,7 @@ const Doctor = sequelize.define('Doctor', {
     },
     comment: 'Weekly availability schedule with time slots for appointment booking'
   },
-  
+
   // Consultation Types and Fees as JSONB
   consultationTypes: {
     type: DataTypes.JSONB,
@@ -226,27 +226,27 @@ const Doctor = sequelize.define('Doctor', {
     },
     comment: 'Consultation types offered and their respective fees'
   },
-  
+
   // Practice Locations as JSONB Array
   practiceLocations: {
     type: DataTypes.JSONB,
     defaultValue: [],
     comment: 'Array of practice location objects with id, name, address, consultationFee'
   },
-  
+
   // Reviews and Ratings
   reviews: {
     type: DataTypes.TEXT,
     allowNull: true
   },
-  
+
   // Reviews as JSONB Array
   reviews_json: {
     type: DataTypes.JSONB,
     defaultValue: [],
     comment: 'Array of review objects with rating, comment, patient, date'
   },
-  
+
   rating: {
     type: DataTypes.DECIMAL(3, 2),
     defaultValue: 0.0,
@@ -259,21 +259,21 @@ const Doctor = sequelize.define('Doctor', {
     type: DataTypes.INTEGER,
     defaultValue: 0
   },
-  
+
   // Services Offered as Array
   servicesOffered: {
     type: DataTypes.ARRAY(DataTypes.STRING),
     defaultValue: [],
     comment: 'Services like consultation, surgery, diagnostics, etc.'
   },
-  
+
   // Languages Spoken as Array
   languages: {
     type: DataTypes.ARRAY(DataTypes.STRING),
     defaultValue: ['English'],
     comment: 'Languages doctor can communicate in'
   },
-  
+
   // Statistics
   totalAppointments: {
     type: DataTypes.INTEGER,
@@ -287,14 +287,14 @@ const Doctor = sequelize.define('Doctor', {
     type: DataTypes.INTEGER,
     defaultValue: 0
   },
-  
+
   // Professional Settings as JSONB
   professionalSettings: {
     type: DataTypes.JSONB,
     defaultValue: {},
     comment: 'Settings like appointment duration, break times, etc.'
   },
-  
+
   // Verification
   isVerified: {
     type: DataTypes.BOOLEAN,
@@ -312,7 +312,7 @@ const Doctor = sequelize.define('Doctor', {
     type: DataTypes.BOOLEAN,
     defaultValue: false
   },
-  
+
   // Password Reset Fields
   passwordResetToken: {
     type: DataTypes.STRING(255),
@@ -322,28 +322,28 @@ const Doctor = sequelize.define('Doctor', {
     type: DataTypes.DATE,
     allowNull: true
   },
-  
+
   // Documents as JSONB
   documents: {
     type: DataTypes.JSONB,
     defaultValue: {},
     comment: 'Registration certificate, degrees, etc.'
   },
-  
+
   // Document Templates as JSONB Array
   documentTemplates: {
     type: DataTypes.JSONB,
     defaultValue: [],
     comment: 'Array of document templates (prescriptions, referrals, certificates)'
   },
-  
+
   // Template Settings as JSONB
   templateSettings: {
     type: DataTypes.JSONB,
     defaultValue: {},
     comment: 'Template settings including logo, seal, signature, clinic info'
   },
-  
+
   // Status
   status: {
     type: DataTypes.ENUM('active', 'inactive', 'suspended', 'pending'),
@@ -353,7 +353,7 @@ const Doctor = sequelize.define('Doctor', {
     type: DataTypes.BOOLEAN,
     defaultValue: false
   },
-  
+
   // Activity
   lastLoginAt: {
     type: DataTypes.DATE,
@@ -363,14 +363,14 @@ const Doctor = sequelize.define('Doctor', {
     type: DataTypes.DATE,
     allowNull: true
   },
-  
+
   // Metadata as JSONB
   metadata: {
     type: DataTypes.JSONB,
     defaultValue: {},
     comment: 'Additional flexible metadata'
   },
-  
+
   // === SERVICE ENROLLMENT ===
   // Second Opinion Service
   offersSecondOpinion: {
@@ -385,7 +385,7 @@ const Doctor = sequelize.define('Doctor', {
     field: 'second_opinion_fee',
     comment: 'Fee for second opinion consultation'
   },
-  
+
   // Home Visit Service (Homecare)
   offersHomeVisits: {
     type: DataTypes.BOOLEAN,
@@ -405,7 +405,7 @@ const Doctor = sequelize.define('Doctor', {
     field: 'home_visit_radius_km',
     comment: 'Maximum distance doctor will travel for home visits (in km)'
   },
-  
+
   // Emergency Services
   acceptsEmergencyCalls: {
     type: DataTypes.BOOLEAN,
@@ -419,13 +419,13 @@ const Doctor = sequelize.define('Doctor', {
     field: 'emergency_available_until',
     comment: 'Timestamp until which doctor is available for emergency calls'
   },
-  
+
   // Full-Text Search
   search_vector: {
     type: DataTypes.TSVECTOR,
     allowNull: true
   },
-  
+
   // Timestamps
   createdAt: {
     type: DataTypes.DATE,
@@ -438,7 +438,7 @@ const Doctor = sequelize.define('Doctor', {
 }, {
   tableName: 'doctors',
   timestamps: true,
-  
+
   indexes: [
     { fields: ['email'], unique: true },
     { fields: ['registrationNumber'], unique: true },
@@ -447,7 +447,7 @@ const Doctor = sequelize.define('Doctor', {
     { fields: ['specialization'] },
     { fields: ['status'] },
     { fields: ['isVerified'] },
-    
+
     // JSONB indexes
     {
       name: 'idx_doctors_weekly_schedule',
@@ -464,7 +464,7 @@ const Doctor = sequelize.define('Doctor', {
       using: 'GIN',
       fields: ['metadata']
     },
-    
+
     // Array indexes
     {
       name: 'idx_doctors_specializations',
@@ -476,33 +476,33 @@ const Doctor = sequelize.define('Doctor', {
       using: 'GIN',
       fields: ['languages']
     },
-    
+
     // Full-text search
     {
       name: 'idx_doctors_search',
       using: 'GIN',
       fields: ['search_vector']
     },
-    
+
     // Composite indexes
     {
       name: 'idx_doctors_org_status',
       fields: ['organization_id', 'status']
     }
   ],
-  
+
   hooks: {
     beforeCreate: async (doctor) => {
       // Generate unique ID if not set
       if (!doctor.unique_id) {
         doctor.unique_id = generateUniqueId('doctor');
       }
-      
+
       if (doctor.password) {
         doctor.password = await bcrypt.hash(doctor.password, 10);
       }
     },
-    
+
     beforeUpdate: async (doctor) => {
       if (doctor.changed('password') && doctor.password) {
         doctor.password = await bcrypt.hash(doctor.password, 10);
@@ -512,21 +512,21 @@ const Doctor = sequelize.define('Doctor', {
 });
 
 // Instance Methods
-Doctor.prototype.comparePassword = async function(candidatePassword) {
+Doctor.prototype.comparePassword = async function (candidatePassword) {
   return await bcrypt.compare(candidatePassword, this.password);
 };
 
 // Generate authentication token with userId (doctorId) and userType for ring-fencing
-Doctor.prototype.generateAuthToken = function() {
+Doctor.prototype.generateAuthToken = function () {
   if (!JWT_CONFIG.SECRET) {
     throw new Error('FATAL: JWT_SECRET not configured');
   }
-  
+
   return jwt.sign(
-    { 
+    {
       id: this.id,
       doctorId: this.id,  // Explicit doctorId for ring-fencing
-      email: this.email, 
+      email: this.email,
       role: 'doctor',
       userType: 'doctor',  // userType for ring-fencing middleware
       organization_id: this.organization_id
@@ -537,7 +537,7 @@ Doctor.prototype.generateAuthToken = function() {
 };
 
 // Static Methods
-Doctor.findBySpecialization = async function(specialization) {
+Doctor.findBySpecialization = async function (specialization) {
   return await Doctor.findAll({
     where: sequelize.literal(
       `'${specialization}' = ANY(specializations)`
@@ -545,7 +545,7 @@ Doctor.findBySpecialization = async function(specialization) {
   });
 };
 
-Doctor.findBySearch = async function(query) {
+Doctor.findBySearch = async function (query) {
   return await Doctor.findAll({
     where: sequelize.literal(
       `search_vector @@ plainto_tsquery('english', '${query}')`
