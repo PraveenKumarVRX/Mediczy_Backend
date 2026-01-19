@@ -298,6 +298,8 @@ const PUBLIC_ENDPOINTS = [
   '/api/status',
   '/metrics',
   '/api/sib/health', // SIB Control Layer health check (public monitoring)
+  '/api/auth/login', // Generic auth login endpoint
+  '/api/auth/register', // Generic auth registration endpoint
   '/api/users/login',
   '/api/users/register',
   '/api/doctors/login',

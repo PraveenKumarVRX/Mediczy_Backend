@@ -5,10 +5,11 @@ import DoctorAvailability from '../models/doctorAvailability.model.intelligent.j
 import Doctor from '../models/doctor.model.intelligent.js';
 import User from '../models/user.model.intelligent.js';
 import { Op } from 'sequelize';
-import { 
-  sendAppointmentConfirmation, 
+import crypto from 'crypto';
+import {
+  sendAppointmentConfirmation,
   scheduleAppointmentReminder,
-  publishAppointmentBooked 
+  publishAppointmentBooked
 } from '../tasks/index.js';
 import intelligentDb from '../utils/intelligentDbClient.js';
 import n8nService from '../services/n8n.service.js';
@@ -79,19 +80,19 @@ const mapConsultationTypeForDb = (requestedType) => {
  */
 const resolveDoctorId = async (doctorIdOrUniqueId) => {
   if (!doctorIdOrUniqueId) return null;
-  
+
   const idString = String(doctorIdOrUniqueId).trim();
-  
+
   // Check if it's a numeric ID
   if (/^\d+$/.test(idString)) {
     return await Doctor.findByPk(parseInt(idString, 10));
   }
-  
+
   // Check if it's an alphanumeric unique_id (starts with D)
   if (/^D[A-Z0-9]{5}$/i.test(idString)) {
     return await Doctor.findOne({ where: { unique_id: idString.toUpperCase() } });
   }
-  
+
   // Try both as fallback
   const doctor = await Doctor.findOne({
     where: {
@@ -101,7 +102,7 @@ const resolveDoctorId = async (doctorIdOrUniqueId) => {
       ]
     }
   });
-  
+
   return doctor;
 };
 
@@ -149,12 +150,12 @@ export const createAppointment = async (req, res) => {
     // Fetch doctor details (supports both numeric ID and alphanumeric unique_id)
     const doctor = await resolveDoctorId(doctorId);
     if (!doctor) {
-      return res.status(404).json({ 
+      return res.status(404).json({
         message: 'Doctor not found',
         hint: 'Please provide a valid doctor ID (numeric like 2 or alphanumeric like D2C193)'
       });
     }
-    
+
     // Use the resolved internal ID for database operations
     const resolvedDoctorId = doctor.id;
 
@@ -171,7 +172,7 @@ export const createAppointment = async (req, res) => {
     });
 
     if (doctorConflict) {
-      return res.status(409).json({ 
+      return res.status(409).json({
         success: false,
         message: `Dr. ${doctor.firstName} ${doctor.lastName} (ID: ${doctor.unique_id || doctor.id}) is not available at the selected time. The time slot is already booked by another patient. Please select a different time slot.`,
         conflict: 'doctor_busy',
@@ -196,11 +197,11 @@ export const createAppointment = async (req, res) => {
       const conflictDoctor = await Doctor.findByPk(patientConflict.doctorId, {
         attributes: ['firstName', 'lastName', 'specialization']
       });
-      const conflictDoctorName = conflictDoctor 
+      const conflictDoctorName = conflictDoctor
         ? `Dr. ${conflictDoctor.firstName} ${conflictDoctor.lastName} (${conflictDoctor.specialization})`
         : 'another doctor';
 
-      return res.status(409).json({ 
+      return res.status(409).json({
         success: false,
         message: `You already have an appointment scheduled at ${appointmentTime} on ${appointmentDate} with ${conflictDoctorName}. You cannot book multiple appointments at the same time. Please select a different time slot or cancel your existing appointment first.`,
         conflict: 'patient_busy',
@@ -238,15 +239,25 @@ export const createAppointment = async (req, res) => {
 
     // Auto-assign organization_id from doctor's hospital/organization
     const organizationId = doctor.organization_id || doctor.hospitalId || req.userTenantId || null;
-    
+
     console.log('🏥 Auto-assigning organization_id:', {
       doctorId: resolvedDoctorId,
       doctorName: doctor.firstName + ' ' + doctor.lastName,
       organizationId,
-      source: doctor.organization_id ? 'doctor.organization_id' : 
-              doctor.hospitalId ? 'doctor.hospitalId' : 
-              req.userTenantId ? 'tenant' : 'none'
+      source: doctor.organization_id ? 'doctor.organization_id' :
+        doctor.hospitalId ? 'doctor.hospitalId' :
+          req.userTenantId ? 'tenant' : 'none'
     });
+
+    // Generate meeting link for video/audio/telemedicine consultations
+    let meetingId = null;
+    let meetingLink = null;
+
+    if (['video', 'audio', 'telemedicine'].includes(requestedConsultationType)) {
+      meetingId = `MEDCALL-${Date.now()}-${crypto.randomBytes(4).toString('hex').toUpperCase()}`;
+      meetingLink = `${process.env.MIROTALK_URL || 'https://video.mediczy.com'}/join/${meetingId}`;
+      console.log('📹 Generated video meeting link:', { meetingId, meetingLink, type: requestedConsultationType });
+    }
 
     // Create appointment
     const appointment = await Appointment.create({
@@ -267,6 +278,8 @@ export const createAppointment = async (req, res) => {
       paymentStatus: 'pending',
       organization_id: organizationId,
       organization_type: organizationId ? 'hospital' : null,
+      meetingId,
+      meetingLink,
       metadata: {
         ...(req.userTenantId ? { organizationId: req.userTenantId } : {}),
         requestedConsultationType: requestedConsultationType || null,
@@ -275,10 +288,10 @@ export const createAppointment = async (req, res) => {
           requestedConsultationType === 'audio'
             ? 'phone'
             : requestedConsultationType === 'chat'
-            ? 'chat'
-            : dbConsultationType === 'in-person'
-            ? 'in-person'
-            : 'video'
+              ? 'chat'
+              : dbConsultationType === 'in-person'
+                ? 'in-person'
+                : 'video'
       }
     });
 
@@ -338,7 +351,7 @@ export const createAppointment = async (req, res) => {
     // Send comprehensive notification to doctor (NEW - Multi-channel)
     try {
       console.log('📧 Sending appointment notification to doctor...');
-      
+
       // Prepare appointment data for iCal generation
       const appointmentData = {
         id: appointment.id,
@@ -358,7 +371,7 @@ export const createAppointment = async (req, res) => {
         location: appointment.location,
         meetingLink: appointment.meetingLink
       };
-      
+
       await notificationService.notifyAppointmentRequest(appointment, appointmentData);
       console.log('✅ Doctor notification sent successfully');
     } catch (notificationError) {
@@ -368,7 +381,7 @@ export const createAppointment = async (req, res) => {
     // Send confirmation notification to patient
     try {
       console.log('📧 Sending appointment confirmation to patient...');
-      
+
       // Prepare appointment data for iCal generation
       const appointmentData = {
         id: appointment.id,
@@ -388,7 +401,7 @@ export const createAppointment = async (req, res) => {
         location: appointment.location,
         meetingLink: appointment.meetingLink
       };
-      
+
       await notificationService.send({
         userId: appointment.userId,
         userType: 'patient',
@@ -402,7 +415,7 @@ export const createAppointment = async (req, res) => {
           consultationType: consultationType,
           paymentStatus: 'Pending'
         },
-        data: { 
+        data: {
           appointmentId: appointment.id,
           status: 'scheduled',
           doctorId: appointment.doctorId
@@ -464,10 +477,10 @@ export const createAppointment = async (req, res) => {
     });
   } catch (error) {
     console.error('Create appointment error:', error);
-    return res.status(500).json({ 
+    return res.status(500).json({
       success: false,
       message: 'Failed to create appointment',
-      error: error.message 
+      error: error.message
     });
   }
 };
@@ -524,10 +537,10 @@ export const getUserAppointments = async (req, res) => {
     });
   } catch (error) {
     console.error('Get appointments error:', error);
-    return res.status(500).json({ 
+    return res.status(500).json({
       success: false,
       message: 'Failed to fetch appointments',
-      error: error.message 
+      error: error.message
     });
   }
 };
@@ -599,9 +612,9 @@ export const getDoctorAppointments = async (req, res) => {
     });
   } catch (error) {
     console.error('Get doctor appointments error:', error);
-    return res.status(500).json({ 
+    return res.status(500).json({
       message: 'Failed to fetch appointments',
-      error: error.message 
+      error: error.message
     });
   }
 };
@@ -629,9 +642,9 @@ export const getAppointmentById = async (req, res) => {
     return res.status(200).json({ appointment });
   } catch (error) {
     console.error('Get appointment error:', error);
-    return res.status(500).json({ 
+    return res.status(500).json({
       message: 'Failed to fetch appointment',
-      error: error.message 
+      error: error.message
     });
   }
 };
@@ -645,7 +658,7 @@ export const cancelAppointment = async (req, res) => {
     const { id } = req.params;
     const userId = req.user.id;
     const { reason, cancellationReason } = req.body;
-    
+
     // Use either reason or cancellationReason field
     const cancelReason = reason || cancellationReason;
 
@@ -662,15 +675,15 @@ export const cancelAppointment = async (req, res) => {
 
     // Check if appointment can be cancelled
     if (!canCancelOrReschedule(appointment, 2)) {
-      return res.status(400).json({ 
-        message: 'Appointment cannot be cancelled. Must be cancelled at least 2 hours before the scheduled time.' 
+      return res.status(400).json({
+        message: 'Appointment cannot be cancelled. Must be cancelled at least 2 hours before the scheduled time.'
       });
     }
 
     // Determine who is cancelling
     const cancelledBy = appointment.userId === userId ? 'patient' : 'doctor';
-    const defaultReason = cancelledBy === 'patient' 
-      ? 'Cancelled by patient' 
+    const defaultReason = cancelledBy === 'patient'
+      ? 'Cancelled by patient'
       : 'Cancelled by doctor';
 
     // Update appointment
@@ -687,9 +700,9 @@ export const cancelAppointment = async (req, res) => {
     });
   } catch (error) {
     console.error('Cancel appointment error:', error);
-    return res.status(500).json({ 
+    return res.status(500).json({
       message: 'Failed to cancel appointment',
-      error: error.message 
+      error: error.message
     });
   }
 };
@@ -722,8 +735,8 @@ export const rescheduleAppointment = async (req, res) => {
 
     // Check if appointment can be rescheduled
     if (!canCancelOrReschedule(appointment, 2)) {
-      return res.status(400).json({ 
-        message: 'Appointment cannot be rescheduled at this time.' 
+      return res.status(400).json({
+        message: 'Appointment cannot be rescheduled at this time.'
       });
     }
 
@@ -740,8 +753,8 @@ export const rescheduleAppointment = async (req, res) => {
     });
 
     if (existingAppointment) {
-      return res.status(409).json({ 
-        message: 'This time slot is already booked. Please select another slot.' 
+      return res.status(409).json({
+        message: 'This time slot is already booked. Please select another slot.'
       });
     }
 
@@ -758,9 +771,9 @@ export const rescheduleAppointment = async (req, res) => {
     });
   } catch (error) {
     console.error('Reschedule appointment error:', error);
-    return res.status(500).json({ 
+    return res.status(500).json({
       message: 'Failed to reschedule appointment',
-      error: error.message 
+      error: error.message
     });
   }
 };
@@ -792,7 +805,7 @@ export const completeAppointment = async (req, res) => {
     if (autoCreatePrescription !== false && ['video', 'audio', 'chat'].includes(appointment.consultationType)) {
       try {
         const { Prescription, Doctor, User } = await import('../models/index.js');
-        
+
         // Check if prescription already exists
         const existingPrescription = await Prescription.findOne({
           where: { appointmentId: parseInt(id) }
@@ -819,21 +832,21 @@ export const completeAppointment = async (req, res) => {
               patientPhone: patient.phoneNumber || patient.phone || appointment.patientPhone,
               doctorId: doctor.id,
               doctorName: `${doctor.firstName || ''} ${doctor.lastName || ''}`.trim(),
-              doctorQualifications: Array.isArray(doctor.qualifications) 
-                ? doctor.qualifications.join(', ') 
+              doctorQualifications: Array.isArray(doctor.qualifications)
+                ? doctor.qualifications.join(', ')
                 : (doctor.qualifications || doctor.qualification || 'MBBS'),
               doctorRegNo: doctor.registrationNumber || doctor.licenseNumber || 'N/A',
               specialty: doctor.specialization || 'General Medicine',
               clinicName: doctor.clinicHospitalName || doctor.clinicName || 'Mediczy Healthcare',
-              clinicAddress: appointment.consultationType === 'in-person' 
-                ? (doctor.clinicAddress || 'Clinic') 
+              clinicAddress: appointment.consultationType === 'in-person'
+                ? (doctor.clinicAddress || 'Clinic')
                 : 'Online Consultation / Telemedicine',
               clinicPhone: doctor.phone || doctor.phoneNumber,
               clinicEmail: doctor.email,
               clinicDetails: {
                 name: doctor.clinicHospitalName || doctor.clinicName || 'Mediczy Healthcare',
-                address: appointment.consultationType === 'in-person' 
-                  ? (doctor.clinicAddress || 'Clinic') 
+                address: appointment.consultationType === 'in-person'
+                  ? (doctor.clinicAddress || 'Clinic')
                   : 'Online Consultation / Telemedicine',
                 phone: doctor.phone || doctor.phoneNumber,
                 email: doctor.email,
@@ -888,9 +901,9 @@ export const completeAppointment = async (req, res) => {
     });
   } catch (error) {
     console.error('Complete appointment error:', error);
-    return res.status(500).json({ 
+    return res.status(500).json({
       message: 'Failed to complete appointment',
-      error: error.message 
+      error: error.message
     });
   }
 };
@@ -923,8 +936,8 @@ export const rateAppointment = async (req, res) => {
 
     // Check if appointment is completed
     if (appointment.status !== 'completed') {
-      return res.status(400).json({ 
-        message: 'Can only rate completed appointments' 
+      return res.status(400).json({
+        message: 'Can only rate completed appointments'
       });
     }
 
@@ -940,9 +953,9 @@ export const rateAppointment = async (req, res) => {
     });
   } catch (error) {
     console.error('Rate appointment error:', error);
-    return res.status(500).json({ 
+    return res.status(500).json({
       message: 'Failed to submit rating',
-      error: error.message 
+      error: error.message
     });
   }
 };
@@ -979,9 +992,9 @@ export const updatePaymentStatus = async (req, res) => {
     });
   } catch (error) {
     console.error('Update payment error:', error);
-    return res.status(500).json({ 
+    return res.status(500).json({
       message: 'Failed to update payment status',
-      error: error.message 
+      error: error.message
     });
   }
 };
