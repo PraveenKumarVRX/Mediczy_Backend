@@ -48,10 +48,30 @@ type TelePerItem = { spec: string; allowed: number; used: number; remaining: num
 type TelePer = { mode: 'per-spec'; items: TelePerItem[] };
 type TeleStats = TeleAll | TelePer | null;
 
+interface UpgradeOption {
+  id: number;
+  name: string;
+  description?: string;
+  tier: number;
+  tierName: string;
+  originalPrice: number;
+  proratedRefund: number;
+  amountDue: number;
+  isUpgrade: boolean;
+  features?: any;
+  benefits?: any;
+  durationMonths?: number;
+}
+
+interface AddonPlan extends MembershipPlan {
+  isSubscribed: boolean;
+}
+
 const MyPlans = () => {
   const { toast } = useToast();
   const qc = useQueryClient();
   const [subscribingId, setSubscribingId] = useState<number | null>(null);
+  const [upgradingId, setUpgradingId] = useState<number | null>(null);
   const [showUsageBanner, setShowUsageBanner] = useState(false);
 
   const { data: currentRes, isLoading: loadingCurrent } = useQuery({
@@ -80,8 +100,33 @@ const MyPlans = () => {
     },
   });
 
+  // Fetch upgrade options if user has active plan
+  const { data: upgradeRes } = useQuery({
+    queryKey: ["plans", "upgrade-options"],
+    queryFn: async () => {
+      const { data } = await api.get("/membership/upgrade-options");
+      return data as { 
+        hasActivePlan: boolean; 
+        currentPlan: any; 
+        upgradeOptions: UpgradeOption[];
+      };
+    },
+    enabled: !!currentRes?.userPlan,
+  });
+
+  // Fetch addon plans
+  const { data: addonsRes } = useQuery({
+    queryKey: ["plans", "addons"],
+    queryFn: async () => {
+      const { data } = await api.get("/membership/addons");
+      return data as { addons: AddonPlan[]; activeAddons: any[] };
+    },
+  });
+
   const userPlan = currentRes?.userPlan || null;
   const availablePlans = plansRes?.plans || [];
+  const upgradeOptions = upgradeRes?.upgradeOptions || [];
+  const addonPlans = addonsRes?.addons || [];
   const remainingMoney = usageRes?.remaining || null;
   const [lastUsageUpdate, setLastUsageUpdate] = useState<string | null>(null);
 
@@ -177,11 +222,67 @@ const MyPlans = () => {
       await Promise.all([
         qc.invalidateQueries({ queryKey: ["myPlan", "current"] }),
         qc.invalidateQueries({ queryKey: ["myPlan", "usage"] }),
+        qc.invalidateQueries({ queryKey: ["plans", "upgrade-options"] }),
+        qc.invalidateQueries({ queryKey: ["plans", "addons"] }),
       ]);
     } catch (e: any) {
       // Rollback
       qc.invalidateQueries({ queryKey: ["myPlan", "current"] });
       toast({ title: "Subscription failed", description: e?.response?.data?.message || e.message, variant: "destructive" });
+    } finally {
+      setSubscribingId(null);
+    }
+  };
+
+  // Handle plan upgrade
+  const handleUpgrade = async (planId: number, planName: string, amountDue: number) => {
+    const confirmMsg = amountDue > 0 
+      ? `Upgrade to ${planName}? You'll pay ₹${amountDue.toLocaleString('en-IN')} (prorated amount).`
+      : `Upgrade to ${planName}? No additional payment required due to prorated refund.`;
+    
+    if (!confirm(confirmMsg)) return;
+    
+    setUpgradingId(planId);
+    try {
+      const { data } = await api.post(`/membership/upgrade/${planId}`);
+      toast({ 
+        title: "Plan Upgraded Successfully!", 
+        description: `You are now on ${data.newPlan.name}. ${data.previousPlan.proratedRefund > 0 ? `Prorated refund: ₹${data.previousPlan.proratedRefund}` : ''}`
+      });
+      await Promise.all([
+        qc.invalidateQueries({ queryKey: ["myPlan", "current"] }),
+        qc.invalidateQueries({ queryKey: ["myPlan", "usage"] }),
+        qc.invalidateQueries({ queryKey: ["plans", "upgrade-options"] }),
+      ]);
+    } catch (e: any) {
+      toast({ 
+        title: "Upgrade Failed", 
+        description: e?.response?.data?.message || e.message, 
+        variant: "destructive" 
+      });
+    } finally {
+      setUpgradingId(null);
+    }
+  };
+
+  // Handle addon subscription
+  const handleSubscribeAddon = async (planId: number, planName: string) => {
+    if (!confirm(`Subscribe to ${planName} addon?`)) return;
+    
+    setSubscribingId(planId);
+    try {
+      await api.post(`/membership/subscribe/${planId}`);
+      toast({ title: `${planName} addon activated!` });
+      await Promise.all([
+        qc.invalidateQueries({ queryKey: ["plans", "addons"] }),
+        qc.invalidateQueries({ queryKey: ["myPlan", "current"] }),
+      ]);
+    } catch (e: any) {
+      toast({ 
+        title: "Subscription Failed", 
+        description: e?.response?.data?.message || e.message, 
+        variant: "destructive" 
+      });
     } finally {
       setSubscribingId(null);
     }
@@ -404,6 +505,130 @@ const MyPlans = () => {
                 </div>
               )}
             </div>
+
+            {/* Upgrade Options - Show when user has active plan */}
+            {userPlan && upgradeOptions.length > 0 && (
+              <div className="space-y-3">
+                <div className="flex items-center gap-2">
+                  <TrendingUp className="h-5 w-5 text-primary" />
+                  <h2 className="text-xl font-semibold">Upgrade Your Plan</h2>
+                </div>
+                <p className="text-sm text-muted-foreground">
+                  Upgrade to a higher tier and get prorated credit for your remaining days
+                </p>
+                <div className="grid md:grid-cols-2 lg:grid-cols-3 gap-6">
+                  {upgradeOptions.map((opt) => (
+                    <Card key={opt.id} className={`p-6 space-y-3 border-2 ${opt.isUpgrade ? 'border-primary/50 bg-primary/5' : 'border-gray-200'}`}>
+                      <div className="flex items-start justify-between">
+                        <div>
+                          <h3 className="text-lg font-semibold">{opt.name}</h3>
+                          <Badge variant={opt.isUpgrade ? "default" : "secondary"} className="mt-1">
+                            {opt.tierName} {opt.isUpgrade && '↑'}
+                          </Badge>
+                        </div>
+                        {opt.isUpgrade && <Zap className="h-5 w-5 text-amber-500" />}
+                      </div>
+                      
+                      <div className="space-y-1">
+                        <div className="text-sm text-muted-foreground line-through">
+                          Original: ₹{opt.originalPrice.toLocaleString('en-IN')}
+                        </div>
+                        <div className="text-sm text-emerald-600">
+                          Prorated credit: -₹{opt.proratedRefund.toLocaleString('en-IN')}
+                        </div>
+                        <div className="text-2xl font-bold text-primary">
+                          Pay: ₹{opt.amountDue.toLocaleString('en-IN')}
+                        </div>
+                      </div>
+                      
+                      {opt.description && (
+                        <p className="text-sm text-gray-600 line-clamp-2">{opt.description}</p>
+                      )}
+                      
+                      <Button
+                        disabled={upgradingId === opt.id}
+                        onClick={() => handleUpgrade(opt.id, opt.name, opt.amountDue)}
+                        className="w-full"
+                        variant={opt.isUpgrade ? "default" : "outline"}
+                      >
+                        {upgradingId === opt.id ? (
+                          <Loader2 className="h-4 w-4 animate-spin mr-2" />
+                        ) : (
+                          <TrendingUp className="h-4 w-4 mr-2" />
+                        )}
+                        {opt.isUpgrade ? 'Upgrade Now' : 'Switch Plan'}
+                      </Button>
+                    </Card>
+                  ))}
+                </div>
+              </div>
+            )}
+
+            {/* Addon Plans */}
+            {addonPlans.length > 0 && (
+              <div className="space-y-3">
+                <div className="flex items-center gap-2">
+                  <Zap className="h-5 w-5 text-amber-500" />
+                  <h2 className="text-xl font-semibold">Optional Add-ons</h2>
+                </div>
+                <p className="text-sm text-muted-foreground">
+                  Enhance your membership with additional benefits
+                </p>
+                <div className="grid md:grid-cols-2 lg:grid-cols-3 gap-6">
+                  {addonPlans.map((addon) => {
+                    const priceValue = addon.priceINR ?? Number(addon.price) ?? 0;
+                    return (
+                      <Card key={addon.id} className={`p-6 space-y-3 ${addon.isSubscribed ? 'border-emerald-500 bg-emerald-50' : ''}`}>
+                        <div className="flex items-start justify-between">
+                          <div>
+                            <h3 className="text-lg font-semibold">{addon.name}</h3>
+                            <p className="text-sm text-gray-600">
+                              {addon.durationMonths ? `${addon.durationMonths} months` : 'Lifetime'}
+                            </p>
+                          </div>
+                          {addon.isSubscribed ? (
+                            <Badge className="bg-emerald-100 text-emerald-700">Active</Badge>
+                          ) : (
+                            <Badge variant="outline">Add-on</Badge>
+                          )}
+                        </div>
+                        
+                        <div className="text-2xl font-bold">₹{Number(priceValue).toLocaleString('en-IN')}</div>
+                        
+                        {addon.description && (
+                          <p className="text-sm text-gray-600 line-clamp-2">{addon.description}</p>
+                        )}
+                        
+                        {addon.features && Array.isArray(addon.features) && addon.features.length > 0 && (
+                          <ul className="text-sm text-gray-600 space-y-1">
+                            {(addon.features as string[]).slice(0, 3).map((f, i) => (
+                              <li key={i} className="flex items-center gap-1">
+                                <CheckCircle className="h-3 w-3 text-emerald-500" />
+                                {f}
+                              </li>
+                            ))}
+                          </ul>
+                        )}
+                        
+                        <Button
+                          disabled={addon.isSubscribed || subscribingId === addon.id || !addon.isActive}
+                          onClick={() => handleSubscribeAddon(addon.id, addon.name)}
+                          className="w-full"
+                          variant={addon.isSubscribed ? "secondary" : "outline"}
+                        >
+                          {subscribingId === addon.id ? (
+                            <Loader2 className="h-4 w-4 animate-spin mr-2" />
+                          ) : addon.isSubscribed ? (
+                            <CheckCircle className="h-4 w-4 mr-2" />
+                          ) : null}
+                          {addon.isSubscribed ? 'Already Added' : 'Add to Plan'}
+                        </Button>
+                      </Card>
+                    );
+                  })}
+                </div>
+              </div>
+            )}
           </>
         )}
       </div>

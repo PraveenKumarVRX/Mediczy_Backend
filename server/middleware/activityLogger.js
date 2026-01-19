@@ -1,4 +1,5 @@
 import express from 'express';
+import { JWT_CONFIG } from '../config/auth.config.js';
 import jwt from 'jsonwebtoken';
 
 // Activity logging middleware
@@ -386,7 +387,7 @@ activityLogRoutes.get('/admin/activity-logs', async (req, res) => {
 
     let decoded;
     try {
-      decoded = jwt.verify(token, process.env.JWT_SECRET || 'your-secret-key');
+      decoded = jwt.verify(token, JWT_CONFIG.SECRET || 'your-secret-key');
     } catch (err) {
       return res.status(401).json({ message: 'Invalid token' });
     }

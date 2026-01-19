@@ -1,4 +1,5 @@
 /**
+import { JWT_CONFIG } from '../../config/auth.config.js';
  * Organization Admin Model - PostgreSQL
  * Multi-tenant organization administrator management
  * 

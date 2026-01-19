@@ -737,7 +737,7 @@ const CorporateBenefits = () => {
                                 appointment.status === 'completed' ? 'bg-green-500/10 text-green-700 border-green-500/20 border' :
                                 'bg-gray-500/10 text-gray-700 border-gray-500/20 border'
                               }>
-                                {appointment.status.toUpperCase()}
+                                {(appointment.status || 'scheduled').toUpperCase()}
                               </Badge>
                               <span className="text-sm text-gray-600">#{appointment.appointmentId}</span>
                             </div>

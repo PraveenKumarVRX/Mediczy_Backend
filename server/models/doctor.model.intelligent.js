@@ -174,6 +174,30 @@ const doctorModel = {
     return deriveVerificationStatus(doctor);
   },
 
+  update: async (id, doctorData) => {
+    // Validate ID before querying
+    if (id === undefined || id === null || id === 'undefined' || id === '') {
+      throw new Error('Invalid doctor ID');
+    }
+
+    const doctor = await Doctor.findByPk(id);
+    if (!doctor) {
+      throw new Error('Doctor not found');
+    }
+
+    const payload = sanitizeDoctorPayload(doctorData);
+    
+    // Update doctor fields
+    Object.keys(payload).forEach(key => {
+      if (payload[key] !== undefined && key !== 'id') {
+        doctor[key] = payload[key];
+      }
+    });
+
+    await doctor.save();
+    return deriveVerificationStatus(doctor);
+  },
+
   findAll: async (options = {}) => {
     const doctors = await Doctor.findAll(options);
     return doctors.map(deriveVerificationStatus);

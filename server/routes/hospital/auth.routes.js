@@ -1,9 +1,10 @@
 import express from 'express';
 import jwt from 'jsonwebtoken';
 import bcrypt from 'bcryptjs';
+import { JWT_CONFIG } from '../../config/auth.config.js';
 
 const router = express.Router();
-const JWT_SECRET = process.env.JWT_SECRET || 'mediczy-super-secret-key-2024';
+const JWT_SECRET = JWT_CONFIG.SECRET;
 
 // Mock hospital data (replace with database later)
 const mockHospital = {
@@ -43,7 +44,7 @@ router.post('/login', async (req, res) => {
     // DEV-ONLY: Mock hospital authentication (disabled in production)
     if (process.env.NODE_ENV !== 'production' && email === mockHospital.email) {
       console.warn('⚠️ Using mock hospital credentials (development only)');
-      
+
       // Verify password
       const isPasswordValid = await bcrypt.compare(password, mockHospital.password);
       if (!isPasswordValid) {
@@ -88,7 +89,7 @@ router.post('/login', async (req, res) => {
     //   return res.status(401).json({ success: false, message: 'Invalid credentials' });
     // }
     // ... verify password, generate token
-    
+
     return res.status(401).json({
       success: false,
       message: 'Invalid email or password'

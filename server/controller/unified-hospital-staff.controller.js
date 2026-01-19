@@ -21,8 +21,9 @@ import { validationResult } from 'express-validator';
 import { Op } from 'sequelize';
 import jwt from 'jsonwebtoken';
 import bcrypt from 'bcryptjs';
+import { JWT_CONFIG } from '../config/auth.config.js';
 
-const JWT_SECRET = process.env.JWT_SECRET || 'mediczy-clinic-secret-key-2025';
+const JWT_SECRET = JWT_CONFIG.SECRET;
 
 // Rate limiting for staff login
 const loginAttempts = new Map();
@@ -32,16 +33,16 @@ const MAX_ATTEMPTS = 5;
 const checkRateLimit = (email) => {
   const now = Date.now();
   const attempts = loginAttempts.get(email) || { count: 0, resetTime: now + RATE_LIMIT_WINDOW };
-  
+
   if (now > attempts.resetTime) {
     loginAttempts.set(email, { count: 1, resetTime: now + RATE_LIMIT_WINDOW });
     return true;
   }
-  
+
   if (attempts.count >= MAX_ATTEMPTS) {
     return false;
   }
-  
+
   attempts.count += 1;
   loginAttempts.set(email, attempts);
   return true;
@@ -152,8 +153,8 @@ export const doctorSignup = async (req, res) => {
       });
     }
 
-    console.log('👨‍⚕️ Mobile app doctor signup:', { 
-      email, 
+    console.log('👨‍⚕️ Mobile app doctor signup:', {
+      email,
       hospital_name: hospital.name,
       hospital_id: hospital.id,
       hospital_slug: hospital.slug
@@ -161,7 +162,7 @@ export const doctorSignup = async (req, res) => {
 
     // Check if email already exists in this hospital
     const existingUser = await User.findOne({
-      where: { 
+      where: {
         email,
         organization_id: hospital.id
       }
@@ -201,7 +202,7 @@ export const doctorSignup = async (req, res) => {
 
     // Generate JWT token
     const token = jwt.sign(
-      { 
+      {
         id: doctor.id,
         email: doctor.email,
         role: doctor.role,
@@ -293,9 +294,9 @@ export const doctorLogin = async (req, res) => {
       });
     }
 
-    console.log('👨‍⚕️ Mobile app doctor login attempt:', { 
-      email, 
-      hospital_name: hospital.name 
+    console.log('👨‍⚕️ Mobile app doctor login attempt:', {
+      email,
+      hospital_name: hospital.name
     });
 
     // Find doctor
@@ -327,7 +328,7 @@ export const doctorLogin = async (req, res) => {
 
     // Generate JWT token
     const token = jwt.sign(
-      { 
+      {
         id: doctor.id,
         email: doctor.email,
         role: doctor.role,
@@ -427,8 +428,8 @@ export const nurseSignup = async (req, res) => {
       });
     }
 
-    console.log('👩‍⚕️ Mobile app nurse signup:', { 
-      email, 
+    console.log('👩‍⚕️ Mobile app nurse signup:', {
+      email,
       hospital_name: hospital.name
     });
 
@@ -465,7 +466,7 @@ export const nurseSignup = async (req, res) => {
     });
 
     const token = jwt.sign(
-      { 
+      {
         id: nurse.id,
         email: nurse.email,
         role: nurse.role,
@@ -553,9 +554,9 @@ export const nurseLogin = async (req, res) => {
       });
     }
 
-    console.log('👩‍⚕️ Mobile app nurse login attempt:', { 
-      email, 
-      hospital_name: hospital.name 
+    console.log('👩‍⚕️ Mobile app nurse login attempt:', {
+      email,
+      hospital_name: hospital.name
     });
 
     const nurse = await User.findOne({
@@ -583,7 +584,7 @@ export const nurseLogin = async (req, res) => {
     }
 
     const token = jwt.sign(
-      { 
+      {
         id: nurse.id,
         email: nurse.email,
         role: nurse.role,
@@ -681,8 +682,8 @@ export const assistantSignup = async (req, res) => {
       });
     }
 
-    console.log('👔 Mobile app assistant signup:', { 
-      email, 
+    console.log('👔 Mobile app assistant signup:', {
+      email,
       hospital_name: hospital.name
     });
 
@@ -718,7 +719,7 @@ export const assistantSignup = async (req, res) => {
     });
 
     const token = jwt.sign(
-      { 
+      {
         id: assistant.id,
         email: assistant.email,
         role: assistant.role,
@@ -806,9 +807,9 @@ export const assistantLogin = async (req, res) => {
       });
     }
 
-    console.log('👔 Mobile app assistant login attempt:', { 
-      email, 
-      hospital_name: hospital.name 
+    console.log('👔 Mobile app assistant login attempt:', {
+      email,
+      hospital_name: hospital.name
     });
 
     const assistant = await User.findOne({
@@ -836,7 +837,7 @@ export const assistantLogin = async (req, res) => {
     }
 
     const token = jwt.sign(
-      { 
+      {
         id: assistant.id,
         email: assistant.email,
         role: assistant.role,
@@ -934,8 +935,8 @@ export const insuranceCoordinatorSignup = async (req, res) => {
       });
     }
 
-    console.log('💼 Mobile app insurance coordinator signup:', { 
-      email, 
+    console.log('💼 Mobile app insurance coordinator signup:', {
+      email,
       hospital_name: hospital.name
     });
 
@@ -971,7 +972,7 @@ export const insuranceCoordinatorSignup = async (req, res) => {
     });
 
     const token = jwt.sign(
-      { 
+      {
         id: coordinator.id,
         email: coordinator.email,
         role: coordinator.role,
@@ -1059,9 +1060,9 @@ export const insuranceCoordinatorLogin = async (req, res) => {
       });
     }
 
-    console.log('💼 Mobile app insurance coordinator login attempt:', { 
-      email, 
-      hospital_name: hospital.name 
+    console.log('💼 Mobile app insurance coordinator login attempt:', {
+      email,
+      hospital_name: hospital.name
     });
 
     const coordinator = await User.findOne({
@@ -1089,7 +1090,7 @@ export const insuranceCoordinatorLogin = async (req, res) => {
     }
 
     const token = jwt.sign(
-      { 
+      {
         id: coordinator.id,
         email: coordinator.email,
         role: coordinator.role,
@@ -1183,10 +1184,10 @@ export const searchHospitals = async (req, res) => {
     const { count, rows: hospitals } = await Tenant.findAndCountAll({
       where: whereClause,
       attributes: [
-        'id', 
-        'name', 
-        'slug', 
-        'logo', 
+        'id',
+        'name',
+        'slug',
+        'logo',
         'organization_type',
         'address',
         'city',

@@ -43,8 +43,11 @@ import firebaseStatusRouter from './routes/firebase-status.route.js';
 import crmRouter from './routes/crm.route.js';
 import asyncRouter from './routes/async.route.js';
 import appointmentRouter from './routes/appointment.route.js';
+import reportsRouter from './routes/reports.route.js';
+import labTestsRouter from './routes/lab-tests.route.js';
 import availabilityRouter from './routes/availability.route.js';
 import membershipRouter from './routes/membership.route.js';
+import orgMembershipPlansRouter from './routes/org-membership-plans.route.js';
 import teamRouter from './routes/team.route.js';
 import nurseRouter from './routes/nurse.route.js';
 import assistantRouter from './routes/assistant.route.js';
@@ -75,6 +78,7 @@ import videoEventsRouter from './routes/video-events.route.js';
 import otpRouter from './routes/otp.route.js';
 import enhancedLabRouter from './routes/lab.route.enhanced.js';
 import corporateRouter from './routes/corporate.route.js';
+import cartRouter from './routes/cart.route.js';
 import hospitalRouter from './routes/hospital.route.js';
 import hospitalAuthRouter from './routes/hospital-auth.route.js';
 import clinicRouter from './routes/clinic.route.js';
@@ -108,6 +112,7 @@ import consultationRecordingRouter from './routes/consultation-recording.route.j
 import billingRouter from './routes/billing.route.js';
 import moduleAccessRouter from './routes/module-access.route.js';
 import hospitalPracticeRouter from './routes/hospital/practice.route.js';
+import userAssociationRouter from './routes/userAssociation.route.js';
 
 // MariaDB models completely replaced with Intelligent Database models
 // Legacy MariaDB models removed - all data now flows through intelligent database
@@ -130,6 +135,15 @@ import "./models/ticket.model.intelligent.js";
 import "./models/FitnessData.model.intelligent.js";
 import "./models/chat.model.intelligent.js";
 import "./models/consultationRecording.model.intelligent.js";
+
+// Import user hierarchy models
+import "./models/postgres/user-association.model.postgres.js";
+import "./models/postgres/patient.model.postgres.js";
+import "./models/postgres/team-member.model.postgres.js";
+import setupUserHierarchyAssociations from "./models/userHierarchy.associations.js";
+
+// Setup user hierarchy associations
+setupUserHierarchyAssociations();
 
 // Import async infrastructure (optional - gracefully degrades if services unavailable)
 import './config/redis.js';
@@ -620,6 +634,7 @@ app.use("/api/reports", uploadRouter); // Medical report upload
 app.use("/api/health-assessment", healthAssessmentRouter); // Health risk assessment
 app.use("/api/reports", reportAnalysisRouter); // Report analysis
 app.use("/api/doctors", doctorRoutes); // Doctor routes (login, register, profile)
+app.use("/api/doctor", doctorRoutes); // Alias route for singular 'doctor' endpoints
 app.use("/api/doctors", doctorEnhancedRoutes); // Enhanced doctor routes (search, public profiles)
 app.use("/api/doctors", availabilityRouter); // Availability routes
 app.use("/api/ai", aiScribeRouter); // AI Scribe for prescription generation
@@ -628,12 +643,16 @@ app.use("/api/doctors/availability", doctorAvailabilityRoutes); // Doctor availa
 app.use("/api/doctor-settings", doctorSettingsRoutes); // Doctor appointment configuration
 app.use("/api/enhanced-appointments", enhancedAppointmentRoutes); // Enhanced appointment booking
 app.use("/api/membership", membershipRouter);
+app.use("/api/org-membership-plans", orgMembershipPlansRouter); // Organization-specific plan customization
 app.use("/api/insurance", insuranceRouter);
 app.use("/api/insurance-policies", insurancePolicyRouter); // Comprehensive insurance policy & rule engine
 app.use("/api/insurance-company", insuranceCompanyRouter); // Insurance company & corporate login
 app.use("/api/insurance-broker", insuranceBrokerRouter); // Insurance broker/intermediary login
 app.use("/api/tpa", tpaRouter); // TPA (Third Party Administrator) login
 app.use("/api/appointments", appointmentRouter);
+app.use("/api/reports", reportsRouter);
+app.use("/api/lab-tests", labTestsRouter);
+app.use("/api/cart", cartRouter); // Lab test cart management
 app.use("/api/prescriptions", prescriptionRouter); // Prescription CRUD and PDF generation
 app.use("/api/ehr", ehrRouter); // Electronic Health Records - admin access to patient records
 app.use("/api/health-diary", healthDiaryRouter); // Patient health journal and diary entries
@@ -694,6 +713,7 @@ app.use('/api/corporate', corporateRouter); // Corporate benefits and plans
 app.use('/api', hospitalRouter); // Hospital directory and SPN network
 app.use('/api/hospital/practice', hospitalPracticeRouter); // Hospital practice management (appointments, patients, staff, resources)
 app.use('/api/hospital/auth', hospitalAuthRouter); // Hospital authentication & corporate onboarding
+app.use('/api/user-associations', userAssociationRouter); // User hierarchy and entity associations
 app.use('/api/clinics', clinicRouter); // Clinics directory (labs, dental, etc.)
 app.use('/api/labs', enhancedLabRouter); // Enhanced laboratory management with comprehensive search
 app.use('/api/pharmacy', pharmacyRouter); // Pharmacy authentication and management
@@ -744,6 +764,7 @@ import unifiedHospitalStaffRouter from './routes/unified-hospital-staff.routes.j
 
 // Super Admin Routes
 import superadminClinicRouter from './routes/superadmin-clinic.routes.js';
+import superAdminTenantRouter from './routes/super-admin-tenant.route.js';
 
 app.use('/api/clinic', clinicAuthRouter); // Clinic authentication (login, logout, verify)
 app.use('/api/clinic', clinicStaffAuthRouter); // Clinic staff authentication (doctor, nurse, assistant login)
@@ -759,6 +780,7 @@ app.use('/api/hospital/staff', unifiedHospitalStaffRouter); // Doctor, nurse, as
 
 // Super Admin Routes
 app.use('/api/superadmin/clinics', superadminClinicRouter); // Super admin clinic management (create, list, update, delete)
+app.use('/api/superadmin/tenants', superAdminTenantRouter); // Super admin tenant/organization management (multi-tenancy control)
 
 // Ambulance Service Routes
 import ambulanceAuthRouter from './routes/ambulance/auth.routes.js';

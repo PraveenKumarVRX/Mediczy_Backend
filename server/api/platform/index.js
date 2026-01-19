@@ -1,4 +1,5 @@
 /**
+import { JWT_CONFIG } from '../config/auth.config.js';
  * Mediqzy PaaS - Platform Admin API
  * 
  * Routes for Super Super Admin (admin@mediqzy.com) to manage the platform
@@ -33,7 +34,7 @@ const platformAdminAuth = async (req, res, next) => {
     }
 
     const token = authHeader.split(' ')[1];
-    const decoded = jwt.verify(token, process.env.JWT_SECRET || 'mediqzy-secret-key');
+    const decoded = jwt.verify(token, JWT_CONFIG.SECRET || 'mediqzy-secret-key');
 
     // Check if user is a platform admin
     const pool = await getPostgresPool();

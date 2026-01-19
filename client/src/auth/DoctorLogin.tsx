@@ -62,8 +62,8 @@ const DoctorLogin = () => {
   const form = useForm<z.infer<typeof formSchema>>({
     resolver: zodResolver(formSchema),
     defaultValues: {
-      email: "doctor@mediczy.com",
-      password: "Doctor123",
+      email: "",
+      password: "",
     },
   });
 
@@ -182,8 +182,11 @@ const DoctorLogin = () => {
             aria-label="Go to doctor dashboard"
             title="Go to dashboard"
           >
-            <HeartPulse className="h-6 w-6" />
-            {BRAND.name}
+            <img 
+              src={BRAND.logo} 
+              alt={BRAND.name} 
+              className="h-10 w-auto object-contain"
+            />
             <span className="ml-2 text-[10px] uppercase bg-white/20 px-2 py-0.5 rounded-full">Doctor</span>
           </div>
           <div className="mt-auto space-y-3">

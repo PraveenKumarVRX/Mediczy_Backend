@@ -1,161 +1,42 @@
-import http from "http";
-// import app from "./app.js"; // Moved after database initialization
-import { Server } from "socket.io";
-import { setupSocketIO } from "./chat/chathandler.controller.js";
-import orchestrator from "./db/orchestrator.js";
-import intelligence from "./db/intelligence.js";
-import { validateEnvironment } from "./config/env-validator.js";
-import workers from "./workers/index.js";
-import { connectKafkaProducer, connectKafkaConsumer } from "./config/kafka.js";
-import scheduleDeviceMonitoring from "./scripts/device-monitoring-cron.js";
-import scheduleAppointmentAutoCancel from "./scripts/appointment-auto-cancel-cron.js";
-import AppointmentNotificationService from "./services/appointment-notification.service.js";
+/**
+ * Mediczy API Server Entry Point
+ * 
+ * This is a minimal entry point that delegates to controllers:
+ * - InitializationController: Handles all startup logic (DB, Kafka, cron jobs)
+ * - ServerController: Manages HTTP server and Socket.IO
+ * - ShutdownController: Handles graceful shutdown
+ */
 
-// Validate environment before starting
-try {
-  validateEnvironment();
-  console.log('✅ Environment validation passed');
-} catch (error) {
-  console.warn('⚠️ Environment validation warnings:', error.message);
-  // Continue anyway - some variables are optional
-}
+import initializationController from "./controllers/initialization.controller.js";
+import serverController from "./controllers/server.controller.js";
+import shutdownController from "./controllers/shutdown.controller.js";
 
-const PORT = process.env.PORT || 8000;
-
-let server;
-
-// Initialize database orchestrator and intelligence layer
-async function initializeDatabases() {
+/**
+ * Main application startup
+ */
+async function startApplication() {
   try {
-    console.log('🚀 Initializing Database Orchestrator...');
-    const results = await orchestrator.initializeAll();
-    console.log('✅ Database Orchestrator initialized successfully');
+    // 1. Initialize all services (DB, Kafka, cron jobs, workers)
+    await initializationController.initializeAll();
     
-    // Initialize intelligence layer
-    console.log('🧠 Initializing Database Intelligence Layer...');
-    // orchestrator.setIntelligence(intelligence); // Temporarily disabled
-    console.log('✅ Database Intelligence Layer initialized successfully');
+    // 2. Import app after database is initialized
+    const { default: app } = await import("./app.js");
     
-    // Initialize BullMQ workers
-    console.log('📋 BullMQ workers initialized and ready');
+    // 3. Create and configure HTTP server with Socket.IO
+    await serverController.createServer(app);
     
-    return results;
-  } catch (error) {
-    console.error('❌ Database Orchestrator initialization failed:', error.message);
-    console.error('⚠️  Server will continue but some features may be unavailable');
-    return null;
-  }
-}
-
-// Initialize databases first, then import app
-async function startServer() {
-  await initializeDatabases();
-  
-  // Now import app after database is initialized
-  const { default: app } = await import("./app.js");
-  
-  server = http.createServer(app);
-  const io = setupSocketIO(server);
-  
-  // Initialize Appointment Notification Service
-  console.log('🔔 Initializing Appointment Notification Service...');
-  const notificationService = new AppointmentNotificationService(io);
-  notificationService.initialize();
-  
-  // Initialize Kafka for video streaming events
-  console.log('📡 Connecting to Kafka...');
-  await connectKafkaProducer();
-  await connectKafkaConsumer();
-  
-  // Initialize device monitoring cron jobs
-  scheduleDeviceMonitoring();
-  
-  // Initialize appointment auto-cancel cron jobs
-  scheduleAppointmentAutoCancel();
-  
-  // Initialize membership validation cron jobs
-  console.log('👤 Starting membership validation cron jobs...');
-  const { startMembershipCronJobs } = await import('./services/membership-cron.service.js');
-  startMembershipCronJobs();
-  
-  // Handle server errors before listening
-  server.on('error', (err) => {
-    if (err.code === 'EADDRINUSE') {
-      console.error(`❌ Port ${PORT} is already in use. Please stop other processes using this port.`);
-      process.exit(1);
-    } else {
-      console.error('❌ Server error:', err);
-      process.exit(1);
-    }
-  });
-
-  // Start server
-  server.listen(PORT, '0.0.0.0', () => {
-    console.log(`\n🚀 Server running on PORT ${PORT} and accessible on all interfaces`);
-    console.log(`📊 Health Check: http://localhost:${PORT}/health`);
-    console.log(`📊 DB Health: http://localhost:${PORT}/api/db/health`);
-    console.log(`📊 DB Stats: http://localhost:${PORT}/api/db/stats\n`);
-    console.log(`📈 Metrics: http://localhost:${PORT}/metrics`);
-  });
-}
-
-// Graceful shutdown handler
-function gracefulShutdown(signal) {
-  console.log(`\n${signal} received. Starting graceful shutdown...`);
-
-  const afterHttpClose = async () => {
-    try {
-      // Close workers
-      console.log('🔄 Closing BullMQ workers...');
-      await Promise.all(Object.values(workers).map(w => w.close()));
-      console.log('✅ Workers closed');
-
-      // Close database connections
-      await orchestrator.closeAll();
-      console.log('✅ Database connections closed');
-
-      console.log('✅ Graceful shutdown completed');
-      process.exit(0);
-    } catch (err) {
-      console.error('❌ Error during shutdown:', err);
-      process.exit(1);
-    }
-  };
-
-  if (server?.close) {
-    server.close(async () => {
-      console.log('✅ HTTP server closed');
-      await afterHttpClose();
-    });
-  } else {
-    console.warn('⚠️ HTTP server not initialized; skipping server.close()');
-    void afterHttpClose();
-  }
-  
-  // Force shutdown after 30 seconds
-  setTimeout(() => {
-    console.error('❌ Forced shutdown after timeout');
+    // 4. Start listening on configured port
+    await serverController.start();
+    
+    // 5. Register shutdown handlers
+    shutdownController.initialize(serverController, initializationController);
+    shutdownController.registerHandlers();
+    
+  } catch (err) {
+    console.error('❌ Fatal error during startup:', err);
     process.exit(1);
-  }, 30000);
+  }
 }
 
-// Register shutdown handlers
-process.on('SIGTERM', () => gracefulShutdown('SIGTERM'));
-process.on('SIGINT', () => gracefulShutdown('SIGINT'));
-
-// Handle uncaught errors
-process.on('uncaughtException', (err) => {
-  console.error('❌ Uncaught Exception:', err);
-  gracefulShutdown('UNCAUGHT_EXCEPTION');
-});
-
-process.on('unhandledRejection', (reason, promise) => {
-  console.error('❌ Unhandled Rejection at:', promise, 'reason:', reason);
-  gracefulShutdown('UNHANDLED_REJECTION');
-});
-
-// Start the server
-startServer().catch(err => {
-  console.error('Fatal error during startup:', err);
-  process.exit(1);
-});
+// Start the application
+startApplication();

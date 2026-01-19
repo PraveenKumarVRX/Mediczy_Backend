@@ -15,7 +15,7 @@ test('debug admin login', async ({ page }) => {
     console.log(`Console ${msg.type()}: ${msg.text()}`);
   });
 
-  await page.goto('http://localhost:3001/admin/login', { waitUntil: 'domcontentloaded' });
+  await page.goto('http://localhost:9443/admin/login', { waitUntil: 'domcontentloaded' });
   
   console.log('Page loaded');
   

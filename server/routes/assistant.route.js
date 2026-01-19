@@ -28,20 +28,20 @@ export const authAssistant = async (req, res, next) => {
       };
       return next();
     }
-    
+
     if (!token) {
-      return res.status(401).json({ 
+      return res.status(401).json({
         success: false,
-        message: 'No authorization token provided' 
+        message: 'No authorization token provided'
       });
     }
 
-    const decoded = jwt.verify(token, process.env.JWT_SECRET);
-    
+    const decoded = jwt.verify(token, JWT_CONFIG.SECRET);
+
     if (decoded.role !== 'assistant') {
-      return res.status(403).json({ 
+      return res.status(403).json({
         success: false,
-        message: 'Access denied. Assistant privileges required.' 
+        message: 'Access denied. Assistant privileges required.'
       });
     }
 
@@ -61,17 +61,17 @@ export const authAssistant = async (req, res, next) => {
     next();
   } catch (error) {
     console.error('Assistant authentication error:', error);
-    
+
     if (error.name === 'TokenExpiredError') {
-      return res.status(401).json({ 
+      return res.status(401).json({
         success: false,
-        message: 'Token expired. Please login again.' 
+        message: 'Token expired. Please login again.'
       });
     }
-    
-    return res.status(401).json({ 
+
+    return res.status(401).json({
       success: false,
-      message: 'Invalid or expired token' 
+      message: 'Invalid or expired token'
     });
   }
 };
@@ -94,9 +94,9 @@ router.post('/login', [
           firstName: 'Emily',
           lastName: 'Davis',
           roleTitle: 'Medical Secretary',
-          linkedDoctorIds: ['doc_001'],
-          primaryDoctorId: 'doc_001',
-          linkedFacilityId: 'facility_001',
+          linkedDoctorIds: [70],  // Use numeric doctor ID
+          primaryDoctorId: 70,    // Use numeric doctor ID
+          linkedFacilityId: 1,     // Use numeric facility ID
           linkedFacilityType: 'clinic',
           linkedFacilityName: 'Mediczy Health Clinic',
           workSchedule: { monday: '9:00-17:00', tuesday: '9:00-17:00', wednesday: '9:00-17:00', thursday: '9:00-17:00', friday: '9:00-17:00' },
@@ -125,7 +125,7 @@ router.post('/login', [
         }
       };
 
-    // Check test credentials first
+      // Check test credentials first
       const testAssistant = testAssistants[email];
       if (testAssistant && testAssistant.password === password) {
         const token = jwt.sign(
@@ -139,50 +139,50 @@ router.post('/login', [
             linkedFacilityId: testAssistant.linkedFacilityId,
             linkedFacilityType: testAssistant.linkedFacilityType,
             linkedFacilityName: testAssistant.linkedFacilityName,
-          canAccessDoctorCalendar: testAssistant.canAccessDoctorCalendar,
-          canManagePatients: testAssistant.canManagePatients
-        },
-        process.env.JWT_SECRET,
-        { expiresIn: '8h' }
-      );
+            canAccessDoctorCalendar: testAssistant.canAccessDoctorCalendar,
+            canManagePatients: testAssistant.canManagePatients
+          },
+          JWT_CONFIG.SECRET,
+          { expiresIn: '8h' }
+        );
 
-      return res.status(200).json({
-        success: true,
-        message: 'Assistant login successful',
-        token,
-        assistant: {
-          id: testAssistant.id,
-          email: testAssistant.email,
-          firstName: testAssistant.firstName,
-          lastName: testAssistant.lastName,
-          roleTitle: testAssistant.roleTitle,
-          linkedDoctorIds: testAssistant.linkedDoctorIds,
-          primaryDoctorId: testAssistant.primaryDoctorId,
-          linkedFacilityId: testAssistant.linkedFacilityId,
-          linkedFacilityType: testAssistant.linkedFacilityType,
-          linkedFacilityName: testAssistant.linkedFacilityName,
-          workSchedule: testAssistant.workSchedule,
-          permissions: testAssistant.permissions,
-          canAccessDoctorCalendar: testAssistant.canAccessDoctorCalendar,
-          canManagePatients: testAssistant.canManagePatients,
-          phoneNumber: testAssistant.phoneNumber
-        }
-      });
-    }
+        return res.status(200).json({
+          success: true,
+          message: 'Assistant login successful',
+          token,
+          assistant: {
+            id: testAssistant.id,
+            email: testAssistant.email,
+            firstName: testAssistant.firstName,
+            lastName: testAssistant.lastName,
+            roleTitle: testAssistant.roleTitle,
+            linkedDoctorIds: testAssistant.linkedDoctorIds,
+            primaryDoctorId: testAssistant.primaryDoctorId,
+            linkedFacilityId: testAssistant.linkedFacilityId,
+            linkedFacilityType: testAssistant.linkedFacilityType,
+            linkedFacilityName: testAssistant.linkedFacilityName,
+            workSchedule: testAssistant.workSchedule,
+            permissions: testAssistant.permissions,
+            canAccessDoctorCalendar: testAssistant.canAccessDoctorCalendar,
+            canManagePatients: testAssistant.canManagePatients,
+            phoneNumber: testAssistant.phoneNumber
+          }
+        });
+      }
     } // End NODE_ENV !== 'production' check
 
     // Check database for assistant
-    const assistant = await Assistant.findOne({ 
-      where: { 
+    const assistant = await Assistant.findOne({
+      where: {
         email,
         isActive: true
-      } 
+      }
     });
 
     if (!assistant) {
-      return res.status(401).json({ 
+      return res.status(401).json({
         success: false,
-        message: 'Invalid email or password' 
+        message: 'Invalid email or password'
       });
     }
 
@@ -196,11 +196,11 @@ router.post('/login', [
       // Development fallback
       isPasswordValid = password === 'AssistantPass123';
     }
-    
+
     if (!isPasswordValid) {
-      return res.status(401).json({ 
+      return res.status(401).json({
         success: false,
-        message: 'Invalid email or password' 
+        message: 'Invalid email or password'
       });
     }
 
@@ -223,7 +223,7 @@ router.post('/login', [
         canAccessDoctorCalendar: assistant.canAccessDoctorCalendar,
         canManagePatients: assistant.canManagePatients
       },
-      process.env.JWT_SECRET,
+      JWT_CONFIG.SECRET,
       { expiresIn: '8h' }
     );
 
@@ -251,10 +251,10 @@ router.post('/login', [
     });
   } catch (error) {
     console.error('Assistant login error:', error);
-    res.status(500).json({ 
+    res.status(500).json({
       success: false,
       message: 'Server error during login',
-      error: error.message 
+      error: error.message
     });
   }
 });
@@ -263,7 +263,7 @@ router.post('/login', [
 router.get('/profile', authAssistant, async (req, res) => {
   try {
     let assistant;
-    
+
     // Handle test assistant (IDs starting with A are test assistants)
     if (req.assistant.id === 'A7X9K2' || req.assistant.id === 'A7X9K2' || req.assistant.id === 'A3M8P5' || req.assistant.id === 'asst_001') {
       assistant = {
@@ -303,11 +303,11 @@ router.get('/profile', authAssistant, async (req, res) => {
       assistant = await Assistant.findByPk(req.assistant.id, {
         attributes: { exclude: ['password'] }
       });
-      
+
       if (!assistant) {
-        return res.status(404).json({ 
+        return res.status(404).json({
           success: false,
-          message: 'Assistant not found' 
+          message: 'Assistant not found'
         });
       }
     }
@@ -318,10 +318,10 @@ router.get('/profile', authAssistant, async (req, res) => {
     });
   } catch (error) {
     console.error('Get assistant profile error:', error);
-    res.status(500).json({ 
+    res.status(500).json({
       success: false,
       message: 'Server error',
-      error: error.message 
+      error: error.message
     });
   }
 });
@@ -340,11 +340,11 @@ router.put('/profile', authAssistant, async (req, res) => {
     }
 
     const assistant = await Assistant.findByPk(req.assistant.id);
-    
+
     if (!assistant) {
-      return res.status(404).json({ 
+      return res.status(404).json({
         success: false,
-        message: 'Assistant not found' 
+        message: 'Assistant not found'
       });
     }
 
@@ -369,10 +369,10 @@ router.put('/profile', authAssistant, async (req, res) => {
     });
   } catch (error) {
     console.error('Update assistant profile error:', error);
-    res.status(500).json({ 
+    res.status(500).json({
       success: false,
       message: 'Server error',
-      error: error.message 
+      error: error.message
     });
   }
 });
@@ -381,7 +381,7 @@ router.put('/profile', authAssistant, async (req, res) => {
 router.get('/appointments', authAssistant, async (req, res) => {
   try {
     const { date } = req.query;
-    
+
     // Mock appointments data
     const appointments = [
       {
@@ -425,10 +425,10 @@ router.get('/appointments', authAssistant, async (req, res) => {
     });
   } catch (error) {
     console.error('Get appointments error:', error);
-    res.status(500).json({ 
+    res.status(500).json({
       success: false,
       message: 'Server error',
-      error: error.message 
+      error: error.message
     });
   }
 });
@@ -453,10 +453,10 @@ router.put('/appointments/:appointmentId', authAssistant, async (req, res) => {
     });
   } catch (error) {
     console.error('Update appointment error:', error);
-    res.status(500).json({ 
+    res.status(500).json({
       success: false,
       message: 'Server error',
-      error: error.message 
+      error: error.message
     });
   }
 });
@@ -494,10 +494,10 @@ router.get('/doctor-schedule', authAssistant, async (req, res) => {
     });
   } catch (error) {
     console.error('Get doctor schedule error:', error);
-    res.status(500).json({ 
+    res.status(500).json({
       success: false,
       message: 'Server error',
-      error: error.message 
+      error: error.message
     });
   }
 });
@@ -532,10 +532,10 @@ router.get('/patients', authAssistant, async (req, res) => {
     });
   } catch (error) {
     console.error('Get patients error:', error);
-    res.status(500).json({ 
+    res.status(500).json({
       success: false,
       message: 'Server error',
-      error: error.message 
+      error: error.message
     });
   }
 });
@@ -559,10 +559,10 @@ router.post('/notify', authAssistant, async (req, res) => {
     });
   } catch (error) {
     console.error('Send notification error:', error);
-    res.status(500).json({ 
+    res.status(500).json({
       success: false,
       message: 'Server error',
-      error: error.message 
+      error: error.message
     });
   }
 });
@@ -585,7 +585,7 @@ router.get('/linked-doctors', authAssistant, async (req, res) => {
           isPrimary: true
         }
       ];
-      
+
       return res.status(200).json({
         success: true,
         doctors,
@@ -595,7 +595,7 @@ router.get('/linked-doctors', authAssistant, async (req, res) => {
     }
 
     const assistant = await Assistant.findByPk(req.assistant.id);
-    
+
     if (!assistant) {
       return res.status(404).json({
         success: false,
@@ -605,7 +605,7 @@ router.get('/linked-doctors', authAssistant, async (req, res) => {
 
     // In production, fetch actual doctor details from database
     const linkedDoctorIds = assistant.linkedDoctorIds || [];
-    
+
     res.status(200).json({
       success: true,
       linkedDoctorIds,
@@ -649,7 +649,7 @@ router.post('/link-doctor', async (req, res) => {
     }
 
     const assistant = await Assistant.findByPk(assistantId);
-    
+
     if (!assistant) {
       return res.status(404).json({
         success: false,
@@ -731,7 +731,7 @@ router.post('/unlink-doctor', async (req, res) => {
     }
 
     const assistant = await Assistant.findByPk(assistantId);
-    
+
     if (!assistant) {
       return res.status(404).json({
         success: false,
@@ -804,7 +804,7 @@ router.post('/set-primary-doctor', async (req, res) => {
     }
 
     const assistant = await Assistant.findByPk(assistantId);
-    
+
     if (!assistant) {
       return res.status(404).json({
         success: false,
@@ -879,7 +879,7 @@ router.post('/link-facility', async (req, res) => {
 
     // Database update
     const assistant = await Assistant.findByPk(assistantId);
-    
+
     if (!assistant) {
       return res.status(404).json({
         success: false,
@@ -941,7 +941,7 @@ router.post('/unlink-facility', async (req, res) => {
 
     // Database update
     const assistant = await Assistant.findByPk(assistantId);
-    
+
     if (!assistant) {
       return res.status(404).json({
         success: false,

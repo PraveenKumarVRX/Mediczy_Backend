@@ -14,11 +14,11 @@ import api from "@/utils/api";
 import { useNavigate } from "react-router-dom";
 import { useToast } from "@/hooks/use-toast";
 import { io, Socket } from "socket.io-client";
-import { 
-  Calendar, 
-  Clock, 
-  MapPin, 
-  Plus, 
+import {
+  Calendar,
+  Clock,
+  MapPin,
+  Plus,
   Video,
   Phone,
   MessageSquare,
@@ -54,6 +54,7 @@ interface Appointment {
   clinicName?: string;
   clinicAddress?: string;
   status: 'upcoming' | 'completed' | 'cancelled' | 'rescheduled';
+  originalStatus?: string; // The actual status from DB (scheduled, no-show, expired, etc.)
   symptoms?: string;
   notes?: string;
   reminderEnabled: boolean;
@@ -114,12 +115,18 @@ const Appointments = () => {
   });
 
   // Fetch enhanced appointments from backend and map into local shape
-  const { data: backendAppointments = [], isLoading } = useQuery({
+  const { data: backendAppointments = [], isLoading, error: appointmentsError } = useQuery({
     queryKey: ["enhancedAppointments"],
     queryFn: async () => {
-      const { data } = await api.get("/enhanced-appointments/my-appointments");
+      console.log("📅 Fetching appointments...");
+      const { data } = await api.get("/enhanced-appointments/my-appointments?limit=100");
+      console.log("📅 Appointments response:", data);
       const list = (data as any).appointments || data;
-      if (!Array.isArray(list)) return [];
+      if (!Array.isArray(list)) {
+        console.log("📅 Not an array, returning empty:", list);
+        return [];
+      }
+      console.log("📅 Found appointments:", list.length);
 
       return list.map((apt: any) => ({
         id: String(apt.id ?? apt.appointmentId ?? apt._id ?? crypto.randomUUID()),
@@ -132,7 +139,7 @@ const Appointments = () => {
               ? [apt.doctor.firstName, apt.doctor.lastName].filter(Boolean).join(" ")
               : "Doctor"),
           specialty: apt.specialization ?? apt.doctor?.specialization ?? "",
-          rating: apt.doctorRating ?? apt.doctor?.averageRating ?? 4.5,
+          rating: Number(apt.doctorRating ?? apt.doctor?.averageRating ?? 4.5) || 4.5,
           profileImage: apt.doctorProfileImage ?? apt.doctor?.profileImage,
         },
         date: apt.appointmentDate ?? apt.date,
@@ -145,8 +152,8 @@ const Appointments = () => {
           apt.channel === "phone" || apt.consultationType === "audio"
             ? "phone"
             : apt.consultationType === "in-person"
-            ? "in-person"
-            : "video",
+              ? "in-person"
+              : "video",
         clinicName:
           apt.clinicName ??
           apt.clinic?.name ??
@@ -163,30 +170,53 @@ const Appointments = () => {
           apt.consultationType === "walkin" || apt.consultationType === "in-person"
             ? (apt.location ?? apt.clinic?.address ?? "Clinic / Hospital")
             : "Online",
-        status:
-          apt.status === "completed"
-            ? "completed"
-            : apt.status === "cancelled"
-            ? "cancelled"
-            : "upcoming",
+        status: (() => {
+          // Determine if this is a past appointment
+          const rawDate = apt.appointmentDate || apt.date;
+          const appointmentDate = new Date(rawDate);
+          const today = new Date();
+          today.setHours(0, 0, 0, 0);
+          const isPast = appointmentDate < today;
+
+          // Keep original status for display, but categorize for filtering
+          const originalStatus = apt.status || 'scheduled';
+
+          if (apt.status === "cancelled") {
+            return "cancelled";
+          }
+          // Future appointments are upcoming
+          if (!isPast && (originalStatus === "scheduled" || originalStatus === "confirmed" || originalStatus === "pending")) {
+            return "upcoming";
+          }
+          // Past appointments go to history with their original status
+          return "completed"; // This is the filter category
+        })(),
+        // Keep the original status for display
+        originalStatus: apt.status || 'scheduled',
         symptoms: apt.symptoms,
         notes: apt.notes,
         reminderEnabled: true,
-        estimatedDuration: apt.estimatedDuration ?? 30,
-        fee:
+        estimatedDuration: Number(apt.estimatedDuration) || 30,
+        fee: Number(
           apt.consultationFee ??
           apt.serviceTierPrice ??
           apt.serviceTier?.price ??
-          0,
+          0
+        ) || 0,
       })) as Appointment[];
     },
+    retry: 1,
   });
 
   useEffect(() => {
+    if (appointmentsError) {
+      console.error("📅 Appointments fetch error:", appointmentsError);
+    }
     if (!isLoading && backendAppointments) {
+      console.log("📅 Setting appointments from backend:", backendAppointments.length, backendAppointments.slice(0, 3));
       setAppointments(backendAppointments as Appointment[]);
     }
-  }, [backendAppointments, isLoading]);
+  }, [backendAppointments, isLoading, appointmentsError]);
 
   // Generate smart appointment suggestions using AI
   const generateSmartSuggestions = async () => {
@@ -194,16 +224,16 @@ const Appointments = () => {
     try {
       const upcomingAppointments = appointments.filter(apt => apt.status === 'upcoming');
       const completedAppointments = appointments.filter(apt => apt.status === 'completed');
-      
+
       const query = `Analyze my appointment history and provide smart suggestions:
 
       Upcoming Appointments:
-      ${upcomingAppointments.map(apt => 
+      ${upcomingAppointments.map(apt =>
         `- ${apt.doctor.name} (${apt.doctor.specialty}) on ${apt.date} for ${apt.symptoms}`
       ).join('\n')}
 
       Recent Completed Appointments:
-      ${completedAppointments.map(apt => 
+      ${completedAppointments.map(apt =>
         `- ${apt.doctor.name} (${apt.doctor.specialty}) on ${apt.date} for ${apt.symptoms}`
       ).join('\n')}
 
@@ -236,10 +266,10 @@ const Appointments = () => {
   // Parse AI response into structured suggestions
   const parseAISuggestions = (aiResponse: string): SmartSuggestion[] => {
     const suggestions: SmartSuggestion[] = [];
-    
+
     // Follow-up suggestion
-    const hasCardiology = appointments.some(apt => 
-      apt.doctor.specialty.toLowerCase().includes('cardio') && apt.status === 'completed'
+    const hasCardiology = appointments.some(apt =>
+      (apt.doctor?.specialty || '').toLowerCase().includes('cardio') && apt.status === 'completed'
     );
     if (hasCardiology) {
       suggestions.push({
@@ -263,7 +293,7 @@ const Appointments = () => {
     });
 
     // Optimal scheduling
-    const hasEarlyMorningAppts = appointments.some(apt => 
+    const hasEarlyMorningAppts = appointments.some(apt =>
       parseInt(apt.time.split(':')[0]) < 11
     );
     if (hasEarlyMorningAppts) {
@@ -278,7 +308,7 @@ const Appointments = () => {
     }
 
     // Specialist suggestion
-    const hasSkinIssues = appointments.some(apt => 
+    const hasSkinIssues = appointments.some(apt =>
       apt.symptoms?.toLowerCase().includes('skin') || apt.symptoms?.toLowerCase().includes('rash')
     );
     if (hasSkinIssues) {
@@ -338,7 +368,7 @@ const Appointments = () => {
     // Listen for doctor-initiated calls
     newSocket.on('doctor-initiated-call', (data) => {
       console.log('📞 Incoming call from doctor:', data);
-      
+
       setIncomingCall({
         appointmentId: data.appointmentId,
         doctorName: data.doctorName,
@@ -422,12 +452,14 @@ const Appointments = () => {
   };
 
   const filterAppointments = (status: string) => {
-    return appointments.filter(apt => {
+    const filtered = appointments.filter(apt => {
       if (status === 'upcoming') return apt.status === 'upcoming';
       if (status === 'completed') return apt.status === 'completed';
       if (status === 'all') return true;
       return apt.status === status;
     });
+    console.log(`📅 filterAppointments(${status}): ${filtered.length} appointments`, filtered.slice(0, 3));
+    return filtered;
   };
 
   const handleJoinCall = (appointment: Appointment) => {
@@ -440,7 +472,17 @@ const Appointments = () => {
       });
       return;
     }
-    navigate(`/chat?doctorId=${doctorId}`);
+
+    // Generate room ID from appointment
+    const roomId = appointment.backendId ? `apt-${appointment.backendId}` : `doc-${doctorId}`;
+
+    // Navigate to video consultation page
+    navigate(`/video-consultation?room=${encodeURIComponent(roomId)}&appointmentId=${appointment.backendId || ''}`);
+
+    toast({
+      title: "Joining Video Call",
+      description: `Connecting to consultation with ${appointment.doctor.name}`,
+    });
   };
 
   const handleCancelAppointment = async (appointment: Appointment) => {
@@ -507,11 +549,11 @@ const Appointments = () => {
         prev.map((apt) =>
           apt.id === appointment.id
             ? {
-                ...apt,
-                date: appointmentDate,
-                time: appointmentTime,
-                status: "rescheduled",
-              }
+              ...apt,
+              date: appointmentDate,
+              time: appointmentTime,
+              status: "rescheduled",
+            }
             : apt
         )
       );
@@ -573,7 +615,7 @@ const Appointments = () => {
                 <MessageSquare className="h-4 w-4 mr-2" />
                 Ask Dr. iSHA
               </Button>
-              <Button 
+              <Button
                 onClick={() => setShowBookingModal(true)}
                 className="bg-gradient-to-r from-[#00FFF3] to-[#00B8FF] text-black hover:from-[#00E6D6] hover:to-[#00A3E6]">
                 <Plus className="h-4 w-4 mr-2" />
@@ -584,7 +626,7 @@ const Appointments = () => {
         </div>
 
         <Tabs value={activeTab} onValueChange={setActiveTab} className="space-y-6">
-          <TabsList className="grid w-full grid-cols-4 bg-[#1A2333] p-1 rounded-lg">
+          <TabsList className="grid w-full grid-cols-3 bg-[#1A2333] p-1 rounded-lg">
             <TabsTrigger value="upcoming" className="data-[state=active]:bg-[#00FFF3] data-[state=active]:text-[#0B1120]">
               Upcoming
             </TabsTrigger>
@@ -594,9 +636,6 @@ const Appointments = () => {
             <TabsTrigger value="smart" className="data-[state=active]:bg-[#00FFF3] data-[state=active]:text-[#0B1120] flex items-center space-x-1">
               <span>AI Insights</span>
               {aiAnalyzing && <div className="w-2 h-2 bg-[#00FFF3] rounded-full animate-pulse" />}
-            </TabsTrigger>
-            <TabsTrigger value="settings" className="data-[state=active]:bg-[#00FFF3] data-[state=active]:text-[#0B1120]">
-              Settings
             </TabsTrigger>
           </TabsList>
 
@@ -630,7 +669,7 @@ const Appointments = () => {
                             </div>
                           </div>
                           <p className="text-gray-300">{appointment.doctor.specialty}</p>
-                          
+
                           <div className="flex items-center gap-4 text-sm text-gray-400">
                             <div className="flex items-center gap-1">
                               <Calendar className="h-4 w-4" />
@@ -649,7 +688,7 @@ const Appointments = () => {
                               {appointment.estimatedDuration} min
                             </div>
                           </div>
-                          
+
                           {appointment.symptoms && (
                             <div className="flex items-center gap-2 text-sm">
                               <span className="text-gray-400">Reason:</span>
@@ -658,7 +697,7 @@ const Appointments = () => {
                           )}
                         </div>
                       </div>
-                      
+
                       <div className="flex flex-col items-end space-y-2">
                         <div className="flex items-center space-x-2">
                           <Badge className={getStatusColor(appointment.status)}>
@@ -669,9 +708,9 @@ const Appointments = () => {
                             <Bell className="h-4 w-4 text-[#00FFF3]" />
                           )}
                         </div>
-                        
+
                         <p className="text-lg font-semibold text-[#00FFF3]">₹{appointment.fee}</p>
-                        
+
                         <div className="flex gap-2 mt-4">
                           {appointment.consultationType === 'online' && appointment.channel === 'video' && (
                             <Button
@@ -708,14 +747,14 @@ const Appointments = () => {
                   </CardContent>
                 </Card>
               ))}
-              
+
               {filterAppointments('upcoming').length === 0 && (
                 <Card className="border-[#00FFF3]/20 border-dashed">
                   <CardContent className="p-12 text-center">
                     <CalendarDays className="h-12 w-12 text-[#00FFF3] mx-auto mb-4 opacity-50" />
                     <h3 className="text-lg font-semibold text-[#00FFF3] mb-2">No Upcoming Appointments</h3>
                     <p className="text-gray-400 mb-6">Schedule your next consultation to stay on top of your health</p>
-                    <Button 
+                    <Button
                       onClick={() => setShowBookingModal(true)}
                       className="bg-gradient-to-r from-[#00FFF3] to-[#00B8FF] text-black">
                       <Plus className="h-4 w-4 mr-2" />
@@ -756,21 +795,58 @@ const Appointments = () => {
                         </div>
                       </div>
                       <div className="flex flex-col items-end space-y-2">
-                        <Badge className={getStatusColor(appointment.status)}>
-                          {getStatusIcon(appointment.status)}
-                          <span className="ml-1 capitalize">{appointment.status}</span>
+                        <Badge className={
+                          appointment.originalStatus === 'no-show' ? 'bg-red-500/20 text-red-400' :
+                            appointment.originalStatus === 'expired' ? 'bg-orange-500/20 text-orange-400' :
+                              appointment.originalStatus === 'cancelled' ? 'bg-gray-500/20 text-gray-400' :
+                                appointment.originalStatus === 'completed' ? 'bg-green-500/20 text-green-400' :
+                                  'bg-blue-500/20 text-blue-400'
+                        }>
+                          {appointment.originalStatus === 'no-show' ? <AlertCircle className="h-3 w-3" /> :
+                            appointment.originalStatus === 'expired' ? <Clock className="h-3 w-3" /> :
+                              <CheckCircle className="h-3 w-3" />}
+                          <span className="ml-1 capitalize">{appointment.originalStatus || 'completed'}</span>
                         </Badge>
                         <div className="flex gap-2 mt-2">
                           <Button
                             variant="outline"
                             size="sm"
                             className="border-[#00FFF3]/30 text-[#00FFF3]"
-                            onClick={() =>
-                              toast({
-                                title: "View report",
-                                description: "Report view is not wired yet for this appointment.",
-                              })
-                            }
+                            onClick={async () => {
+                              if (!appointment.backendId) {
+                                toast({
+                                  title: "Cannot view report",
+                                  description: "Appointment ID is missing.",
+                                  variant: "destructive",
+                                });
+                                return;
+                              }
+                              try {
+                                const { data } = await api.get(`/prescriptions/appointment/${appointment.backendId}`);
+                                if (data.success && data.prescription) {
+                                  // Navigate to my prescriptions page
+                                  navigate(`/my-prescriptions?highlight=${data.prescription.id}`);
+                                } else {
+                                  toast({
+                                    title: "No prescription found",
+                                    description: "No prescription has been issued for this appointment yet.",
+                                  });
+                                }
+                              } catch (error: any) {
+                                if (error.response?.status === 404) {
+                                  toast({
+                                    title: "No prescription found",
+                                    description: "No prescription has been issued for this appointment yet.",
+                                  });
+                                } else {
+                                  toast({
+                                    title: "Error",
+                                    description: "Failed to fetch prescription. Please try again.",
+                                    variant: "destructive",
+                                  });
+                                }
+                              }
+                            }}
                           >
                             View Report
                           </Button>
@@ -846,13 +922,12 @@ const Appointments = () => {
                             <h4 className="font-semibold text-[#00FFF3] mb-1">{suggestion.title}</h4>
                             <p className="text-gray-600 text-sm mb-2">{suggestion.description}</p>
                             <div className="flex items-center space-x-2">
-                              <Badge 
+                              <Badge
                                 variant="outline"
-                                className={`text-xs ${
-                                  suggestion.priority === 'high' ? 'border-red-500 text-red-600' :
-                                  suggestion.priority === 'medium' ? 'border-orange-500 text-orange-600' :
-                                  'border-blue-500 text-blue-600'
-                                }`}
+                                className={`text-xs ${suggestion.priority === 'high' ? 'border-red-500 text-red-600' :
+                                    suggestion.priority === 'medium' ? 'border-orange-500 text-orange-600' :
+                                      'border-blue-500 text-blue-600'
+                                  }`}
                               >
                                 {suggestion.priority} priority
                               </Badge>
@@ -869,7 +944,7 @@ const Appointments = () => {
                         </div>
                       </div>
                     ))}
-                    
+
                     <div className="flex justify-between items-center mt-4">
                       <Button
                         onClick={generateSmartSuggestions}
@@ -888,82 +963,7 @@ const Appointments = () => {
             </Card>
           </TabsContent>
 
-          {/* Reminder Settings */}
-          <TabsContent value="settings" className="space-y-6">
-            <Card className="border-[#00FFF3]/20">
-              <CardHeader>
-                <CardTitle className="flex items-center text-[#00FFF3]">
-                  <Bell className="h-5 w-5 mr-2" />
-                  Appointment Reminders & Preferences
-                </CardTitle>
-              </CardHeader>
-              <CardContent className="space-y-6">
-                <div className="flex items-center justify-between">
-                  <div>
-                    <h4 className="font-medium text-[#00FFF3]">Enable Reminders</h4>
-                    <p className="text-sm text-gray-400">Get notified before appointments</p>
-                  </div>
-                  <Button
-                    variant="outline"
-                    size="sm"
-                    onClick={() => setReminderSettings(prev => ({ ...prev, enabled: !prev.enabled }))}
-                    className={reminderSettings.enabled ? 'border-green-500 text-green-500' : 'border-gray-500 text-gray-500'}
-                  >
-                    {reminderSettings.enabled ? <Bell className="h-4 w-4" /> : <BellOff className="h-4 w-4" />}
-                  </Button>
-                </div>
-                
-                <Separator className="bg-[#00FFF3]/20" />
-                
-                <div>
-                  <h4 className="font-medium text-[#00FFF3] mb-4">Notification Preferences</h4>
-                  <div className="space-y-3">
-                    <div className="flex items-center justify-between">
-                      <span className="text-sm text-gray-300">Push Notifications</span>
-                      <Button variant="outline" size="sm" className="border-green-500 text-green-500">
-                        <CheckCircle className="h-4 w-4" />
-                      </Button>
-                    </div>
-                    <div className="flex items-center justify-between">
-                      <span className="text-sm text-gray-300">Email Notifications</span>
-                      <Button variant="outline" size="sm" className="border-green-500 text-green-500">
-                        <CheckCircle className="h-4 w-4" />
-                      </Button>
-                    </div>
-                    <div className="flex items-center justify-between">
-                      <span className="text-sm text-gray-300">SMS Notifications</span>
-                      <Button variant="outline" size="sm" className="border-gray-500 text-gray-500">
-                        <AlertCircle className="h-4 w-4" />
-                      </Button>
-                    </div>
-                  </div>
-                </div>
-                
-                <Separator className="bg-[#00FFF3]/20" />
-                
-                <div>
-                  <h4 className="font-medium text-[#00FFF3] mb-2">Reminder Timing</h4>
-                  <p className="text-sm text-gray-400 mb-3">When to send appointment reminders</p>
-                  <div className="grid grid-cols-2 md:grid-cols-4 gap-2">
-                    {[15, 30, 60, 120].map((minutes) => (
-                      <Button
-                        key={minutes}
-                        variant={reminderSettings.timeBeforeAppointment === minutes ? "default" : "outline"}
-                        size="sm"
-                        onClick={() => setReminderSettings(prev => ({ ...prev, timeBeforeAppointment: minutes }))}
-                        className={reminderSettings.timeBeforeAppointment === minutes 
-                          ? "bg-[#00FFF3] text-black" 
-                          : "border-[#00FFF3]/30 text-[#00FFF3]"
-                        }
-                      >
-                        {minutes} min
-                      </Button>
-                    ))}
-                  </div>
-                </div>
-              </CardContent>
-            </Card>
-          </TabsContent>
+
         </Tabs>
 
         {/* AI Chat Modal */}
@@ -982,7 +982,7 @@ const Appointments = () => {
                 </Button>
               </div>
               <div className="flex-1 overflow-hidden">
-                <DrISHAChat 
+                <DrISHAChat
                   language="en"
                   showVoiceInput={true}
                   onMessageSent={(message) => {
@@ -996,9 +996,9 @@ const Appointments = () => {
         )}
 
         {/* Quick Appointment Booking Modal */}
-        <QuickAppointmentModal 
-          open={showBookingModal} 
-          onOpenChange={setShowBookingModal} 
+        <QuickAppointmentModal
+          open={showBookingModal}
+          onOpenChange={setShowBookingModal}
         />
       </div>
     </MainLayout>

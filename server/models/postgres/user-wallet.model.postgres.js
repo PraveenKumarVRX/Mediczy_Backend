@@ -1,4 +1,5 @@
 /**
+import { JWT_CONFIG } from '../../config/auth.config.js';
  * User Wallet Model (PostgreSQL)
  * Stores user health coins balance and wallet information
  */

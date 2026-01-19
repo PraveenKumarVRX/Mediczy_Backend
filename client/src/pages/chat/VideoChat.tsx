@@ -96,7 +96,7 @@ const normalizeParticipants = (payload: any): Recipient[] => {
 const Chat = () => {
   const { socket } = useSocket();
   const queryClient = useQueryClient();
-  const { currentUser, currentDoctor, userType } = useAuth();
+  const { currentUser, currentDoctor, userType, isLoading: authLoading } = useAuth();
   const [selectedRecipient, setSelectedRecipient] = useState<
     User | Doctor | null
   >(null);
@@ -137,6 +137,40 @@ const Chat = () => {
 
   // Get current user ID and type
   const currentId = userType === "user" ? currentUser?._id : currentDoctor?._id;
+
+  // Show loading while auth is checking
+  if (authLoading) {
+    return (
+      <MainLayout>
+        <div className="flex items-center justify-center h-[60vh]">
+          <div className="text-center">
+            <Loader2 className="h-8 w-8 animate-spin mx-auto mb-4 text-primary" />
+            <p className="text-muted-foreground">Loading...</p>
+          </div>
+        </div>
+      </MainLayout>
+    );
+  }
+
+  // Show login prompt if not authenticated
+  if (!currentUser && !currentDoctor) {
+    return (
+      <MainLayout>
+        <div className="flex items-center justify-center h-[60vh]">
+          <Card className="p-8 text-center max-w-md">
+            <User2 className="h-16 w-16 mx-auto mb-4 text-muted-foreground" />
+            <h2 className="text-xl font-semibold mb-2">Login Required</h2>
+            <p className="text-muted-foreground mb-4">
+              Please login to access the chat with doctor feature.
+            </p>
+            <Button asChild>
+              <a href="/login">Login to Continue</a>
+            </Button>
+          </Card>
+        </div>
+      </MainLayout>
+    );
+  }
 
   // Fetch available doctors/users depending on user type
   const { data: availableUsers = [] } = useQuery<Recipient[]>({

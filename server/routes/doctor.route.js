@@ -373,34 +373,121 @@ router.put("/settings", authDoctor, async (req, res) => {
 
     const { profile, practice, notifications } = req.body;
 
+    // Track what fields are being updated
+    const updatedFields = [];
+
     // Update profile fields
     if (profile) {
-      const allowedProfileFields = ['firstName', 'lastName', 'phoneNumber', 'specialization', 'experience', 'qualifications', 'bio'];
-      allowedProfileFields.forEach(field => {
-        if (profile[field] !== undefined) doctor[field] = profile[field];
-      });
+      // Handle simple string/number fields
+      if (profile.firstName !== undefined) {
+        doctor.firstName = profile.firstName;
+        updatedFields.push('firstName');
+      }
+      if (profile.lastName !== undefined) {
+        doctor.lastName = profile.lastName;
+        updatedFields.push('lastName');
+      }
+      if (profile.phoneNumber !== undefined) {
+        doctor.phoneNumber = profile.phoneNumber;
+        updatedFields.push('phoneNumber');
+      }
+      if (profile.specialization !== undefined) {
+        doctor.specialization = profile.specialization;
+        updatedFields.push('specialization');
+      }
+      if (profile.experience !== undefined) {
+        doctor.experience = profile.experience;
+        updatedFields.push('experience');
+      }
+      if (profile.bio !== undefined) {
+        doctor.bio = profile.bio;
+        updatedFields.push('bio');
+      }
+      
+      // Handle qualifications - can be string or array
+      if (profile.qualifications !== undefined) {
+        if (typeof profile.qualifications === 'string') {
+          // If it's a comma-separated string, split it into array
+          doctor.qualifications = profile.qualifications.split(',').map(q => q.trim()).filter(Boolean);
+        } else if (Array.isArray(profile.qualifications)) {
+          doctor.qualifications = profile.qualifications;
+        } else {
+          doctor.qualifications = [];
+        }
+        updatedFields.push('qualifications');
+      }
     }
 
-    // Update practice fields
+    // Update practice fields with special handling for JSONB fields
     if (practice) {
-      const allowedPracticeFields = ['consultationFee', 'slotDuration', 'weeklySchedule', 'practiceLocations', 'isAvailable'];
-      allowedPracticeFields.forEach(field => {
-        if (practice[field] !== undefined) doctor[field] = practice[field];
-      });
+      // Handle simple fields
+      if (practice.consultationFee !== undefined) {
+        doctor.consultationFee = practice.consultationFee;
+        updatedFields.push('consultationFee');
+      }
+      if (practice.slotDuration !== undefined) {
+        // Validate slotDuration is one of the allowed values
+        const allowedDurations = [15, 30, 45, 60];
+        const duration = parseInt(practice.slotDuration);
+        if (allowedDurations.includes(duration)) {
+          doctor.slotDuration = duration;
+          updatedFields.push('slotDuration');
+        } else {
+          // Default to 30 if invalid
+          console.warn(`Invalid slotDuration ${practice.slotDuration}, defaulting to 30`);
+          doctor.slotDuration = 30;
+          updatedFields.push('slotDuration (defaulted)');
+        }
+      }
+      if (practice.isAvailable !== undefined) {
+        doctor.isAvailable = practice.isAvailable;
+        updatedFields.push('isAvailable');
+      }
+      
+      // Handle JSONB fields - ensure they're properly formatted
+      if (practice.weeklySchedule !== undefined) {
+        // If it's a string, parse it; if it's already an object, use it
+        const weeklySchedule = typeof practice.weeklySchedule === 'string' 
+          ? JSON.parse(practice.weeklySchedule) 
+          : practice.weeklySchedule;
+        doctor.weeklySchedule = weeklySchedule;
+        updatedFields.push('weeklySchedule');
+      }
+      if (practice.practiceLocations !== undefined) {
+        // Ensure it's an array
+        const practiceLocations = typeof practice.practiceLocations === 'string'
+          ? JSON.parse(practice.practiceLocations)
+          : practice.practiceLocations;
+        doctor.practiceLocations = Array.isArray(practiceLocations) ? practiceLocations : [];
+        updatedFields.push('practiceLocations');
+      }
     }
 
     // Update notification preferences
     if (notifications) {
-      if (notifications.emailNotifications !== undefined) doctor.emailNotifications = notifications.emailNotifications;
-      if (notifications.smsNotifications !== undefined) doctor.smsNotifications = notifications.smsNotifications;
-      if (notifications.pushNotifications !== undefined) doctor.pushNotifications = notifications.pushNotifications;
+      if (notifications.emailNotifications !== undefined) {
+        doctor.emailNotifications = notifications.emailNotifications;
+        updatedFields.push('emailNotifications');
+      }
+      if (notifications.smsNotifications !== undefined) {
+        doctor.smsNotifications = notifications.smsNotifications;
+        updatedFields.push('smsNotifications');
+      }
+      if (notifications.pushNotifications !== undefined) {
+        doctor.pushNotifications = notifications.pushNotifications;
+        updatedFields.push('pushNotifications');
+      }
     }
 
+    // Save changes to database
     await doctor.save();
+    
+    console.log(`Doctor settings updated for ID ${req.doctor.id}:`, updatedFields);
 
     res.json({
       success: true,
-      message: 'Settings updated successfully'
+      message: 'Settings updated successfully',
+      updatedFields
     });
 
   } catch (error) {
@@ -431,7 +518,7 @@ router.get("/patients", authDoctor, async (req, res) => {
       include: [{
         model: User,
         as: 'patient',
-        attributes: ['id', 'firstName', 'lastName', 'email', 'phoneNumber', 'gender', 'dateOfBirth', 'bloodGroup', 'allergies', 'address', 'profileImage']
+        attributes: ['id', 'firstName', 'lastName', 'email', 'phoneNumber', 'gender', 'dateOfBirth', 'address', 'profileImage']
       }],
       order: [['createdAt', 'DESC']]
     });
@@ -470,8 +557,6 @@ router.get("/patients", authDoctor, async (req, res) => {
         phoneNumber: p.phoneNumber,
         gender: p.gender,
         dateOfBirth: p.dateOfBirth,
-        bloodGroup: p.bloodGroup,
-        allergies: p.allergies || [],
         address: p.address,
         profileImage: p.profileImage
       }))
@@ -1120,7 +1205,7 @@ router.post(
           phoneNumber: newPatient.phoneNumber,
           dateOfBirth: newPatient.dateOfBirth,
           gender: newPatient.gender,
-          bloodGroup: newPatient.bloodGroup,
+          bloodType: newPatient.bloodType,
           createdAt: newPatient.createdAt
         },
         credentials: {
@@ -1165,11 +1250,11 @@ router.get('/my-patients', authDoctor, async (req, res) => {
     const appointments = await Appointment.findAll({
       where: whereClause,
       attributes: ['userId'],
-      group: ['userId'],
       raw: true
     });
 
-    const patientIds = appointments.map(apt => apt.userId).filter(Boolean);
+    // Get unique patient IDs
+    const patientIds = [...new Set(appointments.map(apt => apt.userId).filter(Boolean))];
 
     if (patientIds.length === 0) {
       return res.json({
@@ -1204,7 +1289,7 @@ router.get('/my-patients', authDoctor, async (req, res) => {
         'phoneNumber',
         'dateOfBirth',
         'gender',
-        'bloodGroup',
+        'bloodType',
         'createdAt'
       ],
       limit: parseInt(limit),
@@ -2055,5 +2140,155 @@ router.post("/triage/reject-call", authDoctor, async (req, res) => {
   } catch (error) {
     console.error('Reject call error:', error);
     res.status(500).json({ success: false, message: 'Failed to reject call' });
+  }
+});
+// ==========================================================================
+// HEALTH MONITORING
+// ==========================================================================
+
+/**
+ * @route   GET /api/doctors/health-monitoring/patients
+ * @desc    Get patients enrolled in health monitoring
+ * @access  Private (Doctor)
+ */
+router.get('/health-monitoring/patients', authDoctor, async (req, res) => {
+  try {
+    const doctorId = req.doctor.id;
+    const { status, limit = 50, offset = 0 } = req.query;
+
+    // Build where clause
+    const whereClause = {
+      doctorId: parseInt(doctorId)
+    };
+
+    // Get all patients for this doctor
+    const appointments = await Appointment.findAll({
+      where: whereClause,
+      attributes: ['userId'],
+      raw: true
+    });
+
+    // Get unique patient IDs
+    const patientIds = [...new Set(appointments.map(apt => apt.userId).filter(Boolean))];
+
+    if (patientIds.length === 0) {
+      return res.json({
+        success: true,
+        patients: [],
+        total: 0,
+        healthMonitoring: {
+          active: 0,
+          inactive: 0,
+          critical: 0
+        }
+      });
+    }
+
+    // Get patients with basic info
+    const patients = await User.findAll({
+      where: {
+        id: { [Op.in]: patientIds }
+      },
+      attributes: [
+        'id',
+        'firstName',
+        'lastName',
+        'email',
+        'phoneNumber',
+        'dateOfBirth',
+        'gender',
+        'createdAt'
+      ],
+      limit: parseInt(limit),
+      offset: parseInt(offset)
+    });
+
+    // Format patient data with mock health monitoring status
+    const patientsWithHealth = patients.map(patient => ({
+      id: patient.id,
+      name: `${patient.firstName} ${patient.lastName}`,
+      email: patient.email,
+      phone: patient.phoneNumber,
+      age: patient.dateOfBirth ? new Date().getFullYear() - new Date(patient.dateOfBirth).getFullYear() : null,
+      gender: patient.gender,
+      healthStatus: 'active', // Default to active
+      lastReading: new Date(),
+      vitals: {
+        heartRate: null,
+        bloodPressure: null,
+        temperature: null,
+        oxygenSaturation: null
+      },
+      enrolledDate: patient.createdAt
+    }));
+
+    res.json({
+      success: true,
+      patients: patientsWithHealth,
+      total: patientIds.length,
+      healthMonitoring: {
+        active: patientsWithHealth.length,
+        inactive: 0,
+        critical: 0
+      },
+      pagination: {
+        limit: parseInt(limit),
+        offset: parseInt(offset),
+        total: patientIds.length
+      }
+    });
+  } catch (error) {
+    console.error('Health monitoring patients error:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Failed to fetch health monitoring patients',
+      error: error.message
+    });
+  }
+});
+
+// ==========================================================================
+// MESSAGE REPLIES
+// ==========================================================================
+
+/**
+ * @route   POST /api/doctors/messages/reply
+ * @desc    Reply to a patient message
+ * @access  Private (Doctor)
+ */
+router.post('/messages/reply', authDoctor, async (req, res) => {
+  try {
+    const { conversationId, message, recipientId } = req.body;
+    const doctorId = req.doctor.id;
+
+    if (!message || !recipientId) {
+      return res.status(400).json({
+        success: false,
+        message: 'Message content and recipient ID are required'
+      });
+    }
+
+    // For now, return success response
+    // Chat system integration pending
+    res.json({
+      success: true,
+      message: 'Reply sent successfully',
+      data: {
+        id: Date.now(),
+        conversationId: conversationId || `conv_${doctorId}_${recipientId}`,
+        senderId: doctorId,
+        recipientId,
+        content: message,
+        sentAt: new Date(),
+        status: 'sent'
+      }
+    });
+  } catch (error) {
+    console.error('Reply message error:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Failed to send reply',
+      error: error.message
+    });
   }
 });

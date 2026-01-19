@@ -1,7 +1,8 @@
 import jwt from 'jsonwebtoken';
 import { createClient } from 'redis';
+import { JWT_CONFIG } from '../config/auth.config.js';
 
-const JWT_SECRET = process.env.JWT_SECRET || 'mediczy-super-secret-key-2024';
+const JWT_SECRET = JWT_CONFIG.SECRET;
 const REFRESH_SECRET = process.env.REFRESH_SECRET || 'mediczy-refresh-secret-2024';
 
 // Redis client for token blacklist (optional - for immediate revocation)
@@ -52,7 +53,7 @@ export const generateRefreshToken = (payload) => {
 export const generateTokenPair = (payload) => {
   const accessToken = generateAccessToken(payload);
   const refreshToken = generateRefreshToken(payload);
-  
+
   return {
     accessToken,
     refreshToken,
@@ -73,7 +74,7 @@ export const verifyAccessToken = (token) => {
         throw new Error('Token has been revoked');
       }
     }
-    
+
     return jwt.verify(token, JWT_SECRET, {
       issuer: 'mediczy-api',
       audience: 'mediczy-users',
@@ -106,11 +107,11 @@ export const revokeToken = async (token) => {
     console.warn('Token revocation requires Redis - token will remain valid until expiry');
     return false;
   }
-  
+
   try {
     const decoded = jwt.decode(token);
     const expiresIn = decoded.exp - Math.floor(Date.now() / 1000);
-    
+
     if (expiresIn > 0) {
       // Add to blacklist until natural expiry
       await redisClient.setEx(`blacklist:${token}`, expiresIn, '1');
@@ -129,14 +130,14 @@ export const revokeToken = async (token) => {
 export const refreshAccessToken = (refreshToken) => {
   try {
     const payload = verifyRefreshToken(refreshToken);
-    
+
     // Generate new access token with same payload
     const newAccessToken = generateAccessToken({
       id: payload.id,
       email: payload.email,
       role: payload.role,
     });
-    
+
     return {
       accessToken: newAccessToken,
       expiresIn: 900, // 15 minutes
@@ -161,7 +162,7 @@ export const isTokenExpired = (token) => {
   try {
     const decoded = jwt.decode(token);
     if (!decoded || !decoded.exp) return true;
-    
+
     return decoded.exp < Math.floor(Date.now() / 1000);
   } catch (error) {
     return true;

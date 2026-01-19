@@ -1,4 +1,5 @@
 import axios from 'axios';
+import { JWT_CONFIG } from '../config/auth.config.js';
 import crypto from 'crypto';
 import fs from 'fs';
 import path from 'path';

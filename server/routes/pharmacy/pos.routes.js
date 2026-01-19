@@ -5,6 +5,7 @@
 
 import express from 'express';
 import jwt from 'jsonwebtoken';
+import { JWT_CONFIG } from '../../config/auth.config.js';
 
 const router = express.Router();
 
@@ -17,12 +18,12 @@ const verifyPharmacyToken = (req, res, next) => {
     if (!token) {
       return res.status(401).json({ success: false, message: 'Unauthorized' });
     }
-    
-    const decoded = jwt.verify(token, process.env.JWT_SECRET);
+
+    const decoded = jwt.verify(token, JWT_CONFIG.SECRET);
     if (decoded.type !== 'pharmacy') {
       return res.status(403).json({ success: false, message: 'Access denied' });
     }
-    
+
     req.pharmacyId = decoded.id;
     req.pharmacyToken = decoded;
     next();
@@ -78,7 +79,7 @@ router.get('/transactions', verifyPharmacyToken, async (req, res) => {
         }
       ]
     };
-    
+
     res.json(transactions);
   } catch (error) {
     console.error('Transactions fetch error:', error);
@@ -97,10 +98,10 @@ router.get('/transactions', verifyPharmacyToken, async (req, res) => {
 router.post('/sale', verifyPharmacyToken, async (req, res) => {
   try {
     const saleData = req.body;
-    
+
     // Mock response - replace with actual database insert and inventory update
     const invoiceNumber = `INV-2025-${Math.floor(Math.random() * 10000).toString().padStart(4, '0')}`;
-    
+
     res.status(201).json({
       success: true,
       message: 'Sale completed successfully',
@@ -129,7 +130,7 @@ router.post('/sale', verifyPharmacyToken, async (req, res) => {
 router.get('/invoice/:invoiceNumber', verifyPharmacyToken, async (req, res) => {
   try {
     const { invoiceNumber } = req.params;
-    
+
     // Mock invoice data
     res.json({
       success: true,

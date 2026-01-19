@@ -1,4 +1,5 @@
 /**
+import { JWT_CONFIG } from '../../config/auth.config.js';
  * PostgreSQL Prescription Model
  * With JSONB for medications and full-text search
  */

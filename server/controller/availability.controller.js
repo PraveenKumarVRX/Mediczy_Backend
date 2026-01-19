@@ -1,4 +1,5 @@
 import { validationResult } from 'express-validator';
+import { JWT_CONFIG } from '../config/auth.config.js';
 import DoctorAvailability from '../models/doctorAvailability.model.intelligent.js';
 import Appointment from '../models/appointment.model.intelligent.js';
 import Doctor from '../models/doctor.model.intelligent.js';

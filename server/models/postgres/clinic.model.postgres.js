@@ -1,4 +1,5 @@
 /**
+import { JWT_CONFIG } from '../../config/auth.config.js';
  * PostgreSQL Clinic Model
  * Primary database model replacing MariaDB
  *

@@ -1,9 +1,10 @@
 import express from 'express';
 import jwt from 'jsonwebtoken';
 import bcrypt from 'bcryptjs';
+import { JWT_CONFIG } from '../../config/auth.config.js';
 
 const router = express.Router();
-const JWT_SECRET = process.env.JWT_SECRET || 'mediczy-super-secret-key-2024';
+const JWT_SECRET = JWT_CONFIG.SECRET;
 
 // Mock pharmacy data (replace with database later)
 const mockPharmacy = {
@@ -46,7 +47,7 @@ router.post('/login', async (req, res) => {
     // Mock pharmacy authentication (enabled when allowDemo)
     if (allowDemo && email.toLowerCase() === mockPharmacy.email.toLowerCase()) {
       console.warn('⚠️ Using mock pharmacy credentials (demo mode)');
-      
+
       // Verify password
       let isPasswordValid = false;
       try {
@@ -101,7 +102,7 @@ router.post('/login', async (req, res) => {
     //   return res.status(401).json({ success: false, message: 'Invalid credentials' });
     // }
     // ... verify password, generate token
-    
+
     return res.status(401).json({
       success: false,
       message: 'Invalid email or password'

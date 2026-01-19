@@ -1,4 +1,5 @@
 import { DataTypes } from 'sequelize';
+import { JWT_CONFIG } from '../../config/auth.config.js';
 import postgresSequelize from '../../db/postgres-sequelize.js';
 
 /**

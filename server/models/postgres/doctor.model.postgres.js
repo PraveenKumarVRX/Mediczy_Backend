@@ -1,4 +1,5 @@
 /**
+import { JWT_CONFIG } from '../../config/auth.config.js';
  * PostgreSQL Doctor Model
  * Enhanced with PostgreSQL-specific features
  */
@@ -517,7 +518,7 @@ Doctor.prototype.comparePassword = async function(candidatePassword) {
 
 // Generate authentication token with userId (doctorId) and userType for ring-fencing
 Doctor.prototype.generateAuthToken = function() {
-  if (!process.env.JWT_SECRET) {
+  if (!JWT_CONFIG.SECRET) {
     throw new Error('FATAL: JWT_SECRET not configured');
   }
   
@@ -530,7 +531,7 @@ Doctor.prototype.generateAuthToken = function() {
       userType: 'doctor',  // userType for ring-fencing middleware
       organization_id: this.organization_id
     },
-    process.env.JWT_SECRET,
+    JWT_CONFIG.SECRET,
     { expiresIn: '7d' }
   );
 };

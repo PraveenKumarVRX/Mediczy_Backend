@@ -18,19 +18,12 @@ const LabLogin = () => {
   const [isCheckingAuth, setIsCheckingAuth] = useState(true);
   const navigate = useNavigate();
 
-  const demoCreds = { email: 'lab@mediczy.com', password: 'Lab123' };
-
   useEffect(() => {
     const token = localStorage.getItem('labToken');
     if (token) {
       console.log('✅ Lab already authenticated, redirecting...');
       navigate('/lab/dashboard');
       return;
-    }
-    
-    if (import.meta.env.DEV) {
-      setEmail('lab@mediczy.com');
-      setPassword('Lab123');
     }
     
     setIsCheckingAuth(false);
@@ -65,22 +58,6 @@ const LabLogin = () => {
     
     console.log('Lab login attempt:', { email, password: '***' });
 
-    if (
-      email === demoCreds.email &&
-      password === demoCreds.password &&
-      (import.meta.env.DEV || true)
-    ) {
-      console.log('🚀 Lab dev shortcut engaged');
-      establishLabSession('dev-lab-token', {
-        id: 'lab_dev',
-        email: 'lab@mediczy.com',
-        name: 'Demo Lab',
-      });
-      setLoading(false);
-      navigate('/lab/dashboard', { replace: true });
-      return;
-    }
-    
     let timeoutId: ReturnType<typeof setTimeout> | null = null;
     try {
       const controller = new AbortController();
@@ -93,16 +70,7 @@ const LabLogin = () => {
       if (timeoutId) clearTimeout(timeoutId);
     } catch (err: any) {
       console.error('Lab login error:', err);
-      if (email === demoCreds.email && password === demoCreds.password) {
-        // Fallback to offline demo session when API is unreachable
-        establishLabSession('lab-demo-offline-token', {
-          id: 'lab_demo_offline',
-          email: demoCreds.email,
-          name: 'Demo Lab (Offline)',
-        });
-        setError(null);
-        navigate('/lab/dashboard', { replace: true });
-      } else if (err?.name === 'AbortError' || err?.code === 'ERR_CANCELED') {
+      if (err?.name === 'AbortError' || err?.code === 'ERR_CANCELED') {
         setError('Request timeout. Please check your connection and try again.');
       } else {
         setError(err?.response?.data?.message || err?.message || 'Login failed. Please check your credentials.');

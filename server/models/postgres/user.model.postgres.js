@@ -1,4 +1,5 @@
 /**
+import { JWT_CONFIG } from '../../config/auth.config.js';
  * PostgreSQL User Model
  * Primary database model replacing MariaDB
  * 
@@ -423,7 +424,7 @@ User.prototype.verifyPassword = async function(candidatePassword) {
 
 // Generate JWT token
 User.prototype.generateAuthToken = function() {
-  if (!process.env.JWT_SECRET) {
+  if (!JWT_CONFIG.SECRET) {
     throw new Error('FATAL: JWT_SECRET not configured');
   }
   
@@ -440,7 +441,7 @@ User.prototype.generateAuthToken = function() {
     scope: this.scope || {}
   };
   
-  return jwt.sign(payload, process.env.JWT_SECRET, { expiresIn: '7d' });
+  return jwt.sign(payload, JWT_CONFIG.SECRET, { expiresIn: '7d' });
 };
 
 // Get public profile (exclude sensitive data)

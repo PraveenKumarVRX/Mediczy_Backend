@@ -241,10 +241,11 @@ const Login = () => {
             aria-label="Go to dashboard"
             title="Go to dashboard"
           >
-            <div className="p-2.5 rounded-xl bg-white/15 backdrop-blur-sm group-hover:bg-white/25 transition-all duration-300">
-              <HeartPulse className="h-6 w-6" />
-            </div>
-            <span className="text-xl font-bold tracking-tight">{BRAND.name}</span>
+            <img 
+              src={BRAND.logo} 
+              alt={BRAND.name} 
+              className="h-12 w-auto object-contain"
+            />
           </motion.div>
           
           <div className="mt-auto space-y-6">

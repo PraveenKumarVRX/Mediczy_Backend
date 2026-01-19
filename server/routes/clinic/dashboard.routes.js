@@ -1,10 +1,11 @@
 import express from 'express';
 import jwt from 'jsonwebtoken';
+import { JWT_CONFIG } from '../../config/auth.config.js';
 // import Clinic from '../../models/postgres/clinic.model.postgres.js'; // Lazy import
 // import { postgresSequelize } from '../../db/postgres-sequelize.js'; // Lazy import
 
 const router = express.Router();
-const JWT_SECRET = process.env.JWT_SECRET || 'mediczy-clinic-secret-key-2025';
+const JWT_SECRET = JWT_CONFIG.SECRET;
 
 // Lazy import function for models
 const getModels = async () => {
@@ -17,7 +18,7 @@ const getModels = async () => {
 const verifyClinicToken = async (req, res, next) => {
   try {
     const token = req.headers.authorization?.replace('Bearer ', '');
-    
+
     if (!token) {
       return res.status(401).json({
         success: false,
@@ -33,7 +34,7 @@ const verifyClinicToken = async (req, res, next) => {
     }
 
     const decoded = jwt.verify(token, JWT_SECRET);
-    
+
     if (decoded.type !== 'clinic') {
       return res.status(403).json({
         success: false,
@@ -53,7 +54,7 @@ const verifyClinicToken = async (req, res, next) => {
         message: 'Invalid or expired token'
       });
     }
-    
+
     // For other errors, also return 401
     res.status(401).json({
       success: false,
@@ -67,7 +68,7 @@ router.get('/stats', verifyClinicToken, async (req, res) => {
   try {
     const today = new Date();
     today.setHours(0, 0, 0, 0);
-    
+
     const tomorrow = new Date(today);
     tomorrow.setDate(tomorrow.getDate() + 1);
 
@@ -118,35 +119,35 @@ router.get('/appointments', verifyClinicToken, async (req, res) => {
 
     // Simulated data - replace with actual appointment queries
     const appointments = [
-      { 
-        id: 1, 
-        patient: 'Rajesh Kumar', 
-        time: '10:30 AM', 
-        type: 'Consultation', 
+      {
+        id: 1,
+        patient: 'Rajesh Kumar',
+        time: '10:30 AM',
+        type: 'Consultation',
         status: 'Waiting',
         phone: '+91-9876543210'
       },
-      { 
-        id: 2, 
-        patient: 'Priya Sharma', 
-        time: '11:00 AM', 
-        type: 'Follow-up', 
+      {
+        id: 2,
+        patient: 'Priya Sharma',
+        time: '11:00 AM',
+        type: 'Follow-up',
         status: 'Scheduled',
         phone: '+91-9876543211'
       },
-      { 
-        id: 3, 
-        patient: 'Amit Patel', 
-        time: '11:30 AM', 
-        type: 'Check-up', 
+      {
+        id: 3,
+        patient: 'Amit Patel',
+        time: '11:30 AM',
+        type: 'Check-up',
         status: 'Scheduled',
         phone: '+91-9876543212'
       },
-      { 
-        id: 4, 
-        patient: 'Neha Singh', 
-        time: '12:00 PM', 
-        type: 'Consultation', 
+      {
+        id: 4,
+        patient: 'Neha Singh',
+        time: '12:00 PM',
+        type: 'Consultation',
         status: 'Scheduled',
         phone: '+91-9876543213'
       }
@@ -214,31 +215,31 @@ router.get('/patients', verifyClinicToken, async (req, res) => {
 
     // Simulated data - replace with actual patient queries
     const patients = [
-      { 
-        id: 1, 
-        name: 'Rahul Mehta', 
-        lastVisit: '2024-12-03', 
-        diagnosis: 'Diabetes Follow-up', 
+      {
+        id: 1,
+        name: 'Rahul Mehta',
+        lastVisit: '2024-12-03',
+        diagnosis: 'Diabetes Follow-up',
         nextVisit: '2024-12-17',
         phone: '+91-9876543220',
         age: 45,
         gender: 'Male'
       },
-      { 
-        id: 2, 
-        name: 'Anita Desai', 
-        lastVisit: '2024-12-03', 
-        diagnosis: 'Hypertension', 
+      {
+        id: 2,
+        name: 'Anita Desai',
+        lastVisit: '2024-12-03',
+        diagnosis: 'Hypertension',
         nextVisit: '2024-12-10',
         phone: '+91-9876543221',
         age: 52,
         gender: 'Female'
       },
-      { 
-        id: 3, 
-        name: 'Vikram Joshi', 
-        lastVisit: '2024-12-02', 
-        diagnosis: 'Routine Check-up', 
+      {
+        id: 3,
+        name: 'Vikram Joshi',
+        lastVisit: '2024-12-02',
+        diagnosis: 'Routine Check-up',
         nextVisit: '2025-01-02',
         phone: '+91-9876543222',
         age: 38,
@@ -404,40 +405,40 @@ router.get('/inventory', verifyClinicToken, async (req, res) => {
 
     // Simulated data
     const inventory = [
-      { 
+      {
         id: 1,
-        name: 'Paracetamol 500mg', 
-        quantity: 245, 
+        name: 'Paracetamol 500mg',
+        quantity: 245,
         status: 'In Stock',
         category: 'Medicine',
         minStock: 50,
         price: 2.50,
         expiry: '2025-12-31'
       },
-      { 
+      {
         id: 2,
-        name: 'Amoxicillin 250mg', 
-        quantity: 18, 
+        name: 'Amoxicillin 250mg',
+        quantity: 18,
         status: 'Low Stock',
         category: 'Medicine',
         minStock: 30,
         price: 15.00,
         expiry: '2025-08-15'
       },
-      { 
+      {
         id: 3,
-        name: 'Blood Pressure Monitor', 
-        quantity: 5, 
+        name: 'Blood Pressure Monitor',
+        quantity: 5,
         status: 'Low Stock',
         category: 'Equipment',
         minStock: 3,
         price: 1200.00,
         expiry: null
       },
-      { 
+      {
         id: 4,
-        name: 'Thermometer Digital', 
-        quantity: 0, 
+        name: 'Thermometer Digital',
+        quantity: 0,
         status: 'Out of Stock',
         category: 'Equipment',
         minStock: 10,
@@ -540,7 +541,7 @@ router.get('/profile', verifyClinicToken, async (req, res) => {
 router.put('/profile', verifyClinicToken, async (req, res) => {
   try {
     const updates = req.body;
-    
+
     // Remove fields that shouldn't be updated directly
     delete updates.id;
     delete updates.email;

@@ -8,13 +8,25 @@ import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { useToast } from "@/hooks/use-toast";
 import { ticketService } from "@/services/ticketService";
-import { useMemo, useState } from "react";
+import { useMemo, useState, useEffect } from "react";
 
 interface StatCardProps {
   title: string;
   value: string;
   helper?: string;
 }
+
+const toNumber = (value: string | number | undefined) => {
+  if (typeof value === "number") return value;
+  const numeric = value ? Number(String(value).replace(/[^0-9.-]/g, "")) : 0;
+  return Number.isFinite(numeric) ? numeric : 0;
+};
+
+const formatStatValue = (value: number | string) =>
+  typeof value === "number" ? value.toLocaleString("en-IN") : value;
+
+const setStatValueAt = (stats: StatCardProps[], index: number, value: number) =>
+  stats.map((stat, i) => (i === index ? { ...stat, value: formatStatValue(value) } : stat));
 
 const StatGrid = ({ items }: { items: StatCardProps[] }) => (
   <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-4">
@@ -95,6 +107,10 @@ const ActionPage = ({
   const [open, setOpen] = useState(false);
   const [submitting, setSubmitting] = useState(false);
   const [values, setValues] = useState<Record<string, string>>({});
+  
+  useEffect(() => {
+    setItems(initialItems);
+  }, [initialItems]);
 
   const fields = useMemo(() => (action?.kind === "dialog" ? action.fields : []), [action]);
 
@@ -190,6 +206,71 @@ const ActionPage = ({
   );
 };
 
+// Helper wrappers: keep per-page logic readable.
+const withSimpleItemAppend = (
+  page: {
+    title: string;
+    subtitle: string;
+    stats: StatCardProps[];
+    items: { label: string; meta?: string; status?: string }[];
+    action: ActionMode;
+    countStatIndex?: number;
+    persistKey?: string;
+  },
+  buildItem: (values: Record<string, string>) => { label: string; meta?: string; status?: string }
+) => {
+  const Component = () => {
+    const { toast } = useToast();
+    const [items, setItems] = useState(page.items);
+    const [stats, setStats] = useState(page.stats);
+    const baseCount = page.countStatIndex !== undefined ? toNumber(page.stats[page.countStatIndex]?.value) : 0;
+    const baseItems = page.items.length;
+
+    useEffect(() => {
+      if (!page.persistKey) return;
+      try {
+        const cached = localStorage.getItem(page.persistKey);
+        if (cached) {
+          const parsed = JSON.parse(cached);
+          if (Array.isArray(parsed)) {
+            setItems(parsed);
+          }
+        }
+      } catch (err) {
+        console.warn("Unable to read cached items", err);
+      }
+    }, [page.persistKey]);
+
+    useEffect(() => {
+      if (page.persistKey) {
+        try {
+          localStorage.setItem(page.persistKey, JSON.stringify(items));
+        } catch (err) {
+          console.warn("Unable to persist items", err);
+        }
+      }
+
+      if (page.countStatIndex !== undefined) {
+        const nextValue = Math.max(0, baseCount + (items.length - baseItems));
+        setStats((prev) => setStatValueAt(prev, page.countStatIndex!, nextValue));
+      }
+    }, [items, page.persistKey, page.countStatIndex, baseCount, baseItems]);
+
+    const action =
+      page.action.kind === "dialog"
+        ? {
+            ...page.action,
+            onSubmit: async (values: Record<string, string>) => {
+              setItems((prev) => [buildItem(values), ...prev]);
+              toast({ title: "Saved", description: `${page.action.actionLabel} completed.` });
+            },
+          }
+        : page.action;
+    return <ActionPage title={page.title} subtitle={page.subtitle} stats={stats} initialItems={items} action={action} />;
+  };
+  return <Component />;
+};
+
 export const ClinicAppointmentsPage = () =>
   withSimpleItemAppend(
     {
@@ -206,6 +287,8 @@ export const ClinicAppointmentsPage = () =>
         { label: "Walk-in queue", meta: "24 patients", status: "Flow" },
         { label: "Video consult", meta: "Dr. Kaur from 4PM", status: "Upcoming" },
       ],
+      countStatIndex: 0,
+      persistKey: "clinic-appointments",
       action: {
         kind: "dialog",
         actionLabel: "Add slot",
@@ -227,29 +310,6 @@ export const ClinicAppointmentsPage = () =>
     })
   );
 
-// Helper wrappers: keep per-page logic readable.
-const withSimpleItemAppend = (
-  page: { title: string; subtitle: string; stats: StatCardProps[]; items: { label: string; meta?: string; status?: string }[]; action: ActionMode },
-  buildItem: (values: Record<string, string>) => { label: string; meta?: string; status?: string }
-) => {
-  const Component = () => {
-    const { toast } = useToast();
-    const [items, setItems] = useState(page.items);
-    const action =
-      page.action.kind === "dialog"
-        ? {
-            ...page.action,
-            onSubmit: async (values: Record<string, string>) => {
-              setItems((prev) => [buildItem(values), ...prev]);
-              toast({ title: "Saved", description: `${page.action.actionLabel} completed.` });
-            },
-          }
-        : page.action;
-    return <ActionPage title={page.title} subtitle={page.subtitle} stats={page.stats} initialItems={items} action={action} />;
-  };
-  return <Component />;
-};
-
 export const ClinicPatientsPage = () =>
   withSimpleItemAppend(
     {
@@ -266,6 +326,8 @@ export const ClinicPatientsPage = () =>
         { label: "Chronic care", meta: "24 under plan", status: "Managed" },
         { label: "Pediatric review", meta: "12 due tomorrow", status: "Reminder" },
       ],
+      countStatIndex: 0,
+      persistKey: "clinic-patients",
       action: {
         kind: "dialog",
         actionLabel: "Register patient",
@@ -394,6 +456,8 @@ export const ClinicPrescriptionsPage = () =>
         { label: "Chronic meds", meta: "12 refills due", status: "Reminder" },
         { label: "Allergy alerts", meta: "No mismatches", status: "Safe" },
       ],
+      countStatIndex: 0,
+      persistKey: "clinic-prescriptions",
       action: {
         kind: "dialog",
         actionLabel: "New prescription",

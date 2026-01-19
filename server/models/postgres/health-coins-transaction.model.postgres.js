@@ -1,4 +1,5 @@
 /**
+import { JWT_CONFIG } from '../../config/auth.config.js';
  * Health Coins Transaction Model (PostgreSQL)
  * Records all wallet transactions (earn, spend, purchase)
  */

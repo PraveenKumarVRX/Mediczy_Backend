@@ -1,4 +1,5 @@
 /**
+import { JWT_CONFIG } from '../config/auth.config.js';
  * Clinic Staff Management Controller
  * Allows clinic admin to create, update, and manage staff
  */

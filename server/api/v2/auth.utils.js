@@ -1,11 +1,12 @@
 /**
+import { JWT_CONFIG } from '../config/auth.config.js';
  * Unified Authentication Utilities for API v2
  * JWT token generation and verification helpers
  */
 
 import jwt from 'jsonwebtoken';
 
-const JWT_SECRET = process.env.JWT_SECRET || 'mediczy-secret-key-change-in-production';
+const JWT_SECRET = JWT_CONFIG.SECRET || 'mediczy-secret-key-change-in-production';
 
 /**
  * Token configuration by role

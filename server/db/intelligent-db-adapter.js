@@ -1,4 +1,5 @@
 import axios from 'axios';
+import { JWT_CONFIG } from '../config/auth.config.js';
 import bcrypt from 'bcrypt';
 import jwt from 'jsonwebtoken';
 
@@ -529,7 +530,7 @@ class IntelligentDatabaseAdapter {
               generateAuthToken: () => {
                 return jwt.sign(
                   { id: 'user_001', email: 'user@mediczy.com', role: 'user' },
-                  process.env.JWT_SECRET || 'fallback_secret',
+                  JWT_CONFIG.SECRET || 'fallback_secret',
                   { expiresIn: '24h' }
                 );
               },
@@ -593,7 +594,7 @@ class IntelligentDatabaseAdapter {
             generateAuthToken: () => {
               return jwt.sign(
                 { id: `user_${Date.now()}`, email: userData.email, role: 'user' },
-                process.env.JWT_SECRET || 'fallback_secret',
+                JWT_CONFIG.SECRET || 'fallback_secret',
                 { expiresIn: '24h' }
               );
             }
@@ -703,7 +704,7 @@ class IntelligentDatabaseAdapter {
                 generateAuthToken: () => {
                   return jwt.sign(
                     { id: doctor.id, email: doctor.email, role: 'doctor' },
-                    process.env.JWT_SECRET || 'fallback_secret',
+                    JWT_CONFIG.SECRET || 'fallback_secret',
                     { expiresIn: '24h' }
                   );
                 },
@@ -727,7 +728,7 @@ class IntelligentDatabaseAdapter {
                 generateAuthToken: () => {
                   return jwt.sign(
                     { id: doctor.id, email: doctor.email, role: 'doctor' },
-                    process.env.JWT_SECRET || 'fallback_secret',
+                    JWT_CONFIG.SECRET || 'fallback_secret',
                     { expiresIn: '24h' }
                   );
                 },
@@ -779,7 +780,7 @@ class IntelligentDatabaseAdapter {
               generateAuthToken: () => {
                 return jwt.sign(
                   { id: 'dr_test_001', email: 'doctor@mediczy.com', role: 'doctor' },
-                  process.env.JWT_SECRET || 'fallback_secret',
+                  JWT_CONFIG.SECRET || 'fallback_secret',
                   { expiresIn: '24h' }
                 );
               },
@@ -936,7 +937,7 @@ class IntelligentDatabaseAdapter {
             generateAuthToken: () => {
               return jwt.sign(
                 { id: newDoctor.id, email: doctorData.email, role: 'doctor' },
-                process.env.JWT_SECRET || 'fallback_secret',
+                JWT_CONFIG.SECRET || 'fallback_secret',
                 { expiresIn: '24h' }
               );
             }
@@ -1309,7 +1310,7 @@ class IntelligentDatabaseAdapter {
                 }
               },
               generateAuthToken: () => {
-                const jwtSecret = process.env.JWT_SECRET || 'fallback_secret';
+                const jwtSecret = JWT_CONFIG.SECRET || 'fallback_secret';
                 return jwt.sign(
                   { 
                     id: 'admin_001', 
@@ -1379,7 +1380,7 @@ class IntelligentDatabaseAdapter {
                 return await bcrypt.compare(password, adminPasswordHash);
               },
               generateAuthToken: () => {
-                const jwtSecret = process.env.JWT_SECRET;
+                const jwtSecret = JWT_CONFIG.SECRET;
                 if (!jwtSecret) {
                   throw new Error('JWT_SECRET not configured');
                 }

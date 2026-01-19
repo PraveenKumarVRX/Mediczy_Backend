@@ -69,7 +69,7 @@ router.delete('/configs/:id', [
 
 router.post('/configs/:id/test', [
   param('id').notEmpty(),
-  body('testEmail').isEmail().normalizeEmail()
+  body('testEmail').isEmail().withMessage('Please provide a valid email address')
 ], testEmailConfig);
 
 router.put('/configs/:id/default', [

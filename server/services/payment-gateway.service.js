@@ -1,20 +1,55 @@
 import Razorpay from 'razorpay';
 import Stripe from 'stripe';
 import crypto from 'crypto';
+import dotenv from 'dotenv';
+import path from 'path';
+import { fileURLToPath } from 'url';
+import fs from 'fs';
+
+const mask = (v) => (v ? `${v.slice(0, 3)}***${v.slice(-4)}` : 'undefined');
+
+// Ensure environment variables load from project root .env
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = path.dirname(__filename);
+const envPath = path.resolve(__dirname, '..', '..', '.env');
+console.log('🔧 PaymentGateway env load', { envPath, exists: fs.existsSync(envPath) });
+const dotenvResult = dotenv.config({ path: envPath, override: true });
+console.log('🔧 Dotenv loaded', { 
+  error: dotenvResult.error ? dotenvResult.error.message : null, 
+  hasRazorpayKey: !!(dotenvResult.parsed && dotenvResult.parsed.RAZORPAY_KEY_ID),
+  hasRazorpaySecret: !!(dotenvResult.parsed && dotenvResult.parsed.RAZORPAY_KEY_SECRET)
+});
+console.log('🔑 Razorpay env in service', {
+  hasKey: !!process.env.RAZORPAY_KEY_ID,
+  hasSecret: !!process.env.RAZORPAY_KEY_SECRET
+});
 
 // Initialize payment gateways
 let razorpayInstance = null;
 let stripeInstance = null;
 
 // Initialize Razorpay
-if (process.env.RAZORPAY_KEY_ID && process.env.RAZORPAY_KEY_SECRET) {
+const resolvedRazorpayKeyId = process.env.RAZORPAY_KEY_ID || (dotenvResult.parsed && dotenvResult.parsed.RAZORPAY_KEY_ID);
+const resolvedRazorpaySecret = process.env.RAZORPAY_KEY_SECRET || (dotenvResult.parsed && dotenvResult.parsed.RAZORPAY_KEY_SECRET);
+if (resolvedRazorpayKeyId && resolvedRazorpaySecret) {
+  // Backfill process.env for downstream usage if missing
+  if (!process.env.RAZORPAY_KEY_ID) process.env.RAZORPAY_KEY_ID = resolvedRazorpayKeyId;
+  if (!process.env.RAZORPAY_KEY_SECRET) process.env.RAZORPAY_KEY_SECRET = resolvedRazorpaySecret;
+
   razorpayInstance = new Razorpay({
-    key_id: process.env.RAZORPAY_KEY_ID,
-    key_secret: process.env.RAZORPAY_KEY_SECRET
+    key_id: resolvedRazorpayKeyId,
+    key_secret: resolvedRazorpaySecret
   });
-  console.log('✅ Razorpay initialized');
+  console.log(
+    '✅ Razorpay initialized',
+    `(key_id=${mask(resolvedRazorpayKeyId)})`
+  );
 } else {
-  console.warn('⚠️ Razorpay credentials not configured');
+  console.warn(
+    '⚠️ Razorpay credentials not configured',
+    `(key_id=${mask(resolvedRazorpayKeyId)}, secret=${mask(resolvedRazorpaySecret)})`,
+    `envPath=${envPath}`
+  );
 }
 
 // Initialize Stripe
@@ -63,7 +98,12 @@ class PaymentGatewayService {
         status: order.status
       };
     } catch (error) {
-      console.error('Razorpay order creation error:', error);
+      console.error('Razorpay order creation error:', {
+        message: error?.message,
+        name: error?.name,
+        status: error?.status,
+        options
+      });
       throw error;
     }
   }

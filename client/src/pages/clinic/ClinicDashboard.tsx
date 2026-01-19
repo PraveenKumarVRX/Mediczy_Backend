@@ -36,10 +36,24 @@ const ClinicDashboard = () => {
   const [sendingReminder, setSendingReminder] = useState(false);
   const [sendingBulkReminders, setSendingBulkReminders] = useState(false);
 
+  const [dashboardStats, setDashboardStats] = useState({
+    todaysAppointments: 24,
+    patientsWaiting: 8,
+    totalPatients: 1847,
+    todaysRevenue: 45890,
+  });
+
   const [patients, setPatients] = useState([
     { id: 1, name: 'Rahul Mehta', lastVisit: '2024-12-03', diagnosis: 'Diabetes Follow-up', nextVisit: '2024-12-17' },
     { id: 2, name: 'Anita Desai', lastVisit: '2024-12-03', diagnosis: 'Hypertension', nextVisit: '2024-12-10' },
     { id: 3, name: 'Vikram Joshi', lastVisit: '2024-12-02', diagnosis: 'Routine Check-up', nextVisit: '2025-01-02' },
+  ]);
+
+  const [appointments, setAppointments] = useState([
+    { id: 1, patient: 'Rajesh Kumar', time: '10:30 AM', type: 'Consultation', status: 'Waiting', phone: '+91-9876543210' },
+    { id: 2, patient: 'Priya Sharma', time: '11:00 AM', type: 'Follow-up', status: 'Scheduled', phone: '+91-9876543211' },
+    { id: 3, patient: 'Amit Patel', time: '11:30 AM', type: 'Check-up', status: 'Scheduled', phone: '+91-9876543212' },
+    { id: 4, patient: 'Neha Singh', time: '12:00 PM', type: 'Consultation', status: 'Scheduled', phone: '+91-9876543213' },
   ]);
   const [selectedPatient, setSelectedPatient] = useState<(typeof patients)[number] | null>(null);
   const [patientForm, setPatientForm] = useState({
@@ -89,6 +103,60 @@ const ClinicDashboard = () => {
   });
   const [saving, setSaving] = useState(false);
 
+  const normalizeAppointment = (apt: any) => ({
+    id: apt?.id ?? Date.now(),
+    patient: apt?.patient || apt?.patientName || 'New patient',
+    time: apt?.time || apt?.appointmentTime || apt?.date || apt?.appointmentDate || '—',
+    type: apt?.type || apt?.appointmentType || 'Consultation',
+    status: apt?.status || 'Scheduled',
+    phone: apt?.phone || apt?.patientPhone || apt?.patientMobile || '',
+  });
+
+  const loadDashboardData = async () => {
+    setLoading(true);
+    try {
+      const [statsRes, appointmentsRes, patientsRes] = await Promise.allSettled([
+        api.get('/clinic/dashboard/stats'),
+        api.get('/clinic/dashboard/appointments'),
+        api.get('/clinic/dashboard/patients'),
+      ]);
+
+      let nextStats = { ...dashboardStats };
+
+      if (statsRes.status === 'fulfilled') {
+        const apiStats = statsRes.value.data?.data || {};
+        nextStats = {
+          todaysAppointments: apiStats.todayAppointments ?? nextStats.todaysAppointments,
+          patientsWaiting: apiStats.patientsWaiting ?? nextStats.patientsWaiting,
+          totalPatients: apiStats.totalPatients ?? nextStats.totalPatients,
+          todaysRevenue: apiStats.todayRevenue ?? nextStats.todaysRevenue,
+        };
+      }
+
+      if (patientsRes.status === 'fulfilled') {
+        const patientList = (patientsRes.value.data as any)?.data || [];
+        if (Array.isArray(patientList) && patientList.length) {
+          setPatients(patientList);
+          nextStats.totalPatients = patientList.length;
+        }
+      }
+
+      if (appointmentsRes.status === 'fulfilled') {
+        const appts = (appointmentsRes.value.data as any)?.data || [];
+        if (Array.isArray(appts) && appts.length) {
+          setAppointments(appts.map(normalizeAppointment));
+          nextStats.todaysAppointments = appts.length;
+        }
+      }
+
+      setDashboardStats(nextStats);
+    } catch (error) {
+      console.error('Error loading clinic dashboard data', error);
+    } finally {
+      setLoading(false);
+    }
+  };
+
   const handleCreateAppointment = async () => {
     if (!appointmentForm.patientName || !appointmentForm.appointmentDate || !appointmentForm.appointmentTime) {
       toast.error('Please fill in required fields');
@@ -97,8 +165,34 @@ const ClinicDashboard = () => {
     
     setSaving(true);
     try {
-      // Simulate API call
-      await new Promise(resolve => setTimeout(resolve, 1000));
+      const payload = {
+        patientName: appointmentForm.patientName,
+        patientEmail: appointmentForm.patientEmail,
+        patientPhone: appointmentForm.patientPhone,
+        date: appointmentForm.appointmentDate,
+        time: appointmentForm.appointmentTime,
+        type: appointmentForm.appointmentType,
+        doctor: appointmentForm.doctor,
+        notes: appointmentForm.notes,
+      };
+
+      let created: any = null;
+
+      try {
+        const { data } = await api.post('/clinic/dashboard/appointments', payload);
+        created = data?.data || payload;
+      } catch (apiError) {
+        console.warn('Clinic appointment API unavailable, using local data', apiError);
+        created = { ...payload, status: 'Scheduled' };
+      }
+
+      const normalized = normalizeAppointment(created);
+      setAppointments((prev) => [normalized, ...prev]);
+      setDashboardStats((prev) => ({
+        ...prev,
+        todaysAppointments: prev.todaysAppointments + 1,
+        patientsWaiting: normalized.status === 'Waiting' ? prev.patientsWaiting + 1 : prev.patientsWaiting,
+      }));
       toast.success('Appointment created successfully!');
       setShowNewAppointment(false);
       setAppointmentForm({
@@ -143,17 +237,28 @@ const ClinicDashboard = () => {
       toast.error('Patient name is required');
       return;
     }
+
+    const payload = {
+      name: patientForm.name.trim(),
+      diagnosis: patientForm.diagnosis.trim() || '—',
+      lastVisit: patientForm.lastVisit || new Date().toISOString().slice(0, 10),
+      nextVisit: patientForm.nextVisit || '—',
+      phone: '',
+    };
+
+    let created: any = null;
+
+    try {
+      const { data } = await api.post('/clinic/dashboard/patients', payload);
+      created = data?.data || payload;
+    } catch (apiError) {
+      console.warn('Clinic patient API unavailable, using local data', apiError);
+      created = payload;
+    }
+
     const newId = Math.max(0, ...patients.map((p) => p.id)) + 1;
-    setPatients([
-      {
-        id: newId,
-        name: patientForm.name.trim(),
-        diagnosis: patientForm.diagnosis.trim() || '—',
-        lastVisit: patientForm.lastVisit || new Date().toISOString().slice(0, 10),
-        nextVisit: patientForm.nextVisit || '—',
-      },
-      ...patients,
-    ]);
+    setPatients([{ id: created.id ?? newId, ...payload, ...created }, ...patients]);
+    setDashboardStats((prev) => ({ ...prev, totalPatients: prev.totalPatients + 1 }));
     setShowAddPatient(false);
     setPatientForm({ name: '', diagnosis: '', lastVisit: '', nextVisit: '' });
     toast.success('Patient added');
@@ -326,21 +431,9 @@ const ClinicDashboard = () => {
     if (data) {
       setClinicData(JSON.parse(data));
     }
-    
-    // Fetch dashboard stats from API
-    fetchDashboardStats();
-    setLoading(false);
-  }, [navigate]);
 
-  const fetchDashboardStats = async () => {
-    try {
-      const response = await api.get('/clinic/dashboard/stats');
-      console.log('Dashboard stats:', response.data?.data);
-      // Update stats with real data when available
-    } catch (error) {
-      console.error('Error fetching dashboard stats:', error);
-    }
-  };
+    loadDashboardData();
+  }, [navigate]);
 
   const handleLogout = () => {
     localStorage.removeItem('clinicToken');
@@ -357,17 +450,10 @@ const ClinicDashboard = () => {
   }
 
   const stats = [
-    { label: 'Today\'s Appointments', value: '24', icon: Calendar, color: 'text-teal-600', bg: 'bg-teal-50' },
-    { label: 'Patients Waiting', value: '8', icon: UserCheck, color: 'text-blue-600', bg: 'bg-blue-50' },
-    { label: 'Total Patients', value: '1,847', icon: Users, color: 'text-cyan-600', bg: 'bg-cyan-50' },
-    { label: 'Today\'s Revenue', value: '₹45,890', icon: DollarSign, color: 'text-amber-600', bg: 'bg-amber-50' },
-  ];
-
-  const upcomingAppointments = [
-    { id: 1, patient: 'Rajesh Kumar', time: '10:30 AM', type: 'Consultation', status: 'Waiting' },
-    { id: 2, patient: 'Priya Sharma', time: '11:00 AM', type: 'Follow-up', status: 'Scheduled' },
-    { id: 3, patient: 'Amit Patel', time: '11:30 AM', type: 'Check-up', status: 'Scheduled' },
-    { id: 4, patient: 'Neha Singh', time: '12:00 PM', type: 'Consultation', status: 'Scheduled' },
+    { label: 'Today\'s Appointments', value: dashboardStats.todaysAppointments.toLocaleString('en-IN'), icon: Calendar, color: 'text-teal-600', bg: 'bg-teal-50' },
+    { label: 'Patients Waiting', value: dashboardStats.patientsWaiting.toLocaleString('en-IN'), icon: UserCheck, color: 'text-blue-600', bg: 'bg-blue-50' },
+    { label: 'Total Patients', value: dashboardStats.totalPatients.toLocaleString('en-IN'), icon: Users, color: 'text-cyan-600', bg: 'bg-cyan-50' },
+    { label: 'Today\'s Revenue', value: `₹${dashboardStats.todaysRevenue.toLocaleString('en-IN')}`, icon: DollarSign, color: 'text-amber-600', bg: 'bg-amber-50' },
   ];
 
   // patients state is above
@@ -421,7 +507,7 @@ const ClinicDashboard = () => {
                 </CardHeader>
                 <CardContent>
                   <div className="space-y-4">
-                    {upcomingAppointments.map((apt) => (
+                    {appointments.map((apt) => (
                       <div key={apt.id} className="flex items-center justify-between p-4 bg-slate-50 dark:bg-slate-800/50 rounded-lg hover:bg-slate-100 dark:hover:bg-slate-700/50 transition-colors">
                         <div className="flex items-center gap-4">
                           <div className="bg-teal-100 p-3 rounded-lg">
@@ -446,6 +532,9 @@ const ClinicDashboard = () => {
                         </div>
                       </div>
                     ))}
+                    {appointments.length === 0 && (
+                      <p className="text-sm text-muted-foreground">No appointments scheduled.</p>
+                    )}
                   </div>
                 </CardContent>
               </Card>
@@ -478,7 +567,7 @@ const ClinicDashboard = () => {
                       setSendingBulkReminders(true);
                       try {
                         // Send reminders for all upcoming appointments
-                        for (const apt of upcomingAppointments.slice(0, 5)) {
+                        for (const apt of appointments.slice(0, 5)) {
                           try {
                             await api.post(`/appointments/${apt.id}/remind`);
                           } catch (e) {

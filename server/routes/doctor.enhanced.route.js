@@ -34,7 +34,7 @@ const upload = multer({
     const allowedTypes = /jpeg|jpg|png|pdf|doc|docx/;
     const mimeType = allowedTypes.test(file.mimetype);
     const extname = allowedTypes.test(path.extname(file.originalname).toLowerCase());
-    
+
     if (mimeType && extname) {
       return cb(null, true);
     } else {
@@ -74,15 +74,15 @@ router.get('/', [
 
     // Build where clause
     const whereClause = {};
-    
+
     if (specialization) {
       whereClause.specialization = specialization;
     }
-    
+
     if (city) {
       whereClause.city = city;
     }
-    
+
     if (isVerified !== undefined) {
       whereClause.isVerified = isVerified === 'true';
     }
@@ -156,7 +156,7 @@ router.post('/register', [
     const existingDoctor = await doctorModel.findOne({
       where: { email: req.body.email }
     });
-    
+
     if (existingDoctor) {
       return res.status(400).json({
         success: false,
@@ -166,17 +166,17 @@ router.post('/register', [
 
     // Create doctor profile
     const doctor = await doctorModel.create(req.body);
-    
+
     // Generate JWT token
     const token = jwt.sign(
-      { 
+      {
         id: doctor.id,
         doctorId: doctor.id,
-        email: doctor.email, 
+        email: doctor.email,
         role: 'doctor',
         userType: 'doctor'
       },
-      process.env.JWT_SECRET,
+      JWT_CONFIG.SECRET,
       { expiresIn: '7d' }
     );
 
@@ -217,9 +217,9 @@ router.post('/login', async (req, res) => {
         message: 'Email and password are required'
       });
     }
-    
+
     // Find doctor (case-insensitive email)
-    const doctor = await doctorModel.findOne({ 
+    const doctor = await doctorModel.findOne({
       where: sequelize.where(
         sequelize.fn('LOWER', sequelize.col('email')),
         sequelize.fn('LOWER', email)
@@ -259,14 +259,14 @@ router.post('/login', async (req, res) => {
     const token = typeof doctor.generateAuthToken === 'function'
       ? doctor.generateAuthToken()
       : jwt.sign(
-          { 
-            id: doctor.id, 
-            email: doctor.email, 
-            role: 'doctor' 
-          },
-          process.env.JWT_SECRET,
-          { expiresIn: '7d' }
-        );
+        {
+          id: doctor.id,
+          email: doctor.email,
+          role: 'doctor'
+        },
+        JWT_CONFIG.SECRET,
+        { expiresIn: '7d' }
+      );
 
     res.json({
       success: true,
@@ -319,7 +319,7 @@ router.get('/profile', authUser, async (req, res) => {
 
     // Remove password from response
     const { password, ...doctorProfile } = doctor;
-    
+
     res.json({
       success: true,
       doctor: doctorProfile
@@ -364,15 +364,13 @@ router.put('/profile', authUser, [
       });
     }
 
-    // Update profile
-    const updatedDoctor = await doctorModel.update(req.user.id, {
-      ...doctor,
-      ...req.body,
-      updatedAt: new Date().toISOString()
-    });
+    // Update profile using the model's update method
+    const updatedDoctor = await doctorModel.update(req.user.id, req.body);
 
     const { password, ...doctorProfile } = updatedDoctor;
-    
+
+    console.log(`Doctor profile updated for ID ${req.user.id}`);
+
     res.json({
       success: true,
       message: 'Profile updated successfully',
@@ -415,7 +413,7 @@ router.put('/consultation-types', authUser, [
     }
 
     await doctorModel.updateConsultationFees(req.user.id, req.body);
-    
+
     res.json({
       success: true,
       message: 'Consultation types updated successfully'
@@ -455,7 +453,7 @@ router.put('/availability', authUser, [
     }
 
     await doctorModel.updateAvailability(req.user.id, req.body);
-    
+
     res.json({
       success: true,
       message: 'Availability updated successfully'
@@ -483,9 +481,9 @@ router.get('/:doctorId/slots', [
   try {
     const { doctorId } = req.params;
     const { date, consultationType = 'online' } = req.query;
-    
+
     const slots = await doctorModel.getAvailableSlots(doctorId, date, consultationType);
-    
+
     res.json({
       success: true,
       date,
@@ -521,7 +519,7 @@ router.post('/upload/:mediaType', authUser, upload.single('file'), async (req, r
     }
 
     const { mediaType } = req.params;
-    
+
     if (!req.file) {
       return res.status(400).json({
         success: false,
@@ -538,9 +536,9 @@ router.post('/upload/:mediaType', authUser, upload.single('file'), async (req, r
     }
 
     const mediaUrl = `/uploads/doctors/${req.user.id}/${req.file.filename}`;
-    
+
     await doctorModel.updateMedia(req.user.id, mediaType, mediaUrl);
-    
+
     res.json({
       success: true,
       message: 'Media uploaded successfully',
@@ -590,15 +588,15 @@ router.get('/search', [
     Object.keys(filters).forEach(key => filters[key] === undefined && delete filters[key]);
 
     const doctors = await doctorModel.searchDoctors(filters);
-    
+
     // Pagination
     const page = parseInt(req.query.page) || 1;
     const limit = parseInt(req.query.limit) || 20;
     const startIndex = (page - 1) * limit;
     const endIndex = startIndex + limit;
-    
+
     const paginatedDoctors = doctors.slice(startIndex, endIndex);
-    
+
     // Remove sensitive data
     const publicDoctors = paginatedDoctors.map(doctor => {
       const { password, verificationDocuments, ...publicDoctor } = doctor;
@@ -636,7 +634,7 @@ router.get('/:doctorId/public', [
 ], async (req, res) => {
   try {
     const { doctorId } = req.params;
-    
+
     const doctor = await doctorModel.findByPk(doctorId);
     if (!doctor) {
       return res.status(404).json({
@@ -653,12 +651,12 @@ router.get('/:doctorId/public', [
     }
 
     // Remove sensitive information
-    const { 
-      password, 
-      verificationDocuments, 
-      digitalSignature, 
+    const {
+      password,
+      verificationDocuments,
+      digitalSignature,
       medicalSeal,
-      ...publicProfile 
+      ...publicProfile
     } = doctor;
 
     res.json({
@@ -695,7 +693,7 @@ router.get('/admin/all', authUser, requireRole('admin'), [
     const verificationStatus = req.query.verificationStatus;
 
     let doctors = await doctorModel.findAll();
-    
+
     // Filter by verification status if provided
     if (verificationStatus) {
       doctors = doctors.filter(doctor => doctor.verificationStatus === verificationStatus);
@@ -741,7 +739,7 @@ router.put('/admin/:doctorId/verification', authUser, requireRole('admin'), [
     const { status, notes } = req.body;
 
     await doctorModel.updateVerificationStatus(doctorId, status, notes);
-    
+
     res.json({
       success: true,
       message: 'Doctor verification status updated successfully'
@@ -759,6 +757,49 @@ router.put('/admin/:doctorId/verification', authUser, requireRole('admin'), [
 // ==========================================================================
 // SERVICE ENROLLMENT (Second Opinion & Home Visits)
 // ==========================================================================
+
+/**
+ * @route   GET /api/doctors/services
+ * @desc    Get current doctor's service offerings
+ * @access  Private (Doctor)
+ */
+router.get('/services', authUser, async (req, res) => {
+  try {
+    if (req.user.role !== 'doctor') {
+      return res.status(403).json({
+        success: false,
+        message: 'Access denied. Doctor role required.'
+      });
+    }
+
+    const doctor = await doctorModel.findById(req.user.id);
+
+    if (!doctor) {
+      return res.status(404).json({
+        success: false,
+        message: 'Doctor not found'
+      });
+    }
+
+    res.json({
+      success: true,
+      data: {
+        offersSecondOpinion: doctor.offersSecondOpinion || false,
+        secondOpinionFee: doctor.secondOpinionFee || 0,
+        offersHomeVisits: doctor.offersHomeVisits || false,
+        homeVisitFee: doctor.homeVisitFee || 0,
+        homeVisitRadiusKm: doctor.homeVisitRadiusKm || 0
+      }
+    });
+  } catch (error) {
+    console.error('Get doctor services error:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Failed to get service preferences',
+      error: error.message
+    });
+  }
+});
 
 /**
  * @route   PUT /api/doctors/services
@@ -797,7 +838,7 @@ router.put('/services', authUser, [
     if (homeVisitRadiusKm !== undefined) updateData.homeVisitRadiusKm = homeVisitRadiusKm;
 
     await doctorModel.update(req.user.id, updateData);
-    
+
     res.json({
       success: true,
       message: 'Service preferences updated successfully',
@@ -821,13 +862,13 @@ router.put('/services', authUser, [
 router.get('/services/second-opinion', async (req, res) => {
   try {
     const { specialization, page = 1, limit = 20 } = req.query;
-    
+
     const whereClause = {
       offersSecondOpinion: true,
       isVerified: true,
       status: 'active'
     };
-    
+
     if (specialization) {
       whereClause.specialization = specialization;
     }
@@ -838,7 +879,7 @@ router.get('/services/second-opinion', async (req, res) => {
       offset: (parseInt(page) - 1) * parseInt(limit),
       order: [['rating', 'DESC']]
     });
-    
+
     res.json({
       success: true,
       data: doctors,
@@ -865,13 +906,13 @@ router.get('/services/second-opinion', async (req, res) => {
 router.get('/services/home-visits', async (req, res) => {
   try {
     const { specialization, page = 1, limit = 20 } = req.query;
-    
+
     const whereClause = {
       offersHomeVisits: true,
       isVerified: true,
       status: 'active'
     };
-    
+
     if (specialization) {
       whereClause.specialization = specialization;
     }
@@ -882,7 +923,7 @@ router.get('/services/home-visits', async (req, res) => {
       offset: (parseInt(page) - 1) * parseInt(limit),
       order: [['rating', 'DESC']]
     });
-    
+
     res.json({
       success: true,
       data: doctors,
@@ -896,6 +937,48 @@ router.get('/services/home-visits', async (req, res) => {
     res.status(500).json({
       success: false,
       message: 'Failed to fetch doctors',
+      error: error.message
+    });
+  }
+});
+
+// ==========================================================================
+// MESSAGING & COMMUNICATION
+// ==========================================================================
+
+/**
+ * @route   GET /api/doctors/messages
+ * @desc    Get doctor's chat conversations
+ * @access  Private (Doctor)
+ */
+router.get('/messages', authUser, async (req, res) => {
+  try {
+    if (req.user.role !== 'doctor') {
+      return res.status(403).json({
+        success: false,
+        message: 'Access denied. Doctor role required.'
+      });
+    }
+
+    const { limit = 50, offset = 0 } = req.query;
+
+    // For now, return empty array until chat system is fully integrated
+    // This prevents 404 errors on the frontend
+    res.json({
+      success: true,
+      conversations: [],
+      unreadCount: 0,
+      pagination: {
+        limit: parseInt(limit),
+        offset: parseInt(offset),
+        total: 0
+      }
+    });
+  } catch (error) {
+    console.error('Get doctor messages error:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Failed to fetch messages',
       error: error.message
     });
   }

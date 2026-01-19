@@ -56,7 +56,7 @@ const NGOLogin = () => {
 
   const form = useForm<z.infer<typeof formSchema>>({
     resolver: zodResolver(formSchema),
-    defaultValues: { email: "ngo@mediczy.com", password: "NGO123" },
+    defaultValues: { email: "", password: "" },
   });
 
   const loginMutation = useLogin();

@@ -1,28 +1,73 @@
 import express from 'express';
 import { body, param } from 'express-validator';
+import { Op } from 'sequelize';
 import { authUser, requireRole } from '../middleware/auth.middleware.js';
 import { MembershipPlan, UserPlan } from '../models/postgres/membershipPlan.model.postgres.js';
 
 const router = express.Router();
 
-// -------- Admin Endpoints --------
+// -------- Super Admin Endpoints (Master Plans) --------
 router.post('/admin/plans', authUser, requireRole('admin'), [
   body('name').notEmpty(),
-  body('durationDays').isInt({ min:1 }),
-  body('priceINR').isFloat({ min:0 }),
+  body('durationDays').optional().isInt({ min:1 }),
+  body('priceINR').optional().isFloat({ min:0 }),
+  body('isMaster').optional().isBoolean()
 ], async (req,res) => {
   try {
-    const plan = await MembershipPlan.create(req.body);
-    res.status(201).json({ plan });
+    // Mark as master plan if created by super admin
+    const planData = {
+      ...req.body,
+      isMaster: req.body.isMaster !== undefined ? req.body.isMaster : true,
+      organizationId: null, // Master plans have no organization
+      organizationType: null,
+      customizedBy: null
+    };
+    
+    const plan = await MembershipPlan.create(planData);
+    res.status(201).json({ 
+      plan,
+      message: planData.isMaster ? 'Master plan created successfully' : 'Plan created successfully'
+    });
   } catch (e) {
     console.error(e);
     res.status(500).json({ message:'Failed to create plan', error: e.message });
   }
 });
 
-router.get('/admin/plans', authUser, requireRole('admin'), async (_req,res) => {
-  const plans = await MembershipPlan.findAll({ order:[['createdAt','DESC']] });
-  res.json({ plans });
+router.get('/admin/plans', authUser, requireRole('admin'), async (req,res) => {
+  try {
+    const { masterOnly, includeCustomized } = req.query;
+    
+    let whereClause = {};
+    
+    if (masterOnly === 'true') {
+      whereClause.isMaster = true;
+    } else if (includeCustomized === 'false') {
+      whereClause.isMaster = true;
+    }
+    
+    const plans = await MembershipPlan.findAll({ 
+      where: whereClause,
+      order:[['isMaster', 'DESC'], ['sortOrder', 'ASC'], ['createdAt','DESC']] 
+    });
+    
+    const masterPlans = plans.filter(p => p.isMaster);
+    const customizedPlans = plans.filter(p => !p.isMaster);
+    
+    res.json({ 
+      plans,
+      masterPlans,
+      customizedPlans,
+      stats: {
+        total: plans.length,
+        masterCount: masterPlans.length,
+        customizedCount: customizedPlans.length
+      }
+    });
+  } catch (e) {
+    console.error(e);
+    res.status(500).json({ message:'Failed to fetch plans', error: e.message });
+  }
 });
 
 router.put('/admin/plans/:id', authUser, requireRole('admin'), [ param('id').isInt() ], async (req,res) => {
@@ -60,8 +105,20 @@ router.get('/plans', async (_req,res) => {
 
 router.get('/my/current', authUser, async (req,res) => {
   try {
-    const userPlan = await UserPlan.findOne({ where:{ userId:req.user.id, status:'active' }, order:[['createdAt','DESC']] });
-    res.json({ userPlan });
+    const userPlan = await UserPlan.findOne({ 
+      where:{ userId:req.user.id, status:'active' }, 
+      include: [{ model: MembershipPlan, as: 'plan' }],
+      order:[['createdAt','DESC']] 
+    });
+    
+    if (!userPlan) {
+      return res.json({ userPlan: null, plan: null });
+    }
+    
+    res.json({ 
+      userPlan,
+      plan: userPlan.plan || userPlan.MembershipPlan 
+    });
   } catch(e) {
     console.error(e);
     res.status(500).json({ message:'Failed to get current plan', error:e.message });
@@ -70,13 +127,32 @@ router.get('/my/current', authUser, async (req,res) => {
 
 router.post('/subscribe/:planId', authUser, [ param('planId').isInt() ], async (req,res) => {
   try {
-    // Prevent multiple active subscriptions
-    const alreadyActive = await UserPlan.findOne({ where: { userId: req.user.id, status: 'active' } });
-    if (alreadyActive) {
-      return res.status(400).json({ message: 'You already have an active plan' });
-    }
     const plan = await MembershipPlan.findByPk(req.params.planId);
     if(!plan || !plan.isActive) return res.status(404).json({ message:'Plan not available' });
+
+    const planType = plan.planType || 'primary';
+    
+    // For primary plans, prevent multiple active subscriptions
+    if (planType === 'primary') {
+      const alreadyActive = await UserPlan.findOne({ 
+        where: { userId: req.user.id, status: 'active' },
+        include: [{ model: MembershipPlan, as: 'plan', where: { planType: 'primary' }, required: false }]
+      });
+      // Check if the active plan is a primary plan
+      if (alreadyActive && (!alreadyActive.plan || alreadyActive.plan.planType === 'primary' || !alreadyActive.plan.planType)) {
+        return res.status(400).json({ message: 'You already have an active primary plan. Use upgrade endpoint to switch plans.' });
+      }
+    }
+    
+    // For addon plans, check if user already has this specific addon
+    if (planType === 'addon') {
+      const alreadyHasAddon = await UserPlan.findOne({ 
+        where: { userId: req.user.id, membershipPlanId: plan.id, status: 'active' } 
+      });
+      if (alreadyHasAddon) {
+        return res.status(400).json({ message: 'You already have this addon plan active' });
+      }
+    }
 
     const startDate = new Date();
     // durationMonths is in months, convert to days (approx 30 days per month)
@@ -91,6 +167,8 @@ router.post('/subscribe/:planId', authUser, [ param('planId').isInt() ], async (
       paidAmount: plan.discountedPrice || plan.price,
       metadata: {
         planName: plan.name,
+        planType: planType,
+        tier: plan.tier,
         features: plan.features,
         benefits: plan.benefits,
         limitations: plan.limitations,
@@ -102,6 +180,281 @@ router.post('/subscribe/:planId', authUser, [ param('planId').isInt() ], async (
   } catch(e){
     console.error(e);
     res.status(500).json({ message:'Subscription failed', error:e.message });
+  }
+});
+
+// -------- PLAN UPGRADE --------
+// Upgrade from current plan to a higher tier plan (prorated)
+router.post('/upgrade/:newPlanId', authUser, [ param('newPlanId').isInt() ], async (req, res) => {
+  try {
+    const newPlanId = parseInt(req.params.newPlanId);
+    
+    // Find current active primary plan
+    const currentUserPlan = await UserPlan.findOne({ 
+      where: { userId: req.user.id, status: 'active' },
+      include: [{ model: MembershipPlan, as: 'plan' }]
+    });
+    
+    if (!currentUserPlan) {
+      return res.status(400).json({ message: 'No active plan to upgrade from. Please subscribe first.' });
+    }
+    
+    const currentPlan = currentUserPlan.plan;
+    if (!currentPlan) {
+      return res.status(400).json({ message: 'Current plan details not found' });
+    }
+    
+    // Only allow upgrading primary plans
+    if (currentPlan.planType === 'addon') {
+      return res.status(400).json({ message: 'Cannot upgrade addon plans. Please subscribe to a new addon instead.' });
+    }
+    
+    // Get new plan
+    const newPlan = await MembershipPlan.findByPk(newPlanId);
+    if (!newPlan || !newPlan.isActive) {
+      return res.status(404).json({ message: 'Target plan not available' });
+    }
+    
+    // New plan must also be a primary plan
+    if (newPlan.planType === 'addon') {
+      return res.status(400).json({ message: 'Cannot upgrade to an addon plan. Use subscribe endpoint for addons.' });
+    }
+    
+    // Check tier - must be upgrading to higher or equal tier
+    const currentTier = currentPlan.tier || 1;
+    const newTier = newPlan.tier || 1;
+    
+    if (newTier < currentTier) {
+      return res.status(400).json({ 
+        message: 'Cannot downgrade to a lower tier plan. Contact support for downgrades.',
+        currentTier,
+        newTier
+      });
+    }
+    
+    if (newPlanId === currentUserPlan.membershipPlanId) {
+      return res.status(400).json({ message: 'You are already on this plan' });
+    }
+    
+    // Calculate prorated refund for remaining days
+    const today = new Date();
+    const endDate = new Date(currentUserPlan.endDate);
+    const startDate = new Date(currentUserPlan.startDate);
+    
+    const totalDays = Math.ceil((endDate - startDate) / (1000 * 60 * 60 * 24));
+    const remainingDays = Math.max(0, Math.ceil((endDate - today) / (1000 * 60 * 60 * 24)));
+    
+    const paidAmount = parseFloat(currentUserPlan.paidAmount || 0);
+    const dailyRate = totalDays > 0 ? paidAmount / totalDays : 0;
+    const proratedRefund = Math.round(dailyRate * remainingDays * 100) / 100;
+    
+    // Calculate new plan price
+    const newPlanPrice = parseFloat(newPlan.discountedPrice || newPlan.price || 0);
+    const amountDue = Math.max(0, newPlanPrice - proratedRefund);
+    
+    // Cancel current plan
+    await currentUserPlan.update({ 
+      status: 'upgraded',
+      metadata: {
+        ...currentUserPlan.metadata,
+        upgradedTo: newPlanId,
+        upgradedAt: new Date().toISOString(),
+        proratedRefund
+      }
+    });
+    
+    // Create new plan subscription
+    const newStartDate = new Date();
+    const newDurationDays = (newPlan.durationMonths || 1) * 30;
+    const newEndDate = new Date(newStartDate.getTime() + newDurationDays * 24 * 60 * 60 * 1000);
+    
+    const newUserPlan = await UserPlan.create({
+      userId: req.user.id,
+      membershipPlanId: newPlan.id,
+      startDate: newStartDate.toISOString().slice(0, 10),
+      endDate: newEndDate.toISOString().slice(0, 10),
+      paidAmount: amountDue,
+      metadata: {
+        planName: newPlan.name,
+        planType: newPlan.planType || 'primary',
+        tier: newPlan.tier,
+        features: newPlan.features,
+        benefits: newPlan.benefits,
+        limitations: newPlan.limitations,
+        upgradedFrom: currentUserPlan.membershipPlanId,
+        previousPlanName: currentPlan.name,
+        proratedRefund,
+        originalPrice: newPlanPrice,
+        usage: {}
+      }
+    });
+    
+    res.json({
+      success: true,
+      message: 'Plan upgraded successfully',
+      previousPlan: {
+        id: currentPlan.id,
+        name: currentPlan.name,
+        tier: currentTier,
+        proratedRefund
+      },
+      newPlan: {
+        id: newPlan.id,
+        name: newPlan.name,
+        tier: newTier,
+        originalPrice: newPlanPrice,
+        amountDue
+      },
+      userPlan: newUserPlan
+    });
+    
+  } catch (e) {
+    console.error('Upgrade error:', e);
+    res.status(500).json({ message: 'Plan upgrade failed', error: e.message });
+  }
+});
+
+// -------- GET UPGRADE OPTIONS --------
+// Get available plans user can upgrade to
+router.get('/upgrade-options', authUser, async (req, res) => {
+  try {
+    // Get current active primary plan
+    const currentUserPlan = await UserPlan.findOne({ 
+      where: { userId: req.user.id, status: 'active' },
+      include: [{ model: MembershipPlan, as: 'plan' }]
+    });
+    
+    if (!currentUserPlan || !currentUserPlan.plan) {
+      return res.json({ 
+        hasActivePlan: false,
+        currentPlan: null,
+        upgradeOptions: [],
+        message: 'No active plan. Subscribe to a plan first.'
+      });
+    }
+    
+    const currentPlan = currentUserPlan.plan;
+    const currentTier = currentPlan.tier || 1;
+    
+    // Find all primary plans with higher or equal tier
+    const upgradeOptions = await MembershipPlan.findAll({
+      where: {
+        isActive: true,
+        planType: ['primary', null], // Include plans without planType set
+        id: { [Op.ne]: currentPlan.id } // Exclude current plan
+      },
+      order: [['tier', 'ASC'], ['price', 'ASC']]
+    });
+    
+    // Filter to only higher or equal tiers and calculate prorated pricing
+    const today = new Date();
+    const endDate = new Date(currentUserPlan.endDate);
+    const startDate = new Date(currentUserPlan.startDate);
+    
+    const totalDays = Math.ceil((endDate - startDate) / (1000 * 60 * 60 * 24));
+    const remainingDays = Math.max(0, Math.ceil((endDate - today) / (1000 * 60 * 60 * 24)));
+    
+    const paidAmount = parseFloat(currentUserPlan.paidAmount || 0);
+    const dailyRate = totalDays > 0 ? paidAmount / totalDays : 0;
+    const proratedRefund = Math.round(dailyRate * remainingDays * 100) / 100;
+    
+    const optionsWithPricing = upgradeOptions
+      .filter(p => (p.tier || 1) >= currentTier)
+      .map(plan => {
+        const planPrice = parseFloat(plan.discountedPrice || plan.price || 0);
+        const amountDue = Math.max(0, planPrice - proratedRefund);
+        const isUpgrade = (plan.tier || 1) > currentTier;
+        
+        return {
+          id: plan.id,
+          name: plan.name,
+          description: plan.description,
+          tier: plan.tier || 1,
+          tierName: plan.tierName || (plan.tier === 1 ? 'Basic' : plan.tier === 2 ? 'Standard' : plan.tier === 3 ? 'Premium' : 'Enterprise'),
+          originalPrice: planPrice,
+          proratedRefund,
+          amountDue,
+          isUpgrade,
+          features: plan.features,
+          benefits: plan.benefits,
+          durationMonths: plan.durationMonths
+        };
+      });
+    
+    res.json({
+      hasActivePlan: true,
+      currentPlan: {
+        id: currentPlan.id,
+        name: currentPlan.name,
+        tier: currentTier,
+        tierName: currentPlan.tierName,
+        endDate: currentUserPlan.endDate,
+        remainingDays,
+        proratedRefund
+      },
+      upgradeOptions: optionsWithPricing
+    });
+    
+  } catch (e) {
+    console.error('Get upgrade options error:', e);
+    res.status(500).json({ message: 'Failed to get upgrade options', error: e.message });
+  }
+});
+
+// -------- GET ADDON PLANS --------
+// Get available addon plans
+router.get('/addons', authUser, async (req, res) => {
+  try {
+    const addons = await MembershipPlan.findAll({
+      where: {
+        isActive: true,
+        planType: 'addon'
+      },
+      order: [['sortOrder', 'ASC'], ['price', 'ASC']]
+    });
+    
+    // Get user's active addons
+    const userAddons = await UserPlan.findAll({
+      where: { userId: req.user.id, status: 'active' },
+      include: [{ model: MembershipPlan, as: 'plan', where: { planType: 'addon' } }]
+    });
+    
+    const activeAddonIds = userAddons.map(ua => ua.membershipPlanId);
+    
+    const addonsWithStatus = addons.map(addon => ({
+      ...addon.toJSON(),
+      isSubscribed: activeAddonIds.includes(addon.id)
+    }));
+    
+    res.json({ addons: addonsWithStatus, activeAddons: userAddons });
+    
+  } catch (e) {
+    console.error('Get addons error:', e);
+    res.status(500).json({ message: 'Failed to get addon plans', error: e.message });
+  }
+});
+
+// -------- GET ALL USER PLANS (primary + addons) --------
+router.get('/my/all', authUser, async (req, res) => {
+  try {
+    const userPlans = await UserPlan.findAll({
+      where: { userId: req.user.id, status: 'active' },
+      include: [{ model: MembershipPlan, as: 'plan' }],
+      order: [['createdAt', 'DESC']]
+    });
+    
+    const primaryPlan = userPlans.find(up => !up.plan?.planType || up.plan?.planType === 'primary');
+    const addonPlans = userPlans.filter(up => up.plan?.planType === 'addon');
+    
+    res.json({
+      primaryPlan: primaryPlan || null,
+      addonPlans,
+      totalActive: userPlans.length
+    });
+    
+  } catch (e) {
+    console.error('Get all plans error:', e);
+    res.status(500).json({ message: 'Failed to get user plans', error: e.message });
   }
 });
 

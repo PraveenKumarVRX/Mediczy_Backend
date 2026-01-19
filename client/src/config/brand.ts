@@ -9,6 +9,9 @@ export const BRAND = {
   fullName: 'Mediqzy Healthcare',
   tagline: 'Your Health, Our Priority',
   
+  // Logo
+  logo: '/logo/Mediqzy_logo.jpeg',
+  
   // Colors (Tailwind classes)
   colors: {
     primary: 'teal',
@@ -32,7 +35,7 @@ export const BRAND = {
   
   // Role-specific labels
   roleLabels: {
-    user: 'Patient Dashboard',
+    user: 'User Dashboard',
     doctor: 'Doctor Portal',
     nurse: 'Nurse Station',
     admin: 'Admin Console',
@@ -69,7 +72,7 @@ export const getRoleLabel = (role: string): string => {
 // Helper function to get short role label (for header badges)
 export const getShortRoleLabel = (role: string): string => {
   const labels: Record<string, string> = {
-    user: 'Patient',
+    user: 'User',
     doctor: 'Doctor',
     nurse: 'Nurse',
     admin: 'Admin',

@@ -1644,7 +1644,7 @@ export const AmbulanceStaffPage = () => {
   const summary = useMemo(() => {
     const total = staff.length;
     const onDuty = staff.filter((m) => m.status === "On Duty").length;
-    const paramedics = staff.filter((m) => m.role.toLowerCase() === "paramedic").length;
+    const paramedics = staff.filter((m) => m.role?.toLowerCase() === "paramedic").length;
     const trainingDue = staff.filter((m) => m.status === "Off Duty").length;
     return { total, onDuty, paramedics, trainingDue };
   }, [staff]);

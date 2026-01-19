@@ -1,4 +1,5 @@
 import { validationResult } from 'express-validator';
+import { JWT_CONFIG } from '../config/auth.config.js';
 import jwt from 'jsonwebtoken';
 import { Appointment, Prescription, Doctor, User } from '../models/index.js';
 
@@ -53,7 +54,7 @@ class VideoController {
           appointmentId,
           timestamp: Date.now()
         },
-        process.env.JWT_SECRET,
+        JWT_CONFIG.SECRET,
         { expiresIn: '2h' }
       );
 

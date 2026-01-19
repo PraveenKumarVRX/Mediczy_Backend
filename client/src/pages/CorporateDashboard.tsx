@@ -1122,7 +1122,7 @@ const CorporateDashboard = () => {
                       <div className="flex items-center gap-3 mb-2">
                         <h3 className="text-lg font-semibold text-slate-800 dark:text-white">{employee.name}</h3>
                         <Badge className={`${getRiskColor(employee.riskLevel)} border`}>
-                          {employee.riskLevel.toUpperCase()}
+                          {(employee.riskLevel || 'unknown').toUpperCase()}
                         </Badge>
                         {employee.deviceConnected && (
                           <Badge variant="outline" className="bg-blue-50 dark:bg-blue-900/30 text-blue-700 dark:text-blue-400 border-blue-200 dark:border-blue-700">
@@ -1319,7 +1319,7 @@ const CorporateDashboard = () => {
                     <div className="flex-1">
                       <div className="flex items-center gap-3 mb-3">
                         <Badge className={`${getStatusColor(appointment.status)} border`}>
-                          {appointment.status.toUpperCase()}
+                          {(appointment.status || 'scheduled').toUpperCase()}
                         </Badge>
                         <Badge variant="outline" className="bg-blue-50 dark:bg-blue-900/30 text-blue-700 dark:text-blue-400 border-blue-200 dark:border-blue-700">
                           {appointment.appointmentType}

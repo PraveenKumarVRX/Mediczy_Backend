@@ -1,4 +1,5 @@
 /**
+import { JWT_CONFIG } from '../../config/auth.config.js';
  * Communication Log Model
  * Tracks all communication (email, SMS, WhatsApp) across different user types
  */

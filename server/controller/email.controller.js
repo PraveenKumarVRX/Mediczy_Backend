@@ -1,25 +1,34 @@
 import { validationResult } from 'express-validator';
-import { EmailConfig, EmailTemplate, EmailLog } from '../models/email.model.simple.js';
+import { JWT_CONFIG } from '../config/auth.config.js';
+import { EmailConfig, EmailTemplate, EmailLog } from '../models/email.model.js';
 import { addJob, getQueueStats } from '../config/queues.js';
 import emailService from '../services/emailService.js';
+import { Op } from 'sequelize';
 
 // SMTP Configuration Controllers
 export const getEmailConfigs = async (req, res) => {
   try {
-    const configs = await EmailConfig.find();
+    const configs = await EmailConfig.findAll();
     
     // Add runtime stats for each config
     const configsWithStats = await Promise.all(
       configs.map(async (config) => {
-        const logs = await EmailLog.find({ configId: config.id });
-        const sentToday = logs.filter(log => 
-          log.sentAt && new Date(log.sentAt).toDateString() === new Date().toDateString()
-        ).length;
+        const today = new Date();
+        today.setHours(0, 0, 0, 0);
+        
+        const sentToday = await EmailLog.count({
+          where: {
+            configId: config.id,
+            sentAt: { $gte: today }
+          }
+        });
+        
+        const rateLimits = config.rateLimits || { perDay: 1000 };
         
         return {
-          ...config.toObject(),
+          ...config.toJSON(),
           dailyUsage: sentToday,
-          usagePercentage: (sentToday / config.rateLimits.perDay) * 100
+          usagePercentage: (sentToday / rateLimits.perDay) * 100
         };
       })
     );
@@ -70,15 +79,15 @@ export const createEmailConfig = async (req, res) => {
     } = req.body;
 
     // Check if this is the first config (make it default)
-    const existingConfigs = await EmailConfig.find();
-    const shouldBeDefault = existingConfigs.length === 0 || isDefault;
+    const existingCount = await EmailConfig.count();
+    const shouldBeDefault = existingCount === 0 || isDefault;
 
     // If setting as default, remove default from others
     if (shouldBeDefault) {
-      await EmailConfig.updateMany({}, { isDefault: false });
+      await EmailConfig.update({ isDefault: false }, { where: {} });
     }
 
-    const config = new EmailConfig({
+    const config = await EmailConfig.create({
       name,
       host,
       port: port || 587,
@@ -100,13 +109,11 @@ export const createEmailConfig = async (req, res) => {
       createdBy: req.user?.email || 'admin'
     });
 
-    await config.save();
-
     res.status(201).json({
       success: true,
       message: 'Email configuration created successfully',
       data: {
-        ...config.toObject(),
+        ...config.toJSON(),
         password: undefined // Don't return password
       }
     });
@@ -138,17 +145,8 @@ export const updateEmailConfig = async (req, res) => {
       delete updates.password;
     }
 
-    // If setting as default, remove default from others
-    if (updates.isDefault) {
-      await EmailConfig.updateMany({ id: { $ne: id } }, { isDefault: false });
-    }
-
-    const config = await EmailConfig.findByIdAndUpdate(
-      id,
-      updates,
-      { new: true, runValidators: true }
-    );
-
+    // Find the config first
+    const config = await EmailConfig.findByPk(id);
     if (!config) {
       return res.status(404).json({
         success: false,
@@ -156,10 +154,24 @@ export const updateEmailConfig = async (req, res) => {
       });
     }
 
+    // If setting as default, remove default from others
+    if (updates.isDefault) {
+      await EmailConfig.update(
+        { isDefault: false }, 
+        { where: { id: { [Op.ne]: id } } }
+      );
+    }
+
+    // Update the config
+    await config.update(updates);
+
     res.json({
       success: true,
       message: 'Email configuration updated successfully',
-      data: config
+      data: {
+        ...config.toJSON(),
+        password: undefined // Don't return password
+      }
     });
   } catch (error) {
     console.error('Error updating email config:', error);
@@ -174,7 +186,7 @@ export const deleteEmailConfig = async (req, res) => {
   try {
     const { id } = req.params;
 
-    const config = await EmailConfig.findById(id);
+    const config = await EmailConfig.findByPk(id);
     if (!config) {
       return res.status(404).json({
         success: false,
@@ -183,9 +195,11 @@ export const deleteEmailConfig = async (req, res) => {
     }
 
     // Check if this config is being used by any pending emails
-    const pendingEmails = await EmailLog.countDocuments({
-      configId: id,
-      status: { $in: ['pending', 'sent'] }
+    const pendingEmails = await EmailLog.count({
+      where: {
+        configId: id,
+        status: ['pending', 'sent']
+      }
     });
 
     if (pendingEmails > 0) {
@@ -195,14 +209,14 @@ export const deleteEmailConfig = async (req, res) => {
       });
     }
 
-    await EmailConfig.findByIdAndDelete(id);
+    const wasDefault = config.isDefault;
+    await config.destroy();
 
     // If deleted config was default, make another one default
-    if (config.isDefault) {
-      const nextConfig = await EmailConfig.findOne({ isActive: true });
+    if (wasDefault) {
+      const nextConfig = await EmailConfig.findOne({ where: { isActive: true } });
       if (nextConfig) {
-        nextConfig.isDefault = true;
-        await nextConfig.save();
+        await nextConfig.update({ isDefault: true });
       }
     }
 
@@ -223,9 +237,16 @@ export const testEmailConfig = async (req, res) => {
   try {
     const errors = validationResult(req);
     if (!errors.isEmpty()) {
+      console.log('Validation errors in testEmailConfig:', errors.array());
+      console.log('Request body:', req.body);
+      console.log('Request params:', req.params);
+      
+      const emailError = errors.array().find(e => e.path === 'testEmail');
+      const errorMessage = emailError?.msg || 'Please provide a valid email address';
+      
       return res.status(400).json({
         success: false,
-        message: 'Validation failed',
+        message: errorMessage,
         errors: errors.array()
       });
     }
@@ -233,7 +254,7 @@ export const testEmailConfig = async (req, res) => {
     const { id } = req.params;
     const { testEmail } = req.body;
 
-    const config = await EmailConfig.findById(id);
+    const config = await EmailConfig.findByPk(id);
     if (!config) {
       return res.status(404).json({
         success: false,
@@ -241,17 +262,26 @@ export const testEmailConfig = async (req, res) => {
       });
     }
 
+    console.log('Testing SMTP config:', {
+      id: config.id,
+      name: config.name,
+      hasPassword: !!config.password,
+      passwordLength: config.password?.length,
+      password: config.password
+    });
+
     try {
       const result = await emailService.testSMTPConfig(config, testEmail);
       
       // Update config with test result
-      config.testResult = {
-        success: result.success,
-        message: result.message,
-        testedAt: new Date()
-      };
-      config.lastTested = new Date();
-      await config.save();
+      await config.update({
+        testResult: {
+          success: result.success,
+          message: result.message,
+          testedAt: new Date()
+        },
+        lastTested: new Date()
+      });
 
       res.json({
         success: true,
@@ -287,15 +317,10 @@ export const setDefaultConfig = async (req, res) => {
     const { id } = req.params;
 
     // Remove default from all configs
-    await EmailConfig.updateMany({}, { isDefault: false });
+    await EmailConfig.update({ isDefault: false }, { where: {} });
 
     // Set new default
-    const config = await EmailConfig.findByIdAndUpdate(
-      id,
-      { isDefault: true, isActive: true },
-      { new: true }
-    ).select('-password');
-
+    const config = await EmailConfig.findByPk(id);
     if (!config) {
       return res.status(404).json({
         success: false,
@@ -303,10 +328,15 @@ export const setDefaultConfig = async (req, res) => {
       });
     }
 
+    await config.update({ isDefault: true, isActive: true });
+
     res.json({
       success: true,
       message: 'Default email configuration updated',
-      data: config
+      data: {
+        ...config.toJSON(),
+        password: undefined
+      }
     });
   } catch (error) {
     console.error('Error setting default config:', error);
@@ -321,27 +351,25 @@ export const setDefaultConfig = async (req, res) => {
 export const getEmailTemplates = async (req, res) => {
   try {
     const { category, isActive, search, page = 1, limit = 20 } = req.query;
-    const filter = {};
+    const where = {};
 
-    if (category) filter.category = category;
-    if (isActive !== undefined) filter.isActive = isActive === 'true';
+    if (category) where.category = category;
+    if (isActive !== undefined) where.isActive = isActive === 'true';
     if (search) {
-      filter.$or = [
-        { name: { $regex: search, $options: 'i' } },
-        { subject: { $regex: search, $options: 'i' } },
-        { description: { $regex: search, $options: 'i' } }
+      where[Op.or] = [
+        { name: { [Op.like]: `%${search}%` } },
+        { subject: { [Op.like]: `%${search}%` } }
       ];
     }
 
-    const skip = (parseInt(page) - 1) * parseInt(limit);
+    const offset = (parseInt(page) - 1) * parseInt(limit);
 
-    const [templates, total] = await Promise.all([
-      EmailTemplate.find(filter)
-        .sort({ createdAt: -1 })
-        .skip(skip)
-        .limit(parseInt(limit)),
-      EmailTemplate.countDocuments(filter)
-    ]);
+    const { rows: templates, count: total } = await EmailTemplate.findAndCountAll({
+      where,
+      order: [['createdAt', 'DESC']],
+      limit: parseInt(limit),
+      offset
+    });
 
     res.json({
       success: true,
@@ -377,13 +405,11 @@ export const createEmailTemplate = async (req, res) => {
     }
 
     console.log('✅ Validation passed, creating template...');
-    const template = new EmailTemplate({
+    const template = await EmailTemplate.create({
       ...req.body,
       createdBy: req.user?.email || 'system'
     });
 
-    console.log('🔥 Template object created:', template);
-    await template.save();
     console.log('✅ Template saved successfully');
 
     res.status(201).json({
@@ -414,18 +440,15 @@ export const updateEmailTemplate = async (req, res) => {
 
     const { id } = req.params;
 
-    const template = await EmailTemplate.findByIdAndUpdate(
-      id,
-      req.body,
-      { new: true, runValidators: true }
-    );
-
+    const template = await EmailTemplate.findByPk(id);
     if (!template) {
       return res.status(404).json({
         success: false,
         message: 'Email template not found'
       });
     }
+
+    await template.update(req.body);
 
     res.json({
       success: true,
@@ -445,7 +468,7 @@ export const deleteEmailTemplate = async (req, res) => {
   try {
     const { id } = req.params;
 
-    const template = await EmailTemplate.findById(id);
+    const template = await EmailTemplate.findByPk(id);
     if (!template) {
       return res.status(404).json({
         success: false,
@@ -454,9 +477,11 @@ export const deleteEmailTemplate = async (req, res) => {
     }
 
     // Check if template is being used by pending emails
-    const pendingEmails = await EmailLog.countDocuments({
-      templateId: id,
-      status: { $in: ['pending', 'sent'] }
+    const pendingEmails = await EmailLog.count({
+      where: {
+        templateId: id,
+        status: { [Op.in]: ['pending', 'sent'] }
+      }
     });
 
     if (pendingEmails > 0) {
@@ -466,7 +491,7 @@ export const deleteEmailTemplate = async (req, res) => {
       });
     }
 
-    await EmailTemplate.findByIdAndDelete(id);
+    await template.destroy();
 
     res.json({
       success: true,
@@ -486,7 +511,7 @@ export const previewTemplate = async (req, res) => {
     const { id } = req.params;
     const { variables = {} } = req.body;
 
-    const template = await EmailTemplate.findById(id);
+    const template = await EmailTemplate.findByPk(id);
     if (!template) {
       return res.status(404).json({
         success: false,
@@ -519,7 +544,7 @@ export const validateTemplate = async (req, res) => {
     const { id } = req.params;
     const { variables = {} } = req.body;
 
-    const template = await EmailTemplate.findById(id);
+    const template = await EmailTemplate.findByPk(id);
     if (!template) {
       return res.status(404).json({
         success: false,
@@ -559,7 +584,7 @@ export const sendEmail = async (req, res) => {
     // Get default config if not specified
     let config;
     if (configId) {
-      config = await EmailConfig.findById(configId);
+      config = await EmailConfig.findByPk(configId);
     } else {
       config = await EmailConfig.findOne({ isDefault: true, isActive: true });
     }
@@ -572,7 +597,7 @@ export const sendEmail = async (req, res) => {
     }
 
     // Create email log entry
-    const emailLog = new EmailLog({
+    const emailLog = await EmailLog.create({
       to,
       cc,
       bcc,
@@ -644,7 +669,7 @@ export const sendBulkEmail = async (req, res) => {
     // Get config
     let config;
     if (configId) {
-      config = await EmailConfig.findById(configId);
+      config = await EmailConfig.findByPk(configId);
     } else {
       config = await EmailConfig.findOne({ isDefault: true, isActive: true });
     }
@@ -676,7 +701,7 @@ export const sendBulkEmail = async (req, res) => {
 
     // Create email log entries
     for (const recipient of recipients) {
-      const emailLog = new EmailLog({
+      const emailLog = await EmailLog.create({
         to: recipient.to,
         cc: recipient.cc,
         bcc: recipient.bcc,
@@ -748,7 +773,7 @@ export const scheduleEmail = async (req, res) => {
     // Get config
     let config;
     if (configId) {
-      config = await EmailConfig.findById(configId);
+      config = await EmailConfig.findByPk(configId);
     } else {
       config = await EmailConfig.findOne({ isDefault: true, isActive: true });
     }
@@ -761,7 +786,7 @@ export const scheduleEmail = async (req, res) => {
     }
 
     // Create email log entry
-    const emailLog = new EmailLog({
+    const emailLog = await EmailLog.create({
       to,
       templateId,
       configId: config.id,
@@ -814,29 +839,29 @@ export const getEmailLogs = async (req, res) => {
       configId
     } = req.query;
 
-    const filter = {};
+    const where = {};
 
-    if (status) filter.status = status;
-    if (to) filter.to = { $regex: to, $options: 'i' };
-    if (templateId) filter.templateId = templateId;
-    if (configId) filter.configId = configId;
+    if (status) where.status = status;
+    if (to) where.to = { [Op.like]: `%${to}%` };
+    if (templateId) where.templateId = templateId;
+    if (configId) where.configId = configId;
 
     if (startDate || endDate) {
-      filter.createdAt = {};
-      if (startDate) filter.createdAt.$gte = new Date(startDate);
-      if (endDate) filter.createdAt.$lte = new Date(endDate);
+      where.createdAt = {};
+      if (startDate) where.createdAt[Op.gte] = new Date(startDate);
+      if (endDate) where.createdAt[Op.lte] = new Date(endDate);
     }
 
-    const skip = (parseInt(page) - 1) * parseInt(limit);
+    const offset = (parseInt(page) - 1) * parseInt(limit);
 
-    const [logs, total] = await Promise.all([
-      EmailLog.find(filter),
-      EmailLog.countDocuments(filter)
-    ]);
+    const { rows: logs, count: total } = await EmailLog.findAndCountAll({
+      where,
+      order: [['createdAt', 'DESC']],
+      limit: parseInt(limit),
+      offset
+    });
 
-    // Apply pagination and sorting manually
-    const sortedLogs = logs.sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt));
-    const paginatedLogs = sortedLogs.slice(skip, skip + parseInt(limit));
+    const paginatedLogs = logs;
 
     res.json({
       success: true,
@@ -858,16 +883,16 @@ export const getEmailStats = async (req, res) => {
   try {
     const { period = 'day', startDate, endDate } = req.query;
 
-    let dateFilter = {};
+    let dateWhere = {};
     if (startDate || endDate) {
-      dateFilter.createdAt = {};
-      if (startDate) dateFilter.createdAt.$gte = new Date(startDate);
-      if (endDate) dateFilter.createdAt.$lte = new Date(endDate);
+      dateWhere.createdAt = {};
+      if (startDate) dateWhere.createdAt[Op.gte] = new Date(startDate);
+      if (endDate) dateWhere.createdAt[Op.lte] = new Date(endDate);
     } else {
       // Default to last 30 days
       const thirtyDaysAgo = new Date();
       thirtyDaysAgo.setDate(thirtyDaysAgo.getDate() - 30);
-      dateFilter.createdAt = { $gte: thirtyDaysAgo };
+      dateWhere.createdAt = { [Op.gte]: thirtyDaysAgo };
     }
 
     const [
@@ -879,12 +904,12 @@ export const getEmailStats = async (req, res) => {
       totalClicked,
       queueStats
     ] = await Promise.all([
-      EmailLog.countDocuments({ ...dateFilter, status: { $in: ['sent', 'delivered'] } }),
-      EmailLog.countDocuments({ ...dateFilter, status: 'delivered' }),
-      EmailLog.countDocuments({ ...dateFilter, status: 'failed' }),
-      EmailLog.countDocuments({ ...dateFilter, status: 'bounced' }),
-      EmailLog.countDocuments({ ...dateFilter, openedAt: { $exists: true } }),
-      EmailLog.countDocuments({ ...dateFilter, clickedAt: { $exists: true } }),
+      EmailLog.count({ where: { ...dateWhere, status: { [Op.in]: ['sent', 'delivered'] } } }),
+      EmailLog.count({ where: { ...dateWhere, status: 'delivered' } }),
+      EmailLog.count({ where: { ...dateWhere, status: 'failed' } }),
+      EmailLog.count({ where: { ...dateWhere, status: 'bounced' } }),
+      EmailLog.count({ where: { ...dateWhere, openedAt: { [Op.ne]: null } } }),
+      EmailLog.count({ where: { ...dateWhere, clickedAt: { [Op.ne]: null } } }),
       getQueueStats('email')
     ]);
 
@@ -1010,7 +1035,7 @@ export const retryFailedEmail = async (req, res) => {
   try {
     const { id } = req.params;
 
-    const emailLog = await EmailLog.findById(id);
+    const emailLog = await EmailLog.findByPk(id);
     if (!emailLog) {
       return res.status(404).json({
         success: false,
@@ -1065,7 +1090,7 @@ export const cancelPendingEmail = async (req, res) => {
   try {
     const { id } = req.params;
 
-    const emailLog = await EmailLog.findById(id);
+    const emailLog = await EmailLog.findByPk(id);
     if (!emailLog) {
       return res.status(404).json({
         success: false,
@@ -1100,21 +1125,21 @@ export const exportEmailLogs = async (req, res) => {
   try {
     const { startDate, endDate, format = 'csv' } = req.query;
 
-    const filter = {};
+    const where = {};
     if (startDate || endDate) {
-      filter.createdAt = {};
-      if (startDate) filter.createdAt.$gte = new Date(startDate);
-      if (endDate) filter.createdAt.$lte = new Date(endDate);
+      where.createdAt = {};
+      if (startDate) where.createdAt[Op.gte] = new Date(startDate);
+      if (endDate) where.createdAt[Op.lte] = new Date(endDate);
     }
 
-    const logs = await EmailLog.find(filter);
-    
-    // Sort and limit manually
-    const sortedLogs = logs.sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt))
-                           .slice(0, 10000); // Limit export to 10k records
+    const logs = await EmailLog.findAll({
+      where,
+      order: [['createdAt', 'DESC']],
+      limit: 10000 // Limit export to 10k records
+    });
 
     if (format === 'csv') {
-      const csvData = sortedLogs.map(log => ({
+      const csvData = logs.map(log => ({
         'Email ID': log.id,
         'To': log.to,
         'CC': log.cc?.join(';') || '',

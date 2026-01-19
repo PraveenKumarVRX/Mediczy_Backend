@@ -1,6 +1,7 @@
 import express from 'express';
 import jwt from 'jsonwebtoken';
 import bcrypt from 'bcryptjs';
+import { JWT_CONFIG } from '../../config/auth.config.js';
 
 const router = express.Router();
 
@@ -27,7 +28,6 @@ router.post('/login', async (req, res) => {
   try {
     const { email, password } = req.body;
 
-    const JWT_SECRET = process.env.JWT_SECRET;
 
     if (!JWT_SECRET) {
       console.error('FATAL: JWT_SECRET environment variable not set!');
@@ -120,7 +120,6 @@ router.get('/verify', async (req, res) => {
   try {
     const token = req.headers.authorization?.split(' ')[1];
 
-    const JWT_SECRET = process.env.JWT_SECRET;
 
     if (!JWT_SECRET) {
       console.error('FATAL: JWT_SECRET environment variable not set!');

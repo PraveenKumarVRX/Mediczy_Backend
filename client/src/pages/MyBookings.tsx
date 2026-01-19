@@ -103,10 +103,10 @@ const MyBookings = () => {
     const appointmentDate = new Date(booking.appointmentDate);
     const today = new Date();
     today.setHours(0, 0, 0, 0);
-    
+
     if (activeTab === "upcoming") {
       return (
-        appointmentDate >= today && 
+        appointmentDate >= today &&
         ["scheduled", "confirmed"].includes(booking.status)
       );
     } else if (activeTab === "history") {
@@ -149,14 +149,14 @@ const MyBookings = () => {
     },
     onSuccess: (_, variables) => {
       queryClient.invalidateQueries({ queryKey: ["myBookings"] });
-      
+
       // Increment teleconsult usage for completed appointments
       const appointment = bookings.find((b: Booking) => b.id === variables.id);
       if (appointment?.specialization && appointment.status === "completed") {
         try {
-          incrementTeleconsult({ 
-            specialty: appointment.specialization, 
-            count: 1 
+          incrementTeleconsult({
+            specialty: appointment.specialization,
+            count: 1
           }, {
             onSuccess: () => {
               // Invalidate MyPlans queries to show updated usage
@@ -175,7 +175,7 @@ const MyBookings = () => {
           console.log("Usage tracking failed:", e);
         }
       }
-      
+
       toast({
         title: "Success",
         description: "Thank you for your feedback!",
@@ -199,7 +199,7 @@ const MyBookings = () => {
       const response = await api.get(`/appointments/${booking.id}/calendar`, {
         responseType: 'blob',
       });
-      
+
       // Create download link
       const url = window.URL.createObjectURL(new Blob([response.data]));
       const link = document.createElement('a');
@@ -209,7 +209,7 @@ const MyBookings = () => {
       link.click();
       link.remove();
       window.URL.revokeObjectURL(url);
-      
+
       toast({
         title: "Success",
         description: "Calendar file downloaded! Open it to add to your calendar.",
@@ -226,12 +226,12 @@ const MyBookings = () => {
 
   const handleJoinVideoCall = (booking: Booking) => {
     // Navigate to embedded video consultation page with room parameter
-    const roomId = booking.meetingLink 
+    const roomId = booking.meetingLink
       ? (booking.meetingLink.includes('/join/') ? booking.meetingLink.split('/join/')[1]?.split('?')[0] : booking.meetingLink)
       : `apt-${booking.id}`;
-    
+
     navigate(`/video-consultation?room=${encodeURIComponent(roomId)}`);
-    
+
     toast({
       title: "Joining Video Call",
       description: `Connecting to video consultation with Dr. ${booking.doctorName}`,
@@ -285,7 +285,20 @@ const MyBookings = () => {
   };
 
   const handleJoinCall = (booking: Booking) => {
-    navigate(`/chat?doctorId=${booking.doctorId}`);
+    // Generate room ID from appointment or meeting link
+    const roomId = booking.meetingLink
+      ? (booking.meetingLink.includes('/join/')
+        ? booking.meetingLink.split('/join/')[1]?.split('?')[0]
+        : booking.meetingLink)
+      : `apt-${booking.id}`;
+
+    // Navigate to video consultation page
+    navigate(`/video-consultation?room=${encodeURIComponent(roomId)}&appointmentId=${booking.id}`);
+
+    toast({
+      title: "Joining Video Call",
+      description: `Connecting to consultation with Dr. ${booking.doctorName}`,
+    });
   };
 
   const canCancel = (booking: Booking) => {
@@ -321,33 +334,30 @@ const MyBookings = () => {
         <div className="flex gap-2 mb-6 border-b border-slate-200 dark:border-slate-700">
           <button
             onClick={() => setActiveTab("upcoming")}
-            className={`pb-3 px-1 font-medium text-sm transition-colors ${
-              activeTab === "upcoming"
+            className={`pb-3 px-1 font-medium text-sm transition-colors ${activeTab === "upcoming"
                 ? "text-teal-600 dark:text-teal-400 border-b-2 border-teal-600 dark:border-teal-400"
                 : "text-slate-600 dark:text-slate-400 hover:text-slate-800 dark:hover:text-slate-300"
-            }`}
+              }`}
           >
             <Calendar className="inline w-4 h-4 mr-2" />
             Upcoming
           </button>
           <button
             onClick={() => setActiveTab("history")}
-            className={`pb-3 px-1 font-medium text-sm transition-colors ${
-              activeTab === "history"
+            className={`pb-3 px-1 font-medium text-sm transition-colors ${activeTab === "history"
                 ? "text-teal-600 dark:text-teal-400 border-b-2 border-teal-600 dark:border-teal-400"
                 : "text-slate-600 dark:text-slate-400 hover:text-slate-800 dark:hover:text-slate-300"
-            }`}
+              }`}
           >
             <Clock className="inline w-4 h-4 mr-2" />
             History
           </button>
           <button
             onClick={() => setActiveTab("all")}
-            className={`pb-3 px-1 font-medium text-sm transition-colors ${
-              activeTab === "all"
+            className={`pb-3 px-1 font-medium text-sm transition-colors ${activeTab === "all"
                 ? "text-teal-600 dark:text-teal-400 border-b-2 border-teal-600 dark:border-teal-400"
                 : "text-slate-600 dark:text-slate-400 hover:text-slate-800 dark:hover:text-slate-300"
-            }`}
+              }`}
           >
             All
           </button>
@@ -377,10 +387,10 @@ const MyBookings = () => {
                     {getStatusBadge(booking.status)}
                     <Badge variant="outline" className={
                       booking.paymentStatus === "paid" ? "bg-green-50 text-green-700 dark:bg-green-900/30 dark:text-green-300" :
-                      booking.paymentStatus === "pending" ? "bg-yellow-50 text-yellow-700 dark:bg-yellow-900/30 dark:text-yellow-300" :
-                      "bg-red-50 text-red-700 dark:bg-red-900/30 dark:text-red-300"
+                        booking.paymentStatus === "pending" ? "bg-yellow-50 text-yellow-700 dark:bg-yellow-900/30 dark:text-yellow-300" :
+                          "bg-red-50 text-red-700 dark:bg-red-900/30 dark:text-red-300"
                     }>
-                      {booking.paymentStatus.toUpperCase()}
+                      {(booking.paymentStatus || 'pending').toUpperCase()}
                     </Badge>
                   </div>
                 </div>
@@ -389,10 +399,10 @@ const MyBookings = () => {
                   <div className="space-y-2">
                     <div className="flex items-center gap-2 text-slate-600 dark:text-slate-400">
                       <Calendar className="h-4 w-4 text-teal-600 dark:text-teal-400" />
-                      <span>{new Date(booking.appointmentDate).toLocaleDateString('en-IN', { 
-                        day: 'numeric', 
-                        month: 'long', 
-                        year: 'numeric' 
+                      <span>{new Date(booking.appointmentDate).toLocaleDateString('en-IN', {
+                        day: 'numeric',
+                        month: 'long',
+                        year: 'numeric'
                       })}</span>
                     </div>
                     <div className="flex items-center gap-2 text-slate-600 dark:text-slate-400">
@@ -549,11 +559,10 @@ const MyBookings = () => {
                       className="focus:outline-none focus:ring-2 focus:ring-teal-500 rounded"
                     >
                       <Star
-                        className={`h-8 w-8 ${
-                          star <= rating
+                        className={`h-8 w-8 ${star <= rating
                             ? "text-yellow-500 fill-yellow-500"
                             : "text-slate-300 dark:text-slate-600"
-                        }`}
+                          }`}
                       />
                     </button>
                   ))}

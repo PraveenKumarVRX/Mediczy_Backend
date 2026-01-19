@@ -1,5 +1,6 @@
 import express from 'express';
 import { body, param, query } from 'express-validator';
+import { Op } from 'sequelize';
 import {
   createAppointment,
   getUserAppointments,
@@ -162,17 +163,45 @@ router.get(
         filter.patientId = id;
       }
 
-      const analytics = await intelligentDb.query('appointments_v1', filter);
+      let analytics = null;
+      
+      try {
+        // Try intelligent DB first
+        analytics = await intelligentDb.query('appointments_v1', filter);
+      } catch (intelligentDbError) {
+        console.log('Intelligent DB not available, using fallback analytics');
+        
+        // Fallback: Get basic analytics from database directly
+        const whereClause = role === 'doctor' 
+          ? { doctorId: id } 
+          : { patientId: id };
+        
+        const [totalCount, completedCount, upcomingCount, cancelledCount] = await Promise.all([
+          Appointment.count({ where: whereClause }),
+          Appointment.count({ where: { ...whereClause, status: 'completed' } }),
+          Appointment.count({ where: { ...whereClause, status: { [Op.in]: ['scheduled', 'confirmed'] } } }),
+          Appointment.count({ where: { ...whereClause, status: 'cancelled' } })
+        ]);
+        
+        analytics = {
+          total: totalCount,
+          completed: completedCount,
+          upcoming: upcomingCount,
+          cancelled: cancelledCount,
+          completionRate: totalCount > 0 ? Math.round((completedCount / totalCount) * 100) : 0,
+          source: 'database_fallback'
+        };
+      }
 
       return res.json({
         success: true,
         analytics
       });
     } catch (error) {
-      console.error('Intelligent DB appointment analytics error:', error);
+      console.error('Appointment analytics error:', error);
       return res.status(500).json({
         success: false,
-        message: 'Failed to fetch intelligent appointment analytics',
+        message: 'Failed to fetch appointment analytics',
         error: error.message
       });
     }

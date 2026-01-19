@@ -1,4 +1,5 @@
 /**
+import { JWT_CONFIG } from '../../config/auth.config.js';
  * Family Member Model (PostgreSQL)
  * Stores family members linked to user accounts
  */

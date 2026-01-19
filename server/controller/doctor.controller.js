@@ -1,4 +1,5 @@
 // import { validationResult } from "express-validator";
+import { JWT_CONFIG } from '../config/auth.config.js';
 // import doctorModel from "../models/doctor.model.js";
 // import jwt from "jsonwebtoken";
 
@@ -426,7 +427,7 @@ export const updateDoctorStatus = async (req, res) => {
     }
 
     // Verify and decode token
-    const decoded = jwt.verify(token, process.env.JWT_SECRET);
+    const decoded = jwt.verify(token, JWT_CONFIG.SECRET);
     const userId = decoded.id || decoded._id;
 
     // Extract status from request

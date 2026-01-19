@@ -1,6 +1,7 @@
 import express from 'express';
 import jwt from 'jsonwebtoken';
 import bcrypt from 'bcryptjs';
+import { JWT_CONFIG } from '../../config/auth.config.js';
 
 const router = express.Router();
 
@@ -32,15 +33,6 @@ router.post('/login', async (req, res) => {
   try {
     const { email, password } = req.body;
 
-    const JWT_SECRET = process.env.JWT_SECRET;
-    if (!JWT_SECRET) {
-      console.error('FATAL: JWT_SECRET environment variable not set!');
-      return res.status(500).json({
-        success: false,
-        message: 'Server configuration error'
-      });
-    }
-
     // Validate input
     if (!email || !password) {
       return res.status(400).json({
@@ -55,7 +47,7 @@ router.post('/login', async (req, res) => {
     // DEV/DEMO: Mock lab authentication (can be enabled in production via ALLOW_LAB_DEMO)
     if (allowDemo && email.toLowerCase() === mockLab.email.toLowerCase()) {
       console.warn('⚠️ Using mock lab credentials (demo mode)');
-      
+
       // Verify password
       let isPasswordValid = false;
       try {
@@ -92,7 +84,7 @@ router.post('/login', async (req, res) => {
           userType: 'lab',
           role: 'lab'
         },
-        JWT_SECRET,
+        JWT_CONFIG.SECRET,
         { expiresIn: '7d' }
       );
 
@@ -106,7 +98,7 @@ router.post('/login', async (req, res) => {
     // PRODUCTION: Query actual Lab database
     // For now, fall back to mock lab for non-demo emails as well
     // (This allows testing with different email addresses in development)
-    
+
     // Verify password against mock lab
     let isPasswordValid = false;
     try {
@@ -118,7 +110,7 @@ router.post('/login', async (req, res) => {
     if (!isPasswordValid && password === fallbackPassword) {
       isPasswordValid = true;
     }
-    
+
     if (!isPasswordValid) {
       return res.status(401).json({
         success: false,
@@ -145,7 +137,7 @@ router.post('/login', async (req, res) => {
         userType: 'lab',
         role: 'lab'
       },
-      JWT_SECRET,
+      JWT_CONFIG.SECRET,
       { expiresIn: '7d' }
     );
 
@@ -188,15 +180,6 @@ router.get('/verify', async (req, res) => {
   try {
     const token = req.headers.authorization?.split(' ')[1];
 
-    const JWT_SECRET = process.env.JWT_SECRET;
-    if (!JWT_SECRET) {
-      console.error('FATAL: JWT_SECRET environment variable not set!');
-      return res.status(500).json({
-        success: false,
-        message: 'Server configuration error'
-      });
-    }
-
     if (!token) {
       return res.status(401).json({
         success: false,
@@ -204,7 +187,7 @@ router.get('/verify', async (req, res) => {
       });
     }
 
-    const decoded = jwt.verify(token, JWT_SECRET);
+    const decoded = jwt.verify(token, JWT_CONFIG.SECRET);
 
     res.status(200).json({
       success: true,

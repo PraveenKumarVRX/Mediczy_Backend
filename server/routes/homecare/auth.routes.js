@@ -1,9 +1,10 @@
 import express from 'express';
 import jwt from 'jsonwebtoken';
 import bcrypt from 'bcryptjs';
+import { JWT_CONFIG } from '../../config/auth.config.js';
 
 const router = express.Router();
-const JWT_SECRET = process.env.JWT_SECRET || 'mediczy-super-secret-key-2024';
+const JWT_SECRET = JWT_CONFIG.SECRET;
 
 // Mock homecare data (replace with database later)
 const mockHomecare = {

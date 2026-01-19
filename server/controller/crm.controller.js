@@ -1,4 +1,5 @@
 import { LeadActivity, LeadNote, LeadTask } from '../models/crm.model.intelligent.js';
+import { JWT_CONFIG } from '../config/auth.config.js';
 import {
   createLeadForTenant,
   deleteLeadForTenant,

@@ -7,6 +7,16 @@ import { Textarea } from '@/components/ui/textarea';
 import { Badge } from '@/components/ui/badge';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from '@/components/ui/dialog';
+import { Label } from '@/components/ui/label';
+import pharmacyService from '@/services/pharmacy.service';
+import {
   Pill,
   Package,
   ShoppingCart,
@@ -45,6 +55,20 @@ const PharmacyDashboard = () => {
   const navigate = useNavigate();
   const location = useLocation();
   const [pharmacyData, setPharmacyData] = useState<any>(null);
+  const [showAddBatchDialog, setShowAddBatchDialog] = useState(false);
+  const [batches, setBatches] = useState<any[]>([]);
+  const [analyticsData, setAnalyticsData] = useState<any>(null);
+  const [loading, setLoading] = useState(false);
+  const [batchForm, setBatchForm] = useState({
+    batchNumber: '',
+    medicineId: '',
+    quantity: '',
+    expiryDate: '',
+    manufacturingDate: '',
+    costPrice: '',
+    sellingPrice: '',
+    supplier: '',
+  });
 
   useEffect(() => {
     const token = localStorage.getItem('pharmacyToken');
@@ -59,6 +83,89 @@ const PharmacyDashboard = () => {
       setPharmacyData(JSON.parse(data));
     }
   }, [navigate]);
+
+  // Load batches when on batches page
+  useEffect(() => {
+    const currentPath = location.pathname.split('/').pop();
+    if (currentPath === 'batches' && pharmacyData) {
+      loadBatches();
+    }
+  }, [location.pathname, pharmacyData]);
+
+  // Load analytics when on analytics page
+  useEffect(() => {
+    const currentPath = location.pathname.split('/').pop();
+    if (currentPath === 'analytics' && pharmacyData) {
+      loadAnalytics();
+    }
+  }, [location.pathname, pharmacyData]);
+
+  const loadBatches = async () => {
+    try {
+      setLoading(true);
+      const response = await pharmacyService.batches.getAll();
+      setBatches(response.batches || []);
+    } catch (error: any) {
+      console.error('Error loading batches:', error);
+      alert(error.response?.data?.message || 'Failed to load batches');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const loadAnalytics = async () => {
+    try {
+      setLoading(true);
+      const response = await pharmacyService.analytics.getDashboard();
+      // Backend returns { success: true, analytics: {...} }
+      setAnalyticsData(response.analytics || response);
+    } catch (error: any) {
+      console.error('Error loading analytics:', error);
+      alert(error.response?.data?.message || 'Failed to load analytics');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleAddBatch = async () => {
+    try {
+      if (!batchForm.batchNumber || !batchForm.medicineId || !batchForm.quantity) {
+        alert('Please fill in all required fields');
+        return;
+      }
+
+      setLoading(true);
+      await pharmacyService.batches.create({
+        batchNumber: batchForm.batchNumber,
+        medicineId: parseInt(batchForm.medicineId),
+        quantity: parseInt(batchForm.quantity),
+        expiryDate: batchForm.expiryDate || undefined,
+        manufacturingDate: batchForm.manufacturingDate || undefined,
+        costPrice: batchForm.costPrice ? parseFloat(batchForm.costPrice) : undefined,
+        sellingPrice: batchForm.sellingPrice ? parseFloat(batchForm.sellingPrice) : undefined,
+        supplier: batchForm.supplier || undefined,
+      });
+
+      alert('Batch added successfully!');
+      setShowAddBatchDialog(false);
+      setBatchForm({
+        batchNumber: '',
+        medicineId: '',
+        quantity: '',
+        expiryDate: '',
+        manufacturingDate: '',
+        costPrice: '',
+        sellingPrice: '',
+        supplier: '',
+      });
+      loadBatches(); // Reload batches
+    } catch (error: any) {
+      console.error('Error adding batch:', error);
+      alert(error.response?.data?.message || 'Failed to add batch');
+    } finally {
+      setLoading(false);
+    }
+  };
 
   const stats = [
     {
@@ -600,9 +707,8 @@ const PharmacyDashboard = () => {
         <h2 className="text-2xl font-bold">Batch Management</h2>
         <Button 
           className="gap-2"
-          onClick={() => {
-            alert('Add Batch functionality coming soon! This will open a form to add a new medicine batch.');
-          }}
+          onClick={() => setShowAddBatchDialog(true)}
+          disabled={loading}
         >
           <Plus className="h-4 w-4" />
           Add Batch
@@ -614,38 +720,158 @@ const PharmacyDashboard = () => {
           <CardTitle>Active Batches</CardTitle>
         </CardHeader>
         <CardContent>
-          <div className="overflow-x-auto">
-            <table className="w-full">
-              <thead>
-                <tr className="border-b">
-                  <th className="text-left py-3 px-4">Medicine</th>
-                  <th className="text-left py-3 px-4">Batch No.</th>
-                  <th className="text-left py-3 px-4">MFG Date</th>
-                  <th className="text-left py-3 px-4">Expiry Date</th>
-                  <th className="text-left py-3 px-4">Quantity</th>
-                  <th className="text-left py-3 px-4">Status</th>
-                </tr>
-              </thead>
-              <tbody>
-                {[...Array(10)].map((_, i) => (
-                  <tr key={i} className="border-b hover:bg-slate-50">
-                    <td className="py-3 px-4 font-semibold">Medicine {i + 1}</td>
-                    <td className="py-3 px-4">B{100 + i}</td>
-                    <td className="py-3 px-4">Jan {i + 1}, 2024</td>
-                    <td className="py-3 px-4">Jan {i + 1}, 2026</td>
-                    <td className="py-3 px-4">{500 + i * 100}</td>
-                    <td className="py-3 px-4">
-                      <Badge variant={i % 3 === 0 ? 'default' : 'secondary'}>
-                        {i % 3 === 0 ? 'Active' : 'Low'}
-                      </Badge>
-                    </td>
+          {loading ? (
+            <div className="text-center py-8">Loading batches...</div>
+          ) : batches.length === 0 ? (
+            <div className="text-center py-8 text-muted-foreground">
+              No batches found. Click "Add Batch" to create one.
+            </div>
+          ) : (
+            <div className="overflow-x-auto">
+              <table className="w-full">
+                <thead>
+                  <tr className="border-b">
+                    <th className="text-left py-3 px-4">Medicine</th>
+                    <th className="text-left py-3 px-4">Batch No.</th>
+                    <th className="text-left py-3 px-4">MFG Date</th>
+                    <th className="text-left py-3 px-4">Expiry Date</th>
+                    <th className="text-left py-3 px-4">Quantity</th>
+                    <th className="text-left py-3 px-4">Status</th>
                   </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
+                </thead>
+                <tbody>
+                  {batches.map((batch: any) => (
+                    <tr key={batch.id} className="border-b hover:bg-slate-50">
+                      <td className="py-3 px-4 font-semibold">{batch.medicine_name || `Medicine #${batch.medicine_id}`}</td>
+                      <td className="py-3 px-4">{batch.batch_number}</td>
+                      <td className="py-3 px-4">
+                        {batch.manufacturing_date 
+                          ? new Date(batch.manufacturing_date).toLocaleDateString() 
+                          : 'N/A'}
+                      </td>
+                      <td className="py-3 px-4">
+                        {batch.expiry_date 
+                          ? new Date(batch.expiry_date).toLocaleDateString() 
+                          : 'N/A'}
+                      </td>
+                      <td className="py-3 px-4">{batch.quantity}</td>
+                      <td className="py-3 px-4">
+                        <Badge variant={batch.quantity > 100 ? 'default' : 'secondary'}>
+                          {batch.quantity > 100 ? 'Active' : 'Low'}
+                        </Badge>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          )}
         </CardContent>
       </Card>
+
+      {/* Add Batch Dialog */}
+      <Dialog open={showAddBatchDialog} onOpenChange={setShowAddBatchDialog}>
+        <DialogContent className="sm:max-w-[500px]">
+          <DialogHeader>
+            <DialogTitle>Add New Batch</DialogTitle>
+            <DialogDescription>
+              Enter the details of the new medicine batch.
+            </DialogDescription>
+          </DialogHeader>
+          <div className="grid gap-4 py-4">
+            <div className="grid gap-2">
+              <Label htmlFor="batchNumber">Batch Number *</Label>
+              <Input
+                id="batchNumber"
+                value={batchForm.batchNumber}
+                onChange={(e) => setBatchForm({ ...batchForm, batchNumber: e.target.value })}
+                placeholder="e.g., B12345"
+              />
+            </div>
+            <div className="grid gap-2">
+              <Label htmlFor="medicineId">Medicine ID *</Label>
+              <Input
+                id="medicineId"
+                type="number"
+                value={batchForm.medicineId}
+                onChange={(e) => setBatchForm({ ...batchForm, medicineId: e.target.value })}
+                placeholder="Enter medicine ID"
+              />
+            </div>
+            <div className="grid gap-2">
+              <Label htmlFor="quantity">Quantity *</Label>
+              <Input
+                id="quantity"
+                type="number"
+                value={batchForm.quantity}
+                onChange={(e) => setBatchForm({ ...batchForm, quantity: e.target.value })}
+                placeholder="Enter quantity"
+              />
+            </div>
+            <div className="grid grid-cols-2 gap-4">
+              <div className="grid gap-2">
+                <Label htmlFor="manufacturingDate">MFG Date</Label>
+                <Input
+                  id="manufacturingDate"
+                  type="date"
+                  value={batchForm.manufacturingDate}
+                  onChange={(e) => setBatchForm({ ...batchForm, manufacturingDate: e.target.value })}
+                />
+              </div>
+              <div className="grid gap-2">
+                <Label htmlFor="expiryDate">Expiry Date</Label>
+                <Input
+                  id="expiryDate"
+                  type="date"
+                  value={batchForm.expiryDate}
+                  onChange={(e) => setBatchForm({ ...batchForm, expiryDate: e.target.value })}
+                />
+              </div>
+            </div>
+            <div className="grid grid-cols-2 gap-4">
+              <div className="grid gap-2">
+                <Label htmlFor="costPrice">Cost Price</Label>
+                <Input
+                  id="costPrice"
+                  type="number"
+                  step="0.01"
+                  value={batchForm.costPrice}
+                  onChange={(e) => setBatchForm({ ...batchForm, costPrice: e.target.value })}
+                  placeholder="₹0.00"
+                />
+              </div>
+              <div className="grid gap-2">
+                <Label htmlFor="sellingPrice">Selling Price</Label>
+                <Input
+                  id="sellingPrice"
+                  type="number"
+                  step="0.01"
+                  value={batchForm.sellingPrice}
+                  onChange={(e) => setBatchForm({ ...batchForm, sellingPrice: e.target.value })}
+                  placeholder="₹0.00"
+                />
+              </div>
+            </div>
+            <div className="grid gap-2">
+              <Label htmlFor="supplier">Supplier</Label>
+              <Input
+                id="supplier"
+                value={batchForm.supplier}
+                onChange={(e) => setBatchForm({ ...batchForm, supplier: e.target.value })}
+                placeholder="Enter supplier name"
+              />
+            </div>
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setShowAddBatchDialog(false)}>
+              Cancel
+            </Button>
+            <Button onClick={handleAddBatch} disabled={loading}>
+              {loading ? 'Adding...' : 'Add Batch'}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 
@@ -856,65 +1082,151 @@ const PharmacyDashboard = () => {
 
   const renderAnalyticsContent = () => (
     <div className="space-y-6 p-8">
-      <h2 className="text-2xl font-bold">Business Analytics</h2>
+      <div className="flex justify-between items-center">
+        <h2 className="text-2xl font-bold">Business Analytics</h2>
+        <Button 
+          variant="outline"
+          size="sm"
+          onClick={loadAnalytics}
+          disabled={loading}
+        >
+          <RefreshCw className="h-4 w-4 mr-2" />
+          Refresh
+        </Button>
+      </div>
       
-      <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
-        <Card>
-          <CardContent className="pt-6">
-            <DollarSign className="h-8 w-8 text-green-600 mb-2" />
-            <div className="text-2xl font-bold">₹12.5L</div>
-            <p className="text-sm text-muted-foreground">Monthly Revenue</p>
-            <p className="text-xs text-green-600 mt-1">+18% from last month</p>
-          </CardContent>
-        </Card>
-        <Card>
-          <CardContent className="pt-6">
-            <ShoppingCart className="h-8 w-8 text-blue-600 mb-2" />
-            <div className="text-2xl font-bold">1,245</div>
-            <p className="text-sm text-muted-foreground">Total Sales</p>
-            <p className="text-xs text-blue-600 mt-1">+12% from last month</p>
-          </CardContent>
-        </Card>
-        <Card>
-          <CardContent className="pt-6">
-            <Users className="h-8 w-8 text-purple-600 mb-2" />
-            <div className="text-2xl font-bold">845</div>
-            <p className="text-sm text-muted-foreground">Customers</p>
-            <p className="text-xs text-purple-600 mt-1">+8% from last month</p>
-          </CardContent>
-        </Card>
-        <Card>
-          <CardContent className="pt-6">
-            <TrendingUp className="h-8 w-8 text-teal-600 mb-2" />
-            <div className="text-2xl font-bold">₹425</div>
-            <p className="text-sm text-muted-foreground">Avg Order Value</p>
-            <p className="text-xs text-teal-600 mt-1">+5% from last month</p>
-          </CardContent>
-        </Card>
-      </div>
+      {loading ? (
+        <div className="text-center py-12">Loading analytics...</div>
+      ) : analyticsData ? (
+        <>
+          <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
+            <Card>
+              <CardContent className="pt-6">
+                <DollarSign className="h-8 w-8 text-green-600 mb-2" />
+                <div className="text-2xl font-bold">
+                  ₹{(analyticsData.sales?.total || 0).toLocaleString()}
+                </div>
+                <p className="text-sm text-muted-foreground">
+                  {analyticsData.sales?.period === 'today' ? 'Today\'s Sales' : 'Total Sales'}
+                </p>
+                <p className="text-xs text-green-600 mt-1">
+                  {analyticsData.recentTransactions?.length || 0} recent transactions
+                </p>
+              </CardContent>
+            </Card>
+            <Card>
+              <CardContent className="pt-6">
+                <Package className="h-8 w-8 text-blue-600 mb-2" />
+                <div className="text-2xl font-bold">
+                  {analyticsData.stock?.totalItems || 0}
+                </div>
+                <p className="text-sm text-muted-foreground">Total Stock Items</p>
+                <p className="text-xs text-blue-600 mt-1">In inventory</p>
+              </CardContent>
+            </Card>
+            <Card>
+              <CardContent className="pt-6">
+                <AlertTriangle className="h-8 w-8 text-orange-600 mb-2" />
+                <div className="text-2xl font-bold">
+                  {analyticsData.stock?.lowStockItems || 0}
+                </div>
+                <p className="text-sm text-muted-foreground">Low Stock Alerts</p>
+                <p className="text-xs text-orange-600 mt-1">Needs attention</p>
+              </CardContent>
+            </Card>
+            <Card>
+              <CardContent className="pt-6">
+                <TrendingUp className="h-8 w-8 text-teal-600 mb-2" />
+                <div className="text-2xl font-bold">
+                  ₹{analyticsData.recentTransactions?.length > 0 
+                    ? ((analyticsData.sales?.total || 0) / analyticsData.recentTransactions.length).toFixed(0)
+                    : '0'}
+                </div>
+                <p className="text-sm text-muted-foreground">Avg Transaction</p>
+                <p className="text-xs text-teal-600 mt-1">Per sale</p>
+              </CardContent>
+            </Card>
+          </div>
 
-      <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-        <Card>
-          <CardHeader>
-            <CardTitle>Sales Trend</CardTitle>
-          </CardHeader>
-          <CardContent>
-            <div className="h-64 flex items-center justify-center text-muted-foreground">
-              Chart: Monthly sales trend
-            </div>
-          </CardContent>
-        </Card>
-        <Card>
-          <CardHeader>
-            <CardTitle>Top Selling Medicines</CardTitle>
-          </CardHeader>
-          <CardContent>
-            <div className="h-64 flex items-center justify-center text-muted-foreground">
-              Chart: Product sales distribution
-            </div>
-          </CardContent>
-        </Card>
-      </div>
+          {analyticsData.recentTransactions && analyticsData.recentTransactions.length > 0 && (
+            <Card>
+              <CardHeader>
+                <CardTitle>Recent Transactions</CardTitle>
+              </CardHeader>
+              <CardContent>
+                <div className="space-y-3">
+                  {analyticsData.recentTransactions.map((transaction: any, index: number) => (
+                    <div key={index} className="flex justify-between items-center border-b pb-2">
+                      <div>
+                        <p className="font-medium">
+                          Transaction #{transaction.id}
+                        </p>
+                        <p className="text-sm text-muted-foreground">
+                          {new Date(transaction.created_at).toLocaleDateString()}
+                        </p>
+                      </div>
+                      <div className="text-right">
+                        <p className="font-bold">₹{transaction.total_amount}</p>
+                        <p className="text-xs text-muted-foreground">
+                          {transaction.payment_method}
+                        </p>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </CardContent>
+            </Card>
+          )}
+
+          {analyticsData.stock?.lowStockItems > 0 && (
+            <Card>
+              <CardHeader>
+                <CardTitle>Low Stock Items</CardTitle>
+              </CardHeader>
+              <CardContent>
+                <div className="text-center py-4 text-muted-foreground">
+                  {analyticsData.stock.lowStockItems} items need restocking
+                </div>
+              </CardContent>
+            </Card>
+          )}
+        </>
+      ) : (
+        <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
+          <Card>
+            <CardContent className="pt-6">
+              <DollarSign className="h-8 w-8 text-green-600 mb-2" />
+              <div className="text-2xl font-bold">₹0</div>
+              <p className="text-sm text-muted-foreground">Total Sales</p>
+              <p className="text-xs text-muted-foreground mt-1">No data available</p>
+            </CardContent>
+          </Card>
+          <Card>
+            <CardContent className="pt-6">
+              <Package className="h-8 w-8 text-blue-600 mb-2" />
+              <div className="text-2xl font-bold">0</div>
+              <p className="text-sm text-muted-foreground">Total Stock Items</p>
+              <p className="text-xs text-muted-foreground mt-1">No data available</p>
+            </CardContent>
+          </Card>
+          <Card>
+            <CardContent className="pt-6">
+              <AlertTriangle className="h-8 w-8 text-orange-600 mb-2" />
+              <div className="text-2xl font-bold">0</div>
+              <p className="text-sm text-muted-foreground">Low Stock Alerts</p>
+              <p className="text-xs text-muted-foreground mt-1">No data available</p>
+            </CardContent>
+          </Card>
+          <Card>
+            <CardContent className="pt-6">
+              <TrendingUp className="h-8 w-8 text-teal-600 mb-2" />
+              <div className="text-2xl font-bold">₹0</div>
+              <p className="text-sm text-muted-foreground">Avg Transaction</p>
+              <p className="text-xs text-muted-foreground mt-1">No data available</p>
+            </CardContent>
+          </Card>
+        </div>
+      )}
     </div>
   );
 

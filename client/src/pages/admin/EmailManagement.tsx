@@ -843,31 +843,12 @@ const EmailManagement = () => {
     return badges[category];
   };
 
-  const handleTestSMTP = async (smtpConfig: SMTPConfig) => {
-    if (!testEmail) {
-      setTestResult({ success: false, message: 'Please enter a test email address' });
-      return;
-    }
-
-    // Simulate SMTP test
-    setTestResult(null);
-    setTimeout(() => {
-      const success = Math.random() > 0.3; // 70% success rate for demo
-      setTestResult({
-        success,
-        message: success 
-          ? `Test email sent successfully to ${testEmail} via ${smtpConfig.name}`
-          : `Failed to send test email: Connection timeout`
-      });
-    }, 2000);
-  };
-
   return (
     <AdminLayout>
-      <div className="min-h-screen bg-gradient-to-br from-gray-50 via-blue-50/30 to-purple-50/20">
+      <div className="min-h-screen bg-gradient-to-br from-gray-50 via-slate-50/30 to-teal-50/20 dark:from-slate-950 dark:via-slate-900 dark:to-slate-950">
         <div className="space-y-6 lg:space-y-8">
           {/* Enhanced Header */}
-          <div className="relative overflow-hidden rounded-2xl bg-gradient-to-br from-blue-600 via-blue-700 to-purple-700 p-6 lg:p-8 text-white shadow-2xl">
+          <div className="relative overflow-hidden rounded-2xl bg-gradient-to-br from-slate-800 via-slate-900 to-slate-800 p-6 lg:p-8 text-white shadow-2xl">
             <div className="absolute inset-0 bg-black/10" />
             <div className="absolute -top-4 -right-4 opacity-10">
               <Mail className="h-32 w-32" />
@@ -910,20 +891,20 @@ const EmailManagement = () => {
 
           {/* Enhanced Stats Cards */}
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-6 gap-4 lg:gap-6">
-            <Card className="relative overflow-hidden border-0 bg-gradient-to-br from-blue-500/10 via-blue-500/5 to-background shadow-lg hover:shadow-xl transition-all duration-300 group admin-card">
+            <Card className="relative overflow-hidden border-0 bg-gradient-to-br from-teal-500/10 via-teal-500/5 to-background shadow-lg hover:shadow-xl transition-all duration-300 group admin-card">
               <CardContent className="p-4 lg:p-6">
                 <div className="flex items-center justify-between">
                   <div className="space-y-2">
-                    <p className="text-xs lg:text-sm font-medium text-blue-600 dark:text-blue-400 uppercase tracking-wide">Total Sent</p>
+                    <p className="text-xs lg:text-sm font-medium text-teal-600 dark:text-teal-400 uppercase tracking-wide">Total Sent</p>
                     <p className="text-xl lg:text-2xl font-bold text-foreground group-hover:scale-105 transition-transform duration-200">
                       {calculatedStats.totalDelivered.toLocaleString()}
                     </p>
                   </div>
-                  <div className="p-3 rounded-xl bg-blue-500/15 group-hover:bg-blue-500/20 transition-colors duration-200">
-                    <Send className="h-6 w-6 lg:h-7 lg:w-7 text-blue-600" />
+                  <div className="p-3 rounded-xl bg-teal-500/15 group-hover:bg-teal-500/20 transition-colors duration-200">
+                    <Send className="h-6 w-6 lg:h-7 lg:w-7 text-teal-600" />
                   </div>
                 </div>
-                <div className="absolute inset-0 bg-gradient-to-r from-blue-500/5 to-transparent opacity-0 group-hover:opacity-100 transition-opacity duration-300" />
+                <div className="absolute inset-0 bg-gradient-to-r from-teal-500/5 to-transparent opacity-0 group-hover:opacity-100 transition-opacity duration-300" />
               </CardContent>
             </Card>
 
@@ -995,7 +976,7 @@ const EmailManagement = () => {
               </CardContent>
             </Card>
 
-            <Card className="relative overflow-hidden border-0 bg-gradient-to-br from-purple-500/10 via-purple-500/5 to-background shadow-lg hover:shadow-xl transition-all duration-300 group admin-card">
+            <Card className="relative overflow-hidden border-0 bg-gradient-to-br from-teal-500/10 via-teal-500/5 to-background shadow-lg hover:shadow-xl transition-all duration-300 group admin-card">
               <CardContent className="p-4 lg:p-6">
                 <div className="flex items-center justify-between">
                   <div className="space-y-2">
@@ -1008,7 +989,7 @@ const EmailManagement = () => {
                     <Eye className="h-6 w-6 lg:h-7 lg:w-7 text-purple-600" />
                   </div>
                 </div>
-                <div className="absolute inset-0 bg-gradient-to-r from-purple-500/5 to-transparent opacity-0 group-hover:opacity-100 transition-opacity duration-300" />
+                <div className="absolute inset-0 bg-gradient-to-r from-teal-500/5 to-transparent opacity-0 group-hover:opacity-100 transition-opacity duration-300" />
               </CardContent>
             </Card>
 
@@ -1058,7 +1039,7 @@ const EmailManagement = () => {
             <TabsContent value="dashboard" className="space-y-6">
               <div className="grid md:grid-cols-2 lg:grid-cols-3 gap-6">
                 {/* SMTP Status Cards */}
-                <Card className="border-0 shadow-lg hover:shadow-xl transition-all duration-300 bg-gradient-to-br from-blue-50/50 to-background">
+                <Card className="border-0 shadow-lg hover:shadow-xl transition-all duration-300 bg-gradient-to-br from-teal-50/50 to-background dark:from-teal-950/20">
                   <CardHeader className="pb-3">
                     <CardTitle className="flex items-center gap-2 text-base">
                       <div className="p-2 rounded-lg bg-blue-500/10">
@@ -1148,7 +1129,7 @@ const EmailManagement = () => {
                 </Card>
 
                 {/* Popular Templates */}
-                <Card className="border-0 shadow-lg hover:shadow-xl transition-all duration-300 bg-gradient-to-br from-purple-50/50 to-background">
+                <Card className="border-0 shadow-lg hover:shadow-xl transition-all duration-300 bg-gradient-to-br from-slate-50/50 to-background dark:from-slate-950/20">
                   <CardHeader className="pb-3">
                     <CardTitle className="flex items-center gap-2 text-base">
                       <div className="p-2 rounded-lg bg-purple-500/10">
@@ -1193,7 +1174,7 @@ const EmailManagement = () => {
               </div>
 
               {/* Quick Actions */}
-              <Card className="border-0 shadow-lg bg-gradient-to-r from-blue-500/5 via-purple-500/5 to-blue-500/5">
+              <Card className="border-0 shadow-lg bg-gradient-to-r from-teal-500/5 via-slate-500/5 to-teal-500/5">
                 <CardHeader>
                   <CardTitle className="flex items-center gap-2">
                     <Zap className="h-5 w-5 text-blue-600" />
@@ -1395,7 +1376,7 @@ const EmailManagement = () => {
               )}
 
               {/* SMTP Test Panel */}
-              <Card className="border-0 shadow-lg bg-gradient-to-r from-blue-50/50 to-purple-50/50">
+              <Card className="border-0 shadow-lg bg-gradient-to-r from-teal-50/50 to-slate-50/50 dark:from-teal-950/20 dark:to-slate-950/20">
                 <CardHeader>
                   <CardTitle className="flex items-center gap-2">
                     <TestTube className="h-5 w-5 text-blue-600" />
@@ -1442,7 +1423,7 @@ const EmailManagement = () => {
                         toast.error('Please select a configuration to test');
                       }
                     }}
-                    className="w-full bg-gradient-to-r from-blue-600 to-blue-700 hover:from-blue-700 hover:to-blue-800 text-white"
+                    className="w-full bg-gradient-to-r from-teal-500 to-teal-600 hover:from-teal-600 hover:to-teal-700 text-white"
                     disabled={!testEmail || testing[selectedTestConfig] || !selectedTestConfig}
                   >
                     {testing[selectedTestConfig] ? (
@@ -1721,11 +1702,12 @@ const EmailManagement = () => {
                     />
                   </div>
                   <Button 
-                    onClick={() => handleTestSMTP(smtpConfigs[0])}
+                    onClick={() => testSMTP(selectedTestingTabConfig)}
+                    disabled={testing[selectedTestingTabConfig] || !testEmail}
                     className="w-full"
                   >
                     <TestTube className="mr-2 h-4 w-4" />
-                    Send Test Email
+                    {testing[selectedTestingTabConfig] ? 'Testing...' : 'Send Test Email'}
                   </Button>
                   {testResult && (
                     <div className={`p-4 rounded-lg ${

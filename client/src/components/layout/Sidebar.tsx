@@ -57,6 +57,7 @@ interface SidebarItem {
   label: string;
   path: string;
   category?: string;
+  adminOnly?: boolean; // Flag for admin-only items
 }
 
 const sidebarItems: SidebarItem[] = [
@@ -68,7 +69,7 @@ const sidebarItems: SidebarItem[] = [
   // Health Management
   { icon: HeartPulse, label: "Health Dashboard", path: "/health-dashboard", category: "Health" },
   { icon: Brain, label: "Health Intelligence", path: "/health-intelligence", category: "Health" },
-  { icon: Shield, label: "SIB Control", path: "/sib-control", category: "Health" },
+  { icon: Shield, label: "SIB Control", path: "/sib-control", category: "Health", adminOnly: true },
   { icon: BookHeart, label: "Health Diary", path: "/health-diary", category: "Health" },
   { icon: ShieldCheck, label: "Health Risk Assessment", path: "/health-risk-assessment", category: "Health" },
   { icon: Trophy, label: "Wellness Challenges", path: "/wellness-challenges", category: "Health" },
@@ -94,6 +95,9 @@ const sidebarItems: SidebarItem[] = [
   // Wallet & Plans
   { icon: Wallet, label: "Wallet", path: "/wallet", category: "Finance" },
   { icon: Crown, label: "Membership Plans", path: "/my-plans", category: "Finance" },
+  { icon: CreditCard, label: "My Membership Card", path: "/membership-card", category: "Finance" },
+  { icon: FileStack, label: "Order History", path: "/billing/orders", category: "Finance" },
+  { icon: Receipt, label: "My Invoices", path: "/billing/invoices", category: "Finance" },
 ];
 
 const teamSidebarItems: SidebarItem[] = [
@@ -122,13 +126,28 @@ export function Sidebar() {
   const [isTeamUser, setIsTeamUser] = useState(false);
   const [isNurseUser, setIsNurseUser] = useState(false);
   const [isAssistantUser, setIsAssistantUser] = useState(false);
+  const [isAdmin, setIsAdmin] = useState(false);
   const scrollAreaRef = useRef<HTMLDivElement>(null);
 
-  // Check if user is a team member, nurse, or assistant
+  // Check if user is a team member, nurse, assistant, or admin
   useEffect(() => {
     const teamToken = localStorage.getItem('teamToken');
     const nurseToken = localStorage.getItem('nurseToken');
     const assistantToken = localStorage.getItem('assistantToken');
+    const userToken = localStorage.getItem('token');
+    
+    // Check if user is admin
+    let userIsAdmin = false;
+    if (userToken) {
+      try {
+        const payload = JSON.parse(atob(userToken.split('.')[1]));
+        userIsAdmin = payload.role === 'admin' || payload.isAdmin === true;
+      } catch (e) {
+        console.warn('Failed to parse user token:', e);
+      }
+    }
+    setIsAdmin(userIsAdmin);
+    
     const isTeamRoute = location.pathname.startsWith('/team') || 
                        (location.pathname.startsWith('/admin') && !!teamToken);
     const isNurseRoute = location.pathname.startsWith('/nurse');
@@ -206,7 +225,14 @@ export function Sidebar() {
     if (isTeamUser) return teamSidebarItems;
     if (isNurseUser) return nurseSidebarItems;
     if (isAssistantUser) return assistantSidebarItems;
-    return sidebarItems;
+    
+    // Filter out admin-only items for regular users
+    return sidebarItems.filter(item => {
+      if (item.adminOnly) {
+        return isAdmin; // Only show admin items to admin users
+      }
+      return true; // Show all other items
+    });
   };
 
   const items = getSidebarItems();
@@ -244,10 +270,11 @@ export function Sidebar() {
 
         {/* Logo */}
         <div className="flex items-center gap-3 border-b border-slate-700/50 px-6 py-5">
-          <div className="p-2 rounded-xl bg-gradient-to-br from-teal-500 to-teal-600 shadow-lg shadow-teal-500/20">
-            <HeartPulse className="h-5 w-5 text-white" />
-          </div>
-          <span className="text-lg font-bold text-white tracking-tight">{BRAND.name}</span>
+          <img 
+            src={BRAND.logo} 
+            alt={BRAND.name} 
+            className="h-10 w-auto object-contain"
+          />
         </div>
 
         {/* Sidebar Links */}

@@ -2679,8 +2679,8 @@ export const LabStaffPage = () => {
 
   const stats = useMemo(() => {
     const total = staff.length;
-    const technicians = staff.filter((s) => s.role.toLowerCase().includes("tech")).length;
-    const pathologists = staff.filter((s) => s.role.toLowerCase().includes("path")).length;
+    const technicians = staff.filter((s) => s.role?.toLowerCase().includes("tech")).length;
+    const pathologists = staff.filter((s) => s.role?.toLowerCase().includes("path")).length;
     const support = Math.max(0, total - technicians - pathologists);
     return [
       { title: "Total Staff", value: String(total), helper: "Employees" },

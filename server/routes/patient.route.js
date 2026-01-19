@@ -383,9 +383,15 @@ router.post(
       // Create patient - assign to assistant's linked doctor as primary doctor
       // If assistant has a linked doctor, use that; otherwise default to CMO
       const DEFAULT_PRIMARY_DOCTOR_ID = 5; // CMO Dr. Nandita Agarwal
-      const primaryDoctorId = req.assistant.primaryDoctorId || 
-                               (req.assistant.linkedDoctorIds && req.assistant.linkedDoctorIds[0]) ||
-                               DEFAULT_PRIMARY_DOCTOR_ID;
+      let primaryDoctorId = req.assistant.primaryDoctorId || 
+                            (req.assistant.linkedDoctorIds && req.assistant.linkedDoctorIds[0]) ||
+                            DEFAULT_PRIMARY_DOCTOR_ID;
+      
+      // Ensure primaryDoctorId is a number (convert string IDs to number or use default)
+      if (typeof primaryDoctorId === 'string') {
+        const parsed = parseInt(primaryDoctorId, 10);
+        primaryDoctorId = isNaN(parsed) ? DEFAULT_PRIMARY_DOCTOR_ID : parsed;
+      }
       
       // Note: User model only supports basic fields. 
       // Additional fields (address, bloodGroup, etc.) should be stored in patient_profiles table

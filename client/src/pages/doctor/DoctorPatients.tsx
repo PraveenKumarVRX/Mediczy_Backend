@@ -357,9 +357,9 @@ const DoctorPatients = () => {
               </CardHeader>
               <CardContent>
                 <div className="text-2xl font-bold">
-                  <span className="text-blue-600">{patients.filter(p => p.gender?.toLowerCase() === 'male').length}</span>
+                  <span className="text-blue-600">{patients.filter(p => p.gender?.toLowerCase() === 'male' || p.gender === 'male').length}</span>
                   <span className="text-muted-foreground mx-1">/</span>
-                  <span className="text-pink-600">{patients.filter(p => p.gender?.toLowerCase() === 'female').length}</span>
+                  <span className="text-pink-600">{patients.filter(p => p.gender?.toLowerCase() === 'female' || p.gender === 'female').length}</span>
                 </div>
               </CardContent>
             </Card>

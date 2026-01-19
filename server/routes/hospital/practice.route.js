@@ -4,12 +4,22 @@ import path from 'path';
 import { fileURLToPath } from 'url';
 import jwt from 'jsonwebtoken';
 import crypto from 'crypto';
+import { JWT_CONFIG } from '../../config/auth.config.js';
 import { postgresSequelize as sequelize } from '../../db/postgres-sequelize.js';
 import { QueryTypes, Op } from 'sequelize';
 import Appointment from '../../models/postgres/appointment.model.postgres.js';
+import Bed from '../../models/postgres/bed.model.postgres.js';
+import LabOrder from '../../models/postgres/labOrder.model.postgres.js';
+import PharmacyInventory from '../../models/postgres/pharmacyInventory.model.postgres.js';
+import PrescriptionDispensing from '../../models/postgres/prescriptionDispensing.model.postgres.js';
+import InsuranceClaim from '../../models/postgres/insuranceClaim.model.postgres.js';
+import InsurancePolicy from '../../models/postgres/insurancePolicy.model.postgres.js';
+import MedicalRecord from '../../models/postgres/medicalRecord.model.postgres.js';
+import EHRRecord from '../../models/postgres/ehrRecord.model.postgres.js';
+import VitalSign from '../../models/postgres/vitalSign.model.postgres.js';
 
 const router = express.Router();
-const JWT_SECRET = process.env.JWT_SECRET || 'mediczy-super-secret-key-2024';
+const JWT_SECRET = JWT_CONFIG.SECRET;
 const STORE_DIR = process.env.HOSPITAL_PRACTICE_STORE || '/tmp/mediczy/hospital-practice';
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -56,16 +66,17 @@ const verifyHospitalToken = (req, res, next) => {
 
   // Dev bypass token used by frontend seed login
   if (token === 'dev-hospital-token') {
-    req.hospitalId = 'hospital_dev';
+    req.hospitalId = 1;  // Use numeric ID for dev mode
+    req.hospitalOrgId = 1;  // Organization ID for queries
     req.hospitalName = 'Sample Hospital';
-    req.tenantId = 'hospital_dev';
+    req.tenantId = 1;
     return next();
   }
 
   try {
     const decoded = jwt.verify(token, JWT_SECRET);
     const role = decoded.role || decoded.userType;
-    
+
     // Support both old system (role: hospital) and new multitenancy (role: hospital_admin, etc.)
     const validRoles = ['hospital', 'hospital_admin', 'doctor', 'staff', 'nurse'];
     if (!validRoles.includes(role)) {
@@ -74,11 +85,12 @@ const verifyHospitalToken = (req, res, next) => {
 
     // Support both old system (decoded.id) and new multitenancy (decoded.tenant_id / decoded.hospital_id)
     req.hospitalId = decoded.hospital_id || decoded.tenant_id || decoded.id || decoded.hospitalId;
+    req.hospitalOrgId = decoded.hospital_id || decoded.tenant_id || decoded.id || decoded.hospitalId;  // For DB queries
     req.hospitalName = decoded.hospitalName || decoded.name || 'Hospital';
     req.tenantId = decoded.tenant_id || decoded.hospital_id || decoded.id;
     req.userId = decoded.id;
     req.userRole = role;
-    
+
     return next();
   } catch (error) {
     return res.status(401).json({ success: false, message: 'Invalid token', error: error.message });
@@ -195,21 +207,21 @@ router.get('/appointments', verifyHospitalToken, async (req, res) => {
 
     // Apply in-memory filters for priority and type if needed
     if (priority) {
-      transformedAppointments = transformedAppointments.filter(apt => 
+      transformedAppointments = transformedAppointments.filter(apt =>
         apt.priority.toLowerCase() === priority.toLowerCase()
       );
     }
 
     if (type) {
-      transformedAppointments = transformedAppointments.filter(apt => 
+      transformedAppointments = transformedAppointments.filter(apt =>
         apt.type.toLowerCase() === type.toLowerCase()
       );
     }
 
-    return res.json({ 
-      success: true, 
-      data: transformedAppointments, 
-      total: transformedAppointments.length 
+    return res.json({
+      success: true,
+      data: transformedAppointments,
+      total: transformedAppointments.length
     });
   } catch (error) {
     console.error('Get hospital appointments error:', error);
@@ -224,11 +236,11 @@ router.get('/appointments', verifyHospitalToken, async (req, res) => {
 router.post('/appointments', verifyHospitalToken, async (req, res) => {
   try {
     const { patientName, patientPhone, patientEmail, userId, doctorId, appointmentDate, appointmentTime, reason, consultationType } = req.body;
-    
+
     if (!patientName || !patientPhone || !appointmentDate || !appointmentTime) {
-      return res.status(400).json({ 
-        success: false, 
-        message: 'Patient name, phone, date, and time are required' 
+      return res.status(400).json({
+        success: false,
+        message: 'Patient name, phone, date, and time are required'
       });
     }
 
@@ -268,9 +280,9 @@ router.post('/appointments', verifyHospitalToken, async (req, res) => {
 
     console.log('✅ Hospital created appointment:', appointment.id);
 
-    return res.status(201).json({ 
-      success: true, 
-      message: 'Appointment created successfully', 
+    return res.status(201).json({
+      success: true,
+      message: 'Appointment created successfully',
       data: {
         id: appointment.id.toString(),
         patientName: appointment.patientName,
@@ -306,9 +318,9 @@ router.patch('/appointments/:id', verifyHospitalToken, async (req, res) => {
     });
 
     if (!appointment) {
-      return res.status(404).json({ 
-        success: false, 
-        message: 'Appointment not found or does not belong to this hospital' 
+      return res.status(404).json({
+        success: false,
+        message: 'Appointment not found or does not belong to this hospital'
       });
     }
 
@@ -324,9 +336,9 @@ router.patch('/appointments/:id', verifyHospitalToken, async (req, res) => {
 
     console.log('✅ Hospital updated appointment:', id);
 
-    return res.json({ 
-      success: true, 
-      message: 'Appointment updated successfully', 
+    return res.json({
+      success: true,
+      message: 'Appointment updated successfully',
       data: {
         id: appointment.id.toString(),
         status: appointment.status,
@@ -359,14 +371,14 @@ router.delete('/appointments/:id', verifyHospitalToken, async (req, res) => {
     });
 
     if (!appointment) {
-      return res.status(404).json({ 
-        success: false, 
-        message: 'Appointment not found or does not belong to this hospital' 
+      return res.status(404).json({
+        success: false,
+        message: 'Appointment not found or does not belong to this hospital'
       });
     }
 
     // Soft delete by updating status to cancelled
-    await appointment.update({ 
+    await appointment.update({
       status: 'cancelled',
       cancellationReason: 'Cancelled by hospital',
       cancelledAt: new Date()
@@ -374,8 +386,8 @@ router.delete('/appointments/:id', verifyHospitalToken, async (req, res) => {
 
     console.log('✅ Hospital cancelled appointment:', id);
 
-    return res.json({ 
-      success: true, 
+    return res.json({
+      success: true,
       message: 'Appointment cancelled successfully'
     });
   } catch (error) {
@@ -639,7 +651,7 @@ router.post('/resources/allocate', verifyHospitalToken, async (req, res) => {
  */
 router.patch('/insurance/claims/:id', verifyHospitalToken, async (req, res) => {
   const transaction = await sequelize.transaction();
-  
+
   try {
     const { id } = req.params;
     const { status, approvedAmount, remarks } = req.body;
@@ -1147,6 +1159,1237 @@ router.post('/procedures/schedule', verifyHospitalToken, async (req, res) => {
   } catch (error) {
     console.error('Error scheduling procedure:', error);
     res.status(500).json({ success: false, message: 'Failed to schedule procedure', error: error.message });
+  }
+});
+
+// ========================================
+// BEDS MANAGEMENT ENDPOINTS
+// ========================================
+
+/**
+ * GET /api/hospital/practice/beds
+ * List all beds for the hospital with optional filters
+ */
+router.get('/beds', verifyHospitalToken, async (req, res) => {
+  try {
+    const { organizationId } = req.hospitalId ? { organizationId: req.hospitalId } : req.query;
+    const { status, ward, bedType, patientId } = req.query;
+
+    if (!organizationId) {
+      return res.status(400).json({ success: false, message: 'Organization ID required' });
+    }
+
+    const whereClause = { organizationId };
+
+    if (status) whereClause.status = status;
+    if (ward) whereClause.ward = ward;
+    if (bedType) whereClause.bedType = bedType;
+    if (patientId) whereClause.patientId = patientId;
+
+    const beds = await Bed.findAll({
+      where: whereClause,
+      order: [['ward', 'ASC'], ['bedNumber', 'ASC']]
+    });
+
+    // Manually fetch patient details for occupied beds
+    const bedsWithPatients = await Promise.all(beds.map(async (bed) => {
+      const bedData = bed.toJSON();
+      if (bed.patientId) {
+        const patient = await sequelize.query(
+          'SELECT id, "firstName", "lastName", email, "phoneNumber" FROM users WHERE id = :patientId',
+          {
+            replacements: { patientId: bed.patientId },
+            type: QueryTypes.SELECT
+          }
+        );
+        bedData.patient = patient[0] || null;
+      }
+      return bedData;
+    }));
+
+    res.json({
+      success: true,
+      data: bedsWithPatients,
+      total: beds.length,
+      stats: {
+        available: beds.filter(b => b.status === 'available').length,
+        occupied: beds.filter(b => b.status === 'occupied').length,
+        maintenance: beds.filter(b => b.status === 'maintenance').length,
+        reserved: beds.filter(b => b.status === 'reserved').length
+      }
+    });
+  } catch (error) {
+    console.error('Error fetching beds:', error);
+    res.status(500).json({ success: false, message: 'Failed to fetch beds', error: error.message });
+  }
+});
+
+/**
+ * POST /api/hospital/practice/beds
+ * Create a new bed
+ */
+router.post('/beds', verifyHospitalToken, async (req, res) => {
+  try {
+    const organizationId = req.hospitalId;
+    const { bedNumber, ward, bedType, status, notes } = req.body;
+
+    if (!organizationId) {
+      return res.status(400).json({ success: false, message: 'Organization ID required' });
+    }
+
+    if (!bedNumber || !ward) {
+      return res.status(400).json({ success: false, message: 'Bed number and ward are required' });
+    }
+
+    // Check for duplicate bed number in same organization
+    const existing = await Bed.findOne({
+      where: { bedNumber, organizationId }
+    });
+
+    if (existing) {
+      return res.status(409).json({ success: false, message: 'Bed number already exists in this hospital' });
+    }
+
+    const bed = await Bed.create({
+      bedNumber,
+      ward,
+      bedType,
+      status: status || 'available',
+      notes,
+      organizationId
+    });
+
+    res.status(201).json({ success: true, message: 'Bed created successfully', data: bed });
+  } catch (error) {
+    console.error('Error creating bed:', error);
+    res.status(500).json({ success: false, message: 'Failed to create bed', error: error.message });
+  }
+});
+
+/**
+ * PATCH /api/hospital/practice/beds/:id
+ * Update bed status or assign/release patient
+ */
+router.patch('/beds/:id', verifyHospitalToken, async (req, res) => {
+  try {
+    const { id } = req.params;
+    const organizationId = req.hospitalId;
+    const { status, patientId, notes } = req.body;
+
+    const bed = await Bed.findOne({
+      where: { id, organizationId }
+    });
+
+    if (!bed) {
+      return res.status(404).json({ success: false, message: 'Bed not found' });
+    }
+
+    // Handle patient assignment/release
+    if (patientId !== undefined) {
+      if (patientId) {
+        // Assign patient
+        bed.patientId = patientId;
+        bed.status = 'occupied';
+        bed.assignedAt = new Date();
+        bed.releasedAt = null;
+      } else {
+        // Release patient
+        bed.patientId = null;
+        bed.status = 'available';
+        bed.releasedAt = new Date();
+      }
+    }
+
+    if (status) bed.status = status;
+    if (notes !== undefined) bed.notes = notes;
+
+    await bed.save();
+
+    const updatedBed = bed.toJSON();
+    if (bed.patientId) {
+      const patient = await sequelize.query(
+        'SELECT id, "firstName", "lastName", email FROM users WHERE id = :patientId',
+        {
+          replacements: { patientId: bed.patientId },
+          type: QueryTypes.SELECT
+        }
+      );
+      updatedBed.patient = patient[0] || null;
+    }
+
+    res.json({ success: true, message: 'Bed updated successfully', data: updatedBed });
+  } catch (error) {
+    console.error('Error updating bed:', error);
+    res.status(500).json({ success: false, message: 'Failed to update bed', error: error.message });
+  }
+});
+
+/**
+ * DELETE /api/hospital/practice/beds/:id
+ * Delete a bed
+ */
+router.delete('/beds/:id', verifyHospitalToken, async (req, res) => {
+  try {
+    const { id } = req.params;
+    const organizationId = req.hospitalId;
+
+    const bed = await Bed.findOne({
+      where: { id, organizationId }
+    });
+
+    if (!bed) {
+      return res.status(404).json({ success: false, message: 'Bed not found' });
+    }
+
+    if (bed.status === 'occupied') {
+      return res.status(400).json({ success: false, message: 'Cannot delete occupied bed' });
+    }
+
+    await bed.destroy();
+
+    res.json({ success: true, message: 'Bed deleted successfully' });
+  } catch (error) {
+    console.error('Error deleting bed:', error);
+    res.status(500).json({ success: false, message: 'Failed to delete bed', error: error.message });
+  }
+});
+
+// ========================================
+// LABS MANAGEMENT ENDPOINTS
+// ========================================
+
+/**
+ * GET /api/hospital/practice/labs
+ * List all lab orders for the hospital
+ */
+router.get('/labs', verifyHospitalToken, async (req, res) => {
+  try {
+    const { organizationId } = req.hospitalId ? { organizationId: req.hospitalId } : req.query;
+    const { status, priority, testCategory, patientId, doctorId, fromDate, toDate } = req.query;
+
+    if (!organizationId) {
+      return res.status(400).json({ success: false, message: 'Organization ID required' });
+    }
+
+    const whereClause = { organizationId };
+
+    if (status) whereClause.status = status;
+    if (priority) whereClause.priority = priority;
+    if (testCategory) whereClause.testCategory = testCategory;
+    if (patientId) whereClause.patientId = patientId;
+    if (doctorId) whereClause.doctorId = doctorId;
+
+    if (fromDate || toDate) {
+      whereClause.created_at = {};
+      if (fromDate) whereClause.created_at[Op.gte] = new Date(fromDate);
+      if (toDate) whereClause.created_at[Op.lte] = new Date(toDate);
+    }
+
+    const labOrders = await LabOrder.findAll({
+      where: whereClause,
+      order: [['created_at', 'DESC']]
+    });
+
+    // Manually fetch patient and doctor details
+    const labOrdersWithDetails = await Promise.all(labOrders.map(async (order) => {
+      const orderData = order.toJSON();
+      if (order.patientId) {
+        const [patient] = await sequelize.query(
+          'SELECT id, "firstName", "lastName", email, "phoneNumber" FROM users WHERE id = :id',
+          { replacements: { id: order.patientId }, type: QueryTypes.SELECT }
+        );
+        orderData.patient = patient || null;
+      }
+      if (order.doctorId) {
+        const [doctor] = await sequelize.query(
+          'SELECT id, "firstName", "lastName", email FROM users WHERE id = :id',
+          { replacements: { id: order.doctorId }, type: QueryTypes.SELECT }
+        );
+        orderData.doctor = doctor || null;
+      }
+      return orderData;
+    }));
+
+    res.json({
+      success: true,
+      data: labOrdersWithDetails,
+      total: labOrdersWithDetails.length,
+      stats: {
+        pending: labOrdersWithDetails.filter(l => l.status === 'pending').length,
+        sampleCollected: labOrdersWithDetails.filter(l => l.status === 'sample_collected').length,
+        inProgress: labOrdersWithDetails.filter(l => l.status === 'in_progress').length,
+        completed: labOrdersWithDetails.filter(l => l.status === 'completed').length,
+        urgent: labOrdersWithDetails.filter(l => l.priority === 'urgent').length
+      }
+    });
+  } catch (error) {
+    console.error('Error fetching lab orders:', error);
+    res.status(500).json({ success: false, message: 'Failed to fetch lab orders', error: error.message });
+  }
+});
+
+/**
+ * POST /api/hospital/practice/labs
+ * Create a new lab order
+ */
+router.post('/labs', verifyHospitalToken, async (req, res) => {
+  try {
+    const organizationId = req.hospitalId;
+    const { patientId, doctorId, testType, testCategory, priority, notes } = req.body;
+
+    if (!organizationId) {
+      return res.status(400).json({ success: false, message: 'Organization ID required' });
+    }
+
+    if (!patientId || !doctorId || !testType) {
+      return res.status(400).json({ success: false, message: 'Patient ID, Doctor ID, and Test Type are required' });
+    }
+
+    // Generate unique order number
+    const orderNumber = `LAB${Date.now()}${Math.floor(Math.random() * 1000)}`;
+
+    const labOrder = await LabOrder.create({
+      orderNumber,
+      patientId,
+      doctorId,
+      testType,
+      testCategory,
+      priority: priority || 'normal',
+      status: 'pending',
+      notes,
+      organizationId
+    });
+
+    // Fetch with patient and doctor details
+    const createdOrder = labOrder.toJSON();
+    if (labOrder.patientId) {
+      const [patient] = await sequelize.query(
+        'SELECT id, "firstName", "lastName", email FROM users WHERE id = :id',
+        { replacements: { id: labOrder.patientId }, type: QueryTypes.SELECT }
+      );
+      createdOrder.patient = patient || null;
+    }
+    if (labOrder.doctorId) {
+      const [doctor] = await sequelize.query(
+        'SELECT id, "firstName", "lastName", email FROM users WHERE id = :id',
+        { replacements: { id: labOrder.doctorId }, type: QueryTypes.SELECT }
+      );
+      createdOrder.doctor = doctor || null;
+    }
+
+    res.status(201).json({ success: true, message: 'Lab order created successfully', data: createdOrder });
+  } catch (error) {
+    console.error('Error creating lab order:', error);
+    res.status(500).json({ success: false, message: 'Failed to create lab order', error: error.message });
+  }
+});
+
+/**
+ * PATCH /api/hospital/practice/labs/:id
+ * Update lab order status, results, or notes
+ */
+router.patch('/labs/:id', verifyHospitalToken, async (req, res) => {
+  try {
+    const { id } = req.params;
+    const organizationId = req.hospitalId;
+    const { status, results, notes, sampleCollectedAt } = req.body;
+
+    const labOrder = await LabOrder.findOne({
+      where: { id, organizationId }
+    });
+
+    if (!labOrder) {
+      return res.status(404).json({ success: false, message: 'Lab order not found' });
+    }
+
+    if (status) labOrder.status = status;
+    if (results !== undefined) labOrder.results = results;
+    if (notes !== undefined) labOrder.notes = notes;
+    if (sampleCollectedAt) labOrder.sampleCollectedAt = new Date(sampleCollectedAt);
+
+    await labOrder.save();
+
+    const updatedOrder = labOrder.toJSON();
+    if (labOrder.patientId) {
+      const [patient] = await sequelize.query(
+        'SELECT id, "firstName", "lastName", email FROM users WHERE id = :id',
+        { replacements: { id: labOrder.patientId }, type: QueryTypes.SELECT }
+      );
+      updatedOrder.patient = patient || null;
+    }
+    if (labOrder.doctorId) {
+      const [doctor] = await sequelize.query(
+        'SELECT id, "firstName", "lastName", email FROM users WHERE id = :id',
+        { replacements: { id: labOrder.doctorId }, type: QueryTypes.SELECT }
+      );
+      updatedOrder.doctor = doctor || null;
+    }
+
+    res.json({ success: true, message: 'Lab order updated successfully', data: updatedOrder });
+  } catch (error) {
+    console.error('Error updating lab order:', error);
+    res.status(500).json({ success: false, message: 'Failed to update lab order', error: error.message });
+  }
+});
+
+// ========================================
+// PHARMACY MANAGEMENT ENDPOINTS
+// ========================================
+
+/**
+ * GET /api/hospital/practice/pharmacy
+ * List pharmacy inventory
+ */
+router.get('/pharmacy', verifyHospitalToken, async (req, res) => {
+  try {
+    const { organizationId } = req.hospitalId ? { organizationId: req.hospitalId } : req.query;
+    const { lowStock, search } = req.query;
+
+    if (!organizationId) {
+      return res.status(400).json({ success: false, message: 'Organization ID required' });
+    }
+
+    const whereClause = { organizationId };
+
+    if (search) {
+      whereClause[Op.or] = [
+        { medicineName: { [Op.iLike]: `%${search}%` } },
+        { genericName: { [Op.iLike]: `%${search}%` } }
+      ];
+    }
+
+    let inventory = await PharmacyInventory.findAll({
+      where: whereClause,
+      order: [['medicineName', 'ASC']]
+    });
+
+    // Filter low stock items if requested
+    if (lowStock === 'true') {
+      inventory = inventory.filter(item => item.quantity <= item.reorderLevel);
+    }
+
+    res.json({
+      success: true,
+      data: inventory,
+      total: inventory.length,
+      stats: {
+        totalItems: inventory.length,
+        lowStock: inventory.filter(item => item.quantity <= item.reorderLevel).length,
+        outOfStock: inventory.filter(item => item.quantity === 0).length
+      }
+    });
+  } catch (error) {
+    console.error('Error fetching pharmacy inventory:', error);
+    res.status(500).json({ success: false, message: 'Failed to fetch inventory', error: error.message });
+  }
+});
+
+/**
+ * POST /api/hospital/practice/pharmacy
+ * Add new medicine to inventory
+ */
+router.post('/pharmacy', verifyHospitalToken, async (req, res) => {
+  try {
+    const organizationId = req.hospitalId;
+    const {
+      medicineName,
+      genericName,
+      manufacturer,
+      batchNumber,
+      quantity,
+      unit,
+      unitPrice,
+      expiryDate,
+      reorderLevel
+    } = req.body;
+
+    if (!organizationId) {
+      return res.status(400).json({ success: false, message: 'Organization ID required' });
+    }
+
+    if (!medicineName || quantity === undefined) {
+      return res.status(400).json({ success: false, message: 'Medicine name and quantity are required' });
+    }
+
+    const medicine = await PharmacyInventory.create({
+      medicineName,
+      genericName,
+      manufacturer,
+      batchNumber,
+      quantity,
+      unit,
+      unitPrice,
+      expiryDate,
+      reorderLevel: reorderLevel || 10,
+      organizationId
+    });
+
+    res.status(201).json({ success: true, message: 'Medicine added to inventory', data: medicine });
+  } catch (error) {
+    console.error('Error adding medicine:', error);
+    res.status(500).json({ success: false, message: 'Failed to add medicine', error: error.message });
+  }
+});
+
+/**
+ * PATCH /api/hospital/practice/pharmacy/:id
+ * Update medicine inventory (quantity, price, etc.)
+ */
+router.patch('/pharmacy/:id', verifyHospitalToken, async (req, res) => {
+  try {
+    const { id } = req.params;
+    const organizationId = req.hospitalId;
+    const { quantity, unitPrice, reorderLevel, batchNumber, expiryDate } = req.body;
+
+    const medicine = await PharmacyInventory.findOne({
+      where: { id, organizationId }
+    });
+
+    if (!medicine) {
+      return res.status(404).json({ success: false, message: 'Medicine not found' });
+    }
+
+    if (quantity !== undefined) medicine.quantity = quantity;
+    if (unitPrice !== undefined) medicine.unitPrice = unitPrice;
+    if (reorderLevel !== undefined) medicine.reorderLevel = reorderLevel;
+    if (batchNumber !== undefined) medicine.batchNumber = batchNumber;
+    if (expiryDate !== undefined) medicine.expiryDate = expiryDate;
+
+    await medicine.save();
+
+    res.json({ success: true, message: 'Inventory updated successfully', data: medicine });
+  } catch (error) {
+    console.error('Error updating inventory:', error);
+    res.status(500).json({ success: false, message: 'Failed to update inventory', error: error.message });
+  }
+});
+
+/**
+ * GET /api/hospital/practice/pharmacy/prescriptions
+ * List prescription dispensing records
+ */
+router.get('/pharmacy/prescriptions', verifyHospitalToken, async (req, res) => {
+  try {
+    const { organizationId } = req.hospitalId ? { organizationId: req.hospitalId } : req.query;
+    const { dispensed, patientId, fromDate, toDate } = req.query;
+
+    if (!organizationId) {
+      return res.status(400).json({ success: false, message: 'Organization ID required' });
+    }
+
+    const whereClause = { organizationId };
+
+    if (dispensed !== undefined) whereClause.dispensed = dispensed === 'true';
+    if (patientId) whereClause.patientId = patientId;
+
+    if (fromDate || toDate) {
+      whereClause.created_at = {};
+      if (fromDate) whereClause.created_at[Op.gte] = new Date(fromDate);
+      if (toDate) whereClause.created_at[Op.lte] = new Date(toDate);
+    }
+
+    const prescriptions = await PrescriptionDispensing.findAll({
+      where: whereClause,
+      order: [['created_at', 'DESC']]
+    });
+
+    // Manually fetch related data
+    const prescriptionsWithDetails = await Promise.all(prescriptions.map(async (prescription) => {
+      const prescriptionData = prescription.toJSON();
+      if (prescription.patientId) {
+        const [patient] = await sequelize.query(
+          'SELECT id, "firstName", "lastName", email FROM users WHERE id = :id',
+          { replacements: { id: prescription.patientId }, type: QueryTypes.SELECT }
+        );
+        prescriptionData.patient = patient || null;
+      }
+      if (prescription.doctorId) {
+        const [doctor] = await sequelize.query(
+          'SELECT id, "firstName", "lastName", email FROM users WHERE id = :id',
+          { replacements: { id: prescription.doctorId }, type: QueryTypes.SELECT }
+        );
+        prescriptionData.doctor = doctor || null;
+      }
+      if (prescription.medicineId) {
+        const medicine = await PharmacyInventory.findOne({
+          where: { id: prescription.medicineId },
+          attributes: ['id', 'medicineName', 'genericName', 'unit']
+        });
+        prescriptionData.medicine = medicine ? medicine.toJSON() : null;
+      }
+      return prescriptionData;
+    }));
+
+    res.json({
+      success: true,
+      data: prescriptionsWithDetails,
+      total: prescriptionsWithDetails.length,
+      stats: {
+        pending: prescriptionsWithDetails.filter(p => !p.dispensed).length,
+        dispensed: prescriptionsWithDetails.filter(p => p.dispensed).length
+      }
+    });
+  } catch (error) {
+    console.error('Error fetching prescriptions:', error);
+    res.status(500).json({ success: false, message: 'Failed to fetch prescriptions', error: error.message });
+  }
+});
+
+/**
+ * POST /api/hospital/practice/pharmacy/prescriptions
+ * Create prescription dispensing record
+ */
+router.post('/pharmacy/prescriptions', verifyHospitalToken, async (req, res) => {
+  try {
+    const organizationId = req.hospitalId;
+    const {
+      patientId,
+      doctorId,
+      medicineId,
+      dosage,
+      frequency,
+      duration,
+      quantity,
+      prescriptionId
+    } = req.body;
+
+    if (!organizationId) {
+      return res.status(400).json({ success: false, message: 'Organization ID required' });
+    }
+
+    if (!patientId || !doctorId || !medicineId || !quantity) {
+      return res.status(400).json({
+        success: false,
+        message: 'Patient ID, Doctor ID, Medicine ID, and quantity are required'
+      });
+    }
+
+    // Check medicine availability
+    const medicine = await PharmacyInventory.findOne({
+      where: { id: medicineId, organizationId }
+    });
+
+    if (!medicine) {
+      return res.status(404).json({ success: false, message: 'Medicine not found' });
+    }
+
+    if (medicine.quantity < quantity) {
+      return res.status(400).json({
+        success: false,
+        message: `Insufficient stock. Available: ${medicine.quantity} ${medicine.unit}`
+      });
+    }
+
+    // Generate unique dispensing number
+    const dispensingNumber = `DISP${Date.now()}${Math.floor(Math.random() * 1000)}`;
+
+    const prescription = await PrescriptionDispensing.create({
+      dispensingNumber,
+      prescriptionId,
+      patientId,
+      doctorId,
+      medicineId,
+      dosage,
+      frequency,
+      duration,
+      quantity,
+      dispensed: false,
+      organizationId
+    });
+
+    // Fetch with related data
+    const created = prescription.toJSON();
+    if (prescription.patientId) {
+      const [patient] = await sequelize.query(
+        'SELECT id, "firstName", "lastName", email FROM users WHERE id = :id',
+        { replacements: { id: prescription.patientId }, type: QueryTypes.SELECT }
+      );
+      created.patient = patient || null;
+    }
+    if (prescription.doctorId) {
+      const [doctor] = await sequelize.query(
+        'SELECT id, "firstName", "lastName", email FROM users WHERE id = :id',
+        { replacements: { id: prescription.doctorId }, type: QueryTypes.SELECT }
+      );
+      created.doctor = doctor || null;
+    }
+    if (prescription.medicineId) {
+      const medicine = await PharmacyInventory.findOne({
+        where: { id: prescription.medicineId },
+        attributes: ['id', 'medicineName', 'genericName', 'unit']
+      });
+      created.medicine = medicine ? medicine.toJSON() : null;
+    }
+
+    res.status(201).json({ success: true, message: 'Prescription created successfully', data: created });
+  } catch (error) {
+    console.error('Error creating prescription:', error);
+    res.status(500).json({ success: false, message: 'Failed to create prescription', error: error.message });
+  }
+});
+
+/**
+ * PATCH /api/hospital/practice/pharmacy/prescriptions/:id/dispense
+ * Mark prescription as dispensed and update inventory
+ */
+router.patch('/pharmacy/prescriptions/:id/dispense', verifyHospitalToken, async (req, res) => {
+  try {
+    const { id } = req.params;
+    const organizationId = req.hospitalId;
+    const { dispensedBy } = req.body;
+
+    const prescription = await PrescriptionDispensing.findOne({
+      where: { id, organizationId }
+    });
+
+    if (!prescription) {
+      return res.status(404).json({ success: false, message: 'Prescription not found' });
+    }
+
+    if (prescription.dispensed) {
+      return res.status(400).json({ success: false, message: 'Prescription already dispensed' });
+    }
+
+    // Fetch medicine info
+    const medicine = await PharmacyInventory.findOne({
+      where: { id: prescription.medicineId, organizationId }
+    });
+
+    if (!medicine || medicine.quantity < prescription.quantity) {
+      return res.status(400).json({
+        success: false,
+        message: 'Insufficient stock to dispense'
+      });
+    }
+
+    medicine.quantity -= prescription.quantity;
+    await medicine.save();
+
+    prescription.dispensed = true;
+    prescription.dispensedAt = new Date();
+    prescription.dispensedBy = dispensedBy || req.userId;
+    await prescription.save();
+
+    const updated = prescription.toJSON();
+    if (prescription.patientId) {
+      const [patient] = await sequelize.query(
+        'SELECT id, "firstName", "lastName", email FROM users WHERE id = :id',
+        { replacements: { id: prescription.patientId }, type: QueryTypes.SELECT }
+      );
+      updated.patient = patient || null;
+    }
+    if (prescription.doctorId) {
+      const [doctor] = await sequelize.query(
+        'SELECT id, "firstName", "lastName", email FROM users WHERE id = :id',
+        { replacements: { id: prescription.doctorId }, type: QueryTypes.SELECT }
+      );
+      updated.doctor = doctor || null;
+    }
+    const medicineData = await PharmacyInventory.findOne({
+      where: { id: prescription.medicineId },
+      attributes: ['id', 'medicineName', 'genericName', 'unit', 'quantity']
+    });
+    updated.medicine = medicineData ? medicineData.toJSON() : null;
+
+    res.json({
+      success: true,
+      message: 'Prescription dispensed successfully',
+      data: updated,
+      remainingStock: medicine.quantity
+    });
+  } catch (error) {
+    console.error('Error dispensing prescription:', error);
+    res.status(500).json({ success: false, message: 'Failed to dispense prescription', error: error.message });
+  }
+});
+
+// ========================================
+// INSURANCE MANAGEMENT ENDPOINTS
+// ========================================
+
+/**
+ * GET /api/hospital/practice/insurance/policies
+ * List insurance policies for patients
+ */
+router.get('/insurance/policies', verifyHospitalToken, async (req, res) => {
+  try {
+    const organizationId = req.hospitalId;
+    const { status, patientId, provider } = req.query;
+
+    const whereClause = { organizationId };
+    if (status) whereClause.status = status;
+    if (patientId) whereClause.patientId = patientId;
+    if (provider) whereClause.insuranceProvider = provider;
+
+    const policies = await InsurancePolicy.findAll({
+      where: whereClause,
+      order: [['validUpto', 'DESC']]
+    });
+
+    res.json({
+      success: true,
+      data: policies,
+      total: policies.length,
+      stats: {
+        active: policies.filter(p => p.status === 'active').length,
+        expired: policies.filter(p => p.status === 'expired').length,
+        cancelled: policies.filter(p => p.status === 'cancelled').length
+      }
+    });
+  } catch (error) {
+    console.error('Error fetching policies:', error);
+    res.status(500).json({ success: false, message: 'Failed to fetch policies', error: error.message });
+  }
+});
+
+/**
+ * POST /api/hospital/practice/insurance/policies
+ * Create new insurance policy
+ */
+router.post('/insurance/policies', verifyHospitalToken, async (req, res) => {
+  try {
+    const organizationId = req.hospitalId;
+    const { patientId, policyNumber, insuranceProvider, planName, coverageAmount, deductible, copay, validFrom, validUpto } = req.body;
+
+    if (!patientId || !policyNumber || !insuranceProvider || !coverageAmount) {
+      return res.status(400).json({ success: false, message: 'Missing required fields' });
+    }
+
+    const policy = await InsurancePolicy.create({
+      patientId,
+      policyNumber,
+      insuranceProvider,
+      planName,
+      coverageAmount,
+      remainingAmount: coverageAmount,
+      deductible,
+      copay,
+      validFrom,
+      validUpto,
+      organizationId
+    });
+
+    res.status(201).json({ success: true, message: 'Policy created successfully', data: policy });
+  } catch (error) {
+    console.error('Error creating policy:', error);
+    if (error.name === 'SequelizeUniqueConstraintError') {
+      return res.status(409).json({ success: false, message: 'Policy number already exists' });
+    }
+    res.status(500).json({ success: false, message: 'Failed to create policy', error: error.message });
+  }
+});
+
+/**
+ * GET /api/hospital/practice/insurance/claims
+ * List insurance claims
+ */
+router.get('/insurance/claims', verifyHospitalToken, async (req, res) => {
+  try {
+    const organizationId = req.hospitalId;
+    const { status, patientId, fromDate, toDate } = req.query;
+
+    const whereClause = { organizationId };
+    if (status) whereClause.status = status;
+    if (patientId) whereClause.patientId = patientId;
+
+    if (fromDate || toDate) {
+      whereClause.submittedDate = {};
+      if (fromDate) whereClause.submittedDate[Op.gte] = new Date(fromDate);
+      if (toDate) whereClause.submittedDate[Op.lte] = new Date(toDate);
+    }
+
+    const claims = await InsuranceClaim.findAll({
+      where: whereClause,
+      order: [['created_at', 'DESC']]
+    });
+
+    const totalClaimed = claims.reduce((sum, c) => sum + parseFloat(c.claimAmount), 0);
+    const totalApproved = claims.reduce((sum, c) => sum + (c.approvedAmount ? parseFloat(c.approvedAmount) : 0), 0);
+
+    res.json({
+      success: true,
+      data: claims,
+      total: claims.length,
+      stats: {
+        submitted: claims.filter(c => c.status === 'submitted').length,
+        underReview: claims.filter(c => c.status === 'under_review').length,
+        approved: claims.filter(c => c.status === 'approved').length,
+        rejected: claims.filter(c => c.status === 'rejected').length,
+        paid: claims.filter(c => c.status === 'paid').length,
+        totalClaimed,
+        totalApproved
+      }
+    });
+  } catch (error) {
+    console.error('Error fetching claims:', error);
+    res.status(500).json({ success: false, message: 'Failed to fetch claims', error: error.message });
+  }
+});
+
+/**
+ * POST /api/hospital/practice/insurance/claims
+ * Create insurance claim
+ */
+router.post('/insurance/claims', verifyHospitalToken, async (req, res) => {
+  try {
+    const organizationId = req.hospitalId;
+    const { patientId, appointmentId, policyNumber, insuranceProvider, claimAmount } = req.body;
+
+    if (!patientId || !insuranceProvider || !claimAmount) {
+      return res.status(400).json({ success: false, message: 'Missing required fields' });
+    }
+
+    const claimNumber = `CLM${Date.now()}${Math.floor(Math.random() * 1000)}`;
+
+    const claim = await InsuranceClaim.create({
+      claimNumber,
+      patientId,
+      appointmentId,
+      policyNumber,
+      insuranceProvider,
+      claimAmount,
+      status: 'submitted',
+      submittedDate: new Date(),
+      organizationId
+    });
+
+    res.status(201).json({ success: true, message: 'Claim submitted successfully', data: claim });
+  } catch (error) {
+    console.error('Error creating claim:', error);
+    res.status(500).json({ success: false, message: 'Failed to create claim', error: error.message });
+  }
+});
+
+/**
+ * PATCH /api/hospital/practice/insurance/claims/:id
+ * Update claim status (approve/reject/pay)
+ */
+router.patch('/insurance/claims/:id', verifyHospitalToken, async (req, res) => {
+  try {
+    const { id } = req.params;
+    const organizationId = req.hospitalId;
+    const { status, approvedAmount, rejectionReason, paymentDate } = req.body;
+
+    const claim = await InsuranceClaim.findOne({
+      where: { id, organizationId }
+    });
+
+    if (!claim) {
+      return res.status(404).json({ success: false, message: 'Claim not found' });
+    }
+
+    if (status) claim.status = status;
+    if (approvedAmount !== undefined) claim.approvedAmount = approvedAmount;
+    if (rejectionReason) claim.rejectionReason = rejectionReason;
+    if (status === 'approved' && !claim.approvalDate) claim.approvalDate = new Date();
+    if (status === 'paid' && paymentDate) claim.paymentDate = new Date(paymentDate);
+
+    await claim.save();
+
+    res.json({ success: true, message: 'Claim updated successfully', data: claim });
+  } catch (error) {
+    console.error('Error updating claim:', error);
+    res.status(500).json({ success: false, message: 'Failed to update claim', error: error.message });
+  }
+});
+
+// ========================================
+// MEDICAL RECORDS ENDPOINTS
+// ========================================
+
+/**
+ * GET /api/hospital/practice/medical-records
+ * List patient medical records
+ */
+router.get('/medical-records', verifyHospitalToken, async (req, res) => {
+  try {
+    const organizationId = req.hospitalId;
+    const { patientId, doctorId, recordType, fromDate, toDate } = req.query;
+
+    const whereClause = { organizationId };
+    if (patientId) whereClause.patientId = patientId;
+    if (doctorId) whereClause.doctorId = doctorId;
+    if (recordType) whereClause.recordType = recordType;
+
+    if (fromDate || toDate) {
+      whereClause.recordDate = {};
+      if (fromDate) whereClause.recordDate[Op.gte] = new Date(fromDate);
+      if (toDate) whereClause.recordDate[Op.lte] = new Date(toDate);
+    }
+
+    const records = await sequelize.query(
+      `SELECT * FROM medical_records 
+       WHERE organization_id = :organizationId 
+       ${patientId ? 'AND patient_id = :patientId' : ''}
+       ${doctorId ? 'AND doctor_id = :doctorId' : ''}
+       ${recordType ? 'AND record_type = :recordType' : ''}
+       ORDER BY record_date DESC`,
+      {
+        replacements: { organizationId, patientId, doctorId, recordType },
+        type: QueryTypes.SELECT
+      }
+    );
+
+    res.json({ success: true, data: records, total: records.length });
+  } catch (error) {
+    console.error('Error fetching records:', error);
+    res.status(500).json({ success: false, message: 'Failed to fetch records', error: error.message });
+  }
+});
+
+/**
+ * POST /api/hospital/practice/medical-records
+ * Create medical record
+ */
+router.post('/medical-records', verifyHospitalToken, async (req, res) => {
+  try {
+    const organizationId = req.hospitalId;
+    const { patientId, doctorId, appointmentId, diagnosis, treatment, symptoms, vitalSigns, prescriptions, recordType, recordDate } = req.body;
+
+    if (!patientId || !doctorId) {
+      return res.status(400).json({ success: false, message: 'Patient and Doctor are required' });
+    }
+
+    const recordNumber = `MR${Date.now()}${Math.floor(Math.random() * 1000)}`;
+
+    const record = await MedicalRecord.create({
+      recordNumber,
+      patientId,
+      doctorId,
+      appointmentId,
+      diagnosis,
+      treatment,
+      symptoms,
+      vitalSigns,
+      prescriptions,
+      recordType,
+      recordDate: recordDate || new Date(),
+      organizationId
+    });
+
+    res.status(201).json({ success: true, message: 'Record created successfully', data: record });
+  } catch (error) {
+    console.error('Error creating record:', error);
+    res.status(500).json({ success: false, message: 'Failed to create record', error: error.message });
+  }
+});
+
+/**
+ * PATCH /api/hospital/practice/medical-records/:id
+ * Update medical record
+ */
+router.patch('/medical-records/:id', verifyHospitalToken, async (req, res) => {
+  try {
+    const { id } = req.params;
+    const organizationId = req.hospitalId;
+    const { diagnosis, treatment, symptoms, vitalSigns, prescriptions } = req.body;
+
+    const record = await MedicalRecord.findOne({
+      where: { id, organizationId }
+    });
+
+    if (!record) {
+      return res.status(404).json({ success: false, message: 'Record not found' });
+    }
+
+    if (diagnosis !== undefined) record.diagnosis = diagnosis;
+    if (treatment !== undefined) record.treatment = treatment;
+    if (symptoms !== undefined) record.symptoms = symptoms;
+    if (vitalSigns !== undefined) record.vitalSigns = vitalSigns;
+    if (prescriptions !== undefined) record.prescriptions = prescriptions;
+
+    await record.save();
+
+    res.json({ success: true, message: 'Record updated successfully', data: record });
+  } catch (error) {
+    console.error('Error updating record:', error);
+    res.status(500).json({ success: false, message: 'Failed to update record', error: error.message });
+  }
+});
+
+// ========================================
+// EHR ENDPOINTS
+// ========================================
+
+/**
+ * GET /api/hospital/practice/ehr/:patientId
+ * Get patient EHR record
+ */
+router.get('/ehr/:patientId', verifyHospitalToken, async (req, res) => {
+  try {
+    const { patientId } = req.params;
+    const organizationId = req.hospitalId;
+
+    const ehr = await EHRRecord.findOne({
+      where: { patientId, organizationId }
+    });
+
+    if (!ehr) {
+      return res.status(404).json({ success: false, message: 'EHR not found' });
+    }
+
+    res.json({ success: true, data: ehr });
+  } catch (error) {
+    console.error('Error fetching EHR:', error);
+    res.status(500).json({ success: false, message: 'Failed to fetch EHR', error: error.message });
+  }
+});
+
+/**
+ * POST /api/hospital/practice/ehr
+ * Create EHR record
+ */
+router.post('/ehr', verifyHospitalToken, async (req, res) => {
+  try {
+    const organizationId = req.hospitalId;
+    const { patientId, height, weight, bloodType, allergies, chronicDiseases, emergencyContact, insuranceDetails } = req.body;
+
+    if (!patientId) {
+      return res.status(400).json({ success: false, message: 'Patient ID is required' });
+    }
+
+    // Check if EHR already exists
+    const existingEHR = await EHRRecord.findOne({ where: { patientId, organizationId } });
+    if (existingEHR) {
+      return res.status(409).json({ success: false, message: 'EHR already exists for this patient' });
+    }
+
+    const ehrNumber = `EHR${Date.now()}${Math.floor(Math.random() * 1000)}`;
+
+    const ehr = await EHRRecord.create({
+      ehrNumber,
+      patientId,
+      height,
+      weight,
+      bloodType,
+      allergies,
+      chronicDiseases,
+      emergencyContact,
+      insuranceDetails,
+      organizationId
+    });
+
+    res.status(201).json({ success: true, message: 'EHR created successfully', data: ehr });
+  } catch (error) {
+    console.error('Error creating EHR:', error);
+    res.status(500).json({ success: false, message: 'Failed to create EHR', error: error.message });
+  }
+});
+
+/**
+ * PATCH /api/hospital/practice/ehr/:patientId
+ * Update EHR record
+ */
+router.patch('/ehr/:patientId', verifyHospitalToken, async (req, res) => {
+  try {
+    const { patientId } = req.params;
+    const organizationId = req.hospitalId;
+    const { height, weight, bloodType, allergies, chronicDiseases, medications, emergencyContact } = req.body;
+
+    const ehr = await EHRRecord.findOne({
+      where: { patientId, organizationId }
+    });
+
+    if (!ehr) {
+      return res.status(404).json({ success: false, message: 'EHR not found' });
+    }
+
+    if (height !== undefined) ehr.height = height;
+    if (weight !== undefined) ehr.weight = weight;
+    if (bloodType !== undefined) ehr.bloodType = bloodType;
+    if (allergies !== undefined) ehr.allergies = allergies;
+    if (chronicDiseases !== undefined) ehr.chronicDiseases = chronicDiseases;
+    if (medications !== undefined) ehr.medications = medications;
+    if (emergencyContact !== undefined) ehr.emergencyContact = emergencyContact;
+
+    await ehr.save();
+
+    res.json({ success: true, message: 'EHR updated successfully', data: ehr });
+  } catch (error) {
+    console.error('Error updating EHR:', error);
+    res.status(500).json({ success: false, message: 'Failed to update EHR', error: error.message });
+  }
+});
+
+// ========================================
+// VITAL SIGNS ENDPOINTS
+// ========================================
+
+/**
+ * GET /api/hospital/practice/vitals
+ * List vital signs records
+ */
+router.get('/vitals', verifyHospitalToken, async (req, res) => {
+  try {
+    const organizationId = req.hospitalId;
+    const { patientId, fromDate, toDate, latest } = req.query;
+
+    let whereClause = { organizationId };
+    if (patientId) whereClause.patientId = patientId;
+
+    if (fromDate || toDate) {
+      whereClause.recordedAt = {};
+      if (fromDate) whereClause.recordedAt[Op.gte] = new Date(fromDate);
+      if (toDate) whereClause.recordedAt[Op.lte] = new Date(toDate);
+    }
+
+    let query = VitalSign.findAll({
+      where: whereClause,
+      order: [['recordedAt', 'DESC']]
+    });
+
+    if (latest === 'true') {
+      query = query.then(vitals => {
+        const grouped = {};
+        vitals.forEach(vital => {
+          if (!grouped[vital.patientId]) grouped[vital.patientId] = vital;
+        });
+        return Object.values(grouped);
+      });
+    }
+
+    const vitals = await query;
+
+    res.json({ success: true, data: vitals, total: vitals.length });
+  } catch (error) {
+    console.error('Error fetching vitals:', error);
+    res.status(500).json({ success: false, message: 'Failed to fetch vitals', error: error.message });
+  }
+});
+
+/**
+ * POST /api/hospital/practice/vitals
+ * Record vital signs
+ */
+router.post('/vitals', verifyHospitalToken, async (req, res) => {
+  try {
+    const organizationId = req.hospitalId;
+    const { patientId, systolic, diastolic, temperature, heartRate, respiratoryRate, oxygenSaturation, weight, height, notes, recordedBy } = req.body;
+
+    if (!patientId) {
+      return res.status(400).json({ success: false, message: 'Patient ID is required' });
+    }
+
+    const vital = await VitalSign.create({
+      patientId,
+      systolic,
+      diastolic,
+      temperature,
+      heartRate,
+      respiratoryRate,
+      oxygenSaturation,
+      weight,
+      height,
+      notes,
+      recordedBy,
+      recordedAt: new Date(),
+      organizationId
+    });
+
+    res.status(201).json({ success: true, message: 'Vital signs recorded successfully', data: vital });
+  } catch (error) {
+    console.error('Error recording vitals:', error);
+    res.status(500).json({ success: false, message: 'Failed to record vitals', error: error.message });
   }
 });
 

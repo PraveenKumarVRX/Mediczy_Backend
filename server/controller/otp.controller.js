@@ -1,4 +1,5 @@
 import OTP from '../models/otp.model.intelligent.js';
+import { JWT_CONFIG } from '../config/auth.config.js';
 import { SMSService, SMSTemplateManager } from '../services/sms.service.js';
 
 // Initialize SMS service from environment

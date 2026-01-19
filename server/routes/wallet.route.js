@@ -7,6 +7,7 @@ import express from 'express';
 import { authUser } from '../middleware/auth.middleware.js';
 import healthCoinsService from '../services/health-coins.service.js';
 import { HEALTH_COINS_REWARDS, HEALTH_COINS_PRICING } from '../config/health-coins.config.js';
+import paymentGateway from '../services/payment-gateway.service.js';
 
 const router = express.Router();
 
@@ -313,14 +314,177 @@ router.get('/rewards', authUser, async (req, res) => {
 });
 
 /**
+ * POST /api/wallet/create-order
+ * Create Razorpay order for health coins purchase
+ */
+router.post('/create-order', authUser, async (req, res) => {
+  try {
+    const { packageId } = req.body;
+    
+    if (packageId === undefined || packageId === null) {
+      return res.status(400).json({
+        success: false,
+        message: 'Package ID is required'
+      });
+    }
+    
+    // Get package details
+    const pkg = HEALTH_COINS_PRICING.packages[packageId];
+    
+    if (!pkg) {
+      return res.status(400).json({
+        success: false,
+        message: 'Invalid package'
+      });
+    }
+    
+    // Debug env presence for Razorpay keys
+    const mask = (v) => (v ? `${v.slice(0, 3)}***${v.slice(-4)}` : 'undefined');
+    console.log('🔑 Razorpay env in route', {
+      key_id: mask(process.env.RAZORPAY_KEY_ID),
+      hasSecret: !!process.env.RAZORPAY_KEY_SECRET
+    });
+
+    // Create Razorpay order
+    const razorpayOrder = await paymentGateway.createRazorpayOrder({
+      amount: pkg.price,
+      currency: 'INR',
+      receipt: `HC_${req.user.id}_${Date.now()}`,
+      notes: {
+        userId: req.user.id,
+        packageId,
+        coins: pkg.coins,
+        type: 'health_coins_purchase'
+      }
+    });
+    
+    console.log('✅ Razorpay order created for HC purchase:', razorpayOrder.orderId);
+    
+    res.json({
+      success: true,
+      order: {
+        orderId: razorpayOrder.orderId,
+        amount: razorpayOrder.amount,
+        currency: razorpayOrder.currency,
+        key: process.env.RAZORPAY_KEY_ID
+      },
+      package: pkg
+    });
+  } catch (error) {
+    console.error('Create order error:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Failed to create payment order',
+      error: error.message
+    });
+  }
+});
+
+/**
+ * POST /api/wallet/verify-payment
+ * Verify Razorpay payment and credit coins
+ */
+router.post('/verify-payment', authUser, async (req, res) => {
+  try {
+    const { 
+      razorpay_order_id, 
+      razorpay_payment_id, 
+      razorpay_signature,
+      packageId 
+    } = req.body;
+    
+    if (!razorpay_order_id || !razorpay_payment_id || !razorpay_signature || packageId === undefined) {
+      return res.status(400).json({
+        success: false,
+        message: 'Missing required payment fields'
+      });
+    }
+    
+    // Verify payment signature
+    const isValid = paymentGateway.verifyRazorpaySignature(
+      razorpay_order_id,
+      razorpay_payment_id,
+      razorpay_signature
+    );
+    
+    if (!isValid) {
+      console.error('❌ Invalid payment signature');
+      return res.status(400).json({
+        success: false,
+        message: 'Payment verification failed'
+      });
+    }
+    
+    // Get package details
+    const pkg = HEALTH_COINS_PRICING.packages[packageId];
+    
+    if (!pkg) {
+      return res.status(400).json({
+        success: false,
+        message: 'Invalid package'
+      });
+    }
+    
+    // Add coins to wallet
+    const result = await healthCoinsService.addCoins(
+      req.user.id,
+      pkg.coins,
+      'PURCHASE',
+      'PURCHASE',
+      `Purchased ${pkg.coins} health coins`,
+      {
+        packageId,
+        paymentMethod: 'razorpay',
+        razorpayOrderId: razorpay_order_id,
+        razorpayPaymentId: razorpay_payment_id,
+        amountPaid: pkg.price,
+        discount: pkg.discount
+      }
+    );
+    
+    console.log(`✅ Successfully credited ${pkg.coins} HC to user ${req.user.id}`);
+    
+    res.json({
+      success: true,
+      message: `Successfully purchased ${pkg.coins} health coins`,
+      coinsPurchased: pkg.coins,
+      newBalance: result.newBalance,
+      transactionId: razorpay_payment_id
+    });
+  } catch (error) {
+    console.error('Verify payment error:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Failed to verify payment',
+      error: error.message
+    });
+  }
+});
+
+/**
  * POST /api/wallet/purchase
  * Purchase health coins with real money
+ * @deprecated Use /create-order and /verify-payment instead
  */
 router.post('/purchase', authUser, async (req, res) => {
   try {
     const { packageId, paymentMethod, paymentTransactionId, amountPaid } = req.body;
     
-    if (!packageId || !paymentTransactionId || !amountPaid) {
+    console.log('💰 Wallet purchase request:', { 
+      packageId, 
+      paymentMethod, 
+      paymentTransactionId, 
+      amountPaid,
+      userId: req.user.id,
+      body: req.body 
+    });
+    
+    if (packageId === undefined || packageId === null || !paymentTransactionId || !amountPaid) {
+      console.log('❌ Missing required fields:', { 
+        hasPackageId: packageId !== undefined && packageId !== null, 
+        hasPaymentTransactionId: !!paymentTransactionId, 
+        hasAmountPaid: !!amountPaid 
+      });
       return res.status(400).json({
         success: false,
         message: 'Missing required fields'
@@ -328,7 +492,7 @@ router.post('/purchase', authUser, async (req, res) => {
     }
     
     // Get package details
-    const pkg = HEALTH_COINS_PRICING.packages.find((p, idx) => idx === packageId);
+    const pkg = HEALTH_COINS_PRICING.packages[packageId];
     
     if (!pkg) {
       return res.status(400).json({

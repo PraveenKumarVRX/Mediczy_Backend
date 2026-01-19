@@ -1,4 +1,5 @@
 /**
+import { JWT_CONFIG } from '../config/auth.config.js';
  * Mediqzy PaaS - Multi-Entity Authentication Service
  * 
  * Handles user authentication with support for:
@@ -13,7 +14,7 @@ import { getPostgresPool } from '../db/postgres.js';
 import { AuthEvents } from './event.service.js';
 import { permissionService } from './permission.service.js';
 
-const JWT_SECRET = process.env.JWT_SECRET || 'mediqzy-secret-key';
+const JWT_SECRET = JWT_CONFIG.SECRET || 'mediqzy-secret-key';
 const JWT_EXPIRES_IN = process.env.JWT_EXPIRES_IN || '24h';
 const REFRESH_TOKEN_EXPIRES_IN = process.env.REFRESH_TOKEN_EXPIRES_IN || '7d';
 

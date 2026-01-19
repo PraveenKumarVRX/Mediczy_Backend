@@ -655,6 +655,8 @@ router.get('/my-appointments', authUser, [
   try {
     const { status, consultationType, limit = 10, page = 1, upcoming } = req.query;
     
+    console.log(`📅 Fetching appointments for user ID: ${req.user.id}`);
+    
     // Filter appointments for this user (DB-backed)
     let userAppointments = await Appointment.findAll({
       where: { userId: req.user.id },
@@ -663,6 +665,8 @@ router.get('/my-appointments', authUser, [
         ['appointmentTime', 'ASC']
       ]
     });
+    
+    console.log(`📅 Found ${userAppointments.length} appointments for user ${req.user.id}`);
 
     // Apply filters
     if (status) {
@@ -680,7 +684,9 @@ router.get('/my-appointments', authUser, [
     userAppointments.sort((a, b) => {
       const dateCompare = new Date(a.appointmentDate) - new Date(b.appointmentDate);
       if (dateCompare === 0) {
-        return a.timeSlot.localeCompare(b.timeSlot);
+        const timeA = a.appointmentTime || a.timeSlot || '00:00';
+        const timeB = b.appointmentTime || b.timeSlot || '00:00';
+        return timeA.localeCompare(timeB);
       }
       return dateCompare;
     });

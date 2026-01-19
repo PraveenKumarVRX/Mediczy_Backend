@@ -49,12 +49,6 @@ const AdminLogin = () => {
       return;
     }
     
-    // Development mode: Auto-set credentials
-    if (import.meta.env.DEV) {
-      setEmail('admin@mediczy.com');
-      setPassword('Admin123');
-    }
-    
     setIsCheckingAuth(false);
   }, [navigate]);
 
@@ -213,7 +207,7 @@ const AdminLogin = () => {
                           required
                           value={email}
                           onChange={(e) => setEmail(e.target.value)}
-                          placeholder="admin@mediczy.com"
+                          placeholder="Admin@mediczy.com"
                           className="h-11 bg-white border-slate-300 focus:bg-white focus:border-blue-500 focus:ring-blue-500/20 transition-all pl-4 text-gray-900 font-medium placeholder:text-slate-500 autofill:bg-white autofill:text-gray-900"
                         />
                         <Shield className="absolute right-3 top-1/2 -translate-y-1/2 h-4 w-4 text-slate-400" />
@@ -276,7 +270,7 @@ const AdminLogin = () => {
                         console.log('🚀 Quick development login');
                         establishAdminSession('dev-admin-token', {
                           id: 'admin_dev',
-                          email: 'admin@mediczy.com',
+                          email: 'Admin@mediczy.com',
                           role: 'super_admin'
                         });
                         navigate('/admin/dashboard');

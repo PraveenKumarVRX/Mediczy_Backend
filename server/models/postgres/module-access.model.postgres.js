@@ -1,4 +1,5 @@
 /**
+import { JWT_CONFIG } from '../../config/auth.config.js';
  * Module Access Control Model
  * Manages which modules are accessible to different user types
  * Super Admin configures these settings to control access across the platform

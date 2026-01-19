@@ -83,6 +83,46 @@ const DoctorAppointments = () => {
   const [searchQuery, setSearchQuery] = useState("");
   const [filterStatus, setFilterStatus] = useState("all");
 
+  // Helper function to get display status (marks past non-completed appointments as expired)
+  const getDisplayStatus = (appointment: Appointment): string => {
+    const today = format(new Date(), "yyyy-MM-dd");
+    const isPast = appointment.appointmentDate < today;
+    // Normalize status to lowercase with hyphens for comparison
+    const normalizedStatus = (appointment.status || '').toLowerCase().replace(/_/g, '-');
+    const incompleteStatuses = ['scheduled', 'confirmed', 'in-progress', 'pending'];
+    const isIncomplete = incompleteStatuses.includes(normalizedStatus);
+
+    // If it's a past appointment that wasn't completed, show as expired
+    if (isPast && isIncomplete) {
+      return 'EXPIRED';
+    }
+    return appointment.status;
+  };
+
+  // Helper function to get status color including expired
+  const getStatusColorWithExpired = (status: string): string => {
+    // Normalize status for comparison
+    const normalizedStatus = (status || '').toLowerCase().replace(/_/g, '-');
+    switch (normalizedStatus) {
+      case "scheduled":
+        return "bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-300";
+      case "confirmed":
+        return "bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-300";
+      case "in-progress":
+        return "bg-yellow-100 text-yellow-700 dark:bg-yellow-900/30 dark:text-yellow-300";
+      case "completed":
+        return "bg-emerald-100 text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-300";
+      case "cancelled":
+        return "bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-300";
+      case "no-show":
+        return "bg-gray-100 text-gray-700 dark:bg-gray-900/30 dark:text-gray-300";
+      case "expired":
+        return "bg-orange-100 text-orange-700 dark:bg-orange-900/30 dark:text-orange-300";
+      default:
+        return "bg-gray-100 text-gray-700 dark:bg-gray-900/30 dark:text-gray-300";
+    }
+  };
+
   // Fetch doctor's enhanced appointments
   const { data: appointments = [], isLoading } = useQuery({
     queryKey: ["doctorEnhancedAppointments", doctorId],
@@ -110,7 +150,7 @@ const DoctorAppointments = () => {
     },
     onSuccess: (data) => {
       queryClient.invalidateQueries({ queryKey: ["doctorAppointments"] });
-      
+
       // If marking as completed, notify the doctor that patient's usage will be tracked
       if (data.status === "completed") {
         toast({
@@ -123,10 +163,10 @@ const DoctorAppointments = () => {
           description: "Appointment status updated",
         });
       }
-      
+
       // Note: Patient's plan usage is tracked when they submit rating/feedback in MyBookings
       // This ensures the consultation was actually completed and prevents double-counting
-      
+
       setStatusDialogOpen(false);
       setSelectedAppointment(null);
     },
@@ -221,19 +261,28 @@ const DoctorAppointments = () => {
       status: "in-progress",
       appointment
     });
-    // Navigate to video call/chat based on type
-    window.location.href = `/doctor/chat?userId=${appointment.userId}`;
+
+    // Generate room ID from appointment
+    const roomId = `apt-${appointment.id}`;
+
+    // Navigate to video consultation page based on consultation type
+    if (appointment.consultationType === "online" && appointment.channel === "video") {
+      window.location.href = `/doctor/video?room=${encodeURIComponent(roomId)}&appointmentId=${appointment.id}&userId=${appointment.userId}`;
+    } else {
+      // For phone/chat consultations, go to chat
+      window.location.href = `/doctor/chat?userId=${appointment.userId}`;
+    }
   };
 
   // Filter appointments
   const filteredAppointments = appointments.filter((appointment: Appointment) => {
-    const matchesSearch = 
-      appointment.patientName.toLowerCase().includes(searchQuery.toLowerCase()) ||
-      appointment.patientEmail.toLowerCase().includes(searchQuery.toLowerCase()) ||
-      appointment.patientPhone.includes(searchQuery);
-    
+    const matchesSearch =
+      (appointment.patientName || '').toLowerCase().includes(searchQuery.toLowerCase()) ||
+      (appointment.patientEmail || '').toLowerCase().includes(searchQuery.toLowerCase()) ||
+      (appointment.patientPhone || '').includes(searchQuery);
+
     const matchesStatus = filterStatus === "all" || appointment.status === filterStatus;
-    
+
     return matchesSearch && matchesStatus;
   });
 
@@ -272,8 +321,8 @@ const DoctorAppointments = () => {
             <p className="text-sm text-gray-600">{appointment.patientPhone}</p>
           </div>
         </div>
-        <Badge className={getStatusColor(appointment.status)}>
-          {appointment.status.toUpperCase().replace("-", " ")}
+        <Badge className={getStatusColorWithExpired(getDisplayStatus(appointment))}>
+          {getDisplayStatus(appointment).toUpperCase().replace("-", " ")}
         </Badge>
       </div>
 
@@ -301,13 +350,12 @@ const DoctorAppointments = () => {
             <span className="font-semibold">₹{appointment.consultationFee}</span>
             <Badge
               variant="outline"
-              className={`ml-2 ${
-                appointment.paymentStatus === "paid"
+              className={`ml-2 ${appointment.paymentStatus === "paid"
                   ? "bg-green-50 text-green-700"
                   : "bg-yellow-50 text-yellow-700"
-              }`}
+                }`}
             >
-              {appointment.paymentStatus.toUpperCase()}
+              {(appointment.paymentStatus || 'pending').toUpperCase()}
             </Badge>
           </div>
         </div>

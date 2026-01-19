@@ -1,4 +1,5 @@
 import { DataTypes } from 'sequelize';
+import { JWT_CONFIG } from '../../config/auth.config.js';
 import { postgresSequelize as sequelize } from '../../db/postgres-sequelize.js';
 
 const POCDevice = sequelize.define('POCDevice', {

@@ -14,8 +14,9 @@ import { validationResult } from 'express-validator';
 import { Op } from 'sequelize';
 import jwt from 'jsonwebtoken';
 import bcrypt from 'bcryptjs';
+import { JWT_CONFIG } from '../config/auth.config.js';
 
-const JWT_SECRET = process.env.JWT_SECRET || 'mediczy-clinic-secret-key-2025';
+const JWT_SECRET = JWT_CONFIG.SECRET;
 
 // Rate limiting for patient login
 const loginAttempts = new Map();
@@ -25,16 +26,16 @@ const MAX_ATTEMPTS = 5;
 const checkRateLimit = (email) => {
   const now = Date.now();
   const attempts = loginAttempts.get(email) || { count: 0, resetTime: now + RATE_LIMIT_WINDOW };
-  
+
   if (now > attempts.resetTime) {
     loginAttempts.set(email, { count: 1, resetTime: now + RATE_LIMIT_WINDOW });
     return true;
   }
-  
+
   if (attempts.count >= MAX_ATTEMPTS) {
     return false;
   }
-  
+
   attempts.count += 1;
   loginAttempts.set(email, attempts);
   return true;
@@ -115,8 +116,8 @@ export const unifiedPatientSignup = async (req, res) => {
       });
     }
 
-    console.log('📱 Mobile app patient signup:', { 
-      email, 
+    console.log('📱 Mobile app patient signup:', {
+      email,
       clinic_name: clinic.name,
       clinic_id: clinic.id,
       clinic_slug: clinic.slug
@@ -124,7 +125,7 @@ export const unifiedPatientSignup = async (req, res) => {
 
     // Check if email already exists in this clinic
     const existingUser = await User.findOne({
-      where: { 
+      where: {
         email,
         organization_id: clinic.id
       }
@@ -170,7 +171,7 @@ export const unifiedPatientSignup = async (req, res) => {
 
     // Generate JWT token
     const token = jwt.sign(
-      { 
+      {
         id: patient.id,
         email: patient.email,
         role: patient.role,
@@ -261,9 +262,9 @@ export const unifiedPatientLogin = async (req, res) => {
       });
     }
 
-    console.log('📱 Mobile app patient login attempt:', { 
-      email, 
-      clinic_name: clinic.name 
+    console.log('📱 Mobile app patient login attempt:', {
+      email,
+      clinic_name: clinic.name
     });
 
     // Find patient
@@ -295,7 +296,7 @@ export const unifiedPatientLogin = async (req, res) => {
 
     // Generate JWT token
     const token = jwt.sign(
-      { 
+      {
         id: patient.id,
         email: patient.email,
         role: patient.role,
@@ -396,10 +397,10 @@ export const searchClinics = async (req, res) => {
     const { count, rows: clinics } = await Tenant.findAndCountAll({
       where: whereClause,
       attributes: [
-        'id', 
-        'name', 
-        'slug', 
-        'logo', 
+        'id',
+        'name',
+        'slug',
+        'logo',
         'organization_type',
         'address',
         'city',

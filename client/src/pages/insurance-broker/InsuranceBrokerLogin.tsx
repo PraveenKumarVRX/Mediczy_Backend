@@ -33,12 +33,6 @@ const InsuranceBrokerLogin = () => {
       return;
     }
 
-    // Development mode: Auto-set credentials
-    if (import.meta.env.DEV) {
-      setEmail('broker@mediczy.com');
-      setPassword('SecurePass123');
-    }
-
     setIsCheckingAuth(false);
   }, [navigate]);
 
@@ -46,35 +40,6 @@ const InsuranceBrokerLogin = () => {
     e.preventDefault();
     setError(null);
     setLoading(true);
-
-    // Development mode: Quick bypass for valid credentials
-    if (import.meta.env.DEV && email === 'broker@mediczy.com' && password === 'SecurePass123') {
-
-      // Clear any other role tokens first
-      localStorage.removeItem('adminToken');
-      localStorage.removeItem('teamToken');
-      localStorage.removeItem('nurseToken');
-      localStorage.removeItem('assistantToken');
-      localStorage.removeItem('tpaToken');
-      localStorage.removeItem('insuranceCompanyToken');
-      localStorage.removeItem('token');
-      localStorage.removeItem('userType');
-
-      // Set dev token directly
-      localStorage.setItem('insuranceBrokerToken', 'dev-insurance-broker-token');
-      localStorage.setItem('insuranceBrokerData', JSON.stringify({
-        id: 'broker_dev',
-        email: 'broker@mediczy.com',
-        role: 'insurance_broker',
-        firstName: 'Insurance',
-        lastName: 'Broker',
-        company: 'MediCare Brokers Ltd.'
-      }));
-
-      setLoading(false);
-      navigate('/insurance-broker/dashboard');
-      return;
-    }
 
     try {
       // Add timeout to prevent long waits

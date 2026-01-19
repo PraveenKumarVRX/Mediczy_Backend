@@ -5,6 +5,7 @@
 
 import express from 'express';
 import jwt from 'jsonwebtoken';
+import { JWT_CONFIG } from '../../config/auth.config.js';
 
 const router = express.Router();
 
@@ -17,12 +18,12 @@ const verifyPharmacyToken = (req, res, next) => {
     if (!token) {
       return res.status(401).json({ success: false, message: 'Unauthorized' });
     }
-    
-    const decoded = jwt.verify(token, process.env.JWT_SECRET);
+
+    const decoded = jwt.verify(token, JWT_CONFIG.SECRET);
     if (decoded.type !== 'pharmacy') {
       return res.status(403).json({ success: false, message: 'Access denied' });
     }
-    
+
     req.pharmacyId = decoded.id;
     req.pharmacyToken = decoded;
     next();
@@ -103,7 +104,7 @@ router.get('/', verifyPharmacyToken, async (req, res) => {
         completed: 25
       }
     };
-    
+
     res.json(prescriptions);
   } catch (error) {
     console.error('Prescriptions fetch error:', error);
@@ -122,7 +123,7 @@ router.get('/', verifyPharmacyToken, async (req, res) => {
 router.get('/:id', verifyPharmacyToken, async (req, res) => {
   try {
     const { id } = req.params;
-    
+
     res.json({
       success: true,
       data: {
@@ -165,7 +166,7 @@ router.put('/:id/status', verifyPharmacyToken, async (req, res) => {
   try {
     const { id } = req.params;
     const { status } = req.body;
-    
+
     res.json({
       success: true,
       message: `Prescription status updated to ${status}`,

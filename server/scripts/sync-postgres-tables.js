@@ -19,6 +19,17 @@ import User from '../models/postgres/user.model.postgres.js';
 import Doctor from '../models/postgres/doctor.model.postgres.js';
 import Appointment from '../models/postgres/appointment.model.postgres.js';
 import Prescription from '../models/postgres/prescription.model.postgres.js';
+import Bed from '../models/postgres/bed.model.postgres.js';
+import LabOrder from '../models/postgres/labOrder.model.postgres.js';
+import PharmacyInventory from '../models/postgres/pharmacyInventory.model.postgres.js';
+import PrescriptionDispensing from '../models/postgres/prescriptionDispensing.model.postgres.js';
+import InsuranceClaim from '../models/postgres/insuranceClaim.model.postgres.js';
+import InsurancePolicy from '../models/postgres/insurancePolicy.model.postgres.js';
+import MedicalRecord from '../models/postgres/medicalRecord.model.postgres.js';
+import EHRRecord from '../models/postgres/ehrRecord.model.postgres.js';
+import VitalSign from '../models/postgres/vitalSign.model.postgres.js';
+import Report from '../models/postgres/report.model.postgres.js';
+import LabTest from '../models/postgres/labTest.model.postgres.js';
 
 const args = process.argv.slice(2);
 const force = args.includes('--force');
@@ -53,7 +64,18 @@ async function syncTables() {
       { name: 'users', model: User },
       { name: 'doctors', model: Doctor },
       { name: 'appointments', model: Appointment },
-      { name: 'prescriptions', model: Prescription }
+      { name: 'prescriptions', model: Prescription },
+      { name: 'beds', model: Bed },
+      { name: 'lab_orders', model: LabOrder },
+      { name: 'pharmacy_inventory', model: PharmacyInventory },
+      { name: 'prescription_dispensing', model: PrescriptionDispensing },
+      { name: 'insurance_claims', model: InsuranceClaim },
+      { name: 'insurance_policies', model: InsurancePolicy },
+      { name: 'medical_records', model: MedicalRecord },
+      { name: 'ehr_records', model: EHRRecord },
+      { name: 'vital_signs', model: VitalSign },
+      { name: 'reports', model: Report },
+      { name: 'lab_tests', model: LabTest }
     ];
     
     console.log('\n📋 Syncing models...');

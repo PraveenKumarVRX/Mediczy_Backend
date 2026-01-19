@@ -1,4 +1,5 @@
 /**
+import { JWT_CONFIG } from '../../config/auth.config.js';
  * PostgreSQL Tenant Model
  * Multi-tenant organization management
  * 

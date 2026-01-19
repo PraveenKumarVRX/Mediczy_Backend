@@ -239,7 +239,7 @@ const MainLayout = ({ children }: MainLayoutProps) => {
         <Sidebar />
 
       {/* Main Content */}
-      <main className="flex-1 overflow-auto md:ml-64 bg-gradient-to-br from-slate-50 via-white to-slate-50/80 dark:from-slate-900 dark:via-slate-900 dark:to-slate-800">
+      <main className="flex-1 w-full overflow-auto md:ml-64 bg-gradient-to-br from-slate-50 via-white to-slate-50/80 dark:from-slate-900 dark:via-slate-900 dark:to-slate-800">
         <header className="sticky top-0 z-30 border-b border-slate-200/80 dark:border-slate-700/50 bg-white/95 dark:bg-slate-900/95 backdrop-blur-xl shadow-sm">
           <div className="flex h-16 items-center px-4 lg:px-6 gap-3">
             <div className="flex items-center gap-2.5">
@@ -406,7 +406,7 @@ const MainLayout = ({ children }: MainLayoutProps) => {
             </div>
           </div>
         </header>
-        <div className="container mx-auto p-6 pb-20 md:pb-6">{children}</div>
+        <div className="p-6 pb-20 md:pb-6">{children}</div>
       </main>
       <Navigation />
       <OfflineIndicator />

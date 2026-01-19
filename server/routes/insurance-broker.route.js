@@ -4,6 +4,7 @@ import { InsurancePolicy } from '../models/insurance-policy.model.intelligent.js
 import { Corporate } from '../models/insurance-company.model.intelligent.js';
 import { authUser, requireRole } from '../middleware/auth.middleware.js';
 import jwt from 'jsonwebtoken';
+import { JWT_CONFIG } from '../config/auth.config.js';
 
 const router = express.Router();
 
@@ -91,7 +92,7 @@ router.post('/register', async (req, res) => {
         email: broker.email,
         role: 'broker'
       },
-      process.env.JWT_SECRET,
+      JWT_CONFIG.SECRET,
       { expiresIn: '7d' }
     );
 
@@ -172,7 +173,7 @@ router.post('/login', async (req, res) => {
         email: broker.email,
         role: 'broker'
       },
-      process.env.JWT_SECRET,
+      JWT_CONFIG.SECRET,
       { expiresIn: '7d' }
     );
 

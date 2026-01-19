@@ -1,4 +1,5 @@
 import jwt from 'jsonwebtoken';
+import { JWT_CONFIG } from '../config/auth.config.js';
 
 /**
  * Middleware to verify team member authentication
@@ -16,7 +17,7 @@ export const authTeam = async (req, res, next) => {
     }
 
     // Verify token
-    const decoded = jwt.verify(token, process.env.JWT_SECRET);
+    const decoded = jwt.verify(token, JWT_CONFIG.SECRET);
     
     // Check if user is a team member
     if (!decoded.isTeam && decoded.role !== 'team') {

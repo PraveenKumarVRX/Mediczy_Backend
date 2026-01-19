@@ -28,7 +28,10 @@ import {
 import axios from 'axios';
 import { toast } from 'react-hot-toast';
 
-const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:8000';
+// API_URL already includes '/api' in production (https://mediqzy.com/api)
+// Remove /api prefix if present to avoid duplication
+const API_BASE = import.meta.env.VITE_API_URL || 'http://localhost:8000';
+const API_URL = API_BASE.replace(/\/api$/, ''); // Remove trailing /api if present
 
 interface Decision {
   id: string;
@@ -75,37 +78,77 @@ export default function SIBControlDashboard() {
     try {
       const token = localStorage.getItem('token');
       
-      // Fetch health status (public endpoint)
-      const healthRes = await axios.get(`${API_URL}/api/sib/health`);
-      setHealth(healthRes.data.data);
+      // Fetch health status (public endpoint - no auth required)
+      try {
+        const healthRes = await axios.get(`${API_URL}/api/sib/health`);
+        setHealth(healthRes.data.data);
+      } catch (error: any) {
+        console.warn('Failed to fetch SIB health:', error.response?.status || error.message);
+      }
+
+      // Verify token exists for protected endpoints
+      if (!token) {
+        console.warn('⚠️ No authentication token - skipping admin features');
+        return;
+      }
+
+      const authConfig = {
+        headers: { Authorization: `Bearer ${token}` }
+      };
 
       // Fetch pending approvals (requires admin auth)
-      const approvalsRes = await axios.get(`${API_URL}/api/sib/approvals/pending`, {
-        headers: { Authorization: `Bearer ${token}` }
-      });
-      setPendingApprovals(approvalsRes.data.data.approvals);
+      try {
+        const approvalsRes = await axios.get(`${API_URL}/api/sib/approvals/pending`, authConfig);
+        setPendingApprovals(approvalsRes.data.data.approvals);
+      } catch (error: any) {
+        if (error.response?.status === 401 || error.response?.status === 403) {
+          console.error('❌ Authentication failed for approvals - token may be expired or user lacks admin role');
+          toast.error('Admin authentication failed - please log in again');
+          // Could redirect to login here if needed
+        } else {
+          console.error('Failed to fetch pending approvals:', error.message);
+        }
+      }
 
-      // Fetch metrics
-      const metricsRes = await axios.get(`${API_URL}/api/sib/metrics`, {
-        headers: { Authorization: `Bearer ${token}` }
-      });
-      setMetrics(metricsRes.data.data);
+      // Fetch metrics (requires admin auth)
+      try {
+        const metricsRes = await axios.get(`${API_URL}/api/sib/metrics`, authConfig);
+        setMetrics(metricsRes.data.data);
+      } catch (error: any) {
+        if (error.response?.status === 401 || error.response?.status === 403) {
+          console.error('❌ Authentication failed for metrics - token may be expired or user lacks admin role');
+        } else {
+          console.error('Failed to fetch metrics:', error.message);
+        }
+      }
 
     } catch (error) {
-      console.error('Failed to fetch SIB data:', error);
+      console.error('Unexpected error in fetchData:', error);
     }
   };
 
   const fetchAuditLog = async (filters: any = {}) => {
     try {
       const token = localStorage.getItem('token');
+      
+      if (!token) {
+        toast.error('Authentication required to view audit log');
+        return;
+      }
+
       const params = new URLSearchParams(filters).toString();
       const res = await axios.get(`${API_URL}/api/sib/audit?${params}`, {
         headers: { Authorization: `Bearer ${token}` }
       });
       setAuditLog(res.data.data.decisions);
-    } catch (error) {
-      toast.error('Failed to fetch audit log');
+    } catch (error: any) {
+      if (error.response?.status === 401 || error.response?.status === 403) {
+        toast.error('Not authorized to view audit log - requires admin role');
+        console.error('❌ Audit log access denied:', error.response?.status);
+      } else {
+        toast.error('Failed to fetch audit log');
+        console.error('Audit log error:', error.message);
+      }
     }
   };
 
@@ -113,6 +156,13 @@ export default function SIBControlDashboard() {
     setLoading(true);
     try {
       const token = localStorage.getItem('token');
+      
+      if (!token) {
+        toast.error('Authentication required - please log in');
+        setLoading(false);
+        return;
+      }
+
       const endpoint = activate 
         ? `${API_URL}/api/sib/kill-switch/activate`
         : `${API_URL}/api/sib/kill-switch/deactivate`;
@@ -130,7 +180,15 @@ export default function SIBControlDashboard() {
       setAdminToken('');
       await fetchData();
     } catch (error: any) {
-      toast.error(error.response?.data?.error || 'Failed to toggle kill switch');
+      const status = error.response?.status;
+      const errorMsg = error.response?.data?.error || error.message;
+      
+      if (status === 401 || status === 403) {
+        toast.error('❌ Not authorized - requires admin role');
+        console.error('Kill switch auth failed:', { status, message: errorMsg });
+      } else {
+        toast.error(errorMsg || 'Failed to toggle kill switch');
+      }
     } finally {
       setLoading(false);
     }
@@ -140,6 +198,13 @@ export default function SIBControlDashboard() {
     setLoading(true);
     try {
       const token = localStorage.getItem('token');
+      
+      if (!token) {
+        toast.error('Authentication required');
+        setLoading(false);
+        return;
+      }
+
       await axios.post(
         `${API_URL}/api/sib/approvals/${approvalId}/approve`,
         { comments },
@@ -147,8 +212,14 @@ export default function SIBControlDashboard() {
       );
       toast.success('Decision approved and executed');
       await fetchData();
-    } catch (error) {
-      toast.error('Failed to approve decision');
+    } catch (error: any) {
+      const status = error.response?.status;
+      if (status === 401 || status === 403) {
+        toast.error('❌ Not authorized - requires admin role');
+        console.error('Approval auth failed:', status);
+      } else {
+        toast.error('Failed to approve decision');
+      }
     } finally {
       setLoading(false);
     }
@@ -158,6 +229,13 @@ export default function SIBControlDashboard() {
     setLoading(true);
     try {
       const token = localStorage.getItem('token');
+      
+      if (!token) {
+        toast.error('Authentication required');
+        setLoading(false);
+        return;
+      }
+
       await axios.post(
         `${API_URL}/api/sib/approvals/${approvalId}/reject`,
         { reason },
@@ -165,8 +243,14 @@ export default function SIBControlDashboard() {
       );
       toast.success('Decision rejected');
       await fetchData();
-    } catch (error) {
-      toast.error('Failed to reject decision');
+    } catch (error: any) {
+      const status = error.response?.status;
+      if (status === 401 || status === 403) {
+        toast.error('❌ Not authorized - requires admin role');
+        console.error('Rejection auth failed:', status);
+      } else {
+        toast.error('Failed to reject decision');
+      }
     } finally {
       setLoading(false);
     }

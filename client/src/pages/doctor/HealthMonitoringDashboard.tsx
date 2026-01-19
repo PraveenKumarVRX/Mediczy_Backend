@@ -512,7 +512,7 @@ const HealthMonitoringDashboard = () => {
                     </div>
                   </div>
                   <Badge variant="outline" className={getRiskColor(patient.riskLevel)}>
-                    {patient.riskLevel.toUpperCase()}
+                    {(patient.riskLevel || 'unknown').toUpperCase()}
                   </Badge>
                 </div>
               </CardHeader>
@@ -641,7 +641,7 @@ const HealthMonitoringDashboard = () => {
                 </p>
               </div>
               <Badge variant="outline" className={`ml-auto ${getRiskColor(selectedPatient?.riskLevel || 'low')}`}>
-                {selectedPatient?.riskLevel.toUpperCase()}
+                {(selectedPatient?.riskLevel || 'unknown').toUpperCase()}
               </Badge>
             </DialogTitle>
           </DialogHeader>

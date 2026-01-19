@@ -1,4 +1,5 @@
 import { validationResult } from 'express-validator';
+import { JWT_CONFIG } from '../config/auth.config.js';
 import userModel, { generateAuthTokenForUser } from '../models/user.model.intelligent.js';
 import { Corporate } from '../models/index.js';
 
@@ -448,7 +449,7 @@ export const corporateLogin = async (req, res) => {
       if (email.toLowerCase() === demoEmail && password === demoPassword) {
         const token = jwt.sign(
           { userId: 'corp_demo', email: demoEmail, userType: 'corporate' },
-          process.env.JWT_SECRET || 'your-secret-key',
+          JWT_CONFIG.SECRET || 'your-secret-key',
           { expiresIn: '7d' }
         );
         return res.json({
@@ -512,7 +513,7 @@ export const corporateLogin = async (req, res) => {
         role: 'corporate',
         userType: 'corporate'
       },
-      process.env.JWT_SECRET || 'your-secret-key',
+      JWT_CONFIG.SECRET || 'your-secret-key',
       { expiresIn: '7d' }
     );
 

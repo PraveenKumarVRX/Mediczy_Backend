@@ -120,7 +120,7 @@ const AdminLayout = ({ children }: AdminLayoutProps) => {
   const unreadCount = notifications.filter(n => n.unread).length;
 
   const [expandedGroups, setExpandedGroups] = useState<Record<string, boolean>>({
-    users: true,
+    users: false,
     healthcare: false,
     corporate: false,
     services: false,
@@ -284,7 +284,7 @@ const AdminLayout = ({ children }: AdminLayoutProps) => {
       color: 'text-slate-500',
       items: [
         { icon: Shield, label: 'Module Access', path: '/admin/module-access', color: 'text-blue-500', bg: 'bg-blue-500/10', highlight: true },
-        { icon: Activity, label: 'Activity Log', path: '/admin/activity-log', color: 'text-purple-500', bg: 'bg-purple-500/10' },
+        { icon: Activity, label: 'Activity Log', path: '/admin/activity-log', color: 'text-teal-500', bg: 'bg-teal-500/10' },
         { icon: Workflow, label: 'Automation', path: '/admin/workflow-automation', color: 'text-indigo-500', bg: 'bg-indigo-500/10', highlight: true },
         { icon: Settings, label: 'Settings', path: '/admin/settings', color: 'text-slate-500', bg: 'bg-slate-500/10' },
       ]
@@ -316,7 +316,7 @@ const AdminLayout = ({ children }: AdminLayoutProps) => {
               className={cn(
                 "group relative flex items-center justify-center rounded-xl p-2.5 transition-all duration-200",
                 isActive
-                  ? "bg-gradient-to-r from-blue-500/20 to-purple-500/10 text-blue-500 border border-blue-500/30 shadow-sm"
+                  ? "bg-gradient-to-r from-teal-500/20 to-teal-600/10 text-teal-400 border border-teal-500/30 shadow-sm"
                   : item.highlight
                     ? "text-amber-500 hover:bg-amber-500/10 border border-amber-500/20"
                     : "text-muted-foreground hover:bg-accent hover:text-foreground"
@@ -324,7 +324,7 @@ const AdminLayout = ({ children }: AdminLayoutProps) => {
             >
               <Icon className={cn(
                 "h-5 w-5",
-                isActive ? "text-blue-500" : item.highlight ? "text-amber-500" : ""
+                isActive ? "text-teal-400" : item.highlight ? "text-amber-500" : ""
               )} />
               {item.highlight && !isActive && (
                 <span className="absolute top-1 right-1 flex h-2 w-2 rounded-full bg-amber-400 animate-pulse" />
@@ -353,7 +353,7 @@ const AdminLayout = ({ children }: AdminLayoutProps) => {
         className={cn(
           "group relative flex items-center gap-3 rounded-xl px-3 py-2.5 text-sm font-medium transition-all duration-200",
           isActive
-            ? "bg-gradient-to-r from-blue-500/15 to-purple-500/10 text-blue-600 dark:text-blue-400 border border-blue-500/20 shadow-sm"
+            ? "bg-gradient-to-r from-teal-500/20 to-teal-600/10 text-teal-400 border border-teal-500/30 shadow-sm"
             : item.highlight
               ? "text-amber-600 dark:text-amber-400 hover:bg-amber-500/10 border border-amber-500/20"
               : "text-muted-foreground hover:bg-accent hover:text-foreground border border-transparent hover:border-border/50",
@@ -361,15 +361,15 @@ const AdminLayout = ({ children }: AdminLayoutProps) => {
         )}
       >
         {isActive && (
-          <div className="absolute left-0 top-1/2 -translate-y-1/2 w-1 h-6 bg-blue-500 rounded-r-full" />
+          <div className="absolute left-0 top-1/2 -translate-y-1/2 w-1 h-6 bg-teal-500 rounded-r-full" />
         )}
         <Icon className={cn(
           "h-4 w-4 transition-colors",
-          isActive ? "text-blue-500" : item.highlight ? "text-amber-500" : "text-muted-foreground group-hover:text-foreground"
+          isActive ? "text-teal-400" : item.highlight ? "text-amber-500" : "text-muted-foreground group-hover:text-foreground"
         )} />
         <span className="flex-1">{item.label}</span>
         {item.badge && (
-          <Badge variant="secondary" className="text-[10px] px-1.5 bg-blue-500/10 text-blue-600 dark:text-blue-400">
+          <Badge variant="secondary" className="text-[10px] px-1.5 bg-teal-500/10 text-teal-600 dark:text-teal-400">
             {item.badge}
           </Badge>
         )}
@@ -394,7 +394,7 @@ const AdminLayout = ({ children }: AdminLayoutProps) => {
           to="/admin" 
           className="flex items-center gap-3 flex-1 cursor-pointer hover:opacity-80 transition-opacity"
         >
-          <div className="p-2 rounded-xl bg-gradient-to-br from-blue-500 to-purple-600 shadow-lg shadow-blue-500/20">
+          <div className="p-2 rounded-xl bg-gradient-to-br from-teal-500 to-teal-600 shadow-lg shadow-teal-500/20">
             <HeartPulse className="h-5 w-5 text-white" />
           </div>
           {!(isCollapsed && isDesktop) && (
@@ -441,7 +441,7 @@ const AdminLayout = ({ children }: AdminLayoutProps) => {
           <div className="flex items-center gap-3 p-2 rounded-lg bg-accent/30">
             <Avatar className="h-9 w-9 border-2 border-blue-500/30">
               <AvatarImage src="/admin-avatar.png" />
-              <AvatarFallback className="bg-gradient-to-br from-blue-500/20 to-purple-500/20 text-blue-600 text-sm font-semibold">
+              <AvatarFallback className="bg-gradient-to-br from-teal-500 to-teal-600 text-white text-sm font-semibold">
                 {getAdminInitials()}
               </AvatarFallback>
             </Avatar>
@@ -691,9 +691,9 @@ const AdminLayout = ({ children }: AdminLayoutProps) => {
             <DropdownMenu>
               <DropdownMenuTrigger asChild>
                 <Button variant="ghost" className="relative h-9 w-9 rounded-full">
-                  <Avatar className="h-9 w-9 border-2 border-blue-500/30">
+                  <Avatar className="h-9 w-9 border-2 border-teal-500/30">
                     <AvatarImage src="/admin-avatar.png" />
-                    <AvatarFallback className="bg-gradient-to-br from-blue-500/20 to-purple-500/20 text-blue-600 text-sm font-semibold">
+                    <AvatarFallback className="bg-gradient-to-br from-teal-500 to-teal-600 text-white text-sm font-semibold">
                       {getAdminInitials()}
                     </AvatarFallback>
                   </Avatar>

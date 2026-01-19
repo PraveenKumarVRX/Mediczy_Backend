@@ -1,4 +1,5 @@
 import { postgresSequelize as sequelize } from '../db/postgres-sequelize.js';
+import { JWT_CONFIG } from '../config/auth.config.js';
 import { DataTypes } from 'sequelize';
 import jwt from 'jsonwebtoken';
 import bcrypt from 'bcrypt';
@@ -131,6 +132,20 @@ const User = sequelize.define('User', {
     defaultValue: 0,
     field: 'emergency_triage_pending_amount',
     comment: 'Pending amount to be paid for emergency triage consultations'
+  },
+  // Metadata field for additional user information (JSONB)
+  metadata: {
+    type: DataTypes.JSONB,
+    allowNull: true,
+    defaultValue: {},
+    comment: 'Additional user metadata including role-specific data, preferences, and flags'
+  },
+  // Role field for user type
+  role: {
+    type: DataTypes.STRING(50),
+    allowNull: true,
+    defaultValue: 'user',
+    comment: 'User role: user, doctor, admin, team, etc.'
   }
 }, {
   tableName: 'users',
@@ -206,7 +221,7 @@ const userModel = {
 // Helper to generate JWT for intelligent DB users
 // Includes userId and userType for ring-fencing middleware
 export const generateAuthTokenForUser = (userInstance) => {
-  if (!process.env.JWT_SECRET) {
+  if (!JWT_CONFIG.SECRET) {
     throw new Error('JWT_SECRET is not configured');
   }
 
@@ -220,7 +235,7 @@ export const generateAuthTokenForUser = (userInstance) => {
     corporateId: userInstance.corporateId || null
   };
 
-  return jwt.sign(payload, process.env.JWT_SECRET, {
+  return jwt.sign(payload, JWT_CONFIG.SECRET, {
     expiresIn: '7d'
   });
 };

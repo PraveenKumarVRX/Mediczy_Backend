@@ -3,6 +3,7 @@ import doctorModel from "../models/doctor.model.intelligent.js";
 import nurseModel from "../models/nurse.model.intelligent.js";
 import assistantModel from "../models/assistant.model.intelligent.js";
 import jwt from "jsonwebtoken";
+import { JWT_CONFIG } from "../config/auth.config.js";
 import UserPostgres from "../models/postgres/user.model.postgres.js";
 import DoctorPostgres from "../models/postgres/doctor.model.postgres.js";
 import NursePostgres from "../models/postgres/nurse.model.postgres.js";
@@ -145,16 +146,16 @@ export const authUser = async (req, res, next) => {
     return next();
   }
 
-  if (!process.env.JWT_SECRET) {
+  if (!JWT_CONFIG.SECRET) {
     console.error("FATAL: JWT_SECRET environment variable not set!");
     return res.status(500).json({ message: "Server configuration error" });
   }
 
   try {
-    const decoded = jwt.verify(token, process.env.JWT_SECRET);
+    const decoded = jwt.verify(token, JWT_CONFIG.SECRET);
     console.log(
       "🔹 Token verification SUCCESS. JWT_SECRET:",
-      (process.env.JWT_SECRET || "").slice(0, 10) + "..."
+      (JWT_CONFIG.SECRET || "").slice(0, 10) + "..."
     );
     console.log("🔹 Decoded payload:", decoded);
 
@@ -308,7 +309,7 @@ export const authUser = async (req, res, next) => {
     console.log("❌ Token verification FAILED. Error:", error.message);
     console.log(
       "❌ JWT_SECRET being used:",
-      (process.env.JWT_SECRET || "").slice(0, 10) + "..."
+      (JWT_CONFIG.SECRET || "").slice(0, 10) + "..."
     );
     console.log("❌ Token being verified:", token?.slice(0, 50) + "...");
     return res.status(401).json({ message: error.message });
@@ -336,13 +337,13 @@ export const authDoctor = async (req, res, next) => {
     }
 
     // CRITICAL SECURITY: Fail immediately if JWT_SECRET not set
-    if (!process.env.JWT_SECRET) {
+    if (!JWT_CONFIG.SECRET) {
       console.error('FATAL: JWT_SECRET environment variable not set!');
       return res.status(500).json({ message: "Server configuration error" });
     }
 
     // Verify Token
-    const decoded = jwt.verify(token, process.env.JWT_SECRET);
+    const decoded = jwt.verify(token, JWT_CONFIG.SECRET);
 
     const doctor = await safeFindByPk(
       DoctorPostgres,

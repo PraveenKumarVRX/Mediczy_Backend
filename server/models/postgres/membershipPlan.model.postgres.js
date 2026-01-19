@@ -1,4 +1,5 @@
 import { DataTypes } from 'sequelize';
+import { JWT_CONFIG } from '../../config/auth.config.js';
 import { postgresSequelize as sequelize } from '../../db/postgres-sequelize.js';
 
 /**
@@ -76,10 +77,78 @@ export const MembershipPlan = sequelize.define('MembershipPlan', {
     type: DataTypes.JSONB,
     allowNull: false,
     defaultValue: {}
+  },
+  
+  // Master Plan & Customization
+  isMaster: {
+    type: DataTypes.BOOLEAN,
+    defaultValue: false,
+    comment: 'True if this is a super admin master template plan'
+  },
+  masterPlanId: {
+    type: DataTypes.INTEGER,
+    allowNull: true,
+    references: {
+      model: 'membership_plans',
+      key: 'id'
+    },
+    comment: 'Reference to master plan if this is a customized version'
+  },
+  
+  // Organization Context
+  organizationId: {
+    type: DataTypes.INTEGER,
+    allowNull: true,
+    comment: 'Tenant/Organization ID if this is org-specific customization'
+  },
+  organizationType: {
+    type: DataTypes.STRING(50),
+    allowNull: true,
+    comment: 'hospital, clinic, lab, pharmacy, homecare, etc.'
+  },
+  
+  // Customization Info
+  customizedBy: {
+    type: DataTypes.INTEGER,
+    allowNull: true,
+    comment: 'User ID who customized this plan'
+  },
+  customizationNotes: {
+    type: DataTypes.TEXT,
+    allowNull: true,
+    comment: 'Notes about customization from master plan'
+  },
+  
+  // Plan Type & Tier (for upgrades and addons)
+  planType: {
+    type: DataTypes.ENUM('primary', 'addon'),
+    defaultValue: 'primary',
+    comment: 'primary = main plan (one per user), addon = optional additional plan'
+  },
+  tier: {
+    type: DataTypes.INTEGER,
+    defaultValue: 1,
+    comment: 'Plan tier level (1=basic, 2=standard, 3=premium, etc.) for upgrade path'
+  },
+  tierName: {
+    type: DataTypes.STRING(50),
+    allowNull: true,
+    comment: 'Display name for tier: basic, standard, premium, enterprise'
   }
 }, {
   tableName: 'membership_plans',
   timestamps: true
+});
+
+// Association for master plan relationship
+MembershipPlan.belongsTo(MembershipPlan, {
+  as: 'masterPlan',
+  foreignKey: 'masterPlanId'
+});
+
+MembershipPlan.hasMany(MembershipPlan, {
+  as: 'customizations',
+  foreignKey: 'masterPlanId'
 });
 
 export const UserPlan = sequelize.define('UserPlan', {

@@ -1,4 +1,5 @@
 import { validationResult } from "express-validator";
+import { JWT_CONFIG } from '../config/auth.config.js';
 import userModel, { generateAuthTokenForUser, User } from "../models/user.model.intelligent.js";
 import jwt from "jsonwebtoken";
 import { auditLoginAttempt } from "../middleware/audit.middleware.js";
@@ -384,7 +385,7 @@ export const updateUserStatus = async (req, res) => {
     }
 
     // Verify and decode token
-    const decoded = jwt.verify(token, process.env.JWT_SECRET);
+    const decoded = jwt.verify(token, JWT_CONFIG.SECRET);
     const userId = decoded.id; // Use 'id' instead of '_id' for Sequelize
 
     // Extract status from request

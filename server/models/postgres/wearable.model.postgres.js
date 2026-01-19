@@ -1,4 +1,5 @@
 /**
+import { JWT_CONFIG } from '../../config/auth.config.js';
  * Wearable Device Model
  * Health monitoring devices (smartwatch, smart band, smart ring)
  * Provided as part of subscription to users

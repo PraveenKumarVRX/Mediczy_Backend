@@ -1,4 +1,5 @@
 import paymentService from '../services/payment.service.js';
+import { JWT_CONFIG } from '../config/auth.config.js';
 
 // Temporary in-memory store for payment transactions
 const paymentTransactions = new Map();

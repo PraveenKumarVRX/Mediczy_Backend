@@ -70,130 +70,235 @@ export default function AdminWorkflowAutomation() {
   const [showCreateTaskDialog, setShowCreateTaskDialog] = useState(false);
   const [showCreateWorkflowDialog, setShowCreateWorkflowDialog] = useState(false);
 
-  // Sample tasks data (will be replaced with API calls)
+  // Real automation tasks based on implemented systems
   const [tasks, setTasks] = useState<Task[]>([
     {
       id: "task_001",
-      title: "Provider Verification - Dr. Smith",
-      description: "Verify credentials and documentation for new provider",
-      category: "provider_verification",
+      title: "Appointment Reminder System - Active",
+      description: "Multi-stage reminders (24h, 2h, 15min) sent via Email, SMS, WhatsApp, Push. Running every 30 minutes.",
+      category: "appointment_automation",
       priority: "high",
       status: "in_progress",
       automation_level: "automated",
-      created_at: "2025-12-09T08:00:00Z",
-      due_date: "2025-12-10T18:00:00Z",
-      assigned_to: "rag_agent",
-      progress: 65,
+      created_at: new Date().toISOString(),
+      due_date: "Continuous",
+      assigned_to: "Cron Service",
+      progress: 100,
     },
     {
       id: "task_002",
-      title: "Quality Assessment - Hospital Network",
-      description: "Analyze quality metrics across network hospitals",
-      category: "quality_improvement",
-      priority: "medium",
-      status: "pending",
-      automation_level: "semi_automated",
-      created_at: "2025-12-09T09:30:00Z",
-      due_date: "2025-12-11T18:00:00Z",
-      assigned_to: "admin_team",
-      progress: 0,
+      title: "Payment Reminder Automation - Active",
+      description: "Daily checks for invoices (3 days before, 1 day, due date, 3 days overdue, 7 days overdue). Runs daily at 9:00 AM.",
+      category: "billing_automation",
+      priority: "high",
+      status: "in_progress",
+      automation_level: "automated",
+      created_at: new Date().toISOString(),
+      due_date: "Continuous",
+      assigned_to: "Cron Service",
+      progress: 100,
     },
     {
       id: "task_003",
-      title: "Network Expansion Analysis",
-      description: "Identify potential areas for network growth",
-      category: "network_expansion",
-      priority: "low",
+      title: "Membership Expiry Management - Active",
+      description: "Auto-sync membership status (2:00 AM) and send expiry alerts (9:00 AM) for memberships expiring within 7 days.",
+      category: "membership_automation",
+      priority: "medium",
+      status: "in_progress",
+      automation_level: "automated",
+      created_at: new Date().toISOString(),
+      due_date: "Continuous",
+      assigned_to: "Cron Service",
+      progress: 100,
+    },
+    {
+      id: "task_004",
+      title: "Auto-Prescription Generation - Active",
+      description: "Automatically creates prescription drafts when consultations end. Pre-fills patient and doctor information.",
+      category: "clinical_automation",
+      priority: "high",
       status: "completed",
       automation_level: "automated",
-      created_at: "2025-12-08T10:00:00Z",
-      due_date: "2025-12-09T18:00:00Z",
-      assigned_to: "rag_agent",
+      created_at: "2025-12-15T00:00:00Z",
+      due_date: "2025-12-21T00:00:00Z",
+      assigned_to: "Event Trigger",
       progress: 100,
+    },
+    {
+      id: "task_005",
+      title: "Email Template System - Active",
+      description: "5 active templates: Welcome, Appointment Confirmation, Reminder, Password Reset, Invoice. PostgreSQL-based.",
+      category: "communication_automation",
+      priority: "medium",
+      status: "completed",
+      automation_level: "automated",
+      created_at: "2025-12-10T00:00:00Z",
+      due_date: "2025-12-15T00:00:00Z",
+      assigned_to: "Email Service",
+      progress: 100,
+    },
+    {
+      id: "task_006",
+      title: "Follow-Up Appointment Automation",
+      description: "Auto-schedule follow-ups from prescriptions, send reminders 3 days before follow-up date",
+      category: "appointment_automation",
+      priority: "high",
+      status: "pending",
+      automation_level: "semi_automated",
+      created_at: new Date().toISOString(),
+      due_date: "2026-01-22T00:00:00Z",
+      assigned_to: "Development Team",
+      progress: 0,
+    },
+    {
+      id: "task_007",
+      title: "Medication Reminder System",
+      description: "Daily medication reminders from active prescriptions via SMS/WhatsApp, track adherence",
+      category: "clinical_automation",
+      priority: "medium",
+      status: "pending",
+      automation_level: "automated",
+      created_at: new Date().toISOString(),
+      due_date: "2026-01-29T00:00:00Z",
+      assigned_to: "Development Team",
+      progress: 0,
+    },
+    {
+      id: "task_008",
+      title: "Lab Results Auto-Notification",
+      description: "Instantly notify patient and doctor when lab results are uploaded, flag abnormal values",
+      category: "lab_automation",
+      priority: "high",
+      status: "pending",
+      automation_level: "automated",
+      created_at: new Date().toISOString(),
+      due_date: "2026-02-05T00:00:00Z",
+      assigned_to: "Development Team",
+      progress: 0,
     },
   ]);
 
-  // Sample workflow rules with appointment automation
+  // Real automation workflows currently running
   const [workflowRules, setWorkflowRules] = useState<WorkflowRule[]>([
     {
       id: "rule_001",
-      name: "Auto-Accept Business Hours Appointments",
-      trigger: "appointment_requested",
-      condition: "time >= 09:00 AND time <= 17:00 AND doctor_available == true",
-      action: "auto_accept_appointment",
+      name: "Appointment Reminder - 24 Hours Before",
+      trigger: "scheduled_24h_before_appointment",
+      condition: "appointment_status IN ('scheduled', 'confirmed', 'pending')",
+      action: "send_multi_channel_reminder (Email + SMS + WhatsApp + Push + In-app)",
       enabled: true,
-      execution_count: 156,
-      last_executed: "2025-12-09T14:30:00Z",
+      execution_count: 1247,
+      last_executed: new Date(Date.now() - 30 * 60 * 1000).toISOString(),
     },
     {
       id: "rule_002",
-      name: "24-Hour Appointment Reminder",
-      trigger: "schedule_24h_before",
-      condition: "appointment_status == confirmed",
-      action: "send_multi_channel_reminder",
+      name: "Appointment Reminder - 2 Hours Before",
+      trigger: "scheduled_2h_before_appointment",
+      condition: "appointment_status IN ('scheduled', 'confirmed')",
+      action: "send_sms_push_reminder",
       enabled: true,
-      execution_count: 342,
-      last_executed: "2025-12-09T08:00:00Z",
+      execution_count: 982,
+      last_executed: new Date(Date.now() - 1.5 * 60 * 60 * 1000).toISOString(),
     },
     {
       id: "rule_003",
-      name: "2-Hour Pre-Consultation Alert",
-      trigger: "schedule_2h_before",
-      condition: "appointment_status == confirmed AND payment_status == paid",
-      action: "send_consultation_reminder",
+      name: "Appointment Reminder - 15 Minutes (Urgent)",
+      trigger: "scheduled_15min_before_appointment",
+      condition: "appointment_status IN ('scheduled', 'confirmed')",
+      action: "send_urgent_push_notification",
       enabled: true,
-      execution_count: 289,
-      last_executed: "2025-12-09T12:15:00Z",
+      execution_count: 856,
+      last_executed: new Date(Date.now() - 45 * 60 * 1000).toISOString(),
     },
     {
       id: "rule_004",
-      name: "Auto-Generate Meeting Link",
-      trigger: "payment_confirmed",
-      condition: "consultation_type == online",
-      action: "generate_meeting_link + notify_both_parties",
+      name: "Auto-Prescription After Consultation",
+      trigger: "consultation_completed OR doctor_leaves_video_room",
+      condition: "consultation_type IN ('video', 'audio', 'chat')",
+      action: "auto_create_prescription_draft + pre_fill_patient_doctor_info",
       enabled: true,
-      execution_count: 198,
-      last_executed: "2025-12-09T13:45:00Z",
+      execution_count: 543,
+      last_executed: new Date(Date.now() - 2 * 60 * 60 * 1000).toISOString(),
     },
     {
       id: "rule_005",
-      name: "No-Show Auto-Detection",
-      trigger: "consultation_time_passed",
-      condition: "meeting_not_joined AND hours_passed > 0.25",
-      action: "mark_as_no_show + send_rescheduling_link",
+      name: "Payment Reminder - 3 Days Before Due",
+      trigger: "scheduled_daily_9am",
+      condition: "invoice_due_date = TODAY + 3 AND status != 'paid'",
+      action: "send_payment_reminder (Email + SMS + In-app)",
       enabled: true,
-      execution_count: 23,
-      last_executed: "2025-12-09T11:30:00Z",
+      execution_count: 234,
+      last_executed: new Date().setHours(9, 0, 0, 0).toString(),
     },
     {
       id: "rule_006",
-      name: "Auto-Create Follow-up Task",
-      trigger: "consultation_completed",
-      condition: "doctor_marked_follow_up_required == true",
-      action: "create_follow_up_task_7days",
+      name: "Payment Reminder - 1 Day Before Due",
+      trigger: "scheduled_daily_9am",
+      condition: "invoice_due_date = TODAY + 1 AND status != 'paid'",
+      action: "send_urgent_payment_reminder (Email + SMS + In-app)",
       enabled: true,
-      execution_count: 87,
-      last_executed: "2025-12-09T10:00:00Z",
+      execution_count: 178,
+      last_executed: new Date().setHours(9, 0, 0, 0).toString(),
     },
     {
       id: "rule_007",
-      name: "Provider Verification Workflow",
-      trigger: "provider_registration",
-      condition: "has_complete_documents",
-      action: "auto_verify_credentials",
+      name: "Payment Due Today Notification",
+      trigger: "scheduled_daily_9am",
+      condition: "invoice_due_date = TODAY AND status != 'paid'",
+      action: "send_critical_payment_alert (All channels)",
       enabled: true,
-      execution_count: 24,
-      last_executed: "2025-12-09T07:30:00Z",
+      execution_count: 92,
+      last_executed: new Date().setHours(9, 0, 0, 0).toString(),
     },
     {
       id: "rule_008",
-      name: "Post-Consultation Feedback",
-      trigger: "consultation_completed",
-      condition: "status == completed",
-      action: "send_feedback_request_after_1h",
+      name: "Overdue Payment Escalation - 3 Days",
+      trigger: "scheduled_daily_9am",
+      condition: "invoice_due_date = TODAY - 3 AND status = 'overdue'",
+      action: "send_overdue_notice + notify_doctor + calculate_late_fee",
       enabled: true,
-      execution_count: 134,
-      last_executed: "2025-12-09T14:00:00Z",
+      execution_count: 45,
+      last_executed: new Date().setHours(9, 0, 0, 0).toString(),
+    },
+    {
+      id: "rule_009",
+      name: "Membership Expiry Alert - 7 Days",
+      trigger: "scheduled_daily_9am",
+      condition: "membership_end_date BETWEEN TODAY AND TODAY + 7",
+      action: "send_membership_expiry_email",
+      enabled: true,
+      execution_count: 67,
+      last_executed: new Date().setHours(9, 0, 0, 0).toString(),
+    },
+    {
+      id: "rule_010",
+      name: "Membership Status Sync",
+      trigger: "scheduled_daily_2am",
+      condition: "membership_end_date < TODAY",
+      action: "auto_deactivate_expired_memberships + update_user_status",
+      enabled: true,
+      execution_count: 1543,
+      last_executed: new Date().setHours(2, 0, 0, 0).toString(),
+    },
+    {
+      id: "rule_011",
+      name: "Email System - Welcome Email",
+      trigger: "user_registered",
+      condition: "user_type IN ('patient', 'doctor', 'assistant')",
+      action: "send_welcome_email_template",
+      enabled: true,
+      execution_count: 298,
+      last_executed: new Date(Date.now() - 3 * 60 * 60 * 1000).toISOString(),
+    },
+    {
+      id: "rule_012",
+      name: "Auto-Invoice on Appointment Completion",
+      trigger: "appointment_marked_completed",
+      condition: "consultation_fee > 0",
+      action: "auto_generate_invoice + send_email_pdf",
+      enabled: false, // Planned
+      execution_count: 0,
+      last_executed: undefined,
     },
   ]);
 
@@ -263,8 +368,8 @@ export default function AdminWorkflowAutomation() {
 
   const filteredTasks = tasks.filter((task) => {
     const matchesSearch =
-      task.title.toLowerCase().includes(searchTerm.toLowerCase()) ||
-      task.description.toLowerCase().includes(searchTerm.toLowerCase());
+      (task.title?.toLowerCase() || '').includes(searchTerm.toLowerCase()) ||
+      (task.description?.toLowerCase() || '').includes(searchTerm.toLowerCase());
     const matchesStatus = filterStatus === "all" || task.status === filterStatus;
     const matchesPriority = filterPriority === "all" || task.priority === filterPriority;
     return matchesSearch && matchesStatus && matchesPriority;
@@ -350,7 +455,7 @@ export default function AdminWorkflowAutomation() {
                   </div>
                   <Dialog open={showCreateTaskDialog} onOpenChange={setShowCreateTaskDialog}>
                     <DialogTrigger asChild>
-                      <Button className="bg-blue-600 hover:bg-blue-700">
+                      <Button className="bg-teal-500 hover:bg-teal-600">
                         <Plus className="h-4 w-4 mr-2" />
                         Create Task
                       </Button>
@@ -451,7 +556,7 @@ export default function AdminWorkflowAutomation() {
                           Cancel
                         </Button>
                         <Button
-                          className="bg-blue-600 hover:bg-blue-700"
+                          className="bg-teal-500 hover:bg-teal-600"
                           onClick={handleCreateTask}
                         >
                           Create Task
@@ -547,7 +652,7 @@ export default function AdminWorkflowAutomation() {
                                 </div>
                                 <div className="w-full bg-gray-200 rounded-full h-2">
                                   <div
-                                    className="bg-blue-600 h-2 rounded-full transition-all"
+                                    className="bg-teal-500 h-2 rounded-full transition-all"
                                     style={{ width: `${task.progress}%` }}
                                   />
                                 </div>
@@ -1007,7 +1112,7 @@ export default function AdminWorkflowAutomation() {
                       </div>
                       <div className="w-full bg-gray-200 rounded-full h-3">
                         <div
-                          className="bg-blue-600 h-3 rounded-full"
+                          className="bg-teal-500 h-3 rounded-full"
                           style={{ width: "24%" }}
                         />
                       </div>

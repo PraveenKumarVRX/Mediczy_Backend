@@ -12,6 +12,13 @@ import { useToast } from "@/hooks/use-toast";
 import api from "@/utils/api";
 import { Coins, Check, Sparkles } from "lucide-react";
 
+// Declare Razorpay type
+declare global {
+  interface Window {
+    Razorpay: any;
+  }
+}
+
 interface PurchaseCoinsDialogProps {
   open: boolean;
   onOpenChange: (open: boolean) => void;
@@ -44,35 +51,102 @@ export function PurchaseCoinsDialog({ open, onOpenChange, onSuccess }: PurchaseC
     setProcessing(true);
     
     try {
-      // In production, integrate with payment gateway (Razorpay, Stripe, etc.)
-      // For demo, we'll simulate a successful payment
       const pkg = PACKAGES[selectedPackage];
       
-      // Simulate payment processing
-      await new Promise(resolve => setTimeout(resolve, 1000));
+      // Step 1: Create Razorpay order
+      const orderResponse = await api.post('/wallet/create-order', {
+        packageId: selectedPackage
+      });
+
+      if (!orderResponse.data.success) {
+        throw new Error(orderResponse.data.message || 'Failed to create order');
+      }
+
+      const { order } = orderResponse.data;
+
+      // Step 2: Load Razorpay script if not already loaded
+      if (!window.Razorpay) {
+        const script = document.createElement('script');
+        script.src = 'https://checkout.razorpay.com/v1/checkout.js';
+        script.async = true;
+        document.body.appendChild(script);
+        
+        await new Promise((resolve, reject) => {
+          script.onload = resolve;
+          script.onerror = reject;
+        });
+      }
+
+      // Step 3: Open Razorpay checkout
+      const options = {
+        key: order.key,
+        // Razorpay will use amount from the order when order_id is provided
+        currency: order.currency,
+        name: 'Mediqzy Healthcare',
+        description: `Purchase ${pkg.coins} Health Coins`,
+        order_id: order.orderId,
+        image: 'https://mediqzy.com/logo/Mediqzy_logo.jpeg',
+        handler: async function (response: any) {
+          try {
+            // Step 4: Verify payment on backend
+            const verifyResponse = await api.post('/wallet/verify-payment', {
+              razorpay_order_id: response.razorpay_order_id,
+              razorpay_payment_id: response.razorpay_payment_id,
+              razorpay_signature: response.razorpay_signature,
+              packageId: selectedPackage
+            });
+
+            if (verifyResponse.data.success) {
+              toast({
+                title: "Success!",
+                description: `${pkg.coins} health coins added to your wallet`,
+              });
+
+              onSuccess();
+              onOpenChange(false);
+            } else {
+              throw new Error(verifyResponse.data.message || 'Payment verification failed');
+            }
+          } catch (error: any) {
+            toast({
+              title: "Verification Error",
+              description: error.response?.data?.message || error.message || "Failed to verify payment",
+              variant: "destructive",
+            });
+          } finally {
+            setProcessing(false);
+          }
+        },
+        prefill: {
+          name: '',
+          email: '',
+          contact: ''
+        },
+        theme: {
+          color: '#14b8a6' // Teal color
+        },
+        modal: {
+          ondismiss: function() {
+            setProcessing(false);
+            toast({
+              title: "Payment Cancelled",
+              description: "You cancelled the payment",
+              variant: "default",
+            });
+          }
+        }
+      };
+
+      const razorpay = new window.Razorpay(options);
+      razorpay.open();
       
-      const response = await api.post('/wallet/purchase', {
-        packageId: selectedPackage,
-        paymentMethod: 'demo',
-        paymentTransactionId: `TXN${Date.now()}`,
-        amountPaid: pkg.price
-      });
-
-      toast({
-        title: "Success!",
-        description: `${pkg.coins} health coins added to your wallet`,
-      });
-
-      onSuccess();
-      onOpenChange(false);
     } catch (error: any) {
+      setProcessing(false);
       toast({
         title: "Error",
-        description: error.response?.data?.message || "Purchase failed",
+        description: error.response?.data?.message || error.message || "Failed to initiate payment",
         variant: "destructive",
       });
-    } finally {
-      setProcessing(false);
     }
   };
 

@@ -12,6 +12,7 @@ import { fileURLToPath } from 'url';
 import { Prescription, Appointment, User, Doctor } from '../models/index.js';
 import { EHRRecord, HealthDiary } from '../models/index.js';
 import { authUser, authDoctor } from '../middleware/auth.middleware.js';
+import { JWT_CONFIG } from '../config/auth.config.js';
 
 const router = express.Router();
 const __filename = fileURLToPath(import.meta.url);
@@ -21,7 +22,7 @@ const __dirname = path.dirname(__filename);
 const renderPrescriptionHTML = (prescription) => {
   const templatePath = path.join(__dirname, '../templates/documents/prescription-template.html');
   let template = fs.readFileSync(templatePath, 'utf-8');
-  
+
   // Basic replacements
   const replacements = {
     '{{clinicName}}': prescription.clinicName || prescription.clinicDetails?.name || 'Mediczy Healthcare',
@@ -44,10 +45,10 @@ const renderPrescriptionHTML = (prescription) => {
     '{{weight}}': prescription.vitals?.weight || 'N/A',
     '{{chiefComplaints}}': prescription.chiefComplaints || 'As discussed during consultation',
     '{{diagnosis}}': prescription.diagnosis || 'N/A',
-    '{{followUpDate}}': prescription.followUpDate 
+    '{{followUpDate}}': prescription.followUpDate
       ? new Date(prescription.followUpDate).toLocaleDateString('en-IN', {
-          day: 'numeric', month: 'long', year: 'numeric'
-        })
+        day: 'numeric', month: 'long', year: 'numeric'
+      })
       : 'As needed',
     '{{validityDays}}': prescription.validityDays || 30,
     '{{doctorName}}': prescription.doctorName || 'Doctor',
@@ -57,12 +58,12 @@ const renderPrescriptionHTML = (prescription) => {
     '{{doctorId}}': prescription.doctorId || 'N/A',
     '{{generatedDateTime}}': new Date().toLocaleString('en-IN')
   };
-  
+
   // Apply replacements
   for (const [key, value] of Object.entries(replacements)) {
     template = template.replace(new RegExp(key.replace(/[{}]/g, '\\$&'), 'g'), value);
   }
-  
+
   // Handle medications table
   const medications = prescription.medications || [];
   let medicationsHTML = '';
@@ -81,10 +82,10 @@ const renderPrescriptionHTML = (prescription) => {
       </tr>
     `;
   });
-  
+
   // Replace medications placeholder
   template = template.replace(/\{\{#medications\}\}[\s\S]*?\{\{\/medications\}\}/g, medicationsHTML);
-  
+
   // Handle lab tests
   const labTests = prescription.labTests || [];
   if (labTests.length > 0) {
@@ -99,7 +100,7 @@ const renderPrescriptionHTML = (prescription) => {
     // Remove tests section if no tests
     template = template.replace(/\{\{#hasTests\}\}[\s\S]*?\{\{\/hasTests\}\}/g, '');
   }
-  
+
   // Handle instructions
   const instructions = prescription.instructions || ['Complete the full course of medications', 'Contact doctor if symptoms worsen'];
   let instructionsHTML = '';
@@ -108,7 +109,7 @@ const renderPrescriptionHTML = (prescription) => {
     instructionsHTML += `<li>✓ ${instruction}</li>`;
   });
   template = template.replace(/\{\{#instructions\}\}[\s\S]*?\{\{\/instructions\}\}/g, instructionsHTML);
-  
+
   return template;
 };
 
@@ -127,7 +128,7 @@ router.post('/from-appointment/:appointmentId', authUser, [
     if (!errors.isEmpty()) {
       return res.status(400).json({ success: false, errors: errors.array() });
     }
-    
+
     const { appointmentId } = req.params;
     const {
       diagnosis,
@@ -140,24 +141,24 @@ router.post('/from-appointment/:appointmentId', authUser, [
       validityDays,
       notes
     } = req.body;
-    
+
     // Get appointment details
     const appointment = await Appointment.findByPk(appointmentId);
     if (!appointment) {
       return res.status(404).json({ success: false, message: 'Appointment not found' });
     }
-    
+
     // Verify doctor access
     if (appointment.doctorId !== req.user.id) {
       return res.status(403).json({ success: false, message: 'You can only create prescriptions for your own appointments' });
     }
-    
+
     // Get doctor info
     const doctor = await Doctor.findByPk(req.user.id);
     if (!doctor) {
       return res.status(403).json({ success: false, message: 'Doctor access required' });
     }
-    
+
     // Get patient info
     const patient = await User.findByPk(appointment.userId);
     let patientData = {
@@ -166,7 +167,7 @@ router.post('/from-appointment/:appointmentId', authUser, [
       patientGender: 'Not specified',
       patientPhone: appointment.patientPhone
     };
-    
+
     if (patient) {
       let patientAge = null;
       if (patient.dateOfBirth) {
@@ -174,7 +175,7 @@ router.post('/from-appointment/:appointmentId', authUser, [
         const today = new Date();
         patientAge = today.getFullYear() - dob.getFullYear();
       }
-      
+
       patientData = {
         patientName: `${patient.firstName || ''} ${patient.lastName || ''}`.trim() || appointment.patientName,
         patientAge,
@@ -182,13 +183,13 @@ router.post('/from-appointment/:appointmentId', authUser, [
         patientPhone: patient.phoneNumber || patient.phone || appointment.patientPhone
       };
     }
-    
+
     // Determine if this was an online consultation
     const consultationType = appointment.consultationType || 'in-person';
-    const clinicAddress = consultationType === 'online' 
+    const clinicAddress = consultationType === 'online'
       ? 'Online Consultation / Telemedicine'
       : (doctor.clinicAddress || doctor.address?.street || 'Clinic');
-    
+
     // Create prescription linked to appointment
     const prescription = await Prescription.create({
       appointmentId: appointment.id,
@@ -196,8 +197,8 @@ router.post('/from-appointment/:appointmentId', authUser, [
       ...patientData,
       doctorId: doctor.id,
       doctorName: `${doctor.firstName || ''} ${doctor.lastName || ''}`.trim(),
-      doctorQualifications: Array.isArray(doctor.qualifications) 
-        ? doctor.qualifications.join(', ') 
+      doctorQualifications: Array.isArray(doctor.qualifications)
+        ? doctor.qualifications.join(', ')
         : (doctor.qualifications || doctor.qualification || 'MBBS'),
       doctorRegNo: doctor.registrationNumber || doctor.licenseNumber || 'N/A',
       specialty: doctor.specialization || 'General Medicine',
@@ -214,8 +215,8 @@ router.post('/from-appointment/:appointmentId', authUser, [
         consultationType
       },
       diagnosis,
-      chiefComplaints: typeof chiefComplaints === 'string' 
-        ? [chiefComplaints] 
+      chiefComplaints: typeof chiefComplaints === 'string'
+        ? [chiefComplaints]
         : (Array.isArray(chiefComplaints) ? chiefComplaints : appointment.symptoms || []),
       medications,
       labTests: labTests || [],
@@ -230,16 +231,16 @@ router.post('/from-appointment/:appointmentId', authUser, [
       notes: notes || appointment.notes,
       status: 'active'
     });
-    
+
     // Update appointment with prescription reference
     await Appointment.update(
-      { 
+      {
         prescription: prescription.prescriptionId,
-        status: 'completed' 
+        status: 'completed'
       },
       { where: { id: appointmentId } }
     );
-    
+
     res.status(201).json({
       success: true,
       message: `Prescription created successfully for ${consultationType} consultation`,
@@ -283,7 +284,7 @@ router.post('/', authUser, [
     if (!errors.isEmpty()) {
       return res.status(400).json({ success: false, errors: errors.array() });
     }
-    
+
     const {
       appointmentId,
       userId,
@@ -302,16 +303,16 @@ router.post('/', authUser, [
       validityDays,
       notes
     } = req.body;
-    
+
     // Use patientId or userId
     const patientUserId = patientId || userId;
-    
+
     // Get doctor info
     const doctor = await Doctor.findByPk(req.user.id);
     if (!doctor) {
       return res.status(403).json({ success: false, message: 'Doctor access required' });
     }
-    
+
     // Get patient info if available, otherwise use provided data
     let patientData = {
       patientName: reqPatientName || 'Patient',
@@ -319,7 +320,7 @@ router.post('/', authUser, [
       patientGender: reqPatientGender || 'Not specified',
       patientPhone: reqPatientPhone
     };
-    
+
     if (patientUserId) {
       const patient = await User.findByPk(patientUserId);
       if (patient) {
@@ -330,7 +331,7 @@ router.post('/', authUser, [
           const today = new Date();
           patientAge = today.getFullYear() - dob.getFullYear();
         }
-        
+
         patientData = {
           patientName: reqPatientName || `${patient.firstName || ''} ${patient.lastName || ''}`.trim() || 'Patient',
           patientAge,
@@ -339,7 +340,7 @@ router.post('/', authUser, [
         };
       }
     }
-    
+
     // Create prescription
     const prescription = await Prescription.create({
       appointmentId,
@@ -347,8 +348,8 @@ router.post('/', authUser, [
       ...patientData,
       doctorId: doctor.id,
       doctorName: `${doctor.firstName || ''} ${doctor.lastName || ''}`.trim(),
-      doctorQualifications: Array.isArray(doctor.qualifications) 
-        ? doctor.qualifications.join(', ') 
+      doctorQualifications: Array.isArray(doctor.qualifications)
+        ? doctor.qualifications.join(', ')
         : (doctor.qualifications || doctor.qualification || 'MBBS'),
       doctorRegNo: doctor.registrationNumber || doctor.licenseNumber || 'N/A',
       specialty: doctor.specialization || 'General Medicine',
@@ -364,8 +365,8 @@ router.post('/', authUser, [
         specialty: doctor.specialization
       },
       diagnosis,
-      chiefComplaints: typeof chiefComplaints === 'string' 
-        ? [chiefComplaints] 
+      chiefComplaints: typeof chiefComplaints === 'string'
+        ? [chiefComplaints]
         : (Array.isArray(chiefComplaints) ? chiefComplaints : []),
       medications,
       labTests: labTests || [],
@@ -380,7 +381,7 @@ router.post('/', authUser, [
       notes,
       status: 'draft'
     });
-    
+
     // Update appointment with prescription reference if provided
     if (appointmentId) {
       await Appointment.update(
@@ -388,7 +389,7 @@ router.post('/', authUser, [
         { where: { id: appointmentId } }
       );
     }
-    
+
     res.status(201).json({
       success: true,
       message: 'Prescription created successfully',
@@ -422,21 +423,21 @@ router.get('/doctor', authUser, async (req, res) => {
   try {
     // Get doctor ID from various possible locations
     const doctorId = req.user?.id || req.user?.dataValues?.id || req.user?._id;
-    
+
     // Check if user has doctor role from token
     if (req.user?.role !== 'doctor' && req.userRole !== 'doctor') {
       return res.status(403).json({ success: false, message: 'Doctor access required' });
     }
-    
+
     if (!doctorId) {
       return res.status(400).json({ success: false, message: 'Doctor ID not found in token' });
     }
-    
+
     const prescriptions = await Prescription.findAll({
       where: { doctorId: parseInt(doctorId) },
       order: [['createdAt', 'DESC']]
     });
-    
+
     res.json({
       success: true,
       count: prescriptions.length,
@@ -460,12 +461,12 @@ router.get('/doctor', authUser, async (req, res) => {
 router.get('/patient', authUser, async (req, res) => {
   try {
     const patientId = req.user.id;
-    
+
     const prescriptions = await Prescription.findAll({
       where: { patientId },
       order: [['createdAt', 'DESC']]
     });
-    
+
     res.json({
       success: true,
       count: prescriptions.length,
@@ -489,26 +490,26 @@ router.get('/patient', authUser, async (req, res) => {
 router.get('/:id', authUser, async (req, res) => {
   try {
     const { id } = req.params;
-    
+
     // Find by ID or prescriptionId
     const prescription = await Prescription.findOne({
-      where: isNaN(id) 
+      where: isNaN(id)
         ? { prescriptionId: id }
         : { id: parseInt(id) }
     });
-    
+
     if (!prescription) {
       return res.status(404).json({ success: false, message: 'Prescription not found' });
     }
-    
+
     // Check access (patient or doctor)
     const userId = req.user.id;
     const userRole = req.user.role;
-    
+
     if (userRole !== 'doctor' && prescription.patientId !== userId) {
       return res.status(403).json({ success: false, message: 'Access denied' });
     }
-    
+
     res.json({
       success: true,
       prescription
@@ -533,17 +534,17 @@ router.get('/patient/:patientId', authUser, async (req, res) => {
     const { patientId } = req.params;
     const requesterId = req.user.id;
     const userRole = req.user.role;
-    
+
     // Only allow patient to see their own or doctor to see any
     if (userRole !== 'doctor' && parseInt(patientId) !== requesterId) {
       return res.status(403).json({ success: false, message: 'Access denied' });
     }
-    
+
     const prescriptions = await Prescription.findAll({
       where: { patientId: parseInt(patientId) },
       order: [['createdAt', 'DESC']]
     });
-    
+
     res.json({
       success: true,
       count: prescriptions.length,
@@ -576,12 +577,12 @@ router.get('/patient/:patientId', authUser, async (req, res) => {
 router.get('/my/all', authUser, async (req, res) => {
   try {
     const patientId = req.user.id;
-    
+
     const prescriptions = await Prescription.findAll({
       where: { patientId },
       order: [['createdAt', 'DESC']]
     });
-    
+
     res.json({
       success: true,
       count: prescriptions.length,
@@ -605,26 +606,26 @@ router.get('/my/all', authUser, async (req, res) => {
 router.get('/appointment/:appointmentId', authUser, async (req, res) => {
   try {
     const { appointmentId } = req.params;
-    
+
     const prescription = await Prescription.findOne({
       where: { appointmentId: parseInt(appointmentId) }
     });
-    
+
     if (!prescription) {
-      return res.status(404).json({ 
-        success: false, 
-        message: 'No prescription found for this appointment' 
+      return res.status(404).json({
+        success: false,
+        message: 'No prescription found for this appointment'
       });
     }
-    
+
     // Check access
     const userId = req.user.id;
     const userRole = req.user.role;
-    
+
     if (userRole !== 'doctor' && prescription.userId !== userId) {
       return res.status(403).json({ success: false, message: 'Access denied' });
     }
-    
+
     res.json({
       success: true,
       prescription
@@ -647,19 +648,19 @@ router.get('/appointment/:appointmentId', authUser, async (req, res) => {
 router.get('/doctor/issued', authUser, async (req, res) => {
   try {
     const doctorId = req.user.id;
-    
+
     // Verify doctor
     const doctor = await Doctor.findByPk(doctorId);
     if (!doctor) {
       return res.status(403).json({ success: false, message: 'Doctor access required' });
     }
-    
+
     const prescriptions = await Prescription.findAll({
       where: { doctorId },
       order: [['createdAt', 'DESC']],
       limit: 100
     });
-    
+
     res.json({
       success: true,
       count: prescriptions.length,
@@ -691,22 +692,22 @@ router.get('/doctor/issued', authUser, async (req, res) => {
 router.put('/:id', authUser, async (req, res) => {
   try {
     const { id } = req.params;
-    
+
     const prescription = await Prescription.findByPk(id);
     if (!prescription) {
       return res.status(404).json({ success: false, message: 'Prescription not found' });
     }
-    
+
     // Check if doctor owns this prescription
     if (prescription.doctorId !== req.user.id) {
       return res.status(403).json({ success: false, message: 'Not authorized to update this prescription' });
     }
-    
+
     // Cannot update dispensed prescriptions
     if (prescription.status === 'dispensed') {
       return res.status(400).json({ success: false, message: 'Cannot update dispensed prescription' });
     }
-    
+
     const {
       diagnosis,
       chiefComplaints,
@@ -717,7 +718,7 @@ router.put('/:id', authUser, async (req, res) => {
       followUpDate,
       notes
     } = req.body;
-    
+
     await prescription.update({
       diagnosis: diagnosis || prescription.diagnosis,
       chiefComplaints: chiefComplaints || prescription.chiefComplaints,
@@ -728,7 +729,7 @@ router.put('/:id', authUser, async (req, res) => {
       followUpDate: followUpDate || prescription.followUpDate,
       notes: notes || prescription.notes
     });
-    
+
     res.json({
       success: true,
       message: 'Prescription updated successfully',
@@ -753,30 +754,30 @@ router.patch('/:id/status', authUser, async (req, res) => {
   try {
     const { id } = req.params;
     const { status } = req.body;
-    
+
     const validStatuses = ['draft', 'issued', 'dispensed', 'cancelled', 'expired'];
     if (!validStatuses.includes(status)) {
       return res.status(400).json({ success: false, message: 'Invalid status' });
     }
-    
+
     const prescription = await Prescription.findByPk(id);
     if (!prescription) {
       return res.status(404).json({ success: false, message: 'Prescription not found' });
     }
-    
+
     const previousStatus = prescription.status;
-    await prescription.update({ 
+    await prescription.update({
       status,
       issuedAt: status === 'issued' ? new Date() : prescription.issuedAt
     });
-    
+
     // When prescription is issued, create EHR record and health diary entries
     if (status === 'issued' && previousStatus !== 'issued' && prescription.patientId) {
       try {
         // Create EHR record
         const ehrRecord = await EHRRecord.createFromPrescription(prescription);
         console.log(`✅ EHR record created for prescription ${prescription.prescriptionNumber}`);
-        
+
         // Create health diary entries
         await HealthDiary.createFromPrescription(prescription, ehrRecord.id);
         console.log(`✅ Health diary entries created for patient ${prescription.patientId}`);
@@ -785,7 +786,7 @@ router.patch('/:id/status', authUser, async (req, res) => {
         // Don't fail the request, just log the error
       }
     }
-    
+
     res.json({
       success: true,
       message: 'Prescription status updated',
@@ -812,26 +813,26 @@ router.get('/:id/html', async (req, res) => {
   try {
     const { id } = req.params;
     const { token } = req.query;
-    
+
     const prescription = await Prescription.findOne({
-      where: isNaN(id) 
+      where: isNaN(id)
         ? { prescriptionId: id }
         : { id: parseInt(id) }
     });
-    
+
     if (!prescription) {
       return res.status(404).json({ success: false, message: 'Prescription not found' });
     }
-    
+
     // Check access - either via Authorization header or query token
     let authenticated = false;
-    
+
     // Try authorization header first
     if (req.headers.authorization) {
       try {
         const headerToken = req.headers.authorization.split(' ')[1];
         const jwt = await import('jsonwebtoken');
-        const decoded = jwt.default.verify(headerToken, process.env.JWT_SECRET);
+        const decoded = jwt.default.verify(headerToken, JWT_CONFIG.SECRET);
         if (decoded.role === 'doctor' || decoded.id === prescription.patientId) {
           authenticated = true;
         }
@@ -839,12 +840,12 @@ router.get('/:id/html', async (req, res) => {
         // Header auth failed, will try query token
       }
     }
-    
+
     // Try query token if header auth failed
     if (!authenticated && token) {
       try {
         const jwt = await import('jsonwebtoken');
-        const decoded = jwt.default.verify(token, process.env.JWT_SECRET);
+        const decoded = jwt.default.verify(token, JWT_CONFIG.SECRET);
         if (decoded.role === 'doctor' || decoded.id === prescription.patientId) {
           authenticated = true;
         }
@@ -852,14 +853,14 @@ router.get('/:id/html', async (req, res) => {
         // Query token also failed
       }
     }
-    
+
     if (!authenticated) {
       return res.status(403).json({ success: false, message: 'Access denied. Please login to view prescription.' });
     }
-    
+
     // Generate HTML
     const html = renderPrescriptionHTML(prescription);
-    
+
     // Add print button at the top
     const printableHTML = html.replace(
       '</head>',
@@ -896,7 +897,7 @@ router.get('/:id/html', async (req, res) => {
       `<body>
         <button class="print-button no-print" onclick="printPrescription()">🖨️ Print Prescription</button>`
     );
-    
+
     res.setHeader('Content-Type', 'text/html');
     res.send(printableHTML);
   } catch (error) {
@@ -918,26 +919,26 @@ router.get('/:id/pdf', async (req, res) => {
   try {
     const { id } = req.params;
     const { token } = req.query;
-    
+
     const prescription = await Prescription.findOne({
-      where: isNaN(id) 
+      where: isNaN(id)
         ? { prescriptionId: id }
         : { id: parseInt(id) }
     });
-    
+
     if (!prescription) {
       return res.status(404).json({ success: false, message: 'Prescription not found' });
     }
-    
+
     // Check access - either via Authorization header or query token
     let authenticated = false;
-    
+
     // Try authorization header first
     if (req.headers.authorization) {
       try {
         const headerToken = req.headers.authorization.split(' ')[1];
         const jwt = await import('jsonwebtoken');
-        const decoded = jwt.default.verify(headerToken, process.env.JWT_SECRET);
+        const decoded = jwt.default.verify(headerToken, JWT_CONFIG.SECRET);
         if (decoded.role === 'doctor' || decoded.id === prescription.patientId) {
           authenticated = true;
         }
@@ -945,12 +946,12 @@ router.get('/:id/pdf', async (req, res) => {
         // Header auth failed, will try query token
       }
     }
-    
+
     // Try query token if header auth failed
     if (!authenticated && token) {
       try {
         const jwt = await import('jsonwebtoken');
-        const decoded = jwt.default.verify(token, process.env.JWT_SECRET);
+        const decoded = jwt.default.verify(token, JWT_CONFIG.SECRET);
         if (decoded.role === 'doctor' || decoded.id === prescription.patientId) {
           authenticated = true;
         }
@@ -958,18 +959,18 @@ router.get('/:id/pdf', async (req, res) => {
         // Query token also failed
       }
     }
-    
+
     if (!authenticated) {
       return res.status(403).json({ success: false, message: 'Access denied. Please login to view prescription.' });
     }
-    
+
     // Generate HTML
     const html = renderPrescriptionHTML(prescription);
-    
+
     // Try to use html-pdf-node for PDF generation
     try {
       const htmlPdf = await import('html-pdf-node');
-      
+
       const options = {
         format: 'A4',
         printBackground: true,
@@ -980,20 +981,20 @@ router.get('/:id/pdf', async (req, res) => {
           left: '10mm'
         }
       };
-      
+
       const file = { content: html };
       const pdfBuffer = await htmlPdf.default.generatePdf(file, options);
-      
+
       // Save PDF to uploads directory
       const fs = await import('fs');
       const uploadsDir = path.join(__dirname, '../../uploads/prescriptions');
       if (!fs.existsSync(uploadsDir)) {
         fs.mkdirSync(uploadsDir, { recursive: true });
       }
-      
+
       const pdfPath = path.join(uploadsDir, `${prescription.prescriptionId}.pdf`);
       fs.writeFileSync(pdfPath, pdfBuffer);
-      
+
       res.setHeader('Content-Type', 'application/pdf');
       res.setHeader('Content-Disposition', `attachment; filename="prescription-${prescription.prescriptionId}.pdf"`);
       res.send(pdfBuffer);
@@ -1022,42 +1023,42 @@ router.get('/:id/pdf', async (req, res) => {
 router.get('/:id/share/whatsapp', authUser, async (req, res) => {
   try {
     const { id } = req.params;
-    
+
     const prescription = await Prescription.findOne({
-      where: isNaN(id) 
+      where: isNaN(id)
         ? { prescriptionId: id }
         : { id: parseInt(id) }
     });
-    
+
     if (!prescription) {
       return res.status(404).json({ success: false, message: 'Prescription not found' });
     }
-    
+
     // Check access
     const userId = req.user.id;
     const userRole = req.user.role;
-    
+
     if (userRole !== 'doctor' && prescription.patientId !== userId) {
       return res.status(403).json({ success: false, message: 'Access denied' });
     }
-    
+
     // Generate shareable link
     const baseUrl = process.env.FRONTEND_URL || 'https://mediqzy.com';
-    
+
     // Get a fresh token for the patient to access the prescription
     const jwt = await import('jsonwebtoken');
     const shareToken = jwt.default.sign(
       { id: prescription.patientId, role: 'user' },
-      process.env.JWT_SECRET,
+      JWT_CONFIG.SECRET,
       { expiresIn: '30d' }
     );
-    
+
     const pdfUrl = `${baseUrl}/api/prescriptions/${prescription.prescriptionId}/pdf?token=${shareToken}`;
-    
+
     // Determine consultation type
-    const consultationType = prescription.clinicDetails?.consultationType || 
+    const consultationType = prescription.clinicDetails?.consultationType ||
       (prescription.clinicAddress && prescription.clinicAddress.includes('Online') ? 'Online Consultation' : 'Clinic Visit');
-    
+
     // WhatsApp message
     const message = `🏥 *Prescription from ${prescription.doctorName || 'Doctor'}*\n\n` +
       `Patient: ${prescription.patientName}\n` +
@@ -1065,9 +1066,9 @@ router.get('/:id/share/whatsapp', authUser, async (req, res) => {
       `Consultation Type: ${consultationType}\n` +
       `Prescription ID: ${prescription.prescriptionId}\n\n` +
       `📥 Download: ${pdfUrl}`;
-    
+
     const whatsappUrl = `https://wa.me/?text=${encodeURIComponent(message)}`;
-    
+
     res.json({
       success: true,
       whatsappUrl,
@@ -1093,38 +1094,38 @@ router.get('/:id/share/whatsapp', authUser, async (req, res) => {
 router.post('/:id/share/whatsapp/:phone', authDoctor, async (req, res) => {
   try {
     const { id, phone } = req.params;
-    
+
     const prescription = await Prescription.findOne({
-      where: isNaN(id) 
+      where: isNaN(id)
         ? { prescriptionId: id }
         : { id: parseInt(id) }
     });
-    
+
     if (!prescription) {
       return res.status(404).json({ success: false, message: 'Prescription not found' });
     }
-    
+
     // Generate prescription URL
     const baseUrl = process.env.FRONTEND_URL || 'https://mediqzy.com';
-    
+
     // Create a share token for the patient
     const jwt = await import('jsonwebtoken');
     const shareToken = jwt.default.sign(
       { id: prescription.patientId, role: 'user' },
-      process.env.JWT_SECRET,
+      JWT_CONFIG.SECRET,
       { expiresIn: '30d' }
     );
-    
+
     const prescriptionUrl = `${baseUrl}/api/prescriptions/${prescription.prescriptionId}/html?token=${shareToken}`;
     const pdfUrl = `${baseUrl}/api/prescriptions/${prescription.prescriptionId}/pdf?token=${shareToken}`;
-    
+
     // Format phone number (remove +91 if present, then add it)
     const formattedPhone = phone.replace(/[^0-9]/g, '').replace(/^91/, '');
-    
+
     // Determine consultation type
-    const consultationType = prescription.clinicDetails?.consultationType || 
+    const consultationType = prescription.clinicDetails?.consultationType ||
       (prescription.clinicAddress && prescription.clinicAddress.includes('Online') ? 'Online Consultation' : 'Clinic Visit');
-    
+
     // WhatsApp message for specific patient
     const message = `🏥 *Medical Prescription*\n\n` +
       `Dear ${prescription.patientName},\n\n` +
@@ -1137,9 +1138,9 @@ router.post('/:id/share/whatsapp/:phone', authDoctor, async (req, res) => {
       `📱 *View Online:* ${prescriptionUrl}\n\n` +
       `⚕️ Please follow the prescribed medications and instructions.\n\n` +
       `For any queries, contact: ${prescription.clinicPhone || 'your clinic'}`;
-    
+
     const whatsappUrl = `https://wa.me/91${formattedPhone}?text=${encodeURIComponent(message)}`;
-    
+
     res.json({
       success: true,
       whatsappUrl,
@@ -1167,17 +1168,17 @@ router.post('/:id/share/whatsapp/:phone', authDoctor, async (req, res) => {
 router.delete('/:id', authUser, async (req, res) => {
   try {
     const { id } = req.params;
-    
+
     const prescription = await Prescription.findByPk(id);
     if (!prescription) {
       return res.status(404).json({ success: false, message: 'Prescription not found' });
     }
-    
+
     // Check if doctor owns this prescription
     if (prescription.doctorId !== req.user.id) {
       return res.status(403).json({ success: false, message: 'Not authorized to delete this prescription' });
     }
-    
+
     // Cannot delete dispensed prescriptions, only cancel
     if (prescription.status === 'dispensed') {
       await prescription.update({ status: 'cancelled' });
@@ -1187,10 +1188,10 @@ router.delete('/:id', authUser, async (req, res) => {
         prescriptionId: prescription.prescriptionId
       });
     }
-    
+
     // Soft delete by cancelling
     await prescription.update({ status: 'cancelled' });
-    
+
     res.json({
       success: true,
       message: 'Prescription cancelled',

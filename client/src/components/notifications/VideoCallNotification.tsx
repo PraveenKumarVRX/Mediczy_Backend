@@ -146,8 +146,8 @@ export default function VideoCallNotification() {
     if ('Notification' in window && Notification.permission === 'granted') {
       const notification = new Notification(data.title, {
         body: data.message,
-        icon: '/logo.png',
-        badge: '/logo.png',
+        icon: '/logo/Mediqzy_logo.jpeg',
+        badge: '/logo/Mediqzy_logo.jpeg',
         tag: `appointment-${data.appointmentId}`,
         requireInteraction: data.persistent,
         vibrate: data.vibrate ? [500, 200, 500] : undefined

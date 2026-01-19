@@ -1,4 +1,5 @@
 import userModel from '../models/user.model.intelligent.js';
+import { JWT_CONFIG } from '../config/auth.config.js';
 import Doctor from '../models/doctor.model.intelligent.js';
 import bcrypt from 'bcrypt';
 import jwt from 'jsonwebtoken';
@@ -249,7 +250,7 @@ export const adminLogin = async (req, res) => {
           loginTime: new Date().toISOString(),
           clientIP
         },
-        process.env.JWT_SECRET || 'MediczYJWTK3yS3cur3AndStr0ng2024!',
+        JWT_CONFIG.SECRET || 'MediczYJWTK3yS3cur3AndStr0ng2024!',
         { expiresIn: PRODUCTION_CONFIG.SECURITY.JWT_EXPIRY }
       );
       

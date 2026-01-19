@@ -22,6 +22,7 @@ import { generateDoctorTemplate } from '@/utils/excelTemplates';
 import { parseExcelFile } from '@/utils/excelParser';
 import ProviderDetailModal from '@/components/providers/ProviderDetailModal';
 import ProviderAnalytics from '@/components/providers/ProviderAnalytics';
+import MEDICAL_SPECIALTIES from '@/constants/medical-specialties';
 
 // Get API base URL from environment
 const API_BASE_URL = import.meta.env.VITE_API_URL || '/api';
@@ -139,17 +140,23 @@ const DoctorsManagement = () => {
     try {
       const headers = token ? { 'Authorization': `Bearer ${token}` } : {};
       
+      // Set default specialties from constant
+      setSpecialties(MEDICAL_SPECIALTIES);
+      
       const [citiesRes, statesRes, specialtiesRes] = await Promise.all([
-        axios.get(`${API_BASE_URL}/admin/doctors/filters/cities`, { headers }),
-        axios.get(`${API_BASE_URL}/admin/doctors/filters/states`, { headers }),
-        axios.get(`${API_BASE_URL}/admin/doctors/filters/specialties`, { headers }),
+        axios.get(`${API_BASE_URL}/admin/doctors/filters/cities`, { headers }).catch(() => ({ data: { success: false } })),
+        axios.get(`${API_BASE_URL}/admin/doctors/filters/states`, { headers }).catch(() => ({ data: { success: false } })),
+        axios.get(`${API_BASE_URL}/admin/doctors/filters/specialties`, { headers }).catch(() => ({ data: { success: false } })),
       ]);
       
       if (citiesRes.data.success) setCities(citiesRes.data.data);
       if (statesRes.data.success) setStates(statesRes.data.data);
       if (specialtiesRes.data.success) setSpecialties(specialtiesRes.data.data);
+      // If API fails, we keep the MEDICAL_SPECIALTIES constant set above
     } catch (err) {
       console.error('Failed to fetch filter options:', err);
+      // Ensure specialties are available even if fetch fails
+      setSpecialties(MEDICAL_SPECIALTIES);
     }
   };
 

@@ -18,12 +18,12 @@ const verifyPharmacyToken = (req, res, next) => {
     if (!token) {
       return res.status(401).json({ success: false, message: 'Unauthorized' });
     }
-    
-    const decoded = jwt.verify(token, process.env.JWT_SECRET);
+
+    const decoded = jwt.verify(token, JWT_CONFIG.SECRET);
     if (decoded.type !== 'pharmacy') {
       return res.status(403).json({ success: false, message: 'Access denied' });
     }
-    
+
     req.pharmacyId = decoded.id;
     req.pharmacyToken = decoded;
     next();
@@ -85,7 +85,7 @@ router.get('/stats', verifyPharmacyToken, async (req, res) => {
         ],
       }
     };
-    
+
     res.json(stats);
   } catch (error) {
     console.error('Dashboard stats error:', error);
@@ -123,7 +123,7 @@ router.get('/quick-actions', verifyPharmacyToken, async (req, res) => {
         ]
       }
     };
-    
+
     res.json(actions);
   } catch (error) {
     console.error('Quick actions error:', error);

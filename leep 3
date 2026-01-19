@@ -1,0 +1,23 @@
+                                         Table "public.lab_orders"
+    Column    |            Type             | Collation | Nullable |                Default                 
+--------------+-----------------------------+-----------+----------+----------------------------------------
+ id           | integer                     |           | not null | nextval('lab_orders_id_seq'::regclass)
+ order_number | character varying(100)      |           | not null | 
+ patient_id   | integer                     |           | not null | 
+ hospital_id  | integer                     |           | not null | 
+ tests        | jsonb                       |           |          | 
+ priority     | character varying(20)       |           |          | 'routine'::character varying
+ notes        | text                        |           |          | 
+ total_amount | numeric(10,2)               |           |          | 
+ status       | character varying(50)       |           |          | 'ordered'::character varying
+ ordered_at   | timestamp without time zone |           |          | now()
+ completed_at | timestamp without time zone |           |          | 
+ created_at   | timestamp without time zone |           |          | now()
+ updated_at   | timestamp without time zone |           |          | now()
+Indexes:
+    "lab_orders_pkey" PRIMARY KEY, btree (id)
+    "idx_lab_orders_hospital" btree (hospital_id)
+    "idx_lab_orders_patient" btree (patient_id)
+    "idx_lab_orders_status" btree (status)
+    "lab_orders_order_number_key" UNIQUE CONSTRAINT, btree (order_number)
+

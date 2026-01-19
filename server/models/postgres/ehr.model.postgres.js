@@ -1,4 +1,5 @@
 /**
+import { JWT_CONFIG } from '../../config/auth.config.js';
  * PostgreSQL EHR (Electronic Health Record) Model
  * Primary database model replacing MariaDB
  *

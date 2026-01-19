@@ -95,7 +95,8 @@ const SettingsPage = () => {
     paymentNotifications: true,
     marketingEmails: false,
     weeklyReports: true,
-    criticalAlertsOnly: false
+    criticalAlertsOnly: false,
+    alertEmail: 'support@mediqzy.com'
   });
 
   // System Settings
@@ -687,6 +688,24 @@ const SettingsPage = () => {
                         onCheckedChange={(checked) => setNotificationSettings({ ...notificationSettings, whatsappNotifications: checked })}
                       />
                     </div>
+                  </div>
+                </div>
+
+                <Separator />
+
+                <div className="space-y-4">
+                  <h3 className="text-sm font-semibold">Alert Email Configuration</h3>
+                  <div className="space-y-2">
+                    <Label htmlFor="alertEmail">Alert Email Address</Label>
+                    <p className="text-xs text-muted-foreground">System alerts and critical notifications will be sent to this email</p>
+                    <Input
+                      id="alertEmail"
+                      type="email"
+                      placeholder="support@mediqzy.com"
+                      value={notificationSettings.alertEmail}
+                      onChange={(e) => setNotificationSettings({ ...notificationSettings, alertEmail: e.target.value })}
+                      className="max-w-md"
+                    />
                   </div>
                 </div>
 

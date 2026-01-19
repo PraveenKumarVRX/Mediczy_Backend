@@ -54,12 +54,6 @@ const TpaLogin = () => {
       return;
     }
 
-    // Development mode: Auto-set credentials
-    if (import.meta.env.DEV) {
-      setEmail('tpa@mediczy.com');
-      setPassword('SecurePass123');
-    }
-
     setIsCheckingAuth(false);
   }, [navigate]);
 

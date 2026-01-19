@@ -84,4 +84,18 @@
 
 .animate-pulse-shadow {
   animation: pulse-shadow 2s infinite;
-} 
+}
+
+/* Membership Card Shine Animation */
+@keyframes shine {
+  0% {
+    transform: translateX(-100%) translateY(-100%) rotate(30deg);
+  }
+  100% {
+    transform: translateX(100%) translateY(100%) rotate(30deg);
+  }
+}
+
+.animate-shine {
+  animation: shine 3s ease-in-out infinite;
+}

@@ -265,9 +265,9 @@ const AdminAppointments = () => {
   // Filter appointments
   const filteredAppointments = appointments.filter((appointment: Appointment) => {
     const matchesSearch =
-      appointment.patientName.toLowerCase().includes(searchQuery.toLowerCase()) ||
-      appointment.doctorName.toLowerCase().includes(searchQuery.toLowerCase()) ||
-      appointment.patientEmail.toLowerCase().includes(searchQuery.toLowerCase());
+      (appointment.patientName?.toLowerCase() || '').includes(searchQuery.toLowerCase()) ||
+      (appointment.doctorName?.toLowerCase() || '').includes(searchQuery.toLowerCase()) ||
+      (appointment.patientEmail?.toLowerCase() || '').includes(searchQuery.toLowerCase());
 
     const matchesStatus = filterStatus === "all" || appointment.status === filterStatus;
     const matchesPayment = filterPaymentStatus === "all" || appointment.paymentStatus === filterPaymentStatus;
@@ -442,10 +442,10 @@ const AdminAppointments = () => {
                       </div>
                       <div className="flex flex-col items-end gap-2">
                         <Badge className={getStatusColor(appointment.status)}>
-                          {appointment.status.toUpperCase().replace("-", " ")}
+                          {(appointment.status || 'scheduled').toUpperCase().replace("-", " ")}
                         </Badge>
                         <Badge className={getPaymentStatusColor(appointment.paymentStatus)}>
-                          {appointment.paymentStatus.toUpperCase()}
+                          {(appointment.paymentStatus || 'pending').toUpperCase()}
                         </Badge>
                         <div className="flex gap-2">
                           <Button
@@ -523,7 +523,7 @@ const AdminAppointments = () => {
                               </div>
                             </div>
                             <Badge className={getPaymentStatusColor(appointment.paymentStatus)}>
-                              {appointment.paymentStatus.toUpperCase()}
+                              {(appointment.paymentStatus || 'pending').toUpperCase()}
                             </Badge>
                             <div className="flex gap-2 mt-2">
                               <Button
@@ -601,13 +601,13 @@ const AdminAppointments = () => {
                   <div>
                     <Label className="text-xs text-muted-foreground">Status</Label>
                     <Badge className={getStatusColor(selectedAppointment.status)}>
-                      {selectedAppointment.status.toUpperCase()}
+                      {(selectedAppointment.status || 'scheduled').toUpperCase()}
                     </Badge>
                   </div>
                   <div>
                     <Label className="text-xs text-muted-foreground">Payment</Label>
                     <Badge className={getPaymentStatusColor(selectedAppointment.paymentStatus)}>
-                      {selectedAppointment.paymentStatus.toUpperCase()}
+                      {(selectedAppointment.paymentStatus || 'pending').toUpperCase()}
                     </Badge>
                   </div>
                 </div>

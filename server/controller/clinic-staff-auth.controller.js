@@ -7,8 +7,9 @@ import User from '../models/postgres/user.model.postgres.js';
 import Tenant from '../models/postgres/tenant.model.postgres.js';
 import jwt from 'jsonwebtoken';
 import { Op } from 'sequelize';
+import { JWT_CONFIG } from '../config/auth.config.js';
 
-const JWT_SECRET = process.env.JWT_SECRET || 'mediczy-clinic-secret-key-2025';
+const JWT_SECRET = JWT_CONFIG.SECRET;
 
 // Rate limiting for staff login
 const loginAttempts = new Map();
@@ -18,17 +19,17 @@ const MAX_ATTEMPTS = 5;
 const checkRateLimit = (email) => {
   const now = Date.now();
   const attempts = loginAttempts.get(email) || { count: 0, resetTime: now + RATE_LIMIT_WINDOW };
-  
+
   if (now > attempts.resetTime) {
     // Reset rate limit window
     loginAttempts.set(email, { count: 1, resetTime: now + RATE_LIMIT_WINDOW });
     return true;
   }
-  
+
   if (attempts.count >= MAX_ATTEMPTS) {
     return false;
   }
-  
+
   attempts.count += 1;
   loginAttempts.set(email, attempts);
   return true;

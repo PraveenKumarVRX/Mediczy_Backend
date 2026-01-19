@@ -1,4 +1,5 @@
 import userModel from '../models/user.model.intelligent.js';
+import { JWT_CONFIG } from '../config/auth.config.js';
 import doctorModel from '../models/doctor.model.intelligent.js';
 import bcrypt from 'bcrypt';
 import jwt from 'jsonwebtoken';
@@ -56,7 +57,7 @@ export const adminLogin = async (req, res) => {
   const clientIP = req.ip || req.connection.remoteAddress || req.headers['x-forwarded-for'] || 'unknown';
   const userAgent = req.headers['user-agent'] || 'unknown';
 
-  if (!process.env.JWT_SECRET) {
+  if (!JWT_CONFIG.SECRET) {
     console.error('FATAL: JWT_SECRET environment variable not set!');
     return res.status(500).json({
       success: false,
@@ -146,7 +147,7 @@ export const adminLogin = async (req, res) => {
           isAdmin: true,
           loginTime: new Date().toISOString()
         },
-        process.env.JWT_SECRET,
+        JWT_CONFIG.SECRET,
         { expiresIn: '8h' }
       );
       

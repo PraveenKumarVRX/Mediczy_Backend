@@ -6,6 +6,7 @@ import bcrypt from 'bcryptjs';
 import Medication from '../models/medication.model.intelligent.js';
 import PatientNote from '../models/patientNote.model.intelligent.js';
 import VitalsRecord from '../models/vitalsRecord.model.intelligent.js';
+import { JWT_CONFIG } from '../config/auth.config.js';
 
 const router = express.Router();
 
@@ -24,20 +25,20 @@ export const authNurse = async (req, res, next) => {
       };
       return next();
     }
-    
+
     if (!token) {
-      return res.status(401).json({ 
+      return res.status(401).json({
         success: false,
-        message: 'No authorization token provided' 
+        message: 'No authorization token provided'
       });
     }
 
-    const decoded = jwt.verify(token, process.env.JWT_SECRET);
-    
+    const decoded = jwt.verify(token, JWT_CONFIG.SECRET);
+
     if (decoded.role !== 'nurse') {
-      return res.status(403).json({ 
+      return res.status(403).json({
         success: false,
-        message: 'Access denied. Nurse privileges required.' 
+        message: 'Access denied. Nurse privileges required.'
       });
     }
 
@@ -50,17 +51,17 @@ export const authNurse = async (req, res, next) => {
     next();
   } catch (error) {
     console.error('Nurse authentication error:', error);
-    
+
     if (error.name === 'TokenExpiredError') {
-      return res.status(401).json({ 
+      return res.status(401).json({
         success: false,
-        message: 'Token expired. Please login again.' 
+        message: 'Token expired. Please login again.'
       });
     }
-    
-    return res.status(401).json({ 
+
+    return res.status(401).json({
       success: false,
-      message: 'Invalid or expired token' 
+      message: 'Invalid or expired token'
     });
   }
 };
@@ -76,15 +77,15 @@ router.post('/login', [
     console.log('🟢 [Nurse Login] Email:', email);
 
     // Hardcoded credentials removed for security - all nurses must be in database
-    
+
     // Check database for nurse
     console.log('🟢 [Nurse Login] Querying database...');
     let nurse;
     try {
-      nurse = await Nurse.findOne({ 
-        where: { 
+      nurse = await Nurse.findOne({
+        where: {
           email
-        } 
+        }
       });
       console.log('🟢 [Nurse Login] Query completed');
     } catch (queryError) {
@@ -94,9 +95,9 @@ router.post('/login', [
     console.log('🟢 [Nurse Login] Nurse found:', !!nurse);
 
     if (!nurse) {
-      return res.status(401).json({ 
+      return res.status(401).json({
         success: false,
-        message: 'Invalid email or password' 
+        message: 'Invalid email or password'
       });
     }
 
@@ -108,11 +109,11 @@ router.post('/login', [
       });
     }
     const isPasswordValid = await nurse.comparePassword(password);
-    
+
     if (!isPasswordValid) {
-      return res.status(401).json({ 
+      return res.status(401).json({
         success: false,
-        message: 'Invalid email or password' 
+        message: 'Invalid email or password'
       });
     }
 
@@ -128,7 +129,7 @@ router.post('/login', [
         role: 'nurse',
         userType: 'nurse'
       },
-      process.env.JWT_SECRET,
+      JWT_CONFIG.SECRET,
       { expiresIn: '8h' }
     );
 
@@ -154,10 +155,10 @@ router.post('/login', [
     console.error('❌ NURSE LOGIN ERROR:', error);
     console.error('❌ Error message:', error.message);
     console.error('❌ Error stack:', error.stack);
-    res.status(500).json({ 
+    res.status(500).json({
       success: false,
       message: 'Server error during login',
-      error: error.message 
+      error: error.message
     });
   }
 });
@@ -166,7 +167,7 @@ router.post('/login', [
 router.get('/profile', authNurse, async (req, res) => {
   try {
     let nurse;
-    
+
     // Handle test nurse
     if (req.nurse.id === 'nurse_001') {
       nurse = {
@@ -196,11 +197,11 @@ router.get('/profile', authNurse, async (req, res) => {
       nurse = await Nurse.findByPk(req.nurse.id, {
         attributes: { exclude: ['password'] }
       });
-      
+
       if (!nurse) {
-        return res.status(404).json({ 
+        return res.status(404).json({
           success: false,
-          message: 'Nurse not found' 
+          message: 'Nurse not found'
         });
       }
     }
@@ -211,10 +212,10 @@ router.get('/profile', authNurse, async (req, res) => {
     });
   } catch (error) {
     console.error('Get nurse profile error:', error);
-    res.status(500).json({ 
+    res.status(500).json({
       success: false,
       message: 'Server error',
-      error: error.message 
+      error: error.message
     });
   }
 });
@@ -233,11 +234,11 @@ router.put('/profile', authNurse, async (req, res) => {
     }
 
     const nurse = await Nurse.findByPk(req.nurse.id);
-    
+
     if (!nurse) {
-      return res.status(404).json({ 
+      return res.status(404).json({
         success: false,
-        message: 'Nurse not found' 
+        message: 'Nurse not found'
       });
     }
 
@@ -262,10 +263,10 @@ router.put('/profile', authNurse, async (req, res) => {
     });
   } catch (error) {
     console.error('Update nurse profile error:', error);
-    res.status(500).json({ 
+    res.status(500).json({
       success: false,
       message: 'Server error',
-      error: error.message 
+      error: error.message
     });
   }
 });
@@ -303,10 +304,10 @@ router.get('/patients', authNurse, async (req, res) => {
     });
   } catch (error) {
     console.error('Get patients error:', error);
-    res.status(500).json({ 
+    res.status(500).json({
       success: false,
       message: 'Server error',
-      error: error.message 
+      error: error.message
     });
   }
 });
@@ -378,10 +379,10 @@ router.post('/vitals', authNurse, async (req, res) => {
     });
   } catch (error) {
     console.error('Record vitals error:', error);
-    res.status(500).json({ 
+    res.status(500).json({
       success: false,
       message: 'Server error',
-      error: error.message 
+      error: error.message
     });
   }
 });
@@ -495,12 +496,12 @@ router.get('/activity/recent', authNurse, async (req, res) => {
     const { Op } = await import('sequelize');
     const [vitals, meds, notes] = await Promise.all([
       VitalsRecord.findAll({ where: { recordedBy: nurseId }, order: [['recordedAt', 'DESC']], limit: 20 }),
-      Medication.findAll({ 
-        where: { 
-          'metadata.administeredBy': { [Op.eq]: nurseId } 
-        }, 
-        order: [['createdAt', 'DESC']], 
-        limit: 20 
+      Medication.findAll({
+        where: {
+          'metadata.administeredBy': { [Op.eq]: nurseId }
+        },
+        order: [['createdAt', 'DESC']],
+        limit: 20
       }),
       PatientNote.findAll({ where: { nurseId }, order: [['createdAt', 'DESC']], limit: 20 }),
     ]);
@@ -555,10 +556,10 @@ router.get('/schedule', authNurse, async (req, res) => {
     });
   } catch (error) {
     console.error('Get schedule error:', error);
-    res.status(500).json({ 
+    res.status(500).json({
       success: false,
       message: 'Server error',
-      error: error.message 
+      error: error.message
     });
   }
 });

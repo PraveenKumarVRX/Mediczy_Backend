@@ -56,7 +56,7 @@ const PSULogin = () => {
 
   const form = useForm<z.infer<typeof formSchema>>({
     resolver: zodResolver(formSchema),
-    defaultValues: { email: "psu@mediczy.com", password: "PSU123" },
+    defaultValues: { email: "", password: "" },
   });
 
   const loginMutation = useLogin();

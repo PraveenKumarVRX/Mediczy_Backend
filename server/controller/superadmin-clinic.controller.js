@@ -8,8 +8,9 @@ import User from '../models/postgres/user.model.postgres.js';
 import OrganizationAdmin from '../models/postgres/organization-admin.model.postgres.js';
 import jwt from 'jsonwebtoken';
 import { validationResult } from 'express-validator';
+import { JWT_CONFIG } from '../config/auth.config.js';
 
-const JWT_SECRET = process.env.JWT_SECRET || 'mediczy-clinic-secret-key-2025';
+const JWT_SECRET = JWT_CONFIG.SECRET;
 
 /**
  * Create new clinic and clinic admin
@@ -40,16 +41,16 @@ export const createClinicWithAdmin = async (req, res) => {
       clinic_pincode,
       registration_number,
       tax_id,
-      
+
       // Clinic admin information
       admin_email,
       admin_password,
       admin_first_name,
       admin_last_name,
-      
+
       // Plan
       plan = 'basic',
-      
+
       // Optional settings
       timezone = 'Asia/Kolkata',
       language = 'en',
@@ -70,7 +71,7 @@ export const createClinicWithAdmin = async (req, res) => {
     const existingClinic = await Tenant.findOne({
       where: { email: clinic_email }
     });
-    
+
     if (existingClinic) {
       return res.status(409).json({
         success: false,
@@ -82,7 +83,7 @@ export const createClinicWithAdmin = async (req, res) => {
     const existingAdminEmail = await Tenant.findOne({
       where: { admin_email }
     });
-    
+
     if (existingAdminEmail) {
       return res.status(409).json({
         success: false,
@@ -94,7 +95,7 @@ export const createClinicWithAdmin = async (req, res) => {
     const existingUser = await User.findOne({
       where: { email: admin_email }
     });
-    
+
     if (existingUser) {
       return res.status(409).json({
         success: false,
@@ -264,7 +265,7 @@ export const listClinics = async (req, res) => {
     const { status, plan, type, search, limit = 20, offset = 0 } = req.query;
 
     const where = { type: 'clinic' };
-    
+
     if (status) where.status = status;
     if (plan) where.plan = plan;
     if (type) where.type = type;

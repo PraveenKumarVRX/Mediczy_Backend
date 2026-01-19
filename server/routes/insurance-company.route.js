@@ -8,10 +8,9 @@ import jwt from 'jsonwebtoken';
 import { InsuranceCompany, Corporate, CorporateEmployee } from '../models/insurance-company.model.intelligent.js';
 import { InsurancePolicy, PolicyMember } from '../models/insurance-policy.model.intelligent.js';
 import { authUser, requireRole } from '../middleware/auth.middleware.js';
+import { JWT_CONFIG } from '../config/auth.config.js';
 
 const router = express.Router();
-
-const JWT_SECRET = process.env.JWT_SECRET || 'mediczy-secret-key-2024';
 
 // ============================================================================
 // INSURANCE COMPANY ROUTES
@@ -35,19 +34,19 @@ router.post('/register', async (req, res) => {
       address,
       contactPerson
     } = req.body;
-    
+
     // Check if company already exists
     const existing = await InsuranceCompany.findOne({
       where: { email }
     });
-    
+
     if (existing) {
       return res.status(400).json({
         success: false,
         message: 'Insurance company with this email already exists'
       });
     }
-    
+
     const company = await InsuranceCompany.create({
       companyName,
       companyCode,
@@ -62,7 +61,7 @@ router.post('/register', async (req, res) => {
       isActive: true,
       isVerified: false
     });
-    
+
     res.status(201).json({
       success: true,
       message: 'Insurance company registered successfully. Awaiting admin verification.',
@@ -85,41 +84,41 @@ router.post('/register', async (req, res) => {
 router.post('/login', async (req, res) => {
   try {
     const { email, password } = req.body;
-    
+
     const company = await InsuranceCompany.findOne({
       where: { email: email.toLowerCase() }
     });
-    
+
     if (!company) {
       return res.status(401).json({
         success: false,
         message: 'Invalid email or password'
       });
     }
-    
+
     const isPasswordValid = await company.comparePassword(password);
-    
+
     if (!isPasswordValid) {
       return res.status(401).json({
         success: false,
         message: 'Invalid email or password'
       });
     }
-    
+
     if (!company.isActive) {
       return res.status(403).json({
         success: false,
         message: 'Company account is inactive. Please contact support.'
       });
     }
-    
+
     if (!company.isVerified) {
       return res.status(403).json({
         success: false,
         message: 'Company account pending verification. Please contact admin.'
       });
     }
-    
+
     const token = jwt.sign(
       {
         id: company.id,
@@ -127,10 +126,10 @@ router.post('/login', async (req, res) => {
         role: 'insurance_company',
         companyName: company.companyName
       },
-      JWT_SECRET,
+      JWT_CONFIG.SECRET,
       { expiresIn: '7d' }
     );
-    
+
     res.json({
       success: true,
       message: 'Login successful',
@@ -161,14 +160,14 @@ router.get('/profile', authUser, requireRole('insurance_company'), async (req, r
         }
       ]
     });
-    
+
     if (!company) {
       return res.status(404).json({
         success: false,
         message: 'Company not found'
       });
     }
-    
+
     res.json({
       success: true,
       company
@@ -190,14 +189,14 @@ router.get('/profile', authUser, requireRole('insurance_company'), async (req, r
 router.put('/profile', authUser, requireRole('insurance_company'), async (req, res) => {
   try {
     const company = await InsuranceCompany.findByPk(req.user.id);
-    
+
     if (!company) {
       return res.status(404).json({
         success: false,
         message: 'Company not found'
       });
     }
-    
+
     const {
       phone,
       website,
@@ -207,7 +206,7 @@ router.put('/profile', authUser, requireRole('insurance_company'), async (req, r
       description,
       settings
     } = req.body;
-    
+
     await company.update({
       phone,
       website,
@@ -217,7 +216,7 @@ router.put('/profile', authUser, requireRole('insurance_company'), async (req, r
       description,
       settings
     });
-    
+
     res.json({
       success: true,
       message: 'Profile updated successfully',
@@ -252,14 +251,14 @@ router.get('/dashboard', authUser, requireRole('insurance_company'), async (req,
         }
       ]
     });
-    
+
     const stats = {
       totalPolicies: policies.length,
       activePolicies: policies.filter(p => p.status === 'active').length,
       totalMembers: policies.reduce((sum, p) => sum + (p.members?.length || 0), 0),
       totalClaims: policies.reduce((sum, p) => sum + (p.claims?.length || 0), 0)
     };
-    
+
     res.json({
       success: true,
       stats,
@@ -358,16 +357,16 @@ router.post('/corporate/register', async (req, res) => {
       address,
       hrContact
     } = req.body;
-    
+
     const existing = await Corporate.findOne({ where: { email } });
-    
+
     if (existing) {
       return res.status(400).json({
         success: false,
         message: 'Corporate with this email already exists'
       });
     }
-    
+
     const corporate = await Corporate.create({
       corporateName,
       corporateCode,
@@ -385,7 +384,7 @@ router.post('/corporate/register', async (req, res) => {
       isActive: true,
       isVerified: false
     });
-    
+
     res.status(201).json({
       success: true,
       message: 'Corporate registered successfully. Awaiting verification.',
@@ -408,32 +407,32 @@ router.post('/corporate/register', async (req, res) => {
 router.post('/corporate/login', async (req, res) => {
   try {
     const { email, password } = req.body;
-    
+
     const corporate = await Corporate.findOne({ where: { email } });
-    
+
     if (!corporate) {
       return res.status(401).json({
         success: false,
         message: 'Invalid email or password'
       });
     }
-    
+
     const isPasswordValid = await corporate.comparePassword(password);
-    
+
     if (!isPasswordValid) {
       return res.status(401).json({
         success: false,
         message: 'Invalid email or password'
       });
     }
-    
+
     if (!corporate.isActive) {
       return res.status(403).json({
         success: false,
         message: 'Corporate account is inactive'
       });
     }
-    
+
     const token = jwt.sign(
       {
         id: corporate.id,
@@ -441,10 +440,10 @@ router.post('/corporate/login', async (req, res) => {
         role: 'corporate',
         corporateName: corporate.corporateName
       },
-      JWT_SECRET,
+      JWT_CONFIG.SECRET,
       { expiresIn: '7d' }
     );
-    
+
     res.json({
       success: true,
       message: 'Login successful',
@@ -479,14 +478,14 @@ router.get('/corporate/profile', authUser, requireRole('corporate'), async (req,
         }
       ]
     });
-    
+
     if (!corporate) {
       return res.status(404).json({
         success: false,
         message: 'Corporate not found'
       });
     }
-    
+
     res.json({
       success: true,
       corporate
@@ -515,7 +514,7 @@ router.post('/corporate/employees', authUser, requireRole('corporate'), async (r
       joiningDate,
       dependents
     } = req.body;
-    
+
     // Check if employee already exists
     const existing = await CorporateEmployee.findOne({
       where: {
@@ -523,14 +522,14 @@ router.post('/corporate/employees', authUser, requireRole('corporate'), async (r
         employeeId
       }
     });
-    
+
     if (existing) {
       return res.status(400).json({
         success: false,
         message: 'Employee already exists'
       });
     }
-    
+
     const employee = await CorporateEmployee.create({
       corporateId: req.user.id,
       userId,
@@ -541,7 +540,7 @@ router.post('/corporate/employees', authUser, requireRole('corporate'), async (r
       dependents: dependents || [],
       isActive: true
     });
-    
+
     res.status(201).json({
       success: true,
       message: 'Employee added successfully',
@@ -564,16 +563,16 @@ router.post('/corporate/employees', authUser, requireRole('corporate'), async (r
 router.get('/corporate/employees', authUser, requireRole('corporate'), async (req, res) => {
   try {
     const { isActive, department } = req.query;
-    
+
     const whereClause = { corporateId: req.user.id };
     if (isActive !== undefined) whereClause.isActive = isActive === 'true';
     if (department) whereClause.department = department;
-    
+
     const employees = await CorporateEmployee.findAll({
       where: whereClause,
       order: [['createdAt', 'DESC']]
     });
-    
+
     res.json({
       success: true,
       employees
@@ -603,7 +602,7 @@ router.get('/corporate/dashboard', authUser, requireRole('corporate'), async (re
         include: ['members', 'claims']
       })
     ]);
-    
+
     const stats = {
       totalEmployees: employees.length,
       activeEmployees: employees.filter(e => e.isActive).length,
@@ -612,7 +611,7 @@ router.get('/corporate/dashboard', authUser, requireRole('corporate'), async (re
       totalCoveredMembers: policies.reduce((sum, p) => sum + (p.members?.length || 0), 0),
       totalClaims: policies.reduce((sum, p) => sum + (p.claims?.length || 0), 0)
     };
-    
+
     res.json({
       success: true,
       stats,
@@ -642,7 +641,7 @@ router.get('/admin/companies', authUser, requireRole('admin'), async (req, res) 
     const companies = await InsuranceCompany.findAll({
       order: [['createdAt', 'DESC']]
     });
-    
+
     res.json({
       success: true,
       companies
@@ -664,16 +663,16 @@ router.get('/admin/companies', authUser, requireRole('admin'), async (req, res) 
 router.post('/admin/companies/:id/verify', authUser, requireRole('admin'), async (req, res) => {
   try {
     const company = await InsuranceCompany.findByPk(req.params.id);
-    
+
     if (!company) {
       return res.status(404).json({
         success: false,
         message: 'Company not found'
       });
     }
-    
+
     await company.update({ isVerified: true });
-    
+
     res.json({
       success: true,
       message: 'Company verified successfully',
@@ -704,7 +703,7 @@ router.get('/admin/corporates', authUser, requireRole('admin'), async (req, res)
       ],
       order: [['createdAt', 'DESC']]
     });
-    
+
     res.json({
       success: true,
       corporates

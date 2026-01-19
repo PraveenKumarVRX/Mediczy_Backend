@@ -5,6 +5,7 @@
 
 import express from 'express';
 import jwt from 'jsonwebtoken';
+import { JWT_CONFIG } from '../../config/auth.config.js';
 
 const router = express.Router();
 
@@ -17,12 +18,12 @@ const verifyPharmacyToken = (req, res, next) => {
     if (!token) {
       return res.status(401).json({ success: false, message: 'Unauthorized' });
     }
-    
-    const decoded = jwt.verify(token, process.env.JWT_SECRET);
+
+    const decoded = jwt.verify(token, JWT_CONFIG.SECRET);
     if (decoded.type !== 'pharmacy') {
       return res.status(403).json({ success: false, message: 'Access denied' });
     }
-    
+
     req.pharmacyId = decoded.id;
     req.pharmacyToken = decoded;
     next();
@@ -174,7 +175,7 @@ router.get('/', verifyPharmacyToken, async (req, res) => {
         ]
       }
     };
-    
+
     res.json(inventory);
   } catch (error) {
     console.error('Inventory fetch error:', error);
@@ -193,7 +194,7 @@ router.get('/', verifyPharmacyToken, async (req, res) => {
 router.get('/:id', verifyPharmacyToken, async (req, res) => {
   try {
     const { id } = req.params;
-    
+
     // Mock medicine detail - replace with database query
     const medicine = {
       success: true,
@@ -220,7 +221,7 @@ router.get('/:id', verifyPharmacyToken, async (req, res) => {
         ]
       }
     };
-    
+
     res.json(medicine);
   } catch (error) {
     console.error('Medicine detail error:', error);
@@ -239,7 +240,7 @@ router.get('/:id', verifyPharmacyToken, async (req, res) => {
 router.post('/', verifyPharmacyToken, async (req, res) => {
   try {
     const medicineData = req.body;
-    
+
     // Mock response - replace with actual database insert
     res.status(201).json({
       success: true,
@@ -268,7 +269,7 @@ router.put('/:id', verifyPharmacyToken, async (req, res) => {
   try {
     const { id } = req.params;
     const updateData = req.body;
-    
+
     // Mock response - replace with actual database update
     res.json({
       success: true,
@@ -296,7 +297,7 @@ router.put('/:id', verifyPharmacyToken, async (req, res) => {
 router.delete('/:id', verifyPharmacyToken, async (req, res) => {
   try {
     const { id } = req.params;
-    
+
     // Mock response - replace with actual database delete
     res.json({
       success: true,
@@ -320,7 +321,7 @@ router.delete('/:id', verifyPharmacyToken, async (req, res) => {
 router.get('/search/:query', verifyPharmacyToken, async (req, res) => {
   try {
     const { query } = req.params;
-    
+
     // Mock search results - replace with database search
     res.json({
       success: true,

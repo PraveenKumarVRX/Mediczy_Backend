@@ -1,4 +1,5 @@
 /**
+import { JWT_CONFIG } from '../../config/auth.config.js';
  * User Activity Tracking Model (PostgreSQL)
  * Tracks daily user activities to prevent duplicate coin rewards
  */

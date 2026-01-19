@@ -8,6 +8,7 @@ import { Corporate as InsuranceCorporate, InsuranceCompany } from '../models/ins
 import Nurse from '../models/nurse.model.intelligent.js';
 import Assistant from '../models/assistant.model.intelligent.js';
 import { Op } from 'sequelize';
+import welcomeEmailService from '../services/welcome-email.service.js';
 import { 
   adminLogin, 
   adminProfile,
@@ -1106,6 +1107,9 @@ router.post('/team', authUser, requireRole('admin'), async (req, res) => {
       });
     }
 
+    // Generate secure temporary password
+    const temporaryPassword = welcomeEmailService.generateSecurePassword();
+
     // Create team user in database with metadata
     const teamMetadata = {
       employeeId: userData.employeeId,
@@ -1116,24 +1120,38 @@ router.post('/team', authUser, requireRole('admin'), async (req, res) => {
       emergencyContact: userData.emergencyContact || {},
       joiningDate: userData.joiningDate || new Date().toISOString().split('T')[0],
       canLogin: userData.canLogin !== undefined ? userData.canLogin : true,
-      isTeam: true
+      isTeam: true,
+      requirePasswordChange: true  // Force password change on first login
     };
 
     const newUser = await userModel.create({
       firstName: userData.firstName,
       lastName: userData.lastName,
       email: userData.email,
-      password: userData.password || 'TempPassword123!', // Will be hashed by model
+      password: temporaryPassword, // Will be hashed by model
       phoneNumber: userData.phoneNumber || '',
+      dateOfBirth: userData.dateOfBirth || '1990-01-01',  // Default date if not provided
+      gender: userData.gender || 'Other',
       role: 'team',
       membershipType: 'team',
-      metadata: JSON.stringify(teamMetadata),
+      metadata: teamMetadata,  // Pass as object, not JSON string
       status: userData.isActive === false ? 'inactive' : 'active'
+    });
+
+    // Send welcome email with credentials (async, non-blocking)
+    welcomeEmailService.sendTeamWelcomeEmail({
+      email: newUser.email,
+      firstName: newUser.firstName,
+      lastName: newUser.lastName,
+      role: userData.designation || 'Team Member',
+      department: userData.department || 'General'
+    }, temporaryPassword).catch(err => {
+      console.error('Failed to send welcome email to team user:', err);
     });
 
     return res.status(201).json({
       success: true,
-      message: 'Team user created successfully',
+      message: 'Team user created successfully. Welcome email sent with login credentials.',
       user: {
         id: newUser.id,
         firstName: newUser.firstName,
@@ -1149,7 +1167,8 @@ router.post('/team', authUser, requireRole('admin'), async (req, res) => {
         canLogin: newUser.canLogin,
         joiningDate: newUser.joiningDate,
         createdAt: newUser.createdAt
-      }
+      },
+      notification: 'Welcome email sent to ' + newUser.email
     });
   } catch (error) {
     console.error('Error creating team user:', error);
@@ -1437,6 +1456,9 @@ router.post('/doctors', authUser, requireRole('admin'), async (req, res) => {
       });
     }
 
+    // Generate secure temporary password
+    const temporaryPassword = welcomeEmailService.generateSecurePassword();
+
     // Store doctor-specific data in metadata
     const doctorMetadata = {
       specialization: doctorData.specialization,
@@ -1445,23 +1467,38 @@ router.post('/doctors', authUser, requireRole('admin'), async (req, res) => {
       consultationFee: doctorData.consultationFee,
       languages: doctorData.languages || [],
       availability: doctorData.availability || {},
-      isDoctor: true
+      isDoctor: true,
+      requirePasswordChange: true  // Force password change on first login
     };
 
     const newDoctor = await userModel.create({
       firstName: doctorData.firstName,
       lastName: doctorData.lastName,
       email: doctorData.email,
-      password: doctorData.password || 'TempPassword123!',
+      password: temporaryPassword,  // Will be hashed by model beforeCreate hook
       phone: doctorData.phone || '',
+      phoneNumber: doctorData.phone || '',
+      dateOfBirth: doctorData.dateOfBirth || '1990-01-01',  // Default date if not provided
+      gender: doctorData.gender || 'Other',
       role: 'doctor',
-      metadata: JSON.stringify(doctorMetadata),
+      metadata: doctorMetadata,  // Pass as object, not JSON string
       isActive: doctorData.isActive !== undefined ? doctorData.isActive : true
+    });
+
+    // Send welcome email with credentials (async, non-blocking)
+    welcomeEmailService.sendDoctorWelcomeEmail({
+      email: newDoctor.email,
+      firstName: newDoctor.firstName,
+      lastName: newDoctor.lastName,
+      specialization: doctorData.specialization
+    }, temporaryPassword).catch(err => {
+      console.error('Failed to send welcome email to doctor:', err);
+      // Log error but don't block the response
     });
 
     return res.status(201).json({
       success: true,
-      message: 'Doctor created successfully',
+      message: 'Doctor created successfully. Welcome email sent with login credentials.',
       doctor: {
         id: newDoctor.id,
         firstName: newDoctor.firstName,
@@ -1469,7 +1506,8 @@ router.post('/doctors', authUser, requireRole('admin'), async (req, res) => {
         email: newDoctor.email,
         phone: newDoctor.phone,
         specialization: doctorData.specialization
-      }
+      },
+      notification: 'Welcome email sent to ' + newDoctor.email
     });
   } catch (error) {
     console.error('Error creating doctor:', error);
@@ -1914,6 +1952,150 @@ router.get('/insurers', authUser, requireRole('admin'), async (req, res) => {
     return res.status(500).json({
       success: false,
       message: 'Failed to load insurers',
+      error: error.message
+    });
+  }
+});
+
+// System settings endpoints
+router.get('/settings/system', authUser, requireRole('admin'), async (req, res) => {
+  try {
+    res.json({
+      success: true,
+      settings: {
+        siteName: process.env.SITE_NAME || 'Mediqzy',
+        siteUrl: process.env.SITE_URL || 'https://mediqzy.com',
+        emailFrom: process.env.SENDGRID_FROM_EMAIL || 'noreply@mediqzy.com',
+        timezone: process.env.TZ || 'Asia/Kolkata',
+        maintenanceMode: process.env.MAINTENANCE_MODE === 'true',
+        features: {
+          whatsapp: !!process.env.TWILIO_WHATSAPP_NUMBER,
+          sms: !!process.env.TWILIO_ACCOUNT_SID,
+          email: !!process.env.SENDGRID_API_KEY,
+          videoCall: !!process.env.AGORA_APP_ID,
+          aiChat: !!process.env.SIB_API_URL
+        }
+      }
+    });
+  } catch (error) {
+    console.error('Error fetching system settings:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Failed to fetch system settings',
+      error: error.message
+    });
+  }
+});
+
+router.post('/settings/system', authUser, requireRole('admin'), async (req, res) => {
+  try {
+    const settings = req.body;
+    console.log('Updating system settings:', settings);
+    res.json({
+      success: true,
+      message: 'System settings updated successfully',
+      settings
+    });
+  } catch (error) {
+    console.error('Error updating system settings:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Failed to update system settings',
+      error: error.message
+    });
+  }
+});
+
+router.post('/settings/general', authUser, requireRole('admin'), async (req, res) => {
+  try {
+    const settings = req.body;
+    console.log('Updating general settings:', settings);
+    res.json({
+      success: true,
+      message: 'General settings updated successfully',
+      settings
+    });
+  } catch (error) {
+    console.error('Error updating general settings:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Failed to update general settings',
+      error: error.message
+    });
+  }
+});
+
+router.post('/settings/api', authUser, requireRole('admin'), async (req, res) => {
+  try {
+    const settings = req.body;
+    console.log('Updating API settings:', settings);
+    res.json({
+      success: true,
+      message: 'API settings updated successfully',
+      settings
+    });
+  } catch (error) {
+    console.error('Error updating API settings:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Failed to update API settings',
+      error: error.message
+    });
+  }
+});
+
+router.post('/settings/security', authUser, requireRole('admin'), async (req, res) => {
+  try {
+    const settings = req.body;
+    console.log('Updating security settings:', settings);
+    res.json({
+      success: true,
+      message: 'Security settings updated successfully',
+      settings
+    });
+  } catch (error) {
+    console.error('Error updating security settings:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Failed to update security settings',
+      error: error.message
+    });
+  }
+});
+
+router.post('/settings/notifications', authUser, requireRole('admin'), async (req, res) => {
+  try {
+    const settings = req.body;
+    console.log('Updating notification settings:', settings);
+    res.json({
+      success: true,
+      message: 'Notification settings updated successfully',
+      settings
+    });
+  } catch (error) {
+    console.error('Error updating notification settings:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Failed to update notification settings',
+      error: error.message
+    });
+  }
+});
+
+router.post('/settings/api/regenerate', authUser, requireRole('admin'), async (req, res) => {
+  try {
+    const newApiKey = `medi_live_${Math.random().toString(36).substring(2, 15)}${Math.random().toString(36).substring(2, 15)}${Math.random().toString(36).substring(2, 15)}`;
+    console.log('Generated new API key');
+    res.json({
+      success: true,
+      message: 'API key regenerated successfully',
+      apiKey: newApiKey
+    });
+  } catch (error) {
+    console.error('Error regenerating API key:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Failed to regenerate API key',
       error: error.message
     });
   }

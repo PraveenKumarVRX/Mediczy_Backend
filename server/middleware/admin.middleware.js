@@ -1,4 +1,5 @@
 // Admin authentication middleware
+import { JWT_CONFIG } from '../config/auth.config.js';
 import jwt from 'jsonwebtoken';
 
 export const adminAuthMiddleware = (req, res, next) => {
@@ -12,7 +13,7 @@ export const adminAuthMiddleware = (req, res, next) => {
       });
     }
 
-    const decoded = jwt.verify(token, process.env.JWT_SECRET || 'mediczy_secret_key');
+    const decoded = jwt.verify(token, JWT_CONFIG.SECRET || 'mediczy_secret_key');
     
     // Check if user is admin
     if (!decoded.isAdmin && decoded.role !== 'admin' && decoded.role !== 'super_admin') {

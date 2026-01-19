@@ -1,4 +1,5 @@
 import { Routes, Route, Navigate } from "react-router-dom";
+import { useEffect, useState } from "react";
 import Index from "@/pages/Index";
 import Login from "@/auth/Login";
 import ForgotPassword from "@/pages/ForgotPassword";
@@ -32,6 +33,7 @@ import MyBookings from "@/pages/MyBookings";
 import HealthFeedPage from "@/pages/HealthFeedPage";
 import RepostsPage from "@/pages/Reposts";
 import MyPlans from "@/pages/MyPlans";
+import MyMembershipCard from "@/pages/user/MyMembershipCard";
 import MyPrescriptions from "@/pages/MyPrescriptions";
 import Diet from "@/pages/Diet";
 import CalorieCalculator from "@/pages/CalorieCalculator";
@@ -342,6 +344,40 @@ import CorporateCompliance from "@/pages/corporate/CorporateCompliance";
 import CorporateSupport from "@/pages/corporate/CorporateSupport";
 import HospitalNotifications from "@/pages/hospital/HospitalNotifications";
 
+// Admin Route Protection Component
+const AdminRoute = ({ children }: { children: React.ReactNode }) => {
+  const [isAdmin, setIsAdmin] = useState<boolean | null>(null);
+  
+  useEffect(() => {
+    const token = localStorage.getItem('token');
+    if (!token) {
+      setIsAdmin(false);
+      return;
+    }
+    
+    try {
+      const payload = JSON.parse(atob(token.split('.')[1]));
+      const userIsAdmin = payload.role === 'admin' || payload.isAdmin === true;
+      setIsAdmin(userIsAdmin);
+    } catch (e) {
+      console.warn('Failed to parse token:', e);
+      setIsAdmin(false);
+    }
+  }, []);
+  
+  // Show loading state while checking
+  if (isAdmin === null) {
+    return <div className="flex items-center justify-center h-screen">Loading...</div>;
+  }
+  
+  // Redirect non-admins to home
+  if (!isAdmin) {
+    return <Navigate to="/" replace />;
+  }
+  
+  return <>{children}</>;
+};
+
 const AppRoutes = () => {
   const PharmacyEntry = () => {
     const token = localStorage.getItem('pharmacyToken');
@@ -548,7 +584,7 @@ const AppRoutes = () => {
       {/* Health Intelligence Dashboard */}
       <Route path="/health-intelligence" element={<MainLayout><HealthIntelligence /></MainLayout>} />
       {/* SIB Control Dashboard (Admin Only) */}
-      <Route path="/sib-control" element={<MainLayout><SIBControlDashboard /></MainLayout>} />
+      <Route path="/sib-control" element={<AdminRoute><MainLayout><SIBControlDashboard /></MainLayout></AdminRoute>} />
       <Route path="/consultation" element={<MainLayout><Consultation /></MainLayout>} />
       <Route path="/doctors" element={<DoctorListBooking />} />
       <Route path="/symptoms" element={<MainLayout><Symptoms /></MainLayout>} />
@@ -570,6 +606,7 @@ const AppRoutes = () => {
       <Route path="/appointments" element={<Appointments />} />
       <Route path="/my-prescriptions" element={<MyPrescriptions />} />
   <Route path="/my-plans" element={<MainLayout><MyPlans /></MainLayout>} />
+      <Route path="/membership-card" element={<MainLayout><MyMembershipCard /></MainLayout>} />
       <Route path="/diet" element={<MainLayout><Diet /></MainLayout>} />
       <Route path="/calorie-calculator" element={<MainLayout><CalorieCalculator /></MainLayout>} />
       <Route path="/emergency" element={<MainLayout><Emergency /></MainLayout>} />

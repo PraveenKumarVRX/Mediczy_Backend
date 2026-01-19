@@ -8,6 +8,7 @@ import heritageTPA from '../services/heritage-tpa.service.js';
 import mdIndiaTPA from '../services/mdindia-tpa.service.js';
 import healthIndiaTPA from '../services/healthindia-tpa.service.js';
 import tpaAggregator from '../services/tpa-aggregator.service.js';
+import { JWT_CONFIG } from '../config/auth.config.js';
 
 const router = express.Router();
 
@@ -316,7 +317,7 @@ router.post('/register', async (req, res) => {
 
     const token = jwt.sign(
       { id: tpa.id, email: tpa.email, role: 'tpa' },
-      process.env.JWT_SECRET,
+      JWT_CONFIG.SECRET,
       { expiresIn: '7d' }
     );
 
@@ -351,7 +352,7 @@ router.post('/login', async (req, res) => {
   try {
     console.log('=== TPA LOGIN ROUTE HIT ===');
     console.log('Email:', req.body.email);
-    
+
     const { email, password } = req.body;
 
     if (!email || !password) {
@@ -396,7 +397,7 @@ router.post('/login', async (req, res) => {
 
     const token = jwt.sign(
       { id: tpa.id, email: tpa.email, role: 'tpa' },
-      process.env.JWT_SECRET,
+      JWT_CONFIG.SECRET,
       { expiresIn: '7d' }
     );
 
@@ -660,7 +661,7 @@ router.get('/claims', authUser, requireRole('tpa'), async (req, res) => {
       }
     ];
 
-    let filteredClaims = status && status !== 'all' 
+    let filteredClaims = status && status !== 'all'
       ? allClaims.filter(c => c.status === status)
       : allClaims;
 
@@ -733,7 +734,7 @@ router.get('/members', authUser, requireRole('tpa'), async (req, res) => {
     }
     if (search) {
       const searchLower = search.toLowerCase();
-      filteredMembers = filteredMembers.filter(m => 
+      filteredMembers = filteredMembers.filter(m =>
         m.name.toLowerCase().includes(searchLower) ||
         m.email.toLowerCase().includes(searchLower) ||
         m.employeeId.toLowerCase().includes(searchLower)

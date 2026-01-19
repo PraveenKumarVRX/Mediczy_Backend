@@ -1,4 +1,5 @@
 /**
+import { JWT_CONFIG } from '../../config/auth.config.js';
  * Device Management Model
  * Smart tablet devices provided to healthcare providers
  * Business Model: Device + Software + AMC (Annual Maintenance Contract)

@@ -6,6 +6,7 @@ import User from '../models/postgres/user.model.postgres.js';
 import { authUser, requireRole } from '../middleware/auth.middleware.js';
 import jwt from 'jsonwebtoken';
 import bcrypt from 'bcrypt';
+import { JWT_CONFIG } from '../config/auth.config.js';
 
 const router = express.Router();
 
@@ -65,7 +66,7 @@ router.post('/register', async (req, res) => {
 
     const token = jwt.sign(
       { id: hospital.id, email: hospital.email, role: 'hospital' },
-      process.env.JWT_SECRET,
+      JWT_CONFIG.SECRET,
       { expiresIn: '7d' }
     );
 
@@ -134,7 +135,7 @@ router.post('/login', async (req, res) => {
 
     const token = jwt.sign(
       { id: hospital.id, email: hospital.email, role: 'hospital' },
-      process.env.JWT_SECRET,
+      JWT_CONFIG.SECRET,
       { expiresIn: '7d' }
     );
 
@@ -236,7 +237,7 @@ router.post('/login/v2', async (req, res) => {
 
       const token = jwt.sign(
         { id: hospital.id, email: hospital.email, role: 'hospital', hospitalId: hospital.id },
-        process.env.JWT_SECRET,
+        JWT_CONFIG.SECRET,
         { expiresIn: '7d' }
       );
 
@@ -296,7 +297,7 @@ router.post('/login/v2', async (req, res) => {
         subdomain: tenant.subdomain,
         custom_domain: tenant.custom_domain
       },
-      process.env.JWT_SECRET,
+      JWT_CONFIG.SECRET,
       { expiresIn: '7d' }
     );
 
@@ -353,13 +354,13 @@ router.post('/login-tenant', async (req, res) => {
 
     // Get hospital tenant
     const tenant = await Tenant.findOne({
-      where: { 
+      where: {
         [Tenant.sequelize.Op.or]: [
           { subdomain },
           { slug: subdomain }
         ],
-        status: 'active', 
-        type: 'hospital' 
+        status: 'active',
+        type: 'hospital'
       }
     });
 
@@ -407,7 +408,7 @@ router.post('/login-tenant', async (req, res) => {
         hospitalName: tenant.name,
         subdomain: tenant.subdomain
       },
-      process.env.JWT_SECRET,
+      JWT_CONFIG.SECRET,
       { expiresIn: '7d' }
     );
 

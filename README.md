@@ -1,5 +1,29 @@
 # Mediczy
 
+> **Healthcare Platform** - Complete digital health ecosystem with multi-tenant architecture
+
+## 📚 Documentation
+
+**All documentation has been organized into the [`docs/`](./docs/) folder.**
+
+- **[Documentation Index](./docs/README.md)** - Complete guide to all 466+ documentation files
+- **Quick Links**: See organized categories below
+
+### Documentation Categories
+- 🔐 [Authentication](./docs/authentication/) - OAuth, passwords, OTP (16 files)
+- 👨‍⚕️ [Doctor Portal](./docs/doctor/) - Doctor features & APIs (19 files)
+- 🏥 [Hospital System](./docs/hospital/) - Hospital management (23 files)
+- 🏢 [Clinic System](./docs/clinic/) - Clinic operations (12 files)
+- 🤒 [Patient Portal](./docs/patient/) - Patient features (18 files)
+- 🚀 [Deployment](./docs/deployment/) - Production setup (32 files)
+- 📱 [Integrations](./docs/integrations/) - APIs & services (82 files)
+- 🔒 [Security](./docs/security/) - Security measures (12 files)
+- 📖 [Guides](./docs/guides/) - How-tos & tutorials (60 files)
+- 🧪 [Testing](./docs/testing/) - QA & validation (19 files)
+- ⚙️ [More...](./docs/README.md) - See full documentation index
+
+---
+
 ## Features
 
 - **Admin Dashboard**: ERP+CRM system for managing users, doctors, labs, pharmacies, and corporates
@@ -13,6 +37,7 @@
 
 ## Quick Links
 
+- **🐛 Debugging**: [DEBUG_QUICK_REFERENCE.md](./docs/DEBUG_QUICK_REFERENCE.md) - Quick debugging guide | [Full Guide](./docs/DEBUGGING_GUIDE.md)
 - **Admin Setup**: See section below
 - **CRM Guide**: [CRM_GUIDE.md](CRM_GUIDE.md) - Complete CRM documentation
 - **Async Tasks**: [ASYNC_TASKS.md](ASYNC_TASKS.md) - Background job processing guide

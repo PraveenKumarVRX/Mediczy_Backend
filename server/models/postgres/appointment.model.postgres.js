@@ -1,4 +1,5 @@
 /**
+import { JWT_CONFIG } from '../../config/auth.config.js';
  * PostgreSQL Appointment Model
  * Enhanced with PostgreSQL JSONB and advanced features
  */

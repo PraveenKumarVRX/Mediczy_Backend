@@ -1,4 +1,5 @@
 import { DataTypes } from 'sequelize';
+import { JWT_CONFIG } from '../../config/auth.config.js';
 import bcrypt from 'bcryptjs';
 import jwt from 'jsonwebtoken';
 import postgresSequelize from '../../db/postgres-sequelize.js';
@@ -252,7 +253,7 @@ Ambulance.prototype.generateAuthToken = function() {
     isVerified: this.isVerified
   };
   
-  return jwt.sign(payload, process.env.JWT_SECRET || 'mediczy-secret-key', {
+  return jwt.sign(payload, JWT_CONFIG.SECRET || 'mediczy-secret-key', {
     expiresIn: '7d'
   });
 };

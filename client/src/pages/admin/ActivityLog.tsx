@@ -354,12 +354,12 @@ const ActivityLog = () => {
 
   return (
     <AdminLayout>
-      <div className="min-h-screen bg-gradient-to-br from-gray-50 via-blue-50/30 to-purple-50/20 p-6">
+      <div className="min-h-screen bg-gradient-to-br from-gray-50 via-slate-50/30 to-teal-50/20 dark:from-slate-950 dark:via-slate-900 dark:to-slate-950 p-6">
         <div className="max-w-7xl mx-auto space-y-6">
           {/* Header */}
           <div className="flex items-center justify-between">
             <div>
-              <h1 className="text-3xl font-bold bg-gradient-to-r from-blue-600 to-purple-600 bg-clip-text text-transparent">
+              <h1 className="text-3xl font-bold bg-gradient-to-r from-teal-600 to-slate-700 bg-clip-text text-transparent">
                 Activity Log
               </h1>
               <p className="text-gray-600 mt-1">
@@ -385,7 +385,7 @@ const ActivityLog = () => {
           <Card className="shadow-lg border-0 bg-white/80 backdrop-blur-xl">
             <CardHeader>
               <CardTitle className="flex items-center gap-2">
-                <Filter className="h-5 w-5 text-blue-600" />
+                <Filter className="h-5 w-5 text-teal-600" />
                 Filters & Search
               </CardTitle>
             </CardHeader>
@@ -511,7 +511,7 @@ const ActivityLog = () => {
                       <tr>
                         <td colSpan={6} className="px-6 py-12 text-center">
                           <div className="flex items-center justify-center">
-                            <RefreshCw className="h-6 w-6 animate-spin text-blue-600 mr-2" />
+                            <RefreshCw className="h-6 w-6 animate-spin text-teal-600 mr-2" />
                             Loading activity logs...
                           </div>
                         </td>
@@ -538,7 +538,7 @@ const ActivityLog = () => {
                                   <div className="text-xs text-gray-500">
                                     {timestamp.date}
                                   </div>
-                                  <div className="text-xs text-blue-600">
+                                  <div className="text-xs text-teal-600">
                                     {timestamp.relative}
                                   </div>
                                 </div>

@@ -3,6 +3,7 @@ import { body } from 'express-validator';
 import userModel from '../models/user.model.intelligent.js';
 import jwt from 'jsonwebtoken';
 import { authTeam, requireModule, attachAccessLevel } from '../middleware/team.middleware.js';
+import { JWT_CONFIG } from '../config/auth.config.js';
 
 const router = express.Router();
 
@@ -22,10 +23,10 @@ router.post('/login', [
     console.log('🔵 [Team Login] Querying database...');
     let user;
     try {
-      user = await userModel.findOne({ 
-        where: { 
+      user = await userModel.findOne({
+        where: {
           email
-        } 
+        }
       });
       console.log('🔵 [Team Login] Query completed');
     } catch (queryError) {
@@ -35,9 +36,9 @@ router.post('/login', [
     console.log('🔵 [Team Login] User found:', !!user);
 
     if (!user) {
-      return res.status(401).json({ 
+      return res.status(401).json({
         success: false,
-        message: 'Invalid email or password' 
+        message: 'Invalid email or password'
       });
     }
 
@@ -59,7 +60,7 @@ router.post('/login', [
 
     if (!hasTeamAccess) {
       console.log('🔴 [Team Login] Access denied: User lacks team permissions');
-      return res.status(403).json({ 
+      return res.status(403).json({
         success: false,
         message: 'Access denied. Team member privileges required.',
         hint: 'Please contact an administrator to request team access.'
@@ -69,9 +70,9 @@ router.post('/login', [
     // Verify password
     const isPasswordValid = await user.comparePassword(password);
     if (!isPasswordValid) {
-      return res.status(401).json({ 
+      return res.status(401).json({
         success: false,
-        message: 'Invalid email or password' 
+        message: 'Invalid email or password'
       });
     }
 
@@ -107,7 +108,7 @@ router.post('/login', [
         isTeam: true,
         isAdmin: user.isAdmin || false
       },
-      process.env.JWT_SECRET,
+      JWT_CONFIG.SECRET,
       { expiresIn: '8h' }
     );
 
@@ -125,9 +126,9 @@ router.post('/login', [
     console.error('❌ TEAM LOGIN ERROR:', error);
     console.error('❌ Error message:', error.message);
     console.error('❌ Error stack:', error.stack);
-    res.status(500).json({ 
+    res.status(500).json({
       success: false,
-      message: 'Internal server error' 
+      message: 'Internal server error'
     });
   }
 });
@@ -260,7 +261,7 @@ router.get('/profile', authTeam, attachAccessLevel, async (req, res) => {
           'Health Plans Access'
         ],
         modules: [
-          'users', 'doctors', 'appointments', 'chat', 
+          'users', 'doctors', 'appointments', 'chat',
           'hospitals', 'pharmacies', 'plans', 'reports'
         ],
         editableModules: req.editableModules || [],
@@ -270,9 +271,9 @@ router.get('/profile', authTeam, attachAccessLevel, async (req, res) => {
 
   } catch (error) {
     console.error('Team profile error:', error);
-    res.status(500).json({ 
+    res.status(500).json({
       success: false,
-      message: 'Error fetching profile' 
+      message: 'Error fetching profile'
     });
   }
 });
@@ -285,91 +286,91 @@ router.get('/modules', authTeam, attachAccessLevel, async (req, res) => {
     const isAdmin = req.accessLevel === 'full';
 
     const modules = [
-      { 
-        id: 'users', 
-        name: 'User Management', 
-        icon: 'Users', 
+      {
+        id: 'users',
+        name: 'User Management',
+        icon: 'Users',
         enabled: true,
         canView: true,
         canEdit: isAdmin || editableModules.includes('users'),
         canDelete: isAdmin || deletableModules.includes('users')
       },
-      { 
-        id: 'doctors', 
-        name: 'Doctor Management', 
-        icon: 'Stethoscope', 
+      {
+        id: 'doctors',
+        name: 'Doctor Management',
+        icon: 'Stethoscope',
         enabled: true,
         canView: true,
         canEdit: isAdmin || editableModules.includes('doctors'),
         canDelete: isAdmin || deletableModules.includes('doctors')
       },
-      { 
-        id: 'appointments', 
-        name: 'Appointments', 
-        icon: 'Calendar', 
+      {
+        id: 'appointments',
+        name: 'Appointments',
+        icon: 'Calendar',
         enabled: true,
         canView: true,
         canEdit: isAdmin || editableModules.includes('appointments'),
         canDelete: isAdmin || deletableModules.includes('appointments')
       },
-      { 
-        id: 'chat', 
-        name: 'Chat Dashboard', 
-        icon: 'MessageSquare', 
+      {
+        id: 'chat',
+        name: 'Chat Dashboard',
+        icon: 'MessageSquare',
         enabled: true,
         canView: true,
         canEdit: isAdmin || editableModules.includes('chat'),
         canDelete: isAdmin || deletableModules.includes('chat')
       },
-      { 
-        id: 'hospitals', 
-        name: 'Hospitals', 
-        icon: 'Building2', 
+      {
+        id: 'hospitals',
+        name: 'Hospitals',
+        icon: 'Building2',
         enabled: true,
         canView: true,
         canEdit: isAdmin || editableModules.includes('hospitals'),
         canDelete: isAdmin || deletableModules.includes('hospitals')
       },
-      { 
-        id: 'pharmacies', 
-        name: 'Pharmacies', 
-        icon: 'Pill', 
+      {
+        id: 'pharmacies',
+        name: 'Pharmacies',
+        icon: 'Pill',
         enabled: true,
         canView: true,
         canEdit: isAdmin || editableModules.includes('pharmacies'),
         canDelete: isAdmin || deletableModules.includes('pharmacies')
       },
-      { 
-        id: 'plans', 
-        name: 'Health Plans', 
-        icon: 'Heart', 
+      {
+        id: 'plans',
+        name: 'Health Plans',
+        icon: 'Heart',
         enabled: true,
         canView: true,
         canEdit: isAdmin || editableModules.includes('plans'),
         canDelete: isAdmin || deletableModules.includes('plans')
       },
-      { 
-        id: 'reports', 
-        name: 'Reports & Analytics', 
-        icon: 'BarChart3', 
+      {
+        id: 'reports',
+        name: 'Reports & Analytics',
+        icon: 'BarChart3',
         enabled: true,
         canView: true,
         canEdit: isAdmin || editableModules.includes('reports'),
         canDelete: false // Reports typically don't allow delete
       },
-      { 
-        id: 'team_directory', 
-        name: 'Team Directory', 
-        icon: 'Users', 
+      {
+        id: 'team_directory',
+        name: 'Team Directory',
+        icon: 'Users',
         enabled: true,
         canView: true,
         canEdit: isAdmin || editableModules.includes('team_directory'),
         canDelete: isAdmin || deletableModules.includes('team_directory')
       },
-      { 
-        id: 'notifications', 
-        name: 'Notifications', 
-        icon: 'Bell', 
+      {
+        id: 'notifications',
+        name: 'Notifications',
+        icon: 'Bell',
         enabled: true,
         canView: true,
         canEdit: isAdmin || editableModules.includes('notifications'),
@@ -389,9 +390,9 @@ router.get('/modules', authTeam, attachAccessLevel, async (req, res) => {
     });
   } catch (error) {
     console.error('Get modules error:', error);
-    res.status(500).json({ 
+    res.status(500).json({
       success: false,
-      message: 'Error fetching modules' 
+      message: 'Error fetching modules'
     });
   }
 });
@@ -400,9 +401,9 @@ router.get('/modules', authTeam, attachAccessLevel, async (req, res) => {
 router.post('/verify-access', authTeam, attachAccessLevel, async (req, res) => {
   try {
     const { module, action } = req.body; // action can be 'view', 'edit', 'delete'
-    
+
     const allowedModules = [
-      'users', 'doctors', 'appointments', 'chat', 
+      'users', 'doctors', 'appointments', 'chat',
       'hospitals', 'pharmacies', 'plans', 'reports',
       'team_directory', 'profile', 'notifications'
     ];
@@ -435,9 +436,9 @@ router.post('/verify-access', authTeam, attachAccessLevel, async (req, res) => {
     });
   } catch (error) {
     console.error('Verify access error:', error);
-    res.status(500).json({ 
+    res.status(500).json({
       success: false,
-      message: 'Error verifying access' 
+      message: 'Error verifying access'
     });
   }
 });
@@ -706,7 +707,7 @@ router.get('/doctors', authTeam, async (req, res) => {
       }
     }).map(doc => {
       const metadata = typeof doc.metadata === 'string' ? JSON.parse(doc.metadata) : (doc.metadata || {});
-      
+
       if (specialization && metadata.specialization !== specialization) {
         return null;
       }
@@ -851,7 +852,7 @@ router.get('/pharmacies', authTeam, async (req, res) => {
       }
     }).map(pharm => {
       const metadata = typeof pharm.metadata === 'string' ? JSON.parse(pharm.metadata) : (pharm.metadata || {});
-      
+
       if (city && metadata.city !== city) return null;
       if (state && metadata.state !== state) return null;
 
@@ -990,7 +991,7 @@ router.post('/logout', authTeam, async (req, res) => {
     // - Blacklist the token
     // - Update user's last activity timestamp
     // - Log the logout event
-    
+
     res.status(200).json({
       success: true,
       message: 'Logged out successfully'

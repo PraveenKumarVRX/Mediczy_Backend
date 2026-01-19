@@ -1,0 +1,357 @@
+/**
+ * Patient Medical Reports Routes
+ * Handles report uploads, retrieval, and organization
+ * Database-integrated version
+ */
+
+import express from 'express';
+import { authUser } from '../middleware/auth.middleware.js';
+import multer from 'multer';
+import path from 'path';
+import fs from 'fs/promises';
+import { fileURLToPath } from 'url';
+import { Report } from '../models/index.js';
+import { validationResult } from 'express-validator';
+import { body } from 'express-validator';
+
+const router = express.Router();
+const __dirname = path.dirname(fileURLToPath(import.meta.url));
+
+// Configure multer for file upload
+const uploadDir = path.join(__dirname, '../../uploads/reports');
+
+// Ensure upload directory exists
+try {
+  await fs.mkdir(uploadDir, { recursive: true });
+} catch (err) {
+  console.error('Failed to create upload directory:', err);
+}
+
+const storage = multer.diskStorage({
+  destination: async (req, file, cb) => {
+    try {
+      await fs.mkdir(uploadDir, { recursive: true });
+      cb(null, uploadDir);
+    } catch (err) {
+      cb(err);
+    }
+  },
+  filename: (req, file, cb) => {
+    const uniqueSuffix = Date.now() + '-' + Math.round(Math.random() * 1E9);
+    const ext = path.extname(file.originalname);
+    const baseName = path.basename(file.originalname, ext);
+    cb(null, `${baseName}-${uniqueSuffix}${ext}`);
+  }
+});
+
+const upload = multer({
+  storage,
+  limits: { fileSize: 50 * 1024 * 1024 }, // 50MB limit
+  fileFilter: (req, file, cb) => {
+    // Allow PDFs and images
+    const allowedMimes = [
+      'application/pdf',
+      'image/jpeg',
+      'image/png',
+      'image/tiff',
+      'image/webp',
+      'image/gif',
+      'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+      'application/msword',
+      'application/vnd.ms-excel',
+      'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'
+    ];
+
+    if (allowedMimes.includes(file.mimetype)) {
+      cb(null, true);
+    } else {
+      cb(new Error(`File type not allowed: ${file.mimetype}`));
+    }
+  }
+});
+
+/**
+ * POST /api/reports
+ * Upload a new medical report
+ */
+router.post('/', authUser, upload.single('file'), async (req, res) => {
+  try {
+    if (!req.file) {
+      return res.status(400).json({
+        success: false,
+        message: 'No file uploaded',
+        error: 'File is required'
+      });
+    }
+
+    const { reportType = 'general', description = '', testName = '', labName = '', reportDate = '' } = req.body;
+    const userId = req.user.id;
+    const organizationId = req.user.organization_id;
+
+    // Validate report type
+    const validTypes = ['lab', 'imaging', 'prescription', 'general'];
+    if (!validTypes.includes(reportType)) {
+      // Clean up uploaded file
+      try {
+        await fs.unlink(req.file.path);
+      } catch (unlinkErr) {
+        console.error('Error deleting uploaded file:', unlinkErr);
+      }
+      
+      return res.status(400).json({
+        success: false,
+        message: `Invalid report type: ${reportType}. Allowed: ${validTypes.join(', ')}`
+      });
+    }
+
+    // Save to database
+    const savedReport = await Report.create({
+      userId,
+      organization_id: organizationId,
+      fileName: req.file.originalname,
+      fileSize: req.file.size,
+      mimeType: req.file.mimetype,
+      filePath: req.file.path,
+      fileUrl: `/api/reports/download/${req.file.filename}`,
+      reportType,
+      description: description || null,
+      testName: testName || null,
+      labName: labName || null,
+      reportDate: reportDate || null,
+      status: 'active',
+      uploadedAt: new Date(),
+      analysisStatus: 'pending'
+    });
+
+    console.log('✅ Report uploaded and saved to database:', {
+      id: savedReport.id,
+      userId,
+      fileName: req.file.originalname,
+      size: req.file.size,
+      type: reportType
+    });
+
+    return res.status(201).json({
+      success: true,
+      message: 'Report uploaded successfully',
+      data: savedReport
+    });
+  } catch (error) {
+    console.error('❌ Report upload error:', error);
+    
+    // Clean up uploaded file if there was an error
+    if (req.file) {
+      try {
+        await fs.unlink(req.file.path);
+      } catch (unlinkErr) {
+        console.error('Error deleting uploaded file:', unlinkErr);
+      }
+    }
+
+    return res.status(500).json({
+      success: false,
+      message: 'Failed to upload report',
+      error: error.message
+    });
+  }
+});
+
+/**
+ * GET /api/reports
+ * List all reports for the authenticated user
+ * Query params: type (lab|imaging|prescription|general), status (active|archived), skip, limit
+ */
+router.get('/', authUser, async (req, res) => {
+  try {
+    const userId = req.user.id;
+    const organizationId = req.user.organization_id;
+    const { type, status = 'active', skip = 0, limit = 20 } = req.query;
+
+    // Build where clause
+    const where = {
+      userId,
+      status: status || 'active'
+    };
+
+    // Add optional filters
+    if (type && ['lab', 'imaging', 'prescription', 'general'].includes(type)) {
+      where.reportType = type;
+    }
+
+    // Get reports from database
+    const reports = await Report.findAll({
+      where,
+      order: [['uploadedAt', 'DESC']],
+      offset: parseInt(skip),
+      limit: parseInt(limit)
+    });
+
+    // Get total count
+    const total = await Report.count({ where });
+
+    return res.status(200).json({
+      success: true,
+      message: 'Reports retrieved successfully',
+      data: reports,
+      pagination: {
+        total,
+        skip: parseInt(skip),
+        limit: parseInt(limit),
+        hasMore: parseInt(skip) + parseInt(limit) < total
+      }
+    });
+  } catch (error) {
+    console.error('❌ Get reports error:', error);
+    return res.status(500).json({
+      success: false,
+      message: 'Failed to retrieve reports',
+      error: error.message
+    });
+  }
+});
+
+/**
+ * GET /api/reports/:id
+ * Get a specific report by ID
+ */
+router.get('/:id', authUser, async (req, res) => {
+  try {
+    const { id } = req.params;
+    const userId = req.user.id;
+
+    const report = await Report.findOne({
+      where: {
+        id,
+        userId
+      }
+    });
+
+    if (!report) {
+      return res.status(404).json({
+        success: false,
+        message: 'Report not found'
+      });
+    }
+
+    return res.status(200).json({
+      success: true,
+      message: 'Report retrieved successfully',
+      data: report
+    });
+  } catch (error) {
+    console.error('❌ Get report error:', error);
+    return res.status(500).json({
+      success: false,
+      message: 'Failed to retrieve report',
+      error: error.message
+    });
+  }
+});
+
+/**
+ * DELETE /api/reports/:id
+ * Delete a report (archive or hard delete)
+ */
+router.delete('/:id', authUser, async (req, res) => {
+  try {
+    const { id } = req.params;
+    const userId = req.user.id;
+    const { hardDelete = false } = req.query;
+
+    const report = await Report.findOne({
+      where: {
+        id,
+        userId
+      }
+    });
+
+    if (!report) {
+      return res.status(404).json({
+        success: false,
+        message: 'Report not found'
+      });
+    }
+
+    if (hardDelete === 'true') {
+      // Hard delete - remove file and database record
+      try {
+        if (report.filePath && fs.existsSync(report.filePath)) {
+          await fs.unlink(report.filePath);
+        }
+      } catch (err) {
+        console.error('Error deleting file:', err);
+      }
+
+      await report.destroy();
+    } else {
+      // Soft delete - archive the report
+      await report.update({
+        status: 'deleted',
+        archivedAt: new Date()
+      });
+    }
+
+    console.log('✅ Report deleted successfully:', { id, userId, hardDelete });
+
+    return res.status(200).json({
+      success: true,
+      message: `Report ${hardDelete === 'true' ? 'permanently deleted' : 'archived'} successfully`
+    });
+  } catch (error) {
+    console.error('❌ Delete report error:', error);
+    return res.status(500).json({
+      success: false,
+      message: 'Failed to delete report',
+      error: error.message
+    });
+  }
+});
+
+/**
+ * GET /api/reports/download/:filename
+ * Download a report file
+ */
+router.get('/download/:filename', authUser, async (req, res) => {
+  try {
+    const { filename } = req.params;
+    const filePath = path.join(uploadDir, filename);
+
+    // Security: Ensure file is within upload directory
+    const resolvedPath = path.resolve(filePath);
+    const resolvedUploadDir = path.resolve(uploadDir);
+
+    if (!resolvedPath.startsWith(resolvedUploadDir)) {
+      return res.status(403).json({
+        success: false,
+        message: 'Access denied'
+      });
+    }
+
+    // Check if user owns the report
+    const report = await Report.findOne({
+      where: {
+        filePath: resolvedPath,
+        userId: req.user.id
+      }
+    });
+
+    if (!report) {
+      return res.status(403).json({
+        success: false,
+        message: 'Access denied or file not found'
+      });
+    }
+
+    // Send file
+    res.download(resolvedPath, report.fileName);
+  } catch (error) {
+    console.error('❌ Download error:', error);
+    return res.status(500).json({
+      success: false,
+      message: 'Failed to download report',
+      error: error.message
+    });
+  }
+});
+
+export default router;

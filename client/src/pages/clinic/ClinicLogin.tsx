@@ -24,11 +24,6 @@ const ClinicLogin = () => {
       return;
     }
     
-    if (import.meta.env.DEV) {
-      setEmail('clinic@mediczy.com');
-      setPassword('Clinic123');
-    }
-    
     setIsCheckingAuth(false);
   }, [navigate]);
 

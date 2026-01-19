@@ -1,4 +1,5 @@
 import healthRiskAssessmentModel from '../models/healthRiskAssessment.model.intelligent.js';
+import { JWT_CONFIG } from '../config/auth.config.js';
 import {
   MAX_THEORETICAL_SCORE,
   RISK_SCORE_BANDS,

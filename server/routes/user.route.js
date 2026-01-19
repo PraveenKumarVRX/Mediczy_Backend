@@ -788,4 +788,112 @@ router.post("/reset-password", [
   }
 });
 
+/**
+ * @route   POST /api/users/change-password
+ * @desc    Change password (for first-time login or regular password change)
+ * @access  Private (requires authentication)
+ */
+router.post('/change-password', authUser, [
+  body('currentPassword')
+    .optional()
+    .isLength({ min: 6 })
+    .withMessage('Current password must be at least 6 characters'),
+  body('newPassword')
+    .isLength({ min: 8 })
+    .withMessage('New password must be at least 8 characters')
+    .matches(/^(?=.*[a-z])(?=.*[A-Z])(?=.*\d)(?=.*[@$!%*?&])[A-Za-z\d@$!%*?&]/)
+    .withMessage('Password must contain uppercase, lowercase, number, and special character'),
+  body('confirmPassword')
+    .custom((value, { req }) => value === req.body.newPassword)
+    .withMessage('Passwords do not match')
+], async (req, res) => {
+  try {
+    const errors = validationResult(req);
+    if (!errors.isEmpty()) {
+      return res.status(400).json({
+        success: false,
+        errors: errors.array()
+      });
+    }
+
+    const { currentPassword, newPassword } = req.body;
+    const userId = req.user.id;
+
+    // Fetch user from database
+    const user = await userModel.findByPk(userId);
+    if (!user) {
+      return res.status(404).json({
+        success: false,
+        message: 'User not found'
+      });
+    }
+
+    // Parse metadata
+    let metadata = user.metadata;
+    if (typeof metadata === 'string') {
+      try {
+        metadata = JSON.parse(metadata);
+      } catch (e) {
+        metadata = {};
+      }
+    }
+
+    // Check if this is a forced password change (first login)
+    const isFirstLogin = metadata && metadata.requirePasswordChange === true;
+
+    // If not first login, verify current password
+    if (!isFirstLogin && currentPassword) {
+      const isPasswordValid = await bcrypt.compare(currentPassword, user.password);
+      if (!isPasswordValid) {
+        return res.status(401).json({
+          success: false,
+          message: 'Current password is incorrect'
+        });
+      }
+    }
+
+    // Ensure new password is different from current password
+    const isSamePassword = await bcrypt.compare(newPassword, user.password);
+    if (isSamePassword) {
+      return res.status(400).json({
+        success: false,
+        message: 'New password must be different from current password'
+      });
+    }
+
+    // Hash new password
+    const hashedPassword = await bcrypt.hash(newPassword, 10);
+
+    // Update password and remove password change requirement
+    if (metadata && metadata.requirePasswordChange) {
+      metadata.requirePasswordChange = false;
+      metadata.passwordChangedAt = new Date().toISOString();
+    }
+
+    await user.update({
+      password: hashedPassword,
+      metadata: JSON.stringify(metadata)
+    });
+
+    // Log the password change
+    console.log(`✅ Password changed for user: ${user.email} (ID: ${userId})`);
+
+    res.status(200).json({
+      success: true,
+      message: isFirstLogin 
+        ? 'Password changed successfully. You can now access all features.'
+        : 'Password changed successfully.',
+      firstLoginComplete: isFirstLogin
+    });
+
+  } catch (error) {
+    console.error('Change password error:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Failed to change password',
+      error: process.env.NODE_ENV === 'development' ? error.message : undefined
+    });
+  }
+});
+
 export default router;

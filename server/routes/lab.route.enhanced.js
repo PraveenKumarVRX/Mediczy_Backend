@@ -1,5 +1,5 @@
 import express from 'express';
-import { Op } from 'sequelize';
+import { Op, Sequelize } from 'sequelize';
 import Lab from '../models/postgres/lab.model.postgres.js';
 import { orchestrator } from '../db/orchestrator.js';
 
@@ -65,25 +65,51 @@ router.get('/', async (req, res) => {
       ];
     }
     
-    // Location filters
+    // Location filters - use JSONB operators for PostgreSQL
+    // Store search words for sorting later
+    let searchWords = [];
     if (city) {
-      whereConditions['address'] = {
-        [Op.like]: `%"city":"${city}"%`
-      };
+      // Case-insensitive city search - search in city, street, and state fields
+      // Split search query into words and match ANY word in address fields
+      whereConditions[Op.and] = whereConditions[Op.and] || [];
+      searchWords = city.trim().split(/\s+/).filter(w => w.length >= 2);
+      
+      if (searchWords.length > 0) {
+        // Build OR conditions for each word across all address fields
+        const wordConditions = searchWords.map(word => {
+          const wordEscaped = word.replace(/'/g, "''");
+          return `(
+            "address"->>'city' ILIKE '%${wordEscaped}%' 
+            OR "address"->>'street' ILIKE '%${wordEscaped}%'
+            OR "address"->>'state' ILIKE '%${wordEscaped}%'
+            OR "address"->>'zipCode' ILIKE '%${wordEscaped}%'
+          )`;
+        });
+        
+        // Match ANY word (more inclusive search) - will sort by relevance later
+        whereConditions[Op.and].push(
+          Sequelize.literal(`(${wordConditions.join(' OR ')})`)
+        );
+      }
     }
     
     if (state) {
-      whereConditions['address'] = {
-        ...whereConditions['address'],
-        [Op.like]: `%"state":"${state}"%`
-      };
+      whereConditions[Op.and] = whereConditions[Op.and] || [];
+      whereConditions[Op.and].push(
+        Sequelize.literal(`"address"->>'state' ILIKE '%${state.replace(/'/g, "''")}%'`)
+      );
     }
     
     if (pincode) {
-      whereConditions['address'] = {
-        ...whereConditions['address'],
-        [Op.like]: `%"pincode":"${pincode}"%`
-      };
+      const pincodeEscaped = pincode.replace(/'/g, "''");
+      whereConditions[Op.and] = whereConditions[Op.and] || [];
+      
+      // First try exact match, if no results, search by prefix (first 3 digits = region)
+      // Indian pincodes: first 3 digits represent the region/district
+      const pincodePrefix = pincodeEscaped.substring(0, 3);
+      whereConditions[Op.and].push(
+        Sequelize.literal(`"address"->>'zipCode' LIKE '${pincodePrefix}%'`)
+      );
     }
     
     // Service filters
@@ -128,10 +154,34 @@ router.get('/', async (req, res) => {
     // Pagination
     const offset = (parseInt(page) - 1) * parseInt(limit);
     
+    // Build order clause - for pincode search, show exact matches first
+    let orderClause = [[sortBy, sortOrder.toUpperCase()]];
+    if (pincode) {
+      // Sort by exact pincode match first, then by rating
+      orderClause = [
+        [Sequelize.literal(`CASE WHEN "address"->>'zipCode' = '${pincode.replace(/'/g, "''")}' THEN 0 ELSE 1 END`), 'ASC'],
+        ['rating', 'DESC']
+      ];
+    } else if (searchWords && searchWords.length > 1) {
+      // For multi-word city search, sort by number of matching words (relevance)
+      const relevanceScores = searchWords.map(word => {
+        const wordEscaped = word.replace(/'/g, "''");
+        return `CASE WHEN (
+          "address"->>'city' ILIKE '%${wordEscaped}%' 
+          OR "address"->>'street' ILIKE '%${wordEscaped}%'
+          OR "address"->>'state' ILIKE '%${wordEscaped}%'
+        ) THEN 1 ELSE 0 END`;
+      });
+      orderClause = [
+        [Sequelize.literal(`(${relevanceScores.join(' + ')})`), 'DESC'],
+        ['rating', 'DESC']
+      ];
+    }
+    
     // Execute query
     const { rows: labs, count: total } = await Lab.findAndCountAll({
       where: whereConditions,
-      order: [[sortBy, sortOrder.toUpperCase()]],
+      order: orderClause,
       limit: parseInt(limit),
       offset: offset
     });
@@ -144,6 +194,7 @@ router.get('/', async (req, res) => {
       total,
       count: labs.length,
       labs,
+      searchedPincode: pincode || null,
       pagination: {
         currentPage: parseInt(page),
         totalPages,

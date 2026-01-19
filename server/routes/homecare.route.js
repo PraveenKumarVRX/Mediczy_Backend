@@ -5,8 +5,7 @@
 
 import express from 'express';
 import bcrypt from 'bcrypt';
-import jwt from 'jsonwebtoken';
-import { HomecareProvider } from '../models/index.js';
+import jwt from 'jsonwebtoken'; import { JWT_CONFIG } from '../config/auth.config.js'; import { HomecareProvider } from '../models/index.js';
 
 const router = express.Router();
 
@@ -17,38 +16,38 @@ const router = express.Router();
 router.post('/login', async (req, res) => {
   try {
     const { email, password } = req.body;
-    
+
     if (!email || !password) {
       return res.status(400).json({
         success: false,
         message: 'Email and password are required'
       });
     }
-    
+
     // Find homecare by email - select only needed fields for faster query
-    const homecare = await HomecareProvider.findOne({ 
+    const homecare = await HomecareProvider.findOne({
       where: { email },
       attributes: ['id', 'name', 'email', 'password', 'phone', 'services', 'tenant_id'],
       raw: true
     });
-    
+
     if (!homecare) {
       return res.status(401).json({
         success: false,
         message: 'Invalid credentials'
       });
     }
-    
+
     // Verify password
     const isValidPassword = await bcrypt.compare(password, homecare.password);
-    
+
     if (!isValidPassword) {
       return res.status(401).json({
         success: false,
         message: 'Invalid credentials'
       });
     }
-    
+
     // Generate JWT token
     const token = jwt.sign(
       {
@@ -57,10 +56,10 @@ router.post('/login', async (req, res) => {
         type: 'homecare',
         tenant_id: homecare.tenant_id
       },
-      process.env.JWT_SECRET,
+      JWT_CONFIG.SECRET,
       { expiresIn: '7d' }
     );
-    
+
     res.json({
       success: true,
       token,
@@ -193,7 +192,7 @@ router.post('/register', async (req, res) => {
       services = [],
       tenant_id
     } = req.body;
-    
+
     // Check if homecare exists
     const existing = await HomecareProvider.findOne({ where: { email } });
     if (existing) {
@@ -202,10 +201,10 @@ router.post('/register', async (req, res) => {
         message: 'Email already registered'
       });
     }
-    
+
     // Hash password
     const hashedPassword = await bcrypt.hash(password, 10);
-    
+
     // Create homecare
     const homecare = await HomecareProvider.create({
       name,
@@ -218,7 +217,7 @@ router.post('/register', async (req, res) => {
       tenant_id,
       status: 'active'
     });
-    
+
     // Generate token
     const token = jwt.sign(
       {
@@ -227,10 +226,10 @@ router.post('/register', async (req, res) => {
         type: 'homecare',
         tenant_id: homecare.tenant_id
       },
-      process.env.JWT_SECRET,
+      JWT_CONFIG.SECRET,
       { expiresIn: '7d' }
     );
-    
+
     res.status(201).json({
       success: true,
       token,
@@ -262,14 +261,14 @@ router.get('/profile', async (req, res) => {
     if (!token) {
       return res.status(401).json({ success: false, message: 'Unauthorized' });
     }
-    
-    const decoded = jwt.verify(token, process.env.JWT_SECRET);
+
+    const decoded = jwt.verify(token, JWT_CONFIG.SECRET);
     const homecare = await HomecareProvider.findByPk(decoded.id);
-    
+
     if (!homecare) {
       return res.status(404).json({ success: false, message: 'Homecare provider not found' });
     }
-    
+
     res.json({
       success: true,
       homecare: {

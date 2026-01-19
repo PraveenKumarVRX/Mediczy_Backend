@@ -1,4 +1,5 @@
 import { validationResult } from 'express-validator';
+import { JWT_CONFIG } from '../config/auth.config.js';
 import Appointment from '../models/appointment.model.intelligent.js';
 import DoctorAvailability from '../models/doctorAvailability.model.intelligent.js';
 import Doctor from '../models/doctor.model.intelligent.js';
@@ -436,7 +437,19 @@ export const createAppointment = async (req, res) => {
     })();
 
     return res.status(201).json({
+      success: true,
       message: 'Appointment booked successfully',
+      data: {
+        id: appointment.id,
+        doctorName: appointment.doctorName,
+        specialization: appointment.specialization,
+        appointmentDate: appointment.appointmentDate,
+        appointmentTime: appointment.appointmentTime,
+        consultationType: requestedConsultationType || appointment.consultationType,
+        consultationFee,
+        status: appointment.status,
+        paymentStatus: appointment.paymentStatus
+      },
       appointment: {
         id: appointment.id,
         doctorName: appointment.doctorName,
@@ -452,6 +465,7 @@ export const createAppointment = async (req, res) => {
   } catch (error) {
     console.error('Create appointment error:', error);
     return res.status(500).json({ 
+      success: false,
       message: 'Failed to create appointment',
       error: error.message 
     });
@@ -477,15 +491,20 @@ export const getUserAppointments = async (req, res) => {
     // Filter upcoming or past
     const now = new Date();
     if (upcoming === 'true') {
+      // Upcoming: scheduled, confirmed, in-progress (not completed, cancelled, or no-show)
       whereClause.appointmentDate = {
         [Op.gte]: now.toISOString().split('T')[0]
       };
       whereClause.status = {
-        [Op.in]: ['scheduled', 'confirmed']
+        [Op.in]: ['scheduled', 'confirmed', 'in-progress', 'rescheduled']
       };
     } else if (past === 'true') {
+      // Past: completed, cancelled, no-show
       whereClause.appointmentDate = {
         [Op.lt]: now.toISOString().split('T')[0]
+      };
+      whereClause.status = {
+        [Op.in]: ['completed', 'cancelled', 'no-show']
       };
     }
 
@@ -498,12 +517,15 @@ export const getUserAppointments = async (req, res) => {
     });
 
     return res.status(200).json({
+      success: true,
       count: appointments.length,
-      appointments
+      data: appointments,
+      appointments // Keep for backward compatibility
     });
   } catch (error) {
     console.error('Get appointments error:', error);
     return res.status(500).json({ 
+      success: false,
       message: 'Failed to fetch appointments',
       error: error.message 
     });

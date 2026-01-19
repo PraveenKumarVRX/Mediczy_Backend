@@ -1,4 +1,5 @@
 /**
+import { JWT_CONFIG } from '../../config/auth.config.js';
  * Health Reading Model
  * Time-series data from wearable devices
  */

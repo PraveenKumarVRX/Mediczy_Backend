@@ -105,8 +105,11 @@ const Register = () => {
       <div className="auth-Image relative hidden h-full flex-col bg-cover bg-center bg-muted p-10 text-white dark:border-r lg:flex">
         <div className="absolute inset-0" />
         <div className="relative z-20 flex items-center gap-2 text-lg font-bold">
-          <HeartPulse className="h-6 w-6" />
-          {BRAND.name}
+          <img 
+            src={BRAND.logo} 
+            alt={BRAND.name} 
+            className="h-10 w-auto object-contain"
+          />
         </div>
         <div className="relative z-20 mt-auto">
           <blockquote className="space-y-2">

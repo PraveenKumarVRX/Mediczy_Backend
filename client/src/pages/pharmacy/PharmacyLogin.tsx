@@ -42,10 +42,6 @@ const PharmacyLogin = () => {
       return;
     }
     
-    // Pre-fill dev credentials for testing
-    setEmail('pharmacy@mediczy.com');
-    setPassword('Pharmacy123');
-    
     setIsCheckingAuth(false);
   }, [navigate]);
 
