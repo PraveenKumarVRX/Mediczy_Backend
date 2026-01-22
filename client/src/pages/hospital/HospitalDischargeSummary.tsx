@@ -51,6 +51,13 @@ const HospitalDischargeSummary = () => {
   const [filterStatus, setFilterStatus] = useState('all');
   const [showCreateDialog, setShowCreateDialog] = useState(false);
   const [selectedPatient, setSelectedPatient] = useState<string | null>(null);
+  const [showCreateTemplateDialog, setShowCreateTemplateDialog] = useState(false);
+  const [newTemplate, setNewTemplate] = useState({
+    name: '',
+    category: '',
+    description: '',
+    content: ''
+  });
 
   // Form state for new discharge summary
   const [formData, setFormData] = useState({
@@ -288,6 +295,38 @@ const HospitalDischargeSummary = () => {
       title: "Printing",
       description: "Discharge summary sent to printer"
     });
+  };
+
+  const handleCreateTemplate = () => {
+    if (!newTemplate.name || !newTemplate.category) {
+      toast({
+        title: "Missing Fields",
+        description: "Template name and category are required",
+        variant: "destructive"
+      });
+      return;
+    }
+
+    const template = {
+      id: `TPL-${Date.now()}`,
+      name: newTemplate.name,
+      category: newTemplate.category,
+      description: newTemplate.description,
+      content: newTemplate.content,
+      createdAt: new Date().toISOString()
+    };
+
+    // Save to localStorage
+    const existingTemplates = loadHospitalStore('discharge-templates', []);
+    saveHospitalStore('discharge-templates', [...existingTemplates, template]);
+
+    toast({
+      title: "Template Created",
+      description: `${newTemplate.name} template has been saved successfully`
+    });
+
+    setNewTemplate({ name: '', category: '', description: '', content: '' });
+    setShowCreateTemplateDialog(false);
   };
 
   const handleDownload = (id: string) => {
@@ -780,9 +819,72 @@ const HospitalDischargeSummary = () => {
                   <CardTitle className="text-slate-800 dark:text-white">Discharge Summary Templates</CardTitle>
                   <CardDescription className="text-slate-500 dark:text-slate-400">Pre-configured templates for common diagnoses</CardDescription>
                 </div>
-                <Button variant="outline">
-                  <Plus className="h-4 w-4 mr-2" /> Create Template
-                </Button>
+                <Dialog open={showCreateTemplateDialog} onOpenChange={setShowCreateTemplateDialog}>
+                  <DialogTrigger asChild>
+                    <Button variant="outline">
+                      <Plus className="h-4 w-4 mr-2" /> Create Template
+                    </Button>
+                  </DialogTrigger>
+                  <DialogContent className="max-w-2xl">
+                    <DialogHeader>
+                      <DialogTitle>Create New Template</DialogTitle>
+                      <DialogDescription>Create a reusable discharge summary template</DialogDescription>
+                    </DialogHeader>
+                    <div className="space-y-4 py-4">
+                      <div className="grid grid-cols-2 gap-4">
+                        <div className="space-y-2">
+                          <Label htmlFor="templateName">Template Name</Label>
+                          <Input
+                            id="templateName"
+                            placeholder="e.g., Post-Surgery Discharge"
+                            value={newTemplate.name}
+                            onChange={(e) => setNewTemplate({...newTemplate, name: e.target.value})}
+                          />
+                        </div>
+                        <div className="space-y-2">
+                          <Label htmlFor="templateCategory">Category</Label>
+                          <Select value={newTemplate.category} onValueChange={(value) => setNewTemplate({...newTemplate, category: value})}>
+                            <SelectTrigger>
+                              <SelectValue placeholder="Select category" />
+                            </SelectTrigger>
+                            <SelectContent>
+                              <SelectItem value="General Surgery">General Surgery</SelectItem>
+                              <SelectItem value="Cardiology">Cardiology</SelectItem>
+                              <SelectItem value="Orthopedics">Orthopedics</SelectItem>
+                              <SelectItem value="Gynecology & Obstetrics">Gynecology & Obstetrics</SelectItem>
+                              <SelectItem value="Neurology">Neurology</SelectItem>
+                              <SelectItem value="Pediatrics">Pediatrics</SelectItem>
+                              <SelectItem value="Other">Other</SelectItem>
+                            </SelectContent>
+                          </Select>
+                        </div>
+                      </div>
+                      <div className="space-y-2">
+                        <Label htmlFor="templateDescription">Description</Label>
+                        <Input
+                          id="templateDescription"
+                          placeholder="Brief description of when to use this template"
+                          value={newTemplate.description}
+                          onChange={(e) => setNewTemplate({...newTemplate, description: e.target.value})}
+                        />
+                      </div>
+                      <div className="space-y-2">
+                        <Label htmlFor="templateContent">Template Content</Label>
+                        <Textarea
+                          id="templateContent"
+                          placeholder="Enter the template content with placeholders like {{patient_name}}, {{diagnosis}}, etc."
+                          className="min-h-[200px]"
+                          value={newTemplate.content}
+                          onChange={(e) => setNewTemplate({...newTemplate, content: e.target.value})}
+                        />
+                      </div>
+                    </div>
+                    <DialogFooter>
+                      <Button variant="outline" onClick={() => setShowCreateTemplateDialog(false)}>Cancel</Button>
+                      <Button onClick={handleCreateTemplate} className="bg-teal-600 hover:bg-teal-700">Create Template</Button>
+                    </DialogFooter>
+                  </DialogContent>
+                </Dialog>
               </div>
             </CardHeader>
             <CardContent>
