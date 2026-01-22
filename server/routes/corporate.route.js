@@ -1361,4 +1361,281 @@ router.get('/network-providers', authUser, async (req, res) => {
   }
 });
 
+// ---------------------------------------------------------------------------
+// Wellness Calendar Endpoints
+// ---------------------------------------------------------------------------
+
+// In-memory store for wellness activities
+let wellnessActivities = [];
+
+const WELLNESS_THEMES = [
+  { month: 0, name: 'New Year Wellness Kickoff', description: 'Start the year with health goals and resolutions' },
+  { month: 1, name: 'Heart Health Month', description: 'Focus on cardiovascular wellness and heart-healthy habits' },
+  { month: 2, name: 'Nutrition & Diet', description: 'Healthy eating habits and nutritional awareness' },
+  { month: 3, name: 'Mental Wellness', description: 'Stress management and mental health awareness' },
+  { month: 4, name: 'Physical Fitness', description: 'Exercise routines and physical activity promotion' },
+  { month: 5, name: 'Eye & Vision Care', description: 'Eye health awareness and vision screening' },
+  { month: 6, name: 'Hydration & Detox', description: 'Importance of hydration and body detoxification' },
+  { month: 7, name: 'Preventive Health', description: 'Health screenings and preventive care' },
+  { month: 8, name: 'Diabetes Awareness', description: 'Blood sugar management and diabetes prevention' },
+  { month: 9, name: 'Breast Cancer Awareness', description: 'Cancer awareness and early detection' },
+  { month: 10, name: "Men's Health", description: "Focus on men's health issues and wellness" },
+  { month: 11, name: 'Sleep & Rest', description: 'Quality sleep and rest for overall wellness' },
+];
+
+// Generate sample wellness activities
+const generateWellnessActivities = () => {
+  const currentYear = new Date().getFullYear();
+  const sampleActivities = [
+    { title: 'New Year Health Goals Workshop', type: 'workshop', month: 0, day: 5 },
+    { title: 'BMI & Body Composition Check', type: 'screening', month: 0, day: 15 },
+    { title: 'Cardiac Health Awareness Talk', type: 'talk', month: 1, day: 8 },
+    { title: 'Heart Health Screening Camp', type: 'health-camp', month: 1, day: 14 },
+    { title: 'CPR & First Aid Demo', type: 'demonstration', month: 1, day: 20 },
+    { title: 'Healthy Cooking Webinar', type: 'webinar', month: 2, day: 10 },
+    { title: 'Nutrition Counseling Sessions', type: 'talk', month: 2, day: 18 },
+    { title: 'Calorie Counting Challenge', type: 'challenge', month: 2, day: 1 },
+    { title: 'Stress Management Workshop', type: 'workshop', month: 3, day: 7 },
+    { title: 'Meditation & Mindfulness Session', type: 'demonstration', month: 3, day: 15 },
+    { title: 'Office Fitness Challenge', type: 'challenge', month: 4, day: 1 },
+    { title: 'Yoga & Stretching Demo', type: 'demonstration', month: 4, day: 12 },
+    { title: 'Eye Checkup Camp', type: 'health-camp', month: 5, day: 10 },
+    { title: 'Hydration Challenge', type: 'challenge', month: 6, day: 1 },
+    { title: 'Annual Health Checkup Camp', type: 'health-camp', month: 7, day: 5 },
+    { title: 'Diabetes Risk Assessment', type: 'screening', month: 8, day: 10 },
+    { title: 'Breast Cancer Awareness Session', type: 'talk', month: 9, day: 8 },
+    { title: 'Prostate Health Screening', type: 'screening', month: 10, day: 10 },
+    { title: 'Sleep Hygiene Webinar', type: 'webinar', month: 11, day: 5 },
+  ];
+
+  return sampleActivities.map((act, index) => {
+    const theme = WELLNESS_THEMES[act.month];
+    return {
+      id: `act-${index + 1}`,
+      title: act.title,
+      description: `Join us for ${act.title.toLowerCase()} as part of our ${theme.name} initiative.`,
+      type: act.type,
+      date: `${currentYear}-${String(act.month + 1).padStart(2, '0')}-${String(act.day).padStart(2, '0')}`,
+      startTime: '10:00',
+      endTime: '12:00',
+      location: act.type === 'webinar' ? 'Online (Zoom)' : 'Conference Room A',
+      speaker: ['Dr. Priya Sharma', 'Dr. Rajesh Kumar', 'Wellness Coach Anita', 'Dr. Vikram Singh'][index % 4],
+      capacity: act.type === 'webinar' ? 500 : act.type === 'health-camp' ? 200 : 50,
+      registered: Math.floor(Math.random() * 40) + 10,
+      status: new Date(`${currentYear}-${String(act.month + 1).padStart(2, '0')}-${String(act.day).padStart(2, '0')}`) < new Date() ? 'completed' : 'scheduled',
+      theme: theme.name,
+      participantSelection: 'all',
+      invitesSent: index < 10,
+      totalInvited: index < 10 ? 200 : 0,
+      reminders: { enabled: true, fifteenDays: true, threeDays: true, oneDayBefore: true }
+    };
+  });
+};
+
+// Initialize wellness activities
+if (wellnessActivities.length === 0) {
+  wellnessActivities = generateWellnessActivities();
+}
+
+// Get wellness calendar activities
+router.get('/wellness-calendar/activities', authUser, async (req, res) => {
+  try {
+    res.json({
+      success: true,
+      data: {
+        activities: wellnessActivities,
+        themes: WELLNESS_THEMES
+      }
+    });
+  } catch (error) {
+    console.error('Error fetching wellness activities:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Failed to fetch wellness activities',
+      error: error.message
+    });
+  }
+});
+
+// Create wellness activity
+router.post('/wellness-calendar/activities', authUser, async (req, res) => {
+  try {
+    const { title, description, type, date, startTime, endTime, location, speaker, capacity, theme } = req.body;
+    
+    const newActivity = {
+      id: `act-${Date.now()}`,
+      title,
+      description,
+      type,
+      date,
+      startTime,
+      endTime,
+      location,
+      speaker,
+      capacity: capacity || 50,
+      registered: 0,
+      status: 'scheduled',
+      theme,
+      participantSelection: 'all',
+      invitesSent: false,
+      totalInvited: 0,
+      reminders: { enabled: true, fifteenDays: true, threeDays: true, oneDayBefore: true },
+      createdAt: new Date().toISOString()
+    };
+    
+    wellnessActivities.push(newActivity);
+    
+    res.json({
+      success: true,
+      message: 'Activity created successfully',
+      data: newActivity
+    });
+  } catch (error) {
+    console.error('Error creating wellness activity:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Failed to create activity',
+      error: error.message
+    });
+  }
+});
+
+// Update wellness activity
+router.put('/wellness-calendar/activities/:id', authUser, async (req, res) => {
+  try {
+    const { id } = req.params;
+    const index = wellnessActivities.findIndex(a => a.id === id);
+    
+    if (index === -1) {
+      return res.status(404).json({
+        success: false,
+        message: 'Activity not found'
+      });
+    }
+    
+    wellnessActivities[index] = { ...wellnessActivities[index], ...req.body, updatedAt: new Date().toISOString() };
+    
+    res.json({
+      success: true,
+      message: 'Activity updated successfully',
+      data: wellnessActivities[index]
+    });
+  } catch (error) {
+    console.error('Error updating wellness activity:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Failed to update activity',
+      error: error.message
+    });
+  }
+});
+
+// Delete wellness activity
+router.delete('/wellness-calendar/activities/:id', authUser, async (req, res) => {
+  try {
+    const { id } = req.params;
+    const index = wellnessActivities.findIndex(a => a.id === id);
+    
+    if (index === -1) {
+      return res.status(404).json({
+        success: false,
+        message: 'Activity not found'
+      });
+    }
+    
+    wellnessActivities.splice(index, 1);
+    
+    res.json({
+      success: true,
+      message: 'Activity deleted successfully'
+    });
+  } catch (error) {
+    console.error('Error deleting wellness activity:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Failed to delete activity',
+      error: error.message
+    });
+  }
+});
+
+// Send invites for wellness activity
+router.post('/wellness-calendar/activities/:id/send-invites', authUser, async (req, res) => {
+  try {
+    const { id } = req.params;
+    const { participantSelection, selectedDepartments, selectedLocations, totalParticipants } = req.body;
+    
+    const index = wellnessActivities.findIndex(a => a.id === id);
+    
+    if (index === -1) {
+      return res.status(404).json({
+        success: false,
+        message: 'Activity not found'
+      });
+    }
+    
+    wellnessActivities[index] = {
+      ...wellnessActivities[index],
+      invitesSent: true,
+      invitesSentDate: new Date().toISOString(),
+      participantSelection,
+      selectedDepartments,
+      selectedLocations,
+      totalInvited: totalParticipants || 0
+    };
+    
+    res.json({
+      success: true,
+      message: `Invites sent to ${totalParticipants || 0} participants`,
+      data: wellnessActivities[index]
+    });
+  } catch (error) {
+    console.error('Error sending invites:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Failed to send invites',
+      error: error.message
+    });
+  }
+});
+
+// Get employee events (for employee wellness calendar view)
+router.get('/wellness-calendar/employee/events', authUser, async (req, res) => {
+  try {
+    // Return activities that are scheduled or ongoing
+    const employeeEvents = wellnessActivities
+      .filter(a => a.status === 'scheduled' || a.status === 'ongoing')
+      .map(a => ({
+        id: a.id,
+        title: a.title,
+        description: a.description,
+        type: a.type,
+        date: a.date,
+        startTime: a.startTime,
+        endTime: a.endTime,
+        location: a.location,
+        speaker: a.speaker,
+        theme: a.theme,
+        capacity: a.capacity,
+        registered: a.registered,
+        isRegistered: false
+      }));
+    
+    res.json({
+      success: true,
+      data: {
+        events: employeeEvents,
+        themes: WELLNESS_THEMES
+      }
+    });
+  } catch (error) {
+    console.error('Error fetching employee wellness events:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Failed to fetch wellness events',
+      error: error.message
+    });
+  }
+});
+
 export default router;
