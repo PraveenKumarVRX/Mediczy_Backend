@@ -39,6 +39,9 @@ import {
 interface Appointment {
   id: string;
   backendId?: number;
+  meetingLink?: string;
+  roomId?: string;
+  meetingId?: string;
   doctor: {
     id?: string;
     name: string;
@@ -75,6 +78,24 @@ const parseBackendId = (value: unknown) => {
   if (value === null || value === undefined) return undefined;
   const parsed = typeof value === "number" ? value : Number(String(value));
   return Number.isFinite(parsed) ? parsed : undefined;
+};
+
+const extractRoomId = (meetingLink?: string) => {
+  if (!meetingLink) return undefined;
+  if (meetingLink.includes("/join/")) {
+    return meetingLink.split("/join/")[1]?.split("?")[0];
+  }
+  try {
+    const parsed = new URL(meetingLink);
+    const parts = parsed.pathname.split("/").filter(Boolean);
+    const joinIndex = parts.indexOf("join");
+    if (joinIndex >= 0 && parts[joinIndex + 1]) {
+      return parts[joinIndex + 1];
+    }
+  } catch (error) {
+    // Ignore parsing errors and fall back to raw value.
+  }
+  return meetingLink;
 };
 
 const Appointments = () => {
@@ -132,7 +153,7 @@ const Appointments = () => {
         id: String(apt.id ?? apt.appointmentId ?? apt._id ?? crypto.randomUUID()),
         backendId: parseBackendId(apt.id ?? apt.appointmentId ?? apt.appointment_id),
         doctor: {
-          id: apt.doctorId ?? apt.doctor?._id,
+          id: apt.doctorId ?? apt.doctor_id ?? apt.doctor?._id ?? apt.doctor?.id,
           name:
             apt.doctorName ??
             (apt.doctor
@@ -142,6 +163,9 @@ const Appointments = () => {
           rating: Number(apt.doctorRating ?? apt.doctor?.averageRating ?? 4.5) || 4.5,
           profileImage: apt.doctorProfileImage ?? apt.doctor?.profileImage,
         },
+        meetingLink: apt.meetingLink ?? apt.meeting_link,
+        roomId: apt.roomId ?? apt.videoRoomId ?? apt.meetingId ?? apt.meeting_id,
+        meetingId: apt.meetingId ?? apt.meeting_id,
         date: apt.appointmentDate ?? apt.date,
         time: apt.appointmentTime ?? apt.time,
         consultationType:
@@ -464,24 +488,31 @@ const Appointments = () => {
 
   const handleJoinCall = (appointment: Appointment) => {
     const doctorId = appointment.doctor.id;
-    if (!doctorId) {
+    const meetingRoomFromLink = extractRoomId(appointment.meetingLink);
+    const roomId =
+      appointment.meetingLink ||
+      appointment.roomId ||
+      appointment.meetingId ||
+      meetingRoomFromLink ||
+      (appointment.backendId ? `apt-${appointment.backendId}` : undefined) ||
+      (doctorId ? `doc-${doctorId}` : undefined);
+
+    if (!roomId) {
       toast({
         title: "Unable to start call",
-        description: "Doctor details are missing for this appointment.",
+        description: "Meeting room details are missing for this appointment.",
         variant: "destructive",
       });
       return;
     }
 
-    // Generate room ID from appointment
-    const roomId = appointment.backendId ? `apt-${appointment.backendId}` : `doc-${doctorId}`;
-
     // Navigate to video consultation page
-    navigate(`/video-consultation?room=${encodeURIComponent(roomId)}&appointmentId=${appointment.backendId || ''}`);
+    const appointmentId = appointment.backendId ?? appointment.id ?? "";
+    navigate(`/video-consultation?room=${encodeURIComponent(roomId)}&appointmentId=${encodeURIComponent(String(appointmentId))}`);
 
     toast({
       title: "Joining Video Call",
-      description: `Connecting to consultation with ${appointment.doctor.name}`,
+      description: `Connecting to consultation with ${appointment.doctor.name || "Doctor"}`,
     });
   };
 

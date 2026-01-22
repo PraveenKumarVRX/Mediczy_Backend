@@ -9,7 +9,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import { GoogleGenerativeAI } from "@google/generative-ai";
+import api from "@/utils/api";
 
 interface AIResponse {
   description: string;
@@ -28,9 +28,6 @@ const languages = [
   { value: "ar", label: "Arabic" },
   { value: "ru", label: "Russian" },
 ];
-
-// Initialize Gemini AI with your API key
-const genAI = new GoogleGenerativeAI(import.meta.env.VITE_GEMINI_API_KEY);
 
 export default function RepostsPage() {
   const [selectedImage, setSelectedImage] = useState<File | null>(null);
@@ -85,41 +82,6 @@ export default function RepostsPage() {
       .join('\n\n'); // Join with double newlines for spacing
   };
 
-  const getLanguagePrompt = (lang: string): string => {
-    const languageMap: { [key: string]: string } = {
-      en: "English",
-      es: "Spanish (Español)",
-      fr: "French (Français)",
-      de: "German (Deutsch)",
-      hi: "Hindi (हिंदी)",
-      zh: "Chinese (中文)",
-      ja: "Japanese (日本語)",
-      ko: "Korean (한국어)",
-      ar: "Arabic (العربية)",
-      ru: "Russian (Русский)"
-    };
-    return languageMap[lang] || "English";
-  };
-
-  const translateText = async (text: string, targetLang: string): Promise<string> => {
-    try {
-      const model = genAI.getGenerativeModel({ model: "gemini-1.5-flash-8b" });
-      const prompt = `Translate the following text to ${getLanguagePrompt(targetLang)}. 
-Keep the same format and structure, including bullet points. 
-Make sure the translation is natural and fluent.
-
-Text to translate:
-${text}`;
-
-      const result = await model.generateContent(prompt);
-      const translatedText = result.response.text();
-      return cleanMarkdown(translatedText);
-    } catch (error) {
-      console.error('Translation error:', error);
-      throw new Error(`Translation failed: ${error instanceof Error ? error.message : 'Unknown error'}`);
-    }
-  };
-
   const analyzeImage = async () => {
     if (!selectedImage) return;
 
@@ -130,79 +92,25 @@ ${text}`;
       // Get base64 image data
       const base64Image = await getBase64FromFile(selectedImage);
 
-      // Get the Gemini Vision Pro model
-      const model = genAI.getGenerativeModel({ model: "gemini-1.5-flash-8b" });
-
-      console.log('Sending request to Gemini with image type:', selectedImage.type);
-      
-      // Generate content with language-specific prompt
-      const prompt = language === 'en' 
-        ? "Analyze this medical or health-related image and provide a detailed but concise description. List each observation as a separate bullet point. Focus on any visible symptoms, medical conditions, or health-related aspects. Use simple, easy-to-understand language without any special formatting or markdown."
-        : `Analyze this medical or health-related image and provide a detailed but concise description in ${getLanguagePrompt(language)}. List each observation as a separate bullet point. Focus on any visible symptoms, medical conditions, or health-related aspects. Use simple, easy-to-understand language without any special formatting or markdown.`;
-
-      const result = await model.generateContent([
-        {
-          inlineData: {
-            mimeType: selectedImage.type,
-            data: base64Image
-          }
-        },
-        prompt
-      ]);
-
-      const response = await result.response;
-      let description = cleanMarkdown(response.text());
-
-      console.log('Received response from Gemini:', description);
-
-      // Check if we need translation by looking for some language-specific characters
-      const needsTranslation = language !== 'en' && 
-        !(
-          (language === 'hi' && /[\u0900-\u097F]/.test(description)) || // Hindi
-          (language === 'zh' && /[\u4E00-\u9FFF]/.test(description)) || // Chinese
-          (language === 'ja' && /[\u3040-\u30FF]/.test(description)) || // Japanese
-          (language === 'ko' && /[\uAC00-\uD7AF]/.test(description)) || // Korean
-          (language === 'ar' && /[\u0600-\u06FF]/.test(description)) || // Arabic
-          (language === 'ru' && /[\u0400-\u04FF]/.test(description))    // Russian
-        );
-
-      if (needsTranslation) {
-        console.log('Translating response to', getLanguagePrompt(language));
-        try {
-          description = await translateText(description, language);
-        } catch (translationError) {
-          console.warn('Translation failed, using original response:', translationError);
-          // Continue with the original response if translation fails
-        }
-      }
+      const response = await api.post('/ai/analyze-image', {
+        image: base64Image,
+        language
+      });
+      const description = cleanMarkdown(response.data?.description || "");
 
       setAiResponse({
         description,
         language,
       });
     } catch (error: unknown) {
-      console.error('Analysis error:', {
-        error,
-        message: error instanceof Error ? error.message : 'Unknown error',
-        stack: error instanceof Error ? error.stack : undefined
-      });
+      const apiError = error as any;
+      const errorMessage =
+        apiError?.response?.data?.details ||
+        apiError?.response?.data?.error ||
+        apiError?.message ||
+        "Failed to analyze image.";
       
-      let errorMessage = "Failed to analyze image. ";
-      if (error instanceof Error) {
-        if (error.message.includes('PERMISSION_DENIED')) {
-          errorMessage += "API key error. Please check your API key.";
-        } else if (error.message.includes('INVALID_ARGUMENT')) {
-          errorMessage += "Invalid image format. Please try a different image.";
-        } else if (error.message.includes('404')) {
-          errorMessage += "Model not found. Please check model availability.";
-        } else if (error.message.includes('Translation failed')) {
-          errorMessage += "Failed to translate, showing original response.";
-        } else {
-          errorMessage += error.message;
-        }
-      }
-      
-      setError(errorMessage);
+      setError(errorMessage.startsWith("Failed") ? errorMessage : `Failed to analyze image. ${errorMessage}`);
     } finally {
       setLoading(false);
     }

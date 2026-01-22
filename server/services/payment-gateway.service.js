@@ -13,7 +13,7 @@ const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 const envPath = path.resolve(__dirname, '..', '..', '.env');
 console.log('🔧 PaymentGateway env load', { envPath, exists: fs.existsSync(envPath) });
-const dotenvResult = dotenv.config({ path: envPath, override: true });
+const dotenvResult = dotenv.config({ path: envPath });
 console.log('🔧 Dotenv loaded', { 
   error: dotenvResult.error ? dotenvResult.error.message : null, 
   hasRazorpayKey: !!(dotenvResult.parsed && dotenvResult.parsed.RAZORPAY_KEY_ID),
@@ -79,16 +79,22 @@ class PaymentGatewayService {
       throw new Error('Razorpay not configured');
     }
 
+    // Ensure amount is in paise (multiply by 100 for decimal prices)
+    const amountInPaise = Math.round(orderData.amount * 100);
+    
     const options = {
-      amount: Math.round(orderData.amount * 100), // Amount in paise
+      amount: amountInPaise,
       currency: orderData.currency || 'INR',
       receipt: orderData.receipt || `order_${Date.now()}`,
-      notes: orderData.notes || {}
+      notes: orderData.notes || {},
+      payment_capture: 1 // Auto-capture payment
     };
 
     try {
+      console.log('📤 Creating Razorpay order with options:', JSON.stringify(options, null, 2));
       const order = await razorpayInstance.orders.create(options);
-      return {
+      
+      const result = {
         success: true,
         gateway: 'razorpay',
         orderId: order.id,
@@ -97,11 +103,17 @@ class PaymentGatewayService {
         receipt: order.receipt,
         status: order.status
       };
+      
+      console.log('✅ Razorpay order created successfully:', result.orderId);
+      return result;
     } catch (error) {
-      console.error('Razorpay order creation error:', {
+      console.error('❌ Razorpay order creation error:', {
         message: error?.message,
         name: error?.name,
-        status: error?.status,
+        status: error?.status || error?.statusCode,
+        code: error?.code,
+        description: error?.description,
+        error: error?.error,
         options
       });
       throw error;

@@ -14,6 +14,7 @@ import { ScrollArea } from '@/components/ui/scroll-area';
 import { Separator } from '@/components/ui/separator';
 import { useToast } from '@/hooks/use-toast';
 import HospitalLayout from '@/components/hospital/HospitalLayout';
+import { loadHospitalStore, saveHospitalStore } from '@/utils/hospitalStorage';
 import {
   MessageSquare, Mail, Send, Phone, Video, Smartphone, Settings,
   BarChart3, Users, CheckCircle, XCircle, Clock, RefreshCw,
@@ -76,7 +77,7 @@ const HospitalCommunicationHub = () => {
   });
 
   // Recent communications
-  const [recentComms, setRecentComms] = useState<CommunicationLog[]>([
+  const initialRecentComms: CommunicationLog[] = [
     {
       id: '1',
       channel: 'whatsapp',
@@ -118,7 +119,10 @@ const HospitalCommunicationHub = () => {
       timestamp: '2026-01-07T11:00:00',
       direction: 'outbound'
     }
-  ]);
+  ];
+  const [recentComms, setRecentComms] = useState<CommunicationLog[]>(
+    () => loadHospitalStore('hospital-communication-logs', initialRecentComms)
+  );
 
   // Templates
   const [templates, setTemplates] = useState<MessageTemplate[]>([
@@ -246,12 +250,32 @@ const HospitalCommunicationHub = () => {
       return;
     }
     setLoading(true);
-    // Simulate API call
-    setTimeout(() => {
+    try {
+      const entry: CommunicationLog = {
+        id: `C-${Date.now()}`,
+        channel: 'email',
+        recipient: emailForm.to,
+        recipientName: emailForm.to,
+        subject: emailForm.subject,
+        message: emailForm.body,
+        status: 'sent',
+        timestamp: new Date().toISOString(),
+        direction: 'outbound'
+      };
+      setRecentComms(prev => {
+        const next = [entry, ...prev];
+        saveHospitalStore('hospital-communication-logs', next);
+        return next;
+      });
+      setStats(prev => ({
+        ...prev,
+        email: { ...prev.email, sent: prev.email.sent + 1, delivered: prev.email.delivered + 1 }
+      }));
       toast({ title: 'Email Sent', description: `Email sent to ${emailForm.to}` });
       setEmailForm({ to: '', cc: '', subject: '', body: '', templateId: '' });
+    } finally {
       setLoading(false);
-    }, 1000);
+    }
   };
 
   const handleSendSMS = async () => {
@@ -260,11 +284,31 @@ const HospitalCommunicationHub = () => {
       return;
     }
     setLoading(true);
-    setTimeout(() => {
+    try {
+      const entry: CommunicationLog = {
+        id: `C-${Date.now()}`,
+        channel: 'sms',
+        recipient: smsForm.to,
+        recipientName: smsForm.to,
+        message: smsForm.message,
+        status: 'sent',
+        timestamp: new Date().toISOString(),
+        direction: 'outbound'
+      };
+      setRecentComms(prev => {
+        const next = [entry, ...prev];
+        saveHospitalStore('hospital-communication-logs', next);
+        return next;
+      });
+      setStats(prev => ({
+        ...prev,
+        sms: { ...prev.sms, sent: prev.sms.sent + 1, delivered: prev.sms.delivered + 1 }
+      }));
       toast({ title: 'SMS Sent', description: `SMS sent to ${smsForm.to}` });
       setSmsForm({ to: '', message: '', templateId: '' });
+    } finally {
       setLoading(false);
-    }, 1000);
+    }
   };
 
   const handleSendWhatsApp = async () => {
@@ -273,11 +317,31 @@ const HospitalCommunicationHub = () => {
       return;
     }
     setLoading(true);
-    setTimeout(() => {
+    try {
+      const entry: CommunicationLog = {
+        id: `C-${Date.now()}`,
+        channel: 'whatsapp',
+        recipient: whatsappForm.to,
+        recipientName: whatsappForm.to,
+        message: whatsappForm.message,
+        status: 'sent',
+        timestamp: new Date().toISOString(),
+        direction: 'outbound'
+      };
+      setRecentComms(prev => {
+        const next = [entry, ...prev];
+        saveHospitalStore('hospital-communication-logs', next);
+        return next;
+      });
+      setStats(prev => ({
+        ...prev,
+        whatsapp: { ...prev.whatsapp, sent: prev.whatsapp.sent + 1 }
+      }));
       toast({ title: 'WhatsApp Sent', description: `WhatsApp message sent to ${whatsappForm.to}` });
       setWhatsappForm({ to: '', message: '', templateId: '', mediaUrl: '' });
+    } finally {
       setLoading(false);
-    }, 1000);
+    }
   };
 
   const handleInitiateCall = async () => {
@@ -286,11 +350,31 @@ const HospitalCommunicationHub = () => {
       return;
     }
     setLoading(true);
-    setTimeout(() => {
+    try {
+      const entry: CommunicationLog = {
+        id: `C-${Date.now()}`,
+        channel: 'voice',
+        recipient: voiceForm.to,
+        recipientName: voiceForm.to,
+        message: voiceForm.script || 'Outbound call initiated',
+        status: 'sent',
+        timestamp: new Date().toISOString(),
+        direction: 'outbound'
+      };
+      setRecentComms(prev => {
+        const next = [entry, ...prev];
+        saveHospitalStore('hospital-communication-logs', next);
+        return next;
+      });
+      setStats(prev => ({
+        ...prev,
+        voice: { ...prev.voice, total: prev.voice.total + 1 }
+      }));
       toast({ title: 'Call Initiated', description: `Calling ${voiceForm.to}...` });
       setVoiceForm({ to: '', script: '', callType: 'reminder' });
+    } finally {
       setLoading(false);
-    }, 1000);
+    }
   };
 
   const applyTemplate = (template: MessageTemplate, channel: string) => {

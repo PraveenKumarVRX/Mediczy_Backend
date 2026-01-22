@@ -98,6 +98,8 @@ import ehrRouter from './routes/ehr.route.js';
 import healthDiaryRouter from './routes/health-diary.route.js';
 import healthIntelligenceRouter from './routes/health-intelligence.route.js';
 import sibControlRouter from './routes/sib-control.route.js';
+import sibChatbotsRouter from './routes/sib-chatbots.route.js';
+import { ringFencingMiddleware } from './middleware/ringFencing.js';
 import onlineConsultationRouter from './routes/online-consultation.route.js';
 import notificationRouter from './routes/notification.route.js';
 import embeddingsRouter from './routes/embeddings.route.js';
@@ -107,6 +109,7 @@ import circuitBreakerRouter from './routes/circuit-breaker.route.js';
 import n8nCallbackRouter from './routes/webhooks/n8n-callback.route.js';
 import oauthRouter from './routes/oauth.route.js';
 import doctorOAuthRouter from './routes/doctor-oauth.route.js';
+import authLoginRouter from './routes/auth.login.route.js';
 import communicationRouter from './routes/communication.route.js';
 import consultationRecordingRouter from './routes/consultation-recording.route.js';
 import billingRouter from './routes/billing.route.js';
@@ -412,7 +415,6 @@ app.use(activityLogger({
 app.use(sessionTimeout);
 
 // 10. Ring-Fencing Middleware (Prevent cross-user privilege escalation)
-import { ringFencingMiddleware } from './middleware/ringFencing.js';
 app.use(ringFencingMiddleware);
 
 // Error handling middleware (must be last)
@@ -622,6 +624,7 @@ app.use('/api/circuit-breakers', circuitBreakerRouter);
 // OAuth2 Routes (must be before authentication middleware)
 app.use('/api/auth', oauthRouter);
 app.use('/api/auth/doctor', doctorOAuthRouter);
+app.use('/api/auth', authLoginRouter);
 
 app.use("/api/users", userRouter);
 app.use("/api/addresses", addressRouter);
@@ -658,6 +661,7 @@ app.use("/api/ehr", ehrRouter); // Electronic Health Records - admin access to p
 app.use("/api/health-diary", healthDiaryRouter); // Patient health journal and diary entries
 app.use("/api/health-intelligence", healthIntelligenceRouter); // Dr. iSHA Health Intelligence Dashboard
 app.use("/api/sib", sibControlRouter); // SIB Control Layer - AI decision management, kill switch, approvals
+app.use("/api/sib-chatbots", sibChatbotsRouter); // SIB Chatbots - Admin dashboard AI chatbots (Health, Appointment, Emergency)
 app.use("/api/health", healthRouter); // Unified health metrics endpoint
 app.use("/api/consultation", onlineConsultationRouter); // Online consultation booking flow
 app.use("/api/consultation-recordings", consultationRecordingRouter); // Consultation recording and AI transcription
@@ -712,6 +716,7 @@ app.use('/api/tenant-domains', tenantDomainRouter); // Custom domain management
 app.use('/api/corporate', corporateRouter); // Corporate benefits and plans
 app.use('/api', hospitalRouter); // Hospital directory and SPN network
 app.use('/api/hospital/practice', hospitalPracticeRouter); // Hospital practice management (appointments, patients, staff, resources)
+app.use('/api/hospital', hospitalPracticeRouter); // Alias practice endpoints for hospital dashboard modules
 app.use('/api/hospital/auth', hospitalAuthRouter); // Hospital authentication & corporate onboarding
 app.use('/api/user-associations', userAssociationRouter); // User hierarchy and entity associations
 app.use('/api/clinics', clinicRouter); // Clinics directory (labs, dental, etc.)
@@ -766,11 +771,11 @@ import unifiedHospitalStaffRouter from './routes/unified-hospital-staff.routes.j
 import superadminClinicRouter from './routes/superadmin-clinic.routes.js';
 import superAdminTenantRouter from './routes/super-admin-tenant.route.js';
 
+app.use('/api/clinic/dashboard', clinicDashboardRouter); // Clinic practice management dashboard
 app.use('/api/clinic', clinicAuthRouter); // Clinic authentication (login, logout, verify)
 app.use('/api/clinic', clinicStaffAuthRouter); // Clinic staff authentication (doctor, nurse, assistant login)
 app.use('/api/clinic', clinicStaffRouter); // Clinic staff management (CRUD operations)
 app.use('/api/clinic', clinicPatientRouter); // Clinic patient management (signup, add, login, list)
-app.use('/api/clinic/dashboard', clinicDashboardRouter); // Clinic practice management dashboard
 
 // Unified Patient Routes - Single Mediczy Mobile App for all tenants
 app.use('/api/patient', unifiedPatientRouter); // Patient signup, login, profile (multi-tenant)

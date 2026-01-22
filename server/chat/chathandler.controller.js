@@ -359,10 +359,17 @@ export async function emitTriageCallRequest(doctorId, callData) {
   let fcmSent = false;
 
   // Try Socket.IO first (instant for active connections)
-  const doctorSocket = onlineUsers.get(doctorId);
-  if (doctorSocket && io) {
-    io.to(doctorSocket.socketId).emit("triage-call-request", callData);
-    console.log(`✅ Socket.IO notification sent to doctor ${doctorId}`);
+  if (io) {
+    // Send to doctor's room (works even if doctor reconnects)
+    io.to(`doctor-${doctorId}`).emit("triage-call-request", callData);
+    console.log(`✅ Socket.IO notification sent to doctor-${doctorId} room`);
+    
+    // Also send directly to socket if available
+    const doctorSocket = onlineUsers.get(doctorId);
+    if (doctorSocket) {
+      io.to(doctorSocket.socketId).emit("triage-call-request", callData);
+      console.log(`✅ Socket.IO notification also sent to doctor socket ${doctorSocket.socketId}`);
+    }
     socketSent = true;
   }
 
@@ -387,11 +394,17 @@ export async function emitCallAccepted(patientId, acceptData) {
   let socketSent = false;
   let fcmSent = false;
 
-  // Socket.IO (instant)
-  const patientSocket = onlineUsers.get(patientId);
-  if (patientSocket && io) {
-    io.to(patientSocket.socketId).emit("triage-call-accepted", acceptData);
-    console.log(`✅ Socket.IO call accepted sent to patient ${patientId}`);
+  // Socket.IO (instant) - send to room and direct socket
+  if (io) {
+    // Send to user's room
+    io.to(`user-${patientId}`).emit("triage-call-accepted", acceptData);
+    console.log(`✅ Socket.IO call accepted sent to user-${patientId} room`);
+    
+    // Also send directly to socket if available
+    const patientSocket = onlineUsers.get(patientId);
+    if (patientSocket) {
+      io.to(patientSocket.socketId).emit("triage-call-accepted", acceptData);
+    }
     socketSent = true;
   }
 
@@ -416,12 +429,17 @@ export async function emitCallRejected(patientId, rejectData) {
   let socketSent = false;
   let fcmSent = false;
 
-  // Socket.IO (instant)
-  const patientSocket = onlineUsers.get(patientId);
-  if (patientSocket && io) {
-    io.to(patientSocket.socketId).emit("triage-call-rejected", rejectData);
-    console.log(`✅ Socket.IO call rejected sent to patient ${patientId}`);
-    socketSent = true;
+  // Socket.IO (instant) - send to room and direct socket
+  if (io) {
+    // Send to user's room
+    io.to(`user-${patientId}`).emit("triage-call-rejected", rejectData);
+    console.log(`✅ Socket.IO call rejected sent to user-${patientId} room`);
+    
+    // Also send directly to socket if available
+    const patientSocket = onlineUsers.get(patientId);
+    if (patientSocket) {
+      io.to(patientSocket.socketId).emit("triage-call-rejected", rejectData);
+    }    socketSent = true;
   }
 
   // FCM (mobile backup)

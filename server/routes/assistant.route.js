@@ -3,6 +3,9 @@ import { body } from 'express-validator';
 import Assistant from '../models/assistant.model.intelligent.js';
 import jwt from 'jsonwebtoken';
 import bcrypt from 'bcryptjs';
+import { JWT_CONFIG } from '../config/auth.config.js';
+import { authLimiter } from '../middleware/rateLimiter.middleware.js';
+import { auditLoginAttempt } from '../middleware/audit.middleware.js';
 
 const router = express.Router();
 
@@ -77,7 +80,7 @@ export const authAssistant = async (req, res, next) => {
 };
 
 // Assistant login endpoint
-router.post('/login', [
+router.post('/login', authLimiter, [
   body('email').isEmail().withMessage('Must be a valid email'),
   body('password').notEmpty().withMessage('Password is required'),
 ], async (req, res) => {
@@ -85,7 +88,7 @@ router.post('/login', [
     const { email, password } = req.body;
 
     // DEV/DEMO: Allow known test assistants to log in even if DB is empty
-    if (process.env.NODE_ENV !== 'production' || process.env.ALLOW_ASSISTANT_DEMO === 'true') {
+    if (process.env.NODE_ENV !== 'production') {
       const testAssistants = {
         'assistant@mediczy.com': {
           id: 'A7X9K2',  // 6-char alphanumeric starting with A
@@ -146,6 +149,7 @@ router.post('/login', [
           { expiresIn: '8h' }
         );
 
+        await auditLoginAttempt(req, testAssistant.id, testAssistant.email, true);
         return res.status(200).json({
           success: true,
           message: 'Assistant login successful',
@@ -172,14 +176,16 @@ router.post('/login', [
     } // End NODE_ENV !== 'production' check
 
     // Check database for assistant
+    const normalizedEmail = String(email).toLowerCase();
     const assistant = await Assistant.findOne({
       where: {
-        email,
+        email: normalizedEmail,
         isActive: true
       }
     });
 
     if (!assistant) {
+      await auditLoginAttempt(req, null, normalizedEmail, false, 'Assistant not found');
       return res.status(401).json({
         success: false,
         message: 'Invalid email or password'
@@ -198,6 +204,7 @@ router.post('/login', [
     }
 
     if (!isPasswordValid) {
+      await auditLoginAttempt(req, assistant.id, normalizedEmail, false, 'Invalid password');
       return res.status(401).json({
         success: false,
         message: 'Invalid email or password'
@@ -226,6 +233,8 @@ router.post('/login', [
       JWT_CONFIG.SECRET,
       { expiresIn: '8h' }
     );
+
+    await auditLoginAttempt(req, assistant.id, normalizedEmail, true);
 
     res.status(200).json({
       success: true,

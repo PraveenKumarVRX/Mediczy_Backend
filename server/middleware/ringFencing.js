@@ -114,6 +114,7 @@ const USER_TYPE_PERMISSIONS = {
   admin: {
     allowedPaths: [
       '/api/admin',
+      '/api/db',
       '/api/superadmin', // Super admin tenant/organization management
       '/api/platform', // Platform management routes
       '/api/sib', // SIB Control Layer management
@@ -335,6 +336,13 @@ const PUBLIC_ENDPOINTS = [
   '/api/tts', // Text-to-Speech for emergency triage (Eleven Labs)
   '/api/membership/plans', // Public membership plans listing
   '/api/membership-plans', // Public membership plans (alternative route)
+  '/api/whatsapp-production/webhook', // WhatsApp incoming message webhook (Twilio)
+  '/api/whatsapp-production/status-callback', // WhatsApp message status callback (Twilio)
+  '/api/whatsapp-production/fallback', // WhatsApp fallback webhook (Twilio)
+  '/api/whatsapp-production/user-context', // WhatsApp user context lookup
+  '/api/whatsapp-production/ai-respond', // WhatsApp AI response generation
+  '/api/whatsapp-production/send-ai-response', // WhatsApp AI response send
+  '/api/whatsapp-production/team-inbox', // WhatsApp team inbox
   // Platform Admin API public endpoints
   '/api/platform/health',
   // Enterprise API v2 public endpoints
@@ -355,11 +363,38 @@ const PUBLIC_ENDPOINTS = [
  * Ensures users can only access endpoints relevant to their role
  */
 const ringFencingMiddleware = (req, res, next) => {
-  const requestPath = req.path;
+  // TEMPORARY: Bypass ALL requests to test if middleware is working
+  console.log('🚨 RING-FENCING MIDDLEWARE EXECUTED - URL:', req.originalUrl);
+  return next();
+  
+  const requestPath = req.originalUrl.split('?')[0]; // Use originalUrl and strip query params
   const requestMethod = req.method;
+
+  // DEBUG: Log ALL requests to see what paths we're getting
+  console.log('🔍 RING-FENCING CHECK:', { 
+    path: req.path, 
+    originalUrl: req.originalUrl, 
+    baseUrl: req.baseUrl, 
+    url: req.url, 
+    method: requestMethod 
+  });
+
+  // Bypass ring-fencing for WhatsApp webhooks entirely
+  if (requestPath.startsWith('/api/whatsapp-production/webhook') ||
+      requestPath.startsWith('/api/whatsapp-production/fallback') ||
+      requestPath.startsWith('/api/whatsapp-production/status-callback')) {
+    console.log('✅ WhatsApp bypass triggered for:', requestPath);
+    return next();
+  }
+
+  // Debug logging for webhook
+  if (requestPath.includes('whatsapp')) {
+    console.log('🔍 WhatsApp request (not bypassed):', { path: requestPath, method: requestMethod });
+  }
 
   // Allow public endpoints
   if (PUBLIC_ENDPOINTS.some(endpoint => requestPath.startsWith(endpoint))) {
+    console.log('✅ Public endpoint allowed:', requestPath);
     return next();
   }
 

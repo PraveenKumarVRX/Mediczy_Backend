@@ -10,39 +10,41 @@ This document lists all external APIs, services, and credentials needed for the 
 
 ### Firebase Cloud Messaging (FCM) - Push Notifications
 **Purpose**: Real-time push notifications for video calls, messages, and appointments
-**Status**: ⚠️ **CONFIGURED BUT NEEDS CREDENTIALS**
+**Status**: ✅ **CONFIGURED AND WORKING**
 
-**Required Configuration:**
+**Current Configuration:**
 ```bash
-# Frontend (.env)
-VITE_FIREBASE_API_KEY=your-firebase-api-key
+# Frontend (.env.production)
+VITE_FIREBASE_API_KEY=AIzaSyAuYgocNCvsNuf8uW6G43vdSw74TYraXb4
 VITE_FIREBASE_AUTH_DOMAIN=mediczy-notifications.firebaseapp.com
 VITE_FIREBASE_PROJECT_ID=mediczy-notifications
 VITE_FIREBASE_STORAGE_BUCKET=mediczy-notifications.appspot.com
-VITE_FIREBASE_MESSAGING_SENDER_ID=your-sender-id
-VITE_FIREBASE_APP_ID=your-app-id
-VITE_FIREBASE_VAPID_KEY=your-vapid-key
+VITE_FIREBASE_MESSAGING_SENDER_ID=982376166047
+VITE_FIREBASE_APP_ID=1:982376166047:web:mediczy-app-id
+VITE_FIREBASE_VAPID_KEY=BMR-v0zDJTYcXyF-69jwyk4BPzcPGOArW5VK8WxBLiB99Ult0I7gNkcJiFLTmRTUc8VdbcpwYlL7EMOpG9hCsk4
 
 # Backend (.env)
-FIREBASE_PROJECT_ID=mediczy-notifications
+FIREBASE_PROJECT_ID=mediczy-624ed
+FIREBASE_CLIENT_EMAIL=firebase-adminsdk-fbsvc@mediczy-624ed.iam.gserviceaccount.com
 FIREBASE_PRIVATE_KEY="-----BEGIN PRIVATE KEY-----\n...\n-----END PRIVATE KEY-----\n"
-FIREBASE_CLIENT_EMAIL=firebase-adminsdk-xxxxx@mediczy-notifications.iam.gserviceaccount.com
 ```
 
-**Setup Steps:**
-1. Go to [Firebase Console](https://console.firebase.google.com)
-2. Create new project: "mediczy-notifications"
-3. Enable Cloud Messaging
-4. Generate service account credentials
-5. Generate VAPID keys for web push
-6. Configure notification topics and channels
+**Mobile App FCM Registration:**
+```javascript
+// POST /api/fcm/register-token
+{
+  "fcmToken": "device-fcm-token",
+  "deviceType": "android|ios",
+  "deviceInfo": { "model": "iPhone 14", "os": "iOS 17" }
+}
+```
 
 **Current Implementation:**
 - ✅ Frontend FCM integration ready
 - ✅ Service worker for background notifications
 - ✅ Backend push notification system
 - ✅ Notification types: video calls, messages, appointments
-- ⚠️ Needs Firebase project credentials
+- ✅ FCM token registration endpoint
 
 ---
 
@@ -50,76 +52,78 @@ FIREBASE_CLIENT_EMAIL=firebase-adminsdk-xxxxx@mediczy-notifications.iam.gservice
 
 ### Google OAuth 2.0 - Authentication
 **Purpose**: Social login with Google accounts
-**Status**: ⚠️ **CONFIGURED BUT NEEDS CLIENT ID**
+**Status**: ✅ **CONFIGURED AND WORKING**
 
-**Required Configuration:**
+**Current Configuration:**
 ```bash
-# Frontend (.env)
-VITE_GOOGLE_CLIENT_ID=your-google-oauth-client-id.googleusercontent.com
-```
+# Frontend (.env.production)
+VITE_GOOGLE_CLIENT_ID=982376166047-j975co5qc5enqhcesggbsee3obnj7tqa.apps.googleusercontent.com
 
-**Setup Steps:**
-1. Go to [Google Cloud Console](https://console.cloud.google.com)
-2. Create OAuth 2.0 Client IDs
-3. Configure authorized origins: `https://192.168.1.72`
-4. Add redirect URIs for authentication flow
+# Backend (.env)
+GOOGLE_CLIENT_ID=982376166047-j975co5qc5enqhcesggbsee3obnj7tqa.apps.googleusercontent.com
+GOOGLE_CLIENT_SECRET=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
+GOOGLE_CALLBACK_URL=https://mediqzy.com/api/auth/google/callback
+```
 
 **Current Implementation:**
 - ✅ Google OAuth Provider integrated
-- ✅ Login flow implemented
-- ⚠️ Needs Google Client ID
+- ✅ Patient login flow implemented
+- ✅ Doctor login flow implemented
+- ✅ Callback URLs configured for mediqzy.com
 
 ### Google Gemini AI - Medical AI Assistant
 **Purpose**: AI-powered medical responses and image analysis
-**Status**: ⚠️ **CONFIGURED BUT NEEDS API KEY**
+**Status**: ✅ **CONFIGURED AND WORKING**
 
-**Required Configuration:**
+**Current Configuration:**
 ```bash
-# Frontend (.env)
-VITE_GEMINI_API_KEY=your-gemini-api-key
+# Frontend (.env.production)
+VITE_GEMINI_API_KEY=AIzaSyAuYgocNCvsNuf8uW6G43vdSw74TYraXb4
 
 # Backend (.env)
-GEMINI_API_KEY=your-gemini-api-key
+GEMINI_API_KEY=AIzaSyCVa8eKHpCzWvyFrd4jKKxkomxHI8iAp48
+GROQ_API_KEY=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
 ```
 
-**Setup Steps:**
-1. Go to [Google AI Studio](https://makersuite.google.com/app/apikey)
-2. Create API key for Gemini Pro
-3. Enable Gemini Pro Vision for image analysis
+**AI Consultation Endpoints:**
+```javascript
+// POST /api/medical-ai/orchestrator/consult
+{ "query": "I have a headache", "language": "en" }
+
+// POST /api/ai-doctor/consult
+{ "symptoms": "headache, fever", "duration": "2 days" }
+```
 
 **Current Implementation:**
 - ✅ Gemini Pro for text generation
 - ✅ Gemini Pro Vision for medical image analysis  
 - ✅ AI doctor consultation features
 - ✅ Medical report generation
-- ⚠️ Needs Gemini API key
+- ✅ Groq API as backup/alternative
 
 ### Google Maps Platform - Location Services
 **Purpose**: Find nearby hospitals, pharmacies, and healthcare facilities
-**Status**: ⚠️ **CONFIGURED BUT NEEDS API KEY**
+**Status**: ✅ **CONFIGURED AND WORKING**
 
-**Required Configuration:**
+**Current Configuration:**
 ```bash
 # Backend (.env)
-GOOGLE_MAPS_API_KEY=your-google-maps-api-key
+GOOGLE_MAPS_API_KEY=AIzaSyAuYgocNCvsNuf8uW6G43vdSw74TYraXb4
+
+# Frontend (.env.production)
+VITE_GOOGLE_MAPS_API_KEY=AIzaSyAuYgocNCvsNuf8uW6G43vdSw74TYraXb4
 ```
 
-**APIs Needed:**
+**APIs Enabled:**
 - Places API (for nearby search)
 - Maps JavaScript API
 - Geocoding API
-
-**Setup Steps:**
-1. Go to [Google Cloud Console](https://console.cloud.google.com)
-2. Enable Maps Platform APIs
-3. Create API key with restrictions
-4. Set up billing (required for Maps APIs)
 
 **Current Implementation:**
 - ✅ Places API integration for hospital search
 - ✅ Emergency services locator
 - ✅ Pharmacy finder
-- ⚠️ Needs Google Maps API key
+- ✅ Location-based doctor search
 
 ### Google Fit API - Health Data Integration
 **Purpose**: Sync fitness and health data from Google Fit
@@ -160,35 +164,60 @@ VITE_YOUTUBE_API_KEY=your-youtube-data-api-key
 
 ## 🎥 Video Calling Services
 
-### WebRTC + STUN/TURN Servers
-**Purpose**: Peer-to-peer video calling (replaces Agora)
+### MiroTalk SFU - Video Consultations
+**Purpose**: WebRTC-based video consultations for doctor-patient calls
 **Status**: ✅ **FULLY CONFIGURED AND WORKING**
+
+**Production URL:** `https://video.mediqzy.com`
 
 **Current Configuration:**
 ```bash
+# Frontend (.env.production)
+VITE_MIROTALK_URL=https://video.mediqzy.com
+
 # Backend (.env)
-TURN_SERVER_URL=stun:stun.l.google.com:19302
+MIROTALK_SERVER_URL=http://localhost:3010
+MIROTALK_API_KEY=mirotalk_default_key
+MIROTALK_API_SECRET=mirotalk_default_secret
+```
+
+**Video Join URL Format:**
+```
+https://video.mediqzy.com/join/{roomId}?name={userName}&audio=1&video=1&notify=0
 ```
 
 **Current Implementation:**
-- ✅ Native WebRTC implementation
+- ✅ MiroTalk SFU server running at video.mediqzy.com
+- ✅ WebRTC with mediasoup for scalable video
 - ✅ Socket.IO signaling server
-- ✅ Google STUN servers for NAT traversal
 - ✅ Multi-device video calling
 - ✅ Audio/video device management
+- ✅ Screen sharing support
+- ✅ Chat during video calls
+- ✅ Mobile browser compatible
 - ✅ Production-ready performance
 
-**Optional TURN Server Setup:**
-For better connectivity behind firewalls, consider:
-- [Coturn Server](https://github.com/coturn/coturn)
-- [AWS/Google Cloud TURN services](https://www.twilio.com/docs/stun-turn)
+**Mobile App Integration:**
+```javascript
+// React Native - Open in WebView
+import { WebView } from 'react-native-webview';
+
+const VideoCallScreen = ({ meetingUrl }) => (
+  <WebView
+    source={{ uri: meetingUrl }}
+    mediaPlaybackRequiresUserAction={false}
+    allowsInlineMediaPlayback={true}
+    javaScriptEnabled={true}
+  />
+);
+```
 
 ### ~~Agora Video SDK~~ (REPLACED)
-**Status**: ❌ **REMOVED - REPLACED WITH WEBRTC**
+**Status**: ❌ **REMOVED - REPLACED WITH MIROTALK SFU**
 
-Previously configured but replaced with native WebRTC:
+Previously configured but replaced with MiroTalk:
 - Old: `VITE_AGORA_APP_ID`, `VITE_AGORA_APP_CERTIFICATE`
-- New: Native WebRTC with Socket.IO signaling
+- New: MiroTalk SFU at video.mediqzy.com
 
 ---
 
@@ -402,5 +431,5 @@ docker-compose up -d
 
 ---
 
-**Last Updated**: November 11, 2025  
-**Status**: Core platform ✅ OPERATIONAL | External APIs ⚠️ NEED CREDENTIALS
+**Last Updated**: January 20, 2026  
+**Status**: Core platform ✅ OPERATIONAL | Video Calls ✅ LIVE at video.mediqzy.com | External APIs ✅ CONFIGURED

@@ -429,14 +429,15 @@ router.post('/analyze-image', async (req, res) => {
 
     const genAI = getGenAI();
     if (!genAI) {
-      return res.status(503).json({
-        error: 'Image analysis unavailable',
-        details: 'GEMINI_API_KEY is not configured'
+      return res.status(200).json({
+        description: 'AI image analysis is temporarily unavailable because the Generative AI key is not configured.',
+        language: language || 'en',
+        unavailable: true
       });
     }
 
-    // Initialize the model
-    const model = genAI.getGenerativeModel({ model: "gemini-pro-vision" });
+    // Initialize the model (using gemini-1.5-flash for vision tasks)
+    const model = genAI.getGenerativeModel({ model: "gemini-1.5-flash" });
 
     // Prepare the image data
     const imageData = {
@@ -458,7 +459,7 @@ router.post('/analyze-image', async (req, res) => {
 
     // If language is not English, translate the response
     if (language !== 'en') {
-      const translationModel = genAI.getGenerativeModel({ model: "gemini-pro" });
+      const translationModel = genAI.getGenerativeModel({ model: "gemini-1.5-flash" });
       const translationPrompt = `Translate the following text to ${language}:\n\n${description}`;
       const translationResult = await translationModel.generateContent(translationPrompt);
       description = (await translationResult.response).text();
@@ -474,13 +475,17 @@ router.post('/analyze-image', async (req, res) => {
 
     console.error('Image analysis error:', status || error.message);
 
-    const friendlyDetails = isServiceDisabled
-      ? 'Generative AI API disabled or not enabled for this project. Enable Generative Language API in Google Cloud.'
-      : 'Upstream AI service unavailable. Please try again.';
+    if (isServiceDisabled) {
+      return res.status(200).json({
+        description: 'AI image analysis is unavailable because the Generative Language API is disabled for this project.',
+        language: language || 'en',
+        unavailable: true
+      });
+    }
 
-    res.status(isServiceDisabled ? 503 : 500).json({ 
+    res.status(500).json({ 
       error: 'Failed to analyze image',
-      details: friendlyDetails
+      details: 'Upstream AI service unavailable. Please try again.'
     });
   }
 });

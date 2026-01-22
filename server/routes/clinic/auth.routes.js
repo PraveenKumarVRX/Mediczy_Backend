@@ -3,6 +3,8 @@ import jwt from 'jsonwebtoken';
 import bcrypt from 'bcryptjs';
 import { Sequelize } from 'sequelize';
 import { JWT_CONFIG } from '../../config/auth.config.js';
+import { authLimiter } from '../../middleware/rateLimiter.middleware.js';
+import { auditLoginAttempt } from '../../middleware/audit.middleware.js';
 
 const router = express.Router();
 const JWT_SECRET = JWT_CONFIG.SECRET;
@@ -20,7 +22,7 @@ const sequelize = new Sequelize(
 );
 
 // Clinic Login - Now using database
-router.post('/login', async (req, res) => {
+router.post('/login', authLimiter, async (req, res) => {
   try {
     const { email, password } = req.body;
 
@@ -49,6 +51,7 @@ router.post('/login', async (req, res) => {
 
     if (!clinics || clinics.length === 0) {
       console.warn('⚠️ Clinic not found:', email);
+      await auditLoginAttempt(req, null, email, false, 'Clinic not found');
       return res.status(401).json({
         success: false,
         message: 'Invalid credentials or clinic not found'
@@ -68,6 +71,7 @@ router.post('/login', async (req, res) => {
     // Verify password
     const isPasswordValid = await bcrypt.compare(password, clinic.password);
     if (!isPasswordValid) {
+      await auditLoginAttempt(req, clinic.id, email, false, 'Invalid password');
       return res.status(401).json({
         success: false,
         message: 'Invalid credentials'
@@ -76,6 +80,7 @@ router.post('/login', async (req, res) => {
 
     // Check if clinic is active
     if (clinic.status !== 'active') {
+      await auditLoginAttempt(req, clinic.id, email, false, 'Clinic inactive');
       return res.status(403).json({
         success: false,
         message: 'Account is inactive. Please contact support.'
@@ -97,6 +102,8 @@ router.post('/login', async (req, res) => {
     );
 
     console.log('✅ Clinic login successful:', clinic.hospital_name);
+
+    await auditLoginAttempt(req, clinic.id, email, true);
 
     res.json({
       success: true,

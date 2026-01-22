@@ -275,9 +275,9 @@ const Index = () => {
       }
 
       setRecentActivities([
-        { id: 1, type: "checkup", message: "Health metrics updated", time: "2 hours ago", icon: Activity },
-        { id: 2, type: "prescription", message: "New prescription added", time: "Yesterday", icon: Pill },
-        { id: 3, type: "appointment", message: "Appointment confirmed", time: "2 days ago", icon: CalendarCheck },
+        { id: 1, type: "checkup", message: "Health metrics updated", time: "2 hours ago", icon: Activity, link: "/health-tracker" },
+        { id: 2, type: "prescription", message: "New prescription added", time: "Yesterday", icon: Pill, link: "/my-prescriptions" },
+        { id: 3, type: "appointment", message: "Appointment confirmed", time: "2 days ago", icon: CalendarCheck, link: "/appointments" },
       ]);
     } catch (err) {
       console.error("Error fetching dashboard data:", err);
@@ -1828,17 +1828,36 @@ const Index = () => {
             </CardHeader>
             <CardContent className="pt-4">
               <div className="space-y-3">
-                {recentActivities.map((activity) => (
-                  <div key={activity.id} className="flex items-start gap-3 p-2 rounded-lg hover:bg-slate-50 dark:hover:bg-slate-700/30 transition-colors">
-                    <div className="p-1.5 rounded-lg bg-slate-100 dark:bg-slate-700">
-                      <activity.icon className="w-4 h-4 text-slate-500 dark:text-slate-400" />
+                {recentActivities.map((activity) => {
+                  const content = (
+                    <>
+                      <div className="p-1.5 rounded-lg bg-slate-100 dark:bg-slate-700">
+                        <activity.icon className="w-4 h-4 text-slate-500 dark:text-slate-400" />
+                      </div>
+                      <div className="flex-1 min-w-0">
+                        <p className="text-sm text-slate-700 dark:text-slate-300">{activity.message}</p>
+                        <p className="text-xs text-slate-400 dark:text-slate-500 mt-0.5">{activity.time}</p>
+                      </div>
+                    </>
+                  );
+
+                  return activity.link ? (
+                    <Link
+                      key={activity.id}
+                      to={activity.link}
+                      className="flex items-start gap-3 p-2 rounded-lg hover:bg-slate-50 dark:hover:bg-slate-700/30 transition-colors"
+                    >
+                      {content}
+                    </Link>
+                  ) : (
+                    <div
+                      key={activity.id}
+                      className="flex items-start gap-3 p-2 rounded-lg hover:bg-slate-50 dark:hover:bg-slate-700/30 transition-colors"
+                    >
+                      {content}
                     </div>
-                    <div className="flex-1 min-w-0">
-                      <p className="text-sm text-slate-700 dark:text-slate-300">{activity.message}</p>
-                      <p className="text-xs text-slate-400 dark:text-slate-500 mt-0.5">{activity.time}</p>
-                    </div>
-                  </div>
-                ))}
+                  );
+                })}
               </div>
             </CardContent>
           </Card>

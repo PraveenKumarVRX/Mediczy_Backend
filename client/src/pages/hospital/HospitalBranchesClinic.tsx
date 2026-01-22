@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -12,6 +12,7 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@
 import { Switch } from '@/components/ui/switch';
 import { useToast } from '@/hooks/use-toast';
 import api from '@/utils/api';
+import { loadHospitalStore, saveHospitalStore } from '@/utils/hospitalStorage';
 import HospitalLayout from '@/components/hospital/HospitalLayout';
 import {
   Building2, MapPin, Phone, Mail, Users, Clock, Activity, Plus, Search, Filter,
@@ -111,9 +112,47 @@ const HospitalBranchesClinic = () => {
   const [showAddClinicDialog, setShowAddClinicDialog] = useState(false);
   const [selectedBranch, setSelectedBranch] = useState<HospitalBranch | null>(null);
   const [showViewDialog, setShowViewDialog] = useState(false);
+  const [branchForm, setBranchForm] = useState({
+    name: '',
+    type: 'branch' as HospitalBranch['type'],
+    address: '',
+    city: '',
+    state: '',
+    pincode: '',
+    latitude: '',
+    longitude: '',
+    phone: '',
+    email: '',
+    website: '',
+    managerName: '',
+    managerPhone: '',
+    totalBeds: '',
+    doctors: '',
+    nurses: '',
+    ambulances: '',
+    emergencyServices: true,
+  });
+  const [clinicForm, setClinicForm] = useState({
+    name: '',
+    type: 'weekly' as OutreachClinic['type'],
+    parentBranch: '',
+    locationName: '',
+    address: '',
+    city: '',
+    state: '',
+    pincode: '',
+    days: '',
+    startTime: '09:00',
+    endTime: '13:00',
+    doctorName: '',
+    doctorPhone: '',
+    specialization: '',
+    services: '',
+    capacity: '',
+  });
 
   // Mock branches data
-  const [branches, setBranches] = useState<HospitalBranch[]>([
+  const initialBranches: HospitalBranch[] = [
     {
       id: 'HB001',
       name: 'City Hospital - Main Campus',
@@ -193,10 +232,13 @@ const HospitalBranchesClinic = () => {
       doctors: 12,
       nurses: 30
     }
-  ]);
+  ];
+  const [branches, setBranches] = useState<HospitalBranch[]>(
+    () => loadHospitalStore('hospital-branches', initialBranches)
+  );
 
   // Mock clinics data
-  const [clinics, setClinics] = useState<OutreachClinic[]>([
+  const initialClinics: OutreachClinic[] = [
     {
       id: 'OC001',
       name: 'Mobile Health Camp - Slums',
@@ -301,7 +343,16 @@ const HospitalBranchesClinic = () => {
       },
       launchDate: '2025-02-15'
     }
-  ]);
+  ];
+  const [clinics, setClinics] = useState<OutreachClinic[]>(
+    () => loadHospitalStore('hospital-clinics', initialClinics)
+  );
+
+  useEffect(() => {
+    if (!clinicForm.parentBranch && branches[0]?.id) {
+      setClinicForm(prev => ({ ...prev, parentBranch: branches[0].id }));
+    }
+  }, [branches, clinicForm.parentBranch]);
 
   const getStatusBadge = (status: string) => {
     const config: Record<string, { color: string; label: string }> = {
@@ -377,11 +428,18 @@ const HospitalBranchesClinic = () => {
                     <div className="grid grid-cols-2 gap-4">
                       <div className="space-y-2">
                         <Label>Branch Name *</Label>
-                        <Input placeholder="e.g., City Hospital - Indiranagar" />
+                        <Input
+                          placeholder="e.g., City Hospital - Indiranagar"
+                          value={branchForm.name}
+                          onChange={(e) => setBranchForm(prev => ({ ...prev, name: e.target.value }))}
+                        />
                       </div>
                       <div className="space-y-2">
                         <Label>Branch Type *</Label>
-                        <Select defaultValue="branch">
+                        <Select
+                          value={branchForm.type}
+                          onValueChange={(value) => setBranchForm(prev => ({ ...prev, type: value as HospitalBranch['type'] }))}
+                        >
                           <SelectTrigger><SelectValue /></SelectTrigger>
                           <SelectContent>
                             <SelectItem value="main">Main Campus</SelectItem>
@@ -395,26 +453,48 @@ const HospitalBranchesClinic = () => {
                       <h3 className="font-semibold text-slate-700 dark:text-slate-300">Location Details</h3>
                       <div className="space-y-2">
                         <Label>Address *</Label>
-                        <Textarea placeholder="Full street address" />
+                        <Textarea
+                          placeholder="Full street address"
+                          value={branchForm.address}
+                          onChange={(e) => setBranchForm(prev => ({ ...prev, address: e.target.value }))}
+                        />
                       </div>
                       <div className="grid grid-cols-2 gap-4">
                         <div className="space-y-2">
                           <Label>City *</Label>
-                          <Input placeholder="City" />
+                          <Input
+                            placeholder="City"
+                            value={branchForm.city}
+                            onChange={(e) => setBranchForm(prev => ({ ...prev, city: e.target.value }))}
+                          />
                         </div>
                         <div className="space-y-2">
                           <Label>State *</Label>
-                          <Input placeholder="State" />
+                          <Input
+                            placeholder="State"
+                            value={branchForm.state}
+                            onChange={(e) => setBranchForm(prev => ({ ...prev, state: e.target.value }))}
+                          />
                         </div>
                       </div>
                       <div className="grid grid-cols-2 gap-4">
                         <div className="space-y-2">
                           <Label>PIN Code *</Label>
-                          <Input placeholder="560001" />
+                          <Input
+                            placeholder="560001"
+                            value={branchForm.pincode}
+                            onChange={(e) => setBranchForm(prev => ({ ...prev, pincode: e.target.value }))}
+                          />
                         </div>
                         <div className="space-y-2">
                           <Label>Latitude (Optional)</Label>
-                          <Input type="number" placeholder="12.9716" step="0.0001" />
+                          <Input
+                            type="number"
+                            placeholder="12.9716"
+                            step="0.0001"
+                            value={branchForm.latitude}
+                            onChange={(e) => setBranchForm(prev => ({ ...prev, latitude: e.target.value }))}
+                          />
                         </div>
                       </div>
                     </div>
@@ -424,16 +504,29 @@ const HospitalBranchesClinic = () => {
                       <div className="grid grid-cols-2 gap-4">
                         <div className="space-y-2">
                           <Label>Phone *</Label>
-                          <Input placeholder="+91 80 1234 5678" />
+                          <Input
+                            placeholder="+91 80 1234 5678"
+                            value={branchForm.phone}
+                            onChange={(e) => setBranchForm(prev => ({ ...prev, phone: e.target.value }))}
+                          />
                         </div>
                         <div className="space-y-2">
                           <Label>Email *</Label>
-                          <Input type="email" placeholder="branch@hospital.com" />
+                          <Input
+                            type="email"
+                            placeholder="branch@hospital.com"
+                            value={branchForm.email}
+                            onChange={(e) => setBranchForm(prev => ({ ...prev, email: e.target.value }))}
+                          />
                         </div>
                       </div>
                       <div className="space-y-2">
                         <Label>Website (Optional)</Label>
-                        <Input placeholder="www.hospital.com/branch" />
+                        <Input
+                          placeholder="www.hospital.com/branch"
+                          value={branchForm.website}
+                          onChange={(e) => setBranchForm(prev => ({ ...prev, website: e.target.value }))}
+                        />
                       </div>
                     </div>
 
@@ -442,11 +535,19 @@ const HospitalBranchesClinic = () => {
                       <div className="grid grid-cols-2 gap-4">
                         <div className="space-y-2">
                           <Label>Manager Name *</Label>
-                          <Input placeholder="Manager name" />
+                          <Input
+                            placeholder="Manager name"
+                            value={branchForm.managerName}
+                            onChange={(e) => setBranchForm(prev => ({ ...prev, managerName: e.target.value }))}
+                          />
                         </div>
                         <div className="space-y-2">
                           <Label>Manager Phone *</Label>
-                          <Input placeholder="+91 98765 43210" />
+                          <Input
+                            placeholder="+91 98765 43210"
+                            value={branchForm.managerPhone}
+                            onChange={(e) => setBranchForm(prev => ({ ...prev, managerPhone: e.target.value }))}
+                          />
                         </div>
                       </div>
                     </div>
@@ -456,61 +557,135 @@ const HospitalBranchesClinic = () => {
                       <div className="grid grid-cols-3 gap-4">
                         <div className="space-y-2">
                           <Label>Total Beds</Label>
-                          <Input type="number" placeholder="250" />
+                          <Input
+                            type="number"
+                            placeholder="250"
+                            value={branchForm.totalBeds}
+                            onChange={(e) => setBranchForm(prev => ({ ...prev, totalBeds: e.target.value }))}
+                          />
                         </div>
                         <div className="space-y-2">
                           <Label>Doctors</Label>
-                          <Input type="number" placeholder="25" />
+                          <Input
+                            type="number"
+                            placeholder="25"
+                            value={branchForm.doctors}
+                            onChange={(e) => setBranchForm(prev => ({ ...prev, doctors: e.target.value }))}
+                          />
                         </div>
                         <div className="space-y-2">
                           <Label>Nurses</Label>
-                          <Input type="number" placeholder="65" />
+                          <Input
+                            type="number"
+                            placeholder="65"
+                            value={branchForm.nurses}
+                            onChange={(e) => setBranchForm(prev => ({ ...prev, nurses: e.target.value }))}
+                          />
                         </div>
                       </div>
                       <div className="space-y-2">
                         <Label>Ambulances</Label>
-                        <Input type="number" placeholder="6" />
+                        <Input
+                          type="number"
+                          placeholder="6"
+                          value={branchForm.ambulances}
+                          onChange={(e) => setBranchForm(prev => ({ ...prev, ambulances: e.target.value }))}
+                        />
                       </div>
                     </div>
 
                     <div className="space-y-4 border-t pt-4">
                       <div className="flex items-center justify-between">
                         <Label>Emergency Services Available?</Label>
-                        <Switch defaultChecked />
+                        <Switch
+                          checked={branchForm.emergencyServices}
+                          onCheckedChange={(checked) => setBranchForm(prev => ({ ...prev, emergencyServices: checked }))}
+                        />
                       </div>
                     </div>
                   </div>
                   <DialogFooter>
                     <Button variant="outline" onClick={() => setShowAddBranchDialog(false)}>Cancel</Button>
                     <Button className="bg-teal-600 hover:bg-teal-700" onClick={async () => {
+                      if (!branchForm.name || !branchForm.address || !branchForm.city || !branchForm.state || !branchForm.pincode) {
+                        toast({ title: 'Missing Fields', description: 'Please complete required branch details.', variant: 'destructive' });
+                        return;
+                      }
+                      if (!branchForm.phone || !branchForm.email || !branchForm.managerName || !branchForm.managerPhone) {
+                        toast({ title: 'Missing Fields', description: 'Please add branch contact and manager details.', variant: 'destructive' });
+                        return;
+                      }
+
+                      const fallbackBranch: HospitalBranch = {
+                        id: `HB-${Date.now()}`,
+                        name: branchForm.name,
+                        type: branchForm.type,
+                        status: 'active',
+                        address: branchForm.address,
+                        city: branchForm.city,
+                        state: branchForm.state,
+                        pincode: branchForm.pincode,
+                        latitude: branchForm.latitude ? Number(branchForm.latitude) : undefined,
+                        longitude: branchForm.longitude ? Number(branchForm.longitude) : undefined,
+                        phone: branchForm.phone,
+                        email: branchForm.email,
+                        manager: { name: branchForm.managerName, phone: branchForm.managerPhone },
+                        establishedDate: new Date().toISOString().split('T')[0],
+                        totalBeds: Number(branchForm.totalBeds) || 0,
+                        departments: [],
+                        facilities: [],
+                        operatingHours: { open: '24/7', close: '24/7' },
+                        emergencyServices: branchForm.emergencyServices,
+                        ambulances: Number(branchForm.ambulances) || 0,
+                        doctors: Number(branchForm.doctors) || 0,
+                        nurses: Number(branchForm.nurses) || 0,
+                        website: branchForm.website || undefined,
+                      };
+
                       try {
-                        const branchData = {
+                        const { data } = await api.post(
+                          '/hospital/branches',
+                          fallbackBranch,
+                          { headers: hospitalHeaders() }
+                        );
+                        setBranches(prev => {
+                          const next = [data?.id ? data : fallbackBranch, ...prev];
+                          saveHospitalStore('hospital-branches', next);
+                          return next;
+                        });
+                        toast({ title: 'Branch Added', description: 'New hospital branch created successfully' });
+                      } catch (error: any) {
+                        setBranches(prev => {
+                          const next = [fallbackBranch, ...prev];
+                          saveHospitalStore('hospital-branches', next);
+                          return next;
+                        });
+                        toast({ 
+                          title: 'Saved locally', 
+                          description: error.response?.data?.message || 'Branch saved locally; sync server when available.',
+                        });
+                      } finally {
+                        setBranchForm({
                           name: '',
                           type: 'branch',
                           address: '',
                           city: '',
                           state: '',
                           pincode: '',
+                          latitude: '',
+                          longitude: '',
                           phone: '',
                           email: '',
-                          manager: { name: '', phone: '' }
-                        };
-
-                        const { data } = await api.post(
-                          '/hospital/branches',
-                          branchData,
-                          { headers: hospitalHeaders() }
-                        );
-
-                        setBranches(prev => [...prev, data]);
-                        toast({ title: 'Branch Added', description: 'New hospital branch created successfully' });
-                        setShowAddBranchDialog(false);
-                      } catch (error: any) {
-                        toast({ 
-                          title: 'Failed to add branch', 
-                          description: error.response?.data?.message || 'An error occurred',
-                          variant: 'destructive'
+                          website: '',
+                          managerName: '',
+                          managerPhone: '',
+                          totalBeds: '',
+                          doctors: '',
+                          nurses: '',
+                          ambulances: '',
+                          emergencyServices: true,
                         });
+                        setShowAddBranchDialog(false);
                       }
                     }}>
                       <Plus className="h-4 w-4 mr-2" /> Add Branch
@@ -536,11 +711,18 @@ const HospitalBranchesClinic = () => {
                     <div className="grid grid-cols-2 gap-4">
                       <div className="space-y-2">
                         <Label>Clinic Name *</Label>
-                        <Input placeholder="e.g., Mobile Health Camp" />
+                        <Input
+                          placeholder="e.g., Mobile Health Camp"
+                          value={clinicForm.name}
+                          onChange={(e) => setClinicForm(prev => ({ ...prev, name: e.target.value }))}
+                        />
                       </div>
                       <div className="space-y-2">
                         <Label>Clinic Type *</Label>
-                        <Select defaultValue="weekly">
+                        <Select
+                          value={clinicForm.type}
+                          onValueChange={(value) => setClinicForm(prev => ({ ...prev, type: value as OutreachClinic['type'] }))}
+                        >
                           <SelectTrigger><SelectValue /></SelectTrigger>
                           <SelectContent>
                             <SelectItem value="daily">Daily</SelectItem>
@@ -554,7 +736,10 @@ const HospitalBranchesClinic = () => {
 
                     <div className="space-y-2">
                       <Label>Parent Branch *</Label>
-                      <Select defaultValue={branches[0]?.id}>
+                      <Select
+                        value={clinicForm.parentBranch}
+                        onValueChange={(value) => setClinicForm(prev => ({ ...prev, parentBranch: value }))}
+                      >
                         <SelectTrigger><SelectValue /></SelectTrigger>
                         <SelectContent>
                           {branches.map(b => (
@@ -568,20 +753,36 @@ const HospitalBranchesClinic = () => {
                       <h3 className="font-semibold text-slate-700 dark:text-slate-300">Location</h3>
                       <div className="space-y-2">
                         <Label>Location Name *</Label>
-                        <Input placeholder="e.g., Community Center, School, Corporate Office" />
+                        <Input
+                          placeholder="e.g., Community Center, School, Corporate Office"
+                          value={clinicForm.locationName}
+                          onChange={(e) => setClinicForm(prev => ({ ...prev, locationName: e.target.value }))}
+                        />
                       </div>
                       <div className="space-y-2">
                         <Label>Address *</Label>
-                        <Textarea placeholder="Full address" />
+                        <Textarea
+                          placeholder="Full address"
+                          value={clinicForm.address}
+                          onChange={(e) => setClinicForm(prev => ({ ...prev, address: e.target.value }))}
+                        />
                       </div>
                       <div className="grid grid-cols-2 gap-4">
                         <div className="space-y-2">
                           <Label>City *</Label>
-                          <Input placeholder="City" />
+                          <Input
+                            placeholder="City"
+                            value={clinicForm.city}
+                            onChange={(e) => setClinicForm(prev => ({ ...prev, city: e.target.value }))}
+                          />
                         </div>
                         <div className="space-y-2">
                           <Label>PIN Code *</Label>
-                          <Input placeholder="560085" />
+                          <Input
+                            placeholder="560085"
+                            value={clinicForm.pincode}
+                            onChange={(e) => setClinicForm(prev => ({ ...prev, pincode: e.target.value }))}
+                          />
                         </div>
                       </div>
                     </div>
@@ -590,16 +791,28 @@ const HospitalBranchesClinic = () => {
                       <h3 className="font-semibold text-slate-700 dark:text-slate-300">Schedule</h3>
                       <div className="space-y-2">
                         <Label>Operating Days *</Label>
-                        <Input placeholder="e.g., Monday, Wednesday, Friday" />
+                        <Input
+                          placeholder="e.g., Monday, Wednesday, Friday"
+                          value={clinicForm.days}
+                          onChange={(e) => setClinicForm(prev => ({ ...prev, days: e.target.value }))}
+                        />
                       </div>
                       <div className="grid grid-cols-2 gap-4">
                         <div className="space-y-2">
                           <Label>Start Time *</Label>
-                          <Input type="time" defaultValue="09:00" />
+                          <Input
+                            type="time"
+                            value={clinicForm.startTime}
+                            onChange={(e) => setClinicForm(prev => ({ ...prev, startTime: e.target.value }))}
+                          />
                         </div>
                         <div className="space-y-2">
                           <Label>End Time *</Label>
-                          <Input type="time" defaultValue="13:00" />
+                          <Input
+                            type="time"
+                            value={clinicForm.endTime}
+                            onChange={(e) => setClinicForm(prev => ({ ...prev, endTime: e.target.value }))}
+                          />
                         </div>
                       </div>
                     </div>
@@ -609,16 +822,28 @@ const HospitalBranchesClinic = () => {
                       <div className="grid grid-cols-2 gap-4">
                         <div className="space-y-2">
                           <Label>Doctor Name *</Label>
-                          <Input placeholder="Doctor name" />
+                          <Input
+                            placeholder="Doctor name"
+                            value={clinicForm.doctorName}
+                            onChange={(e) => setClinicForm(prev => ({ ...prev, doctorName: e.target.value }))}
+                          />
                         </div>
                         <div className="space-y-2">
                           <Label>Doctor Phone *</Label>
-                          <Input placeholder="+91 98765 11111" />
+                          <Input
+                            placeholder="+91 98765 11111"
+                            value={clinicForm.doctorPhone}
+                            onChange={(e) => setClinicForm(prev => ({ ...prev, doctorPhone: e.target.value }))}
+                          />
                         </div>
                       </div>
                       <div className="space-y-2">
                         <Label>Specialization *</Label>
-                        <Input placeholder="e.g., General Medicine, Pediatrics" />
+                        <Input
+                          placeholder="e.g., General Medicine, Pediatrics"
+                          value={clinicForm.specialization}
+                          onChange={(e) => setClinicForm(prev => ({ ...prev, specialization: e.target.value }))}
+                        />
                       </div>
                     </div>
 
@@ -626,44 +851,111 @@ const HospitalBranchesClinic = () => {
                       <h3 className="font-semibold text-slate-700 dark:text-slate-300">Services & Capacity</h3>
                       <div className="space-y-2">
                         <Label>Services Offered *</Label>
-                        <Input placeholder="e.g., General Consultation, Vaccination, Health Screening" />
+                        <Input
+                          placeholder="e.g., General Consultation, Vaccination, Health Screening"
+                          value={clinicForm.services}
+                          onChange={(e) => setClinicForm(prev => ({ ...prev, services: e.target.value }))}
+                        />
                       </div>
                       <div className="space-y-2">
                         <Label>Daily Capacity *</Label>
-                        <Input type="number" placeholder="50" />
+                        <Input
+                          type="number"
+                          placeholder="50"
+                          value={clinicForm.capacity}
+                          onChange={(e) => setClinicForm(prev => ({ ...prev, capacity: e.target.value }))}
+                        />
                       </div>
                     </div>
                   </div>
                   <DialogFooter>
                     <Button variant="outline" onClick={() => setShowAddClinicDialog(false)}>Cancel</Button>
                     <Button className="bg-teal-600 hover:bg-teal-700" onClick={async () => {
-                      try {
-                        const clinicData = {
-                          name: '',
-                          type: 'daily',
-                          parentBranch: '',
-                          location: { name: '', address: '', city: '', state: '', pincode: '' },
-                          schedule: { days: [], startTime: '', endTime: '' },
-                          doctor: { name: '', phone: '', specialization: '' },
-                          services: [],
-                          capacity: 0
-                        };
+                      if (!clinicForm.name || !clinicForm.parentBranch || !clinicForm.locationName || !clinicForm.address || !clinicForm.city || !clinicForm.pincode) {
+                        toast({ title: 'Missing Fields', description: 'Please complete clinic location details.', variant: 'destructive' });
+                        return;
+                      }
+                      if (!clinicForm.doctorName || !clinicForm.doctorPhone || !clinicForm.specialization || !clinicForm.services || !clinicForm.capacity) {
+                        toast({ title: 'Missing Fields', description: 'Please complete doctor and service details.', variant: 'destructive' });
+                        return;
+                      }
 
+                      const parentBranch = branches.find((branch) => branch.id === clinicForm.parentBranch);
+                      const fallbackClinic: OutreachClinic = {
+                        id: `OC-${Date.now()}`,
+                        name: clinicForm.name,
+                        type: clinicForm.type,
+                        status: 'active',
+                        parentBranch: clinicForm.parentBranch,
+                        location: {
+                          name: clinicForm.locationName,
+                          address: clinicForm.address,
+                          city: clinicForm.city,
+                          state: parentBranch?.state || clinicForm.state || '',
+                          pincode: clinicForm.pincode,
+                        },
+                        schedule: {
+                          days: clinicForm.days.split(',').map((day) => day.trim()).filter(Boolean),
+                          startTime: clinicForm.startTime,
+                          endTime: clinicForm.endTime,
+                        },
+                        doctor: {
+                          name: clinicForm.doctorName,
+                          phone: clinicForm.doctorPhone,
+                          specialization: clinicForm.specialization,
+                        },
+                        services: clinicForm.services.split(',').map((service) => service.trim()).filter(Boolean),
+                        capacity: Number(clinicForm.capacity) || 0,
+                        contactPerson: {
+                          name: clinicForm.doctorName,
+                          phone: clinicForm.doctorPhone,
+                          designation: clinicForm.specialization,
+                        },
+                        launchDate: new Date().toISOString().split('T')[0],
+                      };
+
+                      try {
                         const { data } = await api.post(
                           '/hospital/clinics',
-                          clinicData,
+                          fallbackClinic,
                           { headers: hospitalHeaders() }
                         );
-
-                        setClinics(prev => [...prev, data]);
-                        toast({ title: 'Clinic Added', description: 'New outreach clinic created successfully' });
-                        setShowAddClinicDialog(false);
-                      } catch (error: any) {
-                        toast({ 
-                          title: 'Failed to add clinic', 
-                          description: error.response?.data?.message || 'An error occurred',
-                          variant: 'destructive'
+                        setClinics(prev => {
+                          const next = [data?.id ? data : fallbackClinic, ...prev];
+                          saveHospitalStore('hospital-clinics', next);
+                          return next;
                         });
+                        toast({ title: 'Clinic Added', description: 'New outreach clinic created successfully' });
+                      } catch (error: any) {
+                        setClinics(prev => {
+                          const next = [fallbackClinic, ...prev];
+                          saveHospitalStore('hospital-clinics', next);
+                          return next;
+                        });
+                        toast({ 
+                          title: 'Saved locally', 
+                          description: error.response?.data?.message || 'Clinic saved locally; sync server when available.',
+                        });
+                      } finally {
+                        setClinicForm({
+                          name: '',
+                          type: 'weekly',
+                          parentBranch: branches[0]?.id || '',
+                          locationName: '',
+                          address: '',
+                          city: '',
+                          state: '',
+                          pincode: '',
+                          days: '',
+                          startTime: '09:00',
+                          endTime: '13:00',
+                          doctorName: '',
+                          doctorPhone: '',
+                          specialization: '',
+                          services: '',
+                          capacity: '',
+                        });
+                        setShowAddClinicDialog(false);
                       }
                     }}>
                       <Plus className="h-4 w-4 mr-2" /> Add Clinic

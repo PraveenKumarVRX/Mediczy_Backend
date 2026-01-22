@@ -4,6 +4,7 @@ import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/com
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { useToast } from '@/hooks/use-toast';
+import { loadHospitalStore, saveHospitalStore } from '@/utils/hospitalStorage';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Badge } from '@/components/ui/badge';
 import { Label } from '@/components/ui/label';
@@ -57,6 +58,7 @@ interface PatientEHR {
   immunizations: Immunization[];
   familyHistory: FamilyHistory[];
   socialHistory: SocialHistory;
+  notes: ClinicalNote[];
   createdAt: string;
   updatedAt: string;
 }
@@ -108,11 +110,12 @@ interface LabResult {
   }[];
   status: 'Ordered' | 'Collected' | 'Processing' | 'Completed';
   attachmentUrl?: string;
+  notes?: string;
 }
 
 interface ImagingStudy {
   id: string;
-  studyType: 'X-Ray' | 'CT Scan' | 'MRI' | 'Ultrasound' | 'ECG' | 'Echo';
+  studyType: 'X-Ray' | 'CT Scan' | 'MRI' | 'Ultrasound' | 'ECG' | 'Echo' | 'PET Scan';
   bodyPart: string;
   orderedBy: string;
   orderedDate: string;
@@ -214,6 +217,70 @@ const HospitalEHR = () => {
   const [showProcedureDialog, setShowProcedureDialog] = useState(false);
   const [expandedSections, setExpandedSections] = useState<string[]>(['vitals', 'encounters', 'medications']);
   const { toast } = useToast();
+  const [noteForm, setNoteForm] = useState({
+    type: 'Progress Note' as ClinicalNote['type'],
+    author: 'Dr. On Call',
+    authorRole: 'Physician',
+    subject: '',
+    content: ''
+  });
+  const [vitalsForm, setVitalsForm] = useState({
+    systolic: '',
+    diastolic: '',
+    heartRate: '',
+    temperature: '',
+    respiratoryRate: '',
+    oxygenSaturation: '',
+    weight: '',
+    height: '',
+    painLevel: '',
+    notes: ''
+  });
+  const [encounterForm, setEncounterForm] = useState({
+    type: 'OPD' as Encounter['type'],
+    dateTime: new Date().toISOString().slice(0, 16),
+    department: '',
+    doctor: '',
+    chiefComplaint: '',
+    presentIllness: '',
+    examination: '',
+    diagnosis: '',
+    treatmentPlan: '',
+    followUp: ''
+  });
+  const [labForm, setLabForm] = useState({
+    category: 'blood',
+    priority: 'routine',
+    testName: '',
+    indication: '',
+    instructions: ''
+  });
+  const [imagingForm, setImagingForm] = useState({
+    type: 'xray',
+    priority: 'routine',
+    bodyPart: '',
+    contrast: 'no',
+    notes: ''
+  });
+  const [prescriptionForm, setPrescriptionForm] = useState({
+    medication: '',
+    dosage: '',
+    frequency: 'bd',
+    duration: '',
+    route: 'oral',
+    instructions: ''
+  });
+  const [procedureForm, setProcedureForm] = useState({
+    type: 'surgical',
+    name: '',
+    dateTime: new Date().toISOString().slice(0, 16),
+    performedBy: '',
+    anesthesia: '',
+    findings: '',
+    complications: '',
+    outcome: 'Successful',
+    notes: ''
+  });
 
   useEffect(() => {
     const token = localStorage.getItem('hospitalToken');
@@ -221,13 +288,17 @@ const HospitalEHR = () => {
       navigate('/hospital/login');
       return;
     }
-    // Auto-select first patient for demo
-    setSelectedPatient(samplePatients[0]);
     setLoading(false);
   }, [navigate]);
 
+  useEffect(() => {
+    if (!selectedPatient && patients.length > 0) {
+      setSelectedPatient(patients[0]);
+    }
+  }, [patients, selectedPatient]);
+
   // Sample data
-  const samplePatients: PatientEHR[] = [
+  const initialPatients: PatientEHR[] = [
     {
       id: 'P001',
       uhid: 'UHID001234',
@@ -305,10 +376,15 @@ const HospitalEHR = () => {
         stressLevel: 'High',
         sleepHours: 5,
       },
+      notes: [],
       createdAt: '2020-05-15',
       updatedAt: '2024-12-04',
     },
   ];
+
+  const [patients, setPatients] = useState<PatientEHR[]>(
+    () => loadHospitalStore('ehr-patients', initialPatients)
+  );
 
   const toggleSection = (section: string) => {
     setExpandedSections(prev => 
@@ -360,6 +436,19 @@ const HospitalEHR = () => {
       console.error('Share failed', err);
       toast({ title: 'Share failed', description: 'Unable to share chart right now.', variant: 'destructive' });
     }
+  };
+
+  const updateSelectedPatient = (updater: (patient: PatientEHR) => PatientEHR) => {
+    if (!selectedPatient) return;
+    const updatedPatient = updater(selectedPatient);
+    setSelectedPatient(updatedPatient);
+    setPatients((prev) => {
+      const next = prev.map((patient) =>
+        patient.id === selectedPatient.id ? updatedPatient : patient
+      );
+      saveHospitalStore('ehr-patients', next);
+      return next;
+    });
   };
 
   if (loading) {
@@ -653,48 +742,150 @@ const HospitalEHR = () => {
                     <div className="grid grid-cols-3 gap-4 py-4">
                       <div className="space-y-2">
                         <Label>Blood Pressure (Systolic)</Label>
-                        <Input type="number" placeholder="mmHg" />
+                        <Input
+                          type="number"
+                          placeholder="mmHg"
+                          value={vitalsForm.systolic}
+                          onChange={(e) => setVitalsForm(prev => ({ ...prev, systolic: e.target.value }))}
+                        />
                       </div>
                       <div className="space-y-2">
                         <Label>Blood Pressure (Diastolic)</Label>
-                        <Input type="number" placeholder="mmHg" />
+                        <Input
+                          type="number"
+                          placeholder="mmHg"
+                          value={vitalsForm.diastolic}
+                          onChange={(e) => setVitalsForm(prev => ({ ...prev, diastolic: e.target.value }))}
+                        />
                       </div>
                       <div className="space-y-2">
                         <Label>Heart Rate</Label>
-                        <Input type="number" placeholder="bpm" />
+                        <Input
+                          type="number"
+                          placeholder="bpm"
+                          value={vitalsForm.heartRate}
+                          onChange={(e) => setVitalsForm(prev => ({ ...prev, heartRate: e.target.value }))}
+                        />
                       </div>
                       <div className="space-y-2">
                         <Label>Temperature</Label>
-                        <Input type="number" step="0.1" placeholder="°F" />
+                        <Input
+                          type="number"
+                          step="0.1"
+                          placeholder="°F"
+                          value={vitalsForm.temperature}
+                          onChange={(e) => setVitalsForm(prev => ({ ...prev, temperature: e.target.value }))}
+                        />
                       </div>
                       <div className="space-y-2">
                         <Label>Respiratory Rate</Label>
-                        <Input type="number" placeholder="/min" />
+                        <Input
+                          type="number"
+                          placeholder="/min"
+                          value={vitalsForm.respiratoryRate}
+                          onChange={(e) => setVitalsForm(prev => ({ ...prev, respiratoryRate: e.target.value }))}
+                        />
                       </div>
                       <div className="space-y-2">
                         <Label>SpO2</Label>
-                        <Input type="number" placeholder="%" />
+                        <Input
+                          type="number"
+                          placeholder="%"
+                          value={vitalsForm.oxygenSaturation}
+                          onChange={(e) => setVitalsForm(prev => ({ ...prev, oxygenSaturation: e.target.value }))}
+                        />
                       </div>
                       <div className="space-y-2">
                         <Label>Weight</Label>
-                        <Input type="number" step="0.1" placeholder="kg" />
+                        <Input
+                          type="number"
+                          step="0.1"
+                          placeholder="kg"
+                          value={vitalsForm.weight}
+                          onChange={(e) => setVitalsForm(prev => ({ ...prev, weight: e.target.value }))}
+                        />
                       </div>
                       <div className="space-y-2">
                         <Label>Height</Label>
-                        <Input type="number" placeholder="cm" />
+                        <Input
+                          type="number"
+                          placeholder="cm"
+                          value={vitalsForm.height}
+                          onChange={(e) => setVitalsForm(prev => ({ ...prev, height: e.target.value }))}
+                        />
                       </div>
                       <div className="space-y-2">
                         <Label>Pain Level (0-10)</Label>
-                        <Input type="number" min="0" max="10" placeholder="0-10" />
+                        <Input
+                          type="number"
+                          min="0"
+                          max="10"
+                          placeholder="0-10"
+                          value={vitalsForm.painLevel}
+                          onChange={(e) => setVitalsForm(prev => ({ ...prev, painLevel: e.target.value }))}
+                        />
                       </div>
                       <div className="col-span-3 space-y-2">
                         <Label>Notes</Label>
-                        <Textarea placeholder="Additional observations..." />
+                        <Textarea
+                          placeholder="Additional observations..."
+                          value={vitalsForm.notes}
+                          onChange={(e) => setVitalsForm(prev => ({ ...prev, notes: e.target.value }))}
+                        />
                       </div>
                     </div>
                     <DialogFooter>
                       <Button variant="outline" onClick={() => setShowAddVitalsDialog(false)}>Cancel</Button>
-                      <Button className="bg-gradient-to-r from-orange-600 to-amber-600">Save Vitals</Button>
+                      <Button
+                        className="bg-gradient-to-r from-orange-600 to-amber-600"
+                        onClick={() => {
+                          if (!selectedPatient) return;
+                          updateSelectedPatient((patient) => {
+                            const systolic = parseInt(vitalsForm.systolic || '0', 10);
+                            const diastolic = parseInt(vitalsForm.diastolic || '0', 10);
+                            const vital: VitalSigns = {
+                              id: `V-${Date.now()}`,
+                              recordedAt: new Date().toISOString().replace('T', ' ').slice(0, 16),
+                              recordedBy: 'Nurse Station',
+                              bloodPressure: { systolic, diastolic },
+                              heartRate: parseInt(vitalsForm.heartRate || '0', 10),
+                              temperature: parseFloat(vitalsForm.temperature || '0'),
+                              respiratoryRate: parseInt(vitalsForm.respiratoryRate || '0', 10),
+                              oxygenSaturation: parseInt(vitalsForm.oxygenSaturation || '0', 10),
+                              weight: parseFloat(vitalsForm.weight || '0'),
+                              height: parseFloat(vitalsForm.height || '0'),
+                              bmi: 0,
+                              painLevel: vitalsForm.painLevel ? parseInt(vitalsForm.painLevel, 10) : undefined,
+                              notes: vitalsForm.notes || undefined
+                            };
+                            const bmi =
+                              vital.height && vital.weight
+                                ? Math.round((vital.weight / Math.pow(vital.height / 100, 2)) * 10) / 10
+                                : 0;
+                            vital.bmi = bmi;
+                            return { ...patient, vitals: [vital, ...patient.vitals] };
+                          });
+                          setVitalsForm({
+                            systolic: '',
+                            diastolic: '',
+                            heartRate: '',
+                            temperature: '',
+                            respiratoryRate: '',
+                            oxygenSaturation: '',
+                            weight: '',
+                            height: '',
+                            painLevel: '',
+                            notes: ''
+                          });
+                          toast({
+                            title: "Vitals Saved",
+                            description: "New vital signs recorded.",
+                          });
+                          setShowAddVitalsDialog(false);
+                        }}
+                      >
+                        Save Vitals
+                      </Button>
                     </DialogFooter>
                   </DialogContent>
                 </Dialog>
@@ -777,7 +968,12 @@ const HospitalEHR = () => {
                     <div className="grid grid-cols-2 gap-4 py-4">
                       <div className="space-y-2">
                         <Label>Encounter Type</Label>
-                        <Select>
+                        <Select
+                          value={encounterForm.type.toLowerCase()}
+                          onValueChange={(value) =>
+                            setEncounterForm(prev => ({ ...prev, type: value.toUpperCase() as Encounter['type'] }))
+                          }
+                        >
                           <SelectTrigger>
                             <SelectValue placeholder="Select type" />
                           </SelectTrigger>
@@ -792,7 +988,10 @@ const HospitalEHR = () => {
                       </div>
                       <div className="space-y-2">
                         <Label>Department</Label>
-                        <Select>
+                        <Select
+                          value={encounterForm.department}
+                          onValueChange={(value) => setEncounterForm(prev => ({ ...prev, department: value }))}
+                        >
                           <SelectTrigger>
                             <SelectValue placeholder="Select department" />
                           </SelectTrigger>
@@ -810,7 +1009,10 @@ const HospitalEHR = () => {
                       </div>
                       <div className="space-y-2">
                         <Label>Doctor</Label>
-                        <Select>
+                        <Select
+                          value={encounterForm.doctor}
+                          onValueChange={(value) => setEncounterForm(prev => ({ ...prev, doctor: value }))}
+                        >
                           <SelectTrigger>
                             <SelectValue placeholder="Select doctor" />
                           </SelectTrigger>
@@ -828,28 +1030,88 @@ const HospitalEHR = () => {
                       </div>
                       <div className="col-span-2 space-y-2">
                         <Label>Chief Complaint</Label>
-                        <Textarea placeholder="Patient's main complaint..." />
+                        <Textarea
+                          placeholder="Patient's main complaint..."
+                          value={encounterForm.chiefComplaint}
+                          onChange={(e) => setEncounterForm(prev => ({ ...prev, chiefComplaint: e.target.value }))}
+                        />
                       </div>
                       <div className="col-span-2 space-y-2">
                         <Label>Present Illness</Label>
-                        <Textarea placeholder="History of present illness..." />
+                        <Textarea
+                          placeholder="History of present illness..."
+                          value={encounterForm.presentIllness}
+                          onChange={(e) => setEncounterForm(prev => ({ ...prev, presentIllness: e.target.value }))}
+                        />
                       </div>
                       <div className="col-span-2 space-y-2">
                         <Label>Examination Findings</Label>
-                        <Textarea placeholder="Physical examination findings..." />
+                        <Textarea
+                          placeholder="Physical examination findings..."
+                          value={encounterForm.examination}
+                          onChange={(e) => setEncounterForm(prev => ({ ...prev, examination: e.target.value }))}
+                        />
                       </div>
                       <div className="col-span-2 space-y-2">
                         <Label>Diagnosis</Label>
-                        <Textarea placeholder="Provisional/final diagnosis..." />
+                        <Textarea
+                          placeholder="Provisional/final diagnosis..."
+                          value={encounterForm.diagnosis}
+                          onChange={(e) => setEncounterForm(prev => ({ ...prev, diagnosis: e.target.value }))}
+                        />
                       </div>
                       <div className="col-span-2 space-y-2">
                         <Label>Treatment Plan</Label>
-                        <Textarea placeholder="Treatment plan and instructions..." />
+                        <Textarea
+                          placeholder="Treatment plan and instructions..."
+                          value={encounterForm.treatmentPlan}
+                          onChange={(e) => setEncounterForm(prev => ({ ...prev, treatmentPlan: e.target.value }))}
+                        />
                       </div>
                     </div>
                     <DialogFooter>
                       <Button variant="outline" onClick={() => setShowNewEncounterDialog(false)}>Cancel</Button>
-                      <Button className="bg-gradient-to-r from-orange-600 to-amber-600">Save Encounter</Button>
+                      <Button
+                        className="bg-gradient-to-r from-orange-600 to-amber-600"
+                        onClick={() => {
+                          if (!selectedPatient) return;
+                          updateSelectedPatient((patient) => {
+                            const encounter: Encounter = {
+                              id: `E-${Date.now()}`,
+                              type: encounterForm.type,
+                              date: new Date().toISOString().split('T')[0],
+                              department: encounterForm.department || 'General Medicine',
+                              doctor: encounterForm.doctor || 'On Call',
+                              chiefComplaint: encounterForm.chiefComplaint || 'General Consultation',
+                              presentIllness: encounterForm.presentIllness || '',
+                              examination: encounterForm.examination || '',
+                              diagnosis: encounterForm.diagnosis ? [encounterForm.diagnosis] : ['Pending'],
+                              treatmentPlan: encounterForm.treatmentPlan || '',
+                              followUp: encounterForm.followUp || '',
+                              status: 'Completed'
+                            };
+                            return { ...patient, encounters: [encounter, ...patient.encounters] };
+                          });
+                          setEncounterForm({
+                            type: 'OPD',
+                            department: '',
+                            doctor: '',
+                            chiefComplaint: '',
+                            presentIllness: '',
+                            examination: '',
+                            diagnosis: '',
+                            treatmentPlan: '',
+                            followUp: ''
+                          });
+                          toast({
+                            title: "Encounter Created",
+                            description: "New clinical encounter has been recorded.",
+                          });
+                          setShowNewEncounterDialog(false);
+                        }}
+                      >
+                        Save Encounter
+                      </Button>
                     </DialogFooter>
                   </DialogContent>
                 </Dialog>
@@ -1330,16 +1592,19 @@ const HospitalEHR = () => {
             <div className="grid grid-cols-2 gap-4">
               <div className="space-y-2">
                 <Label>Note Type</Label>
-                <Select defaultValue="progress">
+                <Select
+                  value={noteForm.type}
+                  onValueChange={(value) => setNoteForm(prev => ({ ...prev, type: value as ClinicalNote['type'] }))}
+                >
                   <SelectTrigger>
                     <SelectValue />
                   </SelectTrigger>
                   <SelectContent>
-                    <SelectItem value="progress">Progress Note</SelectItem>
-                    <SelectItem value="admission">Admission Note</SelectItem>
-                    <SelectItem value="discharge">Discharge Summary</SelectItem>
-                    <SelectItem value="consult">Consultation Note</SelectItem>
-                    <SelectItem value="procedure">Procedure Note</SelectItem>
+                    <SelectItem value="Progress Note">Progress Note</SelectItem>
+                    <SelectItem value="Consultation Note">Consultation Note</SelectItem>
+                    <SelectItem value="Discharge Summary">Discharge Summary</SelectItem>
+                    <SelectItem value="Procedure Note">Procedure Note</SelectItem>
+                    <SelectItem value="Nursing Note">Nursing Note</SelectItem>
                   </SelectContent>
                 </Select>
               </div>
@@ -1350,16 +1615,44 @@ const HospitalEHR = () => {
             </div>
             <div className="space-y-2">
               <Label>Subject</Label>
-              <Input placeholder="Brief subject of the note" />
+              <Input
+                placeholder="Brief subject of the note"
+                value={noteForm.subject}
+                onChange={(e) => setNoteForm(prev => ({ ...prev, subject: e.target.value }))}
+              />
             </div>
             <div className="space-y-2">
               <Label>Clinical Note</Label>
-              <Textarea rows={8} placeholder="Enter detailed clinical note..." />
+              <Textarea
+                rows={8}
+                placeholder="Enter detailed clinical note..."
+                value={noteForm.content}
+                onChange={(e) => setNoteForm(prev => ({ ...prev, content: e.target.value }))}
+              />
             </div>
           </div>
           <DialogFooter>
             <Button variant="outline" onClick={() => setShowAddNoteDialog(false)}>Cancel</Button>
             <Button onClick={() => {
+              if (!selectedPatient) return;
+              updateSelectedPatient((patient) => {
+                const note: ClinicalNote = {
+                  id: `N-${Date.now()}`,
+                  type: noteForm.type,
+                  author: noteForm.author,
+                  authorRole: noteForm.authorRole,
+                  createdAt: new Date().toISOString(),
+                  content: `${noteForm.subject ? `${noteForm.subject}\n\n` : ''}${noteForm.content}`.trim()
+                };
+                return { ...patient, notes: [note, ...patient.notes] };
+              });
+              setNoteForm({
+                type: 'Progress Note',
+                author: 'Dr. On Call',
+                authorRole: 'Physician',
+                subject: '',
+                content: ''
+              });
               toast({
                 title: "Note Added",
                 description: "Clinical note has been added to patient record.",
@@ -1381,7 +1674,10 @@ const HospitalEHR = () => {
             <div className="grid grid-cols-2 gap-4">
               <div className="space-y-2">
                 <Label>Encounter Type</Label>
-                <Select defaultValue="OPD">
+                <Select
+                  value={encounterForm.type}
+                  onValueChange={(value) => setEncounterForm(prev => ({ ...prev, type: value as Encounter['type'] }))}
+                >
                   <SelectTrigger>
                     <SelectValue />
                   </SelectTrigger>
@@ -1389,31 +1685,127 @@ const HospitalEHR = () => {
                     <SelectItem value="OPD">OPD Visit</SelectItem>
                     <SelectItem value="IPD">IPD Admission</SelectItem>
                     <SelectItem value="Emergency">Emergency</SelectItem>
-                    <SelectItem value="Day Care">Day Care</SelectItem>
+                    <SelectItem value="Telemedicine">Telemedicine</SelectItem>
+                    <SelectItem value="Home Visit">Home Visit</SelectItem>
                   </SelectContent>
                 </Select>
               </div>
               <div className="space-y-2">
                 <Label>Date & Time</Label>
-                <Input type="datetime-local" defaultValue={new Date().toISOString().slice(0, 16)} />
+                <Input
+                  type="datetime-local"
+                  value={encounterForm.dateTime}
+                  onChange={(e) => setEncounterForm(prev => ({ ...prev, dateTime: e.target.value }))}
+                />
+              </div>
+            </div>
+            <div className="grid grid-cols-2 gap-4">
+              <div className="space-y-2">
+                <Label>Department</Label>
+                <Input
+                  placeholder="Department"
+                  value={encounterForm.department}
+                  onChange={(e) => setEncounterForm(prev => ({ ...prev, department: e.target.value }))}
+                />
+              </div>
+              <div className="space-y-2">
+                <Label>Attending Doctor</Label>
+                <Input
+                  placeholder="Doctor name"
+                  value={encounterForm.doctor}
+                  onChange={(e) => setEncounterForm(prev => ({ ...prev, doctor: e.target.value }))}
+                />
               </div>
             </div>
             <div className="space-y-2">
               <Label>Chief Complaint</Label>
-              <Input placeholder="Primary complaint" />
+              <Input
+                placeholder="Primary complaint"
+                value={encounterForm.chiefComplaint}
+                onChange={(e) => setEncounterForm(prev => ({ ...prev, chiefComplaint: e.target.value }))}
+              />
+            </div>
+            <div className="space-y-2">
+              <Label>Present Illness</Label>
+              <Textarea
+                rows={3}
+                placeholder="Describe the present illness"
+                value={encounterForm.presentIllness}
+                onChange={(e) => setEncounterForm(prev => ({ ...prev, presentIllness: e.target.value }))}
+              />
+            </div>
+            <div className="space-y-2">
+              <Label>Examination</Label>
+              <Textarea
+                rows={3}
+                placeholder="Clinical examination notes"
+                value={encounterForm.examination}
+                onChange={(e) => setEncounterForm(prev => ({ ...prev, examination: e.target.value }))}
+              />
             </div>
             <div className="space-y-2">
               <Label>Diagnosis</Label>
-              <Input placeholder="Provisional/confirmed diagnosis" />
+              <Input
+                placeholder="Comma separated diagnoses"
+                value={encounterForm.diagnosis}
+                onChange={(e) => setEncounterForm(prev => ({ ...prev, diagnosis: e.target.value }))}
+              />
             </div>
             <div className="space-y-2">
               <Label>Treatment Plan</Label>
-              <Textarea rows={4} placeholder="Enter treatment plan..." />
+              <Textarea
+                rows={4}
+                placeholder="Enter treatment plan..."
+                value={encounterForm.treatmentPlan}
+                onChange={(e) => setEncounterForm(prev => ({ ...prev, treatmentPlan: e.target.value }))}
+              />
+            </div>
+            <div className="space-y-2">
+              <Label>Follow Up</Label>
+              <Input
+                placeholder="e.g., 2 weeks"
+                value={encounterForm.followUp}
+                onChange={(e) => setEncounterForm(prev => ({ ...prev, followUp: e.target.value }))}
+              />
             </div>
           </div>
           <DialogFooter>
             <Button variant="outline" onClick={() => setShowNewEncounterDialog(false)}>Cancel</Button>
             <Button onClick={() => {
+              if (!selectedPatient) return;
+              const diagnoses = encounterForm.diagnosis
+                .split(',')
+                .map((item) => item.trim())
+                .filter(Boolean);
+              updateSelectedPatient((patient) => {
+                const encounter: Encounter = {
+                  id: `E-${Date.now()}`,
+                  type: encounterForm.type,
+                  date: encounterForm.dateTime || new Date().toISOString(),
+                  department: encounterForm.department || 'General',
+                  doctor: encounterForm.doctor || 'Dr. On Call',
+                  chiefComplaint: encounterForm.chiefComplaint || 'General Checkup',
+                  presentIllness: encounterForm.presentIllness || '',
+                  examination: encounterForm.examination || '',
+                  diagnosis: diagnoses.length > 0 ? diagnoses : ['General'],
+                  treatmentPlan: encounterForm.treatmentPlan || '',
+                  followUp: encounterForm.followUp || undefined,
+                  status: 'In-Progress',
+                };
+                return { ...patient, encounters: [encounter, ...patient.encounters] };
+              });
+              setEncounterForm({
+                type: 'OPD',
+                dateTime: new Date().toISOString().slice(0, 16),
+                department: '',
+                doctor: '',
+                chiefComplaint: '',
+                presentIllness: '',
+                examination: '',
+                diagnosis: '',
+                treatmentPlan: '',
+                followUp: ''
+              });
               toast({
                 title: "Encounter Created",
                 description: "New clinical encounter has been recorded.",
@@ -1435,7 +1827,10 @@ const HospitalEHR = () => {
             <div className="grid grid-cols-2 gap-4">
               <div className="space-y-2">
                 <Label>Test Category</Label>
-                <Select defaultValue="blood">
+                <Select
+                  value={labForm.category}
+                  onValueChange={(value) => setLabForm(prev => ({ ...prev, category: value }))}
+                >
                   <SelectTrigger>
                     <SelectValue />
                   </SelectTrigger>
@@ -1450,7 +1845,10 @@ const HospitalEHR = () => {
               </div>
               <div className="space-y-2">
                 <Label>Priority</Label>
-                <Select defaultValue="routine">
+                <Select
+                  value={labForm.priority}
+                  onValueChange={(value) => setLabForm(prev => ({ ...prev, priority: value }))}
+                >
                   <SelectTrigger>
                     <SelectValue />
                   </SelectTrigger>
@@ -1464,23 +1862,58 @@ const HospitalEHR = () => {
             </div>
             <div className="space-y-2">
               <Label>Test Name</Label>
-              <Input placeholder="e.g., Complete Blood Count (CBC)" />
+              <Input
+                placeholder="e.g., Complete Blood Count (CBC)"
+                value={labForm.testName}
+                onChange={(e) => setLabForm(prev => ({ ...prev, testName: e.target.value }))}
+              />
             </div>
             <div className="space-y-2">
               <Label>Clinical Indication</Label>
-              <Textarea rows={3} placeholder="Reason for test..." />
+              <Textarea
+                rows={3}
+                placeholder="Reason for test..."
+                value={labForm.indication}
+                onChange={(e) => setLabForm(prev => ({ ...prev, indication: e.target.value }))}
+              />
             </div>
             <div className="space-y-2">
               <Label>Special Instructions</Label>
-              <Textarea rows={2} placeholder="Any special instructions..." />
+              <Textarea
+                rows={2}
+                placeholder="Any special instructions..."
+                value={labForm.instructions}
+                onChange={(e) => setLabForm(prev => ({ ...prev, instructions: e.target.value }))}
+              />
             </div>
           </div>
           <DialogFooter>
             <Button variant="outline" onClick={() => setShowLabTestDialog(false)}>Cancel</Button>
             <Button onClick={() => {
+              if (!selectedPatient) return;
+              updateSelectedPatient((patient) => {
+                const lab: LabResult = {
+                  id: `L-${Date.now()}`,
+                  testName: labForm.testName || 'Lab Test',
+                  category: labForm.category,
+                  orderedBy: 'Dr. On Call',
+                  orderedDate: new Date().toISOString().split('T')[0],
+                  results: [],
+                  status: 'Ordered',
+                  notes: labForm.indication || undefined
+                };
+                return { ...patient, labResults: [lab, ...patient.labResults] };
+              });
+              setLabForm({
+                category: 'blood',
+                priority: 'routine',
+                testName: '',
+                indication: '',
+                instructions: ''
+              });
               toast({
                 title: "Lab Test Ordered",
-                description: "Laboratory test order has been sent.",
+                description: "Laboratory test order has been saved.",
               });
               setShowLabTestDialog(false);
             }}>Order Test</Button>
@@ -1499,7 +1932,10 @@ const HospitalEHR = () => {
             <div className="grid grid-cols-2 gap-4">
               <div className="space-y-2">
                 <Label>Imaging Type</Label>
-                <Select defaultValue="xray">
+                <Select
+                  value={imagingForm.type}
+                  onValueChange={(value) => setImagingForm(prev => ({ ...prev, type: value }))}
+                >
                   <SelectTrigger>
                     <SelectValue />
                   </SelectTrigger>
@@ -1514,7 +1950,10 @@ const HospitalEHR = () => {
               </div>
               <div className="space-y-2">
                 <Label>Priority</Label>
-                <Select defaultValue="routine">
+                <Select
+                  value={imagingForm.priority}
+                  onValueChange={(value) => setImagingForm(prev => ({ ...prev, priority: value }))}
+                >
                   <SelectTrigger>
                     <SelectValue />
                   </SelectTrigger>
@@ -1528,15 +1967,27 @@ const HospitalEHR = () => {
             </div>
             <div className="space-y-2">
               <Label>Body Part / Region</Label>
-              <Input placeholder="e.g., Chest, Abdomen, Head" />
+              <Input
+                placeholder="e.g., Chest, Abdomen, Head"
+                value={imagingForm.bodyPart}
+                onChange={(e) => setImagingForm(prev => ({ ...prev, bodyPart: e.target.value }))}
+              />
             </div>
             <div className="space-y-2">
               <Label>Clinical Indication</Label>
-              <Textarea rows={3} placeholder="Clinical reason for imaging..." />
+              <Textarea
+                rows={3}
+                placeholder="Clinical reason for imaging..."
+                value={imagingForm.notes}
+                onChange={(e) => setImagingForm(prev => ({ ...prev, notes: e.target.value }))}
+              />
             </div>
             <div className="space-y-2">
               <Label>Contrast Required?</Label>
-              <Select defaultValue="no">
+              <Select
+                value={imagingForm.contrast}
+                onValueChange={(value) => setImagingForm(prev => ({ ...prev, contrast: value }))}
+              >
                 <SelectTrigger>
                   <SelectValue />
                 </SelectTrigger>
@@ -1551,9 +2002,37 @@ const HospitalEHR = () => {
           <DialogFooter>
             <Button variant="outline" onClick={() => setShowImagingDialog(false)}>Cancel</Button>
             <Button onClick={() => {
+              if (!selectedPatient) return;
+              updateSelectedPatient((patient) => {
+                const studyTypeMap: Record<string, ImagingStudy['studyType']> = {
+                  xray: 'X-Ray',
+                  ct: 'CT Scan',
+                  mri: 'MRI',
+                  ultrasound: 'Ultrasound',
+                  pet: 'PET Scan'
+                };
+                const studyType = studyTypeMap[imagingForm.type] || 'X-Ray';
+                const imaging: ImagingStudy = {
+                  id: `I-${Date.now()}`,
+                  studyType,
+                  bodyPart: imagingForm.bodyPart || 'General',
+                  orderedBy: 'Dr. On Call',
+                  orderedDate: new Date().toISOString().split('T')[0],
+                  status: 'Ordered',
+                  findings: imagingForm.notes || undefined
+                };
+                return { ...patient, imagingStudies: [imaging, ...patient.imagingStudies] };
+              });
+              setImagingForm({
+                type: 'xray',
+                priority: 'routine',
+                bodyPart: '',
+                contrast: 'no',
+                notes: ''
+              });
               toast({
                 title: "Imaging Ordered",
-                description: "Imaging study order has been sent to radiology.",
+                description: "Imaging study order has been saved.",
               });
               setShowImagingDialog(false);
             }}>Order Imaging</Button>
@@ -1571,16 +2050,27 @@ const HospitalEHR = () => {
           <div className="space-y-4 py-4">
             <div className="space-y-2">
               <Label>Medication Name</Label>
-              <Input placeholder="e.g., Amoxicillin 500mg" />
+              <Input
+                placeholder="e.g., Amoxicillin 500mg"
+                value={prescriptionForm.medication}
+                onChange={(e) => setPrescriptionForm(prev => ({ ...prev, medication: e.target.value }))}
+              />
             </div>
             <div className="grid grid-cols-3 gap-4">
               <div className="space-y-2">
                 <Label>Dosage</Label>
-                <Input placeholder="e.g., 500mg" />
+                <Input
+                  placeholder="e.g., 500mg"
+                  value={prescriptionForm.dosage}
+                  onChange={(e) => setPrescriptionForm(prev => ({ ...prev, dosage: e.target.value }))}
+                />
               </div>
               <div className="space-y-2">
                 <Label>Frequency</Label>
-                <Select defaultValue="bd">
+                <Select
+                  value={prescriptionForm.frequency}
+                  onValueChange={(value) => setPrescriptionForm(prev => ({ ...prev, frequency: value }))}
+                >
                   <SelectTrigger>
                     <SelectValue />
                   </SelectTrigger>
@@ -1595,12 +2085,19 @@ const HospitalEHR = () => {
               </div>
               <div className="space-y-2">
                 <Label>Duration</Label>
-                <Input placeholder="e.g., 7 days" />
+                <Input
+                  placeholder="e.g., 7 days"
+                  value={prescriptionForm.duration}
+                  onChange={(e) => setPrescriptionForm(prev => ({ ...prev, duration: e.target.value }))}
+                />
               </div>
             </div>
             <div className="space-y-2">
               <Label>Route of Administration</Label>
-              <Select defaultValue="oral">
+              <Select
+                value={prescriptionForm.route}
+                onValueChange={(value) => setPrescriptionForm(prev => ({ ...prev, route: value }))}
+              >
                 <SelectTrigger>
                   <SelectValue />
                 </SelectTrigger>
@@ -1615,12 +2112,51 @@ const HospitalEHR = () => {
             </div>
             <div className="space-y-2">
               <Label>Instructions</Label>
-              <Textarea rows={3} placeholder="e.g., Take after meals..." />
+              <Textarea
+                rows={3}
+                placeholder="e.g., Take after meals..."
+                value={prescriptionForm.instructions}
+                onChange={(e) => setPrescriptionForm(prev => ({ ...prev, instructions: e.target.value }))}
+              />
             </div>
           </div>
           <DialogFooter>
             <Button variant="outline" onClick={() => setShowPrescriptionDialog(false)}>Cancel</Button>
             <Button onClick={() => {
+              if (!selectedPatient) return;
+              updateSelectedPatient((patient) => {
+                const med: Medication = {
+                  name: prescriptionForm.medication || 'Medication',
+                  dosage: prescriptionForm.dosage || '',
+                  frequency: prescriptionForm.frequency,
+                  duration: prescriptionForm.duration || '',
+                  route: prescriptionForm.route,
+                  instructions: prescriptionForm.instructions || undefined
+                };
+                const rx: Prescription = {
+                  id: `RX-${Date.now()}`,
+                  prescribedDate: new Date().toISOString().split('T')[0],
+                  prescribedBy: 'Dr. On Call',
+                  diagnosis: 'General',
+                  medications: [med],
+                  instructions: prescriptionForm.instructions || '',
+                  validity: '30 days',
+                  status: 'Active'
+                };
+                return {
+                  ...patient,
+                  prescriptions: [rx, ...patient.prescriptions],
+                  currentMedications: [med, ...patient.currentMedications]
+                };
+              });
+              setPrescriptionForm({
+                medication: '',
+                dosage: '',
+                frequency: 'bd',
+                duration: '',
+                route: 'oral',
+                instructions: ''
+              });
               toast({
                 title: "Prescription Created",
                 description: "New prescription has been added to patient record.",
@@ -1642,7 +2178,10 @@ const HospitalEHR = () => {
             <div className="grid grid-cols-2 gap-4">
               <div className="space-y-2">
                 <Label>Procedure Type</Label>
-                <Select defaultValue="surgical">
+                <Select
+                  value={procedureForm.type}
+                  onValueChange={(value) => setProcedureForm(prev => ({ ...prev, type: value }))}
+                >
                   <SelectTrigger>
                     <SelectValue />
                   </SelectTrigger>
@@ -1656,16 +2195,54 @@ const HospitalEHR = () => {
               </div>
               <div className="space-y-2">
                 <Label>Date & Time</Label>
-                <Input type="datetime-local" defaultValue={new Date().toISOString().slice(0, 16)} />
+                <Input
+                  type="datetime-local"
+                  value={procedureForm.dateTime}
+                  onChange={(e) => setProcedureForm(prev => ({ ...prev, dateTime: e.target.value }))}
+                />
+              </div>
+            </div>
+            <div className="grid grid-cols-2 gap-4">
+              <div className="space-y-2">
+                <Label>Performed By</Label>
+                <Input
+                  placeholder="Surgeon/Doctor"
+                  value={procedureForm.performedBy}
+                  onChange={(e) => setProcedureForm(prev => ({ ...prev, performedBy: e.target.value }))}
+                />
+              </div>
+              <div className="space-y-2">
+                <Label>Outcome</Label>
+                <Select
+                  value={procedureForm.outcome}
+                  onValueChange={(value) => setProcedureForm(prev => ({ ...prev, outcome: value }))}
+                >
+                  <SelectTrigger>
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="Successful">Successful</SelectItem>
+                    <SelectItem value="Complications">Complications</SelectItem>
+                    <SelectItem value="Aborted">Aborted</SelectItem>
+                    <SelectItem value="Follow-up Required">Follow-up Required</SelectItem>
+                  </SelectContent>
+                </Select>
               </div>
             </div>
             <div className="space-y-2">
               <Label>Procedure Name</Label>
-              <Input placeholder="e.g., Laparoscopic Appendectomy" />
+              <Input
+                placeholder="e.g., Laparoscopic Appendectomy"
+                value={procedureForm.name}
+                onChange={(e) => setProcedureForm(prev => ({ ...prev, name: e.target.value }))}
+              />
             </div>
             <div className="space-y-2">
               <Label>Anesthesia Type</Label>
-              <Select defaultValue="general">
+              <Select
+                value={procedureForm.anesthesia || 'general'}
+                onValueChange={(value) => setProcedureForm(prev => ({ ...prev, anesthesia: value }))}
+              >
                 <SelectTrigger>
                   <SelectValue />
                 </SelectTrigger>
@@ -1679,16 +2256,62 @@ const HospitalEHR = () => {
             </div>
             <div className="space-y-2">
               <Label>Findings</Label>
-              <Textarea rows={3} placeholder="Procedure findings..." />
+              <Textarea
+                rows={3}
+                placeholder="Procedure findings..."
+                value={procedureForm.findings}
+                onChange={(e) => setProcedureForm(prev => ({ ...prev, findings: e.target.value }))}
+              />
+            </div>
+            <div className="space-y-2">
+              <Label>Complications</Label>
+              <Textarea
+                rows={2}
+                placeholder="Complications if any..."
+                value={procedureForm.complications}
+                onChange={(e) => setProcedureForm(prev => ({ ...prev, complications: e.target.value }))}
+              />
             </div>
             <div className="space-y-2">
               <Label>Notes</Label>
-              <Textarea rows={3} placeholder="Additional notes..." />
+              <Textarea
+                rows={3}
+                placeholder="Additional notes..."
+                value={procedureForm.notes}
+                onChange={(e) => setProcedureForm(prev => ({ ...prev, notes: e.target.value }))}
+              />
             </div>
           </div>
           <DialogFooter>
             <Button variant="outline" onClick={() => setShowProcedureDialog(false)}>Cancel</Button>
             <Button onClick={() => {
+              if (!selectedPatient) return;
+              updateSelectedPatient((patient) => {
+                const procedure: Procedure = {
+                  id: `P-${Date.now()}`,
+                  name: procedureForm.name || 'Procedure',
+                  type: procedureForm.type === 'diagnostic' ? 'Diagnostic' : procedureForm.type === 'therapeutic' ? 'Non-Surgical' : 'Surgical',
+                  date: procedureForm.dateTime || new Date().toISOString(),
+                  performedBy: procedureForm.performedBy || 'On Call',
+                  anesthesia: procedureForm.anesthesia || undefined,
+                  findings: procedureForm.findings || undefined,
+                  complications: procedureForm.complications || undefined,
+                  outcome: procedureForm.outcome,
+                  notes: procedureForm.notes || undefined
+                };
+                return { ...patient, procedures: [procedure, ...patient.procedures] };
+              });
+              setProcedureForm({
+                type: 'surgical',
+                name: '',
+                dateTime: new Date().toISOString().slice(0, 16),
+                performedBy: '',
+                anesthesia: '',
+                findings: '',
+                complications: '',
+                outcome: 'Successful',
+                notes: ''
+              });
               toast({
                 title: "Procedure Added",
                 description: "Procedure record has been added to patient file.",

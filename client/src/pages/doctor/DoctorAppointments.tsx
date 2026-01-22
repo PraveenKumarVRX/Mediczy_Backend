@@ -266,7 +266,15 @@ const DoctorAppointments = () => {
     const roomId = `apt-${appointment.id}`;
 
     // Navigate to video consultation page based on consultation type
-    if (appointment.consultationType === "online" && appointment.channel === "video") {
+    const channel = String(appointment.channel || "").toLowerCase();
+    const consultType = String(appointment.consultationType || "").toLowerCase();
+    const isVideoConsultation =
+      channel.includes("video") ||
+      consultType === "online" ||
+      consultType.includes("video") ||
+      consultType.includes("tele");
+
+    if (isVideoConsultation) {
       window.location.href = `/doctor/video?room=${encodeURIComponent(roomId)}&appointmentId=${appointment.id}&userId=${appointment.userId}`;
     } else {
       // For phone/chat consultations, go to chat

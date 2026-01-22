@@ -106,11 +106,14 @@ const NurseMedications: React.FC = () => {
           <div className="mt-6">
             <h3 className="text-sm font-medium mb-2">Recent Administrations</h3>
             <div className="space-y-2">
-              {history.slice(0, 5).map((h) => (
-                <div key={h.id} className="text-xs text-muted-foreground">
-                  {new Date(h.administeredAt).toLocaleString()} • {h.medicationName}{h.dosage ? ` ${h.dosage}` : ''}
-                </div>
-              ))}
+              {history.slice(0, 5).map((h) => {
+                const administeredAt = h?.metadata?.administeredAt || h?.administeredAt || h?.createdAt;
+                return (
+                  <div key={h.id} className="text-xs text-muted-foreground">
+                    {administeredAt ? new Date(administeredAt).toLocaleString() : 'N/A'} • {h.name || h.medicationName}{h.dosage ? ` ${h.dosage}` : ''}
+                  </div>
+                );
+              })}
             </div>
           </div>
         )}

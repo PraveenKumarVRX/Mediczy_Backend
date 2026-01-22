@@ -15,11 +15,12 @@ export const adminAuthMiddleware = (req, res, next) => {
 
     const decoded = jwt.verify(token, JWT_CONFIG.SECRET || 'mediczy_secret_key');
     
-    // Check if user is admin
-    if (!decoded.isAdmin && decoded.role !== 'admin' && decoded.role !== 'super_admin') {
+    // Check if user is admin or team member
+    const allowedRoles = ['admin', 'super_admin', 'team'];
+    if (!decoded.isAdmin && !allowedRoles.includes(decoded.role)) {
       return res.status(403).json({
         success: false,
-        error: 'Admin access required'
+        error: 'Admin or team access required'
       });
     }
 

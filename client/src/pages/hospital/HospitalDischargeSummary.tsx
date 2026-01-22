@@ -1,6 +1,7 @@
 import { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import api from '@/utils/api';
+import { loadHospitalStore, saveHospitalStore } from '@/utils/hospitalStorage';
 import HospitalLayout from '@/components/hospital/HospitalLayout';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
@@ -76,8 +77,7 @@ const HospitalDischargeSummary = () => {
     consultants: ''
   });
 
-  // Mock data for discharge summaries
-  const [summaries] = useState<DischargeSummary[]>([
+  const initialSummaries: DischargeSummary[] = [
     {
       id: 'DS001',
       patientName: 'Rajesh Kumar',
@@ -130,7 +130,11 @@ const HospitalDischargeSummary = () => {
       status: 'sent',
       createdAt: '2026-01-06T16:20:00'
     }
-  ]);
+  ];
+
+  const [summaries, setSummaries] = useState<DischargeSummary[]>(
+    () => loadHospitalStore('discharge-summaries', initialSummaries)
+  );
 
   // Mock patients for selection
   const admittedPatients = [
@@ -168,7 +172,7 @@ const HospitalDischargeSummary = () => {
   const handleSaveDraft = async () => {
     try {
       const draftData = {
-        patientId: selectedPatient?.id,
+        patientId: selectedPatient,
         diagnosis: '',
         procedures: [],
         medications: [],
@@ -176,11 +180,38 @@ const HospitalDischargeSummary = () => {
         status: 'draft'
       };
 
-      const { data } = await api.post(
-        '/hospital/discharge-summaries',
-        draftData,
-        { headers: hospitalHeaders() }
-      );
+      try {
+        await api.post(
+          '/hospital/discharge-summaries',
+          draftData,
+          { headers: hospitalHeaders() }
+        );
+      } catch {
+        // Allow local persistence if API is unavailable
+      }
+
+      const patient = admittedPatients.find((item) => item.id === selectedPatient);
+      if (patient) {
+        const created: DischargeSummary = {
+          id: `DS-${Date.now()}`,
+          patientName: patient.name,
+          patientId: patient.id,
+          admissionDate: patient.admissionDate,
+          dischargeDate: formData.dischargeDate,
+          ward: patient.ward,
+          bed: patient.bed,
+          diagnosis: formData.diagnosis || 'Pending',
+          attendingDoctor: formData.attendingDoctor || 'On Call',
+          status: 'draft',
+          createdAt: new Date().toISOString()
+        };
+
+        setSummaries((prev) => {
+          const updated = [created, ...prev];
+          saveHospitalStore('discharge-summaries', updated);
+          return updated;
+        });
+      }
 
       toast({
         title: "Draft Saved",
@@ -198,7 +229,7 @@ const HospitalDischargeSummary = () => {
   const handleSubmitForApproval = async () => {
     try {
       const submissionData = {
-        patientId: selectedPatient?.id,
+        patientId: selectedPatient,
         diagnosis: '',
         procedures: [],
         medications: [],
@@ -206,11 +237,38 @@ const HospitalDischargeSummary = () => {
         status: 'pending_approval'
       };
 
-      const { data } = await api.post(
-        '/hospital/discharge-summaries/submit',
-        submissionData,
-        { headers: hospitalHeaders() }
-      );
+      try {
+        await api.post(
+          '/hospital/discharge-summaries/submit',
+          submissionData,
+          { headers: hospitalHeaders() }
+        );
+      } catch {
+        // Allow local persistence if API is unavailable
+      }
+
+      const patient = admittedPatients.find((item) => item.id === selectedPatient);
+      if (patient) {
+        const created: DischargeSummary = {
+          id: `DS-${Date.now()}`,
+          patientName: patient.name,
+          patientId: patient.id,
+          admissionDate: patient.admissionDate,
+          dischargeDate: formData.dischargeDate,
+          ward: patient.ward,
+          bed: patient.bed,
+          diagnosis: formData.diagnosis || 'Pending',
+          attendingDoctor: formData.attendingDoctor || 'On Call',
+          status: 'pending_approval',
+          createdAt: new Date().toISOString()
+        };
+
+        setSummaries((prev) => {
+          const updated = [created, ...prev];
+          saveHospitalStore('discharge-summaries', updated);
+          return updated;
+        });
+      }
 
       toast({
         title: "Submitted for Approval",

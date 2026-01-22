@@ -1,38 +1,18 @@
 import express from 'express';
 import jwt from 'jsonwebtoken';
-import bcrypt from 'bcryptjs';
 import { JWT_CONFIG } from '../../config/auth.config.js';
+import HomecareProvider from '../../models/postgres/homecare.model.postgres.js';
+import { authLimiter } from '../../middleware/rateLimiter.middleware.js';
+import { auditLoginAttempt } from '../../middleware/audit.middleware.js';
 
 const router = express.Router();
 const JWT_SECRET = JWT_CONFIG.SECRET;
-
-// Mock homecare data (replace with database later)
-const mockHomecare = {
-  id: 1,
-  name: "Premium Home Healthcare Services",
-  email: "homecare@mediczy.com",
-  password: "$2a$10$XYZ123ABC456DEF789GHI0JK.LMNOPQRSTUVWXYZ1234567890", // Homecare123
-  phone: "+91-9876543211",
-  registrationNumber: "HCS-DL-2024-001",
-  serviceType: "Full Spectrum Home Care",
-  totalStaff: 20,
-  availableStaff: 12,
-  coverageArea: "Delhi, Gurgaon, Noida",
-  isActive: true,
-  avgRating: 4.8,
-  totalPatients: 342
-};
-
-// Generate proper password hash for Homecare123
-bcrypt.hash('Homecare123', 10).then(hash => {
-  mockHomecare.password = hash;
-});
 
 /**
  * POST /api/homecare/login
  * Authenticate homecare service provider
  */
-router.post('/login', async (req, res) => {
+router.post('/login', authLimiter, async (req, res) => {
   try {
     const { email, password } = req.body;
 
@@ -44,62 +24,43 @@ router.post('/login', async (req, res) => {
       });
     }
 
-    // Check if homecare exists
-    if (email !== mockHomecare.email) {
+    const normalizedEmail = String(email).toLowerCase();
+    const provider = await HomecareProvider.findOne({ where: { email: normalizedEmail } });
+
+    if (!provider) {
+      await auditLoginAttempt(req, null, normalizedEmail, false, 'Homecare provider not found');
       return res.status(401).json({
         success: false,
         message: 'Invalid email or password'
       });
     }
 
-    // Verify password
-    const isPasswordValid = await bcrypt.compare(password, mockHomecare.password);
+    const isPasswordValid = await provider.comparePassword(password);
     if (!isPasswordValid) {
+      await auditLoginAttempt(req, provider.id, normalizedEmail, false, 'Invalid password');
       return res.status(401).json({
         success: false,
         message: 'Invalid email or password'
       });
     }
 
-    // Check if homecare is active
-    if (!mockHomecare.isActive) {
+    if (!provider.isActive()) {
+      await auditLoginAttempt(req, provider.id, normalizedEmail, false, 'Homecare provider inactive');
       return res.status(403).json({
         success: false,
         message: 'Account is inactive. Please contact support.'
       });
     }
 
-    // Generate JWT token
-    const token = jwt.sign(
-      {
-        homecareId: mockHomecare.id,
-        email: mockHomecare.email,
-        name: mockHomecare.name,
-        userType: 'homecare',
-        role: 'homecare'
-      },
-      JWT_SECRET,
-      { expiresIn: '7d' }
-    );
+    const token = provider.generateAuthToken();
 
-    // Return success response
+    await auditLoginAttempt(req, provider.id, normalizedEmail, true);
+
     res.status(200).json({
       success: true,
       message: 'Login successful',
       token,
-      homecare: {
-        id: mockHomecare.id,
-        name: mockHomecare.name,
-        email: mockHomecare.email,
-        phone: mockHomecare.phone,
-        registrationNumber: mockHomecare.registrationNumber,
-        serviceType: mockHomecare.serviceType,
-        totalStaff: mockHomecare.totalStaff,
-        availableStaff: mockHomecare.availableStaff,
-        coverageArea: mockHomecare.coverageArea,
-        avgRating: mockHomecare.avgRating,
-        totalPatients: mockHomecare.totalPatients
-      }
+      homecare: provider.toJSON()
     });
 
   } catch (error) {

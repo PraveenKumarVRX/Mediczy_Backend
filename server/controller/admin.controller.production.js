@@ -4,6 +4,7 @@ import Doctor from '../models/doctor.model.intelligent.js';
 import bcrypt from 'bcrypt';
 import jwt from 'jsonwebtoken';
 import { validationResult } from 'express-validator';
+import { auditLoginAttempt } from '../middleware/audit.middleware.js';
 
 // Production-ready configuration
 const PRODUCTION_CONFIG = {
@@ -205,6 +206,7 @@ export const adminLogin = async (req, res) => {
     // Input validation
     if (!email || !password) {
       securityManager.recordFailedLogin(clientIP, email || 'missing', 'Missing credentials');
+      await auditLoginAttempt(req, null, email || 'missing', false, 'Missing credentials');
       return res.status(400).json(
         responseBuilder.error('Email and password are required', 'MISSING_CREDENTIALS', null, 400)
       );
@@ -213,6 +215,7 @@ export const adminLogin = async (req, res) => {
     // Email format validation
     if (!PRODUCTION_CONFIG.SECURITY.EMAIL_REGEX.test(email)) {
       securityManager.recordFailedLogin(clientIP, email, 'Invalid email format');
+      await auditLoginAttempt(req, null, email, false, 'Invalid email format');
       return res.status(400).json(
         responseBuilder.error('Invalid email format', 'INVALID_EMAIL_FORMAT', null, 400)
       );
@@ -264,6 +267,7 @@ export const adminLogin = async (req, res) => {
         ip: clientIP,
         userAgent
       });
+      await auditLoginAttempt(req, adminUser.id, adminUser.email, true);
       
       const responseTime = Date.now() - startTime;
       securityManager.trackPerformance('admin_login', responseTime);
@@ -294,6 +298,7 @@ export const adminLogin = async (req, res) => {
     
     // Failed authentication
     securityManager.recordFailedLogin(clientIP, email, 'Invalid credentials');
+    await auditLoginAttempt(req, adminUser?.id || null, email, false, 'Invalid credentials');
     console.warn(`❌ Failed admin login - Email: ${email}, IP: ${clientIP}`);
     
     return res.status(401).json(

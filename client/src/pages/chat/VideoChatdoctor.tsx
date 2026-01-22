@@ -148,12 +148,14 @@ const Chat = () => {
   const searchParams = new URLSearchParams(window.location.search);
   const doctorIdFromUrl = searchParams.get('doctorId');
   const isInstantConsultation = searchParams.get('instant') === 'true';
+  const recipientEndpoint = userType === "user" ? "/doctors/available" : "/users/available";
+  const recipientQueryKey = userType === "user" ? "available-doctors" : "available-users";
 
   // Fetch available doctors/users depending on user type
   const { data: availableUsers = [] } = useQuery<Recipient[]>({
-    queryKey: ["available-users", "doctor"],
+    queryKey: [recipientQueryKey, userType],
     queryFn: async () => {
-      const { data } = await api.get("/users/available"); // Fetch only available users
+      const { data } = await api.get(recipientEndpoint);
       return normalizeParticipants(data);
     },
     enabled: !!currentId, // Ensures query runs only if currentId is defined

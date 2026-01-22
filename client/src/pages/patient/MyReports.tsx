@@ -7,6 +7,7 @@ import { Badge } from '@/components/ui/badge';
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, DialogTrigger } from '@/components/ui/dialog';
 import { useToast } from '@/hooks/use-toast';
 import MainLayout from '@/components/layout/MainLayout';
+import api from '@/utils/api';
 
 interface Report {
   id: string;
@@ -52,18 +53,9 @@ const MyReports = () => {
         return;
       }
 
-      const response = await fetch('/api/reports?limit=100', {
-        headers: {
-          'Authorization': `Bearer ${token}`,
-          'Content-Type': 'application/json'
-        }
-      });
-
-      if (response.ok) {
-        const data = await response.json();
-        if (data.success && data.data) {
-          setReports(data.data);
-        }
+      const response = await api.get('/reports', { params: { limit: 100 } });
+      if (response.data?.success && response.data?.data) {
+        setReports(response.data.data);
       } else {
         console.error('Failed to fetch reports');
       }
@@ -108,17 +100,12 @@ const MyReports = () => {
       if (uploadTestName) formData.append('testName', uploadTestName);
       if (uploadLabName) formData.append('labName', uploadLabName);
 
-      const response = await fetch('/api/reports', {
-        method: 'POST',
-        headers: {
-          'Authorization': `Bearer ${token}`
-        },
-        body: formData
+      const response = await api.post('/reports', formData, {
+        headers: { 'Content-Type': 'multipart/form-data' }
       });
+      const data = response.data;
 
-      const data = await response.json();
-
-      if (response.ok && data.success) {
+      if (data?.success) {
         toast({
           title: 'Success',
           description: 'Report uploaded successfully'
@@ -133,7 +120,7 @@ const MyReports = () => {
         toast({
           variant: 'destructive',
           title: 'Upload Failed',
-          description: data.message || 'Failed to upload report'
+          description: data?.message || 'Failed to upload report'
         });
       }
     } catch (error) {
@@ -301,7 +288,10 @@ const MyReports = () => {
 
       {/* Stats */}
       <div className="grid grid-cols-1 md:grid-cols-4 gap-4 mb-6">
-        <Card>
+        <Card
+          className="cursor-pointer transition-shadow hover:shadow-md"
+          onClick={() => setFilterType('all')}
+        >
           <CardContent className="pt-6">
             <div className="text-center">
               <div className="text-3xl font-bold text-gray-900">{typeCounts.total}</div>
@@ -309,7 +299,10 @@ const MyReports = () => {
             </div>
           </CardContent>
         </Card>
-        <Card>
+        <Card
+          className="cursor-pointer transition-shadow hover:shadow-md"
+          onClick={() => setFilterType('lab')}
+        >
           <CardContent className="pt-6">
             <div className="text-center">
               <div className="text-3xl font-bold text-cyan-600">{typeCounts.lab}</div>
@@ -317,7 +310,10 @@ const MyReports = () => {
             </div>
           </CardContent>
         </Card>
-        <Card>
+        <Card
+          className="cursor-pointer transition-shadow hover:shadow-md"
+          onClick={() => setFilterType('imaging')}
+        >
           <CardContent className="pt-6">
             <div className="text-center">
               <div className="text-3xl font-bold text-blue-600">{typeCounts.imaging}</div>
@@ -325,7 +321,10 @@ const MyReports = () => {
             </div>
           </CardContent>
         </Card>
-        <Card>
+        <Card
+          className="cursor-pointer transition-shadow hover:shadow-md"
+          onClick={() => setFilterType('prescription')}
+        >
           <CardContent className="pt-6">
             <div className="text-center">
               <div className="text-3xl font-bold text-purple-600">{typeCounts.prescription}</div>

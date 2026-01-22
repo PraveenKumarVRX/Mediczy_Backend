@@ -8,6 +8,7 @@ import {
   updateDoctorStatus,
 } from "../controller/doctor.controller.js";
 import { authDoctor } from "../middleware/auth.middleware.js";
+import { authLimiter } from "../middleware/rateLimiter.middleware.js";
 import { Doctor, Appointment, User } from "../models/index.js";
 import { Op } from 'sequelize';
 import bcrypt from 'bcrypt';
@@ -51,6 +52,7 @@ router.post(
 // Doctor Login Route
 router.post(
   "/login",
+  authLimiter,
   [
     body("email").isEmail().withMessage("Must be a valid email"),
     body("password").notEmpty().withMessage("Password is required"),
@@ -1133,7 +1135,7 @@ router.post(
       const generatedEmail = email || `patient.${phoneNumber.replace(/[^0-9]/g, '')}@mediczy.com`;
 
       // Normalize gender to match database enum (capitalize first letter)
-      const normalizedGender = gender ? gender.charAt(0).toUpperCase() + gender.slice(1).toLowerCase() : null;
+      const normalizedGender = gender ? gender.charAt(0).toUpperCase() + gender.slice(1).toLowerCase() : 'Other';
 
       // Create patient account
       // Note: User model only supports basic fields
@@ -1144,7 +1146,7 @@ router.post(
         email: generatedEmail,
         password: hashedPassword,
         phoneNumber,
-        dateOfBirth: dateOfBirth ? new Date(dateOfBirth) : null,
+        dateOfBirth: dateOfBirth ? new Date(dateOfBirth) : new Date('1990-01-01'),
         gender: normalizedGender,
         status: 'active',         // Use status instead of isActive
         emailVerified: true,      // Doctor-created patients are auto-verified
@@ -1253,29 +1255,37 @@ router.get('/my-patients', authDoctor, async (req, res) => {
       raw: true
     });
 
-    // Get unique patient IDs
+    // Get unique patient IDs from appointments
     const patientIds = [...new Set(appointments.map(apt => apt.userId).filter(Boolean))];
 
-    if (patientIds.length === 0) {
-      return res.json({
-        success: true,
-        count: 0,
-        patients: []
-      });
+    // Build patient search criteria - only include patients from appointments
+    // Note: primaryDoctorId is not available in current User model
+    let patientWhere = {};
+    
+    if (patientIds.length > 0) {
+      patientWhere.id = { [Op.in]: patientIds };
     }
 
-    // Build patient search criteria
-    const patientWhere = {
-      id: { [Op.in]: patientIds }
-    };
-
     if (search) {
-      patientWhere[Op.or] = [
-        { firstName: { [Op.iLike]: `%${search}%` } },
-        { lastName: { [Op.iLike]: `%${search}%` } },
-        { email: { [Op.iLike]: `%${search}%` } },
-        { phoneNumber: { [Op.iLike]: `%${search}%` } }
-      ];
+      const searchCondition = {
+        [Op.or]: [
+          { firstName: { [Op.iLike]: `%${search}%` } },
+          { lastName: { [Op.iLike]: `%${search}%` } },
+          { email: { [Op.iLike]: `%${search}%` } },
+          { phoneNumber: { [Op.iLike]: `%${search}%` } }
+        ]
+      };
+      
+      if (patientIds.length > 0) {
+        patientWhere = {
+          [Op.and]: [
+            { id: { [Op.in]: patientIds } },
+            searchCondition
+          ]
+        };
+      } else {
+        patientWhere = searchCondition;
+      }
     }
 
     // Get patients with appointment stats
@@ -1391,24 +1401,32 @@ router.get("/video-consultations/stats", authDoctor, async (req, res) => {
     const today = new Date();
     today.setHours(0, 0, 0, 0);
 
+    const videoFilter = {
+      [Op.or]: [
+        { type: { [Op.in]: ['video', 'emergency_triage', 'telemedicine'] } },
+        { consultationType: { [Op.in]: ['online', 'video', 'telemedicine'] } },
+        { channel: { [Op.in]: ['video'] } }
+      ]
+    };
+
     const [totalConsultations, todayConsultations, completedConsultations] = await Promise.all([
       Appointment.count({
         where: {
           doctorId,
-          type: { [Op.in]: ['video', 'emergency_triage', 'telemedicine'] }
+          ...videoFilter
         }
       }),
       Appointment.count({
         where: {
           doctorId,
-          type: { [Op.in]: ['video', 'emergency_triage', 'telemedicine'] },
+          ...videoFilter,
           createdAt: { [Op.gte]: today }
         }
       }),
       Appointment.count({
         where: {
           doctorId,
-          type: { [Op.in]: ['video', 'emergency_triage', 'telemedicine'] },
+          ...videoFilter,
           status: 'completed'
         }
       })
@@ -1442,7 +1460,11 @@ router.get("/video-consultations/recent", authDoctor, async (req, res) => {
     const consultations = await Appointment.findAll({
       where: {
         doctorId,
-        type: { [Op.in]: ['video', 'emergency_triage', 'telemedicine'] }
+        [Op.or]: [
+          { type: { [Op.in]: ['video', 'emergency_triage', 'telemedicine'] } },
+          { consultationType: { [Op.in]: ['online', 'video', 'telemedicine'] } },
+          { channel: { [Op.in]: ['video'] } }
+        ]
       },
       include: [
         {
@@ -1496,7 +1518,11 @@ router.get("/video-consultations/upcoming", authDoctor, async (req, res) => {
     const consultations = await Appointment.findAll({
       where: {
         doctorId,
-        type: { [Op.in]: ['video', 'emergency_triage', 'telemedicine'] },
+        [Op.or]: [
+          { type: { [Op.in]: ['video', 'emergency_triage', 'telemedicine'] } },
+          { consultationType: { [Op.in]: ['online', 'video', 'telemedicine'] } },
+          { channel: { [Op.in]: ['video'] } }
+        ],
         status: { [Op.in]: ['pending', 'confirmed', 'scheduled'] },
         [Op.or]: [
           { appointmentDate: { [Op.gte]: now } },
@@ -1730,7 +1756,7 @@ router.post("/triage/cases/:caseId/accept", authDoctor, async (req, res) => {
     try {
       const notificationService = (await import('../services/notification.service.js')).default;
       await notificationService.sendNotification({
-        userId: appointment.patientId,
+        userId: appointment.userId,
         userType: 'user',
         type: 'triage_accepted',
         title: '👨‍⚕️ Doctor Reviewing Your Case',
@@ -1943,7 +1969,7 @@ router.post('/appointments/:appointmentId/initiate-call', authDoctor, async (req
 
     if (!meetingLink) {
       meetingId = `MEDCALL-${appointment.id}-${crypto.randomBytes(4).toString('hex').toUpperCase()}`;
-      meetingLink = `${process.env.MIROTALK_URL || 'https://video.mediczy.com'}/join/${meetingId}`;
+      meetingLink = `${process.env.MIROTALK_URL || 'https://video.mediqzy.com'}/join/${meetingId}`;
     }
 
     // Update appointment status and call initiation tracking
@@ -2000,7 +2026,8 @@ router.post('/appointments/:appointmentId/initiate-call', authDoctor, async (req
     try {
       const io = req.app.get('io');
       if (io) {
-        io.to(`user_${appointment.userId}`).emit('doctor-initiated-call', {
+        // Emit to user-{userId} room (matching the room joined in chathandler)
+        io.to(`user-${appointment.userId}`).emit('doctor-initiated-call', {
           appointmentId: appointment.id,
           doctorName,
           doctorId: doctorId,
@@ -2009,7 +2036,7 @@ router.post('/appointments/:appointmentId/initiate-call', authDoctor, async (req
           appointmentDate: appointment.appointmentDate,
           appointmentTime: appointment.appointmentTime
         });
-        console.log('✅ Socket event emitted to patient');
+        console.log(`✅ Socket event emitted to user-${appointment.userId}`);
       }
     } catch (socketError) {
       console.error('⚠️ Failed to emit socket event:', socketError);
@@ -2171,23 +2198,13 @@ router.get('/health-monitoring/patients', authDoctor, async (req, res) => {
     // Get unique patient IDs
     const patientIds = [...new Set(appointments.map(apt => apt.userId).filter(Boolean))];
 
-    if (patientIds.length === 0) {
-      return res.json({
-        success: true,
-        patients: [],
-        total: 0,
-        healthMonitoring: {
-          active: 0,
-          inactive: 0,
-          critical: 0
-        }
-      });
-    }
-
-    // Get patients with basic info
+    // Get patients with basic info (include primary doctor assignments)
     const patients = await User.findAll({
       where: {
-        id: { [Op.in]: patientIds }
+        [Op.or]: [
+          { id: { [Op.in]: patientIds } },
+          { primaryDoctorId: parseInt(doctorId) }
+        ]
       },
       attributes: [
         'id',

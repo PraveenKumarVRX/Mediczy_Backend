@@ -25,10 +25,13 @@ async function startApplication() {
     // 3. Create and configure HTTP server with Socket.IO
     await serverController.createServer(app);
     
-    // 4. Start listening on configured port
+    // 4. Make Socket.IO available globally for webhook handlers
+    global.io = serverController.getIO();
+    
+    // 5. Start listening on configured port
     await serverController.start();
     
-    // 5. Register shutdown handlers
+    // 6. Register shutdown handlers
     shutdownController.initialize(serverController, initializationController);
     shutdownController.registerHandlers();
     

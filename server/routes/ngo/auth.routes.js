@@ -1,30 +1,18 @@
 import express from 'express';
 import jwt from 'jsonwebtoken';
-import bcrypt from 'bcryptjs';
 import { JWT_CONFIG } from '../../config/auth.config.js';
+import User from '../../models/postgres/user.model.postgres.js';
+import { authLimiter } from '../../middleware/rateLimiter.middleware.js';
+import { auditLoginAttempt } from '../../middleware/audit.middleware.js';
 
 const router = express.Router();
-
-// Mock NGO data (Non-Governmental Organization - replace with database later)
-const mockNGO = {
-  id: 1,
-  organizationName: "HealthCare For All Foundation",
-  email: "ngo@mediczy.com",
-  password: "$2b$10$obqmH4fnl5vdW9BcYe17eu6kojg3pEQeysAYBve6ldW2Bf/TAcpl.", // NGO123
-  contactPerson: "NGO Program Director",
-  phone: "+91-9876543210",
-  registrationNumber: "NGO-2024-001",
-  focusAreas: ["Primary Healthcare", "Preventive Care", "Community Outreach"],
-  registeredAddress: "Community Center, Chennai",
-  isActive: true,
-  beneficiaryCount: 25000
-};
+const JWT_SECRET = JWT_CONFIG.SECRET;
 
 /**
  * POST /api/ngo/login
  * Authenticate NGO account
  */
-router.post('/login', async (req, res) => {
+router.post('/login', authLimiter, async (req, res) => {
   try {
     const { email, password } = req.body;
 
@@ -44,60 +32,46 @@ router.post('/login', async (req, res) => {
         message: 'Email and password are required'
       });
     }
+    const normalizedEmail = String(email).toLowerCase();
+    const ngoUser = await User.findOne({
+      where: {
+        email: normalizedEmail,
+        role: 'ngo_admin',
+        status: 'active'
+      }
+    });
 
-    // Check if NGO exists
-    if (email !== mockNGO.email) {
+    if (!ngoUser) {
+      await auditLoginAttempt(req, null, normalizedEmail, false, 'NGO admin not found');
       return res.status(401).json({
         success: false,
         message: 'Invalid email or password'
       });
     }
 
-    // Verify password
-    const isPasswordValid = await bcrypt.compare(password, mockNGO.password);
+    const isPasswordValid = await ngoUser.comparePassword(password);
     if (!isPasswordValid) {
+      await auditLoginAttempt(req, ngoUser.id, normalizedEmail, false, 'Invalid password');
       return res.status(401).json({
         success: false,
         message: 'Invalid email or password'
       });
     }
 
-    // Check if NGO is active
-    if (!mockNGO.isActive) {
-      return res.status(403).json({
-        success: false,
-        message: 'Account is inactive. Please contact support.'
-      });
-    }
+    const token = ngoUser.generateAuthToken();
+    await ngoUser.update({ lastLoginAt: new Date() });
 
-    // Generate JWT token
-    const token = jwt.sign(
-      {
-        id: mockNGO.id,
-        ngoId: mockNGO.id,
-        email: mockNGO.email,
-        organizationName: mockNGO.organizationName,
-        userType: 'ngo',
-        role: 'ngo'
-      },
-      JWT_SECRET,
-      { expiresIn: '7d' }
-    );
+    await auditLoginAttempt(req, ngoUser.id, normalizedEmail, true);
 
-    // Return success response
     res.status(200).json({
       success: true,
       message: 'Login successful',
       token,
       ngo: {
-        id: mockNGO.id,
-        organizationName: mockNGO.organizationName,
-        email: mockNGO.email,
-        contactPerson: mockNGO.contactPerson,
-        phone: mockNGO.phone,
-        registrationNumber: mockNGO.registrationNumber,
-        focusAreas: mockNGO.focusAreas,
-        beneficiaryCount: mockNGO.beneficiaryCount
+        id: ngoUser.id,
+        email: ngoUser.email,
+        role: ngoUser.role,
+        organizationId: ngoUser.organization_id || null
       }
     });
 

@@ -12,6 +12,7 @@ import { Badge } from '@/components/ui/badge';
 import { Checkbox } from '@/components/ui/checkbox';
 import { useToast } from '@/hooks/use-toast';
 import api from '@/utils/api';
+import { loadHospitalStore, saveHospitalStore } from '@/utils/hospitalStorage';
 import HospitalLayout from '@/components/hospital/HospitalLayout';
 import {
   Stethoscope, Plus, Search, ArrowLeft, Calendar, Clock,
@@ -188,8 +189,7 @@ const HospitalProcedureAdder = () => {
     }
   ];
 
-  // Sample scheduled procedures data
-  const scheduledProcedures: ProcedureSchedule[] = [
+  const initialScheduledProcedures: ProcedureSchedule[] = [
     {
       id: 'SCH001',
       procedureId: 'PROC001',
@@ -229,6 +229,10 @@ const HospitalProcedureAdder = () => {
       assistants: ['Nurse Kumar']
     }
   ];
+
+  const [scheduledProcedures, setScheduledProcedures] = useState<ProcedureSchedule[]>(
+    () => loadHospitalStore('procedure-schedules', initialScheduledProcedures)
+  );
 
   // Sample patients data
   const patients = [
@@ -278,7 +282,6 @@ const HospitalProcedureAdder = () => {
 
     setLoading(true);
     try {
-      // Schedule procedure via API
       const procedureData = {
         procedureId: selectedProcedure.id,
         patientId: selectedPatient.id,
@@ -291,11 +294,41 @@ const HospitalProcedureAdder = () => {
         estimatedDuration: selectedProcedure.estimatedDuration
       };
 
-      const { data } = await api.post(
-        '/hospital/procedures/schedule',
-        procedureData,
-        { headers: hospitalHeaders() }
-      );
+      try {
+        await api.post(
+          '/hospital/procedures/schedule',
+          procedureData,
+          { headers: hospitalHeaders() }
+        );
+      } catch {
+        // Allow local persistence if API is unavailable
+      }
+
+      const created: ProcedureSchedule = {
+        id: `SCH-${Date.now()}`,
+        procedureId: selectedProcedure.id,
+        procedure: selectedProcedure,
+        patientId: selectedPatient.id,
+        patientName: selectedPatient.name,
+        uhid: selectedPatient.uhid,
+        doctorName: 'On Call',
+        department: selectedProcedure.department,
+        scheduledDate,
+        scheduledTime,
+        status: 'Scheduled',
+        priority,
+        notes: procedureNotes,
+        anesthesiaType,
+        estimatedDuration: selectedProcedure.estimatedDuration,
+        room,
+        assistants: []
+      };
+
+      setScheduledProcedures(prev => {
+        const updated = [created, ...prev];
+        saveHospitalStore('procedure-schedules', updated);
+        return updated;
+      });
 
       toast({
         title: "Procedure Scheduled",

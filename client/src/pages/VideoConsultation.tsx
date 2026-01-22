@@ -94,7 +94,7 @@ const VideoConsultation = () => {
   const localStreamRef = useRef<MediaStream | null>(null);
 
   // MiroTalk base URL
-  const MIROTALK_BASE_URL = import.meta.env.VITE_MIROTALK_URL || 'https://mediqzy.com:3010';
+  const MIROTALK_BASE_URL = import.meta.env.VITE_MIROTALK_URL || 'https://video.mediqzy.com';
 
   // Fetch upcoming video consultations
   const { data: upcomingAppointments = [], isLoading, refetch } = useQuery({
@@ -183,15 +183,60 @@ const VideoConsultation = () => {
   // Generate meeting URL
   const generateMeetingUrl = useCallback((roomIdOrAppointment: string | Appointment) => {
     let room = '';
-    let name = currentUser?.name || currentUser?.firstName || 'Patient';
+    const name = currentUser?.name || currentUser?.firstName || 'Patient';
+    let directJoinUrl = '';
     
     if (typeof roomIdOrAppointment === 'string') {
-      room = roomIdOrAppointment;
+      if (roomIdOrAppointment.startsWith('http')) {
+        directJoinUrl = roomIdOrAppointment;
+      } else {
+        room = roomIdOrAppointment;
+      }
     } else {
-      room = roomIdOrAppointment.roomId || roomIdOrAppointment.meetingLink || `apt-${roomIdOrAppointment.id}`;
+      if (roomIdOrAppointment.meetingLink && roomIdOrAppointment.meetingLink.startsWith('http')) {
+        directJoinUrl = roomIdOrAppointment.meetingLink;
+      } else {
+        room = roomIdOrAppointment.roomId || roomIdOrAppointment.meetingLink || `apt-${roomIdOrAppointment.id}`;
+      }
       // Extract room from full URL if needed
       if (room.includes('/join/')) {
         room = room.split('/join/')[1]?.split('?')[0] || room;
+      }
+    }
+
+    if (directJoinUrl) {
+      try {
+        const parsed = new URL(directJoinUrl);
+        if (!parsed.searchParams.has('name')) {
+          parsed.searchParams.set('name', name);
+        }
+        if (!parsed.searchParams.has('audio')) {
+          parsed.searchParams.set('audio', '1');
+        }
+        if (!parsed.searchParams.has('video')) {
+          parsed.searchParams.set('video', '1');
+        }
+        if (!parsed.searchParams.has('notify')) {
+          parsed.searchParams.set('notify', '0');
+        }
+        return parsed.toString();
+      } catch (error) {
+        // Fall back to room-based URL if parsing fails.
+      }
+    }
+
+    if (room.includes('/join/')) {
+      room = room.split('/join/')[1]?.split('?')[0] || room;
+    } else if (room.startsWith('http')) {
+      try {
+        const parsed = new URL(room);
+        const parts = parsed.pathname.split('/').filter(Boolean);
+        const joinIndex = parts.indexOf('join');
+        if (joinIndex >= 0 && parts[joinIndex + 1]) {
+          room = parts[joinIndex + 1];
+        }
+      } catch (error) {
+        // Keep original value if parsing fails.
       }
     }
     

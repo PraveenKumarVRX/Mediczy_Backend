@@ -5,6 +5,8 @@ import { Corporate } from '../models/insurance-company.model.intelligent.js';
 import { authUser, requireRole } from '../middleware/auth.middleware.js';
 import jwt from 'jsonwebtoken';
 import { JWT_CONFIG } from '../config/auth.config.js';
+import { authLimiter } from '../middleware/rateLimiter.middleware.js';
+import { auditLoginAttempt } from '../middleware/audit.middleware.js';
 
 const router = express.Router();
 
@@ -126,9 +128,10 @@ router.post('/register', async (req, res) => {
  * Broker Login
  * POST /api/insurance-broker/login
  */
-router.post('/login', async (req, res) => {
+router.post('/login', authLimiter, async (req, res) => {
   try {
     const { email, password } = req.body;
+    const normalizedEmail = String(email || '').toLowerCase();
 
     if (!email || !password) {
       return res.status(400).json({
@@ -139,10 +142,11 @@ router.post('/login', async (req, res) => {
 
     // Find broker
     const broker = await InsuranceBroker.findOne({
-      where: { email: email.toLowerCase() }
+      where: { email: normalizedEmail }
     });
 
     if (!broker) {
+      await auditLoginAttempt(req, null, normalizedEmail, false, 'Broker not found');
       return res.status(401).json({
         success: false,
         message: 'Invalid email or password'
@@ -152,6 +156,7 @@ router.post('/login', async (req, res) => {
     // Check password
     const isPasswordValid = await broker.comparePassword(password);
     if (!isPasswordValid) {
+      await auditLoginAttempt(req, broker.id, normalizedEmail, false, 'Invalid password');
       return res.status(401).json({
         success: false,
         message: 'Invalid email or password'
@@ -160,6 +165,7 @@ router.post('/login', async (req, res) => {
 
     // Check if broker is active
     if (broker.status !== 'active') {
+      await auditLoginAttempt(req, broker.id, normalizedEmail, false, 'Broker inactive');
       return res.status(403).json({
         success: false,
         message: 'Broker account is not active'
@@ -176,6 +182,8 @@ router.post('/login', async (req, res) => {
       JWT_CONFIG.SECRET,
       { expiresIn: '7d' }
     );
+
+    await auditLoginAttempt(req, broker.id, normalizedEmail, true);
 
     res.json({
       success: true,

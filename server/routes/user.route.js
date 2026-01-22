@@ -15,6 +15,7 @@ import doctorModel from "../models/doctor.model.intelligent.js";
 import passwordResetService from "../services/password-reset.service.js";
 import Consent from "../models/consent.model.intelligent.js";
 import { auditLoginAttempt } from "../middleware/audit.middleware.js";
+import { authLimiter } from "../middleware/rateLimiter.middleware.js";
 import intelligentDb from "../utils/intelligentDbClient.js";
 
 const router = express.Router();
@@ -409,6 +410,7 @@ router.post(
  */
 router.post(
   "/login",
+  authLimiter,
   [
     body("email").isEmail().withMessage("Must be a valid email"),
     body("password").notEmpty().withMessage("Password is required"),

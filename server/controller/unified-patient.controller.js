@@ -15,6 +15,7 @@ import { Op } from 'sequelize';
 import jwt from 'jsonwebtoken';
 import bcrypt from 'bcryptjs';
 import { JWT_CONFIG } from '../config/auth.config.js';
+import { auditLoginAttempt } from '../middleware/audit.middleware.js';
 
 const JWT_SECRET = JWT_CONFIG.SECRET;
 
@@ -278,6 +279,7 @@ export const unifiedPatientLogin = async (req, res) => {
     });
 
     if (!patient) {
+      await auditLoginAttempt(req, null, email, false, 'Patient not found');
       return res.status(401).json({
         success: false,
         message: 'Invalid email or password',
@@ -288,6 +290,7 @@ export const unifiedPatientLogin = async (req, res) => {
     // Verify password
     const isPasswordValid = await patient.verifyPassword(password);
     if (!isPasswordValid) {
+      await auditLoginAttempt(req, patient.id, email, false, 'Invalid password');
       return res.status(401).json({
         success: false,
         message: 'Invalid email or password'
@@ -319,6 +322,7 @@ export const unifiedPatientLogin = async (req, res) => {
     });
 
     console.log('✅ Patient login successful:', patient.id);
+    await auditLoginAttempt(req, patient.id, email, true);
 
     res.status(200).json({
       success: true,

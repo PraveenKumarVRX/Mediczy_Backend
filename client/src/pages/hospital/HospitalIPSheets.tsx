@@ -1,6 +1,7 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import api from '@/utils/api';
+import { loadHospitalStore, saveHospitalStore } from '@/utils/hospitalStorage';
 import HospitalLayout from '@/components/hospital/HospitalLayout';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
@@ -187,16 +188,27 @@ const HospitalIPSheets = () => {
     try {
       const sheetData = {
         patientId: selectedPatient?.id,
-        sheetType: activeSheet,
+        sheetType,
         data: {}, // Sheet specific data
         timestamp: new Date().toISOString()
       };
 
-      const { data } = await api.post(
-        '/hospital/ip-sheets',
-        sheetData,
-        { headers: hospitalHeaders() }
-      );
+      try {
+        await api.post(
+          '/hospital/ip-sheets',
+          sheetData,
+          { headers: hospitalHeaders() }
+        );
+      } catch {
+        // Allow local persistence if API is unavailable
+      }
+
+      if (selectedPatient) {
+        const storeKey = `ip-sheets:${selectedPatient.id}`;
+        const existing = loadHospitalStore(storeKey, []);
+        const updated = [{ ...sheetData, id: `IPS-${Date.now()}` }, ...existing];
+        saveHospitalStore(storeKey, updated);
+      }
 
       toast({
         title: "Saved",
@@ -220,6 +232,13 @@ const HospitalIPSheets = () => {
   });
 
   const wards = ['ICU', 'General Medicine', 'Gynecology', 'Neurology', 'Orthopedics', 'Pediatrics', 'Surgery'];
+
+  useEffect(() => {
+    if (!selectedPatient && ipPatients.length > 0) {
+      setSelectedPatient(ipPatients[0]);
+      setActiveTab('sheet');
+    }
+  }, [selectedPatient, ipPatients]);
 
   return (
     <HospitalLayout title="IP Sheets" subtitle="Manage inpatient monitoring sheets and charts">

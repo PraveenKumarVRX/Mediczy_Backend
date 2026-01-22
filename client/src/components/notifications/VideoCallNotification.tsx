@@ -3,7 +3,7 @@
  * Displays incoming video call notifications with ringing sound
  */
 
-import { useState, useEffect, useRef } from 'react';
+import { useState, useEffect, useRef, useCallback } from 'react';
 import { Phone, PhoneOff, Video, User, Clock, X } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Card } from '@/components/ui/card';
@@ -51,15 +51,112 @@ export default function VideoCallNotification() {
     };
   }, []);
 
-  // Listen for Socket.io notifications
-  useEffect(() => {
-    const socket = (window as any).socket;
+  // Setup socket listeners - defined first so it can be used in effect
+  const setupSocketListeners = useCallback((socket: typeof window.socket) => {
     if (!socket) return;
 
+    console.log('🔔 Setting up VideoCallNotification socket listeners');
+
+    // Handle standard appointment notification
     const handleNotification = (data: CallNotification) => {
       console.log('📞 Received appointment notification:', data);
       setNotification(data);
+      handleNotificationSound(data);
+    };
 
+    // Handle doctor-initiated-call (when doctor starts a scheduled call)
+    const handleDoctorInitiatedCall = (data: {
+      appointmentId: number;
+      doctorName?: string;
+      meetingLink?: string;
+      appointmentTime?: string;
+      appointmentDate?: string;
+    }) => {
+      console.log('📞 Doctor initiated call:', data);
+      const callNotification: CallNotification = {
+        type: 'incoming_call',
+        urgency: 'critical',
+        title: `📞 ${data.doctorName || 'Your Doctor'} is calling`,
+        message: 'Your doctor has started the video consultation. Tap to join!',
+        appointmentId: data.appointmentId,
+        appointmentTime: data.appointmentTime || new Date().toISOString(),
+        doctorName: data.doctorName,
+        roomId: data.meetingLink?.split('/').pop() || `apt-${data.appointmentId}`,
+        meetingLink: data.meetingLink,
+        timeRemaining: 'now',
+        action: 'answer',
+        sound: 'ringing',
+        vibrate: true,
+        persistent: true,
+        fullScreen: true
+      };
+      setNotification(callNotification);
+      handleNotificationSound(callNotification);
+    };
+
+    // Handle triage-call-request (for doctors receiving emergency calls)
+    const handleTriageCallRequest = (data: {
+      appointmentId: number;
+      patientName?: string;
+      urgencyLevel?: string;
+      symptoms?: string;
+      roomId?: string;
+      joinUrl?: string;
+      timestamp?: string;
+    }) => {
+      console.log('🚨 Triage call request:', data);
+      const callNotification: CallNotification = {
+        type: 'incoming_call',
+        urgency: 'critical',
+        title: `🚨 Emergency: ${data.patientName || 'Patient'} needs help`,
+        message: `Urgency: ${data.urgencyLevel || 'URGENT'} - ${data.symptoms || 'Emergency consultation'}`,
+        appointmentId: data.appointmentId,
+        appointmentTime: data.timestamp || new Date().toISOString(),
+        patientName: data.patientName,
+        roomId: data.roomId || '',
+        meetingLink: data.joinUrl,
+        timeRemaining: 'now',
+        action: 'answer',
+        sound: 'ringing',
+        vibrate: true,
+        persistent: true,
+        fullScreen: true
+      };
+      setNotification(callNotification);
+      handleNotificationSound(callNotification);
+    };
+
+    // Handle triage-call-accepted (for patients when doctor accepts)
+    const handleTriageCallAccepted = (data: {
+      appointmentId: number;
+      doctorName?: string;
+      roomId?: string;
+      joinUrl?: string;
+      timestamp?: string;
+    }) => {
+      console.log('✅ Triage call accepted:', data);
+      const callNotification: CallNotification = {
+        type: 'incoming_call',
+        urgency: 'critical',
+        title: `✅ ${data.doctorName || 'Doctor'} accepted your call!`,
+        message: 'Your doctor is ready. Join the video consultation now!',
+        appointmentId: data.appointmentId,
+        appointmentTime: data.timestamp || new Date().toISOString(),
+        doctorName: data.doctorName,
+        roomId: data.roomId || '',
+        meetingLink: data.joinUrl,
+        timeRemaining: 'now',
+        action: 'join_now',
+        sound: 'calling',
+        vibrate: true,
+        persistent: true,
+        fullScreen: true
+      };
+      setNotification(callNotification);
+      handleNotificationSound(callNotification);
+    };
+
+    const handleNotificationSound = (data: CallNotification) => {
       // Play sound based on urgency
       if (data.sound === 'ringing' || data.action === 'answer') {
         playRingingSound();
@@ -86,11 +183,44 @@ export default function VideoCallNotification() {
     };
 
     socket.on('appointment_notification', handleNotification);
+    socket.on('doctor-initiated-call', handleDoctorInitiatedCall);
+    socket.on('triage-call-request', handleTriageCallRequest);
+    socket.on('triage-call-accepted', handleTriageCallAccepted);
+
+    // Mark that we've set up listeners using a custom property
+    (socket as unknown as { _hasVideoCallListeners?: boolean })._hasVideoCallListeners = true;
+  }, []);
+
+  // Check for socket connection periodically
+  useEffect(() => {
+    const checkSocket = () => {
+      const socket = window.socket;
+      if (socket && !(socket as unknown as { _hasVideoCallListeners?: boolean })._hasVideoCallListeners) {
+        setupSocketListeners(socket);
+      }
+    };
+
+    // Check immediately and then every 2 seconds
+    checkSocket();
+    const interval = setInterval(checkSocket, 2000);
+
+    return () => clearInterval(interval);
+  }, [setupSocketListeners]);
+
+  // Listen for Socket.io notifications (initial setup)
+  useEffect(() => {
+    const socket = window.socket;
+    if (!socket) return;
+
+    setupSocketListeners(socket);
 
     return () => {
-      socket.off('appointment_notification', handleNotification);
+      socket.off('appointment_notification');
+      socket.off('doctor-initiated-call');
+      socket.off('triage-call-request');
+      socket.off('triage-call-accepted');
     };
-  }, []);
+  }, [setupSocketListeners]);
 
   const playRingingSound = () => {
     if (audioRef.current) {
@@ -149,8 +279,8 @@ export default function VideoCallNotification() {
         icon: '/logo/Mediqzy_logo.jpeg',
         badge: '/logo/Mediqzy_logo.jpeg',
         tag: `appointment-${data.appointmentId}`,
-        requireInteraction: data.persistent,
-        vibrate: data.vibrate ? [500, 200, 500] : undefined
+        requireInteraction: data.persistent
+        // Note: vibrate is not supported in NotificationOptions, using startVibration() instead
       });
 
       notification.onclick = () => {
@@ -168,7 +298,15 @@ export default function VideoCallNotification() {
 
     stopRinging();
     
-    // Navigate to video consultation page
+    // If we have a direct meeting link (from MiroTalk), open it
+    if (notification.meetingLink) {
+      // Open in new window for better video experience
+      window.open(notification.meetingLink, '_blank', 'width=1280,height=720');
+      setNotification(null);
+      return;
+    }
+    
+    // Navigate to video consultation page with room ID
     if (currentDoctor) {
       navigate(`/doctor/video?room=${notification.roomId}&appointmentId=${notification.appointmentId}`);
     } else {

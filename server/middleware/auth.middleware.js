@@ -11,9 +11,7 @@ import AssistantPostgres from "../models/postgres/doctor-assistant.model.postgre
 import { validateMembership, checkMembershipExpiry } from "./membership.middleware.js";
 
 const DEV_TOKEN_ALLOWLIST = new Set(["dev-user-token", "dev-doctor-token", "dev-corporate-token"]);
-const ALLOW_DEV_TOKENS =
-  process.env.ALLOW_DEV_TOKENS === "true" ||
-  ["development", "test"].includes(process.env.NODE_ENV);
+const ALLOW_DEV_TOKENS = ["development", "test"].includes(process.env.NODE_ENV);
 
 const TENANT_BYPASS_ROLES = new Set(["admin", "super_admin", "system_admin", "platform_admin"]);
 
@@ -153,23 +151,20 @@ export const authUser = async (req, res, next) => {
 
   try {
     const decoded = jwt.verify(token, JWT_CONFIG.SECRET);
-    console.log(
-      "🔹 Token verification SUCCESS. JWT_SECRET:",
-      (JWT_CONFIG.SECRET || "").slice(0, 10) + "..."
-    );
-    console.log("🔹 Decoded payload:", decoded);
+    console.log("🔹 Token verification SUCCESS");
 
     // Admins bypass tenant restrictions (but mismatch is logged)
-    if (decoded.isAdmin || TENANT_BYPASS_ROLES.has(decoded.role)) {
+    if (decoded.isAdmin || decoded.isTeam || TENANT_BYPASS_ROLES.has(decoded.role)) {
       req.user = {
         id: decoded.id,
         email: decoded.email,
-        role: decoded.role || "admin",
-        firstName: "System",
-        lastName: "Administrator",
-        isAdmin: true,
+        role: decoded.role || (decoded.isAdmin ? "admin" : (decoded.isTeam ? "team" : "user")),
+        firstName: decoded.firstName || "System",
+        lastName: decoded.lastName || "User",
+        isAdmin: decoded.isAdmin || false,
+        isTeam: decoded.isTeam || false,
       };
-      req.userRole = req.user.role;
+      req.userRole = decoded.isTeam ? "team" : (decoded.isAdmin ? "admin" : decoded.role);
       return next();
     }
 
@@ -292,8 +287,13 @@ export const authUser = async (req, res, next) => {
       return res.status(401).json({ message: "user not found" });
     }
 
-    req.user = user;
-    req.userRole = decoded.role || (user?.isAdmin ? "admin" : "user");
+    // Preserve isTeam and isAdmin flags from both token and database
+    req.user = {
+      ...user,
+      isTeam: user.isTeam || decoded.isTeam,
+      isAdmin: user.isAdmin || decoded.isAdmin
+    };
+    req.userRole = decoded.role || (user?.isAdmin ? "admin" : (user?.isTeam ? "team" : "user"));
     const tenantBinding = bindTenantContext(req, resolveTenantFromEntity(user));
     if (!tenantBinding.ok) {
       return res.status(tenantBinding.status).json(tenantBinding.body);
@@ -321,7 +321,11 @@ export const requireRole = (role) => {
     if (!req.userRole) {
       return res.status(401).json({ message: 'Unauthorized' });
     }
-    if (req.userRole !== role) {
+    
+    // Support array of roles
+    const allowedRoles = Array.isArray(role) ? role : [role];
+    
+    if (!allowedRoles.includes(req.userRole)) {
       return res.status(403).json({ message: 'Forbidden: insufficient role' });
     }
     next();

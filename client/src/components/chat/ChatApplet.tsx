@@ -113,6 +113,7 @@ const ChatAppletContent = () => {
   useEffect(() => {
     // Get user info from localStorage
     const adminData = localStorage.getItem('adminData');
+    const teamUserData = localStorage.getItem('teamUserData');
     const userData = localStorage.getItem('userData');
     const nurseData = localStorage.getItem('nurseData');
     const assistantData = localStorage.getItem('assistantData');
@@ -120,6 +121,8 @@ const ChatAppletContent = () => {
     
     if (adminData) {
       setUserInfo(JSON.parse(adminData));
+    } else if (teamUserData) {
+      setUserInfo(JSON.parse(teamUserData));
     } else if (userData) {
       setUserInfo(JSON.parse(userData));
     } else if (nurseData) {

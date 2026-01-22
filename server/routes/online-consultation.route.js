@@ -779,7 +779,7 @@ router.post('/payment/verify/:appointmentId', authUser, [
 
     // Generate meeting link for video consultation
     const meetingId = `MEDCALL-${appointment.id}-${crypto.randomBytes(4).toString('hex').toUpperCase()}`;
-    const meetingLink = `${process.env.MIROTALK_URL || 'https://video.mediczy.com'}/join/${meetingId}`;
+    const meetingLink = `${process.env.MIROTALK_URL || 'https://video.mediqzy.com'}/join/${meetingId}`;
 
     // Update appointment as confirmed with payment
     await appointment.update({
@@ -872,7 +872,7 @@ router.post('/payment/manual/:appointmentId', authUser, [
 
     // Generate meeting link
     const meetingId = `MEDCALL-${appointment.id}-${crypto.randomBytes(4).toString('hex').toUpperCase()}`;
-    const meetingLink = `${process.env.MIROTALK_URL || 'https://video.mediczy.com'}/join/${meetingId}`;
+    const meetingLink = `${process.env.MIROTALK_URL || 'https://video.mediqzy.com'}/join/${meetingId}`;
 
     // Update appointment
     await appointment.update({
@@ -1004,7 +1004,7 @@ router.get('/video/join/:appointmentId', authUser, async (req, res) => {
 
     if (!meetingLink) {
       meetingId = `MEDCALL-${appointment.id}-${crypto.randomBytes(4).toString('hex').toUpperCase()}`;
-      meetingLink = `${process.env.MIROTALK_URL || 'https://video.mediczy.com'}/join/${meetingId}`;
+      meetingLink = `${process.env.MIROTALK_URL || 'https://video.mediqzy.com'}/join/${meetingId}`;
       
       await appointment.update({ meetingId, meetingLink });
     }
@@ -1029,7 +1029,7 @@ router.get('/video/join/:appointmentId', authUser, async (req, res) => {
         meetingLink,
         meetingId,
         platform: 'MiroTalk',
-        directJoinUrl: `${process.env.MIROTALK_URL || 'https://video.mediczy.com'}/join/${meetingId}?name=${encodeURIComponent(isDoctor ? appointment.doctorName : appointment.patientName)}`
+        directJoinUrl: `${process.env.MIROTALK_URL || 'https://video.mediqzy.com'}/join/${meetingId}?name=${encodeURIComponent(isDoctor ? appointment.doctorName : appointment.patientName)}`
       },
       appointment: {
         id: appointment.id,

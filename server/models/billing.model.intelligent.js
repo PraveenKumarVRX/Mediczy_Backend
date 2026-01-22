@@ -67,6 +67,11 @@ const OrderModel = sequelize.define('Order', {
   },
   notes: {
     type: DataTypes.TEXT
+  },
+  doctorId: {
+    type: DataTypes.INTEGER,
+    allowNull: true,
+    field: 'doctorId'
   }
 }, {
   tableName: 'orders',

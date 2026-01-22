@@ -110,7 +110,7 @@ const DoctorVideoConsultation = () => {
   const localStreamRef = useRef<MediaStream | null>(null);
 
   // MiroTalk base URL
-  const MIROTALK_BASE_URL = import.meta.env.VITE_MIROTALK_URL || 'https://mediqzy.com:3010';
+  const MIROTALK_BASE_URL = import.meta.env.VITE_MIROTALK_URL || 'https://video.mediqzy.com';
 
   // Fetch video consultation stats
   const { data: stats = { todaysConsultations: 0, totalHours: 0, activePatients: 0, avgDuration: 0 }, isLoading: statsLoading, refetch: refetchStats } = useQuery({

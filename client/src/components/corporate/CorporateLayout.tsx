@@ -23,6 +23,7 @@ interface CorporateLayoutProps {
 const CorporateLayout = ({ children, title, subtitle }: CorporateLayoutProps) => {
   const navigate = useNavigate();
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
+  const [corporateName, setCorporateName] = useState<string>('');
   const [darkMode, setDarkMode] = useState(() => {
     if (typeof window !== 'undefined') {
       return localStorage.getItem('theme') === 'dark' || 
@@ -30,6 +31,21 @@ const CorporateLayout = ({ children, title, subtitle }: CorporateLayoutProps) =>
     }
     return false;
   });
+
+  // Load corporate name from stored data
+  useEffect(() => {
+    try {
+      const corporateDataStr = localStorage.getItem('corporateData');
+      if (corporateDataStr) {
+        const corporateData = JSON.parse(corporateDataStr);
+        if (corporateData?.name) {
+          setCorporateName(corporateData.name);
+        }
+      }
+    } catch (e) {
+      console.error('Error loading corporate data:', e);
+    }
+  }, []);
 
   useEffect(() => {
     const type = getUserType();
@@ -79,7 +95,7 @@ const CorporateLayout = ({ children, title, subtitle }: CorporateLayoutProps) =>
               <div className="p-1.5 rounded-lg bg-gradient-to-br from-emerald-500 to-emerald-600 shadow-sm">
                 <HeartPulse className="h-4 w-4 text-white" />
               </div>
-              <span className="text-sm text-slate-800 dark:text-white">Mediqzy</span>
+              <span className="text-sm text-slate-800 dark:text-white">{corporateName || 'Mediqzy'}</span>
               <span className="text-[10px] uppercase font-semibold bg-gradient-to-r from-emerald-600 to-emerald-700 text-white px-2.5 py-1 rounded-full tracking-wider">Corporate</span>
             </div>
             {title && (

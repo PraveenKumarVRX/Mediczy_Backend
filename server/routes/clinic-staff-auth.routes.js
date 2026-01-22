@@ -12,6 +12,7 @@ import {
   assistantLogin,
   verifyStaffToken
 } from '../controller/clinic-staff-auth.controller.js';
+import { authLimiter } from '../middleware/rateLimiter.middleware.js';
 
 const router = express.Router();
 
@@ -21,6 +22,7 @@ const router = express.Router();
  */
 router.post(
   '/login',
+  authLimiter,
   [
     body('email').isEmail().withMessage('Invalid email'),
     body('password').notEmpty().withMessage('Password is required'),
@@ -35,6 +37,7 @@ router.post(
  */
 router.post(
   '/doctor-login',
+  authLimiter,
   [
     body('email').isEmail().withMessage('Invalid email'),
     body('password').notEmpty().withMessage('Password is required')
@@ -48,6 +51,7 @@ router.post(
  */
 router.post(
   '/nurse-login',
+  authLimiter,
   [
     body('email').isEmail().withMessage('Invalid email'),
     body('password').notEmpty().withMessage('Password is required')
@@ -61,6 +65,7 @@ router.post(
  */
 router.post(
   '/assistant-login',
+  authLimiter,
   [
     body('email').isEmail().withMessage('Invalid email'),
     body('password').notEmpty().withMessage('Password is required')

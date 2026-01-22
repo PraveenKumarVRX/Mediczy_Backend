@@ -4,11 +4,13 @@ import userModel from '../models/user.model.intelligent.js';
 import jwt from 'jsonwebtoken';
 import { authTeam, requireModule, attachAccessLevel } from '../middleware/team.middleware.js';
 import { JWT_CONFIG } from '../config/auth.config.js';
+import { authLimiter } from '../middleware/rateLimiter.middleware.js';
+import { auditLoginAttempt } from '../middleware/audit.middleware.js';
 
 const router = express.Router();
 
 // Team login endpoint
-router.post('/login', [
+router.post('/login', authLimiter, [
   body('email').isEmail().withMessage('Must be a valid email'),
   body('password').notEmpty().withMessage('Password is required'),
 ], async (req, res) => {
@@ -21,11 +23,12 @@ router.post('/login', [
 
     // Check if user exists in database and has team role
     console.log('🔵 [Team Login] Querying database...');
+    const normalizedEmail = String(email).toLowerCase();
     let user;
     try {
       user = await userModel.findOne({
         where: {
-          email
+          email: normalizedEmail
         }
       });
       console.log('🔵 [Team Login] Query completed');
@@ -36,6 +39,7 @@ router.post('/login', [
     console.log('🔵 [Team Login] User found:', !!user);
 
     if (!user) {
+      await auditLoginAttempt(req, null, normalizedEmail, false, 'Team user not found');
       return res.status(401).json({
         success: false,
         message: 'Invalid email or password'
@@ -60,6 +64,7 @@ router.post('/login', [
 
     if (!hasTeamAccess) {
       console.log('🔴 [Team Login] Access denied: User lacks team permissions');
+      await auditLoginAttempt(req, user.id, normalizedEmail, false, 'Team access denied');
       return res.status(403).json({
         success: false,
         message: 'Access denied. Team member privileges required.',
@@ -70,6 +75,7 @@ router.post('/login', [
     // Verify password
     const isPasswordValid = await user.comparePassword(password);
     if (!isPasswordValid) {
+      await auditLoginAttempt(req, user.id, normalizedEmail, false, 'Invalid password');
       return res.status(401).json({
         success: false,
         message: 'Invalid email or password'
@@ -114,6 +120,8 @@ router.post('/login', [
 
     // Update last login
     await user.update({ lastLogin: new Date() });
+
+    await auditLoginAttempt(req, user.id, normalizedEmail, true);
 
     res.status(200).json({
       success: true,

@@ -1,6 +1,8 @@
 import express from 'express';
 import jwt from 'jsonwebtoken';
+import { Op } from 'sequelize';
 import { JWT_CONFIG } from '../../config/auth.config.js';
+import { Notification, Report } from '../../models/index.js';
 // import Clinic from '../../models/postgres/clinic.model.postgres.js'; // Lazy import
 // import { postgresSequelize } from '../../db/postgres-sequelize.js'; // Lazy import
 
@@ -91,6 +93,313 @@ router.get('/stats', verifyClinicToken, async (req, res) => {
     res.status(500).json({
       success: false,
       message: 'Failed to fetch dashboard stats',
+      error: error.message
+    });
+  }
+});
+
+// Get Clinic Notifications
+router.get('/notifications', verifyClinicToken, async (req, res) => {
+  try {
+    const { filter, page = 1, limit = 10 } = req.query;
+    const clinicId = Number(req.clinicId);
+    if (!Number.isFinite(clinicId)) {
+      return res.json({
+        success: true,
+        data: {
+          stats: { unread: 0, high: 0, reminders: 0, escalated: 0 },
+          items: [],
+          pagination: { page: 1, limit: 0, total: 0, hasMore: false }
+        }
+      });
+    }
+
+    const baseWhere = { userId: clinicId, userType: 'clinic' };
+    const stats = {
+      unread: await Notification.count({ where: { ...baseWhere, isRead: false } }),
+      high: await Notification.count({
+        where: { ...baseWhere, priority: { [Op.in]: ['high', 'urgent'] } }
+      }),
+      reminders: await Notification.count({
+        where: { ...baseWhere, type: { [Op.in]: ['reminder', 'medicine_reminder'] } }
+      }),
+      escalated: await Notification.count({
+        where: { ...baseWhere, priority: 'urgent' }
+      })
+    };
+
+    const where = { ...baseWhere };
+    if (filter === 'unread') {
+      where.isRead = false;
+    } else if (filter === 'high') {
+      where.priority = { [Op.in]: ['high', 'urgent'] };
+    } else if (filter === 'reminders') {
+      where.type = { [Op.in]: ['reminder', 'medicine_reminder'] };
+    } else if (filter === 'escalated') {
+      where.priority = 'urgent';
+    }
+
+    const safePage = Math.max(1, Number(page) || 1);
+    const safeLimit = Math.min(50, Math.max(1, Number(limit) || 10));
+    const offset = (safePage - 1) * safeLimit;
+
+    const { rows: notifications, count: total } = await Notification.findAndCountAll({
+      where,
+      order: [['createdAt', 'DESC']],
+      limit: safeLimit,
+      offset
+    });
+
+    const items = notifications.map((notification) => ({
+      id: notification.id,
+      title: notification.title,
+      message: notification.message,
+      type: notification.type,
+      priority: notification.priority,
+      read: notification.isRead,
+      createdAt: notification.createdAt,
+      status: notification.priority === 'urgent' ? 'Escalated' : notification.isRead ? 'Read' : 'Unread'
+    }));
+
+    res.json({
+      success: true,
+      data: {
+        stats,
+        items,
+        pagination: {
+          page: safePage,
+          limit: safeLimit,
+          total,
+          hasMore: offset + notifications.length < total
+        }
+      }
+    });
+  } catch (error) {
+    console.error('Error fetching notifications:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Failed to fetch notifications',
+      error: error.message
+    });
+  }
+});
+
+router.post('/notifications/:id/read', verifyClinicToken, async (req, res) => {
+  try {
+    const clinicId = Number(req.clinicId);
+    const notificationId = Number(req.params.id);
+    if (!Number.isFinite(clinicId) || !Number.isFinite(notificationId)) {
+      return res.status(400).json({
+        success: false,
+        message: 'Valid notification ID required'
+      });
+    }
+
+    const notification = await Notification.findOne({
+      where: { id: notificationId, userId: clinicId, userType: 'clinic' }
+    });
+
+    if (!notification) {
+      return res.status(404).json({
+        success: false,
+        message: 'Notification not found'
+      });
+    }
+
+    await notification.update({ isRead: true, readAt: new Date() });
+
+    res.json({ success: true, message: 'Notification marked as read' });
+  } catch (error) {
+    console.error('Error marking notification as read:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Failed to mark notification as read',
+      error: error.message
+    });
+  }
+});
+
+router.post('/notifications/read-all', verifyClinicToken, async (req, res) => {
+  try {
+    const clinicId = Number(req.clinicId);
+    if (!Number.isFinite(clinicId)) {
+      return res.status(400).json({
+        success: false,
+        message: 'Invalid clinic ID'
+      });
+    }
+
+    await Notification.update(
+      { isRead: true, readAt: new Date() },
+      { where: { userId: clinicId, userType: 'clinic', isRead: false } }
+    );
+
+    res.json({ success: true, message: 'All notifications marked as read' });
+  } catch (error) {
+    console.error('Error marking notifications as read:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Failed to mark notifications as read',
+      error: error.message
+    });
+  }
+});
+
+// Get Clinic Reports Overview
+router.get('/reports', verifyClinicToken, async (req, res) => {
+  try {
+    const { filter } = req.query;
+    const clinicId = Number(req.clinicId);
+    if (!Number.isFinite(clinicId)) {
+      return res.json({
+        success: true,
+        data: {
+          stats: { dashboards: 0, exports: 0, alerts: 0, shared: 0 },
+          items: []
+        }
+      });
+    }
+
+    const baseWhere = { organization_id: clinicId };
+    const dashboardsWhere = { ...baseWhere, status: 'active' };
+    const exportsWhere = { ...baseWhere, status: 'archived' };
+    const alertsWhere = {
+      ...baseWhere,
+      status: { [Op.ne]: 'deleted' },
+      [Op.or]: [
+        { analysisStatus: 'failed' },
+        { status: 'pending_review' }
+      ]
+    };
+    const sharedWhere = {
+      ...baseWhere,
+      status: { [Op.ne]: 'deleted' },
+      [Op.or]: [
+        { isPublic: true },
+        { sharedWith: { [Op.ne]: null } }
+      ]
+    };
+
+    const stats = {
+      dashboards: await Report.count({ where: dashboardsWhere }),
+      exports: await Report.count({ where: exportsWhere }),
+      alerts: await Report.count({ where: alertsWhere }),
+      shared: await Report.count({ where: sharedWhere })
+    };
+
+    let where = dashboardsWhere;
+    if (filter === 'exports') {
+      where = exportsWhere;
+    } else if (filter === 'alerts') {
+      where = alertsWhere;
+    } else if (filter === 'shared') {
+      where = sharedWhere;
+    }
+
+    const reports = await Report.findAll({
+      where,
+      order: [['uploadedAt', 'DESC']],
+      limit: 25
+    });
+
+    const items = reports.map((report) => ({
+      id: report.id,
+      label: report.fileName,
+      meta: report.reportType,
+      status: report.analysisStatus || report.status,
+      reportType: report.reportType,
+      uploadedAt: report.uploadedAt,
+      fileUrl: report.fileUrl
+    }));
+
+    res.json({
+      success: true,
+      data: {
+        stats,
+        items
+      }
+    });
+  } catch (error) {
+    console.error('Error fetching reports:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Failed to fetch reports',
+      error: error.message
+    });
+  }
+});
+
+// Audit report ownership for a clinic
+router.get('/reports/audit', verifyClinicToken, async (req, res) => {
+  try {
+    const clinicId = Number(req.clinicId);
+    if (!Number.isFinite(clinicId)) {
+      return res.status(400).json({
+        success: false,
+        message: 'Invalid clinic ID'
+      });
+    }
+
+    const idsParam = typeof req.query.ids === 'string' ? req.query.ids : '';
+    const ids = idsParam
+      .split(',')
+      .map((value) => Number(value.trim()))
+      .filter((value) => Number.isFinite(value));
+
+    if (ids.length === 0) {
+      const totalClinicReports = await Report.count({
+        where: { organization_id: clinicId }
+      });
+      return res.json({
+        success: true,
+        data: {
+          clinicId,
+          totalClinicReports,
+          audited: false
+        }
+      });
+    }
+
+    const reports = await Report.findAll({
+      where: { id: { [Op.in]: ids } },
+      attributes: ['id', 'organization_id']
+    });
+
+    const ownedIds = [];
+    const missingOrgIds = [];
+    const otherOrgIds = [];
+    const foundIds = new Set();
+
+    for (const report of reports) {
+      const reportId = report.id;
+      foundIds.add(reportId);
+      if (report.organization_id === clinicId) {
+        ownedIds.push(reportId);
+      } else if (!report.organization_id) {
+        missingOrgIds.push(reportId);
+      } else {
+        otherOrgIds.push(reportId);
+      }
+    }
+
+    const notFoundIds = ids.filter((id) => !foundIds.has(id));
+
+    return res.json({
+      success: true,
+      data: {
+        clinicId,
+        requestedIds: ids,
+        ownedIds,
+        missingOrgIds,
+        otherOrgIds,
+        notFoundIds
+      }
+    });
+  } catch (error) {
+    console.error('Error auditing clinic reports:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Failed to audit report ownership',
       error: error.message
     });
   }

@@ -5,8 +5,8 @@
 
 import cron from 'node-cron';
 import Appointment from '../models/appointment.model.intelligent.js';
-import User from '../models/user.model.intelligent.js';
-import Doctor from '../models/doctor.model.intelligent.js';
+import { User } from '../models/user.model.intelligent.js';
+import { Doctor } from '../models/index.js';
 import { Op } from 'sequelize';
 
 class AppointmentNotificationService {
@@ -56,7 +56,7 @@ class AppointmentNotificationService {
         include: [
           {
             model: User,
-            as: 'user',
+            as: 'patient',
             attributes: ['id', 'firstName', 'lastName', 'email', 'phoneNumber']
           },
           {

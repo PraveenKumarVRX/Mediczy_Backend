@@ -888,10 +888,24 @@ router.get('/doctor/invoices', authDoctor, async (req, res) => {
       offset: parseInt(offset)
     });
 
+    const patientIds = [...new Set(invoices.map((invoice) => invoice.userId).filter(Boolean))];
+    const patients = patientIds.length > 0
+      ? await User.findAll({
+          where: { id: { [Op.in]: patientIds } },
+          attributes: ['id', 'firstName', 'lastName', 'email', 'phoneNumber']
+        })
+      : [];
+
+    const patientMap = new Map(patients.map((patient) => [patient.id, patient]));
+    const invoiceData = invoices.map((invoice) => ({
+      ...invoice.toJSON(),
+      patient: patientMap.get(invoice.userId) || null
+    }));
+
     return res.json({
       success: true,
       data: {
-        invoices,
+        invoices: invoiceData,
         pagination: {
           total: count,
           page: parseInt(page),
@@ -972,41 +986,65 @@ router.post('/doctor/invoices/create', authDoctor, async (req, res) => {
     const tax = subtotal * taxRate;
     const total = subtotal - discountAmount + tax;
 
-    // Generate invoice number
-    const invoiceNumber = `INV-${doctorId}-${Date.now().toString(36).toUpperCase()}`;
+    // Generate invoice number and create order for invoice linkage
+    const invoiceNumber = paymentGateway.generateInvoiceNumber();
+    const orderNumber = paymentGateway.generateOrderReceipt('ORD');
 
     // Prepare doctor details
-    const doctorName = doctor.prefix 
+    const doctorName = doctor.prefix
       ? `${doctor.prefix} ${doctor.firstName} ${doctor.lastName}`
       : `Dr. ${doctor.firstName} ${doctor.lastName}`;
 
-    // Create invoice
-    const invoice = await Invoice.create({
-      invoiceNumber,
-      userId: patientId,
-      doctorId,
-      appointmentId: appointmentId || null,
-      type: 'consultation',
-      status: 'sent',
-      items: invoiceItems,
-      subtotal,
-      tax,
-      discount: discountAmount,
-      total,
-      currency: 'INR',
-      notes: notes || '',
-      dueDate: dueDate || new Date(Date.now() + 7 * 24 * 60 * 60 * 1000), // 7 days from now
-      billingDetails: {
-        doctorName: doctorName,
-        doctorSpecialization: doctor.specialization || 'General',
-        doctorRegistration: doctor.registrationNumber || 'N/A',
-        clinicAddress: doctor.clinicAddress || 'N/A'
-      },
-      patientDetails: {
-        name: `${patient.firstName} ${patient.lastName}`,
-        email: patient.email || '',
-        phone: patient.phoneNumber || ''
-      }
+    const { order, invoice } = await sequelize.transaction(async (transaction) => {
+      const order = await Order.create({
+        orderNumber,
+        userId: patientId,
+        orderType: appointmentId ? 'appointment' : 'consultation',
+        itemId: appointmentId || null,
+        status: 'pending',
+        subtotal,
+        tax,
+        discount: discountAmount,
+        total,
+        currency: 'INR',
+        notes: notes || '',
+        metadata: {
+          doctorId,
+          doctorName,
+          appointmentId: appointmentId || null
+        }
+      }, { transaction });
+
+      const invoice = await Invoice.create({
+        invoiceNumber,
+        orderId: order.id,
+        userId: patientId,
+        doctorId,
+        issueDate: new Date(),
+        status: 'sent',
+        lineItems: invoiceItems,
+        subtotal,
+        tax,
+        discount: discountAmount,
+        total,
+        currency: 'INR',
+        notes: notes || '',
+        dueDate: dueDate || new Date(Date.now() + 7 * 24 * 60 * 60 * 1000), // 7 days from now
+        customerDetails: {
+          name: `${patient.firstName} ${patient.lastName}`,
+          email: patient.email || '',
+          phone: patient.phoneNumber || ''
+        },
+        companyDetails: {
+          name: doctorName,
+          address: doctor.clinicAddress || 'N/A',
+          email: doctor.email || '',
+          phone: doctor.phoneNumber || '',
+          gstin: doctor.registrationNumber || 'N/A'
+        }
+      }, { transaction });
+
+      return { order, invoice };
     });
 
     return res.status(201).json({
@@ -1016,6 +1054,7 @@ router.post('/doctor/invoices/create', authDoctor, async (req, res) => {
         invoice: {
           id: invoice.id,
           invoiceNumber: invoice.invoiceNumber,
+          orderId: order.id,
           total: invoice.total,
           status: invoice.status,
           createdAt: invoice.createdAt

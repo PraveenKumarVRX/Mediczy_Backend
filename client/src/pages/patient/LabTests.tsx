@@ -10,6 +10,7 @@ import { Textarea } from '@/components/ui/textarea';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { useToast } from '@/hooks/use-toast';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
+import api from '@/utils/api';
 
 interface LabTest {
   id: string;
@@ -177,16 +178,10 @@ const LabTests = () => {
     try {
       const token = localStorage.getItem('token');
       if (!token) return;
-      
-      const response = await fetch('/api/cart', {
-        headers: { 'Authorization': `Bearer ${token}` }
-      });
-      
-      if (response.ok) {
-        const data = await response.json();
-        if (data.success && data.cart) {
-          setCart(data.cart);
-        }
+
+      const response = await api.get('/cart');
+      if (response.data?.success && response.data?.cart) {
+        setCart(response.data.cart);
       }
     } catch (error) {
       console.error('Error fetching cart:', error);
@@ -197,15 +192,7 @@ const LabTests = () => {
     try {
       const token = localStorage.getItem('token');
       if (token) {
-        // Sync with server
-        await fetch('/api/cart/add', {
-          method: 'POST',
-          headers: { 
-            'Authorization': `Bearer ${token}`,
-            'Content-Type': 'application/json'
-          },
-          body: JSON.stringify({ test, quantity: 1 })
-        });
+        await api.post('/cart/add', { test, quantity: 1 });
       }
     } catch (error) {
       console.error('Error adding to cart API:', error);
@@ -216,10 +203,7 @@ const LabTests = () => {
     try {
       const token = localStorage.getItem('token');
       if (token) {
-        await fetch(`/api/cart/remove/${testId}`, {
-          method: 'DELETE',
-          headers: { 'Authorization': `Bearer ${token}` }
-        });
+        await api.delete(`/cart/remove/${testId}`);
       }
     } catch (error) {
       console.error('Error removing from cart API:', error);
@@ -230,10 +214,7 @@ const LabTests = () => {
     try {
       const token = localStorage.getItem('token');
       if (token) {
-        await fetch('/api/cart/clear', {
-          method: 'DELETE',
-          headers: { 'Authorization': `Bearer ${token}` }
-        });
+        await api.delete('/cart/clear');
       }
     } catch (error) {
       console.error('Error clearing cart API:', error);
@@ -284,38 +265,29 @@ const LabTests = () => {
         return;
       }
       
-      const response = await fetch('/api/lab-tests?limit=100', {
-        headers: {
-          'Authorization': `Bearer ${token}`,
-          'Content-Type': 'application/json'
-        }
-      });
-      
-      if (response.ok) {
-        const data = await response.json();
-        // Handle both 'labTests' and 'data' response formats
-        const labTestsArray = data.labTests || data.data || [];
-        if (data.success && labTestsArray) {
-          const formattedTests: LabTest[] = labTestsArray.map((lt: any) => ({
-            id: lt.id.toString(),
-            testName: lt.testName || lt.testType,
-            testType: lt.testType,
-            category: getTestCategory(lt.testType),
-            orderedBy: 'Self-booked',
-            orderDate: lt.createdAt?.split('T')[0] || new Date().toISOString().split('T')[0],
-            status: lt.status,
-            sampleCollected: ['sample_collected', 'processing', 'completed'].includes(lt.status),
-            results: lt.results || undefined,
-            reportUrl: lt.reportUrl || undefined,
-            estimatedDate: lt.expectedCompletionDate?.split('T')[0],
-            hospitalId: lt.hospitalId,
-            labName: lt.labName,
-            labAddress: lt.labAddress,
-            urgency: lt.urgency,
-            notes: lt.notes
-          }));
-          setTests(formattedTests);
-        }
+      const response = await api.get('/lab-tests', { params: { limit: 100 } });
+      const data = response.data;
+      const labTestsArray = data?.labTests || data?.data || [];
+      if (data?.success && labTestsArray) {
+        const formattedTests: LabTest[] = labTestsArray.map((lt: any) => ({
+          id: lt.id.toString(),
+          testName: lt.testName || lt.testType,
+          testType: lt.testType,
+          category: getTestCategory(lt.testType),
+          orderedBy: 'Self-booked',
+          orderDate: lt.createdAt?.split('T')[0] || new Date().toISOString().split('T')[0],
+          status: lt.status,
+          sampleCollected: ['sample_collected', 'processing', 'completed'].includes(lt.status),
+          results: lt.results || undefined,
+          reportUrl: lt.reportUrl || undefined,
+          estimatedDate: lt.expectedCompletionDate?.split('T')[0],
+          hospitalId: lt.hospitalId,
+          labName: lt.labName,
+          labAddress: lt.labAddress,
+          urgency: lt.urgency,
+          notes: lt.notes
+        }));
+        setTests(formattedTests);
       } else {
         console.error('Failed to fetch lab tests');
       }
@@ -351,25 +323,19 @@ const LabTests = () => {
   const fetchLabs = async (query?: string) => {
     try {
       setIsLabsLoading(true);
-      let url = '/api/labs?limit=100';
-      
+      const params: Record<string, string | number> = { limit: 100 };
+
       if (query && query.length >= 2) {
-        // Check if it's a pincode (6 digits)
         if (/^\d{6}$/.test(query)) {
-          url = `/api/labs?pincode=${encodeURIComponent(query)}&limit=100`;
+          params.pincode = query;
         } else {
-          // Search by city name - use city parameter to search in address.city JSONB field
-          url = `/api/labs?city=${encodeURIComponent(query)}&limit=100`;
+          params.city = query;
         }
       }
-      
-      const response = await fetch(url);
-      
-      if (response.ok) {
-        const data = await response.json();
-        if (data.success && data.labs) {
-          setLabs(data.labs);
-        }
+
+      const response = await api.get('/labs', { params });
+      if (response.data?.success && response.data?.labs) {
+        setLabs(response.data.labs);
       }
     } catch (error) {
       console.error('Error fetching labs:', error);
@@ -422,25 +388,17 @@ const LabTests = () => {
 
     try {
       setIsBooking(true);
-      const response = await fetch('/api/lab-tests', {
-        method: 'POST',
-        headers: {
-          'Authorization': `Bearer ${token}`,
-          'Content-Type': 'application/json'
-        },
-        body: JSON.stringify({
-          testType: mapTestToType(selectedTest.category),
-          testName: selectedTest.name,
-          hospitalId: actualLabId,
-          appointmentDate: bookingForm.appointmentDate,
-          notes: `${selectedLabId === 'home' ? '[Home Collection] ' : '[Visit Lab] '}${bookingForm.notes}`,
-          urgency: 'routine'
-        })
+      const response = await api.post('/lab-tests', {
+        testType: mapTestToType(selectedTest.category),
+        testName: selectedTest.name,
+        hospitalId: actualLabId,
+        appointmentDate: bookingForm.appointmentDate,
+        notes: `${selectedLabId === 'home' ? '[Home Collection] ' : '[Visit Lab] '}${bookingForm.notes}`,
+        urgency: 'routine'
       });
 
-      const data = await response.json();
-      
-      if (response.ok && data.success) {
+      const data = response.data;
+      if (data?.success) {
         toast({
           title: 'Test Booked!',
           description: `Your ${selectedTest.name} has been booked for ${new Date(bookingForm.appointmentDate).toLocaleDateString()}${selectedLabId === 'home' ? ' (Home Collection)' : ''}`
@@ -454,7 +412,7 @@ const LabTests = () => {
       } else {
         toast({
           title: 'Booking Failed',
-          description: data.message || 'Failed to book lab test',
+          description: data?.message || 'Failed to book lab test',
           variant: 'destructive'
         });
       }
@@ -506,11 +464,15 @@ const LabTests = () => {
   }, [labSearchQuery, collectionType]);
 
   // Filter available tests for booking
-  const filteredBookingTests = availableTests.filter(test =>
-    test.name.toLowerCase().includes(testSearchTerm.toLowerCase()) ||
-    test.category.toLowerCase().includes(testSearchTerm.toLowerCase()) ||
-    test.description.toLowerCase().includes(testSearchTerm.toLowerCase())
-  );
+  const filteredBookingTests = availableTests.filter(test => {
+    const matchesCategory = searchCategory === 'all' || test.category === searchCategory;
+    const searchLower = testSearchTerm.toLowerCase();
+    const matchesSearch =
+      test.name.toLowerCase().includes(searchLower) ||
+      test.category.toLowerCase().includes(searchLower) ||
+      test.description.toLowerCase().includes(searchLower);
+    return matchesCategory && matchesSearch;
+  });
 
   const filteredTests = tests.filter(test => {
     // Handle status filter groups
@@ -992,17 +954,10 @@ const LabTests = () => {
                               // Do NOT add hospitalId here - labs table is separate from hospitals table
                               // If we need to track the lab, we should add a separate labId field to the schema
                               
-                              const response = await fetch('/api/lab-tests', {
-                                method: 'POST',
-                                headers: {
-                                  'Authorization': `Bearer ${token}`,
-                                  'Content-Type': 'application/json'
-                                },
-                                body: JSON.stringify(requestBody)
-                              });
+                              const response = await api.post('/lab-tests', requestBody);
                               
-                              if (!response.ok) {
-                                const errorData = await response.json();
+                              if (!response.data?.success) {
+                                const errorData = response.data;
                                 console.error('Booking error:', errorData);
                                 toast({ 
                                   title: 'Booking failed', 

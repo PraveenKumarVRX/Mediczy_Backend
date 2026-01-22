@@ -102,6 +102,7 @@ const ClinicDashboard = () => {
     notes: ''
   });
   const [saving, setSaving] = useState(false);
+  const [activeTab, setActiveTab] = useState("appointments");
 
   const normalizeAppointment = (apt: any) => ({
     id: apt?.id ?? Date.now(),
@@ -450,10 +451,10 @@ const ClinicDashboard = () => {
   }
 
   const stats = [
-    { label: 'Today\'s Appointments', value: dashboardStats.todaysAppointments.toLocaleString('en-IN'), icon: Calendar, color: 'text-teal-600', bg: 'bg-teal-50' },
-    { label: 'Patients Waiting', value: dashboardStats.patientsWaiting.toLocaleString('en-IN'), icon: UserCheck, color: 'text-blue-600', bg: 'bg-blue-50' },
-    { label: 'Total Patients', value: dashboardStats.totalPatients.toLocaleString('en-IN'), icon: Users, color: 'text-cyan-600', bg: 'bg-cyan-50' },
-    { label: 'Today\'s Revenue', value: `₹${dashboardStats.todaysRevenue.toLocaleString('en-IN')}`, icon: DollarSign, color: 'text-amber-600', bg: 'bg-amber-50' },
+    { label: 'Today\'s Appointments', value: dashboardStats.todaysAppointments.toLocaleString('en-IN'), icon: Calendar, color: 'text-teal-600', bg: 'bg-teal-50', tab: 'appointments' },
+    { label: 'Patients Waiting', value: dashboardStats.patientsWaiting.toLocaleString('en-IN'), icon: UserCheck, color: 'text-blue-600', bg: 'bg-blue-50', tab: 'appointments' },
+    { label: 'Total Patients', value: dashboardStats.totalPatients.toLocaleString('en-IN'), icon: Users, color: 'text-cyan-600', bg: 'bg-cyan-50', tab: 'patients' },
+    { label: 'Today\'s Revenue', value: `₹${dashboardStats.todaysRevenue.toLocaleString('en-IN')}`, icon: DollarSign, color: 'text-amber-600', bg: 'bg-amber-50', tab: 'billing' },
   ];
 
   // patients state is above
@@ -463,7 +464,11 @@ const ClinicDashboard = () => {
       {/* Stats Cards */}
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6 mb-8">
         {stats.map((stat, index) => (
-          <Card key={index} className="hover:shadow-lg transition-shadow bg-white dark:bg-slate-800/50 border-slate-200 dark:border-slate-700">
+          <Card
+            key={index}
+            className="hover:shadow-lg transition-shadow bg-white dark:bg-slate-800/50 border-slate-200 dark:border-slate-700 cursor-pointer"
+            onClick={() => setActiveTab(stat.tab)}
+          >
             <CardContent className="pt-6">
               <div className="flex items-center justify-between">
                 <div>
@@ -480,7 +485,7 @@ const ClinicDashboard = () => {
       </div>
 
       {/* Main Content Tabs */}
-      <Tabs defaultValue="appointments" className="space-y-6">
+      <Tabs value={activeTab} onValueChange={setActiveTab} className="space-y-6">
         <TabsList className="grid w-full grid-cols-5 lg:w-auto">
           <TabsTrigger value="appointments">Appointments</TabsTrigger>
           <TabsTrigger value="patients">Patients</TabsTrigger>

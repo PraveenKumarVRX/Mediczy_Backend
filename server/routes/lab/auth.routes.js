@@ -1,35 +1,17 @@
 import express from 'express';
 import jwt from 'jsonwebtoken';
-import bcrypt from 'bcryptjs';
 import { JWT_CONFIG } from '../../config/auth.config.js';
+import Lab from '../../models/postgres/lab.model.postgres.js';
+import { authLimiter } from '../../middleware/rateLimiter.middleware.js';
+import { auditLoginAttempt } from '../../middleware/audit.middleware.js';
 
 const router = express.Router();
-
-// Mock lab data (replace with database later)
-const mockLab = {
-  id: 1,
-  name: "Test Diagnostic Laboratory",
-  email: "lab@mediczy.com",
-  password: "$2b$10$Tj9I3Su7X3l.CidDiU7NbeiSkHxMpncawUn0K61DrjsMj62IZdCFS", // Lab123
-  contactPerson: "Lab Manager",
-  phone: "+91-9876543210",
-  registrationNumber: "LAB-DL-2024-001",
-  labType: "Diagnostic & Pathology",
-  accreditation: "NABL Certified",
-  totalTests: 250,
-  homeCollection: true,
-  address: "456 Healthcare Plaza, Delhi",
-  city: "New Delhi",
-  state: "Delhi",
-  isActive: true,
-  reportTurnaroundTime: "24-48 hours"
-};
 
 /**
  * POST /api/lab/login
  * Authenticate laboratory account
  */
-router.post('/login', async (req, res) => {
+router.post('/login', authLimiter, async (req, res) => {
   try {
     const { email, password } = req.body;
 
@@ -41,125 +23,43 @@ router.post('/login', async (req, res) => {
       });
     }
 
-    const allowDemo = process.env.NODE_ENV !== 'production' || process.env.ALLOW_LAB_DEMO === 'true';
-    const fallbackPassword = process.env.LAB_DEFAULT_PASSWORD || 'Lab123';
+    const normalizedEmail = String(email).toLowerCase();
+    const lab = await Lab.findOne({ where: { email: normalizedEmail } });
 
-    // DEV/DEMO: Mock lab authentication (can be enabled in production via ALLOW_LAB_DEMO)
-    if (allowDemo && email.toLowerCase() === mockLab.email.toLowerCase()) {
-      console.warn('⚠️ Using mock lab credentials (demo mode)');
-
-      // Verify password
-      let isPasswordValid = false;
-      try {
-        isPasswordValid = await bcrypt.compare(password, mockLab.password);
-      } catch (e) {
-        isPasswordValid = password === fallbackPassword;
-      }
-      if (!isPasswordValid && password === fallbackPassword) {
-        // allow fallback for cleartext demo password
-        isPasswordValid = true;
-      }
-      if (!isPasswordValid) {
-        return res.status(401).json({
-          success: false,
-          message: 'Invalid email or password'
-        });
-      }
-
-      // Check if lab is active
-      if (!mockLab.isActive) {
-        return res.status(403).json({
-          success: false,
-          message: 'Account is inactive. Please contact support.'
-        });
-      }
-
-      // Generate JWT token for mock lab
-      const token = jwt.sign(
-        {
-          id: mockLab.id,
-          labId: mockLab.id,
-          email: mockLab.email,
-          name: mockLab.name,
-          userType: 'lab',
-          role: 'lab'
-        },
-        JWT_CONFIG.SECRET,
-        { expiresIn: '7d' }
-      );
-
-      return res.status(200).json({
-        success: true,
-        token,
-        lab: mockLab
-      });
-    }
-
-    // PRODUCTION: Query actual Lab database
-    // For now, fall back to mock lab for non-demo emails as well
-    // (This allows testing with different email addresses in development)
-
-    // Verify password against mock lab
-    let isPasswordValid = false;
-    try {
-      isPasswordValid = await bcrypt.compare(password, mockLab.password);
-    } catch (e) {
-      // Fallback for cleartext comparison
-      isPasswordValid = password === fallbackPassword;
-    }
-    if (!isPasswordValid && password === fallbackPassword) {
-      isPasswordValid = true;
-    }
-
-    if (!isPasswordValid) {
+    if (!lab) {
+      await auditLoginAttempt(req, null, normalizedEmail, false, 'Lab not found');
       return res.status(401).json({
         success: false,
         message: 'Invalid email or password'
       });
     }
 
-    // Check if lab is active
-    if (!mockLab.isActive) {
+    const isPasswordValid = await lab.comparePassword(password);
+    if (!isPasswordValid) {
+      await auditLoginAttempt(req, lab.id, normalizedEmail, false, 'Invalid password');
+      return res.status(401).json({
+        success: false,
+        message: 'Invalid email or password'
+      });
+    }
+
+    if (!lab.isActive()) {
+      await auditLoginAttempt(req, lab.id, normalizedEmail, false, 'Lab inactive');
       return res.status(403).json({
         success: false,
         message: 'Account is inactive. Please contact support.'
       });
     }
 
-    // Generate JWT token
-    const token = jwt.sign(
-      {
-        // Provide `id` so the shared auth middleware can resolve role context.
-        id: mockLab.id,
-        labId: mockLab.id,
-        email: mockLab.email,
-        name: mockLab.name,
-        userType: 'lab',
-        role: 'lab'
-      },
-      JWT_CONFIG.SECRET,
-      { expiresIn: '7d' }
-    );
+    const token = lab.generateAuthToken();
 
-    // Return success response
-    res.status(200).json({
+    await auditLoginAttempt(req, lab.id, normalizedEmail, true);
+
+    return res.status(200).json({
       success: true,
       message: 'Login successful',
       token,
-      lab: {
-        id: mockLab.id,
-        name: mockLab.name,
-        email: mockLab.email,
-        contactPerson: mockLab.contactPerson,
-        phone: mockLab.phone,
-        registrationNumber: mockLab.registrationNumber,
-        labType: mockLab.labType,
-        accreditation: mockLab.accreditation,
-        totalTests: mockLab.totalTests,
-        homeCollection: mockLab.homeCollection,
-        city: mockLab.city,
-        reportTurnaroundTime: mockLab.reportTurnaroundTime
-      }
+      lab: lab.toJSON()
     });
 
   } catch (error) {

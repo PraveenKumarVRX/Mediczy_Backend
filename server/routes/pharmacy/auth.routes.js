@@ -1,35 +1,18 @@
 import express from 'express';
 import jwt from 'jsonwebtoken';
-import bcrypt from 'bcryptjs';
 import { JWT_CONFIG } from '../../config/auth.config.js';
+import Pharmacy from '../../models/postgres/pharmacy.model.postgres.js';
+import { authLimiter } from '../../middleware/rateLimiter.middleware.js';
+import { auditLoginAttempt } from '../../middleware/audit.middleware.js';
 
 const router = express.Router();
 const JWT_SECRET = JWT_CONFIG.SECRET;
-
-// Mock pharmacy data (replace with database later)
-const mockPharmacy = {
-  id: 1,
-  name: "Test MedPlus Pharmacy",
-  email: "pharmacy@mediczy.com",
-  password: "$2b$10$i39CI8aAWD3n0eQwxNPaQO1d1CBGVOZ40BKvyUuYNcj5qexJ8.Ujy", // Pharmacy123
-  contactPerson: "Pharmacy Manager",
-  phone: "+91-9876543210",
-  registrationNumber: "PHARM-DL-2024-001",
-  pharmacyType: "Retail Pharmacy",
-  licenseNumber: "DL-PHARM-2024-12345",
-  homeDelivery: true,
-  address: "789 Medical Avenue, Delhi",
-  city: "New Delhi",
-  state: "Delhi",
-  isActive: true,
-  operatingHours: "24x7"
-};
 
 /**
  * POST /api/pharmacy/login
  * Authenticate pharmacy account
  */
-router.post('/login', async (req, res) => {
+router.post('/login', authLimiter, async (req, res) => {
   try {
     const { email, password } = req.body;
 
@@ -41,121 +24,43 @@ router.post('/login', async (req, res) => {
       });
     }
 
-    const allowDemo = process.env.NODE_ENV !== 'production' || process.env.ALLOW_PHARMACY_DEMO === 'true';
-    const fallbackPassword = process.env.PHARMACY_DEFAULT_PASSWORD || 'Pharmacy123';
+    const normalizedEmail = String(email).toLowerCase();
+    const pharmacy = await Pharmacy.findOne({ where: { email: normalizedEmail } });
 
-    // Mock pharmacy authentication (enabled when allowDemo)
-    if (allowDemo && email.toLowerCase() === mockPharmacy.email.toLowerCase()) {
-      console.warn('⚠️ Using mock pharmacy credentials (demo mode)');
-
-      // Verify password
-      let isPasswordValid = false;
-      try {
-        isPasswordValid = await bcrypt.compare(password, mockPharmacy.password);
-      } catch (e) {
-        isPasswordValid = password === fallbackPassword;
-      }
-      if (!isPasswordValid && password === fallbackPassword) {
-        isPasswordValid = true;
-      }
-      if (!isPasswordValid) {
-        return res.status(401).json({
-          success: false,
-          message: 'Invalid email or password'
-        });
-      }
-
-      // Check if pharmacy is active
-      if (!mockPharmacy.isActive) {
-        return res.status(403).json({
-          success: false,
-          message: 'Account is inactive. Please contact support.'
-        });
-      }
-
-      // Generate JWT token for mock pharmacy
-      const token = jwt.sign(
-        {
-          id: mockPharmacy.id,
-          pharmacyId: mockPharmacy.id,
-          email: mockPharmacy.email,
-          name: mockPharmacy.name,
-          type: 'pharmacy',
-          userType: 'pharmacy',
-          role: 'pharmacy'
-        },
-        JWT_SECRET,
-        { expiresIn: '7d' }
-      );
-
-      return res.status(200).json({
-        success: true,
-        token,
-        pharmacy: mockPharmacy
-      });
-    }
-
-    // PRODUCTION: Query actual Pharmacy database (implement when Pharmacy model is ready)
-    // const Pharmacy = (await import('../models/pharmacy.model.js')).default;
-    // const pharmacy = await Pharmacy.findOne({ where: { email: email.toLowerCase() } });
-    // if (!pharmacy) {
-    //   return res.status(401).json({ success: false, message: 'Invalid credentials' });
-    // }
-    // ... verify password, generate token
-
-    return res.status(401).json({
-      success: false,
-      message: 'Invalid email or password'
-    });
-
-    // Verify password
-    const isPasswordValid = await bcrypt.compare(password, mockPharmacy.password);
-    if (!isPasswordValid) {
+    if (!pharmacy) {
+      await auditLoginAttempt(req, null, normalizedEmail, false, 'Pharmacy not found');
       return res.status(401).json({
         success: false,
         message: 'Invalid email or password'
       });
     }
 
-    // Check if pharmacy is active
-    if (!mockPharmacy.isActive) {
+    const isPasswordValid = await pharmacy.comparePassword(password);
+    if (!isPasswordValid) {
+      await auditLoginAttempt(req, pharmacy.id, normalizedEmail, false, 'Invalid password');
+      return res.status(401).json({
+        success: false,
+        message: 'Invalid email or password'
+      });
+    }
+
+    if (!pharmacy.isActive()) {
+      await auditLoginAttempt(req, pharmacy.id, normalizedEmail, false, 'Pharmacy inactive');
       return res.status(403).json({
         success: false,
         message: 'Account is inactive. Please contact support.'
       });
     }
 
-    // Generate JWT token
-    const token = jwt.sign(
-      {
-        pharmacyId: mockPharmacy.id,
-        email: mockPharmacy.email,
-        name: mockPharmacy.name,
-        userType: 'pharmacy',
-        role: 'pharmacy'
-      },
-      JWT_SECRET,
-      { expiresIn: '7d' }
-    );
+    const token = pharmacy.generateAuthToken();
 
-    // Return success response
+    await auditLoginAttempt(req, pharmacy.id, normalizedEmail, true);
+
     res.status(200).json({
       success: true,
       message: 'Login successful',
       token,
-      pharmacy: {
-        id: mockPharmacy.id,
-        name: mockPharmacy.name,
-        email: mockPharmacy.email,
-        contactPerson: mockPharmacy.contactPerson,
-        phone: mockPharmacy.phone,
-        registrationNumber: mockPharmacy.registrationNumber,
-        pharmacyType: mockPharmacy.pharmacyType,
-        licenseNumber: mockPharmacy.licenseNumber,
-        homeDelivery: mockPharmacy.homeDelivery,
-        city: mockPharmacy.city,
-        operatingHours: mockPharmacy.operatingHours
-      }
+      pharmacy: pharmacy.toJSON()
     });
 
   } catch (error) {

@@ -25,6 +25,11 @@ const NurseVitals: React.FC = () => {
     setError('');
     try {
       const token = localStorage.getItem('nurseToken');
+      if (!/^\d+$/.test(patientId.trim())) {
+        setError('Patient ID must be a valid number');
+        setLoading(false);
+        return;
+      }
       const payload = {
         patientId,
         vitals: {

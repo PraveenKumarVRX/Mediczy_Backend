@@ -234,6 +234,7 @@ import { validationResult } from "express-validator";
 import doctorModel from "../models/doctor.model.intelligent.js";
 import jwt from "jsonwebtoken";
 import intelligentDb from "../utils/intelligentDbClient.js";
+import { auditLoginAttempt } from "../middleware/audit.middleware.js";
 
 const toPlainDoctor = (doctorInstance) => {
   if (!doctorInstance) return null;
@@ -319,14 +320,15 @@ export async function signInDoctor(req, res) {
     }
 
     const { email, password } = req.body;
-    console.log('💚 [signInDoctor] Email:', email);
+    const normalizedEmail = String(email || '').toLowerCase();
+    console.log('💚 [signInDoctor] Email:', normalizedEmail);
     console.log('💚 [signInDoctor] doctorModel type:', typeof doctorModel);
 
     // Check if doctor exists using Sequelize
     console.log('💚 [signInDoctor] About to query database...');
     let doctor;
     try {
-      doctor = await doctorModel.findOne({ where: { email: email.toLowerCase() } });
+      doctor = await doctorModel.findOne({ where: { email: normalizedEmail } });
       console.log('💚 [signInDoctor] Query completed');
     } catch (queryError) {
       console.error('❌ [signInDoctor] Database query error:', queryError);
@@ -340,6 +342,7 @@ export async function signInDoctor(req, res) {
 
     if (!doctor) {
       console.log('💚 [signInDoctor] No doctor found, returning 401');
+      await auditLoginAttempt(req, null, normalizedEmail, false, 'Doctor not found');
       return res.status(401).json({ message: "Invalid email or password" });
     }
 
@@ -350,6 +353,7 @@ export async function signInDoctor(req, res) {
       console.log('💚 [signInDoctor] Password valid:', isPasswordValid);
 
       if (!isPasswordValid) {
+        await auditLoginAttempt(req, doctor.id, normalizedEmail, false, 'Invalid password');
         return res.status(401).json({ message: "Invalid email or password" });
       }
 
@@ -366,6 +370,7 @@ export async function signInDoctor(req, res) {
       });
 
       // Respond with doctor data & token
+      await auditLoginAttempt(req, doctor.id, normalizedEmail, true);
       return res.status(200).json({
         message: "Login successful",
         token,

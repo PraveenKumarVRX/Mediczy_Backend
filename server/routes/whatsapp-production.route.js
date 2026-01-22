@@ -1,7 +1,13 @@
 import express from 'express';
 import whatsappProductionService from '../services/whatsapp-production.service.js';
+import whatsAppAIHandler from '../services/whatsapp-ai-conversation.service.js';
+import whatsAppUserContextService from '../services/whatsapp-user-context.service.js';
+import logger from '../config/logger.js';
 
 const router = express.Router();
+
+// Configuration for AI auto-reply
+const AI_AUTO_REPLY_ENABLED = process.env.WHATSAPP_AI_AUTO_REPLY === 'true' || false;
 
 /**
  * Send appointment confirmation
@@ -464,28 +470,135 @@ router.post('/conversations/:phoneNumber/send', async (req, res) => {
 });
 
 /**
- * Webhook for incoming WhatsApp messages
+ * Get user context by phone number
+ * Returns complete user profile, appointments, prescriptions, medications
  */
-router.post('/webhook', (req, res) => {
+router.get('/user-context/:phoneNumber', async (req, res) => {
   try {
-    const { From, Body, MessageSid, ProfileName } = req.body;
+    const { phoneNumber } = req.params;
     
-    console.log('Incoming WhatsApp message:', {
-      from: From,
-      body: Body,
-      messageSid: MessageSid,
-      profileName: ProfileName
+    if (!phoneNumber) {
+      return res.status(400).json({
+        success: false,
+        message: 'Phone number is required'
+      });
+    }
+    
+    const userContext = await whatsAppUserContextService.getFullUserContext(phoneNumber);
+    
+    res.json({
+      success: true,
+      context: userContext
     });
-    
-    // Handle incoming message (implement your logic here)
-    // - Store in database
-    // - Trigger auto-reply
-    // - Route to appropriate handler
-    
-    res.status(200).send('OK');
   } catch (error) {
-    console.error('Webhook error:', error);
-    res.status(500).send('Error');
+    logger.error('Error fetching user context:', { error: error.message });
+    res.status(500).json({
+      success: false,
+      message: 'Failed to fetch user context',
+      error: error.message
+    });
+  }
+});
+
+/**
+ * Trigger AI response for a WhatsApp user (manual trigger from admin)
+ */
+router.post('/ai-respond', async (req, res) => {
+  try {
+    const { phoneNumber, message } = req.body;
+    
+    if (!phoneNumber || !message) {
+      return res.status(400).json({
+        success: false,
+        message: 'Phone number and message are required'
+      });
+    }
+    
+    const aiResponse = await whatsAppAIHandler.processMessage(phoneNumber, message);
+    
+    res.json({
+      success: true,
+      response: aiResponse
+    });
+  } catch (error) {
+    logger.error('AI respond error:', { error: error.message });
+    res.status(500).json({
+      success: false,
+      message: 'Failed to generate AI response',
+      error: error.message
+    });
+  }
+});
+
+/**
+ * Send AI response to WhatsApp user
+ */
+router.post('/send-ai-response', async (req, res) => {
+  try {
+    const { phoneNumber, triggerMessage } = req.body;
+    
+    if (!phoneNumber) {
+      return res.status(400).json({
+        success: false,
+        message: 'Phone number is required'
+      });
+    }
+    
+    // Get user context and generate AI response
+    const aiResponse = await whatsAppAIHandler.processMessage(
+      phoneNumber, 
+      triggerMessage || 'Hi',
+      null
+    );
+    
+    if (aiResponse.shouldReply && aiResponse.response) {
+      // Send via WhatsApp
+      const message = await whatsappProductionService.sendSessionMessage({
+        to: phoneNumber,
+        body: aiResponse.response
+      });
+      
+      // Store in chat room
+      const { messages } = await import('../utils/chatStorage.js');
+      const aiMessageObj = {
+        id: `ai_${Date.now()}`,
+        userId: 'dr_isha_bot',
+        userName: '🤖 Dr. iSHA',
+        userRole: 'assistant',
+        message: aiResponse.response,
+        type: 'text',
+        timestamp: new Date().toISOString(),
+        source: 'ai_bot'
+      };
+      
+      await messages.push('general', aiMessageObj);
+      
+      if (global.io) {
+        global.io.to('general').emit('new_message', aiMessageObj);
+      }
+      
+      res.json({
+        success: true,
+        message: 'AI response sent',
+        data: {
+          messageSid: message.sid,
+          response: aiResponse.response,
+          isKnownUser: aiResponse.isKnownUser
+        }
+      });
+    } else {
+      res.json({
+        success: false,
+        message: 'No response generated'
+      });
+    }
+  } catch (error) {
+    logger.error('Send AI response error:', { error: error.message });
+    res.status(500).json({
+      success: false,
+      message: 'Failed to send AI response',
+      error: error.message
+    });
   }
 });
 
@@ -496,4 +609,360 @@ router.get('/webhook', (req, res) => {
   res.status(200).send('Webhook endpoint is active');
 });
 
+/**
+ * Debug endpoint to check team chat inbox messages
+ * This is for testing - returns messages stored in #general room
+ */
+router.get('/team-inbox', async (req, res) => {
+  try {
+    const { chatRooms, messages } = await import('../utils/chatStorage.js');
+    const generalRoomId = 'general';
+    const room = await chatRooms.get(generalRoomId);
+    const roomMessages = await messages.get(generalRoomId) || [];
+    
+    // Filter to show only WhatsApp messages
+    const whatsappMessages = roomMessages.filter(m => m.source === 'whatsapp');
+    
+    res.json({
+      success: true,
+      room: room || null,
+      totalMessages: roomMessages.length,
+      whatsappMessageCount: whatsappMessages.length,
+      messages: roomMessages.slice(-20) // Last 20 messages (all types)
+    });
+  } catch (error) {
+    res.status(500).json({
+      success: false,
+      error: error.message
+    });
+  }
+});
+
+/**
+ * Main webhook for incoming WhatsApp messages
+ * Identifies user, retrieves context, and optionally responds with AI
+ */
+router.post('/webhook', async (req, res) => {
+  try {
+    const { From, Body, MessageSid, ProfileName, MediaUrl0, MediaContentType0 } = req.body;
+    
+    // Extract phone number (remove whatsapp: prefix)
+    const phoneNumber = From?.replace('whatsapp:', '') || '';
+    const customerName = ProfileName || phoneNumber;
+    
+    logger.info('📱 Incoming WhatsApp message', {
+      from: From,
+      body: Body,
+      messageSid: MessageSid,
+      profileName: ProfileName,
+      hasMedia: !!MediaUrl0,
+      timestamp: new Date().toISOString()
+    });
+    
+    // 1. IDENTIFY USER - Check if phone number exists in database
+    const userContext = await whatsAppUserContextService.getFullUserContext(phoneNumber);
+    
+    logger.info('👤 User identification', {
+      phoneNumber,
+      isKnownUser: userContext.isKnownUser,
+      userId: userContext.user?.id,
+      userName: userContext.user?.name,
+      hasAppointments: userContext.appointments?.recent?.length > 0,
+      hasPrescriptions: userContext.prescriptions?.recent?.length > 0
+    });
+    
+    // Import chat rooms storage from chatStorage.js (Redis-backed)
+    const { chatRooms, messages } = await import('../utils/chatStorage.js');
+    
+    // Send WhatsApp messages to the #general room
+    const generalRoomId = 'general';
+    if (!(await chatRooms.has(generalRoomId))) {
+      await chatRooms.set(generalRoomId, {
+        id: generalRoomId,
+        type: 'channel',
+        participants: [],
+        createdAt: new Date().toISOString(),
+        title: '#general',
+        description: 'General discussion and updates'
+      });
+      await messages.set(generalRoomId, []);
+    }
+    
+    // Create enhanced message object with user context
+    const messageObj = {
+      id: MessageSid,
+      userId: userContext.isKnownUser ? `user_${userContext.user.id}` : `whatsapp_${phoneNumber}`,
+      userName: userContext.isKnownUser 
+        ? `📱 ${userContext.user.name}` 
+        : `📱 ${customerName}`,
+      userRole: 'customer',
+      message: Body || '[Media Message]',
+      type: MediaUrl0 ? 'media' : 'text',
+      mediaUrl: MediaUrl0,
+      mediaType: MediaContentType0,
+      timestamp: new Date().toISOString(),
+      source: 'whatsapp',
+      phoneNumber: phoneNumber,
+      // Enhanced user context
+      userContext: {
+        isKnownUser: userContext.isKnownUser,
+        patientId: userContext.user?.id,
+        patientName: userContext.user?.name,
+        upcomingAppointments: userContext.appointments?.upcoming?.length || 0,
+        activeMedications: userContext.activeMedications?.length || 0
+      }
+    };
+    
+    // Add to chat messages using Redis-backed push
+    await messages.push(generalRoomId, messageObj);
+    const currentMessages = await messages.get(generalRoomId) || [];
+    
+    logger.info('✅ WhatsApp message added to #general room (Redis)', {
+      roomId: generalRoomId,
+      messageId: MessageSid,
+      from: userContext.isKnownUser ? userContext.user.name : customerName,
+      isKnownUser: userContext.isKnownUser,
+      messageCount: currentMessages.length
+    });
+    
+    // Emit Socket.IO event to notify team members (if Socket.IO is available)
+    if (global.io) {
+      global.io.to(generalRoomId).emit('new_message', messageObj);
+      
+      // Also emit user context update for real-time dashboard
+      global.io.to(generalRoomId).emit('user_context', {
+        phoneNumber,
+        ...userContext,
+        timestamp: new Date().toISOString()
+      });
+      
+      logger.info('🔔 Socket.IO notification sent to #general room');
+    }
+    
+    // 2. OPTIONAL: AI AUTO-REPLY (only if enabled)
+    if (AI_AUTO_REPLY_ENABLED && Body && !MediaUrl0) {
+      try {
+        const aiResponse = await whatsAppAIHandler.processMessage(phoneNumber, Body, ProfileName);
+        
+        if (aiResponse.shouldReply && aiResponse.response) {
+          // Send AI response via WhatsApp
+          await whatsappProductionService.sendSessionMessage({
+            to: phoneNumber,
+            body: aiResponse.response
+          });
+          
+          // Add AI response to chat room
+          const aiMessageObj = {
+            id: `ai_${Date.now()}`,
+            userId: 'dr_isha_bot',
+            userName: '🤖 Dr. iSHA',
+            userRole: 'assistant',
+            message: aiResponse.response,
+            type: 'text',
+            timestamp: new Date().toISOString(),
+            source: 'ai_bot',
+            replyTo: MessageSid,
+            isEmergency: aiResponse.isEmergency
+          };
+          
+          await messages.push(generalRoomId, aiMessageObj);
+          
+          if (global.io) {
+            global.io.to(generalRoomId).emit('new_message', aiMessageObj);
+          }
+          
+          logger.info('🤖 AI auto-reply sent', {
+            to: phoneNumber,
+            isEmergency: aiResponse.isEmergency,
+            provider: aiResponse.provider
+          });
+          
+          // If emergency, also notify team
+          if (aiResponse.isEmergency && global.io) {
+            global.io.emit('emergency_alert', {
+              phoneNumber,
+              userName: userContext.isKnownUser ? userContext.user.name : customerName,
+              message: Body,
+              userContext: userContext.summary,
+              timestamp: new Date().toISOString()
+            });
+          }
+        }
+      } catch (aiError) {
+        logger.error('AI auto-reply error (non-fatal):', { error: aiError.message });
+        // Don't fail the webhook if AI response fails
+      }
+    }
+    
+    // Return empty TwiML response
+    res.type('text/xml');
+    res.status(200).send('<?xml version="1.0" encoding="UTF-8"?><Response></Response>');
+  } catch (error) {
+    logger.error('❌ Webhook error:', { error: error.message, stack: error.stack });
+    // Return empty TwiML even on error to prevent Twilio from triggering fallback
+    res.type('text/xml');
+    res.status(200).send('<?xml version="1.0" encoding="UTF-8"?><Response></Response>');
+  }
+});
+
+/**
+ * Fallback webhook for incoming messages
+ * Used when primary webhook fails
+ */
+router.post('/fallback', (req, res) => {
+  try {
+    const { From, Body, MessageSid } = req.body;
+    
+    console.error('Fallback webhook triggered:', {
+      from: From,
+      body: Body,
+      messageSid: MessageSid,
+      timestamp: new Date().toISOString()
+    });
+    
+    // Log to error tracking system
+    // Send alert to admin
+    
+    // Return empty TwiML - DO NOT send any auto-reply
+    res.type('text/xml');
+    res.status(200).send('<?xml version="1.0" encoding="UTF-8"?><Response></Response>');
+  } catch (error) {
+    console.error('Fallback webhook error:', error);
+    res.type('text/xml');
+    res.status(200).send('<?xml version="1.0" encoding="UTF-8"?><Response></Response>');
+  }
+});
+
+/**
+ * Status callback webhook
+ * Receives delivery status updates from Twilio
+ */
+router.post('/status-callback', async (req, res) => {
+  try {
+    const { MessageSid, MessageStatus, To, ErrorCode, ErrorMessage } = req.body;
+    
+    console.log('Message status update:', {
+      messageSid: MessageSid,
+      status: MessageStatus,
+      to: To,
+      errorCode: ErrorCode,
+      errorMessage: ErrorMessage,
+      timestamp: new Date().toISOString()
+    });
+    
+    // Update message status in database
+    // - sent, delivered, read, failed, undelivered
+    // - Store error codes for failed messages
+    // - Trigger notifications for failures
+    
+    if (MessageStatus === 'failed' || MessageStatus === 'undelivered') {
+      console.error('Message delivery failed:', {
+        messageSid: MessageSid,
+        errorCode: ErrorCode,
+        errorMessage: ErrorMessage
+      });
+    }
+    
+    res.status(200).send('OK');
+  } catch (error) {
+    console.error('Status callback error:', error);
+    res.status(500).send('Error');
+  }
+});
+
+// ==================== CONVERSATION MANAGEMENT ====================
+
+/**
+ * Get all WhatsApp conversations
+ */
+router.get('/conversations', async (req, res) => {
+  try {
+    const { status } = req.query;
+    
+    // In production, fetch from database
+    // For now, return mock data
+    const conversations = [
+      {
+        id: '1',
+        customerName: 'Ramesh Kumar',
+        customerPhone: '+917373007737',
+        lastMessage: 'Thank you for the appointment confirmation',
+        lastMessageTime: new Date(Date.now() - 1000 * 60 * 15).toISOString(), // 15 min ago
+        unreadCount: 0,
+        status: 'resolved',
+        assignedTo: 'Parinitha M'
+      },
+      {
+        id: '2',
+        customerName: 'Priya Sharma',
+        customerPhone: '+919884069443',
+        lastMessage: 'I need to reschedule my appointment',
+        lastMessageTime: new Date(Date.now() - 1000 * 60 * 5).toISOString(), // 5 min ago
+        unreadCount: 2,
+        status: 'active',
+        assignedTo: 'Parinitha M'
+      }
+    ];
+    
+    const filteredConversations = status && status !== 'all' 
+      ? conversations.filter(c => c.status === status)
+      : conversations;
+    
+    res.json({
+      success: true,
+      conversations: filteredConversations
+    });
+  } catch (error) {
+    console.error('Error fetching conversations:', error);
+    res.status(500).json({
+      success: false,
+      message: error.message
+    });
+  }
+});
+
+/**
+ * Get messages for a conversation
+ */
+router.get('/conversations/:conversationId/messages', async (req, res) => {
+  try {
+    const { conversationId } = req.params;
+    
+    // In production, fetch from database
+    // For now, return mock data
+    const messages = [
+      {
+        id: '1',
+        from: 'whatsapp:+919791476194',
+        to: 'whatsapp:+917373007737',
+        body: 'Hello! Your appointment with Dr. Nandita is confirmed for tomorrow at 3:00 PM.',
+        timestamp: new Date(Date.now() - 1000 * 60 * 30).toISOString(),
+        direction: 'outgoing',
+        status: 'read'
+      },
+      {
+        id: '2',
+        from: 'whatsapp:+917373007737',
+        to: 'whatsapp:+919791476194',
+        body: 'Thank you for the confirmation!',
+        timestamp: new Date(Date.now() - 1000 * 60 * 15).toISOString(),
+        direction: 'incoming',
+        status: 'delivered'
+      }
+    ];
+    
+    res.json({
+      success: true,
+      messages
+    });
+  } catch (error) {
+    console.error('Error fetching messages:', error);
+    res.status(500).json({
+      success: false,
+      message: error.message
+    });
+  }
+});
+
 export default router;
+

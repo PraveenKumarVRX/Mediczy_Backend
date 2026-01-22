@@ -24,6 +24,17 @@ export const validateMembership = async (req, res, next) => {
     return next();
   }
 
+  // Allow core patient records/lab flows without membership gating.
+  const membershipFreeBases = new Set([
+    '/api/lab-tests',
+    '/api/reports',
+    '/api/labs',
+    '/api/cart'
+  ]);
+  if (membershipFreeBases.has(req.baseUrl)) {
+    return next();
+  }
+
   try {
     const userId = req.user?.id;
     

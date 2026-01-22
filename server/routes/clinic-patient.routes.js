@@ -6,6 +6,7 @@
 import express from 'express';
 import { body } from 'express-validator';
 import { authUser, requireRole } from '../middleware/auth.middleware.js';
+import { authLimiter } from '../middleware/rateLimiter.middleware.js';
 import {
   patientSignup,
   addPatient,
@@ -85,6 +86,7 @@ router.post(
  */
 router.post(
   '/:clinicId/patient/login',
+  authLimiter,
   [
     body('email').isEmail().withMessage('Invalid email'),
     body('password').notEmpty().withMessage('Password is required')

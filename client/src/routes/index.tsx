@@ -113,10 +113,11 @@ import TeamDirectory from '@/pages/team/TeamDirectory';
 import TeamReports from '@/pages/team/TeamReports';
 import TeamTools from '@/pages/team/TeamTools';
 import TeamPharmacyEdit from '@/pages/team/TeamPharmacyEdit';
+import WhatsAppCommunication from '@/pages/team/WhatsAppCommunication';
+import TeamCorporateManagement from '@/pages/team/TeamCorporateManagement';
 import {
   TeamUserManagementPage,
   TeamDoctorManagementPage,
-  TeamCorporateManagementPage,
   TeamHospitalManagementPage,
   TeamClinicManagementPage,
   TeamLabManagementPage,
@@ -643,7 +644,7 @@ const AppRoutes = () => {
   <Route path="/team/pharmacy-edit" element={<TeamPharmacyEdit />} />
   <Route path="/team/user-management" element={<TeamUserManagementPage />} />
   <Route path="/team/doctor-management" element={<TeamDoctorManagementPage />} />
-  <Route path="/team/corporate-management" element={<TeamCorporateManagementPage />} />
+  <Route path="/team/corporate-management" element={<TeamCorporateManagement />} />
   <Route path="/team/hospital-management" element={<TeamHospitalManagementPage />} />
   <Route path="/team/clinic-management" element={<TeamClinicManagementPage />} />
   <Route path="/team/lab-management" element={<TeamLabManagementPage />} />
@@ -652,6 +653,7 @@ const AppRoutes = () => {
   <Route path="/team/support-tickets" element={<TeamSupportTicketsPage />} />
   <Route path="/team/appointments" element={<TeamAppointmentsPage />} />
   <Route path="/team/chat" element={<TeamChatDashboardPage />} />
+  <Route path="/team/whatsapp" element={<WhatsAppCommunication />} />
   <Route path="/team/health-plans" element={<TeamHealthPlansPage />} />
   <Route path="/team/activity" element={<TeamActivityLogsPage />} />
   <Route path="/team/settings" element={<TeamSettingsPage />} />

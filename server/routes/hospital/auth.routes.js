@@ -1,35 +1,18 @@
 import express from 'express';
 import jwt from 'jsonwebtoken';
-import bcrypt from 'bcryptjs';
 import { JWT_CONFIG } from '../../config/auth.config.js';
+import Hospital from '../../models/hospital.model.intelligent.js';
+import { authLimiter } from '../../middleware/rateLimiter.middleware.js';
+import { auditLoginAttempt } from '../../middleware/audit.middleware.js';
 
 const router = express.Router();
 const JWT_SECRET = JWT_CONFIG.SECRET;
-
-// Mock hospital data (replace with database later)
-const mockHospital = {
-  id: 1,
-  name: "Test Multi-Specialty Hospital",
-  email: "hospital@mediczy.com",
-  password: "$2b$10$ofJVVrlQUlOTt.Orpaw/uu4S./YsJNmk2ZcWHtHML8sZgr/QpSzF.", // Hospital123
-  contactPerson: "Hospital Admin",
-  phone: "+91-9876543210",
-  registrationNumber: "HOSP-DL-2024-001",
-  hospitalType: "Multi-Specialty",
-  totalBeds: 500,
-  availableBeds: 125,
-  address: "123 Medical District, Delhi",
-  city: "New Delhi",
-  state: "Delhi",
-  isActive: true,
-  accreditation: "NABH Certified"
-};
 
 /**
  * POST /api/hospital/login
  * Authenticate hospital account
  */
-router.post('/login', async (req, res) => {
+router.post('/login', authLimiter, async (req, res) => {
   try {
     const { email, password } = req.body;
 
@@ -41,83 +24,40 @@ router.post('/login', async (req, res) => {
       });
     }
 
-    // DEV-ONLY: Mock hospital authentication (disabled in production)
-    if (process.env.NODE_ENV !== 'production' && email === mockHospital.email) {
-      console.warn('⚠️ Using mock hospital credentials (development only)');
+    const normalizedEmail = String(email).toLowerCase();
+    const hospital = await Hospital.findOne({ where: { email: normalizedEmail } });
 
-      // Verify password
-      const isPasswordValid = await bcrypt.compare(password, mockHospital.password);
-      if (!isPasswordValid) {
-        return res.status(401).json({
-          success: false,
-          message: 'Invalid email or password'
-        });
-      }
-
-      // Check if hospital is active
-      if (!mockHospital.isActive) {
-        return res.status(403).json({
-          success: false,
-          message: 'Account is inactive. Please contact support.'
-        });
-      }
-
-      // Generate JWT token for mock hospital
-      const token = jwt.sign(
-        {
-          hospitalId: mockHospital.id,
-          email: mockHospital.email,
-          name: mockHospital.name,
-          userType: 'hospital',
-          role: 'hospital'
-        },
-        JWT_SECRET,
-        { expiresIn: '7d' }
-      );
-
-      return res.status(200).json({
-        success: true,
-        token,
-        hospital: mockHospital
-      });
-    }
-
-    // PRODUCTION: Query actual Hospital database (implement when Hospital model is ready)
-    // const Hospital = (await import('../models/hospital.model.js')).default;
-    // const hospital = await Hospital.findOne({ where: { email: email.toLowerCase() } });
-    // if (!hospital) {
-    //   return res.status(401).json({ success: false, message: 'Invalid credentials' });
-    // }
-    // ... verify password, generate token
-
-    return res.status(401).json({
-      success: false,
-      message: 'Invalid email or password'
-    });
-
-    // Verify password
-    const isPasswordValid = await bcrypt.compare(password, mockHospital.password);
-    if (!isPasswordValid) {
+    if (!hospital) {
+      await auditLoginAttempt(req, null, normalizedEmail, false, 'Hospital not found');
       return res.status(401).json({
         success: false,
         message: 'Invalid email or password'
       });
     }
 
-    // Check if hospital is active
-    if (!mockHospital.isActive) {
+    const isPasswordValid = await hospital.comparePassword(password);
+    if (!isPasswordValid) {
+      await auditLoginAttempt(req, hospital.id, normalizedEmail, false, 'Invalid password');
+      return res.status(401).json({
+        success: false,
+        message: 'Invalid email or password'
+      });
+    }
+
+    if (hospital.status && hospital.status !== 'active') {
+      await auditLoginAttempt(req, hospital.id, normalizedEmail, false, 'Hospital inactive');
       return res.status(403).json({
         success: false,
         message: 'Account is inactive. Please contact support.'
       });
     }
 
-    // Generate JWT token
     const token = jwt.sign(
       {
-        hospitalId: mockHospital.id,
-        email: mockHospital.email,
-        name: mockHospital.name,
+        id: hospital.id,
+        hospitalId: hospital.id,
+        email: hospital.email,
+        name: hospital.hospitalName || hospital.name,
         userType: 'hospital',
         role: 'hospital'
       },
@@ -125,23 +65,23 @@ router.post('/login', async (req, res) => {
       { expiresIn: '7d' }
     );
 
-    // Return success response
+    await auditLoginAttempt(req, hospital.id, normalizedEmail, true);
+
     res.status(200).json({
       success: true,
       message: 'Login successful',
       token,
       hospital: {
-        id: mockHospital.id,
-        name: mockHospital.name,
-        email: mockHospital.email,
-        contactPerson: mockHospital.contactPerson,
-        phone: mockHospital.phone,
-        registrationNumber: mockHospital.registrationNumber,
-        hospitalType: mockHospital.hospitalType,
-        totalBeds: mockHospital.totalBeds,
-        availableBeds: mockHospital.availableBeds,
-        city: mockHospital.city,
-        accreditation: mockHospital.accreditation
+        id: hospital.id,
+        name: hospital.hospitalName || hospital.name,
+        email: hospital.email,
+        phone: hospital.phoneNumber || hospital.phone,
+        registrationNumber: hospital.registrationNumber,
+        hospitalType: hospital.hospitalType,
+        totalBeds: hospital.totalBeds,
+        availableBeds: hospital.availableBeds,
+        city: hospital.city,
+        accreditation: hospital.accreditation
       }
     });
 

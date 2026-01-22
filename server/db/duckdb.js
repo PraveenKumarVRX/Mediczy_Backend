@@ -80,7 +80,12 @@ export async function executeDuckDB(query, params = []) {
       return null;
     }
 
-    const result = await connection.allAsync(query, params);
+    const normalizedParams = Array.isArray(params) ? params : [];
+    const hasPlaceholders = /(\$[1-9]\d*|\?)/.test(query);
+    const shouldBindParams = hasPlaceholders && normalizedParams.length > 0;
+    const result = shouldBindParams
+      ? await connection.allAsync(query, normalizedParams)
+      : await connection.allAsync(query);
     return result;
   } catch (error) {
     console.warn('⚠️  DuckDB: Query failed:', error.message);

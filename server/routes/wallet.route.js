@@ -346,7 +346,7 @@ router.post('/create-order', authUser, async (req, res) => {
     });
 
     // Create Razorpay order
-    const razorpayOrder = await paymentGateway.createRazorpayOrder({
+    const orderData = {
       amount: pkg.price,
       currency: 'INR',
       receipt: `HC_${req.user.id}_${Date.now()}`,
@@ -356,9 +356,14 @@ router.post('/create-order', authUser, async (req, res) => {
         coins: pkg.coins,
         type: 'health_coins_purchase'
       }
-    });
+    };
+
+    console.log('📝 Creating Razorpay order with:', JSON.stringify(orderData, null, 2));
+    
+    const razorpayOrder = await paymentGateway.createRazorpayOrder(orderData);
     
     console.log('✅ Razorpay order created for HC purchase:', razorpayOrder.orderId);
+    console.log('📤 Razorpay order details:', JSON.stringify(razorpayOrder, null, 2));
     
     res.json({
       success: true,

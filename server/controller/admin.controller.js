@@ -5,6 +5,7 @@ import bcrypt from 'bcrypt';
 import jwt from 'jsonwebtoken';
 import { postgresSequelize as sequelize } from '../db/postgres-sequelize.js';
 import { QueryTypes, Op } from 'sequelize';
+import { auditLoginAttempt } from '../middleware/audit.middleware.js';
 
 // Production-level rate limiting store (would be Redis in production cluster)
 const loginAttempts = new Map();
@@ -69,6 +70,7 @@ export const adminLogin = async (req, res) => {
   // Enhanced input validation
   if (!email || !password) {
     logFailedAttempt(clientIP, email || 'missing', 'Missing credentials');
+    await auditLoginAttempt(req, null, email || 'missing', false, 'Missing credentials');
     return res.status(400).json({ 
       success: false,
       message: 'Email and password are required',
@@ -79,6 +81,7 @@ export const adminLogin = async (req, res) => {
   // Email format validation
   if (!SECURITY_CONFIG.EMAIL_REGEX.test(email)) {
     logFailedAttempt(clientIP, email, 'Invalid email format');
+    await auditLoginAttempt(req, null, email, false, 'Invalid email format');
     return res.status(400).json({ 
       success: false,
       message: 'Invalid email format',
@@ -89,6 +92,7 @@ export const adminLogin = async (req, res) => {
   // Password length validation
   if (password.length < SECURITY_CONFIG.PASSWORD_MIN_LENGTH) {
     logFailedAttempt(clientIP, email, 'Password too short');
+    await auditLoginAttempt(req, null, email, false, 'Password too short');
     return res.status(400).json({ 
       success: false,
       message: 'Invalid credentials',
@@ -122,6 +126,7 @@ export const adminLogin = async (req, res) => {
     
     if (!adminUser) {
       logFailedAttempt(clientIP, email, 'User not found or not admin');
+      await auditLoginAttempt(req, null, email, false, 'Admin not found');
       return res.status(401).json({ message: 'Invalid credentials' });
     }
     
@@ -156,6 +161,7 @@ export const adminLogin = async (req, res) => {
       
       // Security audit log
       console.log(`✅ Admin login successful - ID: ${adminUser.id}, Email: ${adminUser.email}, IP: ${clientIP}`);
+      await auditLoginAttempt(req, adminUser.id, adminUser.email, true);
       
       return res.json({ 
         success: true,
@@ -176,6 +182,7 @@ export const adminLogin = async (req, res) => {
     
     // Failed login attempt
     logFailedAttempt(clientIP, email, 'Invalid credentials');
+    await auditLoginAttempt(req, adminUser.id, email, false, 'Invalid password');
     console.warn(`❌ Failed admin login - Email: ${email}, IP: ${clientIP}, UA: ${userAgent}`);
     return res.status(401).json({ message: 'Invalid credentials' });
   } catch (e) {
@@ -651,4 +658,3 @@ export const getDoctorSpecialties = async (req, res) => {
     return res.status(500).json({ success: false, error: e.message });
   }
 };
-

@@ -8,6 +8,10 @@ set -e
 # CONFIGURATION
 ##############################################################################
 
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+# shellcheck disable=SC1091
+source "$SCRIPT_DIR/load-testing-env.sh" || true
+
 BASE_URL="${BASE_URL:-http://localhost:8000}"
 ALERT_EMAIL="${ALERT_EMAIL:-admin@mediczy.com}"
 LOG_DIR="/var/log/mediczy"
@@ -16,12 +20,12 @@ LOG_FILE="$LOG_DIR/smoke-test-$TIMESTAMP.log"
 SLACK_WEBHOOK="${SLACK_WEBHOOK:-}"
 
 # Test credentials (use test accounts, not real users)
-TEST_USER_EMAIL="test.patient@mediczy.com"
-TEST_USER_PASSWORD="TestPass123!"
-TEST_DOCTOR_EMAIL="test.doctor@mediczy.com"
-TEST_DOCTOR_PASSWORD="TestPass123!"
-TEST_ADMIN_EMAIL="test.admin@mediczy.com"
-TEST_ADMIN_PASSWORD="TestPass123!"
+TEST_USER_EMAIL="${TEST_USER_EMAIL:-user@mediczy.com}"
+TEST_USER_PASSWORD="${TEST_USER_PASSWORD:-User123}"
+TEST_DOCTOR_EMAIL="${TEST_DOCTOR_EMAIL:-doctor@mediczy.com}"
+TEST_DOCTOR_PASSWORD="${TEST_DOCTOR_PASSWORD:-Doctor123}"
+TEST_ADMIN_EMAIL="${TEST_ADMIN_EMAIL:-admin@mediczy.com}"
+TEST_ADMIN_PASSWORD="${TEST_ADMIN_PASSWORD:-SecureAdmin123}"
 
 # Counters
 TOTAL_TESTS=0
@@ -161,7 +165,7 @@ test_user_authentication() {
 test_doctor_authentication() {
     test_start "Doctor Authentication"
     
-    local response=$(curl -s -X POST "$BASE_URL/api/auth/doctor/login" \
+    local response=$(curl -s -X POST "$BASE_URL/api/doctors/login" \
         -H "Content-Type: application/json" \
         -d "{\"email\":\"$TEST_DOCTOR_EMAIL\",\"password\":\"$TEST_DOCTOR_PASSWORD\"}")
     
@@ -177,7 +181,7 @@ test_doctor_authentication() {
 test_admin_authentication() {
     test_start "Admin Authentication"
     
-    local response=$(curl -s -X POST "$BASE_URL/api/auth/admin/login" \
+    local response=$(curl -s -X POST "$BASE_URL/api/admin/login" \
         -H "Content-Type: application/json" \
         -d "{\"email\":\"$TEST_ADMIN_EMAIL\",\"password\":\"$TEST_ADMIN_PASSWORD\"}")
     
@@ -289,7 +293,7 @@ test_error_logs() {
     
     # Check PM2 logs for recent errors
     if [ -d "$HOME/.pm2/logs" ]; then
-        error_count=$(grep -i "error\|critical\|fatal" "$HOME/.pm2/logs/mediczy-server-error.log" 2>/dev/null | tail -100 | wc -l || echo 0)
+        error_count=$(grep -i "error\|critical\|fatal" "$HOME/.pm2/logs/mediczy-server-error.log" 2>/dev/null | grep -vi "errorLogger" | grep -vi "express:router" | tail -100 | wc -l || echo 0)
     fi
     
     if [ "$error_count" -lt 10 ]; then

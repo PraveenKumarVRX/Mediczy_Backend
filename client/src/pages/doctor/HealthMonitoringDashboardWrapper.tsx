@@ -54,7 +54,34 @@ const HealthMonitoringDashboardWrapper = () => {
     queryFn: async () => {
       try {
         const response = await api.get('/doctors/health-monitoring/patients');
-        return response.data.patients || [];
+        const rawPatients = response.data.patients || [];
+        return rawPatients.map((patient: any) => {
+          const name =
+            patient.patientName ||
+            patient.name ||
+            `${patient.firstName || ''} ${patient.lastName || ''}`.trim() ||
+            'Patient';
+          const riskLevel =
+            patient.riskLevel ||
+            (patient.healthStatus === 'critical' ? 'critical' : null) ||
+            (patient.healthStatus === 'high' ? 'high' : null) ||
+            (patient.healthStatus === 'medium' ? 'medium' : null) ||
+            'low';
+
+          return {
+            id: patient.id,
+            patientName: name,
+            patientAge: patient.patientAge ?? patient.age ?? null,
+            patientGender: patient.patientGender ?? patient.gender ?? 'Unknown',
+            heartRate: patient.heartRate ?? patient.vitals?.heartRate ?? 0,
+            bloodPressure: patient.bloodPressure ?? patient.vitals?.bloodPressure ?? '-',
+            oxygenSaturation: patient.oxygenSaturation ?? patient.vitals?.oxygenSaturation ?? 0,
+            temperature: patient.temperature ?? patient.vitals?.temperature ?? 0,
+            lastUpdated: patient.lastUpdated ?? patient.lastReading ?? patient.updatedAt ?? new Date().toISOString(),
+            riskLevel,
+            alerts: patient.alerts ?? []
+          };
+        });
       } catch (err) {
         // Return sample data for demonstration
         return generateSamplePatients();

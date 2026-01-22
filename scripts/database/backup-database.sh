@@ -16,9 +16,17 @@ BACKUP_FILE="$BACKUP_DIR/mediczy_db_$TIMESTAMP.sql"
 # Create backup directory if it doesn't exist
 mkdir -p "$BACKUP_DIR"
 
-# Perform backup
+# Perform backup (prefer PostgreSQL when configured)
 echo "Starting database backup..."
-mysqldump -h "$DB_HOST" -u "$DB_USER" -p"$DB_PASSWORD" "$DB_NAME" > "$BACKUP_FILE"
+if [ -n "$POSTGRES_HOST" ] && command -v pg_dump >/dev/null 2>&1; then
+  PGHOST="${POSTGRES_HOST}" \
+  PGPORT="${POSTGRES_PORT:-5432}" \
+  PGUSER="${POSTGRES_USER}" \
+  PGPASSWORD="${POSTGRES_PASSWORD}" \
+  pg_dump -F p "${POSTGRES_DATABASE}" > "$BACKUP_FILE"
+else
+  mysqldump -h "$DB_HOST" -u "$DB_USER" -p"$DB_PASSWORD" "$DB_NAME" > "$BACKUP_FILE"
+fi
 
 # Compress backup
 gzip "$BACKUP_FILE"

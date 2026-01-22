@@ -6,6 +6,7 @@ import adminMiddleware from '../middleware/admin.middleware.js';
 import { detectProfanity, getWarningResponse, logViolation, Severity } from '../utils/profanityFilter.js';
 import fs from 'fs';
 import path from 'path';
+import { chatRooms, messages } from '../utils/chatStorage.js';
 
 const router = express.Router();
 
@@ -14,9 +15,11 @@ router.get('/health', (req, res) => {
   res.json({ status: 'healthy', service: 'chat-api', timestamp: new Date().toISOString() });
 });
 
-// In-memory chat storage (in production, use database)
-const chatRooms = new Map();
-const messages = new Map();
+// Redis-based chat storage imported from utils/chatStorage.js
+// chatRooms and messages are now async Redis operations
+// Re-export for backward compatibility with WhatsApp webhook
+export { chatRooms, messages };
+
 const activeUsers = new Map();
 
 /**
@@ -36,19 +39,20 @@ router.post('/rooms', authUser, async (req, res) => {
     if (!id || !type || !participants || !title) {
       return res.status(400).json({ success: false, message: 'Missing required fields' });
     }
-    if (chatRooms.has(id)) {
+    if (await chatRooms.has(id)) {
       return res.status(409).json({ success: false, message: 'Room already exists' });
     }
-    chatRooms.set(id, {
+    const roomData = {
       id,
       type,
       participants,
       createdAt: new Date().toISOString(),
       title,
       description: description || '',
-    });
-    messages.set(id, []);
-    return res.json({ success: true, room: chatRooms.get(id) });
+    };
+    await chatRooms.set(id, roomData);
+    await messages.set(id, []);
+    return res.json({ success: true, room: roomData });
   } catch (error) {
     console.error('Error creating chat room:', error);
     res.status(500).json({ success: false, message: 'Failed to create chat room', error: error.message });
@@ -70,8 +74,8 @@ router.get('/rooms', authUser, async (req, res) => {
     if (userRole === 'user' || userRole === 'patient') {
       // Regular users can access user-team support chat
       const supportRoomId = `support_${userId}`;
-      if (!chatRooms.has(supportRoomId)) {
-        chatRooms.set(supportRoomId, {
+      if (!(await chatRooms.has(supportRoomId))) {
+        await chatRooms.set(supportRoomId, {
           id: supportRoomId,
           type: 'user_team',
           participants: [userId],
@@ -81,14 +85,15 @@ router.get('/rooms', authUser, async (req, res) => {
         });
       }
       
-      availableRooms.push(chatRooms.get(supportRoomId));
+      availableRooms.push(await chatRooms.get(supportRoomId));
     }
     
     if (userRole === 'team' || userRole === 'admin' || userRole === 'doctor') {
       // Team members can access both user support and internal team chats
       
       // Add user support rooms where they are assigned
-      for (const [roomId, room] of chatRooms.entries()) {
+      const allRoomEntries = await chatRooms.entries();
+      for (const [roomId, room] of allRoomEntries) {
         if (room.type === 'user_team' && (room.assignedTeam?.includes(userId) || userRole === 'admin')) {
           availableRooms.push(room);
         }
@@ -96,8 +101,8 @@ router.get('/rooms', authUser, async (req, res) => {
       
       // Add team internal chat rooms
       const teamRoomId = 'team_general';
-      if (!chatRooms.has(teamRoomId)) {
-        chatRooms.set(teamRoomId, {
+      if (!(await chatRooms.has(teamRoomId))) {
+        await chatRooms.set(teamRoomId, {
           id: teamRoomId,
           type: 'team_internal',
           participants: [],
@@ -107,11 +112,33 @@ router.get('/rooms', authUser, async (req, res) => {
         });
       }
       
-      const teamRoom = chatRooms.get(teamRoomId);
+      const teamRoom = await chatRooms.get(teamRoomId);
       if (!teamRoom.participants.includes(userId)) {
         teamRoom.participants.push(userId);
+        await chatRooms.set(teamRoomId, teamRoom);
       }
       availableRooms.push(teamRoom);
+      
+      // Add WhatsApp customer messages room
+      const whatsappRoomId = 'whatsapp_general';
+      if (!(await chatRooms.has(whatsappRoomId))) {
+        await chatRooms.set(whatsappRoomId, {
+          id: whatsappRoomId,
+          type: 'whatsapp_customer',
+          participants: [],
+          createdAt: new Date().toISOString(),
+          title: 'WhatsApp Customers',
+          description: 'Incoming messages from WhatsApp customers'
+        });
+        await messages.set(whatsappRoomId, []);
+      }
+      
+      const whatsappRoom = await chatRooms.get(whatsappRoomId);
+      if (!whatsappRoom.participants.includes(userId)) {
+        whatsappRoom.participants.push(userId);
+        await chatRooms.set(whatsappRoomId, whatsappRoom);
+      }
+      availableRooms.push(whatsappRoom);
     }
     
     res.json({
@@ -153,20 +180,30 @@ router.get('/rooms/:roomId/messages', authUser, [
     const limit = parseInt(req.query.limit) || 50;
     const offset = parseInt(req.query.offset) || 0;
 
+    console.log('[Chat Messages] Access check:', { roomId, userId, userRole });
+
     // Check if user has access to this room
-    const room = chatRooms.get(roomId);
+    const room = await chatRooms.get(roomId);
     if (!room) {
+      console.log('[Chat Messages] Room not found:', roomId);
       return res.status(404).json({
         success: false,
         message: 'Chat room not found'
       });
     }
 
-    // Verify access permissions
+    console.log('[Chat Messages] Room found:', { roomType: room.type, participants: room.participants });
+
+    // Verify access permissions - admins always have access
     const hasAccess = 
+      userRole === 'admin' ||
       room.participants.includes(userId) ||
       (room.type === 'user_team' && userRole === 'admin') ||
-      (room.type === 'team_internal' && ['team', 'admin', 'doctor'].includes(userRole));
+      (room.type === 'team_internal' && ['team', 'admin', 'doctor'].includes(userRole)) ||
+      (room.type === 'whatsapp_customer' && ['team', 'admin', 'doctor'].includes(userRole)) ||
+      (room.type === 'channel' && ['team', 'admin', 'doctor'].includes(userRole));
+
+    console.log('[Chat Messages] Access result:', hasAccess);
 
     if (!hasAccess) {
       return res.status(403).json({
@@ -175,7 +212,7 @@ router.get('/rooms/:roomId/messages', authUser, [
       });
     }
 
-    const roomMessages = messages.get(roomId) || [];
+    const roomMessages = await messages.get(roomId) || [];
     const totalMessages = roomMessages.length;
     const paginatedMessages = roomMessages
       .slice(Math.max(0, totalMessages - limit - offset), totalMessages - offset)
@@ -259,7 +296,7 @@ router.post('/rooms/:roomId/messages', authUser, [
     // ===== END PROFANITY CHECK =====
 
     // Check if user has access to this room
-    const room = chatRooms.get(roomId);
+    const room = await chatRooms.get(roomId);
     if (!room) {
       return res.status(404).json({
         success: false,
@@ -271,7 +308,9 @@ router.post('/rooms/:roomId/messages', authUser, [
     const hasAccess = 
       room.participants.includes(userId) ||
       (room.type === 'user_team' && userRole === 'admin') ||
-      (room.type === 'team_internal' && ['team', 'admin', 'doctor'].includes(userRole));
+      (room.type === 'team_internal' && ['team', 'admin', 'doctor'].includes(userRole)) ||
+      (room.type === 'whatsapp_customer' && ['team', 'admin', 'doctor'].includes(userRole)) ||
+      (room.type === 'channel' && ['team', 'admin', 'doctor'].includes(userRole));
 
     if (!hasAccess) {
       return res.status(403).json({
@@ -301,11 +340,8 @@ router.post('/rooms/:roomId/messages', authUser, [
       })
     };
 
-    // Store message
-    if (!messages.has(roomId)) {
-      messages.set(roomId, []);
-    }
-    messages.get(roomId).push(newMessage);
+    // Store message in Redis
+    await messages.push(roomId, newMessage);
 
     // Update room last activity
     room.lastActivity = newMessage.timestamp;
@@ -314,6 +350,7 @@ router.post('/rooms/:roomId/messages', authUser, [
       sender: userName,
       timestamp: newMessage.timestamp
     };
+    await chatRooms.set(roomId, room);
 
     // In a real implementation, emit socket event here
     // io.to(roomId).emit('new_message', newMessage);
@@ -347,7 +384,7 @@ router.post('/rooms/:roomId/join', authUser, async (req, res) => {
     const userId = req.user.id;
     const userRole = req.user.role;
 
-    const room = chatRooms.get(roomId);
+    const room = await chatRooms.get(roomId);
     if (!room) {
       return res.status(404).json({
         success: false,
@@ -422,7 +459,7 @@ router.get('/rooms/:roomId/participants', authUser, async (req, res) => {
     const { roomId } = req.params;
     const userId = req.user.id;
 
-    const room = chatRooms.get(roomId);
+    const room = await chatRooms.get(roomId);
     if (!room) {
       return res.status(404).json({
         success: false,
@@ -656,16 +693,19 @@ router.get('/team-members', authUser, async (req, res) => {
  */
 router.get('/stats', adminMiddleware, async (req, res) => {
   try {
-    const totalRooms = chatRooms.size;
-    const totalMessages = Array.from(messages.values()).reduce((sum, msgs) => sum + msgs.length, 0);
+    const allRooms = await chatRooms.entries();
+    const totalRooms = allRooms.length;
+    let totalMessages = 0;
     const activeUsersCount = activeUsers.size;
     
     const roomStats = {};
-    for (const [roomId, room] of chatRooms.entries()) {
+    for (const [roomId, room] of allRooms) {
+      const roomMsgs = await messages.get(roomId) || [];
+      totalMessages += roomMsgs.length;
       roomStats[roomId] = {
         type: room.type,
         participants: room.participants.length,
-        messages: messages.get(roomId)?.length || 0,
+        messages: roomMsgs.length,
         lastActivity: room.lastActivity
       };
     }
@@ -692,16 +732,19 @@ router.get('/stats', adminMiddleware, async (req, res) => {
 // Chat statistics route
 router.get('/chat-stats', authUser, async (req, res) => {
   try {
-    const totalRooms = chatRooms.size;
-    const totalMessages = Array.from(messages.values()).reduce((sum, msgs) => sum + msgs.length, 0);
+    const allRooms = await chatRooms.entries();
+    const totalRooms = allRooms.length;
+    let totalMessages = 0;
     const activeUsersCount = activeUsers.size;
     
     const roomStats = {};
-    for (const [roomId, room] of chatRooms.entries()) {
+    for (const [roomId, room] of allRooms) {
+      const roomMsgs = await messages.get(roomId) || [];
+      totalMessages += roomMsgs.length;
       roomStats[roomId] = {
         type: room.type,
         participants: room.participants.length,
-        messages: messages.get(roomId)?.length || 0,
+        messages: roomMsgs.length,
         lastActivity: room.lastActivity
       };
     }
@@ -733,8 +776,9 @@ router.get('/chat-stats', authUser, async (req, res) => {
 router.get('/dashboard/overview', adminMiddleware, async (req, res) => {
   try {
     // Real-time statistics
-    const totalRooms = chatRooms.size;
-    const totalMessages = Array.from(messages.values()).reduce((sum, msgs) => sum + msgs.length, 0);
+    const allRooms = await chatRooms.entries();
+    const totalRooms = allRooms.length;
+    let totalMessages = 0;
     const activeUsersCount = activeUsers.size;
     const onlineTeamMembers = Array.from(activeUsers.entries())
       .filter(([userId, userData]) => ['admin', 'doctor', 'support', 'nurse'].includes(userData.role))
@@ -745,8 +789,13 @@ router.get('/dashboard/overview', adminMiddleware, async (req, res) => {
     let recentMessages = 0;
     let recentRooms = 0;
     
-    for (const [roomId, roomMessages] of messages.entries()) {
-      const room = chatRooms.get(roomId);
+    // Build messages map for analytics
+    const allMessages = [];
+    for (const [roomId, room] of allRooms) {
+      const roomMessages = await messages.get(roomId) || [];
+      totalMessages += roomMessages.length;
+      allMessages.push([roomId, roomMessages]);
+      
       if (room && new Date(room.createdAt) > last24Hours) {
         recentRooms++;
       }
@@ -757,9 +806,9 @@ router.get('/dashboard/overview', adminMiddleware, async (req, res) => {
     
     // Response time analytics
     const avgResponseTimes = [];
-    for (const [roomId, roomMessages] of messages.entries()) {
+    for (const [roomId, roomMessages] of allMessages) {
       if (roomMessages.length > 1) {
-        const room = chatRooms.get(roomId);
+        const room = allRooms.find(([id]) => id === roomId)?.[1];
         if (room?.type === 'user_team') {
           // Calculate average response time between user and team messages
           let responseTimes = [];
@@ -850,7 +899,9 @@ router.get('/dashboard/analytics', adminMiddleware, [
     const roomMessageCounts = new Map();
     let totalMessagesInPeriod = 0;
 
-    for (const [roomId, roomMessages] of messages.entries()) {
+    const allRooms = await chatRooms.entries();
+    for (const [roomId, room] of allRooms) {
+      const roomMessages = await messages.get(roomId) || [];
       for (const msg of roomMessages) {
         const ts = new Date(msg.timestamp);
         if (ts > windowStart) {
@@ -864,7 +915,7 @@ router.get('/dashboard/analytics', adminMiddleware, [
 
     // New rooms by day
     const roomsByDayMap = new Map();
-    for (const room of chatRooms.values()) {
+    for (const [roomId, room] of allRooms) {
       const createdAt = new Date(room.createdAt);
       if (createdAt > windowStart) {
         const key = dayKey(createdAt);
@@ -880,18 +931,18 @@ router.get('/dashboard/analytics', adminMiddleware, [
       .sort((a, b) => a[0].localeCompare(b[0]))
       .map(([date, count]) => ({ date, count }));
 
-    const topRooms = Array.from(roomMessageCounts.entries())
+    const topRooms = await Promise.all(Array.from(roomMessageCounts.entries())
       .sort((a, b) => b[1] - a[1])
       .slice(0, 10)
-      .map(([roomId, count]) => {
-        const room = chatRooms.get(roomId);
+      .map(async ([roomId, count]) => {
+        const room = await chatRooms.get(roomId);
         return {
           roomId,
           title: room?.title || room?.name || roomId,
           type: room?.type,
           messages: count
         };
-      });
+      }));
 
     res.json({
       success: true,
@@ -945,7 +996,8 @@ router.get('/dashboard/conversations', adminMiddleware, [
     const statusFilter = req.query.status || 'all';
     const searchQuery = req.query.search || '';
     
-    let filteredRooms = Array.from(chatRooms.values());
+    const allRooms = await chatRooms.values();
+    let filteredRooms = [...allRooms];
     
     // Apply type filter
     if (typeFilter !== 'all') {
@@ -955,47 +1007,56 @@ router.get('/dashboard/conversations', adminMiddleware, [
     // Apply status filter (active = has messages in last 24 hours)
     if (statusFilter !== 'all') {
       const last24Hours = new Date(Date.now() - 24 * 60 * 60 * 1000);
-      filteredRooms = filteredRooms.filter(room => {
-        const roomMessages = messages.get(room.id) || [];
+      const filteredWithStatus = [];
+      for (const room of filteredRooms) {
+        const roomMessages = await messages.get(room.id) || [];
         const hasRecentActivity = roomMessages.some(msg => 
           new Date(msg.timestamp) > last24Hours
         );
-        return statusFilter === 'active' ? hasRecentActivity : !hasRecentActivity;
-      });
+        if (statusFilter === 'active' ? hasRecentActivity : !hasRecentActivity) {
+          filteredWithStatus.push(room);
+        }
+      }
+      filteredRooms = filteredWithStatus;
     }
     
     // Apply search filter
     if (searchQuery) {
-      filteredRooms = filteredRooms.filter(room => {
-        const roomMessages = messages.get(room.id) || [];
+      const filteredWithSearch = [];
+      for (const room of filteredRooms) {
+        const roomMessages = await messages.get(room.id) || [];
         const titleMatch = room.title.toLowerCase().includes(searchQuery.toLowerCase());
         const messageMatch = roomMessages.some(msg => 
           msg.message.toLowerCase().includes(searchQuery.toLowerCase()) ||
           msg.userName.toLowerCase().includes(searchQuery.toLowerCase())
         );
-        return titleMatch || messageMatch;
-      });
+        if (titleMatch || messageMatch) {
+          filteredWithSearch.push(room);
+        }
+      }
+      filteredRooms = filteredWithSearch;
     }
     
     // Sort by last activity
-    filteredRooms.sort((a, b) => {
-      const aMessages = messages.get(a.id) || [];
-      const bMessages = messages.get(b.id) || [];
-      const aLastActivity = aMessages.length > 0 ? new Date(aMessages[aMessages.length - 1].timestamp) : new Date(a.createdAt);
-      const bLastActivity = bMessages.length > 0 ? new Date(bMessages[bMessages.length - 1].timestamp) : new Date(b.createdAt);
-      return bLastActivity.getTime() - aLastActivity.getTime();
-    });
+    const roomsWithActivity = await Promise.all(filteredRooms.map(async (room) => {
+      const roomMessages = await messages.get(room.id) || [];
+      const lastActivity = roomMessages.length > 0 
+        ? new Date(roomMessages[roomMessages.length - 1].timestamp) 
+        : new Date(room.createdAt);
+      return { room, lastActivity, roomMessages };
+    }));
+    
+    roomsWithActivity.sort((a, b) => b.lastActivity.getTime() - a.lastActivity.getTime());
     
     // Pagination
-    const totalRooms = filteredRooms.length;
+    const totalRooms = roomsWithActivity.length;
     const totalPages = Math.ceil(totalRooms / limit);
     const startIndex = (page - 1) * limit;
     const endIndex = startIndex + limit;
-    const paginatedRooms = filteredRooms.slice(startIndex, endIndex);
+    const paginatedRooms = roomsWithActivity.slice(startIndex, endIndex);
     
     // Enrich room data
-    const enrichedRooms = paginatedRooms.map(room => {
-      const roomMessages = messages.get(room.id) || [];
+    const enrichedRooms = paginatedRooms.map(({ room, roomMessages }) => {
       const lastMessage = roomMessages.length > 0 ? roomMessages[roomMessages.length - 1] : null;
       const messageCount = roomMessages.length;
       const participants = room.participants.map(userId => {
@@ -1072,7 +1133,7 @@ router.get('/dashboard/conversation/:roomId', adminMiddleware, [
     const page = parseInt(req.query.page) || 1;
     const limit = parseInt(req.query.limit) || 50;
     
-    const room = chatRooms.get(roomId);
+    const room = await chatRooms.get(roomId);
     if (!room) {
       return res.status(404).json({
         success: false,
@@ -1080,7 +1141,7 @@ router.get('/dashboard/conversation/:roomId', adminMiddleware, [
       });
     }
     
-    const roomMessages = messages.get(roomId) || [];
+    const roomMessages = await messages.get(roomId) || [];
     
     // Pagination
     const totalMessages = roomMessages.length;
@@ -1157,9 +1218,10 @@ router.post('/dashboard/broadcast', adminMiddleware, [
     
     let roomsToBroadcast;
     if (targetRooms && targetRooms.length > 0) {
-      roomsToBroadcast = targetRooms.filter(roomId => chatRooms.has(roomId));
+      const allRoomKeys = await chatRooms.keys();
+      roomsToBroadcast = targetRooms.filter(roomId => allRoomKeys.includes(roomId));
     } else {
-      roomsToBroadcast = Array.from(chatRooms.keys());
+      roomsToBroadcast = await chatRooms.keys();
     }
     
     const broadcastMessage = {
@@ -1179,10 +1241,8 @@ router.post('/dashboard/broadcast', adminMiddleware, [
     let broadcastCount = 0;
     
     for (const roomId of roomsToBroadcast) {
-      const roomMessages = messages.get(roomId) || [];
       const messageWithRoomId = { ...broadcastMessage, roomId, id: `${broadcastMessage.id}_${roomId}` };
-      roomMessages.push(messageWithRoomId);
-      messages.set(roomId, roomMessages);
+      await messages.push(roomId, messageWithRoomId);
       broadcastCount++;
     }
     

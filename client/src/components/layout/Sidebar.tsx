@@ -112,7 +112,7 @@ const teamSidebarItems: SidebarItem[] = [
   { icon: Building, label: "Clinic Management", path: "/team/clinic-management", category: "Management" },
   { icon: FlaskConical, label: "Lab Management", path: "/team/lab-management", category: "Management" },
   { icon: Calendar, label: "Appointments", path: "/team/appointments", category: "Operations" },
-  { icon: MessageSquare, label: "Chat Dashboard", path: "/team/chat", category: "Support" },
+  { icon: MessageSquare, label: "Chat Dashboard", path: "/admin/chat", category: "Support" },
   { icon: Pill, label: "Pharmacies", path: "/team/pharmacy-management", category: "Management" },
   { icon: Heart, label: "Health Plans", path: "/team/health-plans", category: "Business" },
   { icon: Database, label: "Activity Logs", path: "/team/activity", category: "Security" },
@@ -275,6 +275,7 @@ export function Sidebar() {
             alt={BRAND.name} 
             className="h-10 w-auto object-contain"
           />
+          <span className="text-xl font-bold text-white tracking-tight">{BRAND.name}</span>
         </div>
 
         {/* Sidebar Links */}

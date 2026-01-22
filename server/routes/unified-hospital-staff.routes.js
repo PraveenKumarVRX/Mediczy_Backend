@@ -9,6 +9,7 @@
 import express from 'express';
 import { body, query } from 'express-validator';
 import { authUser } from '../middleware/auth.middleware.js';
+import { authLimiter } from '../middleware/rateLimiter.middleware.js';
 import {
   doctorSignup,
   doctorLogin,
@@ -72,6 +73,7 @@ router.post(
  */
 router.post(
   '/doctor/login',
+  authLimiter,
   [
     body('hospital_id').optional().trim(),
     body('hospital_slug').optional().trim(),
@@ -112,6 +114,7 @@ router.post(
  */
 router.post(
   '/nurse/login',
+  authLimiter,
   [
     body('hospital_id').optional().trim(),
     body('hospital_slug').optional().trim(),
@@ -151,6 +154,7 @@ router.post(
  */
 router.post(
   '/assistant/login',
+  authLimiter,
   [
     body('hospital_id').optional().trim(),
     body('hospital_slug').optional().trim(),
@@ -190,6 +194,7 @@ router.post(
  */
 router.post(
   '/insurance-coordinator/login',
+  authLimiter,
   [
     body('hospital_id').optional().trim(),
     body('hospital_slug').optional().trim(),

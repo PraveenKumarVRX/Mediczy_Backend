@@ -5,7 +5,11 @@
 
 import express from 'express';
 import bcrypt from 'bcrypt';
-import jwt from 'jsonwebtoken'; import { JWT_CONFIG } from '../config/auth.config.js'; import { HomecareProvider } from '../models/index.js';
+import jwt from 'jsonwebtoken';
+import { JWT_CONFIG } from '../config/auth.config.js';
+import { HomecareProvider } from '../models/index.js';
+import { authLimiter } from '../middleware/rateLimiter.middleware.js';
+import { auditLoginAttempt } from '../middleware/audit.middleware.js';
 
 const router = express.Router();
 
@@ -13,9 +17,10 @@ const router = express.Router();
  * POST /api/homecare/login
  * Homecare provider login
  */
-router.post('/login', async (req, res) => {
+router.post('/login', authLimiter, async (req, res) => {
   try {
     const { email, password } = req.body;
+    const normalizedEmail = String(email || '').toLowerCase();
 
     if (!email || !password) {
       return res.status(400).json({
@@ -26,12 +31,13 @@ router.post('/login', async (req, res) => {
 
     // Find homecare by email - select only needed fields for faster query
     const homecare = await HomecareProvider.findOne({
-      where: { email },
+      where: { email: normalizedEmail },
       attributes: ['id', 'name', 'email', 'password', 'phone', 'services', 'tenant_id'],
       raw: true
     });
 
     if (!homecare) {
+      await auditLoginAttempt(req, null, normalizedEmail, false, 'Homecare provider not found');
       return res.status(401).json({
         success: false,
         message: 'Invalid credentials'
@@ -42,6 +48,7 @@ router.post('/login', async (req, res) => {
     const isValidPassword = await bcrypt.compare(password, homecare.password);
 
     if (!isValidPassword) {
+      await auditLoginAttempt(req, homecare.id, normalizedEmail, false, 'Invalid password');
       return res.status(401).json({
         success: false,
         message: 'Invalid credentials'
@@ -59,6 +66,8 @@ router.post('/login', async (req, res) => {
       JWT_CONFIG.SECRET,
       { expiresIn: '7d' }
     );
+
+    await auditLoginAttempt(req, homecare.id, normalizedEmail, true);
 
     res.json({
       success: true,

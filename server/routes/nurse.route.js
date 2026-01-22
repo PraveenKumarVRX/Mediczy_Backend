@@ -7,6 +7,10 @@ import Medication from '../models/medication.model.intelligent.js';
 import PatientNote from '../models/patientNote.model.intelligent.js';
 import VitalsRecord from '../models/vitalsRecord.model.intelligent.js';
 import { JWT_CONFIG } from '../config/auth.config.js';
+import { authLimiter } from '../middleware/rateLimiter.middleware.js';
+import { auditLoginAttempt } from '../middleware/audit.middleware.js';
+import userModel from '../models/user.model.intelligent.js';
+import { Op } from 'sequelize';
 
 const router = express.Router();
 
@@ -67,7 +71,7 @@ export const authNurse = async (req, res, next) => {
 };
 
 // Nurse login endpoint
-router.post('/login', [
+router.post('/login', authLimiter, [
   body('email').isEmail().withMessage('Must be a valid email'),
   body('password').notEmpty().withMessage('Password is required'),
 ], async (req, res) => {
@@ -80,11 +84,12 @@ router.post('/login', [
 
     // Check database for nurse
     console.log('🟢 [Nurse Login] Querying database...');
+    const normalizedEmail = String(email).toLowerCase();
     let nurse;
     try {
       nurse = await Nurse.findOne({
         where: {
-          email
+          email: normalizedEmail
         }
       });
       console.log('🟢 [Nurse Login] Query completed');
@@ -95,6 +100,7 @@ router.post('/login', [
     console.log('🟢 [Nurse Login] Nurse found:', !!nurse);
 
     if (!nurse) {
+      await auditLoginAttempt(req, null, normalizedEmail, false, 'Nurse not found');
       return res.status(401).json({
         success: false,
         message: 'Invalid email or password'
@@ -111,6 +117,7 @@ router.post('/login', [
     const isPasswordValid = await nurse.comparePassword(password);
 
     if (!isPasswordValid) {
+      await auditLoginAttempt(req, nurse.id, normalizedEmail, false, 'Invalid password');
       return res.status(401).json({
         success: false,
         message: 'Invalid email or password'
@@ -132,6 +139,8 @@ router.post('/login', [
       JWT_CONFIG.SECRET,
       { expiresIn: '8h' }
     );
+
+    await auditLoginAttempt(req, nurse.id, normalizedEmail, true);
 
     res.status(200).json({
       success: true,
@@ -271,36 +280,23 @@ router.put('/profile', authNurse, async (req, res) => {
   }
 });
 
-// Get assigned patients (mock for now)
+// Get nurse patient list
 router.get('/patients', authNurse, async (req, res) => {
   try {
-    // Mock patient data
-    const patients = [
-      {
-        id: 'P001',
-        name: 'John Doe',
-        age: 45,
-        ward: 'Emergency Ward',
-        bedNumber: 'ER-12',
-        condition: 'Stable',
-        admissionDate: new Date().toISOString(),
-        vitalsLastRecorded: '2 hours ago'
+    const patients = await userModel.findAll({
+      where: {
+        role: { [Op.in]: ['patient', 'user'] },
+        status: 'active'
       },
-      {
-        id: 'P002',
-        name: 'Jane Smith',
-        age: 32,
-        ward: 'Emergency Ward',
-        bedNumber: 'ER-15',
-        condition: 'Critical',
-        admissionDate: new Date().toISOString(),
-        vitalsLastRecorded: '30 minutes ago'
-      }
-    ];
+      attributes: { exclude: ['password'] },
+      order: [['createdAt', 'DESC']],
+      limit: 100
+    });
 
     res.status(200).json({
       success: true,
-      patients
+      patients,
+      count: patients.length
     });
   } catch (error) {
     console.error('Get patients error:', error);
@@ -356,9 +352,10 @@ router.post('/vitals', authNurse, async (req, res) => {
       }
     }
 
+    const recordedById = Number.isFinite(Number(req.nurse.id)) ? Number(req.nurse.id) : null;
     const record = await VitalsRecord.create({
       userId: parsedPatientId,
-      recordedBy: req.nurse.id,
+      recordedBy: recordedById,
       temperature: vitals?.temperature ?? null,
       heartRate: vitals?.pulse ?? vitals?.heartRate ?? null,
       bloodPressureSystolic: systolic,
@@ -369,7 +366,11 @@ router.post('/vitals', authNurse, async (req, res) => {
       respiratoryRate: vitals?.respiratoryRate ?? null,
       notes: vitals?.notes ?? null,
       source: 'nurse',
-      recordedAt: new Date()
+      recordedAt: new Date(),
+      metadata: {
+        nurseId: req.nurse.id,
+        recordedByRole: 'nurse'
+      }
     });
 
     res.status(200).json({
@@ -458,13 +459,21 @@ router.get('/medications/:patientId', authNurse, async (req, res) => {
 // Record patient note
 router.post('/notes', authNurse, async (req, res) => {
   try {
-    const { patientId, note, category } = req.body;
+    const { patientId, note, category, title } = req.body;
+    const parsedPatientId = Number(patientId);
+    if (!Number.isFinite(parsedPatientId)) {
+      return res.status(400).json({ success: false, message: 'Patient ID must be a valid number' });
+    }
+
     const record = await PatientNote.create({
-      patientId,
-      nurseId: req.nurse.id,
-      note,
-      category,
-      createdAt: new Date()
+      patientId: parsedPatientId,
+      type: category || 'general',
+      title: title || 'Nurse Note',
+      content: note,
+      metadata: {
+        nurseId: req.nurse.id,
+        recordedByRole: 'nurse'
+      }
     });
     res.status(200).json({ success: true, message: 'Note saved', data: record });
   } catch (error) {

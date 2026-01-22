@@ -12,6 +12,7 @@ import { Badge } from '@/components/ui/badge';
 import { Checkbox } from '@/components/ui/checkbox';
 import { useToast } from '@/hooks/use-toast';
 import api from '@/utils/api';
+import { loadHospitalStore, saveHospitalStore } from '@/utils/hospitalStorage';
 import HospitalLayout from '@/components/hospital/HospitalLayout';
 import {
   Scan, Plus, Search, ArrowLeft, Calendar, Clock,
@@ -184,8 +185,7 @@ const HospitalImagingOrder = () => {
     }
   ];
 
-  // Sample orders data
-  const orders: ImagingOrder[] = [
+  const initialOrders: ImagingOrder[] = [
     {
       id: 'ORD001',
       orderNumber: 'IMG-2024-001234',
@@ -218,6 +218,10 @@ const HospitalImagingOrder = () => {
       totalAmount: 1200
     }
   ];
+
+  const [orders, setOrders] = useState<ImagingOrder[]>(
+    () => loadHospitalStore('imaging-orders', initialOrders)
+  );
 
   // Sample patients data
   const patients = [
@@ -263,9 +267,7 @@ const HospitalImagingOrder = () => {
 
     setLoading(true);
     try {
-      // Create imaging test order via API
       const totalAmount = selectedTests.reduce((sum, test) => sum + test.price, 0);
-      
       const orderData = {
         patientId: selectedPatient.id,
         tests: selectedTests.map(test => test.id),
@@ -274,11 +276,38 @@ const HospitalImagingOrder = () => {
         totalAmount
       };
 
-      const { data } = await api.post(
-        '/hospital/imaging-orders',
-        orderData,
-        { headers: hospitalHeaders() }
-      );
+      try {
+        await api.post(
+          '/hospital/imaging-orders',
+          orderData,
+          { headers: hospitalHeaders() }
+        );
+      } catch {
+        // Allow local persistence if API is unavailable
+      }
+
+      const createdOrder: ImagingOrder = {
+        id: `IMG-${Date.now()}`,
+        orderNumber: `IMG-${Date.now().toString().slice(-6)}`,
+        patientId: selectedPatient.id,
+        patientName: selectedPatient.name,
+        uhid: selectedPatient.uhid,
+        doctorName: 'On Call',
+        department: 'General',
+        tests: selectedTests,
+        priority,
+        status: 'Ordered',
+        orderDate: new Date().toISOString().slice(0, 10),
+        scheduledDate: new Date().toISOString().slice(0, 10),
+        notes: clinicalNotes,
+        totalAmount
+      };
+
+      setOrders(prev => {
+        const updated = [createdOrder, ...prev];
+        saveHospitalStore('imaging-orders', updated);
+        return updated;
+      });
 
       toast({
         title: "Imaging Test Ordered",

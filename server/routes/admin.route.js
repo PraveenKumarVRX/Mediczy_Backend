@@ -1,6 +1,7 @@
 import express from 'express';
 import { body } from 'express-validator';
 import { authUser, requireRole } from '../middleware/auth.middleware.js';
+import { authLimiter } from '../middleware/rateLimiter.middleware.js';
 import bcrypt from 'bcrypt';
 import userModel, { generateAuthTokenForUser } from '../models/user.model.intelligent.js';
 import { Corporate } from '../models/crm.model.intelligent.js';
@@ -9,6 +10,7 @@ import Nurse from '../models/nurse.model.intelligent.js';
 import Assistant from '../models/assistant.model.intelligent.js';
 import { Op } from 'sequelize';
 import welcomeEmailService from '../services/welcome-email.service.js';
+import { postgresSequelize } from '../db/postgres-sequelize.js';
 import { 
   adminLogin, 
   adminProfile,
@@ -188,7 +190,7 @@ const demoAdminCorporates = [
 ];
 
 // Admin login
-router.post('/login', [
+router.post('/login', authLimiter, [
   body('email').isEmail(),
   body('password').isLength({ min: 4 })
 ], adminLogin);
@@ -297,8 +299,74 @@ router.post('/health-risk/inference', authUser, requireRole('admin'), runHealthR
 
 router.get('/labs', authUser, requireRole('admin'), listLabs);
 router.get('/pharmacies', authUser, requireRole('admin'), listPharmacies);
-router.get('/corporates', authUser, requireRole('admin'), (req, res) => {
-  return res.json({ success: true, data: demoAdminCorporates, total: demoAdminCorporates.length });
+
+/**
+ * Get Corporates - Filters by user associations for team users
+ * Admin users see all corporates, team users see only assigned corporates
+ */
+router.get('/corporates', authUser, requireRole(['admin', 'team']), async (req, res) => {
+  try {
+    const userId = req.user.id;
+    const isTeam = req.user.isTeam;
+    const isAdmin = req.user.isAdmin;
+    
+    let corporates;
+    
+    if (isTeam && !isAdmin) {
+      // Team users: Get only assigned corporates via user_associations
+      const [assigned] = await postgresSequelize.query(`
+        SELECT c.* FROM corporates c
+        INNER JOIN user_associations ua ON ua."entityId" = c.id
+        WHERE ua."userId" = :userId 
+        AND ua."entityType" = 'corporate'
+        AND ua.status = 'active'
+        ORDER BY c."companyName" ASC
+      `, {
+        replacements: { userId },
+        type: postgresSequelize.QueryTypes.SELECT
+      });
+      
+      corporates = Array.isArray(assigned) ? assigned : [assigned].filter(Boolean);
+      
+      console.log(`[Corporates] Team user ${req.user.email} - Found ${corporates.length} assigned corporates`);
+    } else {
+      // Admin users: Get all corporates from database
+      const [all] = await postgresSequelize.query(`
+        SELECT * FROM corporates ORDER BY "companyName" ASC
+      `);
+      
+      corporates = all || [];
+      console.log(`[Corporates] Admin user ${req.user.email} - Found ${corporates.length} total corporates`);
+    }
+    
+    // Map to expected format
+    const formattedCorporates = corporates.map(c => ({
+      id: c.id?.toString() || c.uid,
+      companyName: c.companyName,
+      contactPerson: c.contactPerson,
+      email: c.email,
+      phoneNumber: c.phoneNumber,
+      industry: c.industry,
+      employeeCount: c.employeeCount || 0,
+      packageType: c.packageType || 'Standard',
+      billingCycle: c.billingCycle || 'Yearly',
+      status: c.status || 'Active',
+      gstNumber: c.gstNumber,
+      panNumber: c.panNumber,
+      createdAt: c.createdAt
+    }));
+    
+    return res.json({ 
+      success: true, 
+      data: formattedCorporates, 
+      total: formattedCorporates.length,
+      isFiltered: isTeam && !isAdmin
+    });
+  } catch (error) {
+    console.error('[Corporates] Error fetching corporates:', error);
+    // Fallback to demo data on error
+    return res.json({ success: true, data: demoAdminCorporates, total: demoAdminCorporates.length });
+  }
 });
 
 /**
@@ -667,18 +735,388 @@ router.delete('/assistants/:id', authUser, requireRole('admin'), async (req, res
 });
 
 // Corporate admin stub create for login/config
-router.post('/corporates', authUser, requireRole('admin'), (req, res) => {
-  const corporate = req.body?.corporate || req.body;
-  return res.status(201).json({
-    success: true,
-    message: 'Corporate stub created (no persistence)',
-    corporate: {
-      id: `corp_${Date.now()}`,
-      isActive: true,
-      createdAt: new Date().toISOString(),
-      ...corporate,
-    },
-  });
+router.post('/corporates', authUser, requireRole(['admin', 'team']), async (req, res) => {
+  try {
+    const corporateData = req.body?.corporate || req.body;
+    const { companyName, contactPerson, email, phoneNumber, industry, employeeCount, packageType, gstNumber, panNumber, status } = corporateData;
+    
+    if (!companyName || !email) {
+      return res.status(400).json({
+        success: false,
+        message: 'Company name and email are required'
+      });
+    }
+    
+    // Check if corporate with this email already exists
+    const [existing] = await postgresSequelize.query(`
+      SELECT id FROM corporates WHERE email = :email
+    `, {
+      replacements: { email: email.toLowerCase() },
+      type: postgresSequelize.QueryTypes.SELECT
+    });
+    
+    if (existing && existing.length > 0) {
+      return res.status(409).json({
+        success: false,
+        message: 'Corporate with this email already exists'
+      });
+    }
+    
+    // Insert new corporate
+    const [result] = await postgresSequelize.query(`
+      INSERT INTO corporates ("companyName", "contactPerson", email, "phoneNumber", industry, "employeeCount", "packageType", "gstNumber", "panNumber", status, "createdAt", "updatedAt")
+      VALUES (:companyName, :contactPerson, :email, :phoneNumber, :industry, :employeeCount, :packageType, :gstNumber, :panNumber, :status, NOW(), NOW())
+      RETURNING id, uid, "companyName", email, status
+    `, {
+      replacements: {
+        companyName,
+        contactPerson: contactPerson || companyName,
+        email: email.toLowerCase(),
+        phoneNumber: phoneNumber || '',
+        industry: industry || 'Other',
+        employeeCount: parseInt(employeeCount) || 0,
+        packageType: packageType || 'Standard',
+        gstNumber: gstNumber || null,
+        panNumber: panNumber || null,
+        status: status || 'Active'
+      },
+      type: postgresSequelize.QueryTypes.INSERT
+    });
+    
+    const newCorporate = result && result[0] ? result[0] : { id: Date.now() };
+    
+    // If team user created, link them to the corporate
+    if (req.user.isTeam && !req.user.isAdmin && newCorporate.id) {
+      await postgresSequelize.query(`
+        INSERT INTO user_associations ("userId", "entityType", "entityId", role, "isPrimary", status, "startDate", "createdAt", "updatedAt")
+        VALUES (:userId, 'corporate', :corporateId, 'manager', true, 'active', NOW(), NOW(), NOW())
+        ON CONFLICT DO NOTHING
+      `, {
+        replacements: { userId: req.user.id, corporateId: newCorporate.id }
+      });
+    }
+    
+    console.log(`[Corporates] Created corporate ${companyName} by ${req.user.email}`);
+    
+    return res.status(201).json({
+      success: true,
+      message: 'Corporate created successfully',
+      corporate: {
+        id: newCorporate.id,
+        uid: newCorporate.uid,
+        companyName: newCorporate.companyName || companyName,
+        email: newCorporate.email || email,
+        status: newCorporate.status || 'Active',
+        isActive: true,
+        createdAt: new Date().toISOString()
+      },
+    });
+  } catch (error) {
+    console.error('Failed to create corporate:', error);
+    return res.status(500).json({
+      success: false,
+      message: 'Failed to create corporate',
+      error: error.message
+    });
+  }
+});
+
+/**
+ * Create Corporate HR/Admin User
+ * POST /api/admin/corporate-users
+ * Creates a user account with corporate_admin role and links to corporate
+ */
+router.post('/corporate-users', authUser, requireRole(['admin', 'team']), async (req, res) => {
+  try {
+    const { corporateId, firstName, lastName, email, phoneNumber, password } = req.body;
+    
+    if (!corporateId || !email || !password) {
+      return res.status(400).json({
+        success: false,
+        message: 'corporateId, email, and password are required'
+      });
+    }
+    
+    const normalizedEmail = email.toLowerCase().trim();
+    
+    // Check if user already exists
+    const [existingUser] = await postgresSequelize.query(`
+      SELECT id FROM users WHERE email = :email
+    `, {
+      replacements: { email: normalizedEmail },
+      type: postgresSequelize.QueryTypes.SELECT
+    });
+    
+    if (existingUser && existingUser.length > 0) {
+      return res.status(409).json({
+        success: false,
+        message: 'User with this email already exists'
+      });
+    }
+    
+    // Verify corporate exists
+    const [corporate] = await postgresSequelize.query(`
+      SELECT id, "companyName" FROM corporates WHERE id = :corporateId
+    `, {
+      replacements: { corporateId },
+      type: postgresSequelize.QueryTypes.SELECT
+    });
+    
+    if (!corporate || corporate.length === 0) {
+      return res.status(404).json({
+        success: false,
+        message: 'Corporate not found'
+      });
+    }
+    
+    // Hash password
+    const hashedPassword = await bcrypt.hash(password, 10);
+    
+    // Create user
+    const [userResult] = await postgresSequelize.query(`
+      INSERT INTO users (
+        email, password, "firstName", "lastName", role, 
+        "isCorporate", "isAdmin", "isTeam", 
+        "dateOfBirth", "phoneNumber", gender,
+        "createdAt", "updatedAt"
+      )
+      VALUES (
+        :email, :password, :firstName, :lastName, 'corporate_admin', 
+        true, false, false,
+        '1990-01-01', :phoneNumber, 'Male',
+        NOW(), NOW()
+      )
+      RETURNING id, email, "firstName", "lastName", role
+    `, {
+      replacements: {
+        email: normalizedEmail,
+        password: hashedPassword,
+        firstName: firstName || 'HR',
+        lastName: lastName || 'Admin',
+        phoneNumber: phoneNumber || ''
+      },
+      type: postgresSequelize.QueryTypes.INSERT
+    });
+    
+    const newUser = userResult && userResult[0] ? userResult[0] : null;
+    
+    if (!newUser) {
+      return res.status(500).json({
+        success: false,
+        message: 'Failed to create user'
+      });
+    }
+    
+    // Create user association to corporate
+    await postgresSequelize.query(`
+      INSERT INTO user_associations ("userId", "entityType", "entityId", role, "isPrimary", status, "startDate", "createdAt", "updatedAt")
+      VALUES (:userId, 'corporate', :corporateId, 'admin', true, 'active', NOW(), NOW(), NOW())
+      ON CONFLICT DO NOTHING
+    `, {
+      replacements: { userId: newUser.id, corporateId }
+    });
+    
+    // Set password on corporate record too
+    await postgresSequelize.query(`
+      UPDATE corporates SET password = :password WHERE id = :corporateId
+    `, {
+      replacements: { password: hashedPassword, corporateId }
+    });
+    
+    console.log(`[Corporate Users] Created HR admin ${normalizedEmail} for corporate ${corporate[0]?.companyName || corporateId}`);
+    
+    return res.status(201).json({
+      success: true,
+      message: 'Corporate HR admin created successfully',
+      user: {
+        id: newUser.id,
+        email: newUser.email,
+        firstName: newUser.firstName,
+        lastName: newUser.lastName,
+        role: 'corporate_admin',
+        corporateId
+      }
+    });
+  } catch (error) {
+    console.error('Failed to create corporate user:', error);
+    return res.status(500).json({
+      success: false,
+      message: 'Failed to create corporate HR admin',
+      error: error.message
+    });
+  }
+});
+
+/**
+ * Add Corporate Employees
+ * POST /api/admin/corporate-employees
+ * Creates user accounts for corporate employees with patient role
+ */
+router.post('/corporate-employees', authUser, requireRole(['admin', 'team', 'corporate_admin']), async (req, res) => {
+  try {
+    const { corporateId, employees } = req.body;
+    
+    if (!corporateId || !employees || !Array.isArray(employees) || employees.length === 0) {
+      return res.status(400).json({
+        success: false,
+        message: 'corporateId and employees array are required'
+      });
+    }
+    
+    // Verify corporate exists
+    const [corporate] = await postgresSequelize.query(`
+      SELECT id, "companyName" FROM corporates WHERE id = :corporateId
+    `, {
+      replacements: { corporateId },
+      type: postgresSequelize.QueryTypes.SELECT
+    });
+    
+    if (!corporate) {
+      return res.status(404).json({
+        success: false,
+        message: 'Corporate not found'
+      });
+    }
+    
+    const results = { created: [], failed: [] };
+    
+    for (const emp of employees) {
+      try {
+        const { firstName, lastName, email, phoneNumber, employeeId, department } = emp;
+        
+        if (!email || !firstName) {
+          results.failed.push({ email, reason: 'firstName and email are required' });
+          continue;
+        }
+        
+        const normalizedEmail = email.toLowerCase().trim();
+        
+        // Check if user exists
+        const [existingUser] = await postgresSequelize.query(`
+          SELECT id FROM users WHERE email = :email
+        `, {
+          replacements: { email: normalizedEmail },
+          type: postgresSequelize.QueryTypes.SELECT
+        });
+        
+        let userId;
+        
+        if (existingUser) {
+          // User exists, just create association
+          userId = existingUser.id;
+        } else {
+          // Create new user with default password (phone or employee id)
+          const defaultPassword = phoneNumber || employeeId || 'Welcome@123';
+          const hashedPassword = await bcrypt.hash(defaultPassword, 10);
+          
+          const [userResult] = await postgresSequelize.query(`
+            INSERT INTO users (
+              email, password, "firstName", "lastName", role, 
+              "isCorporate", "isAdmin", "isTeam", 
+              "dateOfBirth", "phoneNumber", gender,
+              "createdAt", "updatedAt"
+            )
+            VALUES (
+              :email, :password, :firstName, :lastName, 'patient', 
+              true, false, false,
+              '1990-01-01', :phoneNumber, 'Male',
+              NOW(), NOW()
+            )
+            RETURNING id
+          `, {
+            replacements: {
+              email: normalizedEmail,
+              password: hashedPassword,
+              firstName,
+              lastName: lastName || '',
+              phoneNumber: phoneNumber || ''
+            },
+            type: postgresSequelize.QueryTypes.INSERT
+          });
+          
+          userId = userResult && userResult[0] ? userResult[0].id : null;
+        }
+        
+        if (!userId) {
+          results.failed.push({ email, reason: 'Failed to create/find user' });
+          continue;
+        }
+        
+        // Create user association to corporate as employee
+        await postgresSequelize.query(`
+          INSERT INTO user_associations ("userId", "entityType", "entityId", role, "isPrimary", status, metadata, "startDate", "createdAt", "updatedAt")
+          VALUES (:userId, 'corporate', :corporateId, 'employee', false, 'active', :metadata, NOW(), NOW(), NOW())
+          ON CONFLICT ("userId", "entityType", "entityId") DO UPDATE SET
+            metadata = EXCLUDED.metadata,
+            "updatedAt" = NOW()
+        `, {
+          replacements: { 
+            userId, 
+            corporateId,
+            metadata: JSON.stringify({ employeeId, department })
+          }
+        });
+        
+        results.created.push({ email: normalizedEmail, userId });
+      } catch (empError) {
+        results.failed.push({ email: emp.email, reason: empError.message });
+      }
+    }
+    
+    console.log(`[Corporate Employees] Added ${results.created.length} employees to corporate ${corporateId}`);
+    
+    return res.status(201).json({
+      success: true,
+      message: `Added ${results.created.length} employees, ${results.failed.length} failed`,
+      results
+    });
+  } catch (error) {
+    console.error('Failed to add corporate employees:', error);
+    return res.status(500).json({
+      success: false,
+      message: 'Failed to add corporate employees',
+      error: error.message
+    });
+  }
+});
+
+/**
+ * Get Corporate Employees
+ * GET /api/admin/corporate-employees/:corporateId
+ */
+router.get('/corporate-employees/:corporateId', authUser, requireRole(['admin', 'team', 'corporate_admin']), async (req, res) => {
+  try {
+    const { corporateId } = req.params;
+    
+    const employees = await postgresSequelize.query(`
+      SELECT u.id, u.email, u."firstName", u."lastName", u."phoneNumber",
+             ua.metadata, ua.status, ua."startDate"
+      FROM users u
+      JOIN user_associations ua ON u.id = ua."userId"
+      WHERE ua."entityType" = 'corporate' 
+        AND ua."entityId" = :corporateId
+        AND ua.role = 'employee'
+      ORDER BY u."firstName"
+    `, {
+      replacements: { corporateId },
+      type: postgresSequelize.QueryTypes.SELECT
+    });
+    
+    return res.json({
+      success: true,
+      employees: employees.map(e => ({
+        ...e,
+        metadata: typeof e.metadata === 'string' ? JSON.parse(e.metadata) : e.metadata
+      }))
+    });
+  } catch (error) {
+    console.error('Failed to get corporate employees:', error);
+    return res.status(500).json({
+      success: false,
+      message: 'Failed to get corporate employees',
+      error: error.message
+    });
+  }
 });
 
 // Admin creates internal users
@@ -846,73 +1284,6 @@ router.post('/assistant-users', authUser, requireRole('admin'), async (req, res)
     return res.status(500).json({
       success: false,
       message: 'Failed to create assistant user',
-    });
-  }
-});
-// --------------------------------------------------------------------------
-// Corporate user provisioning helper (links login user to corporateId)
-// --------------------------------------------------------------------------
-
-router.post('/corporate-users', authUser, requireRole('admin'), async (req, res) => {
-  try {
-    const { corporateId, email, name, phoneNumber, password } = req.body || {};
-
-    if (!corporateId || !email || !password) {
-      return res.status(400).json({
-        success: false,
-        message: 'corporateId, email and password are required',
-      });
-    }
-
-    // Ensure email not already taken
-    const existing = await userModel.findOne({ where: { email } });
-    if (existing) {
-      return res.status(409).json({
-        success: false,
-        message: 'A user with this email already exists',
-      });
-    }
-
-    // Hash password
-    const hashedPassword = await bcrypt.hash(password, 10);
-
-    // Create corporate user in intelligent DB
-    const corporateUser = await userModel.create({
-      firstName: name || 'Corporate',
-      lastName: 'User',
-      email,
-      phoneNumber: phoneNumber || null,
-      password: hashedPassword,
-      role: 'corporate',
-      corporateId,
-      isAdmin: false,
-      isActive: true
-    });
-
-    const token = generateAuthTokenForUser(corporateUser);
-
-    return res.status(201).json({
-      success: true,
-      message: 'Corporate user created and linked to corporateId',
-      token,
-      user: {
-        id: corporateUser.id,
-        corporateId: corporateUser.corporateId,
-        email: corporateUser.email,
-        firstName: corporateUser.firstName,
-        lastName: corporateUser.lastName,
-        phoneNumber: corporateUser.phoneNumber,
-        role: corporateUser.role,
-        isActive: corporateUser.isActive,
-        createdAt: corporateUser.createdAt,
-        updatedAt: corporateUser.updatedAt
-      },
-    });
-  } catch (error) {
-    console.error('Create corporate user error:', error);
-    return res.status(500).json({
-      success: false,
-      message: 'Failed to create corporate user',
     });
   }
 });

@@ -6,6 +6,7 @@ import { Badge } from "@/components/ui/badge";
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { useToast } from "@/hooks/use-toast";
+import { loadHospitalStore, saveHospitalStore } from "@/utils/hospitalStorage";
 
 interface StatCardProps {
   title: string;
@@ -72,8 +73,8 @@ const buildSection = (
             <CardTitle className="text-lg text-slate-900">{title} Activity</CardTitle>
             <p className="text-sm text-muted-foreground">Latest updates across the module</p>
           </div>
-          {actionLabel && (
-            <Button variant="outline" size="sm" onClick={actionHandler || (() => alert(`${actionLabel} triggered`))}>{actionLabel}</Button>
+          {actionLabel && actionHandler && (
+            <Button variant="outline" size="sm" onClick={actionHandler}>{actionLabel}</Button>
           )}
         </CardHeader>
         <CardContent>
@@ -84,113 +85,227 @@ const buildSection = (
   </HospitalLayout>
 );
 
-export const HospitalAppointmentsPage = () =>
-  buildSection(
-    "Appointments",
-    "Track all scheduled visits and on-call requests",
-    [
+const ManagedSection = ({
+  storageKey,
+  title,
+  subtitle,
+  stats,
+  initialItems,
+  actionLabel,
+}: {
+  storageKey: string;
+  title: string;
+  subtitle: string;
+  stats: StatCardProps[];
+  initialItems: { label: string; meta?: string; status?: string }[];
+  actionLabel: string;
+}) => {
+  const { toast } = useToast();
+  const [items, setItems] = useState(() => loadHospitalStore(storageKey, initialItems));
+  const [showDialog, setShowDialog] = useState(false);
+  const [form, setForm] = useState({ label: "", meta: "", status: "" });
+
+  const handleSave = () => {
+    if (!form.label.trim()) {
+      toast({ title: "Missing Details", description: "Please provide a title for this update.", variant: "destructive" });
+      return;
+    }
+    const entry = {
+      label: form.label.trim(),
+      meta: form.meta.trim() || undefined,
+      status: form.status.trim() || undefined,
+    };
+    setItems((prev) => {
+      const next = [entry, ...prev];
+      saveHospitalStore(storageKey, next);
+      return next;
+    });
+    setForm({ label: "", meta: "", status: "" });
+    setShowDialog(false);
+    toast({ title: "Update Added", description: `${title} update saved.` });
+  };
+
+  return (
+    <HospitalLayout title={title} subtitle={subtitle}>
+      <div className="space-y-6">
+        <StatGrid items={stats} />
+        <Card>
+          <CardHeader className="flex flex-row items-center justify-between">
+            <div>
+              <CardTitle className="text-lg text-slate-900">{title} Activity</CardTitle>
+              <p className="text-sm text-muted-foreground">Latest updates across the module</p>
+            </div>
+            <Button variant="outline" size="sm" onClick={() => setShowDialog(true)}>
+              {actionLabel}
+            </Button>
+          </CardHeader>
+          <CardContent>
+            <PlaceholderList items={items} />
+          </CardContent>
+        </Card>
+      </div>
+
+      <Dialog open={showDialog} onOpenChange={setShowDialog}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>{actionLabel}</DialogTitle>
+            <DialogDescription>Add a new update for {title.toLowerCase()}.</DialogDescription>
+          </DialogHeader>
+          <div className="space-y-3">
+            <div className="space-y-1">
+              <label className="text-sm font-medium">Title *</label>
+              <Input
+                value={form.label}
+                onChange={(e) => setForm((prev) => ({ ...prev, label: e.target.value }))}
+                placeholder="Short summary"
+              />
+            </div>
+            <div className="space-y-1">
+              <label className="text-sm font-medium">Details</label>
+              <Input
+                value={form.meta}
+                onChange={(e) => setForm((prev) => ({ ...prev, meta: e.target.value }))}
+                placeholder="Optional details"
+              />
+            </div>
+            <div className="space-y-1">
+              <label className="text-sm font-medium">Status</label>
+              <Input
+                value={form.status}
+                onChange={(e) => setForm((prev) => ({ ...prev, status: e.target.value }))}
+                placeholder="Optional status"
+              />
+            </div>
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setShowDialog(false)}>Cancel</Button>
+            <Button onClick={handleSave}>Save</Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+    </HospitalLayout>
+  );
+};
+
+export const HospitalAppointmentsPage = () => (
+  <ManagedSection
+    storageKey="hospital-appointments-updates"
+    title="Appointments"
+    subtitle="Track all scheduled visits and on-call requests"
+    stats={[
       { title: "Today's Visits", value: "128", helper: "+12% vs yesterday" },
       { title: "Pending Approvals", value: "18" },
       { title: "Emergency Slots", value: "6" },
       { title: "Avg. Wait", value: "14 min" },
-    ],
-    [
+    ]}
+    initialItems={[
       { label: "Cardiology camp", meta: "32 patients • OPD Block A", status: "Running" },
       { label: "ICU consultations", meta: "12 critical cases", status: "Priority" },
       { label: "Telehealth queue", meta: "45 online", status: "Live" },
-    ],
-    "Create schedule"
-  );
+    ]}
+    actionLabel="Create schedule"
+  />
+);
 
-export const HospitalBedsPage = () =>
-  buildSection(
-    "Bed Management",
-    "Real-time capacity across wards and ICUs",
-    [
+export const HospitalBedsPage = () => (
+  <ManagedSection
+    storageKey="hospital-beds-updates"
+    title="Bed Management"
+    subtitle="Real-time capacity across wards and ICUs"
+    stats={[
       { title: "Total Beds", value: "980" },
       { title: "Occupied", value: "812" },
       { title: "ICU Available", value: "14" },
       { title: "Ventilators", value: "26" },
-    ],
-    [
+    ]}
+    initialItems={[
       { label: "Surgical ward", meta: "96% occupancy", status: "Full" },
       { label: "ICU east wing", meta: "2 beds free", status: "Critical" },
       { label: "Maternity block", meta: "78% occupancy", status: "Stable" },
-    ],
-    "Allocate bed"
-  );
+    ]}
+    actionLabel="Allocate bed"
+  />
+);
 
-export const HospitalPatientsPage = () =>
-  buildSection(
-    "Patients",
-    "Central registry for OPD, IPD, and emergency",
-    [
+export const HospitalPatientsPage = () => (
+  <ManagedSection
+    storageKey="hospital-patients-updates"
+    title="Patients"
+    subtitle="Central registry for OPD, IPD, and emergency"
+    stats={[
       { title: "Inpatients", value: "412" },
       { title: "Outpatients", value: "650" },
       { title: "Critical", value: "24" },
       { title: "Discharges", value: "58 today" },
-    ],
-    [
+    ]}
+    initialItems={[
       { label: "High risk follow-up", meta: "18 patients", status: "Due" },
       { label: "Insurance verification", meta: "45 pending", status: "Review" },
       { label: "Remote monitoring", meta: "120 devices online", status: "Live" },
-    ],
-    "Add patient"
-  );
+    ]}
+    actionLabel="Add patient"
+  />
+);
 
-export const HospitalDoctorsPage = () =>
-  buildSection(
-    "Doctors",
-    "Availability, schedules, and credentialing",
-    [
+export const HospitalDoctorsPage = () => (
+  <ManagedSection
+    storageKey="hospital-doctors-updates"
+    title="Doctors"
+    subtitle="Availability, schedules, and credentialing"
+    stats={[
       { title: "Total Doctors", value: "220" },
       { title: "On Duty", value: "132" },
       { title: "On Call", value: "18" },
       { title: "Leave", value: "12" },
-    ],
-    [
+    ]}
+    initialItems={[
       { label: "Cardiology roster", meta: "All shifts filled", status: "Ready" },
       { label: "Orthopedics", meta: "2 pending approvals", status: "Action" },
       { label: "Teleconsult pool", meta: "36 available", status: "Online" },
-    ],
-    "Invite doctor"
-  );
+    ]}
+    actionLabel="Invite doctor"
+  />
+);
 
-export const HospitalOpdIpdPage = () =>
-  buildSection(
-    "OPD / IPD",
-    "Combined flows for ambulatory and admitted care",
-    [
+export const HospitalOpdIpdPage = () => (
+  <ManagedSection
+    storageKey="hospital-opd-ipd-updates"
+    title="OPD / IPD"
+    subtitle="Combined flows for ambulatory and admitted care"
+    stats={[
       { title: "OPD Tokens", value: "340" },
       { title: "IPD Transfers", value: "14" },
       { title: "Day Care", value: "28" },
       { title: "Readmissions", value: "4" },
-    ],
-    [
+    ]}
+    initialItems={[
       { label: "Surgery board", meta: "5 cases awaiting beds", status: "Pending" },
       { label: "IPD audits", meta: "12 charts open", status: "Review" },
       { label: "OPD pharmacy", meta: "Avg wait 6 min", status: "Optimized" },
-    ],
-    "Manage flow"
-  );
+    ]}
+    actionLabel="Manage flow"
+  />
+);
 
-export const HospitalPharmacyPage = () =>
-  buildSection(
-    "Pharmacy",
-    "Connected formulary and ward dispensing",
-    [
+export const HospitalPharmacyPage = () => (
+  <ManagedSection
+    storageKey="hospital-pharmacy-updates"
+    title="Pharmacy"
+    subtitle="Connected formulary and ward dispensing"
+    stats={[
       { title: "Orders Today", value: "540" },
       { title: "Critical Stock", value: "8 alerts" },
       { title: "Avg. Fulfillment", value: "7 min" },
       { title: "Expiry Checks", value: "26 lots" },
-    ],
-    [
+    ]}
+    initialItems={[
       { label: "OT schedule", meta: "Anesthesia kits restocked", status: "Done" },
       { label: "NICU inventory", meta: "Surfactant low", status: "Alert" },
       { label: "Retail counter", meta: "₹4.3L revenue today", status: "Healthy" },
-    ],
-    "Create PO"
-  );
+    ]}
+    actionLabel="Create PO"
+  />
+);
 
 export const HospitalLabReportsPage = () =>
   (() => {
@@ -257,110 +372,122 @@ export const HospitalLabReportsPage = () =>
     );
   })();
 
-export const HospitalBillingPage = () =>
-  buildSection(
-    "Billing",
-    "Consolidated billing and receivables",
-    [
+export const HospitalBillingPage = () => (
+  <ManagedSection
+    storageKey="hospital-billing-updates"
+    title="Billing"
+    subtitle="Consolidated billing and receivables"
+    stats={[
       { title: "Invoices Today", value: "214" },
       { title: "Pending", value: "36" },
       { title: "Average Claim", value: "₹18.4K" },
       { title: "Collections", value: "₹48L" },
-    ],
-    [
+    ]}
+    initialItems={[
       { label: "Cashless claims", meta: "12 awaiting insurer", status: "Review" },
       { label: "Corporate tie-ups", meta: "₹12L billed", status: "Sent" },
       { label: "Outstanding", meta: "₹4.6L beyond 30d", status: "Alert" },
-    ],
-    "Create invoice"
-  );
+    ]}
+    actionLabel="Create invoice"
+  />
+);
 
-export const HospitalClaimsPage = () =>
-  buildSection(
-    "Claims",
-    "Insurance and TPA workflows",
-    [
+export const HospitalClaimsPage = () => (
+  <ManagedSection
+    storageKey="hospital-claims-updates"
+    title="Claims"
+    subtitle="Insurance and TPA workflows"
+    stats={[
       { title: "Claims Filed", value: "142" },
       { title: "Approved", value: "118" },
       { title: "Rejected", value: "6" },
       { title: "Avg. TAT", value: "3.6 days" },
-    ],
-    [
+    ]}
+    initialItems={[
       { label: "TPA approvals", meta: "8 pending docs", status: "Pending" },
       { label: "Cashless preauth", meta: "18 live", status: "Processing" },
       { label: "Denials", meta: "₹2.1L at risk", status: "Action" },
-    ],
-    "Submit claim"
-  );
+    ]}
+    actionLabel="Submit claim"
+  />
+);
 
-export const HospitalStaffPage = () =>
-  buildSection(
-    "Staff Management",
-    "HR, rostering, and compliance",
-    [
+export const HospitalStaffPage = () => (
+  <ManagedSection
+    storageKey="hospital-staff-updates"
+    title="Staff Management"
+    subtitle="HR, rostering, and compliance"
+    stats={[
       { title: "Active Staff", value: "1,240" },
       { title: "Pending Shifts", value: "38" },
       { title: "Compliance", value: "96%" },
       { title: "New Joinees", value: "12" },
-    ],
-    [
+    ]}
+    initialItems={[
       { label: "Nursing roster", meta: "Weekend gaps", status: "Plan" },
       { label: "Annual trainings", meta: "84% complete", status: "Progress" },
       { label: "Credential renewals", meta: "6 expiring", status: "Reminder" },
-    ],
-    "Add staff"
-  );
+    ]}
+    actionLabel="Add staff"
+  />
+);
 
-export const HospitalNotificationsPage = () =>
-  buildSection(
-    "Notifications",
-    "Mission-critical alerts for all departments",
-    [
+export const HospitalNotificationsPage = () => (
+  <ManagedSection
+    storageKey="hospital-notifications-updates"
+    title="Notifications"
+    subtitle="Mission-critical alerts for all departments"
+    stats={[
       { title: "Unread", value: "42" },
       { title: "High Priority", value: "6" },
       { title: "System Alerts", value: "12" },
       { title: "Resolved", value: "138" },
-    ],
-    [
+    ]}
+    initialItems={[
       { label: "Oxygen audit", meta: "Threshold reached", status: "Critical" },
       { label: "Fire drill", meta: "Tomorrow 11 AM", status: "Upcoming" },
       { label: "Code blue", meta: "Ward 5A", status: "Responded" },
-    ],
-    "Configure alerts"
-  );
+    ]}
+    actionLabel="Configure alerts"
+  />
+);
 
-export const HospitalSettingsPage = () =>
-  buildSection(
-    "Settings",
-    "Portal level preferences and automations",
-    [
+export const HospitalSettingsPage = () => (
+  <ManagedSection
+    storageKey="hospital-settings-updates"
+    title="Settings"
+    subtitle="Portal level preferences and automations"
+    stats={[
       { title: "Workflows", value: "12 active" },
       { title: "Integrations", value: "8 linked" },
       { title: "API Keys", value: "4" },
       { title: "Audit Logs", value: "24h clean" },
-    ],
-    [
+    ]}
+    initialItems={[
       { label: "On-call policy", meta: "Last updated 2d ago", status: "Synced" },
       { label: "Billing templates", meta: "GST 18% default", status: "Active" },
       { label: "Security", meta: "2FA enforced", status: "Secured" },
-    ],
-    "Edit settings"
-  );
+    ]}
+    actionLabel="Edit settings"
+  />
+);
 
-export const HospitalSupportPage = () =>
-  buildSection(
-    "Help & Support",
-    "Compliance desk and operational assistance",
-    [
+export const HospitalSupportPage = () => (
+  <ManagedSection
+    storageKey="hospital-support-updates"
+    title="Help & Support"
+    subtitle="Compliance desk and operational assistance"
+    stats={[
       { title: "Open Tickets", value: "14" },
       { title: "SLA", value: "92%" },
       { title: "Scheduled Audits", value: "4" },
       { title: "Incidents", value: "0" },
-    ],
-    [
+    ]}
+    initialItems={[
       { label: "NABL renewal", meta: "Documents submitted", status: "Review" },
       { label: "Bio-med audit", meta: "Due next week", status: "Planned" },
       { label: "Vendor onboarding", meta: "Pharma supply", status: "In progress" },
-    ],
-    "Create ticket"
-  );
+    ]}
+    actionLabel="Create ticket"
+  />
+);

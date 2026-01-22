@@ -22,6 +22,7 @@ import { Op } from 'sequelize';
 import jwt from 'jsonwebtoken';
 import bcrypt from 'bcryptjs';
 import { JWT_CONFIG } from '../config/auth.config.js';
+import { auditLoginAttempt } from '../middleware/audit.middleware.js';
 
 const JWT_SECRET = JWT_CONFIG.SECRET;
 
@@ -310,6 +311,7 @@ export const doctorLogin = async (req, res) => {
     });
 
     if (!doctor) {
+      await auditLoginAttempt(req, null, email, false, 'Doctor not found');
       return res.status(401).json({
         success: false,
         message: 'Invalid email or password',
@@ -320,6 +322,7 @@ export const doctorLogin = async (req, res) => {
     // Verify password
     const isPasswordValid = await doctor.verifyPassword(password);
     if (!isPasswordValid) {
+      await auditLoginAttempt(req, doctor.id, email, false, 'Invalid password');
       return res.status(401).json({
         success: false,
         message: 'Invalid email or password'
@@ -351,6 +354,7 @@ export const doctorLogin = async (req, res) => {
     });
 
     console.log('✅ Doctor login successful:', doctor.id);
+    await auditLoginAttempt(req, doctor.id, email, true);
 
     res.status(200).json({
       success: true,
@@ -569,6 +573,7 @@ export const nurseLogin = async (req, res) => {
     });
 
     if (!nurse) {
+      await auditLoginAttempt(req, null, email, false, 'Nurse not found');
       return res.status(401).json({
         success: false,
         message: 'Invalid email or password'
@@ -577,6 +582,7 @@ export const nurseLogin = async (req, res) => {
 
     const isPasswordValid = await nurse.verifyPassword(password);
     if (!isPasswordValid) {
+      await auditLoginAttempt(req, nurse.id, email, false, 'Invalid password');
       return res.status(401).json({
         success: false,
         message: 'Invalid email or password'
@@ -606,6 +612,7 @@ export const nurseLogin = async (req, res) => {
     });
 
     console.log('✅ Nurse login successful:', nurse.id);
+    await auditLoginAttempt(req, nurse.id, email, true);
 
     res.status(200).json({
       success: true,
@@ -822,6 +829,7 @@ export const assistantLogin = async (req, res) => {
     });
 
     if (!assistant) {
+      await auditLoginAttempt(req, null, email, false, 'Assistant not found');
       return res.status(401).json({
         success: false,
         message: 'Invalid email or password'
@@ -830,6 +838,7 @@ export const assistantLogin = async (req, res) => {
 
     const isPasswordValid = await assistant.verifyPassword(password);
     if (!isPasswordValid) {
+      await auditLoginAttempt(req, assistant.id, email, false, 'Invalid password');
       return res.status(401).json({
         success: false,
         message: 'Invalid email or password'
@@ -859,6 +868,7 @@ export const assistantLogin = async (req, res) => {
     });
 
     console.log('✅ Assistant login successful:', assistant.id);
+    await auditLoginAttempt(req, assistant.id, email, true);
 
     res.status(200).json({
       success: true,
@@ -1075,6 +1085,7 @@ export const insuranceCoordinatorLogin = async (req, res) => {
     });
 
     if (!coordinator) {
+      await auditLoginAttempt(req, null, email, false, 'Insurance coordinator not found');
       return res.status(401).json({
         success: false,
         message: 'Invalid email or password'
@@ -1083,6 +1094,7 @@ export const insuranceCoordinatorLogin = async (req, res) => {
 
     const isPasswordValid = await coordinator.verifyPassword(password);
     if (!isPasswordValid) {
+      await auditLoginAttempt(req, coordinator.id, email, false, 'Invalid password');
       return res.status(401).json({
         success: false,
         message: 'Invalid email or password'
@@ -1112,6 +1124,7 @@ export const insuranceCoordinatorLogin = async (req, res) => {
     });
 
     console.log('✅ Insurance coordinator login successful:', coordinator.id);
+    await auditLoginAttempt(req, coordinator.id, email, true);
 
     res.status(200).json({
       success: true,

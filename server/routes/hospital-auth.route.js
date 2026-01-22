@@ -7,6 +7,8 @@ import { authUser, requireRole } from '../middleware/auth.middleware.js';
 import jwt from 'jsonwebtoken';
 import bcrypt from 'bcrypt';
 import { JWT_CONFIG } from '../config/auth.config.js';
+import { authLimiter } from '../middleware/rateLimiter.middleware.js';
+import { auditLoginAttempt } from '../middleware/audit.middleware.js';
 
 const router = express.Router();
 
@@ -96,7 +98,7 @@ router.post('/register', async (req, res) => {
  * Hospital Login
  * POST /api/hospital/auth/login
  */
-router.post('/login', async (req, res) => {
+router.post('/login', authLimiter, async (req, res) => {
   try {
     const { email, password } = req.body;
 
@@ -112,6 +114,7 @@ router.post('/login', async (req, res) => {
     });
 
     if (!hospital) {
+      await auditLoginAttempt(req, null, email, false, 'Hospital not found');
       return res.status(401).json({
         success: false,
         message: 'Invalid email or password'
@@ -120,6 +123,7 @@ router.post('/login', async (req, res) => {
 
     const isPasswordValid = await hospital.comparePassword(password);
     if (!isPasswordValid) {
+      await auditLoginAttempt(req, hospital.id, email, false, 'Invalid password');
       return res.status(401).json({
         success: false,
         message: 'Invalid email or password'
@@ -127,6 +131,7 @@ router.post('/login', async (req, res) => {
     }
 
     if (hospital.status !== 'active') {
+      await auditLoginAttempt(req, hospital.id, email, false, 'Hospital inactive');
       return res.status(403).json({
         success: false,
         message: 'Hospital account is not active'
@@ -138,6 +143,8 @@ router.post('/login', async (req, res) => {
       JWT_CONFIG.SECRET,
       { expiresIn: '7d' }
     );
+
+    await auditLoginAttempt(req, hospital.id, email, true);
 
     res.json({
       success: true,
@@ -170,7 +177,7 @@ router.post('/login', async (req, res) => {
  * POST /api/hospital/auth/login/v2
  * Supports both old Hospital model and new Tenant model
  */
-router.post('/login/v2', async (req, res) => {
+router.post('/login/v2', authLimiter, async (req, res) => {
   try {
     const { email, password, subdomain } = req.body;
 
@@ -192,6 +199,7 @@ router.post('/login/v2', async (req, res) => {
       });
 
       if (!tenant) {
+        await auditLoginAttempt(req, null, email, false, 'Hospital tenant not found');
         return res.status(404).json({
           success: false,
           message: 'Hospital not found'
@@ -214,6 +222,7 @@ router.post('/login/v2', async (req, res) => {
       });
 
       if (!hospital) {
+        await auditLoginAttempt(req, null, email, false, 'Hospital not found');
         return res.status(401).json({
           success: false,
           message: 'Invalid email or password'
@@ -222,6 +231,7 @@ router.post('/login/v2', async (req, res) => {
 
       const isPasswordValid = await hospital.comparePassword(password);
       if (!isPasswordValid) {
+        await auditLoginAttempt(req, hospital.id, email, false, 'Invalid password');
         return res.status(401).json({
           success: false,
           message: 'Invalid email or password'
@@ -229,6 +239,7 @@ router.post('/login/v2', async (req, res) => {
       }
 
       if (hospital.status !== 'active') {
+        await auditLoginAttempt(req, hospital.id, email, false, 'Hospital inactive');
         return res.status(403).json({
           success: false,
           message: 'Hospital account is not active'
@@ -241,6 +252,7 @@ router.post('/login/v2', async (req, res) => {
         { expiresIn: '7d' }
       );
 
+      await auditLoginAttempt(req, hospital.id, email, true);
       return res.json({
         success: true,
         message: 'Login successful',
@@ -261,6 +273,7 @@ router.post('/login/v2', async (req, res) => {
 
     // Handle new multitenancy system
     if (!user) {
+      await auditLoginAttempt(req, null, email, false, 'Hospital user not found');
       return res.status(401).json({
         success: false,
         message: 'Invalid email or password'
@@ -270,6 +283,7 @@ router.post('/login/v2', async (req, res) => {
     // Verify password
     const passwordMatch = await bcrypt.compare(password, user.password);
     if (!passwordMatch) {
+      await auditLoginAttempt(req, user.id, email, false, 'Invalid password');
       return res.status(401).json({
         success: false,
         message: 'Invalid email or password'
@@ -277,6 +291,7 @@ router.post('/login/v2', async (req, res) => {
     }
 
     if (user.status !== 'active') {
+      await auditLoginAttempt(req, user.id, email, false, 'User inactive');
       return res.status(403).json({
         success: false,
         message: 'User account is not active'
@@ -300,6 +315,8 @@ router.post('/login/v2', async (req, res) => {
       JWT_CONFIG.SECRET,
       { expiresIn: '7d' }
     );
+
+    await auditLoginAttempt(req, user.id, email, true);
 
     res.json({
       success: true,
@@ -340,7 +357,7 @@ router.post('/login/v2', async (req, res) => {
  * POST /api/hospital/auth/login-tenant
  * Optimized for multitenancy
  */
-router.post('/login-tenant', async (req, res) => {
+router.post('/login-tenant', authLimiter, async (req, res) => {
   try {
     const { email, password } = req.body;
     const subdomain = req.get('host')?.split('.')[0]; // Extract from subdomain
@@ -365,6 +382,7 @@ router.post('/login-tenant', async (req, res) => {
     });
 
     if (!tenant) {
+      await auditLoginAttempt(req, null, email, false, 'Hospital tenant not found');
       return res.status(404).json({
         success: false,
         message: 'Hospital not found'
@@ -381,6 +399,7 @@ router.post('/login-tenant', async (req, res) => {
     });
 
     if (!user) {
+      await auditLoginAttempt(req, null, email, false, 'Hospital user not found');
       return res.status(401).json({
         success: false,
         message: 'Invalid credentials'
@@ -390,6 +409,7 @@ router.post('/login-tenant', async (req, res) => {
     // Verify password
     const passwordMatch = await bcrypt.compare(password, user.password);
     if (!passwordMatch) {
+      await auditLoginAttempt(req, user.id, email, false, 'Invalid password');
       return res.status(401).json({
         success: false,
         message: 'Invalid credentials'
@@ -411,6 +431,8 @@ router.post('/login-tenant', async (req, res) => {
       JWT_CONFIG.SECRET,
       { expiresIn: '7d' }
     );
+
+    await auditLoginAttempt(req, user.id, email, true);
 
     res.json({
       success: true,

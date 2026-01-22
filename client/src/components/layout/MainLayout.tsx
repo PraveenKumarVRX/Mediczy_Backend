@@ -30,6 +30,7 @@ import {
 import { BRAND, getShortRoleLabel } from "@/config/brand";
 import VideoCallNotification from "@/components/notifications/VideoCallNotification";
 import { useSocketConnection } from "@/hooks/useSocketConnection";
+import ChatApplet from "@/components/chat/ChatApplet";
 
 interface Notification {
   id: number;
@@ -413,6 +414,9 @@ const MainLayout = ({ children }: MainLayoutProps) => {
       
       {/* Video Call Notification System */}
       <VideoCallNotification />
+      
+      {/* Team Chat Communication Module */}
+      {isTeamUser && <ChatApplet />}
       
       {/* Universal Quick Appointment Booking Modal */}
       <QuickAppointmentModal 

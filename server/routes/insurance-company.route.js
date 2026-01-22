@@ -9,6 +9,8 @@ import { InsuranceCompany, Corporate, CorporateEmployee } from '../models/insura
 import { InsurancePolicy, PolicyMember } from '../models/insurance-policy.model.intelligent.js';
 import { authUser, requireRole } from '../middleware/auth.middleware.js';
 import { JWT_CONFIG } from '../config/auth.config.js';
+import { authLimiter } from '../middleware/rateLimiter.middleware.js';
+import { auditLoginAttempt } from '../middleware/audit.middleware.js';
 
 const router = express.Router();
 
@@ -81,15 +83,17 @@ router.post('/register', async (req, res) => {
  * Insurance Company Login
  * POST /api/insurance-company/login
  */
-router.post('/login', async (req, res) => {
+router.post('/login', authLimiter, async (req, res) => {
   try {
     const { email, password } = req.body;
+    const normalizedEmail = String(email || '').toLowerCase();
 
     const company = await InsuranceCompany.findOne({
-      where: { email: email.toLowerCase() }
+      where: { email: normalizedEmail }
     });
 
     if (!company) {
+      await auditLoginAttempt(req, null, normalizedEmail, false, 'Insurance company not found');
       return res.status(401).json({
         success: false,
         message: 'Invalid email or password'
@@ -99,6 +103,7 @@ router.post('/login', async (req, res) => {
     const isPasswordValid = await company.comparePassword(password);
 
     if (!isPasswordValid) {
+      await auditLoginAttempt(req, company.id, normalizedEmail, false, 'Invalid password');
       return res.status(401).json({
         success: false,
         message: 'Invalid email or password'
@@ -106,6 +111,7 @@ router.post('/login', async (req, res) => {
     }
 
     if (!company.isActive) {
+      await auditLoginAttempt(req, company.id, normalizedEmail, false, 'Company inactive');
       return res.status(403).json({
         success: false,
         message: 'Company account is inactive. Please contact support.'
@@ -113,6 +119,7 @@ router.post('/login', async (req, res) => {
     }
 
     if (!company.isVerified) {
+      await auditLoginAttempt(req, company.id, normalizedEmail, false, 'Company not verified');
       return res.status(403).json({
         success: false,
         message: 'Company account pending verification. Please contact admin.'
@@ -129,6 +136,8 @@ router.post('/login', async (req, res) => {
       JWT_CONFIG.SECRET,
       { expiresIn: '7d' }
     );
+
+    await auditLoginAttempt(req, company.id, normalizedEmail, true);
 
     res.json({
       success: true,
@@ -404,13 +413,15 @@ router.post('/corporate/register', async (req, res) => {
  * Corporate Login
  * POST /api/insurance-company/corporate/login
  */
-router.post('/corporate/login', async (req, res) => {
+router.post('/corporate/login', authLimiter, async (req, res) => {
   try {
     const { email, password } = req.body;
+    const normalizedEmail = String(email || '').toLowerCase();
 
-    const corporate = await Corporate.findOne({ where: { email } });
+    const corporate = await Corporate.findOne({ where: { email: normalizedEmail } });
 
     if (!corporate) {
+      await auditLoginAttempt(req, null, normalizedEmail, false, 'Corporate not found');
       return res.status(401).json({
         success: false,
         message: 'Invalid email or password'
@@ -420,6 +431,7 @@ router.post('/corporate/login', async (req, res) => {
     const isPasswordValid = await corporate.comparePassword(password);
 
     if (!isPasswordValid) {
+      await auditLoginAttempt(req, corporate.id, normalizedEmail, false, 'Invalid password');
       return res.status(401).json({
         success: false,
         message: 'Invalid email or password'
@@ -427,6 +439,7 @@ router.post('/corporate/login', async (req, res) => {
     }
 
     if (!corporate.isActive) {
+      await auditLoginAttempt(req, corporate.id, normalizedEmail, false, 'Corporate inactive');
       return res.status(403).json({
         success: false,
         message: 'Corporate account is inactive'
@@ -443,6 +456,8 @@ router.post('/corporate/login', async (req, res) => {
       JWT_CONFIG.SECRET,
       { expiresIn: '7d' }
     );
+
+    await auditLoginAttempt(req, corporate.id, normalizedEmail, true);
 
     res.json({
       success: true,

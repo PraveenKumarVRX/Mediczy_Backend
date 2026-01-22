@@ -112,7 +112,8 @@ router.post(
         dateOfBirth: dateOfBirth ? new Date(dateOfBirth) : null,
         gender,
         status: 'active',
-        primaryDoctorId: DEFAULT_PRIMARY_DOCTOR_ID
+        primaryDoctorId: DEFAULT_PRIMARY_DOCTOR_ID,
+        role: 'patient'
       });
 
       res.status(201).json({
@@ -575,8 +576,8 @@ router.get('/nurse/patients', authNurse, async (req, res) => {
   try {
     const patients = await userModel.findAll({
       where: {
-        role: 'patient',
-        isActive: true
+        role: { [Op.in]: ['patient', 'user'] },
+        status: 'active'
       },
       attributes: { exclude: ['password'] },
       order: [['createdAt', 'DESC']],

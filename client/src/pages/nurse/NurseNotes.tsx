@@ -90,7 +90,7 @@ const NurseNotes: React.FC = () => {
             <div className="space-y-2">
               {history.slice(0, 5).map((h) => (
                 <div key={h.id} className="text-xs text-muted-foreground">
-                  {new Date(h.createdAt).toLocaleString()} • {(h.note || '').slice(0, 80)}
+                  {new Date(h.createdAt).toLocaleString()} • {(h.content || h.note || '').slice(0, 80)}
                 </div>
               ))}
             </div>

@@ -1,30 +1,18 @@
 import express from 'express';
 import jwt from 'jsonwebtoken';
-import bcrypt from 'bcryptjs';
 import { JWT_CONFIG } from '../../config/auth.config.js';
+import User from '../../models/postgres/user.model.postgres.js';
+import { authLimiter } from '../../middleware/rateLimiter.middleware.js';
+import { auditLoginAttempt } from '../../middleware/audit.middleware.js';
 
 const router = express.Router();
-
-// Mock corporate data (replace with database later)
-const mockCorporate = {
-  id: 1,
-  companyName: "Test Corporate Ltd",
-  email: "corporate@mediczy.com",
-  password: "$2b$10$obqmH4fnl5vdW9BcYe17eu6kojg3pEQeysAYBve6ldW2Bf/TAcpl.", // Corporate123
-  contactPerson: "Corporate Admin",
-  phone: "+91-9876543210",
-  industry: "Healthcare",
-  employeeCount: 500,
-  registeredAddress: "123 Business Park, Delhi",
-  isActive: true,
-  planType: "Enterprise"
-};
+const JWT_SECRET = JWT_CONFIG.SECRET;
 
 /**
  * POST /api/corporate/login
  * Authenticate corporate account
  */
-router.post('/login', async (req, res) => {
+router.post('/login', authLimiter, async (req, res) => {
   try {
     const { email, password } = req.body;
 
@@ -44,61 +32,46 @@ router.post('/login', async (req, res) => {
         message: 'Email and password are required'
       });
     }
+    const normalizedEmail = String(email).toLowerCase();
+    const corporateUser = await User.findOne({
+      where: {
+        email: normalizedEmail,
+        role: 'corporate_admin',
+        status: 'active'
+      }
+    });
 
-    // Check if corporate exists
-    if (email !== mockCorporate.email) {
+    if (!corporateUser) {
+      await auditLoginAttempt(req, null, normalizedEmail, false, 'Corporate admin not found');
       return res.status(401).json({
         success: false,
         message: 'Invalid email or password'
       });
     }
 
-    // Verify password
-    const isPasswordValid = await bcrypt.compare(password, mockCorporate.password);
+    const isPasswordValid = await corporateUser.comparePassword(password);
     if (!isPasswordValid) {
+      await auditLoginAttempt(req, corporateUser.id, normalizedEmail, false, 'Invalid password');
       return res.status(401).json({
         success: false,
         message: 'Invalid email or password'
       });
     }
 
-    // Check if corporate is active
-    if (!mockCorporate.isActive) {
-      return res.status(403).json({
-        success: false,
-        message: 'Account is inactive. Please contact support.'
-      });
-    }
+    const token = corporateUser.generateAuthToken();
+    await corporateUser.update({ lastLoginAt: new Date() });
 
-    // Generate JWT token
-    const token = jwt.sign(
-      {
-        // Backward-compatible: keep corporateId, but also provide id so authUser can resolve it.
-        id: mockCorporate.id,
-        corporateId: mockCorporate.id,
-        email: mockCorporate.email,
-        companyName: mockCorporate.companyName,
-        userType: 'corporate',
-        role: 'corporate'
-      },
-      JWT_SECRET,
-      { expiresIn: '7d' }
-    );
+    await auditLoginAttempt(req, corporateUser.id, normalizedEmail, true);
 
-    // Return success response
     res.status(200).json({
       success: true,
       message: 'Login successful',
       token,
       corporate: {
-        id: mockCorporate.id,
-        companyName: mockCorporate.companyName,
-        email: mockCorporate.email,
-        contactPerson: mockCorporate.contactPerson,
-        phone: mockCorporate.phone,
-        industry: mockCorporate.industry,
-        employeeCount: mockCorporate.employeeCount,
-        planType: mockCorporate.planType
+        id: corporateUser.id,
+        email: corporateUser.email,
+        role: corporateUser.role,
+        organizationId: corporateUser.organization_id || null
       }
     });
 

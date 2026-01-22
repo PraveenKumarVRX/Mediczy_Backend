@@ -84,21 +84,6 @@ export default defineConfig(({ mode }) => ({
     chunkSizeWarningLimit: 2000,
     sourcemap: false,
     minify: 'esbuild',
-    rollupOptions: {
-      output: {
-        manualChunks: {
-          vendor: ['react', 'react-dom'],
-          router: ['react-router-dom'],
-          ui: ['lucide-react', '@radix-ui/react-toast'],
-          markdown: ['react-markdown', 'remark-gfm'],
-          motion: ['framer-motion'],
-          notifications: ['sonner'],
-        },
-        assetFileNames: 'assets/[name]-[hash][extname]',
-        chunkFileNames: 'assets/[name]-[hash].js',
-        entryFileNames: 'assets/[name]-[hash].js',
-      },
-    },
   },
   // Performance optimizations
   esbuild: {

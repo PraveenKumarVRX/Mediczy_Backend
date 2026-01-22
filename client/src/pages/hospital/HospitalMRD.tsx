@@ -16,6 +16,7 @@ import { Progress } from '@/components/ui/progress';
 import { ScrollArea } from '@/components/ui/scroll-area';
 import { Checkbox } from '@/components/ui/checkbox';
 import api from '@/utils/api';
+import { loadHospitalStore, saveHospitalStore } from '@/utils/hospitalStorage';
 import HospitalLayout from '@/components/hospital/HospitalLayout';
 import { 
   FolderOpen, Activity, Bell, Plus, Search, ArrowLeft, Edit, 
@@ -146,8 +147,7 @@ const HospitalMRD = () => {
     setLoading(false);
   }, [navigate]);
 
-  // Sample data
-  const records: MedicalRecord[] = [
+  const initialRecords: MedicalRecord[] = [
     {
       id: 'MRD001',
       mrdNumber: 'MRD-2024-001234',
@@ -239,6 +239,22 @@ const HospitalMRD = () => {
     },
   ];
 
+  const [records, setRecords] = useState<MedicalRecord[]>(
+    () => loadHospitalStore('mrd-records', initialRecords)
+  );
+
+  const [newRecordForm, setNewRecordForm] = useState({
+    patientName: '',
+    uhid: '',
+    recordType: 'IPD' as MedicalRecord['recordType'],
+    department: '',
+    attendingDoctor: '',
+    admissionDate: '',
+    diagnosis: '',
+    shelf: '',
+    rack: ''
+  });
+
   const fileRequests: FileRequest[] = [
     { id: 'FR001', requestNumber: 'REQ-2024-0501', mrdNumber: 'MRD-2024-001234', patientName: 'Rajesh Kumar', requestedBy: 'Insurance Desk', department: 'Admin', purpose: 'Insurance', priority: 'Urgent', status: 'Delivered', requestDate: '2024-12-04', requiredDate: '2024-12-04', deliveredDate: '2024-12-04' },
     { id: 'FR002', requestNumber: 'REQ-2024-0502', mrdNumber: 'MRD-2024-001235', patientName: 'Priya Singh', requestedBy: 'Dr. Patel', department: 'Gynecology', purpose: 'Treatment', priority: 'Emergency', status: 'Processing', requestDate: '2024-12-04', requiredDate: '2024-12-04' },
@@ -311,6 +327,72 @@ const HospitalMRD = () => {
   const handleAddToDigitizationQueue = (record: MedicalRecord) => {
     setSelectedRecord(record);
     setShowDigitizationDialog(true);
+  };
+
+  const handleCreateRecord = () => {
+    if (!newRecordForm.patientName.trim() || !newRecordForm.uhid.trim()) {
+      toast({
+        title: 'Missing details',
+        description: 'Patient name and UHID are required.',
+        variant: 'destructive'
+      });
+      return;
+    }
+
+    const createdAt = new Date().toISOString().slice(0, 10);
+    const newRecord: MedicalRecord = {
+      id: `MRD-${Date.now()}`,
+      mrdNumber: `MRD-${new Date().getFullYear()}-${Date.now().toString().slice(-6)}`,
+      patientId: newRecordForm.uhid,
+      patientName: newRecordForm.patientName,
+      uhid: newRecordForm.uhid,
+      recordType: newRecordForm.recordType,
+      department: newRecordForm.department || 'General Medicine',
+      admissionDate: newRecordForm.admissionDate || createdAt,
+      attendingDoctor: newRecordForm.attendingDoctor || 'On Call',
+      diagnosis: newRecordForm.diagnosis || 'Pending',
+      fileLocation: 'Main Archive',
+      shelf: newRecordForm.shelf || 'S-01',
+      rack: newRecordForm.rack || 'R-01',
+      status: 'Active',
+      documents: [],
+      auditTrail: [
+        {
+          id: `A-${Date.now()}`,
+          action: 'Created',
+          performedBy: 'MRD Desk',
+          department: newRecordForm.department || 'General Medicine',
+          timestamp: new Date().toISOString(),
+          remarks: 'Record created in MRD dashboard'
+        }
+      ],
+      createdAt,
+      updatedAt: createdAt
+    };
+
+    setRecords((prev) => {
+      const updated = [newRecord, ...prev];
+      saveHospitalStore('mrd-records', updated);
+      return updated;
+    });
+
+    setNewRecordForm({
+      patientName: '',
+      uhid: '',
+      recordType: 'IPD',
+      department: '',
+      attendingDoctor: '',
+      admissionDate: '',
+      diagnosis: '',
+      shelf: '',
+      rack: ''
+    });
+    setShowNewRecordDialog(false);
+
+    toast({
+      title: 'Record created',
+      description: `${newRecord.patientName}'s record has been saved.`
+    });
   };
 
   const handlePrintRecord = (record: MedicalRecord) => {
@@ -567,12 +649,16 @@ const HospitalMRD = () => {
     if (!selectedRecord) return;
     
     try {
-      await api.post(
-        '/hospital/mrd/digitization-queue',
-        { recordId: selectedRecord.id },
-        { headers: hospitalHeaders() }
-      );
-      
+      try {
+        await api.post(
+          '/hospital/mrd/digitization-queue',
+          { recordId: selectedRecord.id },
+          { headers: hospitalHeaders() }
+        );
+      } catch {
+        // Allow local persistence if API is unavailable
+      }
+
       toast({
         title: "Added to Digitization Queue",
         description: `${selectedRecord.patientName}'s record has been queued for digitization.`,
@@ -751,12 +837,27 @@ const HospitalMRD = () => {
                     </DialogHeader>
                     <div className="grid grid-cols-2 gap-4 py-4">
                       <div className="space-y-2">
+                        <Label>Patient Name</Label>
+                        <Input
+                          placeholder="Patient name"
+                          value={newRecordForm.patientName}
+                          onChange={(e) => setNewRecordForm(prev => ({ ...prev, patientName: e.target.value }))}
+                        />
+                      </div>
+                      <div className="space-y-2">
                         <Label>Patient UHID</Label>
-                        <Input placeholder="Enter UHID" />
+                        <Input
+                          placeholder="Enter UHID"
+                          value={newRecordForm.uhid}
+                          onChange={(e) => setNewRecordForm(prev => ({ ...prev, uhid: e.target.value }))}
+                        />
                       </div>
                       <div className="space-y-2">
                         <Label>Record Type</Label>
-                        <Select>
+                        <Select
+                          value={newRecordForm.recordType}
+                          onValueChange={(value) => setNewRecordForm(prev => ({ ...prev, recordType: value as MedicalRecord['recordType'] }))}
+                        >
                           <SelectTrigger>
                             <SelectValue placeholder="Select type" />
                           </SelectTrigger>
@@ -771,7 +872,10 @@ const HospitalMRD = () => {
                       </div>
                       <div className="space-y-2">
                         <Label>Department</Label>
-                        <Select>
+                        <Select
+                          value={newRecordForm.department}
+                          onValueChange={(value) => setNewRecordForm(prev => ({ ...prev, department: value }))}
+                        >
                           <SelectTrigger>
                             <SelectValue placeholder="Select department" />
                           </SelectTrigger>
@@ -784,28 +888,48 @@ const HospitalMRD = () => {
                       </div>
                       <div className="space-y-2">
                         <Label>Attending Doctor</Label>
-                        <Input placeholder="Doctor name" />
+                        <Input
+                          placeholder="Doctor name"
+                          value={newRecordForm.attendingDoctor}
+                          onChange={(e) => setNewRecordForm(prev => ({ ...prev, attendingDoctor: e.target.value }))}
+                        />
                       </div>
                       <div className="space-y-2">
                         <Label>Admission Date</Label>
-                        <Input type="date" />
+                        <Input
+                          type="date"
+                          value={newRecordForm.admissionDate}
+                          onChange={(e) => setNewRecordForm(prev => ({ ...prev, admissionDate: e.target.value }))}
+                        />
                       </div>
                       <div className="space-y-2">
                         <Label>Diagnosis</Label>
-                        <Input placeholder="Primary diagnosis" />
+                        <Input
+                          placeholder="Primary diagnosis"
+                          value={newRecordForm.diagnosis}
+                          onChange={(e) => setNewRecordForm(prev => ({ ...prev, diagnosis: e.target.value }))}
+                        />
                       </div>
                       <div className="space-y-2">
                         <Label>Shelf Location</Label>
-                        <Input placeholder="e.g., S-12" />
+                        <Input
+                          placeholder="e.g., S-12"
+                          value={newRecordForm.shelf}
+                          onChange={(e) => setNewRecordForm(prev => ({ ...prev, shelf: e.target.value }))}
+                        />
                       </div>
                       <div className="space-y-2">
                         <Label>Rack Location</Label>
-                        <Input placeholder="e.g., R-05" />
+                        <Input
+                          placeholder="e.g., R-05"
+                          value={newRecordForm.rack}
+                          onChange={(e) => setNewRecordForm(prev => ({ ...prev, rack: e.target.value }))}
+                        />
                       </div>
                     </div>
                     <DialogFooter>
                       <Button variant="outline" onClick={() => setShowNewRecordDialog(false)}>Cancel</Button>
-                      <Button className="bg-gradient-to-r from-purple-600 to-violet-600">Create Record</Button>
+                      <Button className="bg-gradient-to-r from-purple-600 to-violet-600" onClick={handleCreateRecord}>Create Record</Button>
                     </DialogFooter>
                   </DialogContent>
                 </Dialog>

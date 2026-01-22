@@ -8,6 +8,7 @@ import Tenant from '../models/postgres/tenant.model.postgres.js';
 import jwt from 'jsonwebtoken';
 import { Op } from 'sequelize';
 import { JWT_CONFIG } from '../config/auth.config.js';
+import { auditLoginAttempt } from '../middleware/audit.middleware.js';
 
 const JWT_SECRET = JWT_CONFIG.SECRET;
 
@@ -88,6 +89,7 @@ export const clinicStaffLogin = async (req, res) => {
     });
 
     if (!staff) {
+      await auditLoginAttempt(req, null, email, false, 'Staff not found');
       return res.status(401).json({
         success: false,
         message: 'Invalid credentials or staff not found'
@@ -97,6 +99,7 @@ export const clinicStaffLogin = async (req, res) => {
     // Verify password
     const isPasswordValid = await staff.verifyPassword(password);
     if (!isPasswordValid) {
+      await auditLoginAttempt(req, staff.id, email, false, 'Invalid password');
       return res.status(401).json({
         success: false,
         message: 'Invalid credentials'
@@ -109,6 +112,7 @@ export const clinicStaffLogin = async (req, res) => {
     });
 
     if (!clinic || clinic.status !== 'active') {
+      await auditLoginAttempt(req, staff.id, email, false, 'Clinic inactive');
       return res.status(403).json({
         success: false,
         message: 'Clinic is not active. Please contact support.'
@@ -134,6 +138,8 @@ export const clinicStaffLogin = async (req, res) => {
     );
 
     console.log(`✅ Staff login successful:`, { role, email, clinic_name: clinic.name });
+
+    await auditLoginAttempt(req, staff.id, email, true);
 
     res.json({
       success: true,
@@ -214,6 +220,7 @@ export const doctorLogin = async (req, res) => {
     });
 
     if (!doctor) {
+      await auditLoginAttempt(req, null, email, false, 'Doctor not found');
       return res.status(401).json({
         success: false,
         message: 'Doctor account not found'
@@ -223,6 +230,7 @@ export const doctorLogin = async (req, res) => {
     // Verify password
     const isPasswordValid = await doctor.verifyPassword(password);
     if (!isPasswordValid) {
+      await auditLoginAttempt(req, doctor.id, email, false, 'Invalid password');
       return res.status(401).json({
         success: false,
         message: 'Invalid credentials'
@@ -248,6 +256,8 @@ export const doctorLogin = async (req, res) => {
     );
 
     console.log('✅ Doctor login successful:', { email, clinic_name: clinic.name });
+
+    await auditLoginAttempt(req, doctor.id, email, true);
 
     res.json({
       success: true,
@@ -322,6 +332,7 @@ export const nurseLogin = async (req, res) => {
     });
 
     if (!nurse) {
+      await auditLoginAttempt(req, null, email, false, 'Nurse not found');
       return res.status(401).json({
         success: false,
         message: 'Nurse account not found'
@@ -331,6 +342,7 @@ export const nurseLogin = async (req, res) => {
     // Verify password
     const isPasswordValid = await nurse.verifyPassword(password);
     if (!isPasswordValid) {
+      await auditLoginAttempt(req, nurse.id, email, false, 'Invalid password');
       return res.status(401).json({
         success: false,
         message: 'Invalid credentials'
@@ -356,6 +368,8 @@ export const nurseLogin = async (req, res) => {
     );
 
     console.log('✅ Nurse login successful:', { email, clinic_name: clinic.name });
+
+    await auditLoginAttempt(req, nurse.id, email, true);
 
     res.json({
       success: true,
@@ -429,6 +443,7 @@ export const assistantLogin = async (req, res) => {
     });
 
     if (!assistant) {
+      await auditLoginAttempt(req, null, email, false, 'Assistant not found');
       return res.status(401).json({
         success: false,
         message: 'Assistant account not found'
@@ -438,6 +453,7 @@ export const assistantLogin = async (req, res) => {
     // Verify password
     const isPasswordValid = await assistant.verifyPassword(password);
     if (!isPasswordValid) {
+      await auditLoginAttempt(req, assistant.id, email, false, 'Invalid password');
       return res.status(401).json({
         success: false,
         message: 'Invalid credentials'
@@ -463,6 +479,8 @@ export const assistantLogin = async (req, res) => {
     );
 
     console.log('✅ Doctor Assistant login successful:', { email, clinic_name: clinic.name });
+
+    await auditLoginAttempt(req, assistant.id, email, true);
 
     res.json({
       success: true,

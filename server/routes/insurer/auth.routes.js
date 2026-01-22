@@ -1,30 +1,18 @@
 import express from 'express';
 import jwt from 'jsonwebtoken';
-import bcrypt from 'bcryptjs';
 import { JWT_CONFIG } from '../../config/auth.config.js';
+import User from '../../models/postgres/user.model.postgres.js';
+import { authLimiter } from '../../middleware/rateLimiter.middleware.js';
+import { auditLoginAttempt } from '../../middleware/audit.middleware.js';
 
 const router = express.Router();
-
-// Mock Insurer data (replace with database later)
-const mockInsurer = {
-  id: 1,
-  organizationName: "HealthFirst Insurance Co.",
-  email: "insurer@mediczy.com",
-  password: "$2b$10$obqmH4fnl5vdW9BcYe17eu6kojg3pEQeysAYBve6ldW2Bf/TAcpl.", // Insurer123
-  contactPerson: "Insurance Operations Manager",
-  phone: "+91-9876543210",
-  licenseNumber: "INS-2024-001",
-  insuranceTypes: ["Health", "Critical Illness", "Personal Accident"],
-  registeredAddress: "Insurance Tower, Bangalore",
-  isActive: true,
-  policyholderCount: 100000
-};
+const JWT_SECRET = JWT_CONFIG.SECRET;
 
 /**
  * POST /api/insurer/login
  * Authenticate Insurer account
  */
-router.post('/login', async (req, res) => {
+router.post('/login', authLimiter, async (req, res) => {
   try {
     const { email, password } = req.body;
 
@@ -45,59 +33,46 @@ router.post('/login', async (req, res) => {
       });
     }
 
-    // Check if insurer exists
-    if (email !== mockInsurer.email) {
+    const normalizedEmail = String(email).toLowerCase();
+    const insurerUser = await User.findOne({
+      where: {
+        email: normalizedEmail,
+        role: 'insurer_admin',
+        status: 'active'
+      }
+    });
+
+    if (!insurerUser) {
+      await auditLoginAttempt(req, null, normalizedEmail, false, 'Insurer admin not found');
       return res.status(401).json({
         success: false,
         message: 'Invalid email or password'
       });
     }
 
-    // Verify password
-    const isPasswordValid = await bcrypt.compare(password, mockInsurer.password);
+    const isPasswordValid = await insurerUser.comparePassword(password);
     if (!isPasswordValid) {
+      await auditLoginAttempt(req, insurerUser.id, normalizedEmail, false, 'Invalid password');
       return res.status(401).json({
         success: false,
         message: 'Invalid email or password'
       });
     }
 
-    // Check if insurer is active
-    if (!mockInsurer.isActive) {
-      return res.status(403).json({
-        success: false,
-        message: 'Account is inactive. Please contact support.'
-      });
-    }
+    const token = insurerUser.generateAuthToken();
+    await insurerUser.update({ lastLoginAt: new Date() });
 
-    // Generate JWT token
-    const token = jwt.sign(
-      {
-        id: mockInsurer.id,
-        insurerId: mockInsurer.id,
-        email: mockInsurer.email,
-        organizationName: mockInsurer.organizationName,
-        userType: 'insurer',
-        role: 'insurer'
-      },
-      JWT_CONFIG.SECRET,
-      { expiresIn: '7d' }
-    );
+    await auditLoginAttempt(req, insurerUser.id, normalizedEmail, true);
 
-    // Return success response
     res.status(200).json({
       success: true,
       message: 'Login successful',
       token,
       insurer: {
-        id: mockInsurer.id,
-        organizationName: mockInsurer.organizationName,
-        email: mockInsurer.email,
-        contactPerson: mockInsurer.contactPerson,
-        phone: mockInsurer.phone,
-        licenseNumber: mockInsurer.licenseNumber,
-        insuranceTypes: mockInsurer.insuranceTypes,
-        policyholderCount: mockInsurer.policyholderCount
+        id: insurerUser.id,
+        email: insurerUser.email,
+        role: insurerUser.role,
+        organizationId: insurerUser.organization_id || null
       }
     });
 

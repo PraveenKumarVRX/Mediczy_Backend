@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import AdminLayout from '@/components/layout/AdminLayout';
+import MainLayout from '@/components/layout/MainLayout';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
@@ -101,6 +102,11 @@ export default function AdminChatDashboard() {
   const [error, setError] = useState<string | null>(null);
 
   const adminToken = localStorage.getItem('adminToken');
+  const teamToken = localStorage.getItem('teamToken');
+  
+  // Determine which layout to use
+  const isTeamUser = !!teamToken && !adminToken;
+  const LayoutComponent = isTeamUser ? MainLayout : AdminLayout;
 
   // Mock data for RocketChat-style interface
   const [rooms, setRooms] = useState<any[]>([]);
@@ -188,17 +194,20 @@ export default function AdminChatDashboard() {
   const [selectedWhatsappNumber, setSelectedWhatsappNumber] = useState<string | null>(null);
   const [whatsappMessages, setWhatsappMessages] = useState<any[]>([]);
   const [whatsappMessage, setWhatsappMessage] = useState('');
+  const [botConversationId, setBotConversationId] = useState<string | null>(null);
+  const [isBotTyping, setIsBotTyping] = useState(false);
 
   const [chatBots, setChatBots] = useState([
     {
       id: 'health-bot',
       name: 'Health Assistant',
-      description: 'AI-powered health consultation bot',
+      description: 'AI-powered health consultation bot powered by Dr. iSHA',
       status: 'active',
       interactions: 1247,
       accuracy: 94.2,
       responseTime: '0.8s',
-      channels: ['general', 'support']
+      channels: ['general', 'support'],
+      sibEndpoint: '/sib-chatbots/health-bot/chat'
     },
     {
       id: 'appointment-bot',
@@ -208,17 +217,19 @@ export default function AdminChatDashboard() {
       interactions: 567,
       accuracy: 98.1,
       responseTime: '0.3s',
-      channels: ['doctors']
+      channels: ['doctors'],
+      sibEndpoint: '/sib-chatbots/appointment-bot/chat'
     },
     {
       id: 'emergency-bot',
       name: 'Emergency Dispatcher',
-      description: 'Emergency response and coordination',
+      description: 'Emergency response and triage coordination',
       status: 'active',
       interactions: 89,
       accuracy: 99.7,
       responseTime: '0.1s',
-      channels: ['emergency']
+      channels: ['emergency'],
+      sibEndpoint: '/sib-chatbots/emergency-bot/chat'
     }
   ]);
 
@@ -301,38 +312,7 @@ export default function AdminChatDashboard() {
     }
   });
 
-  const [messages, setMessages] = useState([
-    {
-      id: 1,
-      sender: 'Dr. Sarah Johnson',
-      avatar: null,
-      content: 'Patient consultation for case #12847 has been completed. All vitals are normal.',
-      timestamp: '2:34 PM',
-      type: 'text',
-      isBot: false,
-      reactions: [{ emoji: '👍', count: 3 }, { emoji: '✅', count: 1 }]
-    },
-    {
-      id: 2,
-      sender: 'Health Assistant Bot',
-      avatar: null,
-      content: 'Automated reminder: 15 patients have appointments scheduled for tomorrow.',
-      timestamp: '2:32 PM',
-      type: 'bot',
-      isBot: true,
-      reactions: []
-    },
-    {
-      id: 3,
-      sender: 'Dr. Mike Chen',
-      avatar: null,
-      content: 'Emergency case incoming - preparing OR 3.',
-      timestamp: '2:30 PM',
-      type: 'text',
-      isBot: false,
-      reactions: [{ emoji: '🚨', count: 5 }]
-    }
-  ]);
+  const [messages, setMessages] = useState<any[]>([]);
 
   const [stats, setStats] = useState({
     totalMessages: 15847,
@@ -351,6 +331,7 @@ export default function AdminChatDashboard() {
   });
 
   const [dashboardOverview, setDashboardOverview] = useState<any | null>(null);
+  const [sibHealth, setSibHealth] = useState<any | null>(null);
 
   const loadDashboardOverview = async () => {
     if (!adminToken) return;
@@ -372,6 +353,25 @@ export default function AdminChatDashboard() {
       });
     } finally {
       setAnalyticsLoading(false);
+    }
+  };
+
+  // Load SIB chatbot health status
+  const loadSIBHealth = async () => {
+    try {
+      const { data } = await api.get('/sib-chatbots/health');
+      setSibHealth(data);
+      
+      // Update chatbot statuses based on SIB health
+      if (data?.chatbots) {
+        setChatBots(prev => prev.map(bot => {
+          const sibBot = data.chatbots.find((b: any) => b.id === bot.id);
+          return sibBot ? { ...bot, status: sibBot.status } : bot;
+        }));
+      }
+    } catch (error) {
+      console.error('Failed to load SIB health', error);
+      setSibHealth({ success: false, sib: { status: 'offline' } });
     }
   };
 
@@ -618,6 +618,7 @@ export default function AdminChatDashboard() {
   // Load admin analytics overview (doesn't block the main UI)
   useEffect(() => {
     loadDashboardOverview();
+    loadSIBHealth(); // Load SIB chatbot health status
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [adminToken]);
 
@@ -629,29 +630,31 @@ export default function AdminChatDashboard() {
         setIsLoading(true);
         setError(null);
         
-        // Use mock messages for now
-        setRoomMessages([
-          {
-            id: 1,
-            sender: 'Dr. Sarah Johnson',
-            avatar: null,
-            content: 'Patient consultation for case #12847 has been completed. All vitals are normal.',
-            timestamp: '2:34 PM',
-            type: 'text',
-            isBot: false,
-            reactions: [{ emoji: '👍', count: 3 }, { emoji: '✅', count: 1 }]
-          },
-          {
-            id: 2,
-            sender: 'Health Assistant Bot',
-            avatar: null,
-            content: 'Automated reminder: 15 patients have appointments scheduled for tomorrow.',
-            timestamp: '2:32 PM',
-            type: 'bot',
-            isBot: true,
-            reactions: []
-          }
-        ]);
+        // Fetch real messages from the API
+        const token = adminToken || teamToken;
+        const response = await api.get(`/chat/rooms/${selectedRoom}/messages`, {
+          headers: { Authorization: `Bearer ${token}` },
+          params: { limit: 50 }
+        });
+        
+        if (response.data?.success && response.data?.messages) {
+          // Transform API messages to match component format
+          const formattedMessages = response.data.messages.map((msg: any, index: number) => ({
+            id: msg.id || index + 1,
+            sender: msg.userName || msg.userId || 'Unknown',
+            avatar: msg.avatar || null,
+            content: msg.message || msg.content || '',
+            timestamp: msg.timestamp ? new Date(msg.timestamp).toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit' }) : 'now',
+            type: msg.source === 'whatsapp' ? 'whatsapp' : (msg.isBot ? 'bot' : 'text'),
+            isBot: msg.isBot || false,
+            isWhatsApp: msg.source === 'whatsapp',
+            phoneNumber: msg.phoneNumber,
+            reactions: msg.reactions || []
+          }));
+          setRoomMessages(formattedMessages);
+        } else {
+          setRoomMessages([]);
+        }
       } catch (e: any) {
         console.error('Failed to load chat messages', e);
         setError(e?.response?.data?.message || 'Failed to load messages');
@@ -662,30 +665,131 @@ export default function AdminChatDashboard() {
     };
 
     loadMessages();
-  }, [selectedRoom, adminToken]);
+  }, [selectedRoom, adminToken, teamToken]);
 
   const handleSendMessage = async () => {
     if (!chatMessage.trim() || !selectedRoom) return;
     
-    // Add message to local state (mock implementation)
-    const newMsg = {
-      id: messages.length + 1,
+    const userMessage = chatMessage.trim();
+    setChatMessage('');
+    
+    // Add user message to local state
+    const newUserMsg = {
+      id: Date.now(),
       sender: 'Admin',
       avatar: null,
-      content: chatMessage.trim(),
+      content: userMessage,
       timestamp: new Date().toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit' }),
       type: 'text',
       isBot: false,
       reactions: []
     };
     
-    setMessages(prev => [...prev, newMsg]);
-    setChatMessage('');
+    setRoomMessages(prev => [...prev, newUserMsg]);
+
+    // Check if this is a bot room (Dr. iSHA or chatbots)
+    const currentRoomData = rooms.find(r => r.id === selectedRoom);
+    const isAIBot = currentRoomData?.isBot || selectedRoom === 'dr-isha-bot';
     
-    toast({
-      title: 'Message Sent',
-      description: 'Your message has been sent successfully',
-    });
+    // Find if selected room is a chatbot from the chatBots list
+    const selectedBot = chatBots.find(bot => 
+      selectedRoom === bot.id || 
+      selectedRoom === 'dr-isha-bot'
+    );
+    
+    if (isAIBot || selectedBot) {
+      try {
+        setIsBotTyping(true);
+        
+        // Determine which bot to call
+        const botId = selectedBot?.id || 'health-bot'; // Default to health-bot for Dr. iSHA
+        const token = adminToken || teamToken;
+        
+        // Call SIB chatbot API
+        const response = await api.post(`/sib-chatbots/${botId}/chat`, {
+          message: userMessage,
+          conversationId: botConversationId || `admin_${Date.now()}`,
+          userId: null // Can be enhanced to pass actual user ID
+        }, {
+          headers: { Authorization: `Bearer ${token}` }
+        });
+        
+        if (response.data?.success) {
+          // Store conversation ID for context
+          if (response.data.conversationId) {
+            setBotConversationId(response.data.conversationId);
+          }
+          
+          // Add bot response
+          const botResponse = {
+            id: Date.now() + 1,
+            sender: response.data.botName || 'Dr. iSHA',
+            avatar: null,
+            content: response.data.response?.message || 'I apologize, I could not process that request.',
+            timestamp: new Date().toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit' }),
+            type: 'bot',
+            isBot: true,
+            reactions: [],
+            metadata: {
+              latency: response.data.response?.latency,
+              provider: response.data.response?.provider,
+              urgency: response.data.response?.urgency,
+              triageColor: response.data.response?.triageColor,
+              actions: response.data.response?.actions
+            }
+          };
+          
+          setRoomMessages(prev => [...prev, botResponse]);
+          
+          // Show urgency alert for emergency bot
+          if (response.data.response?.triageColor === 'RED') {
+            toast({
+              title: '🚨 Emergency Alert',
+              description: 'This situation requires immediate attention!',
+              variant: 'destructive'
+            });
+          }
+          
+          // Update bot stats (interactions count)
+          if (selectedBot) {
+            setChatBots(prev => prev.map(b => 
+              b.id === botId ? { ...b, interactions: b.interactions + 1 } : b
+            ));
+          }
+        } else {
+          throw new Error(response.data?.error || 'Bot response failed');
+        }
+      } catch (error: any) {
+        console.error('Bot chat error:', error);
+        
+        // Add error message
+        const errorMsg = {
+          id: Date.now() + 1,
+          sender: 'System',
+          avatar: null,
+          content: `⚠️ ${error?.response?.data?.error || 'Failed to get bot response. Please try again.'}`,
+          timestamp: new Date().toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit' }),
+          type: 'error',
+          isBot: true,
+          reactions: []
+        };
+        setRoomMessages(prev => [...prev, errorMsg]);
+        
+        toast({
+          title: 'Bot Error',
+          description: error?.response?.data?.error || 'Failed to communicate with AI assistant',
+          variant: 'destructive'
+        });
+      } finally {
+        setIsBotTyping(false);
+      }
+    } else {
+      // Regular channel message (existing behavior)
+      toast({
+        title: 'Message Sent',
+        description: 'Your message has been sent successfully',
+      });
+    }
   };
 
   const handleCreateRoom = (roomData) => {
@@ -710,16 +814,16 @@ export default function AdminChatDashboard() {
 
   if (isLoading) {
     return (
-      <AdminLayout>
+      <LayoutComponent>
         <div className="flex items-center justify-center min-h-[400px]">
           <RefreshCw className="h-8 w-8 animate-spin text-blue-600" />
         </div>
-      </AdminLayout>
+      </LayoutComponent>
     );
   }
 
   return (
-    <AdminLayout>
+    <LayoutComponent>
       <div className="h-[calc(100vh-120px)] flex flex-col space-y-4">
         {/* Header */}
         <div className="flex items-center justify-between">
@@ -1169,7 +1273,7 @@ export default function AdminChatDashboard() {
                 </div>
 
                 {/* Messages */}
-                <ScrollArea className="flex-1 p-4">
+                <ScrollArea className="flex-1 p-4 bg-slate-100 dark:bg-slate-800">
                   <div className="space-y-4">
                     {selectedWhatsappNumber ? (
                       whatsappMessages.length === 0 ? (
@@ -1214,25 +1318,32 @@ export default function AdminChatDashboard() {
                           </div>
                         ))
                       )
+                    ) : roomMessages.length === 0 ? (
+                      <div className="text-center py-8 text-slate-500 dark:text-slate-400">
+                        No messages in this room yet
+                      </div>
                     ) : (
-                      messages.map((message) => (
-                        <div key={message.id} className="flex space-x-3">
-                          <Avatar className="h-8 w-8">
+                      roomMessages.map((message) => (
+                        <div key={message.id} className={`flex space-x-3 p-3 rounded-lg shadow-sm ${message.isWhatsApp ? 'bg-green-50 dark:bg-green-900/30 border border-green-200 dark:border-green-800' : 'bg-white dark:bg-slate-700 border border-slate-200 dark:border-slate-600'}`}>
+                          <Avatar className="h-10 w-10 ring-2 ring-offset-2 ${message.isWhatsApp ? 'ring-green-400' : 'ring-blue-400'}">
                             <AvatarImage src={message.avatar} />
-                            <AvatarFallback className="text-xs">
-                              {message.isBot ? <Bot className="h-4 w-4" /> : message.sender.split(' ').map(n => n[0]).join('')}
+                            <AvatarFallback className={`text-xs font-semibold ${message.isWhatsApp ? 'bg-green-500 text-white' : 'bg-blue-500 text-white'}`}>
+                              {message.isBot ? <Bot className="h-4 w-4" /> : 
+                               message.isWhatsApp ? <Smartphone className="h-4 w-4" /> :
+                               message.sender?.split(' ').map((n: string) => n[0]).join('')}
                             </AvatarFallback>
                           </Avatar>
                           <div className="flex-1 space-y-1">
                             <div className="flex items-center space-x-2">
-                              <span className="font-medium text-sm">{message.sender}</span>
-                              {message.isBot && <Badge variant="secondary" className="text-xs">BOT</Badge>}
-                              <span className="text-xs text-muted-foreground">{message.timestamp}</span>
+                              <span className="font-semibold text-sm text-slate-900 dark:text-slate-100">{message.sender}</span>
+                              {message.isBot && <Badge variant="secondary" className="text-xs bg-purple-100 text-purple-700">BOT</Badge>}
+                              {message.isWhatsApp && <Badge className="text-xs bg-green-500 text-white">WhatsApp</Badge>}
+                              <span className="text-xs text-slate-500 dark:text-slate-400">{message.timestamp}</span>
                             </div>
-                            <p className="text-sm">{message.content}</p>
-                            {message.reactions.length > 0 && (
+                            <p className="text-sm text-slate-700 dark:text-slate-200 leading-relaxed">{message.content}</p>
+                            {message.reactions && message.reactions.length > 0 && (
                               <div className="flex space-x-1">
-                                {message.reactions.map((reaction, idx) => (
+                                {message.reactions.map((reaction: any, idx: number) => (
                                   <Button
                                     key={idx}
                                     variant="outline"
@@ -1249,10 +1360,23 @@ export default function AdminChatDashboard() {
                       ))
                     )}
                   </div>
+
+                  {/* Typing Indicator for Bot */}
+                  {isBotTyping && (
+                    <div className="flex items-center space-x-2 px-4 py-2">
+                      <Bot className="h-5 w-5 text-purple-600 animate-pulse" />
+                      <div className="flex space-x-1">
+                        <span className="w-2 h-2 bg-purple-400 rounded-full animate-bounce" style={{ animationDelay: '0ms' }}></span>
+                        <span className="w-2 h-2 bg-purple-400 rounded-full animate-bounce" style={{ animationDelay: '150ms' }}></span>
+                        <span className="w-2 h-2 bg-purple-400 rounded-full animate-bounce" style={{ animationDelay: '300ms' }}></span>
+                      </div>
+                      <span className="text-xs text-purple-600">AI is typing...</span>
+                    </div>
+                  )}
                 </ScrollArea>
 
                 {/* Message Input */}
-                <div className="p-4 border-t bg-white">
+                <div className="p-4 border-t bg-white dark:bg-slate-800 shadow-lg">
                   {selectedWhatsappNumber ? (
                     <div className="flex space-x-2">
                       <div className="flex-1 relative">
@@ -2068,7 +2192,7 @@ export default function AdminChatDashboard() {
           </TabsContent>
         </Tabs>
       </div>
-    </AdminLayout>
+    </LayoutComponent>
   );
 }
 

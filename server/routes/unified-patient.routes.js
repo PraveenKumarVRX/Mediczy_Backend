@@ -9,6 +9,7 @@
 import express from 'express';
 import { body, query } from 'express-validator';
 import { authUser } from '../middleware/auth.middleware.js';
+import { authLimiter } from '../middleware/rateLimiter.middleware.js';
 import {
   unifiedPatientSignup,
   unifiedPatientLogin,
@@ -66,6 +67,7 @@ router.post(
  */
 router.post(
   '/login',
+  authLimiter,
   [
     body('clinic_id').optional().trim(),
     body('clinic_slug').optional().trim(),

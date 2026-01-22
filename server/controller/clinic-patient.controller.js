@@ -10,6 +10,7 @@ import { Op } from 'sequelize';
 import jwt from 'jsonwebtoken';
 import bcrypt from 'bcryptjs';
 import { JWT_CONFIG } from '../config/auth.config.js';
+import { auditLoginAttempt } from '../middleware/audit.middleware.js';
 
 const JWT_SECRET = JWT_CONFIG.SECRET;
 
@@ -491,6 +492,7 @@ export const patientLogin = async (req, res) => {
   try {
     const { clinicId } = req.params;
     const { email, password } = req.body;
+    const normalizedEmail = String(email || '').toLowerCase();
 
     console.log('👤 Patient login attempt:', { email, clinicId });
 
@@ -521,7 +523,7 @@ export const patientLogin = async (req, res) => {
     // Find patient
     const patient = await User.findOne({
       where: {
-        email,
+        email: normalizedEmail,
         role: 'patient',
         organization_id: clinicId,
         status: 'active'
@@ -529,6 +531,7 @@ export const patientLogin = async (req, res) => {
     });
 
     if (!patient) {
+      await auditLoginAttempt(req, null, normalizedEmail, false, 'Patient not found');
       return res.status(401).json({
         success: false,
         message: 'Invalid credentials or patient account not found'
@@ -538,6 +541,7 @@ export const patientLogin = async (req, res) => {
     // Verify password
     const isPasswordValid = await patient.verifyPassword(password);
     if (!isPasswordValid) {
+      await auditLoginAttempt(req, patient.id, normalizedEmail, false, 'Invalid password');
       return res.status(401).json({
         success: false,
         message: 'Invalid credentials'
@@ -562,7 +566,8 @@ export const patientLogin = async (req, res) => {
       { expiresIn: '7d' }
     );
 
-    console.log('✅ Patient login successful:', { email, clinic_name: clinic.name });
+    console.log('✅ Patient login successful:', { email: normalizedEmail, clinic_name: clinic.name });
+    await auditLoginAttempt(req, patient.id, normalizedEmail, true);
 
     res.json({
       success: true,

@@ -1,30 +1,18 @@
 import express from 'express';
 import jwt from 'jsonwebtoken';
-import bcrypt from 'bcryptjs';
 import { JWT_CONFIG } from '../../config/auth.config.js';
+import User from '../../models/postgres/user.model.postgres.js';
+import { authLimiter } from '../../middleware/rateLimiter.middleware.js';
+import { auditLoginAttempt } from '../../middleware/audit.middleware.js';
 
 const router = express.Router();
-
-// Mock PSU data (Public Sector Undertaking - replace with database later)
-const mockPSU = {
-  id: 1,
-  organizationName: "CGHS - Central Government Health Scheme",
-  email: "psu@mediczy.com",
-  password: "$2b$10$obqmH4fnl5vdW9BcYe17eu6kojg3pEQeysAYBve6ldW2Bf/TAcpl.", // PSU123
-  contactPerson: "PSU Health Administrator",
-  phone: "+91-9876543210",
-  department: "Ministry of Health & Family Welfare",
-  employeeCount: 50000,
-  registeredAddress: "Government Complex, New Delhi",
-  isActive: true,
-  beneficiaryCount: 200000
-};
+const JWT_SECRET = JWT_CONFIG.SECRET;
 
 /**
  * POST /api/psu/login
  * Authenticate PSU account
  */
-router.post('/login', async (req, res) => {
+router.post('/login', authLimiter, async (req, res) => {
   try {
     const { email, password } = req.body;
 
@@ -44,60 +32,46 @@ router.post('/login', async (req, res) => {
         message: 'Email and password are required'
       });
     }
+    const normalizedEmail = String(email).toLowerCase();
+    const psuUser = await User.findOne({
+      where: {
+        email: normalizedEmail,
+        role: 'psu_admin',
+        status: 'active'
+      }
+    });
 
-    // Check if PSU exists
-    if (email !== mockPSU.email) {
+    if (!psuUser) {
+      await auditLoginAttempt(req, null, normalizedEmail, false, 'PSU admin not found');
       return res.status(401).json({
         success: false,
         message: 'Invalid email or password'
       });
     }
 
-    // Verify password
-    const isPasswordValid = await bcrypt.compare(password, mockPSU.password);
+    const isPasswordValid = await psuUser.comparePassword(password);
     if (!isPasswordValid) {
+      await auditLoginAttempt(req, psuUser.id, normalizedEmail, false, 'Invalid password');
       return res.status(401).json({
         success: false,
         message: 'Invalid email or password'
       });
     }
 
-    // Check if PSU is active
-    if (!mockPSU.isActive) {
-      return res.status(403).json({
-        success: false,
-        message: 'Account is inactive. Please contact support.'
-      });
-    }
+    const token = psuUser.generateAuthToken();
+    await psuUser.update({ lastLoginAt: new Date() });
 
-    // Generate JWT token
-    const token = jwt.sign(
-      {
-        id: mockPSU.id,
-        psuId: mockPSU.id,
-        email: mockPSU.email,
-        organizationName: mockPSU.organizationName,
-        userType: 'psu',
-        role: 'psu'
-      },
-      JWT_CONFIG.SECRET,
-      { expiresIn: '7d' }
-    );
+    await auditLoginAttempt(req, psuUser.id, normalizedEmail, true);
 
-    // Return success response
     res.status(200).json({
       success: true,
       message: 'Login successful',
       token,
       psu: {
-        id: mockPSU.id,
-        organizationName: mockPSU.organizationName,
-        email: mockPSU.email,
-        contactPerson: mockPSU.contactPerson,
-        phone: mockPSU.phone,
-        department: mockPSU.department,
-        employeeCount: mockPSU.employeeCount,
-        beneficiaryCount: mockPSU.beneficiaryCount
+        id: psuUser.id,
+        email: psuUser.email,
+        role: psuUser.role,
+        organizationId: psuUser.organization_id || null
       }
     });
 

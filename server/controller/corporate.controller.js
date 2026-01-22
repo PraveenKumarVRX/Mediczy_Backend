@@ -2,6 +2,7 @@ import { validationResult } from 'express-validator';
 import { JWT_CONFIG } from '../config/auth.config.js';
 import userModel, { generateAuthTokenForUser } from '../models/user.model.intelligent.js';
 import { Corporate } from '../models/index.js';
+import { auditLoginAttempt } from '../middleware/audit.middleware.js';
 
 const seededEmployees = [
   {
@@ -439,68 +440,34 @@ export const corporateLogin = async (req, res) => {
 
   try {
     const { email, password } = req.body;
+    const normalizedEmail = String(email || '').toLowerCase();
     const bcrypt = (await import('bcrypt')).default;
     const jwt = (await import('jsonwebtoken')).default;
-    
-    // DEV/DEMO fallback to allow quick login without DB (disabled in production)
-    if (process.env.NODE_ENV !== 'production' || process.env.ALLOW_CORPORATE_DEMO === 'true') {
-      const demoEmail = 'corporate@mediczy.com';
-      const demoPassword = 'Corporate123';
-      if (email.toLowerCase() === demoEmail && password === demoPassword) {
-        const token = jwt.sign(
-          { userId: 'corp_demo', email: demoEmail, userType: 'corporate' },
-          JWT_CONFIG.SECRET || 'your-secret-key',
-          { expiresIn: '7d' }
-        );
-        return res.json({
-          success: true,
-          token,
-          user: {
-            id: 'corp_demo',
-            email: demoEmail,
-            firstName: 'Demo',
-            lastName: 'Corporate',
-            role: 'corporate',
-            corporateId: 'corp_demo'
-          },
-          corporate: {
-            id: 'corp_demo',
-            email: demoEmail,
-            companyName: 'Demo Corporate',
-            contactPersonName: 'Demo User',
-            status: 'active'
-          }
-        });
-      }
-    }
 
     // Require an active corporate record in the corporates table (allow pending for demo data)
     const corporateRecord = await Corporate.findOne({
       where: {
-        email: email.toLowerCase(),
+        email: normalizedEmail,
         status: ['active', 'Active', 'ACTIVE', 'pending', 'Pending']
       }
     });
 
     if (!corporateRecord) {
+      await auditLoginAttempt(req, null, normalizedEmail, false, 'Corporate not found');
       return res.status(401).json({ success: false, message: 'Invalid corporate credentials' });
     }
-
-    const fallbackPassword = process.env.CORPORATE_DEFAULT_PASSWORD || 'Corporate123';
 
     let validPassword = false;
     try {
       if (corporateRecord.password) {
         validPassword = await bcrypt.compare(password, corporateRecord.password);
-      } else {
-        validPassword = password === fallbackPassword;
       }
     } catch (err) {
-      console.warn('Corporate password verification failed, falling back to default:', err?.message);
-      validPassword = password === fallbackPassword;
+      console.warn('Corporate password verification failed:', err?.message);
     }
 
     if (!validPassword) {
+      await auditLoginAttempt(req, corporateRecord.id, normalizedEmail, false, 'Invalid password');
       return res.status(401).json({ success: false, message: 'Invalid corporate credentials' });
     }
 
@@ -513,9 +480,11 @@ export const corporateLogin = async (req, res) => {
         role: 'corporate',
         userType: 'corporate'
       },
-      JWT_CONFIG.SECRET || 'your-secret-key',
+      JWT_CONFIG.SECRET,
       { expiresIn: '7d' }
     );
+
+    await auditLoginAttempt(req, corporateRecord.id, normalizedEmail, true);
 
     return res.json({
       success: true,

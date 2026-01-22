@@ -1,6 +1,7 @@
 import express from 'express';
 import { body } from 'express-validator';
 import { authUser, requireRole } from '../middleware/auth.middleware.js';
+import { authLimiter } from '../middleware/rateLimiter.middleware.js';
 import {
   corporateLogin,
   getCorporateSummary,
@@ -345,6 +346,7 @@ let corporateBillingHistory = [
 
 router.post(
   '/login',
+  authLimiter,
   [
     body('email').isEmail().withMessage('Valid email is required'),
     body('password').notEmpty().withMessage('Password is required'),
@@ -354,6 +356,7 @@ router.post(
 
 router.post(
   '/auth/login',
+  authLimiter,
   [
     body('email').isEmail().withMessage('Valid email is required'),
     body('password').notEmpty().withMessage('Password is required'),

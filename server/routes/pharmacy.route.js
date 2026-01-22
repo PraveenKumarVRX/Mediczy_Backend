@@ -5,7 +5,11 @@
 
 import express from 'express';
 import bcrypt from 'bcrypt';
-import jwt from 'jsonwebtoken'; import { JWT_CONFIG } from '../config/auth.config.js'; import { Pharmacy } from '../models/index.js';
+import jwt from 'jsonwebtoken';
+import { JWT_CONFIG } from '../config/auth.config.js';
+import { Pharmacy } from '../models/index.js';
+import { authLimiter } from '../middleware/rateLimiter.middleware.js';
+import { auditLoginAttempt } from '../middleware/audit.middleware.js';
 import dashboardRouter from './pharmacy/dashboard.routes.js';
 import inventoryRouter from './pharmacy/inventory.routes.js';
 import posRouter from './pharmacy/pos.routes.js';
@@ -41,9 +45,10 @@ router.use('/analytics', analyticsRouter);
  * POST /api/pharmacy/login
  * Pharmacy login
  */
-router.post('/login', async (req, res) => {
+router.post('/login', authLimiter, async (req, res) => {
   try {
     const { email, password } = req.body;
+    const normalizedEmail = String(email || '').toLowerCase();
 
     if (!email || !password) {
       return res.status(400).json({
@@ -53,9 +58,10 @@ router.post('/login', async (req, res) => {
     }
 
     // Find pharmacy by email
-    const pharmacy = await Pharmacy.findOne({ where: { email } });
+    const pharmacy = await Pharmacy.findOne({ where: { email: normalizedEmail } });
 
     if (!pharmacy) {
+      await auditLoginAttempt(req, null, normalizedEmail, false, 'Pharmacy not found');
       return res.status(401).json({
         success: false,
         message: 'Invalid credentials'
@@ -66,6 +72,7 @@ router.post('/login', async (req, res) => {
     const isValidPassword = await bcrypt.compare(password, pharmacy.password);
 
     if (!isValidPassword) {
+      await auditLoginAttempt(req, pharmacy.id, normalizedEmail, false, 'Invalid password');
       return res.status(401).json({
         success: false,
         message: 'Invalid credentials'
@@ -83,6 +90,8 @@ router.post('/login', async (req, res) => {
       JWT_CONFIG.SECRET,
       { expiresIn: '7d' }
     );
+
+    await auditLoginAttempt(req, pharmacy.id, normalizedEmail, true);
 
     res.json({
       success: true,

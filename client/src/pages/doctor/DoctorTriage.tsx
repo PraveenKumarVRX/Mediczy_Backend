@@ -535,25 +535,42 @@ const DoctorTriage = () => {
 
   // Start video call with AI features
   const handleStartVideoCall = async (caseItem: TriageCase) => {
-    const roomId = caseItem.videoRoomId || `triage-${caseItem.id}-${Date.now()}`;
-    const doctorName = encodeURIComponent(`Dr.${currentDoctor?.firstName || 'Doctor'}`);
-    const videoUrl = `${MIROTALK_BASE_URL}/join/${roomId}?name=${doctorName}&audio=1&video=1&notify=0`;
-    
-    setCurrentVideoUrl(videoUrl);
-    setSelectedCase(caseItem);
-    setIsInVideoCall(true);
-    setConnectionStatus('connecting');
-    
-    // Start AI features
-    startAIFeatures();
-    
-    toast({
-      title: "🎥 Starting Video Consultation",
-      description: "AI features will be enabled automatically"
-    });
-    
-    // Mark as connected after a delay
-    setTimeout(() => setConnectionStatus('connected'), 3000);
+    try {
+      let roomId = caseItem.videoRoomId || `triage-${caseItem.id}-${Date.now()}`;
+
+      if (caseItem.appointmentId) {
+        const response = await api.post('/doctors/triage/accept-call', {
+          appointmentId: caseItem.appointmentId
+        });
+        roomId = response.data?.appointment?.roomId || roomId;
+      }
+
+      const doctorName = encodeURIComponent(`Dr.${currentDoctor?.firstName || 'Doctor'}`);
+      const videoUrl = `${MIROTALK_BASE_URL}/join/${roomId}?name=${doctorName}&audio=1&video=1&notify=0`;
+
+      setCurrentVideoUrl(videoUrl);
+      setSelectedCase(caseItem);
+      setIsInVideoCall(true);
+      setConnectionStatus('connecting');
+
+      // Start AI features
+      startAIFeatures();
+
+      toast({
+        title: "🎥 Starting Video Consultation",
+        description: "AI features will be enabled automatically"
+      });
+
+      // Mark as connected after a delay
+      setTimeout(() => setConnectionStatus('connected'), 3000);
+    } catch (error: any) {
+      console.error('Failed to start triage call:', error);
+      toast({
+        title: "Error",
+        description: error.response?.data?.message || "Failed to start triage call",
+        variant: "destructive",
+      });
+    }
   };
 
   // Open video in new tab (fallback)

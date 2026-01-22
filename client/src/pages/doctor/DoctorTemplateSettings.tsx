@@ -1,4 +1,4 @@
-import { useState, useRef } from "react";
+import { useState, useRef, useEffect } from "react";
 import { useAuth } from "@/auth/AuthProvider";
 import MainLayout from "@/components/layout/MainLayoutdoctor";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
@@ -105,11 +105,11 @@ const DoctorTemplateSettings = () => {
   });
 
   // Update settings when data is fetched
-  useState(() => {
+  useEffect(() => {
     if (settingsData?.settings) {
       setSettings(settingsData.settings);
     }
-  });
+  }, [settingsData?.settings]);
 
   // Save settings mutation
   const saveSettingsMutation = useMutation({

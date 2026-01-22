@@ -21,7 +21,7 @@ import {
   CalendarDays,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { useNavigate } from "react-router-dom";
 
 interface SidebarItem {
@@ -60,6 +60,22 @@ const CorporateSidebar = () => {
   const location = useLocation();
   const navigate = useNavigate();
   const [collapsed, setCollapsed] = useState(false);
+  const [corporateName, setCorporateName] = useState<string>('');
+
+  // Load corporate name from stored data
+  useEffect(() => {
+    try {
+      const corporateDataStr = localStorage.getItem('corporateData');
+      if (corporateDataStr) {
+        const corporateData = JSON.parse(corporateDataStr);
+        if (corporateData?.name) {
+          setCorporateName(corporateData.name);
+        }
+      }
+    } catch (e) {
+      console.error('Error loading corporate data:', e);
+    }
+  }, []);
 
   const handleLogout = () => {
     localStorage.removeItem("token");

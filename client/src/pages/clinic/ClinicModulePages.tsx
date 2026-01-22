@@ -8,7 +8,9 @@ import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { useToast } from "@/hooks/use-toast";
 import { ticketService } from "@/services/ticketService";
-import { useMemo, useState, useEffect } from "react";
+import api from "@/utils/api";
+import { Loader2 } from "lucide-react";
+import { ReactNode, useMemo, useState, useEffect } from "react";
 
 interface StatCardProps {
   title: string;
@@ -28,10 +30,41 @@ const formatStatValue = (value: number | string) =>
 const setStatValueAt = (stats: StatCardProps[], index: number, value: number) =>
   stats.map((stat, i) => (i === index ? { ...stat, value: formatStatValue(value) } : stat));
 
-const StatGrid = ({ items }: { items: StatCardProps[] }) => (
+const formatRelativeTime = (value?: string) => {
+  if (!value) return "";
+  const timestamp = new Date(value).getTime();
+  if (Number.isNaN(timestamp)) return "";
+  const diff = Date.now() - timestamp;
+  const minutes = Math.floor(diff / 60000);
+  if (minutes < 1) return "just now";
+  if (minutes < 60) return `${minutes} min ago`;
+  const hours = Math.floor(minutes / 60);
+  if (hours < 24) return `${hours} hr ago`;
+  const days = Math.floor(hours / 24);
+  return `${days} day${days > 1 ? "s" : ""} ago`;
+};
+
+const StatGrid = ({
+  items,
+  onStatClick,
+  activeIndex,
+}: {
+  items: StatCardProps[];
+  onStatClick?: (item: StatCardProps, index: number) => void;
+  activeIndex?: number;
+}) => (
   <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-4">
-    {items.map((item) => (
-      <Card key={item.title} className="bg-white dark:bg-slate-800/50 border-slate-200 dark:border-slate-700">
+    {items.map((item, index) => {
+      const isActive = activeIndex === index;
+      const clickable = Boolean(onStatClick);
+      return (
+        <Card
+          key={item.title}
+          className={`bg-white dark:bg-slate-800/50 border-slate-200 dark:border-slate-700 transition-shadow ${
+            clickable ? "cursor-pointer hover:shadow-md" : ""
+          } ${isActive ? "ring-1 ring-teal-400" : ""}`}
+          onClick={() => onStatClick?.(item, index)}
+        >
         <CardHeader className="pb-2">
           <CardTitle className="text-sm text-muted-foreground">{item.title}</CardTitle>
         </CardHeader>
@@ -40,14 +73,17 @@ const StatGrid = ({ items }: { items: StatCardProps[] }) => (
           {item.helper && <p className="text-xs text-muted-foreground mt-1">{item.helper}</p>}
         </CardContent>
       </Card>
-    ))}
+      );
+    })}
   </div>
 );
 
 const PlaceholderList = ({
   items,
+  emptyMessage = "No activity recorded.",
 }: {
   items: { label: string; meta?: string; status?: string }[];
+  emptyMessage?: string;
 }) => (
   <div className="space-y-3">
     {items.map((item) => (
@@ -60,7 +96,7 @@ const PlaceholderList = ({
       </div>
     ))}
     {items.length === 0 && (
-      <p className="text-sm text-muted-foreground">No activity recorded.</p>
+      <p className="text-sm text-muted-foreground">{emptyMessage}</p>
     )}
   </div>
 );
@@ -95,19 +131,33 @@ const ActionPage = ({
   stats,
   initialItems,
   action,
+  onStatClick,
+  activeStatIndex,
+  filters,
+  isLoading,
+  errorMessage,
+  emptyMessage,
+  footer,
 }: {
   title: string;
   subtitle: string;
   stats: StatCardProps[];
   initialItems: { label: string; meta?: string; status?: string }[];
   action?: ActionMode;
+  onStatClick?: (item: StatCardProps, index: number) => void;
+  activeStatIndex?: number;
+  filters?: ReactNode;
+  isLoading?: boolean;
+  errorMessage?: string | null;
+  emptyMessage?: string;
+  footer?: ReactNode;
 }) => {
   const { toast } = useToast();
   const [items, setItems] = useState(initialItems);
   const [open, setOpen] = useState(false);
   const [submitting, setSubmitting] = useState(false);
   const [values, setValues] = useState<Record<string, string>>({});
-  
+
   useEffect(() => {
     setItems(initialItems);
   }, [initialItems]);
@@ -146,7 +196,8 @@ const ActionPage = ({
   return (
     <ClinicLayout title={title} subtitle={subtitle}>
       <div className="space-y-6">
-        <StatGrid items={stats} />
+        <StatGrid items={stats} onStatClick={onStatClick} activeIndex={activeStatIndex} />
+        {filters && <div className="flex flex-wrap gap-2">{filters}</div>}
         <Card>
           <CardHeader className="flex flex-row items-center justify-between">
             <div>
@@ -160,8 +211,18 @@ const ActionPage = ({
             )}
           </CardHeader>
           <CardContent>
-            <PlaceholderList items={items} />
+            {isLoading ? (
+              <div className="flex items-center justify-center py-10 text-sm text-muted-foreground">
+                <Loader2 className="h-5 w-5 animate-spin mr-2" />
+                Loading {title.toLowerCase()}...
+              </div>
+            ) : errorMessage ? (
+              <div className="py-6 text-sm text-red-500">{errorMessage}</div>
+            ) : (
+              <PlaceholderList items={items} emptyMessage={emptyMessage} />
+            )}
           </CardContent>
+          {footer && <div className="px-6 pb-6">{footer}</div>}
         </Card>
 
         {action?.kind === "dialog" && (
@@ -360,6 +421,7 @@ export const ClinicQueuePage = () =>
         { label: "Diagnostics", meta: "12 waiting", status: "Steady" },
         { label: "Dental", meta: "5 waiting", status: "Smooth" },
       ],
+      countStatIndex: 0,
       action: {
         kind: "dialog",
         actionLabel: "Manage tokens",
@@ -376,37 +438,74 @@ export const ClinicQueuePage = () =>
     (v) => ({ label: v.token?.trim() ? `Token updated: ${v.token.trim()}` : "Token updated", meta: v.queue || undefined, status: "Updated" })
   );
 
-export const ClinicDoctorsPage = () =>
-  withSimpleItemAppend(
-    {
-      title: "Doctors",
-      subtitle: "Daily rosters and availability",
-      stats: [
-        { title: "On Duty", value: "32" },
-        { title: "On Call", value: "6" },
-        { title: "Telehealth", value: "8" },
-        { title: "Leave", value: "3" },
-      ],
-      items: [
-        { label: "Cardiology", meta: "Slots filled", status: "Ready" },
-        { label: "ENT", meta: "1 locum pending", status: "Action" },
-        { label: "Physio", meta: "Remote sessions live", status: "Online" },
-      ],
-      action: {
-        kind: "dialog",
-        actionLabel: "Invite doctor",
-        dialogTitle: "Invite Doctor",
-        dialogDescription: "Send an invite to a doctor.",
-        fields: [
-          { key: "name", label: "Doctor Name", type: "text" },
-          { key: "email", label: "Email", type: "text" },
-          { key: "specialty", label: "Specialty", type: "text" },
-        ],
-        onSubmit: () => {},
-      },
+export const ClinicDoctorsPage = () => {
+  const { toast } = useToast();
+  const filterKeys = ["on-duty", "on-call", "telehealth", "leave"] as const;
+  const [activeFilter, setActiveFilter] = useState(0);
+  const [stats, setStats] = useState<StatCardProps[]>([
+    { title: "On Duty", value: "32" },
+    { title: "On Call", value: "6" },
+    { title: "Telehealth", value: "8" },
+    { title: "Leave", value: "3" },
+  ]);
+  const [itemsByFilter, setItemsByFilter] = useState<Record<string, { label: string; meta?: string; status?: string }[]>>({
+    "on-duty": [
+      { label: "Dr. Kapoor", meta: "OPD • 14 patients", status: "Active" },
+      { label: "Dr. Sen", meta: "Dermatology • 9 patients", status: "Active" },
+      { label: "Dr. Nair", meta: "Pediatrics • 6 patients", status: "Active" },
+    ],
+    "on-call": [
+      { label: "Dr. Mehta", meta: "Emergency • 2 pending", status: "Standby" },
+      { label: "Dr. Rao", meta: "Surgery • 1 standby", status: "Standby" },
+    ],
+    telehealth: [
+      { label: "Dr. Iyer", meta: "Video • 4 patients", status: "Online" },
+      { label: "Dr. Bose", meta: "Tele-consult • 3 patients", status: "Online" },
+    ],
+    leave: [
+      { label: "Dr. Thomas", meta: "Back on Apr 6", status: "Leave" },
+      { label: "Dr. Dutta", meta: "Back on Apr 8", status: "Leave" },
+    ],
+  });
+
+  const activeKey = filterKeys[activeFilter];
+  const action: ActionMode = {
+    kind: "dialog",
+    actionLabel: "Invite doctor",
+    dialogTitle: "Invite Doctor",
+    dialogDescription: "Send an invite to a doctor.",
+    fields: [
+      { key: "name", label: "Doctor Name", type: "text" },
+      { key: "email", label: "Email", type: "text" },
+      { key: "specialty", label: "Specialty", type: "text" },
+    ],
+    onSubmit: async (values) => {
+      const nextItem = {
+        label: values.name?.trim() ? `Invited: ${values.name.trim()}` : "Doctor invited",
+        meta: values.specialty || values.email || undefined,
+        status: "Invited",
+      };
+      setItemsByFilter((prev) => ({
+        ...prev,
+        "on-duty": [nextItem, ...(prev["on-duty"] || [])],
+      }));
+      setStats((prev) => setStatValueAt(prev, 0, toNumber(prev[0]?.value) + 1));
+      toast({ title: "Saved", description: "Doctor invite queued." });
     },
-    (v) => ({ label: v.name?.trim() ? `Invited: ${v.name.trim()}` : "Doctor invited", meta: v.specialty || v.email || undefined, status: "Invited" })
+  };
+
+  return (
+    <ActionPage
+      title="Doctors"
+      subtitle="Daily rosters and availability"
+      stats={stats}
+      initialItems={itemsByFilter[activeKey] || []}
+      action={action}
+      onStatClick={(_, index) => setActiveFilter(index)}
+      activeStatIndex={activeFilter}
+    />
   );
+};
 
 export const ClinicConsultationsPage = () =>
   withSimpleItemAppend(
@@ -507,70 +606,140 @@ export const ClinicPharmacyPage = () =>
     (v) => ({ label: v.vendor?.trim() ? `PO raised: ${v.vendor.trim()}` : "PO raised", meta: v.item || undefined, status: "Requested" })
   );
 
-export const ClinicLabTestsPage = () =>
-  withSimpleItemAppend(
-    {
-      title: "Lab Tests",
-      subtitle: "Sample collection and results",
-      stats: [
-        { title: "Booked", value: "64" },
-        { title: "Collected", value: "42" },
-        { title: "Processing", value: "18" },
-        { title: "Delivered", value: "36" },
-      ],
-      items: [
-        { label: "Blood profiles", meta: "12 fasted", status: "Queued" },
-        { label: "Radiology", meta: "6 pending QA", status: "Review" },
-        { label: "Home collection", meta: "8 routes live", status: "Dispatch" },
-      ],
-      action: {
-        kind: "dialog",
-        actionLabel: "Book slot",
-        dialogTitle: "Book Lab Slot",
-        dialogDescription: "Reserve a lab test slot.",
-        fields: [
-          { key: "patient", label: "Patient Name", type: "text" },
-          { key: "test", label: "Test Name", type: "text" },
-          { key: "date", label: "Date", type: "date" },
-          { key: "notes", label: "Notes", type: "textarea" },
-        ],
-        onSubmit: () => {},
-      },
-    },
-    (v) => ({ label: v.patient?.trim() ? `Slot booked: ${v.patient.trim()}` : "Slot booked", meta: v.test || v.date || undefined, status: "Booked" })
-  );
+export const ClinicLabTestsPage = () => {
+  const { toast } = useToast();
+  const filterKeys = ["booked", "collected", "processing", "delivered"] as const;
+  const [activeFilter, setActiveFilter] = useState(0);
+  const [stats, setStats] = useState<StatCardProps[]>([
+    { title: "Booked", value: "64" },
+    { title: "Collected", value: "42" },
+    { title: "Processing", value: "18" },
+    { title: "Delivered", value: "36" },
+  ]);
+  const [itemsByFilter, setItemsByFilter] = useState<Record<string, { label: string; meta?: string; status?: string }[]>>({
+    booked: [
+      { label: "Blood profiles", meta: "12 fasted", status: "Booked" },
+      { label: "Radiology", meta: "6 pending QA", status: "Booked" },
+    ],
+    collected: [
+      { label: "Home collection", meta: "8 routes live", status: "Collected" },
+      { label: "CBC samples", meta: "5 completed", status: "Collected" },
+    ],
+    processing: [
+      { label: "Thyroid panel", meta: "ETA 4 hrs", status: "Processing" },
+      { label: "Liver panel", meta: "QA pending", status: "Processing" },
+    ],
+    delivered: [
+      { label: "Lipid profile", meta: "Results sent", status: "Delivered" },
+      { label: "ECG", meta: "Shared with doctor", status: "Delivered" },
+    ],
+  });
 
-export const ClinicBillingPage = () =>
-  withSimpleItemAppend(
-    {
-      title: "Billing",
-      subtitle: "Counters, pricing, and receivables",
-      stats: [
-        { title: "Invoices", value: "142" },
-        { title: "Pending", value: "18" },
-        { title: "Avg. Ticket", value: "₹1,540" },
-        { title: "Discounts", value: "₹24K" },
-      ],
-      items: [
-        { label: "TPA desk", meta: "6 approvals due", status: "Follow" },
-        { label: "Corporate plans", meta: "₹4.2L billed", status: "Sent" },
-        { label: "Cash counter", meta: "Balanced", status: "Closed" },
-      ],
-      action: {
-        kind: "dialog",
-        actionLabel: "Create invoice",
-        dialogTitle: "Create Invoice",
-        dialogDescription: "Create a billing invoice.",
-        fields: [
-          { key: "patient", label: "Patient Name", type: "text" },
-          { key: "amount", label: "Amount (₹)", type: "number" },
-          { key: "notes", label: "Notes", type: "textarea" },
-        ],
-        onSubmit: () => {},
-      },
+  const activeKey = filterKeys[activeFilter];
+  const action: ActionMode = {
+    kind: "dialog",
+    actionLabel: "Book slot",
+    dialogTitle: "Book Lab Slot",
+    dialogDescription: "Reserve a lab test slot.",
+    fields: [
+      { key: "patient", label: "Patient Name", type: "text" },
+      { key: "test", label: "Test Name", type: "text" },
+      { key: "date", label: "Date", type: "date" },
+      { key: "notes", label: "Notes", type: "textarea" },
+    ],
+    onSubmit: async (values) => {
+      const nextItem = {
+        label: values.patient?.trim() ? `Slot booked: ${values.patient.trim()}` : "Slot booked",
+        meta: values.test || values.date || undefined,
+        status: "Booked",
+      };
+      setItemsByFilter((prev) => ({
+        ...prev,
+        booked: [nextItem, ...(prev.booked || [])],
+      }));
+      setStats((prev) => setStatValueAt(prev, 0, toNumber(prev[0]?.value) + 1));
+      toast({ title: "Saved", description: "Lab slot booked." });
     },
-    (v) => ({ label: v.patient?.trim() ? `Invoice created: ${v.patient.trim()}` : "Invoice created", meta: v.amount ? `₹${v.amount}` : undefined, status: "Created" })
+  };
+
+  return (
+    <ActionPage
+      title="Lab Tests"
+      subtitle="Sample collection and results"
+      stats={stats}
+      initialItems={itemsByFilter[activeKey] || []}
+      action={action}
+      onStatClick={(_, index) => setActiveFilter(index)}
+      activeStatIndex={activeFilter}
+    />
   );
+};
+
+export const ClinicBillingPage = () => {
+  const { toast } = useToast();
+  const filterKeys = ["invoices", "pending", "avg-ticket", "discounts"] as const;
+  const [activeFilter, setActiveFilter] = useState(0);
+  const [stats, setStats] = useState<StatCardProps[]>([
+    { title: "Invoices", value: "142" },
+    { title: "Pending", value: "18" },
+    { title: "Avg. Ticket", value: "₹1,540" },
+    { title: "Discounts", value: "₹24K" },
+  ]);
+  const [itemsByFilter, setItemsByFilter] = useState<Record<string, { label: string; meta?: string; status?: string }[]>>({
+    invoices: [
+      { label: "INV-0241 • A. Singh", meta: "₹2,400", status: "Paid" },
+      { label: "INV-0242 • R. Patel", meta: "₹1,200", status: "Paid" },
+    ],
+    pending: [
+      { label: "INV-0245 • S. Khan", meta: "₹3,100", status: "Pending" },
+      { label: "INV-0246 • M. Das", meta: "₹980", status: "Pending" },
+    ],
+    "avg-ticket": [
+      { label: "Average ticket", meta: "₹1,540 across 24 invoices", status: "Info" },
+    ],
+    discounts: [
+      { label: "Discounted invoices", meta: "₹24K total waived", status: "Info" },
+    ],
+  });
+
+  const activeKey = filterKeys[activeFilter];
+  const action: ActionMode = {
+    kind: "dialog",
+    actionLabel: "Create invoice",
+    dialogTitle: "Create Invoice",
+    dialogDescription: "Create a billing invoice.",
+    fields: [
+      { key: "patient", label: "Patient Name", type: "text" },
+      { key: "amount", label: "Amount (₹)", type: "number" },
+      { key: "notes", label: "Notes", type: "textarea" },
+    ],
+    onSubmit: async (values) => {
+      const nextItem = {
+        label: values.patient?.trim() ? `Invoice created: ${values.patient.trim()}` : "Invoice created",
+        meta: values.amount ? `₹${values.amount}` : undefined,
+        status: "Created",
+      };
+      setItemsByFilter((prev) => ({
+        ...prev,
+        invoices: [nextItem, ...(prev.invoices || [])],
+      }));
+      setStats((prev) => setStatValueAt(prev, 0, toNumber(prev[0]?.value) + 1));
+      toast({ title: "Saved", description: "Invoice created." });
+    },
+  };
+
+  return (
+    <ActionPage
+      title="Billing"
+      subtitle="Counters, pricing, and receivables"
+      stats={stats}
+      initialItems={itemsByFilter[activeKey] || []}
+      action={action}
+      onStatClick={(_, index) => setActiveFilter(index)}
+      activeStatIndex={activeFilter}
+    />
+  );
+};
 
 export const ClinicPaymentsPage = () =>
   withSimpleItemAppend(
@@ -606,21 +775,75 @@ export const ClinicPaymentsPage = () =>
 
 export const ClinicReportsPage = () => {
   const stamp = new Date().toISOString().slice(0, 10);
+  const filterKeys = ["dashboards", "exports", "alerts", "shared"] as const;
+  const [activeFilter, setActiveFilter] = useState(0);
+  const activeKey = filterKeys[activeFilter];
+  const [items, setItems] = useState<{ label: string; meta?: string; status?: string }[]>([]);
+  const [stats, setStats] = useState<StatCardProps[]>([
+    { title: "Dashboards", value: "0" },
+    { title: "Exports", value: "0" },
+    { title: "Alerts", value: "0" },
+    { title: "Shared", value: "0" },
+  ]);
+  const [isLoading, setIsLoading] = useState(true);
+  const [errorMessage, setErrorMessage] = useState<string | null>(null);
+
+  useEffect(() => {
+    let active = true;
+    const loadReports = async () => {
+      setIsLoading(true);
+      setErrorMessage(null);
+      try {
+        const response = await api.get("/clinic/dashboard/reports", {
+          params: { filter: activeKey },
+        });
+        if (!response.data?.success) {
+          throw new Error(response.data?.message || "Reports fetch failed");
+        }
+        const payload = response.data?.data;
+        if (!payload) {
+          throw new Error("No reports data");
+        }
+        if (!active) return;
+        const nextItems = (payload.items || []).map((item: any) => {
+          const metaParts = [
+            item.reportType ? String(item.reportType).replace(/_/g, " ") : undefined,
+            item.uploadedAt ? new Date(item.uploadedAt).toLocaleDateString("en-IN") : undefined,
+          ].filter(Boolean);
+          return {
+            label: item.label || item.fileName || item.title || "Report",
+            meta: metaParts.join(" • ") || item.meta || undefined,
+            status: item.status || item.analysisStatus || undefined,
+          };
+        });
+        setItems(nextItems);
+        const nextStats = payload.stats || {};
+        setStats([
+          { title: "Dashboards", value: String(nextStats.dashboards ?? 0) },
+          { title: "Exports", value: String(nextStats.exports ?? 0) },
+          { title: "Alerts", value: String(nextStats.alerts ?? 0) },
+          { title: "Shared", value: String(nextStats.shared ?? 0) },
+        ]);
+      } catch (error: any) {
+        if (!active) return;
+        setErrorMessage("Failed to load reports.");
+      } finally {
+        if (active) setIsLoading(false);
+      }
+    };
+    loadReports();
+    return () => {
+      active = false;
+    };
+  }, [activeKey]);
+
   return (
     <ActionPage
+      key={activeKey}
       title="Reports"
       subtitle="Clinical and business insights"
-      stats={[
-        { title: "Dashboards", value: "6" },
-        { title: "Exports", value: "12" },
-        { title: "Alerts", value: "3" },
-        { title: "Shared", value: "8" },
-      ]}
-      initialItems={[
-        { label: "OPD growth", meta: "+18% MoM", status: "Positive" },
-        { label: "Specialty mix", meta: "60% general", status: "Stable" },
-        { label: "Revenue trend", meta: "₹1.1Cr QTD", status: "Tracking" },
-      ]}
+      stats={stats}
+      initialItems={items}
       action={{
         kind: "export",
         actionLabel: "Export data",
@@ -628,14 +851,25 @@ export const ClinicReportsPage = () => {
           downloadCsv(
             `clinic-reports-export-${stamp}.csv`,
             ["Metric", "Value"],
-            [
-              ["OPD growth", "+18% MoM"],
-              ["Specialty mix", "60% general"],
-              ["Revenue trend", "₹1.1Cr QTD"],
-            ]
+            items.map((item) => [item.label, item.meta || item.status || ""])
           );
         },
       }}
+      filters={filterKeys.map((key, index) => (
+        <Button
+          key={key}
+          size="sm"
+          variant={activeFilter === index ? "default" : "outline"}
+          onClick={() => setActiveFilter(index)}
+        >
+          {key.charAt(0).toUpperCase() + key.slice(1)}
+        </Button>
+      ))}
+      isLoading={isLoading}
+      errorMessage={errorMessage}
+      emptyMessage="No reports found for this view."
+      onStatClick={(_, index) => setActiveFilter(index)}
+      activeStatIndex={activeFilter}
     />
   );
 };
@@ -672,37 +906,145 @@ export const ClinicStaffPage = () =>
     (v) => ({ label: v.name?.trim() ? `Added: ${v.name.trim()}` : "Added staff", meta: v.role || v.email || undefined, status: "Active" })
   );
 
-export const ClinicNotificationsPage = () =>
-  withSimpleItemAppend(
-    {
-      title: "Notifications",
-      subtitle: "Operational alerts",
-      stats: [
-        { title: "Unread", value: "18" },
-        { title: "High", value: "3" },
-        { title: "Reminders", value: "12" },
-        { title: "Escalated", value: "1" },
-      ],
-      items: [
-        { label: "Inventory low", meta: "Vaccines", status: "Critical" },
-        { label: "Maintenance", meta: "X-Ray calibration", status: "Upcoming" },
-        { label: "Feedback", meta: "4.7 rating", status: "Great" },
-      ],
-      action: {
-        kind: "dialog",
-        actionLabel: "Configure",
-        dialogTitle: "Configure Notifications",
-        dialogDescription: "Update notification preferences.",
-        fields: [
-          { key: "quietHours", label: "Quiet hours (e.g. 22:00-07:00)", type: "text" },
-          { key: "channels", label: "Channels (Email/SMS/WhatsApp)", type: "text" },
-          { key: "notes", label: "Notes", type: "textarea" },
-        ],
-        onSubmit: () => {},
-      },
-    },
-    () => ({ label: "Notification settings updated", meta: "Saved", status: "Configured" })
+export const ClinicNotificationsPage = () => {
+  const filterKeys = ["unread", "high", "reminders", "escalated"] as const;
+  const [activeFilter, setActiveFilter] = useState(0);
+  const activeKey = filterKeys[activeFilter];
+  const [stats, setStats] = useState<StatCardProps[]>([
+    { title: "Unread", value: "0" },
+    { title: "High", value: "0" },
+    { title: "Reminders", value: "0" },
+    { title: "Escalated", value: "0" },
+  ]);
+  const [items, setItems] = useState<{ label: string; meta?: string; status?: string }[]>([]);
+  const [isLoading, setIsLoading] = useState(true);
+  const [isLoadingMore, setIsLoadingMore] = useState(false);
+  const [page, setPage] = useState(1);
+  const [hasMore, setHasMore] = useState(false);
+  const [errorMessage, setErrorMessage] = useState<string | null>(null);
+
+  useEffect(() => {
+    let active = true;
+    const loadNotifications = async () => {
+      setIsLoading(true);
+      setPage(1);
+      setErrorMessage(null);
+      try {
+        const response = await api.get("/clinic/dashboard/notifications", {
+          params: { filter: activeKey, page: 1, limit: 10 },
+        });
+        if (!response.data?.success) {
+          throw new Error(response.data?.message || "Notifications fetch failed");
+        }
+        const payload = response.data?.data;
+        if (!payload) {
+          throw new Error("No notifications data");
+        }
+        if (!active) return;
+        const nextItems = (payload.items || []).map((item: any) => ({
+          label: item.title || item.label || "Notification",
+          meta: [item.message, formatRelativeTime(item.createdAt)].filter(Boolean).join(" • ") || undefined,
+          status: item.status || (item.read ? "Read" : "Unread"),
+        }));
+        setItems(nextItems);
+        setHasMore(Boolean(payload.pagination?.hasMore));
+        const nextStats = payload.stats || {};
+        setStats([
+          { title: "Unread", value: String(nextStats.unread ?? 0) },
+          { title: "High", value: String(nextStats.high ?? 0) },
+          { title: "Reminders", value: String(nextStats.reminders ?? 0) },
+          { title: "Escalated", value: String(nextStats.escalated ?? 0) },
+        ]);
+      } catch (error: any) {
+        if (!active) return;
+        setErrorMessage("Failed to load notifications.");
+      } finally {
+        if (active) setIsLoading(false);
+      }
+    };
+    loadNotifications();
+    return () => {
+      active = false;
+    };
+  }, [activeKey]);
+
+  const loadMore = async () => {
+    if (isLoadingMore || !hasMore) return;
+    const nextPage = page + 1;
+    setIsLoadingMore(true);
+    try {
+      const response = await api.get("/clinic/dashboard/notifications", {
+        params: { filter: activeKey, page: nextPage, limit: 10 },
+      });
+      if (!response.data?.success) {
+        throw new Error(response.data?.message || "Notifications fetch failed");
+      }
+      const payload = response.data?.data;
+      if (!payload) {
+        throw new Error("No notifications data");
+      }
+      const nextItems = (payload.items || []).map((item: any) => ({
+        label: item.title || item.label || "Notification",
+        meta: [item.message, formatRelativeTime(item.createdAt)].filter(Boolean).join(" • ") || undefined,
+        status: item.status || (item.read ? "Read" : "Unread"),
+      }));
+      setItems((prev) => [...prev, ...nextItems]);
+      setHasMore(Boolean(payload.pagination?.hasMore));
+      setPage(nextPage);
+    } catch (error) {
+      setHasMore(false);
+    } finally {
+      setIsLoadingMore(false);
+    }
+  };
+  const action: ActionMode = {
+    kind: "dialog",
+    actionLabel: "Configure",
+    dialogTitle: "Configure Notifications",
+    dialogDescription: "Update notification preferences.",
+    fields: [
+      { key: "quietHours", label: "Quiet hours (e.g. 22:00-07:00)", type: "text" },
+      { key: "channels", label: "Channels (Email/SMS/WhatsApp)", type: "text" },
+      { key: "notes", label: "Notes", type: "textarea" },
+    ],
+    onSubmit: () => {},
+  };
+
+  return (
+    <ActionPage
+      key={activeKey}
+      title="Notifications"
+      subtitle="Operational alerts"
+      stats={stats}
+      initialItems={items}
+      action={action}
+      filters={filterKeys.map((key, index) => (
+        <Button
+          key={key}
+          size="sm"
+          variant={activeFilter === index ? "default" : "outline"}
+          onClick={() => setActiveFilter(index)}
+        >
+          {key.charAt(0).toUpperCase() + key.slice(1)}
+        </Button>
+      ))}
+      footer={
+        hasMore ? (
+          <div className="flex justify-center">
+            <Button variant="outline" size="sm" onClick={loadMore} disabled={isLoadingMore}>
+              {isLoadingMore ? "Loading..." : "Load more"}
+            </Button>
+          </div>
+        ) : null
+      }
+      isLoading={isLoading}
+      errorMessage={errorMessage}
+      emptyMessage="No notifications found for this view."
+  onStatClick={(_, index) => setActiveFilter(index)}
+  activeStatIndex={activeFilter}
+    />
   );
+};
 
 export const ClinicSettingsPage = () =>
   withSimpleItemAppend(
@@ -854,4 +1196,3 @@ export const ClinicSupportPage = () => {
     </ClinicLayout>
   );
 };
-

@@ -8,6 +8,9 @@ import multer from 'multer';
 import path from 'path';
 import fs from 'fs';
 import { postgresSequelize as sequelize } from '../db/postgres-sequelize.js';
+import { JWT_CONFIG } from '../config/auth.config.js';
+import { authLimiter } from '../middleware/rateLimiter.middleware.js';
+import { auditLoginAttempt } from '../middleware/audit.middleware.js';
 
 const router = express.Router();
 
@@ -207,9 +210,10 @@ router.post('/register', [
  * @desc    Doctor login
  * @access  Public
  */
-router.post('/login', async (req, res) => {
+router.post('/login', authLimiter, async (req, res) => {
   try {
     const { email, password } = req.body;
+    const normalizedEmail = String(email || '').toLowerCase();
 
     if (!email || !password) {
       return res.status(400).json({
@@ -222,10 +226,11 @@ router.post('/login', async (req, res) => {
     const doctor = await doctorModel.findOne({
       where: sequelize.where(
         sequelize.fn('LOWER', sequelize.col('email')),
-        sequelize.fn('LOWER', email)
+        sequelize.fn('LOWER', normalizedEmail)
       )
     });
     if (!doctor) {
+      await auditLoginAttempt(req, null, normalizedEmail, false, 'Doctor not found');
       return res.status(401).json({
         success: false,
         message: 'Invalid credentials'
@@ -237,6 +242,7 @@ router.post('/login', async (req, res) => {
       ? await doctor.comparePassword(password)
       : await bcrypt.compare(password, doctor.password);
     if (!isValidPassword) {
+      await auditLoginAttempt(req, doctor.id, normalizedEmail, false, 'Invalid password');
       return res.status(401).json({
         success: false,
         message: 'Invalid credentials'
@@ -267,6 +273,8 @@ router.post('/login', async (req, res) => {
         JWT_CONFIG.SECRET,
         { expiresIn: '7d' }
       );
+
+    await auditLoginAttempt(req, doctor.id, normalizedEmail, true);
 
     res.json({
       success: true,

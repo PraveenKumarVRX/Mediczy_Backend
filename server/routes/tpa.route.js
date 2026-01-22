@@ -9,6 +9,8 @@ import mdIndiaTPA from '../services/mdindia-tpa.service.js';
 import healthIndiaTPA from '../services/healthindia-tpa.service.js';
 import tpaAggregator from '../services/tpa-aggregator.service.js';
 import { JWT_CONFIG } from '../config/auth.config.js';
+import { authLimiter } from '../middleware/rateLimiter.middleware.js';
+import { auditLoginAttempt } from '../middleware/audit.middleware.js';
 
 const router = express.Router();
 
@@ -348,12 +350,13 @@ router.post('/register', async (req, res) => {
  * TPA Login
  * POST /api/tpa/login
  */
-router.post('/login', async (req, res) => {
+router.post('/login', authLimiter, async (req, res) => {
   try {
     console.log('=== TPA LOGIN ROUTE HIT ===');
     console.log('Email:', req.body.email);
 
     const { email, password } = req.body;
+    const normalizedEmail = String(email || '').toLowerCase();
 
     if (!email || !password) {
       console.log('Missing email or password');
@@ -363,17 +366,18 @@ router.post('/login', async (req, res) => {
       });
     }
 
-    console.log('Searching for TPA with email (case-insensitive):', email);
+    console.log('Searching for TPA with email (case-insensitive):', normalizedEmail);
     const tpa = await TPA.findOne({
       where: sequelize.where(
         sequelize.fn('LOWER', sequelize.col('email')),
-        sequelize.fn('LOWER', email)
+        sequelize.fn('LOWER', normalizedEmail)
       )
     });
 
     console.log('TPA found:', tpa ? 'YES' : 'NO');
     if (!tpa) {
       console.log('TPA not found for email:', email);
+      await auditLoginAttempt(req, null, normalizedEmail, false, 'TPA not found');
       return res.status(401).json({
         success: false,
         message: 'Invalid email or password'
@@ -382,6 +386,7 @@ router.post('/login', async (req, res) => {
 
     const isPasswordValid = await tpa.comparePassword(password);
     if (!isPasswordValid) {
+      await auditLoginAttempt(req, tpa.id, normalizedEmail, false, 'Invalid password');
       return res.status(401).json({
         success: false,
         message: 'Invalid email or password'
@@ -389,6 +394,7 @@ router.post('/login', async (req, res) => {
     }
 
     if (tpa.status !== 'active') {
+      await auditLoginAttempt(req, tpa.id, normalizedEmail, false, 'TPA inactive');
       return res.status(403).json({
         success: false,
         message: 'TPA account is not active'
@@ -400,6 +406,8 @@ router.post('/login', async (req, res) => {
       JWT_CONFIG.SECRET,
       { expiresIn: '7d' }
     );
+
+    await auditLoginAttempt(req, tpa.id, normalizedEmail, true);
 
     res.json({
       success: true,

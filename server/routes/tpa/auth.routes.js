@@ -1,30 +1,18 @@
 import express from 'express';
 import jwt from 'jsonwebtoken';
-import bcrypt from 'bcryptjs';
 import { JWT_CONFIG } from '../../config/auth.config.js';
+import User from '../../models/postgres/user.model.postgres.js';
+import { authLimiter } from '../../middleware/rateLimiter.middleware.js';
+import { auditLoginAttempt } from '../../middleware/audit.middleware.js';
 
 const router = express.Router();
-
-// Mock TPA data (Third Party Administrator - replace with database later)
-const mockTPA = {
-  id: 1,
-  organizationName: "MediClaim TPA Services Ltd",
-  email: "tpa@mediczy.com",
-  password: "$2b$10$obqmH4fnl5vdW9BcYe17eu6kojg3pEQeysAYBve6ldW2Bf/TAcpl.", // TPA123
-  contactPerson: "TPA Administrator",
-  phone: "+91-9876543210",
-  licenseNumber: "TPA-2024-001",
-  servicesOffered: ["Health Insurance", "Cashless Claims", "Reimbursements"],
-  registeredAddress: "TPA Tower, Mumbai",
-  isActive: true,
-  networkSize: 5000
-};
+const JWT_SECRET = JWT_CONFIG.SECRET;
 
 /**
  * POST /api/tpa/login
  * Authenticate TPA account
  */
-router.post('/login', async (req, res) => {
+router.post('/login', authLimiter, async (req, res) => {
   try {
     const { email, password } = req.body;
 
@@ -44,60 +32,46 @@ router.post('/login', async (req, res) => {
         message: 'Email and password are required'
       });
     }
+    const normalizedEmail = String(email).toLowerCase();
+    const tpaUser = await User.findOne({
+      where: {
+        email: normalizedEmail,
+        role: 'tpa_admin',
+        status: 'active'
+      }
+    });
 
-    // Check if TPA exists
-    if (email !== mockTPA.email) {
+    if (!tpaUser) {
+      await auditLoginAttempt(req, null, normalizedEmail, false, 'TPA admin not found');
       return res.status(401).json({
         success: false,
         message: 'Invalid email or password'
       });
     }
 
-    // Verify password
-    const isPasswordValid = await bcrypt.compare(password, mockTPA.password);
+    const isPasswordValid = await tpaUser.comparePassword(password);
     if (!isPasswordValid) {
+      await auditLoginAttempt(req, tpaUser.id, normalizedEmail, false, 'Invalid password');
       return res.status(401).json({
         success: false,
         message: 'Invalid email or password'
       });
     }
 
-    // Check if TPA is active
-    if (!mockTPA.isActive) {
-      return res.status(403).json({
-        success: false,
-        message: 'Account is inactive. Please contact support.'
-      });
-    }
+    const token = tpaUser.generateAuthToken();
+    await tpaUser.update({ lastLoginAt: new Date() });
 
-    // Generate JWT token
-    const token = jwt.sign(
-      {
-        id: mockTPA.id,
-        tpaId: mockTPA.id,
-        email: mockTPA.email,
-        organizationName: mockTPA.organizationName,
-        userType: 'tpa',
-        role: 'tpa'
-      },
-      JWT_CONFIG.SECRET,
-      { expiresIn: '7d' }
-    );
+    await auditLoginAttempt(req, tpaUser.id, normalizedEmail, true);
 
-    // Return success response
     res.status(200).json({
       success: true,
       message: 'Login successful',
       token,
       tpa: {
-        id: mockTPA.id,
-        organizationName: mockTPA.organizationName,
-        email: mockTPA.email,
-        contactPerson: mockTPA.contactPerson,
-        phone: mockTPA.phone,
-        licenseNumber: mockTPA.licenseNumber,
-        servicesOffered: mockTPA.servicesOffered,
-        networkSize: mockTPA.networkSize
+        id: tpaUser.id,
+        email: tpaUser.email,
+        role: tpaUser.role,
+        organizationId: tpaUser.organization_id || null
       }
     });
 

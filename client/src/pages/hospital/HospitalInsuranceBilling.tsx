@@ -14,6 +14,7 @@ import { Progress } from '@/components/ui/progress';
 import { ScrollArea } from '@/components/ui/scroll-area';
 import { Checkbox } from '@/components/ui/checkbox';
 import api from '@/utils/api';
+import { loadHospitalStore, saveHospitalStore } from '@/utils/hospitalStorage';
 import HospitalLayout from '@/components/hospital/HospitalLayout';
 import { 
   Shield, Activity, Bell, Plus, Search, ArrowLeft, Edit, 
@@ -269,7 +270,22 @@ const HospitalInsuranceBilling = () => {
       ]
     },
   ];
-  const [claims, setClaims] = useState<InsuranceClaim[]>(initialClaims);
+  const [claims, setClaims] = useState<InsuranceClaim[]>(
+    () => loadHospitalStore('insurance-claims', initialClaims)
+  );
+  const [newClaimForm, setNewClaimForm] = useState({
+    uhid: '',
+    patientName: '',
+    policyNumber: '',
+    insurerName: '',
+    claimType: 'Cashless' as InsuranceClaim['claimType'],
+    priority: 'Normal' as InsuranceClaim['priority'],
+    admissionDate: '',
+    estimatedAmount: '',
+    diagnosis: '',
+    procedureCodes: '',
+    remarks: ''
+  });
 
   useEffect(() => {
     const token = localStorage.getItem('hospitalToken');
@@ -392,18 +408,123 @@ const HospitalInsuranceBilling = () => {
         updatedAt: today,
       };
 
-      const { data } = await api.patch(
-        `/hospital/insurance/claims/${editingClaim.id}`,
-        updatedClaim,
-        { headers: hospitalHeaders() }
-      );
+      let updated = { ...editingClaim, ...updatedClaim } as InsuranceClaim;
+      try {
+        const { data } = await api.patch(
+          `/hospital/insurance/claims/${editingClaim.id}`,
+          updatedClaim,
+          { headers: hospitalHeaders() }
+        );
+        updated = data?.data || updated;
+      } catch {
+        // Allow local persistence if API is unavailable
+      }
 
-      setClaims(prev => prev.map(c => c.id === editingClaim.id ? data : c));
+      setClaims(prev => {
+        const next = prev.map(c => c.id === editingClaim.id ? updated : c);
+        saveHospitalStore('insurance-claims', next);
+        return next;
+      });
       toast({ title: 'Claim updated', description: `${editingClaim.claimNumber} updated with new status.` });
       setEditingClaim(null);
     } catch (error: any) {
       toast({ 
         title: 'Failed to update claim', 
+        description: error.response?.data?.message || 'An error occurred',
+        variant: 'destructive'
+      });
+    }
+  };
+
+  const handleSubmitClaim = async () => {
+    if (!newClaimForm.uhid || !newClaimForm.patientName || !newClaimForm.insurerName || !newClaimForm.estimatedAmount) {
+      toast({
+        title: 'Missing fields',
+        description: 'UHID, patient name, insurer, and estimated amount are required.',
+        variant: 'destructive'
+      });
+      return;
+    }
+
+    const claimPayload = {
+      patientId: newClaimForm.uhid,
+      policyNumber: newClaimForm.policyNumber,
+      insuranceProvider: newClaimForm.insurerName,
+      claimAmount: parseFloat(newClaimForm.estimatedAmount)
+    };
+
+    try {
+      try {
+        await api.post(
+          '/hospital/insurance/claims',
+          claimPayload,
+          { headers: hospitalHeaders() }
+        );
+      } catch {
+        // Allow local persistence if API is unavailable
+      }
+
+      const today = new Date().toISOString().split('T')[0];
+      const created: InsuranceClaim = {
+        id: `CLM-${Date.now()}`,
+        claimNumber: `MED-${new Date().getFullYear()}-${Date.now().toString().slice(-6)}`,
+        patientId: newClaimForm.uhid,
+        patientName: newClaimForm.patientName,
+        uhid: newClaimForm.uhid,
+        insurerId: newClaimForm.insurerName.replace(/\s+/g, '-').toUpperCase(),
+        insurerName: newClaimForm.insurerName,
+        policyNumber: newClaimForm.policyNumber,
+        admissionDate: newClaimForm.admissionDate || today,
+        claimType: newClaimForm.claimType,
+        estimatedAmount: parseFloat(newClaimForm.estimatedAmount),
+        status: 'Submitted',
+        priority: newClaimForm.priority,
+        diagnosis: newClaimForm.diagnosis || 'Pending',
+        procedureCodes: newClaimForm.procedureCodes
+          ? newClaimForm.procedureCodes.split(',').map(code => code.trim()).filter(Boolean)
+          : [],
+        documents: [],
+        remarks: newClaimForm.remarks || '',
+        createdAt: today,
+        updatedAt: today,
+        timeline: [
+          {
+            date: today,
+            status: 'Submitted',
+            remarks: newClaimForm.remarks || 'Claim submitted',
+            updatedBy: 'Hospital Desk'
+          }
+        ]
+      };
+
+      setClaims(prev => {
+        const next = [created, ...prev];
+        saveHospitalStore('insurance-claims', next);
+        return next;
+      });
+
+      setNewClaimForm({
+        uhid: '',
+        patientName: '',
+        policyNumber: '',
+        insurerName: '',
+        claimType: 'Cashless',
+        priority: 'Normal',
+        admissionDate: '',
+        estimatedAmount: '',
+        diagnosis: '',
+        procedureCodes: '',
+        remarks: ''
+      });
+      setShowNewClaimDialog(false);
+
+      toast({
+        title: 'Claim submitted',
+        description: `${created.claimNumber} has been created.`
+      });
+    } catch (error: any) {
+      toast({
+        title: 'Failed to submit claim',
         description: error.response?.data?.message || 'An error occurred',
         variant: 'destructive'
       });
@@ -639,19 +760,34 @@ const HospitalInsuranceBilling = () => {
                     <div className="grid grid-cols-3 gap-4 py-4">
                       <div className="space-y-2">
                         <Label>Patient UHID</Label>
-                        <Input placeholder="Enter UHID" />
+                        <Input
+                          placeholder="Enter UHID"
+                          value={newClaimForm.uhid}
+                          onChange={(e) => setNewClaimForm(prev => ({ ...prev, uhid: e.target.value }))}
+                        />
                       </div>
                       <div className="space-y-2">
                         <Label>Patient Name</Label>
-                        <Input placeholder="Patient name" />
+                        <Input
+                          placeholder="Patient name"
+                          value={newClaimForm.patientName}
+                          onChange={(e) => setNewClaimForm(prev => ({ ...prev, patientName: e.target.value }))}
+                        />
                       </div>
                       <div className="space-y-2">
                         <Label>Policy Number</Label>
-                        <Input placeholder="Policy number" />
+                        <Input
+                          placeholder="Policy number"
+                          value={newClaimForm.policyNumber}
+                          onChange={(e) => setNewClaimForm(prev => ({ ...prev, policyNumber: e.target.value }))}
+                        />
                       </div>
                       <div className="space-y-2">
                         <Label>Insurance Company</Label>
-                        <Select>
+                        <Select
+                          value={newClaimForm.insurerName}
+                          onValueChange={(value) => setNewClaimForm(prev => ({ ...prev, insurerName: value }))}
+                        >
                           <SelectTrigger>
                             <SelectValue placeholder="Select insurer" />
                           </SelectTrigger>
@@ -664,7 +800,10 @@ const HospitalInsuranceBilling = () => {
                       </div>
                       <div className="space-y-2">
                         <Label>Claim Type</Label>
-                        <Select>
+                        <Select
+                          value={newClaimForm.claimType}
+                          onValueChange={(value) => setNewClaimForm(prev => ({ ...prev, claimType: value as InsuranceClaim['claimType'] }))}
+                        >
                           <SelectTrigger>
                             <SelectValue placeholder="Select type" />
                           </SelectTrigger>
@@ -677,7 +816,10 @@ const HospitalInsuranceBilling = () => {
                       </div>
                       <div className="space-y-2">
                         <Label>Priority</Label>
-                        <Select>
+                        <Select
+                          value={newClaimForm.priority}
+                          onValueChange={(value) => setNewClaimForm(prev => ({ ...prev, priority: value as InsuranceClaim['priority'] }))}
+                        >
                           <SelectTrigger>
                             <SelectValue placeholder="Select priority" />
                           </SelectTrigger>
@@ -690,23 +832,44 @@ const HospitalInsuranceBilling = () => {
                       </div>
                       <div className="space-y-2">
                         <Label>Admission Date</Label>
-                        <Input type="date" />
+                        <Input
+                          type="date"
+                          value={newClaimForm.admissionDate}
+                          onChange={(e) => setNewClaimForm(prev => ({ ...prev, admissionDate: e.target.value }))}
+                        />
                       </div>
                       <div className="space-y-2">
                         <Label>Estimated Amount</Label>
-                        <Input type="number" placeholder="Amount in ₹" />
+                        <Input
+                          type="number"
+                          placeholder="Amount in ₹"
+                          value={newClaimForm.estimatedAmount}
+                          onChange={(e) => setNewClaimForm(prev => ({ ...prev, estimatedAmount: e.target.value }))}
+                        />
                       </div>
                       <div className="space-y-2">
                         <Label>Diagnosis</Label>
-                        <Input placeholder="Primary diagnosis" />
+                        <Input
+                          placeholder="Primary diagnosis"
+                          value={newClaimForm.diagnosis}
+                          onChange={(e) => setNewClaimForm(prev => ({ ...prev, diagnosis: e.target.value }))}
+                        />
                       </div>
                       <div className="col-span-3 space-y-2">
                         <Label>Procedure Codes (ICD/CPT)</Label>
-                        <Input placeholder="Enter codes separated by comma" />
+                        <Input
+                          placeholder="Enter codes separated by comma"
+                          value={newClaimForm.procedureCodes}
+                          onChange={(e) => setNewClaimForm(prev => ({ ...prev, procedureCodes: e.target.value }))}
+                        />
                       </div>
                       <div className="col-span-3 space-y-2">
                         <Label>Remarks</Label>
-                        <Textarea placeholder="Additional notes..." />
+                        <Textarea
+                          placeholder="Additional notes..."
+                          value={newClaimForm.remarks}
+                          onChange={(e) => setNewClaimForm(prev => ({ ...prev, remarks: e.target.value }))}
+                        />
                       </div>
                       <div className="col-span-3 space-y-2">
                         <Label>Attach Documents</Label>
@@ -719,7 +882,7 @@ const HospitalInsuranceBilling = () => {
                     </div>
                     <DialogFooter>
                       <Button variant="outline" onClick={() => setShowNewClaimDialog(false)}>Cancel</Button>
-                      <Button className="bg-gradient-to-r from-green-600 to-emerald-600">Submit Claim</Button>
+                      <Button className="bg-gradient-to-r from-green-600 to-emerald-600" onClick={handleSubmitClaim}>Submit Claim</Button>
                     </DialogFooter>
                   </DialogContent>
                 </Dialog>

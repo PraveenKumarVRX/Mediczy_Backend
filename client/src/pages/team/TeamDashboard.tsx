@@ -22,7 +22,8 @@ import {
   Building2,
   Stethoscope,
   MessageSquare,
-  Ticket
+  Ticket,
+  MessageCircle
 } from 'lucide-react';
 import { Link, useNavigate } from 'react-router-dom';
 import api from '@/utils/api';
@@ -179,6 +180,15 @@ const TeamDashboard = () => {
       iconColor: "text-green-500",
       link: "/team/directory",
       pattern: "radial-gradient(circle at 0% 0%, rgba(34, 197, 94, 0.05) 0%, transparent 50%)",
+    },
+    {
+      title: "WhatsApp Communication",
+      description: "Manage customer conversations",
+      icon: MessageCircle,
+      color: "bg-gradient-to-br from-emerald-500/10 to-green-500/10 border-emerald-500/20",
+      iconColor: "text-emerald-500",
+      link: "/team/whatsapp",
+      pattern: "radial-gradient(circle at 50% 0%, rgba(16, 185, 129, 0.05) 0%, transparent 50%)",
     },
     {
       title: "Reports & Analytics",

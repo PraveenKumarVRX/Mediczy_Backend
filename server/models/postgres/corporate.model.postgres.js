@@ -45,6 +45,11 @@ const Corporate = postgresSequelize.define('Corporate', {
       isEmail: true
     }
   },
+  password: {
+    type: DataTypes.STRING(255),
+    allowNull: true,
+    comment: 'Hashed password for corporate admin login'
+  },
   phoneNumber: {
     type: DataTypes.STRING(20),
     allowNull: false
