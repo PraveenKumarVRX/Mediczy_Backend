@@ -1283,4 +1283,360 @@ router.get('/doctor/appointments', authUser, async (req, res) => {
   }
 });
 
+// ============================================
+// CONSULTATION CHAT ENDPOINTS
+// ============================================
+
+// In-memory store for consultation chat messages (replace with DB in production)
+const consultationChats = new Map();
+
+/**
+ * @route   GET /api/consultation/chat/conversations
+ * @desc    Get user's consultation chat conversations
+ * @access  Private
+ */
+router.get('/chat/conversations', authUser, async (req, res) => {
+  try {
+    const userId = req.user.id;
+    const userRole = req.user.role;
+    
+    // Get appointments for this user/doctor
+    const where = userRole === 'doctor' 
+      ? { doctorId: userId }
+      : { patientId: userId };
+    
+    const appointments = await Appointment.findAll({
+      where,
+      attributes: ['id', 'doctorId', 'patientId', 'patientName', 'doctorName', 'status', 'appointmentDate', 'appointmentTime'],
+      order: [['updatedAt', 'DESC']],
+      limit: 50
+    });
+    
+    // Build conversations from appointments with chat enabled
+    const conversations = await Promise.all(appointments.map(async (apt) => {
+      const chatKey = `chat_${apt.id}`;
+      const messages = consultationChats.get(chatKey) || [];
+      const lastMessage = messages[messages.length - 1];
+      const unreadCount = messages.filter(m => 
+        m.receiverId === userId && !m.read
+      ).length;
+      
+      // Get other party info
+      let otherParty;
+      if (userRole === 'doctor') {
+        otherParty = {
+          id: apt.patientId,
+          name: apt.patientName || 'Patient',
+          type: 'patient'
+        };
+      } else {
+        const doctor = await Doctor.findByPk(apt.doctorId, {
+          attributes: ['id', 'firstName', 'lastName', 'specialization', 'profileImage']
+        });
+        otherParty = {
+          id: apt.doctorId,
+          name: doctor ? `Dr. ${doctor.firstName} ${doctor.lastName}` : apt.doctorName || 'Doctor',
+          specialization: doctor?.specialization,
+          profileImage: doctor?.profileImage,
+          type: 'doctor'
+        };
+      }
+      
+      return {
+        id: chatKey,
+        appointmentId: apt.id,
+        participant: otherParty,
+        lastMessage: lastMessage ? {
+          text: lastMessage.text,
+          timestamp: lastMessage.createdAt,
+          senderId: lastMessage.senderId
+        } : null,
+        unreadCount,
+        appointmentDate: apt.appointmentDate,
+        appointmentTime: apt.appointmentTime,
+        status: apt.status
+      };
+    }));
+    
+    res.json({
+      success: true,
+      conversations: conversations.filter(c => c.lastMessage || c.status === 'confirmed')
+    });
+  } catch (error) {
+    console.error('Error fetching chat conversations:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Failed to fetch conversations',
+      error: error.message
+    });
+  }
+});
+
+/**
+ * @route   GET /api/consultation/chat/:appointmentId/messages
+ * @desc    Get messages for a consultation chat
+ * @access  Private
+ */
+router.get('/chat/:appointmentId/messages', authUser, async (req, res) => {
+  try {
+    const { appointmentId } = req.params;
+    const userId = req.user.id;
+    const { limit = 50, before } = req.query;
+    
+    // Verify user has access to this appointment
+    const appointment = await Appointment.findByPk(appointmentId);
+    if (!appointment) {
+      return res.status(404).json({
+        success: false,
+        message: 'Appointment not found'
+      });
+    }
+    
+    if (appointment.patientId !== userId && appointment.doctorId !== userId) {
+      return res.status(403).json({
+        success: false,
+        message: 'Access denied'
+      });
+    }
+    
+    const chatKey = `chat_${appointmentId}`;
+    let messages = consultationChats.get(chatKey) || [];
+    
+    // Filter and limit messages
+    if (before) {
+      messages = messages.filter(m => new Date(m.createdAt) < new Date(before));
+    }
+    messages = messages.slice(-parseInt(limit));
+    
+    // Mark messages as read
+    messages.forEach(m => {
+      if (m.receiverId === userId) {
+        m.read = true;
+        m.readAt = new Date().toISOString();
+      }
+    });
+    consultationChats.set(chatKey, messages);
+    
+    // Get participant info
+    const isDoctor = req.user.role === 'doctor';
+    let participant;
+    if (isDoctor) {
+      participant = {
+        id: appointment.patientId,
+        name: appointment.patientName,
+        type: 'patient'
+      };
+    } else {
+      const doctor = await Doctor.findByPk(appointment.doctorId, {
+        attributes: ['id', 'firstName', 'lastName', 'specialization', 'profileImage']
+      });
+      participant = {
+        id: appointment.doctorId,
+        name: doctor ? `Dr. ${doctor.firstName} ${doctor.lastName}` : 'Doctor',
+        specialization: doctor?.specialization,
+        profileImage: doctor?.profileImage,
+        type: 'doctor'
+      };
+    }
+    
+    res.json({
+      success: true,
+      appointmentId,
+      participant,
+      messages: messages.map(m => ({
+        id: m.id,
+        text: m.text,
+        senderId: m.senderId,
+        senderType: m.senderType,
+        receiverId: m.receiverId,
+        read: m.read,
+        createdAt: m.createdAt,
+        attachments: m.attachments || []
+      })),
+      appointmentStatus: appointment.status
+    });
+  } catch (error) {
+    console.error('Error fetching chat messages:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Failed to fetch messages',
+      error: error.message
+    });
+  }
+});
+
+/**
+ * @route   POST /api/consultation/chat/:appointmentId/messages
+ * @desc    Send a message in consultation chat
+ * @access  Private
+ */
+router.post('/chat/:appointmentId/messages', authUser, [
+  body('text').notEmpty().withMessage('Message text is required')
+], async (req, res) => {
+  try {
+    const errors = validationResult(req);
+    if (!errors.isEmpty()) {
+      return res.status(400).json({
+        success: false,
+        errors: errors.array()
+      });
+    }
+    
+    const { appointmentId } = req.params;
+    const { text, attachments } = req.body;
+    const userId = req.user.id;
+    const userRole = req.user.role;
+    
+    // Verify user has access
+    const appointment = await Appointment.findByPk(appointmentId);
+    if (!appointment) {
+      return res.status(404).json({
+        success: false,
+        message: 'Appointment not found'
+      });
+    }
+    
+    const isPatient = appointment.patientId === userId;
+    const isDoctor = appointment.doctorId === userId;
+    
+    if (!isPatient && !isDoctor) {
+      return res.status(403).json({
+        success: false,
+        message: 'Access denied'
+      });
+    }
+    
+    const chatKey = `chat_${appointmentId}`;
+    const messages = consultationChats.get(chatKey) || [];
+    
+    const newMessage = {
+      id: `msg_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`,
+      text,
+      senderId: userId,
+      senderType: isDoctor ? 'doctor' : 'patient',
+      receiverId: isDoctor ? appointment.patientId : appointment.doctorId,
+      receiverType: isDoctor ? 'patient' : 'doctor',
+      read: false,
+      createdAt: new Date().toISOString(),
+      attachments: attachments || []
+    };
+    
+    messages.push(newMessage);
+    consultationChats.set(chatKey, messages);
+    
+    // TODO: Send real-time notification via socket.io
+    // TODO: Send push notification
+    
+    res.json({
+      success: true,
+      message: newMessage
+    });
+  } catch (error) {
+    console.error('Error sending chat message:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Failed to send message',
+      error: error.message
+    });
+  }
+});
+
+/**
+ * @route   POST /api/consultation/chat/:appointmentId/read
+ * @desc    Mark messages as read
+ * @access  Private
+ */
+router.post('/chat/:appointmentId/read', authUser, async (req, res) => {
+  try {
+    const { appointmentId } = req.params;
+    const userId = req.user.id;
+    
+    // Verify access
+    const appointment = await Appointment.findByPk(appointmentId);
+    if (!appointment) {
+      return res.status(404).json({
+        success: false,
+        message: 'Appointment not found'
+      });
+    }
+    
+    if (appointment.patientId !== userId && appointment.doctorId !== userId) {
+      return res.status(403).json({
+        success: false,
+        message: 'Access denied'
+      });
+    }
+    
+    const chatKey = `chat_${appointmentId}`;
+    const messages = consultationChats.get(chatKey) || [];
+    
+    // Mark all messages to this user as read
+    let readCount = 0;
+    messages.forEach(m => {
+      if (m.receiverId === userId && !m.read) {
+        m.read = true;
+        m.readAt = new Date().toISOString();
+        readCount++;
+      }
+    });
+    consultationChats.set(chatKey, messages);
+    
+    res.json({
+      success: true,
+      readCount
+    });
+  } catch (error) {
+    console.error('Error marking messages as read:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Failed to mark messages as read',
+      error: error.message
+    });
+  }
+});
+
+/**
+ * @route   GET /api/consultation/chat/unread-count
+ * @desc    Get total unread message count
+ * @access  Private
+ */
+router.get('/chat/unread-count', authUser, async (req, res) => {
+  try {
+    const userId = req.user.id;
+    const userRole = req.user.role;
+    
+    // Get user's appointments
+    const where = userRole === 'doctor'
+      ? { doctorId: userId }
+      : { patientId: userId };
+    
+    const appointments = await Appointment.findAll({
+      where,
+      attributes: ['id'],
+      limit: 100
+    });
+    
+    let totalUnread = 0;
+    appointments.forEach(apt => {
+      const chatKey = `chat_${apt.id}`;
+      const messages = consultationChats.get(chatKey) || [];
+      totalUnread += messages.filter(m => 
+        m.receiverId === userId && !m.read
+      ).length;
+    });
+    
+    res.json({
+      success: true,
+      unreadCount: totalUnread
+    });
+  } catch (error) {
+    console.error('Error getting unread count:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Failed to get unread count',
+      error: error.message
+    });
+  }
+});
+
 export default router;

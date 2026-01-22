@@ -968,18 +968,47 @@ router.get('/messages', authUser, async (req, res) => {
       });
     }
 
+    const doctorId = req.user.id;
     const { limit = 50, offset = 0 } = req.query;
 
-    // For now, return empty array until chat system is fully integrated
-    // This prevents 404 errors on the frontend
+    // Get doctor's appointments to build conversation list
+    const { Appointment } = await import('../models/index.js');
+    
+    const appointments = await Appointment.findAll({
+      where: { doctorId },
+      attributes: ['id', 'patientId', 'patientName', 'patientPhone', 'status', 'appointmentDate', 'appointmentTime', 'updatedAt'],
+      order: [['updatedAt', 'DESC']],
+      limit: parseInt(limit),
+      offset: parseInt(offset)
+    });
+
+    // Build conversations from appointments
+    const conversations = appointments
+      .filter(apt => ['confirmed', 'in-progress', 'completed'].includes(apt.status))
+      .map(apt => ({
+        id: `conv_${doctorId}_${apt.patientId}`,
+        appointmentId: apt.id,
+        patient: {
+          id: apt.patientId,
+          name: apt.patientName,
+          phone: apt.patientPhone
+        },
+        lastMessage: null,
+        unreadCount: 0,
+        appointmentDate: apt.appointmentDate,
+        appointmentTime: apt.appointmentTime,
+        status: apt.status,
+        updatedAt: apt.updatedAt
+      }));
+
     res.json({
       success: true,
-      conversations: [],
+      conversations,
       unreadCount: 0,
       pagination: {
         limit: parseInt(limit),
         offset: parseInt(offset),
-        total: 0
+        total: conversations.length
       }
     });
   } catch (error) {
@@ -987,6 +1016,146 @@ router.get('/messages', authUser, async (req, res) => {
     res.status(500).json({
       success: false,
       message: 'Failed to fetch messages',
+      error: error.message
+    });
+  }
+});
+
+/**
+ * @route   GET /api/doctors/messages/:patientId
+ * @desc    Get chat messages with a specific patient
+ * @access  Private (Doctor)
+ */
+router.get('/messages/:patientId', authUser, async (req, res) => {
+  try {
+    if (req.user.role !== 'doctor') {
+      return res.status(403).json({
+        success: false,
+        message: 'Access denied. Doctor role required.'
+      });
+    }
+
+    const doctorId = req.user.id;
+    const { patientId } = req.params;
+    const { appointmentId, limit = 50 } = req.query;
+    
+    // Verify doctor has an appointment with this patient
+    const { Appointment } = await import('../models/index.js');
+    
+    const where = { doctorId, patientId };
+    if (appointmentId) {
+      where.id = appointmentId;
+    }
+    
+    const appointment = await Appointment.findOne({
+      where,
+      order: [['updatedAt', 'DESC']]
+    });
+    
+    if (!appointment) {
+      return res.status(404).json({
+        success: false,
+        message: 'No appointment found with this patient'
+      });
+    }
+
+    // Get patient info
+    const userModel = (await import('../models/user.model.intelligent.js')).default;
+    const patient = await userModel.findById(patientId);
+
+    res.json({
+      success: true,
+      conversationId: `conv_${doctorId}_${patientId}`,
+      appointmentId: appointment.id,
+      patient: {
+        id: patientId,
+        name: patient ? `${patient.firstName} ${patient.lastName}` : appointment.patientName,
+        phone: patient?.phone || appointment.patientPhone,
+        email: patient?.email
+      },
+      messages: [],
+      appointmentStatus: appointment.status,
+      canChat: ['confirmed', 'in-progress'].includes(appointment.status)
+    });
+  } catch (error) {
+    console.error('Get patient messages error:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Failed to fetch messages',
+      error: error.message
+    });
+  }
+});
+
+/**
+ * @route   POST /api/doctors/messages/:patientId
+ * @desc    Send message to a patient
+ * @access  Private (Doctor)
+ */
+router.post('/messages/:patientId', authUser, async (req, res) => {
+  try {
+    if (req.user.role !== 'doctor') {
+      return res.status(403).json({
+        success: false,
+        message: 'Access denied. Doctor role required.'
+      });
+    }
+
+    const doctorId = req.user.id;
+    const { patientId } = req.params;
+    const { message, appointmentId } = req.body;
+    
+    if (!message) {
+      return res.status(400).json({
+        success: false,
+        message: 'Message content is required'
+      });
+    }
+    
+    // Verify appointment exists
+    const { Appointment } = await import('../models/index.js');
+    
+    const where = { doctorId, patientId };
+    if (appointmentId) {
+      where.id = appointmentId;
+    }
+    
+    const appointment = await Appointment.findOne({ where });
+    
+    if (!appointment) {
+      return res.status(404).json({
+        success: false,
+        message: 'No appointment found with this patient'
+      });
+    }
+
+    const newMessage = {
+      id: `msg_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`,
+      conversationId: `conv_${doctorId}_${patientId}`,
+      appointmentId: appointment.id,
+      senderId: doctorId,
+      senderType: 'doctor',
+      recipientId: patientId,
+      recipientType: 'patient',
+      content: message,
+      status: 'sent',
+      createdAt: new Date().toISOString()
+    };
+
+    // TODO: Store in database
+    // TODO: Send real-time notification via socket.io
+    // TODO: Send push notification to patient
+
+    res.json({
+      success: true,
+      message: 'Message sent successfully',
+      data: newMessage
+    });
+  } catch (error) {
+    console.error('Send message to patient error:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Failed to send message',
       error: error.message
     });
   }
