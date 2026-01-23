@@ -282,22 +282,7 @@ const HospitalEHR = () => {
     notes: ''
   });
 
-  useEffect(() => {
-    const token = localStorage.getItem('hospitalToken');
-    if (!token) {
-      navigate('/hospital/login');
-      return;
-    }
-    setLoading(false);
-  }, [navigate]);
-
-  useEffect(() => {
-    if (!selectedPatient && patients.length > 0) {
-      setSelectedPatient(patients[0]);
-    }
-  }, [patients, selectedPatient]);
-
-  // Sample data
+  // Sample data - defined before useEffect that depends on patients
   const initialPatients: PatientEHR[] = [
     {
       id: 'P001',
@@ -385,6 +370,23 @@ const HospitalEHR = () => {
   const [patients, setPatients] = useState<PatientEHR[]>(
     () => loadHospitalStore('ehr-patients', initialPatients)
   );
+
+  // Auth check
+  useEffect(() => {
+    const token = localStorage.getItem('hospitalToken');
+    if (!token) {
+      navigate('/hospital/login');
+      return;
+    }
+    setLoading(false);
+  }, [navigate]);
+
+  // Auto-select first patient
+  useEffect(() => {
+    if (!selectedPatient && patients.length > 0) {
+      setSelectedPatient(patients[0]);
+    }
+  }, [patients, selectedPatient]);
 
   const toggleSection = (section: string) => {
     setExpandedSections(prev => 

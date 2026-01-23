@@ -56,6 +56,14 @@ export const HEALTH_COINS_PRICING = {
     { coins: 2500, price: 1299, discount: 48, popular: false }
   ],
   
+  // HC to INR conversion rate for payments
+  // 1 HC = ₹1 INR (can be adjusted for promotional rates)
+  HC_TO_INR_RATE: 1,
+  
+  // Bonus when paying with HC (percentage extra value)
+  // e.g., 10 means 10% bonus - 100 HC gives ₹110 value
+  HC_PAYMENT_BONUS_PERCENT: 10,
+  
   // Spending (Health Coins to services)
   services: {
     CONSULTATION_DISCOUNT: {
@@ -72,6 +80,11 @@ export const HEALTH_COINS_PRICING = {
       25: 25,
       50: 60,
       100: 130
+    },
+    // Full payment with HC (includes bonus)
+    CONSULTATION_FULL_PAYMENT: {
+      enabled: true,
+      bonusPercent: 10  // 10% bonus when paying fully with HC
     }
   }
 };

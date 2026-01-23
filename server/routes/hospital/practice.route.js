@@ -488,6 +488,287 @@ router.post('/patients/:id/discharge', verifyHospitalToken, async (req, res) => 
   res.json({ success: true, message: 'Patient discharged', data: patient });
 });
 
+// ============================================
+// HOSPITAL DOCTORS MANAGEMENT
+// ============================================
+
+/**
+ * @route   GET /api/hospital/practice/doctors
+ * @desc    Get all doctors in the hospital
+ * @access  Private (Hospital)
+ */
+router.get('/doctors', verifyHospitalToken, async (req, res) => {
+  try {
+    const { specialization, status, department } = req.query;
+    const state = await readState();
+    const practice = getPractice(state, req.hospitalId, req.hospitalName);
+    
+    // Initialize doctors array if not exists
+    if (!practice.doctors) {
+      practice.doctors = [];
+    }
+    
+    let doctors = practice.doctors;
+    
+    // Apply filters
+    if (specialization) {
+      doctors = doctors.filter(d => d.specialization === specialization);
+    }
+    if (status) {
+      doctors = doctors.filter(d => d.status === status);
+    }
+    if (department) {
+      doctors = doctors.filter(d => d.department === department);
+    }
+    
+    res.json({ 
+      success: true, 
+      data: doctors, 
+      total: doctors.length,
+      specializations: [...new Set(practice.doctors.map(d => d.specialization))].filter(Boolean)
+    });
+  } catch (error) {
+    console.error('Error fetching hospital doctors:', error);
+    res.status(500).json({ success: false, message: 'Failed to fetch doctors' });
+  }
+});
+
+/**
+ * @route   POST /api/hospital/practice/doctors
+ * @desc    Add a doctor to the hospital
+ * @access  Private (Hospital)
+ */
+router.post('/doctors', verifyHospitalToken, async (req, res) => {
+  try {
+    const { 
+      firstName, lastName, name, email, phone, phoneNumber,
+      specialization, department, qualification, experience,
+      registrationNumber, consultationFee, shift, status, password
+    } = req.body;
+    
+    const doctorName = name || `Dr. ${firstName || ''} ${lastName || ''}`.trim();
+    const doctorPhone = phone || phoneNumber;
+    
+    if (!doctorName || doctorName === 'Dr.') {
+      return res.status(400).json({ 
+        success: false, 
+        message: 'Doctor name is required' 
+      });
+    }
+    
+    if (!doctorPhone) {
+      return res.status(400).json({ 
+        success: false, 
+        message: 'Phone number is required' 
+      });
+    }
+    
+    if (!specialization) {
+      return res.status(400).json({ 
+        success: false, 
+        message: 'Specialization is required' 
+      });
+    }
+
+    const state = await readState();
+    const practice = getPractice(state, req.hospitalId, req.hospitalName);
+    
+    // Initialize doctors array if not exists
+    if (!practice.doctors) {
+      practice.doctors = [];
+    }
+    
+    // Check for duplicate by phone or email
+    const existingDoctor = practice.doctors.find(d => 
+      d.phone === doctorPhone || (email && d.email === email)
+    );
+    
+    if (existingDoctor) {
+      return res.status(400).json({ 
+        success: false, 
+        message: 'A doctor with this phone/email already exists' 
+      });
+    }
+
+    const doctor = {
+      id: generateId('DOC'),
+      name: doctorName,
+      firstName: firstName || doctorName.replace('Dr. ', '').split(' ')[0],
+      lastName: lastName || doctorName.replace('Dr. ', '').split(' ').slice(1).join(' '),
+      email: email || '',
+      phone: doctorPhone,
+      specialization,
+      department: department || specialization,
+      qualification: qualification || 'MBBS',
+      experience: parseInt(experience) || 0,
+      registrationNumber: registrationNumber || '',
+      consultationFee: parseFloat(consultationFee) || 500,
+      shift: shift || 'Morning',
+      status: status || 'active',
+      hospitalId: req.hospitalId,
+      joiningDate: new Date().toISOString().slice(0, 10),
+      createdAt: new Date().toISOString()
+    };
+
+    practice.doctors.unshift(doctor);
+    await writeState(state);
+
+    res.status(201).json({ 
+      success: true, 
+      message: 'Doctor added successfully',
+      data: doctor 
+    });
+  } catch (error) {
+    console.error('Error adding doctor:', error);
+    res.status(500).json({ success: false, message: 'Failed to add doctor' });
+  }
+});
+
+/**
+ * @route   GET /api/hospital/practice/doctors/:id
+ * @desc    Get a specific doctor
+ * @access  Private (Hospital)
+ */
+router.get('/doctors/:id', verifyHospitalToken, async (req, res) => {
+  try {
+    const state = await readState();
+    const practice = getPractice(state, req.hospitalId, req.hospitalName);
+    
+    if (!practice.doctors) {
+      return res.status(404).json({ success: false, message: 'Doctor not found' });
+    }
+    
+    const doctor = practice.doctors.find(d => d.id === req.params.id);
+    
+    if (!doctor) {
+      return res.status(404).json({ success: false, message: 'Doctor not found' });
+    }
+    
+    res.json({ success: true, data: doctor });
+  } catch (error) {
+    console.error('Error fetching doctor:', error);
+    res.status(500).json({ success: false, message: 'Failed to fetch doctor' });
+  }
+});
+
+/**
+ * @route   PATCH /api/hospital/practice/doctors/:id
+ * @desc    Update a doctor
+ * @access  Private (Hospital)
+ */
+router.patch('/doctors/:id', verifyHospitalToken, async (req, res) => {
+  try {
+    const state = await readState();
+    const practice = getPractice(state, req.hospitalId, req.hospitalName);
+    
+    if (!practice.doctors) {
+      return res.status(404).json({ success: false, message: 'Doctor not found' });
+    }
+    
+    const index = practice.doctors.findIndex(d => d.id === req.params.id);
+    
+    if (index === -1) {
+      return res.status(404).json({ success: false, message: 'Doctor not found' });
+    }
+    
+    // Update fields
+    const updates = { ...req.body };
+    delete updates.id; // Prevent ID modification
+    delete updates.hospitalId; // Prevent hospital ID modification
+    
+    // Update name if firstName/lastName provided
+    if (updates.firstName || updates.lastName) {
+      const fn = updates.firstName || practice.doctors[index].firstName || '';
+      const ln = updates.lastName || practice.doctors[index].lastName || '';
+      updates.name = `Dr. ${fn} ${ln}`.trim();
+    }
+    
+    practice.doctors[index] = { 
+      ...practice.doctors[index], 
+      ...updates,
+      updatedAt: new Date().toISOString()
+    };
+    
+    await writeState(state);
+    
+    res.json({ 
+      success: true, 
+      message: 'Doctor updated successfully',
+      data: practice.doctors[index] 
+    });
+  } catch (error) {
+    console.error('Error updating doctor:', error);
+    res.status(500).json({ success: false, message: 'Failed to update doctor' });
+  }
+});
+
+/**
+ * @route   DELETE /api/hospital/practice/doctors/:id
+ * @desc    Remove a doctor from hospital
+ * @access  Private (Hospital)
+ */
+router.delete('/doctors/:id', verifyHospitalToken, async (req, res) => {
+  try {
+    const state = await readState();
+    const practice = getPractice(state, req.hospitalId, req.hospitalName);
+    
+    if (!practice.doctors) {
+      return res.status(404).json({ success: false, message: 'Doctor not found' });
+    }
+    
+    const before = practice.doctors.length;
+    practice.doctors = practice.doctors.filter(d => d.id !== req.params.id);
+    
+    if (practice.doctors.length === before) {
+      return res.status(404).json({ success: false, message: 'Doctor not found' });
+    }
+    
+    await writeState(state);
+    
+    res.json({ success: true, message: 'Doctor removed successfully' });
+  } catch (error) {
+    console.error('Error removing doctor:', error);
+    res.status(500).json({ success: false, message: 'Failed to remove doctor' });
+  }
+});
+
+/**
+ * @route   GET /api/hospital/practice/doctors/by-specialization
+ * @desc    Get doctors grouped by specialization
+ * @access  Private (Hospital)
+ */
+router.get('/doctors-by-specialization', verifyHospitalToken, async (req, res) => {
+  try {
+    const state = await readState();
+    const practice = getPractice(state, req.hospitalId, req.hospitalName);
+    
+    if (!practice.doctors) {
+      return res.json({ success: true, data: {}, total: 0 });
+    }
+    
+    const grouped = practice.doctors.reduce((acc, doctor) => {
+      const spec = doctor.specialization || 'General';
+      if (!acc[spec]) acc[spec] = [];
+      acc[spec].push(doctor);
+      return acc;
+    }, {});
+    
+    res.json({ 
+      success: true, 
+      data: grouped,
+      specializations: Object.keys(grouped),
+      total: practice.doctors.length
+    });
+  } catch (error) {
+    console.error('Error fetching doctors by specialization:', error);
+    res.status(500).json({ success: false, message: 'Failed to fetch doctors' });
+  }
+});
+
+// ============================================
+// STAFF MANAGEMENT (Non-Doctor Staff)
+// ============================================
+
 router.get('/staff', verifyHospitalToken, async (req, res) => {
   const { department, role } = req.query;
   const state = await readState();

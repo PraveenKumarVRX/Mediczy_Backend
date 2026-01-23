@@ -6,7 +6,7 @@
 import UserWallet from '../models/postgres/user-wallet.model.postgres.js';
 import HealthCoinsTransaction from '../models/postgres/health-coins-transaction.model.postgres.js';
 import UserActivityLog from '../models/postgres/user-activity-log.model.postgres.js';
-import { HEALTH_COINS_REWARDS } from '../config/health-coins.config.js';
+import { HEALTH_COINS_REWARDS, HEALTH_COINS_PRICING } from '../config/health-coins.config.js';
 import { postgresSequelize as sequelize } from '../db/postgres-sequelize.js';
 
 class HealthCoinsService {
@@ -382,6 +382,125 @@ class HealthCoinsService {
       todayActivity: todayActivity || null,
       recentTransactions
     };
+  }
+
+  /**
+   * Calculate HC required to pay for a consultation
+   * Includes bonus value calculation
+   */
+  calculateHCForConsultation(consultationFeeINR) {
+    const bonusPercent = HEALTH_COINS_PRICING.HC_PAYMENT_BONUS_PERCENT || 10;
+    const rate = HEALTH_COINS_PRICING.HC_TO_INR_RATE || 1;
+    
+    // With bonus, HC has more value
+    // If bonus is 10%, then 100 HC = ₹110 value
+    // So to pay ₹100, you need 100 / 1.10 = ~91 HC
+    const effectiveRate = rate * (1 + bonusPercent / 100);
+    const hcRequired = Math.ceil(consultationFeeINR / effectiveRate);
+    
+    return {
+      consultationFeeINR,
+      hcRequired,
+      hcToINRRate: rate,
+      bonusPercent,
+      effectiveValuePerHC: effectiveRate,
+      savings: consultationFeeINR - hcRequired  // How much saved compared to INR value
+    };
+  }
+
+  /**
+   * Check if user can pay for consultation with HC
+   */
+  async canPayWithHC(userId, consultationFeeINR) {
+    const wallet = await this.getOrCreateWallet(userId);
+    const balance = parseFloat(wallet.balance);
+    const calculation = this.calculateHCForConsultation(consultationFeeINR);
+    
+    return {
+      canPay: balance >= calculation.hcRequired,
+      currentBalance: balance,
+      ...calculation,
+      shortfall: Math.max(0, calculation.hcRequired - balance)
+    };
+  }
+
+  /**
+   * Pay for appointment using Health Coins
+   */
+  async payForAppointment(userId, appointmentId, consultationFeeINR, doctorName) {
+    const transaction = await sequelize.transaction();
+    
+    try {
+      const wallet = await this.getOrCreateWallet(userId);
+      const balance = parseFloat(wallet.balance);
+      const calculation = this.calculateHCForConsultation(consultationFeeINR);
+      
+      // Check sufficient balance
+      if (balance < calculation.hcRequired) {
+        throw new Error(`Insufficient Health Coins. Required: ${calculation.hcRequired} HC, Available: ${balance} HC`);
+      }
+      
+      // Deduct coins
+      const newBalance = balance - calculation.hcRequired;
+      
+      await wallet.update({
+        balance: newBalance,
+        totalSpent: parseFloat(wallet.totalSpent) + calculation.hcRequired
+      }, { transaction });
+      
+      // Create transaction record
+      const txn = await HealthCoinsTransaction.create({
+        userId,
+        type: 'SPEND',
+        amount: -calculation.hcRequired,
+        balanceAfter: newBalance,
+        activityType: 'APPOINTMENT_PAYMENT',
+        description: `Paid for appointment #${appointmentId} with ${doctorName}`,
+        referenceType: 'APPOINTMENT',
+        referenceId: appointmentId.toString(),
+        metadata: {
+          appointmentId,
+          doctorName,
+          consultationFeeINR,
+          hcPaid: calculation.hcRequired,
+          bonusPercent: calculation.bonusPercent,
+          effectiveValue: consultationFeeINR
+        },
+        status: 'COMPLETED'
+      }, { transaction });
+      
+      await transaction.commit();
+      
+      return {
+        success: true,
+        transaction: txn,
+        newBalance,
+        hcPaid: calculation.hcRequired,
+        consultationFeeINR,
+        bonusPercent: calculation.bonusPercent
+      };
+    } catch (error) {
+      await transaction.rollback();
+      throw error;
+    }
+  }
+
+  /**
+   * Refund HC for cancelled appointment
+   */
+  async refundAppointmentPayment(userId, appointmentId, hcAmount, doctorName) {
+    return await this.addCoins(
+      userId,
+      hcAmount,
+      'REFUND',
+      'APPOINTMENT_REFUND',
+      `Refund for cancelled appointment #${appointmentId} with ${doctorName}`,
+      {
+        appointmentId,
+        doctorName,
+        refundedAmount: hcAmount
+      }
+    );
   }
 }
 

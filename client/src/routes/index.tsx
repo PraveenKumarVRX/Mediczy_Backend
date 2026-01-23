@@ -238,11 +238,11 @@ import HospitalPrescriptionCreator from "@/pages/hospital/HospitalPrescriptionCr
 import HospitalProcedureAdder from "@/pages/hospital/HospitalProcedureAdder";
 import HospitalDischargeSummary from "@/pages/hospital/HospitalDischargeSummary";
 import HospitalIPSheets from "@/pages/hospital/HospitalIPSheets";
+import HospitalDoctorsManagement from "@/pages/hospital/HospitalDoctorsManagement";
 import {
   HospitalAppointmentsPage,
   HospitalBedsPage,
   HospitalPatientsPage,
-  HospitalDoctorsPage,
   HospitalOpdIpdPage,
   HospitalPharmacyPage,
   HospitalLabReportsPage,
@@ -410,7 +410,7 @@ const AppRoutes = () => {
       <Route path="/hospital/appointments" element={<HospitalAppointmentsPage />} />
       <Route path="/hospital/beds" element={<HospitalBedsPage />} />
       <Route path="/hospital/patients" element={<HospitalPatientsPage />} />
-      <Route path="/hospital/doctors" element={<HospitalDoctorsPage />} />
+      <Route path="/hospital/doctors" element={<HospitalDoctorsManagement />} />
       <Route path="/hospital/opd-ipd" element={<HospitalOpdIpdPage />} />
       <Route path="/hospital/pharmacy" element={<HospitalPharmacyPage />} />
       <Route path="/hospital/lab-reports" element={<HospitalLabReportsPage />} />
@@ -786,7 +786,7 @@ const AppRoutes = () => {
   <Route path="/hospital/appointments" element={<HospitalAppointmentsPage />} />
   <Route path="/hospital/beds" element={<HospitalBedsPage />} />
   <Route path="/hospital/patients" element={<HospitalPatientsPage />} />
-  <Route path="/hospital/doctors" element={<HospitalDoctorsPage />} />
+  <Route path="/hospital/doctors" element={<HospitalDoctorsManagement />} />
   <Route path="/hospital/opd-ipd" element={<HospitalOpdIpdPage />} />
   <Route path="/hospital/pharmacy" element={<HospitalPharmacyPage />} />
   <Route path="/hospital/lab-reports" element={<HospitalLabReportsPage />} />

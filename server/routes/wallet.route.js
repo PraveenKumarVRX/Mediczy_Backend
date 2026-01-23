@@ -546,4 +546,171 @@ router.post('/purchase', authUser, async (req, res) => {
   }
 });
 
+// ============================================
+// HEALTH COINS APPOINTMENT PAYMENT ENDPOINTS
+// ============================================
+
+/**
+ * GET /api/wallet/appointment/calculate/:consultationFee
+ * Calculate HC required to pay for a consultation
+ */
+router.get('/appointment/calculate/:consultationFee', authUser, async (req, res) => {
+  try {
+    const consultationFee = parseFloat(req.params.consultationFee);
+    
+    if (isNaN(consultationFee) || consultationFee <= 0) {
+      return res.status(400).json({
+        success: false,
+        message: 'Invalid consultation fee'
+      });
+    }
+    
+    const canPayResult = await healthCoinsService.canPayWithHC(req.user.id, consultationFee);
+    
+    res.json({
+      success: true,
+      data: canPayResult
+    });
+  } catch (error) {
+    console.error('Calculate HC error:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Failed to calculate HC requirement',
+      error: error.message
+    });
+  }
+});
+
+/**
+ * POST /api/wallet/appointment/can-pay
+ * Check if user can pay for appointment with HC
+ */
+router.post('/appointment/can-pay', authUser, async (req, res) => {
+  try {
+    const { consultationFee } = req.body;
+    
+    if (!consultationFee || consultationFee <= 0) {
+      return res.status(400).json({
+        success: false,
+        message: 'Valid consultation fee is required'
+      });
+    }
+    
+    const result = await healthCoinsService.canPayWithHC(req.user.id, consultationFee);
+    
+    res.json({
+      success: true,
+      data: result
+    });
+  } catch (error) {
+    console.error('Can pay with HC error:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Failed to check HC payment eligibility',
+      error: error.message
+    });
+  }
+});
+
+/**
+ * POST /api/wallet/appointment/pay
+ * Pay for an appointment using Health Coins
+ */
+router.post('/appointment/pay', authUser, async (req, res) => {
+  try {
+    const { appointmentId, consultationFee, doctorName } = req.body;
+    
+    if (!appointmentId || !consultationFee || !doctorName) {
+      return res.status(400).json({
+        success: false,
+        message: 'Appointment ID, consultation fee, and doctor name are required'
+      });
+    }
+    
+    // First check if user can pay
+    const canPayResult = await healthCoinsService.canPayWithHC(req.user.id, consultationFee);
+    
+    if (!canPayResult.canPay) {
+      return res.status(400).json({
+        success: false,
+        message: `Insufficient Health Coins. You need ${canPayResult.hcRequired} HC but have ${canPayResult.currentBalance} HC`,
+        data: canPayResult
+      });
+    }
+    
+    // Process the payment
+    const result = await healthCoinsService.payForAppointment(
+      req.user.id,
+      appointmentId,
+      consultationFee,
+      doctorName
+    );
+    
+    console.log(`✅ HC payment successful: User ${req.user.id} paid ${result.hcPaid} HC for appointment ${appointmentId}`);
+    
+    res.json({
+      success: true,
+      message: `Successfully paid ${result.hcPaid} HC for consultation (₹${consultationFee} value with ${result.bonusPercent}% bonus)`,
+      data: {
+        appointmentId,
+        hcPaid: result.hcPaid,
+        consultationFeeINR: consultationFee,
+        bonusPercent: result.bonusPercent,
+        newBalance: result.newBalance,
+        transactionId: result.transaction.id
+      }
+    });
+  } catch (error) {
+    console.error('HC appointment payment error:', error);
+    res.status(500).json({
+      success: false,
+      message: error.message || 'Failed to process HC payment',
+      error: error.message
+    });
+  }
+});
+
+/**
+ * POST /api/wallet/appointment/refund
+ * Refund HC for a cancelled appointment
+ */
+router.post('/appointment/refund', authUser, async (req, res) => {
+  try {
+    const { appointmentId, hcAmount, doctorName } = req.body;
+    
+    if (!appointmentId || !hcAmount || !doctorName) {
+      return res.status(400).json({
+        success: false,
+        message: 'Appointment ID, HC amount, and doctor name are required'
+      });
+    }
+    
+    const result = await healthCoinsService.refundAppointmentPayment(
+      req.user.id,
+      appointmentId,
+      hcAmount,
+      doctorName
+    );
+    
+    console.log(`✅ HC refund successful: User ${req.user.id} refunded ${hcAmount} HC for appointment ${appointmentId}`);
+    
+    res.json({
+      success: true,
+      message: `Successfully refunded ${hcAmount} HC for cancelled appointment`,
+      data: {
+        appointmentId,
+        hcRefunded: hcAmount,
+        newBalance: result.newBalance
+      }
+    });
+  } catch (error) {
+    console.error('HC refund error:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Failed to process HC refund',
+      error: error.message
+    });
+  }
+});
+
 export default router;

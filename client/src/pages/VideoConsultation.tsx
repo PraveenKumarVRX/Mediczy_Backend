@@ -244,12 +244,51 @@ const VideoConsultation = () => {
   }, [currentUser, MIROTALK_BASE_URL]);
 
   // Start video call with pre-call check
-  const initiateVideoCall = useCallback((appointment?: Appointment, customRoomId?: string) => {
+  const initiateVideoCall = useCallback(async (appointment?: Appointment, customRoomId?: string) => {
     if (appointment) {
       setCurrentAppointment(appointment);
     }
     
-    const room = customRoomId || (appointment?.roomId || appointment?.meetingLink || (appointment ? `apt-${appointment.id}` : ''));
+    let room = customRoomId;
+    
+    // If joining an appointment, fetch the meeting link from the server
+    // This ensures we get the same room ID that the doctor created
+    if (!customRoomId && appointment?.id) {
+      try {
+        toast({
+          title: "Fetching Meeting Room...",
+          description: "Getting your consultation link...",
+        });
+        
+        const response = await api.get(`/consultation/video/join/${appointment.id}`);
+        
+        if (response.data.success && response.data.video) {
+          // Use the direct join URL from server if available
+          if (response.data.video.directJoinUrl) {
+            room = response.data.video.directJoinUrl;
+          } else if (response.data.video.meetingLink) {
+            room = response.data.video.meetingLink;
+          } else if (response.data.video.meetingId) {
+            room = response.data.video.meetingId;
+          }
+        }
+      } catch (err: any) {
+        console.error('Failed to fetch meeting link:', err);
+        // Show specific error message from server
+        const errorMessage = err.response?.data?.message || 'Failed to get meeting link';
+        toast({
+          variant: "destructive",
+          title: "Cannot Join",
+          description: errorMessage,
+        });
+        return;
+      }
+    }
+    
+    // Fallback to appointment data if API didn't return a room
+    if (!room) {
+      room = appointment?.meetingLink || appointment?.roomId || (appointment ? `apt-${appointment.id}` : '');
+    }
     
     if (!room) {
       toast({

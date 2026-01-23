@@ -5,6 +5,7 @@ import { Appointment, Doctor } from '../models/index.js';
 import userModel from '../models/user.model.intelligent.js';
 import paymentService from '../services/payment.service.js';
 import notificationService from '../services/notification.service.js';
+import healthCoinsService from '../services/health-coins.service.js';
 import crypto from 'crypto';
 
 const router = express.Router();
@@ -916,6 +917,177 @@ router.post('/payment/manual/:appointmentId', authUser, [
     res.status(500).json({
       success: false,
       message: 'Failed to confirm payment',
+      error: error.message
+    });
+  }
+});
+
+/**
+ * @route   GET /api/consultation/payment/hc-check/:appointmentId
+ * @desc    Check if user can pay for appointment with Health Coins
+ * @access  Private (Patient)
+ */
+router.get('/payment/hc-check/:appointmentId', authUser, async (req, res) => {
+  try {
+    const { appointmentId } = req.params;
+    const patientId = req.user.id || req.user.dataValues?.id;
+
+    const appointment = await Appointment.findByPk(appointmentId);
+    
+    if (!appointment) {
+      return res.status(404).json({
+        success: false,
+        message: 'Appointment not found'
+      });
+    }
+
+    if (appointment.userId !== patientId) {
+      return res.status(403).json({
+        success: false,
+        message: 'Not authorized to view this appointment'
+      });
+    }
+
+    const consultationFee = parseFloat(appointment.consultationFee);
+    const canPayResult = await healthCoinsService.canPayWithHC(patientId, consultationFee);
+
+    res.json({
+      success: true,
+      appointment: {
+        id: appointment.id,
+        doctorName: appointment.doctorName,
+        consultationFee: consultationFee,
+        status: appointment.status,
+        paymentStatus: appointment.paymentStatus
+      },
+      healthCoins: canPayResult
+    });
+  } catch (error) {
+    console.error('Error checking HC payment:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Failed to check HC payment eligibility',
+      error: error.message
+    });
+  }
+});
+
+/**
+ * @route   POST /api/consultation/payment/hc/:appointmentId
+ * @desc    Pay for appointment using Health Coins
+ * @access  Private (Patient)
+ */
+router.post('/payment/hc/:appointmentId', authUser, async (req, res) => {
+  try {
+    const { appointmentId } = req.params;
+    const patientId = req.user.id || req.user.dataValues?.id;
+
+    const appointment = await Appointment.findByPk(appointmentId);
+    
+    if (!appointment) {
+      return res.status(404).json({
+        success: false,
+        message: 'Appointment not found'
+      });
+    }
+
+    if (appointment.userId !== patientId) {
+      return res.status(403).json({
+        success: false,
+        message: 'Not authorized to pay for this appointment'
+      });
+    }
+
+    if (appointment.status !== 'accepted' && appointment.status !== 'pending') {
+      return res.status(400).json({
+        success: false,
+        message: `Cannot pay for appointment with status: ${appointment.status}`
+      });
+    }
+
+    if (appointment.paymentStatus === 'paid') {
+      return res.status(400).json({
+        success: false,
+        message: 'Payment already completed'
+      });
+    }
+
+    const consultationFee = parseFloat(appointment.consultationFee);
+    
+    // Check if user can pay with HC
+    const canPayResult = await healthCoinsService.canPayWithHC(patientId, consultationFee);
+    
+    if (!canPayResult.canPay) {
+      return res.status(400).json({
+        success: false,
+        message: `Insufficient Health Coins. You need ${canPayResult.hcRequired} HC but have ${canPayResult.currentBalance} HC`,
+        healthCoins: canPayResult
+      });
+    }
+
+    // Process HC payment
+    const paymentResult = await healthCoinsService.payForAppointment(
+      patientId,
+      appointmentId,
+      consultationFee,
+      appointment.doctorName
+    );
+
+    // Generate meeting link
+    const meetingId = `MEDCALL-${appointment.id}-${crypto.randomBytes(4).toString('hex').toUpperCase()}`;
+    const meetingLink = `${process.env.MIROTALK_URL || 'https://video.mediqzy.com'}/join/${meetingId}`;
+
+    // Update appointment
+    await appointment.update({
+      status: 'confirmed',
+      paymentStatus: 'paid',
+      paymentMethod: 'health_coins',
+      transactionId: `HC-${paymentResult.transaction.id}`,
+      meetingId,
+      meetingLink,
+      notes: `Paid with ${paymentResult.hcPaid} Health Coins (₹${consultationFee} value). Video consultation enabled.`
+    });
+
+    // Get doctor info for notifications
+    const doctor = await Doctor.findByPk(appointment.doctorId);
+    appointment.meetingLink = meetingLink;
+
+    // Send confirmation notifications
+    try {
+      await notificationService.notifyPaymentReceived(appointment, doctor);
+    } catch (notifError) {
+      console.error('Failed to send payment notification:', notifError);
+    }
+
+    console.log(`✅ HC payment successful: User ${patientId} paid ${paymentResult.hcPaid} HC for appointment ${appointmentId}`);
+
+    res.json({
+      success: true,
+      message: `Payment successful! Paid ${paymentResult.hcPaid} HC for ₹${consultationFee} consultation.`,
+      appointment: {
+        id: appointment.id,
+        doctorName: appointment.doctorName,
+        date: appointment.appointmentDate,
+        time: appointment.appointmentTime,
+        status: 'confirmed',
+        paymentStatus: 'paid',
+        meetingLink,
+        meetingId
+      },
+      payment: {
+        method: 'health_coins',
+        hcPaid: paymentResult.hcPaid,
+        consultationFeeINR: consultationFee,
+        bonusPercent: paymentResult.bonusPercent,
+        newBalance: paymentResult.newBalance,
+        transactionId: paymentResult.transaction.id
+      }
+    });
+  } catch (error) {
+    console.error('Error processing HC payment:', error);
+    res.status(500).json({
+      success: false,
+      message: error.message || 'Failed to process Health Coins payment',
       error: error.message
     });
   }

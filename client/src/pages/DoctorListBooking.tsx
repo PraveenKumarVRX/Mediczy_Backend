@@ -29,7 +29,9 @@ import {
   Shield,
   SlidersHorizontal,
   Sparkles,
-  Loader2
+  Loader2,
+  Coins,
+  Wallet
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -65,6 +67,7 @@ import { cn } from "@/lib/utils";
 import api from "@/utils/api";
 import MainLayout from "@/components/layout/MainLayout";
 import { getToken, getUserType } from "@/hooks/auth";
+import walletService, { HCCalculation } from "@/services/wallet.service";
 
 interface Doctor {
   _id: string;
@@ -344,6 +347,12 @@ const DoctorListBooking = () => {
   const [loadingSlots, setLoadingSlots] = useState(false);
   const [userType, setUserType] = useState<string | null>(() => getUserType());
   
+  // Health Coins payment states
+  const [paymentMethod, setPaymentMethod] = useState<"inr" | "hc">("inr");
+  const [hcCalculation, setHcCalculation] = useState<HCCalculation | null>(null);
+  const [loadingHC, setLoadingHC] = useState(false);
+  const [walletBalance, setWalletBalance] = useState<number>(0);
+  
   const { toast } = useToast();
   const navigate = useNavigate();
 
@@ -573,6 +582,31 @@ const DoctorListBooking = () => {
     }
   }, [selectedDate, selectedDoctor, showBookingModal]);
 
+  // Fetch HC calculation when doctor or consultation type changes
+  useEffect(() => {
+    const fetchHCCalculation = async () => {
+      if (!selectedDoctor || !showBookingModal) return;
+      
+      const fee = consultationType === "online" 
+        ? selectedDoctor.consultationFee.online 
+        : selectedDoctor.consultationFee.inPerson;
+      
+      setLoadingHC(true);
+      try {
+        const calculation = await walletService.canPayWithHC(fee);
+        setHcCalculation(calculation);
+        setWalletBalance(calculation.currentBalance);
+      } catch (error) {
+        console.error('Error fetching HC calculation:', error);
+        setHcCalculation(null);
+      } finally {
+        setLoadingHC(false);
+      }
+    };
+
+    fetchHCCalculation();
+  }, [selectedDoctor, consultationType, showBookingModal]);
+
   const renderDoctorCard = (doctor: Doctor) => {
     const SpecIcon = getSpecializationIcon(doctor.specialization);
     const firstInitial = doctor.firstName?.[0] ?? "";
@@ -734,18 +768,53 @@ const DoctorListBooking = () => {
         doctorId = doctorIdentifier;
       }
       
+      const consultationFee = consultationType === "online" 
+        ? selectedDoctor.consultationFee.online 
+        : selectedDoctor.consultationFee.inPerson;
+
       const bookingData = {
         doctorId,
         appointmentDate: format(selectedDate, "yyyy-MM-dd"),
         appointmentTime: normalizedTime,
         consultationType: consultationType === "online" ? "video" : "in-person",
         symptoms,
-        consultationFee: consultationType === "online" 
-          ? selectedDoctor.consultationFee.online 
-          : selectedDoctor.consultationFee.inPerson
+        consultationFee
       };
 
+      // First, create the appointment
       const response = await api.post("/appointments", bookingData);
+      const appointmentId = response.data?.appointment?.id;
+
+      // If paying with Health Coins, process HC payment
+      if (paymentMethod === "hc" && appointmentId && hcCalculation?.canPay) {
+        try {
+          const hcPaymentResult = await walletService.payAppointmentWithHC(appointmentId);
+          
+          toast({
+            title: "Success! Paid with Health Coins",
+            description: `Appointment booked and paid ${hcPaymentResult.payment.hcPaid} HC. New balance: ${hcPaymentResult.payment.newBalance} HC`,
+            action: {
+              label: "View my bookings",
+              onClick: () => navigate("/my-bookings"),
+            },
+          });
+
+          setShowBookingModal(false);
+          // Reset payment method
+          setPaymentMethod("inr");
+          return;
+        } catch (hcError: any) {
+          console.error("HC payment failed:", hcError);
+          toast({
+            title: "Booking created, HC payment failed",
+            description: hcError.response?.data?.message || "Health Coins payment failed. You can pay later from My Bookings.",
+            variant: "destructive"
+          });
+          setShowBookingModal(false);
+          navigate("/my-bookings");
+          return;
+        }
+      }
       
       toast({
         title: "Success!",
@@ -757,6 +826,8 @@ const DoctorListBooking = () => {
       });
 
       setShowBookingModal(false);
+      // Reset payment method
+      setPaymentMethod("inr");
       // Stay on the doctors page after booking; patient can navigate to My Bookings manually
       // navigate("/my-bookings");
       
@@ -1418,6 +1489,117 @@ const DoctorListBooking = () => {
                 </CardContent>
               </Card>
 
+              {/* Payment Method Selection */}
+              <div className="space-y-3">
+                <Label className="text-base font-semibold flex items-center gap-2">
+                  <Wallet className="h-5 w-5 text-purple-600" />
+                  Payment Method
+                </Label>
+                <RadioGroup 
+                  value={paymentMethod} 
+                  onValueChange={(value: "inr" | "hc") => setPaymentMethod(value)}
+                >
+                  {/* INR Payment Option */}
+                  <div className={cn(
+                    "flex items-center space-x-3 p-4 border-2 rounded-xl cursor-pointer transition-all",
+                    paymentMethod === "inr" ? "border-green-500 bg-green-50" : "border-gray-200 hover:border-gray-300"
+                  )}>
+                    <RadioGroupItem value="inr" id="pay-inr" />
+                    <Label htmlFor="pay-inr" className="flex items-center gap-3 cursor-pointer flex-1">
+                      <div className="w-10 h-10 bg-green-100 rounded-full flex items-center justify-center">
+                        <DollarSign className="h-5 w-5 text-green-600" />
+                      </div>
+                      <div className="flex-1">
+                        <div className="font-semibold text-gray-900">Pay with INR</div>
+                        <div className="text-sm text-gray-500">
+                          Pay via UPI, Card, or Net Banking
+                        </div>
+                      </div>
+                      <div className="text-lg font-bold text-green-600">
+                        ₹{(() => {
+                          if (!selectedDoctor) return 0;
+                          if (consultationType === "online") {
+                            return selectedDoctor.consultationFee.online;
+                          } else {
+                            const locationFee = doctorSlots?.slots?.inPerson?.[0]?.location?.fee;
+                            return locationFee || selectedDoctor.consultationFee.inPerson;
+                          }
+                        })()}
+                      </div>
+                    </Label>
+                  </div>
+                  
+                  {/* Health Coins Payment Option */}
+                  <div className={cn(
+                    "flex items-center space-x-3 p-4 border-2 rounded-xl cursor-pointer transition-all",
+                    paymentMethod === "hc" ? "border-purple-500 bg-purple-50" : "border-gray-200 hover:border-gray-300",
+                    hcCalculation && !hcCalculation.canPay && "opacity-60"
+                  )}>
+                    <RadioGroupItem 
+                      value="hc" 
+                      id="pay-hc" 
+                      disabled={!hcCalculation?.canPay}
+                    />
+                    <Label htmlFor="pay-hc" className="flex items-center gap-3 cursor-pointer flex-1">
+                      <div className="w-10 h-10 bg-purple-100 rounded-full flex items-center justify-center">
+                        <Coins className="h-5 w-5 text-purple-600" />
+                      </div>
+                      <div className="flex-1">
+                        <div className="font-semibold text-gray-900 flex items-center gap-2">
+                          Pay with Health Coins
+                          {hcCalculation?.bonusPercent > 0 && (
+                            <Badge className="bg-purple-100 text-purple-700 text-xs">
+                              {hcCalculation.bonusPercent}% bonus value
+                            </Badge>
+                          )}
+                        </div>
+                        <div className="text-sm text-gray-500">
+                          {loadingHC ? (
+                            <span className="flex items-center gap-1">
+                              <Loader2 className="h-3 w-3 animate-spin" />
+                              Checking balance...
+                            </span>
+                          ) : hcCalculation ? (
+                            <>
+                              Balance: <span className="font-semibold text-purple-600">{walletBalance} HC</span>
+                              {!hcCalculation.canPay && (
+                                <span className="text-red-500 ml-2">
+                                  (Need {hcCalculation.shortfall} more HC)
+                                </span>
+                              )}
+                            </>
+                          ) : (
+                            "Use your earned Health Coins"
+                          )}
+                        </div>
+                      </div>
+                      <div className="text-right">
+                        <div className="text-lg font-bold text-purple-600">
+                          {hcCalculation ? `${hcCalculation.hcRequired} HC` : "..."}
+                        </div>
+                        {hcCalculation && hcCalculation.savings > 0 && (
+                          <div className="text-xs text-green-600">
+                            Save ₹{hcCalculation.savings}
+                          </div>
+                        )}
+                      </div>
+                    </Label>
+                  </div>
+                </RadioGroup>
+                
+                {/* Low balance warning */}
+                {hcCalculation && !hcCalculation.canPay && paymentMethod === "hc" && (
+                  <div className="p-3 bg-amber-50 border border-amber-200 rounded-lg text-sm text-amber-800">
+                    <p className="font-medium">Insufficient Health Coins</p>
+                    <p>You need {hcCalculation.hcRequired} HC but have {walletBalance} HC. 
+                      <Button variant="link" className="h-auto p-0 ml-1 text-amber-700 underline" onClick={() => navigate("/wallet")}>
+                        Buy more HC
+                      </Button>
+                    </p>
+                  </div>
+                )}
+              </div>
+
               {/* Action Buttons */}
               <div className="flex gap-3 pt-2">
                 <Button 
@@ -1429,10 +1611,19 @@ const DoctorListBooking = () => {
                 </Button>
                 <Button 
                   onClick={handleBookingSubmit} 
-                  disabled={isSubmitting || !selectedDate || !selectedTime}
+                  disabled={isSubmitting || !selectedDate || !selectedTime || (paymentMethod === "hc" && !hcCalculation?.canPay)}
                   className="flex-1 h-12 rounded-xl bg-gradient-to-r from-blue-600 to-green-600 hover:from-blue-700 hover:to-green-700"
                 >
-                  {isSubmitting ? "Booking..." : "Confirm Booking"}
+                  {isSubmitting ? (
+                    <span className="flex items-center gap-2">
+                      <Loader2 className="h-4 w-4 animate-spin" />
+                      Booking...
+                    </span>
+                  ) : paymentMethod === "hc" ? (
+                    `Pay ${hcCalculation?.hcRequired || 0} HC & Book`
+                  ) : (
+                    "Confirm Booking"
+                  )}
                 </Button>
               </div>
             </div>
