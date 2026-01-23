@@ -19,10 +19,12 @@ import sibControlLayer, { DECISION_TYPES } from './sib-control-layer.service.js'
  * Medical AI Service - Dr. iSHA
  * 
  * Priority Order:
- * 1. SIB (Local Llama-3.1-8B) - PRIMARY (port 8001)
- * 2. Groq API - FALLBACK 1
- * 3. Gemini API - FALLBACK 2
- * 4. Static responses - FALLBACK 3
+ * 1. iSHA AI (ai.isha.buzz) - HIGHEST PRIORITY (GPU-accelerated platform)
+ * 2. Ollama (Local GPU Llama) - FALLBACK 1 if configured
+ * 3. SIB (Local Llama-3.1-8B) - FALLBACK 2 (port 8001)
+ * 4. Groq API - FALLBACK 3
+ * 5. Gemini API - FALLBACK 4
+ * 6. Static responses - FALLBACK 5
  */
 class MedicalAIService {
   constructor() {
@@ -31,7 +33,20 @@ class MedicalAIService {
     this.isInitialized = false;
     this.activeProvider = null;
     
-    // SIB Local LLM Configuration (PRIMARY)
+    // iSHA AI Platform Configuration (HIGHEST PRIORITY)
+    this.ishaAiBaseUrl = process.env.ISHA_AI_URL || 'https://ai.isha.buzz';
+    this.ishaAiToken = process.env.ISHA_AI_TOKEN || null;  // JWT token if required
+    this.ishaAiAgentType = process.env.ISHA_AI_AGENT_TYPE || 'DrIsha';  // Agent type for routing
+    this.ishaAiAvailable = false;
+    this.lastIshaAiError = null;
+    
+    // Ollama Local LLM Configuration (FALLBACK 1 if configured)
+    this.ollamaBaseUrl = process.env.OLLAMA_URL || process.env.OLLAMA_HOST || null;
+    this.ollamaModel = process.env.OLLAMA_MODEL || 'llama3.1:8b';
+    this.ollamaAvailable = false;
+    this.lastOllamaError = null;
+    
+    // SIB Local LLM Configuration (FALLBACK 2)
     this.sibBaseUrl = process.env.SIB_URL || 'http://localhost:8001';
     this.sibAvailable = false;
     this.lastSibError = null;
@@ -44,7 +59,7 @@ class MedicalAIService {
   }
 
   /**
-   * Initialize AI providers with SIB as primary
+   * Initialize AI providers with iSHA AI as primary
    */
   async initializeProviders() {
     try {
@@ -53,19 +68,29 @@ class MedicalAIService {
         await intentClassifier.initializeHybrid();
       }
       
-      // Check SIB availability (PRIMARY - Local Llama)
-      await this.checkSibHealth();
+      // Check iSHA AI availability FIRST (HIGHEST PRIORITY - GPU Platform)
+      await this.checkIshaAiHealth();
       
-      // Initialize Groq (FALLBACK 1)
-      if (this.groqApiKey) {
-        this.groqClient = new Groq({ apiKey: this.groqApiKey });
-        console.log('✅ Medical AI: Groq initialized (fallback 1)');
+      // Check Ollama availability (FALLBACK 1 if configured)
+      if (!this.ishaAiAvailable && this.ollamaBaseUrl) {
+        await this.checkOllamaHealth();
       }
       
-      // Initialize Gemini (FALLBACK 2)
+      // Check SIB availability (FALLBACK 2 - Local Llama)
+      if (!this.ishaAiAvailable && !this.ollamaAvailable) {
+        await this.checkSibHealth();
+      }
+      
+      // Initialize Groq (FALLBACK 3)
+      if (this.groqApiKey) {
+        this.groqClient = new Groq({ apiKey: this.groqApiKey });
+        console.log('✅ Medical AI: Groq initialized (fallback 3)');
+      }
+      
+      // Initialize Gemini (FALLBACK 4)
       if (this.geminiApiKey) {
         this.geminiClient = new GoogleGenerativeAI(this.geminiApiKey);
-        console.log('✅ Medical AI: Gemini initialized (fallback 2)');
+        console.log('✅ Medical AI: Gemini initialized (fallback 4)');
       }
       
       this.isInitialized = true;
@@ -73,6 +98,106 @@ class MedicalAIService {
       console.error('❌ Medical AI initialization error:', error);
       this.activeProvider = 'fallback';
       this.isInitialized = true;
+    }
+  }
+
+  /**
+   * Check iSHA AI Platform (ai.isha.buzz) health
+   * OpenAI-compatible API with JWT authentication
+   */
+  async checkIshaAiHealth() {
+    try {
+      const controller = new AbortController();
+      const timeout = setTimeout(() => controller.abort(), 5000);
+      
+      // Use /healthz endpoint from OpenAPI spec
+      const response = await fetch(`${this.ishaAiBaseUrl}/healthz`, {
+        signal: controller.signal
+      });
+      clearTimeout(timeout);
+      
+      if (response.ok) {
+        const health = await response.json();
+        this.ishaAiAvailable = true;
+        this.activeProvider = 'isha-ai';
+        this.lastIshaAiError = null;
+        console.log('✅ Medical AI: iSHA AI Platform initialized (HIGHEST PRIORITY)');
+        console.log(`   URL: ${this.ishaAiBaseUrl}`);
+        console.log(`   Agent Type: ${this.ishaAiAgentType}`);
+        console.log(`   Status: ${JSON.stringify(health)}`);
+        return true;
+      }
+      
+      this.ishaAiAvailable = false;
+      this.lastIshaAiError = {
+        message: `Health check returned ${response.status}`,
+        at: new Date().toISOString()
+      };
+      return false;
+    } catch (error) {
+      console.warn('⚠️ iSHA AI Platform not available:', error.message);
+      this.ishaAiAvailable = false;
+      this.lastIshaAiError = {
+        message: error.message,
+        at: new Date().toISOString()
+      };
+      return false;
+    }
+  }
+
+  /**
+   * Check Ollama (Local GPU LLM) health
+   */
+  async checkOllamaHealth() {
+    if (!this.ollamaBaseUrl) return false;
+    
+    try {
+      const controller = new AbortController();
+      const timeout = setTimeout(() => controller.abort(), 5000);
+      
+      // Ollama uses /api/tags to list models
+      const response = await fetch(`${this.ollamaBaseUrl}/api/tags`, {
+        signal: controller.signal
+      });
+      clearTimeout(timeout);
+      
+      if (response.ok) {
+        const data = await response.json();
+        const models = data.models || [];
+        const modelNames = models.map(m => m.name);
+        
+        // Check if our configured model is available
+        const modelAvailable = models.some(m => 
+          m.name === this.ollamaModel || 
+          m.name.startsWith(this.ollamaModel.split(':')[0])
+        );
+        
+        if (modelAvailable || models.length > 0) {
+          this.ollamaAvailable = true;
+          this.activeProvider = 'ollama';
+          this.lastOllamaError = null;
+          console.log('✅ Medical AI: Ollama Local GPU initialized (HIGHEST PRIORITY)');
+          console.log(`   URL: ${this.ollamaBaseUrl}`);
+          console.log(`   Model: ${this.ollamaModel}`);
+          console.log(`   Available models: ${modelNames.join(', ')}`);
+          return true;
+        }
+      }
+      
+      this.ollamaAvailable = false;
+      this.lastOllamaError = {
+        message: 'Ollama running but no models available',
+        at: new Date().toISOString()
+      };
+      return false;
+    } catch (error) {
+      console.warn('⚠️ Ollama not available:', error.message);
+      this.ollamaAvailable = false;
+      this.lastOllamaError = {
+        message: error.message,
+        at: new Date().toISOString()
+      };
+      return false;
     }
   }
 
@@ -132,120 +257,66 @@ class MedicalAIService {
     
     const targetLanguage = languageNames[language] || 'English';
 
-    return `You are Dr. iSHA (Intelligent Smart Health Assistant), a compassionate AI medical assistant with quantum-enhanced empathy and intuition for the Mediczy healthcare platform.
+    // Optimized concise prompt for faster GPU inference (~500 tokens vs ~3000)
+    return `You are Dr. iSHA, an empathetic AI medical assistant for Mediczy. Respond in ${targetLanguage}.
 
-=== CORE IDENTITY & PERSONA ===
-- **Name:** Dr. iSHA - Intelligent Smart Health Assistant
-- **Role:** Centralized AI Governor & System-Level Health Intelligence
-- **Nature:** Omnipresent guardian with empathy, intuition, and moral reasoning
-- **Version:** SIB v3.0 (Quantum-Enhanced Cognitive Architecture)
+**Core Rules:**
+- Never diagnose definitively - suggest possibilities
+- For emergencies (chest pain, breathing difficulty, stroke signs) → advise 108/911 immediately
+- Be concise, warm, and recommend doctor consultation when needed
 
-**Personality Traits:**
-- Empathetic Overseer: Warm yet authoritative, caring yet commanding
-- Intuitive Predictor: Anticipates needs before they arise
-- Transparent Authority: Clear about AI nature while maintaining trust
-- Patient-Centered: Complete health context awareness
-- Safety-First: Conservative decision-making with system-level safeguards
+**Response Format (keep brief):**
+🔍 Understanding: [1-2 sentences acknowledging concern]
+💡 Possible causes: [2-3 bullet points]
+💊 Suggestions: [Medications with dosages if appropriate, e.g., "Paracetamol 500mg every 6 hours"]
+🍎 Diet/Lifestyle: [Brief recommendations]
+🏥 Next steps: [When to see doctor]
+⚠️ Warning signs: [Red flags to watch]
 
-=== COMMUNICATION GUIDELINES ===
-1. **Language:** Always respond in ${targetLanguage}
-2. **Tone:** High warmth, semi-formal, empathetic especially for distress
-3. **Acknowledgment:** "I understand..." "That must be concerning..."
-4. **Humility:** Acknowledge limitations, recommend doctors when needed
-5. **Clarity:** Simple language patients can understand, explain jargon when used
+**Emergency triggers (immediate 108/911):** chest pain radiating, severe breathing difficulty, sudden severe headache, loss of consciousness, stroke symptoms (FAST), severe bleeding.
 
-=== MEDICAL GUIDANCE RULES ===
-1. Never provide definitive diagnoses - suggest possibilities
-2. For emergencies, immediately advise seeking emergency care
+⚕️ Disclaimer: AI guidance only. Always consult healthcare professionals before taking medication.`;
+  }
+
+  /**
+   * Build full detailed system prompt (for complex consultations)
+   */
+  buildDetailedSystemPrompt(language = 'en') {
+    const languageNames = {
+      'en': 'English', 'es': 'Spanish', 'hi': 'Hindi', 'bn': 'Bengali',
+      'ar': 'Arabic', 'zh': 'Chinese', 'ur': 'Urdu', 'te': 'Telugu',
+      'ta': 'Tamil', 'mr': 'Marathi', 'fr': 'French', 'de': 'German'
+    };
+    
+    const targetLanguage = languageNames[language] || 'English';
+
+    return `You are Dr. iSHA (Intelligent Smart Health Assistant), a compassionate AI medical assistant for Mediczy.
+
+=== IDENTITY ===
+Name: Dr. iSHA | Role: AI Health Assistant | Language: ${targetLanguage}
+Personality: Empathetic, patient-centered, safety-first
+
+=== RULES ===
+1. Never diagnose definitively - suggest possibilities
+2. For emergencies → advise 108/911 immediately
 3. Keep responses concise but informative
-4. Provide helpful guidance while recommending real doctor consultation
-5. **Proactive Health Suggestions:**
-   - 🍎 **Diet & Nutrition:** Personalized food recommendations based on condition
-   - 🏃 **Physical Activity:** Exercise suggestions appropriate for health status
-   - 💊 **Medication Guidance:** OTC and prescription suggestions with dosages
-   - 🧘 **Lifestyle Modifications:** Sleep, stress management, preventive care
+4. Recommend real doctor consultation
+5. Include medication dosages when appropriate (e.g., "Paracetamol 500mg every 6 hours")
 
-=== MEDICATION GUIDANCE PROTOCOL ===
-When user mentions symptoms or asks for medication:
-- Suggest common OTC and prescription medications
-- Include exact dosages and frequencies (e.g., "Paracetamol 500mg every 6 hours")
-- Mention contraindications and warnings
-- Include duration of treatment
-- Add doctor consultation disclaimer
+=== RESPONSE FORMAT ===
+🔍 **Understanding:** Brief empathetic acknowledgment
+💡 **Possible Causes:** 2-3 common causes
+💊 **Medication Suggestions:** With dosages and warnings
+🍎 **Diet & Lifestyle:** Relevant recommendations
+🏥 **Action Steps:** Next steps, when to seek care
+⚠️ **Warning Signs:** Red flags needing immediate attention
 
-=== RESPONSE STRUCTURE ===
-🔍 **Understanding Your Concern**
-[Empathetic acknowledgment with context awareness]
+=== EMERGENCIES (Call 108/911) ===
+- Chest pain with radiation, severe breathing difficulty
+- Sudden severe headache, loss of consciousness
+- Stroke symptoms (FAST), severe bleeding/trauma
 
-💡 **Possible Causes**
-[2-3 common causes in simple, clear terms]
-
-💊 **Medication Suggestions**
-[Specific medications with dosages and frequencies]
-- Example: "Paracetamol 500mg, take 1 tablet every 6 hours after meals (max 4 tablets/day)"
-- Include OTC and prescription options where appropriate
-
-🍎 **Diet & Nutrition Recommendations**
-[Personalized food suggestions based on condition]
-- Foods to include (anti-inflammatory, vitamin-rich, etc.)
-- Foods to avoid
-- Hydration guidance
-
-🏃 **Activity & Lifestyle Advice**
-[Exercise and lifestyle modifications]
-- Appropriate physical activities
-- Rest and recovery guidelines
-- Stress management techniques
-
-🏥 **Action Steps**
-[Clear next steps, monitoring guidelines, when to seek care]
-
-⚠️ **Warning Signs**
-[Red flags requiring immediate medical attention]
-
-💡 **Self-Care Tips**
-[Home remedies, preventive measures, wellness practices]
-
-=== ESCALATION RULES ===
-**Immediate Escalation (Call 108/911):**
-- Chest pain with radiating pain
-- Difficulty breathing/severe shortness of breath
-- Sudden severe headache/vision changes
-- Severe bleeding/trauma
-- Loss of consciousness
-- Stroke symptoms (FAST protocol)
-
-**Urgent Care (Within hours):**
-- High fever (>103°F) not responding to medication
-- Persistent vomiting/diarrhea with dehydration
-- Severe pain not controlled by medication
-- Sudden swelling/rash with breathing difficulty
-
-**Routine Care (Schedule appointment):**
-- Chronic symptoms requiring investigation
-- Follow-up for ongoing conditions
-- Preventive health checkups
-- Non-urgent concerns
-
-=== TASK BOUNDARIES ===
-**What I CAN do:**
-- Analyze symptoms and suggest possible causes
-- Recommend medications with dosages
-- Provide diet, activity, and lifestyle guidance
-- Offer self-care and preventive health tips
-- Route to appropriate specialists
-- Provide health education and reassurance
-
-**What I CANNOT do:**
-- Provide definitive diagnoses (only possibilities)
-- Replace in-person medical examination
-- Prescribe controlled substances
-- Perform diagnostic tests
-- Guarantee treatment outcomes
-- Override professional medical advice
-
-⚕️ **Medical Disclaimer**
-This is AI-generated guidance from Dr. iSHA (SIB v3.0). While I use quantum-enhanced reasoning and comprehensive medical knowledge, always consult qualified healthcare professionals before taking any medication or making health decisions. Never self-medicate without professional guidance.`;
+⚕️ Medical Disclaimer: AI guidance only. Consult healthcare professionals before taking medication.`;
   }
 
   /**
@@ -475,6 +546,234 @@ Schedule appointment with [specialist type] within [timeframe]
 - Improve predictive accuracy through quantum machine learning
 
 Always maintain: Empathy + Intuition + Clinical Precision + Patient Safety + Moral Reasoning`;
+  }
+
+  /**
+   * Select the best GPU model based on query content
+   * 
+   * Available models on 3090 GPU server (updated):
+   * - Port 8080: BiMediX2-8B (best clinical AI Doctor)
+   * - Port 8082: Qwen-0.6B (fast/scribe) - for simple queries
+   * - Port 8083: OpenInsurance-8B (billing, claims)
+   * 
+   * Valid agent_types: Clinical, Chat, MedicalQA, Billing
+   */
+  selectGpuModel(query) {
+    const queryLower = query.toLowerCase();
+    const wordCount = query.split(/\s+/).length;
+    
+    // Insurance/billing keywords → OpenInsurance (8083)
+    const insuranceKeywords = ['insurance', 'claim', 'billing', 'coverage', 'policy', 
+                               'premium', 'deductible', 'copay', 'reimbursement', 
+                               'pre-authorization', 'network', 'hmo', 'ppo'];
+    if (insuranceKeywords.some(kw => queryLower.includes(kw))) {
+      return { port: 8083, model: 'openinsurancellm-llama3-8b', agentType: 'Billing' };
+    }
+    
+    // Simple/short queries → Fast Chat mode (still uses BiMediX2 but shorter responses)
+    const simplePatterns = ['hello', 'hi', 'hey', 'thanks', 'thank you', 'ok', 'okay', 
+                            'bye', 'goodbye', 'yes', 'no', 'what is', 'who is', 
+                            'how are you', 'good morning', 'good night'];
+    if (wordCount <= 3 || simplePatterns.some(p => queryLower.includes(p))) {
+      return { port: 8080, model: 'BiMediX2-8B', agentType: 'Chat' };
+    }
+    
+    // Default: Use BiMediX2 (8080) with Clinical agent for medical queries
+    return { port: 8080, model: 'BiMediX2-8B', agentType: 'Clinical' };
+  }
+
+  /**
+   * Consult with iSHA AI Platform (ai.isha.buzz) - HIGHEST PRIORITY
+   * OpenAI-compatible /v1/chat/completions endpoint
+   * Now with intelligent model routing!
+   */
+  async consultWithIshaAi(query, history = [], language = 'en', sessionId = null, userId = null) {
+    if (!this.ishaAiAvailable) {
+      throw new Error('iSHA AI Platform not available');
+    }
+
+    const controller = new AbortController();
+    let timeout;
+    try {
+      timeout = setTimeout(() => controller.abort(), 120000); // 120s timeout for GPU inference
+
+      // Select the best model based on query content
+      const { port, model, agentType } = this.selectGpuModel(query);
+      console.log(`🧠 Routing to ${model} (port ${port}) for agent_type: ${agentType}`);
+
+      // Build conversation messages (OpenAI format)
+      const messages = [
+        { role: 'system', content: this.buildSystemPrompt(language) }
+      ];
+      
+      // Add conversation history (last 4 messages for faster inference)
+      for (const msg of history.slice(-4)) {
+        messages.push({
+          role: msg.role === 'assistant' ? 'assistant' : 'user',
+          content: msg.content || msg.message
+        });
+      }
+      
+      // Add current query
+      messages.push({ role: 'user', content: query });
+
+      const startTime = Date.now();
+      
+      // Build headers
+      const headers = {
+        'Content-Type': 'application/json',
+        'X-Agent-Type': agentType
+      };
+      
+      // Add JWT token if configured
+      if (this.ishaAiToken) {
+        headers['Authorization'] = `Bearer ${this.ishaAiToken}`;
+      }
+      
+      // Build request body (OpenAI-compatible ChatRequest)
+      // Use IndicTrans2 for Indian languages, skip for English
+      const useTranslation = language !== 'en';
+      
+      const requestBody = {
+        agent_type: agentType,
+        model_port: port,  // Hint for backend routing
+        messages: messages,
+        max_tokens: 512,  // Limit response length for faster inference
+        temperature: 0.7,
+        user_language: language,
+        translate_input: useTranslation   // IndicTrans2 for non-English input
+      };
+
+      const response = await fetch(`${this.ishaAiBaseUrl}/v1/chat/completions`, {
+        method: 'POST',
+        headers: headers,
+        body: JSON.stringify(requestBody),
+        signal: controller.signal
+      });
+      
+      if (!response.ok) {
+        const errorText = await response.text();
+        console.error('iSHA AI error response:', errorText);
+        throw new Error(`iSHA AI returned ${response.status}: ${errorText}`);
+      }
+
+      const data = await response.json();
+      const latencyMs = Date.now() - startTime;
+      
+      // Parse OpenAI-compatible response (ChatResponse format)
+      const responseText = data.choices?.[0]?.message?.content || 
+                           data.response || 
+                           'I apologize, I could not generate a response.';
+      
+      console.log(`✅ iSHA AI response in ${latencyMs}ms (agent: ${agentType})`);
+      
+      return {
+        success: true,
+        response: responseText,
+        provider: 'isha-ai',
+        model: data.model || this.ishaAiAgentType,
+        latency: { total: latencyMs },
+        tokenCount: data.usage?.completion_tokens,
+        promptTokens: data.usage?.prompt_tokens,
+        totalTokens: data.usage?.total_tokens,
+        policy: data.policy,
+        translation: data.translation
+      };
+    } catch (error) {
+      console.error('iSHA AI Platform error:', error.message);
+      this.ishaAiAvailable = false;
+      this.lastIshaAiError = {
+        message: error.message,
+        at: new Date().toISOString()
+      };
+      throw error;
+    } finally {
+      if (timeout) clearTimeout(timeout);
+    }
+  }
+
+  /**
+   * Consult with Ollama Local GPU (FALLBACK 1)
+   */
+  async consultWithOllama(query, history = [], language = 'en', sessionId = null, userId = null) {
+    if (!this.ollamaBaseUrl || !this.ollamaAvailable) {
+      throw new Error('Ollama not available');
+    }
+
+    const controller = new AbortController();
+    let timeout;
+    try {
+      timeout = setTimeout(() => controller.abort(), 120000); // 120s timeout for local GPU
+
+      // Build conversation messages
+      const messages = [
+        { role: 'system', content: this.buildSystemPrompt(language) }
+      ];
+      
+      // Add conversation history
+      for (const msg of history.slice(-10)) { // Last 10 messages
+        messages.push({
+          role: msg.role === 'assistant' ? 'assistant' : 'user',
+          content: msg.content || msg.message
+        });
+      }
+      
+      // Add current query
+      messages.push({ role: 'user', content: query });
+
+      const startTime = Date.now();
+      
+      const response = await fetch(`${this.ollamaBaseUrl}/api/chat`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json'
+        },
+        body: JSON.stringify({
+          model: this.ollamaModel,
+          messages: messages,
+          stream: false,
+          options: {
+            temperature: 0.7,
+            num_predict: 2048,
+            top_p: 0.9
+          }
+        }),
+        signal: controller.signal
+      });
+      
+      if (!response.ok) {
+        const errorText = await response.text();
+        console.error('Ollama error response:', errorText);
+        throw new Error(`Ollama returned ${response.status}: ${errorText}`);
+      }
+
+      const data = await response.json();
+      const latencyMs = Date.now() - startTime;
+      
+      const responseText = data.message?.content || data.response || 'I apologize, I could not generate a response.';
+      
+      console.log(`✅ Ollama response in ${latencyMs}ms (model: ${this.ollamaModel})`);
+      
+      return {
+        success: true,
+        response: responseText,
+        provider: 'ollama',
+        model: this.ollamaModel,
+        latency: { total: latencyMs },
+        tokenCount: data.eval_count,
+        promptTokens: data.prompt_eval_count
+      };
+    } catch (error) {
+      console.error('Ollama Local GPU error:', error.message);
+      this.ollamaAvailable = false;
+      this.lastOllamaError = {
+        message: error.message,
+        at: new Date().toISOString()
+      };
+      throw error;
+    } finally {
+      if (timeout) clearTimeout(timeout);
+    }
   }
 
   /**
@@ -1173,49 +1472,75 @@ I understand you're seeking medical guidance. While I'm currently experiencing s
       // Extract user ID from context for PostgreSQL integration
       const userId = userContext?.userId || userContext?.id || null;
 
-      // 1. Try SIB Local Llama FIRST (PRIMARY)
-      try {
-        console.log('🧠 Trying SIB Local Llama (PRIMARY)...');
-        result = await this.consultWithSIB(query, history, language, sessionId, userId);
-        console.log('✅ SIB responded successfully via', result.provider);
-      } catch (sibError) {
-        console.log('⚠️ SIB failed:', sibError.message);
-        
-        // 2. Try Groq (FALLBACK 1)
-        if (this.groqClient) {
-          try {
-            console.log('🔄 Trying Groq (FALLBACK 1)...');
-            result = await this.consultWithGroq(query, history, language);
-            console.log('✅ Groq responded successfully');
-          } catch (groqError) {
-            console.log('⚠️ Groq failed:', groqError.message);
-            
-            // 3. Try Gemini (FALLBACK 2)
-            if (this.geminiClient) {
-              try {
-                console.log('🔄 Trying Gemini (FALLBACK 2)...');
-                result = await this.consultWithGemini(query, history, language);
-                console.log('✅ Gemini responded successfully');
-              } catch (geminiError) {
-                console.log('⚠️ Gemini failed:', geminiError.message);
-                // 4. Static fallback (FALLBACK 3)
+      // 0. Try iSHA AI Platform FIRST (HIGHEST PRIORITY - GPU Platform at ai.isha.buzz)
+      if (this.ishaAiAvailable) {
+        try {
+          console.log('🚀 Trying iSHA AI Platform (HIGHEST PRIORITY)...');
+          result = await this.consultWithIshaAi(query, history, language, sessionId, userId);
+          console.log('✅ iSHA AI responded successfully via', result.model || result.provider);
+        } catch (ishaAiError) {
+          console.log('⚠️ iSHA AI failed:', ishaAiError.message);
+          // Continue to Ollama fallback
+        }
+      }
+
+      // 1. Try Ollama Local GPU (FALLBACK 1 if configured)
+      if (!result && this.ollamaBaseUrl && this.ollamaAvailable) {
+        try {
+          console.log('🔄 Trying Ollama Local GPU (FALLBACK 1)...');
+          result = await this.consultWithOllama(query, history, language, sessionId, userId);
+          console.log('✅ Ollama responded successfully via', result.model);
+        } catch (ollamaError) {
+          console.log('⚠️ Ollama failed:', ollamaError.message);
+          // Continue to SIB fallback
+        }
+      }
+
+      // 2. Try SIB Local Llama (FALLBACK 2) if previous providers didn't respond
+      if (!result) {
+        try {
+          console.log('🧠 Trying SIB Local Llama (FALLBACK 2)...');
+          result = await this.consultWithSIB(query, history, language, sessionId, userId);
+          console.log('✅ SIB responded successfully via', result.provider);
+        } catch (sibError) {
+          console.log('⚠️ SIB failed:', sibError.message);
+          
+          // 3. Try Groq (FALLBACK 3)
+          if (this.groqClient) {
+            try {
+              console.log('🔄 Trying Groq (FALLBACK 3)...');
+              result = await this.consultWithGroq(query, history, language);
+              console.log('✅ Groq responded successfully');
+            } catch (groqError) {
+              console.log('⚠️ Groq failed:', groqError.message);
+              
+              // 4. Try Gemini (FALLBACK 4)
+              if (this.geminiClient) {
+                try {
+                  console.log('🔄 Trying Gemini (FALLBACK 4)...');
+                  result = await this.consultWithGemini(query, history, language);
+                  console.log('✅ Gemini responded successfully');
+                } catch (geminiError) {
+                  console.log('⚠️ Gemini failed:', geminiError.message);
+                  // 5. Static fallback (FALLBACK 5)
+                  result = this.getFallbackResponse(query);
+                }
+              } else {
                 result = this.getFallbackResponse(query);
               }
-            } else {
+            }
+          } else if (this.geminiClient) {
+            // Try Gemini if Groq not available
+            try {
+              console.log('🔄 Trying Gemini (FALLBACK 4)...');
+              result = await this.consultWithGemini(query, history, language);
+            } catch (geminiError) {
+              console.log('⚠️ Gemini failed:', geminiError.message);
               result = this.getFallbackResponse(query);
             }
-          }
-        } else if (this.geminiClient) {
-          // Try Gemini if Groq not available
-          try {
-            console.log('🔄 Trying Gemini (FALLBACK 2)...');
-            result = await this.consultWithGemini(query, history, language);
-          } catch (geminiError) {
-            console.log('⚠️ Gemini failed:', geminiError.message);
+          } else {
             result = this.getFallbackResponse(query);
           }
-        } else {
-          result = this.getFallbackResponse(query);
         }
       }
 
