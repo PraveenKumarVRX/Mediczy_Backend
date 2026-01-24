@@ -21,10 +21,12 @@ const appointmentPhrases = [
   { phrase: "book a checkup", action: "book", priority: 9 },
   { phrase: "schedule a checkup", action: "book", priority: 9 },
   
-  // Doctor finding intents
+  // Doctor finding intents - also handles booking variations
   { phrase: "find a doctor", action: "find", priority: 8 },
   { phrase: "looking for a doctor", action: "find", priority: 8 },
   { phrase: "need a doctor", action: "find", priority: 7 },
+  { phrase: "need doctor", action: "find", priority: 7 },  // Added: handles "i need doctor appointment"
+  { phrase: "doctor appointment", action: "book", priority: 8 },  // Added: handles "i need doctor appointment"
   { phrase: "search for doctor", action: "find", priority: 7 },
   { phrase: "recommend a doctor", action: "find", priority: 8 },
   { phrase: "suggest a doctor", action: "find", priority: 8 },
@@ -40,6 +42,7 @@ const appointmentPhrases = [
   { phrase: "consult a doctor", action: "visit", priority: 7 },
   { phrase: "consult with a doctor", action: "visit", priority: 7 },
   { phrase: "doctor consultation", action: "visit", priority: 6 },
+  { phrase: "online consultation", action: "book", priority: 8 },  // Added
   { phrase: "meet with doctor", action: "visit", priority: 6 }
 ];
 
