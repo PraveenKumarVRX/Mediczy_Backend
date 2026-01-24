@@ -274,6 +274,16 @@ export const Corporate = sequelize.define('Corporate', {
     defaultValue: false
   },
   
+  // Password Reset
+  passwordResetToken: {
+    type: DataTypes.STRING(255),
+    allowNull: true
+  },
+  passwordResetExpires: {
+    type: DataTypes.DATE,
+    allowNull: true
+  },
+  
   // Metadata
   metadata: {
     type: DataTypes.JSONB,

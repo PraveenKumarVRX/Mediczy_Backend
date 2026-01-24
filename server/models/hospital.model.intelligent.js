@@ -93,6 +93,16 @@ const Hospital = sequelize.define('Hospital', {
     defaultValue: false,
     field: 'is_verified'
   },
+  passwordResetToken: {
+    type: DataTypes.STRING(255),
+    allowNull: true,
+    field: 'password_reset_token'
+  },
+  passwordResetExpires: {
+    type: DataTypes.DATE,
+    allowNull: true,
+    field: 'password_reset_expires'
+  },
   metadata: {
     type: DataTypes.JSONB,
     defaultValue: {}

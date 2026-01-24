@@ -1046,7 +1046,7 @@ router.post('/corporate-employees', authUser, requireRole(['admin', 'team', 'cor
         await postgresSequelize.query(`
           INSERT INTO user_associations ("userId", "entityType", "entityId", role, "isPrimary", status, metadata, "startDate", "createdAt", "updatedAt")
           VALUES (:userId, 'corporate', :corporateId, 'employee', false, 'active', :metadata, NOW(), NOW(), NOW())
-          ON CONFLICT ("userId", "entityType", "entityId") DO UPDATE SET
+          ON CONFLICT ("userId", "entityType", "entityId", role) DO UPDATE SET
             metadata = EXCLUDED.metadata,
             "updatedAt" = NOW()
         `, {
@@ -1114,6 +1114,185 @@ router.get('/corporate-employees/:corporateId', authUser, requireRole(['admin', 
     return res.status(500).json({
       success: false,
       message: 'Failed to get corporate employees',
+      error: error.message
+    });
+  }
+});
+
+/**
+ * Assign Health Package to Corporate Employees
+ * POST /api/admin/corporate-package-assignments
+ * Creates health package assignments for corporate employees
+ */
+router.post('/corporate-package-assignments', authUser, requireRole(['admin', 'team']), async (req, res) => {
+  try {
+    const { corporateId, packageId, packageName, packageDetails, employeeIds, validityDays = 365 } = req.body;
+    
+    if (!corporateId || !packageId) {
+      return res.status(400).json({
+        success: false,
+        message: 'corporateId and packageId are required'
+      });
+    }
+    
+    // Verify corporate exists
+    const [corporate] = await postgresSequelize.query(`
+      SELECT id, "companyName" FROM corporates WHERE id = :corporateId
+    `, {
+      replacements: { corporateId },
+      type: postgresSequelize.QueryTypes.SELECT
+    });
+    
+    if (!corporate) {
+      return res.status(404).json({
+        success: false,
+        message: 'Corporate not found'
+      });
+    }
+    
+    // Get employees to assign package to
+    let employeesToAssign = [];
+    
+    if (employeeIds === 'all' || !employeeIds) {
+      // Get all employees of this corporate
+      employeesToAssign = await postgresSequelize.query(`
+        SELECT u.id, u.email, u."firstName", u."lastName"
+        FROM users u
+        JOIN user_associations ua ON u.id = ua."userId"
+        WHERE ua."entityType" = 'corporate' 
+          AND ua."entityId" = :corporateId
+          AND ua.role = 'employee'
+          AND ua.status = 'active'
+      `, {
+        replacements: { corporateId },
+        type: postgresSequelize.QueryTypes.SELECT
+      });
+    } else if (Array.isArray(employeeIds)) {
+      // Get specific employees
+      employeesToAssign = await postgresSequelize.query(`
+        SELECT u.id, u.email, u."firstName", u."lastName"
+        FROM users u
+        WHERE u.id = ANY(:employeeIds)
+      `, {
+        replacements: { employeeIds },
+        type: postgresSequelize.QueryTypes.SELECT
+      });
+    }
+    
+    const results = { assigned: [], failed: [] };
+    const validFrom = new Date();
+    const validTo = new Date();
+    validTo.setDate(validTo.getDate() + validityDays);
+    
+    for (const emp of employeesToAssign) {
+      try {
+        // Create health package assignment
+        await postgresSequelize.query(`
+          INSERT INTO user_health_packages (
+            "userId", "corporateId", "packageId", "packageName", 
+            "packageDetails", "validFrom", "validTo", status,
+            "createdAt", "updatedAt"
+          )
+          VALUES (
+            :userId, :corporateId, :packageId, :packageName,
+            :packageDetails, :validFrom, :validTo, 'active',
+            NOW(), NOW()
+          )
+          ON CONFLICT ("userId", "packageId") DO UPDATE SET
+            "validTo" = EXCLUDED."validTo",
+            status = 'active',
+            "updatedAt" = NOW()
+        `, {
+          replacements: {
+            userId: emp.id,
+            corporateId,
+            packageId,
+            packageName: packageName || `Health Package ${packageId}`,
+            packageDetails: JSON.stringify(packageDetails || {}),
+            validFrom: validFrom.toISOString(),
+            validTo: validTo.toISOString()
+          },
+          type: postgresSequelize.QueryTypes.INSERT
+        });
+        
+        results.assigned.push({
+          userId: emp.id,
+          email: emp.email,
+          name: `${emp.firstName || ''} ${emp.lastName || ''}`.trim()
+        });
+      } catch (empError) {
+        results.failed.push({
+          userId: emp.id,
+          email: emp.email,
+          reason: empError.message
+        });
+      }
+    }
+    
+    console.log(`[Package Assignment] Corporate ${corporate.companyName}: Assigned ${results.assigned.length} employees, Failed ${results.failed.length}`);
+    
+    return res.json({
+      success: true,
+      message: `Health package assigned to ${results.assigned.length} employees`,
+      data: {
+        corporate: corporate.companyName,
+        packageId,
+        packageName: packageName || `Health Package ${packageId}`,
+        validFrom,
+        validTo,
+        summary: {
+          total: employeesToAssign.length,
+          assigned: results.assigned.length,
+          failed: results.failed.length
+        },
+        assigned: results.assigned,
+        failed: results.failed.length > 0 ? results.failed : undefined
+      }
+    });
+  } catch (error) {
+    console.error('Failed to assign corporate health package:', error);
+    return res.status(500).json({
+      success: false,
+      message: 'Failed to assign health package',
+      error: error.message
+    });
+  }
+});
+
+/**
+ * Get Health Packages for Corporate
+ * GET /api/admin/corporate-health-packages/:corporateId
+ */
+router.get('/corporate-health-packages/:corporateId', authUser, requireRole(['admin', 'team']), async (req, res) => {
+  try {
+    const { corporateId } = req.params;
+    
+    // Get all unique packages assigned to this corporate's employees
+    const packages = await postgresSequelize.query(`
+      SELECT DISTINCT ON (uhp."packageId")
+        uhp."packageId", uhp."packageName", uhp."packageDetails",
+        uhp."validFrom", uhp."validTo", uhp.status,
+        COUNT(uhp."userId") OVER (PARTITION BY uhp."packageId") as "employeeCount"
+      FROM user_health_packages uhp
+      WHERE uhp."corporateId" = :corporateId
+      ORDER BY uhp."packageId", uhp."createdAt" DESC
+    `, {
+      replacements: { corporateId },
+      type: postgresSequelize.QueryTypes.SELECT
+    });
+    
+    return res.json({
+      success: true,
+      packages: packages.map(p => ({
+        ...p,
+        packageDetails: typeof p.packageDetails === 'string' ? JSON.parse(p.packageDetails) : p.packageDetails
+      }))
+    });
+  } catch (error) {
+    console.error('Failed to get corporate health packages:', error);
+    return res.status(500).json({
+      success: false,
+      message: 'Failed to get health packages',
       error: error.message
     });
   }

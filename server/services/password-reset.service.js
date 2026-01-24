@@ -2,6 +2,10 @@ import crypto from 'crypto';
 import OTP from '../models/otp.model.intelligent.js';
 import userModel from '../models/user.model.intelligent.js';
 import doctorModel from '../models/doctor.model.intelligent.js';
+import Hospital from '../models/hospital.model.intelligent.js';
+import Nurse from '../models/nurse.model.intelligent.js';
+import Pharmacy from '../models/postgres/pharmacy.model.postgres.js';
+import Corporate from '../models/postgres/corporate.model.postgres.js';
 import { SMSService, SMSTemplateManager } from './sms.service.js';
 import emailService from './emailService.js';
 import notificationService from './notification.service.js';
@@ -47,23 +51,47 @@ class PasswordResetService {
    */
   async requestPasswordReset({ email, phone, userType = 'user' }) {
     try {
-      // Find account by email or phone
+      // Find account by email or phone based on userType
       let account;
       let accountType = userType;
 
-      if (email) {
-        if (userType === 'doctor') {
-          account = await doctorModel.findOne({ where: { email } });
-        } else {
-          account = await userModel.findOne({ where: { email } });
+      // Get the appropriate model based on userType
+      const findAccount = async () => {
+        switch (userType) {
+          case 'doctor':
+            return email
+              ? await doctorModel.findOne({ where: { email } })
+              : await doctorModel.findOne({ where: { phone } });
+          
+          case 'hospital':
+            return email
+              ? await Hospital.findOne({ where: { email } })
+              : await Hospital.findOne({ where: { phoneNumber: phone } });
+          
+          case 'nurse':
+            return email
+              ? await Nurse.findOne({ where: { email } })
+              : await Nurse.findOne({ where: { phoneNumber: phone } });
+          
+          case 'pharmacy':
+            return email
+              ? await Pharmacy.findOne({ where: { email } })
+              : await Pharmacy.findOne({ where: { phoneNumber: phone } });
+          
+          case 'corporate':
+            return email
+              ? await Corporate.findOne({ where: { email } })
+              : await Corporate.findOne({ where: { phone } });
+          
+          case 'user':
+          default:
+            return email
+              ? await userModel.findOne({ where: { email } })
+              : await userModel.findOne({ where: { phoneNumber: phone } });
         }
-      } else if (phone) {
-        if (userType === 'doctor') {
-          account = await doctorModel.findOne({ where: { phone } });
-        } else {
-          account = await userModel.findOne({ where: { phoneNumber: phone } });
-        }
-      }
+      };
+
+      account = await findAccount();
 
       // Don't reveal if account exists (security)
       if (!account) {
@@ -106,7 +134,8 @@ class PasswordResetService {
   }
 
   /**
-   * Send OTP to all channels (Email, SMS, WhatsApp)
+   * Send OTP to all channels (Email, WhatsApp)
+   * Uses direct delivery by default, n8n webhook as backup if configured
    */
   async sendOTPToAllChannels(account, otpCode) {
     const results = {
@@ -115,38 +144,69 @@ class PasswordResetService {
       whatsapp: { sent: false, error: null }
     };
 
-    // Parallel delivery for speed
+    const phone = account.phoneNumber || account.phone;
+    const email = account.email;
+
+    // Use direct delivery (more reliable)
     await Promise.allSettled([
-      // Email
-      this.sendOTPViaEmail(account, otpCode).then(() => {
+      // Email delivery
+      email && this.sendOTPViaEmail(account, otpCode).then(() => {
         results.email.sent = true;
+        console.log(`✅ Email OTP sent to ${email}`);
       }).catch(error => {
         results.email.error = error.message;
-        console.error('Email delivery failed:', error);
+        console.error('❌ Email delivery failed:', error.message);
       }),
 
-      // SMS
-      this.sendOTPViaSMS(account, otpCode).then(() => {
-        results.sms.sent = true;
-      }).catch(error => {
-        results.sms.error = error.message;
-        console.error('SMS delivery failed:', error);
-      }),
-
-      // WhatsApp
-      this.sendOTPViaWhatsApp(account, otpCode).then(() => {
+      // WhatsApp delivery
+      phone && this.sendOTPViaWhatsApp(account, otpCode).then(() => {
         results.whatsapp.sent = true;
+        console.log(`✅ WhatsApp OTP sent to ${phone}`);
       }).catch(error => {
         results.whatsapp.error = error.message;
-        console.error('WhatsApp delivery failed:', error);
+        console.error('❌ WhatsApp delivery failed:', error.message);
       })
     ]);
+
+    // Optionally also trigger n8n for logging/analytics (without delivery)
+    if (process.env.N8N_WEBHOOK_URL && process.env.USE_N8N_FOR_OTP === 'true') {
+      try {
+        const webhookEndpoint = `${process.env.N8N_WEBHOOK_URL}/password-reset-otp`;
+        const name = account.name || account.firstName || account.hospitalName || account.companyName || 'User';
+        
+        console.log(`📤 Notifying n8n about OTP delivery to: ${email || phone}`);
+        
+        // Fire and forget - don't wait for response
+        fetch(webhookEndpoint, {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'X-Webhook-Secret': process.env.N8N_WEBHOOK_SECRET || 'mediczy_n8n_webhook_2025'
+          },
+          body: JSON.stringify({
+            otp: otpCode,
+            email: email,
+            phone: phone,
+            name: name,
+            otp_id: `otp_${Date.now()}`,
+            userType: account.userType || 'user',
+            timestamp: new Date().toISOString(),
+            deliveryResults: results  // Include delivery status for logging
+          })
+        }).catch(err => console.log('n8n notification skipped:', err.message));
+      } catch (n8nError) {
+        console.log('n8n webhook skipped:', n8nError.message);
+      }
+    }
+
+    // SMS is not configured
+    results.sms.error = 'SMS not configured';
 
     return results;
   }
 
   /**
-   * Send OTP via Email
+   * Send OTP via Email (fallback)
    */
   async sendOTPViaEmail(account, otpCode) {
     try {
@@ -295,17 +355,44 @@ class PasswordResetService {
         };
       }
 
-      // Find account
+      // Find account based on userType
       let account;
-      if (userType === 'doctor') {
-        account = email
-          ? await doctorModel.findOne({ where: { email } })
-          : await doctorModel.findOne({ where: { phone } });
-      } else {
-        account = email
-          ? await userModel.findOne({ where: { email } })
-          : await userModel.findOne({ where: { phoneNumber: phone } });
-      }
+      const findAccountByType = async () => {
+        switch (userType) {
+          case 'doctor':
+            return email
+              ? await doctorModel.findOne({ where: { email } })
+              : await doctorModel.findOne({ where: { phone } });
+          
+          case 'hospital':
+            return email
+              ? await Hospital.findOne({ where: { email } })
+              : await Hospital.findOne({ where: { phoneNumber: phone } });
+          
+          case 'nurse':
+            return email
+              ? await Nurse.findOne({ where: { email } })
+              : await Nurse.findOne({ where: { phoneNumber: phone } });
+          
+          case 'pharmacy':
+            return email
+              ? await Pharmacy.findOne({ where: { email } })
+              : await Pharmacy.findOne({ where: { phoneNumber: phone } });
+          
+          case 'corporate':
+            return email
+              ? await Corporate.findOne({ where: { email } })
+              : await Corporate.findOne({ where: { phoneNumber: phone } });
+          
+          case 'user':
+          default:
+            return email
+              ? await userModel.findOne({ where: { email } })
+              : await userModel.findOne({ where: { phoneNumber: phone } });
+        }
+      };
+
+      account = await findAccountByType();
 
       if (!account) {
         return {
@@ -319,24 +406,27 @@ class PasswordResetService {
       const resetTokenHash = crypto.createHash('sha256').update(resetToken).digest('hex');
       const resetTokenExpiry = new Date(Date.now() + 3600000); // 1 hour
 
-      // Store token in database
-      if (userType === 'doctor') {
-        await doctorModel.update(
-          {
-            passwordResetToken: resetTokenHash,
-            passwordResetExpires: resetTokenExpiry
-          },
-          { where: { id: account.id } }
-        );
-      } else {
-        await userModel.update(
-          {
-            passwordResetToken: resetTokenHash,
-            passwordResetExpires: resetTokenExpiry
-          },
-          { where: { id: account.id } }
-        );
-      }
+      // Get the appropriate model for updating
+      const getModelByType = () => {
+        switch (userType) {
+          case 'doctor': return doctorModel;
+          case 'hospital': return Hospital;
+          case 'nurse': return Nurse;
+          case 'pharmacy': return Pharmacy;
+          case 'corporate': return Corporate;
+          case 'user':
+          default: return userModel;
+        }
+      };
+
+      const Model = getModelByType();
+      await Model.update(
+        {
+          passwordResetToken: resetTokenHash,
+          passwordResetExpires: resetTokenExpiry
+        },
+        { where: { id: account.id } }
+      );
 
       return {
         success: true,
@@ -361,11 +451,23 @@ class PasswordResetService {
       // Hash the token
       const resetTokenHash = crypto.createHash('sha256').update(resetToken).digest('hex');
 
-      // Find account with valid token
-      let account;
-      const Model = userType === 'doctor' ? doctorModel : userModel;
+      // Get the appropriate model based on userType
+      const getModelByType = () => {
+        switch (userType) {
+          case 'doctor': return doctorModel;
+          case 'hospital': return Hospital;
+          case 'nurse': return Nurse;
+          case 'pharmacy': return Pharmacy;
+          case 'corporate': return Corporate;
+          case 'user':
+          default: return userModel;
+        }
+      };
 
-      account = await Model.findOne({
+      const Model = getModelByType();
+
+      // Find account with valid token
+      let account = await Model.findOne({
         where: {
           passwordResetToken: resetTokenHash
         }

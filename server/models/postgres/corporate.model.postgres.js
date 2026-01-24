@@ -145,6 +145,17 @@ const Corporate = postgresSequelize.define('Corporate', {
     defaultValue: {},
     comment: 'Additional corporate data: {billingInfo, preferences, integrations}'
   },
+  // Password Reset fields
+  passwordResetToken: {
+    type: DataTypes.STRING(255),
+    allowNull: true,
+    comment: 'Hashed password reset token'
+  },
+  passwordResetExpires: {
+    type: DataTypes.DATE,
+    allowNull: true,
+    comment: 'Expiry time for password reset token'
+  },
   createdAt: {
     type: DataTypes.DATE,
     allowNull: false,

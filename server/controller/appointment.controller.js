@@ -17,6 +17,11 @@ import notificationService from '../services/notification.service.js';
 
 const normalizeTimeHHMM = (value = '') => {
   const trimmed = String(value || '').trim();
+  // If it's a time range like "12:30 - 13:00" or "12:30-13:00", extract just the start time
+  if (trimmed.includes('-')) {
+    const startTime = trimmed.split('-')[0].trim();
+    if (/^([01]\d|2[0-3]):[0-5]\d$/.test(startTime)) return startTime;
+  }
   if (/^([01]\d|2[0-3]):[0-5]\d$/.test(trimmed)) return trimmed;
   if (/^([01]\d|2[0-3]):[0-5]\d:[0-5]\d$/.test(trimmed)) return trimmed.slice(0, 5);
   return trimmed;
@@ -130,11 +135,15 @@ export const createAppointment = async (req, res) => {
     const {
       doctorId,
       appointmentDate,
-      appointmentTime,
+      appointmentTime: rawAppointmentTime,
       consultationType,
       symptoms,
       reason
     } = req.body;
+
+    // Normalize appointmentTime - extract start time from range format if present
+    const appointmentTime = normalizeTimeHHMM(rawAppointmentTime);
+    console.log('⏰ Time normalization:', { raw: rawAppointmentTime, normalized: appointmentTime });
 
     const userId = req.user.id;
     const requestedConsultationType = consultationType;

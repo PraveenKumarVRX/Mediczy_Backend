@@ -12,7 +12,7 @@ const router = express.Router();
 router.post('/request', [
   body('email').optional().isEmail().withMessage('Must be a valid email'),
   body('phone').optional().matches(/^\+?[1-9]\d{1,14}$/).withMessage('Invalid phone format'),
-  body('userType').optional().isIn(['user', 'doctor']).withMessage("User type must be 'user' or 'doctor'")
+  body('userType').optional().isIn(['user', 'doctor', 'hospital', 'nurse', 'pharmacy', 'corporate']).withMessage("User type must be one of: user, doctor, hospital, nurse, pharmacy, corporate")
 ], async (req, res) => {
   try {
     const { email, phone, userType = 'user' } = req.body;
@@ -52,7 +52,7 @@ router.post('/verify-otp', [
   body('email').optional().isEmail().withMessage('Must be a valid email'),
   body('phone').optional().matches(/^\+?[1-9]\d{1,14}$/).withMessage('Invalid phone format'),
   body('code').notEmpty().isLength({ min: 6, max: 6 }).withMessage('OTP must be 6 digits'),
-  body('userType').optional().isIn(['user', 'doctor']).withMessage("User type must be 'user' or 'doctor'")
+  body('userType').optional().isIn(['user', 'doctor', 'hospital', 'nurse', 'pharmacy', 'corporate']).withMessage("User type must be one of: user, doctor, hospital, nurse, pharmacy, corporate")
 ], async (req, res) => {
   try {
     const { email, phone, code, userType = 'user' } = req.body;
@@ -90,7 +90,7 @@ router.post('/verify-otp', [
 router.post('/reset', [
   body('resetToken').notEmpty().withMessage('Reset token is required'),
   body('newPassword').isLength({ min: 6 }).withMessage('Password must be at least 6 characters long'),
-  body('userType').optional().isIn(['user', 'doctor']).withMessage("User type must be 'user' or 'doctor'")
+  body('userType').optional().isIn(['user', 'doctor', 'hospital', 'nurse', 'pharmacy', 'corporate']).withMessage("User type must be one of: user, doctor, hospital, nurse, pharmacy, corporate")
 ], async (req, res) => {
   try {
     const { resetToken, newPassword, userType = 'user' } = req.body;

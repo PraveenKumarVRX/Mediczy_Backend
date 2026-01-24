@@ -144,6 +144,14 @@ const Pharmacy = postgresSequelize.define('Pharmacy', {
     type: DataTypes.BOOLEAN,
     defaultValue: false
   },
+  passwordResetToken: {
+    type: DataTypes.STRING(255),
+    allowNull: true
+  },
+  passwordResetExpires: {
+    type: DataTypes.DATE,
+    allowNull: true
+  },
   // Metadata
   metadata: {
     type: DataTypes.JSONB,

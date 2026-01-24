@@ -1,9 +1,11 @@
 import intelligentDb from '../utils/intelligentDbClient.js';
 import crypto from 'crypto';
+import { cache } from '../db/redis.js';
 
 /**
  * OTP Model for Intelligent Database
  * Handles OTP generation, storage, and verification
+ * Uses Redis for cross-cluster storage
  */
 
 class OTP {
@@ -42,14 +44,17 @@ class OTP {
         userId: userId || null
       };
 
-      // Try to store in intelligent database, but don't fail if unavailable
+      // Store in Redis (primary - works across clusters)
+      const redisKey = `otp:${purpose}:${email || phone}:${id}`;
+      const redisTTL = expiryMinutes * 60; // seconds
+      await cache.set(redisKey, otpData, redisTTL);
+      console.log(`🔐 OTP stored in Redis: ${redisKey}`);
+
+      // Also try to store in intelligent database (backup)
       try {
         await intelligentDb.ingest('otps_v1', otpData);
       } catch (dbError) {
-        console.warn('⚠️  IntelligentDB unavailable, OTP stored in memory only:', dbError.message);
-        // Store in memory as fallback (for demo purposes)
-        if (!global.otpMemoryStore) global.otpMemoryStore = new Map();
-        global.otpMemoryStore.set(id, otpData);
+        console.warn('⚠️  IntelligentDB unavailable, OTP stored in Redis only:', dbError.message);
       }
 
       // Log OTP in development mode for testing
@@ -100,32 +105,44 @@ class OTP {
 
       let otp = null;
 
-      // Try to search in intelligent database first
+      // Search in Redis first (primary store for cluster mode)
       try {
-        const results = await intelligentDb.search('otps_v1', {
-          filter: query,
-          limit: 1
-        });
-        if (results && results.length > 0) {
-          otp = results[0];
-        }
-      } catch (dbError) {
-        console.warn('⚠️  IntelligentDB search failed, checking memory store');
-      }
-
-      // Fallback to memory store if DB search failed
-      if (!otp && global.otpMemoryStore) {
-        for (const [id, storedOtp] of global.otpMemoryStore.entries()) {
-          if (
-            storedOtp.code === code &&
-            storedOtp.purpose === purpose &&
-            !storedOtp.isVerified &&
-            (phone ? storedOtp.phone === phone : true) &&
-            (email ? storedOtp.email === email : true)
-          ) {
-            otp = storedOtp;
+        const redisPattern = `otp:${purpose}:${email || phone}:*`;
+        const { connectRedis } = await import('../db/redis.js');
+        const redis = await connectRedis();
+        const keys = await redis.keys(redisPattern);
+        
+        console.log(`🔍 Searching Redis for OTP: ${redisPattern}, found ${keys.length} keys`);
+        
+        for (const key of keys) {
+          const storedOtp = await cache.get(key);
+          if (storedOtp && 
+              storedOtp.code === code && 
+              storedOtp.purpose === purpose &&
+              !storedOtp.isVerified &&
+              (phone ? storedOtp.phone === phone : true) &&
+              (email ? storedOtp.email === email : true)) {
+            otp = { ...storedOtp, redisKey: key };
+            console.log(`✅ Found matching OTP in Redis: ${key}`);
             break;
           }
+        }
+      } catch (redisError) {
+        console.warn('⚠️  Redis search failed, trying IntelligentDB:', redisError.message);
+      }
+
+      // Try to search in intelligent database if not found in Redis
+      if (!otp) {
+        try {
+          const results = await intelligentDb.search('otps_v1', {
+            filter: query,
+            limit: 1
+          });
+          if (results && results.length > 0) {
+            otp = results[0];
+          }
+        } catch (dbError) {
+          console.warn('⚠️  IntelligentDB search failed');
         }
       }
 
@@ -157,18 +174,21 @@ class OTP {
 
       // Mark as verified
       try {
+        // Update in Redis first
+        if (otp.redisKey) {
+          otp.isVerified = true;
+          otp.verifiedAt = new Date().toISOString();
+          await cache.set(otp.redisKey, otp, 60); // Keep for 1 minute then expire
+          console.log(`✅ OTP marked verified in Redis: ${otp.redisKey}`);
+        }
+        
+        // Also update in intelligent DB
         await intelligentDb.update('otps_v1', otp.id, {
           isVerified: true,
           verifiedAt: new Date().toISOString()
         });
       } catch (dbError) {
-        // Update in memory store if DB update fails
-        if (global.otpMemoryStore && global.otpMemoryStore.has(otp.id)) {
-          const storedOtp = global.otpMemoryStore.get(otp.id);
-          storedOtp.isVerified = true;
-          storedOtp.verifiedAt = new Date().toISOString();
-          global.otpMemoryStore.set(otp.id, storedOtp);
-        }
+        console.warn('⚠️  OTP verification update error:', dbError.message);
       }
 
       return {

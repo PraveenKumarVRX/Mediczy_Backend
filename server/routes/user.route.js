@@ -13,6 +13,8 @@ import { authUser } from "../middleware/auth.middleware.js";
 import userModel, { generateAuthTokenForUser } from "../models/user.model.intelligent.js";
 import doctorModel from "../models/doctor.model.intelligent.js";
 import passwordResetService from "../services/password-reset.service.js";
+import signupVerificationService from "../services/signup-verification.service.js";
+import n8nOTPService from "../services/n8n-otp.service.js";
 import Consent from "../models/consent.model.intelligent.js";
 import { auditLoginAttempt } from "../middleware/audit.middleware.js";
 import { authLimiter } from "../middleware/rateLimiter.middleware.js";
@@ -25,7 +27,7 @@ const router = express.Router();
  * /api/users/register/send-otp:
  *   post:
  *     summary: Send OTP for user registration
- *     description: Send OTP to email and phone for verification before registration
+ *     description: Send OTP to email and WhatsApp for verification before registration
  *     tags: [Users]
  */
 router.post(
@@ -35,6 +37,7 @@ router.post(
     body("phoneNumber")
       .isMobilePhone()
       .withMessage("Must be a valid mobile phone number"),
+    body("firstName").optional().isLength({ min: 2, max: 20 }).withMessage("First name must be between 2 to 20 characters"),
   ],
   async (req, res) => {
     const errors = validationResult(req);
@@ -42,7 +45,7 @@ router.post(
       return res.status(400).json({ errors: errors.array() });
     }
 
-    const { email, phoneNumber } = req.body;
+    const { email, phoneNumber, firstName } = req.body;
 
     try {
       // Check if email already exists
@@ -63,54 +66,19 @@ router.post(
         });
       }
 
-      // Generate OTP for registration
-      const OTP = await import('../models/otp.model.intelligent.js');
-      const otp = await OTP.default.generate({
+      // Send OTP via Email and WhatsApp using verified working service
+      const result = await signupVerificationService.sendSignupOTP({
         email,
-        phone: phoneNumber,
-        purpose: 'registration',
-        expiryMinutes: 10
+        phoneNumber,
+        firstName: firstName || 'User'
       });
 
-      // Send OTP via notification service
-      const notificationService = await import('../services/notification.service.js');
-      const deliveryResults = [];
-
-      // Send via email
-      try {
-        await notificationService.default.sendEmail(
-          email,
-          'Verify Your Email - Mediczy Registration',
-          `Your OTP for registration is: ${otp.code}. Valid for 10 minutes.`
-        );
-        deliveryResults.push({ channel: 'email', sent: true });
-      } catch (err) {
-        deliveryResults.push({ channel: 'email', sent: false, error: err.message });
-      }
-
-      // Send via SMS
-      try {
-        await notificationService.default.sendSMS(
-          phoneNumber,
-          `Your Mediczy registration OTP is: ${otp.code}. Valid for 10 minutes.`
-        );
-        deliveryResults.push({ channel: 'sms', sent: true });
-      } catch (err) {
-        deliveryResults.push({ channel: 'sms', sent: false, error: err.message });
-      }
-
-      console.log('📧 Registration OTP sent:', { email, phoneNumber, otp: otp.code });
+      console.log('📧 Registration OTP sent via Email + WhatsApp:', { email, phoneNumber });
 
       return res.status(200).json({
         success: true,
-        message: 'OTP sent successfully to your email and phone',
-        data: {
-          otpId: otp.id,
-          expiresAt: otp.expiresAt,
-          deliveryChannels: deliveryResults,
-          // Include OTP for testing
-          otp: otp.code
-        }
+        message: 'OTP sent successfully to your email and WhatsApp',
+        data: result.data
       });
     } catch (error) {
       console.error('Send registration OTP error:', error);
@@ -152,13 +120,11 @@ router.post(
     const { email, phoneNumber, code, password, firstName, lastName, dateOfBirth, gender } = req.body;
 
     try {
-      // Verify OTP
-      const OTP = await import('../models/otp.model.intelligent.js');
-      const verifyResult = await OTP.default.verify({
+      // Verify OTP using signup verification service
+      const verifyResult = await signupVerificationService.verifySignupOTP({
         email,
-        phone: phoneNumber,
-        code,
-        purpose: 'registration'
+        phoneNumber,
+        code
       });
 
       if (!verifyResult.success) {
@@ -416,6 +382,262 @@ router.post(
     body("password").notEmpty().withMessage("Password is required"),
   ],
   signInUser
+);
+
+/**
+ * @swagger
+ * /api/users/login/send-otp:
+ *   post:
+ *     summary: Send OTP for passwordless login
+ *     description: Send OTP via Email (if email provided) or WhatsApp (if phone provided)
+ *     tags: [Authentication]
+ */
+router.post(
+  "/login/send-otp",
+  authLimiter,
+  [
+    body("identifier")
+      .notEmpty()
+      .withMessage("Email or phone number is required"),
+  ],
+  async (req, res) => {
+    const errors = validationResult(req);
+    if (!errors.isEmpty()) {
+      return res.status(400).json({ errors: errors.array() });
+    }
+
+    const { identifier } = req.body;
+
+    try {
+      // Determine if identifier is email or phone
+      const isEmail = /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(identifier);
+      const isPhone = /^[0-9]{10}$/.test(identifier.replace(/[^0-9]/g, ''));
+
+      if (!isEmail && !isPhone) {
+        return res.status(400).json({
+          success: false,
+          message: 'Please provide a valid email address or 10-digit phone number'
+        });
+      }
+
+      let user;
+      let deliveryMethod;
+
+      if (isEmail) {
+        // Find user by email
+        user = await userModel.findOne({ where: { email: identifier } });
+        deliveryMethod = 'email';
+      } else {
+        // Find user by phone number
+        const cleanPhone = identifier.replace(/[^0-9]/g, '');
+        user = await userModel.findOne({ where: { phoneNumber: cleanPhone } });
+        deliveryMethod = 'whatsapp';
+      }
+
+      if (!user) {
+        return res.status(404).json({
+          success: false,
+          message: isEmail 
+            ? 'No account found with this email address' 
+            : 'No account found with this phone number'
+        });
+      }
+
+      // Check if user is active
+      if (user.status === 'inactive' || user.status === 'blocked') {
+        return res.status(403).json({
+          success: false,
+          message: 'Your account is not active. Please contact support.'
+        });
+      }
+
+      // Generate OTP for login
+      const OTP = await import('../models/otp.model.intelligent.js');
+      const otp = await OTP.default.generate({
+        email: user.email,
+        phone: user.phoneNumber,
+        purpose: 'login_otp',
+        expiryMinutes: 5
+      });
+
+      // Send OTP via n8n first, fallback to direct delivery
+      const useN8n = process.env.USE_N8N_OTP !== 'false';
+      let n8nSuccess = false;
+
+      if (useN8n) {
+        try {
+          console.log('📤 Attempting login OTP delivery via n8n...');
+          const n8nResult = deliveryMethod === 'email'
+            ? await n8nOTPService.sendEmailOTP({
+                email: user.email,
+                otp: otp.code,
+                name: user.firstName || 'User',
+                purpose: 'login_otp',
+                expiryMinutes: 5
+              })
+            : await n8nOTPService.sendWhatsAppOTP({
+                phone: user.phoneNumber,
+                otp: otp.code,
+                name: user.firstName || 'User',
+                purpose: 'login_otp',
+                expiryMinutes: 5
+              });
+
+          if (n8nResult.success) {
+            n8nSuccess = true;
+            console.log(`✅ Login OTP sent via n8n (${deliveryMethod})`);
+          } else {
+            console.warn('⚠️  n8n delivery failed, using fallback');
+          }
+        } catch (n8nError) {
+          console.warn('⚠️  n8n error, using fallback:', n8nError.message);
+        }
+      }
+
+      // Fallback to direct delivery if n8n failed
+      if (!n8nSuccess) {
+        if (deliveryMethod === 'email') {
+          await signupVerificationService.sendOTPViaEmail({
+            email: user.email,
+            firstName: user.firstName || 'User'
+          }, otp.code);
+          console.log(`📧 Login OTP sent via Email (direct) to ${user.email}`);
+        } else {
+          await signupVerificationService.sendOTPViaWhatsApp({
+            phoneNumber: user.phoneNumber,
+            firstName: user.firstName || 'User'
+          }, otp.code);
+          console.log(`📱 Login OTP sent via WhatsApp (direct) to ${user.phoneNumber}`);
+        }
+      }
+
+      // Mask email/phone for response
+      const maskedIdentifier = isEmail
+        ? user.email.replace(/(.{2})(.*)(@.*)/, '$1****$3')
+        : user.phoneNumber.replace(/(\d{2})(\d+)(\d{2})/, '$1******$3');
+
+      return res.status(200).json({
+        success: true,
+        message: `OTP sent successfully via ${deliveryMethod === 'email' ? 'Email' : 'WhatsApp'}`,
+        data: {
+          otpId: otp.id,
+          expiresAt: otp.expiresAt,
+          expiresIn: '5 minutes',
+          deliveryMethod,
+          sentTo: maskedIdentifier,
+          // Include OTP for testing (remove in production)
+          otp: otp.code
+        }
+      });
+    } catch (error) {
+      console.error('Send login OTP error:', error);
+      return res.status(500).json({
+        success: false,
+        message: 'Failed to send OTP',
+        error: process.env.NODE_ENV === 'development' ? error.message : undefined
+      });
+    }
+  }
+);
+
+/**
+ * @swagger
+ * /api/users/login/verify-otp:
+ *   post:
+ *     summary: Verify OTP and login
+ *     description: Verify OTP and receive JWT token for passwordless login
+ *     tags: [Authentication]
+ */
+router.post(
+  "/login/verify-otp",
+  authLimiter,
+  [
+    body("identifier")
+      .notEmpty()
+      .withMessage("Email or phone number is required"),
+    body("code")
+      .isLength({ min: 6, max: 6 })
+      .withMessage("OTP must be 6 digits"),
+  ],
+  async (req, res) => {
+    const errors = validationResult(req);
+    if (!errors.isEmpty()) {
+      return res.status(400).json({ errors: errors.array() });
+    }
+
+    const { identifier, code } = req.body;
+
+    try {
+      // Determine if identifier is email or phone
+      const isEmail = /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(identifier);
+      
+      let user;
+      if (isEmail) {
+        user = await userModel.findOne({ where: { email: identifier } });
+      } else {
+        const cleanPhone = identifier.replace(/[^0-9]/g, '');
+        user = await userModel.findOne({ where: { phoneNumber: cleanPhone } });
+      }
+
+      if (!user) {
+        return res.status(404).json({
+          success: false,
+          message: 'Account not found'
+        });
+      }
+
+      // Verify OTP
+      const OTP = await import('../models/otp.model.intelligent.js');
+      const verifyResult = await OTP.default.verify({
+        email: user.email,
+        phone: user.phoneNumber,
+        code,
+        purpose: 'login_otp'
+      });
+
+      if (!verifyResult.success) {
+        // Audit failed login attempt
+        await auditLoginAttempt(req, user.id, user.email, false, 'Invalid OTP');
+        
+        return res.status(400).json({
+          success: false,
+          message: verifyResult.message || 'Invalid or expired OTP'
+        });
+      }
+
+      // Generate JWT Token
+      const token = generateAuthTokenForUser(user);
+
+      // Audit successful login
+      await auditLoginAttempt(req, user.id, user.email, true, 'OTP Login');
+
+      console.log(`✅ User ${user.email} logged in via OTP`);
+
+      return res.status(200).json({
+        success: true,
+        message: 'Login successful',
+        token,
+        user: {
+          id: user.id,
+          firstName: user.firstName,
+          lastName: user.lastName,
+          email: user.email,
+          phoneNumber: user.phoneNumber,
+          dateOfBirth: user.dateOfBirth,
+          gender: user.gender,
+          role: user.role || 'user',
+          corporateId: user.corporateId || null
+        }
+      });
+    } catch (error) {
+      console.error('Login OTP verification error:', error);
+      return res.status(500).json({
+        success: false,
+        message: 'Failed to verify OTP',
+        error: process.env.NODE_ENV === 'development' ? error.message : undefined
+      });
+    }
+  }
 );
 
 /**

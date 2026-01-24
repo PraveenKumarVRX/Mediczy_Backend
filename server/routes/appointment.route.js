@@ -32,7 +32,10 @@ router.post(
   [
     body('doctorId').notEmpty().withMessage('Doctor ID is required (numeric like 2 or alphanumeric like D2C193)'),
     body('appointmentDate').isDate().withMessage('Valid date is required'),
-    body('appointmentTime').matches(/^([0-1]?[0-9]|2[0-3]):[0-5][0-9]$/).withMessage('Valid time in HH:MM format is required'),
+    // Accept both HH:MM format and HH:MM - HH:MM time range format
+    body('appointmentTime')
+      .matches(/^([0-1]?[0-9]|2[0-3]):[0-5][0-9](\s*-\s*([0-1]?[0-9]|2[0-3]):[0-5][0-9])?$/)
+      .withMessage('Valid time in HH:MM or HH:MM - HH:MM format is required'),
     body('consultationType').isIn(['video', 'audio', 'chat', 'in-person']).withMessage('Valid consultation type is required'),
     body('symptoms').optional().isString(),
     body('reason').optional().isString()

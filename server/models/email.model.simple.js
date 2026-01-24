@@ -47,35 +47,62 @@ export class EmailConfig {
   }
 
   static async find(filter = {}) {
-    // Initialize store once
+    // Initialize store once - try to load from PostgreSQL database first
     if (!initialized) {
       console.log('Initializing email config store...');
-      const sampleConfigs = [
-        new EmailConfig({
-          id: 'smtp_1763323320742_i4dpiz5yq',
-          name: 'Zoho Pro SMTP (Default)',
-          host: 'smtppro.zoho.in',
-          port: 465,
-          secure: true,
-          username: 'notification@mayden.in',
-          password: process.env.SMTP_PASSWORD || '***********',
-          fromEmail: 'notification@mayden.in',
-          fromName: 'Mayden Notifications',
-          isDefault: true,
-          isActive: true,
-          provider: 'Zoho Professional Mail',
-          replyTo: '',
-          rateLimits: { perHour: 100, perDay: 1000, perMonth: 30000 },
-          testResult: { success: true, message: 'Connection successful', testedAt: '2025-11-16T20:03:29.726Z' },
-          lastTested: '2025-11-16T20:03:29.726Z',
-          createdAt: '2025-11-16T20:02:00.742Z',
-          createdBy: 'admin@mayden.in'
-        })
-      ];
-      
-      emailStore.push(...sampleConfigs);
+      try {
+        // Try to load from PostgreSQL database
+        const { postgresSequelize } = await import('../db/postgres-sequelize.js');
+        const [rows] = await postgresSequelize.query('SELECT * FROM email_configs WHERE "isActive" = true ORDER BY "isDefault" DESC');
+        if (rows && rows.length > 0) {
+          rows.forEach(row => {
+            emailStore.push(new EmailConfig({
+              id: row.id,
+              name: row.name,
+              host: row.host,
+              port: row.port,
+              secure: row.secure,
+              username: row.username,
+              password: row.password,
+              fromEmail: row.fromEmail,
+              fromName: row.fromName,
+              isDefault: row.isDefault,
+              isActive: row.isActive,
+              provider: row.provider,
+              replyTo: row.replyTo,
+              rateLimits: row.rateLimits,
+              testResult: row.testResult,
+              lastTested: row.lastTested,
+              createdAt: row.createdAt,
+              createdBy: row.createdBy
+            }));
+          });
+          console.log('Store initialized from database with', emailStore.length, 'configs');
+        } else {
+          throw new Error('No configs in database');
+        }
+      } catch (dbError) {
+        console.log('Database load failed, using environment fallback:', dbError.message);
+        // Fallback to environment variables
+        const sampleConfigs = [
+          new EmailConfig({
+            id: 'smtp_env_fallback',
+            name: 'Environment SMTP Config',
+            host: process.env.SMTP_HOST || 'smtppro.zoho.in',
+            port: parseInt(process.env.SMTP_PORT) || 465,
+            secure: (parseInt(process.env.SMTP_PORT) || 465) === 465,
+            username: process.env.SMTP_USER || process.env.SMTP_FROM,
+            password: process.env.SMTP_PASSWORD || process.env.SMTP_PASS,
+            fromEmail: process.env.SMTP_FROM || process.env.SMTP_USER,
+            fromName: 'Mediqzy',
+            isDefault: true,
+            isActive: true
+          })
+        ];
+        emailStore.push(...sampleConfigs);
+        console.log('Store initialized from environment with', emailStore.length, 'configs');
+      }
       initialized = true;
-      console.log('Store initialized with', emailStore.length, 'configs');
     }
 
     console.log('EmailConfig.find returning', emailStore.length, 'configs:', emailStore.map(c => c.name));
