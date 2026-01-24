@@ -284,7 +284,7 @@ const TeamCorporateManagement = () => {
       });
 
       if (response.data?.success && Array.isArray(response.data?.plans)) {
-        setCorporatePlans(response.data.plans.map((plan: any) => ({
+        const mappedPlans = response.data.plans.map((plan: any) => ({
           id: plan.id,
           name: plan.name,
           slug: plan.slug,
@@ -293,7 +293,8 @@ const TeamCorporateManagement = () => {
           currency: plan.currency || 'INR',
           billingCycle: plan.billing_cycle || plan.billingCycle || 'MONTHLY',
           enrolled: Number(plan.enrolled || 0)
-        })));
+        }));
+        setCorporatePlans(mappedPlans.filter(plan => plan.enrolled > 0));
       } else {
         setCorporatePlans([]);
       }
