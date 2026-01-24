@@ -185,39 +185,18 @@ const TeamCorporateManagement = () => {
   // Mock data for employees and network
   const [employees, setEmployees] = useState<Employee[]>([]);
   const [networkEntities, setNetworkEntities] = useState<NetworkEntity[]>([]);
-  const [healthPackages, setHealthPackages] = useState<HealthPackage[]>([
-    {
-      id: 'pkg-1',
-      name: 'Executive Health Checkup',
-      tests: ['Complete Blood Count', 'Lipid Profile', 'Liver Function Test', 'Kidney Function Test', 'Thyroid Profile', 'HbA1c', 'Vitamin D', 'Vitamin B12', 'Chest X-Ray', 'ECG'],
-      price: 4500,
-      validityDays: 365
-    },
-    {
-      id: 'pkg-2', 
-      name: 'Basic Health Screening',
-      tests: ['Blood Sugar Fasting', 'Urine Analysis', 'Blood Pressure', 'BMI Assessment', 'Hemoglobin'],
-      price: 1500,
-      validityDays: 365
-    },
-    {
-      id: 'pkg-3',
-      name: 'Women Wellness Package',
-      tests: ['Complete Blood Count', 'Thyroid Profile', 'Vitamin D', 'Calcium', 'Iron Studies', 'PAP Smear', 'Mammography'],
-      price: 5500,
-      validityDays: 365
-    }
-  ]);
+  const [healthPackages, setHealthPackages] = useState<HealthPackage[]>([]);
 
   // Fetch corporates
   useEffect(() => {
     fetchCorporates();
   }, []);
 
-  // Fetch employees when corporate is selected
+  // Fetch employees and packages when corporate is selected
   useEffect(() => {
     if (selectedCorporate?.id) {
       fetchEmployees(selectedCorporate.id);
+      fetchHealthPackages(selectedCorporate.id);
     }
   }, [selectedCorporate?.id]);
 
@@ -247,6 +226,40 @@ const TeamCorporateManagement = () => {
     } catch (error) {
       console.error('Failed to fetch employees:', error);
       setEmployees([]);
+    }
+  };
+
+  const fetchHealthPackages = async (corporateId: number) => {
+    try {
+      const token = localStorage.getItem('teamToken');
+      const response = await api.get(`/admin/corporate-health-packages/${corporateId}`, {
+        headers: token ? { Authorization: `Bearer ${token}` } : undefined
+      });
+
+      if (response.data?.success && Array.isArray(response.data?.packages)) {
+        const packages = response.data.packages.map((pkg: any) => {
+          const details = pkg.packageDetails || {};
+          const validFrom = pkg.validFrom ? new Date(pkg.validFrom) : null;
+          const validTo = pkg.validTo ? new Date(pkg.validTo) : null;
+          const validityDays = validFrom && validTo
+            ? Math.max(1, Math.ceil((validTo.getTime() - validFrom.getTime()) / (1000 * 60 * 60 * 24)))
+            : 365;
+
+          return {
+            id: pkg.packageId || pkg.packageName,
+            name: pkg.packageName || details.name || 'Health Package',
+            tests: details.tests || [],
+            price: Number(details.cost || details.price || 0),
+            validityDays
+          } as HealthPackage;
+        });
+        setHealthPackages(packages);
+      } else {
+        setHealthPackages([]);
+      }
+    } catch (error) {
+      console.error('Failed to fetch health packages:', error);
+      setHealthPackages([]);
     }
   };
 
@@ -1149,43 +1162,53 @@ const TeamCorporateManagement = () => {
                 </CardHeader>
                 <CardContent>
                   <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-                    {healthPackages.map((pkg, index) => (
-                      <Card key={pkg.id}>
-                        <CardHeader className="pb-2">
-                          <CardTitle className="text-lg flex items-center gap-2">
-                            {index % 3 === 0 ? <Heart className="h-5 w-5 text-red-500" /> : 
-                             index % 3 === 1 ? <Stethoscope className="h-5 w-5 text-blue-500" /> :
-                             <Activity className="h-5 w-5 text-green-500" />}
-                            {pkg.name}
-                          </CardTitle>
-                        </CardHeader>
-                        <CardContent>
-                          <p className="text-xl font-bold">₹{pkg.price.toLocaleString()}</p>
-                          <p className="text-sm text-muted-foreground">{pkg.tests.length} tests included</p>
-                          <div className="mt-4 space-y-2">
-                            {pkg.tests.slice(0, 3).map((test, i) => (
-                              <div key={i} className="flex items-center gap-2 text-sm">
-                                <FlaskConical className="h-4 w-4" />
-                                {test}
-                              </div>
-                            ))}
-                            {pkg.tests.length > 3 && (
-                              <p className="text-xs text-muted-foreground">+{pkg.tests.length - 3} more tests</p>
-                            )}
-                          </div>
-                          <div className="mt-4 flex gap-2">
-                            <Button size="sm" variant="outline" className="flex-1" onClick={() => handleEditPackage(pkg)}>
-                              <Edit className="h-3 w-3 mr-1" />
-                              Edit
-                            </Button>
-                            <Button size="sm" className="flex-1" onClick={() => handleAssignPackage(pkg)}>
-                              <Users className="h-3 w-3 mr-1" />
-                              Assign
-                            </Button>
-                          </div>
+                    {healthPackages.length === 0 ? (
+                      <Card className="border-dashed">
+                        <CardContent className="flex flex-col items-center justify-center h-full py-8 text-center">
+                          <FlaskConical className="h-8 w-8 text-muted-foreground mb-2" />
+                          <p className="text-sm text-muted-foreground">No health checkup packages found.</p>
+                          <p className="text-xs text-muted-foreground">Create a new package to get started.</p>
                         </CardContent>
                       </Card>
-                    ))}
+                    ) : (
+                      healthPackages.map((pkg, index) => (
+                        <Card key={pkg.id}>
+                          <CardHeader className="pb-2">
+                            <CardTitle className="text-lg flex items-center gap-2">
+                              {index % 3 === 0 ? <Heart className="h-5 w-5 text-red-500" /> : 
+                               index % 3 === 1 ? <Stethoscope className="h-5 w-5 text-blue-500" /> :
+                               <Activity className="h-5 w-5 text-green-500" />}
+                              {pkg.name}
+                            </CardTitle>
+                          </CardHeader>
+                          <CardContent>
+                            <p className="text-xl font-bold">₹{pkg.price.toLocaleString()}</p>
+                            <p className="text-sm text-muted-foreground">{pkg.tests.length} tests included</p>
+                            <div className="mt-4 space-y-2">
+                              {pkg.tests.slice(0, 3).map((test, i) => (
+                                <div key={i} className="flex items-center gap-2 text-sm">
+                                  <FlaskConical className="h-4 w-4" />
+                                  {test}
+                                </div>
+                              ))}
+                              {pkg.tests.length > 3 && (
+                                <p className="text-xs text-muted-foreground">+{pkg.tests.length - 3} more tests</p>
+                              )}
+                            </div>
+                            <div className="mt-4 flex gap-2">
+                              <Button size="sm" variant="outline" className="flex-1" onClick={() => handleEditPackage(pkg)}>
+                                <Edit className="h-3 w-3 mr-1" />
+                                Edit
+                              </Button>
+                              <Button size="sm" className="flex-1" onClick={() => handleAssignPackage(pkg)}>
+                                <Users className="h-3 w-3 mr-1" />
+                                Assign
+                              </Button>
+                            </div>
+                          </CardContent>
+                        </Card>
+                      ))
+                    )}
 
                     <Card className="border-dashed cursor-pointer hover:bg-muted/50" onClick={() => setShowAddPackageDialog(true)}>
                       <CardContent className="flex flex-col items-center justify-center h-full py-8">

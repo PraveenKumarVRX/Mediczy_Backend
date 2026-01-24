@@ -1120,6 +1120,46 @@ router.get('/corporate-employees/:corporateId', authUser, requireRole(['admin', 
 });
 
 /**
+ * Get Corporate Health Packages
+ * GET /api/admin/corporate-health-packages/:corporateId
+ */
+router.get('/corporate-health-packages/:corporateId', authUser, requireRole(['admin', 'team', 'corporate_admin']), async (req, res) => {
+  try {
+    const { corporateId } = req.params;
+
+    const packages = await postgresSequelize.query(`
+      SELECT "packageId", "packageName", "packageDetails",
+             MIN("validFrom") AS "validFrom",
+             MAX("validTo") AS "validTo"
+      FROM user_health_packages
+      WHERE "corporateId" = :corporateId
+      GROUP BY "packageId", "packageName", "packageDetails"
+      ORDER BY "packageName" ASC
+    `, {
+      replacements: { corporateId },
+      type: postgresSequelize.QueryTypes.SELECT
+    });
+
+    return res.json({
+      success: true,
+      packages: packages.map(pkg => ({
+        ...pkg,
+        packageDetails: typeof pkg.packageDetails === 'string'
+          ? JSON.parse(pkg.packageDetails)
+          : pkg.packageDetails
+      }))
+    });
+  } catch (error) {
+    console.error('Failed to get corporate health packages:', error);
+    return res.status(500).json({
+      success: false,
+      message: 'Failed to get corporate health packages',
+      error: error.message
+    });
+  }
+});
+
+/**
  * Assign Health Package to Corporate Employees
  * POST /api/admin/corporate-package-assignments
  * Creates health package assignments for corporate employees
