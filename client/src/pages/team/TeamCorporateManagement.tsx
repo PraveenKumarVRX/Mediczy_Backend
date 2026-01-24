@@ -214,6 +214,42 @@ const TeamCorporateManagement = () => {
     fetchCorporates();
   }, []);
 
+  // Fetch employees when corporate is selected
+  useEffect(() => {
+    if (selectedCorporate?.id) {
+      fetchEmployees(selectedCorporate.id);
+    }
+  }, [selectedCorporate?.id]);
+
+  const fetchEmployees = async (corporateId: number) => {
+    try {
+      const token = localStorage.getItem('teamToken');
+      const response = await api.get(`/admin/corporate-employees/${corporateId}`, {
+        headers: token ? { Authorization: `Bearer ${token}` } : undefined
+      });
+      
+      if (response.data?.success && response.data?.employees) {
+        setEmployees(response.data.employees.map((emp: any) => ({
+          id: emp.id?.toString() || emp.uid,
+          employeeId: emp.employeeId || emp.unique_id || `EMP${emp.id}`,
+          name: `${emp.firstName || ''} ${emp.lastName || ''}`.trim() || emp.name || 'Unknown',
+          email: emp.email || '',
+          phone: emp.phoneNumber || '',
+          department: emp.department || 'Not Assigned',
+          designation: emp.designation || 'Not Assigned',
+          joiningDate: emp.dateOfBirth || '',
+          healthStatus: emp.healthStatus || 'Not Assessed',
+          insurancePlan: emp.insurancePlan || 'None'
+        })));
+      } else {
+        setEmployees([]);
+      }
+    } catch (error) {
+      console.error('Failed to fetch employees:', error);
+      setEmployees([]);
+    }
+  };
+
   const fetchCorporates = async () => {
     try {
       setLoading(true);
@@ -355,6 +391,8 @@ const TeamCorporateManagement = () => {
         designation: '',
         joiningDate: ''
       });
+      // Refresh employees list
+      fetchEmployees(selectedCorporate.id);
     } catch (error: any) {
       toast({
         variant: 'destructive',
@@ -464,6 +502,8 @@ const TeamCorporateManagement = () => {
           title: 'Upload completed',
           description: `${successCount} employees added successfully${failedCount > 0 ? `, ${failedCount} failed` : ''}`
         });
+        // Refresh employees list
+        fetchEmployees(selectedCorporate.id);
       } else if (failedCount > 0) {
         toast({
           variant: 'destructive',
@@ -930,46 +970,44 @@ const TeamCorporateManagement = () => {
                       </TableRow>
                     </TableHeader>
                     <TableBody>
-                      <TableRow>
-                        <TableCell>EQ001</TableCell>
-                        <TableCell className="font-medium">Rajesh Kumar</TableCell>
-                        <TableCell>rajesh.kumar@equitasbank.com</TableCell>
-                        <TableCell>Engineering</TableCell>
-                        <TableCell>Senior Developer</TableCell>
-                        <TableCell>
-                          <Badge className="bg-green-100 text-green-800">Good</Badge>
-                        </TableCell>
-                        <TableCell>
-                          <div className="flex gap-2">
-                            <Button variant="ghost" size="sm">
-                              <Eye className="h-4 w-4" />
-                            </Button>
-                            <Button variant="ghost" size="sm">
-                              <Edit className="h-4 w-4" />
-                            </Button>
-                          </div>
-                        </TableCell>
-                      </TableRow>
-                      <TableRow>
-                        <TableCell>EQ002</TableCell>
-                        <TableCell className="font-medium">Priya Sharma</TableCell>
-                        <TableCell>priya.sharma@equitasbank.com</TableCell>
-                        <TableCell>Human Resources</TableCell>
-                        <TableCell>HR Manager</TableCell>
-                        <TableCell>
-                          <Badge className="bg-green-100 text-green-800">Excellent</Badge>
-                        </TableCell>
-                        <TableCell>
-                          <div className="flex gap-2">
-                            <Button variant="ghost" size="sm">
-                              <Eye className="h-4 w-4" />
-                            </Button>
-                            <Button variant="ghost" size="sm">
-                              <Edit className="h-4 w-4" />
-                            </Button>
-                          </div>
-                        </TableCell>
-                      </TableRow>
+                      {employees.length === 0 ? (
+                        <TableRow>
+                          <TableCell colSpan={7} className="text-center py-8 text-muted-foreground">
+                            No employees found. Click "Add Employee" or "Bulk Upload" to add employees.
+                          </TableCell>
+                        </TableRow>
+                      ) : (
+                        employees.map((emp) => (
+                          <TableRow key={emp.id}>
+                            <TableCell>{emp.employeeId}</TableCell>
+                            <TableCell className="font-medium">{emp.name}</TableCell>
+                            <TableCell>{emp.email}</TableCell>
+                            <TableCell>{emp.department}</TableCell>
+                            <TableCell>{emp.designation}</TableCell>
+                            <TableCell>
+                              <Badge className={`${
+                                emp.healthStatus === 'Excellent' || emp.healthStatus === 'Good' 
+                                  ? 'bg-green-100 text-green-800' 
+                                  : emp.healthStatus === 'Fair' 
+                                    ? 'bg-yellow-100 text-yellow-800' 
+                                    : 'bg-gray-100 text-gray-800'
+                              }`}>
+                                {emp.healthStatus}
+                              </Badge>
+                            </TableCell>
+                            <TableCell>
+                              <div className="flex gap-2">
+                                <Button variant="ghost" size="sm">
+                                  <Eye className="h-4 w-4" />
+                                </Button>
+                                <Button variant="ghost" size="sm">
+                                  <Edit className="h-4 w-4" />
+                                </Button>
+                              </div>
+                            </TableCell>
+                          </TableRow>
+                        ))
+                      )}
                     </TableBody>
                   </Table>
                 </CardContent>
