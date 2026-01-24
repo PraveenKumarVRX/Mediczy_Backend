@@ -78,11 +78,30 @@ interface Employee {
   insurancePlan: string;
 }
 
-interface NetworkEntity {
+interface LabPartner {
   id: number;
   name: string;
-  type: 'lab' | 'hospital' | 'clinic';
   city: string;
+  testsAvailable: number;
+  discount: number | null;
+  status: string;
+}
+
+interface HospitalPartner {
+  id: number;
+  name: string;
+  city: string;
+  specialities: string;
+  beds: number;
+  status: string;
+}
+
+interface ClinicPartner {
+  id: number;
+  name: string;
+  city: string;
+  type: string;
+  doctors: number;
   status: string;
 }
 
@@ -195,7 +214,9 @@ const TeamCorporateManagement = () => {
   
   // Mock data for employees and network
   const [employees, setEmployees] = useState<Employee[]>([]);
-  const [networkEntities, setNetworkEntities] = useState<NetworkEntity[]>([]);
+  const [labPartners, setLabPartners] = useState<LabPartner[]>([]);
+  const [hospitalPartners, setHospitalPartners] = useState<HospitalPartner[]>([]);
+  const [clinicPartners, setClinicPartners] = useState<ClinicPartner[]>([]);
   const [healthPackages, setHealthPackages] = useState<HealthPackage[]>([]);
   const [corporatePlans, setCorporatePlans] = useState<CorporatePlan[]>([]);
 
@@ -204,12 +225,13 @@ const TeamCorporateManagement = () => {
     fetchCorporates();
   }, []);
 
-  // Fetch employees, packages, and plans when corporate is selected
+  // Fetch employees, packages, plans, and network partners when corporate is selected
   useEffect(() => {
     if (selectedCorporate?.id) {
       fetchEmployees(selectedCorporate.id);
       fetchHealthPackages(selectedCorporate.id);
       fetchCorporatePlans(selectedCorporate.id);
+      fetchNetworkPartners(selectedCorporate.id);
     }
   }, [selectedCorporate?.id]);
 
@@ -301,6 +323,30 @@ const TeamCorporateManagement = () => {
     } catch (error) {
       console.error('Failed to fetch corporate plans:', error);
       setCorporatePlans([]);
+    }
+  };
+
+  const fetchNetworkPartners = async (corporateId: number) => {
+    try {
+      const token = localStorage.getItem('teamToken');
+      const response = await api.get(`/admin/corporate-network/${corporateId}`, {
+        headers: token ? { Authorization: `Bearer ${token}` } : undefined
+      });
+
+      if (response.data?.success) {
+        setLabPartners(response.data?.labs || []);
+        setHospitalPartners(response.data?.hospitals || []);
+        setClinicPartners(response.data?.clinics || []);
+      } else {
+        setLabPartners([]);
+        setHospitalPartners([]);
+        setClinicPartners([]);
+      }
+    } catch (error) {
+      console.error('Failed to fetch network partners:', error);
+      setLabPartners([]);
+      setHospitalPartners([]);
+      setClinicPartners([]);
     }
   };
 
@@ -1256,15 +1302,15 @@ const TeamCorporateManagement = () => {
                     <TabsList>
                       <TabsTrigger value="labs" className="flex items-center gap-2">
                         <FlaskConical className="h-4 w-4" />
-                        Labs (12)
+                        Labs ({labPartners.length})
                       </TabsTrigger>
                       <TabsTrigger value="hospitals" className="flex items-center gap-2">
                         <Hospital className="h-4 w-4" />
-                        Hospitals (6)
+                        Hospitals ({hospitalPartners.length})
                       </TabsTrigger>
                       <TabsTrigger value="clinics" className="flex items-center gap-2">
                         <Stethoscope className="h-4 w-4" />
-                        Clinics (8)
+                        Clinics ({clinicPartners.length})
                       </TabsTrigger>
                     </TabsList>
                     
@@ -1281,30 +1327,28 @@ const TeamCorporateManagement = () => {
                           </TableRow>
                         </TableHeader>
                         <TableBody>
-                          <TableRow>
-                            <TableCell className="font-medium">Apollo Diagnostics</TableCell>
-                            <TableCell>Chennai</TableCell>
-                            <TableCell>250+</TableCell>
-                            <TableCell>15%</TableCell>
-                            <TableCell>{getStatusBadge('Active')}</TableCell>
-                            <TableCell>
-                              <Button variant="ghost" size="sm">
-                                <Trash2 className="h-4 w-4 text-red-500" />
-                              </Button>
-                            </TableCell>
-                          </TableRow>
-                          <TableRow>
-                            <TableCell className="font-medium">SRL Diagnostics</TableCell>
-                            <TableCell>Bangalore</TableCell>
-                            <TableCell>320+</TableCell>
-                            <TableCell>12%</TableCell>
-                            <TableCell>{getStatusBadge('Active')}</TableCell>
-                            <TableCell>
-                              <Button variant="ghost" size="sm">
-                                <Trash2 className="h-4 w-4 text-red-500" />
-                              </Button>
-                            </TableCell>
-                          </TableRow>
+                          {labPartners.length === 0 ? (
+                            <TableRow>
+                              <TableCell colSpan={6} className="text-center py-8 text-muted-foreground">
+                                No labs found.
+                              </TableCell>
+                            </TableRow>
+                          ) : (
+                            labPartners.map((lab) => (
+                              <TableRow key={lab.id}>
+                                <TableCell className="font-medium">{lab.name}</TableCell>
+                                <TableCell>{lab.city}</TableCell>
+                                <TableCell>{lab.testsAvailable || 0}</TableCell>
+                                <TableCell>{lab.discount ? `${lab.discount}%` : '—'}</TableCell>
+                                <TableCell>{getStatusBadge(lab.status || 'Active')}</TableCell>
+                                <TableCell>
+                                  <Button variant="ghost" size="sm">
+                                    <Trash2 className="h-4 w-4 text-red-500" />
+                                  </Button>
+                                </TableCell>
+                              </TableRow>
+                            ))
+                          )}
                         </TableBody>
                       </Table>
                     </TabsContent>
@@ -1322,18 +1366,28 @@ const TeamCorporateManagement = () => {
                           </TableRow>
                         </TableHeader>
                         <TableBody>
-                          <TableRow>
-                            <TableCell className="font-medium">Apollo Hospitals</TableCell>
-                            <TableCell>Chennai</TableCell>
-                            <TableCell>Multi-specialty</TableCell>
-                            <TableCell>500</TableCell>
-                            <TableCell>{getStatusBadge('Active')}</TableCell>
-                            <TableCell>
-                              <Button variant="ghost" size="sm">
-                                <Trash2 className="h-4 w-4 text-red-500" />
-                              </Button>
-                            </TableCell>
-                          </TableRow>
+                          {hospitalPartners.length === 0 ? (
+                            <TableRow>
+                              <TableCell colSpan={6} className="text-center py-8 text-muted-foreground">
+                                No hospitals found.
+                              </TableCell>
+                            </TableRow>
+                          ) : (
+                            hospitalPartners.map((hospital) => (
+                              <TableRow key={hospital.id}>
+                                <TableCell className="font-medium">{hospital.name}</TableCell>
+                                <TableCell>{hospital.city}</TableCell>
+                                <TableCell>{hospital.specialities || '—'}</TableCell>
+                                <TableCell>{hospital.beds || 0}</TableCell>
+                                <TableCell>{getStatusBadge(hospital.status || 'Active')}</TableCell>
+                                <TableCell>
+                                  <Button variant="ghost" size="sm">
+                                    <Trash2 className="h-4 w-4 text-red-500" />
+                                  </Button>
+                                </TableCell>
+                              </TableRow>
+                            ))
+                          )}
                         </TableBody>
                       </Table>
                     </TabsContent>
@@ -1351,18 +1405,28 @@ const TeamCorporateManagement = () => {
                           </TableRow>
                         </TableHeader>
                         <TableBody>
-                          <TableRow>
-                            <TableCell className="font-medium">HealthFirst Clinic</TableCell>
-                            <TableCell>Chennai</TableCell>
-                            <TableCell>Multi-specialty</TableCell>
-                            <TableCell>12</TableCell>
-                            <TableCell>{getStatusBadge('Active')}</TableCell>
-                            <TableCell>
-                              <Button variant="ghost" size="sm">
-                                <Trash2 className="h-4 w-4 text-red-500" />
-                              </Button>
-                            </TableCell>
-                          </TableRow>
+                          {clinicPartners.length === 0 ? (
+                            <TableRow>
+                              <TableCell colSpan={6} className="text-center py-8 text-muted-foreground">
+                                No clinics found.
+                              </TableCell>
+                            </TableRow>
+                          ) : (
+                            clinicPartners.map((clinic) => (
+                              <TableRow key={clinic.id}>
+                                <TableCell className="font-medium">{clinic.name}</TableCell>
+                                <TableCell>{clinic.city}</TableCell>
+                                <TableCell>{clinic.type || 'Clinic'}</TableCell>
+                                <TableCell>{clinic.doctors || 0}</TableCell>
+                                <TableCell>{getStatusBadge(clinic.status || 'Active')}</TableCell>
+                                <TableCell>
+                                  <Button variant="ghost" size="sm">
+                                    <Trash2 className="h-4 w-4 text-red-500" />
+                                  </Button>
+                                </TableCell>
+                              </TableRow>
+                            ))
+                          )}
                         </TableBody>
                       </Table>
                     </TabsContent>

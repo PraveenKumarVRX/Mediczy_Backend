@@ -1204,6 +1204,98 @@ router.get('/corporate-plans/:corporateId', authUser, requireRole(['admin', 'tea
 });
 
 /**
+ * Get Corporate Network Partners
+ * GET /api/admin/corporate-network/:corporateId
+ */
+router.get('/corporate-network/:corporateId', authUser, requireRole(['admin', 'team', 'corporate_admin']), async (req, res) => {
+  try {
+    const labs = await postgresSequelize.query(`
+      SELECT id, name, address, "testCatalog", status, metadata
+      FROM labs
+      ORDER BY name ASC
+    `, {
+      type: postgresSequelize.QueryTypes.SELECT
+    });
+
+    const hospitals = await postgresSequelize.query(`
+      SELECT id, hospital_name, city, specializations, total_beds, status, metadata
+      FROM hospitals
+      ORDER BY hospital_name ASC
+    `, {
+      type: postgresSequelize.QueryTypes.SELECT
+    });
+
+    const clinics = await postgresSequelize.query(`
+      SELECT id, name, type, location, capacity, status
+      FROM outreach_clinics
+      ORDER BY name ASC
+    `, {
+      type: postgresSequelize.QueryTypes.SELECT
+    });
+
+    const normalizedLabs = labs.map((lab) => {
+      const address = typeof lab.address === 'string' ? JSON.parse(lab.address) : lab.address;
+      const testCatalog = typeof lab.testCatalog === 'string' ? JSON.parse(lab.testCatalog) : lab.testCatalog;
+      const metadata = typeof lab.metadata === 'string' ? JSON.parse(lab.metadata) : lab.metadata;
+      const testsAvailable = testCatalog
+        ? Object.values(testCatalog).reduce((count, group) => count + (Array.isArray(group) ? group.length : 0), 0)
+        : 0;
+
+      return {
+        id: lab.id,
+        name: lab.name,
+        city: address?.city || 'N/A',
+        testsAvailable,
+        discount: metadata?.discount || metadata?.corporateDiscount || null,
+        status: lab.status || 'active'
+      };
+    });
+
+    const normalizedHospitals = hospitals.map((hospital) => {
+      const specializations = typeof hospital.specializations === 'string'
+        ? JSON.parse(hospital.specializations)
+        : hospital.specializations || [];
+      const metadata = typeof hospital.metadata === 'string' ? JSON.parse(hospital.metadata) : hospital.metadata;
+
+      return {
+        id: hospital.id,
+        name: hospital.hospital_name,
+        city: hospital.city || metadata?.city || 'N/A',
+        specialities: Array.isArray(specializations) ? specializations.join(', ') : specializations,
+        beds: hospital.total_beds || metadata?.beds || 0,
+        status: hospital.status || 'active'
+      };
+    });
+
+    const normalizedClinics = clinics.map((clinic) => {
+      const location = typeof clinic.location === 'string' ? JSON.parse(clinic.location) : clinic.location;
+      return {
+        id: clinic.id,
+        name: clinic.name,
+        city: location?.city || location?.town || 'N/A',
+        type: clinic.type || 'Clinic',
+        doctors: clinic.capacity || 0,
+        status: clinic.status || 'active'
+      };
+    });
+
+    return res.json({
+      success: true,
+      labs: normalizedLabs,
+      hospitals: normalizedHospitals,
+      clinics: normalizedClinics
+    });
+  } catch (error) {
+    console.error('Failed to get corporate network partners:', error);
+    return res.status(500).json({
+      success: false,
+      message: 'Failed to get corporate network partners',
+      error: error.message
+    });
+  }
+});
+
+/**
  * Assign Health Package to Corporate Employees
  * POST /api/admin/corporate-package-assignments
  * Creates health package assignments for corporate employees
