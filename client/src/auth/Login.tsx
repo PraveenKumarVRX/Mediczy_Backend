@@ -53,6 +53,12 @@ const Login = () => {
   const navigate = useNavigate();
   const [showPassword, setShowPassword] = useState(false);
   const [isCheckingAuth, setIsCheckingAuth] = useState(true);
+  const [useOtpLogin, setUseOtpLogin] = useState(false);
+  const [otpIdentifier, setOtpIdentifier] = useState('');
+  const [otpCode, setOtpCode] = useState('');
+  const [otpSent, setOtpSent] = useState(false);
+  const [otpLoading, setOtpLoading] = useState(false);
+  const [otpVerifying, setOtpVerifying] = useState(false);
 
   // Check if already authenticated
   useEffect(() => {
@@ -75,6 +81,93 @@ const Login = () => {
   });
 
   const loginMutation = useLogin();
+
+  const handleOtpSend = async () => {
+    if (!otpIdentifier.trim()) {
+      toast({
+        variant: "destructive",
+        title: "Error",
+        description: "Email or phone number is required",
+      });
+      return;
+    }
+
+    setOtpLoading(true);
+    try {
+      const { data } = await api.post(
+        "/users/login/send-otp",
+        { identifier: otpIdentifier.trim() },
+        { skipAuth: true } as any
+      );
+      if (data?.success) {
+        setOtpSent(true);
+        toast({
+          title: "OTP sent",
+          description: data?.message || "OTP sent successfully",
+        });
+      } else {
+        throw new Error(data?.message || "Failed to send OTP");
+      }
+    } catch (error: any) {
+      toast({
+        variant: "destructive",
+        title: "Error",
+        description: error?.response?.data?.message || error?.message || "Failed to send OTP",
+      });
+    } finally {
+      setOtpLoading(false);
+    }
+  };
+
+  const handleOtpVerify = async () => {
+    if (!otpIdentifier.trim() || !otpCode.trim()) {
+      toast({
+        variant: "destructive",
+        title: "Error",
+        description: "Identifier and OTP code are required",
+      });
+      return;
+    }
+
+    setOtpVerifying(true);
+    try {
+      const { data } = await api.post(
+        "/users/login/verify-otp",
+        { identifier: otpIdentifier.trim(), code: otpCode.trim() },
+        { skipAuth: true } as any
+      );
+
+      if (!data?.token) {
+        throw new Error(data?.message || "OTP verification failed");
+      }
+
+      localStorage.setItem("token", data.token);
+      localStorage.setItem("userType", "user");
+      if (data?.user?.id) {
+        localStorage.setItem("userId", String(data.user.id));
+        localStorage.setItem("userData", JSON.stringify(data.user));
+      }
+
+      toast({
+        title: "Success",
+        description: "Logged in successfully. Redirecting...",
+      });
+
+      window.dispatchEvent(new Event("authChange"));
+      initializeFirebaseMessaging().catch(err => {
+        console.log('Firebase messaging initialization skipped:', err.message);
+      });
+      navigate("/", { replace: true });
+    } catch (error: any) {
+      toast({
+        variant: "destructive",
+        title: "Error",
+        description: error?.response?.data?.message || error?.message || "OTP verification failed",
+      });
+    } finally {
+      setOtpVerifying(false);
+    }
+  };
 
   // Handle OAuth2 Login
   const handleOAuthLogin = (provider: 'google' | 'facebook') => {
@@ -316,8 +409,74 @@ const Login = () => {
             </motion.div>
 
           {/* Login Form */}
-          <Form {...form}>
-            <form onSubmit={form.handleSubmit(onSubmit)} className="space-y-5">
+          <div className="space-y-5">
+            <div className="flex items-center justify-between">
+              <p className="text-sm text-slate-600">Sign in to your account</p>
+              <Button
+                type="button"
+                variant="outline"
+                size="sm"
+                onClick={() => {
+                  setUseOtpLogin(!useOtpLogin);
+                  setOtpSent(false);
+                  setOtpCode('');
+                }}
+              >
+                {useOtpLogin ? "Use Password" : "Use OTP"}
+              </Button>
+            </div>
+
+            {useOtpLogin ? (
+              <div className="space-y-4">
+                <div className="space-y-2">
+                  <FormLabel className="text-slate-700 font-medium">Email or Phone</FormLabel>
+                  <FormControl>
+                    <div className="relative group">
+                      <Mail className="absolute left-4 top-1/2 -translate-y-1/2 h-4 w-4 text-slate-400 group-focus-within:text-primary transition-colors" />
+                      <Input
+                        type="text"
+                        placeholder="name@example.com or 9876543210"
+                        className="h-12 pl-11 bg-slate-50/50 border-slate-200 text-slate-900 focus:border-primary focus:ring-2 focus:ring-primary/20 rounded-xl transition-all duration-200"
+                        value={otpIdentifier}
+                        onChange={(e) => setOtpIdentifier(e.target.value)}
+                      />
+                    </div>
+                  </FormControl>
+                </div>
+
+                <Button
+                  type="button"
+                  className="w-full h-12 text-base font-semibold bg-gradient-to-r from-primary to-teal-600 hover:from-primary/90 hover:to-teal-600/90 shadow-lg shadow-primary/25 hover:shadow-xl hover:shadow-primary/30 transition-all duration-300 rounded-xl"
+                  onClick={handleOtpSend}
+                  disabled={otpLoading}
+                >
+                  {otpLoading ? "Sending OTP..." : otpSent ? "Resend OTP" : "Send OTP"}
+                </Button>
+
+                {otpSent && (
+                  <div className="space-y-2">
+                    <FormLabel className="text-slate-700 font-medium">OTP Code</FormLabel>
+                    <Input
+                      type="text"
+                      placeholder="Enter 6-digit OTP"
+                      className="h-12"
+                      value={otpCode}
+                      onChange={(e) => setOtpCode(e.target.value)}
+                    />
+                    <Button
+                      type="button"
+                      className="w-full h-12 text-base font-semibold bg-gradient-to-r from-primary to-teal-600 hover:from-primary/90 hover:to-teal-600/90 shadow-lg shadow-primary/25 hover:shadow-xl hover:shadow-primary/30 transition-all duration-300 rounded-xl"
+                      onClick={handleOtpVerify}
+                      disabled={otpVerifying}
+                    >
+                      {otpVerifying ? "Verifying..." : "Verify & Login"}
+                    </Button>
+                  </div>
+                )}
+              </div>
+            ) : (
+              <Form {...form}>
+                <form onSubmit={form.handleSubmit(onSubmit)} className="space-y-5">
               {/* Email Field */}
               <motion.div
                 initial={{ opacity: 0, y: 10 }}
@@ -464,8 +623,10 @@ const Login = () => {
                   <span className="font-medium text-slate-700">Facebook</span>
                 </Button>
               </motion.div>
-            </form>
-          </Form>
+                </form>
+              </Form>
+            )}
+          </div>
 
           {/* Sign-Up Link */}
           <motion.div 
