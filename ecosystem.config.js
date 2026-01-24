@@ -91,21 +91,20 @@ module.exports = {
       min_uptime: '10s'
     },
 
-    // ==================== MiroTalk SFU Video Server ====================
+    // ==================== LiveKit Video Server ====================
     {
-      name: 'mirotalk-sfu',
-      script: 'npm',
-      args: 'start',
-      cwd: '/home/ubuntu/mirotalk-sfu',
+      name: 'livekit-server',
+      script: '/usr/local/bin/livekit-server',
+      args: '--config /home/ubuntu/livekit-config.yaml',
+      cwd: '/home/ubuntu',
       instances: 1,
       exec_mode: 'fork',
+      interpreter: 'none',
       env: {
-        NODE_ENV: 'production',
-        PORT: 3010,
-        SERVER_URL: 'https://mediqzy.com'
+        NODE_ENV: 'production'
       },
-      error_file: '/home/ubuntu/mirotalk-sfu/logs/mirotalk-error.log',
-      out_file: '/home/ubuntu/mirotalk-sfu/logs/mirotalk-out.log',
+      error_file: '/home/ubuntu/Mediczy/logs/livekit-error.log',
+      out_file: '/home/ubuntu/Mediczy/logs/livekit-out.log',
       log_date_format: 'YYYY-MM-DD HH:mm:ss Z',
       merge_logs: true,
       max_memory_restart: '1G',
@@ -113,9 +112,7 @@ module.exports = {
       autorestart: true,
       max_restarts: 20,
       min_uptime: '10s',
-      restart_delay: 5000,
-      exp_backoff_restart_delay: 100,
-      kill_timeout: 5000
+      restart_delay: 5000
     }
   ],
 

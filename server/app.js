@@ -117,13 +117,7 @@ import moduleAccessRouter from './routes/module-access.route.js';
 import hospitalPracticeRouter from './routes/hospital/practice.route.js';
 import userAssociationRouter from './routes/userAssociation.route.js';
 
-// MariaDB models completely replaced with Intelligent Database models
-// Legacy MariaDB models removed - all data now flows through intelligent database
-// Previous MariaDB models: user, doctor, leadNote, leadTask, appointment, 
-// doctorAvailability, membershipPlan, insurance, auditLog, consent
-// All now available as intelligent models with enhanced functionality
-
-// Load intelligent database models
+// Load intelligent database models (PostgreSQL-backed)
 import "./models/user.model.intelligent.js";
 import "./models/doctor.model.intelligent.js";
 import "./models/consent.model.intelligent.js";
@@ -189,8 +183,6 @@ app.set('trust proxy', 1); // Trust first proxy only
 // With trust proxy enabled, Express automatically reads X-Forwarded-Proto
 // No need to manually set req.secure or req.protocol (they're read-only)
 // The 'trust proxy' setting above handles this correctly
-
-// All models now use Intelligent Database - MariaDB connection removed
 
 // Connect to Kafka (non-blocking) - skip if disabled
 if (process.env.DISABLE_KAFKA !== 'true') {

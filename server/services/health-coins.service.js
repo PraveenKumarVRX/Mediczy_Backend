@@ -454,10 +454,10 @@ class HealthCoinsService {
         type: 'SPEND',
         amount: -calculation.hcRequired,
         balanceAfter: newBalance,
-        activityType: 'APPOINTMENT_PAYMENT',
+        activityType: 'CONSULTATION',
         description: `Paid for appointment #${appointmentId} with ${doctorName}`,
         referenceType: 'APPOINTMENT',
-        referenceId: appointmentId.toString(),
+        referenceId: parseInt(appointmentId, 10),
         metadata: {
           appointmentId,
           doctorName,

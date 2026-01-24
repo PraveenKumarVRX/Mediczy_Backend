@@ -61,6 +61,7 @@ import { Input } from '@/components/ui/input';
 import { Badge } from '@/components/ui/badge';
 import { cn } from '@/lib/utils';
 import ChatApplet from '@/components/chat/ChatApplet';
+import api from '@/utils/api';
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -105,6 +106,17 @@ const AdminLayout = ({ children }: AdminLayoutProps) => {
   const [isTeamMember, setIsTeamMember] = useState(false);
   const [searchQuery, setSearchQuery] = useState('');
   const scrollAreaRef = useRef<HTMLDivElement>(null);
+  const [livekitStatus, setLivekitStatus] = useState<{
+    loading: boolean;
+    success: boolean | null;
+    message: string;
+    checkedAt: string | null;
+  }>({
+    loading: true,
+    success: null,
+    message: '',
+    checkedAt: null
+  });
 
   const adminData = JSON.parse(localStorage.getItem('adminData') || '{}');
   const adminName = adminData?.firstName 
@@ -150,6 +162,69 @@ const AdminLayout = ({ children }: AdminLayoutProps) => {
     const teamToken = localStorage.getItem('teamToken');
     setIsTeamMember(!!teamToken);
   }, []);
+
+  useEffect(() => {
+    let isMounted = true;
+    let intervalId: number | undefined;
+    const adminToken = localStorage.getItem('adminToken');
+    if (!adminToken) {
+      setLivekitStatus({ loading: false, success: null });
+      return;
+    }
+
+    const checkLivekit = async () => {
+      try {
+        if (!isMounted) return;
+        setLivekitStatus((prev) => ({ ...prev, loading: true }));
+        const { data } = await api.post('/video-config/provider/livekit/test');
+        if (!isMounted) return;
+        setLivekitStatus({
+          loading: false,
+          success: !!data.success,
+          message: data.message || '',
+          checkedAt: new Date().toISOString()
+        });
+      } catch (error) {
+        if (!isMounted) return;
+        setLivekitStatus({
+          loading: false,
+          success: false,
+          message: 'LiveKit health check failed',
+          checkedAt: new Date().toISOString()
+        });
+      }
+    };
+
+    checkLivekit();
+    intervalId = window.setInterval(checkLivekit, 120000);
+
+    return () => {
+      isMounted = false;
+      if (intervalId) {
+        window.clearInterval(intervalId);
+      }
+    };
+  }, []);
+
+  const refreshLivekitStatus = async () => {
+    try {
+      setLivekitStatus((prev) => ({ ...prev, loading: true }));
+      const { data } = await api.post('/video-config/provider/livekit/test');
+      setLivekitStatus({
+        loading: false,
+        success: !!data.success,
+        message: data.message || '',
+        checkedAt: new Date().toISOString()
+      });
+    } catch (error) {
+      setLivekitStatus({
+        loading: false,
+        success: false,
+        message: 'LiveKit health check failed',
+        checkedAt: new Date().toISOString()
+      });
+    }
+  };
 
   const handleLogout = () => {
     localStorage.removeItem('adminToken');
@@ -605,6 +680,57 @@ const AdminLayout = ({ children }: AdminLayoutProps) => {
 
           {/* Header Actions */}
           <div className="flex items-center gap-2">
+            <TooltipProvider>
+              <Tooltip>
+                <TooltipTrigger asChild>
+                  <div className="hidden sm:flex items-center gap-2 rounded-md border border-input px-2 py-1">
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      onClick={() => navigate('/admin/video')}
+                      className="h-7 px-2"
+                    >
+                      <span
+                        className={cn(
+                          'h-2 w-2 rounded-full',
+                          livekitStatus.loading && 'bg-slate-300 animate-pulse',
+                          livekitStatus.success === true && 'bg-emerald-500',
+                          livekitStatus.success === false && 'bg-red-500'
+                        )}
+                      />
+                      <span className="ml-2 text-xs">LiveKit</span>
+                    </Button>
+                    <Button
+                      variant="ghost"
+                      size="icon"
+                      onClick={refreshLivekitStatus}
+                      className="h-7 w-7"
+                      title="Refresh LiveKit status"
+                    >
+                      <RefreshCw className={cn('h-3.5 w-3.5', livekitStatus.loading && 'animate-spin')} />
+                    </Button>
+                  </div>
+                </TooltipTrigger>
+                <TooltipContent>
+                  <div className="text-xs space-y-1">
+                    <div>
+                      Status:{' '}
+                      {livekitStatus.loading
+                        ? 'Checking...'
+                        : livekitStatus.success
+                          ? 'Healthy'
+                          : 'Unhealthy'}
+                    </div>
+                    {livekitStatus.message && <div>{livekitStatus.message}</div>}
+                    {livekitStatus.checkedAt && (
+                      <div>Checked: {new Date(livekitStatus.checkedAt).toLocaleString()}</div>
+                    )}
+                    <div>Click refresh to update</div>
+                  </div>
+                </TooltipContent>
+              </Tooltip>
+            </TooltipProvider>
+
             {/* Quick Add Button */}
             <DropdownMenu>
               <DropdownMenuTrigger asChild>

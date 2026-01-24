@@ -18,7 +18,7 @@ import { useAuth } from "@/auth/AuthProvider";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import api from "@/utils/api";
 import { doctorProfileProps, UserProps } from "@/lib/user.type";
-import useMirotalk from "@/hooks/useMirotalk";
+import useLiveKit from "@/hooks/useLiveKit";
 import { useNotifications } from "@/hooks/useNotifications";
 import NotificationCenter from "@/components/NotificationCenter";
 import { randomID } from "@/lib/utils";
@@ -113,18 +113,17 @@ const Chat = () => {
   const messageEndRef = useRef<HTMLDivElement>(null);
   const localVideoRef = useRef<HTMLVideoElement | null>(null);
   
-  // MiroTalk (WebRTC + SFU signalling) hook
+  // LiveKit (video call) hook
   const {
     localStream,
     remoteStreams,
     isJoined,
-    isLoading: mirotalkLoading,
-    initClient,
+    isLoading: livekitLoading,
     joinChannel,
     leaveChannel,
     toggleVideo,
     toggleAudio
-  } = useMirotalk({
+  } = useLiveKit({
     onUserJoined: (userId) => {
       notifySystemAlert("User Joined", "Someone joined the video call", "success");
     },

@@ -1,13 +1,16 @@
 import express from 'express';
 import whatsappProductionService from '../services/whatsapp-production.service.js';
 import whatsAppAIHandler from '../services/whatsapp-ai-conversation.service.js';
+import whatsAppSIBBrain from '../services/whatsapp-sib-brain.service.js';
 import whatsAppUserContextService from '../services/whatsapp-user-context.service.js';
 import logger from '../config/logger.js';
 
 const router = express.Router();
 
-// Configuration for AI auto-reply
+// Configuration for AI auto-reply - Now uses SIB Brain by default
 const AI_AUTO_REPLY_ENABLED = process.env.WHATSAPP_AI_AUTO_REPLY === 'true' || false;
+// Use SIB Brain for deep reasoning (recommended)
+const USE_SIB_BRAIN = process.env.WHATSAPP_USE_SIB_BRAIN !== 'false'; // Default: true
 
 /**
  * Send appointment confirmation
@@ -740,9 +743,21 @@ router.post('/webhook', async (req, res) => {
     }
     
     // 2. OPTIONAL: AI AUTO-REPLY (only if enabled)
+    // Routes through SIB Brain for deep reasoning with user context
     if (AI_AUTO_REPLY_ENABLED && Body && !MediaUrl0) {
       try {
-        const aiResponse = await whatsAppAIHandler.processMessage(phoneNumber, Body, ProfileName);
+        // Choose handler based on configuration
+        // SIB Brain provides deep reasoning, user profiling, and context-aware responses
+        const handler = USE_SIB_BRAIN ? whatsAppSIBBrain : whatsAppAIHandler;
+        const handlerName = USE_SIB_BRAIN ? 'SIB Brain' : 'AI Handler';
+        
+        logger.info(`🧠 Processing via ${handlerName}`, {
+          phoneNumber,
+          useSIB: USE_SIB_BRAIN,
+          messageLength: Body.length
+        });
+        
+        const aiResponse = await handler.processMessage(phoneNumber, Body, ProfileName);
         
         if (aiResponse.shouldReply && aiResponse.response) {
           // Send AI response via WhatsApp
@@ -960,6 +975,62 @@ router.get('/conversations/:conversationId/messages', async (req, res) => {
     res.status(500).json({
       success: false,
       message: error.message
+    });
+  }
+});
+
+// ==================== SIB BRAIN STATUS ====================
+
+/**
+ * Get SIB Brain health status
+ * Check if SIB is available and responsive
+ */
+router.get('/sib/health', async (req, res) => {
+  try {
+    const sibHealth = await whatsAppSIBBrain.checkSIBHealth();
+    
+    res.json({
+      success: true,
+      sibBrain: sibHealth,
+      configuration: {
+        autoReplyEnabled: AI_AUTO_REPLY_ENABLED,
+        useSIBBrain: USE_SIB_BRAIN,
+        sibUrl: process.env.SIB_URL || 'http://localhost:8001'
+      }
+    });
+  } catch (error) {
+    res.status(500).json({
+      success: false,
+      error: error.message
+    });
+  }
+});
+
+/**
+ * Test SIB Brain response manually
+ * For debugging and testing SIB integration
+ */
+router.post('/sib/test', async (req, res) => {
+  try {
+    const { phoneNumber, message } = req.body;
+    
+    if (!phoneNumber || !message) {
+      return res.status(400).json({
+        success: false,
+        message: 'Phone number and message are required'
+      });
+    }
+    
+    const response = await whatsAppSIBBrain.processMessage(phoneNumber, message, 'Test User');
+    
+    res.json({
+      success: true,
+      response
+    });
+  } catch (error) {
+    res.status(500).json({
+      success: false,
+      error: error.message
     });
   }
 });

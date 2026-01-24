@@ -141,6 +141,16 @@ const HospitalDoctorsManagement = () => {
   const [filterStatus, setFilterStatus] = useState<string>("all");
   const [activeTab, setActiveTab] = useState("all");
 
+  // Get hospital token for API calls
+  const getHospitalToken = () => localStorage.getItem('hospitalToken');
+
+  // Create API config with hospital token
+  const getApiConfig = () => ({
+    headers: {
+      Authorization: `Bearer ${getHospitalToken()}`
+    }
+  });
+
   // Fetch doctors
   const { data: doctorsData, isLoading, refetch } = useQuery({
     queryKey: ['hospital-doctors', filterSpecialization, filterStatus],
@@ -150,13 +160,18 @@ const HospitalDoctorsManagement = () => {
         if (filterSpecialization !== "all") params.specialization = filterSpecialization;
         if (filterStatus !== "all") params.status = filterStatus;
         
-        const response = await api.get('/hospital/practice/doctors', { params });
+        const response = await api.get('/hospital/practice/doctors', { 
+          params,
+          ...getApiConfig()
+        });
         return response.data.data || response.data.doctors || [];
       } catch (err: any) {
+        console.error('Failed to fetch doctors:', err);
         // Fallback to staff endpoint with role=Doctor filter
         try {
           const response = await api.get('/hospital/practice/staff', { 
-            params: { role: 'Doctor' } 
+            params: { role: 'Doctor' },
+            ...getApiConfig()
           });
           return response.data.data || [];
         } catch {
@@ -190,11 +205,11 @@ const HospitalDoctorsManagement = () => {
       
       // Try dedicated doctors endpoint first
       try {
-        const response = await api.post('/hospital/practice/doctors', payload);
+        const response = await api.post('/hospital/practice/doctors', payload, getApiConfig());
         return response.data;
       } catch {
         // Fallback to staff endpoint
-        const response = await api.post('/hospital/practice/staff', payload);
+        const response = await api.post('/hospital/practice/staff', payload, getApiConfig());
         return response.data;
       }
     },
@@ -220,10 +235,10 @@ const HospitalDoctorsManagement = () => {
   const updateDoctorMutation = useMutation({
     mutationFn: async ({ id, data }: { id: string; data: Partial<DoctorFormData> }) => {
       try {
-        const response = await api.patch(`/hospital/practice/doctors/${id}`, data);
+        const response = await api.patch(`/hospital/practice/doctors/${id}`, data, getApiConfig());
         return response.data;
       } catch {
-        const response = await api.patch(`/hospital/practice/staff/${id}`, data);
+        const response = await api.patch(`/hospital/practice/staff/${id}`, data, getApiConfig());
         return response.data;
       }
     },
@@ -249,10 +264,10 @@ const HospitalDoctorsManagement = () => {
   const deleteDoctorMutation = useMutation({
     mutationFn: async (id: string) => {
       try {
-        const response = await api.delete(`/hospital/practice/doctors/${id}`);
+        const response = await api.delete(`/hospital/practice/doctors/${id}`, getApiConfig());
         return response.data;
       } catch {
-        const response = await api.delete(`/hospital/practice/staff/${id}`);
+        const response = await api.delete(`/hospital/practice/staff/${id}`, getApiConfig());
         return response.data;
       }
     },

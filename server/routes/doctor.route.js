@@ -13,6 +13,11 @@ import { Doctor, Appointment, User } from "../models/index.js";
 import { Op } from 'sequelize';
 import bcrypt from 'bcrypt';
 import crypto from 'crypto';
+import {
+  buildLiveKitJoinData,
+  ensureMeetingInfo,
+  getProviderLabel
+} from '../utils/videoProvider.js';
 
 const router = express.Router();
 
@@ -1928,7 +1933,7 @@ router.post('/appointments/:appointmentId/initiate-call', authDoctor, async (req
         {
           model: User,
           as: 'patient',
-          attributes: ['id', 'firstName', 'lastName', 'email', 'phoneNumber', 'fcmToken']
+          attributes: ['id', 'firstName', 'lastName', 'email', 'phoneNumber']
         },
         {
           model: Doctor,
@@ -1946,10 +1951,11 @@ router.post('/appointments/:appointmentId/initiate-call', authDoctor, async (req
     }
 
     // Check if appointment is in valid state for call
-    if (!['confirmed', 'scheduled', 'accepted'].includes(appointment.status)) {
+    // Allow 'in-progress' so doctor can rejoin an ongoing call
+    if (!['confirmed', 'scheduled', 'accepted', 'in-progress'].includes(appointment.status)) {
       return res.status(400).json({
         success: false,
-        message: `Cannot initiate call. Appointment status is ${appointment.status}. Only confirmed/scheduled appointments can be started.`,
+        message: `Cannot initiate call. Appointment status is ${appointment.status}. Only confirmed/scheduled/in-progress appointments can be started.`,
         currentStatus: appointment.status
       });
     }
@@ -1964,19 +1970,15 @@ router.post('/appointments/:appointmentId/initiate-call', authDoctor, async (req
     }
 
     // Generate or get meeting link
-    let meetingLink = appointment.meetingLink;
-    let meetingId = appointment.meetingId;
-
-    if (!meetingLink) {
-      meetingId = `MEDCALL-${appointment.id}-${crypto.randomBytes(4).toString('hex').toUpperCase()}`;
-      meetingLink = `${process.env.MIROTALK_URL || 'https://video.mediqzy.com'}/join/${meetingId}`;
-    }
+    const meetingInfo = ensureMeetingInfo(appointment);
+    let { meetingId, meetingLink, meetingDetails, provider } = meetingInfo;
 
     // Update appointment status and call initiation tracking
     await appointment.update({
       status: 'in-progress',
       meetingId,
       meetingLink,
+      meetingDetails,
       callInitiatedBy: 'doctor',
       callInitiatedAt: new Date()
     });
@@ -2042,14 +2044,30 @@ router.post('/appointments/:appointmentId/initiate-call', authDoctor, async (req
       console.error('⚠️ Failed to emit socket event:', socketError);
     }
 
+    const videoPayload = {
+      meetingLink,
+      meetingId,
+      platform: getProviderLabel(provider)
+    };
+
+    if (provider === 'livekit') {
+      const livekitData = await buildLiveKitJoinData({
+        meetingId,
+        identity: `doctor-${doctorId}`,
+        name: doctorName
+      });
+      videoPayload.livekit = livekitData;
+      videoPayload.joinUrl = livekitData.joinUrl;
+      if (!videoPayload.meetingLink) {
+        videoPayload.meetingLink = livekitData.meetUrl;
+      }
+    }
+
     res.json({
       success: true,
       message: 'Call initiated successfully. Patient has been notified.',
       video: {
-        meetingLink,
-        meetingId,
-        platform: 'MiroTalk',
-        directJoinUrl: `${meetingLink}?name=${encodeURIComponent(doctorName)}`
+        ...videoPayload
       },
       appointment: {
         id: appointment.id,

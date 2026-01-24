@@ -2,6 +2,7 @@ import { validationResult } from 'express-validator';
 import { JWT_CONFIG } from '../config/auth.config.js';
 import jwt from 'jsonwebtoken';
 import { Appointment, Prescription, Doctor, User } from '../models/index.js';
+import { buildLiveKitJoinData, createMeetingInfo } from '../utils/videoProvider.js';
 
 // Simple WebRTC video calling controller
 class VideoController {
@@ -78,6 +79,50 @@ class VideoController {
       res.status(500).json({
         success: false,
         message: 'Failed to generate room token',
+        error: error.message
+      });
+    }
+  };
+
+  // Generate LiveKit token without appointment context
+  static generateLiveKitToken = async (req, res) => {
+    try {
+      const errors = validationResult(req);
+      if (!errors.isEmpty()) {
+        return res.status(400).json({ errors: errors.array() });
+      }
+
+      const { roomName } = req.body;
+      const userId = req.user.id;
+      const userRole = req.user.role || 'user';
+      const displayName =
+        [req.user.firstName, req.user.lastName].filter(Boolean).join(' ') ||
+        req.user.name ||
+        req.user.email ||
+        'Mediczy User';
+
+      const meetingId = roomName || createMeetingInfo({}).meetingId;
+      const livekitData = await buildLiveKitJoinData({
+        meetingId,
+        identity: `${userRole}-${userId}`,
+        name: displayName
+      });
+
+      res.json({
+        success: true,
+        video: {
+          meetingId,
+          meetingLink: livekitData.meetUrl,
+          joinUrl: livekitData.joinUrl,
+          livekit: livekitData
+        },
+        expiresAt: new Date(Date.now() + 60 * 60 * 1000).toISOString()
+      });
+    } catch (error) {
+      console.error('Failed to generate LiveKit token:', error);
+      res.status(500).json({
+        success: false,
+        message: 'Failed to generate LiveKit token',
         error: error.message
       });
     }

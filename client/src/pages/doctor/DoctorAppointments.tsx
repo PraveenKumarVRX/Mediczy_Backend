@@ -254,17 +254,7 @@ const DoctorAppointments = () => {
     setStatusDialogOpen(true);
   };
 
-  const handleStartConsultation = (appointment: Appointment) => {
-    // Update status to in-progress and navigate to consultation
-    updateStatusMutation.mutate({
-      id: appointment.id,
-      status: "in-progress",
-      appointment
-    });
-
-    // Generate room ID from appointment
-    const roomId = `apt-${appointment.id}`;
-
+  const handleStartConsultation = async (appointment: Appointment) => {
     // Navigate to video consultation page based on consultation type
     const channel = String(appointment.channel || "").toLowerCase();
     const consultType = String(appointment.consultationType || "").toLowerCase();
@@ -275,7 +265,42 @@ const DoctorAppointments = () => {
       consultType.includes("tele");
 
     if (isVideoConsultation) {
-      window.location.href = `/doctor/video?room=${encodeURIComponent(roomId)}&appointmentId=${appointment.id}&userId=${appointment.userId}`;
+      try {
+        // Call initiate-call API to notify patient and get meeting link
+        toast({
+          title: "📞 Starting Call...",
+          description: "Notifying patient and preparing video room...",
+        });
+
+        const response = await api.post(`/doctors/appointments/${appointment.id}/initiate-call`);
+        
+        if (response.data.success) {
+          const meetingLink = response.data.video?.meetingLink || response.data.video?.directJoinUrl;
+          const roomId = response.data.video?.meetingId || `apt-${appointment.id}`;
+          
+          toast({
+            title: "✅ Patient Notified",
+            description: `${response.data.appointment?.patientName || 'Patient'} has been notified. Opening video room...`,
+          });
+
+          // Open meeting link directly if available, otherwise use room-based URL
+          if (meetingLink) {
+            window.open(meetingLink, '_blank', 'width=1280,height=720');
+          } else {
+            window.location.href = `/doctor/video?room=${encodeURIComponent(roomId)}&appointmentId=${appointment.id}&userId=${appointment.userId}`;
+          }
+        }
+      } catch (error: any) {
+        console.error('Failed to initiate call:', error);
+        toast({
+          variant: "destructive",
+          title: "Failed to Start Call",
+          description: error.response?.data?.message || "Please try again",
+        });
+        // Fallback: still navigate to video page
+        const roomId = `apt-${appointment.id}`;
+        window.location.href = `/doctor/video?room=${encodeURIComponent(roomId)}&appointmentId=${appointment.id}&userId=${appointment.userId}`;
+      }
     } else {
       // For phone/chat consultations, go to chat
       window.location.href = `/doctor/chat?userId=${appointment.userId}`;

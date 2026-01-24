@@ -4,7 +4,7 @@ import Tenant from '../models/postgres/tenant.model.postgres.js';
 
 const router = express.Router();
 
-// Legacy MySQL fallback removed - using PostgreSQL via Tenant model only
+// Using PostgreSQL via Tenant model
 
 const TENANT_ID_PREFIX = 'tenant-';
 const privilegedRoles = new Set(['admin', 'super_admin', 'system_admin']);

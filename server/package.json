@@ -50,6 +50,7 @@
     "ioredis": "^5.8.2",
     "jsonwebtoken": "^9.0.2",
     "kafkajs": "^2.2.4",
+    "livekit-server-sdk": "^2.15.0",
     "multer": "^2.0.2",
     "node-cron": "^4.2.1",
     "node-fetch": "^2.6.7",

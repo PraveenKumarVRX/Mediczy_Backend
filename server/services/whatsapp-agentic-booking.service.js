@@ -10,6 +10,8 @@
  * 3. Search for available slots FROM DATABASE
  * 4. Execute booking action
  * 5. Confirm with user via WhatsApp
+ * 
+ * NOTE: Uses Redis for session storage to work across clustered instances
  */
 
 import { Appointment } from '../models/appointment.model.intelligent.js';
@@ -20,6 +22,7 @@ import { User } from '../models/user.model.intelligent.js';
 import { Op } from 'sequelize';
 import whatsAppProductionService from './whatsapp-production.service.js';
 import medicalAIService from './medicalAI.service.js';
+import Redis from 'ioredis';
 
 // Booking state machine
 const BOOKING_STATES = {
@@ -72,8 +75,16 @@ const HEALTH_PACKAGES = {
   }
 };
 
-// In-memory booking sessions (use Redis in production)
-const bookingSessions = new Map();
+// Redis client for session storage (works across clustered instances)
+const redis = new Redis({
+  host: process.env.REDIS_HOST || '127.0.0.1',
+  port: process.env.REDIS_PORT || 6379,
+  password: process.env.REDIS_PASSWORD || undefined,
+  keyPrefix: 'booking:'
+});
+
+// Session TTL (15 minutes)
+const SESSION_TTL = 15 * 60;
 
 class WhatsAppAgenticBookingService {
   constructor() {
@@ -81,38 +92,61 @@ class WhatsAppAgenticBookingService {
   }
 
   /**
-   * Get or create booking session for a phone number
+   * Get or create booking session for a phone number (Redis-backed)
    */
-  getSession(phoneNumber) {
+  async getSession(phoneNumber) {
     const normalizedPhone = phoneNumber.replace(/[^\d+]/g, '');
+    const key = `session:${normalizedPhone}`;
     
-    if (!bookingSessions.has(normalizedPhone)) {
-      bookingSessions.set(normalizedPhone, {
-        state: BOOKING_STATES.IDLE,
-        data: {},
-        lastActivity: Date.now(),
-        history: []
-      });
+    try {
+      const sessionData = await redis.get(key);
+      
+      if (sessionData) {
+        const session = JSON.parse(sessionData);
+        // Refresh TTL on access
+        await redis.expire(key, SESSION_TTL);
+        return session;
+      }
+    } catch (err) {
+      console.error('Redis get error:', err);
     }
     
-    const session = bookingSessions.get(normalizedPhone);
+    // Create new session
+    const newSession = {
+      state: BOOKING_STATES.IDLE,
+      data: {},
+      lastActivity: Date.now(),
+      history: []
+    };
     
-    // Check if session expired
-    if (Date.now() - session.lastActivity > this.sessionTimeout) {
-      session.state = BOOKING_STATES.IDLE;
-      session.data = {};
+    await this.saveSession(normalizedPhone, newSession);
+    return newSession;
+  }
+  
+  /**
+   * Save session to Redis
+   */
+  async saveSession(phoneNumber, session) {
+    const normalizedPhone = phoneNumber.replace(/[^\d+]/g, '');
+    const key = `session:${normalizedPhone}`;
+    
+    try {
+      session.lastActivity = Date.now();
+      await redis.set(key, JSON.stringify(session), 'EX', SESSION_TTL);
+    } catch (err) {
+      console.error('Redis save error:', err);
     }
-    
-    session.lastActivity = Date.now();
-    return session;
   }
 
   /**
    * Process booking-related message with agentic behavior
    */
   async processBookingIntent(phoneNumber, message, userContext) {
-    const session = this.getSession(phoneNumber);
+    // CRITICAL: await getSession since it's now async with Redis
+    const session = await this.getSession(phoneNumber);
     const userName = userContext.isKnownUser ? userContext.user.firstName : 'there';
+    
+    console.log('📅 Booking session state:', session.state, 'for phone:', phoneNumber.substring(0, 8) + '***');
     
     // Store message in session history
     session.history.push({ role: 'user', content: message, timestamp: Date.now() });
@@ -150,6 +184,10 @@ class WhatsAppAgenticBookingService {
     
     // Store response in session history
     session.history.push({ role: 'assistant', content: response.response, timestamp: Date.now() });
+    
+    // CRITICAL: Save session state to Redis after processing
+    await this.saveSession(phoneNumber, session);
+    console.log('📅 Session saved with state:', session.state);
     
     return response;
   }
@@ -510,9 +548,20 @@ class WhatsAppAgenticBookingService {
       if (bookingResult.success) {
         session.state = BOOKING_STATES.COMPLETED;
         
+        // Ensure date is properly formatted (may be string from Redis)
+        const dateObj = session.data.preferredDate instanceof Date 
+          ? session.data.preferredDate 
+          : new Date(session.data.preferredDate);
+        const dateStr = dateObj.toLocaleDateString('en-IN', { 
+          weekday: 'long', 
+          day: 'numeric', 
+          month: 'long', 
+          year: 'numeric' 
+        });
+        
         let response = `✅ *BOOKING CONFIRMED!*\n\n`;
         response += `📋 *Booking ID:* ${bookingResult.bookingId}\n`;
-        response += `📅 *Date:* ${session.data.preferredDate.toLocaleDateString('en-IN', { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' })}\n`;
+        response += `📅 *Date:* ${dateStr}\n`;
         response += `⏰ *Time:* ${selectedSlot.time}\n`;
         
         if (session.data.packageDetails) {
@@ -520,8 +569,8 @@ class WhatsAppAgenticBookingService {
           response += `💰 *Amount:* ₹${session.data.packageDetails.price}\n`;
         }
         
-        if (selectedSlot.doctorName) {
-          response += `👨‍⚕️ *Doctor:* Dr. ${selectedSlot.doctorName}\n`;
+        if (selectedSlot.doctorName || bookingResult.doctorName) {
+          response += `👨‍⚕️ *Doctor:* ${selectedSlot.doctorName || bookingResult.doctorName}\n`;
         }
         
         if (selectedSlot.location) {
@@ -574,38 +623,113 @@ class WhatsAppAgenticBookingService {
     try {
       // Get or create user
       let userId = userContext.isKnownUser ? userContext.user.id : null;
+      const normalizedPhone = phoneNumber.replace(/[^\d+]/g, '');
       
       if (!userId) {
-        // Create a new user record for this phone number
-        const newUser = await User.create({
-          phoneNumber: phoneNumber.replace(/[^\d+]/g, ''),
-          firstName: 'WhatsApp',
-          lastName: 'User',
-          registrationSource: 'whatsapp_booking'
+        // Try to find existing user by phone number first
+        let existingUser = await User.findOne({ 
+          where: { phoneNumber: normalizedPhone } 
         });
-        userId = newUser.id;
+        
+        if (existingUser) {
+          userId = existingUser.id;
+        } else {
+          // Create a new user record for this phone number
+          // Generate placeholder values for ALL required fields
+          const placeholderEmail = `whatsapp.${normalizedPhone.replace(/[+]/g, '')}@mediczy.whatsapp`;
+          const randomPassword = `WA${Date.now()}${Math.random().toString(36).substring(2, 10)}`;
+          // Use placeholder values (will be updated when user completes profile)
+          const placeholderDOB = new Date('1990-01-01');
+          
+          const newUser = await User.create({
+            phoneNumber: normalizedPhone,
+            email: placeholderEmail,
+            password: randomPassword, // Required - user can reset later
+            dateOfBirth: placeholderDOB, // Required - placeholder until profile completion
+            gender: 'Other', // Required - will be updated on profile completion
+            firstName: 'WhatsApp',
+            lastName: 'User',
+            registrationSource: 'whatsapp_booking',
+            isPhoneVerified: true, // WhatsApp numbers are inherently verified
+            isEmailVerified: false,
+            profileCompleted: false // Flag to indicate profile needs completion
+          });
+          userId = newUser.id;
+          console.log('📱 Created new user from WhatsApp booking:', newUser.id);
+        }
       }
       
-      // Create the appointment
+      // Get user details for the appointment
+      const user = userContext.isKnownUser ? userContext.user : 
+        await User.findByPk(userId);
+      
+      const patientName = user?.firstName && user?.lastName 
+        ? `${user.firstName} ${user.lastName}` 
+        : user?.firstName || 'WhatsApp User';
+      
+      // Get doctor name from slot or use default
+      const doctorName = bookingData.selectedSlot?.doctorName || 
+        (bookingData.specialization === 'General Medicine' ? 'Dr. General Physician' : 
+         `Dr. ${bookingData.specialization || 'Consultant'}`);
+      
+      // Ensure preferredDate is a proper Date object (may be string from Redis)
+      const appointmentDate = bookingData.preferredDate instanceof Date 
+        ? bookingData.preferredDate 
+        : new Date(bookingData.preferredDate);
+      
+      // Validate the date
+      if (isNaN(appointmentDate.getTime())) {
+        throw new Error('Invalid appointment date');
+      }
+      
+      // Convert time string to 24-hour format for database
+      const timeStr = bookingData.selectedSlot.time; // e.g., "10:00 AM" or "02:00 PM"
+      let appointmentTime = timeStr;
+      
+      // Parse and convert to 24-hour format if needed
+      const timeMatch = timeStr.match(/(\d{1,2}):(\d{2})\s*(AM|PM)?/i);
+      if (timeMatch) {
+        let hours = parseInt(timeMatch[1]);
+        const minutes = timeMatch[2];
+        const period = timeMatch[3]?.toUpperCase();
+        
+        if (period === 'PM' && hours < 12) hours += 12;
+        if (period === 'AM' && hours === 12) hours = 0;
+        
+        appointmentTime = `${hours.toString().padStart(2, '0')}:${minutes}:00`;
+      }
+      
+      // Create the appointment with all required fields
       const appointment = await Appointment.create({
         userId: userId,
-        doctorId: bookingData.selectedSlot.doctorId || null,
-        appointmentDate: bookingData.preferredDate,
-        appointmentTime: bookingData.selectedSlot.time,
-        consultationType: bookingData.bookingType === 'health_checkup' ? 'Health Checkup' : 'Consultation',
-        packageType: bookingData.package || null,
-        packageName: bookingData.packageDetails?.name || null,
-        amount: bookingData.packageDetails?.price || bookingData.selectedSlot.price || 500,
+        patientName: patientName,
+        patientPhone: normalizedPhone,
+        patientEmail: user?.email || null,
+        doctorId: bookingData.selectedSlot?.doctorId || null,
+        doctorName: doctorName,
+        appointmentDate: appointmentDate,
+        appointmentTime: appointmentTime,
+        consultationType: bookingData.bookingType === 'health_checkup' ? 'in-person' : 'online',
+        specialization: bookingData.specialization || 'General Medicine',
         status: 'confirmed',
-        bookingSource: 'whatsapp',
-        notes: `Booked via WhatsApp. Package: ${bookingData.packageDetails?.name || 'N/A'}`,
-        specialization: bookingData.specialization || 'General Medicine'
+        reason: bookingData.bookingType === 'health_checkup' 
+          ? `Health Checkup: ${bookingData.packageDetails?.name || 'General Checkup'}` 
+          : 'Doctor Consultation',
+        notes: `Booked via WhatsApp. Package: ${bookingData.packageDetails?.name || 'N/A'}. Source: agentic-booking`,
+        patientDetails: {
+          bookedVia: 'whatsapp',
+          profileName: userContext.profileName,
+          bookingTimestamp: new Date().toISOString()
+        }
       });
       
       // Send confirmation SMS via WhatsApp
       try {
+        const confirmDateStr = appointmentDate.toLocaleDateString('en-IN', { 
+          weekday: 'short', day: 'numeric', month: 'short' 
+        });
         await whatsAppProductionService.sendMessage(phoneNumber, 
-          `Your booking #${appointment.id} is confirmed for ${bookingData.preferredDate.toLocaleDateString()} at ${bookingData.selectedSlot.time}. - Mediczy`
+          `Your booking #${appointment.id} is confirmed for ${confirmDateStr} at ${bookingData.selectedSlot.time}. - Mediczy`
         );
       } catch (smsError) {
         console.error('Failed to send confirmation SMS:', smsError);
@@ -615,7 +739,8 @@ class WhatsAppAgenticBookingService {
         success: true,
         bookingId: `MED${appointment.id.toString().padStart(6, '0')}`,
         appointmentId: appointment.id,
-        appointment
+        appointment,
+        doctorName: doctorName
       };
       
     } catch (error) {
@@ -1114,10 +1239,10 @@ class WhatsAppAgenticBookingService {
   }
 
   /**
-   * Get session state for debugging
+   * Get session state for debugging (async Redis-based)
    */
-  getSessionState(phoneNumber) {
-    const session = this.getSession(phoneNumber);
+  async getSessionState(phoneNumber) {
+    const session = await this.getSession(phoneNumber);
     return {
       state: session.state,
       data: session.data,

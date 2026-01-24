@@ -16,7 +16,7 @@ const __dirname = path.dirname(__filename);
 
 const router = express.Router();
 
-const MIROTALK_RECORDINGS_DIR = process.env.MIROTALK_RECORDINGS_DIR || '/mnt/recordings';
+const LIVEKIT_RECORDINGS_DIR = process.env.LIVEKIT_RECORDINGS_DIR || '/mnt/recordings';
 const RECORDINGS_BASE_URL = process.env.RECORDINGS_BASE_URL || '/api/recordings';
 
 // Initialize AI clients for transcription
@@ -153,8 +153,8 @@ router.post('/stop/:recordingId', authDoctor, [
  */
 async function processRecordingFile(recording) {
   try {
-    // Find recording file in MiroTalk recordings directory
-    const recordingsDir = MIROTALK_RECORDINGS_DIR;
+    // Find recording file in LiveKit recordings directory
+    const recordingsDir = LIVEKIT_RECORDINGS_DIR;
     
     if (!fs.existsSync(recordingsDir)) {
       throw new Error('Recordings directory not found');

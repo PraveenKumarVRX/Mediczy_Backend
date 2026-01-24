@@ -1,7 +1,7 @@
 /**
- * Model Index - PostgreSQL Primary
+ * Model Index - PostgreSQL
  * 
- * Exports PostgreSQL models as primary (MariaDB completely retired)
+ * Exports PostgreSQL models as primary database models
  */
 
 // PostgreSQL Models (Primary)

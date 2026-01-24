@@ -1,7 +1,7 @@
 /**
 import { JWT_CONFIG } from '../../config/auth.config.js';
  * PostgreSQL User Model
- * Primary database model replacing MariaDB
+ * Primary database model for user data
  * 
  * PostgreSQL-Specific Features:
  * - JSONB for flexible metadata storage

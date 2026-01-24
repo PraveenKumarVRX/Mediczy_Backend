@@ -399,7 +399,7 @@ router.post('/instant-triage-call', authUser, async (req, res) => {
     const consultationFee = parseFloat(doctor.onlineConsultationFee || doctor.consultationFees || 500);
     const isUsingCredit = creditsUsed < creditLimit;
 
-    // Generate unique room ID for MiroTalk SFU
+    // Generate unique room ID for LiveKit
     const roomId = `triage_${crypto.randomBytes(8).toString('hex')}_${Date.now()}`;
     
     // Create emergency appointment record with credit/pay-later flag
@@ -446,10 +446,10 @@ router.post('/instant-triage-call', authUser, async (req, res) => {
       console.log(`✅ Emergency credit used for user ${req.user.id}. Credits: ${creditsUsed + 1}/${creditLimit}, Pending: ₹${(pendingAmount + consultationFee).toFixed(2)}`);
     }
 
-    // MiroTalk SFU URL
-    const mirotalkBaseUrl = process.env.MIROTALK_SFU_URL || 'https://video.mediqzy.com';
-    const patientJoinUrl = `${mirotalkBaseUrl}/join/${roomId}`;
-    const doctorJoinUrl = `${mirotalkBaseUrl}/join/${roomId}`;
+    // LiveKit URL
+    const livekitBaseUrl = process.env.LIVEKIT_MEET_URL || 'https://video.mediqzy.com';
+    const patientJoinUrl = `${livekitBaseUrl}/rooms/${roomId}`;
+    const doctorJoinUrl = `${livekitBaseUrl}/rooms/${roomId}`;
 
     // Send real-time socket notification to doctor (WhatsApp-style call notification)
     try {
@@ -516,7 +516,7 @@ router.post('/instant-triage-call', authUser, async (req, res) => {
         roomId,
         patientJoinUrl,
         doctorJoinUrl,
-        platform: 'MiroTalk SFU'
+        platform: 'LiveKit'
       },
       billing: {
         paymentType: isUsingCredit ? 'credit' : 'pending',

@@ -301,8 +301,8 @@ const DoctorTriage = () => {
   const localStreamRef = useRef<MediaStream | null>(null);
   const recognitionRef = useRef<any>(null);
   
-  // MiroTalk base URL
-  const MIROTALK_BASE_URL = import.meta.env.VITE_MIROTALK_URL || 'https://video.mediqzy.com';
+  // LiveKit base URL
+  const LIVEKIT_BASE_URL = import.meta.env.VITE_LIVEKIT_URL || 'https://video.mediqzy.com';
 
   // Fetch triage cases
   const { data: triageCases, isLoading, refetch } = useQuery({
@@ -481,7 +481,7 @@ const DoctorTriage = () => {
       // Join video room
       const roomId = response.data.appointment.roomId;
       const doctorName = encodeURIComponent(`Dr.${currentDoctor?.firstName || 'Doctor'}`);
-      const videoUrl = `${MIROTALK_BASE_URL}/join/${roomId}?name=${doctorName}&audio=1&video=1&notify=0`;
+      const videoUrl = `${LIVEKIT_BASE_URL}/join/${roomId}?name=${doctorName}&audio=1&video=1&notify=0`;
       
       setCurrentVideoUrl(videoUrl);
       setIsInVideoCall(true);
@@ -546,7 +546,7 @@ const DoctorTriage = () => {
       }
 
       const doctorName = encodeURIComponent(`Dr.${currentDoctor?.firstName || 'Doctor'}`);
-      const videoUrl = `${MIROTALK_BASE_URL}/join/${roomId}?name=${doctorName}&audio=1&video=1&notify=0`;
+      const videoUrl = `${LIVEKIT_BASE_URL}/join/${roomId}?name=${doctorName}&audio=1&video=1&notify=0`;
 
       setCurrentVideoUrl(videoUrl);
       setSelectedCase(caseItem);

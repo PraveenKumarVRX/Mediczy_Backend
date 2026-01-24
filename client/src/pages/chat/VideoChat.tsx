@@ -21,7 +21,7 @@ import api from "@/utils/api";
 import { doctorProfileProps, UserProps } from "@/lib/user.type";
 import { randomID } from "@/lib/utils";
 import { useSocket } from "@/context/SocketContext";
-import useMirotalk from "@/hooks/useMirotalk";
+import useLiveKit from "@/hooks/useLiveKit";
 
 // Define types
 interface User {
@@ -113,7 +113,7 @@ const Chat = () => {
   const localVideoRef = useRef<HTMLVideoElement>(null);
   const remoteVideoRef = useRef<HTMLVideoElement>(null);
   
-  // MiroTalk hook for video calls
+  // LiveKit hook for video calls
   const { 
     localStream, 
     remoteStreams, 
@@ -123,7 +123,7 @@ const Chat = () => {
     leaveChannel, 
     toggleVideo, 
     toggleAudio 
-  } = useMirotalk();
+  } = useLiveKit();
 
   // Get recipient and instant flag from URL
   const searchParams = new URLSearchParams(window.location.search);
@@ -363,7 +363,7 @@ const Chat = () => {
     setNewMessage("");
   };
 
-  // Start video call using MiroTalk
+  // Start video call using LiveKit
   const startVideoCall = async () => {
     if (!selectedRecipient || !currentId) return;
 
@@ -410,7 +410,7 @@ const Chat = () => {
     setIsVideoEnabled(!isVideoEnabled);
   };
 
-  // Start audio call (placeholder - uses same MiroTalk with video off)
+  // Start audio call (placeholder - uses same LiveKit with video off)
   const startAudioCall = async () => {
     if (!selectedRecipient || !currentId) return;
     

@@ -49,7 +49,8 @@ router.get(
   '/',
   authUser,
   [
-    query('status').optional().isIn(['scheduled', 'confirmed', 'in-progress', 'completed', 'cancelled', 'no-show', 'rescheduled']),
+    query('status').optional().isString(), // Allow comma-separated status values
+    query('consultationType').optional().isString(),
     query('upcoming').optional().isBoolean(),
     query('past').optional().isBoolean()
   ],

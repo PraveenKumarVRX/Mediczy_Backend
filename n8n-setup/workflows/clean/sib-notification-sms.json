@@ -1,0 +1,151 @@
+{
+  "name": "SIB: SMS Notification",
+  "nodes": [
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "notification-sms",
+        "options": {}
+      },
+      "name": "Webhook - SMS Trigger",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 1,
+      "position": [
+        250,
+        300
+      ],
+      "webhookId": "sib-notification-sms"
+    },
+    {
+      "parameters": {
+        "resource": "sms",
+        "operation": "send",
+        "from": "Mediczy",
+        "to": "={{$node[\"Webhook - SMS Trigger\"].json[\"data\"][\"phone\"]}}",
+        "message": "={{$node[\"Webhook - SMS Trigger\"].json[\"data\"][\"message\"]}}",
+        "options": {}
+      },
+      "name": "Send SMS (Twilio)",
+      "type": "n8n-nodes-base.twilio",
+      "typeVersion": 1,
+      "position": [
+        500,
+        300
+      ],
+      "credentials": {
+        "twilioApi": {
+          "id": "2",
+          "name": "Twilio API"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "url": "http://localhost:3000/api/notifications/log",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={\n  \"channel\": \"sms\",\n  \"patient_id\": \"{{$node[\"Webhook - SMS Trigger\"].json[\"data\"][\"patient_id\"]}}\",\n  \"phone\": \"{{$node[\"Webhook - SMS Trigger\"].json[\"data\"][\"phone\"]}}\",\n  \"status\": \"{{$node[\"Send SMS (Twilio)\"].json[\"status\"] === \"sent\" ? \"delivered\" : \"failed\"}}\",\n  \"sent_at\": \"{{new Date().toISOString()}}\"\n}",
+        "options": {}
+      },
+      "name": "Log to Database",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4,
+      "position": [
+        750,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "values": {
+          "string": [
+            {
+              "name": "status",
+              "value": "success"
+            },
+            {
+              "name": "channel",
+              "value": "sms"
+            },
+            {
+              "name": "recipient",
+              "value": "={{$node[\"Webhook - SMS Trigger\"].json[\"data\"][\"phone\"]}}"
+            },
+            {
+              "name": "sms_status",
+              "value": "={{$node[\"Send SMS (Twilio)\"].json[\"status\"]}}"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "name": "Respond to Webhook",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3,
+      "position": [
+        1000,
+        300
+      ]
+    }
+  ],
+  "connections": {
+    "Webhook - SMS Trigger": {
+      "main": [
+        [
+          {
+            "node": "Send SMS (Twilio)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Send SMS (Twilio)": {
+      "main": [
+        [
+          {
+            "node": "Log to Database",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Log to Database": {
+      "main": [
+        [
+          {
+            "node": "Respond to Webhook",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": true,
+  "settings": {
+    "executionOrder": "v1"
+  },
+  "versionId": "1",
+  "meta": {
+    "instanceId": "mediczy-n8n"
+  },
+  "tags": [
+    {
+      "name": "sib-automation"
+    },
+    {
+      "name": "notifications"
+    }
+  ]
+}

@@ -135,6 +135,20 @@ const Doctor = sequelize.define('Doctor', {
     allowNull: true
   },
 
+  // Online consultation fee
+  onlineConsultationFee: {
+    type: DataTypes.DECIMAL(10, 2),
+    allowNull: true,
+    comment: 'Fee for online consultations'
+  },
+
+  // In-person consultation fee
+  inPersonConsultationFee: {
+    type: DataTypes.DECIMAL(10, 2),
+    allowNull: true,
+    comment: 'Fee for in-person consultations'
+  },
+
   // Fee Structure as JSONB
   feeStructure: {
     type: DataTypes.JSONB,

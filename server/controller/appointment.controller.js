@@ -5,7 +5,7 @@ import DoctorAvailability from '../models/doctorAvailability.model.intelligent.j
 import Doctor from '../models/doctor.model.intelligent.js';
 import User from '../models/user.model.intelligent.js';
 import { Op } from 'sequelize';
-import crypto from 'crypto';
+import { createMeetingInfo } from '../utils/videoProvider.js';
 import {
   sendAppointmentConfirmation,
   scheduleAppointmentReminder,
@@ -252,11 +252,19 @@ export const createAppointment = async (req, res) => {
     // Generate meeting link for video/audio/telemedicine consultations
     let meetingId = null;
     let meetingLink = null;
+    let meetingDetails = {};
 
     if (['video', 'audio', 'telemedicine'].includes(requestedConsultationType)) {
-      meetingId = `MEDCALL-${Date.now()}-${crypto.randomBytes(4).toString('hex').toUpperCase()}`;
-      meetingLink = `${process.env.MIROTALK_URL || 'https://video.mediczy.com'}/join/${meetingId}`;
-      console.log('📹 Generated video meeting link:', { meetingId, meetingLink, type: requestedConsultationType });
+      const meetingInfo = createMeetingInfo({ appointmentId: Date.now() });
+      meetingId = meetingInfo.meetingId;
+      meetingLink = meetingInfo.meetingLink;
+      meetingDetails = meetingInfo.meetingDetails;
+      console.log('📹 Generated video meeting link:', {
+        meetingId,
+        meetingLink,
+        type: requestedConsultationType,
+        platform: meetingDetails.platform
+      });
     }
 
     // Create appointment
@@ -280,6 +288,7 @@ export const createAppointment = async (req, res) => {
       organization_type: organizationId ? 'hospital' : null,
       meetingId,
       meetingLink,
+      meetingDetails,
       metadata: {
         ...(req.userTenantId ? { organizationId: req.userTenantId } : {}),
         requestedConsultationType: requestedConsultationType || null,
@@ -492,13 +501,23 @@ export const createAppointment = async (req, res) => {
 export const getUserAppointments = async (req, res) => {
   try {
     const userId = req.user.id;
-    const { status, upcoming, past } = req.query;
+    const { status, upcoming, past, consultationType } = req.query;
 
     const whereClause = { userId };
 
-    // Filter by status if provided
+    // Filter by status if provided (supports comma-separated values)
     if (status) {
-      whereClause.status = status;
+      const statuses = status.split(',').map(s => s.trim()).filter(Boolean);
+      if (statuses.length === 1) {
+        whereClause.status = statuses[0];
+      } else if (statuses.length > 1) {
+        whereClause.status = { [Op.in]: statuses };
+      }
+    }
+
+    // Filter by consultation type if provided
+    if (consultationType) {
+      whereClause.consultationType = consultationType;
     }
 
     // Filter upcoming or past

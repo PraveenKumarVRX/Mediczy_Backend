@@ -25,8 +25,9 @@ async function startApplication() {
     // 3. Create and configure HTTP server with Socket.IO
     await serverController.createServer(app);
     
-    // 4. Make Socket.IO available globally for webhook handlers
+    // 4. Make Socket.IO available globally and on Express app for routes
     global.io = serverController.getIO();
+    app.set('io', global.io);  // Make io available via req.app.get('io')
     
     // 5. Start listening on configured port
     await serverController.start();

@@ -41,6 +41,7 @@ const VideoManagement = () => {
   const [logs, setLogs] = useState([]);
   const [loading, setLoading] = useState(true);
   const [testResults, setTestResults] = useState({});
+  const [livekitHealth, setLivekitHealth] = useState({ testing: false, success: null, message: '' });
 
   // Load initial data
   useEffect(() => {
@@ -127,6 +128,56 @@ const VideoManagement = () => {
           timestamp: new Date().toISOString()
         }
       }));
+    }
+  };
+
+  const runLivekitHealthCheck = async () => {
+    try {
+      setLivekitHealth({ testing: true, success: null, message: '' });
+      const { data } = await api.post('/video-config/provider/livekit/test');
+      setLivekitHealth({
+        testing: false,
+        success: data.success,
+        message: data.message || (data.success ? 'LiveKit is reachable' : 'LiveKit test failed')
+      });
+    } catch (error) {
+      console.error('LiveKit health check failed:', error);
+      setLivekitHealth({
+        testing: false,
+        success: false,
+        message: 'LiveKit health check failed'
+      });
+    }
+  };
+
+  const openLivekitTestRoom = async () => {
+    try {
+      setLivekitHealth({ testing: true, success: null, message: 'Creating test room...' });
+      const { data } = await api.post('/video/livekit/token', {
+        roomName: `admin-test-${Date.now()}`
+      });
+      const joinUrl = data?.video?.joinUrl;
+      if (joinUrl) {
+        window.open(joinUrl, '_blank', 'width=1280,height=720');
+        setLivekitHealth({
+          testing: false,
+          success: true,
+          message: 'Opened LiveKit test room'
+        });
+        return;
+      }
+      setLivekitHealth({
+        testing: false,
+        success: false,
+        message: 'LiveKit test room could not be created'
+      });
+    } catch (error) {
+      console.error('LiveKit test room failed:', error);
+      setLivekitHealth({
+        testing: false,
+        success: false,
+        message: 'LiveKit test room failed'
+      });
     }
   };
 
@@ -296,6 +347,46 @@ const VideoManagement = () => {
                 </div>
               </CardContent>
             </Card>
+
+            {config && (
+              <Card>
+                <CardHeader>
+                  <CardTitle>LiveKit Health Check</CardTitle>
+                  <p className="text-sm text-gray-600">Verify LiveKit config and open a test room</p>
+                </CardHeader>
+                <CardContent className="space-y-4">
+                  <div className="flex flex-wrap items-center gap-3">
+                    <Button
+                      variant="outline"
+                      onClick={runLivekitHealthCheck}
+                      disabled={livekitHealth.testing}
+                      className="flex items-center gap-2"
+                    >
+                      <Activity className="h-4 w-4" />
+                      {livekitHealth.testing ? 'Testing...' : 'Test LiveKit Config'}
+                    </Button>
+                    <Button
+                      onClick={openLivekitTestRoom}
+                      disabled={livekitHealth.testing}
+                      className="flex items-center gap-2"
+                    >
+                      <Video className="h-4 w-4" />
+                      Open LiveKit Test Room
+                    </Button>
+                    {livekitHealth.success !== null && (
+                      <Badge variant={livekitHealth.success ? 'default' : 'destructive'}>
+                        {livekitHealth.success ? 'Healthy' : 'Unhealthy'}
+                      </Badge>
+                    )}
+                  </div>
+                  {livekitHealth.message && (
+                    <Alert>
+                      <AlertDescription>{livekitHealth.message}</AlertDescription>
+                    </Alert>
+                  )}
+                </CardContent>
+              </Card>
+            )}
           </TabsContent>
 
           {/* Active Sessions Tab */}
@@ -435,7 +526,7 @@ const ProviderCard = ({ provider, isActive, testResult, onConfigure, onTest, onS
   const getProviderIcon = (providerId) => {
     switch (providerId) {
       case 'webrtc': return <Video className="h-5 w-5" />;
-      case 'mirotalk': return <Monitor className="h-5 w-5" />;
+      case 'livekit': return <Video className="h-5 w-5" />;
       case 'jitsi': return <Users className="h-5 w-5" />;
       case 'zoom': return <Phone className="h-5 w-5" />;
       case 'agora': return <Video className="h-5 w-5" />;
@@ -486,23 +577,68 @@ const ProviderCard = ({ provider, isActive, testResult, onConfigure, onTest, onS
       </CardHeader>
       <CardContent className="space-y-4">
         {/* Provider-specific settings */}
-        {provider.id === 'mirotalk' && (
-          <div className="grid grid-cols-2 gap-4">
-            <div>
-              <Label>Server URL</Label>
-              <Input
-                value={settings.serverUrl || ''}
-                onChange={(e) => setSettings({...settings, serverUrl: e.target.value})}
-                placeholder="https://your-mirotalk-server.com"
+        {provider.id === 'livekit' && (
+          <div className="space-y-4">
+            <div className="grid grid-cols-2 gap-4">
+              <div>
+                <Label>Server URL</Label>
+                <Input
+                  value={settings.serverUrl || ''}
+                  onChange={(e) => setSettings({...settings, serverUrl: e.target.value})}
+                  placeholder="wss://livekit.your-domain.com"
+                />
+              </div>
+              <div>
+                <Label>Meet URL</Label>
+                <Input
+                  value={settings.meetUrl || ''}
+                  onChange={(e) => setSettings({...settings, meetUrl: e.target.value})}
+                  placeholder="https://meet.your-domain.com"
+                />
+              </div>
+            </div>
+            <div className="grid grid-cols-2 gap-4">
+              <div>
+                <Label>API Key</Label>
+                <Input
+                  type="password"
+                  value={settings.apiKey || ''}
+                  onChange={(e) => setSettings({...settings, apiKey: e.target.value})}
+                  placeholder="Your LiveKit API key"
+                />
+              </div>
+              <div>
+                <Label>API Secret</Label>
+                <Input
+                  type="password"
+                  value={settings.apiSecret || ''}
+                  onChange={(e) => setSettings({...settings, apiSecret: e.target.value})}
+                  placeholder="Your LiveKit API secret"
+                />
+              </div>
+            </div>
+            <div className="grid grid-cols-2 gap-4">
+              <div>
+                <Label>Room Prefix</Label>
+                <Input
+                  value={settings.roomPrefix || ''}
+                  onChange={(e) => setSettings({...settings, roomPrefix: e.target.value})}
+                  placeholder="mediczy_"
+                />
+              </div>
+            </div>
+            <div className="flex items-center justify-between">
+              <Label>Enable Recording</Label>
+              <Switch
+                checked={settings.enableRecording || false}
+                onCheckedChange={(checked) => setSettings({...settings, enableRecording: checked})}
               />
             </div>
-            <div>
-              <Label>API Key</Label>
-              <Input
-                type="password"
-                value={settings.apiKey || ''}
-                onChange={(e) => setSettings({...settings, apiKey: e.target.value})}
-                placeholder="Your MiroTalk API key"
+            <div className="flex items-center justify-between">
+              <Label>Enable Egress</Label>
+              <Switch
+                checked={settings.enableEgress || false}
+                onCheckedChange={(checked) => setSettings({...settings, enableEgress: checked})}
               />
             </div>
           </div>
@@ -760,18 +896,18 @@ const HelpCard = () => (
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
             <div className="border rounded-lg p-4">
               <div className="flex items-center space-x-2 mb-2">
+                <Video className="h-5 w-5 text-indigo-600" />
+                <span className="font-medium">LiveKit</span>
+              </div>
+              <p className="text-sm text-gray-600">Modern WebRTC SFU with web and mobile SDKs. <strong>Recommended</strong></p>
+            </div>
+
+            <div className="border rounded-lg p-4">
+              <div className="flex items-center space-x-2 mb-2">
                 <Video className="h-5 w-5 text-blue-600" />
                 <span className="font-medium">WebRTC P2P</span>
               </div>
               <p className="text-sm text-gray-600">Direct peer-to-peer video calling. No external service required.</p>
-            </div>
-            
-            <div className="border rounded-lg p-4">
-              <div className="flex items-center space-x-2 mb-2">
-                <Monitor className="h-5 w-5 text-green-600" />
-                <span className="font-medium">MiroTalk SFU</span>
-              </div>
-              <p className="text-sm text-gray-600">Scalable video conferencing with SFU architecture.</p>
             </div>
 
             <div className="border rounded-lg p-4">
@@ -803,8 +939,7 @@ const HelpCard = () => (
         <div>
           <h3 className="font-semibold text-lg mb-2">Configuration Tips</h3>
           <ul className="list-disc list-inside space-y-1 text-sm text-gray-600">
-            <li>Start with WebRTC for simple peer-to-peer calls</li>
-            <li>Use MiroTalk SFU for group calls with multiple participants</li>
+            <li>Use LiveKit for the best experience (recommended)</li>
             <li>Configure TURN servers for better connectivity</li>
             <li>Test each provider after configuration</li>
             <li>Monitor session logs for troubleshooting</li>
@@ -814,8 +949,10 @@ const HelpCard = () => (
         <div>
           <h3 className="font-semibold text-lg mb-2">Environment Variables</h3>
           <div className="bg-gray-50 dark:bg-gray-800 rounded-lg p-4 text-sm font-mono">
-            <div>MIROTALK_SERVER_URL=https://your-mirotalk-server.com</div>
-            <div>MIROTALK_API_KEY=your_api_key</div>
+            <div>LIVEKIT_URL=wss://livekit.your-domain.com</div>
+            <div>LIVEKIT_API_KEY=your_livekit_key</div>
+            <div>LIVEKIT_API_SECRET=your_livekit_secret</div>
+            <div>LIVEKIT_MEET_URL=https://meet.your-domain.com</div>
             <div>JITSI_DOMAIN=meet.jit.si</div>
             <div>ZOOM_SDK_KEY=your_sdk_key</div>
           </div>

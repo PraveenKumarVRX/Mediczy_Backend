@@ -87,7 +87,7 @@ const RecordingTestPage = () => {
                   <span className="font-semibold">Step 1: Record</span>
                 </div>
                 <p className="text-sm text-muted-foreground">
-                  Start recording to create a consultation record. Normally linked to MiroTalk video.
+                  Start recording to create a consultation record. Normally linked to LiveKit video.
                 </p>
               </Card>
               <Card className="p-4 bg-white">
@@ -198,7 +198,7 @@ const RecordingTestPage = () => {
                       <li>Click "Import to Prescription" to test the integration</li>
                     </ol>
                     <p className="mt-3 text-blue-700">
-                      <strong>Note:</strong> If no actual recording file exists in MiroTalk, 
+                      <strong>Note:</strong> If no actual recording file exists in LiveKit, 
                       the system will mark it as "failed" but you can still test the UI flow.
                     </p>
                   </div>

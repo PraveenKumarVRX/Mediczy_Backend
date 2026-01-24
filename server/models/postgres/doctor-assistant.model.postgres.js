@@ -79,7 +79,7 @@ const DoctorAssistant = postgresSequelize.define('DoctorAssistant', {
   isActive: {
     type: DataTypes.BOOLEAN,
     defaultValue: true,
-    comment: 'Quick status flag from MariaDB'
+    comment: 'Active status flag'
   },
   // JSONB for granular permissions
   permissions: {

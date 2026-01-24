@@ -1,0 +1,140 @@
+{
+  "name": "SIB: WhatsApp Notification",
+  "nodes": [
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "whatsapp-notification",
+        "responseMode": "responseNode",
+        "options": {
+          "allowedOrigins": "*"
+        }
+      },
+      "id": "webhook-whatsapp",
+      "name": "Webhook (WhatsApp Notification)",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 1,
+      "position": [250, 300],
+      "webhookId": "sib-whatsapp-notification"
+    },
+    {
+      "parameters": {
+        "url": "http://localhost:3000/api/communication/whatsapp/send",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            },
+            {
+              "name": "x-n8n-webhook",
+              "value": "true"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={\n  \"phone\": \"{{ $json.phone }}\",\n  \"message\": \"{{ $json.message }}\",\n  \"template\": \"{{ $json.template || '' }}\",\n  \"userId\": {{ $json.patient_id || 'null' }}\n}",
+        "options": {
+          "timeout": 30000
+        }
+      },
+      "id": "send-whatsapp-twilio",
+      "name": "Send WhatsApp (Twilio via Mediczy API)",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4,
+      "position": [450, 300]
+    },
+    {
+      "parameters": {
+        "url": "http://localhost:3000/api/notifications/log",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={\n  \"channel\": \"whatsapp\",\n  \"patient_id\": {{ $node[\"Webhook (WhatsApp Notification)\"].json.patient_id || 'null' }},\n  \"phone\": \"{{ $node[\"Webhook (WhatsApp Notification)\"].json.phone }}\",\n  \"message\": \"{{ $node[\"Webhook (WhatsApp Notification)\"].json.message }}\",\n  \"status\": \"{{ $json.success ? 'sent' : 'failed' }}\",\n  \"provider\": \"twilio\",\n  \"message_sid\": \"{{ $json.data?.sid || $json.messageSid || '' }}\",\n  \"sent_at\": \"{{ new Date().toISOString() }}\"\n}",
+        "options": {}
+      },
+      "id": "log-whatsapp",
+      "name": "Log Notification",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4,
+      "position": [650, 300]
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={\n  \"success\": {{ $node[\"Send WhatsApp (Twilio via Mediczy API)\"].json.success || false }},\n  \"channel\": \"whatsapp\",\n  \"provider\": \"twilio\",\n  \"phone\": \"{{ $node[\"Webhook (WhatsApp Notification)\"].json.phone }}\",\n  \"message_sid\": \"{{ $node[\"Send WhatsApp (Twilio via Mediczy API)\"].json.data?.sid || '' }}\",\n  \"timestamp\": \"{{ new Date().toISOString() }}\"\n}"
+      },
+      "id": "respond-whatsapp",
+      "name": "Respond to Webhook",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1,
+      "position": [850, 300]
+    }
+  ],
+  "connections": {
+    "Webhook (WhatsApp Notification)": {
+      "main": [
+        [
+          {
+            "node": "Send WhatsApp (Twilio via Mediczy API)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Send WhatsApp (Twilio via Mediczy API)": {
+      "main": [
+        [
+          {
+            "node": "Log Notification",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Log Notification": {
+      "main": [
+        [
+          {
+            "node": "Respond to Webhook",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": true,
+  "settings": {
+    "executionOrder": "v1"
+  },
+  "versionId": "2",
+  "meta": {
+    "instanceId": "sib-whatsapp-workflow"
+  },
+  "tags": [
+    {
+      "name": "SIB"
+    },
+    {
+      "name": "Notification"
+    },
+    {
+      "name": "WhatsApp"
+    }
+  ]
+}

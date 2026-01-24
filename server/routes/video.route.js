@@ -28,6 +28,20 @@ router.post(
 );
 
 /**
+ * @route   POST /api/video/livekit/token
+ * @desc    Generate LiveKit token without appointment context
+ * @access  Private
+ */
+router.post(
+  '/livekit/token',
+  authUser,
+  [
+    body('roomName').optional().isString().withMessage('Room name must be a string')
+  ],
+  VideoController.generateLiveKitToken
+);
+
+/**
  * @route   POST /api/video/room/:roomId/join
  * @desc    Join video room
  * @access  Private

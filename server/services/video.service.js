@@ -8,7 +8,7 @@ import crypto from 'crypto';
 class VideoService {
   constructor() {
     this.config = {
-      provider: 'mirotalk', // webrtc, mirotalk, jitsi, zoom, custom
+      provider: 'livekit', // webrtc, livekit, jitsi, zoom, custom
       settings: {
         maxParticipants: 2,
         recordingSetting: false,
@@ -37,16 +37,17 @@ class VideoService {
             rtcpMuxPolicy: 'require'
           }
         },
-        mirotalk: {
-          name: 'MiroTalk SFU',
+        livekit: {
+          name: 'LiveKit',
           enabled: true,
           settings: {
-            serverUrl: process.env.MIROTALK_SERVER_URL || '',
-            apiKey: process.env.MIROTALK_API_KEY || '',
-            apiSecret: process.env.MIROTALK_API_SECRET || '',
+            serverUrl: process.env.LIVEKIT_URL || '',
+            apiKey: process.env.LIVEKIT_API_KEY || '',
+            apiSecret: process.env.LIVEKIT_API_SECRET || '',
+            meetUrl: process.env.LIVEKIT_MEET_URL || '',
             roomPrefix: 'mediczy_',
-            maxRoomSize: 10,
-            enableRecording: false
+            enableRecording: false,
+            enableEgress: false
           }
         },
         jitsi: {
@@ -164,9 +165,13 @@ class VideoService {
     switch (provider) {
       case 'webrtc':
         return true; // WebRTC is always available
-        
-      case 'mirotalk':
-        return !!providerConfig.settings.serverUrl; // MiroTalk only needs server URL for basic usage
+
+      case 'livekit':
+        return !!(
+          providerConfig.settings.serverUrl &&
+          providerConfig.settings.apiKey &&
+          providerConfig.settings.apiSecret
+        );
         
       case 'jitsi':
         return !!providerConfig.settings.domain;
@@ -235,8 +240,8 @@ class VideoService {
           configuration: providerConfig.settings
         };
 
-      case 'mirotalk':
-        return await this.createMiroTalkSession(sessionData, providerConfig);
+      case 'livekit':
+        return this.createLiveKitSession(sessionData, providerConfig);
 
       case 'jitsi':
         return this.createJitsiSession(sessionData, providerConfig);
@@ -256,27 +261,21 @@ class VideoService {
   }
 
   /**
-   * Create MiroTalk SFU session
+   * Create LiveKit session
    */
-  async createMiroTalkSession(sessionData, providerConfig) {
-    try {
-      const roomName = `${providerConfig.settings.roomPrefix}${sessionData.roomId || this.generateRoomId()}`;
-      
-      // In a real implementation, you would call MiroTalk API here
-      const miroTalkData = {
-        roomName,
-        serverUrl: providerConfig.settings.serverUrl,
-        roomUrl: `${providerConfig.settings.serverUrl}/join/${roomName}`,
-        maxParticipants: providerConfig.settings.maxRoomSize,
-        recordingEnabled: providerConfig.settings.enableRecording
-      };
+  createLiveKitSession(sessionData, providerConfig) {
+    const roomName = `${providerConfig.settings.roomPrefix}${sessionData.roomId || this.generateRoomId()}`;
+    const meetUrl = providerConfig.settings.meetUrl
+      ? `${providerConfig.settings.meetUrl.replace(/\/+$/, '')}/rooms/${roomName}`
+      : '';
 
-      console.log('MiroTalk session created:', roomName);
-      return miroTalkData;
-    } catch (error) {
-      console.error('Error creating MiroTalk session:', error);
-      throw error;
-    }
+    return {
+      roomName,
+      serverUrl: providerConfig.settings.serverUrl,
+      meetUrl,
+      recordingEnabled: providerConfig.settings.enableRecording,
+      egressEnabled: providerConfig.settings.enableEgress
+    };
   }
 
   /**
@@ -470,11 +469,9 @@ class VideoService {
       switch (provider) {
         case 'webrtc':
           return { success: true, message: 'WebRTC is available' };
-          
-        case 'mirotalk':
-          // Test MiroTalk connection
-          const miroTalkTest = await this.testMiroTalkConnection(providerConfig);
-          return miroTalkTest;
+
+      case 'livekit':
+        return this.testLiveKitConnection(providerConfig);
           
         case 'jitsi':
           return { success: true, message: 'Jitsi configuration valid' };
@@ -497,24 +494,26 @@ class VideoService {
   }
 
   /**
-   * Test MiroTalk connection
+   * Test LiveKit connection
    */
-  async testMiroTalkConnection(providerConfig) {
+  async testLiveKitConnection(providerConfig) {
     try {
       if (!providerConfig.settings.serverUrl) {
-        throw new Error('MiroTalk server URL not configured');
+        throw new Error('LiveKit server URL not configured');
+      }
+      if (!providerConfig.settings.apiKey || !providerConfig.settings.apiSecret) {
+        throw new Error('LiveKit API credentials not configured');
       }
 
-      // In a real implementation, you would ping the MiroTalk server
-      console.log('Testing MiroTalk connection to:', providerConfig.settings.serverUrl);
-      
-      return { 
-        success: true, 
-        message: 'MiroTalk server reachable',
+      console.log('LiveKit configuration detected for:', providerConfig.settings.serverUrl);
+
+      return {
+        success: true,
+        message: 'LiveKit configuration valid',
         serverUrl: providerConfig.settings.serverUrl
       };
     } catch (error) {
-      return { success: false, message: `MiroTalk test failed: ${error.message}` };
+      return { success: false, message: `LiveKit test failed: ${error.message}` };
     }
   }
 

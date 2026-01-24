@@ -6,7 +6,12 @@ import userModel from '../models/user.model.intelligent.js';
 import paymentService from '../services/payment.service.js';
 import notificationService from '../services/notification.service.js';
 import healthCoinsService from '../services/health-coins.service.js';
-import crypto from 'crypto';
+import {
+  buildLiveKitJoinData,
+  createMeetingInfo,
+  ensureMeetingInfo,
+  getProviderLabel
+} from '../utils/videoProvider.js';
 
 const router = express.Router();
 
@@ -342,8 +347,13 @@ router.post('/book', authUser, [
 
     // Calculate consultation fee
     const consultationFee = consultationType === 'online'
-      ? (doctor.onlineConsultationFee || doctor.consultationFees?.online || 500)
-      : (doctor.inPersonConsultationFee || doctor.consultationFees?.inPerson || 700);
+      ? (doctor.onlineConsultationFee || doctor.feeStructure?.online || doctor.consultationFees || 500)
+      : (doctor.inPersonConsultationFee || doctor.feeStructure?.inPerson || doctor.consultationFees || 700);
+
+    // Normalize symptoms to array
+    const symptomsArray = symptoms 
+      ? (Array.isArray(symptoms) ? symptoms : [symptoms])
+      : [];
 
     // Create appointment with 'pending' status (waiting for doctor approval)
     const appointment = await Appointment.create({
@@ -359,9 +369,9 @@ router.post('/book', authUser, [
       duration: 30,
       consultationType,
       status: 'pending', // Waiting for doctor to accept
-      consultationFee,
+      paymentAmount: consultationFee,
       paymentStatus: 'pending',
-      symptoms,
+      symptoms: symptomsArray,
       reason
     });
 
@@ -384,7 +394,7 @@ router.post('/book', authUser, [
         time: appointment.appointmentTime,
         consultationType: appointment.consultationType,
         status: appointment.status,
-        consultationFee: appointment.consultationFee,
+        consultationFee: appointment.paymentAmount,
         paymentStatus: appointment.paymentStatus
       }
     });
@@ -779,8 +789,8 @@ router.post('/payment/verify/:appointmentId', authUser, [
     }
 
     // Generate meeting link for video consultation
-    const meetingId = `MEDCALL-${appointment.id}-${crypto.randomBytes(4).toString('hex').toUpperCase()}`;
-    const meetingLink = `${process.env.MIROTALK_URL || 'https://video.mediqzy.com'}/join/${meetingId}`;
+    const meetingInfo = createMeetingInfo({ appointmentId: appointment.id });
+    const { meetingId, meetingLink, meetingDetails } = meetingInfo;
 
     // Update appointment as confirmed with payment
     await appointment.update({
@@ -790,6 +800,7 @@ router.post('/payment/verify/:appointmentId', authUser, [
       transactionId: razorpay_payment_id,
       meetingId,
       meetingLink,
+      meetingDetails,
       notes: 'Payment received. Video consultation enabled.'
     });
 
@@ -872,8 +883,8 @@ router.post('/payment/manual/:appointmentId', authUser, [
     }
 
     // Generate meeting link
-    const meetingId = `MEDCALL-${appointment.id}-${crypto.randomBytes(4).toString('hex').toUpperCase()}`;
-    const meetingLink = `${process.env.MIROTALK_URL || 'https://video.mediqzy.com'}/join/${meetingId}`;
+    const meetingInfo = createMeetingInfo({ appointmentId: appointment.id });
+    const { meetingId, meetingLink, meetingDetails } = meetingInfo;
 
     // Update appointment
     await appointment.update({
@@ -883,6 +894,7 @@ router.post('/payment/manual/:appointmentId', authUser, [
       transactionId: transactionRef || `MANUAL-${Date.now()}`,
       meetingId,
       meetingLink,
+      meetingDetails,
       notes: `Payment confirmed manually via ${paymentMethod}. Video consultation enabled.`
     });
 
@@ -1012,7 +1024,7 @@ router.post('/payment/hc/:appointmentId', authUser, async (req, res) => {
       });
     }
 
-    const consultationFee = parseFloat(appointment.consultationFee);
+    const consultationFee = parseFloat(appointment.paymentAmount);
     
     // Check if user can pay with HC
     const canPayResult = await healthCoinsService.canPayWithHC(patientId, consultationFee);
@@ -1034,17 +1046,23 @@ router.post('/payment/hc/:appointmentId', authUser, async (req, res) => {
     );
 
     // Generate meeting link
-    const meetingId = `MEDCALL-${appointment.id}-${crypto.randomBytes(4).toString('hex').toUpperCase()}`;
-    const meetingLink = `${process.env.MIROTALK_URL || 'https://video.mediqzy.com'}/join/${meetingId}`;
+    const meetingInfo = createMeetingInfo({ appointmentId: appointment.id });
+    const { meetingId, meetingLink, meetingDetails } = meetingInfo;
 
     // Update appointment
     await appointment.update({
       status: 'confirmed',
       paymentStatus: 'paid',
-      paymentMethod: 'health_coins',
-      transactionId: `HC-${paymentResult.transaction.id}`,
+      paymentDetails: {
+        method: 'health_coins',
+        transactionId: `HC-${paymentResult.transaction.id}`,
+        hcPaid: paymentResult.hcPaid,
+        amountINR: consultationFee,
+        timestamp: new Date().toISOString()
+      },
       meetingId,
       meetingLink,
+      meetingDetails,
       notes: `Paid with ${paymentResult.hcPaid} Health Coins (₹${consultationFee} value). Video consultation enabled.`
     });
 
@@ -1171,14 +1189,11 @@ router.get('/video/join/:appointmentId', authUser, async (req, res) => {
     }
 
     // Generate or get meeting link
-    let meetingLink = appointment.meetingLink;
-    let meetingId = appointment.meetingId;
+    const meetingInfo = ensureMeetingInfo(appointment);
+    let { meetingId, meetingLink, meetingDetails, provider } = meetingInfo;
 
-    if (!meetingLink) {
-      meetingId = `MEDCALL-${appointment.id}-${crypto.randomBytes(4).toString('hex').toUpperCase()}`;
-      meetingLink = `${process.env.MIROTALK_URL || 'https://video.mediqzy.com'}/join/${meetingId}`;
-      
-      await appointment.update({ meetingId, meetingLink });
+    if (meetingInfo.needsUpdate) {
+      await appointment.update({ meetingId, meetingLink, meetingDetails });
     }
 
     // Update status to in-progress if first join
@@ -1194,14 +1209,31 @@ router.get('/video/join/:appointmentId', authUser, async (req, res) => {
       }
     }
 
+    const participantName = isDoctor ? appointment.doctorName : appointment.patientName;
+    const videoPayload = {
+      meetingLink,
+      meetingId,
+      platform: getProviderLabel(provider)
+    };
+
+    if (provider === 'livekit') {
+      const livekitData = await buildLiveKitJoinData({
+        meetingId,
+        identity: `${userRole || 'user'}-${userId}`,
+        name: participantName
+      });
+      videoPayload.livekit = livekitData;
+      videoPayload.joinUrl = livekitData.joinUrl;
+      if (!videoPayload.meetingLink) {
+        videoPayload.meetingLink = livekitData.meetUrl;
+      }
+    }
+
     res.json({
       success: true,
       message: 'Video consultation ready',
       video: {
-        meetingLink,
-        meetingId,
-        platform: 'MiroTalk',
-        directJoinUrl: `${process.env.MIROTALK_URL || 'https://video.mediqzy.com'}/join/${meetingId}?name=${encodeURIComponent(isDoctor ? appointment.doctorName : appointment.patientName)}`
+        ...videoPayload
       },
       appointment: {
         id: appointment.id,

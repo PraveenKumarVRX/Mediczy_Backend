@@ -1,0 +1,320 @@
+{
+  "name": "SIB: EHR Processing Automation",
+  "nodes": [
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "ehr-processing",
+        "options": {}
+      },
+      "name": "Webhook - EHR Ingested",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 1,
+      "position": [
+        250,
+        300
+      ],
+      "webhookId": "sib-ehr-processing"
+    },
+    {
+      "parameters": {
+        "url": "http://localhost:3000/api/patients/{{$node[\"Webhook - EHR Ingested\"].json[\"data\"][\"patient_id\"]}}/update",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={\n  \"ehr_updated\": true,\n  \"last_ehr_ingestion\": \"{{$node[\"Webhook - EHR Ingested\"].json[\"data\"][\"ingested_at\"]}}\",\n  \"ehr_sections\": {{JSON.stringify($node[\"Webhook - EHR Ingested\"].json[\"data\"][\"sections\"])}},\n  \"entities_count\": {{$node[\"Webhook - EHR Ingested\"].json[\"data\"][\"entities_count\"]}}\n}",
+        "options": {}
+      },
+      "name": "Update Patient Profile",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4,
+      "position": [
+        500,
+        200
+      ]
+    },
+    {
+      "parameters": {
+        "url": "http://localhost:8001/webhook/n8n",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={\n  \"workflow\": \"ehr-processing\",\n  \"action\": \"trigger_risk\",\n  \"payload\": {\n    \"patient_data\": {\n      \"patient_id\": \"{{$node[\"Webhook - EHR Ingested\"].json[\"data\"][\"patient_id\"]}}\"\n    }\n  }\n}",
+        "options": {}
+      },
+      "name": "Trigger Risk Assessment",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4,
+      "position": [
+        500,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "url": "http://localhost:3000/api/nlp/extract-structured-data",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={\n  \"patient_id\": \"{{$node[\"Webhook - EHR Ingested\"].json[\"data\"][\"patient_id\"]}}\",\n  \"entities\": {{JSON.stringify($node[\"Webhook - EHR Ingested\"].json[\"data\"][\"entities\"])}}\n}",
+        "options": {}
+      },
+      "name": "Extract Structured Data",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4,
+      "position": [
+        500,
+        400
+      ]
+    },
+    {
+      "parameters": {
+        "url": "http://localhost:3000/api/drug-interactions/check",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={\n  \"patient_id\": \"{{$node[\"Webhook - EHR Ingested\"].json[\"data\"][\"patient_id\"]}}\",\n  \"entities\": {{JSON.stringify($node[\"Webhook - EHR Ingested\"].json[\"data\"][\"entities\"])}}\n}",
+        "options": {}
+      },
+      "name": "Check Drug Interactions",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4,
+      "position": [
+        500,
+        500
+      ]
+    },
+    {
+      "parameters": {
+        "url": "http://localhost:8001/webhook/n8n",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={\n  \"workflow\": \"ehr-processing\",\n  \"action\": \"trigger_chat\",\n  \"payload\": {\n    \"patient_id\": \"{{$node[\"Webhook - EHR Ingested\"].json[\"data\"][\"patient_id\"]}}\",\n    \"message\": \"Summarize the key findings from the recently uploaded EHR.\",\n    \"include_rag\": true\n  }\n}",
+        "options": {}
+      },
+      "name": "Generate Clinical Summary",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4,
+      "position": [
+        750,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "url": "http://localhost:3000/api/analytics/ehr-events",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={\n  \"event_type\": \"ehr_processed\",\n  \"patient_id\": \"{{$node[\"Webhook - EHR Ingested\"].json[\"data\"][\"patient_id\"]}}\",\n  \"file\": \"{{$node[\"Webhook - EHR Ingested\"].json[\"data\"][\"file\"]}}\",\n  \"sections\": {{JSON.stringify($node[\"Webhook - EHR Ingested\"].json[\"data\"][\"sections\"])}},\n  \"entities_count\": {{$node[\"Webhook - EHR Ingested\"].json[\"data\"][\"entities_count\"]}},\n  \"timestamp\": \"{{new Date().toISOString()}}\"\n}",
+        "options": {}
+      },
+      "name": "Log to Analytics",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4,
+      "position": [
+        1000,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "values": {
+          "string": [
+            {
+              "name": "status",
+              "value": "success"
+            },
+            {
+              "name": "patient_id",
+              "value": "={{$node[\"Webhook - EHR Ingested\"].json[\"data\"][\"patient_id\"]}}"
+            },
+            {
+              "name": "actions_completed",
+              "value": "5"
+            },
+            {
+              "name": "profile_updated",
+              "value": "true"
+            },
+            {
+              "name": "risk_assessed",
+              "value": "true"
+            },
+            {
+              "name": "summary_generated",
+              "value": "true"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "name": "Respond to Webhook",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3,
+      "position": [
+        1250,
+        300
+      ]
+    }
+  ],
+  "connections": {
+    "Webhook - EHR Ingested": {
+      "main": [
+        [
+          {
+            "node": "Update Patient Profile",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Trigger Risk Assessment",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Extract Structured Data",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Check Drug Interactions",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Update Patient Profile": {
+      "main": [
+        [
+          {
+            "node": "Generate Clinical Summary",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Trigger Risk Assessment": {
+      "main": [
+        [
+          {
+            "node": "Generate Clinical Summary",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Extract Structured Data": {
+      "main": [
+        [
+          {
+            "node": "Generate Clinical Summary",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Check Drug Interactions": {
+      "main": [
+        [
+          {
+            "node": "Generate Clinical Summary",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Generate Clinical Summary": {
+      "main": [
+        [
+          {
+            "node": "Log to Analytics",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Log to Analytics": {
+      "main": [
+        [
+          {
+            "node": "Respond to Webhook",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": true,
+  "settings": {
+    "executionOrder": "v1"
+  },
+  "versionId": "1",
+  "meta": {
+    "instanceId": "mediczy-n8n"
+  },
+  "tags": [
+    {
+      "name": "sib-automation"
+    },
+    {
+      "name": "ehr-processing"
+    }
+  ]
+}

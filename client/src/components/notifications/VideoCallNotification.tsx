@@ -10,6 +10,7 @@ import { Card } from '@/components/ui/card';
 import { Avatar, AvatarFallback } from '@/components/ui/avatar';
 import { useNavigate } from 'react-router-dom';
 import { useAuth } from '@/auth/AuthProvider';
+import api from '@/utils/api';
 
 interface CallNotification {
   type: 'incoming_call' | 'appointment_reminder';
@@ -293,17 +294,35 @@ export default function VideoCallNotification() {
     }
   };
 
-  const handleAnswer = () => {
+  const handleAnswer = async () => {
     if (!notification) return;
 
     stopRinging();
     
-    // If we have a direct meeting link (from MiroTalk), open it
+    // If we have a direct meeting link, open it
     if (notification.meetingLink) {
-      // Open in new window for better video experience
-      window.open(notification.meetingLink, '_blank', 'width=1280,height=720');
-      setNotification(null);
-      return;
+      const isLiveKitLink =
+        notification.meetingLink.includes('/rooms/') &&
+        !notification.meetingLink.includes('access_token=');
+
+      if (!isLiveKitLink) {
+        // Open in new window for better video experience
+        window.open(notification.meetingLink, '_blank', 'width=1280,height=720');
+        setNotification(null);
+        return;
+      }
+
+      try {
+        const response = await api.get(`/consultation/video/join/${notification.appointmentId}`);
+        const joinUrl = response.data?.video?.joinUrl || response.data?.video?.directJoinUrl;
+        if (joinUrl) {
+          window.open(joinUrl, '_blank', 'width=1280,height=720');
+          setNotification(null);
+          return;
+        }
+      } catch (error) {
+        console.error('Failed to fetch LiveKit join URL:', error);
+      }
     }
     
     // Navigate to video consultation page with room ID

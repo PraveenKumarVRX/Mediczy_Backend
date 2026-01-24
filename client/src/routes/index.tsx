@@ -178,8 +178,6 @@ import { ReportsPage } from "@/pages/admin/AdminPlaceholders";
 import SettingsPage from "@/pages/admin/SettingsPage";
 import CRMPage from "@/pages/admin/CRMPage";
 import CRMLeadDetail from "@/pages/admin/CRMLeadDetail";
-import VideoCallTestSimple from "@/pages/VideoCallTestSimple";
-import VideoCallTestBasic from "@/pages/VideoCallTestBasic";
 import CorporateDashboard from "@/pages/CorporateDashboard";
 import CorporateBenefits from "@/pages/CorporateBenefits";
 import OrderTasks from "@/pages/OrderTasks";
@@ -388,8 +386,6 @@ const AppRoutes = () => {
   return (
     <Routes>
         <Route path="/" element={<MainLayout><Index /></MainLayout>} />
-        <Route path="/video-test" element={<VideoCallTestSimple />} />
-        <Route path="/video-test-basic" element={<VideoCallTestBasic />} />
       <Route path="/login" element={<Login />} />
       <Route path="/forgot-password" element={<ForgotPassword />} />
       <Route path="/reset-password" element={<ResetPassword />} />

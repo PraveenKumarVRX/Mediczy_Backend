@@ -47,6 +47,7 @@ const HospitalLogin = () => {
       localStorage.removeItem('userType');
       
       localStorage.setItem('hospitalToken', 'dev-hospital-token');
+      localStorage.setItem('userType', 'hospital');
       localStorage.setItem('hospitalData', JSON.stringify({
         id: 'hospital_dev',
         email: 'hospital@mediczy.com',
@@ -68,6 +69,7 @@ const HospitalLogin = () => {
       clearTimeout(timeoutId);
 
       localStorage.setItem('hospitalToken', data.token);
+      localStorage.setItem('userType', 'hospital');
       localStorage.setItem('hospitalData', JSON.stringify(data.hospital));
       
       navigate('/hospital/dashboard');

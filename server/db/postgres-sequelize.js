@@ -1,6 +1,6 @@
 /**
  * PostgreSQL Sequelize Connection
- * Primary database replacing MariaDB
+ * Primary database for all operations
  */
 
 import { Sequelize } from 'sequelize';
@@ -41,8 +41,8 @@ const postgresSequelize = new Sequelize(database, username, password, {
   },
   benchmark: process.env.NODE_ENV === 'development',
   define: {
-    // Use snake_case for database columns (PostgreSQL convention)
-    underscored: false, // Keep camelCase for now to match MariaDB
+    // Use camelCase for database columns
+    underscored: false,
     timestamps: true,
     createdAt: 'createdAt',
     updatedAt: 'updatedAt',

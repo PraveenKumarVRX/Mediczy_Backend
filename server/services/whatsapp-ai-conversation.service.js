@@ -54,11 +54,14 @@ class WhatsAppAIConversationHandler {
       const bookingSession = agenticBookingService.getSessionState(phoneNumber);
       const isActiveBookingSession = bookingSession.state !== 'idle';
       
-      if (isActiveBookingSession || 
-          (appointmentIntent.isAppointmentRelated && 
-           (appointmentIntent.intent === 'book' || appointmentIntent.intent === 'schedule' ||
-            messageBody.toLowerCase().includes('health check') || 
-            messageBody.toLowerCase().includes('checkup')))) {
+      // Use action (not intent) - detectAppointmentIntent returns { action: 'book', matched: true, ... }
+      const isBookingIntent = appointmentIntent.matched && 
+        (appointmentIntent.action === 'book' || appointmentIntent.action === 'schedule' ||
+         appointmentIntent.action === 'find' || appointmentIntent.action === 'visit');
+      
+      if (isActiveBookingSession || isBookingIntent ||
+          messageBody.toLowerCase().includes('health check') || 
+          messageBody.toLowerCase().includes('checkup')) {
         
         // Use the agentic booking service - this ACTUALLY books appointments!
         const agenticResponse = await agenticBookingService.processBookingIntent(

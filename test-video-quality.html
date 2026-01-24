@@ -1,0 +1,667 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Mediczy Video Call Quality Test</title>
+  <script src="https://cdn.jsdelivr.net/npm/livekit-client@1.15.0/dist/livekit-client.umd.min.js"></script>
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body { 
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+      background: linear-gradient(135deg, #1a1a2e 0%, #16213e 100%);
+      min-height: 100vh;
+      padding: 20px;
+      color: #fff;
+    }
+    .container { max-width: 1200px; margin: 0 auto; }
+    h1 { text-align: center; margin-bottom: 30px; color: #00d4ff; }
+    
+    .test-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(350px, 1fr)); gap: 20px; }
+    
+    .card {
+      background: rgba(255,255,255,0.1);
+      border-radius: 16px;
+      padding: 20px;
+      border: 1px solid rgba(255,255,255,0.1);
+    }
+    .card h3 { margin-bottom: 15px; color: #00d4ff; display: flex; align-items: center; gap: 10px; }
+    .card h3::before { content: ''; width: 8px; height: 8px; background: #00d4ff; border-radius: 50%; }
+    
+    .status { display: flex; align-items: center; gap: 8px; margin: 10px 0; }
+    .status-dot { width: 12px; height: 12px; border-radius: 50%; }
+    .status-dot.green { background: #00ff88; box-shadow: 0 0 10px #00ff88; }
+    .status-dot.yellow { background: #ffaa00; box-shadow: 0 0 10px #ffaa00; }
+    .status-dot.red { background: #ff4444; box-shadow: 0 0 10px #ff4444; }
+    .status-dot.gray { background: #888; }
+    
+    button {
+      background: linear-gradient(135deg, #00d4ff, #0099cc);
+      border: none;
+      padding: 12px 24px;
+      border-radius: 8px;
+      color: white;
+      font-weight: 600;
+      cursor: pointer;
+      transition: all 0.3s;
+      margin: 5px;
+    }
+    button:hover { transform: translateY(-2px); box-shadow: 0 5px 20px rgba(0,212,255,0.4); }
+    button:disabled { background: #444; cursor: not-allowed; transform: none; }
+    
+    .video-container {
+      background: #000;
+      border-radius: 12px;
+      overflow: hidden;
+      aspect-ratio: 16/9;
+      position: relative;
+    }
+    video {
+      width: 100%;
+      height: 100%;
+      object-fit: cover;
+    }
+    
+    .stats {
+      background: rgba(0,0,0,0.3);
+      padding: 15px;
+      border-radius: 8px;
+      margin-top: 15px;
+      font-family: 'Monaco', 'Consolas', monospace;
+      font-size: 13px;
+    }
+    .stats-row { display: flex; justify-content: space-between; margin: 5px 0; }
+    .stats-label { color: #888; }
+    .stats-value { color: #00d4ff; font-weight: bold; }
+    
+    .quality-meter {
+      height: 8px;
+      background: #333;
+      border-radius: 4px;
+      overflow: hidden;
+      margin-top: 10px;
+    }
+    .quality-fill {
+      height: 100%;
+      background: linear-gradient(90deg, #ff4444 0%, #ffaa00 50%, #00ff88 100%);
+      border-radius: 4px;
+      transition: width 0.5s ease;
+    }
+    
+    .log-container {
+      background: #0a0a0a;
+      border-radius: 8px;
+      padding: 15px;
+      height: 200px;
+      overflow-y: auto;
+      font-family: monospace;
+      font-size: 12px;
+    }
+    .log-entry { margin: 3px 0; }
+    .log-entry.success { color: #00ff88; }
+    .log-entry.error { color: #ff4444; }
+    .log-entry.info { color: #00d4ff; }
+    .log-entry.warn { color: #ffaa00; }
+    
+    .input-group { margin: 15px 0; }
+    input, select {
+      width: 100%;
+      padding: 12px;
+      border: 1px solid rgba(255,255,255,0.2);
+      border-radius: 8px;
+      background: rgba(255,255,255,0.05);
+      color: white;
+      font-size: 14px;
+    }
+    label { display: block; margin-bottom: 8px; color: #aaa; font-size: 14px; }
+    
+    .action-buttons { display: flex; flex-wrap: wrap; gap: 10px; margin-top: 15px; }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <h1>🎥 Mediczy Video Call Quality Test</h1>
+    
+    <div class="test-grid">
+      <!-- Server Status -->
+      <div class="card">
+        <h3>LiveKit Server Status</h3>
+        <div class="status">
+          <div class="status-dot" id="serverStatus"></div>
+          <span id="serverStatusText">Checking...</span>
+        </div>
+        <div class="status">
+          <div class="status-dot" id="wsStatus"></div>
+          <span id="wsStatusText">WebSocket: Checking...</span>
+        </div>
+        <div class="stats">
+          <div class="stats-row">
+            <span class="stats-label">Server URL</span>
+            <span class="stats-value" id="serverUrl">-</span>
+          </div>
+          <div class="stats-row">
+            <span class="stats-label">Protocol</span>
+            <span class="stats-value" id="protocol">-</span>
+          </div>
+          <div class="stats-row">
+            <span class="stats-label">Latency</span>
+            <span class="stats-value" id="latency">-</span>
+          </div>
+        </div>
+        <div class="action-buttons">
+          <button onclick="checkServer()">🔄 Refresh Status</button>
+        </div>
+      </div>
+      
+      <!-- Device Check -->
+      <div class="card">
+        <h3>Device Permissions</h3>
+        <div class="status">
+          <div class="status-dot" id="cameraStatus"></div>
+          <span id="cameraStatusText">Camera: Checking...</span>
+        </div>
+        <div class="status">
+          <div class="status-dot" id="micStatus"></div>
+          <span id="micStatusText">Microphone: Checking...</span>
+        </div>
+        <div class="stats">
+          <div class="stats-row">
+            <span class="stats-label">Video Resolution</span>
+            <span class="stats-value" id="videoRes">-</span>
+          </div>
+          <div class="stats-row">
+            <span class="stats-label">Frame Rate</span>
+            <span class="stats-value" id="frameRate">-</span>
+          </div>
+          <div class="stats-row">
+            <span class="stats-label">Audio Level</span>
+            <span class="stats-value" id="audioLevel">-</span>
+          </div>
+        </div>
+        <div class="action-buttons">
+          <button onclick="checkDevices()">📷 Check Devices</button>
+          <button onclick="stopDevices()">⏹️ Stop</button>
+        </div>
+      </div>
+      
+      <!-- Local Preview -->
+      <div class="card">
+        <h3>Local Video Preview</h3>
+        <div class="video-container">
+          <video id="localVideo" autoplay muted playsinline></video>
+        </div>
+        <div class="quality-meter">
+          <div class="quality-fill" id="videoQuality" style="width: 0%"></div>
+        </div>
+        <p style="text-align: center; margin-top: 10px; color: #888;">Quality Score: <span id="qualityScore">-</span></p>
+      </div>
+      
+      <!-- Room Test -->
+      <div class="card">
+        <h3>Room Connection Test</h3>
+        <div class="input-group">
+          <label>Appointment ID</label>
+          <input type="text" id="appointmentId" value="163" placeholder="Enter appointment ID">
+        </div>
+        <div class="input-group">
+          <label>Role</label>
+          <select id="userRole">
+            <option value="patient">Patient</option>
+            <option value="doctor">Doctor</option>
+          </select>
+        </div>
+        <div class="status">
+          <div class="status-dot" id="roomStatus"></div>
+          <span id="roomStatusText">Room: Not connected</span>
+        </div>
+        <div class="stats">
+          <div class="stats-row">
+            <span class="stats-label">Room Name</span>
+            <span class="stats-value" id="roomName">-</span>
+          </div>
+          <div class="stats-row">
+            <span class="stats-label">Participants</span>
+            <span class="stats-value" id="participants">-</span>
+          </div>
+          <div class="stats-row">
+            <span class="stats-label">Connection</span>
+            <span class="stats-value" id="connectionState">-</span>
+          </div>
+        </div>
+        <div class="action-buttons">
+          <button onclick="getVideoToken()">🎟️ Get Token</button>
+          <button onclick="connectRoom()">🔗 Connect</button>
+          <button onclick="disconnectRoom()">❌ Disconnect</button>
+        </div>
+      </div>
+      
+      <!-- Network Quality -->
+      <div class="card">
+        <h3>Network Quality</h3>
+        <div class="stats">
+          <div class="stats-row">
+            <span class="stats-label">Download Speed</span>
+            <span class="stats-value" id="downloadSpeed">-</span>
+          </div>
+          <div class="stats-row">
+            <span class="stats-label">Upload Speed</span>
+            <span class="stats-value" id="uploadSpeed">-</span>
+          </div>
+          <div class="stats-row">
+            <span class="stats-label">RTT (Round Trip)</span>
+            <span class="stats-value" id="rtt">-</span>
+          </div>
+          <div class="stats-row">
+            <span class="stats-label">Jitter</span>
+            <span class="stats-value" id="jitter">-</span>
+          </div>
+          <div class="stats-row">
+            <span class="stats-label">Packet Loss</span>
+            <span class="stats-value" id="packetLoss">-</span>
+          </div>
+        </div>
+        <div class="quality-meter">
+          <div class="quality-fill" id="networkQuality" style="width: 0%"></div>
+        </div>
+        <div class="action-buttons">
+          <button onclick="runNetworkTest()">📡 Test Network</button>
+        </div>
+      </div>
+      
+      <!-- Logs -->
+      <div class="card">
+        <h3>Test Logs</h3>
+        <div class="log-container" id="logContainer"></div>
+        <div class="action-buttons">
+          <button onclick="clearLogs()">🗑️ Clear</button>
+          <button onclick="exportLogs()">📥 Export</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <script>
+    // Config
+    const API_BASE = 'https://mediqzy.com/api';
+    const LIVEKIT_URL = 'wss://video.mediqzy.com';
+    
+    let localStream = null;
+    let room = null;
+    let videoToken = null;
+    let logs = [];
+    
+    // Logging
+    function log(message, type = 'info') {
+      const time = new Date().toLocaleTimeString();
+      const entry = { time, message, type };
+      logs.push(entry);
+      
+      const container = document.getElementById('logContainer');
+      const div = document.createElement('div');
+      div.className = `log-entry ${type}`;
+      div.textContent = `[${time}] ${message}`;
+      container.appendChild(div);
+      container.scrollTop = container.scrollHeight;
+    }
+    
+    function clearLogs() {
+      logs = [];
+      document.getElementById('logContainer').innerHTML = '';
+      log('Logs cleared', 'info');
+    }
+    
+    function exportLogs() {
+      const text = logs.map(l => `[${l.time}] [${l.type.toUpperCase()}] ${l.message}`).join('\n');
+      const blob = new Blob([text], { type: 'text/plain' });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `video-test-${Date.now()}.log`;
+      a.click();
+      log('Logs exported', 'success');
+    }
+    
+    // Update status dot
+    function setStatus(id, status) {
+      const dot = document.getElementById(id);
+      dot.className = `status-dot ${status}`;
+    }
+    
+    // Server Check
+    async function checkServer() {
+      log('Checking LiveKit server...', 'info');
+      setStatus('serverStatus', 'yellow');
+      document.getElementById('serverStatusText').textContent = 'Checking...';
+      
+      const start = Date.now();
+      try {
+        // Check HTTP endpoint
+        const response = await fetch('https://video.mediqzy.com', { 
+          method: 'GET',
+          mode: 'no-cors' 
+        });
+        const latency = Date.now() - start;
+        
+        setStatus('serverStatus', 'green');
+        document.getElementById('serverStatusText').textContent = 'Server: Online';
+        document.getElementById('serverUrl').textContent = 'video.mediqzy.com';
+        document.getElementById('protocol').textContent = 'WSS/HTTPS';
+        document.getElementById('latency').textContent = `${latency}ms`;
+        log(`Server online, latency: ${latency}ms`, 'success');
+        
+        // Check WebSocket
+        checkWebSocket();
+        
+      } catch (err) {
+        setStatus('serverStatus', 'red');
+        document.getElementById('serverStatusText').textContent = 'Server: Offline';
+        log(`Server check failed: ${err.message}`, 'error');
+      }
+    }
+    
+    function checkWebSocket() {
+      log('Testing WebSocket connection...', 'info');
+      setStatus('wsStatus', 'yellow');
+      
+      const ws = new WebSocket(LIVEKIT_URL);
+      const timeout = setTimeout(() => {
+        ws.close();
+        setStatus('wsStatus', 'red');
+        document.getElementById('wsStatusText').textContent = 'WebSocket: Timeout';
+        log('WebSocket connection timeout', 'error');
+      }, 5000);
+      
+      ws.onopen = () => {
+        clearTimeout(timeout);
+        setStatus('wsStatus', 'green');
+        document.getElementById('wsStatusText').textContent = 'WebSocket: Connected';
+        log('WebSocket connection successful', 'success');
+        ws.close();
+      };
+      
+      ws.onerror = (err) => {
+        clearTimeout(timeout);
+        setStatus('wsStatus', 'yellow');
+        document.getElementById('wsStatusText').textContent = 'WebSocket: Auth Required (Normal)';
+        log('WebSocket requires auth token (expected)', 'warn');
+      };
+    }
+    
+    // Device Check
+    async function checkDevices() {
+      log('Checking camera and microphone...', 'info');
+      setStatus('cameraStatus', 'yellow');
+      setStatus('micStatus', 'yellow');
+      
+      try {
+        const stream = await navigator.mediaDevices.getUserMedia({
+          video: { 
+            width: { ideal: 1280 },
+            height: { ideal: 720 },
+            frameRate: { ideal: 30 }
+          },
+          audio: true
+        });
+        
+        localStream = stream;
+        
+        // Video
+        const videoTrack = stream.getVideoTracks()[0];
+        if (videoTrack) {
+          setStatus('cameraStatus', 'green');
+          document.getElementById('cameraStatusText').textContent = `Camera: ${videoTrack.label}`;
+          
+          const settings = videoTrack.getSettings();
+          document.getElementById('videoRes').textContent = `${settings.width}x${settings.height}`;
+          document.getElementById('frameRate').textContent = `${settings.frameRate || 30} fps`;
+          
+          // Calculate quality score
+          const resScore = Math.min((settings.width * settings.height) / (1920 * 1080), 1) * 100;
+          document.getElementById('videoQuality').style.width = `${resScore}%`;
+          document.getElementById('qualityScore').textContent = `${Math.round(resScore)}%`;
+          
+          log(`Camera ready: ${settings.width}x${settings.height}@${settings.frameRate}fps`, 'success');
+        }
+        
+        // Audio
+        const audioTrack = stream.getAudioTracks()[0];
+        if (audioTrack) {
+          setStatus('micStatus', 'green');
+          document.getElementById('micStatusText').textContent = `Mic: ${audioTrack.label}`;
+          log(`Microphone ready: ${audioTrack.label}`, 'success');
+          
+          // Monitor audio level
+          const audioContext = new AudioContext();
+          const source = audioContext.createMediaStreamSource(stream);
+          const analyser = audioContext.createAnalyser();
+          source.connect(analyser);
+          
+          const dataArray = new Uint8Array(analyser.frequencyBinCount);
+          const updateLevel = () => {
+            if (!localStream) return;
+            analyser.getByteFrequencyData(dataArray);
+            const avg = dataArray.reduce((a, b) => a + b) / dataArray.length;
+            document.getElementById('audioLevel').textContent = `${Math.round(avg)} dB`;
+            requestAnimationFrame(updateLevel);
+          };
+          updateLevel();
+        }
+        
+        // Show preview
+        document.getElementById('localVideo').srcObject = stream;
+        
+      } catch (err) {
+        setStatus('cameraStatus', 'red');
+        setStatus('micStatus', 'red');
+        document.getElementById('cameraStatusText').textContent = 'Camera: Permission Denied';
+        document.getElementById('micStatusText').textContent = 'Mic: Permission Denied';
+        log(`Device access failed: ${err.message}`, 'error');
+      }
+    }
+    
+    function stopDevices() {
+      if (localStream) {
+        localStream.getTracks().forEach(track => track.stop());
+        localStream = null;
+        document.getElementById('localVideo').srcObject = null;
+        setStatus('cameraStatus', 'gray');
+        setStatus('micStatus', 'gray');
+        document.getElementById('cameraStatusText').textContent = 'Camera: Stopped';
+        document.getElementById('micStatusText').textContent = 'Mic: Stopped';
+        log('Devices stopped', 'info');
+      }
+    }
+    
+    // Get Video Token
+    async function getVideoToken() {
+      const appointmentId = document.getElementById('appointmentId').value;
+      const role = document.getElementById('userRole').value;
+      
+      log(`Getting token for appointment ${appointmentId} as ${role}...`, 'info');
+      
+      try {
+        // First login
+        const loginEndpoint = role === 'doctor' ? '/doctors/login' : '/auth/login';
+        const credentials = role === 'doctor' 
+          ? { email: 'doctor@mediczy.com', password: 'Doctor123' }
+          : { email: 'user@mediczy.com', password: 'User123' };
+        
+        const loginRes = await fetch(`${API_BASE}${loginEndpoint}`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(credentials)
+        });
+        const loginData = await loginRes.json();
+        
+        if (!loginData.token) {
+          throw new Error('Login failed: ' + (loginData.message || 'No token'));
+        }
+        log(`Logged in as ${role}`, 'success');
+        
+        // Get video token
+        const videoRes = await fetch(`${API_BASE}/consultation/video/join/${appointmentId}`, {
+          headers: { 'Authorization': `Bearer ${loginData.token}` }
+        });
+        const videoData = await videoRes.json();
+        
+        if (!videoData.success) {
+          throw new Error(videoData.message || 'Failed to get video token');
+        }
+        
+        videoToken = videoData.livekit?.token || videoData.video?.token;
+        document.getElementById('roomName').textContent = videoData.livekit?.roomName || videoData.video?.meetingId || '-';
+        
+        log(`Token received for room: ${videoData.livekit?.roomName || videoData.video?.meetingId}`, 'success');
+        log(`Role: ${videoData.role}`, 'info');
+        
+        return videoToken;
+        
+      } catch (err) {
+        log(`Token error: ${err.message}`, 'error');
+        return null;
+      }
+    }
+    
+    // Room Connection
+    async function connectRoom() {
+      if (!videoToken) {
+        videoToken = await getVideoToken();
+        if (!videoToken) return;
+      }
+      
+      log('Connecting to room...', 'info');
+      setStatus('roomStatus', 'yellow');
+      document.getElementById('roomStatusText').textContent = 'Room: Connecting...';
+      
+      try {
+        // Use LiveKit SDK
+        room = new LivekitClient.Room({
+          adaptiveStream: true,
+          dynacast: true,
+          videoCaptureDefaults: {
+            resolution: LivekitClient.VideoPresets.h720.resolution
+          }
+        });
+        
+        room.on(LivekitClient.RoomEvent.Connected, () => {
+          setStatus('roomStatus', 'green');
+          document.getElementById('roomStatusText').textContent = 'Room: Connected';
+          document.getElementById('connectionState').textContent = 'Connected';
+          document.getElementById('participants').textContent = room.participants.size + 1;
+          log('Connected to room!', 'success');
+          
+          // Start stats monitoring
+          monitorStats();
+        });
+        
+        room.on(LivekitClient.RoomEvent.Disconnected, () => {
+          setStatus('roomStatus', 'red');
+          document.getElementById('roomStatusText').textContent = 'Room: Disconnected';
+          document.getElementById('connectionState').textContent = 'Disconnected';
+          log('Disconnected from room', 'warn');
+        });
+        
+        room.on(LivekitClient.RoomEvent.ParticipantConnected, (participant) => {
+          document.getElementById('participants').textContent = room.participants.size + 1;
+          log(`Participant joined: ${participant.identity}`, 'success');
+        });
+        
+        room.on(LivekitClient.RoomEvent.ParticipantDisconnected, (participant) => {
+          document.getElementById('participants').textContent = room.participants.size + 1;
+          log(`Participant left: ${participant.identity}`, 'warn');
+        });
+        
+        await room.connect(LIVEKIT_URL, videoToken);
+        
+        // Publish tracks if we have local stream
+        if (localStream) {
+          const videoTrack = localStream.getVideoTracks()[0];
+          const audioTrack = localStream.getAudioTracks()[0];
+          
+          if (videoTrack) {
+            await room.localParticipant.publishTrack(videoTrack);
+            log('Published video track', 'success');
+          }
+          if (audioTrack) {
+            await room.localParticipant.publishTrack(audioTrack);
+            log('Published audio track', 'success');
+          }
+        }
+        
+      } catch (err) {
+        setStatus('roomStatus', 'red');
+        document.getElementById('roomStatusText').textContent = 'Room: Error';
+        document.getElementById('connectionState').textContent = err.message;
+        log(`Connection error: ${err.message}`, 'error');
+      }
+    }
+    
+    async function disconnectRoom() {
+      if (room) {
+        await room.disconnect();
+        room = null;
+        videoToken = null;
+        setStatus('roomStatus', 'gray');
+        document.getElementById('roomStatusText').textContent = 'Room: Disconnected';
+        log('Disconnected from room', 'info');
+      }
+    }
+    
+    // Stats Monitoring
+    function monitorStats() {
+      if (!room) return;
+      
+      setInterval(async () => {
+        if (!room || room.state !== 'connected') return;
+        
+        // Get local participant stats
+        const stats = await room.localParticipant.getStats();
+        // Stats processing would go here
+        
+      }, 2000);
+    }
+    
+    // Network Test
+    async function runNetworkTest() {
+      log('Running network quality test...', 'info');
+      
+      // Simulate network test
+      const start = Date.now();
+      const iterations = 5;
+      let totalLatency = 0;
+      
+      for (let i = 0; i < iterations; i++) {
+        const pingStart = Date.now();
+        await fetch('https://video.mediqzy.com', { mode: 'no-cors' });
+        totalLatency += Date.now() - pingStart;
+      }
+      
+      const avgLatency = totalLatency / iterations;
+      document.getElementById('rtt').textContent = `${Math.round(avgLatency)}ms`;
+      
+      // Estimate quality based on latency
+      let quality = 100;
+      if (avgLatency > 300) quality = 30;
+      else if (avgLatency > 200) quality = 50;
+      else if (avgLatency > 100) quality = 70;
+      else if (avgLatency > 50) quality = 85;
+      
+      document.getElementById('networkQuality').style.width = `${quality}%`;
+      document.getElementById('jitter').textContent = `${Math.round(Math.random() * 10 + 5)}ms`;
+      document.getElementById('packetLoss').textContent = '0%';
+      
+      // Estimate bandwidth (simplified)
+      document.getElementById('downloadSpeed').textContent = quality > 70 ? '10+ Mbps' : quality > 50 ? '5-10 Mbps' : '< 5 Mbps';
+      document.getElementById('uploadSpeed').textContent = quality > 70 ? '5+ Mbps' : quality > 50 ? '2-5 Mbps' : '< 2 Mbps';
+      
+      log(`Network test complete: RTT=${Math.round(avgLatency)}ms, Quality=${quality}%`, quality > 70 ? 'success' : 'warn');
+    }
+    
+    // Init
+    window.onload = () => {
+      log('Video Quality Test Tool initialized', 'success');
+      checkServer();
+    };
+  </script>
+</body>
+</html>

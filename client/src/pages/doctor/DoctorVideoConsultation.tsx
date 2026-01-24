@@ -6,6 +6,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Badge } from "@/components/ui/badge";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from "@/components/ui/dialog";
+import { Switch } from "@/components/ui/switch";
 import RecordingControls from "@/components/consultation/RecordingControls";
 import TranscriptionViewer from "@/components/consultation/TranscriptionViewer";
 import { ScrollArea } from "@/components/ui/scroll-area";
@@ -41,11 +42,14 @@ import {
   AlertCircle,
   Wifi
 } from "lucide-react";
-import { useState, useEffect, useRef, useCallback } from "react";
+import { useState, useEffect, useRef, useCallback, lazy, Suspense } from "react";
 import { useNavigate, useSearchParams } from "react-router-dom";
 import { useToast } from "@/hooks/use-toast";
 import { useQuery } from '@tanstack/react-query';
 import api from '@/utils/api';
+
+// Lazy load LiveKit components
+const LiveKitRoom = lazy(() => import('@/components/video/LiveKitRoom'));
 
 interface Consultation {
   id: string;
@@ -67,6 +71,13 @@ interface VideoStats {
   avgDuration: number;
 }
 
+// LiveKit connection state
+interface LiveKitConnection {
+  serverUrl: string;
+  token: string;
+  roomName: string;
+}
+
 const DoctorVideoConsultation = () => {
   const { currentDoctor } = useAuth();
   const navigate = useNavigate();
@@ -86,6 +97,10 @@ const DoctorVideoConsultation = () => {
   const [connectionStatus, setConnectionStatus] = useState<'connecting' | 'connected' | 'disconnected'>('disconnected');
   const [showPreCallCheck, setShowPreCallCheck] = useState(false);
   const [deviceCheckPassed, setDeviceCheckPassed] = useState(false);
+  const [preferEmbeddedJoin, setPreferEmbeddedJoin] = useState(true);
+  
+  // LiveKit native connection state
+  const [liveKitConnection, setLiveKitConnection] = useState<LiveKitConnection | null>(null);
   
   // Device check state
   const [cameraPermission, setCameraPermission] = useState<'granted' | 'denied' | 'prompt'>('prompt');
@@ -109,8 +124,8 @@ const DoctorVideoConsultation = () => {
   const previewVideoRef = useRef<HTMLVideoElement>(null);
   const localStreamRef = useRef<MediaStream | null>(null);
 
-  // MiroTalk base URL
-  const MIROTALK_BASE_URL = import.meta.env.VITE_MIROTALK_URL || 'https://video.mediqzy.com';
+  // LiveKit base URL
+  const LIVEKIT_BASE_URL = import.meta.env.VITE_LIVEKIT_URL || 'https://video.mediqzy.com';
 
   // Fetch video consultation stats
   const { data: stats = { todaysConsultations: 0, totalHours: 0, activePatients: 0, avgDuration: 0 }, isLoading: statsLoading, refetch: refetchStats } = useQuery({
@@ -213,65 +228,90 @@ const DoctorVideoConsultation = () => {
   // Generate meeting URL
   const generateMeetingUrl = useCallback((room: string) => {
     const name = currentDoctor?.name || currentDoctor?.firstName || 'Doctor';
-    return `${MIROTALK_BASE_URL}/join/${room}?name=${encodeURIComponent(name)}&audio=1&video=1&notify=0`;
-  }, [currentDoctor, MIROTALK_BASE_URL]);
+    if (room.startsWith('http')) {
+      try {
+        const parsed = new URL(room);
+        if (parsed.pathname.includes('/rooms/') || parsed.searchParams.has('access_token')) {
+          return parsed.toString();
+        }
+      } catch (error) {
+        // Fall back to LiveKit URL if parsing fails.
+      }
+    }
+    return `${LIVEKIT_BASE_URL}/join/${room}?name=${encodeURIComponent(name)}&audio=1&video=1&notify=0`;
+  }, [currentDoctor, LIVEKIT_BASE_URL]);
 
   // Start video call with pre-call check
   const initiateVideoCall = useCallback(async (consultation?: Consultation, customRoomId?: string) => {
     if (consultation) {
       setCurrentConsultation(consultation);
-      
-      // If this is a scheduled appointment, call backend API to initiate call and notify patient
-      if (consultation.id) {
-        try {
+    }
+    
+    // Extract appointment ID from custom room ID if provided
+    let appointmentId = consultation?.id;
+    if (customRoomId && customRoomId.match(/^apt-(\d+)$/)) {
+      appointmentId = customRoomId.replace('apt-', '');
+    } else if (customRoomId && /^\d+$/.test(customRoomId)) {
+      appointmentId = customRoomId;
+    }
+    
+    // If we have an appointment ID, call backend API to initiate call
+    if (appointmentId) {
+      try {
+        toast({
+          title: "📞 Initiating Call...",
+          description: "Notifying patient and preparing video room...",
+        });
+
+        const response = await api.post(`/doctors/appointments/${appointmentId}/initiate-call`);
+        
+        if (response.data.success) {
           toast({
-            title: "📞 Initiating Call...",
-            description: "Notifying patient and preparing video room...",
+            title: "✅ Patient Notified",
+            description: `${response.data.appointment.patientName} has been notified. Opening video room...`,
           });
 
-          const response = await api.post(`/doctors/appointments/${consultation.id}/initiate-call`);
+          const videoData = response.data.video;
+          const livekitData = videoData?.livekit || videoData;
           
-          if (response.data.success) {
-            toast({
-              title: "✅ Patient Notified",
-              description: `${response.data.appointment.patientName} has been notified. Opening video room...`,
+          // Use native LiveKit SDK connection
+          if (livekitData?.serverUrl && livekitData?.token) {
+            setLiveKitConnection({
+              serverUrl: livekitData.serverUrl,
+              token: livekitData.token,
+              roomName: livekitData.roomName || videoData.meetingId
             });
-
-            // Use the meeting link from response
-            const meetingUrl = response.data.video.directJoinUrl || response.data.video.meetingLink;
+            setIsInCall(true);
+            setConnectionStatus('connecting');
             
-            // Open video in new window immediately for doctor
-            window.open(meetingUrl, '_blank', 'width=1280,height=720');
-            
-            // Update state
-            setRoomId(response.data.video.roomId || response.data.video.meetingId);
+            toast({
+              title: "🎥 Joining Video Call",
+              description: "Connecting to consultation room...",
+            });
             return;
           }
-        } catch (error: any) {
-          toast({
-            variant: "destructive",
-            title: "Failed to Initiate Call",
-            description: error.response?.data?.message || "Please try again",
-          });
+          
+          // Fallback to room ID
+          setRoomId(videoData?.roomId || videoData?.meetingId || '');
+          setShowPreCallCheck(true);
           return;
         }
+      } catch (error: any) {
+        toast({
+          variant: "destructive",
+          title: "Failed to Initiate Call",
+          description: error.response?.data?.message || "Please try again",
+        });
+        return;
       }
     }
     
-    // For custom room ID or manual entry
-    const room = customRoomId || (consultation?.roomId || consultation?.meetingLink || (consultation ? consultation.id : ''));
-    
-    if (!room) {
-      toast({
-        variant: "destructive",
-        title: "No Room ID",
-        description: "Please enter a valid room ID or meeting code.",
-      });
-      return;
-    }
-    
-    setRoomId(room);
-    setShowPreCallCheck(true);
+    // No appointment ID available
+    toast({
+      variant: "destructive",
+      title: "Invalid Room",
+      description: "Please enter a valid appointment ID or room code (e.g., apt-123 or 123).",
+    });
   }, [toast]);
 
   // Actually start the call after device check
@@ -280,19 +320,33 @@ const DoctorVideoConsultation = () => {
     setShowPreCallCheck(false);
     
     const meetingUrl = generateMeetingUrl(roomId);
+    const isLiveKitMeeting = meetingUrl.includes('/rooms/');
+    if (isLiveKitMeeting && !preferEmbeddedJoin) {
+      toast({
+        title: "Opening LiveKit",
+        description: "Launching LiveKit in a new window...",
+      });
+      window.open(meetingUrl, '_blank', 'width=1280,height=720');
+      setIsInCall(false);
+      setConnectionStatus('disconnected');
+      setCurrentMeetingUrl("");
+      return;
+    }
+
     setCurrentMeetingUrl(meetingUrl);
     setIsInCall(true);
     setConnectionStatus('connecting');
+    const providerLabel = 'LiveKit';
     
     toast({
       title: "Starting Video Consultation",
-      description: "Connecting to MiroTalk SFU...",
+      description: `Connecting to ${providerLabel}...`,
     });
     
     setTimeout(() => {
       setConnectionStatus('connected');
     }, 3000);
-  }, [roomId, generateMeetingUrl, stopPreviewStream, toast]);
+  }, [roomId, generateMeetingUrl, preferEmbeddedJoin, stopPreviewStream, toast]);
 
   // End video call
   const endVideoCall = useCallback(() => {
@@ -302,6 +356,7 @@ const DoctorVideoConsultation = () => {
     setCurrentConsultation(null);
     setConnectionStatus('disconnected');
     setRoomId("");
+    setLiveKitConnection(null);
     
     toast({
       title: "Call Ended",
@@ -338,10 +393,28 @@ const DoctorVideoConsultation = () => {
     window.open(url, '_blank', 'width=1200,height=800');
   }, [currentMeetingUrl, roomId, generateMeetingUrl]);
 
+  const moveLiveKitToWindow = useCallback(() => {
+    const url = currentMeetingUrl || generateMeetingUrl(roomId);
+    if (!url) return;
+    window.open(url, '_blank', 'width=1200,height=800');
+    setIsInCall(false);
+    setIsFullscreen(false);
+    setCurrentMeetingUrl("");
+    setCurrentConsultation(null);
+    setConnectionStatus('disconnected');
+  }, [currentMeetingUrl, roomId, generateMeetingUrl]);
+
   // Copy meeting link
   const handleCopyLink = useCallback((room?: string) => {
     const targetRoom = room || roomId;
     const url = generateMeetingUrl(targetRoom);
+    if (url.includes('/rooms/') && url.includes('access_token=')) {
+      toast({
+        title: "LiveKit Link Protected",
+        description: "LiveKit uses per-user tokens. Ask the patient to join from the app.",
+      });
+      return;
+    }
     navigator.clipboard.writeText(url);
     setCopiedLink(true);
     toast({
@@ -386,8 +459,48 @@ const DoctorVideoConsultation = () => {
     };
   }, [stopPreviewStream]);
 
-  // Active video call UI
-  if (isInCall) {
+  // Active video call UI - Native LiveKit
+  if (isInCall && liveKitConnection) {
+    return (
+      <div ref={containerRef} className="h-screen w-full">
+        <Suspense fallback={
+          <div className="flex items-center justify-center h-screen bg-slate-900">
+            <div className="text-center">
+              <Loader2 className="w-12 h-12 animate-spin text-teal-500 mx-auto mb-4" />
+              <p className="text-white text-lg">Loading video components...</p>
+            </div>
+          </div>
+        }>
+          <LiveKitRoom
+            serverUrl={liveKitConnection.serverUrl}
+            token={liveKitConnection.token}
+            roomName={liveKitConnection.roomName}
+            participantName={currentDoctor?.name || currentDoctor?.firstName || 'Doctor'}
+            onDisconnect={() => {
+              setIsInCall(false);
+              setLiveKitConnection(null);
+              setConnectionStatus('disconnected');
+              toast({
+                title: "Call Ended",
+                description: "Your video consultation has ended.",
+              });
+            }}
+            onError={(error) => {
+              console.error('LiveKit error:', error);
+              toast({
+                variant: "destructive",
+                title: "Video Call Error",
+                description: error.message,
+              });
+            }}
+          />
+        </Suspense>
+      </div>
+    );
+  }
+
+  // Legacy iframe-based video call UI (fallback)
+  if (isInCall && currentMeetingUrl) {
     return (
       <div 
         ref={containerRef}
@@ -416,6 +529,20 @@ const DoctorVideoConsultation = () => {
               <Shield className="w-3 h-3 mr-1" />
               HIPAA Compliant
             </Badge>
+            {currentMeetingUrl.includes('/rooms/') && (
+              <div className="flex items-center gap-2 rounded-full border border-slate-700 px-3 py-1 text-slate-300">
+                <span className="text-xs">Embed</span>
+                <Switch
+                  checked={preferEmbeddedJoin}
+                  onCheckedChange={(checked) => {
+                    setPreferEmbeddedJoin(checked);
+                    if (!checked) {
+                      moveLiveKitToWindow();
+                    }
+                  }}
+                />
+              </div>
+            )}
             <Button 
               variant="ghost" 
               size="icon" 
@@ -445,7 +572,7 @@ const DoctorVideoConsultation = () => {
           </div>
         </div>
         
-        {/* MiroTalk SFU Iframe */}
+        {/* Video Consultation Iframe */}
         <div className="flex-1 relative">
           <iframe
             ref={iframeRef}
@@ -936,6 +1063,19 @@ const DoctorVideoConsultation = () => {
                 </p>
               </div>
             </div>
+
+            {roomId && (String(roomId).includes('/rooms/') || String(roomId).includes('access_token=')) && (
+              <div className="flex items-center justify-between rounded-lg border border-slate-200 dark:border-slate-800 p-3">
+                <div>
+                  <p className="text-sm font-medium text-slate-800 dark:text-slate-200">LiveKit join mode</p>
+                  <p className="text-xs text-slate-500">Embed in app or open in a new window</p>
+                </div>
+                <Switch
+                  checked={preferEmbeddedJoin}
+                  onCheckedChange={setPreferEmbeddedJoin}
+                />
+              </div>
+            )}
             
             {/* Actions */}
             <div className="flex gap-3">

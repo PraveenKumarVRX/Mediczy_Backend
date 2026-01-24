@@ -17,9 +17,6 @@ const REQUIRED_ENV_VARS = {
   NODE_ENV: 'Node environment (production/development)',
 };
 
-// Legacy MariaDB variables that should no longer break boot; warn only
-const LEGACY_MARIADB_VARS = ['DB_HOST', 'DB_USER', 'DB_PASSWORD', 'DB_NAME'];
-
 const OPTIONAL_ENV_VARS = {
   // Server Config
   PORT: { default: '8000', description: 'Server port' },
@@ -69,12 +66,6 @@ export function validateEnvironment() {
   const postgresConfigSet = process.env.POSTGRES_HOST && process.env.POSTGRES_USER && process.env.POSTGRES_PASSWORD && process.env.POSTGRES_DATABASE;
   if (!postgresUri && !postgresConfigSet) {
     errors.push('❌ Missing PostgreSQL configuration (set POSTGRES_URI or POSTGRES_HOST/USER/PASSWORD/DATABASE).');
-  }
-
-  // Warn (do not fail) if legacy MariaDB vars are missing for deployments that no longer use them
-  const legacyMissing = LEGACY_MARIADB_VARS.filter(key => !process.env[key]);
-  if (legacyMissing.length === LEGACY_MARIADB_VARS.length) {
-    warnings.push('ℹ️  MariaDB variables not set (legacy layer). This is expected if using the intelligent DB only.');
   }
 
   if (process.env.CITUS_ENABLED === 'true' && !process.env.CITUS_WORKERS) {

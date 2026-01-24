@@ -35,7 +35,7 @@ router.get('/settings', adminMiddleware, async (req, res) => {
  * @access  Admin
  */
 router.post('/settings', adminMiddleware, [
-  body('provider').optional().isIn(['webrtc', 'mirotalk', 'jitsi', 'zoom', 'agora', 'custom']),
+  body('provider').optional().isIn(['webrtc', 'livekit', 'jitsi', 'zoom', 'agora', 'custom']),
   body('settings.maxParticipants').optional().isInt({ min: 2, max: 50 }),
   body('settings.videoQuality').optional().isIn(['low', 'medium', 'high', 'hd']),
   body('settings.audioQuality').optional().isIn(['low', 'medium', 'high']),

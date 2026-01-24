@@ -115,25 +115,25 @@ router.get('/', async (req, res) => {
     // Service filters
     if (services) {
       const serviceList = services.split(',');
-      // For MariaDB, convert array to JSON string search
+      // Text search for services
       whereConditions.services = {
-        [Op.like]: `%${serviceList[0]}%` // For now, search for the first service
+        [Op.like]: `%${serviceList[0]}%` // Search for the first service
       };
     }
     
     if (testCategories) {
       const categoryList = testCategories.split(',');
-      // For MariaDB, convert array to JSON string search
+      // Text search for test categories
       whereConditions.testCategories = {
-        [Op.like]: `%${categoryList[0]}%` // For now, search for the first category
+        [Op.like]: `%${categoryList[0]}%` // Search for the first category
       };
     }
     
     if (accreditation) {
       const accreditationList = accreditation.split(',');
-      // For MariaDB, convert array to JSON string search
+      // Text search for accreditation
       whereConditions.accreditation = {
-        [Op.like]: `%${accreditationList[0]}%` // For now, search for the first accreditation
+        [Op.like]: `%${accreditationList[0]}%` // Search for the first accreditation
       };
     }
     

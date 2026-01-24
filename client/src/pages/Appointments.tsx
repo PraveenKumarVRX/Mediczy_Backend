@@ -612,14 +612,42 @@ const Appointments = () => {
           callInitiatedAt={incomingCall.callInitiatedAt}
           appointmentDate={incomingCall.appointmentDate}
           appointmentTime={incomingCall.appointmentTime}
-          onAccept={() => {
-            // Open meeting link in new window
-            window.open(incomingCall.meetingLink, '_blank', 'width=1280,height=720');
+          onAccept={async () => {
+            const meetingLink = incomingCall.meetingLink;
+            const isLiveKitLink =
+              meetingLink?.includes('/rooms/') && !meetingLink.includes('access_token=');
+
+            if (isLiveKitLink) {
+              try {
+                const response = await api.get(`/consultation/video/join/${incomingCall.appointmentId}`);
+                const joinUrl = response.data?.video?.joinUrl || response.data?.video?.directJoinUrl;
+                if (joinUrl) {
+                  window.open(joinUrl, '_blank', 'width=1280,height=720');
+                  setIncomingCall(null);
+                  toast({
+                    title: "Joined Call",
+                    description: "Opening video consultation...",
+                  });
+                  return;
+                }
+              } catch (error) {
+                console.error('Failed to fetch LiveKit join URL:', error);
+              }
+            }
+
+            if (meetingLink) {
+              // Open meeting link in new window
+              window.open(meetingLink, '_blank', 'width=1280,height=720');
+              setIncomingCall(null);
+              toast({
+                title: "Joined Call",
+                description: "Opening video consultation...",
+              });
+              return;
+            }
+
             setIncomingCall(null);
-            toast({
-              title: "Joined Call",
-              description: "Opening video consultation...",
-            });
+            navigate(`/video-consultation?appointmentId=${incomingCall.appointmentId}`);
           }}
           onDecline={() => {
             setIncomingCall(null);

@@ -1,6 +1,6 @@
 /**
  * Database Orchestrator - PostgreSQL Only
- * MariaDB completely retired - PostgreSQL is the sole database
+ * PostgreSQL is the sole database for all operations
  */
 
 import { postgresSequelize, connectToPostgresDB } from './postgres-sequelize.js';

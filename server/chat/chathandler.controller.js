@@ -275,62 +275,61 @@ export function setupSocketIO(server) {
     });
 
     // =========================
-    // MiroTalk WebRTC Signaling
+    // WebRTC Signaling (Generic)
     // =========================
+    // Note: LiveKit handles its own signaling via WebSocket.
+    // These handlers are kept for backwards compatibility with any
+    // custom WebRTC implementations.
     
-    // Handle MiroTalk join channel
-    socket.on("mirotalk-join", (data) => {
+    // Handle video call join channel
+    socket.on("video-join", (data) => {
       const { channel, uid } = data;
-      console.log(`MiroTalk: User ${uid} joining channel ${channel}`);
+      console.log(`Video: User ${uid} joining channel ${channel}`);
       
       // Join the socket room for the channel
       socket.join(channel);
       
       // Notify others in the channel about new user
-      socket.to(channel).emit("mirotalk-user-joined", { channel, userId: uid });
+      socket.to(channel).emit("video-user-joined", { channel, userId: uid });
     });
 
-    // Handle MiroTalk WebRTC offer
-    socket.on("mirotalk-offer", (data) => {
+    // Handle WebRTC offer
+    socket.on("video-offer", (data) => {
       const { channel, sdp, type, uid } = data;
-      console.log(`MiroTalk: Received offer from ${uid} in channel ${channel}`);
+      console.log(`Video: Received offer from ${uid} in channel ${channel}`);
       
-      // Forward offer to other peers in the channel with correct event name
-      socket.to(channel).emit("mirotalk-offer", { channel, sdp, type, uid });
-      
-      console.log(`MiroTalk: Forwarded offer to channel ${channel}`);
+      // Forward offer to other peers in the channel
+      socket.to(channel).emit("video-offer", { channel, sdp, type, uid });
     });
 
-    // Handle MiroTalk WebRTC answer
-    socket.on("mirotalk-answer", (data) => {
+    // Handle WebRTC answer
+    socket.on("video-answer", (data) => {
       const { channel, sdp, type, uid } = data;
-      console.log(`MiroTalk: Received answer from ${uid} in channel ${channel}`);
+      console.log(`Video: Received answer from ${uid} in channel ${channel}`);
       
-      // Forward answer to other peers in the channel with correct event name
-      socket.to(channel).emit("mirotalk-answer", { channel, sdp, type, uid });
-      
-      console.log(`MiroTalk: Forwarded answer to channel ${channel}`);
+      // Forward answer to other peers in the channel
+      socket.to(channel).emit("video-answer", { channel, sdp, type, uid });
     });
 
-    // Handle MiroTalk ICE candidates
-    socket.on("mirotalk-ice", (data) => {
+    // Handle ICE candidates
+    socket.on("video-ice", (data) => {
       const { channel, candidate } = data;
-      console.log(`MiroTalk: ICE candidate received for channel ${channel}`);
+      console.log(`Video: ICE candidate received for channel ${channel}`);
       
       // Forward ICE candidate to other peers in the channel
-      socket.to(channel).emit("mirotalk-ice", { channel, candidate });
+      socket.to(channel).emit("video-ice", { channel, candidate });
     });
 
-    // Handle MiroTalk leave channel
-    socket.on("mirotalk-leave", (data) => {
+    // Handle leave channel
+    socket.on("video-leave", (data) => {
       const { channel } = data;
-      console.log(`MiroTalk: User leaving channel ${channel}`);
+      console.log(`Video: User leaving channel ${channel}`);
       
       // Leave the socket room
       socket.leave(channel);
       
       // Notify others in the channel about user leaving
-      socket.to(channel).emit("mirotalk-user-left", { channel, userId: socket.id });
+      socket.to(channel).emit("video-user-left", { channel, userId: socket.id });
     });
   });
 

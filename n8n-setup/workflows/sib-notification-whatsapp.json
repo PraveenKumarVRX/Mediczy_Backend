@@ -6,125 +6,73 @@
         "httpMethod": "POST",
         "path": "whatsapp-notification",
         "responseMode": "responseNode",
-        "options": {
-          "allowedOrigins": "*"
-        }
+        "options": {}
       },
-      "id": "webhook-whatsapp",
-      "name": "Webhook (WhatsApp Notification)",
+      "id": "webhook-wa",
+      "name": "Webhook",
       "type": "n8n-nodes-base.webhook",
-      "typeVersion": 1,
+      "typeVersion": 2,
       "position": [250, 300],
-      "webhookId": "sib-whatsapp-notification"
+      "webhookId": "sib-whatsapp"
     },
     {
       "parameters": {
-        "operation": "sendMessage",
-        "phoneNumber": "={{ $json.phone }}",
-        "message": "={{ $json.message }}",
-        "additionalFields": {
-          "messageType": "={{ $json.message_type || 'text' }}"
-        }
+        "method": "POST",
+        "url": "https://api.twilio.com/2010-04-01/Accounts/ACe60079054c0b9f2a7aac3a64a5aea744/Messages.json",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpBasicAuth",
+        "sendBody": true,
+        "contentType": "form-urlencoded",
+        "bodyParameters": {
+          "parameters": [
+            {
+              "name": "From",
+              "value": "whatsapp:+918098998998"
+            },
+            {
+              "name": "To",
+              "value": "={{ 'whatsapp:' + $json.phone }}"
+            },
+            {
+              "name": "Body",
+              "value": "={{ $json.message }}"
+            }
+          ]
+        },
+        "options": {}
       },
-      "id": "send-whatsapp",
-      "name": "Send WhatsApp Message",
-      "type": "n8n-nodes-base.whatsApp",
-      "typeVersion": 1,
+      "id": "send-wa",
+      "name": "Send WhatsApp",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
       "position": [450, 300],
       "credentials": {
-        "whatsAppApi": {
-          "id": "1",
-          "name": "WhatsApp Business API"
-        }
-      }
-    },
-    {
-      "parameters": {
-        "operation": "executeQuery",
-        "query": "INSERT INTO notification_logs (patient_id, channel, title, message, status, sent_at, metadata) VALUES ($1, $2, $3, $4, $5, NOW(), $6) RETURNING id",
-        "additionalFields": {
-          "queryParameters": "={{ JSON.stringify([$json.patient_id, 'whatsapp', $json.title, $json.message, $json.success ? 'sent' : 'failed', JSON.stringify({phone: $json.phone, execution_id: $json.execution_id})]) }}"
-        }
-      },
-      "id": "log-whatsapp-db",
-      "name": "Log to Database",
-      "type": "n8n-nodes-base.postgres",
-      "typeVersion": 1,
-      "position": [650, 300],
-      "credentials": {
-        "postgres": {
-          "id": "1",
-          "name": "PostgreSQL - Mediczy"
+        "httpBasicAuth": {
+          "id": "twilio-basic",
+          "name": "Twilio Basic Auth"
         }
       }
     },
     {
       "parameters": {
         "respondWith": "json",
-        "responseBody": "={{ JSON.stringify({success: true, channel: 'whatsapp', phone: $json.phone, log_id: $json.id, timestamp: new Date().toISOString()}) }}"
+        "responseBody": "={{ JSON.stringify({ success: true, sid: $json.sid, status: $json.status, phone: $('Webhook').item.json.phone }) }}"
       },
-      "id": "respond-whatsapp",
-      "name": "Respond to Webhook",
+      "id": "respond-wa",
+      "name": "Respond",
       "type": "n8n-nodes-base.respondToWebhook",
-      "typeVersion": 1,
-      "position": [850, 300]
+      "typeVersion": 1.1,
+      "position": [650, 300]
     }
   ],
   "connections": {
-    "Webhook (WhatsApp Notification)": {
-      "main": [
-        [
-          {
-            "node": "Send WhatsApp Message",
-            "type": "main",
-            "index": 0
-          }
-        ]
-      ]
+    "Webhook": {
+      "main": [[{ "node": "Send WhatsApp", "type": "main", "index": 0 }]]
     },
-    "Send WhatsApp Message": {
-      "main": [
-        [
-          {
-            "node": "Log to Database",
-            "type": "main",
-            "index": 0
-          }
-        ]
-      ]
-    },
-    "Log to Database": {
-      "main": [
-        [
-          {
-            "node": "Respond to Webhook",
-            "type": "main",
-            "index": 0
-          }
-        ]
-      ]
+    "Send WhatsApp": {
+      "main": [[{ "node": "Respond", "type": "main", "index": 0 }]]
     }
   },
-  "active": true,
-  "settings": {
-    "executionOrder": "v1"
-  },
-  "versionId": "1",
-  "meta": {
-    "instanceId": "sib-whatsapp-workflow"
-  },
-  "tags": [
-    {
-      "name": "SIB",
-      "id": "1"
-    },
-    {
-      "name": "Notification",
-      "id": "2"
-    },
-    {
-      "name": "WhatsApp",
-      "id": "3"
-    }
-  ]
+  "active": false,
+  "settings": { "executionOrder": "v1" }
 }
