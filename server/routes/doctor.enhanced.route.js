@@ -51,6 +51,97 @@ const upload = multer({
 // ==========================================================================
 
 /**
+ * @route   GET /api/doctors/available
+ * @desc    List available doctors (verified + active by default)
+ * @access  Public
+ */
+router.get('/available', [
+  query('search').optional().trim(),
+  query('specialization').optional().notEmpty(),
+  query('city').optional().notEmpty(),
+  query('consultationType').optional().isIn(['online', 'walkIn', 'homeVisit']),
+  query('isVerified').optional().isBoolean(),
+  query('isOnline').optional().isBoolean(),
+  query('page').optional().isInt({ min: 1 }),
+  query('limit').optional().isInt({ min: 1, max: 100 })
+], async (req, res) => {
+  try {
+    const {
+      search,
+      specialization,
+      city,
+      consultationType,
+      isVerified,
+      isOnline,
+      page = 1,
+      limit = 20
+    } = req.query;
+
+    const whereClause = {
+      status: 'active'
+    };
+
+    if (specialization) {
+      whereClause.specialization = specialization;
+    }
+
+    if (city) {
+      whereClause.city = city;
+    }
+
+    if (isVerified !== undefined) {
+      whereClause.isVerified = isVerified === 'true';
+    } else {
+      whereClause.isVerified = true;
+    }
+
+    if (isOnline !== undefined) {
+      whereClause.isOnline = isOnline === 'true';
+    }
+
+    if (search) {
+      whereClause[sequelize.Sequelize.Op.or] = [
+        { firstName: { [sequelize.Sequelize.Op.iLike]: `%${search}%` } },
+        { lastName: { [sequelize.Sequelize.Op.iLike]: `%${search}%` } },
+        { specialization: { [sequelize.Sequelize.Op.iLike]: `%${search}%` } }
+      ];
+    }
+
+    const offset = (parseInt(page) - 1) * parseInt(limit);
+
+    const { count, rows: doctors } = await doctorModel.findAndCountAll({
+      where: whereClause,
+      attributes: { exclude: ['password', 'verificationDocuments'] },
+      limit: parseInt(limit),
+      offset,
+      order: [
+        ['isOnline', 'DESC'],
+        ['rating', 'DESC'],
+        ['createdAt', 'DESC']
+      ]
+    });
+
+    res.json({
+      success: true,
+      doctors,
+      pagination: {
+        page: parseInt(page),
+        limit: parseInt(limit),
+        total: count,
+        pages: Math.ceil(count / parseInt(limit))
+      }
+    });
+  } catch (error) {
+    console.error('Get available doctors error:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Failed to fetch available doctors',
+      error: error.message
+    });
+  }
+});
+
+/**
  * @route   GET /api/doctors
  * @desc    List all doctors with optional filters
  * @access  Public
@@ -651,7 +742,9 @@ router.get('/:doctorId/public', [
       });
     }
 
-    if (!doctor.isActive) {
+    // Check if doctor is verified - status 'pending' is allowed if isVerified is true
+    const isActive = doctor.isVerified || doctor.status === 'active';
+    if (!isActive) {
       return res.status(404).json({
         success: false,
         message: 'Doctor profile is not active'

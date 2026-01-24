@@ -407,14 +407,25 @@ const DoctorListBooking = () => {
   const fetchDoctors = async () => {
     try {
       setLoading(true);
-      const primaryDoctors = await fetchDoctorsFromApi("/doctors/available");
+      let primaryDoctors: Doctor[] = [];
+      try {
+        primaryDoctors = await fetchDoctorsFromApi("/doctors/available");
+      } catch (error) {
+        console.warn("Primary doctor list unavailable, falling back to /doctors:", error);
+      }
 
       if (primaryDoctors.length) {
         setDoctors(primaryDoctors);
         return;
       }
 
-      const secondaryDoctors = await fetchDoctorsFromApi("/doctors", { limit: 100 });
+      let secondaryDoctors: Doctor[] = [];
+      try {
+        secondaryDoctors = await fetchDoctorsFromApi("/doctors", { limit: 100 });
+      } catch (error) {
+        console.warn("Secondary doctor list failed:", error);
+      }
+
       if (secondaryDoctors.length) {
         setDoctors(secondaryDoctors);
         toast({
