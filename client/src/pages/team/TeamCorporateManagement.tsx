@@ -406,14 +406,14 @@ const TeamCorporateManagement = () => {
   const parseCSV = (text: string) => {
     const lines = text.split('\n').filter(line => line.trim());
     if (lines.length < 2) return [];
-    
+
     const headers = lines[0].split(',').map(h => h.trim().toLowerCase());
     const employees = [];
-    
+
     for (let i = 1; i < lines.length; i++) {
       const values = lines[i].split(',').map(v => v.trim());
-      const employee: any = {};
-      
+      const rawEmployee: any = {};
+
       headers.forEach((header, index) => {
         // Map common CSV headers to API fields
         const headerMap: Record<string, string> = {
@@ -435,22 +435,49 @@ const TeamCorporateManagement = () => {
           'dob': 'dateOfBirth',
           'gender': 'gender'
         };
-        
+
         const fieldName = headerMap[header] || header;
-        employee[fieldName] = values[index] || '';
+        rawEmployee[fieldName] = values[index] || '';
       });
-      
-      // If only 'name' is provided, split it into firstName and lastName
-      if (employee.name && !employee.firstName) {
-        const nameParts = employee.name.split(' ');
-        employee.firstName = nameParts[0] || '';
-        employee.lastName = nameParts.slice(1).join(' ') || '';
-        delete employee.name;
+
+      // Derive names
+      if (rawEmployee.name && !rawEmployee.firstName) {
+        const nameParts = rawEmployee.name.split(' ').filter(Boolean);
+        rawEmployee.firstName = nameParts[0] || '';
+        rawEmployee.lastName = nameParts.slice(1).join(' ') || '';
+        delete rawEmployee.name;
       }
-      
-      employees.push(employee);
+
+      const firstName = (rawEmployee.firstName || '').trim() || (rawEmployee.employeeId || '').trim();
+      const lastName = (rawEmployee.lastName || '').trim();
+      const employeeId = (rawEmployee.employeeId || '').trim();
+      const phoneNumber = (rawEmployee.phoneNumber || '').trim();
+
+      // Skip empty rows
+      if (!firstName && !employeeId && !phoneNumber) continue;
+
+      const baseEmail = (rawEmployee.email || '').trim();
+      const generatedEmailLocal = (employeeId || firstName || `emp${Date.now()}${i}`)
+        .toString()
+        .toLowerCase()
+        .replace(/[^a-z0-9]/g, '') || `emp${Date.now()}${i}`;
+      const email = baseEmail || `${generatedEmailLocal}@equitasbank.com`;
+
+      const normalizedEmployee = {
+        firstName: firstName || 'Employee',
+        lastName,
+        email,
+        phoneNumber,
+        employeeId,
+        department: rawEmployee.department || '',
+        designation: rawEmployee.designation || '',
+        dateOfBirth: rawEmployee.dateOfBirth || '',
+        gender: rawEmployee.gender || ''
+      };
+
+      employees.push(normalizedEmployee);
     }
-    
+
     return employees;
   };
 
@@ -524,7 +551,8 @@ const TeamCorporateManagement = () => {
 
   // Download CSV Template
   const downloadTemplate = () => {
-    const template = 'firstName,lastName,email,phoneNumber,employeeId,department,designation,dateOfBirth,gender\nJohn,Doe,john.doe@company.com,9876543210,EMP001,Engineering,Developer,1990-01-15,male\nJane,Smith,jane.smith@company.com,9876543211,EMP002,HR,Manager,1988-05-20,female';
+    // Minimal fields: name (or first/last), phoneNumber, employeeId. Email will be auto-generated if missing.
+    const template = 'name,phoneNumber,employeeId,department,designation\nRajesh Kumar,9876543210,E00001,Engineering,Developer\nPriya Sharma,9876543211,E00002,HR,Manager';
     const blob = new Blob([template], { type: 'text/csv' });
     const url = window.URL.createObjectURL(blob);
     const a = document.createElement('a');
