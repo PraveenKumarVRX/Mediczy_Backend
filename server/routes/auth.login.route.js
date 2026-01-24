@@ -10,7 +10,33 @@ router.post(
   '/login',
   authLimiter,
   [
-    body('email').isEmail().withMessage('Must be a valid email'),
+    body().custom((_, { req }) => {
+      const rawEmail = req.body?.email;
+      const rawPhone = req.body?.phoneNumber || req.body?.phone;
+
+      if (!rawEmail && !rawPhone) {
+        throw new Error('Email or phone number is required');
+      }
+
+      if (rawEmail) {
+        const emailValue = String(rawEmail).trim();
+        const normalized = emailValue.replace(/[^0-9]/g, '');
+        const isEmail = /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(emailValue);
+        const isPhone = normalized.length >= 10;
+        if (!isEmail && !isPhone) {
+          throw new Error('Must be a valid email or phone number');
+        }
+      }
+
+      if (rawPhone) {
+        const normalizedPhone = String(rawPhone).replace(/[^0-9]/g, '');
+        if (normalizedPhone.length < 10) {
+          throw new Error('Must be a valid phone number');
+        }
+      }
+
+      return true;
+    }),
     body('password').notEmpty().withMessage('Password is required')
   ],
   signInUser

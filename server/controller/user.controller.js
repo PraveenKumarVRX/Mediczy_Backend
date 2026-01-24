@@ -217,27 +217,61 @@ export async function signInUser(req, res) {
     return res.status(400).json({ errors: errors.array() });
   }
 
-  const email = String(req.body.email || "").trim().toLowerCase();
+  const rawEmail = req.body.email;
+  const rawPhone = req.body.phoneNumber || req.body.phone || req.body.identifier;
   const password = req.body.password;
 
-  console.log('[LOGIN DEBUG] Email:', email, 'Password length:', password?.length);
+  let email = null;
+  let phoneNumber = null;
+  if (rawEmail) {
+    const emailValue = String(rawEmail).trim();
+    const normalized = emailValue.replace(/[^0-9]/g, '');
+    const isEmail = /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(emailValue);
+    if (isEmail) {
+      email = emailValue.toLowerCase();
+    } else if (normalized.length >= 10) {
+      phoneNumber = normalized.length > 10 ? normalized.slice(-10) : normalized;
+    }
+  }
+
+  if (!phoneNumber && rawPhone) {
+    const normalized = String(rawPhone).replace(/[^0-9]/g, '');
+    phoneNumber = normalized.length > 10 ? normalized.slice(-10) : normalized;
+  }
+
+  console.log('[LOGIN DEBUG] Identifier:', email || phoneNumber, 'Password length:', password?.length);
 
   try {
     // Check if user exists
-    const user = await User.findOne({
-      where: { email },
-    });
+    let user = null;
+    if (email) {
+      user = await User.findOne({
+        where: sequelizeWhere(fn("lower", col("email")), email),
+      });
+    } else if (phoneNumber) {
+      user = await User.findOne({
+        where: sequelizeWhere(
+          fn("regexp_replace", col("phoneNumber"), "[^0-9]", "", "g"),
+          phoneNumber
+        ),
+      });
+      if (!user) {
+        user = await User.findOne({
+          where: { phoneNumber },
+        });
+      }
+    }
     console.log('[LOGIN DEBUG] User found:', !!user, 'User ID:', user?.id);
     
     if (!user) {
       // Audit failed login attempt
-      await auditLoginAttempt(req, null, email, false, 'User not found');
+      await auditLoginAttempt(req, null, email || phoneNumber, false, 'User not found');
       return res.status(401).json({ message: "Invalid email or password" }); // Unauthorized
     }
 
     // ROLE GUARD: Block staff from using user login endpoint
     if (user.isAdmin) {
-      await auditLoginAttempt(req, user.id, email, false, 'Admin attempted user login');
+      await auditLoginAttempt(req, user.id, email || phoneNumber, false, 'Admin attempted user login');
       return res.status(403).json({ 
         message: "Please use the admin login portal" 
       });
@@ -249,7 +283,7 @@ export async function signInUser(req, res) {
       attributes: ["id"]
     });
     if (doctorRecord) {
-      await auditLoginAttempt(req, user.id, email, false, 'Doctor attempted user login');
+      await auditLoginAttempt(req, user.id, email || phoneNumber, false, 'Doctor attempted user login');
       return res.status(403).json({ message: "Please use the doctor login portal" });
     }
     const nurseRecord = await Nurse.findOne({
@@ -257,7 +291,7 @@ export async function signInUser(req, res) {
       attributes: ["id"]
     });
     if (nurseRecord) {
-      await auditLoginAttempt(req, user.id, email, false, 'Nurse attempted user login');
+      await auditLoginAttempt(req, user.id, email || phoneNumber, false, 'Nurse attempted user login');
       return res.status(403).json({ message: "Please use the nurse login portal" });
     }
     const assistantRecord = await Assistant.findOne({
@@ -265,7 +299,7 @@ export async function signInUser(req, res) {
       attributes: ["id"]
     });
     if (assistantRecord) {
-      await auditLoginAttempt(req, user.id, email, false, 'Assistant attempted user login');
+      await auditLoginAttempt(req, user.id, email || phoneNumber, false, 'Assistant attempted user login');
       return res.status(403).json({ message: "Please use the assistant login portal" });
     }
 
@@ -273,7 +307,7 @@ export async function signInUser(req, res) {
     const isPasswordValid = await user.comparePassword(password);
     if (!isPasswordValid) {
       // Audit failed login attempt
-      await auditLoginAttempt(req, user.id, email, false, 'Invalid password');
+      await auditLoginAttempt(req, user.id, email || phoneNumber, false, 'Invalid password');
       return res.status(401).json({ message: "Invalid email or password" }); // Unauthorized
     }
 
@@ -285,7 +319,7 @@ export async function signInUser(req, res) {
     const token = generateAuthTokenForUser(user);
 
     // Audit successful login
-    await auditLoginAttempt(req, user.id, email, true);
+    await auditLoginAttempt(req, user.id, email || phoneNumber, true);
 
     // Respond with user data & token
     return res.status(200).json({
