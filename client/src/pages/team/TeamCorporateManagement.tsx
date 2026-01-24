@@ -94,6 +94,17 @@ interface HealthPackage {
   validityDays: number;
 }
 
+interface CorporatePlan {
+  id: number;
+  name: string;
+  slug: string;
+  price: number;
+  annualPrice: number;
+  currency: string;
+  billingCycle: string;
+  enrolled: number;
+}
+
 const packageTypes = ['Basic', 'Standard', 'Premium', 'Enterprise', 'Custom'];
 const statusOptions = ['Active', 'Inactive', 'Pending', 'Suspended'];
 const industries = [
@@ -186,17 +197,19 @@ const TeamCorporateManagement = () => {
   const [employees, setEmployees] = useState<Employee[]>([]);
   const [networkEntities, setNetworkEntities] = useState<NetworkEntity[]>([]);
   const [healthPackages, setHealthPackages] = useState<HealthPackage[]>([]);
+  const [corporatePlans, setCorporatePlans] = useState<CorporatePlan[]>([]);
 
   // Fetch corporates
   useEffect(() => {
     fetchCorporates();
   }, []);
 
-  // Fetch employees and packages when corporate is selected
+  // Fetch employees, packages, and plans when corporate is selected
   useEffect(() => {
     if (selectedCorporate?.id) {
       fetchEmployees(selectedCorporate.id);
       fetchHealthPackages(selectedCorporate.id);
+      fetchCorporatePlans(selectedCorporate.id);
     }
   }, [selectedCorporate?.id]);
 
@@ -260,6 +273,33 @@ const TeamCorporateManagement = () => {
     } catch (error) {
       console.error('Failed to fetch health packages:', error);
       setHealthPackages([]);
+    }
+  };
+
+  const fetchCorporatePlans = async (corporateId: number) => {
+    try {
+      const token = localStorage.getItem('teamToken');
+      const response = await api.get(`/admin/corporate-plans/${corporateId}`, {
+        headers: token ? { Authorization: `Bearer ${token}` } : undefined
+      });
+
+      if (response.data?.success && Array.isArray(response.data?.plans)) {
+        setCorporatePlans(response.data.plans.map((plan: any) => ({
+          id: plan.id,
+          name: plan.name,
+          slug: plan.slug,
+          price: Number(plan.price || 0),
+          annualPrice: Number(plan.annual_price || plan.annualPrice || 0),
+          currency: plan.currency || 'INR',
+          billingCycle: plan.billing_cycle || plan.billingCycle || 'MONTHLY',
+          enrolled: Number(plan.enrolled || 0)
+        })));
+      } else {
+        setCorporatePlans([]);
+      }
+    } catch (error) {
+      console.error('Failed to fetch corporate plans:', error);
+      setCorporatePlans([]);
     }
   };
 
@@ -1074,63 +1114,35 @@ const TeamCorporateManagement = () => {
                 </CardHeader>
                 <CardContent>
                   <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-                    <Card className="border-2 border-primary">
-                      <CardHeader className="pb-2">
-                        <div className="flex items-center justify-between">
-                          <CardTitle className="text-lg">Premium Health Plan</CardTitle>
-                          <Badge>Active</Badge>
-                        </div>
-                      </CardHeader>
-                      <CardContent>
-                        <p className="text-2xl font-bold text-primary">₹15,000/year</p>
-                        <p className="text-sm text-muted-foreground mt-2">per employee</p>
-                        <ul className="mt-4 space-y-2 text-sm">
-                          <li className="flex items-center gap-2">
-                            <CheckCircle className="h-4 w-4 text-green-600" />
-                            Unlimited OPD consultations
-                          </li>
-                          <li className="flex items-center gap-2">
-                            <CheckCircle className="h-4 w-4 text-green-600" />
-                            Annual health checkup
-                          </li>
-                          <li className="flex items-center gap-2">
-                            <CheckCircle className="h-4 w-4 text-green-600" />
-                            Mental wellness support
-                          </li>
-                        </ul>
-                        <p className="mt-4 text-sm text-muted-foreground">
-                          <Users className="h-4 w-4 inline mr-1" />
-                          350 employees enrolled
-                        </p>
-                      </CardContent>
-                    </Card>
-
-                    <Card>
-                      <CardHeader className="pb-2">
-                        <div className="flex items-center justify-between">
-                          <CardTitle className="text-lg">Standard Plan</CardTitle>
-                          <Badge variant="outline">Active</Badge>
-                        </div>
-                      </CardHeader>
-                      <CardContent>
-                        <p className="text-2xl font-bold">₹8,000/year</p>
-                        <p className="text-sm text-muted-foreground mt-2">per employee</p>
-                        <ul className="mt-4 space-y-2 text-sm">
-                          <li className="flex items-center gap-2">
-                            <CheckCircle className="h-4 w-4 text-green-600" />
-                            10 OPD consultations/year
-                          </li>
-                          <li className="flex items-center gap-2">
-                            <CheckCircle className="h-4 w-4 text-green-600" />
-                            Basic health checkup
-                          </li>
-                        </ul>
-                        <p className="mt-4 text-sm text-muted-foreground">
-                          <Users className="h-4 w-4 inline mr-1" />
-                          120 employees enrolled
-                        </p>
-                      </CardContent>
-                    </Card>
+                    {corporatePlans.length === 0 ? (
+                      <Card className="border-dashed">
+                        <CardContent className="flex flex-col items-center justify-center h-full py-8 text-center">
+                          <Package className="h-8 w-8 text-muted-foreground mb-2" />
+                          <p className="text-sm text-muted-foreground">No corporate plans found.</p>
+                        </CardContent>
+                      </Card>
+                    ) : (
+                      corporatePlans.map((plan) => (
+                        <Card key={plan.id} className={plan.slug.includes('premium') ? 'border-2 border-primary' : undefined}>
+                          <CardHeader className="pb-2">
+                            <div className="flex items-center justify-between">
+                              <CardTitle className="text-lg">{plan.name}</CardTitle>
+                              <Badge>{plan.billingCycle === 'ANNUAL' ? 'Annual' : 'Active'}</Badge>
+                            </div>
+                          </CardHeader>
+                          <CardContent>
+                            <p className="text-2xl font-bold">
+                              ₹{(plan.annualPrice || plan.price).toLocaleString()}/{plan.annualPrice ? 'year' : 'month'}
+                            </p>
+                            <p className="text-sm text-muted-foreground mt-2">per employee</p>
+                            <p className="mt-4 text-sm text-muted-foreground">
+                              <Users className="h-4 w-4 inline mr-1" />
+                              {plan.enrolled} employees enrolled
+                            </p>
+                          </CardContent>
+                        </Card>
+                      ))
+                    )}
 
                     <Card className="border-dashed">
                       <CardContent className="flex flex-col items-center justify-center h-full py-8">

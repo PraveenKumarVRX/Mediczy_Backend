@@ -1160,6 +1160,50 @@ router.get('/corporate-health-packages/:corporateId', authUser, requireRole(['ad
 });
 
 /**
+ * Get Corporate Subscription Plans
+ * GET /api/admin/corporate-plans/:corporateId
+ */
+router.get('/corporate-plans/:corporateId', authUser, requireRole(['admin', 'team', 'corporate_admin']), async (req, res) => {
+  try {
+    const { corporateId } = req.params;
+
+    const plans = await postgresSequelize.query(`
+      SELECT p.id, p.name, p.slug, p.price, p.annual_price, p.currency, p.billing_cycle, p.is_active,
+             COALESCE(cnt.enrolled, 0) AS enrolled
+      FROM subscription_plans p
+      LEFT JOIN (
+        SELECT us.plan_id, COUNT(*) AS enrolled
+        FROM user_subscriptions us
+        JOIN user_associations ua ON ua."userId" = us.user_id
+        WHERE ua."entityType" = 'corporate'
+          AND ua."entityId" = :corporateId
+          AND ua.role = 'employee'
+          AND us.status = 'ACTIVE'
+        GROUP BY us.plan_id
+      ) cnt ON cnt.plan_id = p.id
+      WHERE p.slug ILIKE 'corporate-%'
+        AND p.is_active = true
+      ORDER BY p.id
+    `, {
+      replacements: { corporateId },
+      type: postgresSequelize.QueryTypes.SELECT
+    });
+
+    return res.json({
+      success: true,
+      plans
+    });
+  } catch (error) {
+    console.error('Failed to get corporate plans:', error);
+    return res.status(500).json({
+      success: false,
+      message: 'Failed to get corporate plans',
+      error: error.message
+    });
+  }
+});
+
+/**
  * Assign Health Package to Corporate Employees
  * POST /api/admin/corporate-package-assignments
  * Creates health package assignments for corporate employees
