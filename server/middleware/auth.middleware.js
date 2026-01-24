@@ -325,7 +325,21 @@ export const requireRole = (role) => {
     // Support array of roles
     const allowedRoles = Array.isArray(role) ? role : [role];
     
-    if (!allowedRoles.includes(req.userRole)) {
+    // Normalize role for checking:
+    // - system_admin has admin privileges
+    // - isTeam flag grants team privileges
+    let effectiveRole = req.userRole;
+    if (req.userRole === 'system_admin') {
+      effectiveRole = 'admin';
+    }
+    
+    // Check if user has any allowed role
+    // Also check isTeam flag if 'team' is in allowed roles
+    const hasRole = allowedRoles.includes(effectiveRole) ||
+      (allowedRoles.includes('team') && (req.user?.isTeam || req.userRole === 'team')) ||
+      (allowedRoles.includes('admin') && (req.user?.isAdmin || req.userRole === 'admin' || req.userRole === 'system_admin'));
+    
+    if (!hasRole) {
       return res.status(403).json({ message: 'Forbidden: insufficient role' });
     }
     next();

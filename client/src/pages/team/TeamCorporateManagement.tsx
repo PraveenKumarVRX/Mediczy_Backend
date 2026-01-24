@@ -7,7 +7,7 @@ import { Textarea } from '@/components/ui/textarea';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Badge } from '@/components/ui/badge';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
-import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger, DialogFooter } from '@/components/ui/dialog';
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger, DialogFooter, DialogDescription } from '@/components/ui/dialog';
 import { Label } from '@/components/ui/label';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Checkbox } from '@/components/ui/checkbox';
@@ -125,6 +125,14 @@ const TeamCorporateManagement = () => {
   const [editingPackage, setEditingPackage] = useState<any>(null);
   const [assigningPackage, setAssigningPackage] = useState<any>(null);
   const [selectedEmployeesForAssign, setSelectedEmployeesForAssign] = useState<string[]>([]);
+  
+  // Bulk upload state
+  const [bulkUploadFile, setBulkUploadFile] = useState<File | null>(null);
+  const [bulkUploadResults, setBulkUploadResults] = useState<{
+    created: any[];
+    failed: any[];
+  } | null>(null);
+  const [isUploading, setIsUploading] = useState(false);
   
   // Corporate form
   const [newCorporate, setNewCorporate] = useState({
@@ -354,6 +362,136 @@ const TeamCorporateManagement = () => {
         description: error.response?.data?.message || 'Failed to add employee'
       });
     }
+  };
+
+  // Parse CSV for bulk upload
+  const parseCSV = (text: string) => {
+    const lines = text.split('\n').filter(line => line.trim());
+    if (lines.length < 2) return [];
+    
+    const headers = lines[0].split(',').map(h => h.trim().toLowerCase());
+    const employees = [];
+    
+    for (let i = 1; i < lines.length; i++) {
+      const values = lines[i].split(',').map(v => v.trim());
+      const employee: any = {};
+      
+      headers.forEach((header, index) => {
+        // Map common CSV headers to API fields
+        const headerMap: Record<string, string> = {
+          'first name': 'firstName',
+          'firstname': 'firstName',
+          'last name': 'lastName',
+          'lastname': 'lastName',
+          'name': 'name',
+          'email': 'email',
+          'phone': 'phoneNumber',
+          'phonenumber': 'phoneNumber',
+          'phone number': 'phoneNumber',
+          'employee id': 'employeeId',
+          'employeeid': 'employeeId',
+          'department': 'department',
+          'designation': 'designation',
+          'date of birth': 'dateOfBirth',
+          'dateofbirth': 'dateOfBirth',
+          'dob': 'dateOfBirth',
+          'gender': 'gender'
+        };
+        
+        const fieldName = headerMap[header] || header;
+        employee[fieldName] = values[index] || '';
+      });
+      
+      // If only 'name' is provided, split it into firstName and lastName
+      if (employee.name && !employee.firstName) {
+        const nameParts = employee.name.split(' ');
+        employee.firstName = nameParts[0] || '';
+        employee.lastName = nameParts.slice(1).join(' ') || '';
+        delete employee.name;
+      }
+      
+      employees.push(employee);
+    }
+    
+    return employees;
+  };
+
+  // Bulk Upload Handler
+  const handleBulkUpload = async () => {
+    if (!bulkUploadFile || !selectedCorporate) {
+      toast({
+        variant: 'destructive',
+        title: 'Error',
+        description: 'Please select a file and corporate'
+      });
+      return;
+    }
+    
+    try {
+      setIsUploading(true);
+      setBulkUploadResults(null);
+      
+      const text = await bulkUploadFile.text();
+      const employeeList = parseCSV(text);
+      
+      if (employeeList.length === 0) {
+        toast({
+          variant: 'destructive',
+          title: 'Empty file',
+          description: 'The CSV file contains no employee data.'
+        });
+        return;
+      }
+      
+      const token = localStorage.getItem('teamToken');
+      const { data } = await api.post('/admin/corporate-employees', {
+        corporateId: selectedCorporate.id,
+        employees: employeeList
+      }, {
+        headers: token ? { Authorization: `Bearer ${token}` } : undefined
+      });
+      
+      setBulkUploadResults({
+        created: data.results?.created || [],
+        failed: data.results?.failed || []
+      });
+      
+      const successCount = data.results?.created?.length || 0;
+      const failedCount = data.results?.failed?.length || 0;
+      
+      if (successCount > 0) {
+        toast({
+          title: 'Upload completed',
+          description: `${successCount} employees added successfully${failedCount > 0 ? `, ${failedCount} failed` : ''}`
+        });
+      } else if (failedCount > 0) {
+        toast({
+          variant: 'destructive',
+          title: 'Upload failed',
+          description: `All ${failedCount} employees failed to upload. Check the results below.`
+        });
+      }
+    } catch (error: any) {
+      toast({
+        variant: 'destructive',
+        title: 'Upload failed',
+        description: error.response?.data?.message || 'Failed to upload employees'
+      });
+    } finally {
+      setIsUploading(false);
+    }
+  };
+
+  // Download CSV Template
+  const downloadTemplate = () => {
+    const template = 'firstName,lastName,email,phoneNumber,employeeId,department,designation,dateOfBirth,gender\nJohn,Doe,john.doe@company.com,9876543210,EMP001,Engineering,Developer,1990-01-15,male\nJane,Smith,jane.smith@company.com,9876543211,EMP002,HR,Manager,1988-05-20,female';
+    const blob = new Blob([template], { type: 'text/csv' });
+    const url = window.URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = 'employee_upload_template.csv';
+    a.click();
+    window.URL.revokeObjectURL(url);
   };
 
   // Generate random password
@@ -767,7 +905,7 @@ const TeamCorporateManagement = () => {
                         <Upload className="h-4 w-4 mr-2" />
                         Bulk Upload
                       </Button>
-                      <Button variant="outline">
+                      <Button variant="outline" onClick={downloadTemplate}>
                         <Download className="h-4 w-4 mr-2" />
                         Download Template
                       </Button>
@@ -1742,6 +1880,116 @@ const TeamCorporateManagement = () => {
             <DialogFooter>
               <Button variant="outline" onClick={() => setShowAddPackageDialog(false)}>Cancel</Button>
               <Button onClick={handleCreatePackage}>Create Package</Button>
+            </DialogFooter>
+          </DialogContent>
+        </Dialog>
+
+        {/* Bulk Upload Dialog */}
+        <Dialog open={showBulkUploadDialog} onOpenChange={(open) => {
+          setShowBulkUploadDialog(open);
+          if (!open) {
+            setBulkUploadFile(null);
+            setBulkUploadResults(null);
+          }
+        }}>
+          <DialogContent className="max-w-2xl">
+            <DialogHeader>
+              <DialogTitle>Bulk Upload Employees</DialogTitle>
+              <DialogDescription>
+                Upload a CSV file to add multiple employees at once for {selectedCorporate?.companyName}
+              </DialogDescription>
+            </DialogHeader>
+            <div className="space-y-4 py-4">
+              <div className="flex items-center gap-4">
+                <Button variant="outline" onClick={downloadTemplate}>
+                  <Download className="h-4 w-4 mr-2" />
+                  Download Template
+                </Button>
+                <span className="text-sm text-muted-foreground">
+                  Download and fill the template with employee details
+                </span>
+              </div>
+              
+              <div className="border-2 border-dashed rounded-lg p-6 text-center">
+                <input
+                  type="file"
+                  accept=".csv"
+                  className="hidden"
+                  id="bulk-upload-input"
+                  onChange={(e) => {
+                    const file = e.target.files?.[0];
+                    if (file) {
+                      setBulkUploadFile(file);
+                      setBulkUploadResults(null);
+                    }
+                  }}
+                />
+                <label 
+                  htmlFor="bulk-upload-input" 
+                  className="cursor-pointer flex flex-col items-center gap-2"
+                >
+                  <Upload className="h-10 w-10 text-muted-foreground" />
+                  <span className="text-sm font-medium">
+                    {bulkUploadFile ? bulkUploadFile.name : 'Click to select CSV file'}
+                  </span>
+                  <span className="text-xs text-muted-foreground">
+                    or drag and drop
+                  </span>
+                </label>
+              </div>
+
+              {bulkUploadResults && (
+                <div className="space-y-3">
+                  <div className="flex gap-4">
+                    <div className="flex items-center gap-2 text-green-600">
+                      <CheckCircle className="h-5 w-5" />
+                      <span>{bulkUploadResults.created.length} added successfully</span>
+                    </div>
+                    {bulkUploadResults.failed.length > 0 && (
+                      <div className="flex items-center gap-2 text-red-600">
+                        <AlertCircle className="h-5 w-5" />
+                        <span>{bulkUploadResults.failed.length} failed</span>
+                      </div>
+                    )}
+                  </div>
+                  
+                  {bulkUploadResults.failed.length > 0 && (
+                    <div className="bg-red-50 dark:bg-red-950/30 border border-red-200 dark:border-red-800 rounded-lg p-3 max-h-40 overflow-y-auto">
+                      <p className="text-sm font-medium text-red-800 dark:text-red-300 mb-2">Failed entries:</p>
+                      <ul className="text-sm text-red-700 dark:text-red-400 space-y-1">
+                        {bulkUploadResults.failed.map((fail, idx) => (
+                          <li key={idx}>• {fail.email || fail.name || `Row ${idx + 1}`}: {fail.reason}</li>
+                        ))}
+                      </ul>
+                    </div>
+                  )}
+                </div>
+              )}
+            </div>
+            <DialogFooter>
+              <Button variant="outline" onClick={() => {
+                setShowBulkUploadDialog(false);
+                setBulkUploadFile(null);
+                setBulkUploadResults(null);
+              }}>
+                Cancel
+              </Button>
+              <Button 
+                onClick={handleBulkUpload} 
+                disabled={!bulkUploadFile || isUploading}
+              >
+                {isUploading ? (
+                  <>
+                    <span className="animate-spin mr-2">⏳</span>
+                    Uploading...
+                  </>
+                ) : (
+                  <>
+                    <Upload className="h-4 w-4 mr-2" />
+                    Upload Employees
+                  </>
+                )}
+              </Button>
             </DialogFooter>
           </DialogContent>
         </Dialog>
