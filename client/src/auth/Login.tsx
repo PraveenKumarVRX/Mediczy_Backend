@@ -427,53 +427,138 @@ const Login = () => {
             </div>
 
             {useOtpLogin ? (
-              <div className="space-y-4">
-                <div className="space-y-2">
-                  <FormLabel className="text-slate-700 font-medium">Email or Phone</FormLabel>
-                  <FormControl>
-                    <div className="relative group">
-                      <Mail className="absolute left-4 top-1/2 -translate-y-1/2 h-4 w-4 text-slate-400 group-focus-within:text-primary transition-colors" />
-                      <Input
-                        type="text"
-                        placeholder="name@example.com or 9876543210"
-                        className="h-12 pl-11 bg-slate-50/50 border-slate-200 text-slate-900 focus:border-primary focus:ring-2 focus:ring-primary/20 rounded-xl transition-all duration-200"
-                        value={otpIdentifier}
-                        onChange={(e) => setOtpIdentifier(e.target.value)}
-                      />
+              <motion.div 
+                initial={{ opacity: 0, scale: 0.95 }}
+                animate={{ opacity: 1, scale: 1 }}
+                transition={{ duration: 0.3 }}
+                className="space-y-6"
+              >
+                {!otpSent ? (
+                  /* Step 1: Enter Phone/Email */
+                  <>
+                    <div className="space-y-3">
+                      <FormLabel className="text-slate-700 font-medium flex items-center gap-2">
+                        <Phone className="h-4 w-4 text-primary" />
+                        Email or Phone Number
+                      </FormLabel>
+                      <div className="relative group">
+                        <Mail className="absolute left-4 top-1/2 -translate-y-1/2 h-4 w-4 text-slate-400 group-focus-within:text-primary transition-colors" />
+                        <Input
+                          type="text"
+                          placeholder="name@example.com or 9876543210"
+                          className="h-14 pl-11 pr-4 bg-slate-50/50 border-2 border-slate-200 text-slate-900 placeholder:text-slate-400 focus:border-primary focus:ring-4 focus:ring-primary/10 rounded-xl transition-all duration-200 text-base"
+                          value={otpIdentifier}
+                          onChange={(e) => setOtpIdentifier(e.target.value)}
+                          onKeyDown={(e) => {
+                            if (e.key === 'Enter' && otpIdentifier.trim()) {
+                              handleOtpSend();
+                            }
+                          }}
+                          autoFocus
+                        />
+                      </div>
+                      <p className="text-xs text-slate-500 flex items-center gap-1.5">
+                        <CheckCircle2 className="h-3.5 w-3.5 text-emerald-500" />
+                        We'll send a 6-digit OTP to verify your identity
+                      </p>
                     </div>
-                  </FormControl>
-                </div>
 
-                <Button
-                  type="button"
-                  className="w-full h-12 text-base font-semibold bg-gradient-to-r from-primary to-teal-600 hover:from-primary/90 hover:to-teal-600/90 shadow-lg shadow-primary/25 hover:shadow-xl hover:shadow-primary/30 transition-all duration-300 rounded-xl"
-                  onClick={handleOtpSend}
-                  disabled={otpLoading}
-                >
-                  {otpLoading ? "Sending OTP..." : otpSent ? "Resend OTP" : "Send OTP"}
-                </Button>
-
-                {otpSent && (
-                  <div className="space-y-2">
-                    <FormLabel className="text-slate-700 font-medium">OTP Code</FormLabel>
-                    <Input
-                      type="text"
-                      placeholder="Enter 6-digit OTP"
-                      className="h-12"
-                      value={otpCode}
-                      onChange={(e) => setOtpCode(e.target.value)}
-                    />
                     <Button
                       type="button"
-                      className="w-full h-12 text-base font-semibold bg-gradient-to-r from-primary to-teal-600 hover:from-primary/90 hover:to-teal-600/90 shadow-lg shadow-primary/25 hover:shadow-xl hover:shadow-primary/30 transition-all duration-300 rounded-xl"
-                      onClick={handleOtpVerify}
-                      disabled={otpVerifying}
+                      className="w-full h-13 text-base font-semibold bg-gradient-to-r from-primary via-teal-600 to-emerald-600 hover:from-primary/90 hover:via-teal-600/90 hover:to-emerald-600/90 shadow-lg shadow-primary/30 hover:shadow-xl hover:shadow-primary/40 transition-all duration-300 rounded-xl group"
+                      onClick={handleOtpSend}
+                      disabled={otpLoading || !otpIdentifier.trim()}
                     >
-                      {otpVerifying ? "Verifying..." : "Verify & Login"}
+                      {otpLoading ? (
+                        <>
+                          <div className="w-5 h-5 border-2 border-white/30 border-t-white rounded-full animate-spin mr-2" />
+                          Sending OTP...
+                        </>
+                      ) : (
+                        <>
+                          Send OTP
+                          <ArrowRight className="ml-2 h-4 w-4 group-hover:translate-x-1 transition-transform" />
+                        </>
+                      )}
                     </Button>
-                  </div>
+                  </>
+                ) : (
+                  /* Step 2: Enter OTP */
+                  <motion.div
+                    initial={{ opacity: 0, y: 10 }}
+                    animate={{ opacity: 1, y: 0 }}
+                    className="space-y-6"
+                  >
+                    <div className="text-center space-y-2">
+                      <div className="inline-flex items-center justify-center w-14 h-14 rounded-full bg-gradient-to-br from-primary/10 to-teal-500/10 border-2 border-primary/20 mb-2">
+                        <Lock className="h-7 w-7 text-primary" />
+                      </div>
+                      <h3 className="text-xl font-bold text-slate-900">Enter Verification Code</h3>
+                      <p className="text-sm text-slate-600">
+                        We sent a 6-digit code to <br />
+                        <span className="font-semibold text-slate-900">{otpIdentifier}</span>
+                      </p>
+                    </div>
+
+                    <div className="space-y-4">
+                      <OTPInput
+                        length={6}
+                        value={otpCode}
+                        onChange={setOtpCode}
+                        className="justify-center"
+                      />
+                      
+                      <div className="flex items-center justify-center gap-2 text-sm">
+                        <span className="text-slate-600">Didn't receive code?</span>
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setOtpCode('');
+                            handleOtpSend();
+                          }}
+                          disabled={otpLoading}
+                          className="font-semibold text-primary hover:text-primary/80 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+                        >
+                          {otpLoading ? 'Sending...' : 'Resend OTP'}
+                        </button>
+                      </div>
+                    </div>
+
+                    <div className="space-y-3">
+                      <Button
+                        type="button"
+                        className="w-full h-13 text-base font-semibold bg-gradient-to-r from-primary via-teal-600 to-emerald-600 hover:from-primary/90 hover:via-teal-600/90 hover:to-emerald-600/90 shadow-lg shadow-primary/30 hover:shadow-xl hover:shadow-primary/40 transition-all duration-300 rounded-xl group disabled:opacity-50 disabled:cursor-not-allowed"
+                        onClick={handleOtpVerify}
+                        disabled={otpVerifying || otpCode.length !== 6}
+                      >
+                        {otpVerifying ? (
+                          <>
+                            <div className="w-5 h-5 border-2 border-white/30 border-t-white rounded-full animate-spin mr-2" />
+                            Verifying...
+                          </>
+                        ) : (
+                          <>
+                            <CheckCircle2 className="mr-2 h-5 w-5" />
+                            Verify & Login
+                          </>
+                        )}
+                      </Button>
+
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setOtpSent(false);
+                          setOtpCode('');
+                          setOtpIdentifier('');
+                        }}
+                        className="w-full text-sm text-slate-600 hover:text-slate-900 font-medium transition-colors"
+                      >
+                        ← Change email/phone
+                      </button>
+                    </div>
+                  </motion.div>
                 )}
-              </div>
+              </motion.div>
             ) : (
               <Form {...form}>
                 <form onSubmit={form.handleSubmit(onSubmit)} className="space-y-5">
