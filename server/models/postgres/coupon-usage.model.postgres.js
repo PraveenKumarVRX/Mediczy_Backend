@@ -4,7 +4,7 @@
  */
 
 import { DataTypes } from 'sequelize';
-import postgresSequelize from '../../config/database.postgres.js';
+import { postgresSequelize } from '../../db/postgres-sequelize.js';
 
 const CouponUsage = postgresSequelize.define('CouponUsage', {
   id: {
