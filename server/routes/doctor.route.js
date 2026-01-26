@@ -13,6 +13,7 @@ import { Doctor, Appointment, User } from "../models/index.js";
 import { Op } from 'sequelize';
 import bcrypt from 'bcrypt';
 import crypto from 'crypto';
+import { cache } from '../db/redis.js';
 import {
   buildLiveKitJoinData,
   ensureMeetingInfo,
@@ -23,6 +24,69 @@ const router = express.Router();
 
 console.log('🔷 [doctor.route.js] Module loaded');
 console.log('🔷 signInDoctor type:', typeof signInDoctor);
+
+const ALERT_STATE_PREFIX = 'doctor:alerts:state:';
+const MESSAGE_PREFIX = 'doctor:messages:';
+const ALERT_STATE_TTL = 7 * 24 * 60 * 60;
+const MESSAGE_TTL = 7 * 24 * 60 * 60;
+const localAlertState = new Map();
+const localMessages = new Map();
+
+const getCachedValue = async (key, fallbackMap, defaultValue) => {
+  const cached = await cache.get(key);
+  if (cached) return cached;
+  if (fallbackMap.has(key)) return fallbackMap.get(key);
+  return defaultValue;
+};
+
+const setCachedValue = async (key, value, ttl, fallbackMap) => {
+  await cache.set(key, value, ttl);
+  fallbackMap.set(key, value);
+};
+
+const buildDoctorAlerts = (data) => {
+  const { pendingAppointments, todayAppointments } = data;
+  const now = new Date().toISOString();
+  const alerts = [];
+
+  if (pendingAppointments > 0) {
+    alerts.push({
+      id: 'pending-appointments',
+      type: 'warning',
+      title: 'Pending Appointments',
+      message: `You have ${pendingAppointments} appointment(s) awaiting confirmation`,
+      timestamp: now,
+      category: 'appointment',
+      actionRequired: true
+    });
+  }
+
+  if (todayAppointments > 0) {
+    alerts.push({
+      id: 'today-appointments',
+      type: 'info',
+      title: "Today's Schedule",
+      message: `You have ${todayAppointments} appointment(s) scheduled for today`,
+      timestamp: now,
+      category: 'appointment',
+      actionRequired: false
+    });
+  }
+
+  if (alerts.length === 0) {
+    alerts.push({
+      id: 'no-alerts',
+      type: 'success',
+      title: 'All Clear',
+      message: 'No urgent alerts at the moment',
+      timestamp: now,
+      category: 'system',
+      actionRequired: false
+    });
+  }
+
+  return alerts;
+};
 
 // Doctor Registration Route
 router.post(
@@ -104,32 +168,31 @@ router.get("/alerts", authDoctor, async (req, res) => {
       }
     });
 
-    const alerts = [];
+    const baseAlerts = buildDoctorAlerts({
+      pendingAppointments,
+      todayAppointments
+    });
 
-    if (pendingAppointments > 0) {
-      alerts.push({
-        id: 'pending-appointments',
-        type: 'warning',
-        title: 'Pending Appointments',
-        message: `You have ${pendingAppointments} appointment(s) awaiting confirmation`,
-        count: pendingAppointments
-      });
-    }
+    const stateKey = `${ALERT_STATE_PREFIX}${doctorId}`;
+    const state = await getCachedValue(stateKey, localAlertState, {
+      readIds: [],
+      dismissedIds: []
+    });
 
-    if (todayAppointments > 0) {
-      alerts.push({
-        id: 'today-appointments',
-        type: 'info',
-        title: "Today's Schedule",
-        message: `You have ${todayAppointments} appointment(s) scheduled for today`,
-        count: todayAppointments
-      });
-    }
+    const dismissed = new Set(state.dismissedIds || []);
+    const readIds = new Set(state.readIds || []);
+
+    const alerts = baseAlerts
+      .filter(alert => !dismissed.has(alert.id))
+      .map(alert => ({
+        ...alert,
+        isRead: readIds.has(alert.id)
+      }));
 
     res.json({
       success: true,
       alerts,
-      unreadCount: alerts.length
+      unreadCount: alerts.filter(alert => !alert.isRead).length
     });
 
   } catch (error) {
@@ -137,6 +200,114 @@ router.get("/alerts", authDoctor, async (req, res) => {
     res.status(500).json({
       success: false,
       message: 'Failed to fetch alerts',
+      error: error.message
+    });
+  }
+});
+
+/**
+ * @route   PATCH /api/doctors/alerts/:alertId/read
+ * @desc    Mark a doctor alert as read
+ * @access  Private (Doctor only)
+ */
+router.patch("/alerts/:alertId/read", authDoctor, async (req, res) => {
+  try {
+    const doctorId = req.doctor.id;
+    const { alertId } = req.params;
+    const stateKey = `${ALERT_STATE_PREFIX}${doctorId}`;
+    const state = await getCachedValue(stateKey, localAlertState, {
+      readIds: [],
+      dismissedIds: []
+    });
+
+    if (!state.readIds.includes(alertId)) {
+      state.readIds.push(alertId);
+    }
+
+    await setCachedValue(stateKey, state, ALERT_STATE_TTL, localAlertState);
+
+    res.json({ success: true, message: 'Alert marked as read' });
+  } catch (error) {
+    console.error('Mark alert read error:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Failed to mark alert as read',
+      error: error.message
+    });
+  }
+});
+
+/**
+ * @route   PATCH /api/doctors/alerts/mark-all-read
+ * @desc    Mark all current alerts as read
+ * @access  Private (Doctor only)
+ */
+router.patch("/alerts/mark-all-read", authDoctor, async (req, res) => {
+  try {
+    const doctorId = req.doctor.id;
+    const now = new Date();
+    const today = new Date(now);
+    today.setHours(0, 0, 0, 0);
+    const tomorrow = new Date(today);
+    tomorrow.setDate(tomorrow.getDate() + 1);
+
+    const [pendingAppointments, todayAppointments] = await Promise.all([
+      Appointment.count({ where: { doctorId, status: 'pending' } }),
+      Appointment.count({
+        where: {
+          doctorId,
+          appointmentDate: { [Op.gte]: today, [Op.lt]: tomorrow }
+        }
+      })
+    ]);
+
+    const baseAlerts = buildDoctorAlerts({ pendingAppointments, todayAppointments });
+    const stateKey = `${ALERT_STATE_PREFIX}${doctorId}`;
+    const state = await getCachedValue(stateKey, localAlertState, {
+      readIds: [],
+      dismissedIds: []
+    });
+
+    state.readIds = Array.from(new Set([...(state.readIds || []), ...baseAlerts.map(a => a.id)]));
+    await setCachedValue(stateKey, state, ALERT_STATE_TTL, localAlertState);
+
+    res.json({ success: true, message: 'All alerts marked as read' });
+  } catch (error) {
+    console.error('Mark all alerts read error:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Failed to mark all alerts as read',
+      error: error.message
+    });
+  }
+});
+
+/**
+ * @route   DELETE /api/doctors/alerts/:alertId
+ * @desc    Dismiss a doctor alert
+ * @access  Private (Doctor only)
+ */
+router.delete("/alerts/:alertId", authDoctor, async (req, res) => {
+  try {
+    const doctorId = req.doctor.id;
+    const { alertId } = req.params;
+    const stateKey = `${ALERT_STATE_PREFIX}${doctorId}`;
+    const state = await getCachedValue(stateKey, localAlertState, {
+      readIds: [],
+      dismissedIds: []
+    });
+
+    if (!state.dismissedIds.includes(alertId)) {
+      state.dismissedIds.push(alertId);
+    }
+
+    await setCachedValue(stateKey, state, ALERT_STATE_TTL, localAlertState);
+    res.json({ success: true, message: 'Alert dismissed' });
+  } catch (error) {
+    console.error('Dismiss alert error:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Failed to dismiss alert',
       error: error.message
     });
   }
@@ -2287,20 +2458,116 @@ router.get('/health-monitoring/patients', authDoctor, async (req, res) => {
 // ==========================================================================
 
 /**
+ * @route   GET /api/doctors/messages
+ * @desc    Get doctor messages (inbox)
+ * @access  Private (Doctor)
+ */
+router.get('/messages', authDoctor, async (req, res) => {
+  try {
+    const doctorId = req.doctor.id;
+    const messagesKey = `${MESSAGE_PREFIX}${doctorId}`;
+    const existing = await getCachedValue(messagesKey, localMessages, null);
+
+    if (existing) {
+      return res.json({ success: true, messages: existing });
+    }
+
+    const now = new Date().toISOString();
+    const seed = [
+      {
+        id: `msg-${doctorId}-1`,
+        from: 'Patient Support',
+        subject: 'New patient inquiry',
+        message: 'A patient has requested a follow-up appointment. Please review the request.',
+        timestamp: now,
+        status: 'new',
+        priority: 'medium',
+        senderType: 'patient'
+      },
+      {
+        id: `msg-${doctorId}-2`,
+        from: 'Hospital Admin',
+        subject: 'Updated policy notice',
+        message: 'Please review the updated consultation guidelines effective this week.',
+        timestamp: now,
+        status: 'read',
+        priority: 'low',
+        senderType: 'admin'
+      }
+    ];
+
+    await setCachedValue(messagesKey, seed, MESSAGE_TTL, localMessages);
+    return res.json({ success: true, messages: seed });
+  } catch (error) {
+    console.error('Get doctor messages error:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Failed to fetch messages',
+      error: error.message
+    });
+  }
+});
+
+/**
+ * @route   PATCH /api/doctors/messages/:messageId/read
+ * @desc    Mark doctor message as read
+ * @access  Private (Doctor)
+ */
+router.patch('/messages/:messageId/read', authDoctor, async (req, res) => {
+  try {
+    const doctorId = req.doctor.id;
+    const { messageId } = req.params;
+    const messagesKey = `${MESSAGE_PREFIX}${doctorId}`;
+    const existing = await getCachedValue(messagesKey, localMessages, []);
+
+    const updated = existing.map((item) => {
+      if (item.id === messageId && item.status === 'new') {
+        return { ...item, status: 'read' };
+      }
+      return item;
+    });
+
+    await setCachedValue(messagesKey, updated, MESSAGE_TTL, localMessages);
+
+    res.json({ success: true, message: 'Message marked as read' });
+  } catch (error) {
+    console.error('Mark message read error:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Failed to mark message as read',
+      error: error.message
+    });
+  }
+});
+
+/**
  * @route   POST /api/doctors/messages/reply
  * @desc    Reply to a patient message
  * @access  Private (Doctor)
  */
 router.post('/messages/reply', authDoctor, async (req, res) => {
   try {
-    const { conversationId, message, recipientId } = req.body;
+    const { conversationId, message, recipientId, messageId, reply } = req.body;
     const doctorId = req.doctor.id;
+    const content = reply || message;
 
-    if (!message || !recipientId) {
+    if (!content || (!recipientId && !messageId)) {
       return res.status(400).json({
         success: false,
-        message: 'Message content and recipient ID are required'
+        message: 'Reply content and message ID or recipient ID are required'
       });
+    }
+
+    if (messageId) {
+      const messagesKey = `${MESSAGE_PREFIX}${doctorId}`;
+      const existing = await getCachedValue(messagesKey, localMessages, []);
+      const updated = existing.map((item) => {
+        if (item.id === messageId) {
+          return { ...item, status: 'replied', reply: content, repliedAt: new Date().toISOString() };
+        }
+        return item;
+      });
+      await setCachedValue(messagesKey, updated, MESSAGE_TTL, localMessages);
     }
 
     // For now, return success response
@@ -2313,7 +2580,7 @@ router.post('/messages/reply', authDoctor, async (req, res) => {
         conversationId: conversationId || `conv_${doctorId}_${recipientId}`,
         senderId: doctorId,
         recipientId,
-        content: message,
+        content,
         sentAt: new Date(),
         status: 'sent'
       }

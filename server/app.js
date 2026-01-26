@@ -22,6 +22,16 @@ import doctorEnhancedRoutes from './routes/doctor.enhanced.route.js';
 import doctorAvailabilityRoutes from './routes/doctor-availability.route.js';
 import doctorSettingsRoutes from './routes/doctor-settings.route.js';
 import enhancedAppointmentRoutes from './routes/enhanced-appointment.route.js';
+
+// Clinical workflow routes
+const clinicalWorkflowRouter = require('./routes/clinical-workflow.route.js');
+const labIntegrationRouter = require('./routes/lab-integration.route.js');
+const carePlanRouter = require('./routes/care-plan.route.js');
+const queueManagementRouter = require('./routes/queue-management.route.js');
+const consentManagementRouter = require('./routes/consent-management.route.js');
+const delegationRouter = require('./routes/delegation.route.js');
+const revenueInsightsRouter = require('./routes/revenue-insights.route.js');
+const patientEngagementRouter = require('./routes/patient-engagement.route.js');
 import fitnessRouter from "./routes/fitness.route.js";
 import fitnessDataRouter from "./routes/fitnessData.js";
 import appleHealthRouter from "./routes/apple-health.route.js";
@@ -641,6 +651,16 @@ app.use("/api/recordings", recordingRouter); // Consultation recording managemen
 app.use("/api/doctors/availability", doctorAvailabilityRoutes); // Doctor availability management
 app.use("/api/doctor-settings", doctorSettingsRoutes); // Doctor appointment configuration
 app.use("/api/enhanced-appointments", enhancedAppointmentRoutes); // Enhanced appointment booking
+
+// Clinical workflow routes
+app.use("/api/doctor/clinical-workflow", clinicalWorkflowRouter); // SOAP notes, ICD-10/CPT codes, AI summaries
+app.use("/api/doctor/lab-integration", labIntegrationRouter); // Lab results, abnormal flagging, patient notifications
+app.use("/api/doctor/care-plans", carePlanRouter); // Care plans, tasks, reminders
+app.use("/api/doctor/queue", queueManagementRouter); // Queue management, triage, ETA, no-show handling
+app.use("/api/doctor/consent", consentManagementRouter); // Consent management, e-signatures, HIPAA compliance
+app.use("/api/doctor/delegation", delegationRouter); // Delegation logs, audit trails, co-signatures
+app.use("/api/doctor/revenue", revenueInsightsRouter); // Revenue insights, profitability, claim tracking
+app.use("/api/doctor/engagement", patientEngagementRouter); // Patient engagement, post-visit instructions
 app.use("/api/membership", membershipRouter);
 app.use("/api/org-membership-plans", orgMembershipPlansRouter); // Organization-specific plan customization
 app.use("/api/insurance", insuranceRouter);
