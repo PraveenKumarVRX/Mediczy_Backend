@@ -45,7 +45,8 @@ import {
   UserPlus,
   ClipboardList,
   Receipt,
-  Brain
+  Brain,
+  Ticket
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
@@ -115,6 +116,7 @@ const teamSidebarItems: SidebarItem[] = [
   { icon: MessageSquare, label: "Chat Dashboard", path: "/admin/chat", category: "Support" },
   { icon: Pill, label: "Pharmacies", path: "/team/pharmacy-management", category: "Management" },
   { icon: Heart, label: "Health Plans", path: "/team/health-plans", category: "Business" },
+  { icon: Ticket, label: "Coupons", path: "/admin/coupons", category: "Finance" },
   { icon: Database, label: "Activity Logs", path: "/team/activity", category: "Security" },
   { icon: Settings, label: "Settings", path: "/team/settings", category: "Administration" },
 ];

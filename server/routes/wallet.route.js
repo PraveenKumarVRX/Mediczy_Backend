@@ -8,6 +8,8 @@ import { authUser } from '../middleware/auth.middleware.js';
 import healthCoinsService from '../services/health-coins.service.js';
 import { HEALTH_COINS_REWARDS, HEALTH_COINS_PRICING } from '../config/health-coins.config.js';
 import paymentGateway from '../services/payment-gateway.service.js';
+import { Coupon, CouponUsage } from '../models/index.js';
+import { Op } from 'sequelize';
 
 const router = express.Router();
 
@@ -314,12 +316,119 @@ router.get('/rewards', authUser, async (req, res) => {
 });
 
 /**
+ * POST /api/wallet/validate-coupon
+ * Validate coupon code for HC purchase
+ */
+router.post('/validate-coupon', authUser, async (req, res) => {
+  try {
+    const { code, packageId } = req.body;
+    
+    if (!code) {
+      return res.status(400).json({
+        success: false,
+        message: 'Coupon code is required'
+      });
+    }
+    
+    // Find coupon
+    const coupon = await Coupon.findOne({
+      where: {
+        code: code.toUpperCase(),
+        isActive: true,
+        validFrom: { [Op.lte]: new Date() },
+        validUntil: { [Op.gte]: new Date() }
+      }
+    });
+    
+    if (!coupon) {
+      return res.status(404).json({
+        success: false,
+        message: 'Invalid or expired coupon code'
+      });
+    }
+    
+    // Check max usage
+    if (coupon.usageCount >= coupon.maxUsage) {
+      return res.status(400).json({
+        success: false,
+        message: 'Coupon usage limit exceeded'
+      });
+    }
+    
+    // Check user usage
+    const userUsage = await CouponUsage.count({
+      where: {
+        couponId: coupon.id,
+        userId: req.user.id
+      }
+    });
+    
+    if (userUsage >= coupon.maxUsagePerUser) {
+      return res.status(400).json({
+        success: false,
+        message: 'You have already used this coupon the maximum number of times'
+      });
+    }
+    
+    // Get package if specified
+    let pkg = null;
+    if (packageId !== undefined) {
+      pkg = HEALTH_COINS_PRICING.packages[packageId];
+      
+      // Check min purchase for PERCENTAGE type
+      if (coupon.type === 'PERCENTAGE' && pkg && pkg.coins < coupon.minPurchase) {
+        return res.status(400).json({
+          success: false,
+          message: `Minimum purchase of ${coupon.minPurchase} HC required for this coupon`
+        });
+      }
+    }
+    
+    // Calculate discount/bonus
+    let discount = 0;
+    let bonusHC = 0;
+    let finalPrice = pkg ? pkg.price : 0;
+    
+    if (coupon.type === 'PERCENTAGE' && pkg) {
+      discount = (pkg.price * coupon.value) / 100;
+      finalPrice = pkg.price - discount;
+    } else if (coupon.type === 'FIXED_HC') {
+      bonusHC = coupon.value;
+    } else if (coupon.type === 'FREE_HC') {
+      bonusHC = coupon.value;
+      finalPrice = 0; // Free HC
+    }
+    
+    res.json({
+      success: true,
+      message: 'Coupon is valid',
+      coupon: {
+        code: coupon.code,
+        type: coupon.type,
+        value: coupon.value,
+        description: coupon.description,
+        discount,
+        bonusHC,
+        finalPrice: Math.max(0, finalPrice)
+      }
+    });
+  } catch (error) {
+    console.error('Validate coupon error:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Failed to validate coupon',
+      error: error.message
+    });
+  }
+});
+
+/**
  * POST /api/wallet/create-order
- * Create Razorpay order for health coins purchase
+ * Create Razorpay order for health coins purchase (with optional coupon)
  */
 router.post('/create-order', authUser, async (req, res) => {
   try {
-    const { packageId } = req.body;
+    const { packageId, couponCode } = req.body;
     
     if (packageId === undefined || packageId === null) {
       return res.status(400).json({
@@ -338,6 +447,66 @@ router.post('/create-order', authUser, async (req, res) => {
       });
     }
     
+    let coupon = null;
+    let discount = 0;
+    let bonusHC = 0;
+    let finalAmount = pkg.price;
+    
+    // Validate and apply coupon if provided
+    if (couponCode) {
+      coupon = await Coupon.findOne({
+        where: {
+          code: couponCode.toUpperCase(),
+          isActive: true,
+          validFrom: { [Op.lte]: new Date() },
+          validUntil: { [Op.gte]: new Date() }
+        }
+      });
+      
+      if (!coupon) {
+        return res.status(400).json({
+          success: false,
+          message: 'Invalid or expired coupon code'
+        });
+      }
+      
+      // Check usage limits
+      if (coupon.usageCount >= coupon.maxUsage) {
+        return res.status(400).json({
+          success: false,
+          message: 'Coupon usage limit exceeded'
+        });
+      }
+      
+      const userUsage = await CouponUsage.count({
+        where: { couponId: coupon.id, userId: req.user.id }
+      });
+      
+      if (userUsage >= coupon.maxUsagePerUser) {
+        return res.status(400).json({
+          success: false,
+          message: 'You have already used this coupon'
+        });
+      }
+      
+      // Apply coupon discount/bonus
+      if (coupon.type === 'PERCENTAGE') {
+        if (pkg.coins < coupon.minPurchase) {
+          return res.status(400).json({
+            success: false,
+            message: `Minimum purchase of ${coupon.minPurchase} HC required`
+          });
+        }
+        discount = (pkg.price * coupon.value) / 100;
+        finalAmount = Math.max(0, pkg.price - discount);
+      } else if (coupon.type === 'FIXED_HC') {
+        bonusHC = coupon.value;
+      } else if (coupon.type === 'FREE_HC') {
+        bonusHC = coupon.value;
+        finalAmount = 0;
+      }
+    }
+    
     // Debug env presence for Razorpay keys
     const mask = (v) => (v ? `${v.slice(0, 3)}***${v.slice(-4)}` : 'undefined');
     console.log('🔑 Razorpay env in route', {
@@ -345,35 +514,46 @@ router.post('/create-order', authUser, async (req, res) => {
       hasSecret: !!process.env.RAZORPAY_KEY_SECRET
     });
 
-    // Create Razorpay order
-    const orderData = {
-      amount: pkg.price,
-      currency: 'INR',
-      receipt: `HC_${req.user.id}_${Date.now()}`,
-      notes: {
-        userId: req.user.id,
-        packageId,
-        coins: pkg.coins,
-        type: 'health_coins_purchase'
-      }
-    };
+    // Create Razorpay order only if payment required
+    let razorpayOrder = null;
+    if (finalAmount > 0) {
+      const orderData = {
+        amount: finalAmount,
+        currency: 'INR',
+        receipt: `HC_${req.user.id}_${Date.now()}`,
+        notes: {
+          userId: req.user.id,
+          packageId,
+          coins: pkg.coins,
+          couponCode: couponCode || null,
+          bonusHC,
+          type: 'health_coins_purchase'
+        }
+      };
 
-    console.log('📝 Creating Razorpay order with:', JSON.stringify(orderData, null, 2));
-    
-    const razorpayOrder = await paymentGateway.createRazorpayOrder(orderData);
-    
-    console.log('✅ Razorpay order created for HC purchase:', razorpayOrder.orderId);
-    console.log('📤 Razorpay order details:', JSON.stringify(razorpayOrder, null, 2));
+      console.log('📝 Creating Razorpay order with:', JSON.stringify(orderData, null, 2));
+      
+      razorpayOrder = await paymentGateway.createRazorpayOrder(orderData);
+      
+      console.log('✅ Razorpay order created for HC purchase:', razorpayOrder.orderId);
+      console.log('📤 Razorpay order details:', JSON.stringify(razorpayOrder, null, 2));
+    }
     
     res.json({
       success: true,
-      order: {
+      order: razorpayOrder ? {
         orderId: razorpayOrder.orderId,
         amount: razorpayOrder.amount,
         currency: razorpayOrder.currency,
         key: process.env.RAZORPAY_KEY_ID
-      },
-      package: pkg
+      } : null,
+      package: pkg,
+      coupon: coupon ? {
+        code: coupon.code,
+        discount,
+        bonusHC,
+        finalAmount
+      } : null
     });
   } catch (error) {
     console.error('Create order error:', error);
@@ -395,7 +575,8 @@ router.post('/verify-payment', authUser, async (req, res) => {
       razorpay_order_id, 
       razorpay_payment_id, 
       razorpay_signature,
-      packageId 
+      packageId,
+      couponCode
     } = req.body;
     
     if (!razorpay_order_id || !razorpay_payment_id || !razorpay_signature || packageId === undefined) {
@@ -430,31 +611,78 @@ router.post('/verify-payment', authUser, async (req, res) => {
       });
     }
     
+    let coupon = null;
+    let bonusHC = 0;
+    let discount = 0;
+    let totalHC = pkg.coins;
+    
+    // Process coupon if provided
+    if (couponCode) {
+      coupon = await Coupon.findOne({
+        where: { code: couponCode.toUpperCase() }
+      });
+      
+      if (coupon) {
+        // Apply coupon bonus
+        if (coupon.type === 'PERCENTAGE') {
+          discount = (pkg.price * coupon.value) / 100;
+        } else if (coupon.type === 'FIXED_HC' || coupon.type === 'FREE_HC') {
+          bonusHC = coupon.value;
+          totalHC = pkg.coins + bonusHC;
+        }
+        
+        // Record coupon usage
+        await CouponUsage.create({
+          couponId: coupon.id,
+          couponCode: coupon.code,
+          userId: req.user.id,
+          hcPurchased: pkg.coins,
+          hcBonus: bonusHC,
+          discountAmount: discount,
+          amountPaid: pkg.price - discount,
+          paymentId: razorpay_payment_id
+        });
+        
+        // Increment coupon usage count
+        await coupon.update({
+          usageCount: coupon.usageCount + 1
+        });
+        
+        console.log(`✅ Coupon ${coupon.code} applied - Bonus: ${bonusHC} HC, Discount: ₹${discount}`);
+      }
+    }
+    
     // Add coins to wallet
     const result = await healthCoinsService.addCoins(
       req.user.id,
-      pkg.coins,
+      totalHC,
       'PURCHASE',
       'PURCHASE',
-      `Purchased ${pkg.coins} health coins`,
+      `Purchased ${pkg.coins} health coins${bonusHC > 0 ? ` + ${bonusHC} bonus HC` : ''}${coupon ? ` (Coupon: ${coupon.code})` : ''}`,
       {
         packageId,
         paymentMethod: 'razorpay',
         razorpayOrderId: razorpay_order_id,
         razorpayPaymentId: razorpay_payment_id,
-        amountPaid: pkg.price,
-        discount: pkg.discount
+        amountPaid: pkg.price - discount,
+        baseCoins: pkg.coins,
+        bonusCoins: bonusHC,
+        couponCode: couponCode || null,
+        discount: discount
       }
     );
     
-    console.log(`✅ Successfully credited ${pkg.coins} HC to user ${req.user.id}`);
+    console.log(`✅ Successfully credited ${totalHC} HC to user ${req.user.id}${bonusHC > 0 ? ` (${pkg.coins} + ${bonusHC} bonus)` : ''}`);
     
     res.json({
       success: true,
-      message: `Successfully purchased ${pkg.coins} health coins`,
+      message: `Successfully purchased ${pkg.coins} health coins${bonusHC > 0 ? ` + ${bonusHC} bonus HC` : ''}`,
       coinsPurchased: pkg.coins,
+      bonusCoins: bonusHC,
+      totalCoins: totalHC,
       newBalance: result.newBalance,
-      transactionId: razorpay_payment_id
+      transactionId: razorpay_payment_id,
+      couponApplied: !!coupon
     });
   } catch (error) {
     console.error('Verify payment error:', error);

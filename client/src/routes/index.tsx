@@ -155,6 +155,7 @@ import AdminManageAssistants from '@/pages/admin/AdminManageAssistants';
 import BillingManagement from '@/pages/admin/BillingManagement';
 import AccountingManagement from '@/pages/admin/AccountingManagement';
 import PaymentManagement from '@/pages/admin/PaymentManagement';
+import CouponManagement from '@/pages/admin/CouponManagement';
 import OrderCheckout from '@/pages/billing/OrderCheckout';
 import OrderHistory from '@/pages/billing/OrderHistory';
 import OrderDetails from '@/pages/billing/OrderDetails';
@@ -222,11 +223,14 @@ import NGOLogin from "@/pages/ngo/NGOLogin";
 import HospitalCommunicationHub from "@/pages/hospital/HospitalCommunicationHub";
 import HospitalAmbulance from "@/pages/hospital/HospitalAmbulance";
 import HospitalBranchesClinic from "@/pages/hospital/HospitalBranchesClinic";
+import HospitalTeamChat from "@/pages/hospital/HospitalTeamChat";
 import BrokerCommunication from "@/pages/insurance-broker/BrokerCommunication";
 import InsuranceCommunication from "@/pages/insurance-company/InsuranceCommunication";
 import HospitalLogin from "@/pages/hospital/HospitalLogin";
 import HospitalDashboard from "@/pages/hospital/HospitalDashboard";
 import HospitalPracticeManagement from "@/pages/hospital/HospitalPracticeManagement";
+import HospitalCorporateManagement from "@/pages/hospital/HospitalCorporateManagement";
+import HospitalInsurancePayerManagement from "@/pages/hospital/HospitalInsurancePayerManagement";
 import HospitalInsuranceBilling from "@/pages/hospital/HospitalInsuranceBilling";
 import HospitalMRD from "@/pages/hospital/HospitalMRD";
 import HospitalEHR from "@/pages/hospital/HospitalEHR";
@@ -394,6 +398,8 @@ const AppRoutes = () => {
       <Route path="/hospital/login" element={<HospitalLogin />} />
       <Route path="/hospital/dashboard" element={<HospitalDashboard />} />
       <Route path="/hospital/practice-management" element={<HospitalPracticeManagement />} />
+      <Route path="/hospital/corporate-management" element={<HospitalCorporateManagement />} />
+      <Route path="/hospital/insurance-payer-management" element={<HospitalInsurancePayerManagement />} />
       <Route path="/hospital/insurance-billing" element={<HospitalInsuranceBilling />} />
       <Route path="/hospital/mrd" element={<HospitalMRD />} />
       <Route path="/hospital/ehr" element={<HospitalEHR />} />
@@ -414,6 +420,7 @@ const AppRoutes = () => {
       <Route path="/hospital/claims" element={<HospitalClaimsPage />} />
       <Route path="/hospital/staff" element={<HospitalStaffPage />} />
       <Route path="/hospital/communication" element={<HospitalCommunicationHub />} />
+      <Route path="/hospital/team-chat" element={<HospitalTeamChat />} />
       <Route path="/hospital/ambulance" element={<HospitalAmbulance />} />
       <Route path="/hospital/branches" element={<HospitalBranchesClinic />} />
       <Route path="/hospital/notifications" element={<HospitalNotifications />} />
@@ -727,6 +734,7 @@ const AppRoutes = () => {
   <Route path="/admin/billing" element={<BillingManagement />} />
   <Route path="/admin/accounting" element={<AccountingManagement />} />
   <Route path="/admin/payments" element={<PaymentManagement />} />
+  <Route path="/admin/coupons" element={<CouponManagement />} />
   <Route path="/admin/email" element={<EmailManagement />} />
   <Route path="/admin/activity-log" element={<ActivityLog />} />
   <Route path="/admin/module-access" element={<ModuleAccessControl />} />

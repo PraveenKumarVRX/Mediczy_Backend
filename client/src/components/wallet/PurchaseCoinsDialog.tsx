@@ -26,17 +26,56 @@ interface PurchaseCoinsDialogProps {
 }
 
 const PACKAGES = [
-  { coins: 100, price: 99, discount: 0, popular: false },
-  { coins: 250, price: 199, discount: 20, popular: true },
-  { coins: 500, price: 349, discount: 30, popular: false },
-  { coins: 1000, price: 599, discount: 40, popular: false },
-  { coins: 2500, price: 1299, discount: 48, popular: false }
+  { coins: 100, price: 100, discount: 0, popular: false },
+  { coins: 200, price: 190, discount: 5, popular: false },
+  { coins: 500, price: 450, discount: 10, popular: true },
+  { coins: 1000, price: 850, discount: 15, popular: false },
+  { coins: 2000, price: 1600, discount: 20, popular: false }
 ];
 
 export function PurchaseCoinsDialog({ open, onOpenChange, onSuccess }: PurchaseCoinsDialogProps) {
   const { toast } = useToast();
   const [selectedPackage, setSelectedPackage] = useState<number | null>(null);
   const [processing, setProcessing] = useState(false);
+  const [couponCode, setCouponCode] = useState('');
+  const [appliedCoupon, setAppliedCoupon] = useState<any>(null);
+  const [validatingCoupon, setValidatingCoupon] = useState(false);
+  
+  const validateCoupon = async () => {
+    if (!couponCode.trim()) {
+      toast({
+        title: "Error",
+        description: "Please enter a coupon code",
+        variant: "destructive",
+      });
+      return;
+    }
+    
+    setValidatingCoupon(true);
+    try {
+      const response = await api.post('/wallet/validate-coupon', {
+        code: couponCode,
+        packageId: selectedPackage
+      });
+      
+      if (response.data.success) {
+        setAppliedCoupon(response.data.coupon);
+        toast({
+          title: "✅ Coupon Applied!",
+          description: response.data.message,
+        });
+      }
+    } catch (error: any) {
+      setAppliedCoupon(null);
+      toast({
+        title: "Invalid Coupon",
+        description: error.response?.data?.message || "Coupon validation failed",
+        variant: "destructive",
+      });
+    } finally {
+      setValidatingCoupon(false);
+    }
+  };
 
   const handlePurchase = async () => {
     if (selectedPackage === null) {
@@ -55,7 +94,8 @@ export function PurchaseCoinsDialog({ open, onOpenChange, onSuccess }: PurchaseC
       
       // Step 1: Create Razorpay order
       const orderResponse = await api.post('/wallet/create-order', {
-        packageId: selectedPackage
+        packageId: selectedPackage,
+        couponCode: appliedCoupon ? couponCode : undefined
       });
 
       if (!orderResponse.data.success) {
@@ -93,7 +133,8 @@ export function PurchaseCoinsDialog({ open, onOpenChange, onSuccess }: PurchaseC
               razorpay_order_id: response.razorpay_order_id,
               razorpay_payment_id: response.razorpay_payment_id,
               razorpay_signature: response.razorpay_signature,
-              packageId: selectedPackage
+              packageId: selectedPackage,
+              couponCode: appliedCoupon ? couponCode : undefined
             });
 
             if (verifyResponse.data.success) {
@@ -204,6 +245,54 @@ export function PurchaseCoinsDialog({ open, onOpenChange, onSuccess }: PurchaseC
               </div>
             </div>
           ))}
+        </div>
+
+        {/* Coupon Code Section */}
+        <div className="mt-6 p-4 border rounded-lg bg-gradient-to-r from-purple-50 to-blue-50 dark:from-purple-950/20 dark:to-blue-950/20">
+          <h4 className="font-semibold mb-3 flex items-center gap-2">
+            <Sparkles className="h-4 w-4 text-purple-600" />
+            Have a Coupon Code?
+          </h4>
+          <div className="flex gap-2">
+            <Input
+              placeholder="Enter coupon code"
+              value={couponCode}
+              onChange={(e) => setCouponCode(e.target.value.toUpperCase())}
+              className="flex-1"
+              disabled={processing}
+            />
+            <Button
+              type="button"
+              variant="outline"
+              onClick={validateCoupon}
+              disabled={!couponCode.trim() || validatingCoupon || !selectedPackage}
+            >
+              {validatingCoupon ? 'Validating...' : 'Apply'}
+            </Button>
+          </div>
+          
+          {appliedCoupon && (
+            <div className="mt-3 p-3 bg-green-50 dark:bg-green-950/20 border border-green-200 dark:border-green-800 rounded">
+              <p className="text-sm text-green-800 dark:text-green-200 font-medium">
+                ✅ Coupon Applied: {appliedCoupon.code}
+              </p>
+              {appliedCoupon.bonusHC > 0 && (
+                <p className="text-xs text-green-700 dark:text-green-300 mt-1">
+                  +{appliedCoupon.bonusHC} Bonus HC
+                </p>
+              )}
+              {appliedCoupon.discount > 0 && (
+                <p className="text-xs text-green-700 dark:text-green-300 mt-1">
+                  ₹{appliedCoupon.discount.toFixed(2)} Discount
+                </p>
+              )}
+              {appliedCoupon.finalPrice === 0 && (
+                <p className="text-xs text-green-700 dark:text-green-300 mt-1 font-bold">
+                  🎉 Free HC! No payment required
+                </p>
+              )}
+            </div>
+          )}
         </div>
 
         <div className="mt-6 bg-muted/50 p-4 rounded-lg">

@@ -2,7 +2,7 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { useState, useEffect, useRef, useCallback } from "react";
 import Layout from "@/components/layout/MainLayout";
-import { Phone, MapPin, Loader2, Locate, Stethoscope, AlertTriangle, Users, Mic, MicOff, Video, VideoOff, Camera, Send, Volume2, VolumeX, MessageSquare, X, RefreshCw, Brain, Activity, Eye, PhoneOff, ExternalLink } from "lucide-react";
+import { Phone, MapPin, Loader2, Locate, Stethoscope, AlertTriangle, Users, Mic, MicOff, Video, VideoOff, Camera, Send, Volume2, VolumeX, MessageSquare, X, RefreshCw, Brain, Activity, Eye, PhoneOff, ExternalLink, Coins } from "lucide-react";
 import { useToast } from "@/components/ui/use-toast";
 import L from 'leaflet';
 import 'leaflet/dist/leaflet.css';
@@ -19,6 +19,7 @@ import { Badge } from "@/components/ui/badge";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { analyzeVideoFrame, initializeVisionAI, cleanupVisionAI, getTriageSummary, type VisionAnalysisResult } from '@/services/visionAI';
 import socketService from '@/services/socket.service';
+import { PurchaseCoinsDialog } from '@/components/wallet/PurchaseCoinsDialog';
 
 // Fix Leaflet icon issue
 delete (L.Icon.Default.prototype as any)._getIconUrl;
@@ -169,6 +170,49 @@ const Emergency = () => {
     const saved = localStorage.getItem('emergencyContacts');
     return saved ? JSON.parse(saved) : [];
   });
+  
+  // Fetch user HC balance
+  useEffect(() => {
+    const fetchHCBalance = async () => {
+      try {
+        const token = localStorage.getItem('token');
+        if (!token) return;
+        
+        const response = await axios.get('/api/health-coins/balance', {
+          headers: { Authorization: `Bearer ${token}` }
+        });
+        
+        if (response.data.success) {
+          setUserHCBalance(parseFloat(response.data.balance || 0));
+        }
+      } catch (error) {
+        console.error('Error fetching HC balance:', error);
+      }
+    };
+    
+    fetchHCBalance();
+  }, []);
+  
+  // Handle HC purchase success
+  const handleHCPurchaseSuccess = async () => {
+    // Refresh HC balance
+    try {
+      const token = localStorage.getItem('token');
+      const response = await axios.get('/api/health-coins/balance', {
+        headers: { Authorization: `Bearer ${token}` }
+      });
+      
+      if (response.data.success) {
+        setUserHCBalance(parseFloat(response.data.balance || 0));
+        toast({
+          title: "✅ Health Coins Added!",
+          description: `Your new balance: ${parseFloat(response.data.balance || 0).toFixed(2)} HC`,
+        });
+      }
+    } catch (error) {
+      console.error('Error refreshing HC balance:', error);
+    }
+  };
   const [isEditingContacts, setIsEditingContacts] = useState(false);
   const [newContact, setNewContact] = useState<EmergencyContact>({ name: '', phone: '', relationship: '' });
 
@@ -198,6 +242,12 @@ const Emergency = () => {
   const [isAITranscribing, setIsAITranscribing] = useState(false);
   const [liveTranscript, setLiveTranscript] = useState<string[]>([]);
   const [aiSuggestions, setAiSuggestions] = useState<string[]>([]);
+  
+  // Health Coins Payment States
+  const [userHCBalance, setUserHCBalance] = useState<number>(0);
+  const [showPaymentDialog, setShowPaymentDialog] = useState(false);
+  const [paymentInfo, setPaymentInfo] = useState<{pendingAmount: number, hcRequired: number} | null>(null);
+  const [showPurchaseHCDialog, setShowPurchaseHCDialog] = useState(false);
   const [vitalSigns, setVitalSigns] = useState<{pulse?: string, breathing?: string, consciousness?: string} | null>(null);
   const [isRecordingConsultation, setIsRecordingConsultation] = useState(false);
   
@@ -271,7 +321,7 @@ const Emergency = () => {
       async (error) => {
         console.error('Permission/location error:', error);
         setLocationError('Location permission denied or unavailable.');
-        await useApproximateLocation('Location permission not granted.');
+        await fetchApproximateLocation('Location permission not granted.');
         setLoading(false);
         toast({
           title: "Location blocked",
@@ -413,7 +463,8 @@ const Emergency = () => {
     
     // Clean text for speech
     const cleanText = text
-      .replace(/[🚨⚠️🏥🩺📞✅❌💊🔴🟡🟢📹💬🎤📸📍👁️🧠❤️🫁🏃👤📊🧍😣💪🗣️]/g, '')
+      .replace(/\p{Extended_Pictographic}/gu, '')
+      .replace(/\u{FE0F}/gu, '')
       .replace(/\*\*/g, '')
       .replace(/#{1,6}\s/g, '')
       .replace(/•/g, '')
@@ -901,7 +952,7 @@ Hello, I'm Dr. iSHA, your AI emergency medical assistant powered by multimodal i
   };
 
   // Connect to a specific doctor for instant video consultation
-  const connectToTriageDoctor = async (doctorId?: string) => {
+  const connectToTriageDoctor = async (doctorId?: string, useHC: boolean = false) => {
     setConnectingToDoctor(true);
     try {
       const token = localStorage.getItem('token');
@@ -916,7 +967,8 @@ Hello, I'm Dr. iSHA, your AI emergency medical assistant powered by multimodal i
         doctorId,
         symptoms,
         urgencyLevel: currentUrgency || 'URGENT',
-        triageId: `triage_${Date.now()}`
+        triageId: `triage_${Date.now()}`,
+        paymentMethod: useHC ? 'hc' : undefined
       }, {
         headers: { Authorization: `Bearer ${token}` }
       });
@@ -956,11 +1008,22 @@ Hello, I'm Dr. iSHA, your AI emergency medical assistant powered by multimodal i
       }
     } catch (error: any) {
       console.error('Error connecting to doctor:', error);
-      toast({
-        title: "Connection Failed",
-        description: error.response?.data?.message || "Could not connect to doctor. Try again.",
-        variant: "destructive",
-      });
+      
+      // Handle 402 Payment Required
+      if (error.response?.status === 402) {
+        const errorData = error.response.data;
+        setPaymentInfo({
+          pendingAmount: errorData.pendingAmount || 0,
+          hcRequired: errorData.hcRequired || 50
+        });
+        setShowPaymentDialog(true);
+      } else {
+        toast({
+          title: "Connection Failed",
+          description: error.response?.data?.message || "Could not connect to doctor. Try again.",
+          variant: "destructive",
+        });
+      }
     } finally {
       setConnectingToDoctor(false);
     }
@@ -1876,7 +1939,7 @@ This is for emergency medical guidance. Please prioritize safety and immediate c
     }
   };
 
-  const useApproximateLocation = async (contextMessage?: string) => {
+  const fetchApproximateLocation = async (contextMessage?: string) => {
     try {
       const response = await fetch('https://ipapi.co/json/');
       if (response.ok) {
@@ -1990,7 +2053,7 @@ This is for emergency medical guidance. Please prioritize safety and immediate c
             
             // Fallback to IP-based location
             setLocationError('GPS unavailable. Using approximate location.');
-            await useApproximateLocation('Could not get GPS coordinates.');
+            await fetchApproximateLocation('Could not get GPS coordinates.');
             setLoading(false);
           },
           {
@@ -2004,7 +2067,7 @@ This is for emergency medical guidance. Please prioritize safety and immediate c
         setTimeout(() => {
           if (updateCount === 0) {
             navigator.geolocation.clearWatch(initialWatchId);
-            useApproximateLocation('GPS timeout. ').then(() => setLoading(false));
+            fetchApproximateLocation('GPS timeout. ').then(() => setLoading(false));
           } else if (updateCount > 0 && bestPosition) {
             navigator.geolocation.clearWatch(initialWatchId);
           }
@@ -2013,7 +2076,7 @@ This is for emergency medical guidance. Please prioritize safety and immediate c
       } else {
         setLocationError('Your browser does not support geolocation.');
         const initFallback = async () => {
-          await useApproximateLocation('Browser does not expose GPS hardware.');
+          await fetchApproximateLocation('Browser does not expose GPS hardware.');
           setLoading(false);
         };
         initFallback();
@@ -2168,7 +2231,7 @@ This is for emergency medical guidance. Please prioritize safety and immediate c
 
             // Ensure all 3 nearest hospitals are visible
             const currentBounds = mapRef.current.getBounds();
-            let allVisible = nearestHospitals.every(hospital => 
+            const allVisible = nearestHospitals.every(hospital => 
               currentBounds.contains([hospital.lat, hospital.lon])
             );
 
@@ -3792,12 +3855,6 @@ This is for emergency medical guidance. Please prioritize safety and immediate c
                 <RefreshCw className="h-3 w-3 mr-1" />
                 New Consultation
               </Button>
-              {userLocation && (
-                <span className="text-xs text-slate-500 dark:text-slate-400 flex items-center gap-1">
-                  <MapPin className="h-3 w-3" />
-                  Location shared
-                </span>
-              )}
             </div>
           </div>
         </DialogContent>
@@ -3822,6 +3879,137 @@ This is for emergency medical guidance. Please prioritize safety and immediate c
           </div>
         </div>
       )}
+      
+      {/* Payment Dialog - Health Coins */}
+      <Dialog open={showPaymentDialog} onOpenChange={setShowPaymentDialog}>
+        <DialogContent className="sm:max-w-md">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <AlertTriangle className="h-5 w-5 text-amber-500" />
+              Emergency Credit Exhausted
+            </DialogTitle>
+            <DialogDescription>
+              You've used your free emergency consultation. Choose a payment method to continue.
+            </DialogDescription>
+          </DialogHeader>
+          
+          <div className="space-y-4">
+            {/* Payment info */}
+            {paymentInfo && (
+              <div className="bg-amber-50 dark:bg-amber-900/20 border border-amber-200 dark:border-amber-700 rounded-lg p-4 space-y-2">
+                <div className="flex items-center justify-between">
+                  <span className="text-sm text-amber-800 dark:text-amber-200">
+                    <strong>Consultation Fee:</strong>
+                  </span>
+                  <span className="text-lg font-bold text-amber-900 dark:text-amber-100">
+                    ₹{paymentInfo.hcRequired.toFixed(2)}
+                  </span>
+                </div>
+                <div className="h-px bg-amber-200 dark:bg-amber-700" />
+                <div className="flex items-center justify-between">
+                  <span className="text-sm text-amber-800 dark:text-amber-200">
+                    <strong>Pay with Health Coins:</strong>
+                  </span>
+                  <span className="text-lg font-bold text-teal-700 dark:text-teal-300">
+                    {paymentInfo.hcRequired} HC
+                  </span>
+                </div>
+                <div className="bg-amber-100 dark:bg-amber-900/40 rounded px-3 py-2 mt-2">
+                  <p className="text-xs text-amber-700 dark:text-amber-300 text-center">
+                    💰 Exchange Rate: <strong>1 HC = ₹1</strong>
+                  </p>
+                </div>
+              </div>
+            )}
+            
+            {/* HC Balance */}
+            <div className="bg-blue-50 dark:bg-blue-900/20 border border-blue-200 dark:border-blue-700 rounded-lg p-4">
+              <div className="flex items-center justify-between mb-2">
+                <span className="text-sm text-blue-800 dark:text-blue-200">
+                  <strong>Your HC Balance:</strong>
+                </span>
+                <span className="text-lg font-bold text-blue-900 dark:text-blue-100">
+                  {userHCBalance.toFixed(2)} HC
+                </span>
+              </div>
+              {paymentInfo && userHCBalance < paymentInfo.hcRequired && (
+                <>
+                  <div className="h-px bg-blue-200 dark:bg-blue-700 mb-2" />
+                  <div className="bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-700 rounded px-3 py-2">
+                    <p className="text-xs text-red-700 dark:text-red-300">
+                      ⚠️ <strong>Insufficient Balance</strong>
+                    </p>
+                    <p className="text-xs text-red-600 dark:text-red-400 mt-1">
+                      You need <strong>{(paymentInfo.hcRequired - userHCBalance).toFixed(2)} more HC</strong> (₹{(paymentInfo.hcRequired - userHCBalance).toFixed(2)})
+                    </p>
+                  </div>
+                </>
+              )}
+            </div>
+            
+            {/* Payment buttons */}
+            <div className="flex flex-col gap-2">
+              {paymentInfo && userHCBalance >= paymentInfo.hcRequired ? (
+                <Button
+                  onClick={() => {
+                    setShowPaymentDialog(false);
+                    connectToTriageDoctor(undefined, true);
+                  }}
+                  className="w-full bg-teal-600 hover:bg-teal-700"
+                >
+                  Pay with Health Coins ({paymentInfo.hcRequired} HC)
+                </Button>
+              ) : (
+                <>
+                  <Button
+                    onClick={() => {
+                      setShowPurchaseHCDialog(true);
+                    }}
+                    className="w-full bg-primary hover:bg-primary/90 gap-2"
+                  >
+                    <Coins className="h-4 w-4" />
+                    Buy Health Coins
+                  </Button>
+                  <Button
+                    disabled
+                    variant="outline"
+                    className="w-full"
+                  >
+                    Insufficient Health Coins
+                  </Button>
+                </>
+              )}
+              
+              <Button
+                variant="outline"
+                onClick={() => {
+                  setShowPaymentDialog(false);
+                  toast({
+                    title: "Payment Required",
+                    description: "Please add Health Coins or contact support for payment options.",
+                  });
+                }}
+                className="w-full"
+              >
+                Cancel
+              </Button>
+            </div>
+            
+            {/* Help text */}
+            <p className="text-xs text-slate-600 dark:text-slate-400 text-center">
+              💎 Earn Health Coins by completing health activities, daily check-ins, or purchase them from your profile.<br/>
+              <span className="font-semibold">Rate: 1 HC = ₹1 INR</span>
+            </p>
+          </div>
+        </DialogContent>
+      </Dialog>
+      
+      {/* Purchase Health Coins Dialog */}
+      <PurchaseCoinsDialog
+        open={showPurchaseHCDialog}
+        onOpenChange={setShowPurchaseHCDialog}
+        onSuccess={handleHCPurchaseSuccess}
+      />
       </>
     // </Layout>
   );

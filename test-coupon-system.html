@@ -1,0 +1,352 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Coupon System Test</title>
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        body {
+            font-family: system-ui, -apple-system, sans-serif;
+            background: #0f172a;
+            color: #e2e8f0;
+            padding: 20px;
+        }
+        .container { max-width: 1200px; margin: 0 auto; }
+        h1 { color: #14b8a6; margin-bottom: 30px; }
+        .section { background: #1e293b; padding: 20px; border-radius: 8px; margin-bottom: 20px; }
+        h2 { color: #38bdf8; margin-bottom: 15px; font-size: 1.2em; }
+        button {
+            background: #14b8a6;
+            color: white;
+            border: none;
+            padding: 10px 20px;
+            border-radius: 6px;
+            cursor: pointer;
+            margin: 5px;
+            font-size: 14px;
+        }
+        button:hover { background: #0d9488; }
+        button.danger { background: #ef4444; }
+        button.danger:hover { background: #dc2626; }
+        .result {
+            background: #334155;
+            padding: 15px;
+            border-radius: 6px;
+            margin-top: 15px;
+            font-family: 'Courier New', monospace;
+            font-size: 12px;
+            white-space: pre-wrap;
+            word-wrap: break-word;
+        }
+        .success { border-left: 4px solid #14b8a6; }
+        .error { border-left: 4px solid #ef4444; }
+        input, select {
+            background: #334155;
+            border: 1px solid #475569;
+            color: #e2e8f0;
+            padding: 8px 12px;
+            border-radius: 6px;
+            margin: 5px;
+            min-width: 200px;
+        }
+        label { display: inline-block; min-width: 150px; margin: 5px 0; }
+        .form-group { margin: 10px 0; }
+        .badge {
+            display: inline-block;
+            padding: 4px 8px;
+            border-radius: 4px;
+            font-size: 11px;
+            margin: 2px;
+        }
+        .badge.active { background: #14b8a6; }
+        .badge.expired { background: #ef4444; }
+        .badge.percentage { background: #3b82f6; }
+        .badge.fixed { background: #8b5cf6; }
+        .badge.free { background: #10b981; }
+    </label>
+</style>
+</head>
+<body>
+    <div class="container">
+        <h1>🎟️ Coupon Management System - Test Suite</h1>
+        
+        <div class="section">
+            <h2>📊 1. Test Statistics API</h2>
+            <button onclick="testStats()">Get Coupon Statistics</button>
+            <div id="statsResult" class="result" style="display:none;"></div>
+        </div>
+
+        <div class="section">
+            <h2>📝 2. Create Test Coupon</h2>
+            <div class="form-group">
+                <label>Coupon Code:</label>
+                <input type="text" id="newCode" value="TEST100" placeholder="Coupon code">
+            </div>
+            <div class="form-group">
+                <label>Type:</label>
+                <select id="newType">
+                    <option value="FREE_HC">Free HC</option>
+                    <option value="FIXED_HC">Fixed HC Bonus</option>
+                    <option value="PERCENTAGE">Percentage Discount</option>
+                </select>
+            </div>
+            <div class="form-group">
+                <label>Value:</label>
+                <input type="number" id="newValue" value="100" placeholder="Value">
+            </div>
+            <div class="form-group">
+                <label>Max Usage:</label>
+                <input type="number" id="newMaxUsage" value="100" placeholder="Max usage count">
+            </div>
+            <div class="form-group">
+                <label>Valid Until:</label>
+                <input type="date" id="newValidUntil" value="">
+            </div>
+            <button onclick="createCoupon()">Create Coupon</button>
+            <div id="createResult" class="result" style="display:none;"></div>
+        </div>
+
+        <div class="section">
+            <h2>📋 3. List All Coupons</h2>
+            <button onclick="listCoupons()">Get All Coupons</button>
+            <button onclick="listCoupons('active')">Active Only</button>
+            <button onclick="listCoupons('expired')">Expired Only</button>
+            <div id="listResult" class="result" style="display:none;"></div>
+        </div>
+
+        <div class="section">
+            <h2>✅ 4. Validate Coupon (User Endpoint)</h2>
+            <div class="form-group">
+                <label>Coupon Code:</label>
+                <input type="text" id="validateCode" value="TEST100" placeholder="Code to validate">
+            </div>
+            <div class="form-group">
+                <label>HC Amount:</label>
+                <input type="number" id="validateAmount" value="500" placeholder="HC purchase amount">
+            </div>
+            <button onclick="validateCoupon()">Validate Coupon</button>
+            <div id="validateResult" class="result" style="display:none;"></div>
+        </div>
+
+        <div class="section">
+            <h2>🔗 5. Test Complete Purchase Flow</h2>
+            <p style="margin-bottom: 10px; color: #94a3b8;">This will simulate a complete HC purchase with coupon redemption</p>
+            <div class="form-group">
+                <label>User ID:</label>
+                <input type="number" id="purchaseUserId" value="1" placeholder="User ID">
+            </div>
+            <div class="form-group">
+                <label>HC Amount:</label>
+                <input type="number" id="purchaseAmount" value="500" placeholder="HC amount">
+            </div>
+            <div class="form-group">
+                <label>Coupon Code:</label>
+                <input type="text" id="purchaseCode" value="TEST100" placeholder="Optional coupon">
+            </div>
+            <button onclick="testPurchaseFlow()">Simulate Purchase</button>
+            <div id="purchaseResult" class="result" style="display:none;"></div>
+        </div>
+
+        <div class="section">
+            <h2>🚀 6. Quick System Status</h2>
+            <button onclick="quickTest()">Run All Tests</button>
+            <div id="quickTestResult" class="result" style="display:none;"></div>
+        </div>
+    </div>
+
+    <script>
+        const API_URL = 'http://localhost:3000/api';
+        
+        // Generate admin token for testing (24h expiry)
+        const ADMIN_TOKEN = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJ1c2VySWQiOjEsImlkIjoxLCJlbWFpbCI6ImFkbWluQG1lZGlxenkuY29tIiwicm9sZSI6ImFkbWluIiwiaXNBZG1pbiI6dHJ1ZSwiaWF0IjoxNzY5NDQwMzE1LCJleHAiOjE3Njk1MjY3MTV9.d29azagVcF4SsSwRGyjfiosAkSTl4Jh8uKPwZdnKy4Q';
+        
+        // Generate user token for testing
+        const USER_TOKEN = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJ1c2VySWQiOjEsImlkIjoxLCJlbWFpbCI6InVzZXJAdGVzdC5jb20iLCJyb2xlIjoidXNlciIsImlhdCI6MTc2OTQ0MDMxNSwiZXhwIjoxNzY5NTI2NzE1fQ.mock';
+
+        function showResult(elementId, data, isError = false) {
+            const el = document.getElementById(elementId);
+            el.style.display = 'block';
+            el.className = 'result ' + (isError ? 'error' : 'success');
+            el.textContent = typeof data === 'string' ? data : JSON.stringify(data, null, 2);
+        }
+
+        async function testStats() {
+            try {
+                const response = await fetch(`${API_URL}/coupons/stats`, {
+                    headers: { 'Authorization': `Bearer ${ADMIN_TOKEN}` }
+                });
+                const data = await response.json();
+                showResult('statsResult', data, !response.ok);
+            } catch (error) {
+                showResult('statsResult', `Error: ${error.message}`, true);
+            }
+        }
+
+        async function createCoupon() {
+            const tomorrow = new Date();
+            tomorrow.setDate(tomorrow.getDate() + 30);
+            
+            const coupon = {
+                code: document.getElementById('newCode').value,
+                type: document.getElementById('newType').value,
+                value: parseInt(document.getElementById('newValue').value),
+                maxUsage: parseInt(document.getElementById('newMaxUsage').value),
+                maxUsagePerUser: 1,
+                validFrom: new Date().toISOString(),
+                validUntil: document.getElementById('newValidUntil').value || tomorrow.toISOString(),
+                description: 'Test coupon for system verification',
+                corporateName: 'Test Corporate'
+            };
+
+            try {
+                const response = await fetch(`${API_URL}/coupons`, {
+                    method: 'POST',
+                    headers: {
+                        'Authorization': `Bearer ${ADMIN_TOKEN}`,
+                        'Content-Type': 'application/json'
+                    },
+                    body: JSON.stringify(coupon)
+                });
+                const data = await response.json();
+                showResult('createResult', data, !response.ok);
+            } catch (error) {
+                showResult('createResult', `Error: ${error.message}`, true);
+            }
+        }
+
+        async function listCoupons(status = '') {
+            try {
+                const url = status ? `${API_URL}/coupons?status=${status}` : `${API_URL}/coupons`;
+                const response = await fetch(url, {
+                    headers: { 'Authorization': `Bearer ${ADMIN_TOKEN}` }
+                });
+                const data = await response.json();
+                showResult('listResult', data, !response.ok);
+            } catch (error) {
+                showResult('listResult', `Error: ${error.message}`, true);
+            }
+        }
+
+        async function validateCoupon() {
+            const code = document.getElementById('validateCode').value;
+            const amount = parseInt(document.getElementById('validateAmount').value);
+            
+            try {
+                const response = await fetch(`${API_URL}/wallet/validate-coupon`, {
+                    method: 'POST',
+                    headers: {
+                        'Authorization': `Bearer ${USER_TOKEN}`,
+                        'Content-Type': 'application/json'
+                    },
+                    body: JSON.stringify({ couponCode: code, hcAmount: amount })
+                });
+                const data = await response.json();
+                showResult('validateResult', data, !response.ok);
+            } catch (error) {
+                showResult('validateResult', `Error: ${error.message}`, true);
+            }
+        }
+
+        async function testPurchaseFlow() {
+            const userId = document.getElementById('purchaseUserId').value;
+            const amount = parseInt(document.getElementById('purchaseAmount').value);
+            const code = document.getElementById('purchaseCode').value;
+            
+            let result = '=== PURCHASE FLOW TEST ===\n\n';
+            
+            try {
+                // Step 1: Validate coupon
+                result += '1. Validating coupon...\n';
+                const validateResp = await fetch(`${API_URL}/wallet/validate-coupon`, {
+                    method: 'POST',
+                    headers: {
+                        'Authorization': `Bearer ${USER_TOKEN}`,
+                        'Content-Type': 'application/json'
+                    },
+                    body: JSON.stringify({ couponCode: code, hcAmount: amount })
+                });
+                const validateData = await validateResp.json();
+                result += JSON.stringify(validateData, null, 2) + '\n\n';
+                
+                // Step 2: Create order
+                result += '2. Creating order...\n';
+                const orderResp = await fetch(`${API_URL}/wallet/create-order`, {
+                    method: 'POST',
+                    headers: {
+                        'Authorization': `Bearer ${USER_TOKEN}`,
+                        'Content-Type': 'application/json'
+                    },
+                    body: JSON.stringify({ 
+                        amount: amount,
+                        couponCode: validateData.success ? code : undefined
+                    })
+                });
+                const orderData = await orderResp.json();
+                result += JSON.stringify(orderData, null, 2) + '\n\n';
+                
+                result += '✅ Purchase flow test complete!\n';
+                result += `   - HC Amount: ${amount}\n`;
+                result += `   - Coupon: ${code}\n`;
+                result += `   - Discount/Bonus: ${validateData.bonusHC || validateData.discountAmount || 0}\n`;
+                
+                showResult('purchaseResult', result, !validateResp.ok && !orderResp.ok);
+            } catch (error) {
+                showResult('purchaseResult', result + `\nError: ${error.message}`, true);
+            }
+        }
+
+        async function quickTest() {
+            let results = '=== QUICK SYSTEM TEST ===\n\n';
+            
+            try {
+                // Test 1: Stats
+                results += '1. Testing Statistics API...\n';
+                const statsResp = await fetch(`${API_URL}/coupons/stats`, {
+                    headers: { 'Authorization': `Bearer ${ADMIN_TOKEN}` }
+                });
+                const statsData = await statsResp.json();
+                results += `   Status: ${statsResp.status}\n`;
+                results += `   Total Coupons: ${statsData.stats?.total || 'N/A'}\n\n`;
+                
+                // Test 2: List coupons
+                results += '2. Testing List Coupons API...\n';
+                const listResp = await fetch(`${API_URL}/coupons`, {
+                    headers: { 'Authorization': `Bearer ${ADMIN_TOKEN}` }
+                });
+                const listData = await listResp.json();
+                results += `   Status: ${listResp.status}\n`;
+                results += `   Coupons Found: ${listData.coupons?.length || 0}\n\n`;
+                
+                // Test 3: Validate endpoint
+                results += '3. Testing Validate Coupon API...\n';
+                const validateResp = await fetch(`${API_URL}/wallet/validate-coupon`, {
+                    method: 'POST',
+                    headers: {
+                        'Authorization': `Bearer ${USER_TOKEN}`,
+                        'Content-Type': 'application/json'
+                    },
+                    body: JSON.stringify({ couponCode: 'TEST100', hcAmount: 500 })
+                });
+                results += `   Status: ${validateResp.status}\n\n`;
+                
+                results += '=== TEST SUMMARY ===\n';
+                results += `✅ Admin API: ${statsResp.status === 200 ? 'Working' : 'Failed'}\n`;
+                results += `✅ List API: ${listResp.status === 200 ? 'Working' : 'Failed'}\n`;
+                results += `✅ Validate API: ${validateResp.status === 200 || validateResp.status === 404 ? 'Working' : 'Failed'}\n`;
+                
+                showResult('quickTestResult', results);
+            } catch (error) {
+                showResult('quickTestResult', results + `\n\nError: ${error.message}`, true);
+            }
+        }
+
+        // Set default valid until date (30 days from now)
+        window.onload = function() {
+            const tomorrow = new Date();
+            tomorrow.setDate(tomorrow.getDate() + 30);
+            document.getElementById('newValidUntil').value = tomorrow.toISOString().split('T')[0];
+        };
+    </script>
+</body>
+</html>

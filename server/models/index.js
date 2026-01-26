@@ -21,6 +21,8 @@ import ClinicPostgres from './postgres/clinic.model.postgres.js';
 import ReportPostgres from './postgres/report.model.postgres.js';
 import LabTestPostgres from './postgres/labTest.model.postgres.js';
 import { EHRRecord as EHRRecordPostgres, HealthDiary as HealthDiaryPostgres } from './postgres/ehr.model.postgres.js';
+import CouponPostgres from './postgres/coupon.model.postgres.js';
+import CouponUsagePostgres from './postgres/coupon-usage.model.postgres.js';
 
 // Export PostgreSQL as default
 export const User = UserPostgres;
@@ -40,6 +42,8 @@ export const Report = ReportPostgres;
 export const LabTest = LabTestPostgres;
 export const EHRRecord = EHRRecordPostgres;
 export const HealthDiary = HealthDiaryPostgres;
+export const Coupon = CouponPostgres;
+export const CouponUsage = CouponUsagePostgres;
 
 // Default exports
 export default {
@@ -59,7 +63,9 @@ export default {
   Report: ReportPostgres,
   LabTest: LabTestPostgres,
   EHRRecord: EHRRecordPostgres,
-  HealthDiary: HealthDiaryPostgres
+  HealthDiary: HealthDiaryPostgres,
+  Coupon: CouponPostgres,
+  CouponUsage: CouponUsagePostgres
 };
 
 // Named exports for both
@@ -80,5 +86,7 @@ export {
   ReportPostgres,
   LabTestPostgres,
   EHRRecordPostgres,
-  HealthDiaryPostgres
+  HealthDiaryPostgres,
+  CouponPostgres,
+  CouponUsagePostgres
 };

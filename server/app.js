@@ -13,6 +13,7 @@ import userRouter from "./routes/user.route.js";
 import addressRouter from "./routes/address.route.js";
 import familyMemberRouter from "./routes/family-member.route.js";
 import walletRouter from "./routes/wallet.route.js";
+import couponRouter from "./routes/coupon.route.js";
 import membershipPlansRouter from "./routes/membership-plans.route.js";
 import leaderboardRouter from "./routes/leaderboard.route.js";
 import passwordResetRouter from "./routes/password-reset.route.js";
@@ -67,7 +68,9 @@ import whatsappConfigRouter from './routes/whatsapp.config.route.js';
 import whatsappBusinessRouter from './routes/whatsapp.business.route.js';
 import whatsappProductionRouter from './routes/whatsapp-production.route.js';
 import whatsappNumbersRouter from './routes/whatsapp-numbers.route.js';
+import rocketChatRouter from './routes/rocketchat.routes.js';
 import chatRouter from './routes/chat.route.js';
+import supportChatRouter from './routes/support-chat.route.js';
 import ticketsRouter from './routes/tickets.route.js';
 import tenantRouter from './routes/tenant.route.js';
 import tenantDomainRouter from './routes/tenant-domain.route.js';
@@ -81,6 +84,7 @@ import corporateRouter from './routes/corporate.route.js';
 import cartRouter from './routes/cart.route.js';
 import hospitalRouter from './routes/hospital.route.js';
 import hospitalAuthRouter from './routes/hospital-auth.route.js';
+import hospitalAuthAliasRouter from './routes/hospital/auth.routes.js';
 import clinicRouter from './routes/clinic.route.js';
 import pharmacyRouter from './routes/pharmacy.route.js';
 import ambulanceRouter from './routes/ambulance.route.js';
@@ -697,9 +701,11 @@ app.use('/api/voice-config', voiceConfigRouter); // Voice call configuration man
 app.use('/api/whatsapp-config', whatsappConfigRouter); // WhatsApp provider configuration management
 app.use('/api/whatsapp-numbers', whatsappNumbersRouter); // WhatsApp multiple numbers management
 app.use('/api/payments', paymentRouter); // Payment gateway management
+app.use('/api/rocketchat', rocketChatRouter); // RocketChat integration
 app.use('/api/whatsapp-business', whatsappBusinessRouter); // WhatsApp Business API integration
 app.use('/api/whatsapp-production', whatsappProductionRouter); // Production WhatsApp messaging with templates
 app.use('/api/chat', chatRouter); // Chat system endpoints
+app.use('/api/support', supportChatRouter); // Omnichannel support chat (WhatsApp + In-App to RocketChat)
 app.use('/api/embeddings', embeddingsRouter); // Embeddings management via PGVector
 app.use('/api/cdss/knowledge', cdssKnowledgeRouter); // CDSS Knowledge base (Gale Encyclopedia, medical PDFs)
 app.use('/api/tickets', ticketsRouter); // Support ticket management system
@@ -712,6 +718,7 @@ app.use('/api/hospital', hospitalPracticeRouter); // Alias practice endpoints fo
 app.use('/api/hospital/auth', hospitalAuthRouter); // Hospital authentication & corporate onboarding
 app.use('/api/user-associations', userAssociationRouter); // User hierarchy and entity associations
 app.use('/api/clinics', clinicRouter); // Clinics directory (labs, dental, etc.)
+app.use('/api/coupons', couponRouter); // Corporate HC coupon management
 app.use('/api/labs', enhancedLabRouter); // Enhanced laboratory management with comprehensive search
 app.use('/api/pharmacy', pharmacyRouter); // Pharmacy authentication and management
 app.use('/api/ambulance', ambulanceRouter); // Ambulance service authentication and management
@@ -794,9 +801,8 @@ import corporateAuthRouter from './routes/corporate/auth.routes.js';
 
 app.use('/api/corporate', corporateAuthRouter); // Corporate authentication (login, logout, verify)
 
-// Hospital Service Routes - Using hospital-auth.route.js imported at top
-// (hospitalAuthRouter already imported at line 74)
-app.use('/api/hospital', hospitalAuthRouter); // Hospital authentication (login, logout, verify)
+// Hospital Service Routes - Backwards-compatible alias (no /auth prefix)
+app.use('/api/hospital', hospitalAuthAliasRouter); // Hospital authentication (login, logout, verify)
 
 // Lab Service Routes
 import labAuthRouter from './routes/lab/auth.routes.js';

@@ -89,7 +89,24 @@ const MyMembershipCard = () => {
   const downloadCard = async () => {
     if (!cardRef.current) return;
     try {
-      const canvas = await html2canvas(cardRef.current, { scale: 2, useCORS: true });
+      // Ensure card is showing front side for download
+      const wasFlipped = isFlipped;
+      if (wasFlipped) setIsFlipped(false);
+      
+      // Wait for DOM update
+      await new Promise(resolve => setTimeout(resolve, 100));
+      
+      const canvas = await html2canvas(cardRef.current, {
+        scale: 2,
+        useCORS: true,
+        allowTaint: true,
+        backgroundColor: null,
+        logging: false
+      });
+      
+      // Restore flip state
+      if (wasFlipped) setIsFlipped(true);
+      
       const link = document.createElement('a');
       link.download = `mediqzy-membership-${user?.firstName || 'card'}.png`;
       link.href = canvas.toDataURL('image/png');
@@ -179,7 +196,10 @@ const MyMembershipCard = () => {
               {/* Front of Card */}
               <div
                 className={`w-full aspect-[1.6/1] rounded-2xl bg-gradient-to-br ${style.bg} p-6 text-white shadow-xl`}
-                style={{ backfaceVisibility: 'hidden' }}
+                style={{
+                  backfaceVisibility: 'hidden',
+                  WebkitBackfaceVisibility: 'hidden'
+                }}
               >
                 {/* Header */}
                 <div className="flex justify-between items-start mb-6">
@@ -221,20 +241,21 @@ const MyMembershipCard = () => {
                 className={`absolute inset-0 w-full aspect-[1.6/1] rounded-2xl bg-gradient-to-br ${style.bg} p-6 text-white shadow-xl flex flex-col items-center justify-center`}
                 style={{
                   backfaceVisibility: 'hidden',
+                  WebkitBackfaceVisibility: 'hidden',
                   transform: 'rotateY(180deg)'
                 }}
               >
-                <div className="text-xs opacity-70 mb-3">Scan for Verification</div>
+                <div className="text-xs opacity-70 mb-3" style={{ transform: 'scaleX(-1)' }}>Scan for Verification</div>
                 {qrCode ? (
-                  <div className="bg-white p-3 rounded-xl">
+                  <div className="bg-white p-3 rounded-xl" style={{ transform: 'scaleX(-1)' }}>
                     <img src={qrCode} alt="QR Code" className="w-32 h-32" />
                   </div>
                 ) : (
-                  <div className="bg-white/20 p-6 rounded-xl">
+                  <div className="bg-white/20 p-6 rounded-xl" style={{ transform: 'scaleX(-1)' }}>
                     <QrCode className="w-24 h-24 opacity-50" />
                   </div>
                 )}
-                <div className="text-xs opacity-60 mt-3">{memberId}</div>
+                <div className="text-xs opacity-60 mt-3" style={{ transform: 'scaleX(-1)' }}>{memberId}</div>
               </div>
             </div>
           </div>
