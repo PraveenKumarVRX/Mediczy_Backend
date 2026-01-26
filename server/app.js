@@ -24,14 +24,14 @@ import doctorSettingsRoutes from './routes/doctor-settings.route.js';
 import enhancedAppointmentRoutes from './routes/enhanced-appointment.route.js';
 
 // Clinical workflow routes
-const clinicalWorkflowRouter = require('./routes/clinical-workflow.route.js');
-const labIntegrationRouter = require('./routes/lab-integration.route.js');
-const carePlanRouter = require('./routes/care-plan.route.js');
-const queueManagementRouter = require('./routes/queue-management.route.js');
-const consentManagementRouter = require('./routes/consent-management.route.js');
-const delegationRouter = require('./routes/delegation.route.js');
-const revenueInsightsRouter = require('./routes/revenue-insights.route.js');
-const patientEngagementRouter = require('./routes/patient-engagement.route.js');
+import clinicalWorkflowRouter from './routes/clinical-workflow.route.js';
+import labIntegrationRouter from './routes/lab-integration.route.js';
+import carePlanRouter from './routes/care-plan.route.js';
+import queueManagementRouter from './routes/queue-management.route.js';
+import consentManagementRouter from './routes/consent-management.route.js';
+import delegationRouter from './routes/delegation.route.js';
+import revenueInsightsRouter from './routes/revenue-insights.route.js';
+import patientEngagementRouter from './routes/patient-engagement.route.js';
 import fitnessRouter from "./routes/fitness.route.js";
 import fitnessDataRouter from "./routes/fitnessData.js";
 import appleHealthRouter from "./routes/apple-health.route.js";

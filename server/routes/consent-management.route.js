@@ -1,8 +1,8 @@
-const express = require('express');
+import express from 'express';
 const router = express.Router();
 const crypto = require('crypto');
-const { Consent } = require('../models/consent.model');
-const { authDoctor } = require('../middleware/doctor.middleware');
+import Consent from '../models/consent.model.js';
+import { authDoctor } from '../middleware/doctor.middleware.js';
 
 // Get consents for patient
 router.get('/patient/:patientId', authDoctor, async (req, res) => {
@@ -68,4 +68,4 @@ router.patch('/:id/revoke', authDoctor, async (req, res) => {
   }
 });
 
-module.exports = router;
+export default router;

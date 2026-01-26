@@ -1,8 +1,8 @@
-const express = require('express');
+import express from 'express';
 const router = express.Router();
-const { QueueEntry } = require('../models/queue-management.model');
-const { authDoctor } = require('../middleware/doctor.middleware');
-const { notificationService } = require('../services/notification.service');
+import QueueEntry from '../models/queue-management.model.js';
+import { authDoctor } from '../middleware/doctor.middleware.js';
+import { notificationService } from '../services/notification.service.js';
 
 // Get doctor's current queue
 router.get('/my-queue', authDoctor, async (req, res) => {
@@ -225,4 +225,4 @@ router.get('/analytics', authDoctor, async (req, res) => {
   }
 });
 
-module.exports = router;
+export default router;

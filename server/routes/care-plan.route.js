@@ -1,8 +1,8 @@
-const express = require('express');
+import express from 'express';
 const router = express.Router();
-const { CarePlan } = require('../models/care-plan.model');
-const { authDoctor } = require('../middleware/doctor.middleware');
-const { notificationService } = require('../services/notification.service');
+import CarePlan from '../models/care-plan.model.js';
+import { authDoctor } from '../middleware/doctor.middleware.js';
+import { notificationService } from '../services/notification.service.js';
 
 // Get care plans for a patient
 router.get('/patient/:patientId', authDoctor, async (req, res) => {
@@ -157,4 +157,4 @@ router.post('/:id/send-reminder', authDoctor, async (req, res) => {
   }
 });
 
-module.exports = router;
+export default router;

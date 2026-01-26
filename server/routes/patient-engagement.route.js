@@ -1,8 +1,8 @@
-const express = require('express');
+import express from 'express';
 const router = express.Router();
-const { PatientEngagement } = require('../models/patient-engagement.model');
-const { authDoctor } = require('../middleware/doctor.middleware');
-const { notificationService } = require('../services/notification.service');
+import PatientEngagement from '../models/patient-engagement.model.js';
+import { authDoctor } from '../middleware/doctor.middleware.js';
+import { notificationService } from '../services/notification.service.js';
 
 // Get patient engagement records
 router.get('/patient/:patientId', authDoctor, async (req, res) => {
@@ -64,4 +64,4 @@ router.patch('/:id/acknowledge', async (req, res) => {
   }
 });
 
-module.exports = router;
+export default router;

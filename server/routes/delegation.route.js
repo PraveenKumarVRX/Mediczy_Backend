@@ -1,7 +1,7 @@
-const express = require('express');
+import express from 'express';
 const router = express.Router();
-const { DelegationLog } = require('../models/delegation-log.model');
-const { authDoctor } = require('../middleware/doctor.middleware');
+import DelegationLog from '../models/delegation-log.model.js';
+import { authDoctor } from '../middleware/doctor.middleware.js';
 
 // Get delegation logs
 router.get('/logs', authDoctor, async (req, res) => {
@@ -82,4 +82,4 @@ router.patch('/logs/:id/cosign', authDoctor, async (req, res) => {
   }
 });
 
-module.exports = router;
+export default router;

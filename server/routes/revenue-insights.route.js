@@ -1,7 +1,7 @@
-const express = require('express');
+import express from 'express';
 const router = express.Router();
-const { RevenueInsight } = require('../models/revenue-insight.model');
-const { authDoctor } = require('../middleware/doctor.middleware');
+import RevenueInsight from '../models/revenue-insight.model.js';
+import { authDoctor } from '../middleware/doctor.middleware.js';
 
 // Get revenue insights
 router.get('/', authDoctor, async (req, res) => {
@@ -71,4 +71,4 @@ router.get('/summary', authDoctor, async (req, res) => {
   }
 });
 
-module.exports = router;
+export default router;

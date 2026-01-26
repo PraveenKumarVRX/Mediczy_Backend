@@ -1,0 +1,6 @@
+ id  |      email       | phoneNumber |  status  | isVerified 
+-----+------------------+-------------+----------+------------
+  19 | user@mediczy.com | 9999999999  | active   | f
+ 129 | sk@mayden.co.in  | 7373007737  | inactive | t
+(2 rows)
+
