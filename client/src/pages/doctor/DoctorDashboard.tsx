@@ -40,12 +40,16 @@ import { useQuery } from "@tanstack/react-query";
 import api from "@/utils/api";
 import { useToast } from "@/hooks/use-toast";
 import { cn } from "@/lib/utils";
+import socketService from '@/services/socket.service';
+import { IncomingCallNotification } from '@/components/IncomingCallNotification';
 
 const DoctorDashboard = () => {
   const navigate = useNavigate();
   const { currentDoctor, userType } = useAuth();
   const { toast } = useToast();
   const [currentTime, setCurrentTime] = useState(new Date());
+  const [incomingCall, setIncomingCall] = useState<any | null>(null);
+  const [isSocketConnected, setIsSocketConnected] = useState(false);
 
   // Ring-fencing: Redirect non-doctor users
   useEffect(() => {
@@ -63,6 +67,55 @@ const DoctorDashboard = () => {
       }
     }
   }, [userType, navigate]);
+
+  // Socket.IO connection for emergency triage calls
+  useEffect(() => {
+    if (!currentDoctor?.id) return;
+
+    console.log('🔌 Doctor Dashboard: Connecting Socket.IO for doctor:', currentDoctor.id);
+    
+    // Connect to Socket.IO
+    socketService.connect(currentDoctor.id, 'doctor');
+    setIsSocketConnected(true);
+
+    // Listen for incoming triage call requests
+    const handleTriageCallRequest = (callData: any) => {
+      console.log('📞 Emergency call request received:', callData);
+      setIncomingCall(callData);
+      
+      // Play notification sound
+      try {
+        const audio = new Audio('/notification-sound.mp3');
+        audio.play().catch(e => console.log('Audio play failed:', e));
+      } catch (e) {
+        console.log('Audio initialization failed:', e);
+      }
+      
+      // Show browser notification
+      if ('Notification' in window && Notification.permission === 'granted') {
+        new Notification('🚨 Emergency Call', {
+          body: `${callData.patientName} needs urgent help`,
+          icon: '/emergency-icon.png',
+          tag: `call-${callData.appointmentId}`,
+          requireInteraction: true,
+        });
+      }
+      
+      toast({
+        title: "🚨 Emergency Call",
+        description: `${callData.patientName} needs urgent medical attention`,
+        variant: "default",
+      });
+    };
+
+    socketService.on('triage-call-request', handleTriageCallRequest);
+
+    // Cleanup on unmount
+    return () => {
+      console.log('🔌 Doctor Dashboard: Disconnecting Socket.IO');
+      socketService.off('triage-call-request', handleTriageCallRequest);
+    };
+  }, [currentDoctor?.id, toast]);
 
   useEffect(() => {
     const timer = setInterval(() => setCurrentTime(new Date()), 60000);
@@ -134,6 +187,66 @@ const DoctorDashboard = () => {
     if (hour < 12) return "Good Morning";
     if (hour < 17) return "Good Afternoon";
     return "Good Evening";
+  };
+
+  // Accept incoming emergency call
+  const handleAcceptIncomingCall = async (appointmentId: number) => {
+    try {
+      console.log('✅ Accepting emergency call:', appointmentId);
+      
+      const response = await api.post('/doctors/triage/accept-call', { appointmentId });
+      
+      toast({
+        title: "✅ Call Accepted",
+        description: "Joining video consultation...",
+      });
+
+      // Close incoming call notification
+      setIncomingCall(null);
+
+      // Redirect to video room
+      const roomId = response.data.appointment.roomId || response.data.appointment.meetingId;
+      if (roomId) {
+        const LIVEKIT_BASE_URL = import.meta.env.VITE_LIVEKIT_MEET_URL || 'https://video.mediqzy.com';
+        const doctorName = encodeURIComponent(`Dr.${currentDoctor?.firstName || 'Doctor'}`);
+        const videoUrl = `${LIVEKIT_BASE_URL}/join/${roomId}?name=${doctorName}&audio=1&video=1&notify=0`;
+        window.open(videoUrl, '_blank', 'width=1200,height=800');
+      }
+    } catch (error: any) {
+      console.error('Error accepting call:', error);
+      toast({
+        title: "Error",
+        description: error.response?.data?.message || "Failed to accept call",
+        variant: "destructive",
+      });
+    }
+  };
+
+  // Reject incoming emergency call
+  const handleRejectIncomingCall = async (appointmentId: number, reason?: string) => {
+    try {
+      console.log('❌ Rejecting emergency call:', appointmentId);
+      
+      await api.post('/doctors/triage/reject-call', { 
+        appointmentId,
+        reason: reason || 'Doctor unavailable' 
+      });
+      
+      toast({
+        title: "Call Rejected",
+        description: "Patient has been notified",
+      });
+
+      // Close incoming call notification
+      setIncomingCall(null);
+    } catch (error: any) {
+      console.error('Error rejecting call:', error);
+      toast({
+        title: "Error",
+        description: error.response?.data?.message || "Failed to reject call",
+        variant: "destructive",
+      });
+    }
   };
 
   // Stats cards data
@@ -290,6 +403,16 @@ const DoctorDashboard = () => {
 
   return (
     <MainLayout>
+      {/* Incoming Call Notification - Fullscreen overlay */}
+      {incomingCall && (
+        <IncomingCallNotification
+          callData={incomingCall}
+          onAccept={handleAcceptIncomingCall}
+          onReject={handleRejectIncomingCall}
+          autoRejectTimeout={60}
+        />
+      )}
+
       <div className="max-w-7xl mx-auto space-y-6 animate-in fade-in duration-500 px-4 md:px-0">
         {/* Welcome Section - Hero Banner */}
         <div className="relative overflow-hidden rounded-2xl bg-gradient-to-r from-slate-800 via-slate-900 to-slate-800 p-6 md:p-8 text-white shadow-2xl">

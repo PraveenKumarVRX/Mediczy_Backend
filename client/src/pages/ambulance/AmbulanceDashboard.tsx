@@ -80,7 +80,7 @@ const makeId = (prefix: string) => `${prefix}${Math.random().toString(16).slice(
 const downloadCsv = (filename: string, headers: string[], rows: Array<Array<string | number>>) => {
   const escapeCell = (value: string | number) => {
     const asString = String(value ?? "");
-    const escaped = asString.replace(/\"/g, '""');
+    const escaped = asString.replace(/"/g, '""');
     return /[",\n]/.test(escaped) ? `"${escaped}"` : escaped;
   };
 

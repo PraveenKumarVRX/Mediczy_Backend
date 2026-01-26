@@ -307,70 +307,69 @@ export const HospitalPharmacyPage = () => (
   />
 );
 
-export const HospitalLabReportsPage = () =>
-  (() => {
-    const { toast } = useToast();
-    const [showUpload, setShowUpload] = useState(false);
-    const [batchName, setBatchName] = useState('');
-    const [files, setFiles] = useState<FileList | null>(null);
+export const HospitalLabReportsPage = () => {
+  const { toast } = useToast();
+  const [showUpload, setShowUpload] = useState(false);
+  const [batchName, setBatchName] = useState('');
+  const [files, setFiles] = useState<FileList | null>(null);
 
-    const handleUpload = () => {
-      const count = files?.length || 0;
-      toast({
-        title: 'Batch upload queued',
-        description: `${batchName || 'Lab batch'} • ${count} file${count === 1 ? '' : 's'}`,
-      });
-      setShowUpload(false);
-      setBatchName('');
-      setFiles(null);
-    };
+  const handleUpload = () => {
+    const count = files?.length || 0;
+    toast({
+      title: 'Batch upload queued',
+      description: `${batchName || 'Lab batch'} • ${count} file${count === 1 ? '' : 's'}`,
+    });
+    setShowUpload(false);
+    setBatchName('');
+    setFiles(null);
+  };
 
-    return (
-      <>
-        {buildSection(
-          "Lab Reports",
-          "Samples, diagnostics, and publishing pipeline",
-          [
-            { title: "Samples In Queue", value: "312" },
-            { title: "Processing", value: "142" },
-            { title: "Published", value: "218" },
-            { title: "QC Flags", value: "3" },
-          ],
-          [
-            { label: "Radiology sync", meta: "PACS uptime 99.8%", status: "Healthy" },
-            { label: "COVID PCR", meta: "24 hr TAT achieved", status: "On time" },
-            { label: "Blood bank", meta: "O- short by 6 units", status: "Critical" },
-          ],
-          "Upload batch",
-          () => setShowUpload(true)
-        )}
+  return (
+    <>
+      {buildSection(
+        "Lab Reports",
+        "Samples, diagnostics, and publishing pipeline",
+        [
+          { title: "Samples In Queue", value: "312" },
+          { title: "Processing", value: "142" },
+          { title: "Published", value: "218" },
+          { title: "QC Flags", value: "3" },
+        ],
+        [
+          { label: "Radiology sync", meta: "PACS uptime 99.8%", status: "Healthy" },
+          { label: "COVID PCR", meta: "24 hr TAT achieved", status: "On time" },
+          { label: "Blood bank", meta: "O- short by 6 units", status: "Critical" },
+        ],
+        "Upload batch",
+        () => setShowUpload(true)
+      )}
 
-        <Dialog open={showUpload} onOpenChange={setShowUpload}>
-          <DialogContent>
-            <DialogHeader>
-              <DialogTitle>Upload Lab Report Batch</DialogTitle>
-              <DialogDescription>Attach a ZIP or multiple PDFs to ingest and publish.</DialogDescription>
-            </DialogHeader>
-            <div className="space-y-3 py-2">
-              <div className="space-y-1">
-                <label className="text-sm font-medium">Batch Name</label>
-                <Input value={batchName} onChange={(e) => setBatchName(e.target.value)} placeholder="e.g., 2025-12-OPD-BlockA" />
-              </div>
-              <div className="space-y-1">
-                <label className="text-sm font-medium">Select Files</label>
-                <Input type="file" multiple onChange={(e) => setFiles(e.target.files)} />
-                <p className="text-xs text-muted-foreground">{files?.length || 0} file(s) selected</p>
-              </div>
+      <Dialog open={showUpload} onOpenChange={setShowUpload}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Upload Lab Report Batch</DialogTitle>
+            <DialogDescription>Attach a ZIP or multiple PDFs to ingest and publish.</DialogDescription>
+          </DialogHeader>
+          <div className="space-y-3 py-2">
+            <div className="space-y-1">
+              <label className="text-sm font-medium">Batch Name</label>
+              <Input value={batchName} onChange={(e) => setBatchName(e.target.value)} placeholder="e.g., 2025-12-OPD-BlockA" />
             </div>
-            <DialogFooter>
-              <Button variant="outline" onClick={() => setShowUpload(false)}>Cancel</Button>
-              <Button onClick={handleUpload} disabled={!batchName && !files?.length}>Upload</Button>
-            </DialogFooter>
-          </DialogContent>
-        </Dialog>
-      </>
-    );
-  })();
+            <div className="space-y-1">
+              <label className="text-sm font-medium">Select Files</label>
+              <Input type="file" multiple onChange={(e) => setFiles(e.target.files)} />
+              <p className="text-xs text-muted-foreground">{files?.length || 0} file(s) selected</p>
+            </div>
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setShowUpload(false)}>Cancel</Button>
+            <Button onClick={handleUpload} disabled={!batchName && !files?.length}>Upload</Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+    </>
+  );
+};
 
 export const HospitalBillingPage = () => (
   <ManagedSection

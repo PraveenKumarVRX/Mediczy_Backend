@@ -407,7 +407,7 @@ const HospitalCommunicationHub = () => {
   );
 
   return (
-    <HospitalLayout title="Communication Hub" subtitle="Email, SMS, WhatsApp & Voice communication with patients">
+    <HospitalLayout title="Communication Hub" subtitle="WhatsApp, Email, SMS & Voice communication with patients">
       <Tabs value={activeTab} onValueChange={setActiveTab} className="space-y-6">
         <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
           <TabsList className="bg-slate-100 dark:bg-slate-800">

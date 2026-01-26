@@ -284,7 +284,6 @@ export const HomecarePatientsPage = () => {
       // Normalize URL so refresh/back doesn't repeatedly reopen the modal.
       navigate("/homecare/patients", { replace: true });
     }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [location.pathname, location.search]);
 
   const openEdit = (patient: HomecarePatient) => {

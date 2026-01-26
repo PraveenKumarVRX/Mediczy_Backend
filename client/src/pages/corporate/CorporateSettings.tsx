@@ -59,7 +59,6 @@ const CorporateSettings: React.FC = () => {
 
   useEffect(() => {
     if (billingOpen) loadBillingHistory();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [billingOpen]);
 
   const downloadInvoice = async (invoice: Invoice) => {

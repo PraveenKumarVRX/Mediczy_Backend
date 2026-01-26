@@ -123,7 +123,7 @@ const normalizeSlotEntry = (slot: any, consultationType: string): TimeSlot | nul
 // Generate next 14 available dates
 const getAvailableDates = () => {
   const dates = [];
-  let currentDate = startOfToday();
+  const currentDate = startOfToday();
   
   for (let i = 0; i < 14; i++) {
     const nextDate = addDays(currentDate, i);

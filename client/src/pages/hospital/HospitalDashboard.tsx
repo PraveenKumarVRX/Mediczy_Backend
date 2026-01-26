@@ -68,10 +68,24 @@ const HospitalDashboard = () => {
       route: '/hospital/practice-management'
     },
     { 
+      title: 'Corporate Management', 
+      description: 'Manage corporate tie-ups and employee benefits', 
+      icon: Building, 
+      color: 'from-teal-500 to-teal-600',
+      route: '/hospital/corporate-management'
+    },
+    { 
+      title: 'Insurance Payer Management', 
+      description: 'TPA, Insurance companies, MoU, Schedule of charges', 
+      icon: Shield, 
+      color: 'from-blue-500 to-blue-600',
+      route: '/hospital/insurance-payer-management'
+    },
+    { 
       title: 'Insurance Billing', 
       description: 'Claims, pre-auth, settlements', 
-      icon: Shield, 
-      color: 'from-teal-500 to-teal-600',
+      icon: CreditCard, 
+      color: 'from-amber-500 to-amber-600',
       route: '/hospital/insurance-billing'
     },
     { 
@@ -129,6 +143,13 @@ const HospitalDashboard = () => {
       icon: Stethoscope, 
       color: 'from-pink-500 to-pink-600',
       route: '/hospital/procedure-adder'
+    },
+    { 
+      title: 'Team Chat', 
+      description: 'Internal messaging for staff & partners (RocketChat)', 
+      icon: MessageSquare, 
+      color: 'from-purple-500 to-purple-600',
+      route: '/hospital/team-chat'
     },
   ];
 

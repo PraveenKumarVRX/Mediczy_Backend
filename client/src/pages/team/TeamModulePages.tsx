@@ -1,4 +1,5 @@
 import MainLayout from "@/components/layout/MainLayout";
+import AdminChatDashboard from "@/pages/admin/AdminChatDashboard";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -343,7 +344,7 @@ export const TeamPharmacyManagementPage = createModulePage("pharmacyManagement")
 export const TeamChatAnalyticsPage = createModulePage("chatAnalytics");
 export const TeamSupportTicketsPage = createModulePage("supportTickets");
 export const TeamAppointmentsPage = createModulePage("appointments");
-export const TeamChatDashboardPage = createModulePage("chatDashboard");
+export const TeamChatDashboardPage = () => <AdminChatDashboard />;
 export const TeamHealthPlansPage = createModulePage("healthPlans");
 export const TeamActivityLogsPage = createModulePage("activityLogs");
 export const TeamSettingsPage = createModulePage("settings");

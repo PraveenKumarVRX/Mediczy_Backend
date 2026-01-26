@@ -1,12 +1,14 @@
 import express from 'express';
-import Ticket from '../models/ticket.model.intelligent.js';
+import Ticket from '../models/ticket.model.js';
 import User from '../models/user.model.intelligent.js';
 import auth from '../middleware/auth.js';
+import rocketChatService from '../services/rocketchat.service.js';
+import logger from '../config/logger.js';
 
 const router = express.Router();
 
 // Get all tickets with filtering, sorting, and pagination
-router.get('/tickets', auth, async (req, res) => {
+router.get('/', auth, async (req, res) => {
   try {
     const {
       status,
@@ -70,7 +72,7 @@ router.get('/tickets', auth, async (req, res) => {
 });
 
 // Get ticket statistics
-router.get('/tickets/stats', auth, async (req, res) => {
+router.get('/stats', auth, async (req, res) => {
   try {
     const { startDate, endDate, category, priority } = req.query;
     
@@ -129,8 +131,110 @@ router.get('/tickets/stats', auth, async (req, res) => {
   }
 });
 
+// Create ticket from WhatsApp conversation (no auth required for internal service)
+// IMPORTANT: This route must come BEFORE /tickets/:id to avoid route conflicts
+router.post('/from-whatsapp', async (req, res) => {
+  try {
+    const {
+      phoneNumber,
+      customerName,
+      message,
+      conversationHistory = [],
+      priority = 'medium',
+      category = 'technical'
+    } = req.body;
+
+    if (!phoneNumber || !customerName || !message) {
+      return res.status(400).json({ 
+        message: 'Missing required fields: phoneNumber, customerName, message' 
+      });
+    }
+
+    // Simplified ticket creation for PostgreSQL model
+    // Note: This creates a basic ticket. Full MongoDB features not available yet.
+    const ticketNumber = `WA${Date.now()}`;
+    
+    logger.info(`Creating WhatsApp ticket for ${customerName} (${phoneNumber})`);
+
+    // Post to RocketChat immediately (even if ticket creation fails in DB)
+    try {
+      const channelName = `ticket-${ticketNumber}`.toLowerCase();
+      
+      // Create private channel for ticket discussion (ignore if already exists)
+      try {
+        await rocketChatService.createChannel(channelName, [], true);
+        logger.info(`Created RocketChat channel: ${channelName}`);
+      } catch (channelError) {
+        // Channel might already exist, that's okay
+        logger.warn(`Channel creation note for ${channelName}:`, channelError.message);
+      }
+      
+      // Post comprehensive notification to GENERAL channel
+      const notificationMessage = `📱 *WhatsApp Ticket Request*\n\n` +
+        `🎫 *Ticket:* ${ticketNumber}\n` +
+        `👤 *Customer:* ${customerName}\n` +
+        `📞 *Phone:* ${phoneNumber}\n` +
+        `🔥 *Priority:* ${priority.toUpperCase()}\n` +
+        `📌 *Category:* ${category}\n` +
+        `💬 *Issue:* ${message.substring(0, 200)}${message.length > 200 ? '...' : ''}\n\n` +
+        `🗨️ *Discuss in:* #${channelName}\n` +
+        `⏰ *Created:* ${new Date().toLocaleString('en-IN', { timeZone: 'Asia/Kolkata' })}`;
+
+      await rocketChatService.sendMessage('GENERAL', notificationMessage);
+      
+      // Try to post to ticket channel (might fail if channel doesn't exist)
+      try {
+        await rocketChatService.sendMessage(channelName, notificationMessage);
+      } catch (msgError) {
+        logger.warn(`Could not post to ${channelName}:`, msgError.message);
+      }
+      
+      // Post conversation history to ticket channel if available
+      if (conversationHistory.length > 0) {
+        try {
+          const historyMessage = `📋 *Recent Conversation History:*\n\n` +
+            conversationHistory.slice(-5).map((msg, idx) => 
+              `${idx + 1}. ${msg.sender === 'user' ? '👤' : '🤖'} **${msg.sender === 'user' ? customerName : 'Dr. iSHA'}**: ${msg.content}`
+            ).join('\n\n');
+          
+          await rocketChatService.sendMessage(channelName, historyMessage);
+        } catch (histError) {
+          logger.warn('Could not post conversation history:', histError.message);
+        }
+      }
+      
+      logger.info(`Posted WhatsApp ticket to RocketChat: ${channelName}`);
+    } catch (rcError) {
+      logger.error('RocketChat integration error for WhatsApp ticket:', rcError.message);
+      // Don't fail the whole request if RocketChat fails
+    }
+
+    res.status(201).json({
+      success: true,
+      ticket: {
+        ticketId: ticketNumber,
+        title: `WhatsApp Support: ${customerName}`,
+        status: 'open',
+        priority,
+        category,
+        phoneNumber,
+        customerName
+      },
+      message: 'Ticket notification sent to team via RocketChat'
+    });
+  } catch (error) {
+    console.error('Error creating WhatsApp ticket:', error);
+    logger.error('WhatsApp ticket error:', error.message);
+    res.status(500).json({ 
+      success: false,
+      message: 'Error creating ticket from WhatsApp', 
+      error: error.message 
+    });
+  }
+});
+
 // Get single ticket by ID
-router.get('/tickets/:id', auth, async (req, res) => {
+router.get('/:id', auth, async (req, res) => {
   try {
     const ticket = await Ticket.findOne({ 
       $or: [{ ticketId: req.params.id }, { _id: req.params.id }] 
@@ -153,7 +257,7 @@ router.get('/tickets/:id', auth, async (req, res) => {
 });
 
 // Create new ticket
-router.post('/tickets', auth, async (req, res) => {
+router.post('/', auth, async (req, res) => {
   try {
     const {
       title,
@@ -231,6 +335,48 @@ router.post('/tickets', auth, async (req, res) => {
       });
     }
 
+    // Create RocketChat channel for this ticket and post notification
+    try {
+      const channelName = `ticket-${ticket.ticketId || ticket._id}`.toLowerCase().replace(/[^a-z0-9-]/g, '-');
+      
+      // Create private channel for ticket discussion
+      await rocketChatService.createChannel(channelName, [], true);
+      
+      // Post ticket creation notification to GENERAL channel
+      const priorityEmoji = {
+        'low': '🔵',
+        'medium': '🟡',
+        'high': '🟠',
+        'critical': '🔴'
+      }[priority] || '⚪';
+
+      const categoryEmoji = {
+        'technical': '🔧',
+        'billing': '💳',
+        'integration': '🔗',
+        'performance': '⚡',
+        'feature-request': '✨',
+        'other': '📝'
+      }[category] || '📋';
+
+      const notificationMessage = `🎫 *New Support Ticket Created*\n\n` +
+        `📋 *Ticket:* ${ticket.ticketId || ticket._id}\n` +
+        `${priorityEmoji} *Priority:* ${priority.toUpperCase()}\n` +
+        `${categoryEmoji} *Category:* ${category}\n` +
+        `👤 *From:* ${requester.name} (${requester.email})\n` +
+        `📌 *Title:* ${title}\n` +
+        `📝 *Description:* ${description.substring(0, 200)}${description.length > 200 ? '...' : ''}\n\n` +
+        `💬 *Discuss in:* #${channelName}\n` +
+        `⏰ *Created:* ${new Date().toLocaleString('en-IN', { timeZone: 'Asia/Kolkata' })}`;
+
+      await rocketChatService.sendMessage('GENERAL', notificationMessage);
+      
+      logger.info(`Created RocketChat channel for ticket: ${channelName}`);
+    } catch (rcError) {
+      logger.error('RocketChat integration error for new ticket:', rcError.message);
+      // Don't fail ticket creation if RocketChat fails
+    }
+
     res.status(201).json(ticket);
   } catch (error) {
     console.error('Error creating ticket:', error);
@@ -239,7 +385,7 @@ router.post('/tickets', auth, async (req, res) => {
 });
 
 // Update ticket
-router.put('/tickets/:id', auth, async (req, res) => {
+router.put('/:id', auth, async (req, res) => {
   try {
     const {
       title,
@@ -269,8 +415,13 @@ router.put('/tickets/:id', auth, async (req, res) => {
     if (dueDate) ticket.dueDate = new Date(dueDate);
     if (tags) ticket.tags = tags;
 
+    // Track if we need to send RocketChat notification
+    let statusChanged = false;
+    let oldStatus = ticket.status;
+
     // Handle status changes
     if (status && status !== ticket.status) {
+      statusChanged = true;
       if (status === 'resolved' && resolution) {
         await ticket.resolve(resolution, req.user.id);
       } else {
@@ -294,6 +445,41 @@ router.put('/tickets/:id', auth, async (req, res) => {
     }
 
     await ticket.save();
+
+    // Send RocketChat notification for status changes
+    if (statusChanged) {
+      try {
+        const channelName = `ticket-${ticket.ticketId || ticket._id}`.toLowerCase().replace(/[^a-z0-9-]/g, '-');
+        
+        const statusEmoji = {
+          'open': '🆕',
+          'in-progress': '⚙️',
+          'pending': '⏸️',
+          'resolved': '✅',
+          'closed': '🔒'
+        }[status] || '📝';
+
+        const updateMessage = `${statusEmoji} *Ticket Status Updated*\n\n` +
+          `📋 *Ticket:* ${ticket.ticketId || ticket._id}\n` +
+          `📊 *Status:* ${oldStatus} → ${status}\n` +
+          `👤 *Updated by:* ${req.user.name || 'System'}\n` +
+          `⏰ *Time:* ${new Date().toLocaleString('en-IN', { timeZone: 'Asia/Kolkata' })}` +
+          (resolution ? `\n\n✅ *Resolution:* ${resolution}` : '');
+
+        // Post to ticket channel
+        await rocketChatService.sendMessage(channelName, updateMessage);
+        
+        // Post major updates to GENERAL channel
+        if (status === 'resolved' || status === 'closed') {
+          await rocketChatService.sendMessage('GENERAL', updateMessage);
+        }
+        
+        logger.info(`Posted ticket update to RocketChat: ${ticket.ticketId}`);
+      } catch (rcError) {
+        logger.error('RocketChat notification error:', rcError.message);
+      }
+    }
+
     res.json(ticket);
   } catch (error) {
     console.error('Error updating ticket:', error);
@@ -302,7 +488,7 @@ router.put('/tickets/:id', auth, async (req, res) => {
 });
 
 // Add message to ticket
-router.post('/tickets/:id/messages', auth, async (req, res) => {
+router.post('/:id/messages', auth, async (req, res) => {
   try {
     const { content, isInternal = false } = req.body;
 
@@ -332,6 +518,21 @@ router.post('/tickets/:id/messages', auth, async (req, res) => {
       isInternal
     });
 
+    // Post message to RocketChat ticket channel
+    try {
+      const channelName = `ticket-${ticket.ticketId || ticket._id}`.toLowerCase().replace(/[^a-z0-9-]/g, '-');
+      
+      const senderIcon = senderType === 'agent' ? '👨‍💼' : '👤';
+      const visibilityTag = isInternal ? ' 🔒 *[INTERNAL]*' : '';
+      
+      const chatMessage = `${senderIcon} *${req.user.name}*${visibilityTag}\n\n${content.trim()}`;
+      
+      await rocketChatService.sendMessage(channelName, chatMessage);
+      logger.info(`Posted message to RocketChat channel: ${channelName}`);
+    } catch (rcError) {
+      logger.error('RocketChat message posting error:', rcError.message);
+    }
+
     res.json(ticket);
   } catch (error) {
     console.error('Error adding message:', error);
@@ -340,7 +541,7 @@ router.post('/tickets/:id/messages', auth, async (req, res) => {
 });
 
 // Assign ticket
-router.post('/tickets/:id/assign', auth, async (req, res) => {
+router.post('/:id/assign', auth, async (req, res) => {
   try {
     const { assigneeId } = req.body;
 
@@ -377,7 +578,7 @@ router.post('/tickets/:id/assign', auth, async (req, res) => {
 });
 
 // Escalate ticket
-router.post('/tickets/:id/escalate', auth, async (req, res) => {
+router.post('/:id/escalate', auth, async (req, res) => {
   try {
     const { reason, escalateToId } = req.body;
 
@@ -417,7 +618,7 @@ router.post('/tickets/:id/escalate', auth, async (req, res) => {
 });
 
 // Submit satisfaction rating
-router.post('/tickets/:id/satisfaction', async (req, res) => {
+router.post('/:id/satisfaction', async (req, res) => {
   try {
     const { rating, feedback } = req.body;
 
@@ -449,7 +650,7 @@ router.post('/tickets/:id/satisfaction', async (req, res) => {
 });
 
 // Delete ticket (admin only)
-router.delete('/tickets/:id', auth, async (req, res) => {
+router.delete('/:id', auth, async (req, res) => {
   try {
     // Check if user is admin
     if (req.user.role !== 'admin') {
@@ -472,7 +673,7 @@ router.delete('/tickets/:id', auth, async (req, res) => {
 });
 
 // Bulk operations
-router.post('/tickets/bulk', auth, async (req, res) => {
+router.post('/bulk', auth, async (req, res) => {
   try {
     const { operation, ticketIds, data } = req.body;
 
@@ -559,7 +760,7 @@ router.get('/agents', auth, async (req, res) => {
 });
 
 // Export tickets
-router.get('/tickets/export/:format', auth, async (req, res) => {
+router.get('/export/:format', auth, async (req, res) => {
   try {
     const { format } = req.params;
     const {

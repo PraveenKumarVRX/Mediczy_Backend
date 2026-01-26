@@ -178,7 +178,9 @@ const DeviceIntegration: React.FC = () => {
       if (cachedStats) {
         try {
           setHealthStats(JSON.parse(cachedStats));
-        } catch (e) {}
+        } catch (e) {
+          // Ignore malformed cached data.
+        }
       }
     } finally {
       setLoadingStats(false);

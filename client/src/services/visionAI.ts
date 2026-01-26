@@ -20,8 +20,8 @@ declare global {
 }
 
 let mediapipePose: any = null;
-let mediapipeHands: any = null;
-let mediapipeFaceDetection: any = null;
+const mediapipeHands: any = null;
+const mediapipeFaceDetection: any = null;
 let mediapipeLoaded = false;
 
 // Canvas for frame analysis

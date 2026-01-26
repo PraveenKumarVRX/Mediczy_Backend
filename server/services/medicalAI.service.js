@@ -631,8 +631,10 @@ Always maintain: Empathy + Intuition + Clinical Precision + Patient Safety + Mor
       }
       
       // Build request body (OpenAI-compatible ChatRequest)
-      // Use IndicTrans2 for Indian languages, skip for English
-      const useTranslation = language !== 'en';
+      // Use IndicTrans2 for non-English when enabled and input is reasonably sized
+      const indicTransEnabled = process.env.INDICTRANS_ENABLED !== 'false';
+      const maxIndicTransChars = parseInt(process.env.INDICTRANS_MAX_INPUT_CHARS || '800', 10);
+      const useTranslation = indicTransEnabled && language !== 'en' && query.length <= maxIndicTransChars;
       
       const requestBody = {
         agent_type: agentType,
@@ -779,7 +781,7 @@ Always maintain: Empathy + Intuition + Clinical Precision + Patient Safety + Mor
   /**
    * Consult with SIB Local Llama (PRIMARY)
    */
-  async consultWithSIB(query, history = [], language = 'en', sessionId = null, userId = null) {
+  async consultWithSIB(query, history = [], language = 'en', sessionId = null, userId = null, patientData = null) {
     const controller = new AbortController();
     let timeout;
     try {
@@ -804,7 +806,9 @@ Always maintain: Empathy + Intuition + Clinical Precision + Patient Safety + Mor
           message: query,
           patient_id: patientId,
           user_id: userId,  // Pass Mediczy user ID for PostgreSQL context
-          include_risk: false
+          include_risk: true,
+          include_rag: true,
+          patient_data: patientData || undefined
         }),
         signal: controller.signal
       });
@@ -1033,6 +1037,34 @@ I understand you're seeking medical guidance. While I'm currently experiencing s
     return snapshot;
   }
 
+  buildPatientData(userContext = {}) {
+    if (!userContext || typeof userContext !== 'object') {
+      return null;
+    }
+
+    const direct = userContext.patientData || userContext.patient_data;
+    if (direct && typeof direct === 'object') {
+      return direct;
+    }
+
+    const patientData = {
+      user: userContext.user || userContext.profile || null,
+      profile: userContext.profile || null,
+      demographics: userContext.demographics || null,
+      appointments: userContext.appointments || null,
+      prescriptions: userContext.prescriptions || null,
+      conditions: userContext.conditions || userContext.medicalHistory || null,
+      activeMedications: userContext.activeMedications || userContext.medications || null,
+      allergies: userContext.allergies || null,
+      conversationHistory: userContext.conversationHistory || userContext.history || null,
+      summary: userContext.summary || null,
+      channel: userContext.channel || null
+    };
+
+    const hasData = Object.values(patientData).some(value => value !== null && value !== undefined);
+    return hasData ? patientData : null;
+  }
+
   async touchSessionRecord(sessionId, userContext = {}, language = 'en') {
     if (!sessionId) {
       return;
@@ -1154,6 +1186,8 @@ I understand you're seeking medical guidance. While I'm currently experiencing s
    */
   async consultMedical(query, sessionId, language = 'en', userContext = {}) {
     try {
+      const patientData = this.buildPatientData(userContext);
+
       // ===== EMERGENCY TRIAGE MODE BYPASS =====
       // When emergencyMode is true (from Emergency Triage UI), skip intent classification
       // and go directly to LLM for proper medical assessment
@@ -1175,7 +1209,7 @@ I understand you're seeking medical guidance. While I'm currently experiencing s
         let result;
         try {
           console.log('🧠 Triage Mode: Trying SIB Local Llama (PRIMARY)...');
-          result = await this.consultWithSIB(query, history, detectedLanguage, sessionId, userId);
+          result = await this.consultWithSIB(query, history, detectedLanguage, sessionId, userId, patientData);
           console.log('✅ SIB responded successfully for triage via', result.provider);
         } catch (sibError) {
           console.log('⚠️ SIB failed for triage:', sibError.message);
@@ -1500,7 +1534,7 @@ I understand you're seeking medical guidance. While I'm currently experiencing s
       if (!result) {
         try {
           console.log('🧠 Trying SIB Local Llama (FALLBACK 2)...');
-          result = await this.consultWithSIB(query, history, language, sessionId, userId);
+          result = await this.consultWithSIB(query, history, language, sessionId, userId, patientData);
           console.log('✅ SIB responded successfully via', result.provider);
         } catch (sibError) {
           console.log('⚠️ SIB failed:', sibError.message);

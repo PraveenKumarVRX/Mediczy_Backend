@@ -188,6 +188,320 @@ router.get('/orders/:orderId', authUser, async (req, res) => {
   }
 });
 
+/**
+ * GET /api/billing/orders/:orderId/detailed
+ * Get detailed order history with full item breakdown, payment history, and tracking
+ */
+router.get('/orders/:orderId/detailed', authUser, async (req, res) => {
+  try {
+    const userId = req.user.id;
+    const { orderId } = req.params;
+
+    const order = await Order.findOne({
+      where: { id: orderId, userId },
+      include: [
+        {
+          model: Payment,
+          as: 'payments',
+          order: [['createdAt', 'DESC']]
+        },
+        {
+          model: Invoice,
+          as: 'invoice'
+        }
+      ]
+    });
+
+    if (!order) {
+      return res.status(404).json({
+        success: false,
+        message: 'Order not found'
+      });
+    }
+
+    // Parse items from metadata
+    const items = order.metadata?.items || [];
+    
+    // Build detailed response
+    const detailedOrder = {
+      id: order.id,
+      orderNumber: order.orderNumber,
+      orderType: order.orderType,
+      status: order.status,
+      createdAt: order.createdAt,
+      updatedAt: order.updatedAt,
+      
+      // Financial details
+      subtotal: parseFloat(order.subtotal),
+      tax: parseFloat(order.tax || 0),
+      discount: parseFloat(order.discount || 0),
+      total: parseFloat(order.total),
+      currency: order.currency,
+      
+      // Items breakdown
+      items: items,
+      itemCount: items.length,
+      
+      // Address information
+      billingAddress: order.billingAddress,
+      shippingAddress: order.shippingAddress,
+      deliveryAddress: order.metadata?.deliveryAddress || order.shippingAddress,
+      
+      // Delivery tracking
+      estimatedDelivery: order.metadata?.estimatedDelivery,
+      actualDelivery: order.metadata?.actualDelivery,
+      trackingNumber: order.metadata?.trackingNumber,
+      trackingUrl: order.metadata?.trackingUrl,
+      
+      // Prescription info (for pharmacy orders)
+      prescriptionRequired: order.metadata?.prescriptionRequired || false,
+      prescriptionUrl: order.metadata?.prescriptionUrl,
+      
+      // Payment information
+      payments: order.payments?.map(p => ({
+        id: p.id,
+        paymentId: p.paymentId,
+        amount: parseFloat(p.amount),
+        status: p.status,
+        method: p.method,
+        gateway: p.gateway,
+        createdAt: p.createdAt
+      })) || [],
+      
+      // Invoice
+      invoice: order.invoice ? {
+        id: order.invoice.id,
+        invoiceNumber: order.invoice.invoiceNumber,
+        status: order.invoice.status,
+        pdfUrl: order.invoice.pdfUrl,
+        total: parseFloat(order.invoice.total)
+      } : null,
+      
+      // Notes
+      notes: order.notes,
+      
+      // Status timeline
+      statusTimeline: order.metadata?.statusTimeline || [
+        { status: 'pending', timestamp: order.createdAt }
+      ]
+    };
+
+    return res.json({
+      success: true,
+      data: { order: detailedOrder }
+    });
+
+  } catch (error) {
+    console.error('Get detailed order error:', error);
+    return res.status(500).json({
+      success: false,
+      message: 'Failed to fetch detailed order',
+      error: error.message
+    });
+  }
+});
+
+/**
+ * POST /api/billing/orders/:orderId/reorder
+ * Reorder items from a previous order
+ */
+router.post('/orders/:orderId/reorder', authUser, async (req, res) => {
+  try {
+    const userId = req.user.id;
+    const { orderId } = req.params;
+    const { 
+      deliveryAddress,
+      notes,
+      selectedItems // Optional: array of item indices to reorder (if not provided, reorder all)
+    } = req.body;
+
+    // Find original order
+    const originalOrder = await Order.findOne({
+      where: { id: orderId, userId }
+    });
+
+    if (!originalOrder) {
+      return res.status(404).json({
+        success: false,
+        message: 'Original order not found'
+      });
+    }
+
+    // Get items from original order
+    const originalItems = originalOrder.metadata?.items || [];
+    
+    if (originalItems.length === 0) {
+      return res.status(400).json({
+        success: false,
+        message: 'No items found in original order to reorder'
+      });
+    }
+
+    // Filter items if specific ones are selected
+    let itemsToReorder = originalItems;
+    if (selectedItems && Array.isArray(selectedItems) && selectedItems.length > 0) {
+      itemsToReorder = selectedItems
+        .filter(idx => idx >= 0 && idx < originalItems.length)
+        .map(idx => originalItems[idx]);
+    }
+
+    if (itemsToReorder.length === 0) {
+      return res.status(400).json({
+        success: false,
+        message: 'No valid items selected for reorder'
+      });
+    }
+
+    // Calculate totals
+    const subtotal = itemsToReorder.reduce((sum, item) => {
+      return sum + (parseFloat(item.price) * (item.quantity || 1));
+    }, 0);
+    
+    const tax = subtotal * 0.05; // 5% tax
+    const total = paymentGateway.calculateTotal(subtotal, tax, 0);
+
+    // Generate new order number
+    const orderNumber = paymentGateway.generateOrderReceipt('REORD');
+
+    // Create new order
+    const newOrder = await Order.create({
+      orderNumber,
+      userId,
+      orderType: originalOrder.orderType,
+      itemId: originalOrder.itemId,
+      status: 'pending',
+      subtotal: subtotal,
+      tax: tax,
+      discount: 0,
+      total: total,
+      currency: originalOrder.currency || 'INR',
+      billingAddress: originalOrder.billingAddress,
+      shippingAddress: deliveryAddress || originalOrder.shippingAddress,
+      notes: notes || `Reorder from order #${originalOrder.orderNumber}`,
+      metadata: {
+        items: itemsToReorder,
+        deliveryAddress: deliveryAddress || originalOrder.metadata?.deliveryAddress,
+        prescriptionRequired: originalOrder.metadata?.prescriptionRequired,
+        prescriptionUrl: originalOrder.metadata?.prescriptionUrl,
+        originalOrderId: originalOrder.id,
+        originalOrderNumber: originalOrder.orderNumber,
+        isReorder: true,
+        statusTimeline: [
+          { status: 'pending', timestamp: new Date().toISOString() }
+        ]
+      }
+    });
+
+    return res.status(201).json({
+      success: true,
+      message: 'Reorder created successfully',
+      data: {
+        order: {
+          id: newOrder.id,
+          orderNumber: newOrder.orderNumber,
+          status: newOrder.status,
+          items: itemsToReorder,
+          subtotal: parseFloat(newOrder.subtotal),
+          tax: parseFloat(newOrder.tax),
+          total: parseFloat(newOrder.total),
+          currency: newOrder.currency,
+          deliveryAddress: newOrder.metadata?.deliveryAddress,
+          originalOrderId: originalOrder.id,
+          createdAt: newOrder.createdAt
+        }
+      }
+    });
+
+  } catch (error) {
+    console.error('Reorder error:', error);
+    return res.status(500).json({
+      success: false,
+      message: 'Failed to create reorder',
+      error: error.message
+    });
+  }
+});
+
+/**
+ * GET /api/billing/orders/pharmacy/history
+ * Get pharmacy-specific order history with detailed medicine info
+ */
+router.get('/orders/pharmacy/history', authUser, async (req, res) => {
+  try {
+    const userId = req.user.id;
+    const { page = 1, limit = 20, status } = req.query;
+
+    const where = { 
+      userId,
+      orderType: 'pharmacy'
+    };
+    if (status) where.status = status;
+
+    const offset = (page - 1) * limit;
+
+    const { count, rows: orders } = await Order.findAndCountAll({
+      where,
+      include: [
+        {
+          model: Payment,
+          as: 'payments',
+          attributes: ['id', 'paymentId', 'amount', 'status', 'method', 'createdAt']
+        }
+      ],
+      order: [['createdAt', 'DESC']],
+      limit: parseInt(limit),
+      offset: parseInt(offset)
+    });
+
+    // Transform orders for pharmacy-specific view
+    const pharmacyOrders = orders.map(order => ({
+      id: order.id,
+      orderNumber: order.orderNumber,
+      orderDate: order.createdAt,
+      status: order.status,
+      items: order.metadata?.items || [],
+      totalAmount: parseFloat(order.total),
+      deliveryAddress: order.metadata?.deliveryAddress || order.shippingAddress,
+      estimatedDelivery: order.metadata?.estimatedDelivery,
+      prescriptionRequired: order.metadata?.prescriptionRequired || false,
+      prescriptionUrl: order.metadata?.prescriptionUrl,
+      trackingNumber: order.metadata?.trackingNumber,
+      payments: order.payments,
+      canReorder: ['completed', 'delivered'].includes(order.status)
+    }));
+
+    // Calculate stats
+    const stats = {
+      totalOrders: count,
+      activeOrders: orders.filter(o => ['pending', 'confirmed', 'processing', 'out_for_delivery'].includes(o.status)).length,
+      deliveredOrders: orders.filter(o => o.status === 'delivered' || o.status === 'completed').length,
+      totalSpent: orders.reduce((sum, o) => sum + parseFloat(o.total), 0)
+    };
+
+    return res.json({
+      success: true,
+      data: {
+        orders: pharmacyOrders,
+        stats,
+        pagination: {
+          total: count,
+          page: parseInt(page),
+          limit: parseInt(limit),
+          totalPages: Math.ceil(count / limit)
+        }
+      }
+    });
+
+  } catch (error) {
+    console.error('Get pharmacy order history error:', error);
+    return res.status(500).json({
+      success: false,
+      message: 'Failed to fetch pharmacy order history',
+      error: error.message
+    });
+  }
+});
+
 // ============================================================================
 // PAYMENT PROCESSING
 // ============================================================================

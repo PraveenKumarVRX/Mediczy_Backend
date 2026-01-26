@@ -6,17 +6,53 @@ import User from '../models/postgres/user.model.postgres.js';
 import { authUser, requireRole } from '../middleware/auth.middleware.js';
 import jwt from 'jsonwebtoken';
 import bcrypt from 'bcrypt';
+import { Op } from 'sequelize';
 import { JWT_CONFIG } from '../config/auth.config.js';
 import { authLimiter } from '../middleware/rateLimiter.middleware.js';
 import { auditLoginAttempt } from '../middleware/audit.middleware.js';
 
 const router = express.Router();
 
+const normalizeEmail = (email) => String(email || '').toLowerCase();
+
+const buildHospitalTokenPayload = ({ hospital, tenant, user }) => {
+  if (tenant && user) {
+    return {
+      id: user.id,
+      email: user.email,
+      role: user.role,
+      userType: 'hospital',
+      tenant_id: tenant.id,
+      organization_id: tenant.id,
+      hospital_id: tenant.id,
+      hospitalId: tenant.id,
+      hospitalName: tenant.name,
+      hospital_slug: tenant.slug,
+      subdomain: tenant.subdomain,
+      custom_domain: tenant.custom_domain
+    };
+  }
+
+  if (hospital) {
+    return {
+      id: hospital.id,
+      email: hospital.email,
+      role: 'hospital',
+      userType: 'hospital',
+      hospital_id: hospital.id,
+      hospitalId: hospital.id,
+      hospitalName: hospital.hospitalName || hospital.name
+    };
+  }
+
+  return null;
+};
+
 /**
  * Hospital Registration
  * POST /api/hospital/auth/register
  */
-router.post('/register', async (req, res) => {
+export const hospitalRegister = async (req, res) => {
   try {
     const {
       hospitalName,
@@ -92,13 +128,15 @@ router.post('/register', async (req, res) => {
       error: error.message
     });
   }
-});
+};
+
+router.post('/register', hospitalRegister);
 
 /**
  * Hospital Login
  * POST /api/hospital/auth/login
  */
-router.post('/login', authLimiter, async (req, res) => {
+export const hospitalLogin = async (req, res) => {
   try {
     const { email, password } = req.body;
 
@@ -109,21 +147,96 @@ router.post('/login', authLimiter, async (req, res) => {
       });
     }
 
+    const normalizedEmail = normalizeEmail(email);
     const hospital = await Hospital.findOne({
-      where: { email: email.toLowerCase() }
+      where: { email: normalizedEmail }
     });
 
     if (!hospital) {
-      await auditLoginAttempt(req, null, email, false, 'Hospital not found');
-      return res.status(401).json({
-        success: false,
-        message: 'Invalid email or password'
+      // Fallback: try multitenant hospital staff login by email (no subdomain)
+      const user = await User.findOne({
+        where: {
+          email: normalizedEmail,
+          status: 'active',
+          [Op.or]: [
+            { organization_type: 'hospital' },
+            { role: { [Op.in]: ['hospital_admin', 'doctor', 'staff', 'nurse', 'insurance_coordinator', 'billing', 'receptionist'] } }
+          ]
+        }
+      });
+
+      if (!user) {
+        await auditLoginAttempt(req, null, normalizedEmail, false, 'Hospital not found');
+        return res.status(401).json({
+          success: false,
+          message: 'Invalid email or password'
+        });
+      }
+
+      const passwordMatch = await bcrypt.compare(password, user.password);
+      if (!passwordMatch) {
+        await auditLoginAttempt(req, user.id, normalizedEmail, false, 'Invalid password');
+        return res.status(401).json({
+          success: false,
+          message: 'Invalid email or password'
+        });
+      }
+
+      const tenantId = user.tenant_id || user.organization_id;
+      if (!tenantId) {
+        await auditLoginAttempt(req, user.id, normalizedEmail, false, 'Hospital tenant missing');
+        return res.status(401).json({
+          success: false,
+          message: 'Invalid email or password'
+        });
+      }
+
+      const tenant = await Tenant.findOne({
+        where: { id: tenantId, status: 'active', type: 'hospital' }
+      });
+
+      if (!tenant) {
+        await auditLoginAttempt(req, user.id, normalizedEmail, false, 'Hospital tenant not found');
+        return res.status(401).json({
+          success: false,
+          message: 'Invalid email or password'
+        });
+      }
+
+      const tokenPayload = buildHospitalTokenPayload({ tenant, user });
+      const token = jwt.sign(tokenPayload, JWT_CONFIG.SECRET, { expiresIn: '7d' });
+
+      await auditLoginAttempt(req, user.id, normalizedEmail, true);
+
+      return res.json({
+        success: true,
+        message: 'Login successful',
+        token,
+        user: {
+          id: user.id,
+          email: user.email,
+          firstName: user.firstName,
+          lastName: user.lastName,
+          role: user.role
+        },
+        hospital: {
+          id: tenant.id,
+          name: tenant.name,
+          slug: tenant.slug,
+          subdomain: tenant.subdomain,
+          custom_domain: tenant.custom_domain,
+          email: tenant.email,
+          phone: tenant.phone,
+          type: tenant.type,
+          plan: tenant.plan,
+          status: tenant.status
+        }
       });
     }
 
     const isPasswordValid = await hospital.comparePassword(password);
     if (!isPasswordValid) {
-      await auditLoginAttempt(req, hospital.id, email, false, 'Invalid password');
+      await auditLoginAttempt(req, hospital.id, normalizedEmail, false, 'Invalid password');
       return res.status(401).json({
         success: false,
         message: 'Invalid email or password'
@@ -131,20 +244,17 @@ router.post('/login', authLimiter, async (req, res) => {
     }
 
     if (hospital.status !== 'active') {
-      await auditLoginAttempt(req, hospital.id, email, false, 'Hospital inactive');
+      await auditLoginAttempt(req, hospital.id, normalizedEmail, false, 'Hospital inactive');
       return res.status(403).json({
         success: false,
         message: 'Hospital account is not active'
       });
     }
 
-    const token = jwt.sign(
-      { id: hospital.id, email: hospital.email, role: 'hospital' },
-      JWT_CONFIG.SECRET,
-      { expiresIn: '7d' }
-    );
+    const tokenPayload = buildHospitalTokenPayload({ hospital });
+    const token = jwt.sign(tokenPayload, JWT_CONFIG.SECRET, { expiresIn: '7d' });
 
-    await auditLoginAttempt(req, hospital.id, email, true);
+    await auditLoginAttempt(req, hospital.id, normalizedEmail, true);
 
     res.json({
       success: true,
@@ -170,16 +280,19 @@ router.post('/login', authLimiter, async (req, res) => {
       error: error.message
     });
   }
-});
+};
+
+router.post('/login', authLimiter, hospitalLogin);
 
 /**
  * Hospital Login (Multitenancy-aware)
  * POST /api/hospital/auth/login/v2
  * Supports both old Hospital model and new Tenant model
  */
-router.post('/login/v2', authLimiter, async (req, res) => {
+export const hospitalLoginV2 = async (req, res) => {
   try {
     const { email, password, subdomain } = req.body;
+    const hospitalSlug = req.body.hospital_slug || req.body.hospitalSlug || req.body.slug;
 
     if (!email || !password) {
       return res.status(400).json({
@@ -192,10 +305,22 @@ router.post('/login/v2', authLimiter, async (req, res) => {
     let tenant = null;
     let user = null;
 
-    if (subdomain) {
+    if (subdomain || hospitalSlug) {
       // Login via subdomain (multitenancy)
+      const tenantMatchers = [];
+      if (subdomain) {
+        tenantMatchers.push({ subdomain });
+      }
+      if (hospitalSlug) {
+        tenantMatchers.push({ slug: hospitalSlug });
+      }
+
       tenant = await Tenant.findOne({
-        where: { subdomain, status: 'active', type: 'hospital' }
+        where: {
+          status: 'active',
+          type: 'hospital',
+          ...(tenantMatchers.length ? { [Op.or]: tenantMatchers } : {})
+        }
       });
 
       if (!tenant) {
@@ -209,7 +334,7 @@ router.post('/login/v2', authLimiter, async (req, res) => {
       // Find hospital user in tenant
       user = await User.findOne({
         where: {
-          email: email.toLowerCase(),
+          email: normalizeEmail(email),
           tenant_id: tenant.id,
           organization_id: tenant.id,
           role: ['hospital_admin', 'doctor', 'staff', 'nurse']
@@ -218,7 +343,7 @@ router.post('/login/v2', authLimiter, async (req, res) => {
     } else {
       // Fallback: Login via email (old system)
       const hospital = await Hospital.findOne({
-        where: { email: email.toLowerCase() }
+        where: { email: normalizeEmail(email) }
       });
 
       if (!hospital) {
@@ -246,11 +371,8 @@ router.post('/login/v2', authLimiter, async (req, res) => {
         });
       }
 
-      const token = jwt.sign(
-        { id: hospital.id, email: hospital.email, role: 'hospital', hospitalId: hospital.id },
-        JWT_CONFIG.SECRET,
-        { expiresIn: '7d' }
-      );
+      const tokenPayload = buildHospitalTokenPayload({ hospital });
+      const token = jwt.sign(tokenPayload, JWT_CONFIG.SECRET, { expiresIn: '7d' });
 
       await auditLoginAttempt(req, hospital.id, email, true);
       return res.json({
@@ -299,22 +421,8 @@ router.post('/login/v2', authLimiter, async (req, res) => {
     }
 
     // Generate JWT token with tenant context
-    const token = jwt.sign(
-      {
-        id: user.id,
-        email: user.email,
-        role: user.role,
-        tenant_id: tenant.id,
-        organization_id: tenant.id,
-        hospital_id: tenant.id,
-        hospitalId: tenant.id,
-        hospitalName: tenant.name,
-        subdomain: tenant.subdomain,
-        custom_domain: tenant.custom_domain
-      },
-      JWT_CONFIG.SECRET,
-      { expiresIn: '7d' }
-    );
+    const tokenPayload = buildHospitalTokenPayload({ tenant, user });
+    const token = jwt.sign(tokenPayload, JWT_CONFIG.SECRET, { expiresIn: '7d' });
 
     await auditLoginAttempt(req, user.id, email, true);
 
@@ -350,14 +458,16 @@ router.post('/login/v2', authLimiter, async (req, res) => {
       error: error.message
     });
   }
-});
+};
+
+router.post('/login/v2', authLimiter, hospitalLoginV2);
 
 /**
  * Hospital Login via Subdomain (for Dhyan hospital, etc.)
  * POST /api/hospital/auth/login-tenant
  * Optimized for multitenancy
  */
-router.post('/login-tenant', authLimiter, async (req, res) => {
+export const hospitalLoginTenant = async (req, res) => {
   try {
     const { email, password } = req.body;
     const subdomain = req.get('host')?.split('.')[0]; // Extract from subdomain
@@ -392,7 +502,7 @@ router.post('/login-tenant', authLimiter, async (req, res) => {
     // Find staff/user in this hospital
     const user = await User.findOne({
       where: {
-        email: email.toLowerCase(),
+        email: normalizeEmail(email),
         tenant_id: tenant.id,
         status: 'active'
       }
@@ -417,20 +527,8 @@ router.post('/login-tenant', authLimiter, async (req, res) => {
     }
 
     // Generate JWT
-    const token = jwt.sign(
-      {
-        id: user.id,
-        email: user.email,
-        role: user.role,
-        tenant_id: tenant.id,
-        hospital_id: tenant.id,
-        hospitalId: tenant.id,
-        hospitalName: tenant.name,
-        subdomain: tenant.subdomain
-      },
-      JWT_CONFIG.SECRET,
-      { expiresIn: '7d' }
-    );
+    const tokenPayload = buildHospitalTokenPayload({ tenant, user });
+    const token = jwt.sign(tokenPayload, JWT_CONFIG.SECRET, { expiresIn: '7d' });
 
     await auditLoginAttempt(req, user.id, email, true);
 
@@ -452,13 +550,15 @@ router.post('/login-tenant', authLimiter, async (req, res) => {
       error: error.message
     });
   }
-});
+};
+
+router.post('/login-tenant', authLimiter, hospitalLoginTenant);
 
 /**
  * Hospital Profile
  * GET /api/hospital/auth/profile
  */
-router.get('/profile', authUser, requireRole('hospital'), async (req, res) => {
+export const hospitalProfile = async (req, res) => {
   try {
     const hospital = await Hospital.findByPk(req.user.id, {
       attributes: { exclude: ['password'] }
@@ -483,13 +583,15 @@ router.get('/profile', authUser, requireRole('hospital'), async (req, res) => {
       error: error.message
     });
   }
-});
+};
+
+router.get('/profile', authUser, requireRole('hospital'), hospitalProfile);
 
 /**
  * Onboard Corporate (Hospital creates corporate record)
  * POST /api/hospital/auth/corporates
  */
-router.post('/corporates', authUser, requireRole('hospital'), async (req, res) => {
+export const hospitalCreateCorporate = async (req, res) => {
   try {
     const {
       companyName, cin, gstin, pan, industry, employeeCount,
@@ -542,13 +644,15 @@ router.post('/corporates', authUser, requireRole('hospital'), async (req, res) =
       error: error.message
     });
   }
-});
+};
+
+router.post('/corporates', authUser, requireRole('hospital'), hospitalCreateCorporate);
 
 /**
  * List Corporates onboarded by hospital
  * GET /api/hospital/auth/corporates
  */
-router.get('/corporates', authUser, requireRole('hospital'), async (req, res) => {
+export const hospitalListCorporates = async (req, res) => {
   try {
     const { status, page = 1, limit = 20 } = req.query;
     const whereClause = { onboardedBy: 'hospital', onboardedById: req.user.id };
@@ -577,6 +681,51 @@ router.get('/corporates', authUser, requireRole('hospital'), async (req, res) =>
       error: error.message
     });
   }
-});
+};
+
+router.get('/corporates', authUser, requireRole('hospital'), hospitalListCorporates);
+
+/**
+ * Verify hospital token
+ * GET /api/hospital/auth/verify
+ */
+export const hospitalVerify = async (req, res) => {
+  try {
+    const token = req.headers.authorization?.split(' ')[1];
+
+    if (!token) {
+      return res.status(401).json({
+        success: false,
+        message: 'No token provided'
+      });
+    }
+
+    const decoded = jwt.verify(token, JWT_CONFIG.SECRET);
+    return res.status(200).json({
+      success: true,
+      hospital: decoded
+    });
+  } catch (error) {
+    return res.status(401).json({
+      success: false,
+      message: 'Invalid or expired token'
+    });
+  }
+};
+
+router.get('/verify', hospitalVerify);
+
+/**
+ * Logout hospital (client-side token removal)
+ * POST /api/hospital/auth/logout
+ */
+export const hospitalLogout = async (req, res) => {
+  res.status(200).json({
+    success: true,
+    message: 'Logged out successfully'
+  });
+};
+
+router.post('/logout', hospitalLogout);
 
 export default router;

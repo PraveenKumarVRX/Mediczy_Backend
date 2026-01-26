@@ -145,9 +145,71 @@ class WhatsAppAgenticBookingService {
     // CRITICAL: await getSession since it's now async with Redis
     const session = await this.getSession(phoneNumber);
     const userName = userContext.isKnownUser ? userContext.user.firstName : 'there';
+    const lowerMessage = String(message || '').toLowerCase();
     
     console.log('📅 Booking session state:', session.state, 'for phone:', phoneNumber.substring(0, 8) + '***');
     
+    // Allow users to exit booking flow or switch topics
+    const exitKeywords = ['cancel', 'stop', 'not now', 'later', 'exit', 'quit', 'end'];
+    const nonBookingKeywords = ['membership', 'benefits', 'plan', 'coverage', 'policy', 'subscription'];
+    const wantsExit = exitKeywords.some(k => lowerMessage.includes(k)) || nonBookingKeywords.some(k => lowerMessage.includes(k));
+    if (wantsExit && session.state !== BOOKING_STATES.IDLE) {
+      session.state = BOOKING_STATES.IDLE;
+      session.data = {};
+      session.history.push({ role: 'user', content: message, timestamp: Date.now() });
+      const response = `No problem, ${userName}. I've paused the booking flow.\n\n` +
+        `If you need membership plan benefits, please share your membership ID or corporate name, and I can help.`;
+      session.history.push({ role: 'assistant', content: response, timestamp: Date.now() });
+      await this.saveSession(phoneNumber, session);
+      return {
+        success: true,
+        shouldReply: true,
+        response,
+        isAgenticAction: true,
+        currentState: session.state
+      };
+    }
+
+    // Exit booking flow if user pivots to non-booking queries
+    const isSimpleOption = /^[1-6]$/.test(String(message || '').trim());
+    const isDateLike = this.isDateLike(message);
+    const isBookingRelated = this.isBookingRelated(message);
+
+    if (session.state !== BOOKING_STATES.IDLE && !isBookingRelated && !isDateLike && !isSimpleOption) {
+      session.state = BOOKING_STATES.IDLE;
+      session.data = {};
+      session.history.push({ role: 'user', content: message, timestamp: Date.now() });
+
+      const response = `Got it, ${userName}. I’ll pause the booking flow.\n\nPlease share your symptoms or question, and I’ll help you right away.`;
+      session.history.push({ role: 'assistant', content: response, timestamp: Date.now() });
+      await this.saveSession(phoneNumber, session);
+
+      return {
+        success: true,
+        shouldReply: true,
+        response,
+        isAgenticAction: true,
+        currentState: session.state
+      };
+    }
+
+    // Handle appointment status queries directly
+    if (/(status|track|existing appointment|my appointment)/i.test(message)) {
+      session.state = BOOKING_STATES.IDLE;
+      session.data = {};
+      session.history.push({ role: 'user', content: message, timestamp: Date.now() });
+      const response = `Sure ${userName}, please share your appointment ID or the doctor name and date so I can check the status.`;
+      session.history.push({ role: 'assistant', content: response, timestamp: Date.now() });
+      await this.saveSession(phoneNumber, session);
+      return {
+        success: true,
+        shouldReply: true,
+        response,
+        isAgenticAction: true,
+        currentState: session.state
+      };
+    }
+
     // Store message in session history
     session.history.push({ role: 'user', content: message, timestamp: Date.now() });
     
@@ -1088,6 +1150,13 @@ class WhatsAppAgenticBookingService {
     const lowerMessage = message.toLowerCase();
     const today = new Date();
     today.setHours(0, 0, 0, 0);
+
+    // Strip time-of-day words to improve date parsing
+    const cleanedMessage = lowerMessage
+      .replace(/\b(morning|afternoon|evening|night|tonight)\b/g, '')
+      .replace(/\b(at|by|around|on)\b/g, ' ')
+      .replace(/\s+/g, ' ')
+      .trim();
     
     // Handle relative dates
     if (lowerMessage.includes('today')) {
@@ -1128,19 +1197,41 @@ class WhatsAppAgenticBookingService {
     }
     
     // Handle specific dates like "25th January" or "January 25"
-    const dateMatch = message.match(/(\d{1,2})(?:st|nd|rd|th)?\s*(january|february|march|april|may|june|july|august|september|october|november|december)/i) ||
-                      message.match(/(january|february|march|april|may|june|july|august|september|october|november|december)\s*(\d{1,2})/i);
+    const dateMatch = cleanedMessage.match(/(\d{1,2})(?:st|nd|rd|th)?\s*(january|february|march|april|may|june|july|august|september|october|november|december|jan|feb|mar|apr|jun|jul|aug|sep|sept|oct|nov|dec)/i) ||
+              cleanedMessage.match(/(january|february|march|april|may|june|july|august|september|october|november|december|jan|feb|mar|apr|jun|jul|aug|sep|sept|oct|nov|dec)\s*(\d{1,2})(?:st|nd|rd|th)?/i);
     
     if (dateMatch) {
       const months = ['january', 'february', 'march', 'april', 'may', 'june', 'july', 'august', 'september', 'october', 'november', 'december'];
+      const shortMonths = {
+        jan: 0,
+        feb: 1,
+        mar: 2,
+        apr: 3,
+        jun: 5,
+        jul: 6,
+        aug: 7,
+        sep: 8,
+        sept: 8,
+        oct: 9,
+        nov: 10,
+        dec: 11
+      };
       let day, month;
       
       if (isNaN(dateMatch[1])) {
-        month = months.indexOf(dateMatch[1].toLowerCase());
+        const monthToken = dateMatch[1].toLowerCase();
+        month = months.indexOf(monthToken);
+        if (month === -1 && shortMonths[monthToken] !== undefined) {
+          month = shortMonths[monthToken];
+        }
         day = parseInt(dateMatch[2]);
       } else {
         day = parseInt(dateMatch[1]);
-        month = months.indexOf(dateMatch[2].toLowerCase());
+        const monthToken = dateMatch[2].toLowerCase();
+        month = months.indexOf(monthToken);
+        if (month === -1 && shortMonths[monthToken] !== undefined) {
+          month = shortMonths[monthToken];
+        }
       }
       
       if (month !== -1 && day >= 1 && day <= 31) {
@@ -1234,8 +1325,24 @@ class WhatsAppAgenticBookingService {
       'slot', 'available', 'doctor', 'consult', 'visit', 'clinic',
       'tomorrow', 'next week', 'reschedule', 'cancel'
     ];
+
+    if (lowerMessage.includes('status') || lowerMessage.includes('track')) {
+      return false;
+    }
     
     return bookingKeywords.some(keyword => lowerMessage.includes(keyword));
+  }
+
+  /**
+   * Check if message looks like a date/time input
+   */
+  isDateLike(message = '') {
+    const text = message.toLowerCase();
+    return /\b(today|tomorrow|monday|tuesday|wednesday|thursday|friday|saturday|sunday|jan|feb|mar|apr|may|jun|jul|aug|sep|sept|oct|nov|dec)\b/.test(text) ||
+      /\d{1,2}(?:st|nd|rd|th)?\s*(january|february|march|april|may|june|july|august|september|october|november|december)/i.test(message) ||
+      /\d{4}-\d{2}-\d{2}/.test(text) ||
+      /\d{1,2}[\/\-]\d{1,2}/.test(text) ||
+      /\b(morning|afternoon|evening|night)\b/.test(text);
   }
 
   /**

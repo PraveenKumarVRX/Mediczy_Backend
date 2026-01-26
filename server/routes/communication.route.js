@@ -216,6 +216,18 @@ router.post('/whatsapp/send', authUser, async (req, res) => {
       formattedPhone = `+${formattedPhone}`;
     }
 
+    const normalizedMessage = String(message || '').trim();
+    const lowerMessage = normalizedMessage.toLowerCase();
+    const safeMessage = lowerMessage.includes('error processing your request') || lowerMessage.includes('please try again later') || !normalizedMessage
+      ? "I'm sorry, I'm having trouble processing your request right now. Please try again in a few minutes or reply with more details."
+      : normalizedMessage;
+
+    console.info('WhatsApp communication.send trace', {
+      to: formattedPhone,
+      snippet: safeMessage.slice(0, 120),
+      stack: new Error().stack?.split('\n').slice(1, 6).map(line => line.trim())
+    });
+
     let result;
     
     // If template is specified, use template-based sending
@@ -230,14 +242,14 @@ router.post('/whatsapp/send', authUser, async (req, res) => {
           from: whatsappFrom,
           to: `whatsapp:${formattedPhone}`,
           contentSid: templateSid,
-          contentVariables: JSON.stringify({ 1: message })
+          contentVariables: JSON.stringify({ 1: safeMessage })
         });
       } else {
         // Free-form message
         result = await twilioClient.messages.create({
           from: whatsappFrom,
           to: `whatsapp:${formattedPhone}`,
-          body: message
+          body: safeMessage
         });
       }
     } else {
@@ -245,7 +257,7 @@ router.post('/whatsapp/send', authUser, async (req, res) => {
       result = await twilioClient.messages.create({
         from: whatsappFrom,
         to: `whatsapp:${formattedPhone}`,
-        body: message
+        body: safeMessage
       });
     }
 
@@ -253,7 +265,7 @@ router.post('/whatsapp/send', authUser, async (req, res) => {
     await CommunicationLog.create({
       type: 'whatsapp',
       recipient: phone,
-      body: message,
+      body: safeMessage,
       status: result.status || 'sent',
       createdBy: req.user.id,
       organizationId: req.user.organizationId || organizationId,

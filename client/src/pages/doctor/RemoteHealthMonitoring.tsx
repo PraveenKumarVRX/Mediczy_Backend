@@ -1528,8 +1528,12 @@ const RemoteHealthMonitoring = () => {
       if (!audioRef.current) {
         audioRef.current = new Audio('/sounds/emergency-alert.mp3');
       }
-      audioRef.current.play().catch(() => {});
-    } catch (e) {}
+      audioRef.current.play().catch(() => {
+        // Ignore autoplay-related failures.
+      });
+    } catch (e) {
+      // Audio playback failures should not block monitoring flow.
+    }
   }, []);
   
   // Filtered patients

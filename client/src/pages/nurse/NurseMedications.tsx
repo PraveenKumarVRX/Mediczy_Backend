@@ -33,7 +33,6 @@ const NurseMedications: React.FC = () => {
 
   useEffect(() => {
     if (patientId) loadHistory(patientId);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [patientId]);
 
   const onSubmit = async (e: React.FormEvent) => {

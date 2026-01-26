@@ -14,13 +14,15 @@ class LaBSEEmbeddings {
     this.model = null;
     this.modelLoaded = false;
     this.embeddingCache = new Map();
-    this.maxCacheSize = 1000;
+    this.maxCacheSize = parseInt(process.env.LABSE_MAX_CACHE || '1000', 10);
     this.intentEmbeddings = null;
     this.modelPath = 'Xenova/LaBSE';
+    this.initializingPromise = null;
     
     // Performance configuration (from environment)
     this.eagerLoadEnabled = process.env.LABSE_EAGER_LOAD === 'true';
     this.semanticFallbackEnabled = process.env.LABSE_SEMANTIC_FALLBACK !== 'false';
+    this.maxRssMb = parseInt(process.env.LABSE_MAX_RSS_MB || '0', 10);
     
     // Intent reference phrases for semantic matching
     this.intentReferences = {
@@ -128,21 +130,38 @@ class LaBSEEmbeddings {
       console.log('[LaBSE] Semantic fallback disabled via config');
       return;
     }
-
-    try {
-      console.log('[LaBSE] Initializing semantic embedding model...');
-      this.model = await pipeline('feature-extraction', this.modelPath);
-      this.modelLoaded = true;
-      
-      // Pre-compute intent reference embeddings
-      await this.precomputeIntentEmbeddings();
-      console.log('[LaBSE] Model initialized and intent embeddings cached');
-    } catch (error) {
-      console.error('[LaBSE] Failed to initialize model:', error.message);
-      this.modelLoaded = false;
-      this.semanticFallbackEnabled = false; // Disable fallback on error
-      throw error;
+    if (this.maxRssMb > 0) {
+      const rssMb = Math.round(process.memoryUsage().rss / (1024 * 1024));
+      if (rssMb >= this.maxRssMb) {
+        console.warn(`[LaBSE] Skipping initialization: RSS ${rssMb}MB >= ${this.maxRssMb}MB limit`);
+        return;
+      }
     }
+    if (this.initializingPromise) {
+      await this.initializingPromise;
+      return;
+    }
+
+    this.initializingPromise = (async () => {
+      try {
+        console.log('[LaBSE] Initializing semantic embedding model...');
+        this.model = await pipeline('feature-extraction', this.modelPath);
+        this.modelLoaded = true;
+        
+        // Pre-compute intent reference embeddings
+        await this.precomputeIntentEmbeddings();
+        console.log('[LaBSE] Model initialized and intent embeddings cached');
+      } catch (error) {
+        console.error('[LaBSE] Failed to initialize model:', error.message);
+        this.modelLoaded = false;
+        this.semanticFallbackEnabled = false; // Disable fallback on error
+        throw error;
+      } finally {
+        this.initializingPromise = null;
+      }
+    })();
+
+    await this.initializingPromise;
   }
 
   /**

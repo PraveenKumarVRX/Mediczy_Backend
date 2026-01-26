@@ -79,7 +79,6 @@ const CorporateDepartments: React.FC = () => {
 
   useEffect(() => {
     loadDepartments();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   const filteredDepartments = useMemo(() => {

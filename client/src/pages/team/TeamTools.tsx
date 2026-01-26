@@ -93,7 +93,7 @@ const TeamTools = () => {
       icon: MessageSquare,
       color: 'text-orange-500',
       bgColor: 'bg-orange-500/10',
-      link: '/admin/chat',
+      link: '/team/chat',
       category: 'Support'
     },
     {

@@ -27,7 +27,7 @@ const SIB_URL = process.env.SIB_URL || 'http://localhost:8001';
 class WhatsAppSIBBrainService {
   constructor() {
     this.doctorName = 'Dr. iSHA';
-    this.sibTimeout = 30000; // 30 seconds timeout for SIB
+    this.sibTimeout = 10000; // 10 seconds timeout for faster WhatsApp replies
     this.enabled = true;
   }
 

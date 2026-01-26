@@ -534,7 +534,7 @@ const Index = () => {
     if (platform.isCapacitor) {
       try {
         // Use Capacitor Bluetooth plugin if available
-        // @ts-ignore - Dynamic import for optional Capacitor plugin
+        // @ts-expect-error - Dynamic import for optional Capacitor plugin
         const BleClient = (window as any).CapacitorBluetooth?.BleClient;
         
         if (BleClient) {
@@ -737,7 +737,7 @@ const Index = () => {
       // Capacitor native pairing
       if (platform.isCapacitor && device?.deviceId) {
         try {
-          // @ts-ignore - Dynamic access for optional Capacitor plugin
+          // @ts-expect-error - Dynamic access for optional Capacitor plugin
           const BleClient = (window as any).CapacitorBluetooth?.BleClient;
           
           if (BleClient) {

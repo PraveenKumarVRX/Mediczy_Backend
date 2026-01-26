@@ -128,6 +128,49 @@ class WhatsAppUserContextService {
   }
 
   /**
+   * Find user by ID in database
+   */
+  async findUserById(userId) {
+    if (!userId) return null;
+    const cacheKey = `whatsapp:userId:${userId}`;
+
+    try {
+      const cached = await redis.get(cacheKey);
+      if (cached) {
+        return JSON.parse(cached);
+      }
+    } catch (e) {
+      // ignore cache errors
+    }
+
+    try {
+      const User = (await import('../models/postgres/user.model.postgres.js')).default;
+
+      const user = await User.findOne({
+        where: { id: userId },
+        attributes: [
+          'id', 'unique_id', 'firstName', 'lastName', 'email', 'phoneNumber',
+          'dateOfBirth', 'gender', 'address_city', 'address_state',
+          'bloodType', 'isVerified', 'createdAt'
+        ]
+      });
+
+      if (user) {
+        const userData = user.toJSON();
+        try {
+          await redis.setex(cacheKey, this.contextCacheTTL, JSON.stringify(userData));
+        } catch (e) { /* ignore */ }
+        return userData;
+      }
+
+      return null;
+    } catch (error) {
+      console.error('Error finding user by ID:', error.message);
+      return null;
+    }
+  }
+
+  /**
    * Get user's appointment history
    */
   async getUserAppointments(userId, limit = 5) {
@@ -383,6 +426,86 @@ class WhatsAppUserContextService {
       await redis.setex(cacheKey, this.contextCacheTTL, JSON.stringify(context));
     } catch (e) { /* ignore */ }
     
+    return context;
+  }
+
+  /**
+   * Get complete user context by user ID (for in-app chat)
+   */
+  async getFullUserContextByUserId(userId) {
+    if (!userId) {
+      return {
+        isKnownUser: false,
+        user: null,
+        summary: 'No user ID provided.'
+      };
+    }
+
+    const cacheKey = `whatsapp:fullcontext:user:${userId}`;
+
+    try {
+      const cached = await redis.get(cacheKey);
+      if (cached) {
+        return JSON.parse(cached);
+      }
+    } catch (e) { /* ignore */ }
+
+    const user = await this.findUserById(userId);
+
+    if (!user) {
+      return {
+        isKnownUser: false,
+        user: null,
+        summary: `User ${userId} not found.`
+      };
+    }
+
+    const [
+      appointments,
+      prescriptions,
+      upcomingAppointments,
+      activeMedications
+    ] = await Promise.all([
+      this.getUserAppointments(user.id),
+      this.getUserPrescriptions(user.id),
+      this.getUpcomingAppointments(user.id),
+      this.getActiveMedications(user.id)
+    ]);
+
+    const context = {
+      isKnownUser: true,
+      userId: user.id,
+      phoneNumber: user.phoneNumber || null,
+      user: {
+        id: user.id,
+        uniqueId: user.unique_id,
+        name: `${user.firstName} ${user.lastName}`.trim(),
+        firstName: user.firstName,
+        email: user.email,
+        gender: user.gender,
+        age: user.dateOfBirth ? this.calculateAge(user.dateOfBirth) : null,
+        bloodGroup: user.bloodGroup,
+        city: user.address_city,
+        memberSince: user.createdAt
+      },
+      appointments: {
+        recent: appointments,
+        upcoming: upcomingAppointments,
+        totalCount: appointments.length
+      },
+      prescriptions: {
+        recent: prescriptions,
+        totalCount: prescriptions.length
+      },
+      activeMedications,
+      conversationHistory: [],
+      summary: this.buildContextSummary(user, appointments, prescriptions, upcomingAppointments, activeMedications)
+    };
+
+    try {
+      await redis.setex(cacheKey, this.contextCacheTTL, JSON.stringify(context));
+    } catch (e) { /* ignore */ }
+
     return context;
   }
 

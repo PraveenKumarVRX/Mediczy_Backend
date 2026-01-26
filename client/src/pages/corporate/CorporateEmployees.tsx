@@ -93,7 +93,6 @@ const CorporateEmployees: React.FC = () => {
 
   useEffect(() => {
     loadEmployees();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   const getHealthStatusColor = (status: string) => {

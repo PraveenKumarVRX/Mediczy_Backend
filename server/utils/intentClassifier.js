@@ -15,10 +15,21 @@ class IntentClassifier {
     this.semanticConfidenceThreshold = 60; // Accept semantic result only if confidence >= 60%
     this.labseInstance = null;
     this.intents = {
-      // Appointment & Scheduling
+      // Appointment Status Check - MUST come before appointment (booking) for priority
+      appointment_status: {
+        keywords: {
+          en: ['appointment status', 'my appointment', 'check appointment', 'existing appointment', 'upcoming appointment', 'when is my appointment', 'when is my next', 'my next appointment', 'booked appointment', 'scheduled appointment', 'appointment details', 'see my appointment', 'view appointment', 'status of', 'track appointment', 'did i book', 'what time is my', 'appointment booked', 'booked yesterday', 'booked today', 'my booking', 'next appointment'],
+          hi: ['मेरी अपॉइंटमेंट', 'अपॉइंटमेंट स्थिति', 'मेरी बुकिंग', 'बुक की हुई', 'कब है मेरी', 'अगली अपॉइंटमेंट'],
+          es: ['mi cita', 'estado de cita', 'cita programada', 'mi reserva', 'tengo cita', 'próxima cita']
+        },
+        priority: 0,  // Higher priority than booking
+        action: 'check_appointment_status'
+      },
+      
+      // Appointment & Scheduling (booking new)
       appointment: {
         keywords: {
-          en: ['book appointment', 'schedule appointment', 'need appointment', 'want appointment', 'make appointment', 'appointment', 'reserve', 'slot', 'doctor appointment', 'when can i', 'available times', 'schedule', 'timing', 'time slot', 'booking', 'book doctor', 'see doctor', 'meet doctor', 'consult doctor', 'find doctor'],
+          en: ['book appointment', 'schedule appointment', 'need appointment', 'want appointment', 'make appointment', 'new appointment', 'reserve', 'slot', 'doctor appointment', 'when can i', 'available times', 'schedule', 'timing', 'time slot', 'booking', 'book doctor', 'see doctor', 'meet doctor', 'consult doctor', 'find doctor'],
           hi: ['अपॉइंटमेंट', 'बुक', 'अपॉइंटमेंट बुक', 'शेड्यूल', 'निर्धारण', 'स्लॉट', 'बुकिंग', 'नियुक्ति', 'डॉक्टर', 'मिलना', 'समय'],
           es: ['cita', 'reservar', 'agendar', 'programar', 'horario', 'disponibilidad', 'consulta']
         },
@@ -160,8 +171,8 @@ class IntentClassifier {
     if (this.hybridEnabled && !this.labseInstance) {
       try {
         this.labseInstance = await getLaBSEInstance();
-        // Actually load the model if eager loading is enabled
-        if (this.labseInstance && !this.labseInstance.modelLoaded) {
+        // Load the model only when eager loading is enabled
+        if (this.labseInstance?.eagerLoadEnabled && !this.labseInstance.modelLoaded) {
           await this.labseInstance.initialize();
         }
         console.log('[IntentClassifier] Hybrid mode initialized with LaBSE semantic embeddings');
@@ -192,8 +203,19 @@ class IntentClassifier {
     }
 
     // Low confidence: try semantic fallback if available
-    if (this.hybridEnabled && this.labseInstance?.modelLoaded) {
+    if (this.hybridEnabled && this.labseInstance) {
       try {
+        if (!this.labseInstance.modelLoaded) {
+          await this.labseInstance.initialize();
+        }
+        if (!this.labseInstance.modelLoaded) {
+          return {
+            ...keywordResult,
+            method: 'keyword',
+            hybrid: true,
+            note: 'Semantic fallback unavailable (memory guard or disabled)'
+          };
+        }
         const startTime = Date.now();
         const semanticResult = await this.labseInstance.classifyBySemantics(query);
         const semanticTime = Date.now() - startTime;
@@ -262,6 +284,7 @@ class IntentClassifier {
       const keywords = intentConfig.keywords[language] || intentConfig.keywords.en;
       const matchedKeywords = [];
       let matchCount = 0;
+      let phraseMatchBonus = 0;
 
       // Check for keyword matches
       for (const keyword of keywords) {
@@ -269,6 +292,12 @@ class IntentClassifier {
         if (queryLower.includes(keywordLower)) {
           matchedKeywords.push(keyword);
           matchCount++;
+          
+          // Bonus for multi-word phrase matches (stronger signal)
+          const wordCount = keywordLower.split(/\s+/).length;
+          if (wordCount >= 2) {
+            phraseMatchBonus += wordCount * 10; // Multi-word phrases get significant bonus
+          }
         }
       }
 
@@ -281,12 +310,16 @@ class IntentClassifier {
         const baseScore = 25 + ((matchCount / keywordCount) * 75); // Min 25%, max 100%
         
         // Priority weight (higher = more important intent gets higher score)
+        // Priority 0 = 1.45x, Priority 1 = 1.30x, Priority 2 = 1.15x, Priority 3 = 1.0x
         const priorityWeight = 1 + ((3 - intentConfig.priority) * 0.15);
         
         // Match count boost (more matches = higher confidence)
         const matchBoost = 1 + Math.min(matchCount * 0.15, 0.6);
         
-        const finalScore = baseScore * priorityWeight * matchBoost;
+        // Phrase match bonus for multi-word keyword matches
+        const phraseBonus = Math.min(phraseMatchBonus, 40); // Cap at 40%
+        
+        const finalScore = (baseScore * priorityWeight * matchBoost) + phraseBonus;
         scores[intentName] = Math.min(finalScore, 95); // Cap at 95% to avoid false confidence
       }
     }
@@ -368,6 +401,11 @@ class IntentClassifier {
     if (!intent) return null;
 
     const responses = {
+      appointment_status: {
+        en: 'Let me check your appointment details for you.',
+        hi: 'मुझे आपके अपॉइंटमेंट की जानकारी देखने दें।',
+        es: 'Déjame revisar los detalles de tu cita.'
+      },
       appointment: {
         en: 'I understand you want to book an appointment. Let me help you find the right doctor!',
         hi: 'मुझे समझ आया कि आप अपॉइंटमेंट बुक करना चाहते हैं। मुझे आपको सही डॉक्टर खोजने में मदद करने दें!',

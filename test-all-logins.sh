@@ -3,7 +3,10 @@
 # Comprehensive Login Test Suite for Mediczy
 # Tests all authentication endpoints after JWT_SECRET fixes
 
-API_BASE="http://localhost:8000"
+API_BASE_DEFAULT="http://localhost:8000"
+API_BASE_INPUT="${1:-}"
+API_BASE_ENV="${API_BASE:-}"
+API_BASE="${API_BASE_INPUT:-${API_BASE_ENV:-$API_BASE_DEFAULT}}"
 PASSED=0
 FAILED=0
 
@@ -18,22 +21,48 @@ echo "🔐 Mediczy Authentication Test Suite"
 echo "========================================="
 echo ""
 
+# Helper: check if string is JSON
+is_json() {
+  echo "$1" | jq -e . >/dev/null 2>&1
+}
+
 # Test function
 test_login() {
   local name=$1
   local endpoint=$2
   local email=$3
   local password=$4
+  local extra_payload=$5
   
   echo -n "Testing $name login... "
   
-  response=$(curl -s -X POST "${API_BASE}${endpoint}" \
+  payload="{\"email\":\"$email\",\"password\":\"$password\""
+  if [ -n "$extra_payload" ]; then
+    payload="$payload,$extra_payload"
+  fi
+  payload="$payload}"
+
+  response=$(curl -sS -X POST "${API_BASE}${endpoint}" \
     -H "Content-Type: application/json" \
-    -d "{\"email\":\"$email\",\"password\":\"$password\"}")
+    --connect-timeout 10 --max-time 20 \
+    -d "$payload" \
+    -w "\n%{http_code}")
+
+  http_status=$(echo "$response" | tail -n1)
+  body=$(echo "$response" | sed '$d')
+
+  if ! is_json "$body"; then
+    echo -e "${RED}❌ FAILED${NC}"
+    echo "   HTTP: $http_status"
+    echo "   Response: $body"
+    FAILED=$((FAILED + 1))
+    echo ""
+    return
+  fi
   
-  success=$(echo "$response" | jq -r '.success // false')
-  token=$(echo "$response" | jq -r '.token // empty')
-  message=$(echo "$response" | jq -r '.message // "No message"')
+  success=$(echo "$body" | jq -r '.success // false')
+  token=$(echo "$body" | jq -r '.token // empty')
+  message=$(echo "$body" | jq -r '.message // "No message"')
   
   if [ "$success" = "true" ] && [ -n "$token" ]; then
     echo -e "${GREEN}✅ PASSED${NC}"
@@ -42,7 +71,8 @@ test_login() {
   else
     echo -e "${RED}❌ FAILED${NC}"
     echo "   Message: $message"
-    echo "   Response: $response"
+    echo "   HTTP: $http_status"
+    echo "   Response: $body"
     FAILED=$((FAILED + 1))
   fi
   echo ""
@@ -56,7 +86,7 @@ test_verify() {
   
   echo -n "Testing $name token verification... "
   
-  response=$(curl -s -X GET "${API_BASE}${endpoint}" \
+  response=$(curl -sS -X GET "${API_BASE}${endpoint}" \
     -H "Authorization: Bearer $token")
   
   success=$(echo "$response" | jq -r '.success // false')
@@ -80,8 +110,9 @@ echo ""
 test_login "Clinic" "/api/clinic/login" "clinic@mediczy.com" "Clinic123"
 
 # Get token for verification test
-CLINIC_TOKEN=$(curl -s -X POST "${API_BASE}/api/clinic/login" \
+CLINIC_TOKEN=$(curl -sS -X POST "${API_BASE}/api/clinic/login" \
   -H "Content-Type: application/json" \
+  --connect-timeout 10 --max-time 20 \
   -d '{"email":"clinic@mediczy.com","password":"Clinic123"}' | jq -r '.token // empty')
 
 if [ -n "$CLINIC_TOKEN" ]; then
@@ -89,7 +120,7 @@ if [ -n "$CLINIC_TOKEN" ]; then
 fi
 
 # 2. Hospital Login
-test_login "Hospital" "/api/hospital/login" "hospital@mediczy.com" "Hospital123"
+test_login "Hospital" "/api/hospital/auth/login" "hospital@mediczy.com" "Hospital123"
 
 # 3. Homecare Login
 test_login "Homecare" "/api/homecare/login" "homecare@mediczy.com" "Homecare123"
@@ -98,87 +129,19 @@ test_login "Homecare" "/api/homecare/login" "homecare@mediczy.com" "Homecare123"
 test_login "Ambulance" "/api/ambulance/login" "ambulance@mediczy.com" "Ambulance123"
 
 # 5. Doctor Login (unified)
-echo -n "Testing Doctor login... "
-DOCTOR_RESPONSE=$(curl -s -X POST "${API_BASE}/api/unified-patient/login" \
-  -H "Content-Type: application/json" \
-  -d '{
-    "email":"drjohn@apollo.com",
-    "password":"Doctor@2024",
-    "clinicIdentifier":"apollo-hospital",
-    "role":"doctor"
-  }')
-
-DOCTOR_SUCCESS=$(echo "$DOCTOR_RESPONSE" | jq -r '.success // false')
-DOCTOR_TOKEN=$(echo "$DOCTOR_RESPONSE" | jq -r '.token // empty')
-
-if [ "$DOCTOR_SUCCESS" = "true" ] && [ -n "$DOCTOR_TOKEN" ]; then
-  echo -e "${GREEN}✅ PASSED${NC}"
-  echo "   Token: ${DOCTOR_TOKEN:0:50}..."
-  PASSED=$((PASSED + 1))
-else
-  echo -e "${RED}❌ FAILED${NC}"
-  MESSAGE=$(echo "$DOCTOR_RESPONSE" | jq -r '.message // "No message"')
-  echo "   Message: $MESSAGE"
-  FAILED=$((FAILED + 1))
-fi
-echo ""
+test_login "Doctor" "/api/hospital/staff/doctor/login" "drjohn@apollo.com" "Doctor@2024" '"hospital_slug":"apollo-hospital"'
 
 # 6. Nurse Login (unified)
-echo -n "Testing Nurse login... "
-NURSE_RESPONSE=$(curl -s -X POST "${API_BASE}/api/unified-patient/login" \
-  -H "Content-Type: application/json" \
-  -d '{
-    "email":"nurse@apollo.com",
-    "password":"Nurse@2024",
-    "clinicIdentifier":"apollo-hospital",
-    "role":"nurse"
-  }')
-
-NURSE_SUCCESS=$(echo "$NURSE_RESPONSE" | jq -r '.success // false')
-NURSE_TOKEN=$(echo "$NURSE_RESPONSE" | jq -r '.token // empty')
-
-if [ "$NURSE_SUCCESS" = "true" ] && [ -n "$NURSE_TOKEN" ]; then
-  echo -e "${GREEN}✅ PASSED${NC}"
-  echo "   Token: ${NURSE_TOKEN:0:50}..."
-  PASSED=$((PASSED + 1))
-else
-  echo -e "${RED}❌ FAILED${NC}"
-  MESSAGE=$(echo "$NURSE_RESPONSE" | jq -r '.message // "No message"')
-  echo "   Message: $MESSAGE"
-  FAILED=$((FAILED + 1))
-fi
-echo ""
+test_login "Nurse" "/api/hospital/staff/nurse/login" "nurse@apollo.com" "Nurse@2024" '"hospital_slug":"apollo-hospital"'
 
 # 7. Patient Login (unified)
-echo -n "Testing Patient login... "
-PATIENT_RESPONSE=$(curl -s -X POST "${API_BASE}/api/unified-patient/login" \
-  -H "Content-Type: application/json" \
-  -d '{
-    "email":"john.doe@example.com",
-    "password":"Patient@2024",
-    "clinicIdentifier":"apollo-hospital",
-    "role":"patient"
-  }')
-
-PATIENT_SUCCESS=$(echo "$PATIENT_RESPONSE" | jq -r '.success // false')
-PATIENT_TOKEN=$(echo "$PATIENT_RESPONSE" | jq -r '.token // empty')
-
-if [ "$PATIENT_SUCCESS" = "true" ] && [ -n "$PATIENT_TOKEN" ]; then
-  echo -e "${GREEN}✅ PASSED${NC}"
-  echo "   Token: ${PATIENT_TOKEN:0:50}..."
-  PASSED=$((PASSED + 1))
-else
-  echo -e "${RED}❌ FAILED${NC}"
-  MESSAGE=$(echo "$PATIENT_RESPONSE" | jq -r '.message // "No message"')
-  echo "   Message: $MESSAGE"
-  FAILED=$((FAILED + 1))
-fi
-echo ""
+test_login "Patient" "/api/patient/login" "john.doe@example.com" "Patient@2024" '"clinic_slug":"apollo-hospital"'
 
 # 8. Admin Login
 echo -n "Testing Admin login... "
-ADMIN_RESPONSE=$(curl -s -X POST "${API_BASE}/api/admin/login" \
+ADMIN_RESPONSE=$(curl -sS -X POST "${API_BASE}/api/admin/login" \
   -H "Content-Type: application/json" \
+  --connect-timeout 10 --max-time 20 \
   -d '{
     "email":"admin@mediczy.com",
     "password":"Admin@2024"

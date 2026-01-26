@@ -196,8 +196,8 @@ const createId = (prefix: string) => makeId(prefix);
 const downloadCsv = (filename: string, headers: string[], rows: Array<Array<string | number>>) => {
   const escapeCell = (value: string | number) => {
     const asString = String(value ?? "");
-    const escaped = asString.replace(/\"/g, '""');
-    return /[\n\r,\"]/g.test(escaped) ? `"${escaped}"` : escaped;
+    const escaped = asString.replace(/"/g, '""');
+    return /[\n\r,"]/g.test(escaped) ? `"${escaped}"` : escaped;
   };
   const csv = [headers, ...rows].map((row) => row.map(escapeCell).join(",")).join("\n");
   const blob = new Blob([csv], { type: "text/csv;charset=utf-8" });

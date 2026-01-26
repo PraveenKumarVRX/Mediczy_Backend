@@ -177,7 +177,6 @@ const CorporateRiskMonitor: React.FC = () => {
 
   useEffect(() => {
     loadAlertsConfig();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   const downloadCsv = (rows: string[][], filename: string) => {

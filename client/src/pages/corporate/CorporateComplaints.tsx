@@ -71,7 +71,6 @@ const CorporateComplaints: React.FC = () => {
 
   useEffect(() => {
     loadComplaints();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [statusFilter]);
 
   const stats = {

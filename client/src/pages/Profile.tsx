@@ -237,7 +237,7 @@ const Profile = () => {
 
   // Function to validate Indian phone number
   const validateIndianPhoneNumber = (phone: string) => {
-    const phoneRegex = /^(\+91[\-\s]?)?[0]?(91)?[6789]\d{9}$/;
+    const phoneRegex = /^(\+91[-\s]?)?[0]?(91)?[6789]\d{9}$/;
     return phoneRegex.test(phone.replace(/[-\s]/g, ''));
   };
 

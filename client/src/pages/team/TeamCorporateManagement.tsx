@@ -212,6 +212,15 @@ const TeamCorporateManagement = () => {
     validityDays: '365'
   });
   
+  const [showCreatePlanDialog, setShowCreatePlanDialog] = useState(false);
+  const [newPlan, setNewPlan] = useState({
+    name: '',
+    price: '',
+    annualPrice: '',
+    billingCycle: 'ANNUAL',
+    currency: 'INR'
+  });
+  
   // Mock data for employees and network
   const [employees, setEmployees] = useState<Employee[]>([]);
   const [labPartners, setLabPartners] = useState<LabPartner[]>([]);
@@ -787,6 +796,47 @@ const TeamCorporateManagement = () => {
     setNewPackage({ name: '', description: '', tests: [], price: '', validityDays: '365' });
   };
 
+  const handleCreatePlan = async () => {
+    if (!newPlan.name || !newPlan.price) {
+      toast({
+        variant: 'destructive',
+        title: 'Error',
+        description: 'Plan name and price are required'
+      });
+      return;
+    }
+
+    try {
+      const token = localStorage.getItem('teamToken');
+      await api.post('/admin/corporate-plans', {
+        name: newPlan.name,
+        price: Number(newPlan.price),
+        annualPrice: newPlan.annualPrice ? Number(newPlan.annualPrice) : undefined,
+        billingCycle: newPlan.billingCycle,
+        currency: newPlan.currency
+      }, {
+        headers: token ? { Authorization: `Bearer ${token}` } : undefined
+      });
+
+      toast({
+        title: 'Plan Created',
+        description: `${newPlan.name} has been created successfully`
+      });
+
+      setShowCreatePlanDialog(false);
+      setNewPlan({ name: '', price: '', annualPrice: '', billingCycle: 'ANNUAL', currency: 'INR' });
+      if (selectedCorporate?.id) {
+        fetchCorporatePlans(selectedCorporate.id);
+      }
+    } catch (error: any) {
+      toast({
+        variant: 'destructive',
+        title: 'Error',
+        description: error.response?.data?.message || 'Failed to create plan'
+      });
+    }
+  };
+
   // Filter corporates
   const filteredCorporates = corporates.filter(corp => 
     corp.companyName?.toLowerCase().includes(searchTerm.toLowerCase()) ||
@@ -1153,7 +1203,7 @@ const TeamCorporateManagement = () => {
                         Manage health and insurance plans for {selectedCorporate.companyName}
                       </CardDescription>
                     </div>
-                    <Button>
+                      <Button onClick={() => setShowCreatePlanDialog(true)}>
                       <Plus className="h-4 w-4 mr-2" />
                       Create Plan
                     </Button>
@@ -1928,6 +1978,83 @@ const TeamCorporateManagement = () => {
                 <CheckCircle className="h-4 w-4 mr-2" />
                 Confirm Assignment
               </Button>
+            </DialogFooter>
+          </DialogContent>
+        </Dialog>
+
+        {/* Create Plan Dialog */}
+        <Dialog open={showCreatePlanDialog} onOpenChange={setShowCreatePlanDialog}>
+          <DialogContent className="max-w-lg">
+            <DialogHeader>
+              <DialogTitle>Create Corporate Plan</DialogTitle>
+              <DialogDescription>Set up a new corporate subscription plan.</DialogDescription>
+            </DialogHeader>
+            <div className="space-y-4 py-2">
+              <div className="space-y-2">
+                <Label>Plan Name</Label>
+                <Input
+                  value={newPlan.name}
+                  onChange={(e) => setNewPlan({ ...newPlan, name: e.target.value })}
+                  placeholder="Corporate Basic Plus"
+                />
+              </div>
+              <div className="grid grid-cols-2 gap-4">
+                <div className="space-y-2">
+                  <Label>Price</Label>
+                  <Input
+                    type="number"
+                    value={newPlan.price}
+                    onChange={(e) => setNewPlan({ ...newPlan, price: e.target.value })}
+                    placeholder="6000"
+                  />
+                </div>
+                <div className="space-y-2">
+                  <Label>Annual Price</Label>
+                  <Input
+                    type="number"
+                    value={newPlan.annualPrice}
+                    onChange={(e) => setNewPlan({ ...newPlan, annualPrice: e.target.value })}
+                    placeholder="6000"
+                  />
+                </div>
+              </div>
+              <div className="grid grid-cols-2 gap-4">
+                <div className="space-y-2">
+                  <Label>Billing Cycle</Label>
+                  <Select
+                    value={newPlan.billingCycle}
+                    onValueChange={(value) => setNewPlan({ ...newPlan, billingCycle: value })}
+                  >
+                    <SelectTrigger>
+                      <SelectValue placeholder="Select cycle" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="ANNUAL">Annual</SelectItem>
+                      <SelectItem value="MONTHLY">Monthly</SelectItem>
+                      <SelectItem value="LIFETIME">Lifetime</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
+                <div className="space-y-2">
+                  <Label>Currency</Label>
+                  <Select
+                    value={newPlan.currency}
+                    onValueChange={(value) => setNewPlan({ ...newPlan, currency: value })}
+                  >
+                    <SelectTrigger>
+                      <SelectValue placeholder="Select currency" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="INR">INR</SelectItem>
+                      <SelectItem value="USD">USD</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
+              </div>
+            </div>
+            <DialogFooter>
+              <Button variant="outline" onClick={() => setShowCreatePlanDialog(false)}>Cancel</Button>
+              <Button onClick={handleCreatePlan}>Create Plan</Button>
             </DialogFooter>
           </DialogContent>
         </Dialog>

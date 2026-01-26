@@ -374,7 +374,6 @@ const Appointments = () => {
     if (appointments.length) {
       generateSmartSuggestions();
     }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [appointments]);
 
   // Socket.io connection for incoming doctor calls

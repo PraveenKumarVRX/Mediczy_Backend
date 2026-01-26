@@ -1,0 +1,8 @@
+ id  | firstName |  lastName  |              email               | role  | organization_type | department_name 
+-----+-----------+------------+----------------------------------+-------+-------------------+-----------------
+ 110 | Parinitha | M          | parinitha@mysmarthealth.in       | team  | individual        | 
+ 100 | Nurse     | Test       | nurse@mediczy.com                | nurse | individual        | 
+  96 | Test      | TeamMember | test.team.1768500273@mediqzy.com | team  | individual        | 
+   2 | Admin     | User       | admin@mediqzy.com                | admin | individual        | 
+(4 rows)
+

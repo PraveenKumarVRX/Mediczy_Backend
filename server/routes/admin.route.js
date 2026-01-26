@@ -1204,6 +1204,83 @@ router.get('/corporate-plans/:corporateId', authUser, requireRole(['admin', 'tea
 });
 
 /**
+ * Create Corporate Subscription Plan
+ * POST /api/admin/corporate-plans
+ */
+router.post('/corporate-plans', authUser, requireRole(['admin', 'team']), async (req, res) => {
+  try {
+    const { name, slug, price, annualPrice, currency = 'INR', billingCycle = 'ANNUAL' } = req.body || {};
+
+    if (!name || price == null) {
+      return res.status(400).json({
+        success: false,
+        message: 'name and price are required'
+      });
+    }
+
+    const rawSlug = slug || String(name)
+      .toLowerCase()
+      .replace(/[^a-z0-9\s-]/g, '')
+      .trim()
+      .replace(/\s+/g, '-')
+      .replace(/-+/g, '-')
+      .replace(/(^-|-$)/g, '');
+
+    const planSlug = rawSlug.startsWith('corporate-') ? rawSlug : `corporate-${rawSlug}`;
+
+    const [existing] = await postgresSequelize.query(`
+      SELECT id FROM subscription_plans WHERE slug = :slug
+    `, {
+      replacements: { slug: planSlug },
+      type: postgresSequelize.QueryTypes.SELECT
+    });
+
+    if (existing) {
+      return res.status(409).json({
+        success: false,
+        message: 'Plan slug already exists'
+      });
+    }
+
+    const [inserted] = await postgresSequelize.query(`
+      INSERT INTO subscription_plans (
+        name, slug, type, price, annual_price, currency, billing_cycle,
+        is_active, is_popular, requires_referral, allows_upgrade,
+        created_at, updated_at
+      )
+      VALUES (
+        :name, :slug, 'CORPORATE', :price, :annualPrice, :currency, :billingCycle,
+        true, false, false, true,
+        NOW(), NOW()
+      )
+      RETURNING id, name, slug, price, annual_price, currency, billing_cycle, is_active
+    `, {
+      replacements: {
+        name,
+        slug: planSlug,
+        price,
+        annualPrice: annualPrice ?? price,
+        currency,
+        billingCycle
+      },
+      type: postgresSequelize.QueryTypes.INSERT
+    });
+
+    return res.status(201).json({
+      success: true,
+      plan: inserted
+    });
+  } catch (error) {
+    console.error('Failed to create corporate plan:', error);
+    return res.status(500).json({
+      success: false,
+      message: 'Failed to create corporate plan',
+      error: error.message
+    });
+  }
+});
+
+/**
  * Get Corporate Network Partners
  * GET /api/admin/corporate-network/:corporateId
  */

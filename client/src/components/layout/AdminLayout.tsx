@@ -49,7 +49,8 @@ import {
   PanelLeftClose,
   PanelLeft,
   Moon,
-  Sun
+  Sun,
+  RefreshCw
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Sheet, SheetContent, SheetTrigger } from '@/components/ui/sheet';
@@ -165,7 +166,6 @@ const AdminLayout = ({ children }: AdminLayoutProps) => {
 
   useEffect(() => {
     let isMounted = true;
-    let intervalId: number | undefined;
     const adminToken = localStorage.getItem('adminToken');
     if (!adminToken) {
       setLivekitStatus({ loading: false, success: null });
@@ -196,7 +196,7 @@ const AdminLayout = ({ children }: AdminLayoutProps) => {
     };
 
     checkLivekit();
-    intervalId = window.setInterval(checkLivekit, 120000);
+    const intervalId = window.setInterval(checkLivekit, 120000);
 
     return () => {
       isMounted = false;

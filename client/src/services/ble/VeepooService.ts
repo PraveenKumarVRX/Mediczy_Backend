@@ -548,13 +548,17 @@ export class VeepooService {
           const modelChar = await deviceInfoService.getCharacteristic('model_number_string');
           const modelValue = await modelChar.readValue();
           info.model = new TextDecoder().decode(modelValue);
-        } catch (e) {}
+        } catch (e) {
+          // Optional metadata; ignore if unavailable.
+        }
 
         try {
           const versionChar = await deviceInfoService.getCharacteristic('firmware_revision_string');
           const versionValue = await versionChar.readValue();
           info.version = new TextDecoder().decode(versionValue);
-        } catch (e) {}
+        } catch (e) {
+          // Optional metadata; ignore if unavailable.
+        }
       }
     } catch (e) {
       console.log('Could not read device info');

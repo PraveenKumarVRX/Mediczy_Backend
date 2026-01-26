@@ -63,11 +63,10 @@ const CorporateClaims: React.FC = () => {
 
   useEffect(() => {
     loadClaims();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [statusFilter]);
 
   const parseAmount = (value: string) => {
-    const num = Number(String(value || '').replace(/[^0-9.\-]/g, ''));
+    const num = Number(String(value || '').replace(/[^0-9.-]/g, ''));
     return Number.isFinite(num) ? num : 0;
   };
 

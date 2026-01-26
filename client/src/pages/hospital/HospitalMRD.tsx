@@ -642,7 +642,6 @@ const HospitalMRD = () => {
     return () => {
       stopCamera();
     };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [showScanDialog]);
 
   const handleSaveToQueue = async () => {

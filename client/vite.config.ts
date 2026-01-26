@@ -84,6 +84,14 @@ export default defineConfig(({ mode }) => ({
     chunkSizeWarningLimit: 2000,
     sourcemap: false,
     minify: 'esbuild',
+    rollupOptions: {
+      output: {
+        // Force new hash by adding timestamp to entry chunk name
+        entryFileNames: `assets/[name]-[hash]-${Date.now()}.js`,
+        chunkFileNames: `assets/[name]-[hash]-${Date.now()}.js`,
+        assetFileNames: `assets/[name]-[hash].[ext]`
+      }
+    }
   },
   // Performance optimizations
   esbuild: {

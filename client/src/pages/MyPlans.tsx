@@ -455,7 +455,8 @@ const MyPlans = () => {
                 <div className="grid md:grid-cols-2 lg:grid-cols-3 gap-6">
                   {availablePlans.map((p) => {
                     const durationDays = p.durationDays || ((p.durationMonths || 1) * 30);
-                    const priceValue = p.priceINR ?? Number(p.price) ?? 0;
+                    const parsedPrice = Number(p.price);
+                    const priceValue = p.priceINR ?? (Number.isFinite(parsedPrice) ? parsedPrice : 0);
                     return (
                     <Card key={p.id} className="p-6 space-y-3">
                       <div className="flex items-start justify-between">
@@ -576,7 +577,8 @@ const MyPlans = () => {
                 </p>
                 <div className="grid md:grid-cols-2 lg:grid-cols-3 gap-6">
                   {addonPlans.map((addon) => {
-                    const priceValue = addon.priceINR ?? Number(addon.price) ?? 0;
+                    const parsedPrice = Number(addon.price);
+                    const priceValue = addon.priceINR ?? (Number.isFinite(parsedPrice) ? parsedPrice : 0);
                     return (
                       <Card key={addon.id} className={`p-6 space-y-3 ${addon.isSubscribed ? 'border-emerald-500 bg-emerald-50' : ''}`}>
                         <div className="flex items-start justify-between">

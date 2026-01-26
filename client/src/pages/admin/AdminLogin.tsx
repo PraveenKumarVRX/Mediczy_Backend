@@ -70,7 +70,7 @@ const AdminLogin = () => {
         console.log('Login response:', data);
       }
       
-      // Validate response - API returns 'user' not 'admin'
+      // Validate response - API returns 'user' object (not 'admin')
       if (!data.token || !data.user) {
         throw new Error('Invalid server response');
       }

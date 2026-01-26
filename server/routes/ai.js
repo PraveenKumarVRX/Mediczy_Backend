@@ -1368,4 +1368,205 @@ router.get('/voices', auth, async (req, res) => {
   }
 });
 
+// ====================
+// SIB FEEDBACK SYSTEM
+// ====================
+
+const SIB_URL = process.env.SIB_URL || 'http://localhost:8001';
+
+/**
+ * Submit detailed feedback for SIB response
+ * POST /api/ai/feedback
+ * Body: { query, response, rating, feedback_text, feedback_type, category, conversation_id }
+ */
+router.post('/feedback', auth, async (req, res) => {
+  try {
+    const { query, response, rating, feedback_text, feedback_type, category, conversation_id } = req.body;
+    
+    if (!query || !response) {
+      return res.status(400).json({ 
+        status: 'error', 
+        message: 'query and response are required' 
+      });
+    }
+    
+    const sibResponse = await fetch(`${SIB_URL}/api/feedback/submit`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        query,
+        response,
+        rating: rating || null,
+        feedback_text: feedback_text || null,
+        feedback_type: feedback_type || 'general',
+        user_id: req.user?.id?.toString() || null,
+        patient_id: req.body.patient_id || null,
+        category: category || 'general',
+        conversation_id: conversation_id || null
+      })
+    });
+    
+    if (!sibResponse.ok) {
+      throw new Error(`SIB feedback API error: ${sibResponse.status}`);
+    }
+    
+    const result = await sibResponse.json();
+    res.json({ status: 'success', ...result });
+    
+  } catch (error) {
+    console.error('Feedback submission error:', error);
+    res.status(500).json({ 
+      status: 'error', 
+      message: 'Failed to submit feedback' 
+    });
+  }
+});
+
+/**
+ * Submit quick thumbs up/down feedback
+ * POST /api/ai/feedback/quick
+ * Body: { query, response, is_positive, conversation_id }
+ */
+router.post('/feedback/quick', auth, async (req, res) => {
+  try {
+    const { query, response, is_positive, conversation_id } = req.body;
+    
+    if (!query || !response || typeof is_positive !== 'boolean') {
+      return res.status(400).json({ 
+        status: 'error', 
+        message: 'query, response, and is_positive (boolean) are required' 
+      });
+    }
+    
+    const sibResponse = await fetch(`${SIB_URL}/api/feedback/quick`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        query,
+        response,
+        is_positive,
+        user_id: req.user?.id?.toString() || null,
+        conversation_id: conversation_id || null
+      })
+    });
+    
+    if (!sibResponse.ok) {
+      throw new Error(`SIB quick feedback API error: ${sibResponse.status}`);
+    }
+    
+    const result = await sibResponse.json();
+    res.json({ status: 'success', ...result });
+    
+  } catch (error) {
+    console.error('Quick feedback error:', error);
+    res.status(500).json({ 
+      status: 'error', 
+      message: 'Failed to submit quick feedback' 
+    });
+  }
+});
+
+/**
+ * Submit correction feedback for wrong responses
+ * POST /api/ai/feedback/correction
+ * Body: { query, original_response, corrected_response, correction_reason, conversation_id }
+ */
+router.post('/feedback/correction', auth, async (req, res) => {
+  try {
+    const { query, original_response, corrected_response, correction_reason, conversation_id } = req.body;
+    
+    if (!query || !original_response || !corrected_response) {
+      return res.status(400).json({ 
+        status: 'error', 
+        message: 'query, original_response, and corrected_response are required' 
+      });
+    }
+    
+    const sibResponse = await fetch(`${SIB_URL}/api/feedback/correction`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        query,
+        original_response,
+        corrected_response,
+        correction_reason: correction_reason || null,
+        user_id: req.user?.id?.toString() || null,
+        conversation_id: conversation_id || null
+      })
+    });
+    
+    if (!sibResponse.ok) {
+      throw new Error(`SIB correction API error: ${sibResponse.status}`);
+    }
+    
+    const result = await sibResponse.json();
+    res.json({ status: 'success', ...result });
+    
+  } catch (error) {
+    console.error('Correction feedback error:', error);
+    res.status(500).json({ 
+      status: 'error', 
+      message: 'Failed to submit correction' 
+    });
+  }
+});
+
+/**
+ * Get feedback statistics
+ * GET /api/ai/feedback/stats
+ */
+router.get('/feedback/stats', auth, async (req, res) => {
+  try {
+    const sibResponse = await fetch(`${SIB_URL}/api/feedback/stats`);
+    
+    if (!sibResponse.ok) {
+      throw new Error(`SIB stats API error: ${sibResponse.status}`);
+    }
+    
+    const result = await sibResponse.json();
+    res.json({ status: 'success', ...result });
+    
+  } catch (error) {
+    console.error('Feedback stats error:', error);
+    res.status(500).json({ 
+      status: 'error', 
+      message: 'Failed to get feedback stats' 
+    });
+  }
+});
+
+/**
+ * Get learning insights and stats
+ * GET /api/ai/learning/stats
+ */
+router.get('/learning/stats', auth, async (req, res) => {
+  try {
+    const sibResponse = await fetch(`${SIB_URL}/api/feedback/insights/active`);
+    
+    if (!sibResponse.ok) {
+      throw new Error(`SIB insights API error: ${sibResponse.status}`);
+    }
+    
+    const insights = await sibResponse.json();
+    
+    // Also get quality trends
+    const trendsResponse = await fetch(`${SIB_URL}/api/feedback/quality/trends`);
+    const trends = trendsResponse.ok ? await trendsResponse.json() : { trends: [] };
+    
+    res.json({ 
+      status: 'success', 
+      insights: insights.insights || [],
+      quality_trends: trends.trends || [],
+      total_insights: insights.total || 0
+    });
+    
+  } catch (error) {
+    console.error('Learning stats error:', error);
+    res.status(500).json({ 
+      status: 'error', 
+      message: 'Failed to get learning stats' 
+    });
+  }
+});
+
 export default router; 

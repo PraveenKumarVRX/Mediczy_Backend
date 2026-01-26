@@ -466,7 +466,7 @@ const VoiceNavigation: React.FC = () => {
     }
 
     // Calculate intent scores
-    let scores = {
+    const scores = {
       navigation: 0,
       query: 0,
       action: 0,
@@ -906,7 +906,7 @@ const VoiceNavigation: React.FC = () => {
             case 'back':
               navigate(-1);
               break;
-            case 'home':
+            case 'home': {
               // Navigate to appropriate home based on userType
               const userType = localStorage.getItem('userType');
               if (userType === 'doctor') {
@@ -923,6 +923,7 @@ const VoiceNavigation: React.FC = () => {
                 navigate('/');
               }
               break;
+            }
           }
         }
 

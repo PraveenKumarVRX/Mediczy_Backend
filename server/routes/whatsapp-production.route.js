@@ -1,16 +1,24 @@
 import express from 'express';
 import whatsappProductionService from '../services/whatsapp-production.service.js';
-import whatsAppAIHandler from '../services/whatsapp-ai-conversation.service.js';
-import whatsAppSIBBrain from '../services/whatsapp-sib-brain.service.js';
+import unifiedConversationService from '../services/unified-conversation.service.js';
 import whatsAppUserContextService from '../services/whatsapp-user-context.service.js';
+import rocketChatService from '../services/rocketchat.service.js';
 import logger from '../config/logger.js';
 
 const router = express.Router();
 
-// Configuration for AI auto-reply - Now uses SIB Brain by default
+const sanitizeReply = (text) => {
+  const normalized = String(text || '').trim();
+  const lower = normalized.toLowerCase();
+  if (!normalized) return "Hi! I'm Dr. iSHA. How can I help you today?";
+  if (lower.includes('there was an error processing your request') || lower.includes('please try again later')) {
+    return "I'm sorry, I'm having trouble processing your request right now. Please try again in a few minutes or reply with more details.";
+  }
+  return normalized;
+};
+
+// Configuration for AI auto-reply - unified Dr. iSHA
 const AI_AUTO_REPLY_ENABLED = process.env.WHATSAPP_AI_AUTO_REPLY === 'true' || false;
-// Use SIB Brain for deep reasoning (recommended)
-const USE_SIB_BRAIN = process.env.WHATSAPP_USE_SIB_BRAIN !== 'false'; // Default: true
 
 /**
  * Send appointment confirmation
@@ -517,7 +525,13 @@ router.post('/ai-respond', async (req, res) => {
       });
     }
     
-    const aiResponse = await whatsAppAIHandler.processMessage(phoneNumber, message);
+    const aiResponse = await unifiedConversationService.processMessage({
+      message,
+      channel: 'whatsapp',
+      sessionId: `whatsapp:${phoneNumber}`,
+      identifier: phoneNumber,
+      userContext: { phoneNumber }
+    });
     
     res.json({
       success: true,
@@ -548,11 +562,13 @@ router.post('/send-ai-response', async (req, res) => {
     }
     
     // Get user context and generate AI response
-    const aiResponse = await whatsAppAIHandler.processMessage(
-      phoneNumber, 
-      triggerMessage || 'Hi',
-      null
-    );
+    const aiResponse = await unifiedConversationService.processMessage({
+      message: triggerMessage || 'Hi',
+      channel: 'whatsapp',
+      sessionId: `whatsapp:${phoneNumber}`,
+      identifier: phoneNumber,
+      userContext: { phoneNumber }
+    });
     
     if (aiResponse.shouldReply && aiResponse.response) {
       // Send via WhatsApp
@@ -728,6 +744,17 @@ router.post('/webhook', async (req, res) => {
       messageCount: currentMessages.length
     });
     
+    // Also post incoming WhatsApp message to RocketChat
+    try {
+      await rocketChatService.sendMessage(
+        'GENERAL',
+        `📱 *WhatsApp Message*\n👤 From: ${customerName} (+${phoneNumber})\n${userContext.isKnownUser ? `🆔 Patient: ${userContext.user.name} (ID: ${userContext.user.id})\n` : ''}⏰ ${new Date().toLocaleString()}\n\n💬 ${Body || '[Media Message]'}`
+      );
+      logger.info('✅ Customer message posted to RocketChat');
+    } catch (rcError) {
+      logger.error('Failed to post to RocketChat:', rcError.message);
+    }
+    
     // Emit Socket.IO event to notify team members (if Socket.IO is available)
     if (global.io) {
       global.io.to(generalRoomId).emit('new_message', messageObj);
@@ -742,29 +769,119 @@ router.post('/webhook', async (req, res) => {
       logger.info('🔔 Socket.IO notification sent to #general room');
     }
     
-    // 2. OPTIONAL: AI AUTO-REPLY (only if enabled)
+    // 2. CHECK FOR TEAM MEMBER REQUEST (e.g., "I want to chat with parinitha")
+    const teamChatPatterns = [
+      /\b(chat|talk|speak|connect|contact)\s+(with|to)\s+(\w+)/i,
+      /\bi\s+want\s+to\s+(chat|talk|speak)\s+(with|to)\s+(\w+)/i,
+      /\bconnect\s+me\s+(with|to)\s+(\w+)/i,
+      /\bget\s+me\s+(\w+)/i
+    ];
+    
+    let teamMemberRequested = null;
+    for (const pattern of teamChatPatterns) {
+      const match = Body?.match(pattern);
+      if (match) {
+        teamMemberRequested = match[match.length - 1]; // Last captured group is the name
+        break;
+      }
+    }
+    
+    if (teamMemberRequested) {
+      // Post to RocketChat and notify user
+      try {
+        await rocketChatService.sendMessage(
+          'GENERAL',
+          `🔔 *Customer Request*\n👤 From: ${customerName} (+${phoneNumber})\n💬 Message: ${Body}\n\n📞 Requesting: ${teamMemberRequested}\n⏰ Time: ${new Date().toLocaleString()}`
+        );
+        
+        await whatsappProductionService.sendSessionMessage({
+          to: phoneNumber,
+          body: `I've notified our team. ${teamMemberRequested.charAt(0).toUpperCase() + teamMemberRequested.slice(1)} or another team member will respond to you shortly. 👍`
+        });
+        
+        logger.info('✅ Team member request forwarded to RocketChat', {
+          phoneNumber,
+          teamMember: teamMemberRequested
+        });
+        
+        return res.type('text/xml').status(200).send('<?xml version="1.0" encoding="UTF-8"?><Response></Response>');
+      } catch (error) {
+        logger.error('Error forwarding to RocketChat:', error.message);
+      }
+    }
+    
+    // 3. OPTIONAL: AI AUTO-REPLY (only if enabled)
     // Routes through SIB Brain for deep reasoning with user context
     if (AI_AUTO_REPLY_ENABLED && Body && !MediaUrl0) {
+      let responseSent = false;
       try {
+        // REMOVED hardcoded greeting and status query handlers
+        // Let the AI handle ALL messages with full user context from database
+        // This allows Dr. iSHA to check appointments, prescriptions, etc. from DB
+        
+        // Simple greeting gets fast response but complex queries go to AI
+        const isSimpleGreeting = /^(hi|hello|hey)$/i.test(Body.trim());
+        if (isSimpleGreeting && !userContext.isKnownUser) {
+          await whatsappProductionService.sendSessionMessage({
+            to: phoneNumber,
+            body: sanitizeReply("Hi! I'm Dr. iSHA. How can I help you today?")
+          });
+          responseSent = true;
+          return res.type('text/xml').status(200).send('<?xml version="1.0" encoding="UTF-8"?><Response></Response>');
+        }
+
+        // ALL other messages (including appointment status, medical queries, etc.)
+        // go through unified AI with full DB context
+
         // Choose handler based on configuration
         // SIB Brain provides deep reasoning, user profiling, and context-aware responses
-        const handler = USE_SIB_BRAIN ? whatsAppSIBBrain : whatsAppAIHandler;
-        const handlerName = USE_SIB_BRAIN ? 'SIB Brain' : 'AI Handler';
+        const handler = unifiedConversationService;
+        const handlerName = 'Unified Dr. iSHA';
         
         logger.info(`🧠 Processing via ${handlerName}`, {
           phoneNumber,
-          useSIB: USE_SIB_BRAIN,
           messageLength: Body.length
         });
         
-        const aiResponse = await handler.processMessage(phoneNumber, Body, ProfileName);
+        const aiResponse = await Promise.race([
+          handler.processMessage({
+            message: Body,
+            channel: 'whatsapp',
+            sessionId: `whatsapp:${phoneNumber}`,
+            identifier: phoneNumber,
+            userContext: {
+              ...userContext,
+              phoneNumber,
+              profileName: ProfileName
+            }
+          }),
+          new Promise(resolve => setTimeout(() => resolve(null), 8000))
+        ]);
+        const rawResponseText = String(aiResponse?.response || '').trim();
+        const normalizedResponseText = rawResponseText.toLowerCase();
+        const isGenericErrorReply = normalizedResponseText.includes('there was an error processing your request');
         
-        if (aiResponse.shouldReply && aiResponse.response) {
+        if (!aiResponse) {
+          await whatsappProductionService.sendSessionMessage({
+            to: phoneNumber,
+            body: sanitizeReply("I'm processing your request. Please share a bit more detail so I can help faster.")
+          });
+          responseSent = true;
+          return res.type('text/xml').status(200).send('<?xml version="1.0" encoding="UTF-8"?><Response></Response>');
+        }
+
+        if (aiResponse.shouldReply) {
+          const replyText = rawResponseText
+            ? (isGenericErrorReply
+              ? "I'm sorry, I'm having trouble processing your request right now. Please try again in a few minutes or reply with more details."
+              : rawResponseText)
+            : "Hi! I'm Dr. iSHA. How can I help you today?";
           // Send AI response via WhatsApp
           await whatsappProductionService.sendSessionMessage({
             to: phoneNumber,
-            body: aiResponse.response
+            body: sanitizeReply(replyText)
           });
+          responseSent = true;
           
           // Add AI response to chat room
           const aiMessageObj = {
@@ -772,7 +889,7 @@ router.post('/webhook', async (req, res) => {
             userId: 'dr_isha_bot',
             userName: '🤖 Dr. iSHA',
             userRole: 'assistant',
-            message: aiResponse.response,
+            message: sanitizeReply(replyText),
             type: 'text',
             timestamp: new Date().toISOString(),
             source: 'ai_bot',
@@ -784,6 +901,17 @@ router.post('/webhook', async (req, res) => {
           
           if (global.io) {
             global.io.to(generalRoomId).emit('new_message', aiMessageObj);
+          }
+          
+          // Also post AI response to RocketChat
+          try {
+            await rocketChatService.sendMessage(
+              'GENERAL',
+              `🤖 *Dr. iSHA Response*\n📱 To: ${customerName} (+${phoneNumber})\n⏰ ${new Date().toLocaleString()}\n\n${sanitizeReply(replyText)}`
+            );
+            logger.info('✅ AI response posted to RocketChat');
+          } catch (rcError) {
+            logger.error('Failed to post AI response to RocketChat:', rcError.message);
           }
           
           logger.info('🤖 AI auto-reply sent', {
@@ -805,7 +933,7 @@ router.post('/webhook', async (req, res) => {
         }
       } catch (aiError) {
         logger.error('AI auto-reply error (non-fatal):', { error: aiError.message });
-        // Don't fail the webhook if AI response fails
+        // Do not send a fallback reply here to avoid duplicate error messages
       }
     }
     

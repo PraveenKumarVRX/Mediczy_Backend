@@ -1,5 +1,6 @@
 import express from 'express';
 import fetch from 'node-fetch';
+import unifiedConversationService from '../services/unified-conversation.service.js';
 import { authUser, requireRole } from '../middleware/auth.middleware.js';
 
 const router = express.Router();
@@ -191,52 +192,18 @@ router.post('/:botId/chat', async (req, res) => {
       });
     }
 
-    // Build SIB request based on bot type
-    let sibResponse;
-    const requestData = {
+    const unifiedResponse = await unifiedConversationService.processMessage({
       message,
-      patient_id: conversationId || `admin_${Date.now()}`,
-      user_id: userId,
-      include_risk: botConfig.botletType === 'emergency'
-    };
-
-    // Add patient data if available
-    if (patientData) {
-      requestData.patient_data = patientData;
-    }
-
-    // Route to appropriate SIB endpoint
-    switch (botConfig.botletType) {
-      case 'emergency':
-        // Use chat endpoint with risk assessment for emergency
-        sibResponse = await callSIB('/chat', {
-          ...requestData,
-          include_risk: true
-        });
-        // Check for emergency alerts in the response
-        if (sibResponse.emergency || sibResponse.safety_alerts?.some(a => a.level === 'emergency')) {
-          sibResponse.urgency_level = 'CRITICAL';
-          sibResponse.triage_color = 'RED';
-        }
-        break;
-      
-      case 'task':
-        // For appointment bot, check if it's a booking request
-        const isBookingRequest = /book|schedule|appointment|reschedule|cancel/i.test(message);
-        if (isBookingRequest) {
-          // Use chat endpoint for conversational booking
-          sibResponse = await callSIB('/chat', requestData);
-        } else {
-          // General task query
-          sibResponse = await callSIB('/chat', requestData);
-        }
-        break;
-
-      case 'chat':
-      default:
-        sibResponse = await callSIB('/chat', requestData);
-        break;
-    }
+      channel: 'admin-chat',
+      sessionId: conversationId || `admin_${Date.now()}`,
+      identifier: userId || conversationId || botId,
+      userContext: {
+        userId,
+        patientData,
+        botId,
+        botType: botConfig.botletType
+      }
+    });
 
     // Format response
     res.json({
@@ -244,20 +211,23 @@ router.post('/:botId/chat', async (req, res) => {
       botId,
       botName: botConfig.name,
       response: {
-        message: sibResponse.chat_answer || sibResponse.answer || sibResponse.response || 'No response from AI',
-        provider: sibResponse.provider || 'sib',
-        latency: sibResponse.latency_ms,
-        urgency: sibResponse.urgency_level,
-        triageColor: sibResponse.triage_color,
-        actions: sibResponse.actions || sibResponse.recommended_actions,
+        message: unifiedResponse.response || 'No response from AI',
+        provider: unifiedResponse.provider || 'unified',
+        latency: unifiedResponse.latency_ms,
+        urgency: unifiedResponse.urgency_level,
+        triageColor: unifiedResponse.triage_color,
+        actions: unifiedResponse.actions || unifiedResponse.recommended_actions,
         metadata: {
-          model: sibResponse.model,
-          contextUsed: sibResponse.context_used,
-          riskAssessment: sibResponse.risk_assessment,
-          safetyAlerts: sibResponse.safety_alerts
+          model: unifiedResponse.model,
+          contextUsed: unifiedResponse.context_used,
+          riskAssessment: unifiedResponse.risk_assessment,
+          safetyAlerts: unifiedResponse.safety_alerts,
+          intentType: unifiedResponse.intentType,
+          action: unifiedResponse.action,
+          redirectUrl: unifiedResponse.redirectUrl
         }
       },
-      conversationId: requestData.patient_id,
+      conversationId: unifiedResponse.sessionId,
       timestamp: new Date().toISOString()
     });
 

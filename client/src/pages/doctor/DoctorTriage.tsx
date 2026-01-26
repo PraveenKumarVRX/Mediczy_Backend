@@ -459,8 +459,12 @@ const DoctorTriage = () => {
       if (!audioRef.current) {
         audioRef.current = new Audio('/sounds/emergency-alert.mp3');
       }
-      audioRef.current.play().catch(() => {});
-    } catch (e) {}
+      audioRef.current.play().catch(() => {
+        // Ignore autoplay-related failures.
+      });
+    } catch (e) {
+      // Audio playback failures should not block triage flow.
+    }
   };
 
   // Accept incoming triage call
@@ -740,7 +744,9 @@ const DoctorTriage = () => {
             if (isInVideoCall && recognitionRef.current) {
               try {
                 recognition.start();
-              } catch (e) {}
+              } catch (e) {
+                // Ignore retry failures; next loop will attempt again.
+              }
             }
           }, 1000);
         }
@@ -753,7 +759,9 @@ const DoctorTriage = () => {
             try {
               recognition.start();
               lastResultIndexRef.current = 0; // Reset on restart
-            } catch (e) {}
+            } catch (e) {
+              // Ignore retry failures; next loop will attempt again.
+            }
           }, 500);
         }
       };

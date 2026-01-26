@@ -11,6 +11,7 @@ import api from '@/utils/api';
 const HospitalLogin = () => {
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
+  const [hospitalSlug, setHospitalSlug] = useState('');
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [showPassword, setShowPassword] = useState(false);
@@ -64,13 +65,44 @@ const HospitalLogin = () => {
       const controller = new AbortController();
       const timeoutId = setTimeout(() => controller.abort(), 10000);
 
-      const { data } = await api.post('/hospital/login', { email, password }, { signal: controller.signal, skipAuth: true });
+      const hostname = typeof window !== 'undefined' ? window.location.hostname : '';
+      const hostParts = hostname.split('.').filter(Boolean);
+      const hasSubdomain = hostParts.length > 2 && hostname !== 'mediqzy.com' && hostname !== 'www.mediqzy.com';
+      const subdomain = hasSubdomain ? hostParts[0] : undefined;
+
+      let data: any;
+
+      try {
+        if (subdomain || hospitalSlug) {
+          const response = await api.post(
+            '/hospital/auth/login/v2',
+            { email, password, subdomain, hospital_slug: hospitalSlug || undefined, hospitalSlug: hospitalSlug || undefined, slug: hospitalSlug || undefined },
+            { signal: controller.signal, skipAuth: true }
+          );
+          data = response.data;
+        } else {
+          const response = await api.post(
+            '/hospital/auth/login',
+            { email, password },
+            { signal: controller.signal, skipAuth: true }
+          );
+          data = response.data;
+        }
+      } catch (primaryErr: any) {
+        // Fallback to legacy endpoint if auth route fails (for older deployments)
+        const response = await api.post(
+          '/hospital/login',
+          { email, password },
+          { signal: controller.signal, skipAuth: true }
+        );
+        data = response.data;
+      }
 
       clearTimeout(timeoutId);
 
       localStorage.setItem('hospitalToken', data.token);
       localStorage.setItem('userType', 'hospital');
-      localStorage.setItem('hospitalData', JSON.stringify(data.hospital));
+      localStorage.setItem('hospitalData', JSON.stringify(data.hospital || data.user || {}));
       
       navigate('/hospital/dashboard');
     } catch (err: any) {
@@ -133,6 +165,21 @@ const HospitalLogin = () => {
               )}
               
               <div className="space-y-4">
+                <div className="space-y-2">
+                  <label htmlFor="hospitalSlug" className="text-sm font-medium flex items-center gap-2">
+                    <CheckCircle2 className="h-4 w-4 text-teal-600" />
+                    Hospital Slug (optional)
+                  </label>
+                  <Input
+                    id="hospitalSlug"
+                    type="text"
+                    placeholder="apollo-hospital"
+                    value={hospitalSlug}
+                    onChange={(e) => setHospitalSlug(e.target.value.trim())}
+                    className="h-12 text-base border-2 focus:border-teal-500 transition-colors"
+                  />
+                </div>
+
                 <div className="space-y-2">
                   <label htmlFor="email" className="text-sm font-medium flex items-center gap-2">
                     <CheckCircle2 className="h-4 w-4 text-teal-600" />

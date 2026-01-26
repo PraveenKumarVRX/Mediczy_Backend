@@ -149,11 +149,45 @@ class WhatsAppProductionService {
    * Use this for replies to user-initiated conversations
    */
   async sendSessionMessage({ to, body }) {
-    return await client.messages.create({
+    const normalizedBody = String(body || '').trim();
+    const lowerBody = normalizedBody.toLowerCase();
+    const isGenericErrorReply = lowerBody.includes('error processing your request') || lowerBody.includes('please try again later');
+    if (isGenericErrorReply || !normalizedBody) {
+      console.warn('WhatsApp reply sanitized', {
+        to,
+        snippet: normalizedBody.slice(0, 120)
+      });
+    }
+    console.info('WhatsApp sendSessionMessage trace', {
+      to,
+      snippet: normalizedBody.slice(0, 120),
+      stack: new Error().stack?.split('\n').slice(1, 6).map(line => line.trim())
+    });
+    const safeBody = isGenericErrorReply || !normalizedBody
+      ? "I'm here to help. Please share a bit more detail so I can assist you." 
+      : normalizedBody;
+
+    // Add timeout to prevent hanging
+    const sendPromise = client.messages.create({
       from: this.fromNumber,
       to: `whatsapp:${to}`,
-      body: body
+      body: safeBody
     });
+
+    const timeoutPromise = new Promise((_, reject) => 
+      setTimeout(() => reject(new Error('WhatsApp send timeout after 10s')), 10000)
+    );
+
+    try {
+      return await Promise.race([sendPromise, timeoutPromise]);
+    } catch (error) {
+      console.error('WhatsApp sendSessionMessage error:', {
+        to,
+        error: error.message,
+        code: error.code
+      });
+      throw error;
+    }
   }
 
   /**

@@ -612,14 +612,12 @@ export default function AdminChatDashboard() {
     };
 
     loadRooms();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   // Load admin analytics overview (doesn't block the main UI)
   useEffect(() => {
     loadDashboardOverview();
     loadSIBHealth(); // Load SIB chatbot health status
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [adminToken]);
 
   // Load messages when room changes
@@ -2270,7 +2268,7 @@ function WhatsAppMessaging() {
     }
 
     const template = templates[activeTemplate];
-    let payload: any = { to: phoneNumber };
+    const payload: Record<string, unknown> = { to: phoneNumber };
 
     // Build payload based on template
     switch (activeTemplate) {

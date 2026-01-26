@@ -555,19 +555,25 @@ export class BLEService {
         const manufacturerChar = await service.getCharacteristic(GATT_CHARACTERISTICS.MANUFACTURER_NAME);
         const manufacturerValue = await manufacturerChar.readValue();
         device.manufacturer = new TextDecoder().decode(manufacturerValue);
-      } catch {}
+      } catch {
+        // Optional metadata; ignore if unavailable.
+      }
 
       try {
         const modelChar = await service.getCharacteristic(GATT_CHARACTERISTICS.MODEL_NUMBER);
         const modelValue = await modelChar.readValue();
         device.model = new TextDecoder().decode(modelValue);
-      } catch {}
+      } catch {
+        // Optional metadata; ignore if unavailable.
+      }
 
       try {
         const firmwareChar = await service.getCharacteristic(GATT_CHARACTERISTICS.FIRMWARE_REVISION);
         const firmwareValue = await firmwareChar.readValue();
         device.firmwareVersion = new TextDecoder().decode(firmwareValue);
-      } catch {}
+      } catch {
+        // Optional metadata; ignore if unavailable.
+      }
     } catch (error) {
       console.log('Device info service not available');
     }

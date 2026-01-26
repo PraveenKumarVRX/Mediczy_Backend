@@ -1,5 +1,6 @@
 import express from 'express';
 import medicalAIService from '../services/medicalAI.service.js';
+import whatsAppUserContextService from '../services/whatsapp-user-context.service.js';
 import { authUser } from '../middleware/auth.middleware.js';
 import handleIntentEscalation, { getDoctorSuggestions } from '../services/intentEscalation.service.js';
 import { Appointment } from '../models/appointment.model.intelligent.js';
@@ -68,7 +69,7 @@ router.post('/test', async (req, res) => {
  */
 router.post('/consult', authUser, async (req, res) => {
   try {
-    const { query, language = 'en', userContext = {} } = req.body;
+    const { query, language = 'en', userContext = {}, sessionId: requestedSessionId } = req.body;
 
     if (!query) {
       return res.status(400).json({
@@ -77,12 +78,20 @@ router.post('/consult', authUser, async (req, res) => {
       });
     }
 
-    // Generate session ID based on user ID
-    const sessionId = `mediczy_${req.user.id}_${Date.now()}`;
+    // Use provided session ID if present to preserve memory
+    const sessionId = requestedSessionId || userContext.sessionId || `mediczy_${req.user.id}`;
+
+    let dbContext = null;
+    try {
+      dbContext = await whatsAppUserContextService.getFullUserContextByUserId(req.user.id);
+    } catch (contextError) {
+      console.warn('⚠️ Failed to load user context for Dr. iSHA:', contextError.message);
+    }
 
     // Add user info to context
     const enhancedContext = {
       ...userContext,
+      ...(dbContext || {}),
       userId: req.user.id,
       userName: req.user.firstName || 'Patient'
     };
@@ -91,7 +100,11 @@ router.post('/consult', authUser, async (req, res) => {
       query,
       sessionId,
       language,
-      enhancedContext
+      {
+        ...enhancedContext,
+        channel: 'web',
+        patientData: dbContext || undefined
+      }
     );
 
     res.json(consultation);
@@ -332,7 +345,7 @@ router.get('/triage-doctors', authUser, async (req, res) => {
  */
 router.post('/instant-triage-call', authUser, async (req, res) => {
   try {
-    const { doctorId, symptoms, urgencyLevel, triageId } = req.body;
+    const { doctorId, symptoms, urgencyLevel, triageId, paymentMethod } = req.body;
     const { Doctor, Appointment } = await import('../models/index.js');
     const { User } = await import('../models/user.model.intelligent.js');
     const crypto = await import('crypto');
@@ -350,14 +363,33 @@ router.post('/instant-triage-call', authUser, async (req, res) => {
     const creditLimit = user.emergencyTriageCreditLimit || 1;
     const pendingAmount = parseFloat(user.emergencyTriagePendingAmount || 0);
     
-    // Check if user has already used their emergency credit and hasn't paid
-    if (creditsUsed >= creditLimit && pendingAmount > 0) {
+    // Check if user wants to pay with Health Coins
+    let canProceedWithHC = false;
+    let hcWallet = null;
+    
+    if (paymentMethod === 'hc' || (creditsUsed >= creditLimit && pendingAmount > 0)) {
+      // Import HealthCoinsWallet to check balance
+      const { HealthCoinsWallet } = await import('../models/index.js');
+      hcWallet = await HealthCoinsWallet.findOne({ where: { userId: req.user.id } });
+      
+      if (hcWallet) {
+        const hcBalance = parseFloat(hcWallet.balance || 0);
+        // Emergency consultation typically costs 500 INR = 50 HC (10:1 ratio)
+        const hcRequired = 50;
+        canProceedWithHC = hcBalance >= hcRequired;
+      }
+    }
+    
+    // Check if user has already used their emergency credit and hasn't paid AND doesn't have HC
+    if (creditsUsed >= creditLimit && pendingAmount > 0 && !canProceedWithHC) {
       return res.status(402).json({
         success: false,
         error: 'Emergency credit exhausted',
-        message: `You have already used your ${creditLimit} free emergency consultation. Please pay your pending amount of ₹${pendingAmount.toFixed(2)} before requesting another emergency consultation.`,
+        message: `You have already used your ${creditLimit} free emergency consultation. Please pay your pending amount of ₹${pendingAmount.toFixed(2)} or use Health Coins to continue.`,
         pendingAmount: pendingAmount,
-        paymentRequired: true
+        paymentRequired: true,
+        hcAvailable: hcWallet ? parseFloat(hcWallet.balance || 0) : 0,
+        hcRequired: 50
       });
     }
     
@@ -397,10 +429,33 @@ router.post('/instant-triage-call', authUser, async (req, res) => {
     
     // Calculate consultation fee (for credit tracking)
     const consultationFee = parseFloat(doctor.onlineConsultationFee || doctor.consultationFees || 500);
-    const isUsingCredit = creditsUsed < creditLimit;
+    const isUsingCredit = creditsUsed < creditLimit && !paymentMethod;
+    const isPayingWithHC = paymentMethod === 'hc' && canProceedWithHC;
 
     // Generate unique room ID for LiveKit
     const roomId = `triage_${crypto.randomBytes(8).toString('hex')}_${Date.now()}`;
+    
+    // Deduct Health Coins if paying with HC
+    if (isPayingWithHC && hcWallet) {
+      const hcRequired = 50; // 500 INR = 50 HC
+      const { HealthCoinsTransaction } = await import('../models/index.js');
+      
+      await hcWallet.update({
+        balance: parseFloat(hcWallet.balance) - hcRequired,
+        totalSpent: parseFloat(hcWallet.totalSpent || 0) + hcRequired
+      });
+      
+      await HealthCoinsTransaction.create({
+        userId: req.user.id,
+        type: 'SPEND',
+        amount: hcRequired,
+        description: `Emergency consultation with Dr. ${doctor.firstName} ${doctor.lastName}`,
+        reference: `EMERGENCY_CONSULT`,
+        balanceAfter: parseFloat(hcWallet.balance) - hcRequired
+      });
+      
+      console.log(`✅ Deducted ${hcRequired} HC from user ${req.user.id} for emergency consultation`);
+    }
     
     // Create emergency appointment record with credit/pay-later flag
     const appointment = await Appointment.create({
@@ -416,7 +471,7 @@ router.post('/instant-triage-call', authUser, async (req, res) => {
       status: 'confirmed',
       reason: `Emergency Triage: ${symptoms || 'Immediate consultation requested'}`,
       symptoms: Array.isArray(symptoms) ? symptoms : (symptoms ? [symptoms] : ['Emergency triage consultation']),
-      notes: `Emergency Triage Request - Urgency: ${urgencyLevel || 'HIGH'} | Payment: ${isUsingCredit ? 'CREDIT (Pay Later)' : 'Pending'}`,
+      notes: `Emergency Triage Request - Urgency: ${urgencyLevel || 'HIGH'} | Payment: ${isPayingWithHC ? 'HEALTH_COINS' : (isUsingCredit ? 'CREDIT (Pay Later)' : 'Pending')}`,
       notes_json: {
         triageId,
         urgencyLevel,
@@ -424,13 +479,14 @@ router.post('/instant-triage-call', authUser, async (req, res) => {
         roomId,
         type: 'emergency_triage',
         initiatedAt: new Date().toISOString(),
-        paymentType: isUsingCredit ? 'credit' : 'pending',
+        paymentType: isPayingWithHC ? 'health_coins' : (isUsingCredit ? 'credit' : 'pending'),
         creditUsed: isUsingCredit,
+        healthCoinsUsed: isPayingWithHC ? 50 : 0,
         consultationFee: consultationFee
       },
       consultationType: 'video',
       meetingId: roomId,
-      paymentStatus: isUsingCredit ? 'credit' : 'pending',
+      paymentStatus: isPayingWithHC ? 'paid' : (isUsingCredit ? 'credit' : 'pending'),
       paymentAmount: consultationFee,
       sourceChannel: 'emergency_triage'
     });
@@ -519,16 +575,23 @@ router.post('/instant-triage-call', authUser, async (req, res) => {
         platform: 'LiveKit'
       },
       billing: {
-        paymentType: isUsingCredit ? 'credit' : 'pending',
+        paymentType: isPayingWithHC ? 'health_coins' : (isUsingCredit ? 'credit' : 'pending'),
         consultationFee: consultationFee,
         creditUsed: isUsingCredit,
+        healthCoinsUsed: isPayingWithHC ? 50 : 0,
         creditsRemaining: Math.max(0, creditLimit - (creditsUsed + (isUsingCredit ? 1 : 0))),
         pendingAmount: isUsingCredit ? pendingAmount + consultationFee : pendingAmount,
-        message: isUsingCredit 
-          ? `This consultation is on credit. Pay ₹${consultationFee} later.`
-          : 'Payment pending for this consultation.'
+        message: isPayingWithHC 
+          ? `Paid with 50 Health Coins for this consultation.`
+          : (isUsingCredit 
+            ? `This consultation is on credit. Pay ₹${consultationFee} later.`
+            : 'Payment pending for this consultation.')
       },
-      message: `Connecting you with ${doctor.prefix || 'Dr.'} ${doctor.firstName} ${doctor.lastName}. ${isUsingCredit ? 'This emergency consultation is on credit - pay later.' : ''}`
+      message: `Connecting you with ${doctor.prefix || 'Dr.'} ${doctor.firstName} ${doctor.lastName}. ${
+        isPayingWithHC 
+          ? 'Paid with Health Coins.' 
+          : (isUsingCredit ? 'This emergency consultation is on credit - pay later.' : '')
+      }`
     });
   } catch (error) {
     console.error('Instant triage call error:', error);
