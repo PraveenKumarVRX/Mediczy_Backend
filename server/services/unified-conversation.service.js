@@ -210,79 +210,9 @@ class UnifiedConversationService {
 
       console.log('[UnifiedConversation] Intent classification:', classification?.primary?.name, 'confidence:', classification?.primary?.confidence);
 
-      // Handle appointment status queries with user context
-      if (classification?.primary?.name === 'appointment_status') {
-        const appointments = userContext?.appointments || [];
-        let appointmentResponse;
-        
-        if (Array.isArray(appointments) && appointments.length > 0) {
-          // User has appointments - provide details
-          const upcomingAppointments = appointments.filter(apt => {
-            const aptDate = new Date(apt.appointmentDate || apt.date || apt.scheduled_at);
-            return aptDate >= new Date();
-          }).sort((a, b) => new Date(a.appointmentDate || a.date) - new Date(b.appointmentDate || b.date));
-          
-          const recentAppointments = appointments.filter(apt => {
-            const aptDate = new Date(apt.appointmentDate || apt.date || apt.scheduled_at);
-            const yesterday = new Date();
-            yesterday.setDate(yesterday.getDate() - 7);
-            return aptDate >= yesterday && aptDate < new Date();
-          });
-          
-          if (upcomingAppointments.length > 0) {
-            const apt = upcomingAppointments[0];
-            const doctorName = apt.Doctor?.name || apt.doctorName || apt.doctor_name || 'your doctor';
-            const aptDate = apt.appointmentDate || apt.date || apt.scheduled_at;
-            const formattedDate = new Date(aptDate).toLocaleDateString('en-IN', { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' });
-            const aptTime = apt.timeSlot || apt.time || apt.scheduled_time || '';
-            const status = apt.status || 'confirmed';
-            
-            appointmentResponse = `📅 **Your Upcoming Appointment:**\n\n` +
-              `• **Doctor:** Dr. ${doctorName}\n` +
-              `• **Date:** ${formattedDate}\n` +
-              (aptTime ? `• **Time:** ${aptTime}\n` : '') +
-              `• **Status:** ${status.charAt(0).toUpperCase() + status.slice(1)}\n\n` +
-              (upcomingAppointments.length > 1 ? `You have ${upcomingAppointments.length - 1} more upcoming appointment(s).\n\n` : '') +
-              `Would you like to reschedule or cancel this appointment?`;
-          } else if (recentAppointments.length > 0) {
-            const apt = recentAppointments[0];
-            const doctorName = apt.Doctor?.name || apt.doctorName || apt.doctor_name || 'your doctor';
-            const aptDate = apt.appointmentDate || apt.date || apt.scheduled_at;
-            const formattedDate = new Date(aptDate).toLocaleDateString('en-IN', { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' });
-            
-            appointmentResponse = `📋 **Your Recent Appointment:**\n\n` +
-              `• **Doctor:** Dr. ${doctorName}\n` +
-              `• **Date:** ${formattedDate}\n` +
-              `• **Status:** ${(apt.status || 'completed').charAt(0).toUpperCase() + (apt.status || 'completed').slice(1)}\n\n` +
-              `Would you like to book a follow-up appointment?`;
-          } else {
-            appointmentResponse = `I found ${appointments.length} appointment(s) in your history. However, you don't have any upcoming appointments scheduled.\n\nWould you like to book a new appointment?`;
-          }
-        } else {
-          // No appointments found
-          appointmentResponse = `I couldn't find any appointments in your records. Would you like to book a new appointment? Just tell me the type of doctor you'd like to see.`;
-        }
-        
-        // Translate if needed
-        if (detectedLanguage !== 'en') {
-          try {
-            const translated = await translationService.processMultilingualOutput(appointmentResponse, detectedLanguage);
-            if (translated.translated) appointmentResponse = translated.processedResponse;
-          } catch (e) { /* use English */ }
-        }
-        
-        return {
-          success: true,
-          shouldReply: true,
-          response: appointmentResponse,
-          provider: 'unified-appointment-status',
-          sessionId: resolvedSessionId,
-          language: detectedLanguage,
-          channel,
-          intent: 'appointment_status',
-          translation: translationInfo
-        };
-      }
+      // REMOVED: Special handling for appointment_status
+      // ALL queries now route to SIB AI for intelligent, context-aware responses
+      // SIB ChatBotlet will handle appointment status queries with proper context
 
       const needsHumanHandoff =
         (classification?.primary?.confidence || 0) < 30 ||
@@ -303,7 +233,7 @@ class UnifiedConversationService {
         channel
       };
 
-      // Process with AI using English (translated) message
+      // Process with AI - ALL queries route to SIB ChatBotlet
       result = await medicalAIService.consultMedical(
         processedMessage,  // Use translated English message
         resolvedSessionId,
