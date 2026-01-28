@@ -1,8 +1,6 @@
 import express from 'express';
-import Groq from 'groq-sdk';
 import auth from '../middleware/auth.js';
 import dotenv from 'dotenv';
-import { GoogleGenerativeAI } from "@google/generative-ai";
 import healthDiaryService from '../services/health-diary.service.js';
 import rateLimit from 'express-rate-limit';
 
@@ -11,30 +9,98 @@ dotenv.config();
 
 const router = express.Router();
 
-// Initialize Groq client with explicit API key
-const groq = new Groq({
-  apiKey: process.env.GROQ_API_KEY
-});
+// SIB FastAPI Configuration (SOLE AI SOURCE)
+const SIB_BASE_URL = process.env.SIB_URL || 'http://localhost:8001';
+let sibAvailable = null; // null = unknown, true/false = checked
 
-// Lazy-init Gemini AI to avoid crashing when key is missing
-const getGenAI = () => {
-  const key = process.env.GEMINI_API_KEY;
-  if (!key) return null;
-  return new GoogleGenerativeAI(key);
-};
-
-// Verify API key is loaded
-if (!process.env.GROQ_API_KEY) {
-  console.warn('Warning: GROQ_API_KEY not set. AI endpoints will return 503.');
+/**
+ * Check SIB health and availability
+ */
+async function checkSibHealth() {
+  try {
+    const controller = new AbortController();
+    const timeout = setTimeout(() => controller.abort(), 5000);
+    const response = await fetch(`${SIB_BASE_URL}/health`, { signal: controller.signal });
+    clearTimeout(timeout);
+    if (response.ok) {
+      const health = await response.json();
+      sibAvailable = health.status === 'healthy';
+      return sibAvailable;
+    }
+    sibAvailable = false;
+    return false;
+  } catch (error) {
+    console.warn('⚠️ SIB health check failed:', error.message);
+    sibAvailable = false;
+    return false;
+  }
 }
 
-const assertGroqConfigured = () => {
-  if (!process.env.GROQ_API_KEY) {
-    const err = new Error('AI service unavailable: GROQ_API_KEY missing');
-    err.statusCode = 503;
-    throw err;
+/**
+ * Call SIB /query endpoint for AI processing
+ */
+async function callSibQuery(query, options = {}) {
+  if (sibAvailable === null) await checkSibHealth();
+  if (!sibAvailable) {
+    throw new Error('SIB (AI Brain) is unavailable. Please try again later.');
   }
-};
+  
+  const response = await fetch(`${SIB_BASE_URL}/query`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      query: query,
+      patient_id: options.userId?.toString() || null,
+      include_summary: options.includeSummary || false
+    }),
+    signal: AbortSignal.timeout(30000)
+  });
+  
+  if (!response.ok) {
+    throw new Error(`SIB returned ${response.status}`);
+  }
+  
+  return response.json();
+}
+
+/**
+ * Call SIB /chat endpoint for conversational AI
+ */
+async function callSibChat(message, options = {}) {
+  if (sibAvailable === null) await checkSibHealth();
+  if (!sibAvailable) {
+    throw new Error('SIB (AI Brain) is unavailable. Please try again later.');
+  }
+  
+  const response = await fetch(`${SIB_BASE_URL}/chat`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      patient_id: options.userId?.toString() || 'anonymous',
+      message: message,
+      language: options.language || 'en',
+      session_id: options.sessionId || null,
+      include_risk: options.includeRisk || false,
+      include_rag: true
+    }),
+    signal: AbortSignal.timeout(60000)
+  });
+  
+  if (!response.ok) {
+    throw new Error(`SIB returned ${response.status}`);
+  }
+  
+  return response.json();
+}
+
+// Initialize SIB health check on startup
+checkSibHealth().then(healthy => {
+  if (healthy) {
+    console.log('✅ SIB FastAPI is available (SOLE AI SOURCE)');
+  } else {
+    console.warn('⚠️ SIB FastAPI not available at startup - will retry on requests');
+  }
+});
 
 // Per-route limiter to protect expensive AI calls
 const aiRouteLimiter = rateLimit({
@@ -271,35 +337,41 @@ Examples:
         });
       }
 
-      assertGroqConfigured();
+      // Route through SIB (SOLE AI SOURCE)
+      const sibResponse = await callSibQuery(
+        `Process this voice command for a health app navigation:\nCommand: "${command}"\nCurrent Location: ${currentPath}\nAvailable Routes: ${userContext.availableRoutes.join(', ')}\n\nRespond with JSON: {"intent": "navigation|query|action|system|error", "confidence": 0.0-1.0, "targetPath": "/path or null", "action": "specific action or null", "parameters": {}, "response": "user-friendly response"}`,
+        { userId: req.user?.id }
+      );
 
-      const completion = await groq.chat.completions.create({
-        messages: [
-          {
-            role: "system",
-            content: systemPrompt
-          },
-          {
-            role: "user",
-            content: userPrompt
-          }
-        ],
-        model: "llama-3.3-70b-versatile",
-        temperature: 0.3,
-        max_tokens: 500,
-        response_format: { type: "json_object" }
-      });
-
-      if (!completion.choices || !completion.choices[0]?.message?.content) {
-        throw new Error('Invalid or empty response from AI service');
-      }
-
+      // Parse response from SIB
       let result;
       try {
-        result = JSON.parse(completion.choices[0].message.content);
+        const answer = sibResponse.answer || sibResponse.response || sibResponse.chat_answer || '';
+        // Try to extract JSON from response
+        const jsonMatch = answer.match(/\{[\s\S]*\}/);
+        if (jsonMatch) {
+          result = JSON.parse(jsonMatch[0]);
+        } else {
+          // If no JSON, create a query response
+          result = {
+            intent: 'query',
+            confidence: 0.7,
+            targetPath: null,
+            action: null,
+            parameters: {},
+            response: answer
+          };
+        }
       } catch (parseError) {
-        console.error('Failed to parse AI response:', completion.choices[0].message.content);
-        throw new Error('Failed to parse AI response as JSON. The response was not in the expected format.');
+        console.error('Failed to parse SIB response:', sibResponse);
+        result = {
+          intent: 'query',
+          confidence: 0.5,
+          targetPath: null,
+          action: null,
+          parameters: {},
+          response: sibResponse.answer || 'I understood your request but had trouble processing it.'
+        };
       }
 
       // Validate the response format
@@ -380,33 +452,35 @@ Respond in JSON format:
   ]
 }`;
 
-    assertGroqConfigured();
-
-    const completion = await groq.chat.completions.create({
-      messages: [
-        {
-          role: "system",
-          content: "You are an AI assistant that helps users with voice commands in a health tracking application."
-        },
-        {
-          role: "user",
-          content: prompt
-        }
-      ],
-      model: "meta-llama/llama-4-scout-17b-16e-instruct",
-      temperature: 0.7,
-      max_tokens: 1000
-    });
+    // Route through SIB (SOLE AI SOURCE)
+    const sibResponse = await callSibQuery(prompt, { userId: req.user?.id });
 
     try {
-      const suggestions = JSON.parse(completion.choices[0].message.content);
-      res.json(suggestions);
+      const answer = sibResponse.answer || sibResponse.response || '';
+      const jsonMatch = answer.match(/\{[\s\S]*\}/);
+      if (jsonMatch) {
+        const suggestions = JSON.parse(jsonMatch[0]);
+        res.json(suggestions);
+      } else {
+        // Return default suggestions if SIB doesn't return JSON
+        res.json({
+          suggestions: [
+            { command: "Show me my health dashboard", description: "Navigate to main dashboard", category: "navigation" },
+            { command: "Check my appointments", description: "View upcoming appointments", category: "navigation" },
+            { command: "How many steps today?", description: "Check step count", category: "query" },
+            { command: "Go to health tracker", description: "Navigate to health tracker", category: "navigation" },
+            { command: "Talk to Dr. iSHA", description: "Start AI consultation", category: "action" }
+          ]
+        });
+      }
     } catch (parseError) {
       console.error('Error parsing suggestions:', parseError);
-      res.status(500).json({
-        error: 'Failed to parse suggestions',
-        details: parseError.message,
-        rawResponse: completion.choices[0].message.content
+      res.json({
+        suggestions: [
+          { command: "Show me my health dashboard", description: "Navigate to main dashboard", category: "navigation" },
+          { command: "Check my appointments", description: "View upcoming appointments", category: "navigation" },
+          { command: "How many steps today?", description: "Check step count", category: "query" }
+        ]
       });
     }
   } catch (error) {
@@ -427,65 +501,19 @@ router.post('/analyze-image', async (req, res) => {
       return res.status(400).json({ error: 'No image provided' });
     }
 
-    const genAI = getGenAI();
-    if (!genAI) {
-      return res.status(200).json({
-        description: 'AI image analysis is temporarily unavailable because the Generative AI key is not configured.',
-        language: language || 'en',
-        unavailable: true
-      });
-    }
-
-    // Initialize the model (using gemini-1.5-flash for vision tasks)
-    const model = genAI.getGenerativeModel({ model: "gemini-1.5-flash" });
-
-    // Prepare the image data
-    const imageData = {
-      inlineData: {
-        data: image,
-        mimeType: "image/jpeg",
-      },
-    };
-
-    // Create prompt based on language
-    let prompt = "Analyze this medical or health-related image and provide a detailed but concise description. ";
-    prompt += "Focus on any visible symptoms, medical conditions, or health-related aspects. ";
-    prompt += "Format the response in simple, easy-to-understand language.";
-
-    // Generate content
-    const result = await model.generateContent([prompt, imageData]);
-    const response = await result.response;
-    let description = response.text();
-
-    // If language is not English, translate the response
-    if (language !== 'en') {
-      const translationModel = genAI.getGenerativeModel({ model: "gemini-1.5-flash" });
-      const translationPrompt = `Translate the following text to ${language}:\n\n${description}`;
-      const translationResult = await translationModel.generateContent(translationPrompt);
-      description = (await translationResult.response).text();
-    }
-
-    res.json({
-      description,
-      language,
+    // Image analysis requires vision model - SIB can route to appropriate backend
+    // For now, return a helpful message directing to SIB /ehr/upload for medical images
+    return res.status(200).json({
+      description: 'For medical image analysis, please use the EHR upload feature or describe your symptoms to Dr. iSHA for personalized guidance.',
+      language: language || 'en',
+      suggestion: 'You can upload medical documents through the EHR system or chat with Dr. iSHA about your health concerns.',
+      sibEndpoint: '/ehr/upload'
     });
   } catch (error) {
-    const status = error.status || error.response?.status;
-    const isServiceDisabled = typeof error.message === 'string' && error.message.includes('SERVICE_DISABLED');
-
-    console.error('Image analysis error:', status || error.message);
-
-    if (isServiceDisabled) {
-      return res.status(200).json({
-        description: 'AI image analysis is unavailable because the Generative Language API is disabled for this project.',
-        language: language || 'en',
-        unavailable: true
-      });
-    }
-
+    console.error('Image analysis error:', error.message);
     res.status(500).json({ 
       error: 'Failed to analyze image',
-      details: 'Upstream AI service unavailable. Please try again.'
+      details: error.message
     });
   }
 });
@@ -619,8 +647,9 @@ ${recentHistory}
 
     try {
       console.log(`🧠 Routing request to SIB (Synthetic Intelligence Brain)...`);
-      
-      const sibResponse = await fetch('http://localhost:8001/chat', {
+      const sibBaseUrl = process.env.SIB_URL || 'http://localhost:8001';
+
+      const sibResponse = await fetch(`${sibBaseUrl}/chat`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -634,101 +663,55 @@ ${recentHistory}
         timeout: 10000
       });
 
-      if (sibResponse.ok) {
-        const sibData = await sibResponse.json();
-        // Accept multiple possible response keys from SIB
-        aiResponse = sibData.response 
-          || sibData.primary_response 
-          || sibData.chat_answer 
-          || sibData.message 
-          || sibData.result;
-
-        // Defensive fallback to avoid rendering 'undefined'
-        if (!aiResponse || (typeof aiResponse === 'string' && aiResponse.trim().length === 0)) {
-          console.warn('⚠️ SIB response missing content field; using friendly default');
-          aiResponse = language === 'en'
-            ? "It sounds like you're experiencing cold symptoms like sneezing and a runny nose. Common causes include viral colds or allergies. Rest, fluids, steam inhalation, and over‑the‑counter remedies (like antihistamines for allergies or paracetamol for fever) can help. If symptoms persist beyond 7–10 days, or you develop high fever, severe facial pain, or breathing difficulty, please seek medical care."
-            : "ऐसा लगता है कि आपको छींक और नाक बहने जैसे सर्दी के लक्षण हैं। ये वायरल सर्दी या एलर्जी के कारण हो सकते हैं। आराम करें, पर्याप्त तरल लें, भाप लें, और ओवर‑द‑काउंटर दवाएँ (एलर्जी के लिए एंटीहिस्टामिन या बुखार के लिए पैरासिटामोल) मदद कर सकती हैं। यदि लक्षण 7–10 दिनों से अधिक रहें या तेज बुखार, चेहरे में तेज दर्द या सांस लेने में कठिनाई हो, तो डॉक्टर से संपर्क करें।";
-        }
-
-        sibUsed = true;
-        modelUsed = sibData.model || 'SIB-Llama-3.1';
-        console.log(`✅ SIB processed consultation successfully for user ${userId}`);
-      } else {
-        throw new Error(`SIB returned ${sibResponse.status}, falling back to direct Groq`);
+      if (!sibResponse.ok) {
+        const errorText = await sibResponse.text().catch(() => '');
+        console.warn(`⚠️ SIB error (${sibResponse.status}): ${errorText || 'no response body'}`);
+        return res.status(503).json({
+          status: 'error',
+          error: 'SIB request failed',
+          details: errorText || `HTTP ${sibResponse.status}`,
+          sibUsed: false
+        });
       }
+
+      const sibData = await sibResponse.json();
+      // Accept multiple possible response keys from SIB
+      aiResponse = sibData.response 
+        || sibData.primary_response 
+        || sibData.chat_answer 
+        || sibData.message 
+        || sibData.result;
+
+      if (!aiResponse || (typeof aiResponse === 'string' && aiResponse.trim().length === 0)) {
+        console.warn('⚠️ SIB response missing content field');
+        return res.status(502).json({
+          status: 'error',
+          error: 'SIB response missing content',
+          sibUsed: false
+        });
+      }
+
+      sibUsed = true;
+      modelUsed = sibData.model || 'SIB-Llama-3.1';
+      console.log(`✅ SIB processed consultation successfully for user ${userId}`);
     } catch (sibError) {
-      console.warn(`⚠️ SIB unavailable (${sibError.message}), falling back to direct Groq`);
-      
-      // FALLBACK: Direct Groq API call if SIB is unavailable
-      const queryLength = query.length;
-      const hasDetailedContext = userContext && (userContext.conversationHistory?.length > 0 || userContext.symptoms?.length > 0);
-      
-      // Increased tokens to allow for detailed medication suggestions
-      let maxTokens = 250;
-      if (queryLength > 200 || hasDetailedContext) {
-        maxTokens = 300;
-      }
-
-      // Build personalized prompt with patient context
-      const userName = userProfile?.firstName || '';
-      const patientContextSection = medicalContext ? `\n${medicalContext}\n` : '';
-      
-      const medicalPrompt = `You are Dr. iSHA, a doctor having a SOAP-style conversation with ${userName || 'a patient'}.
-${patientContextSection}
-Patient says: "${query}"
-
-RESPONSE RULES:
-1. Address patient by name if known
-2. Be CONCISE - max 3-4 lines total
-3. If they have allergies/conditions, consider them
-4. If recent history exists, ask follow-up
-5. For clear symptoms, give medication directly
-
-RESPONSE FORMAT:
-"[Name], [brief response]. [Medicine + dose if needed]. [One tip]."
-
-Examples:
-- "Hi Rahul, sounds like a cold. Take Cetirizine 10mg daily + Paracetamol if fever. Steam helps."
-- "Sarah, how's that headache from yesterday? Still bothering you?"
-- "How long have you had this? Any fever?"
-
-Keep it SHORT like a real doctor chat.`;
-
-      assertGroqConfigured();
-
-      const chatCompletion = await groq.chat.completions.create({
-        messages: [
-          {
-            role: "system",
-            content: `You are Dr. iSHA. Address patient by name. Give SHORT, direct advice. Consider their medical history/allergies if mentioned. For symptoms: acknowledge, prescribe meds with dosages, one tip. Max 3-4 lines. If they had recent issues, ask follow-up.`
-          },
-          {
-            role: "user",
-            content: medicalPrompt
-          }
-        ],
-        model: "llama-3.3-70b-versatile",
-        temperature: 0.7,
-        max_tokens: maxTokens,
+      console.warn(`⚠️ SIB unavailable (${sibError.message})`);
+      return res.status(503).json({
+        status: 'error',
+        error: 'SIB unavailable',
+        details: sibError.message,
+        sibUsed: false
       });
-
-      aiResponse = chatCompletion.choices[0]?.message?.content || "I apologize, but I'm unable to provide a response at this moment. Please try again.";
-      
-      // Final safety check - never return undefined
-      if (!aiResponse || aiResponse === 'undefined') {
-        aiResponse = "I'm here to help with your health concerns. However, I'm experiencing technical difficulties right now. For immediate medical concerns, please contact your healthcare provider or emergency services.";
-      }
-      
-      modelUsed = 'llama-3.3-70b-versatile (Groq Fallback)';
     }
 
     // Final safety check on aiResponse
     let finalResponse = aiResponse;
     if (!finalResponse || finalResponse === 'undefined') {
-      finalResponse = language === 'en'
-        ? "I'm here to help with your health concerns. However, I'm experiencing technical difficulties right now. For immediate medical concerns, please contact your healthcare provider or emergency services. I'll be back to assist you shortly!"
-        : "मैं आपकी स्वास्थ्य संबंधी चिंताओं में मदद करने के लिए यहाँ हूँ। हालांकि, मुझे अभी तकनीकी कठिनाइयों का सामना कर रहा हूँ। तत्काल चिकित्सा चिंताओं के लिए, कृपया अपने स्वास्थ्य सेवा प्रदाता या आपातकालीन सेवाओं से संपर्क करें।";
+      return res.status(502).json({
+        status: 'error',
+        error: 'SIB response missing content',
+        sibUsed: false
+      });
     }
 
     // Analyze urgency (simple keyword-based analysis)

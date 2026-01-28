@@ -44,13 +44,22 @@ export default function Wallet() {
   const fetchWallet = async () => {
     try {
       const response = await api.get('/wallet');
+      console.log('Wallet API Response:', response.data);
       setWallet(response.data.data);
-    } catch (error) {
+    } catch (error: any) {
+      console.error('Wallet API Error:', error);
+      console.error('Error Response:', error.response?.data);
       toast({
         title: "Error",
-        description: "Failed to load wallet",
+        description: error.response?.data?.message || "Failed to load wallet. Please login again.",
         variant: "destructive",
       });
+      
+      // If unauthorized, clear token and redirect to login
+      if (error.response?.status === 401) {
+        localStorage.removeItem('token');
+        window.location.href = '/login';
+      }
     } finally {
       setLoading(false);
     }
@@ -108,8 +117,40 @@ export default function Wallet() {
     return (
       <div className="container mx-auto p-6">
         <div className="flex items-center justify-center h-64">
-          <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-primary"></div>
+          <div className="flex flex-col items-center gap-4">
+            <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-primary"></div>
+            <p className="text-muted-foreground">Loading your wallet...</p>
+          </div>
         </div>
+      </div>
+    );
+  }
+
+  if (!wallet) {
+    return (
+      <div className="container mx-auto p-6">
+        <Card>
+          <CardContent className="p-12 text-center">
+            <WalletIcon className="h-16 w-16 mx-auto mb-4 text-muted-foreground" />
+            <h3 className="text-xl font-semibold mb-2">Unable to Load Wallet</h3>
+            <p className="text-muted-foreground mb-6">
+              There was a problem loading your wallet. This could be due to:
+            </p>
+            <ul className="text-left max-w-md mx-auto mb-6 space-y-2">
+              <li>• Authentication session expired</li>
+              <li>• Network connectivity issues</li>
+              <li>• Server temporarily unavailable</li>
+            </ul>
+            <div className="flex gap-3 justify-center">
+              <Button onClick={fetchWallet}>
+                Try Again
+              </Button>
+              <Button variant="outline" onClick={() => window.location.href = '/login'}>
+                Re-login
+              </Button>
+            </div>
+          </CardContent>
+        </Card>
       </div>
     );
   }

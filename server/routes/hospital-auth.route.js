@@ -335,9 +335,22 @@ export const hospitalLoginV2 = async (req, res) => {
       user = await User.findOne({
         where: {
           email: normalizeEmail(email),
-          tenant_id: tenant.id,
-          organization_id: tenant.id,
-          role: ['hospital_admin', 'doctor', 'staff', 'nurse']
+          status: 'active',
+          [Op.or]: [
+            { tenant_id: tenant.id },
+            { organization_id: tenant.id }
+          ],
+          role: {
+            [Op.in]: [
+              'hospital_admin',
+              'doctor',
+              'staff',
+              'nurse',
+              'insurance_coordinator',
+              'billing',
+              'receptionist'
+            ]
+          }
         }
       });
     } else {

@@ -9,6 +9,7 @@
 
 import axios from 'axios';
 import crypto from 'crypto';
+import { cache } from '../db/redis.js';
 
 class OmnichannelChatService {
   constructor() {
@@ -329,29 +330,98 @@ class OmnichannelChatService {
     const { room, message } = webhookData;
     
     // Only process agent messages (not visitor messages)
-    if (message.token) return; // This is a visitor message, skip
+    const isVisitorMessage = !!message?.token && (
+      message?.u?.type === 'visitor'
+      || message?.u?.roles?.includes('livechat-visitor')
+      || message?.u?._id === room?.v?._id
+      || message?.u?.username === room?.v?.username
+      || message?.u?.name === room?.v?.name
+    );
+    if (isVisitorMessage) {
+      return { success: true, skipped: true };
+    }
     
     try {
       // Get visitor info to find WhatsApp number
       const visitor = room.v;
-      if (!visitor?.phone?.[0]?.phoneNumber) {
+      const rawPhone = visitor?.phone?.[0]?.phoneNumber
+        || visitor?.phone?.[0]?.value
+        || visitor?.phoneNumber
+        || visitor?.phone;
+
+      if (!rawPhone) {
         console.log('No WhatsApp number for visitor');
         return { success: false, error: 'No WhatsApp number' };
       }
 
-      const whatsappNumber = visitor.phone[0].phoneNumber;
-      
-      // Import your WhatsApp service
-      const whatsappService = (await import('./whatsapp.service.js')).default;
-      
-      // Send via WhatsApp
-      await whatsappService.sendMessage(whatsappNumber, message.msg);
+      const whatsappNumber = this.normalizeWhatsAppNumber(rawPhone);
+      const messageText = message?.msg || '';
+
+      // Prefer production Twilio session messaging for live replies.
+      try {
+        const whatsappProductionService = (await import('./whatsapp-production.service.js')).default;
+        if (whatsappProductionService?.sendSessionMessage) {
+          await whatsappProductionService.sendSessionMessage({
+            to: whatsappNumber,
+            body: messageText
+          });
+        } else {
+          throw new Error('WhatsApp production service unavailable');
+        }
+      } catch (productionError) {
+        // Fallback to the generic WhatsApp service when production is unavailable.
+        const whatsappService = (await import('./whatsapp.service.js')).default;
+        await whatsappService.sendMessage({
+          to: whatsappNumber,
+          content: messageText,
+          type: 'text'
+        });
+      }
+
+      await this.setHandoffState(whatsappNumber, {
+        reason: 'agent_message',
+        source: 'rocketchat'
+      });
 
       return { success: true };
     } catch (error) {
       console.error('Send to WhatsApp error:', error);
       return { success: false, error: error.message };
     }
+  }
+
+  /**
+   * Normalize phone number for WhatsApp providers.
+   */
+  normalizeWhatsAppNumber(phone) {
+    if (!phone) return '';
+    const trimmed = String(phone).trim().replace(/^whatsapp:/i, '');
+    if (trimmed.startsWith('+')) return trimmed;
+
+    const digits = trimmed.replace(/[^\d]/g, '');
+    if (digits.length === 10) {
+      const countryCode = process.env.DEFAULT_COUNTRY_CODE || '91';
+      return `+${countryCode}${digits}`;
+    }
+
+    if (digits.length >= 11) {
+      return `+${digits}`;
+    }
+
+    return digits;
+  }
+
+  async setHandoffState(phone, payload = {}) {
+    const normalized = this.normalizeWhatsAppNumber(phone);
+    if (!normalized) return null;
+    const ttlSeconds = parseInt(process.env.WHATSAPP_HANDOFF_TTL || '86400', 10);
+    const state = {
+      active: true,
+      updatedAt: new Date().toISOString(),
+      ...payload
+    };
+    await cache.set(`whatsapp:handoff:${normalized}`, state, ttlSeconds);
+    return state;
   }
 
   // ============================================================================

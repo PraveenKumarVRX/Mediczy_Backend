@@ -187,14 +187,25 @@ const doctorModel = {
 
     const payload = sanitizeDoctorPayload(doctorData);
     
+    // 🐛 DEBUG: Log what we're updating
+    console.log('🔧 Doctor Update - ID:', id, 'Payload:', payload);
+    
     // Update doctor fields
     Object.keys(payload).forEach(key => {
       if (payload[key] !== undefined && key !== 'id') {
         doctor[key] = payload[key];
+        console.log(`  ✏️ Setting doctor.${key} = ${payload[key]}`);
       }
     });
 
     await doctor.save();
+    console.log('✅ Doctor saved, checking values:', {
+      offersSecondOpinion: doctor.offersSecondOpinion,
+      secondOpinionFee: doctor.secondOpinionFee,
+      offersHomeVisits: doctor.offersHomeVisits,
+      homeVisitFee: doctor.homeVisitFee,
+      homeVisitRadiusKm: doctor.homeVisitRadiusKm
+    });
     return deriveVerificationStatus(doctor);
   },
 

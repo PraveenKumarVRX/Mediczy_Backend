@@ -14,7 +14,7 @@ import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { DrISHAChat } from "@/components/DrISHAChat";
 import { drIshaAPI } from '@/services/drIsha';
-import axios from 'axios';
+import api from "@/utils/api";
 import { Badge } from "@/components/ui/badge";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { analyzeVideoFrame, initializeVisionAI, cleanupVisionAI, getTriageSummary, type VisionAnalysisResult } from '@/services/visionAI';
@@ -177,11 +177,9 @@ const Emergency = () => {
       try {
         const token = localStorage.getItem('token');
         if (!token) return;
-        
-        const response = await axios.get('/api/health-coins/balance', {
-          headers: { Authorization: `Bearer ${token}` }
-        });
-        
+
+        const response = await api.get('/wallet/balance');
+
         if (response.data.success) {
           setUserHCBalance(parseFloat(response.data.balance || 0));
         }
@@ -189,7 +187,7 @@ const Emergency = () => {
         console.error('Error fetching HC balance:', error);
       }
     };
-    
+
     fetchHCBalance();
   }, []);
   
@@ -198,10 +196,10 @@ const Emergency = () => {
     // Refresh HC balance
     try {
       const token = localStorage.getItem('token');
-      const response = await axios.get('/api/health-coins/balance', {
-        headers: { Authorization: `Bearer ${token}` }
-      });
-      
+      if (!token) return;
+
+      const response = await api.get('/wallet/balance');
+
       if (response.data.success) {
         setUserHCBalance(parseFloat(response.data.balance || 0));
         toast({
@@ -381,72 +379,82 @@ const Emergency = () => {
 
   // Socket.IO connection for real-time call notifications
   useEffect(() => {
-    // Get user from localStorage
-    const userStr = localStorage.getItem('user');
-    if (!userStr) return;
-
-    try {
-      const user = JSON.parse(userStr);
-      if (!user.id) return;
-
-      console.log('🔌 Connecting Socket.IO for patient:', user.id);
-      
-      // Connect to Socket.IO
-      socketService.connect(user.id, 'user');
-      setIsSocketConnected(true);
-
-      // Listen for call accepted event
-      const handleCallAccepted = (data: any) => {
-        console.log('✅ Doctor accepted call:', data);
-        
-        setWaitingForDoctor(false);
-        
-        toast({
-          title: "✅ Doctor Accepted Your Call!",
-          description: `${data.doctorName} is joining the video call`,
-          duration: 5000,
-        });
-
-        // Auto-join the video room
-        if (videoCallInfo?.joinUrl) {
-          setShowEmbeddedVideoCall(true);
-          // Scroll to video section
-          setTimeout(() => {
-            document.getElementById('video-call-section')?.scrollIntoView({ behavior: 'smooth' });
-          }, 100);
+    const resolveSocketUserId = () => {
+      const userPayload = localStorage.getItem('userData') || localStorage.getItem('user');
+      if (userPayload) {
+        try {
+          const parsed = JSON.parse(userPayload);
+          return parsed?.id || parsed?.user_id || null;
+        } catch (error) {
+          console.warn('Failed to parse stored user payload:', error);
         }
-      };
+      }
+      const storedId = localStorage.getItem('userId');
+      if (storedId) {
+        const id = Number(storedId);
+        return Number.isNaN(id) ? null : id;
+      }
+      return null;
+    };
 
-      // Listen for call rejected event
-      const handleCallRejected = (data: any) => {
-        console.log('❌ Doctor rejected call:', data);
-        
-        setWaitingForDoctor(false);
-        setVideoCallInfo(null);
-        setShowEmbeddedVideoCall(false);
-        
-        toast({
-          title: "❌ Call Not Available",
-          description: data.reason || 'Doctor is currently unavailable. Please try again.',
-          variant: "destructive",
-          duration: 7000,
-        });
-      };
+    const userId = resolveSocketUserId();
+    if (!userId) return;
 
-      socketService.on('triage-call-accepted', handleCallAccepted);
-      socketService.on('triage-call-rejected', handleCallRejected);
+    console.log('🔌 Connecting Socket.IO for patient:', userId);
 
-      // Cleanup on unmount
-      return () => {
-        console.log('🔌 Disconnecting Socket.IO');
-        socketService.off('triage-call-accepted', handleCallAccepted);
-        socketService.off('triage-call-rejected', handleCallRejected);
-        socketService.disconnect();
-        setIsSocketConnected(false);
-      };
-    } catch (error) {
-      console.error('Failed to parse user from localStorage:', error);
-    }
+    // Connect to Socket.IO
+    socketService.connect(userId, 'user');
+    setIsSocketConnected(true);
+
+    // Listen for call accepted event
+    const handleCallAccepted = (data: any) => {
+      console.log('✅ Doctor accepted call:', data);
+      
+      setWaitingForDoctor(false);
+      
+      toast({
+        title: "✅ Doctor Accepted Your Call!",
+        description: `${data.doctorName} is joining the video call`,
+        duration: 5000,
+      });
+
+      // Auto-join the video room
+      if (videoCallInfo?.joinUrl) {
+        setShowEmbeddedVideoCall(true);
+        // Scroll to video section
+        setTimeout(() => {
+          document.getElementById('video-call-section')?.scrollIntoView({ behavior: 'smooth' });
+        }, 100);
+      }
+    };
+
+    // Listen for call rejected event
+    const handleCallRejected = (data: any) => {
+      console.log('❌ Doctor rejected call:', data);
+      
+      setWaitingForDoctor(false);
+      setVideoCallInfo(null);
+      setShowEmbeddedVideoCall(false);
+      
+      toast({
+        title: "❌ Call Not Available",
+        description: data.reason || 'Doctor is currently unavailable. Please try again.',
+        variant: "destructive",
+        duration: 7000,
+      });
+    };
+
+    socketService.on('triage-call-accepted', handleCallAccepted);
+    socketService.on('triage-call-rejected', handleCallRejected);
+
+    // Cleanup on unmount
+    return () => {
+      console.log('🔌 Disconnecting Socket.IO');
+      socketService.off('triage-call-accepted', handleCallAccepted);
+      socketService.off('triage-call-rejected', handleCallRejected);
+      socketService.disconnect();
+      setIsSocketConnected(false);
+    };
   }, [videoCallInfo]);
 
   // Attach video stream to video element when video mode is active
@@ -920,10 +928,7 @@ Hello, I'm Dr. iSHA, your AI emergency medical assistant powered by multimodal i
   const fetchTriageDoctors = async () => {
     setIsLoadingDoctors(true);
     try {
-      const token = localStorage.getItem('token');
-      const response = await axios.get('/api/medical-ai/triage-doctors', {
-        headers: { Authorization: `Bearer ${token}` }
-      });
+      const response = await api.get('/medical-ai/triage-doctors');
       
       if (response.data.success && response.data.doctors.length > 0) {
         setAvailableTriageDoctors(response.data.doctors);
@@ -955,22 +960,18 @@ Hello, I'm Dr. iSHA, your AI emergency medical assistant powered by multimodal i
   const connectToTriageDoctor = async (doctorId?: string, useHC: boolean = false) => {
     setConnectingToDoctor(true);
     try {
-      const token = localStorage.getItem('token');
-      
       // Get current symptoms from chat history
       const symptoms = triageChatMessages
         .filter(m => m.role === 'user')
         .map(m => m.content)
         .join('. ');
       
-      const response = await axios.post('/api/medical-ai/instant-triage-call', {
+      const response = await api.post('/medical-ai/instant-triage-call', {
         doctorId,
         symptoms,
         urgencyLevel: currentUrgency || 'URGENT',
         triageId: `triage_${Date.now()}`,
         paymentMethod: useHC ? 'hc' : undefined
-      }, {
-        headers: { Authorization: `Bearer ${token}` }
       });
       
       if (response.data.success) {

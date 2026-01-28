@@ -9,8 +9,13 @@ import { authTeam } from '../middleware/team.middleware.js';
 import { authNurse } from '../routes/nurse.route.js';
 import { authAssistant } from '../routes/assistant.route.js';
 import { Op, Sequelize } from 'sequelize';
+import { getUserAppointments } from '../controller/appointment.controller.js';
+import { requireAppKey } from '../middleware/appAuth.middleware.js';
 
 const router = express.Router();
+
+// Patient appointments alias (mobile compatibility)
+router.get('/appointments', requireAppKey, authUser, getUserAppointments);
 
 // Validation rules for patient registration
 const patientValidationRules = [

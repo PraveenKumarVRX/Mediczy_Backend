@@ -1,0 +1,239 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Wallet User Login Test</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            max-width: 800px;
+            margin: 50px auto;
+            padding: 20px;
+        }
+        .test-section {
+            border: 1px solid #ddd;
+            padding: 20px;
+            margin: 20px 0;
+            border-radius: 8px;
+        }
+        button {
+            background: #4CAF50;
+            color: white;
+            padding: 10px 20px;
+            border: none;
+            border-radius: 4px;
+            cursor: pointer;
+            margin: 5px;
+        }
+        button:hover {
+            background: #45a049;
+        }
+        .result {
+            background: #f5f5f5;
+            padding: 15px;
+            margin: 10px 0;
+            border-radius: 4px;
+            white-space: pre-wrap;
+            font-family: monospace;
+        }
+        .success {
+            color: #4CAF50;
+        }
+        .error {
+            color: #f44336;
+        }
+    </style>
+</head>
+<body>
+    <h1>🧪 Wallet User Login Diagnostic</h1>
+    
+    <div class="test-section">
+        <h2>Step 1: User Login</h2>
+        <button onclick="testLogin()">Test User Login</button>
+        <div id="login-result" class="result"></div>
+    </div>
+
+    <div class="test-section">
+        <h2>Step 2: Get Wallet Data</h2>
+        <button onclick="testWallet()">Test Wallet API</button>
+        <div id="wallet-result" class="result"></div>
+    </div>
+
+    <div class="test-section">
+        <h2>Step 3: Claim Daily Reward</h2>
+        <button onclick="testDailyReward()">Test Daily Reward</button>
+        <div id="reward-result" class="result"></div>
+    </div>
+
+    <div class="test-section">
+        <h2>Step 4: Full Flow Test</h2>
+        <button onclick="testFullFlow()">Run Full Flow (Login → Wallet → Reward)</button>
+        <div id="full-result" class="result"></div>
+    </div>
+
+    <script>
+        const API_URL = 'http://localhost:8000/api';
+        let authToken = '';
+
+        async function testLogin() {
+            const resultDiv = document.getElementById('login-result');
+            resultDiv.innerHTML = 'Testing login...';
+            
+            try {
+                const response = await fetch(`${API_URL}/users/login`, {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json'
+                    },
+                    body: JSON.stringify({
+                        email: 'user@mediczy.com',
+                        password: 'User123'
+                    })
+                });
+
+                const data = await response.json();
+                
+                if (response.ok && data.token) {
+                    authToken = data.token;
+                    resultDiv.innerHTML = `<span class="success">✅ Login Successful</span>\n\nUser: ${data.user.email}\nToken: ${data.token.substring(0, 50)}...\n\n${JSON.stringify(data.user, null, 2)}`;
+                } else {
+                    resultDiv.innerHTML = `<span class="error">❌ Login Failed</span>\n\n${JSON.stringify(data, null, 2)}`;
+                }
+            } catch (error) {
+                resultDiv.innerHTML = `<span class="error">❌ Error</span>\n\n${error.message}`;
+            }
+        }
+
+        async function testWallet() {
+            const resultDiv = document.getElementById('wallet-result');
+            
+            if (!authToken) {
+                resultDiv.innerHTML = '<span class="error">❌ Please login first (Step 1)</span>';
+                return;
+            }
+
+            resultDiv.innerHTML = 'Testing wallet API...';
+            
+            try {
+                const response = await fetch(`${API_URL}/wallet`, {
+                    method: 'GET',
+                    headers: {
+                        'Authorization': `Bearer ${authToken}`
+                    }
+                });
+
+                const data = await response.json();
+                
+                if (response.ok && data.success) {
+                    resultDiv.innerHTML = `<span class="success">✅ Wallet API Working</span>\n\nBalance: ${data.data.balance} HC\nTotal Earned: ${data.data.totalEarned} HC\nTotal Spent: ${data.data.totalSpent} HC\nStreak: ${data.data.streakDays} days\n\nToday's Activity:\n${JSON.stringify(data.data.todayActivity, null, 2)}\n\nRecent Transactions: ${data.data.recentTransactions.length} found`;
+                } else {
+                    resultDiv.innerHTML = `<span class="error">❌ Wallet API Failed</span>\n\n${JSON.stringify(data, null, 2)}`;
+                }
+            } catch (error) {
+                resultDiv.innerHTML = `<span class="error">❌ Error</span>\n\n${error.message}`;
+            }
+        }
+
+        async function testDailyReward() {
+            const resultDiv = document.getElementById('reward-result');
+            
+            if (!authToken) {
+                resultDiv.innerHTML = '<span class="error">❌ Please login first (Step 1)</span>';
+                return;
+            }
+
+            resultDiv.innerHTML = 'Testing daily reward...';
+            
+            try {
+                const response = await fetch(`${API_URL}/wallet/earn/daily-login`, {
+                    method: 'POST',
+                    headers: {
+                        'Authorization': `Bearer ${authToken}`
+                    }
+                });
+
+                const data = await response.json();
+                
+                if (response.ok && data.success) {
+                    resultDiv.innerHTML = `<span class="success">✅ Daily Reward Claimed</span>\n\nCoins Earned: ${data.coinsEarned} HC\nBonus Coins: ${data.bonusCoins || 0} HC\nStreak: ${data.streak} days\nNew Balance: ${data.newBalance} HC`;
+                } else {
+                    resultDiv.innerHTML = `<span class="error">⚠️ ${data.message}</span>\n\n${JSON.stringify(data, null, 2)}`;
+                }
+            } catch (error) {
+                resultDiv.innerHTML = `<span class="error">❌ Error</span>\n\n${error.message}`;
+            }
+        }
+
+        async function testFullFlow() {
+            const resultDiv = document.getElementById('full-result');
+            resultDiv.innerHTML = '🔄 Running full flow test...\n\n';
+            
+            // Step 1: Login
+            resultDiv.innerHTML += '1️⃣ Testing login...\n';
+            try {
+                const loginResponse = await fetch(`${API_URL}/users/login`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        email: 'user@mediczy.com',
+                        password: 'User123'
+                    })
+                });
+                const loginData = await loginResponse.json();
+                
+                if (!loginResponse.ok || !loginData.token) {
+                    resultDiv.innerHTML += `<span class="error">❌ Login failed</span>\n${JSON.stringify(loginData, null, 2)}`;
+                    return;
+                }
+                
+                authToken = loginData.token;
+                resultDiv.innerHTML += `<span class="success">✅ Login successful</span>\nUser: ${loginData.user.email}\n\n`;
+            } catch (error) {
+                resultDiv.innerHTML += `<span class="error">❌ Login error: ${error.message}</span>`;
+                return;
+            }
+
+            // Step 2: Get Wallet
+            resultDiv.innerHTML += '2️⃣ Testing wallet API...\n';
+            try {
+                const walletResponse = await fetch(`${API_URL}/wallet`, {
+                    headers: { 'Authorization': `Bearer ${authToken}` }
+                });
+                const walletData = await walletResponse.json();
+                
+                if (!walletResponse.ok || !walletData.success) {
+                    resultDiv.innerHTML += `<span class="error">❌ Wallet failed</span>\n${JSON.stringify(walletData, null, 2)}`;
+                    return;
+                }
+                
+                resultDiv.innerHTML += `<span class="success">✅ Wallet working</span>\nBalance: ${walletData.data.balance} HC\n\n`;
+            } catch (error) {
+                resultDiv.innerHTML += `<span class="error">❌ Wallet error: ${error.message}</span>`;
+                return;
+            }
+
+            // Step 3: Try Daily Reward
+            resultDiv.innerHTML += '3️⃣ Testing daily reward...\n';
+            try {
+                const rewardResponse = await fetch(`${API_URL}/wallet/earn/daily-login`, {
+                    method: 'POST',
+                    headers: { 'Authorization': `Bearer ${authToken}` }
+                });
+                const rewardData = await rewardResponse.json();
+                
+                if (rewardResponse.ok && rewardData.success) {
+                    resultDiv.innerHTML += `<span class="success">✅ Daily reward claimed</span>\nEarned: ${rewardData.coinsEarned} HC\n\n`;
+                } else {
+                    resultDiv.innerHTML += `⚠️ ${rewardData.message}\n\n`;
+                }
+            } catch (error) {
+                resultDiv.innerHTML += `<span class="error">❌ Reward error: ${error.message}</span>`;
+                return;
+            }
+
+            resultDiv.innerHTML += '<span class="success">🎉 ALL TESTS PASSED - Wallet is working correctly!</span>';
+        }
+    </script>
+</body>
+</html>

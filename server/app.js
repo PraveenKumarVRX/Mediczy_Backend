@@ -124,6 +124,8 @@ import n8nCallbackRouter from './routes/webhooks/n8n-callback.route.js';
 import oauthRouter from './routes/oauth.route.js';
 import doctorOAuthRouter from './routes/doctor-oauth.route.js';
 import authLoginRouter from './routes/auth.login.route.js';
+import { authUser } from './middleware/auth.middleware.js';
+import { requireAppKey } from './middleware/appAuth.middleware.js';
 import communicationRouter from './routes/communication.route.js';
 import consultationRecordingRouter from './routes/consultation-recording.route.js';
 import billingRouter from './routes/billing.route.js';
@@ -174,6 +176,14 @@ import { initializeDataRetentionScheduler } from './services/dataRetention.servi
 import { extractTenant } from './middleware/tenant.middleware.js';
 
 const app = express();
+
+// ABSOLUTE FIRST MIDDLEWARE - Log ALL requests
+app.use((req, res, next) => {
+  if (req.path.includes('/doctors/services')) {
+    process.stdout.write(`[${new Date().toISOString()}] 🚨 REQ: ${req.method} ${req.url}\n`);
+  }
+  next();
+});
 
 // Initialize Passport for OAuth2
 import passport from './config/oauth.config.js';
@@ -392,6 +402,28 @@ app.use(fileUpload({
   createParentPath: true,
   tempFileDir: '/tmp/'
 }));
+
+// Legacy mobile aliases (auth OTP + patient appointments)
+const forwardToRouter = (router, targetPath) => (req, res, next) => {
+  const originalUrl = req.url;
+  req.url = targetPath;
+
+  router.handle(req, res, (err) => {
+    req.url = originalUrl;
+
+    if (err) {
+      return next(err);
+    }
+
+    if (!res.headersSent) {
+      res.status(404).json({ success: false, message: 'Alias route not found' });
+    }
+  });
+};
+
+app.post('/api/auth/send-otp', authLimiter, forwardToRouter(userRouter, '/login/send-otp'));
+app.post('/api/auth/verify-otp', authLimiter, forwardToRouter(userRouter, '/login/verify-otp'));
+app.get('/api/patients/appointments', requireAppKey, authUser, forwardToRouter(appointmentRouter, '/'));
 
 // 6. Input Sanitization (HTTP Parameter Pollution protection)
 // Note: NoSQL injection protection removed - using PostgreSQL with parameterized queries
@@ -639,6 +671,18 @@ app.use("/api/wallet", walletRouter);
 app.use("/api/membership-plans", membershipPlansRouter);
 app.use("/api/leaderboard", leaderboardRouter);
 app.use("/api/password-reset", passwordResetRouter);
+
+// DEBUG: Log all /api/doctors/services requests
+app.use((req, res, next) => {
+  if (req.path.includes('/doctors/services')) {
+    const fs = require('fs');
+    fs.appendFileSync('/tmp/app-request-debug.log', 
+      `${new Date().toISOString()} ${req.method} ${req.path} ${req.url}\n`
+    );
+  }
+  next();
+});
+
 app.use("/api/reports", uploadRouter); // Medical report upload
 app.use("/api/health-assessment", healthAssessmentRouter); // Health risk assessment
 app.use("/api/reports", reportAnalysisRouter); // Report analysis

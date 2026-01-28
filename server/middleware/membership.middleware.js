@@ -29,7 +29,8 @@ export const validateMembership = async (req, res, next) => {
     '/api/lab-tests',
     '/api/reports',
     '/api/labs',
-    '/api/cart'
+    '/api/cart',
+    '/api/wallet'
   ]);
   if (membershipFreeBases.has(req.baseUrl)) {
     return next();

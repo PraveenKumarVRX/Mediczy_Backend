@@ -1120,5 +1120,7 @@ class NotificationService {
 // Export singleton instance
 const notificationService = new NotificationService();
 
-export { Notification, FCMToken, notificationService };
+const sendNotification = (payload) => notificationService.send(payload);
+
+export { Notification, FCMToken, notificationService, sendNotification };
 export default notificationService;

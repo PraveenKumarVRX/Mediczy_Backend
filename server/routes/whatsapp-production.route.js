@@ -3,6 +3,8 @@ import whatsappProductionService from '../services/whatsapp-production.service.j
 import unifiedConversationService from '../services/unified-conversation.service.js';
 import whatsAppUserContextService from '../services/whatsapp-user-context.service.js';
 import rocketChatService from '../services/rocketchat.service.js';
+import n8nService from '../services/n8n.service.js';
+import { cache } from '../db/redis.js';
 import logger from '../config/logger.js';
 
 const router = express.Router();
@@ -15,6 +17,75 @@ const sanitizeReply = (text) => {
     return "I'm sorry, I'm having trouble processing your request right now. Please try again in a few minutes or reply with more details.";
   }
   return normalized;
+};
+
+const HANDOFF_KEY_PREFIX = 'whatsapp:handoff:';
+const HANDOFF_TTL_SECONDS = parseInt(process.env.WHATSAPP_HANDOFF_TTL || '86400', 10);
+
+const normalizeWhatsAppNumber = (value) => {
+  if (!value) return '';
+  const trimmed = String(value).trim().replace(/^whatsapp:/i, '');
+  if (trimmed.startsWith('+')) return trimmed;
+  const digits = trimmed.replace(/[^\d]/g, '');
+  if (digits.length === 10) {
+    const countryCode = process.env.DEFAULT_COUNTRY_CODE || '91';
+    return `+${countryCode}${digits}`;
+  }
+  if (digits.length >= 11) return `+${digits}`;
+  return digits;
+};
+
+const getHandoffKey = (phoneNumber) => `${HANDOFF_KEY_PREFIX}${normalizeWhatsAppNumber(phoneNumber)}`;
+
+const getHandoffState = async (phoneNumber) => {
+  if (!phoneNumber) return null;
+  return await cache.get(getHandoffKey(phoneNumber));
+};
+
+const setHandoffState = async (phoneNumber, payload = {}) => {
+  if (!phoneNumber) return null;
+  const state = {
+    active: true,
+    updatedAt: new Date().toISOString(),
+    ...payload
+  };
+  await cache.set(getHandoffKey(phoneNumber), state, HANDOFF_TTL_SECONDS);
+  return state;
+};
+
+/**
+ * Detect appointment booking intent from user message
+ */
+const detectBookingIntent = (message) => {
+  const lowerMsg = (message || '').toLowerCase();
+  const bookingPatterns = [
+    /book\s*(an?\s*)?(appointment|consultation|doctor)/i,
+    /fix\s*(an?\s*)?(appointment|consultation)/i,
+    /schedule\s*(an?\s*)?(appointment|consultation|visit)/i,
+    /i\s*want\s*to\s*(see|consult|meet|visit)\s*(a\s*)?(doctor|physician)/i,
+    /need\s*(to\s*)?(see|consult)\s*(a\s*)?(doctor|physician)/i,
+    /can\s*(you\s*)?book\s*(me\s*)?(an?\s*)?appointment/i,
+    /yes\s*(please\s*)?(book|schedule)/i,
+    /book\s*now/i,
+    /yes\s*i\s*want\s*(to\s*)?(book|see)/i
+  ];
+  
+  const isBookingIntent = bookingPatterns.some(pattern => pattern.test(lowerMsg));
+  
+  // Try to detect specialist type
+  let specialistType = 'general_physician';
+  if (/gastro|stomach|digestive|abdomen/i.test(lowerMsg)) specialistType = 'gastroenterologist';
+  else if (/heart|cardio|chest\s*pain/i.test(lowerMsg)) specialistType = 'cardiologist';
+  else if (/skin|derma|rash/i.test(lowerMsg)) specialistType = 'dermatologist';
+  else if (/child|baby|infant|pediatric/i.test(lowerMsg)) specialistType = 'pediatrician';
+  else if (/bone|orthop|joint|fracture/i.test(lowerMsg)) specialistType = 'orthopedic';
+  else if (/eye|vision|ophthalm/i.test(lowerMsg)) specialistType = 'ophthalmologist';
+  else if (/ent|ear|nose|throat/i.test(lowerMsg)) specialistType = 'ent';
+  else if (/neuro|brain|headache/i.test(lowerMsg)) specialistType = 'neurologist';
+  else if (/gynec|women|pregnancy/i.test(lowerMsg)) specialistType = 'gynecologist';
+  else if (/general|physician|gp/i.test(lowerMsg)) specialistType = 'general_physician';
+  
+  return { isBookingIntent, specialistType };
 };
 
 // Configuration for AI auto-reply - unified Dr. iSHA
@@ -461,6 +532,11 @@ router.post('/conversations/:phoneNumber/send', async (req, res) => {
       to: phoneNumber,
       body: message
     });
+
+    await setHandoffState(phoneNumber, {
+      reason: 'manual_agent_message',
+      source: 'team_dashboard'
+    });
     
     res.json({
       success: true,
@@ -793,6 +869,12 @@ router.post('/webhook', async (req, res) => {
           'GENERAL',
           `🔔 *Customer Request*\n👤 From: ${customerName} (+${phoneNumber})\n💬 Message: ${Body}\n\n📞 Requesting: ${teamMemberRequested}\n⏰ Time: ${new Date().toLocaleString()}`
         );
+
+        await setHandoffState(phoneNumber, {
+          reason: 'team_member_request',
+          requested: teamMemberRequested,
+          source: 'whatsapp'
+        });
         
         await whatsappProductionService.sendSessionMessage({
           to: phoneNumber,
@@ -809,8 +891,72 @@ router.post('/webhook', async (req, res) => {
         logger.error('Error forwarding to RocketChat:', error.message);
       }
     }
+
+    const handoffState = await getHandoffState(phoneNumber);
+    if (handoffState?.active) {
+      logger.info('🤝 Human handoff active - skipping automation', {
+        phoneNumber,
+        reason: handoffState.reason
+      });
+      return res.type('text/xml').status(200).send('<?xml version="1.0" encoding="UTF-8"?><Response></Response>');
+    }
     
-    // 3. OPTIONAL: AI AUTO-REPLY (only if enabled)
+    // 3. CHECK FOR APPOINTMENT BOOKING INTENT
+    const { isBookingIntent, specialistType } = detectBookingIntent(Body);
+    if (isBookingIntent && userContext.isKnownUser) {
+      logger.info('📅 Appointment booking intent detected via WhatsApp', {
+        phoneNumber,
+        specialistType,
+        userId: userContext.user?.id
+      });
+      
+      try {
+        // Trigger n8n workflow for appointment booking
+        const n8nResult = await n8nService.trigger('whatsapp-appointment-booking', {
+          userId: userContext.user?.id,
+          patientName: userContext.user?.name,
+          patientPhone: phoneNumber,
+          patientEmail: userContext.user?.email,
+          specialistType: specialistType,
+          source: 'whatsapp',
+          timestamp: new Date().toISOString()
+        });
+        
+        // Send confirmation message
+        const specialistNames = {
+          'general_physician': 'General Physician',
+          'gastroenterologist': 'Gastroenterologist',
+          'cardiologist': 'Cardiologist',
+          'dermatologist': 'Dermatologist',
+          'pediatrician': 'Pediatrician',
+          'orthopedic': 'Orthopedic Specialist',
+          'ophthalmologist': 'Ophthalmologist',
+          'ent': 'ENT Specialist',
+          'neurologist': 'Neurologist',
+          'gynecologist': 'Gynecologist'
+        };
+        
+        await whatsappProductionService.sendSessionMessage({
+          to: phoneNumber,
+          body: `📅 *Appointment Booking Request*
+
+I'm processing your request to see a ${specialistNames[specialistType] || 'Doctor'}.
+
+${n8nResult.success 
+  ? `✅ Our team will contact you shortly to confirm your appointment slot.\n\n📱 You'll receive a confirmation message with:\n• Doctor's name\n• Date & time options\n• Consultation fee`
+  : `🔄 I'm connecting you with our booking team. They'll call you within 15 minutes to schedule your appointment.`}
+
+Is there anything else I can help you with? 💙`
+        });
+        
+        return res.type('text/xml').status(200).send('<?xml version="1.0" encoding="UTF-8"?><Response></Response>');
+      } catch (error) {
+        logger.error('Appointment booking error:', error.message);
+        // Continue to AI processing if n8n fails
+      }
+    }
+    
+    // 4. OPTIONAL: AI AUTO-REPLY (only if enabled)
     // Routes through SIB Brain for deep reasoning with user context
     if (AI_AUTO_REPLY_ENABLED && Body && !MediaUrl0) {
       let responseSent = false;
@@ -1164,4 +1310,3 @@ router.post('/sib/test', async (req, res) => {
 });
 
 export default router;
-

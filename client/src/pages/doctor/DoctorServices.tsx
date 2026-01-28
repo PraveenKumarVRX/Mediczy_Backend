@@ -50,8 +50,9 @@ export default function DoctorServices() {
   const fetchServiceSettings = async () => {
     try {
       const response = await api.get('/doctors/profile');
-      if (response.data.success) {
-        const doctor = response.data.doctor;
+      // Handle both wrapped {success, doctor} and unwrapped {id, ...} responses
+      const doctor = response.data.doctor || response.data;
+      if (doctor && doctor.id) {
         setSettings({
           offersSecondOpinion: doctor.offersSecondOpinion || false,
           secondOpinionFee: doctor.secondOpinionFee || null,
@@ -76,6 +77,9 @@ export default function DoctorServices() {
           title: 'Settings Saved',
           description: 'Your service preferences have been updated successfully.',
         });
+        
+        // Refetch to confirm saved values
+        await fetchServiceSettings();
       }
     } catch (error) {
       console.error('Error saving settings:', error);

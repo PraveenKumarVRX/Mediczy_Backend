@@ -2,8 +2,26 @@ import express from 'express';
 import { body } from 'express-validator';
 import { signInUser } from '../controller/user.controller.js';
 import { authLimiter } from '../middleware/rateLimiter.middleware.js';
+import userRouter from './user.route.js';
 
 const router = express.Router();
+
+const forwardToUserRouter = (targetPath) => (req, res, next) => {
+  const originalUrl = req.url;
+  req.url = targetPath;
+
+  userRouter.handle(req, res, (err) => {
+    req.url = originalUrl;
+
+    if (err) {
+      return next(err);
+    }
+
+    if (!res.headersSent) {
+      res.status(404).json({ success: false, message: 'OTP alias not handled' });
+    }
+  });
+};
 
 // Generic auth login alias for legacy clients and health checks
 router.post(
@@ -41,5 +59,9 @@ router.post(
   ],
   signInUser
 );
+
+// OTP login aliases for legacy clients (/api/auth/send-otp, /api/auth/verify-otp)
+router.post('/send-otp', authLimiter, forwardToUserRouter('/login/send-otp'));
+router.post('/verify-otp', authLimiter, forwardToUserRouter('/login/verify-otp'));
 
 export default router;

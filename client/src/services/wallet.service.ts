@@ -3,7 +3,7 @@
  * Handles all wallet and health coins related API calls
  */
 
-import api from '@/lib/api';
+import api from '@/utils/api';
 
 export interface WalletBalance {
   balance: number;

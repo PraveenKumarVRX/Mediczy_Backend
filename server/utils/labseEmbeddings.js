@@ -26,6 +26,29 @@ class LaBSEEmbeddings {
     
     // Intent reference phrases for semantic matching
     this.intentReferences = {
+      // MEDICAL CONSULTATION - Most common intent, must be first for semantic matching
+      medical_consult: [
+        "I have stomach ache",
+        "I have headache",
+        "I'm feeling sick",
+        "I have pain",
+        "I'm not feeling well",
+        "I have fever",
+        "I have cold and cough",
+        "I have body pain",
+        "I feel nauseous",
+        "I have diarrhea",
+        "back pain problem",
+        "chest discomfort",
+        "sore throat",
+        "muscle pain",
+        "joint pain",
+        "feeling weak",
+        "feeling tired",
+        "I have symptoms",
+        "health concern",
+        "medical advice needed"
+      ],
       emergency: [
         "I can't breathe",
         "severe chest pain",

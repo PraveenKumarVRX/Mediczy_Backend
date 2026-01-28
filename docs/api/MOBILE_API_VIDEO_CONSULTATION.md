@@ -1,0 +1,919 @@
+# 📱 Mobile App API Documentation - Video Consultation
+
+Complete API reference for integrating video consultation features into mobile applications.
+
+---
+
+## 📋 Table of Contents
+1. [Authentication](#authentication)
+2. [Doctor Discovery](#doctor-discovery)
+3. [Appointment Booking](#appointment-booking)
+4. [Video Consultation](#video-consultation)
+5. [Prescription Management](#prescription-management)
+6. [Payment & Wallet](#payment--wallet)
+7. [Real-time Events](#real-time-events)
+
+---
+
+## 🔐 Authentication
+
+### Register User
+```http
+POST /api/auth/register
+Content-Type: application/json
+
+{
+  "firstName": "John",
+  "lastName": "Doe",
+  "email": "john@example.com",
+  "password": "SecurePass123!",
+  "phoneNumber": "+919876543210"
+}
+```
+
+**Response:**
+```json
+{
+  "success": true,
+  "message": "Registration successful",
+  "user": {
+    "id": 123,
+    "firstName": "John",
+    "lastName": "Doe",
+    "email": "john@example.com",
+    "phoneNumber": "+919876543210"
+  },
+  "token": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9..."
+}
+```
+
+### Login
+```http
+POST /api/auth/login
+Content-Type: application/json
+
+{
+  "email": "john@example.com",
+  "password": "SecurePass123!"
+}
+```
+
+**Response:**
+```json
+{
+  "success": true,
+  "token": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...",
+  "user": {
+    "id": 123,
+    "firstName": "John",
+    "lastName": "Doe",
+    "email": "john@example.com",
+    "phoneNumber": "+919876543210",
+    "isVerified": true
+  }
+}
+```
+
+### OTP Login (Alternative)
+```http
+POST /api/users/login/send-otp
+Content-Type: application/json
+
+{
+  "phoneNumber": "+919876543210"
+}
+```
+
+```http
+POST /api/users/login/verify-otp
+Content-Type: application/json
+
+{
+  "phoneNumber": "+919876543210",
+  "otp": "123456"
+}
+```
+
+**Legacy aliases (if enabled):**
+```http
+POST /api/auth/send-otp
+POST /api/auth/verify-otp
+```
+
+### Mobile App Credentials (Required)
+All mobile API calls must include app credentials:
+
+```http
+x-app-key: <mobile_app_key>
+x-app-secret: <mobile_app_secret>
+```
+
+---
+
+## 👨‍⚕️ Doctor Discovery
+
+### List Doctors
+```http
+GET /api/consultation/doctors?specialty=Cardiology&sortBy=rating&limit=20&page=1
+Authorization: Bearer <token>
+```
+
+**Query Parameters:**
+- `specialty` (optional): Filter by doctor specialization
+- `date` (optional): Check availability for specific date
+- `minRating` (optional): Minimum doctor rating (0-5)
+- `maxFee` (optional): Maximum consultation fee
+- `sortBy` (optional): `rating` or `fee`
+- `page` (default: 1): Page number
+- `limit` (default: 20): Items per page
+
+**Response:**
+```json
+{
+  "success": true,
+  "count": 15,
+  "doctors": [
+    {
+      "id": 70,
+      "name": "Dr. Nandita Agarwal",
+      "email": "nandita@mediczy.com",
+      "phone": "+919876543210",
+      "profileImage": "https://mediczy.com/images/doctors/nandita.jpg",
+      "specialization": "Cardiology",
+      "qualifications": "MBBS, MD (Cardiology)",
+      "experience": 15,
+      "registrationNumber": "MH/12345/2008",
+      "consultationFee": 500,
+      "rating": 4.8,
+      "totalReviews": 234,
+      "bio": "Specialist in heart care with 15 years of experience",
+      "languages": ["English", "Hindi", "Marathi"],
+      "isOnline": true,
+      "isAvailable": true
+    }
+  ]
+}
+```
+
+### Get Doctor Details
+```http
+GET /api/doctors/:doctorId
+Authorization: Bearer <token>
+```
+
+**Response:**
+```json
+{
+  "success": true,
+  "doctor": {
+    "id": 70,
+    "name": "Dr. Nandita Agarwal",
+    "specialization": "Cardiology",
+    "consultationFee": 500,
+    "availableSlots": [
+      {
+        "date": "2026-01-28",
+        "slots": [
+          { "time": "10:00 AM", "available": true },
+          { "time": "11:00 AM", "available": true },
+          { "time": "02:00 PM", "available": false }
+        ]
+      }
+    ]
+  }
+}
+```
+
+---
+
+## 📅 Appointment Booking
+
+### Create Video Consultation Appointment
+```http
+POST /api/consultation/book
+Authorization: Bearer <token>
+Content-Type: application/json
+
+{
+  "doctorId": 70,
+  "consultationType": "online",
+  "appointmentDate": "2026-01-28",
+  "appointmentTime": "10:00 AM",
+  "symptoms": "Chest pain and shortness of breath",
+  "urgency": "URGENT",
+  "paymentMethod": "wallet"
+}
+```
+
+**Response:**
+```json
+{
+  "success": true,
+  "message": "Appointment booked successfully",
+  "appointment": {
+    "id": 456,
+    "appointmentId": "APT-456-2026",
+    "doctorId": 70,
+    "doctorName": "Dr. Nandita Agarwal",
+    "patientId": 123,
+    "patientName": "John Doe",
+    "consultationType": "online",
+    "appointmentDate": "2026-01-28",
+    "appointmentTime": "10:00 AM",
+    "status": "confirmed",
+    "roomId": "apt-456",
+    "meetingId": "apt-456-1738022400",
+    "amount": 500,
+    "paymentStatus": "paid",
+    "createdAt": "2026-01-27T10:00:00.000Z"
+  },
+  "payment": {
+    "transactionId": "TXN-789",
+    "amount": 500,
+    "method": "wallet",
+    "status": "success"
+  }
+}
+```
+
+### Get My Appointments
+```http
+GET /api/appointments?status=confirmed&consultationType=online&limit=10
+Authorization: Bearer <token>
+```
+
+**Query Parameters:**
+- `status`: `all`, `confirmed`, `completed`, `cancelled`, `pending`
+- `consultationType`: `online`, `in-person`, `all`
+- `limit`: Number of results
+- `page`: Page number
+
+**Response:**
+```json
+{
+  "success": true,
+  "count": 5,
+  "appointments": [
+    {
+      "id": 456,
+      "appointmentId": "APT-456-2026",
+      "doctor": {
+        "id": 70,
+        "name": "Dr. Nandita Agarwal",
+        "specialization": "Cardiology",
+        "profileImage": "https://mediczy.com/images/doctors/nandita.jpg"
+      },
+      "consultationType": "online",
+      "appointmentDate": "2026-01-28",
+      "appointmentTime": "10:00 AM",
+      "status": "confirmed",
+      "roomId": "apt-456",
+      "meetingId": "apt-456-1738022400",
+      "canJoin": true,
+      "joinTime": "2026-01-28T09:45:00.000Z"
+    }
+  ]
+}
+```
+
+### Cancel Appointment
+```http
+POST /api/appointments/:appointmentId/cancel
+Authorization: Bearer <token>
+Content-Type: application/json
+
+{
+  "reason": "Unable to attend"
+}
+```
+
+**Response:**
+```json
+{
+  "success": true,
+  "message": "Appointment cancelled successfully",
+  "refund": {
+    "amount": 500,
+    "method": "wallet",
+    "status": "processed"
+  }
+}
+```
+
+---
+
+## 🎥 Video Consultation
+
+### Get Video Room Token (LiveKit)
+```http
+POST /api/video/livekit/token
+Authorization: Bearer <token>
+Content-Type: application/json
+
+{
+  "roomName": "apt-456",
+  "participantName": "John Doe"
+}
+```
+
+**Response:**
+```json
+{
+  "success": true,
+  "token": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...",
+  "serverUrl": "wss://livekit.mediczy.com",
+  "roomName": "apt-456",
+  "participantName": "John Doe",
+  "expiresAt": "2026-01-28T12:00:00.000Z"
+}
+```
+
+### Join Video Consultation
+```http
+POST /api/video/room/:roomId/join
+Authorization: Bearer <token>
+Content-Type: application/json
+
+{
+  "appointmentId": 456
+}
+```
+
+**Response:**
+```json
+{
+  "success": true,
+  "message": "Joined video room successfully",
+  "room": {
+    "roomId": "apt-456",
+    "appointmentId": 456,
+    "participants": [
+      {
+        "id": "user-123",
+        "name": "John Doe",
+        "role": "patient",
+        "isDoctor": false
+      }
+    ],
+    "startedAt": "2026-01-28T10:00:00.000Z"
+  },
+  "video": {
+    "token": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...",
+    "serverUrl": "wss://livekit.mediczy.com",
+    "provider": "livekit"
+  }
+}
+```
+
+### Leave Video Consultation
+```http
+POST /api/video/room/:roomId/leave
+Authorization: Bearer <token>
+```
+
+**Response:**
+```json
+{
+  "success": true,
+  "message": "Left video room successfully",
+  "duration": 1200,
+  "appointmentStatus": "completed"
+}
+```
+
+### Get Room Status
+```http
+GET /api/video/room/:roomId/status
+Authorization: Bearer <token>
+```
+
+**Response:**
+```json
+{
+  "success": true,
+  "room": {
+    "roomId": "apt-456",
+    "isActive": true,
+    "participants": [
+      {
+        "id": "user-123",
+        "name": "John Doe",
+        "role": "patient",
+        "joinedAt": "2026-01-28T10:00:00.000Z"
+      },
+      {
+        "id": "doctor-70",
+        "name": "Dr. Nandita Agarwal",
+        "role": "doctor",
+        "joinedAt": "2026-01-28T10:02:00.000Z"
+      }
+    ],
+    "startedAt": "2026-01-28T10:00:00.000Z",
+    "duration": 300
+  }
+}
+```
+
+### End Video Consultation (Doctor Only)
+```http
+POST /api/consultation/video/end/:appointmentId
+Authorization: Bearer <doctor-token>
+Content-Type: application/json
+
+{
+  "notes": "Patient showing signs of viral fever. Prescribed medications.",
+  "prescription": "Paracetamol 500mg TDS for 5 days"
+}
+```
+
+**Response:**
+```json
+{
+  "success": true,
+  "message": "Consultation ended successfully",
+  "appointment": {
+    "id": 456,
+    "status": "completed",
+    "duration": 1200,
+    "endedAt": "2026-01-28T10:20:00.000Z"
+  }
+}
+```
+
+---
+
+## 💊 Prescription Management
+
+### Create Prescription (Doctor Only)
+```http
+POST /api/prescriptions/from-appointment/:appointmentId
+Authorization: Bearer <doctor-token>
+Content-Type: application/json
+
+{
+  "diagnosis": "Viral Fever with Myalgia",
+  "chiefComplaints": [
+    "Fever (102°F)",
+    "Severe headache",
+    "Body pain"
+  ],
+  "vitals": {
+    "temperature": "102°F",
+    "bloodPressure": "120/80",
+    "pulse": "88",
+    "weight": "70kg"
+  },
+  "medications": [
+    {
+      "name": "Paracetamol",
+      "dosage": "500mg",
+      "frequency": "Three times daily",
+      "duration": "5 days",
+      "instructions": "Take after meals"
+    },
+    {
+      "name": "Ibuprofen",
+      "dosage": "400mg",
+      "frequency": "Twice daily",
+      "duration": "3 days",
+      "instructions": "Take with food"
+    }
+  ],
+  "labTests": ["CBC", "ESR"],
+  "followUpDate": "2026-02-03",
+  "specialInstructions": "Stay hydrated, rest for 3-4 days"
+}
+```
+
+**Response:**
+```json
+{
+  "success": true,
+  "message": "Prescription created successfully",
+  "prescription": {
+    "id": 789,
+    "prescriptionNumber": "RX-789-2026",
+    "appointmentId": 456,
+    "doctorId": 70,
+    "patientId": 123,
+    "diagnosis": "Viral Fever with Myalgia",
+    "medications": [...],
+    "pdfUrl": "https://mediczy.com/prescriptions/RX-789-2026.pdf",
+    "shareUrl": "https://mediczy.com/rx/RX-789-2026",
+    "whatsappShareUrl": "https://mediczy.com/api/prescriptions/RX-789-2026/share/whatsapp",
+    "createdAt": "2026-01-28T10:20:00.000Z"
+  }
+}
+```
+
+### Get Prescription by Appointment
+```http
+GET /api/prescriptions/appointment/:appointmentId
+Authorization: Bearer <token>
+```
+
+**Response:**
+```json
+{
+  "success": true,
+  "prescription": {
+    "id": 789,
+    "prescriptionNumber": "RX-789-2026",
+    "doctor": {
+      "name": "Dr. Nandita Agarwal",
+      "specialization": "Cardiology",
+      "registrationNumber": "MH/12345/2008"
+    },
+    "patient": {
+      "name": "John Doe",
+      "age": 35,
+      "gender": "Male"
+    },
+    "diagnosis": "Viral Fever with Myalgia",
+    "medications": [...],
+    "labTests": ["CBC", "ESR"],
+    "pdfUrl": "https://mediczy.com/prescriptions/RX-789-2026.pdf",
+    "createdAt": "2026-01-28T10:20:00.000Z"
+  }
+}
+```
+
+### Download Prescription PDF
+```http
+GET /api/prescriptions/:prescriptionId/pdf
+Authorization: Bearer <token>
+```
+
+Returns PDF file for download.
+
+### Share Prescription via WhatsApp
+```http
+POST /api/prescriptions/:prescriptionId/share/whatsapp/:phoneNumber
+Authorization: Bearer <token>
+```
+
+**Response:**
+```json
+{
+  "success": true,
+  "message": "Prescription shared via WhatsApp successfully",
+  "whatsappUrl": "https://wa.me/919876543210?text=..."
+}
+```
+
+---
+
+## 💰 Payment & Wallet
+
+### Get Wallet Balance
+```http
+GET /api/wallet/balance
+Authorization: Bearer <token>
+```
+
+**Response:**
+```json
+{
+  "success": true,
+  "balance": {
+    "totalBalance": 1500,
+    "availableBalance": 1500,
+    "lockedBalance": 0,
+    "healthCoins": 250,
+    "currency": "INR"
+  }
+}
+```
+
+### Add Money to Wallet
+```http
+POST /api/wallet/topup
+Authorization: Bearer <token>
+Content-Type: application/json
+
+{
+  "amount": 1000,
+  "paymentMethod": "razorpay"
+}
+```
+
+**Response:**
+```json
+{
+  "success": true,
+  "orderId": "order_123456",
+  "amount": 1000,
+  "currency": "INR",
+  "razorpayKey": "rzp_live_xxxxx",
+  "callback": "https://mediczy.com/api/wallet/topup/callback"
+}
+```
+
+### Calculate Consultation Cost
+```http
+GET /api/wallet/appointment/calculate/:consultationFee
+Authorization: Bearer <token>
+```
+
+**Response:**
+```json
+{
+  "success": true,
+  "consultationFee": 500,
+  "healthCoinsBalance": 250,
+  "healthCoinsValue": 50,
+  "amountToPay": 450,
+  "canPayWithHC": true,
+  "savings": 50
+}
+```
+
+### Transaction History
+```http
+GET /api/wallet/transactions?type=consultation&limit=20&page=1
+Authorization: Bearer <token>
+```
+
+**Response:**
+```json
+{
+  "success": true,
+  "transactions": [
+    {
+      "id": "TXN-789",
+      "type": "debit",
+      "amount": 500,
+      "purpose": "Video Consultation",
+      "appointmentId": 456,
+      "doctorName": "Dr. Nandita Agarwal",
+      "status": "completed",
+      "timestamp": "2026-01-28T10:00:00.000Z"
+    }
+  ]
+}
+```
+
+---
+
+## 🔔 Real-time Events (Socket.io)
+
+### Connect to Socket
+```javascript
+import io from 'socket.io-client';
+
+const socket = io('https://mediczy.com', {
+  auth: {
+    token: 'Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...'
+  }
+});
+
+socket.on('connect', () => {
+  console.log('Connected to Mediczy');
+});
+```
+
+### Listen for Doctor Call Initiation
+```javascript
+socket.on('doctor-initiated-call', (data) => {
+  // {
+  //   appointmentId: 456,
+  //   doctorName: "Dr. Nandita Agarwal",
+  //   meetingLink: "https://livekit.mediczy.com/join/apt-456",
+  //   callInitiatedAt: "2026-01-28T10:00:00.000Z"
+  // }
+  
+  // Show notification to patient
+  showNotification({
+    title: `${data.doctorName} is calling`,
+    message: 'Tap to join video consultation',
+    action: () => joinVideoCall(data.appointmentId, data.meetingLink)
+  });
+});
+```
+
+### Listen for Appointment Updates
+```javascript
+socket.on('appointment-update', (data) => {
+  // {
+  //   appointmentId: 456,
+  //   status: "in-progress",
+  //   message: "Doctor has joined the consultation"
+  // }
+  
+  updateAppointmentStatus(data.appointmentId, data.status);
+});
+```
+
+### Listen for Prescription Ready
+```javascript
+socket.on('prescription-ready', (data) => {
+  // {
+  //   appointmentId: 456,
+  //   prescriptionId: 789,
+  //   prescriptionNumber: "RX-789-2026",
+  //   pdfUrl: "https://mediczy.com/prescriptions/RX-789-2026.pdf"
+  // }
+  
+  showNotification({
+    title: 'Prescription Ready',
+    message: 'Your prescription is ready to download',
+    action: () => downloadPrescription(data.pdfUrl)
+  });
+});
+```
+
+### Send Typing Indicator
+```javascript
+socket.emit('typing', {
+  appointmentId: 456,
+  isTyping: true
+});
+```
+
+---
+
+## 📊 Error Handling
+
+All API responses follow a consistent error format:
+
+```json
+{
+  "success": false,
+  "message": "Error description",
+  "error": "Detailed error message",
+  "code": "ERROR_CODE"
+}
+```
+
+### Common Error Codes
+
+| Code | Status | Description |
+|------|--------|-------------|
+| `UNAUTHORIZED` | 401 | Invalid or missing authentication token |
+| `FORBIDDEN` | 403 | Insufficient permissions |
+| `NOT_FOUND` | 404 | Resource not found |
+| `VALIDATION_ERROR` | 400 | Invalid request data |
+| `INSUFFICIENT_BALANCE` | 402 | Insufficient wallet balance |
+| `APPOINTMENT_CONFLICT` | 409 | Time slot already booked |
+| `SERVER_ERROR` | 500 | Internal server error |
+
+---
+
+## 🔒 Security Best Practices
+
+1. **Token Storage**: Store JWT tokens securely using encrypted storage
+2. **HTTPS Only**: Always use HTTPS for API calls
+3. **Token Refresh**: Implement token refresh mechanism
+4. **Rate Limiting**: Respect API rate limits (100 requests/minute)
+5. **Input Validation**: Validate all user inputs before sending to API
+6. **WebRTC Security**: Use secure WebRTC connections with TURN/STUN servers
+
+---
+
+## 📱 Mobile SDK Integration Examples
+
+### React Native Example
+```javascript
+import axios from 'axios';
+
+const API_BASE_URL = 'https://mediczy.com/api';
+
+class MediczyAPI {
+  constructor(token) {
+    this.client = axios.create({
+      baseURL: API_BASE_URL,
+      headers: {
+        'Authorization': `Bearer ${token}`,
+        'Content-Type': 'application/json'
+      }
+    });
+  }
+
+  async bookVideoConsultation(doctorId, date, time, symptoms) {
+    const response = await this.client.post('/consultation/book', {
+      doctorId,
+      consultationType: 'online',
+      appointmentDate: date,
+      appointmentTime: time,
+      symptoms,
+      paymentMethod: 'wallet'
+    });
+    return response.data;
+  }
+
+  async joinVideoCall(appointmentId) {
+    const response = await this.client.post(`/video/room/apt-${appointmentId}/join`, {
+      appointmentId
+    });
+    return response.data;
+  }
+
+  async getVideoToken(roomName, participantName) {
+    const response = await this.client.post('/video/livekit/token', {
+      roomName,
+      participantName
+    });
+    return response.data;
+  }
+}
+
+export default MediczyAPI;
+```
+
+### Flutter/Dart Example
+```dart
+import 'package:http/http.dart' as http;
+import 'dart:convert';
+
+class MediczyAPI {
+  final String baseUrl = 'https://mediczy.com/api';
+  final String token;
+
+  MediczyAPI(this.token);
+
+  Future<Map<String, dynamic>> bookVideoConsultation({
+    required int doctorId,
+    required String date,
+    required String time,
+    required String symptoms,
+  }) async {
+    final response = await http.post(
+      Uri.parse('$baseUrl/consultation/book'),
+      headers: {
+        'Authorization': 'Bearer $token',
+        'Content-Type': 'application/json',
+      },
+      body: jsonEncode({
+        'doctorId': doctorId,
+        'consultationType': 'online',
+        'appointmentDate': date,
+        'appointmentTime': time,
+        'symptoms': symptoms,
+        'paymentMethod': 'wallet',
+      }),
+    );
+
+    return jsonDecode(response.body);
+  }
+
+  Future<Map<String, dynamic>> getVideoToken({
+    required String roomName,
+    required String participantName,
+  }) async {
+    final response = await http.post(
+      Uri.parse('$baseUrl/video/livekit/token'),
+      headers: {
+        'Authorization': 'Bearer $token',
+        'Content-Type': 'application/json',
+      },
+      body: jsonEncode({
+        'roomName': roomName,
+        'participantName': participantName,
+      }),
+    );
+
+    return jsonDecode(response.body);
+  }
+}
+```
+
+---
+
+## 🎯 Integration Checklist
+
+- [ ] Implement user authentication (register/login)
+- [ ] Integrate doctor listing and search
+- [ ] Implement appointment booking flow
+- [ ] Integrate wallet and payment system
+- [ ] Set up Socket.io for real-time notifications
+- [ ] Integrate LiveKit for video calls
+- [ ] Implement prescription viewing and download
+- [ ] Add error handling and retry logic
+- [ ] Test video calls on different networks
+- [ ] Implement offline support for viewing past consultations
+- [ ] Add push notifications for appointment reminders
+- [ ] Test on both iOS and Android platforms
+
+---
+
+## 🆘 Support
+
+For API support and questions:
+- **Email**: support@mediczy.com
+- **Documentation**: https://docs.mediczy.com
+- **Status Page**: https://status.mediczy.com
+
+---
+
+## 📝 Changelog
+
+### v2.0.0 (2026-01-27)
+- Added LiveKit video integration
+- Enhanced prescription system
+- Added wallet payment support
+- Improved real-time notifications
+
+### v1.0.0 (2025-12-01)
+- Initial mobile API release
+- Basic video consultation features
+- Doctor booking system

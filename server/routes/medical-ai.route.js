@@ -1,5 +1,4 @@
 import express from 'express';
-import medicalAIService from '../services/medicalAI.service.js';
 import whatsAppUserContextService from '../services/whatsapp-user-context.service.js';
 import { authUser } from '../middleware/auth.middleware.js';
 import handleIntentEscalation, { getDoctorSuggestions } from '../services/intentEscalation.service.js';
@@ -8,6 +7,38 @@ import doctorModel from '../models/doctor.model.intelligent.js';
 import { User } from '../models/user.model.intelligent.js';
 
 const router = express.Router();
+const SIB_URL = process.env.SIB_URL || 'http://localhost:8001';
+const SIB_DOCTOR_NAME = 'Dr. iSHA';
+
+const extractSibResponse = (sibData) => (
+  sibData?.response
+  || sibData?.primary_response
+  || sibData?.chat_answer
+  || sibData?.message
+  || sibData?.result
+);
+
+const buildSibConsultation = (sibData, { sessionId, language }) => {
+  const responseText = extractSibResponse(sibData);
+  const payload = {
+    success: true,
+    response: responseText,
+    primary_response: responseText,
+    doctor: SIB_DOCTOR_NAME,
+    sessionId,
+    timestamp: new Date().toISOString(),
+    language,
+    provider: 'sib-fastapi',
+    model: sibData?.model || 'SIB-Llama-3.1'
+  };
+
+  const confidence = sibData?.confidence ?? sibData?.ai_assessment?.confidence;
+  if (typeof confidence === 'number') {
+    payload.confidence = confidence;
+  }
+
+  return payload;
+};
 
 /**
  * @route   POST /api/medical-ai/test
@@ -38,18 +69,48 @@ router.post('/test', async (req, res) => {
 
     console.log('Testing Medical AI with query:', query);
 
-    const response = await medicalAIService.consultMedical(
-      query,
-      testSessionId,
-      language,
-      testUserContext
-    );
+    const sibResponse = await fetch(`${SIB_URL}/chat`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        patient_id: testSessionId,
+        message: query,
+        language,
+        patient_data: testUserContext
+      })
+    });
+
+    if (!sibResponse.ok) {
+      const errorText = await sibResponse.text().catch(() => '');
+      return res.status(503).json({
+        success: false,
+        error: 'SIB request failed',
+        details: errorText || `HTTP ${sibResponse.status}`,
+        test: true,
+        provider: 'sib-fastapi'
+      });
+    }
+
+    const sibData = await sibResponse.json();
+    const responsePayload = buildSibConsultation(sibData, {
+      sessionId: testSessionId,
+      language
+    });
+
+    if (!responsePayload.response) {
+      return res.status(502).json({
+        success: false,
+        error: 'SIB response missing content',
+        test: true,
+        provider: 'sib-fastapi'
+      });
+    }
 
     res.json({
-      success: true,
-      data: response,
+      ...responsePayload,
+      data: responsePayload,
       test: true,
-      timestamp: new Date().toISOString()
+      timestamp: responsePayload.timestamp
     });
 
   } catch (error) {
@@ -96,16 +157,44 @@ router.post('/consult', authUser, async (req, res) => {
       userName: req.user.firstName || 'Patient'
     };
 
-    const consultation = await medicalAIService.consultMedical(
-      query,
+    const sibResponse = await fetch(`${SIB_URL}/chat`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        patient_id: sessionId,
+        message: query,
+        language,
+        patient_data: {
+          ...enhancedContext,
+          channel: 'web',
+          patientData: dbContext || undefined
+        }
+      })
+    });
+
+    if (!sibResponse.ok) {
+      const errorText = await sibResponse.text().catch(() => '');
+      return res.status(503).json({
+        success: false,
+        error: 'SIB request failed',
+        details: errorText || `HTTP ${sibResponse.status}`,
+        provider: 'sib-fastapi'
+      });
+    }
+
+    const sibData = await sibResponse.json();
+    const consultation = buildSibConsultation(sibData, {
       sessionId,
-      language,
-      {
-        ...enhancedContext,
-        channel: 'web',
-        patientData: dbContext || undefined
-      }
-    );
+      language
+    });
+
+    if (!consultation.response) {
+      return res.status(502).json({
+        success: false,
+        error: 'SIB response missing content',
+        provider: 'sib-fastapi'
+      });
+    }
 
     res.json(consultation);
   } catch (error) {
@@ -139,17 +228,58 @@ router.post('/analyze-symptoms', authUser, async (req, res) => {
       });
     }
 
-    const sessionId = `mediczy_symptoms_${req.user.id}_${Date.now()}`;
+    const sessionId = req.body.sessionId || `mediczy_symptoms_${req.user.id}_${Date.now()}`;
+    const symptomsText = Array.isArray(symptoms) ? symptoms.join(', ') : symptoms;
+    const analysisPrompt = `I am experiencing the following symptoms: ${symptomsText}. ${description || ''}. Duration: ${duration || 'not specified'}. Severity: ${severity || 'moderate'}.`;
 
-    const analysis = await medicalAIService.analyzeSymptoms(
-      symptoms,
-      description || '',
+    const sibResponse = await fetch(`${SIB_URL}/chat`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        patient_id: sessionId,
+        message: analysisPrompt,
+        language,
+        patient_data: {
+          userId: req.user.id,
+          symptoms,
+          description,
+          severity,
+          duration
+        }
+      })
+    });
+
+    if (!sibResponse.ok) {
+      const errorText = await sibResponse.text().catch(() => '');
+      return res.status(503).json({
+        success: false,
+        error: 'SIB request failed',
+        details: errorText || `HTTP ${sibResponse.status}`,
+        provider: 'sib-fastapi'
+      });
+    }
+
+    const sibData = await sibResponse.json();
+    const analysis = buildSibConsultation(sibData, {
       sessionId,
-      language,
-      { severity, duration }
-    );
+      language
+    });
 
-    res.json(analysis);
+    if (!analysis.response) {
+      return res.status(502).json({
+        success: false,
+        error: 'SIB response missing content',
+        provider: 'sib-fastapi'
+      });
+    }
+
+    res.json({
+      ...analysis,
+      symptoms,
+      description,
+      severity,
+      duration
+    });
   } catch (error) {
     console.error('Symptom analysis API error:', error);
     res.status(500).json({
@@ -175,73 +305,55 @@ router.post('/emergency-triage', authUser, async (req, res) => {
       });
     }
 
-    // Try SIB first for centralized triage
-    const SIB_URL = process.env.SIB_URL || 'http://localhost:8001';
     let triage;
     let sibUsed = false;
 
-    try {
-      const sibResponse = await fetch(`${SIB_URL}/emergency-triage`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          symptoms,
-          description,
-          language,
-          patient_id: req.user.id,
-          patient_data: {
-            patient_id: req.user.id,
-            name: `${req.user.firstName || 'Patient'} ${req.user.lastName || ''}`.trim(),
-            age: req.user.age || null,
-            gender: req.user.gender || null,
-            conditions: req.user.medicalConditions || null
-          },
-          multimodal_context: multimodalContext || null
-        })
-      });
-
-      if (sibResponse.ok) {
-        const sibResult = await sibResponse.json();
-        sibUsed = true;
-        
-        // Map SIB response to existing format
-        triage = {
-          success: true,
-          urgencyLevel: sibResult.urgency_level,
-          urgencyDetails: sibResult.urgency_details,
-          response: sibResult.ai_assessment?.response || sibResult.response,
-          requiresImmediateAttention: sibResult.requires_immediate_attention,
-          callAmbulance: sibResult.call_ambulance,
-          recommendedActions: sibResult.recommended_actions || sibResult.urgency_details?.actions,
-          followUpQuestions: sibResult.follow_up_questions || [],
-          triageId: sibResult.triage_id,
-          sibUsed: true,
-          processingTime: sibResult.processing_time_ms
-        };
-      }
-    } catch (sibError) {
-      console.warn('SIB emergency triage fallback:', sibError.message);
-    }
-
-    // Fallback to local medicalAIService if SIB fails
-    if (!sibUsed) {
-      const sessionId = `mediczy_emergency_${req.user.id}_${Date.now()}`;
-      const localResult = await medicalAIService.emergencyTriage(
+    const sibResponse = await fetch(`${SIB_URL}/emergency-triage`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
         symptoms,
         description,
-        sessionId,
         language,
-        {
-          userId: req.user.id,
-          userName: `${req.user.firstName || 'Patient'} ${req.user.lastName || ''}`.trim(),
-          intentType: 'emergency'
-        }
-      );
-      triage = {
-        ...localResult,
-        sibUsed: false
-      };
+        patient_id: req.user.id,
+        patient_data: {
+          patient_id: req.user.id,
+          name: `${req.user.firstName || 'Patient'} ${req.user.lastName || ''}`.trim(),
+          age: req.user.age || null,
+          gender: req.user.gender || null,
+          conditions: req.user.medicalConditions || null
+        },
+        multimodal_context: multimodalContext || null
+      })
+    });
+
+    if (!sibResponse.ok) {
+      const errorText = await sibResponse.text().catch(() => '');
+      return res.status(503).json({
+        success: false,
+        error: 'SIB request failed',
+        details: errorText || `HTTP ${sibResponse.status}`,
+        provider: 'sib-fastapi'
+      });
     }
+
+    const sibResult = await sibResponse.json();
+    sibUsed = true;
+    
+    // Map SIB response to existing format
+    triage = {
+      success: true,
+      urgencyLevel: sibResult.urgency_level,
+      urgencyDetails: sibResult.urgency_details,
+      response: sibResult.ai_assessment?.response || sibResult.response,
+      requiresImmediateAttention: sibResult.requires_immediate_attention,
+      callAmbulance: sibResult.call_ambulance,
+      recommendedActions: sibResult.recommended_actions || sibResult.urgency_details?.actions,
+      followUpQuestions: sibResult.follow_up_questions || [],
+      triageId: sibResult.triage_id,
+      sibUsed: true,
+      processingTime: sibResult.processing_time_ms
+    };
 
     // Log emergency triage attempts for audit
     console.log(`🚨 Emergency triage requested by user ${req.user.id}:`, {
@@ -647,13 +759,23 @@ router.post('/intent-escalation', authUser, async (req, res) => {
  */
 router.get('/health', async (req, res) => {
   try {
-    const healthStatus = await medicalAIService.healthCheck();
-    const statusCode = healthStatus.status === 'healthy'
-      ? 200
-      : healthStatus.status === 'degraded'
-        ? 206
-        : 503;
-    res.status(statusCode).json(healthStatus);
+    const sibResponse = await fetch(`${SIB_URL}/health`);
+    if (!sibResponse.ok) {
+      const errorText = await sibResponse.text().catch(() => '');
+      return res.status(503).json({
+        status: 'unavailable',
+        provider: 'sib-fastapi',
+        error: errorText || `HTTP ${sibResponse.status}`,
+        timestamp: new Date().toISOString()
+      });
+    }
+
+    const sibHealth = await sibResponse.json();
+    const statusCode = sibHealth.status === 'healthy' ? 200 : 503;
+    res.status(statusCode).json({
+      ...sibHealth,
+      provider: 'sib-fastapi'
+    });
   } catch (error) {
     res.status(500).json({
       status: 'error',
@@ -680,8 +802,26 @@ router.delete('/session/:sessionId', authUser, async (req, res) => {
       });
     }
 
-    const result = await medicalAIService.clearSession(sessionId);
-    res.json(result);
+    const sibResponse = await fetch(`${SIB_URL}/chat/history/${sessionId}`, {
+      method: 'DELETE'
+    });
+
+    if (!sibResponse.ok) {
+      const errorText = await sibResponse.text().catch(() => '');
+      return res.status(503).json({
+        success: false,
+        error: 'SIB request failed',
+        details: errorText || `HTTP ${sibResponse.status}`,
+        provider: 'sib-fastapi'
+      });
+    }
+
+    res.json({
+      success: true,
+      message: 'Session cleared',
+      sessionId,
+      provider: 'sib-fastapi'
+    });
   } catch (error) {
     console.error('Clear session API error:', error);
     res.status(500).json({
@@ -708,8 +848,29 @@ router.get('/session/:sessionId', authUser, async (req, res) => {
       });
     }
 
-    const sessionInfo = await medicalAIService.getSessionInfo(sessionId);
-    res.json(sessionInfo);
+    const sibResponse = await fetch(`${SIB_URL}/chat/history/${sessionId}`);
+    if (!sibResponse.ok) {
+      const errorText = await sibResponse.text().catch(() => '');
+      return res.status(503).json({
+        success: false,
+        error: 'SIB request failed',
+        details: errorText || `HTTP ${sibResponse.status}`,
+        provider: 'sib-fastapi'
+      });
+    }
+
+    const sibData = await sibResponse.json();
+    const history = sibData.history || [];
+    const lastEntry = history[history.length - 1] || null;
+
+    res.json({
+      sessionId,
+      conversationLength: Math.floor(history.length / 2),
+      isActive: history.length > 0,
+      provider: 'sib-fastapi',
+      lastIntent: null,
+      lastInteractionAt: lastEntry?.timestamp || null
+    });
   } catch (error) {
     console.error('Get session API error:', error);
     res.status(500).json({
@@ -727,14 +888,38 @@ router.get('/session/:sessionId', authUser, async (req, res) => {
 router.post('/conversation-history', authUser, async (req, res) => {
   try {
     const { sessionId, limit = 10 } = req.body;
-    
-    // This would typically fetch from database in production
-    // For now, return session info
-    const sessionInfo = await medicalAIService.getSessionInfo(sessionId);
-    
+    const historyUrl = new URL(`${SIB_URL}/chat/history/${sessionId}`);
+    if (limit) {
+      historyUrl.searchParams.set('last_n', String(limit));
+    }
+
+    const sibResponse = await fetch(historyUrl.toString());
+    if (!sibResponse.ok) {
+      const errorText = await sibResponse.text().catch(() => '');
+      return res.status(503).json({
+        success: false,
+        error: 'SIB request failed',
+        details: errorText || `HTTP ${sibResponse.status}`,
+        provider: 'sib-fastapi'
+      });
+    }
+
+    const sibData = await sibResponse.json();
+    const history = sibData.history || [];
+    const lastEntry = history[history.length - 1] || null;
+
     res.json({
       success: true,
-      sessionInfo: sessionInfo,
+      sessionInfo: {
+        sessionId,
+        conversationLength: Math.floor(history.length / 2),
+        isActive: history.length > 0,
+        provider: 'sib-fastapi',
+        lastIntent: null,
+        lastInteractionAt: lastEntry?.timestamp || null
+      },
+      history,
+      count: history.length,
       message: 'Conversation history retrieved successfully'
     });
   } catch (error) {

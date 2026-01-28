@@ -433,7 +433,6 @@ const Index = () => {
       border: "border-warning/20",
       iconColor: "text-warning",
       link: "/emergency",
-      action: handleEmergencyCall,
       description: "24/7 Emergency Support",
       badge: "Call 112",
     },
@@ -499,10 +498,6 @@ const Index = () => {
       badge: "Rewards",
     },
   ];
-
-  function handleEmergencyCall() {
-    window.location.href = "tel:112";
-  }
 
   // Platform Detection
   const getPlatformInfo = () => {
@@ -1704,7 +1699,6 @@ const Index = () => {
             <Link 
               key={index} 
               to={action.link}
-              onClick={action.action}
               className="group"
             >
               <Card className="h-full transition-all duration-300 bg-white dark:bg-slate-800/50 border-slate-200/80 dark:border-slate-700/50 hover:shadow-xl hover:shadow-slate-200/50 dark:hover:shadow-teal-500/10 hover:border-teal-200 dark:hover:border-teal-500/50 relative overflow-hidden hover:-translate-y-1">

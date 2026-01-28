@@ -401,8 +401,15 @@ export async function signInDoctor(req, res) {
 
 export const getDoctorProfile = async (req, res) => {
   try {
+    console.log('=== getDoctorProfile CALLED ===');
+    console.log('req.doctor exists:', !!req.doctor);
+    
     if (!req.doctor) {
-      return res.status(404).json({ message: "Doctor not found" });
+      console.log('=== No doctor found, returning 404 ===');
+      return res.status(404).json({ 
+        success: false,
+        message: "Doctor not found" 
+      });
     }
 
     const doctorResponse = toPlainDoctor(req.doctor);
@@ -410,10 +417,22 @@ export const getDoctorProfile = async (req, res) => {
       delete doctorResponse.password;
     }
 
-    return res.status(200).json(doctorResponse);
+    console.log('=== Sending response with structure: {success: true, doctor: {...}} ===');
+    console.log('Doctor has service fields:', {
+      offersSecondOpinion: doctorResponse.offersSecondOpinion,
+      secondOpinionFee: doctorResponse.secondOpinionFee
+    });
+
+    return res.status(200).json({
+      success: true,
+      doctor: doctorResponse
+    });
   } catch (error) {
     console.error("Profile retrieval error:", error);
-    return res.status(500).json({ message: "Internal Server Error" });
+    return res.status(500).json({ 
+      success: false,
+      message: "Internal Server Error" 
+    });
   }
 };
 

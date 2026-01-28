@@ -416,8 +416,9 @@ router.get('/profile', authUser, async (req, res) => {
       });
     }
 
-    // Remove password from response
-    const { password, ...doctorProfile } = doctor;
+    // Convert Sequelize instance to plain object
+    const doctorData = doctor.get ? doctor.get({ plain: true }) : doctor;
+    const { password, ...doctorProfile } = doctorData;
 
     res.json({
       success: true,
@@ -912,7 +913,8 @@ router.put('/services', authUser, [
   body('secondOpinionFee').optional().isFloat({ min: 0 }),
   body('offersHomeVisits').optional().isBoolean(),
   body('homeVisitFee').optional().isFloat({ min: 0 }),
-  body('homeVisitRadiusKm').optional().isInt({ min: 1, max: 100 })
+  body('homeVisitRadiusKm').optional().isInt({ min: 1, max: 100 }),
+  body('practiceLocations').optional().isArray()
 ], async (req, res) => {
   try {
     if (req.user.role !== 'doctor') {
@@ -927,7 +929,8 @@ router.put('/services', authUser, [
       secondOpinionFee,
       offersHomeVisits,
       homeVisitFee,
-      homeVisitRadiusKm
+      homeVisitRadiusKm,
+      practiceLocations
     } = req.body;
 
     // Update doctor services
@@ -937,14 +940,59 @@ router.put('/services', authUser, [
     if (typeof offersHomeVisits === 'boolean') updateData.offersHomeVisits = offersHomeVisits;
     if (homeVisitFee !== undefined) updateData.homeVisitFee = homeVisitFee;
     if (homeVisitRadiusKm !== undefined) updateData.homeVisitRadiusKm = homeVisitRadiusKm;
+    if (practiceLocations !== undefined) updateData.practiceLocations = practiceLocations;
 
-    await doctorModel.update(req.user.id, updateData);
+    // File logging for debugging
+    const fs = require('fs');
+    const logFile = '/tmp/doctor-service-debug.log';
+    
+    try {
+      fs.appendFileSync(logFile, `\n=== ${new Date().toISOString()} ===\n`);
+      fs.appendFileSync(logFile, `Doctor ID: ${req.user.id}\n`);
+      fs.appendFileSync(logFile, `Update data: ${JSON.stringify(updateData)}\n`);
+      
+      const { Doctor } = require('../models/index.js');
+      const doctor = await Doctor.findByPk(req.user.id);
+      
+      if (!doctor) {
+        fs.appendFileSync(logFile, `ERROR: Doctor not found\n`);
+        return res.status(404).json({ success: false, message: 'Doctor not found' });
+      }
 
-    res.json({
-      success: true,
-      message: 'Service preferences updated successfully',
-      data: updateData
-    });
+      fs.appendFileSync(logFile, `Before: offersSecondOpinion=${doctor.offersSecondOpinion}, secondOpinionFee=${doctor.secondOpinionFee}\n`);
+
+      // Update fields
+      Object.keys(updateData).forEach(key => {
+        doctor[key] = updateData[key];
+      });
+
+      await doctor.save();
+      fs.appendFileSync(logFile, `Save completed\n`);
+
+      // Verify
+      const savedDoctor = await Doctor.findByPk(req.user.id);
+      fs.appendFileSync(logFile, `After: offersSecondOpinion=${savedDoctor.offersSecondOpinion}, secondOpinionFee=${savedDoctor.secondOpinionFee}\n`);
+
+      const responsePayload = {
+        success: true,
+        message: 'Service preferences updated successfully',
+        data: updateData,
+        savedValues: {
+          offersSecondOpinion: savedDoctor.offersSecondOpinion,
+          secondOpinionFee: savedDoctor.secondOpinionFee,
+          offersHomeVisits: savedDoctor.offersHomeVisits,
+          homeVisitFee: savedDoctor.homeVisitFee,
+          homeVisitRadiusKm: savedDoctor.homeVisitRadiusKm,
+          practiceLocations: savedDoctor.practiceLocations
+        }
+      };
+
+      fs.appendFileSync(logFile, `Response: ${JSON.stringify(responsePayload)}\n`);
+      res.json(responsePayload);
+    } catch (fileError) {
+      fs.appendFileSync(logFile, `ERROR: ${fileError.message}\n`);
+      throw fileError;
+    }
   } catch (error) {
     console.error('Update doctor services error:', error);
     res.status(500).json({

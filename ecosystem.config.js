@@ -21,7 +21,7 @@ module.exports = {
       name: 'mediczy-server',
       script: './index.js',
       cwd: '/home/ubuntu/Mediczy/server',
-      instances: 'max',
+      instances: 2,  // Reduced from 'max' (4) to 2 to prevent CPU overload
       exec_mode: 'cluster',
       env: {
         NODE_ENV: 'production',
@@ -32,12 +32,13 @@ module.exports = {
       out_file: './logs/server-out.log',
       log_date_format: 'YYYY-MM-DD HH:mm:ss Z',
       merge_logs: true,
-      max_memory_restart: '1G',
+      max_memory_restart: '800M',  // Reduced from 1G
       watch: false,
       ignore_watch: ['node_modules', 'logs', '.git'],
       max_restarts: 10,
       min_uptime: '10s',
-      listen_timeout: 3000
+      listen_timeout: 8000,  // Increased from 3000 to allow slower startup
+      kill_timeout: 5000
     },
 
     // ==================== SIB FastAPI Service ====================

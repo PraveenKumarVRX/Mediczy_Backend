@@ -1,6 +1,7 @@
 import { postgresSequelize as sequelize } from '../db/postgres-sequelize.js';
 import { DataTypes } from 'sequelize';
 import bcrypt from 'bcrypt';
+import { generateUniqueId } from '../utils/uniqueIdGenerator.js';
 
 /**
  * Hospital Model
@@ -17,6 +18,13 @@ const Hospital = sequelize.define('Hospital', {
     unique: true,
     allowNull: false,
     comment: 'Public-facing unique identifier (UUID)'
+  },
+  // Unique alphanumeric ID (e.g., H4K7NP)
+  unique_id: {
+    type: DataTypes.STRING(6),
+    unique: true,
+    allowNull: true,
+    comment: 'Public-facing unique ID with H prefix'
   },
   hospitalName: {
     type: DataTypes.STRING(255),
@@ -119,6 +127,10 @@ Hospital.beforeCreate(async (hospital) => {
   if (hospital.password) {
     const salt = await bcrypt.genSalt(10);
     hospital.password = await bcrypt.hash(hospital.password, salt);
+  }
+  // Generate unique ID if not set
+  if (!hospital.unique_id) {
+    hospital.unique_id = generateUniqueId('hospital');
   }
 });
 

@@ -3,6 +3,7 @@ import { JWT_CONFIG } from '../../config/auth.config.js';
 import bcrypt from 'bcryptjs';
 import jwt from 'jsonwebtoken';
 import postgresSequelize from '../../db/postgres-sequelize.js';
+import { generateUniqueId } from '../../utils/uniqueIdGenerator.js';
 
 /**
  * Lab Model (PostgreSQL)
@@ -13,6 +14,7 @@ import postgresSequelize from '../../db/postgres-sequelize.js';
  * - JWT token generation
  * - JSONB for services and test catalog
  * - Accreditation tracking
+ * - Unique 6-char ID (e.g., L4K7NP)
  */
 
 const Lab = postgresSequelize.define('Lab', {
@@ -20,6 +22,13 @@ const Lab = postgresSequelize.define('Lab', {
     type: DataTypes.INTEGER,
     primaryKey: true,
     autoIncrement: true
+  },
+  // Unique alphanumeric ID (e.g., L4K7NP)
+  unique_id: {
+    type: DataTypes.STRING(6),
+    unique: true,
+    allowNull: true,
+    comment: 'Public-facing unique ID with L prefix'
   },
   name: {
     type: DataTypes.STRING(255),
@@ -139,6 +148,7 @@ const Lab = postgresSequelize.define('Lab', {
   timestamps: true,
   indexes: [
     { unique: true, fields: ['email'] },
+    { unique: true, fields: ['unique_id'] },
     { fields: ['phoneNumber'] },
     { fields: ['status'] },
     { fields: ['isVerified'] },
@@ -154,6 +164,10 @@ const Lab = postgresSequelize.define('Lab', {
       }
       if (lab.email) {
         lab.email = lab.email.toLowerCase();
+      }
+      // Generate unique ID if not set
+      if (!lab.unique_id) {
+        lab.unique_id = generateUniqueId('lab');
       }
     },
     beforeUpdate: async (lab) => {

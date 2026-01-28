@@ -1,8 +1,9 @@
 import express from 'express';
-const router = express.Router();
-const crypto = require('crypto');
+import crypto from 'crypto';
 import Consent from '../models/consent.model.js';
 import { authDoctor } from '../middleware/doctor.middleware.js';
+
+const router = express.Router();
 
 // Get consents for patient
 router.get('/patient/:patientId', authDoctor, async (req, res) => {

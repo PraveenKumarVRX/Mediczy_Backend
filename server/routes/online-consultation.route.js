@@ -1123,8 +1123,29 @@ router.post('/payment/hc/:appointmentId', authUser, async (req, res) => {
 router.get('/video/join/:appointmentId', authUser, async (req, res) => {
   try {
     const { appointmentId } = req.params;
+    
+    // ✅ FIX: Add defensive ID extraction (handle Sequelize dataValues structure)
     const userId = req.user.id || req.user.dataValues?.id;
     const userRole = req.user.role || req.userRole;
+
+    // ✅ DEBUG: Log authentication details for troubleshooting
+    console.log('🎥 Video Join Request:', {
+      appointmentId,
+      userId,
+      userRole,
+      userFields: Object.keys(req.user),
+      hasDirectId: !!req.user.id,
+      hasUnderscoreId: !!req.user._id
+    });
+    
+    // ✅ FIX: Validate userId exists before authorization check
+    if (!userId) {
+      console.error('❌ User ID extraction failed:', req.user);
+      return res.status(500).json({
+        success: false,
+        message: 'Internal error: Unable to identify user'
+      });
+    }
 
     const appointment = await Appointment.findByPk(appointmentId);
     
@@ -1138,6 +1159,14 @@ router.get('/video/join/:appointmentId', authUser, async (req, res) => {
     // Check authorization
     const isPatient = appointment.userId === userId;
     const isDoctor = appointment.doctorId === userId || userRole === 'doctor';
+    
+    console.log('🔐 Authorization Check:', { 
+      userId, 
+      appointmentUserId: appointment.userId, 
+      appointmentDoctorId: appointment.doctorId,
+      isPatient, 
+      isDoctor 
+    });
     
     if (!isPatient && !isDoctor) {
       return res.status(403).json({

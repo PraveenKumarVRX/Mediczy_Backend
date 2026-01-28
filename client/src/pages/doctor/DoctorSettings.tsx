@@ -7,7 +7,7 @@ import { Label } from "@/components/ui/label";
 import { Switch } from "@/components/ui/switch";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Textarea } from "@/components/ui/textarea";
-import { Settings, User, Bell, Shield, Clock, Loader2, Save, CheckCircle, FileSignature, Stamp, Upload, X, RefreshCw } from "lucide-react";
+import { Settings, User, Bell, Shield, Clock, Loader2, Save, CheckCircle, FileSignature, Stamp, Upload, X, RefreshCw, Building2, Plus, Trash2 } from "lucide-react";
 import { useState, useEffect, useRef, useCallback } from "react";
 import api from "@/utils/api";
 import { useToast } from "@/hooks/use-toast";
@@ -33,7 +33,22 @@ const DoctorSettings = () => {
   const [practice, setPractice] = useState({
     consultationFee: 500,
     slotDuration: 30,
-    isAvailable: true
+    isAvailable: true,
+    offersSecondOpinion: false,
+    secondOpinionFee: null as number | null,
+    offersHomeVisits: false,
+    homeVisitFee: null as number | null,
+    homeVisitRadiusKm: 10,
+    practiceLocations: [] as Array<{
+      id: string;
+      name: string;
+      type: 'hospital' | 'clinic';
+      address: string;
+      city: string;
+      pincode: string;
+      phone: string;
+      consultationFee: number | null;
+    }>
   });
 
   const [notifications, setNotifications] = useState({
@@ -59,6 +74,22 @@ const DoctorSettings = () => {
         return response.data.settings;
       } catch (err) {
         console.warn('Failed to fetch settings:', err);
+        return null;
+      }
+    },
+    staleTime: 5 * 60 * 1000,
+  });
+
+  // Fetch doctor profile for service settings
+  const { data: doctorProfile } = useQuery({
+    queryKey: ['doctor-profile'],
+    queryFn: async () => {
+      try {
+        const response = await api.get('/doctors/profile');
+        // Handle both wrapped and unwrapped responses
+        return response.data.doctor || response.data;
+      } catch (err) {
+        console.warn('Failed to fetch doctor profile:', err);
         return null;
       }
     },
@@ -96,7 +127,10 @@ const DoctorSettings = () => {
     const doctorWithExtra = currentDoctor as any; // Extended properties may exist on runtime
     if (settings) {
       setProfile(settings.profile || {});
-      setPractice(settings.practice || {});
+      setPractice(prev => ({
+        ...prev,
+        ...(settings.practice || {})
+      }));
       setNotifications(settings.notifications || {});
     } else if (currentDoctor) {
       setProfile({
@@ -111,6 +145,21 @@ const DoctorSettings = () => {
       });
     }
   }, [settings, currentDoctor]);
+
+  // Populate service settings from doctor profile
+  useEffect(() => {
+    if (doctorProfile) {
+      setPractice(prev => ({
+        ...prev,
+        offersSecondOpinion: doctorProfile.offersSecondOpinion || false,
+        secondOpinionFee: doctorProfile.secondOpinionFee || null,
+        offersHomeVisits: doctorProfile.offersHomeVisits || false,
+        homeVisitFee: doctorProfile.homeVisitFee || null,
+        homeVisitRadiusKm: doctorProfile.homeVisitRadiusKm || 10,
+        practiceLocations: doctorProfile.practiceLocations || []
+      }));
+    }
+  }, [doctorProfile]);
 
   const updateSettings = useMutation({
     mutationFn: async (data: any) => {
@@ -159,8 +208,64 @@ const DoctorSettings = () => {
     updateSettings.mutate({ profile });
   };
 
-  const handleSavePractice = () => {
-    updateSettings.mutate({ practice });
+  const handleSavePractice = async () => {
+    // Save practice settings including practice locations
+    updateSettings.mutate({ 
+      practice: {
+        ...practice,
+        practiceLocations: practice.practiceLocations
+      }
+    });
+    // Also save service settings and practice locations separately
+    try {
+      await api.put('/doctors/services', {
+        offersSecondOpinion: practice.offersSecondOpinion,
+        secondOpinionFee: practice.secondOpinionFee,
+        offersHomeVisits: practice.offersHomeVisits,
+        homeVisitFee: practice.homeVisitFee,
+        homeVisitRadiusKm: practice.homeVisitRadiusKm,
+        practiceLocations: practice.practiceLocations
+      });
+      // Invalidate doctor profile to reflect new service settings
+      queryClient.invalidateQueries({ queryKey: ['doctor-profile'] });
+    } catch (err) {
+      console.error('Failed to save service settings:', err);
+    }
+  };
+
+  const addPracticeLocation = () => {
+    setPractice(prev => ({
+      ...prev,
+      practiceLocations: [
+        ...prev.practiceLocations,
+        {
+          id: `loc_${Date.now()}`,
+          name: '',
+          type: 'clinic' as const,
+          address: '',
+          city: '',
+          pincode: '',
+          phone: '',
+          consultationFee: null
+        }
+      ]
+    }));
+  };
+
+  const updatePracticeLocation = (index: number, field: string, value: any) => {
+    setPractice(prev => ({
+      ...prev,
+      practiceLocations: prev.practiceLocations.map((loc, i) =>
+        i === index ? { ...loc, [field]: value } : loc
+      )
+    }));
+  };
+
+  const removePracticeLocation = (index: number) => {
+    setPractice(prev => ({
+      ...prev,
+      practiceLocations: prev.practiceLocations.filter((_, i) => i !== index)
+    }));
   };
 
   const handleSaveNotifications = () => {
@@ -644,6 +749,188 @@ const DoctorSettings = () => {
                     checked={practice.isAvailable}
                     onCheckedChange={(checked) => setPractice({ ...practice, isAvailable: checked })}
                   />
+                </div>
+
+                {/* Practice Locations Section */}
+                <div className="border-t pt-6 mt-6">
+                  <div className="flex items-center justify-between mb-4">
+                    <div>
+                      <h4 className="font-medium">Practice Locations</h4>
+                      <p className="text-sm text-muted-foreground">Add hospitals or clinics where you practice</p>
+                    </div>
+                    <Button variant="outline" size="sm" onClick={addPracticeLocation}>
+                      <Plus className="h-4 w-4 mr-1" />
+                      Add Location
+                    </Button>
+                  </div>
+
+                  {practice.practiceLocations.length === 0 ? (
+                    <div className="text-center py-8 border-2 border-dashed rounded-lg">
+                      <Building2 className="h-10 w-10 mx-auto text-muted-foreground mb-2" />
+                      <p className="text-muted-foreground">No practice locations added yet</p>
+                      <Button variant="link" onClick={addPracticeLocation}>
+                        Add your first location
+                      </Button>
+                    </div>
+                  ) : (
+                    <div className="space-y-4">
+                      {practice.practiceLocations.map((location, index) => (
+                        <div key={location.id} className="p-4 border rounded-lg space-y-4">
+                          <div className="flex items-center justify-between">
+                            <div className="flex items-center gap-2">
+                              <Building2 className="h-5 w-5 text-primary" />
+                              <span className="font-medium">Location {index + 1}</span>
+                            </div>
+                            <Button 
+                              variant="ghost" 
+                              size="sm" 
+                              onClick={() => removePracticeLocation(index)}
+                              className="text-destructive hover:text-destructive"
+                            >
+                              <Trash2 className="h-4 w-4" />
+                            </Button>
+                          </div>
+
+                          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                            <div className="space-y-2">
+                              <Label>Hospital/Clinic Name</Label>
+                              <Input
+                                value={location.name}
+                                onChange={(e) => updatePracticeLocation(index, 'name', e.target.value)}
+                                placeholder="e.g., Apollo Hospital"
+                              />
+                            </div>
+                            <div className="space-y-2">
+                              <Label>Type</Label>
+                              <select
+                                className="w-full h-10 px-3 border rounded-md bg-background"
+                                value={location.type}
+                                onChange={(e) => updatePracticeLocation(index, 'type', e.target.value)}
+                              >
+                                <option value="hospital">Hospital</option>
+                                <option value="clinic">Clinic</option>
+                              </select>
+                            </div>
+                          </div>
+
+                          <div className="space-y-2">
+                            <Label>Address</Label>
+                            <Input
+                              value={location.address}
+                              onChange={(e) => updatePracticeLocation(index, 'address', e.target.value)}
+                              placeholder="Street address, building, floor"
+                            />
+                          </div>
+
+                          <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                            <div className="space-y-2">
+                              <Label>City</Label>
+                              <Input
+                                value={location.city}
+                                onChange={(e) => updatePracticeLocation(index, 'city', e.target.value)}
+                                placeholder="City"
+                              />
+                            </div>
+                            <div className="space-y-2">
+                              <Label>Pincode</Label>
+                              <Input
+                                value={location.pincode}
+                                onChange={(e) => updatePracticeLocation(index, 'pincode', e.target.value)}
+                                placeholder="560001"
+                              />
+                            </div>
+                            <div className="space-y-2">
+                              <Label>Contact Phone</Label>
+                              <Input
+                                value={location.phone}
+                                onChange={(e) => updatePracticeLocation(index, 'phone', e.target.value)}
+                                placeholder="+91 98765 43210"
+                              />
+                            </div>
+                          </div>
+
+                          <div className="space-y-2">
+                            <Label>Consultation Fee at this location (₹)</Label>
+                            <Input
+                              type="number"
+                              className="max-w-xs"
+                              value={location.consultationFee || ''}
+                              onChange={(e) => updatePracticeLocation(index, 'consultationFee', e.target.value ? parseFloat(e.target.value) : null)}
+                              placeholder="Fee for this location (optional)"
+                            />
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </div>
+
+                {/* Additional Services Section */}
+                <div className="border-t pt-6 mt-6">
+                  <h4 className="font-medium mb-4">Additional Services</h4>
+                  
+                  {/* Second Opinion */}
+                  <div className="flex items-center justify-between p-4 border rounded-lg mb-4">
+                    <div>
+                      <p className="font-medium">Second Opinion Consultations</p>
+                      <p className="text-sm text-muted-foreground">Offer expert second opinions on diagnoses</p>
+                    </div>
+                    <Switch
+                      checked={practice.offersSecondOpinion}
+                      onCheckedChange={(checked) => setPractice({ ...practice, offersSecondOpinion: checked })}
+                    />
+                  </div>
+                  {practice.offersSecondOpinion && (
+                    <div className="ml-4 mb-4">
+                      <Label htmlFor="secondOpinionFee">Second Opinion Fee (₹)</Label>
+                      <Input
+                        id="secondOpinionFee"
+                        type="number"
+                        className="max-w-xs mt-1"
+                        value={practice.secondOpinionFee || ''}
+                        onChange={(e) => setPractice({ ...practice, secondOpinionFee: e.target.value ? parseFloat(e.target.value) : null })}
+                        placeholder="Enter fee amount"
+                      />
+                    </div>
+                  )}
+
+                  {/* Home Visits */}
+                  <div className="flex items-center justify-between p-4 border rounded-lg mb-4">
+                    <div>
+                      <p className="font-medium">Home Visit Consultations</p>
+                      <p className="text-sm text-muted-foreground">Provide in-home medical consultations</p>
+                    </div>
+                    <Switch
+                      checked={practice.offersHomeVisits}
+                      onCheckedChange={(checked) => setPractice({ ...practice, offersHomeVisits: checked })}
+                    />
+                  </div>
+                  {practice.offersHomeVisits && (
+                    <div className="ml-4 mb-4 space-y-4">
+                      <div>
+                        <Label htmlFor="homeVisitFee">Home Visit Fee (₹)</Label>
+                        <Input
+                          id="homeVisitFee"
+                          type="number"
+                          className="max-w-xs mt-1"
+                          value={practice.homeVisitFee || ''}
+                          onChange={(e) => setPractice({ ...practice, homeVisitFee: e.target.value ? parseFloat(e.target.value) : null })}
+                          placeholder="Enter fee amount"
+                        />
+                      </div>
+                      <div>
+                        <Label htmlFor="homeVisitRadius">Service Radius (km)</Label>
+                        <Input
+                          id="homeVisitRadius"
+                          type="number"
+                          className="max-w-xs mt-1"
+                          value={practice.homeVisitRadiusKm}
+                          onChange={(e) => setPractice({ ...practice, homeVisitRadiusKm: parseInt(e.target.value) || 10 })}
+                          placeholder="Enter radius in km"
+                        />
+                      </div>
+                    </div>
+                  )}
                 </div>
 
                 <Button onClick={handleSavePractice} disabled={updateSettings.isPending}>

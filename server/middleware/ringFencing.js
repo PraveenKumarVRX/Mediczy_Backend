@@ -10,6 +10,7 @@ const USER_TYPE_PERMISSIONS = {
       '/api/auth',
       '/api/doctors',
       '/api/appointments',
+      '/api/patients',
       '/api/enhanced-appointments',  // Enhanced appointment booking
       '/api/prescriptions',
       '/api/health-tracker',
@@ -54,6 +55,7 @@ const USER_TYPE_PERMISSIONS = {
       '/api/auth',
       '/api/doctors',
       '/api/appointments',
+      '/api/patients',
       '/api/enhanced-appointments',  // Enhanced appointment booking
       '/api/prescriptions',
       '/api/health-tracker',
@@ -301,8 +303,12 @@ const PUBLIC_ENDPOINTS = [
   '/api/sib/health', // SIB Control Layer health check (public monitoring)
   '/api/auth/login', // Generic auth login endpoint
   '/api/auth/register', // Generic auth registration endpoint
+  '/api/auth/send-otp', // OTP login (legacy alias)
+  '/api/auth/verify-otp', // OTP login (legacy alias)
   '/api/users/login',
   '/api/users/register',
+  '/api/users/login/send-otp',
+  '/api/users/login/verify-otp',
   '/api/doctors/login',
   '/api/doctors/register',
   '/api/doctors/search', // Public doctor search

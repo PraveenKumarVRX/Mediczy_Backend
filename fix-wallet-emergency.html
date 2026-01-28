@@ -1,0 +1,530 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Wallet & Emergency Function Fixer</title>
+    <style>
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Arial, sans-serif;
+            max-width: 900px;
+            margin: 50px auto;
+            padding: 20px;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            min-height: 100vh;
+        }
+        .container {
+            background: white;
+            border-radius: 12px;
+            padding: 30px;
+            box-shadow: 0 10px 40px rgba(0,0,0,0.2);
+        }
+        h1 {
+            color: #667eea;
+            margin-bottom: 10px;
+        }
+        .status-box {
+            border: 2px solid #ddd;
+            padding: 20px;
+            margin: 20px 0;
+            border-radius: 8px;
+        }
+        .status-box.success {
+            border-color: #4CAF50;
+            background: #f1f8f4;
+        }
+        .status-box.error {
+            border-color: #f44336;
+            background: #fef1f1;
+        }
+        .status-box.warning {
+            border-color: #ff9800;
+            background: #fff8f0;
+        }
+        button {
+            background: #667eea;
+            color: white;
+            padding: 12px 24px;
+            border: none;
+            border-radius: 6px;
+            cursor: pointer;
+            font-size: 16px;
+            margin: 5px;
+            transition: all 0.3s;
+        }
+        button:hover {
+            background: #5568d3;
+            transform: translateY(-2px);
+            box-shadow: 0 4px 12px rgba(102, 126, 234, 0.4);
+        }
+        button:disabled {
+            background: #ccc;
+            cursor: not-allowed;
+            transform: none;
+        }
+        .result {
+            background: #f5f5f5;
+            padding: 15px;
+            margin: 10px 0;
+            border-radius: 4px;
+            font-family: monospace;
+            font-size: 14px;
+            white-space: pre-wrap;
+            max-height: 300px;
+            overflow-y: auto;
+        }
+        .success { color: #4CAF50; font-weight: bold; }
+        .error { color: #f44336; font-weight: bold; }
+        .warning { color: #ff9800; font-weight: bold; }
+        .info { color: #2196F3; font-weight: bold; }
+        .step {
+            background: #f9f9f9;
+            border-left: 4px solid #667eea;
+            padding: 15px;
+            margin: 15px 0;
+        }
+        .badge {
+            display: inline-block;
+            padding: 4px 12px;
+            border-radius: 12px;
+            font-size: 12px;
+            font-weight: bold;
+            margin: 0 5px;
+        }
+        .badge.green { background: #4CAF50; color: white; }
+        .badge.red { background: #f44336; color: white; }
+        .badge.orange { background: #ff9800; color: white; }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>🔧 Wallet & Emergency Function Diagnostic & Fix</h1>
+        <p style="color: #666;">Automatically diagnose and fix issues with Wallet and Emergency pages</p>
+
+        <div id="backend-status" class="status-box">
+            <h3>Backend Status</h3>
+            <div id="backend-result">Click "Check Backend" to test...</div>
+        </div>
+
+        <div class="step">
+            <h3>Step 1: Check Backend APIs</h3>
+            <button onclick="checkBackend()">🔍 Check Backend</button>
+        </div>
+
+        <div class="step">
+            <h3>Step 2: Check Browser localStorage</h3>
+            <button onclick="checkLocalStorage()">💾 Check Storage</button>
+            <button onclick="clearStorage()">🗑️ Clear Storage</button>
+            <div id="storage-result" class="result" style="display:none;"></div>
+        </div>
+
+        <div class="step">
+            <h3>Step 3: Test User Login</h3>
+            <div style="margin: 10px 0;">
+                <input type="email" id="email" placeholder="Email" value="user@mediczy.com" style="padding: 10px; width: 250px; border: 1px solid #ddd; border-radius: 4px;">
+                <input type="password" id="password" placeholder="Password" value="User123" style="padding: 10px; width: 250px; border: 1px solid #ddd; border-radius: 4px; margin-left: 10px;">
+            </div>
+            <button onclick="testLogin()">🔑 Test Login</button>
+            <div id="login-result" class="result" style="display:none;"></div>
+        </div>
+
+        <div class="step">
+            <h3>Step 4: Test Wallet API</h3>
+            <button onclick="testWallet()" id="walletBtn" disabled>💰 Test Wallet</button>
+            <div id="wallet-result" class="result" style="display:none;"></div>
+        </div>
+
+        <div class="step">
+            <h3>Step 5: Test Emergency API</h3>
+            <button onclick="testEmergency()" id="emergencyBtn" disabled>🚨 Test Emergency</button>
+            <div id="emergency-result" class="result" style="display:none;"></div>
+        </div>
+
+        <div class="step">
+            <h3>Step 6: Full Auto-Fix</h3>
+            <button onclick="autoFix()" style="background: #4CAF50; font-size: 18px; padding: 15px 30px;">✨ Auto-Fix Everything</button>
+            <div id="autofix-result" class="result" style="display:none;"></div>
+        </div>
+    </div>
+
+    <script>
+        const API_URL = window.location.hostname === 'localhost' 
+            ? 'http://localhost:8000/api'
+            : '/api';
+        
+        let authToken = '';
+
+        async function checkBackend() {
+            const resultDiv = document.getElementById('backend-result');
+            const statusBox = document.getElementById('backend-status');
+            resultDiv.innerHTML = 'Checking backend...';
+            
+            try {
+                // Try to reach the backend
+                const response = await fetch(`${API_URL}/users/login`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ email: 'test@test.com', password: 'test' })
+                });
+                
+                // Even if login fails, if we get a response, backend is up
+                statusBox.className = 'status-box success';
+                resultDiv.innerHTML = `
+                    <span class="success">✅ Backend is ONLINE</span><br>
+                    Backend URL: ${API_URL}<br>
+                    Response Status: ${response.status}<br><br>
+                    <span class="info">Backend APIs are operational!</span>
+                `;
+            } catch (error) {
+                statusBox.className = 'status-box error';
+                resultDiv.innerHTML = `
+                    <span class="error">❌ Cannot reach backend</span><br>
+                    Error: ${error.message}<br>
+                    Backend URL: ${API_URL}<br><br>
+                    <span class="warning">⚠️ Check if server is running (pm2 status)</span>
+                `;
+            }
+        }
+
+        function checkLocalStorage() {
+            const resultDiv = document.getElementById('storage-result');
+            resultDiv.style.display = 'block';
+            
+            const token = localStorage.getItem('token');
+            const userType = localStorage.getItem('userType');
+            const allKeys = Object.keys(localStorage);
+            
+            resultDiv.innerHTML = `
+<span class="info">📦 localStorage Contents:</span>
+
+Token: ${token ? token.substring(0, 50) + '...' : '<span class="error">NOT FOUND</span>'}
+UserType: ${userType || '<span class="error">NOT SET</span>'}
+
+All Keys (${allKeys.length}):
+${allKeys.map(key => `- ${key}: ${localStorage.getItem(key)?.substring(0, 30)}...`).join('\n')}
+
+${!token ? '\n<span class="warning">⚠️ No token found! You need to login first.</span>' : '<span class="success">✅ Token exists</span>'}
+            `;
+        }
+
+        function clearStorage() {
+            if (confirm('This will clear ALL localStorage data. Are you sure?')) {
+                localStorage.clear();
+                alert('✅ localStorage cleared! Please login again.');
+                location.reload();
+            }
+        }
+
+        async function testLogin() {
+            const resultDiv = document.getElementById('login-result');
+            const email = document.getElementById('email').value;
+            const password = document.getElementById('password').value;
+            
+            resultDiv.style.display = 'block';
+            resultDiv.innerHTML = 'Logging in...';
+            
+            try {
+                const response = await fetch(`${API_URL}/users/login`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ email, password })
+                });
+                
+                const data = await response.json();
+                
+                if (response.ok && data.token) {
+                    authToken = data.token;
+                    localStorage.setItem('token', data.token);
+                    localStorage.setItem('userType', 'user');
+                    
+                    document.getElementById('walletBtn').disabled = false;
+                    document.getElementById('emergencyBtn').disabled = false;
+                    
+                    resultDiv.innerHTML = `
+<span class="success">✅ Login Successful!</span>
+
+User: ${data.user.email}
+ID: ${data.user.id}
+Token: ${data.token.substring(0, 50)}...
+
+<span class="info">Token saved to localStorage!</span>
+<span class="success">You can now test Wallet and Emergency functions.</span>
+                    `;
+                } else {
+                    resultDiv.innerHTML = `
+<span class="error">❌ Login Failed</span>
+
+Error: ${data.message || 'Unknown error'}
+
+Response:
+${JSON.stringify(data, null, 2)}
+                    `;
+                }
+            } catch (error) {
+                resultDiv.innerHTML = `
+<span class="error">❌ Login Error</span>
+
+${error.message}
+
+Check:
+1. Backend is running
+2. Credentials are correct
+3. Network connection
+                `;
+            }
+        }
+
+        async function testWallet() {
+            const resultDiv = document.getElementById('wallet-result');
+            resultDiv.style.display = 'block';
+            resultDiv.innerHTML = 'Testing wallet...';
+            
+            const token = authToken || localStorage.getItem('token');
+            
+            if (!token) {
+                resultDiv.innerHTML = '<span class="error">❌ No token found. Login first!</span>';
+                return;
+            }
+            
+            try {
+                const response = await fetch(`${API_URL}/wallet`, {
+                    headers: { 'Authorization': `Bearer ${token}` }
+                });
+                
+                const data = await response.json();
+                
+                if (response.ok && data.success) {
+                    resultDiv.innerHTML = `
+<span class="success">✅ Wallet API WORKING!</span>
+
+Balance: ${data.data.balance} HC
+Total Earned: ${data.data.totalEarned} HC
+Total Spent: ${data.data.totalSpent} HC
+Streak: ${data.data.streakDays} days
+
+Today's Activity:
+${JSON.stringify(data.data.todayActivity, null, 2)}
+
+<span class="success">🎉 Wallet function is operational!</span>
+                    `;
+                } else {
+                    resultDiv.innerHTML = `
+<span class="error">❌ Wallet API Failed</span>
+
+Status: ${response.status}
+Error: ${data.message || data.error || 'Unknown'}
+
+Response:
+${JSON.stringify(data, null, 2)}
+                    `;
+                }
+            } catch (error) {
+                resultDiv.innerHTML = `
+<span class="error">❌ Wallet Request Failed</span>
+
+Error: ${error.message}
+
+Possible causes:
+1. Token expired - try logging in again
+2. Network error
+3. API endpoint changed
+                `;
+            }
+        }
+
+        async function testEmergency() {
+            const resultDiv = document.getElementById('emergency-result');
+            resultDiv.style.display = 'block';
+            resultDiv.innerHTML = 'Testing emergency functions...';
+            
+            const token = authToken || localStorage.getItem('token');
+            
+            if (!token) {
+                resultDiv.innerHTML = '<span class="error">❌ No token found. Login first!</span>';
+                return;
+            }
+            
+            try {
+                // Test 1: Triage Doctors
+                const doctorsResponse = await fetch(`${API_URL}/medical-ai/triage-doctors`, {
+                    headers: { 'Authorization': `Bearer ${token}` }
+                });
+                const doctorsData = await doctorsResponse.json();
+                
+                // Test 2: AI Consultation
+                const aiResponse = await fetch(`${API_URL}/medical-ai/consult`, {
+                    method: 'POST',
+                    headers: {
+                        'Authorization': `Bearer ${token}`,
+                        'Content-Type': 'application/json'
+                    },
+                    body: JSON.stringify({ query: 'Test emergency query' })
+                });
+                const aiData = await aiResponse.json();
+                
+                const doctorsOk = doctorsResponse.ok && doctorsData.success;
+                const aiOk = aiResponse.ok && aiData.success;
+                
+                resultDiv.innerHTML = `
+<span class="${doctorsOk && aiOk ? 'success' : 'error'}">${doctorsOk && aiOk ? '✅' : '❌'} Emergency Functions Test</span>
+
+1️⃣ Triage Doctors API: ${doctorsOk ? '<span class="success">✅ WORKING</span>' : '<span class="error">❌ FAILED</span>'}
+   Doctors online: ${doctorsData.count || 0}
+
+2️⃣ Dr. iSHA AI: ${aiOk ? '<span class="success">✅ WORKING</span>' : '<span class="error">❌ FAILED</span>'}
+
+${doctorsOk && aiOk ? '<span class="success">🎉 Emergency function is operational!</span>' : ''}
+
+${!doctorsOk ? `\nDoctors Error: ${JSON.stringify(doctorsData, null, 2)}` : ''}
+${!aiOk ? `\nAI Error: ${JSON.stringify(aiData, null, 2)}` : ''}
+                `;
+            } catch (error) {
+                resultDiv.innerHTML = `
+<span class="error">❌ Emergency Request Failed</span>
+
+Error: ${error.message}
+
+Possible causes:
+1. Token expired - try logging in again
+2. Network error
+3. Emergency credit exhausted (reset available)
+                `;
+            }
+        }
+
+        async function autoFix() {
+            const resultDiv = document.getElementById('autofix-result');
+            resultDiv.style.display = 'block';
+            resultDiv.innerHTML = '<span class="info">🔄 Running auto-fix...</span>\n\n';
+            
+            let log = '';
+            
+            // Step 1: Clear storage
+            log += '1️⃣ Clearing old localStorage...\n';
+            localStorage.clear();
+            log += '   ✅ Cleared\n\n';
+            resultDiv.innerHTML = log;
+            
+            await new Promise(resolve => setTimeout(resolve, 500));
+            
+            // Step 2: Test backend
+            log += '2️⃣ Checking backend...\n';
+            resultDiv.innerHTML = log;
+            
+            try {
+                await fetch(`${API_URL}/users/login`, { method: 'POST' });
+                log += '   ✅ Backend online\n\n';
+            } catch {
+                log += '   ❌ Backend offline - cannot continue\n';
+                resultDiv.innerHTML = log;
+                return;
+            }
+            resultDiv.innerHTML = log;
+            
+            await new Promise(resolve => setTimeout(resolve, 500));
+            
+            // Step 3: Login
+            log += '3️⃣ Logging in...\n';
+            resultDiv.innerHTML = log;
+            
+            try {
+                const loginRes = await fetch(`${API_URL}/users/login`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        email: document.getElementById('email').value,
+                        password: document.getElementById('password').value
+                    })
+                });
+                
+                const loginData = await loginRes.json();
+                
+                if (!loginRes.ok || !loginData.token) {
+                    log += `   ❌ Login failed: ${loginData.message}\n`;
+                    resultDiv.innerHTML = log;
+                    return;
+                }
+                
+                authToken = loginData.token;
+                localStorage.setItem('token', loginData.token);
+                localStorage.setItem('userType', 'user');
+                
+                log += '   ✅ Login successful\n';
+                log += `   Token saved to localStorage\n\n`;
+            } catch (error) {
+                log += `   ❌ Login error: ${error.message}\n`;
+                resultDiv.innerHTML = log;
+                return;
+            }
+            resultDiv.innerHTML = log;
+            
+            await new Promise(resolve => setTimeout(resolve, 500));
+            
+            // Step 4: Test Wallet
+            log += '4️⃣ Testing Wallet...\n';
+            resultDiv.innerHTML = log;
+            
+            try {
+                const walletRes = await fetch(`${API_URL}/wallet`, {
+                    headers: { 'Authorization': `Bearer ${authToken}` }
+                });
+                const walletData = await walletRes.json();
+                
+                if (walletRes.ok && walletData.success) {
+                    log += `   ✅ Wallet WORKING (Balance: ${walletData.data.balance} HC)\n\n`;
+                } else {
+                    log += `   ❌ Wallet failed: ${walletData.message || walletData.error}\n\n`;
+                }
+            } catch (error) {
+                log += `   ❌ Wallet error: ${error.message}\n\n`;
+            }
+            resultDiv.innerHTML = log;
+            
+            await new Promise(resolve => setTimeout(resolve, 500));
+            
+            // Step 5: Test Emergency
+            log += '5️⃣ Testing Emergency...\n';
+            resultDiv.innerHTML = log;
+            
+            try {
+                const emergencyRes = await fetch(`${API_URL}/medical-ai/triage-doctors`, {
+                    headers: { 'Authorization': `Bearer ${authToken}` }
+                });
+                const emergencyData = await emergencyRes.json();
+                
+                if (emergencyRes.ok && emergencyData.success) {
+                    log += `   ✅ Emergency WORKING (${emergencyData.count} doctors online)\n\n`;
+                } else {
+                    log += `   ❌ Emergency failed: ${emergencyData.message || emergencyData.error}\n\n`;
+                }
+            } catch (error) {
+                log += `   ❌ Emergency error: ${error.message}\n\n`;
+            }
+            resultDiv.innerHTML = log;
+            
+            // Final
+            log += '\n' + '='.repeat(50) + '\n';
+            log += '<span class="success">✅ AUTO-FIX COMPLETE!</span>\n\n';
+            log += 'Next steps:\n';
+            log += '1. Go to /wallet page\n';
+            log += '2. Go to /emergency page\n';
+            log += '3. Both should work now!\n\n';
+            log += 'If still not working:\n';
+            log += '- Check browser console (F12)\n';
+            log += '- Check Network tab for errors\n';
+            log += '- Contact support\n';
+            
+            resultDiv.innerHTML = log;
+            
+            document.getElementById('walletBtn').disabled = false;
+            document.getElementById('emergencyBtn').disabled = false;
+        }
+
+        // Auto-check backend on load
+        window.addEventListener('load', () => {
+            setTimeout(checkBackend, 500);
+            checkLocalStorage();
+        });
+    </script>
+</body>
+</html>

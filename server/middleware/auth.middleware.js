@@ -288,8 +288,10 @@ export const authUser = async (req, res, next) => {
     }
 
     // Preserve isTeam and isAdmin flags from both token and database
+    // ✅ FIX: Ensure ID is always set (Sequelize may return dataValues structure)
     req.user = {
       ...user,
+      id: user.id || decoded.id,
       isTeam: user.isTeam || decoded.isTeam,
       isAdmin: user.isAdmin || decoded.isAdmin
     };
