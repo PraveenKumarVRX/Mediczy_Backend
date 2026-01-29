@@ -13,14 +13,24 @@ from typing import Optional, List
 import json
 import time
 import re
+import requests
+import httpx
+
+# Import configuration
+from config import GPU_MODE, REMOTE_GPU_BASE_URL, print_config
+from config import BIMEDIX_TEMPERATURE, BIMEDIX_TOP_P, BIMEDIX_TOP_K, BIMEDIX_REPEAT_PENALTY
+from config import REQUEST_TIMEOUT, LOG_LEVEL
 
 # Import custom services
 from services.abbreviation_service import AbbreviationExpander
 from services.template_service import SpecialtyTemplateManager
 
 # Configure logging
-logging.basicConfig(level=logging.INFO)
+logging.basicConfig(level=LOG_LEVEL)
 logger = logging.getLogger(__name__)
+
+# Print configuration on startup
+print_config()
 
 app = FastAPI(
     title="Medical Scribe API",
@@ -43,16 +53,37 @@ app.add_middleware(
 
 class ModelManager:
     def __init__(self):
+        self.gpu_mode = GPU_MODE
+        self.remote_gpu_url = REMOTE_GPU_BASE_URL
         self.device = "cuda" if torch.cuda.is_available() else "cpu"
         self.whisper_model = None
         self.bimedix_model = None
         self.abbreviation_expander = None
         self.template_manager = None
+        self.http_client = httpx.AsyncClient(timeout=REQUEST_TIMEOUT)
         self.load_models()
     
     def load_models(self):
         """Load all models on startup"""
-        logger.info("Loading models...")
+        logger.info(f"Loading models (GPU Mode: {self.gpu_mode})...")
+        
+        if self.gpu_mode == "local":
+            self._load_local_models()
+        else:
+            self._load_remote_gpu_models()
+        
+        # Always load local abbreviation and template services
+        logger.info("Loading medical abbreviation database...")
+        self.abbreviation_expander = AbbreviationExpander()
+        logger.info("✓ Abbreviation database loaded")
+        
+        logger.info("Loading specialty templates...")
+        self.template_manager = SpecialtyTemplateManager()
+        logger.info(f"✓ {len(self.template_manager.get_all_specialties())} specialty templates loaded")
+    
+    def _load_local_models(self):
+        """Load models locally on this GPU"""
+        logger.info("[LOCAL GPU MODE] Loading models locally...")
         
         # Load Whisper
         logger.info("Loading Whisper model...")
@@ -62,27 +93,86 @@ class ModelManager:
         # Load Bimedix.gguf
         logger.info("Loading Bimedix.gguf model...")
         try:
+            from config import BIMEDIX_MODEL_PATH, BIMEDIX_N_GPU_LAYERS, BIMEDIX_N_CTX, BIMEDIX_N_THREADS
             self.bimedix_model = Llama(
-                model_path="/home/ubuntu/models/Bimedix.gguf",
-                n_gpu_layers=-1,
-                n_ctx=4096,
-                n_threads=16,
+                model_path=BIMEDIX_MODEL_PATH,
+                n_gpu_layers=BIMEDIX_N_GPU_LAYERS,
+                n_ctx=BIMEDIX_N_CTX,
+                n_threads=BIMEDIX_N_THREADS,
                 verbose=False
             )
             logger.info("✓ Bimedix.gguf loaded on GPU")
         except Exception as e:
             logger.error(f"Error loading Bimedix.gguf: {e}")
             raise
+    
+    def _load_remote_gpu_models(self):
+        """Connect to remote GPU service at isha.buzz:8080"""
+        logger.info(f"[REMOTE GPU MODE] Connecting to GPU at {self.remote_gpu_url}...")
         
-        # Load Abbreviation Expander
-        logger.info("Loading medical abbreviation database...")
-        self.abbreviation_expander = AbbreviationExpander()
-        logger.info("✓ Abbreviation database loaded")
-        
-        # Load Template Manager
-        logger.info("Loading specialty templates...")
-        self.template_manager = SpecialtyTemplateManager()
-        logger.info(f"✓ {len(self.template_manager.get_all_specialties())} specialty templates loaded")
+        try:
+            response = requests.get(f"{self.remote_gpu_url}/api/scribe/health", timeout=10)
+            if response.status_code == 200:
+                health = response.json()
+                logger.info(f"✓ Connected to remote GPU service")
+                logger.info(f"  Device: {health.get('gpu', {}).get('device_name', 'Unknown')}")
+                logger.info(f"  Memory: {health.get('gpu', {}).get('memory_allocated', 'Unknown')}")
+                logger.info(f"  Models: {health.get('models', {})}")
+                self.bimedix_model = "remote"  # Marker for remote
+                self.whisper_model = "remote"  # Marker for remote
+            else:
+                raise Exception(f"Health check failed: {response.status_code}")
+        except Exception as e:
+            logger.error(f"✗ Failed to connect to remote GPU: {e}")
+            logger.warning("Falling back to local GPU loading...")
+            self.gpu_mode = "local"
+            self._load_local_models()
+    
+    async def transcribe_remote(self, audio_path: str, field_name: str = "diagnosis"):
+        """Send transcription request to remote GPU service"""
+        try:
+            async with aiofiles.open(audio_path, 'rb') as f:
+                audio_content = await f.read()
+            
+            files = {'file': ('audio.wav', audio_content, 'audio/wav')}
+            params = {'field_name': field_name}
+            
+            async with httpx.AsyncClient(timeout=REQUEST_TIMEOUT) as client:
+                response = await client.post(
+                    f"{self.remote_gpu_url}/api/scribe/transcribe",
+                    files=files,
+                    params=params
+                )
+            
+            if response.status_code == 200:
+                return response.json()
+            else:
+                raise Exception(f"Remote transcription failed: {response.status_code}")
+        except Exception as e:
+            logger.error(f"Remote transcription error: {e}")
+            raise
+    
+    async def process_medical_text_remote(self, text: str, patient_context: Optional[dict] = None):
+        """Send medical text processing request to remote GPU service"""
+        try:
+            payload = {
+                "text": text,
+                "patient_context": patient_context or {}
+            }
+            
+            async with httpx.AsyncClient(timeout=REQUEST_TIMEOUT) as client:
+                response = await client.post(
+                    f"{self.remote_gpu_url}/api/scribe/process-medical-text",
+                    json=payload
+                )
+            
+            if response.status_code == 200:
+                return response.json()
+            else:
+                raise Exception(f"Remote processing failed: {response.status_code}")
+        except Exception as e:
+            logger.error(f"Remote medical processing error: {e}")
+            raise
 
 # Initialize models
 models = ModelManager()
@@ -98,9 +188,10 @@ async def transcribe_audio(
 ):
     """
     Transcribe audio using Whisper
+    Supports both local GPU and remote GPU (isha.buzz:8080)
     """
     try:
-        logger.info(f"Transcribing audio for field: {field_name}")
+        logger.info(f"Transcribing audio for field: {field_name} (Mode: {models.gpu_mode})")
         
         # Save audio temporarily
         audio_path = f"/tmp/audio_{int(time.time())}.wav"
@@ -108,18 +199,26 @@ async def transcribe_audio(
             content = await file.read()
             await f.write(content)
         
-        # Transcribe with Whisper
         start_time = time.time()
-        result = models.whisper_model.transcribe(
-            audio_path,
-            language="en",
-            task="transcribe",
-            verbose=False,
-            fp16=True
-        )
-        transcribe_time = time.time() - start_time
         
-        raw_text = result["text"].strip()
+        # Use remote GPU if configured
+        if models.gpu_mode == "remote" and models.whisper_model == "remote":
+            logger.info(f"Sending transcription request to {models.remote_gpu_url}/api/scribe/transcribe")
+            result = await models.transcribe_remote(audio_path, field_name)
+            transcribe_time = time.time() - start_time
+        else:
+            # Local transcription
+            logger.info("Transcribing locally...")
+            result = models.whisper_model.transcribe(
+                audio_path,
+                language="en",
+                task="transcribe",
+                verbose=False,
+                fp16=True
+            )
+            transcribe_time = time.time() - start_time
+        
+        raw_text = result.get("transcription") or result.get("text", "").strip()
         logger.info(f"Transcription completed in {transcribe_time:.2f}s")
         
         # Clean up
@@ -131,7 +230,8 @@ async def transcribe_audio(
             "duration": result.get("duration", 0),
             "language": result.get("language", "en"),
             "processing_time": transcribe_time,
-            "field": field_name
+            "field": field_name,
+            "gpu_mode": models.gpu_mode
         }
     
     except Exception as e:
@@ -183,20 +283,32 @@ async def process_medical_text(
 ):
     """
     Process transcribed text with Bimedix LLM for medical enhancement
+    Supports both local GPU and remote GPU (isha.buzz:8080)
+    
+    Features:
     - Expand abbreviations
     - Correct common speech-to-text errors
     - Suggest clinical codes
     - Validate medical content
     """
     try:
-        logger.info("Processing medical text with Bimedix...")
+        logger.info(f"Processing medical text with Bimedix (Mode: {models.gpu_mode})...")
         
-        # Step 1: Expand abbreviations
+        # Step 1: Expand abbreviations locally (always)
         abbrev_context = models.abbreviation_expander.get_medical_context(text)
         expanded_text = abbrev_context["expanded_text"]
         
+        start_time = time.time()
+        
         # Step 2: Use Bimedix for medical text enhancement
-        prompt = f"""You are a medical documentation expert. Enhance and correct the following clinical note:
+        if models.gpu_mode == "remote" and models.bimedix_model == "remote":
+            logger.info(f"Sending to remote Bimedix at {models.remote_gpu_url}")
+            response = await models.process_medical_text_remote(text, patient_context)
+            enhanced_text = response.get("enhanced_text", expanded_text)
+        else:
+            # Local Bimedix processing
+            logger.info("Processing with local Bimedix model...")
+            prompt = f"""You are a medical documentation expert. Enhance and correct the following clinical note:
 
 Original text: {text}
 
@@ -209,22 +321,19 @@ Please:
 6. Keep it concise and professional
 
 Enhanced text:"""
-        
-        start_time = time.time()
-        
-        response = models.bimedix_model(
-            prompt,
-            max_tokens=1024,
-            temperature=0.3,
-            top_p=0.95,
-            top_k=40,
-            repeat_penalty=1.1,
-            echo=False
-        )
+            
+            response = models.bimedix_model(
+                prompt,
+                max_tokens=1024,
+                temperature=BIMEDIX_TEMPERATURE,
+                top_p=BIMEDIX_TOP_P,
+                top_k=BIMEDIX_TOP_K,
+                repeat_penalty=BIMEDIX_REPEAT_PENALTY,
+                echo=False
+            )
+            enhanced_text = response["choices"][0]["text"].strip()
         
         llm_time = time.time() - start_time
-        
-        enhanced_text = response["choices"][0]["text"].strip()
         
         logger.info(f"Medical processing completed in {llm_time:.2f}s")
         
@@ -236,7 +345,8 @@ Enhanced text:"""
             "abbreviations": abbrev_context["abbreviations"],
             "icd10_codes": abbrev_context["icd10_codes"],
             "processing_time": llm_time,
-            "model": "Bimedix"
+            "model": "Bimedix",
+            "gpu_mode": models.gpu_mode
         }
     
     except Exception as e:
@@ -455,33 +565,73 @@ async def analyze_clinical_text(text: str):
 @app.get("/api/scribe/health")
 async def health_check():
     """Check GPU and model status"""
-    gpu_info = {
-        "available": torch.cuda.is_available(),
-        "device_name": torch.cuda.get_device_name(0) if torch.cuda.is_available() else "None",
-        "memory_allocated": f"{torch.cuda.memory_allocated(0) / 1024**3:.2f} GB" if torch.cuda.is_available() else "N/A",
-        "memory_total": f"{torch.cuda.get_device_properties(0).total_memory / 1024**3:.2f} GB" if torch.cuda.is_available() else "N/A",
-    }
     
-    return {
-        "status": "healthy",
-        "timestamp": time.time(),
-        "gpu": gpu_info,
-        "models": {
-            "whisper": "loaded",
-            "bimedix": "loaded",
-            "abbreviation_db": "loaded",
-            "templates": f"{len(models.template_manager.get_all_specialties())} specialties"
-        },
-        "device": str(models.device),
-        "features": [
-            "speech-to-text",
-            "abbreviation-expansion",
-            "medical-text-enhancement",
-            "specialty-templates",
-            "icd10-suggestions",
-            "discharge-summary-generation"
-        ]
-    }
+    if models.gpu_mode == "remote":
+        try:
+            response = requests.get(f"{models.remote_gpu_url}/api/scribe/health", timeout=10)
+            if response.status_code == 200:
+                remote_health = response.json()
+                return {
+                    "status": "healthy",
+                    "timestamp": time.time(),
+                    "gpu_mode": "remote",
+                    "gpu_url": models.remote_gpu_url,
+                    "remote_gpu": remote_health.get("gpu", {}),
+                    "models": remote_health.get("models", {}),
+                    "device": "remote",
+                    "features": [
+                        "speech-to-text",
+                        "abbreviation-expansion",
+                        "medical-text-enhancement",
+                        "specialty-templates",
+                        "icd10-suggestions",
+                        "discharge-summary-generation"
+                    ],
+                    "local_services": [
+                        "abbreviation-expansion",
+                        "template-management",
+                        "icd10-suggestions"
+                    ]
+                }
+        except Exception as e:
+            logger.error(f"Failed to reach remote GPU: {e}")
+            return {
+                "status": "degraded",
+                "gpu_mode": "remote",
+                "gpu_url": models.remote_gpu_url,
+                "error": f"Cannot reach remote GPU: {str(e)}",
+                "device": "remote"
+            }
+    else:
+        # Local GPU mode
+        gpu_info = {
+            "available": torch.cuda.is_available(),
+            "device_name": torch.cuda.get_device_name(0) if torch.cuda.is_available() else "None",
+            "memory_allocated": f"{torch.cuda.memory_allocated(0) / 1024**3:.2f} GB" if torch.cuda.is_available() else "N/A",
+            "memory_total": f"{torch.cuda.get_device_properties(0).total_memory / 1024**3:.2f} GB" if torch.cuda.is_available() else "N/A",
+        }
+        
+        return {
+            "status": "healthy",
+            "timestamp": time.time(),
+            "gpu_mode": "local",
+            "gpu": gpu_info,
+            "models": {
+                "whisper": "loaded",
+                "bimedix": "loaded",
+                "abbreviation_db": "loaded",
+                "templates": f"{len(models.template_manager.get_all_specialties())} specialties"
+            },
+            "device": str(models.device),
+            "features": [
+                "speech-to-text",
+                "abbreviation-expansion",
+                "medical-text-enhancement",
+                "specialty-templates",
+                "icd10-suggestions",
+                "discharge-summary-generation"
+            ]
+        }
 
 @app.get("/api/scribe/gpu-stats")
 async def gpu_stats():
@@ -503,20 +653,31 @@ async def gpu_stats():
 async def service_stats():
     """Get service statistics and capabilities"""
     return {
+        "gpu_configuration": {
+            "mode": models.gpu_mode,
+            "remote_url": models.remote_gpu_url if models.gpu_mode == "remote" else None,
+            "device": str(models.device) if models.gpu_mode == "local" else "remote"
+        },
         "specialties": models.template_manager.get_all_specialties(),
         "total_specialties": len(models.template_manager.get_all_specialties()),
         "medical_abbreviations": len(models.abbreviation_expander.abbreviations),
         "icd10_mappings": len([item for sublist in models.abbreviation_expander.db.get("icd10_mappings", {}).values() for item in sublist]),
-        "version": "2.0.0",
+        "version": "2.1.0",
         "features": [
-            "Whisper speech-to-text",
-            "Bimedix medical LLM",
+            "Whisper speech-to-text (local or remote)",
+            "Bimedix medical LLM (local or remote)",
             "Medical abbreviation database (Indian)",
             "14+ medical specialties",
             "ICD-10 code suggestions",
             "Specialty-specific discharge templates",
             "Text normalization",
             "Medical entity recognition"
+        ],
+        "supported_specialties": [
+            "Cardiology", "Orthopedics", "Neurology", "Respiratory",
+            "Gastroenterology", "Nephrology", "Endocrinology",
+            "General Medicine", "Surgery", "Pediatrics",
+            "Obstetrics", "Psychiatry", "Oncology", "Intensive Care"
         ]
     }
 

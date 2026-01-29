@@ -5,17 +5,20 @@
 Three powerful new features have been added to the discharge summary scribe:
 
 ### 1. **Medical Terminology Database** 📚
+
 - 228 medical abbreviations across 8 specialties
 - ICD-10 code mappings for diagnoses
 - Common medications, investigations, and discharge advice
 
 ### 2. **Abbreviation Expansion** 🔤
+
 - Automatically expands: HTN → Hypertension, DM → Diabetes Mellitus, etc.
 - Normalizes medical values: "BP 160 by 95" → "Blood Pressure 160/95 mmHg"
 - Identifies medical specialties from text
 - Real-time processing (<100ms)
 
 ### 3. **Specialty Templates** 🏥
+
 - 14 medical specialty templates (Cardiology, Orthopedics, Neurology, etc.)
 - Each template includes:
   - Specialty-specific discharge sections
@@ -30,9 +33,11 @@ Three powerful new features have been added to the discharge summary scribe:
 ## 🚀 How to Use
 
 ### Step 1: Open Discharge Summary
+
 Navigate to: `https://mediqzy.com/hospital/discharge-summary`
 
 ### Step 2: Select Medical Specialty
+
 - Click on the specialty dropdown
 - Choose from 14 options:
   - Cardiology
@@ -51,17 +56,20 @@ Navigate to: `https://mediqzy.com/hospital/discharge-summary`
   - Intensive Care
 
 ### Step 3: Review Template
+
 - Right panel shows template information
 - Key investigations listed for that specialty
 - Discharge precautions loaded
 
 ### Step 4: Start Dictating
+
 - Click "Start Scribe" button next to any field
 - Speak clinical information
 - Medical abbreviations automatically expanded
 - Medical values automatically normalized
 
 ### Step 5: Submit
+
 - All fields filled with proper medical formatting
 - ICD-10 codes suggested automatically
 - Ready for final review and submission
@@ -71,15 +79,18 @@ Navigate to: `https://mediqzy.com/hospital/discharge-summary`
 ## 📝 Examples
 
 ### Example 1: Cardiology Patient
+
 **What you dictate:**
+
 ```
-Patient is 65 year old male with STEMI. 
-HR 110, BP 160 by 95. 
+Patient is 65 year old male with STEMI.
+HR 110, BP 160 by 95.
 ECG shows ST elevation in leads 2, 3, AVF.
 Underwent PCI with stent.
 ```
 
 **What system outputs:**
+
 ```
 Patient is 65 year old male with ST-Elevation Myocardial Infarction.
 Heart Rate 110 bpm, Blood Pressure 160/95 mmHg.
@@ -91,7 +102,9 @@ Underwent Percutaneous Coronary Intervention with stent.
 ```
 
 ### Example 2: Orthopedic Patient
+
 **What you dictate:**
+
 ```
 Fracture left femur shaft.
 X-ray done, underwent ORIF with DHS.
@@ -99,6 +112,7 @@ Post-op HR 88, BP 140 by 88, SpO2 98%.
 ```
 
 **What system outputs:**
+
 ```
 Fracture left femur shaft.
 X-ray completed, underwent Open Reduction Internal Fixation with Dynamic Hip Screw.
@@ -113,44 +127,47 @@ Post-operative Heart Rate 88 bpm, Blood Pressure 140/88 mmHg, Oxygen Saturation 
 ## 🎓 Supported Abbreviations
 
 ### Cardiovascular (Most Common)
-| Abbreviation | Expansion |
-|---|---|
-| HTN | Hypertension |
-| DM | Diabetes Mellitus |
-| CAD | Coronary Artery Disease |
-| MI | Myocardial Infarction |
-| STEMI | ST-Elevation Myocardial Infarction |
-| NSTEMI | Non-ST-Elevation Myocardial Infarction |
-| UA | Unstable Angina |
-| AF | Atrial Fibrillation |
-| CHF | Congestive Heart Failure |
-| PCI | Percutaneous Coronary Intervention |
+
+| Abbreviation | Expansion                              |
+| ------------ | -------------------------------------- |
+| HTN          | Hypertension                           |
+| DM           | Diabetes Mellitus                      |
+| CAD          | Coronary Artery Disease                |
+| MI           | Myocardial Infarction                  |
+| STEMI        | ST-Elevation Myocardial Infarction     |
+| NSTEMI       | Non-ST-Elevation Myocardial Infarction |
+| UA           | Unstable Angina                        |
+| AF           | Atrial Fibrillation                    |
+| CHF          | Congestive Heart Failure               |
+| PCI          | Percutaneous Coronary Intervention     |
 
 ### General Medical
-| Abbreviation | Expansion |
-|---|---|
-| OPD | Outpatient Department |
-| IPD | Inpatient Department |
-| ICU | Intensive Care Unit |
-| HDU | High Dependency Unit |
-| HR | Heart Rate |
-| BP | Blood Pressure |
-| RR | Respiratory Rate |
-| SpO2 | Oxygen Saturation |
-| ECG | Electrocardiogram |
-| CT | Computed Tomography |
+
+| Abbreviation | Expansion             |
+| ------------ | --------------------- |
+| OPD          | Outpatient Department |
+| IPD          | Inpatient Department  |
+| ICU          | Intensive Care Unit   |
+| HDU          | High Dependency Unit  |
+| HR           | Heart Rate            |
+| BP           | Blood Pressure        |
+| RR           | Respiratory Rate      |
+| SpO2         | Oxygen Saturation     |
+| ECG          | Electrocardiogram     |
+| CT           | Computed Tomography   |
 
 ### Orthopedic
-| Abbreviation | Expansion |
-|---|---|
-| OA | Osteoarthritis |
-| RA | Rheumatoid Arthritis |
-| ORIF | Open Reduction Internal Fixation |
-| DHS | Dynamic Hip Screw |
-| ACL | Anterior Cruciate Ligament |
-| MCL | Medial Collateral Ligament |
-| TKR | Total Knee Replacement |
-| THR | Total Hip Replacement |
+
+| Abbreviation | Expansion                        |
+| ------------ | -------------------------------- |
+| OA           | Osteoarthritis                   |
+| RA           | Rheumatoid Arthritis             |
+| ORIF         | Open Reduction Internal Fixation |
+| DHS          | Dynamic Hip Screw                |
+| ACL          | Anterior Cruciate Ligament       |
+| MCL          | Medial Collateral Ligament       |
+| TKR          | Total Knee Replacement           |
+| THR          | Total Hip Replacement            |
 
 **[See medical_db.json for complete list of 228+ abbreviations]**
 
@@ -160,39 +177,44 @@ Post-operative Heart Rate 88 bpm, Blood Pressure 140/88 mmHg, Oxygen Saturation 
 
 The system automatically converts these formats:
 
-| Input Format | Output Format |
-|---|---|
-| BP 160 by 95 | Blood Pressure 160/95 mmHg |
-| HR 110 | Heart Rate 110 bpm |
-| RR 22 | Respiratory Rate 22 breaths/min |
-| SpO2 98 | Oxygen Saturation 98% |
-| Temp 38 C | Temperature 38°C |
+| Input Format | Output Format                   |
+| ------------ | ------------------------------- |
+| BP 160 by 95 | Blood Pressure 160/95 mmHg      |
+| HR 110       | Heart Rate 110 bpm              |
+| RR 22        | Respiratory Rate 22 breaths/min |
+| SpO2 98      | Oxygen Saturation 98%           |
+| Temp 38 C    | Temperature 38°C                |
 
 ---
 
 ## 📊 Available Specialties & Templates
 
 ### 1. **Cardiology** ❤️
+
 - Sections: Chief Complaint, Presentation, Exam Findings, Investigations, Diagnosis, Treatment, Complications, Discharge Status, Medications, Follow-up
 - Key Tests: 12-lead ECG, Troponin, BNP, Lipid Profile, Echocardiogram
 - Follow-up: 7-10 days
 
 ### 2. **Orthopedics** 🦴
+
 - Sections: Injury Type, Mechanism, Imaging, Pre-op Assessment, Operative Details, Post-op Course, Neurovascular Status, Pain Management, Mobility Status, Discharge Status
 - Key Tests: X-rays, CT/MRI, Neurovascular Assessment
 - Follow-up: 2 weeks
 
 ### 3. **Neurology** 🧠
+
 - Sections: Chief Complaint, Neuro Examination, Imaging, Consciousness Level, Motor/Sensory Status, Seizures, Speech/Cognitive, Cardiopulmonary Status, Treatment
 - Key Tests: CT/MRI Brain, Carotid Ultrasound, EEG
 - Follow-up: 1 week
 
 ### 4. **Respiratory** 🫁
+
 - Sections: Respiratory Symptoms, Chest X-ray, ABG Values, Oxygen Requirement, Respiratory Support, Medications, Complications, Discharge Plan
 - Key Tests: Spirometry, ABG, CT Chest
 - Follow-up: 1-2 weeks
 
 ### 5. **Gastroenterology** 🫀
+
 - Sections: GI Symptoms, Abdominal Examination, Imaging, Endoscopy Findings, Treatment, Diet Status, Medications
 - Key Tests: Endoscopy, USG Abdomen, CT Abdomen
 - Follow-up: 1-2 weeks
@@ -204,6 +226,7 @@ The system automatically converts these formats:
 ## 🔧 Technical Details (For Admins)
 
 ### File Locations
+
 ```
 /home/ubuntu/Mediczy/scribe_service/
 ├── medical_db.json                     # Medical database (228+ abbreviations)
@@ -219,6 +242,7 @@ The system automatically converts these formats:
 ```
 
 ### API Endpoints
+
 - `GET /api/scribe/specialties` - List all 14 specialties
 - `GET /api/scribe/template/{specialty}` - Get specialty template
 - `POST /api/scribe/expand-abbreviations` - Expand abbreviations
@@ -226,6 +250,7 @@ The system automatically converts these formats:
 - `GET /api/scribe/health` - Service health & GPU stats
 
 ### Database Structure
+
 ```json
 {
   "abbreviations": {
@@ -279,6 +304,7 @@ A: Yes, edit medical_db.json and add to the appropriate specialty section.
 ## 🎉 Success Indicators
 
 ✅ You're using these features successfully if:
+
 - [ ] Specialty selector appears on discharge summary page
 - [ ] Abbreviations automatically expand (HTN → Hypertension)
 - [ ] Medical values normalize (BP 160 by 95 → 160/95 mmHg)
