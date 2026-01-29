@@ -127,7 +127,7 @@ const HospitalCommunicationHub = () => {
   );
 
   // Templates
-  const [templates, setTemplates] = useState<MessageTemplate[]>([
+  const initialTemplates: MessageTemplate[] = [
     {
       id: '1',
       name: 'Appointment Reminder',
@@ -175,7 +175,10 @@ const HospitalCommunicationHub = () => {
       variables: ['patient_name', 'medicine'],
       isActive: true
     }
-  ]);
+  ];
+  const [templates, setTemplates] = useState<MessageTemplate[]>(
+    () => loadHospitalStore('hospital-communication-templates', initialTemplates)
+  );
 
   // Patient contacts for quick messaging
   const [patientContacts, setPatientContacts] = useState<PatientContact[]>([
@@ -218,6 +221,95 @@ const HospitalCommunicationHub = () => {
   const [showBulkDialog, setShowBulkDialog] = useState(false);
   const [showTemplateDialog, setShowTemplateDialog] = useState(false);
   const [selectedTemplate, setSelectedTemplate] = useState<MessageTemplate | null>(null);
+  const [templateMode, setTemplateMode] = useState<'new' | 'edit' | 'duplicate'>('new');
+  const [templateForm, setTemplateForm] = useState<MessageTemplate>({
+    id: '',
+    name: '',
+    category: 'general',
+    channel: 'all',
+    subject: '',
+    content: '',
+    variables: [],
+    isActive: true
+  });
+  const [templateVariablesInput, setTemplateVariablesInput] = useState('');
+
+  useEffect(() => {
+    saveHospitalStore('hospital-communication-templates', templates);
+  }, [templates]);
+
+  const openNewTemplate = () => {
+    setTemplateMode('new');
+    setSelectedTemplate(null);
+    setTemplateForm({
+      id: '',
+      name: '',
+      category: 'general',
+      channel: 'all',
+      subject: '',
+      content: '',
+      variables: [],
+      isActive: true
+    });
+    setTemplateVariablesInput('');
+    setShowTemplateDialog(true);
+  };
+
+  const openEditTemplate = (template: MessageTemplate) => {
+    setTemplateMode('edit');
+    setSelectedTemplate(template);
+    setTemplateForm({ ...template });
+    setTemplateVariablesInput(template.variables.join(', '));
+    setShowTemplateDialog(true);
+  };
+
+  const openDuplicateTemplate = (template: MessageTemplate) => {
+    setTemplateMode('duplicate');
+    setSelectedTemplate(template);
+    setTemplateForm({
+      ...template,
+      id: '',
+      name: `${template.name} (Copy)`
+    });
+    setTemplateVariablesInput(template.variables.join(', '));
+    setShowTemplateDialog(true);
+  };
+
+  const handleTemplateSave = () => {
+    if (!templateForm.name.trim() || !templateForm.content.trim()) {
+      toast({
+        title: 'Missing fields',
+        description: 'Template name and content are required.',
+        variant: 'destructive'
+      });
+      return;
+    }
+
+    const variables = templateVariablesInput
+      .split(',')
+      .map((v) => v.trim())
+      .filter(Boolean);
+
+    if (templateMode === 'edit' && templateForm.id) {
+      setTemplates((prev) =>
+        prev.map((t) =>
+          t.id === templateForm.id ? { ...templateForm, variables } : t
+        )
+      );
+    } else {
+      const id = templateForm.id || `tpl_${Date.now()}`;
+      setTemplates((prev) => [
+        ...prev,
+        { ...templateForm, id, variables }
+      ]);
+    }
+
+    setShowTemplateDialog(false);
+    toast({
+      title: 'Template saved',
+      description: 'Your template has been saved successfully.'
+    });
+  };
 
   const getStatusBadge = (status: string) => {
     const config = {
@@ -1084,7 +1176,7 @@ const HospitalCommunicationHub = () => {
                   <CardTitle className="text-slate-800 dark:text-white">Message Templates</CardTitle>
                   <CardDescription className="text-slate-500 dark:text-slate-400">Pre-configured templates for common communications</CardDescription>
                 </div>
-                <Button className="bg-teal-600 hover:bg-teal-700">
+                <Button className="bg-teal-600 hover:bg-teal-700" onClick={openNewTemplate}>
                   <Plus className="h-4 w-4 mr-2" /> New Template
                 </Button>
               </div>
@@ -1123,10 +1215,10 @@ const HospitalCommunicationHub = () => {
                       </div>
                       <Separator className="my-4" />
                       <div className="flex items-center justify-end gap-2">
-                        <Button variant="ghost" size="sm">
+                        <Button variant="ghost" size="sm" onClick={() => openDuplicateTemplate(template)}>
                           <Copy className="h-4 w-4 mr-1" /> Duplicate
                         </Button>
-                        <Button variant="ghost" size="sm">
+                        <Button variant="ghost" size="sm" onClick={() => openEditTemplate(template)}>
                           <Edit className="h-4 w-4 mr-1" /> Edit
                         </Button>
                       </div>
@@ -1136,6 +1228,97 @@ const HospitalCommunicationHub = () => {
               </div>
             </CardContent>
           </Card>
+
+          <Dialog open={showTemplateDialog} onOpenChange={setShowTemplateDialog}>
+            <DialogContent className="max-w-xl">
+              <DialogHeader>
+                <DialogTitle>
+                  {templateMode === 'edit' ? 'Edit Template' : templateMode === 'duplicate' ? 'Duplicate Template' : 'New Template'}
+                </DialogTitle>
+                <DialogDescription>Configure template details for hospital communication.</DialogDescription>
+              </DialogHeader>
+              <div className="space-y-4">
+                <div className="space-y-2">
+                  <Label>Template Name</Label>
+                  <Input
+                    value={templateForm.name}
+                    onChange={(e) => setTemplateForm({ ...templateForm, name: e.target.value })}
+                    placeholder="Template name"
+                  />
+                </div>
+                <div className="grid grid-cols-2 gap-4">
+                  <div className="space-y-2">
+                    <Label>Category</Label>
+                    <Select
+                      value={templateForm.category}
+                      onValueChange={(value) => setTemplateForm({ ...templateForm, category: value as MessageTemplate['category'] })}
+                    >
+                      <SelectTrigger><SelectValue /></SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="appointment">Appointment</SelectItem>
+                        <SelectItem value="discharge">Discharge</SelectItem>
+                        <SelectItem value="billing">Billing</SelectItem>
+                        <SelectItem value="lab_results">Lab Results</SelectItem>
+                        <SelectItem value="prescription">Prescription</SelectItem>
+                        <SelectItem value="general">General</SelectItem>
+                      </SelectContent>
+                    </Select>
+                  </div>
+                  <div className="space-y-2">
+                    <Label>Channel</Label>
+                    <Select
+                      value={templateForm.channel}
+                      onValueChange={(value) => setTemplateForm({ ...templateForm, channel: value as MessageTemplate['channel'] })}
+                    >
+                      <SelectTrigger><SelectValue /></SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="all">All Channels</SelectItem>
+                        <SelectItem value="email">Email</SelectItem>
+                        <SelectItem value="sms">SMS</SelectItem>
+                        <SelectItem value="whatsapp">WhatsApp</SelectItem>
+                      </SelectContent>
+                    </Select>
+                  </div>
+                </div>
+                <div className="space-y-2">
+                  <Label>Subject (optional)</Label>
+                  <Input
+                    value={templateForm.subject || ''}
+                    onChange={(e) => setTemplateForm({ ...templateForm, subject: e.target.value })}
+                    placeholder="Email subject"
+                  />
+                </div>
+                <div className="space-y-2">
+                  <Label>Message Content</Label>
+                  <Textarea
+                    value={templateForm.content}
+                    onChange={(e) => setTemplateForm({ ...templateForm, content: e.target.value })}
+                    placeholder="Template content"
+                    className="min-h-32"
+                  />
+                </div>
+                <div className="space-y-2">
+                  <Label>Variables (comma separated)</Label>
+                  <Input
+                    value={templateVariablesInput}
+                    onChange={(e) => setTemplateVariablesInput(e.target.value)}
+                    placeholder="patient_name, doctor_name, date"
+                  />
+                </div>
+                <div className="flex items-center justify-between">
+                  <Label>Active</Label>
+                  <Switch
+                    checked={templateForm.isActive}
+                    onCheckedChange={(checked) => setTemplateForm({ ...templateForm, isActive: checked })}
+                  />
+                </div>
+              </div>
+              <DialogFooter>
+                <Button variant="outline" onClick={() => setShowTemplateDialog(false)}>Cancel</Button>
+                <Button onClick={handleTemplateSave}>Save Template</Button>
+              </DialogFooter>
+            </DialogContent>
+          </Dialog>
         </TabsContent>
 
         {/* Settings Tab */}
