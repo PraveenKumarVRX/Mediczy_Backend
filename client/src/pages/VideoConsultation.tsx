@@ -57,6 +57,8 @@ interface Appointment {
   specialization: string;
   date: string;
   time: string;
+  appointmentDate?: string;
+  appointmentTime?: string;
   consultationType: string;
   status: string;
   meetingLink?: string;
@@ -109,8 +111,19 @@ const VideoConsultation = () => {
   const previewVideoRef = useRef<HTMLVideoElement>(null);
   const localStreamRef = useRef<MediaStream | null>(null);
 
-  // LiveKit base URL
-  const LIVEKIT_BASE_URL = import.meta.env.VITE_LIVEKIT_URL || 'wss://video.mediqzy.com';
+  const normalizeMeetUrl = (url?: string) => {
+    if (!url) return 'https://video.mediqzy.com';
+    return url
+      .replace(/^wss:\/\//, 'https://')
+      .replace(/^ws:\/\//, 'http://')
+      .replace(/\/+$/, '')
+      .replace(/\/rooms?$/, '');
+  };
+
+  // LiveKit Meet base URL (HTTPS)
+  const LIVEKIT_BASE_URL = normalizeMeetUrl(
+    import.meta.env.VITE_LIVEKIT_MEET_URL || import.meta.env.VITE_LIVEKIT_URL
+  );
 
   // Fetch upcoming video consultations (include both confirmed and in-progress)
   const { data: upcomingAppointments = [], isLoading, refetch } = useQuery({
@@ -124,7 +137,12 @@ const VideoConsultation = () => {
             status: 'confirmed,in-progress,scheduled,accepted'
           }
         });
-        return response.data.appointments || [];
+        const appointments = response.data.appointments || response.data.data || [];
+        return appointments.map((appointment: any) => ({
+          ...appointment,
+          date: appointment.date || appointment.appointmentDate || '',
+          time: appointment.time || appointment.appointmentTime || ''
+        }));
       } catch (err: any) {
         console.error('Failed to fetch video consultations:', err);
         return [];
@@ -223,7 +241,11 @@ const VideoConsultation = () => {
     if (directJoinUrl) {
       try {
         const parsed = new URL(directJoinUrl);
-        if (parsed.pathname.includes('/rooms/') || parsed.searchParams.has('access_token')) {
+        if (
+          parsed.pathname.includes('/rooms/') ||
+          parsed.pathname.includes('/room/') ||
+          parsed.searchParams.has('access_token')
+        ) {
           return parsed.toString();
         }
         if (!parsed.searchParams.has('name')) {
@@ -244,13 +266,17 @@ const VideoConsultation = () => {
       }
     }
 
-    if (room.includes('/join/')) {
+    if (room.includes('/rooms/')) {
+      room = room.split('/rooms/')[1]?.split('?')[0] || room;
+    } else if (room.includes('/room/')) {
+      room = room.split('/room/')[1]?.split('?')[0] || room;
+    } else if (room.includes('/join/')) {
       room = room.split('/join/')[1]?.split('?')[0] || room;
     } else if (room.startsWith('http')) {
       try {
         const parsed = new URL(room);
         const parts = parsed.pathname.split('/').filter(Boolean);
-        const joinIndex = parts.indexOf('join');
+        const joinIndex = parts.findIndex((segment) => ['rooms', 'room', 'join'].includes(segment));
         if (joinIndex >= 0 && parts[joinIndex + 1]) {
           room = parts[joinIndex + 1];
         }
@@ -259,7 +285,7 @@ const VideoConsultation = () => {
       }
     }
     
-    return `${LIVEKIT_BASE_URL}/join/${room}?name=${encodeURIComponent(name)}&audio=1&video=1&notify=0`;
+    return `${LIVEKIT_BASE_URL}/rooms/${room}?name=${encodeURIComponent(name)}`;
   }, [currentUser, LIVEKIT_BASE_URL]);
 
   // Start video call with pre-call check
@@ -364,7 +390,7 @@ const VideoConsultation = () => {
     setShowPreCallCheck(false);
     
     const meetingUrl = generateMeetingUrl(roomId);
-    const isLiveKitMeeting = meetingUrl.includes('/rooms/');
+    const isLiveKitMeeting = meetingUrl.includes('/rooms/') || meetingUrl.includes('/room/');
     if (isLiveKitMeeting && !preferEmbeddedJoin) {
       toast({
         title: "Opening LiveKit",
@@ -572,7 +598,7 @@ const VideoConsultation = () => {
               <Shield className="w-3 h-3 mr-1" />
               Secure
             </Badge>
-            {currentMeetingUrl.includes('/rooms/') && (
+            {(currentMeetingUrl.includes('/rooms/') || currentMeetingUrl.includes('/room/')) && (
               <div className="flex items-center gap-2 rounded-full border border-slate-700 px-3 py-1 text-slate-300">
                 <span className="text-xs">Embed</span>
                 <Switch
@@ -634,7 +660,7 @@ const VideoConsultation = () => {
             </div>
           )}
 
-          {roomId && (String(roomId).includes('/rooms/') || String(roomId).includes('access_token=')) && (
+          {roomId && (String(roomId).includes('/rooms/') || String(roomId).includes('/room/') || String(roomId).includes('access_token=')) && (
             <div className="flex items-center justify-between rounded-lg border border-slate-200 dark:border-slate-800 p-3">
               <div>
                 <p className="text-sm font-medium text-slate-800 dark:text-slate-200">LiveKit join mode</p>

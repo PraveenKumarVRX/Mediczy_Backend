@@ -61,7 +61,29 @@ router.post(
 );
 
 // OTP login aliases for legacy clients (/api/auth/send-otp, /api/auth/verify-otp)
-router.post('/send-otp', authLimiter, forwardToUserRouter('/login/send-otp'));
-router.post('/verify-otp', authLimiter, forwardToUserRouter('/login/verify-otp'));
+// These need direct access to user router without the /login validation that requires password
+router.post('/send-otp', authLimiter, (req, res, next) => {
+  const originalUrl = req.url;
+  req.url = '/login/send-otp';
+  userRouter.handle(req, res, (err) => {
+    req.url = originalUrl;
+    if (err) return next(err);
+    if (!res.headersSent) {
+      res.status(404).json({ success: false, message: 'OTP send endpoint not found' });
+    }
+  });
+});
+
+router.post('/verify-otp', authLimiter, (req, res, next) => {
+  const originalUrl = req.url;
+  req.url = '/login/verify-otp';
+  userRouter.handle(req, res, (err) => {
+    req.url = originalUrl;
+    if (err) return next(err);
+    if (!res.headersSent) {
+      res.status(404).json({ success: false, message: 'OTP verify endpoint not found' });
+    }
+  });
+});
 
 export default router;

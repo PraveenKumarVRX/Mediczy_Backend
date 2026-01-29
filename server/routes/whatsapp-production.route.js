@@ -54,6 +54,16 @@ const setHandoffState = async (phoneNumber, payload = {}) => {
 };
 
 /**
+ * Clear handoff state - returns conversation to bot
+ */
+const clearHandoffState = async (phoneNumber) => {
+  if (!phoneNumber) return false;
+  await cache.del(getHandoffKey(phoneNumber));
+  logger.info('🤖 Handoff cleared - conversation returned to bot', { phoneNumber });
+  return true;
+};
+
+/**
  * Detect appointment booking intent from user message
  */
 const detectBookingIntent = (message) => {
@@ -557,6 +567,106 @@ router.post('/conversations/:phoneNumber/send', async (req, res) => {
 });
 
 /**
+ * Resolve/end handoff - returns conversation to bot
+ * Agents use this when done assisting a customer
+ */
+router.post('/conversations/:phoneNumber/resolve', async (req, res) => {
+  try {
+    const { phoneNumber } = req.params;
+    const { resolution = 'resolved', notes = '' } = req.body;
+    
+    if (!phoneNumber) {
+      return res.status(400).json({
+        success: false,
+        message: 'Phone number is required'
+      });
+    }
+    
+    // Get current handoff state for logging
+    const currentState = await getHandoffState(phoneNumber);
+    
+    // Clear handoff state
+    await clearHandoffState(phoneNumber);
+    
+    // Log resolution
+    logger.info('✅ Handoff resolved - conversation returned to bot', {
+      phoneNumber,
+      resolution,
+      notes,
+      previousState: currentState
+    });
+    
+    // Notify RocketChat
+    try {
+      await rocketChatService.sendMessage(
+        'GENERAL',
+        `✅ *HANDOFF RESOLVED*\n📱 Customer: +${phoneNumber}\n📋 Resolution: ${resolution}\n${notes ? `📝 Notes: ${notes}\n` : ''}🤖 *Bot is now active* for this conversation\n⏰ Time: ${new Date().toLocaleString()}`
+      );
+    } catch (rcError) {
+      logger.error('Failed to notify RocketChat about resolution:', rcError.message);
+    }
+    
+    // Optionally send confirmation to customer
+    if (req.body.notifyCustomer) {
+      const whatsappService = (await import('../services/whatsapp-production.service.js')).default;
+      await whatsappService.sendSessionMessage({
+        to: phoneNumber,
+        body: "Thank you for chatting with our team! If you have any more questions, I'm here to help. 💙 - Dr. iSHA"
+      });
+    }
+    
+    res.json({
+      success: true,
+      message: 'Handoff resolved - conversation returned to bot',
+      data: {
+        phoneNumber,
+        resolution,
+        resolvedAt: new Date().toISOString()
+      }
+    });
+  } catch (error) {
+    logger.error('Error resolving handoff:', { error: error.message });
+    res.status(500).json({
+      success: false,
+      message: error.message
+    });
+  }
+});
+
+/**
+ * Get handoff status for a phone number
+ */
+router.get('/conversations/:phoneNumber/handoff-status', async (req, res) => {
+  try {
+    const { phoneNumber } = req.params;
+    
+    if (!phoneNumber) {
+      return res.status(400).json({
+        success: false,
+        message: 'Phone number is required'
+      });
+    }
+    
+    const handoffState = await getHandoffState(phoneNumber);
+    
+    res.json({
+      success: true,
+      data: {
+        phoneNumber,
+        isHandoffActive: !!handoffState?.active,
+        handoffState: handoffState || null
+      }
+    });
+  } catch (error) {
+    logger.error('Error getting handoff status:', { error: error.message });
+    res.status(500).json({
+      success: false,
+      message: error.message
+    });
+  }
+});
+
+/**
  * Get user context by phone number
  * Returns complete user profile, appointments, prescriptions, medications
  */
@@ -601,12 +711,24 @@ router.post('/ai-respond', async (req, res) => {
       });
     }
     
+    logger.info('[ai-respond] Processing message:', { message: message.substring(0, 50), phoneNumber });
+    
     const aiResponse = await unifiedConversationService.processMessage({
       message,
       channel: 'whatsapp',
       sessionId: `whatsapp:${phoneNumber}`,
       identifier: phoneNumber,
       userContext: { phoneNumber }
+    });
+    
+    // Debug: Log all response keys and handoff fields
+    logger.info('[ai-respond] Response received:', {
+      keys: Object.keys(aiResponse),
+      handoffRequired: aiResponse.handoffRequired,
+      handoffDepartment: aiResponse.handoffDepartment,
+      handoffReason: aiResponse.handoffReason,
+      handoffSuggested: aiResponse.handoffSuggested,
+      provider: aiResponse.provider
     });
     
     res.json({
@@ -1065,6 +1187,30 @@ Is there anything else I can help you with? 💙`
             isEmergency: aiResponse.isEmergency,
             provider: aiResponse.provider
           });
+          
+          // Auto-trigger handoff if explicitly requested by user
+          if (aiResponse.handoffRequired) {
+            const department = aiResponse.handoffDepartment || 'general';
+            const reason = aiResponse.handoffReason || 'user_requested';
+            
+            await setHandoffState(phoneNumber, {
+              reason: reason,
+              department: department,
+              source: 'auto_escalation',
+              triggerMessage: Body
+            });
+            
+            // Notify RocketChat about the escalation
+            try {
+              await rocketChatService.sendMessage(
+                'GENERAL',
+                `🚨 *HUMAN HANDOFF ACTIVATED*\n👤 Customer: ${customerName} (+${phoneNumber})\n${userContext.isKnownUser ? `🆔 Patient: ${userContext.user.name}\n` : ''}📋 Department: ${department}\n📝 Reason: ${reason}\n💬 Trigger: "${Body}"\n⏰ Time: ${new Date().toLocaleString()}\n\n⚡ *Bot responses paused* - Human agent please respond`
+              );
+              logger.info('🚨 Human handoff activated', { phoneNumber, department, reason });
+            } catch (rcError) {
+              logger.error('Failed to notify RocketChat about handoff:', rcError.message);
+            }
+          }
           
           // If emergency, also notify team
           if (aiResponse.isEmergency && global.io) {

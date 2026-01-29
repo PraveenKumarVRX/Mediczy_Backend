@@ -124,8 +124,19 @@ const DoctorVideoConsultation = () => {
   const previewVideoRef = useRef<HTMLVideoElement>(null);
   const localStreamRef = useRef<MediaStream | null>(null);
 
-  // LiveKit base URL
-  const LIVEKIT_BASE_URL = import.meta.env.VITE_LIVEKIT_URL || 'https://video.mediqzy.com';
+  const normalizeMeetUrl = (url?: string) => {
+    if (!url) return 'https://video.mediqzy.com';
+    return url
+      .replace(/^wss:\/\//, 'https://')
+      .replace(/^ws:\/\//, 'http://')
+      .replace(/\/+$/, '')
+      .replace(/\/rooms?$/, '');
+  };
+
+  // LiveKit Meet base URL (HTTPS)
+  const LIVEKIT_BASE_URL = normalizeMeetUrl(
+    import.meta.env.VITE_LIVEKIT_MEET_URL || import.meta.env.VITE_LIVEKIT_URL
+  );
 
   // Fetch video consultation stats
   const { data: stats = { todaysConsultations: 0, totalHours: 0, activePatients: 0, avgDuration: 0 }, isLoading: statsLoading, refetch: refetchStats } = useQuery({
@@ -231,14 +242,18 @@ const DoctorVideoConsultation = () => {
     if (room.startsWith('http')) {
       try {
         const parsed = new URL(room);
-        if (parsed.pathname.includes('/rooms/') || parsed.searchParams.has('access_token')) {
+        if (
+          parsed.pathname.includes('/rooms/') ||
+          parsed.pathname.includes('/room/') ||
+          parsed.searchParams.has('access_token')
+        ) {
           return parsed.toString();
         }
       } catch (error) {
         // Fall back to LiveKit URL if parsing fails.
       }
     }
-    return `${LIVEKIT_BASE_URL}/join/${room}?name=${encodeURIComponent(name)}&audio=1&video=1&notify=0`;
+    return `${LIVEKIT_BASE_URL}/rooms/${room}?name=${encodeURIComponent(name)}`;
   }, [currentDoctor, LIVEKIT_BASE_URL]);
 
   // Start video call with pre-call check
@@ -320,7 +335,7 @@ const DoctorVideoConsultation = () => {
     setShowPreCallCheck(false);
     
     const meetingUrl = generateMeetingUrl(roomId);
-    const isLiveKitMeeting = meetingUrl.includes('/rooms/');
+    const isLiveKitMeeting = meetingUrl.includes('/rooms/') || meetingUrl.includes('/room/');
     if (isLiveKitMeeting && !preferEmbeddedJoin) {
       toast({
         title: "Opening LiveKit",
@@ -408,7 +423,7 @@ const DoctorVideoConsultation = () => {
   const handleCopyLink = useCallback((room?: string) => {
     const targetRoom = room || roomId;
     const url = generateMeetingUrl(targetRoom);
-    if (url.includes('/rooms/') && url.includes('access_token=')) {
+    if ((url.includes('/rooms/') || url.includes('/room/')) && url.includes('access_token=')) {
       toast({
         title: "LiveKit Link Protected",
         description: "LiveKit uses per-user tokens. Ask the patient to join from the app.",
@@ -529,7 +544,7 @@ const DoctorVideoConsultation = () => {
               <Shield className="w-3 h-3 mr-1" />
               HIPAA Compliant
             </Badge>
-            {currentMeetingUrl.includes('/rooms/') && (
+            {(currentMeetingUrl.includes('/rooms/') || currentMeetingUrl.includes('/room/')) && (
               <div className="flex items-center gap-2 rounded-full border border-slate-700 px-3 py-1 text-slate-300">
                 <span className="text-xs">Embed</span>
                 <Switch
@@ -1064,7 +1079,7 @@ const DoctorVideoConsultation = () => {
               </div>
             </div>
 
-            {roomId && (String(roomId).includes('/rooms/') || String(roomId).includes('access_token=')) && (
+            {roomId && (String(roomId).includes('/rooms/') || String(roomId).includes('/room/') || String(roomId).includes('access_token=')) && (
               <div className="flex items-center justify-between rounded-lg border border-slate-200 dark:border-slate-800 p-3">
                 <div>
                   <p className="text-sm font-medium text-slate-800 dark:text-slate-200">LiveKit join mode</p>

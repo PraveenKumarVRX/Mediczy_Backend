@@ -302,7 +302,7 @@ export default function VideoCallNotification() {
     // If we have a direct meeting link, open it
     if (notification.meetingLink) {
       const isLiveKitLink =
-        notification.meetingLink.includes('/rooms/') &&
+        (notification.meetingLink.includes('/rooms/') || notification.meetingLink.includes('/room/')) &&
         !notification.meetingLink.includes('access_token=');
 
       if (!isLiveKitLink) {

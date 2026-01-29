@@ -67,6 +67,8 @@ const HospitalCommunicationHub = () => {
   const [activeTab, setActiveTab] = useState('dashboard');
   const [loading, setLoading] = useState(false);
   const [selectedChannel, setSelectedChannel] = useState<'email' | 'sms' | 'whatsapp' | 'voice'>('email');
+  const [selectedComm, setSelectedComm] = useState<CommunicationLog | null>(null);
+  const [showCommDialog, setShowCommDialog] = useState(false);
 
   // Stats state
   const [stats, setStats] = useState({
@@ -1000,7 +1002,14 @@ const HospitalCommunicationHub = () => {
                         {new Date(comm.timestamp).toLocaleString()}
                       </TableCell>
                       <TableCell>
-                        <Button variant="ghost" size="icon">
+                        <Button
+                          variant="ghost"
+                          size="icon"
+                          onClick={() => {
+                            setSelectedComm(comm);
+                            setShowCommDialog(true);
+                          }}
+                        >
                           <Eye className="h-4 w-4" />
                         </Button>
                       </TableCell>
@@ -1010,6 +1019,60 @@ const HospitalCommunicationHub = () => {
               </Table>
             </CardContent>
           </Card>
+
+          <Dialog open={showCommDialog} onOpenChange={setShowCommDialog}>
+            <DialogContent className="max-w-lg">
+              <DialogHeader>
+                <DialogTitle>Message Details</DialogTitle>
+                <DialogDescription>Review the full communication details.</DialogDescription>
+              </DialogHeader>
+              {selectedComm && (
+                <div className="space-y-4">
+                  <div className="flex items-center justify-between">
+                    <div className={`inline-flex items-center gap-2 px-2 py-1 rounded-lg ${
+                      selectedComm.channel === 'email' ? 'bg-blue-500/10 text-blue-600' :
+                      selectedComm.channel === 'sms' ? 'bg-emerald-500/10 text-emerald-600' :
+                      selectedComm.channel === 'whatsapp' ? 'bg-teal-500/10 text-teal-600' : 'bg-purple-500/10 text-purple-600'
+                    }`}>
+                      {getChannelIcon(selectedComm.channel)}
+                      <span className="capitalize text-sm">{selectedComm.channel}</span>
+                    </div>
+                    <div>{getStatusBadge(selectedComm.status)}</div>
+                  </div>
+
+                  <div>
+                    <p className="text-sm text-slate-500">Recipient</p>
+                    <p className="font-medium text-slate-800 dark:text-white">{selectedComm.recipientName}</p>
+                    <p className="text-xs text-slate-500">{selectedComm.recipient}</p>
+                  </div>
+
+                  {selectedComm.subject && (
+                    <div>
+                      <p className="text-sm text-slate-500">Subject</p>
+                      <p className="text-slate-800 dark:text-white">{selectedComm.subject}</p>
+                    </div>
+                  )}
+
+                  <div>
+                    <p className="text-sm text-slate-500">Message</p>
+                    <p className="text-slate-700 dark:text-slate-200 whitespace-pre-wrap">
+                      {selectedComm.message}
+                    </p>
+                  </div>
+
+                  <div>
+                    <p className="text-sm text-slate-500">Time</p>
+                    <p className="text-slate-700 dark:text-slate-200">
+                      {new Date(selectedComm.timestamp).toLocaleString()}
+                    </p>
+                  </div>
+                </div>
+              )}
+              <DialogFooter>
+                <Button variant="outline" onClick={() => setShowCommDialog(false)}>Close</Button>
+              </DialogFooter>
+            </DialogContent>
+          </Dialog>
         </TabsContent>
 
         {/* Templates Tab */}

@@ -82,13 +82,19 @@ const parseBackendId = (value: unknown) => {
 
 const extractRoomId = (meetingLink?: string) => {
   if (!meetingLink) return undefined;
+  if (meetingLink.includes("/rooms/")) {
+    return meetingLink.split("/rooms/")[1]?.split("?")[0];
+  }
+  if (meetingLink.includes("/room/")) {
+    return meetingLink.split("/room/")[1]?.split("?")[0];
+  }
   if (meetingLink.includes("/join/")) {
     return meetingLink.split("/join/")[1]?.split("?")[0];
   }
   try {
     const parsed = new URL(meetingLink);
     const parts = parsed.pathname.split("/").filter(Boolean);
-    const joinIndex = parts.indexOf("join");
+    const joinIndex = parts.findIndex((segment) => ["rooms", "room", "join"].includes(segment));
     if (joinIndex >= 0 && parts[joinIndex + 1]) {
       return parts[joinIndex + 1];
     }
@@ -614,7 +620,8 @@ const Appointments = () => {
           onAccept={async () => {
             const meetingLink = incomingCall.meetingLink;
             const isLiveKitLink =
-              meetingLink?.includes('/rooms/') && !meetingLink.includes('access_token=');
+              (meetingLink?.includes('/rooms/') || meetingLink?.includes('/room/')) &&
+              !meetingLink.includes('access_token=');
 
             if (isLiveKitLink) {
               try {

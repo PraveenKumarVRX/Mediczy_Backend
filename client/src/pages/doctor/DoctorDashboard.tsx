@@ -207,9 +207,13 @@ const DoctorDashboard = () => {
       // Redirect to video room
       const roomId = response.data.appointment.roomId || response.data.appointment.meetingId;
       if (roomId) {
-        const LIVEKIT_BASE_URL = import.meta.env.VITE_LIVEKIT_MEET_URL || 'https://video.mediqzy.com';
+        const LIVEKIT_BASE_URL = (import.meta.env.VITE_LIVEKIT_MEET_URL || import.meta.env.VITE_LIVEKIT_URL || 'https://video.mediqzy.com')
+          .replace(/^wss:\/\//, 'https://')
+          .replace(/^ws:\/\//, 'http://')
+          .replace(/\/+$/, '')
+          .replace(/\/rooms?$/, '');
         const doctorName = encodeURIComponent(`Dr.${currentDoctor?.firstName || 'Doctor'}`);
-        const videoUrl = `${LIVEKIT_BASE_URL}/join/${roomId}?name=${doctorName}&audio=1&video=1&notify=0`;
+        const videoUrl = `${LIVEKIT_BASE_URL}/rooms/${roomId}?name=${doctorName}`;
         window.open(videoUrl, '_blank', 'width=1200,height=800');
       }
     } catch (error: any) {

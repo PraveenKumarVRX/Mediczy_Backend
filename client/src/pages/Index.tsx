@@ -68,24 +68,32 @@ const Index = () => {
   
   // Redirect non-patient users to their appropriate dashboards
   useEffect(() => {
+    if (userType === 'user') return;
+
     const storedUserType = localStorage.getItem('userType');
-    if (storedUserType === 'doctor' || userType === 'doctor') {
+    const doctorToken = localStorage.getItem('doctorToken');
+    const clinicToken = localStorage.getItem('clinicToken');
+    const labToken = localStorage.getItem('labToken');
+    const pharmacyToken = localStorage.getItem('pharmacyToken');
+    const hospitalToken = localStorage.getItem('hospitalToken');
+
+    if (userType === 'doctor' || (storedUserType === 'doctor' && doctorToken)) {
       navigate('/doctor/dashboard', { replace: true });
       return;
     }
-    if (storedUserType === 'clinic') {
+    if (storedUserType === 'clinic' && clinicToken) {
       navigate('/clinic/dashboard', { replace: true });
       return;
     }
-    if (storedUserType === 'lab') {
+    if (storedUserType === 'lab' && labToken) {
       navigate('/lab/dashboard', { replace: true });
       return;
     }
-    if (storedUserType === 'pharmacy') {
+    if (storedUserType === 'pharmacy' && pharmacyToken) {
       navigate('/pharmacy/dashboard', { replace: true });
       return;
     }
-    if (storedUserType === 'hospital') {
+    if (storedUserType === 'hospital' && hospitalToken) {
       navigate('/hospital/dashboard', { replace: true });
       return;
     }

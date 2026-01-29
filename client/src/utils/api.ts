@@ -5,7 +5,28 @@ import { getToken } from "../hooks/auth"; // Import function to get stored token
 const resolveBaseURL = () => {
   const envBase = import.meta.env.VITE_API_URL as string | undefined;
   const isBrowser = typeof window !== "undefined";
-  if (!isBrowser) return envBase || "http://localhost:8000/api";
+  const ensureApiSuffix = (base: string) => {
+    const trimmed = base.replace(/\/+$/, "");
+    try {
+      const url = new URL(trimmed, isBrowser ? window.location.origin : "http://localhost");
+      const path = url.pathname.replace(/\/+$/, "");
+      if (!path || path === "/") {
+        url.pathname = "/api";
+        return url.toString().replace(/\/+$/, "");
+      }
+      if (!path.includes("/api")) {
+        url.pathname = `${path}/api`;
+        return url.toString().replace(/\/+$/, "");
+      }
+      return trimmed;
+    } catch {
+      if (!trimmed.endsWith("/api") && !trimmed.includes("/api")) {
+        return `${trimmed}/api`;
+      }
+      return trimmed;
+    }
+  };
+  if (!isBrowser) return envBase ? ensureApiSuffix(envBase) : "http://localhost:8000/api";
 
   const hostname = window.location.hostname;
   const isLocalHostName = hostname === "localhost" || hostname === "127.0.0.1";
@@ -27,7 +48,7 @@ const resolveBaseURL = () => {
   }
 
   // Prefer env base when available; otherwise use same-origin proxy.
-  return envBase || "/api";
+  return envBase ? ensureApiSuffix(envBase) : "/api";
 };
 
 // Resolve tenant id from env or localStorage

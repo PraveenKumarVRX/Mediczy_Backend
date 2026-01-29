@@ -3,6 +3,21 @@ import videoService from '../services/video.service.js';
 
 const normalizeUrl = (url) => (url ? url.replace(/\/+$/, '') : '');
 
+const resolveMeetBaseUrl = (settings = {}) => {
+  const stripMeetPath = (url) => normalizeUrl(url).replace(/\/rooms?$/, '');
+  const explicitMeetUrl = stripMeetPath(settings.meetUrl || process.env.LIVEKIT_MEET_URL);
+  if (explicitMeetUrl) return explicitMeetUrl;
+
+  const serverUrl = normalizeUrl(settings.serverUrl || process.env.LIVEKIT_URL);
+  if (serverUrl) {
+    return stripMeetPath(
+      serverUrl.replace(/^wss:\/\//, 'https://').replace(/^ws:\/\//, 'http://')
+    );
+  }
+
+  return 'https://video.mediqzy.com';
+};
+
 const getProviderSettings = () =>
   videoService?.config?.providers?.livekit?.settings || {};
 
@@ -12,10 +27,10 @@ export const getProviderLabel = () => 'LiveKit';
 
 export const buildMeetingLink = (provider, meetingId) => {
   if (!meetingId) return null;
-  // Return a placeholder - the actual video connection uses WebSocket via LiveKit SDK
+  // Meeting links should point to the LiveKit Meet UI (HTTPS).
   const settings = getProviderSettings();
-  const serverUrl = normalizeUrl(settings.serverUrl || process.env.LIVEKIT_URL || 'wss://video.mediqzy.com');
-  return `${serverUrl.replace('wss://', 'https://')}/room/${meetingId}`;
+  const meetBase = resolveMeetBaseUrl(settings);
+  return `${meetBase}/rooms/${meetingId}`;
 };
 
 export const createMeetingInfo = ({ appointmentId } = {}) => {
@@ -62,6 +77,7 @@ export const buildLiveKitJoinData = async ({ meetingId, identity, name }) => {
   const serverUrl = settings.serverUrl || process.env.LIVEKIT_URL;
   const apiKey = settings.apiKey || process.env.LIVEKIT_API_KEY;
   const apiSecret = settings.apiSecret || process.env.LIVEKIT_API_SECRET;
+  const meetBase = resolveMeetBaseUrl(settings);
 
   if (!serverUrl || !apiKey || !apiSecret) {
     throw new Error('LiveKit is not configured. Set LIVEKIT_URL, LIVEKIT_API_KEY, and LIVEKIT_API_SECRET');
@@ -85,12 +101,13 @@ export const buildLiveKitJoinData = async ({ meetingId, identity, name }) => {
   // serverUrl = WebSocket URL (wss://video.mediqzy.com)
   // token = JWT for authentication
   // roomName = room to join
+  const meetUrl = `${meetBase}/rooms/${meetingId}`;
   return {
     serverUrl,
     token: jwt,
     roomName: meetingId,
     // These URLs are for reference - actual connection is via WebSocket
-    meetUrl: `https://video.mediqzy.com/room/${meetingId}`,
-    joinUrl: null  // Frontend uses serverUrl + token directly
+    meetUrl,
+    joinUrl: `${meetUrl}?access_token=${encodeURIComponent(jwt)}`
   };
 };

@@ -2,6 +2,8 @@ import medicalAIService from './medicalAI.service.js';
 import intentClassifier from '../utils/intentClassifier.js';
 import translationService from './translation.service.js';
 
+console.log('[UnifiedConversation] Module loaded at', new Date().toISOString());
+
 /**
  * Unified Conversation Service
  * One Dr. iSHA brain for all channels (web, WhatsApp, admin chat, etc.)
@@ -27,6 +29,8 @@ class UnifiedConversationService {
     conversationId,
     identifier
   }) {
+    console.log('[UnifiedConversation] processMessage called with:', { message: (message || '').substring(0, 30), channel });
+    
     if (!message || typeof message !== 'string') {
       return {
         success: false,
@@ -214,10 +218,33 @@ class UnifiedConversationService {
       // ALL queries now route to SIB AI for intelligent, context-aware responses
       // SIB ChatBotlet will handle appointment status queries with proper context
 
+      // Detect explicit human handoff request
+      const explicitHandoffRequest = /\b(human|agent|real person|representative|talk to someone|speak to someone|customer service|support team|live agent|live chat|connect me|transfer me|escalate)\b/i.test(normalizedMessage);
+      
+      // Detect department based on query keywords
+      const detectDepartment = (msg) => {
+        const lower = msg.toLowerCase();
+        if (/\b(bill|payment|invoice|charge|refund|receipt|cost|price|fee|insurance claim)\b/i.test(lower)) return 'billing';
+        if (/\b(medicine|pharmacy|drug|prescription refill|order medicine|buy medicine)\b/i.test(lower)) return 'pharmacy';
+        if (/\b(appointment|book|schedule|reschedule|cancel appointment|slot|availability)\b/i.test(lower)) return 'appointments';
+        if (/\b(emergency|urgent|critical|severe|immediately|ambulance|chest pain|breathing)\b/i.test(lower)) return 'emergency';
+        if (/\b(technical|bug|error|not working|app issue|login problem|password|account)\b/i.test(lower)) return 'technical';
+        return 'general';
+      };
+      const detectedDepartment = detectDepartment(normalizedMessage);
+
       const needsHumanHandoff =
+        explicitHandoffRequest ||
         (classification?.primary?.confidence || 0) < 30 ||
         normalizedMessage.length > 300 ||
-        /second opinion|legal|insurance|multiple conditions|complicated|not sure|confused/i.test(normalizedMessage);
+        /second opinion|legal|insurance claim|multiple conditions|complicated|not sure|confused/i.test(normalizedMessage);
+
+      console.log('[UnifiedConversation] Handoff check:', { 
+        message: normalizedMessage.substring(0, 50), 
+        explicitHandoffRequest,
+        confidence: classification?.primary?.confidence,
+        needsHumanHandoff
+      });
 
       const patientData = {
         user: userContext?.user || null,
@@ -267,7 +294,29 @@ class UnifiedConversationService {
       }
 
       if (needsHumanHandoff) {
-        let handoffMsg = "\n\nIf you'd like, I can connect you to a human agent.";
+        // Determine handoff reason for logging/routing
+        let handoffReason = 'low_confidence';
+        if (explicitHandoffRequest) handoffReason = 'user_requested';
+        else if (normalizedMessage.length > 300) handoffReason = 'complex_query';
+        else if (/second opinion|legal|insurance claim|multiple conditions|complicated|not sure|confused/i.test(normalizedMessage)) handoffReason = 'sensitive_topic';
+        
+        // IMPORTANT: Setting handoff fields on result object
+        result.handoffSuggested = true;
+        result.handoffRequired = explicitHandoffRequest;
+        result.handoffDepartment = detectedDepartment;
+        result.handoffReason = handoffReason;
+        
+        console.log('[UnifiedConversation] 🤝 Human handoff needed:', { reason: handoffReason, department: detectedDepartment, explicit: explicitHandoffRequest, handoffRequired: result.handoffRequired });
+        
+        let handoffMsg = explicitHandoffRequest 
+          ? "\n\n✅ I'm connecting you to a human agent now. Someone from our team will assist you shortly."
+          : "\n\nIf you'd like, I can connect you to a human agent. Just say 'talk to human' or 'agent please'.";
+        
+        if (detectedDepartment !== 'general') {
+          const deptNames = { billing: 'billing team', pharmacy: 'pharmacy team', appointments: 'scheduling team', emergency: 'emergency support', technical: 'technical support' };
+          handoffMsg = handoffMsg.replace('human agent', deptNames[detectedDepartment] || 'human agent');
+        }
+        
         if (detectedLanguage !== 'en') {
           try {
             const translated = await translationService.processMultilingualOutput(handoffMsg, detectedLanguage);
@@ -275,7 +324,6 @@ class UnifiedConversationService {
           } catch (e) {}
         }
         result.response = result.response + handoffMsg;
-        result.handoffSuggested = true;
       }
     } catch (error) {
       const classification = intentClassifier.hybridEnabled
@@ -337,7 +385,12 @@ class UnifiedConversationService {
       sessionId: resolvedSessionId,
       language: detectedLanguage,
       channel,
-      translation: translationInfo
+      translation: translationInfo,
+      // Explicitly include handoff fields (they may be on result from the try block)
+      handoffSuggested: result?.handoffSuggested || false,
+      handoffRequired: result?.handoffRequired || false,
+      handoffDepartment: result?.handoffDepartment || null,
+      handoffReason: result?.handoffReason || null
     };
   }
 

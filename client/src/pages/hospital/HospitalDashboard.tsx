@@ -11,7 +11,8 @@ import {
   LogOut, Plus, Search, Filter, BarChart3, Download, Bed,
   Stethoscope, ClipboardList, Shield, FileHeart, FolderOpen,
   AlertCircle, CheckCircle, ArrowRight, BriefcaseMedical,
-  HeartPulse, Receipt, CreditCard, UserCog, Building, FlaskConical, Scan
+  HeartPulse, Receipt, CreditCard, UserCog, Building, FlaskConical, Scan,
+  MessageSquare
 } from 'lucide-react';
 import { Input } from '@/components/ui/input';
 import HospitalLayout from '@/components/hospital/HospitalLayout';

@@ -302,7 +302,11 @@ const DoctorTriage = () => {
   const recognitionRef = useRef<any>(null);
   
   // LiveKit base URL
-  const LIVEKIT_BASE_URL = import.meta.env.VITE_LIVEKIT_URL || 'https://video.mediqzy.com';
+  const LIVEKIT_BASE_URL = (import.meta.env.VITE_LIVEKIT_MEET_URL || import.meta.env.VITE_LIVEKIT_URL || 'https://video.mediqzy.com')
+    .replace(/^wss:\/\//, 'https://')
+    .replace(/^ws:\/\//, 'http://')
+    .replace(/\/+$/, '')
+    .replace(/\/rooms?$/, '');
 
   // Fetch triage cases
   const { data: triageCases, isLoading, refetch } = useQuery({
@@ -485,7 +489,7 @@ const DoctorTriage = () => {
       // Join video room
       const roomId = response.data.appointment.roomId;
       const doctorName = encodeURIComponent(`Dr.${currentDoctor?.firstName || 'Doctor'}`);
-      const videoUrl = `${LIVEKIT_BASE_URL}/join/${roomId}?name=${doctorName}&audio=1&video=1&notify=0`;
+      const videoUrl = `${LIVEKIT_BASE_URL}/rooms/${roomId}?name=${doctorName}`;
       
       setCurrentVideoUrl(videoUrl);
       setIsInVideoCall(true);
@@ -550,7 +554,7 @@ const DoctorTriage = () => {
       }
 
       const doctorName = encodeURIComponent(`Dr.${currentDoctor?.firstName || 'Doctor'}`);
-      const videoUrl = `${LIVEKIT_BASE_URL}/join/${roomId}?name=${doctorName}&audio=1&video=1&notify=0`;
+      const videoUrl = `${LIVEKIT_BASE_URL}/rooms/${roomId}?name=${doctorName}`;
 
       setCurrentVideoUrl(videoUrl);
       setSelectedCase(caseItem);

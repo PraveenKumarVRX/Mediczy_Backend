@@ -20,7 +20,11 @@ export const useLiveKit = ({ onUserJoined, onUserLeft }: UseLiveKitProps = {}) =
   const [joinUrl, setJoinUrl] = useState<string | null>(null);
   const windowRef = useRef<Window | null>(null);
 
-  const LIVEKIT_URL = import.meta.env.VITE_LIVEKIT_URL || 'https://video.mediqzy.com';
+  const LIVEKIT_URL = (import.meta.env.VITE_LIVEKIT_MEET_URL || import.meta.env.VITE_LIVEKIT_URL || 'https://video.mediqzy.com')
+    .replace(/^wss:\/\//, 'https://')
+    .replace(/^ws:\/\//, 'http://')
+    .replace(/\/+$/, '')
+    .replace(/\/rooms?$/, '');
 
   /**
    * Get a LiveKit join URL for the given room

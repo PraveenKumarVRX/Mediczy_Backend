@@ -227,7 +227,13 @@ const MyBookings = () => {
   const handleJoinVideoCall = (booking: Booking) => {
     // Navigate to embedded video consultation page with room parameter
     const roomId = booking.meetingLink
-      ? (booking.meetingLink.includes('/join/') ? booking.meetingLink.split('/join/')[1]?.split('?')[0] : booking.meetingLink)
+      ? (booking.meetingLink.includes('/rooms/')
+        ? booking.meetingLink.split('/rooms/')[1]?.split('?')[0]
+        : booking.meetingLink.includes('/room/')
+          ? booking.meetingLink.split('/room/')[1]?.split('?')[0]
+          : booking.meetingLink.includes('/join/')
+            ? booking.meetingLink.split('/join/')[1]?.split('?')[0]
+            : booking.meetingLink)
       : `apt-${booking.id}`;
 
     navigate(`/video-consultation?room=${encodeURIComponent(roomId)}`);
@@ -287,9 +293,13 @@ const MyBookings = () => {
   const handleJoinCall = (booking: Booking) => {
     // Generate room ID from appointment or meeting link
     const roomId = booking.meetingLink
-      ? (booking.meetingLink.includes('/join/')
-        ? booking.meetingLink.split('/join/')[1]?.split('?')[0]
-        : booking.meetingLink)
+      ? (booking.meetingLink.includes('/rooms/')
+        ? booking.meetingLink.split('/rooms/')[1]?.split('?')[0]
+        : booking.meetingLink.includes('/room/')
+          ? booking.meetingLink.split('/room/')[1]?.split('?')[0]
+          : booking.meetingLink.includes('/join/')
+            ? booking.meetingLink.split('/join/')[1]?.split('?')[0]
+            : booking.meetingLink)
       : `apt-${booking.id}`;
 
     // Navigate to video consultation page
