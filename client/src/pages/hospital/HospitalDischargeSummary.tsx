@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, useRef, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import api from '@/utils/api';
 import { loadHospitalStore, saveHospitalStore } from '@/utils/hospitalStorage';
@@ -20,7 +20,7 @@ import {
   Calendar, User, Bed, Stethoscope, Pill, Activity, Clock,
   CheckCircle, AlertCircle, FileCheck, ClipboardList, Heart,
   Building2, Phone, Mail, ChevronRight, Filter, MoreVertical,
-  History, Trash2, Copy, Share2, ArrowRight
+  History, Trash2, Copy, Share2, ArrowRight, Mic, MicOff, Volume2
 } from 'lucide-react';
 
 interface DischargeSummary {
@@ -58,6 +58,91 @@ const HospitalDischargeSummary = () => {
     description: '',
     content: ''
   });
+
+  // Speech recognition state
+  const [isListening, setIsListening] = useState(false);
+  const [activeField, setActiveField] = useState<string | null>(null);
+  const recognitionRef = useRef<any>(null);
+
+  // Initialize speech recognition
+  useEffect(() => {
+    if ('webkitSpeechRecognition' in window || 'SpeechRecognition' in window) {
+      const SpeechRecognition = (window as any).webkitSpeechRecognition || (window as any).SpeechRecognition;
+      recognitionRef.current = new SpeechRecognition();
+      recognitionRef.current.continuous = true;
+      recognitionRef.current.interimResults = true;
+      recognitionRef.current.lang = 'en-IN'; // Indian English for medical terminology
+
+      recognitionRef.current.onresult = (event: any) => {
+        const transcript = Array.from(event.results)
+          .map((result: any) => result[0])
+          .map((result) => result.transcript)
+          .join('');
+
+        if (activeField) {
+          setFormData((prev) => ({
+            ...prev,
+            [activeField]: prev[activeField as keyof typeof prev] + ' ' + transcript
+          }));
+        }
+      };
+
+      recognitionRef.current.onerror = (event: any) => {
+        console.error('Speech recognition error:', event.error);
+        toast({
+          title: 'Speech Recognition Error',
+          description: `Error: ${event.error}. Please try again.`,
+          variant: 'destructive'
+        });
+        setIsListening(false);
+        setActiveField(null);
+      };
+
+      recognitionRef.current.onend = () => {
+        if (isListening) {
+          recognitionRef.current.start(); // Restart if still in listening mode
+        }
+      };
+    }
+
+    return () => {
+      if (recognitionRef.current) {
+        recognitionRef.current.stop();
+      }
+    };
+  }, [activeField, isListening, toast]);
+
+  // Toggle speech recognition for a specific field
+  const toggleScribe = (fieldName: string) => {
+    if (!recognitionRef.current) {
+      toast({
+        title: 'Speech Recognition Not Supported',
+        description: 'Your browser does not support speech recognition. Please use Chrome or Edge.',
+        variant: 'destructive'
+      });
+      return;
+    }
+
+    if (isListening && activeField === fieldName) {
+      // Stop listening
+      recognitionRef.current.stop();
+      setIsListening(false);
+      setActiveField(null);
+      toast({
+        title: 'Scribe Stopped',
+        description: 'Voice dictation has been stopped.'
+      });
+    } else {
+      // Start listening
+      setActiveField(fieldName);
+      setIsListening(true);
+      recognitionRef.current.start();
+      toast({
+        title: 'Scribe Active',
+        description: `Voice dictation started for ${fieldName.replace(/([A-Z])/g, ' $1').trim()}. Speak clearly into your microphone.`
+      });
+    }
+  };
 
   // Form state for new discharge summary
   const [formData, setFormData] = useState({
@@ -595,7 +680,28 @@ const HospitalDischargeSummary = () => {
                     </h3>
                     <div className="space-y-4">
                       <div className="space-y-2">
-                        <Label>Final Diagnosis</Label>
+                        <div className="flex items-center justify-between">
+                          <Label>Final Diagnosis</Label>
+                          <Button
+                            type="button"
+                            variant={isListening && activeField === 'diagnosis' ? 'default' : 'outline'}
+                            size="sm"
+                            onClick={() => toggleScribe('diagnosis')}
+                            className={isListening && activeField === 'diagnosis' ? 'bg-red-500 hover:bg-red-600 animate-pulse' : ''}
+                          >
+                            {isListening && activeField === 'diagnosis' ? (
+                              <>
+                                <MicOff className="h-4 w-4 mr-1" />
+                                Stop Scribe
+                              </>
+                            ) : (
+                              <>
+                                <Mic className="h-4 w-4 mr-1" />
+                                Start Scribe
+                              </>
+                            )}
+                          </Button>
+                        </div>
                         <Textarea 
                           placeholder="Enter final diagnosis..."
                           value={formData.diagnosis}
@@ -604,7 +710,28 @@ const HospitalDischargeSummary = () => {
                         />
                       </div>
                       <div className="space-y-2">
-                        <Label>Chief Complaints</Label>
+                        <div className="flex items-center justify-between">
+                          <Label>Chief Complaints</Label>
+                          <Button
+                            type="button"
+                            variant={isListening && activeField === 'chiefComplaints' ? 'default' : 'outline'}
+                            size="sm"
+                            onClick={() => toggleScribe('chiefComplaints')}
+                            className={isListening && activeField === 'chiefComplaints' ? 'bg-red-500 hover:bg-red-600 animate-pulse' : ''}
+                          >
+                            {isListening && activeField === 'chiefComplaints' ? (
+                              <>
+                                <MicOff className="h-4 w-4 mr-1" />
+                                Stop Scribe
+                              </>
+                            ) : (
+                              <>
+                                <Mic className="h-4 w-4 mr-1" />
+                                Start Scribe
+                              </>
+                            )}
+                          </Button>
+                        </div>
                         <Textarea 
                           placeholder="Patient's chief complaints at admission..."
                           value={formData.chiefComplaints}
@@ -613,7 +740,28 @@ const HospitalDischargeSummary = () => {
                         />
                       </div>
                       <div className="space-y-2">
-                        <Label>History of Present Illness</Label>
+                        <div className="flex items-center justify-between">
+                          <Label>History of Present Illness</Label>
+                          <Button
+                            type="button"
+                            variant={isListening && activeField === 'historyOfPresentIllness' ? 'default' : 'outline'}
+                            size="sm"
+                            onClick={() => toggleScribe('historyOfPresentIllness')}
+                            className={isListening && activeField === 'historyOfPresentIllness' ? 'bg-red-500 hover:bg-red-600 animate-pulse' : ''}
+                          >
+                            {isListening && activeField === 'historyOfPresentIllness' ? (
+                              <>
+                                <MicOff className="h-4 w-4 mr-1" />
+                                Stop Scribe
+                              </>
+                            ) : (
+                              <>
+                                <Mic className="h-4 w-4 mr-1" />
+                                Start Scribe
+                              </>
+                            )}
+                          </Button>
+                        </div>
                         <Textarea 
                           placeholder="Detailed history of present illness..."
                           value={formData.historyOfPresentIllness}
@@ -622,7 +770,28 @@ const HospitalDischargeSummary = () => {
                         />
                       </div>
                       <div className="space-y-2">
-                        <Label>Past Medical History</Label>
+                        <div className="flex items-center justify-between">
+                          <Label>Past Medical History</Label>
+                          <Button
+                            type="button"
+                            variant={isListening && activeField === 'pastHistory' ? 'default' : 'outline'}
+                            size="sm"
+                            onClick={() => toggleScribe('pastHistory')}
+                            className={isListening && activeField === 'pastHistory' ? 'bg-red-500 hover:bg-red-600 animate-pulse' : ''}
+                          >
+                            {isListening && activeField === 'pastHistory' ? (
+                              <>
+                                <MicOff className="h-4 w-4 mr-1" />
+                                Stop Scribe
+                              </>
+                            ) : (
+                              <>
+                                <Mic className="h-4 w-4 mr-1" />
+                                Start Scribe
+                              </>
+                            )}
+                          </Button>
+                        </div>
                         <Textarea 
                           placeholder="Previous illnesses, surgeries, allergies..."
                           value={formData.pastHistory}
@@ -642,7 +811,22 @@ const HospitalDischargeSummary = () => {
                     </h3>
                     <div className="space-y-4">
                       <div className="space-y-2">
-                        <Label>Physical Examination Findings</Label>
+                        <div className="flex items-center justify-between">
+                          <Label>Physical Examination Findings</Label>
+                          <Button
+                            type="button"
+                            variant={isListening && activeField === 'physicalExamination' ? 'default' : 'outline'}
+                            size="sm"
+                            onClick={() => toggleScribe('physicalExamination')}
+                            className={isListening && activeField === 'physicalExamination' ? 'bg-red-500 hover:bg-red-600 animate-pulse' : ''}
+                          >
+                            {isListening && activeField === 'physicalExamination' ? (
+                              <><MicOff className="h-4 w-4 mr-1" />Stop Scribe</>
+                            ) : (
+                              <><Mic className="h-4 w-4 mr-1" />Start Scribe</>
+                            )}
+                          </Button>
+                        </div>
                         <Textarea 
                           placeholder="General examination, vital signs, systemic examination..."
                           value={formData.physicalExamination}
@@ -651,7 +835,22 @@ const HospitalDischargeSummary = () => {
                         />
                       </div>
                       <div className="space-y-2">
-                        <Label>Investigations Done</Label>
+                        <div className="flex items-center justify-between">
+                          <Label>Investigations Done</Label>
+                          <Button
+                            type="button"
+                            variant={isListening && activeField === 'investigations' ? 'default' : 'outline'}
+                            size="sm"
+                            onClick={() => toggleScribe('investigations')}
+                            className={isListening && activeField === 'investigations' ? 'bg-red-500 hover:bg-red-600 animate-pulse' : ''}
+                          >
+                            {isListening && activeField === 'investigations' ? (
+                              <><MicOff className="h-4 w-4 mr-1" />Stop Scribe</>
+                            ) : (
+                              <><Mic className="h-4 w-4 mr-1" />Start Scribe</>
+                            )}
+                          </Button>
+                        </div>
                         <Textarea 
                           placeholder="Lab tests, imaging, other investigations with key findings..."
                           value={formData.investigations}
@@ -671,7 +870,22 @@ const HospitalDischargeSummary = () => {
                     </h3>
                     <div className="space-y-4">
                       <div className="space-y-2">
-                        <Label>Treatment Given</Label>
+                        <div className="flex items-center justify-between">
+                          <Label>Treatment Given</Label>
+                          <Button
+                            type="button"
+                            variant={isListening && activeField === 'treatmentGiven' ? 'default' : 'outline'}
+                            size="sm"
+                            onClick={() => toggleScribe('treatmentGiven')}
+                            className={isListening && activeField === 'treatmentGiven' ? 'bg-red-500 hover:bg-red-600 animate-pulse' : ''}
+                          >
+                            {isListening && activeField === 'treatmentGiven' ? (
+                              <><MicOff className="h-4 w-4 mr-1" />Stop Scribe</>
+                            ) : (
+                              <><Mic className="h-4 w-4 mr-1" />Start Scribe</>
+                            )}
+                          </Button>
+                        </div>
                         <Textarea 
                           placeholder="Medications, IV fluids, oxygen therapy, etc..."
                           value={formData.treatmentGiven}
@@ -680,7 +894,22 @@ const HospitalDischargeSummary = () => {
                         />
                       </div>
                       <div className="space-y-2">
-                        <Label>Procedures Performed</Label>
+                        <div className="flex items-center justify-between">
+                          <Label>Procedures Performed</Label>
+                          <Button
+                            type="button"
+                            variant={isListening && activeField === 'proceduresPerformed' ? 'default' : 'outline'}
+                            size="sm"
+                            onClick={() => toggleScribe('proceduresPerformed')}
+                            className={isListening && activeField === 'proceduresPerformed' ? 'bg-red-500 hover:bg-red-600 animate-pulse' : ''}
+                          >
+                            {isListening && activeField === 'proceduresPerformed' ? (
+                              <><MicOff className="h-4 w-4 mr-1" />Stop Scribe</>
+                            ) : (
+                              <><Mic className="h-4 w-4 mr-1" />Start Scribe</>
+                            )}
+                          </Button>
+                        </div>
                         <Textarea 
                           placeholder="Surgeries, procedures, interventions..."
                           value={formData.proceduresPerformed}
@@ -689,7 +918,22 @@ const HospitalDischargeSummary = () => {
                         />
                       </div>
                       <div className="space-y-2">
-                        <Label>Course in Hospital</Label>
+                        <div className="flex items-center justify-between">
+                          <Label>Course in Hospital</Label>
+                          <Button
+                            type="button"
+                            variant={isListening && activeField === 'courseInHospital' ? 'default' : 'outline'}
+                            size="sm"
+                            onClick={() => toggleScribe('courseInHospital')}
+                            className={isListening && activeField === 'courseInHospital' ? 'bg-red-500 hover:bg-red-600 animate-pulse' : ''}
+                          >
+                            {isListening && activeField === 'courseInHospital' ? (
+                              <><MicOff className="h-4 w-4 mr-1" />Stop Scribe</>
+                            ) : (
+                              <><Mic className="h-4 w-4 mr-1" />Start Scribe</>
+                            )}
+                          </Button>
+                        </div>
                         <Textarea 
                           placeholder="Day by day progress, response to treatment..."
                           value={formData.courseInHospital}
@@ -723,7 +967,22 @@ const HospitalDischargeSummary = () => {
                         </Select>
                       </div>
                       <div className="space-y-2">
-                        <Label>Medications on Discharge</Label>
+                        <div className="flex items-center justify-between">
+                          <Label>Medications on Discharge</Label>
+                          <Button
+                            type="button"
+                            variant={isListening && activeField === 'medicationsOnDischarge' ? 'default' : 'outline'}
+                            size="sm"
+                            onClick={() => toggleScribe('medicationsOnDischarge')}
+                            className={isListening && activeField === 'medicationsOnDischarge' ? 'bg-red-500 hover:bg-red-600 animate-pulse' : ''}
+                          >
+                            {isListening && activeField === 'medicationsOnDischarge' ? (
+                              <><MicOff className="h-4 w-4 mr-1" />Stop Scribe</>
+                            ) : (
+                              <><Mic className="h-4 w-4 mr-1" />Start Scribe</>
+                            )}
+                          </Button>
+                        </div>
                         <Textarea 
                           placeholder="List all medications with dosage and duration..."
                           value={formData.medicationsOnDischarge}
@@ -733,7 +992,22 @@ const HospitalDischargeSummary = () => {
                       </div>
                       <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                         <div className="space-y-2">
-                          <Label>Diet Advice</Label>
+                          <div className="flex items-center justify-between">
+                            <Label>Diet Advice</Label>
+                            <Button
+                              type="button"
+                              variant={isListening && activeField === 'dietAdvice' ? 'default' : 'outline'}
+                              size="sm"
+                              onClick={() => toggleScribe('dietAdvice')}
+                              className={isListening && activeField === 'dietAdvice' ? 'bg-red-500 hover:bg-red-600 animate-pulse' : ''}
+                            >
+                              {isListening && activeField === 'dietAdvice' ? (
+                                <><MicOff className="h-4 w-4 mr-1" />Stop</>
+                              ) : (
+                                <><Mic className="h-4 w-4 mr-1" />Scribe</>
+                              )}
+                            </Button>
+                          </div>
                           <Textarea 
                             placeholder="Dietary restrictions, recommendations..."
                             value={formData.dietAdvice}
@@ -741,7 +1015,22 @@ const HospitalDischargeSummary = () => {
                           />
                         </div>
                         <div className="space-y-2">
-                          <Label>Activity Restrictions</Label>
+                          <div className="flex items-center justify-between">
+                            <Label>Activity Restrictions</Label>
+                            <Button
+                              type="button"
+                              variant={isListening && activeField === 'activityRestrictions' ? 'default' : 'outline'}
+                              size="sm"
+                              onClick={() => toggleScribe('activityRestrictions')}
+                              className={isListening && activeField === 'activityRestrictions' ? 'bg-red-500 hover:bg-red-600 animate-pulse' : ''}
+                            >
+                              {isListening && activeField === 'activityRestrictions' ? (
+                                <><MicOff className="h-4 w-4 mr-1" />Stop</>
+                              ) : (
+                                <><Mic className="h-4 w-4 mr-1" />Scribe</>
+                              )}
+                            </Button>
+                          </div>
                           <Textarea 
                             placeholder="Physical activity limitations..."
                             value={formData.activityRestrictions}
@@ -750,7 +1039,22 @@ const HospitalDischargeSummary = () => {
                         </div>
                       </div>
                       <div className="space-y-2">
-                        <Label>Warning Signs to Watch</Label>
+                        <div className="flex items-center justify-between">
+                          <Label>Warning Signs to Watch</Label>
+                          <Button
+                            type="button"
+                            variant={isListening && activeField === 'warningSignsToWatch' ? 'default' : 'outline'}
+                            size="sm"
+                            onClick={() => toggleScribe('warningSignsToWatch')}
+                            className={isListening && activeField === 'warningSignsToWatch' ? 'bg-red-500 hover:bg-red-600 animate-pulse' : ''}
+                          >
+                            {isListening && activeField === 'warningSignsToWatch' ? (
+                              <><MicOff className="h-4 w-4 mr-1" />Stop</>
+                            ) : (
+                              <><Mic className="h-4 w-4 mr-1" />Scribe</>
+                            )}
+                          </Button>
+                        </div>
                         <Textarea 
                           placeholder="Symptoms that require immediate medical attention..."
                           value={formData.warningSignsToWatch}
@@ -759,6 +1063,22 @@ const HospitalDischargeSummary = () => {
                       </div>
                       <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                         <div className="space-y-2">
+                          <div className="flex items-center justify-between">
+                            <Label>Follow-up Advice</Label>
+                            <Button
+                              type="button"
+                              variant={isListening && activeField === 'followUpAdvice' ? 'default' : 'outline'}
+                              size="sm"
+                              onClick={() => toggleScribe('followUpAdvice')}
+                              className={isListening && activeField === 'followUpAdvice' ? 'bg-red-500 hover:bg-red-600 animate-pulse' : ''}
+                            >
+                              {isListening && activeField === 'followUpAdvice' ? (
+                                <><MicOff className="h-4 w-4 mr-1" />Stop</>
+                              ) : (
+                                <><Mic className="h-4 w-4 mr-1" />Scribe</>
+                              )}
+                            </Button>
+                          </div>
                           <Label>Follow-up Advice</Label>
                           <Textarea 
                             placeholder="Follow-up instructions..."
