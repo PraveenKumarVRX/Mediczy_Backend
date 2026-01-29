@@ -16,13 +16,15 @@ const LIVEKIT_API_SECRET = process.env.LIVEKIT_API_SECRET || 'J1wqey7DBFq3UUmfhm
 // Test credentials
 const TEST_CREDENTIALS = {
   doctor: {
-    email: 'srinath@mediczy.com',
-    password: 'Srinath@123',
+    email: process.env.TEST_DOCTOR_EMAIL || 'srinath@mediczy.com',
+    password: process.env.TEST_DOCTOR_PASSWORD || 'Srinath@123',
     role: 'doctor'
   },
   user: {
-    phone: '7373007737',
-    otp: '111111',
+    email: process.env.TEST_USER_EMAIL || '',
+    password: process.env.TEST_USER_PASSWORD || '',
+    phone: process.env.TEST_USER_PHONE || '7373007737',
+    otp: process.env.TEST_USER_OTP || '111111',
     role: 'user'
   }
 };
@@ -128,7 +130,7 @@ async function loginDoctor() {
   logTest('Doctor Authentication');
   
   try {
-    const response = await axios.post(`${BASE_URL}/doctor/login`, {
+    const response = await axios.post(`${BASE_URL}/doctors/login`, {
       email: TEST_CREDENTIALS.doctor.email,
       password: TEST_CREDENTIALS.doctor.password
     });
@@ -149,40 +151,73 @@ async function loginDoctor() {
   }
 }
 
-// Test 4: User Login (OTP-based)
+// Test 4: User Login (Password or OTP)
 async function loginUser() {
-  logTest('User Authentication (OTP)');
-  
+  logTest('User Authentication');
+
+  const hasPasswordLogin = TEST_CREDENTIALS.user.email && TEST_CREDENTIALS.user.password;
+  const identifier = TEST_CREDENTIALS.user.email || TEST_CREDENTIALS.user.phone;
+
+  if (hasPasswordLogin) {
+    try {
+      logInfo('Attempting password login...');
+      const response = await axios.post(`${BASE_URL}/auth/login`, {
+        email: TEST_CREDENTIALS.user.email,
+        password: TEST_CREDENTIALS.user.password
+      });
+
+      if (response.data.token) {
+        authTokens.user = response.data.token;
+        logSuccess('User login successful');
+        logInfo(`User: ${response.data.user?.email || TEST_CREDENTIALS.user.email}`);
+        return { success: true, token: response.data.token };
+      }
+    } catch (error) {
+      logWarning(`Password login failed: ${error.response?.data?.message || error.message}`);
+    }
+  }
+
+  if (!identifier) {
+    logWarning('Skipping - user credentials not provided');
+    return { success: false, skipped: true };
+  }
+
   try {
     // Step 1: Request OTP
     logInfo('Requesting OTP...');
-    const otpResponse = await axios.post(`${BASE_URL}/user/request-otp`, {
-      phone: TEST_CREDENTIALS.user.phone
+    const otpResponse = await axios.post(`${BASE_URL}/auth/send-otp`, {
+      identifier
     });
-    
+
     if (!otpResponse.data.success) {
       logError('Failed to request OTP');
       return { success: false };
     }
-    
+
     logSuccess('OTP requested successfully');
-    
+
     // Step 2: Verify OTP
     logInfo('Verifying OTP...');
-    const loginResponse = await axios.post(`${BASE_URL}/user/verify-otp`, {
-      phone: TEST_CREDENTIALS.user.phone,
-      otp: TEST_CREDENTIALS.user.otp
+    const otpCode = otpResponse.data?.data?.otp || TEST_CREDENTIALS.user.otp;
+    if (!otpCode) {
+      logError('No OTP available for verification');
+      return { success: false };
+    }
+
+    const loginResponse = await axios.post(`${BASE_URL}/auth/verify-otp`, {
+      identifier,
+      code: otpCode
     });
-    
+
     if (loginResponse.data.success && loginResponse.data.token) {
       authTokens.user = loginResponse.data.token;
       logSuccess('User login successful');
-      logInfo(`User: ${loginResponse.data.user.name || loginResponse.data.user.phone}`);
+      logInfo(`User: ${loginResponse.data.user?.email || identifier}`);
       return { success: true, token: loginResponse.data.token };
-    } else {
-      logError('User login failed - no token received');
-      return { success: false };
     }
+
+    logError('User login failed - no token received');
+    return { success: false };
   } catch (error) {
     logError(`User login failed: ${error.response?.data?.message || error.message}`);
     return { success: false, error: error.message };
@@ -211,11 +246,12 @@ async function testDoctorLiveKitToken() {
       }
     );
     
-    if (response.data.success && response.data.token) {
+    const livekitToken = response.data?.video?.livekit?.token;
+    if (response.data.success && livekitToken) {
       logSuccess('LiveKit token generated for doctor');
-      logInfo(`Room: ${response.data.roomName}`);
-      logInfo(`Server URL: ${response.data.serverUrl}`);
-      logInfo(`Token length: ${response.data.token.length} characters`);
+      logInfo(`Room: ${response.data.video.meetingId}`);
+      logInfo(`Server URL: ${response.data.video.livekit.serverUrl}`);
+      logInfo(`Token length: ${livekitToken.length} characters`);
       return { success: true, data: response.data };
     } else {
       logError('Failed to generate doctor token');
@@ -249,11 +285,12 @@ async function testUserLiveKitToken() {
       }
     );
     
-    if (response.data.success && response.data.token) {
+    const livekitToken = response.data?.video?.livekit?.token;
+    if (response.data.success && livekitToken) {
       logSuccess('LiveKit token generated for user');
-      logInfo(`Room: ${response.data.roomName}`);
-      logInfo(`Server URL: ${response.data.serverUrl}`);
-      logInfo(`Token length: ${response.data.token.length} characters`);
+      logInfo(`Room: ${response.data.video.meetingId}`);
+      logInfo(`Server URL: ${response.data.video.livekit.serverUrl}`);
+      logInfo(`Token length: ${livekitToken.length} characters`);
       return { success: true, data: response.data };
     } else {
       logError('Failed to generate user token');

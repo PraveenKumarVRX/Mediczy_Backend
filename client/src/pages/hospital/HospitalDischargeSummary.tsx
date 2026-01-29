@@ -63,6 +63,11 @@ const HospitalDischargeSummary = () => {
   const [isListening, setIsListening] = useState(false);
   const [activeField, setActiveField] = useState<string | null>(null);
   const recognitionRef = useRef<any>(null);
+  
+  // Specialty template state
+  const [selectedSpecialty, setSelectedSpecialty] = useState('general_medicine');
+  const [availableSpecialties, setAvailableSpecialties] = useState<string[]>([]);
+  const [specialtyTemplate, setSpecialtyTemplate] = useState<any>(null);
 
   // Initialize speech recognition
   useEffect(() => {
@@ -111,6 +116,42 @@ const HospitalDischargeSummary = () => {
       }
     };
   }, [activeField, isListening, toast]);
+
+  // Load available specialties
+  useEffect(() => {
+    const loadSpecialties = async () => {
+      try {
+        const response = await api.get('/hospital/scribe/specialties');
+        if (response.data.success) {
+          setAvailableSpecialties(response.data.specialties);
+        }
+      } catch (error) {
+        console.error('Error loading specialties:', error);
+      }
+    };
+    
+    loadSpecialties();
+  }, []);
+
+  // Load template when specialty changes
+  useEffect(() => {
+    const loadTemplate = async () => {
+      try {
+        const response = await api.get(`/hospital/scribe/template/${selectedSpecialty}`);
+        if (response.data.success) {
+          setSpecialtyTemplate(response.data.template);
+          toast({
+            title: 'Template Loaded',
+            description: `${selectedSpecialty.replace(/_/g, ' ')} template loaded`
+          });
+        }
+      } catch (error) {
+        console.error('Error loading template:', error);
+      }
+    };
+    
+    loadTemplate();
+  }, [selectedSpecialty, toast]);
 
   // Toggle speech recognition for a specific field
   const toggleScribe = (fieldName: string) => {
@@ -630,6 +671,45 @@ const HospitalDischargeSummary = () => {
 
         {/* Create New Summary */}
         <TabsContent value="create" className="space-y-6">
+          {/* Specialty Selection */}
+          <Card className="bg-gradient-to-r from-teal-50 to-cyan-50 dark:from-teal-900/20 dark:to-cyan-900/20 border-teal-200/50 dark:border-teal-700/30">
+            <CardContent className="pt-6">
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                <div className="space-y-2">
+                  <Label className="text-teal-700 dark:text-teal-300 font-semibold">Medical Specialty</Label>
+                  <Select value={selectedSpecialty} onValueChange={setSelectedSpecialty}>
+                    <SelectTrigger className="border-teal-200">
+                      <SelectValue placeholder="Select specialty" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {availableSpecialties.map((specialty) => (
+                        <SelectItem key={specialty} value={specialty}>
+                          {specialty.replace(/_/g, ' ').toUpperCase()}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                  <p className="text-xs text-slate-500 dark:text-slate-400">
+                    Template will customize sections for your specialty
+                  </p>
+                </div>
+                {specialtyTemplate && (
+                  <div className="space-y-2">
+                    <Label className="text-teal-700 dark:text-teal-300 font-semibold">Template Info</Label>
+                    <div className="bg-white dark:bg-slate-900 p-3 rounded-lg border border-teal-200 dark:border-teal-700/30">
+                      <p className="text-sm font-medium text-slate-800 dark:text-white">
+                        Key Investigations: {specialtyTemplate.key_investigations?.length || 0}
+                      </p>
+                      <p className="text-xs text-slate-500 dark:text-slate-400">
+                        {specialtyTemplate.key_investigations?.slice(0, 3).join(', ')}...
+                      </p>
+                    </div>
+                  </div>
+                )}
+              </div>
+            </CardContent>
+          </Card>
+
           <Card className="bg-white dark:bg-slate-800/50 border-slate-200/80 dark:border-slate-700/50">
             <CardHeader className="border-b border-slate-200 dark:border-slate-700">
               <div className="flex items-center justify-between">

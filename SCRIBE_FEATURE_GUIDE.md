@@ -1,17 +1,20 @@
 # AI Scribe (STT) Feature for Discharge Summary
 
 ## Overview
+
 The discharge summary now includes an **AI Medical Scribe** feature that uses speech-to-text (STT) technology similar to Agnito, allowing doctors and hospital staff to dictate discharge summaries using their voice.
 
 ## Features
 
 ### 🎤 Voice Dictation
+
 - **Real-time speech-to-text** conversion
 - **Continuous dictation** - keeps listening until you stop it
 - **Medical terminology optimized** - Uses Indian English (en-IN) for better recognition of medical terms
 - **Field-specific dictation** - Dictate directly into any text field
 
 ### ✅ Supported Fields
+
 All major discharge summary fields now have scribe functionality:
 
 1. **Clinical Information:**
@@ -61,18 +64,21 @@ All major discharge summary fields now have scribe functionality:
 ## Technical Details
 
 ### Browser Compatibility
+
 - ✅ **Chrome** (Recommended)
 - ✅ **Edge** (Recommended)
 - ❌ Firefox (Limited support)
 - ❌ Safari (Limited support)
 
 ### Technology
+
 - Uses **Web Speech API** (webkitSpeechRecognition)
 - **Continuous recognition** mode for uninterrupted dictation
 - **Interim results** for real-time feedback
 - **Language**: en-IN (Indian English) for better medical term recognition
 
 ### Privacy & Security
+
 - All speech processing happens **locally in your browser**
 - No audio is sent to external servers (except Google's speech service via browser API)
 - Transcribed text is stored **only in your session** until you save
@@ -90,20 +96,24 @@ All major discharge summary fields now have scribe functionality:
 ### 📝 Example Dictation
 
 **You say:**
+
 > "Patient admitted with chief complaints of chest pain radiating to left arm comma associated with sweating and breathlessness period On examination comma blood pressure was 160 by 95 millimeters of mercury comma heart rate 110 beats per minute comma irregular period ECG showed ST elevation in leads 2 3 and AVF suggestive of inferior wall myocardial infarction period"
 
 **System writes:**
+
 > Patient admitted with chief complaints of chest pain radiating to left arm, associated with sweating and breathlessness. On examination, blood pressure was 160 by 95 millimeters of mercury, heart rate 110 beats per minute, irregular. ECG showed ST elevation in leads 2 3 and AVF suggestive of inferior wall myocardial infarction.
 
 ## Troubleshooting
 
 ### Microphone Not Working
+
 - ✅ Check browser permissions (click lock icon in address bar)
 - ✅ Ensure microphone is not muted
 - ✅ Try a different browser (Chrome recommended)
 - ✅ Check system microphone settings
 
 ### Poor Recognition Accuracy
+
 - ✅ Speak more clearly
 - ✅ Reduce background noise
 - ✅ Use a better quality microphone
@@ -111,11 +121,13 @@ All major discharge summary fields now have scribe functionality:
 - ✅ Use standard medical terminology
 
 ### Scribe Stops Unexpectedly
+
 - ✅ This is normal after periods of silence
 - ✅ Just click "Start Scribe" again to continue
 - ✅ The system will resume from where it stopped
 
 ### Browser Not Supported
+
 - ✅ Use Chrome or Edge browsers
 - ✅ Update your browser to the latest version
 - ✅ Fallback to manual typing if needed
@@ -151,6 +163,7 @@ All major discharge summary fields now have scribe functionality:
 ## Support
 
 For technical issues or feedback:
+
 - Contact: support@mediczy.com
 - Portal: Hospital Dashboard → Help & Support
 - Phone: Hospital helpline
