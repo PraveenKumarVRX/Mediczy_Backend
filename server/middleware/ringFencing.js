@@ -214,6 +214,7 @@ const USER_TYPE_PERMISSIONS = {
   hospital: {
     allowedPaths: [
       '/api/hospital',
+      '/api/hospital/staff',
       '/api/hospital/dashboard',
       '/api/hospital/patients',
       '/api/hospital/appointments',
@@ -251,6 +252,30 @@ const USER_TYPE_PERMISSIONS = {
       '/api/pharmacy/prescriptions'
     ],
     tokenField: 'pharmacyId'
+  },
+  homecare: {
+    allowedPaths: [
+      '/api/homecare'
+    ],
+    tokenField: 'homecareId'
+  },
+  ambulance: {
+    allowedPaths: [
+      '/api/ambulance'
+    ],
+    tokenField: 'ambulanceId'
+  },
+  broker: {
+    allowedPaths: [
+      '/api/insurance-broker'
+    ],
+    tokenField: 'brokerId'
+  },
+  insurance_company: {
+    allowedPaths: [
+      '/api/insurance-company'
+    ],
+    tokenField: 'insuranceCompanyId'
   },
   tpa: {
     allowedPaths: [
@@ -292,6 +317,33 @@ const USER_TYPE_PERMISSIONS = {
     ],
     tokenField: 'ngoId'
   }
+};
+
+const USER_TYPE_ALIASES = {
+  system_admin: 'admin',
+  super_admin: 'admin',
+  platform_admin: 'admin',
+  corporate_admin: 'corporate',
+  hospital_admin: 'hospital',
+  hospital_staff: 'hospital',
+  hospital_doctor: 'hospital',
+  clinic_admin: 'clinic',
+  lab_admin: 'lab',
+  pharmacy_admin: 'pharmacy',
+  tpa_admin: 'tpa',
+  psu_admin: 'psu',
+  ngo_admin: 'ngo',
+  insurer_admin: 'insurer',
+  homecare_admin: 'homecare',
+  ambulance_admin: 'ambulance',
+  doctor_assistant: 'assistant',
+  insurance_broker: 'broker'
+};
+
+const resolveUserType = (decoded) => {
+  const rawType = decoded.userType || decoded.role || decoded.type || (decoded.userId ? 'user' : null);
+  if (!rawType) return null;
+  return USER_TYPE_ALIASES[rawType] || rawType;
 };
 
 // Public endpoints that don't require authentication
@@ -404,6 +456,19 @@ const ringFencingMiddleware = (req, res, next) => {
     return next();
   }
 
+  const hospitalStaffAuthPattern = /^\/api\/hospital\/staff\/[^/]+\/(login|signup)$/;
+  const patientAuthPattern = /^\/api\/patient\/(login|signup)$/;
+  const patientClinicSearchPattern = /^\/api\/patient\/clinics\/search$/;
+  const clinicPatientAuthPattern = /^\/api\/clinic\/[^/]+\/patient\/(login|signup)$/;
+
+  if (hospitalStaffAuthPattern.test(requestPath) ||
+      patientAuthPattern.test(requestPath) ||
+      patientClinicSearchPattern.test(requestPath) ||
+      clinicPatientAuthPattern.test(requestPath)) {
+    console.log('✅ Public auth endpoint allowed:', requestPath);
+    return next();
+  }
+
   // Allow public GET requests to /api/doctors for listing/browsing
   if (requestMethod === 'GET' && (requestPath === '/api/doctors' || requestPath.startsWith('/api/doctors/'))) {
     // Allow public access to doctor listing, search, and public profiles
@@ -443,8 +508,8 @@ const ringFencingMiddleware = (req, res, next) => {
     const decoded = jwt.verify(token, JWT_SECRET);
 
     // Normalize userType from multiple possible fields
-    // Priority: userType > role > fallback to 'user'
-    const userType = decoded.userType || decoded.role || (decoded.userId ? 'user' : null);
+    // Priority: userType > role > type > fallback to 'user'
+    const userType = resolveUserType(decoded);
 
     if (!userType) {
       console.log('🚫 Ring-fencing: No userType/role in token');

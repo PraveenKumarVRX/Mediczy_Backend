@@ -315,7 +315,7 @@ const HospitalDischargeSummary = () => {
 
       try {
         await api.post(
-          '/hospital/discharge-summaries',
+          '/hospital/practice/discharge-summaries',
           draftData,
           { headers: hospitalHeaders() }
         );
@@ -372,7 +372,7 @@ const HospitalDischargeSummary = () => {
 
       try {
         await api.post(
-          '/hospital/discharge-summaries/submit',
+          '/hospital/practice/discharge-summaries/submit',
           submissionData,
           { headers: hospitalHeaders() }
         );

@@ -2,6 +2,8 @@ import userModel from "../models/user.model.intelligent.js";
 import doctorModel from "../models/doctor.model.intelligent.js";
 import nurseModel from "../models/nurse.model.intelligent.js";
 import assistantModel from "../models/assistant.model.intelligent.js";
+import InsuranceBroker from "../models/insurance-broker.model.intelligent.js";
+import { InsuranceCompany } from "../models/insurance-company.model.intelligent.js";
 import jwt from "jsonwebtoken";
 import { JWT_CONFIG } from "../config/auth.config.js";
 import UserPostgres from "../models/postgres/user.model.postgres.js";
@@ -31,6 +33,28 @@ const CLINIC_STAFF_ROLES = new Set([
 const HOSPITAL_ROLES = new Set([
   "hospital", "hospital_admin", "hospital_staff", "hospital_doctor"
 ]);
+
+const ROLE_ALIASES = {
+  system_admin: "admin",
+  super_admin: "admin",
+  platform_admin: "admin",
+  corporate_admin: "corporate",
+  hospital_admin: "hospital",
+  hospital_staff: "hospital",
+  hospital_doctor: "hospital",
+  clinic_admin: "clinic",
+  lab_admin: "lab",
+  pharmacy_admin: "pharmacy",
+  tpa_admin: "tpa",
+  psu_admin: "psu",
+  ngo_admin: "ngo",
+  insurer_admin: "insurer",
+  homecare_admin: "homecare",
+  ambulance_admin: "ambulance",
+  doctor_assistant: "assistant"
+};
+
+const normalizeRole = (role) => ROLE_ALIASES[role] || role;
 
 const toPlainObject = (record) => {
   if (!record) return null;
@@ -284,6 +308,40 @@ export const authUser = async (req, res, next) => {
       return next();
     }
 
+    if (decoded.role === "insurance_company") {
+      const insuranceCompany = await safeFindByPk(
+        InsuranceCompany,
+        null,
+        decoded.id,
+        { attributes: { exclude: ["password"] } }
+      );
+
+      if (!insuranceCompany) {
+        return res.status(401).json({ message: "insurance company not found" });
+      }
+
+      req.user = { ...insuranceCompany, role: "insurance_company" };
+      req.userRole = "insurance_company";
+      return next();
+    }
+
+    if (decoded.role === "broker" || decoded.role === "insurance_broker") {
+      const broker = await safeFindByPk(
+        InsuranceBroker,
+        null,
+        decoded.id,
+        { attributes: { exclude: ["password"] } }
+      );
+
+      if (!broker) {
+        return res.status(401).json({ message: "broker not found" });
+      }
+
+      req.user = { ...broker, role: "broker" };
+      req.userRole = "broker";
+      return next();
+    }
+
     // Handle clinic staff roles (doctor, doctor_assistant, receptionist, nurse, staff)
     // FIXED: Map clinic staff tokens with type='clinic_staff' to proper authorization
     if (decoded.type === "clinic_staff" || CLINIC_STAFF_ROLES.has(decoded.role)) {
@@ -397,24 +455,18 @@ export const requireRole = (role) => {
     // Support array of roles
     const allowedRoles = Array.isArray(role) ? role : [role];
     
-    // Normalize role for checking:
-    // - system_admin has admin privileges
-    // - isTeam flag grants team privileges
-    // - hospital_admin, hospital_staff, hospital_doctor map to 'hospital'
-    // - doctor_assistant maps to 'assistant'
-    let effectiveRole = req.userRole;
-    if (req.userRole === 'system_admin') {
-      effectiveRole = 'admin';
-    }
+    const normalizedRole = normalizeRole(req.userRole);
+    const normalizedUserRole = normalizeRole(req.user?.role);
     
     // Check if user has any allowed role
     // Also check isTeam flag if 'team' is in allowed roles
     // FIXED: Support hospital roles properly
-    const hasRole = allowedRoles.includes(effectiveRole) ||
+    const hasRole = allowedRoles.includes(normalizedRole) ||
+      allowedRoles.includes(normalizedUserRole) ||
       (allowedRoles.includes('team') && (req.user?.isTeam || req.userRole === 'team')) ||
       (allowedRoles.includes('admin') && (req.user?.isAdmin || req.userRole === 'admin' || req.userRole === 'system_admin')) ||
-      (allowedRoles.includes('hospital') && HOSPITAL_ROLES.has(req.user?.role)) ||
-      (allowedRoles.includes('assistant') && (req.userRole === 'assistant' || req.user?.role === 'doctor_assistant'));
+      (allowedRoles.includes('hospital') && (req.user?.userType === 'hospital' || HOSPITAL_ROLES.has(req.user?.role))) ||
+      (allowedRoles.includes('assistant') && (normalizedRole === 'assistant' || normalizedUserRole === 'assistant'));
     
     if (!hasRole) {
       return res.status(403).json({ message: 'Forbidden: insufficient role' });

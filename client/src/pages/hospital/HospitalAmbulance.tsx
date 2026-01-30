@@ -1083,7 +1083,7 @@ const HospitalAmbulance = () => {
                 };
 
                 const { data } = await api.post(
-                  '/hospital/ambulances/vehicles',
+                  '/hospital/practice/ambulances/vehicles',
                   vehicleData,
                   { headers: hospitalHeaders() }
                 );

@@ -17,7 +17,7 @@ const router = express.Router();
 // ========== ADMIN ROUTES - Insurance Providers ==========
 
 // Get all providers
-router.get('/admin/providers', authUser, requireRole('admin'), async (req, res) => {
+router.get('/admin/providers', authUser, requireRole(['admin', 'hospital']), async (req, res) => {
   try {
     const providers = await InsuranceProvider.findAll({
       order: [['createdAt', 'DESC']],
@@ -35,7 +35,7 @@ router.get('/admin/providers', authUser, requireRole('admin'), async (req, res) 
 });
 
 // Create provider
-router.post('/admin/providers', authUser, requireRole('admin'), [
+router.post('/admin/providers', authUser, requireRole(['admin', 'hospital']), [
   body('name').notEmpty(),
   body('code').optional().isString(),
 ], async (req, res) => {
@@ -49,7 +49,7 @@ router.post('/admin/providers', authUser, requireRole('admin'), [
 });
 
 // Update provider
-router.put('/admin/providers/:id', authUser, requireRole('admin'), [
+router.put('/admin/providers/:id', authUser, requireRole(['admin', 'hospital']), [
   param('id').isInt()
 ], async (req, res) => {
   try {
@@ -64,7 +64,7 @@ router.put('/admin/providers/:id', authUser, requireRole('admin'), [
 });
 
 // Delete provider
-router.delete('/admin/providers/:id', authUser, requireRole('admin'), [
+router.delete('/admin/providers/:id', authUser, requireRole(['admin', 'hospital']), [
   param('id').isInt()
 ], async (req, res) => {
   try {
@@ -81,7 +81,7 @@ router.delete('/admin/providers/:id', authUser, requireRole('admin'), [
 // ========== ADMIN ROUTES - Insurance Policies ==========
 
 // Get all policies
-router.get('/admin/policies', authUser, requireRole('admin'), async (req, res) => {
+router.get('/admin/policies', authUser, requireRole(['admin', 'hospital']), async (req, res) => {
   try {
     const { providerId } = req.query;
     const where = providerId ? { providerId: Number(providerId) } : {};
@@ -103,7 +103,7 @@ router.get('/admin/policies', authUser, requireRole('admin'), async (req, res) =
 });
 
 // Create policy
-router.post('/admin/policies', authUser, requireRole('admin'), [
+router.post('/admin/policies', authUser, requireRole(['admin', 'hospital']), [
   body('providerId').isInt(),
   body('policyName').notEmpty(),
   body('coverageAmount').isFloat({ min: 0 }),
@@ -118,7 +118,7 @@ router.post('/admin/policies', authUser, requireRole('admin'), [
 });
 
 // Update policy
-router.put('/admin/policies/:id', authUser, requireRole('admin'), [
+router.put('/admin/policies/:id', authUser, requireRole(['admin', 'hospital']), [
   param('id').isInt()
 ], async (req, res) => {
   try {
@@ -133,7 +133,7 @@ router.put('/admin/policies/:id', authUser, requireRole('admin'), [
 });
 
 // Delete policy
-router.delete('/admin/policies/:id', authUser, requireRole('admin'), [
+router.delete('/admin/policies/:id', authUser, requireRole(['admin', 'hospital']), [
   param('id').isInt()
 ], async (req, res) => {
   try {
@@ -150,7 +150,7 @@ router.delete('/admin/policies/:id', authUser, requireRole('admin'), [
 // ========== ADMIN ROUTES - User Insurance Enrollments ==========
 
 // Get all user insurances
-router.get('/admin/enrollments', authUser, requireRole('admin'), async (req, res) => {
+router.get('/admin/enrollments', authUser, requireRole(['admin', 'hospital']), async (req, res) => {
   try {
     const { status, providerId } = req.query;
     const where = {};
@@ -175,7 +175,7 @@ router.get('/admin/enrollments', authUser, requireRole('admin'), async (req, res
 // ========== ADMIN ROUTES - Insurance Claims ==========
 
 // Get all claims
-router.get('/admin/claims', authUser, requireRole('admin'), async (req, res) => {
+router.get('/admin/claims', authUser, requireRole(['admin', 'hospital']), async (req, res) => {
   try {
     const { status, claimType } = req.query;
     const where = {};
@@ -202,7 +202,7 @@ router.get('/admin/claims', authUser, requireRole('admin'), async (req, res) => 
 });
 
 // Update claim status
-router.patch('/admin/claims/:id/status', authUser, requireRole('admin'), [
+router.patch('/admin/claims/:id/status', authUser, requireRole(['admin', 'hospital']), [
   param('id').isInt(),
   body('status').isIn(['Submitted', 'UnderReview', 'Approved', 'Rejected', 'PartiallyApproved', 'Settled']),
 ], async (req, res) => {

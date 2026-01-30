@@ -14,15 +14,23 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from 
 import { Label } from '@/components/ui/label';
 import { Textarea } from '@/components/ui/textarea';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
+import { useToast } from '@/hooks/use-toast';
+import api from '@/lib/api';
 
 const HospitalCorporateManagement = () => {
   const navigate = useNavigate();
+  const { toast } = useToast();
   const [loading, setLoading] = useState(false);
   const [searchTerm, setSearchTerm] = useState('');
   const [isAddDialogOpen, setIsAddDialogOpen] = useState(false);
   const [selectedCorporate, setSelectedCorporate] = useState<any>(null);
   
-  // Mock corporate tie-ups data
+  const hospitalHeaders = () => {
+    const token = localStorage.getItem('hospitalToken');
+    return token ? { Authorization: `Bearer ${token}` } : {};
+  };
+  
+  // Corporate tie-ups data (with mock fallback)
   const [corporates, setCorporates] = useState([
     {
       id: 1,
@@ -120,24 +128,112 @@ const HospitalCorporateManagement = () => {
     corp.category.toLowerCase().includes(searchTerm.toLowerCase())
   );
 
-  const handleAddCorporate = () => {
-    // Add corporate logic here
-    console.log('Adding corporate:', formData);
-    setIsAddDialogOpen(false);
-    // Reset form
-    setFormData({
-      name: '',
-      contactPerson: '',
-      email: '',
-      phone: '',
-      employeeCount: '',
-      contractStart: '',
-      contractEnd: '',
-      discountType: 'percentage',
-      discount: '',
-      category: ''
-    });
+  const handleAddCorporate = async () => {
+    try {
+      setLoading(true);
+      
+      // Map form data to API expected format
+      const payload = {
+        companyName: formData.name,
+        hrContactName: formData.contactPerson,
+        hrContactEmail: formData.email,
+        hrContactPhone: formData.phone,
+        employeeCount: parseInt(formData.employeeCount) || 0,
+        industry: formData.category
+      };
+
+      const response = await api.post('/hospital/auth/corporates', payload, {
+        headers: hospitalHeaders()
+      });
+
+      if (response.data.success) {
+        // Add the new corporate to state with local format
+        const newCorporate = {
+          id: response.data.corporate.id,
+          name: formData.name,
+          contactPerson: formData.contactPerson,
+          email: formData.email,
+          phone: formData.phone,
+          employeeCount: parseInt(formData.employeeCount) || 0,
+          status: 'active',
+          contractStart: formData.contractStart,
+          contractEnd: formData.contractEnd,
+          discountType: formData.discountType,
+          discount: parseFloat(formData.discount) || 0,
+          totalClaims: 0,
+          pendingClaims: 0,
+          settledAmount: '₹0',
+          category: formData.category
+        };
+        
+        setCorporates(prev => [newCorporate, ...prev]);
+        toast({
+          title: 'Success',
+          description: 'Corporate tie-up added successfully'
+        });
+      }
+
+      setIsAddDialogOpen(false);
+      // Reset form
+      setFormData({
+        name: '',
+        contactPerson: '',
+        email: '',
+        phone: '',
+        employeeCount: '',
+        contractStart: '',
+        contractEnd: '',
+        discountType: 'percentage',
+        discount: '',
+        category: ''
+      });
+    } catch (error: any) {
+      console.error('Error adding corporate:', error);
+      toast({
+        title: 'Error',
+        description: error.response?.data?.message || 'Failed to add corporate tie-up',
+        variant: 'destructive'
+      });
+    } finally {
+      setLoading(false);
+    }
   };
+
+  // Fetch corporates on mount
+  useEffect(() => {
+    const fetchCorporates = async () => {
+      try {
+        const response = await api.get('/hospital/auth/corporates', {
+          headers: hospitalHeaders()
+        });
+        if (response.data.success && response.data.corporates) {
+          // Map API response to component format
+          const mappedCorporates = response.data.corporates.map((corp: any) => ({
+            id: corp.id,
+            name: corp.companyName,
+            contactPerson: corp.hrContactName || '',
+            email: corp.hrContactEmail || '',
+            phone: corp.hrContactPhone || '',
+            employeeCount: corp.employeeCount || 0,
+            status: corp.status || 'active',
+            contractStart: corp.createdAt?.split('T')[0] || '',
+            contractEnd: '',
+            discountType: 'percentage',
+            discount: 0,
+            totalClaims: 0,
+            pendingClaims: 0,
+            settledAmount: '₹0',
+            category: corp.industry || 'General'
+          }));
+          setCorporates(mappedCorporates);
+        }
+      } catch (error) {
+        console.error('Error fetching corporates:', error);
+        // Keep mock data on error
+      }
+    };
+    fetchCorporates();
+  }, []);
 
   return (
     <HospitalLayout>

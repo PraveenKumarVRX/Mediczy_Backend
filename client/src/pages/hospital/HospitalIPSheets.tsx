@@ -195,7 +195,7 @@ const HospitalIPSheets = () => {
 
       try {
         await api.post(
-          '/hospital/ip-sheets',
+          '/hospital/practice/ip-sheets',
           sheetData,
           { headers: hospitalHeaders() }
         );

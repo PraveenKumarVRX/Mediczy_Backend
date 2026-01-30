@@ -205,14 +205,18 @@ router.get('/prescriptions/:patientId', authUser, async (req, res) => {
 
 /**
  * @route   POST /api/ehr/record
- * @desc    Create a new EHR record (Admin/Doctor)
+ * @desc    Create a new EHR record (Admin/Doctor/Hospital)
  * @access  Private
  */
 router.post('/record', authUser, async (req, res) => {
   try {
     const userRole = req.user?.role || req.userRole;
-    if (userRole !== 'admin' && userRole !== 'doctor') {
-      return res.status(403).json({ success: false, message: 'Admin or doctor access required' });
+    const userType = req.user?.userType || req.user?.type;
+    // Allow admin, doctor, and hospital users to create EHR records
+    const isHospitalUser = userType === 'hospital' || userRole === 'hospital' || 
+      ['hospital_admin', 'hospital_staff', 'hospital_doctor'].includes(userRole);
+    if (userRole !== 'admin' && userRole !== 'doctor' && !isHospitalUser) {
+      return res.status(403).json({ success: false, message: 'Admin, doctor, or hospital access required' });
     }
     
     const {

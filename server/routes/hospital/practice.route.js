@@ -1108,6 +1108,55 @@ router.post('/discharge-summaries/submit', verifyHospitalToken, async (req, res)
 });
 
 /**
+ * Update Discharge Summary (Edit)
+ * PUT /api/hospital/practice/discharge-summaries/:id
+ */
+router.put('/discharge-summaries/:id', verifyHospitalToken, async (req, res) => {
+  try {
+    const { id } = req.params;
+    const { diagnosis, procedures, medications, followUp, status } = req.body;
+    const hospitalId = req.hospitalId;
+
+    if (!id) {
+      return res.status(400).json({ success: false, message: 'Summary ID is required' });
+    }
+
+    const [updated] = await sequelize.query(
+      `UPDATE discharge_summaries 
+       SET diagnosis = :diagnosis,
+           procedures = :procedures,
+           medications = :medications,
+           follow_up = :followUp,
+           status = COALESCE(:status, status),
+           updated_at = NOW()
+       WHERE id = :id AND hospital_id = :hospitalId
+       RETURNING *`,
+      {
+        replacements: {
+          id,
+          diagnosis: JSON.stringify(diagnosis || []),
+          procedures: JSON.stringify(procedures || []),
+          medications: JSON.stringify(medications || []),
+          followUp,
+          status: status || null,
+          hospitalId
+        },
+        type: QueryTypes.UPDATE
+      }
+    );
+
+    if (!updated || updated.length === 0) {
+      return res.status(404).json({ success: false, message: 'Discharge summary not found or access denied' });
+    }
+
+    res.json({ success: true, message: 'Discharge summary updated successfully', data: updated[0] });
+  } catch (error) {
+    console.error('Error updating discharge summary:', error);
+    res.status(500).json({ success: false, message: 'Failed to update discharge summary', error: error.message });
+  }
+});
+
+/**
  * Create Prescription
  * POST /api/hospital/practice/prescriptions
  */

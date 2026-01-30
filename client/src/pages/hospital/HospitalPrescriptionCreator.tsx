@@ -343,7 +343,7 @@ const HospitalPrescriptionCreator = () => {
 
       try {
         await api.post(
-          '/hospital/prescriptions',
+          '/hospital/practice/prescriptions',
           prescriptionData,
           { headers: hospitalHeaders() }
         );

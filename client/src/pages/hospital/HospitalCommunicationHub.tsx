@@ -15,6 +15,7 @@ import { Separator } from '@/components/ui/separator';
 import { useToast } from '@/hooks/use-toast';
 import HospitalLayout from '@/components/hospital/HospitalLayout';
 import { loadHospitalStore, saveHospitalStore } from '@/utils/hospitalStorage';
+import api from '@/lib/api';
 import {
   MessageSquare, Mail, Send, Phone, Video, Smartphone, Settings,
   BarChart3, Users, CheckCircle, XCircle, Clock, RefreshCw,
@@ -69,6 +70,11 @@ const HospitalCommunicationHub = () => {
   const [selectedChannel, setSelectedChannel] = useState<'email' | 'sms' | 'whatsapp' | 'voice'>('email');
   const [selectedComm, setSelectedComm] = useState<CommunicationLog | null>(null);
   const [showCommDialog, setShowCommDialog] = useState(false);
+
+  const hospitalHeaders = () => {
+    const token = localStorage.getItem('hospitalToken');
+    return token ? { Authorization: `Bearer ${token}` } : {};
+  };
 
   // Stats state
   const [stats, setStats] = useState({
@@ -345,6 +351,18 @@ const HospitalCommunicationHub = () => {
     }
     setLoading(true);
     try {
+      // Call API to send email
+      try {
+        await api.post('/hospital/communication/email/send', {
+          to: emailForm.to,
+          subject: emailForm.subject,
+          body: emailForm.body
+        }, { headers: hospitalHeaders() });
+      } catch (err: any) {
+        console.error('Email API error:', err);
+        // Continue with local persistence even if API fails
+      }
+      
       const entry: CommunicationLog = {
         id: `C-${Date.now()}`,
         channel: 'email',
@@ -367,6 +385,8 @@ const HospitalCommunicationHub = () => {
       }));
       toast({ title: 'Email Sent', description: `Email sent to ${emailForm.to}` });
       setEmailForm({ to: '', cc: '', subject: '', body: '', templateId: '' });
+    } catch (error: any) {
+      toast({ title: 'Failed', description: error.message || 'Failed to send email', variant: 'destructive' });
     } finally {
       setLoading(false);
     }
@@ -379,6 +399,17 @@ const HospitalCommunicationHub = () => {
     }
     setLoading(true);
     try {
+      // Call API to send SMS
+      try {
+        await api.post('/hospital/communication/sms/send', {
+          phone: smsForm.to,
+          message: smsForm.message
+        }, { headers: hospitalHeaders() });
+      } catch (err: any) {
+        console.error('SMS API error:', err);
+        // Continue with local persistence even if API fails
+      }
+      
       const entry: CommunicationLog = {
         id: `C-${Date.now()}`,
         channel: 'sms',
@@ -400,6 +431,8 @@ const HospitalCommunicationHub = () => {
       }));
       toast({ title: 'SMS Sent', description: `SMS sent to ${smsForm.to}` });
       setSmsForm({ to: '', message: '', templateId: '' });
+    } catch (error: any) {
+      toast({ title: 'Failed', description: error.message || 'Failed to send SMS', variant: 'destructive' });
     } finally {
       setLoading(false);
     }
@@ -412,6 +445,17 @@ const HospitalCommunicationHub = () => {
     }
     setLoading(true);
     try {
+      // Call API to send WhatsApp
+      try {
+        await api.post('/hospital/communication/whatsapp/send', {
+          phone: whatsappForm.to,
+          message: whatsappForm.message
+        }, { headers: hospitalHeaders() });
+      } catch (err: any) {
+        console.error('WhatsApp API error:', err);
+        // Continue with local persistence even if API fails
+      }
+      
       const entry: CommunicationLog = {
         id: `C-${Date.now()}`,
         channel: 'whatsapp',
@@ -433,6 +477,8 @@ const HospitalCommunicationHub = () => {
       }));
       toast({ title: 'WhatsApp Sent', description: `WhatsApp message sent to ${whatsappForm.to}` });
       setWhatsappForm({ to: '', message: '', templateId: '', mediaUrl: '' });
+    } catch (error: any) {
+      toast({ title: 'Failed', description: error.message || 'Failed to send WhatsApp', variant: 'destructive' });
     } finally {
       setLoading(false);
     }

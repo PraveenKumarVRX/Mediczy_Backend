@@ -247,7 +247,7 @@ const HospitalLabOrder = () => {
 
       try {
         await api.post(
-          '/hospital/lab-orders',
+          '/hospital/practice/lab-orders',
           orderData,
           { headers: hospitalHeaders() }
         );

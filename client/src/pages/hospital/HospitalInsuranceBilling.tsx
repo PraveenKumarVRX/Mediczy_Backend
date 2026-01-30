@@ -456,7 +456,7 @@ const HospitalInsuranceBilling = () => {
     try {
       try {
         await api.post(
-          '/hospital/insurance/claims',
+          '/hospital/practice/insurance/claims',
           claimPayload,
           { headers: hospitalHeaders() }
         );

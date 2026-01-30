@@ -17,9 +17,12 @@ import { Textarea } from '@/components/ui/textarea';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
+import { useToast } from '@/hooks/use-toast';
+import api from '@/lib/api';
 
 const HospitalInsurancePayerManagement = () => {
   const navigate = useNavigate();
+  const { toast } = useToast();
   const [loading, setLoading] = useState(false);
   const [searchTerm, setSearchTerm] = useState('');
   const [isAddDialogOpen, setIsAddDialogOpen] = useState(false);
@@ -28,7 +31,12 @@ const HospitalInsurancePayerManagement = () => {
   const [viewChargesDialog, setViewChargesDialog] = useState(false);
   const [activeTab, setActiveTab] = useState('all');
   
-  // Mock insurance payers data
+  const hospitalHeaders = () => {
+    const token = localStorage.getItem('hospitalToken');
+    return token ? { Authorization: `Bearer ${token}` } : {};
+  };
+  
+  // Insurance payers data (with mock fallback)
   const [payers, setPayers] = useState([
     {
       id: 1,
@@ -260,23 +268,120 @@ const HospitalInsurancePayerManagement = () => {
     return matchesSearch;
   });
 
-  const handleAddPayer = () => {
-    console.log('Adding payer:', formData);
-    setIsAddDialogOpen(false);
-    setFormData({
-      name: '',
-      type: 'insurance',
-      contactPerson: '',
-      email: '',
-      phone: '',
-      address: '',
-      mouStart: '',
-      mouEnd: '',
-      creditDays: '',
-      tariffType: 'percentage',
-      discount: ''
-    });
+  const handleAddPayer = async () => {
+    try {
+      setLoading(true);
+      
+      const payload = {
+        name: formData.name,
+        code: formData.name.toUpperCase().replace(/\s+/g, '_').slice(0, 10),
+        type: formData.type,
+        contactPerson: formData.contactPerson,
+        email: formData.email,
+        phone: formData.phone,
+        address: formData.address
+      };
+
+      const response = await api.post('/insurance/admin/providers', payload, {
+        headers: hospitalHeaders()
+      });
+
+      if (response.data.provider) {
+        const newPayer = {
+          id: response.data.provider.id,
+          name: formData.name,
+          type: formData.type,
+          contactPerson: formData.contactPerson,
+          email: formData.email,
+          phone: formData.phone,
+          address: formData.address,
+          status: 'active',
+          mouStart: formData.mouStart,
+          mouEnd: formData.mouEnd,
+          creditDays: parseInt(formData.creditDays) || 30,
+          claimSettlementRatio: 0,
+          totalClaims: 0,
+          pendingClaims: 0,
+          settledAmount: '₹0',
+          mouDocument: '',
+          tariffType: formData.tariffType,
+          discount: parseFloat(formData.discount) || 0,
+          packageDeals: false
+        };
+        
+        setPayers(prev => [newPayer, ...prev]);
+        toast({
+          title: 'Success',
+          description: 'Insurance payer added successfully'
+        });
+      }
+
+      setIsAddDialogOpen(false);
+      setFormData({
+        name: '',
+        type: 'insurance',
+        contactPerson: '',
+        email: '',
+        phone: '',
+        address: '',
+        mouStart: '',
+        mouEnd: '',
+        creditDays: '',
+        tariffType: 'percentage',
+        discount: ''
+      });
+    } catch (error: any) {
+      console.error('Error adding payer:', error);
+      toast({
+        title: 'Error',
+        description: error.response?.data?.message || 'Failed to add insurance payer',
+        variant: 'destructive'
+      });
+    } finally {
+      setLoading(false);
+    }
   };
+
+  // Fetch insurance providers on mount
+  useEffect(() => {
+    const fetchProviders = async () => {
+      try {
+        const response = await api.get('/insurance/admin/providers', {
+          headers: hospitalHeaders()
+        });
+        if (response.data.providers) {
+          const mappedPayers = response.data.providers.map((provider: any) => ({
+            id: provider.id,
+            name: provider.name,
+            type: provider.supportedServices?.includes('TPA') ? 'tpa' : 'insurance',
+            contactPerson: provider.contactPerson || '',
+            email: provider.email || '',
+            phone: provider.phone || '',
+            address: provider.address || '',
+            status: provider.isActive ? 'active' : 'inactive',
+            mouStart: '',
+            mouEnd: '',
+            creditDays: 30,
+            claimSettlementRatio: 0,
+            totalClaims: 0,
+            pendingClaims: 0,
+            settledAmount: '₹0',
+            mouDocument: '',
+            tariffType: 'percentage',
+            discount: 0,
+            packageDeals: false
+          }));
+          if (mappedPayers.length > 0) {
+            setPayers(mappedPayers);
+          }
+        }
+      } catch (error) {
+        console.error('Error fetching providers:', error);
+        // Keep mock data on error
+      }
+    };
+    fetchProviders();
+  }, []);
 
   const getTariffLabel = (tariffType: string) => {
     const labels: Record<string, string> = {
