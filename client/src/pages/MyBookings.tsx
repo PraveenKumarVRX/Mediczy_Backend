@@ -390,7 +390,7 @@ const MyBookings = () => {
               <Card key={booking.id} className="p-6 hover:shadow-md transition-shadow bg-white dark:bg-slate-800/50 border-slate-200 dark:border-slate-700">
                 <div className="flex items-start justify-between flex-wrap gap-4 mb-4">
                   <div>
-                    <h3 className="text-xl font-semibold text-slate-800 dark:text-white">{booking.doctorName}</h3>
+                    <h3 className="text-xl font-semibold text-slate-800 dark:text-white select-text">{booking.doctorName}</h3>
                     <p className="text-slate-600 dark:text-slate-400">{booking.specialization}</p>
                   </div>
                   <div className="flex flex-col items-end gap-2">

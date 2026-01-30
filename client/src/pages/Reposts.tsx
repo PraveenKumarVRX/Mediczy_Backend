@@ -96,17 +96,40 @@ export default function RepostsPage() {
         image: base64Image,
         language
       });
-      const description = cleanMarkdown(response.data?.description || "");
+      
+      console.log('🔍 AI analyze-image response:', response.data);
+      
+      // Handle multiple response formats
+      let description = '';
+      if (response.data?.description) {
+        description = response.data.description;
+      } else if (response.data?.data?.description) {
+        description = response.data.data.description;
+      } else if (response.data?.analysis) {
+        description = response.data.analysis;
+      } else if (response.data?.result) {
+        description = response.data.result;
+      } else if (typeof response.data === 'string') {
+        description = response.data;
+      }
+      
+      if (!description) {
+        throw new Error('No analysis result returned from server');
+      }
+      
+      const cleanedDescription = cleanMarkdown(description);
 
       setAiResponse({
-        description,
+        description: cleanedDescription,
         language,
       });
     } catch (error: unknown) {
+      console.error('❌ Image analysis error:', error);
       const apiError = error as any;
       const errorMessage =
         apiError?.response?.data?.details ||
         apiError?.response?.data?.error ||
+        apiError?.response?.data?.message ||
         apiError?.message ||
         "Failed to analyze image.";
       

@@ -1,4 +1,5 @@
 # Patient Portal Issues & Fixes
+
 **Date:** January 30, 2026  
 **Status:** 🔴 6 CRITICAL ISSUES FOUND
 
@@ -6,14 +7,14 @@
 
 ## Patient Dashboard Issues Summary
 
-| # | Issue | Component | Root Cause | Fix |
-|---|-------|-----------|-----------|-----|
-| 1 | **Emergency Call** - Cannot connect | Emergency.tsx | Socket.IO event name mismatch or doctor list fetch error | Check connectToTriageDoctor() function |
-| 2 | **My Appointments** - Click doctor → redirects to booking | MyBookings.tsx | Navigation handler redirects to find/book instead of appointment details | Fix onClick handler for doctor rows |
-| 3 | **Video Consultation** - Blank screen + no connection | VideoConsultation.tsx | LiveKit connection not initializing OR room ID not passed | Check LiveKit setup and URL generation |
-| 4 | **Notifications** - Unread/Read filter not working | NotificationCenter.tsx | No read/unread filtering implemented in dropdown | Add filter state and logic |
-| 5 | **Reports** - Error loading | Reposts.tsx | API endpoint not returning data OR response parsing fails | Check /ai/analyze-image endpoint |
-| 6 | **Chat With Doctor** - No doctors list | VideoChatdoctor.tsx | Doctor fetch endpoint returns empty OR data parsing error | Fix availableUsers fetch and display |
+| #   | Issue                                                     | Component              | Root Cause                                                               | Fix                                    |
+| --- | --------------------------------------------------------- | ---------------------- | ------------------------------------------------------------------------ | -------------------------------------- |
+| 1   | **Emergency Call** - Cannot connect                       | Emergency.tsx          | Socket.IO event name mismatch or doctor list fetch error                 | Check connectToTriageDoctor() function |
+| 2   | **My Appointments** - Click doctor → redirects to booking | MyBookings.tsx         | Navigation handler redirects to find/book instead of appointment details | Fix onClick handler for doctor rows    |
+| 3   | **Video Consultation** - Blank screen + no connection     | VideoConsultation.tsx  | LiveKit connection not initializing OR room ID not passed                | Check LiveKit setup and URL generation |
+| 4   | **Notifications** - Unread/Read filter not working        | NotificationCenter.tsx | No read/unread filtering implemented in dropdown                         | Add filter state and logic             |
+| 5   | **Reports** - Error loading                               | Reposts.tsx            | API endpoint not returning data OR response parsing fails                | Check /ai/analyze-image endpoint       |
+| 6   | **Chat With Doctor** - No doctors list                    | VideoChatdoctor.tsx    | Doctor fetch endpoint returns empty OR data parsing error                | Fix availableUsers fetch and display   |
 
 ---
 
@@ -24,6 +25,7 @@
 **File:** `/home/ubuntu/Mediczy/client/src/pages/Emergency.tsx`
 
 **Problem:**
+
 ```tsx
 const connectToTriageDoctor = async (doctorId?: string, useHC: boolean = false) => {
   setConnectingToDoctor(true);
@@ -35,7 +37,7 @@ const connectToTriageDoctor = async (doctorId?: string, useHC: boolean = false) 
       triageId: `triage_${Date.now()}`,
       paymentMethod: useHC ? 'hc' : undefined
     });
-    
+
     if (response.data.success) {
       // But Socket.IO listener might not be connected!
       setVideoCallInfo(response.data.videoCall); // Line ~1005
@@ -45,10 +47,12 @@ const connectToTriageDoctor = async (doctorId?: string, useHC: boolean = false) 
 ```
 
 **Root Cause:**
+
 - Socket.IO might not be connected when trying to receive `triage-call-accepted` event
 - Error handling doesn't distinguish between "no doctors available" vs "connection error"
 
 **Fix Needed:**
+
 - Verify socket is connected before sending request
 - Add better error messages
 
@@ -76,6 +80,7 @@ Change onClick from `/doctors` route to appointment details modal/page
 **File:** `/home/ubuntu/Mediczy/client/src/pages/VideoConsultation.tsx`
 
 **Problem:**
+
 ```tsx
 // LiveKit connection state
 interface LiveKitConnection {
@@ -84,16 +89,19 @@ interface LiveKitConnection {
   roomName: string;
 }
 
-const [liveKitConnection, setLiveKitConnection] = useState<LiveKitConnection | null>(null);
+const [liveKitConnection, setLiveKitConnection] =
+  useState<LiveKitConnection | null>(null);
 // ^^^ Set to null but never populated in useEffect!
 ```
 
 **Root Cause:**
+
 - `liveKitConnection` is initialized to null and never set
 - LiveKit component isn't receiving connection parameters
 - Video iframe has no room URL
 
 **Fix Needed:**
+
 - Populate `liveKitConnection` with proper serverUrl, token, and roomName
 - Call LiveKit API to get token: `GET /api/video/livekit/token`
 
@@ -110,6 +118,7 @@ Component doesn't have unread/read filter state. It shows all notifications rega
 
 **Root Cause:**
 No filter logic implemented:
+
 ```tsx
 // CURRENT CODE (SHOWS ALL):
 {notifications.map((notification) => (
@@ -117,7 +126,7 @@ No filter logic implemented:
 ))}
 
 // NEEDED CODE:
-const filteredNotifications = filterStatus === 'unread' 
+const filteredNotifications = filterStatus === 'unread'
   ? notifications.filter(n => !n.read)
   : filterStatus === 'read'
   ? notifications.filter(n => n.read)
@@ -125,6 +134,7 @@ const filteredNotifications = filterStatus === 'unread'
 ```
 
 **Fix Needed:**
+
 - Add filter state: `[filterStatus, setFilterStatus] = useState('all')`
 - Add filter tabs/buttons in header
 - Filter notifications before mapping
@@ -136,24 +146,27 @@ const filteredNotifications = filterStatus === 'unread'
 **File:** `/home/ubuntu/Mediczy/client/src/pages/Reposts.tsx` (note: typo in filename)
 
 **Problem:**
+
 ```tsx
 const analyzeImage = async () => {
   // ...
-  const response = await api.post('/ai/analyze-image', {
+  const response = await api.post("/ai/analyze-image", {
     image: base64Image,
-    language
+    language,
   });
   const description = cleanMarkdown(response.data?.description || "");
   // ^^^ endpoint might return data in different format
-}
+};
 ```
 
 **Root Cause:**
+
 - API endpoint returns data in unexpected format
 - Response validation is weak
 - No error handling for missing description field
 
 **Fix Needed:**
+
 - Check actual API response structure
 - Add proper error handling
 - Validate response before accessing properties
@@ -165,12 +178,13 @@ const analyzeImage = async () => {
 **File:** `/home/ubuntu/Mediczy/client/src/pages/chat/VideoChatdoctor.tsx`
 
 **Problem:**
+
 ```tsx
 const { data: availableUsers = [] } = useQuery<Recipient[]>({
   queryKey: [recipientQueryKey, userType],
   queryFn: async () => {
     const { data } = await api.get(recipientEndpoint);
-    return normalizeParticipants(data);  // ^^^ normalizeParticipants might fail
+    return normalizeParticipants(data); // ^^^ normalizeParticipants might fail
   },
   enabled: !!currentId,
 });
@@ -179,11 +193,13 @@ const { data: availableUsers = [] } = useQuery<Recipient[]>({
 ```
 
 **Root Cause:**
+
 - `normalizeParticipants()` function might be stripping valid doctors if data format is different
 - Endpoint returns data in format that doesn't match expectations
 - No error logging for data format mismatches
 
 **Fix Needed:**
+
 - Add console.log to see actual data structure
 - Improve `normalizeParticipants()` to handle more formats
 - Add fallback for when doctors list is empty

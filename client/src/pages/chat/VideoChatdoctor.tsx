@@ -75,24 +75,42 @@ interface Conversation {
 type Recipient = (User | Doctor) & { _id: string };
 
 const normalizeParticipants = (payload: any): Recipient[] => {
-  const rawList = Array.isArray(payload?.data)
-    ? payload.data
-    : Array.isArray(payload)
-      ? payload
-      : [];
+  console.log('🔍 Normalizing participants, raw payload:', payload);
+  
+  // Handle multiple response formats
+  let rawList = [];
+  if (Array.isArray(payload?.data)) {
+    rawList = payload.data;
+  } else if (Array.isArray(payload?.doctors)) {
+    rawList = payload.doctors;
+  } else if (Array.isArray(payload?.users)) {
+    rawList = payload.users;
+  } else if (Array.isArray(payload)) {
+    rawList = payload;
+  } else if (payload?.success && Array.isArray(payload?.data?.doctors)) {
+    rawList = payload.data.doctors;
+  } else if (payload?.success && Array.isArray(payload?.data)) {
+    rawList = payload.data;
+  }
+  
+  console.log('📋 Extracted raw list:', rawList.length, 'items');
 
   const normalized = rawList
     .filter(Boolean)
     .map((item: any) => {
-      const normalizedId = item._id || item.id || item.userId;
-      return {
+      const normalizedId = item._id || item.id || item.userId || item.doctorId;
+      const normalizedItem = {
         ...item,
         _id: normalizedId ? String(normalizedId) : "",
-        isOnline: Boolean(item.isOnline),
+        name: item.name || item.fullName || item.doctorName || 'Unknown',
+        isOnline: Boolean(item.isOnline || item.available),
       } as Recipient;
+      return normalizedItem;
     });
 
-  return normalized.filter((item: Recipient) => Boolean(item._id));
+  const filtered = normalized.filter((item: Recipient) => Boolean(item._id));
+  console.log('✅ Normalized to', filtered.length, 'valid participants');
+  return filtered;
 };
 
 const Chat = () => {

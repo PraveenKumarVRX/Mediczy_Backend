@@ -960,6 +960,18 @@ Hello, I'm Dr. iSHA, your AI emergency medical assistant powered by multimodal i
   const connectToTriageDoctor = async (doctorId?: string, useHC: boolean = false) => {
     setConnectingToDoctor(true);
     try {
+      // Verify Socket.IO is connected before proceeding
+      if (!isSocketConnected) {
+        console.warn('⚠️ Socket not connected, attempting to connect...');
+        socketService.connect();
+        // Wait a bit for connection
+        await new Promise(resolve => setTimeout(resolve, 1000));
+        
+        if (!socketService.socket?.connected) {
+          throw new Error('Cannot connect to notification system. Please refresh the page.');
+        }
+      }
+      
       // Get current symptoms from chat history
       const symptoms = triageChatMessages
         .filter(m => m.role === 'user')

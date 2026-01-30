@@ -98,6 +98,42 @@ const VideoConsultation = () => {
   // LiveKit native connection state
   const [liveKitConnection, setLiveKitConnection] = useState<LiveKitConnection | null>(null);
   
+  // Fetch LiveKit token when roomId is available
+  useEffect(() => {
+    const fetchLiveKitToken = async () => {
+      if (!roomId || !appointmentIdFromUrl) return;
+      
+      try {
+        console.log('🎥 Fetching LiveKit token for room:', roomId);
+        const response = await api.get('/video/livekit/token', {
+          params: {
+            roomId,
+            appointmentId: appointmentIdFromUrl,
+            identity: currentUser?._id || `user_${Date.now()}`
+          }
+        });
+        
+        if (response.data?.token && response.data?.serverUrl) {
+          setLiveKitConnection({
+            serverUrl: response.data.serverUrl,
+            token: response.data.token,
+            roomName: response.data.roomName || roomId
+          });
+          console.log('✅ LiveKit connection initialized');
+        }
+      } catch (error) {
+        console.error('❌ Failed to fetch LiveKit token:', error);
+        toast({
+          title: "Connection Error",
+          description: "Failed to initialize video connection. Please try again.",
+          variant: "destructive"
+        });
+      }
+    };
+    
+    fetchLiveKitToken();
+  }, [roomId, appointmentIdFromUrl, currentUser?._id]);
+  
   // Device check state
   const [cameraPermission, setCameraPermission] = useState<'granted' | 'denied' | 'prompt'>('prompt');
   const [micPermission, setMicPermission] = useState<'granted' | 'denied' | 'prompt'>('prompt');
