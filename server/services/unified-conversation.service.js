@@ -206,17 +206,45 @@ class UnifiedConversationService {
     }
 
     let result;
+    let classification = null;
     try {
-      // Use LaBSE-enhanced hybrid classification
-      const classification = intentClassifier.hybridEnabled
-        ? await intentClassifier.classifyHybrid(processedMessage, 'en')  // Classify in English
-        : intentClassifier.classify(processedMessage, 'en');
+      // Use enhanced intent classifier with conversation state
+      classification = await intentClassifier.classifyHybrid(
+        processedMessage, 
+        detectedLanguage,
+        resolvedSessionId,  // Pass session for state management
+        userContext          // Pass user context for child detection
+      );
 
-      console.log('[UnifiedConversation] Intent classification:', classification?.primary?.name, 'confidence:', classification?.primary?.confidence);
+      console.log('[UnifiedConversation] Intent classification:', classification?.primary?.name, 'confidence:', classification?.primary?.confidence, 'requiresAI:', classification?.requiresAI);
 
-      // REMOVED: Special handling for appointment_status
-      // ALL queries now route to SIB AI for intelligent, context-aware responses
-      // SIB ChatBotlet will handle appointment status queries with proper context
+      // Check if we can use a quick response (no AI needed)
+      if (classification?.quickResponse && !classification?.requiresAI) {
+        let quickResp = classification.quickResponse;
+        
+        // Translate quick response if needed
+        if (detectedLanguage !== 'en') {
+          try {
+            const translated = await translationService.processMultilingualOutput(quickResp, detectedLanguage);
+            if (translated.translated) {
+              quickResp = translated.processedResponse;
+            }
+          } catch (e) { /* use original */ }
+        }
+        
+        console.log('[UnifiedConversation] Using quick response for intent:', classification.primary.name);
+        return {
+          success: true,
+          shouldReply: true,
+          response: quickResp,
+          provider: 'unified-intent',
+          sessionId: resolvedSessionId,
+          language: detectedLanguage,
+          channel,
+          intent: classification.primary.name,
+          translation: translationInfo
+        };
+      }
 
       // Detect explicit human handoff request
       const explicitHandoffRequest = /\b(human|agent|real person|representative|talk to someone|speak to someone|customer service|support team|live agent|live chat|connect me|transfer me|escalate)\b/i.test(normalizedMessage);
@@ -326,13 +354,20 @@ class UnifiedConversationService {
         result.response = result.response + handoffMsg;
       }
     } catch (error) {
-      const classification = intentClassifier.hybridEnabled
-        ? await intentClassifier.classifyHybrid(processedMessage, 'en')
-        : intentClassifier.classify(processedMessage, 'en');
+      console.error('[UnifiedConversation] Error processing message:', error.message);
+      
+      // Try to get intent classification for a reasonable fallback
+      const classification = await intentClassifier.classifyHybrid(
+        processedMessage, 
+        detectedLanguage,
+        resolvedSessionId,
+        userContext
+      );
 
-      let intentResponse = classification?.primary?.name
-        ? intentClassifier.getIntentResponse(classification.primary.name, 'en')
-        : null;
+      let intentResponse = classification?.quickResponse ||
+        (classification?.primary?.name
+          ? intentClassifier.getIntentResponse(classification.primary.name, detectedLanguage)
+          : null);
 
       let fallbackResponse = intentResponse || "Thanks for your message. Please share a bit more detail so I can help you better.";
       
@@ -360,12 +395,16 @@ class UnifiedConversationService {
     let finalResponse = String(result?.response || '').trim();
     const lowerFinal = finalResponse.toLowerCase();
     if (lowerFinal.includes('error processing your request') || lowerFinal.includes('please try again later')) {
-      const classification = intentClassifier.hybridEnabled
-        ? await intentClassifier.classifyHybrid(processedMessage, 'en')
-        : intentClassifier.classify(processedMessage, 'en');
-      let intentResponse = classification?.primary?.name
-        ? intentClassifier.getIntentResponse(classification.primary.name, 'en')
-        : null;
+      const classification = await intentClassifier.classifyHybrid(
+        processedMessage, 
+        detectedLanguage,
+        resolvedSessionId,
+        userContext
+      );
+      let intentResponse = classification?.quickResponse ||
+        (classification?.primary?.name
+          ? intentClassifier.getIntentResponse(classification.primary.name, detectedLanguage)
+          : null);
       finalResponse = intentResponse || "Thanks for your message. Please share a bit more detail so I can help you better.";
       
       // Translate if needed
@@ -377,6 +416,21 @@ class UnifiedConversationService {
       }
     }
     
+    if (!finalResponse) {
+      let intentResponse = classification?.quickResponse ||
+        (classification?.primary?.name
+          ? intentClassifier.getIntentResponse(classification.primary.name, detectedLanguage)
+          : null);
+      finalResponse = intentResponse || "Thanks for your message. Please share a bit more detail so I can help you better.";
+
+      if (detectedLanguage !== 'en') {
+        try {
+          const translated = await translationService.processMultilingualOutput(finalResponse, detectedLanguage);
+          if (translated.translated) finalResponse = translated.processedResponse;
+        } catch (e) { /* use fallback */ }
+      }
+    }
+
     return {
       ...result,
       success: true,
