@@ -5,6 +5,7 @@ import { Strategy as FacebookStrategy } from 'passport-facebook';
 import jwt from 'jsonwebtoken';
 import Doctor from '../models/doctor.model.intelligent.js';
 import { processOAuthProfilePicture } from '../utils/oauth-profile-picture.js';
+import { JWT_CONFIG } from '../config/auth.config.js';
 
 const router = express.Router();
 
@@ -143,18 +144,21 @@ async function findOrCreateDoctor(profile, provider) {
 
 /**
  * Generate JWT token for doctor
+ * FIXED: Use JWT_SECRET and include required id/role fields for authDoctor middleware
  */
 function generateDoctorToken(doctor) {
   const payload = {
-    doctorId: doctor.doctorId,
+    id: doctor.id,             // Required for authDoctor middleware
+    doctorId: doctor.doctorId || doctor.id,
     email: doctor.email,
+    role: 'doctor',            // Required for authUser/authDoctor middleware
     userType: 'doctor',
     firstName: doctor.firstName,
     lastName: doctor.lastName,
     specialization: doctor.specialization
   };
   
-  return jwt.sign(payload, process.env.SECRET_TOKEN, {
+  return jwt.sign(payload, JWT_CONFIG.SECRET || process.env.JWT_SECRET, {
     expiresIn: '30d'
   });
 }

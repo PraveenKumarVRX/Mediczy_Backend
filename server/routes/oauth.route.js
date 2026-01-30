@@ -1,6 +1,7 @@
 import express from 'express';
 import passport from '../config/oauth.config.js';
 import jwt from 'jsonwebtoken';
+import { JWT_CONFIG } from '../config/auth.config.js';
 
 const router = express.Router();
 
@@ -16,17 +17,20 @@ const router = express.Router();
 
 /**
  * Generate JWT token for authenticated user
+ * FIXED: Use JWT_SECRET (JWT_CONFIG.SECRET) and include required id/role fields
  */
 function generateToken(user) {
   const payload = {
+    id: user.id,         // Required for authUser middleware
     userId: user.id,
     email: user.email,
+    role: 'user',        // Required for authUser middleware role check
     userType: 'user',
     firstName: user.firstName,
     lastName: user.lastName
   };
   
-  return jwt.sign(payload, process.env.SECRET_TOKEN, {
+  return jwt.sign(payload, JWT_CONFIG.SECRET || process.env.JWT_SECRET, {
     expiresIn: '30d'
   });
 }

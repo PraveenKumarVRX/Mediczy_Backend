@@ -22,6 +22,16 @@ const ORG_ADMIN_ROLES = new Set([
   "corporate_admin", "homecare_admin", "ambulance_admin"
 ]);
 
+// Clinic staff roles that should map to specific authorization handling
+const CLINIC_STAFF_ROLES = new Set([
+  "doctor", "doctor_assistant", "receptionist", "nurse", "staff"
+]);
+
+// Hospital roles that should be recognized by the auth middleware
+const HOSPITAL_ROLES = new Set([
+  "hospital", "hospital_admin", "hospital_staff", "hospital_doctor"
+]);
+
 const toPlainObject = (record) => {
   if (!record) return null;
   if (typeof record.get === "function") {
@@ -274,6 +284,61 @@ export const authUser = async (req, res, next) => {
       return next();
     }
 
+    // Handle clinic staff roles (doctor, doctor_assistant, receptionist, nurse, staff)
+    // FIXED: Map clinic staff tokens with type='clinic_staff' to proper authorization
+    if (decoded.type === "clinic_staff" || CLINIC_STAFF_ROLES.has(decoded.role)) {
+      req.user = {
+        id: decoded.id,
+        email: decoded.email,
+        role: decoded.role,
+        first_name: decoded.first_name,
+        last_name: decoded.last_name,
+        organization_id: decoded.organization_id || decoded.clinic_id,
+        tenant_id: decoded.tenant_id || decoded.clinic_id,
+        clinic_id: decoded.clinic_id,
+        clinic_name: decoded.clinic_name,
+        type: "clinic_staff",
+      };
+      // Map doctor_assistant role to 'assistant' for requireRole() compatibility
+      req.userRole = decoded.role === "doctor_assistant" ? "assistant" : decoded.role;
+      const tenantBinding = bindTenantContext(
+        req,
+        decoded.tenant_id || decoded.organization_id || decoded.clinic_id || null
+      );
+      if (!tenantBinding.ok) {
+        return res.status(tenantBinding.status).json(tenantBinding.body);
+      }
+      return next();
+    }
+
+    // Handle hospital roles (hospital, hospital_admin, hospital_staff, hospital_doctor)
+    // FIXED: Map hospital tokens to proper authorization
+    if (decoded.userType === "hospital" || HOSPITAL_ROLES.has(decoded.role)) {
+      req.user = {
+        id: decoded.id,
+        email: decoded.email,
+        role: decoded.role,
+        userType: "hospital",
+        hospital_id: decoded.hospital_id || decoded.hospitalId,
+        hospitalId: decoded.hospital_id || decoded.hospitalId,
+        hospitalName: decoded.hospitalName,
+        tenant_id: decoded.tenant_id || decoded.hospital_id,
+        organization_id: decoded.organization_id || decoded.hospital_id,
+        subdomain: decoded.subdomain,
+        custom_domain: decoded.custom_domain,
+      };
+      // Map hospital_admin to 'hospital' for requireRole('hospital') compatibility
+      req.userRole = HOSPITAL_ROLES.has(decoded.role) ? "hospital" : decoded.role;
+      const tenantBinding = bindTenantContext(
+        req,
+        decoded.tenant_id || decoded.organization_id || decoded.hospital_id || null
+      );
+      if (!tenantBinding.ok) {
+        return res.status(tenantBinding.status).json(tenantBinding.body);
+      }
+      return next();
+    }
+
     const user = await safeFindByPk(
       UserPostgres,
       userModel,
@@ -335,6 +400,8 @@ export const requireRole = (role) => {
     // Normalize role for checking:
     // - system_admin has admin privileges
     // - isTeam flag grants team privileges
+    // - hospital_admin, hospital_staff, hospital_doctor map to 'hospital'
+    // - doctor_assistant maps to 'assistant'
     let effectiveRole = req.userRole;
     if (req.userRole === 'system_admin') {
       effectiveRole = 'admin';
@@ -342,9 +409,12 @@ export const requireRole = (role) => {
     
     // Check if user has any allowed role
     // Also check isTeam flag if 'team' is in allowed roles
+    // FIXED: Support hospital roles properly
     const hasRole = allowedRoles.includes(effectiveRole) ||
       (allowedRoles.includes('team') && (req.user?.isTeam || req.userRole === 'team')) ||
-      (allowedRoles.includes('admin') && (req.user?.isAdmin || req.userRole === 'admin' || req.userRole === 'system_admin'));
+      (allowedRoles.includes('admin') && (req.user?.isAdmin || req.userRole === 'admin' || req.userRole === 'system_admin')) ||
+      (allowedRoles.includes('hospital') && HOSPITAL_ROLES.has(req.user?.role)) ||
+      (allowedRoles.includes('assistant') && (req.userRole === 'assistant' || req.user?.role === 'doctor_assistant'));
     
     if (!hasRole) {
       return res.status(403).json({ message: 'Forbidden: insufficient role' });

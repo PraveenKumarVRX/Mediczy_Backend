@@ -369,9 +369,9 @@ const PUBLIC_ENDPOINTS = [
  * Ensures users can only access endpoints relevant to their role
  */
 const ringFencingMiddleware = (req, res, next) => {
-  // TEMPORARY: Bypass ALL requests to test if middleware is working
-  console.log('🚨 RING-FENCING MIDDLEWARE EXECUTED - URL:', req.originalUrl);
-  return next();
+  // FIXED: Removed the early return that was bypassing all ring-fencing security
+  // The previous line `return next();` was causing ALL requests to bypass JWT role scoping
+  console.log('🔒 RING-FENCING MIDDLEWARE EXECUTED - URL:', req.originalUrl);
   
   const requestPath = req.originalUrl.split('?')[0]; // Use originalUrl and strip query params
   const requestMethod = req.method;

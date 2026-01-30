@@ -19,6 +19,7 @@
  */
 
 import express from 'express';
+import bcrypt from 'bcrypt';
 import { asyncHandler } from '../../middleware/errorHandler.middleware.js';
 import { apiLimiter, authLimiter } from '../../middleware/rateLimiter.middleware.js';
 import { requestLogger, auditLogger } from '../../middleware/logging.middleware.js';
@@ -124,8 +125,10 @@ router.post('/auth/login', authLimiter, validateRequest(loginSchema), asyncHandl
   
   const user = result.rows[0];
   
-  // Verify password (simplified - use bcrypt in production)
-  if (user.password !== password) {
+  // Verify password using bcrypt
+  // FIXED: Use bcrypt.compare instead of plaintext comparison
+  const isPasswordValid = await bcrypt.compare(password, user.password);
+  if (!isPasswordValid) {
     return res.status(401).json({
       success: false,
       error: { code: 'AUTH_FAILED', message: 'Invalid credentials' }
