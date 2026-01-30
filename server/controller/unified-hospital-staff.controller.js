@@ -59,12 +59,12 @@ const findHospitalByIdentifier = async (identifier) => {
   }
 
   // Try to find by ID, slug, subdomain, or custom_domain
-  // Filter by organization_type = 'hospital'
+  // Filter by type = 'hospital' (Tenant model uses 'type' not 'organization_type')
   const hospital = await Tenant.findOne({
     where: {
       [Op.and]: [
         { status: 'active' },
-        { organization_type: 'hospital' },
+        { type: 'hospital' },
         {
           [Op.or]: [
             { id: isNaN(identifier) ? null : parseInt(identifier) },
@@ -238,7 +238,7 @@ export const doctorSignup = async (req, res) => {
             name: hospital.name,
             slug: hospital.slug,
             logo: hospital.logo,
-            type: hospital.organization_type
+            type: hospital.type
           }
         }
       }
@@ -379,7 +379,7 @@ export const doctorLogin = async (req, res) => {
             name: hospital.name,
             slug: hospital.slug,
             logo: hospital.logo,
-            type: hospital.organization_type,
+            type: hospital.type,
             address: hospital.address,
             phone: hospital.phone,
             email: hospital.email
@@ -509,7 +509,7 @@ export const nurseSignup = async (req, res) => {
             name: hospital.name,
             slug: hospital.slug,
             logo: hospital.logo,
-            type: hospital.organization_type
+            type: hospital.type
           }
         }
       }
@@ -641,7 +641,7 @@ export const nurseLogin = async (req, res) => {
             name: hospital.name,
             slug: hospital.slug,
             logo: hospital.logo,
-            type: hospital.organization_type,
+            type: hospital.type,
             address: hospital.address,
             phone: hospital.phone,
             email: hospital.email
@@ -769,7 +769,7 @@ export const assistantSignup = async (req, res) => {
             name: hospital.name,
             slug: hospital.slug,
             logo: hospital.logo,
-            type: hospital.organization_type
+            type: hospital.type
           }
         }
       }
@@ -901,7 +901,7 @@ export const assistantLogin = async (req, res) => {
             name: hospital.name,
             slug: hospital.slug,
             logo: hospital.logo,
-            type: hospital.organization_type,
+            type: hospital.type,
             address: hospital.address,
             phone: hospital.phone,
             email: hospital.email
@@ -1029,7 +1029,7 @@ export const insuranceCoordinatorSignup = async (req, res) => {
             name: hospital.name,
             slug: hospital.slug,
             logo: hospital.logo,
-            type: hospital.organization_type
+            type: hospital.type
           }
         }
       }
@@ -1161,7 +1161,7 @@ export const insuranceCoordinatorLogin = async (req, res) => {
             name: hospital.name,
             slug: hospital.slug,
             logo: hospital.logo,
-            type: hospital.organization_type,
+            type: hospital.type,
             address: hospital.address,
             phone: hospital.phone,
             email: hospital.email
@@ -1300,7 +1300,7 @@ export const getStaffProfile = async (req, res) => {
           name: hospital.name,
           slug: hospital.slug,
           logo: hospital.logo,
-          type: hospital.organization_type,
+          type: hospital.type,
           address: hospital.address,
           city: hospital.city,
           state: hospital.state,

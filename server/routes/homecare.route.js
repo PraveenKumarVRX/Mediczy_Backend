@@ -32,7 +32,7 @@ router.post('/login', authLimiter, async (req, res) => {
     // Find homecare by email - select only needed fields for faster query
     const homecare = await HomecareProvider.findOne({
       where: { email: normalizedEmail },
-      attributes: ['id', 'name', 'email', 'password', 'phone', 'services', 'tenant_id'],
+      attributes: ['id', 'name', 'email', 'password', 'phone', 'services'],
       raw: true
     });
 
@@ -63,8 +63,7 @@ router.post('/login', authLimiter, async (req, res) => {
         email: homecare.email,
         role: 'homecare',
         userType: 'homecare',
-        type: 'homecare',
-        tenant_id: homecare.tenant_id
+        type: 'homecare'
       },
       JWT_CONFIG.SECRET,
       { expiresIn: '7d' }
@@ -80,8 +79,7 @@ router.post('/login', authLimiter, async (req, res) => {
         name: homecare.name,
         email: homecare.email,
         phone: homecare.phone,
-        services: homecare.services,
-        tenant_id: homecare.tenant_id
+        services: homecare.services
       }
     });
   } catch (error) {
