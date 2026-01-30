@@ -18,6 +18,7 @@ class OmnichannelChatService {
     this.rocketChatAdminUser = process.env.ROCKETCHAT_ADMIN_USER;
     this.rocketChatAdminPassword = process.env.ROCKETCHAT_ADMIN_PASSWORD;
     this.webhookSecret = process.env.ROCKETCHAT_WEBHOOK_SECRET || 'mediczy-webhook-secret';
+    this.incomingWebhookUrl = process.env.ROCKETCHAT_INCOMING_WEBHOOK_URL;
     
     // Auth tokens (cached)
     this.authToken = null;
@@ -258,6 +259,66 @@ class OmnichannelChatService {
   // ============================================================================
   // WHATSAPP BRIDGE
   // ============================================================================
+
+  /**
+   * Send WhatsApp message to RocketChat using Incoming Webhook (Simple & Fast)
+   * This is the quickest way to get WhatsApp messages into RocketChat #general
+   * @param {Object} messageData - { from, text, userName }
+   */
+  async sendToRocketChatWebhook(messageData) {
+    try {
+      if (!this.incomingWebhookUrl) {
+        console.warn('⚠️ ROCKETCHAT_INCOMING_WEBHOOK_URL not configured');
+        return { success: false, error: 'Webhook URL not configured' };
+      }
+
+      const { from, text, userName = 'WhatsApp User', timestamp = new Date().toISOString() } = messageData;
+
+      // Format message for RocketChat
+      const payload = {
+        text: `📱 **WhatsApp Message from ${userName}** (${from})\n\n${text}`,
+        attachments: [
+          {
+            title: 'WhatsApp Message',
+            text: text,
+            color: '#25D366', // WhatsApp green
+            fields: [
+              {
+                title: 'From',
+                value: `${userName} (${from})`,
+                short: true
+              },
+              {
+                title: 'Time',
+                value: new Date(timestamp).toLocaleString('en-IN', { 
+                  timeZone: 'Asia/Kolkata',
+                  dateStyle: 'short',
+                  timeStyle: 'short'
+                }),
+                short: true
+              }
+            ],
+            ts: timestamp
+          }
+        ]
+      };
+
+      const response = await axios.post(this.incomingWebhookUrl, payload, {
+        headers: { 'Content-Type': 'application/json' },
+        timeout: 5000
+      });
+
+      console.log('✅ WhatsApp message sent to RocketChat #general:', { from, text: text.substring(0, 50) });
+      
+      return {
+        success: true,
+        response: response.data
+      };
+    } catch (error) {
+      console.error('❌ Failed to send to RocketChat webhook:', error.message);
+      return { success: false, error: error.message };
+    }
+  }
 
   /**
    * Handle incoming WhatsApp message and forward to RocketChat

@@ -2,6 +2,11 @@
  * Shared Communication Routes
  * Provides Email, SMS, WhatsApp endpoints for different user types
  * Supports: hospital, tpa, broker, insurance company
+ * 
+ * Omnichannel AI Conversation:
+ * - Unified Dr. iSHA brain for all channels (web, WhatsApp, admin chat)
+ * - Multilingual support with LaBSE (109 languages) and IndicTrans2 (22 Indian languages)
+ * - Intent classification with conversation state management
  */
 
 import express from 'express';
@@ -10,6 +15,7 @@ import { SMSService } from '../services/sms.service.js';
 import twilio from 'twilio';
 import emailService from '../services/emailService.js';
 import CommunicationLog from '../models/postgres/communication-log.model.postgres.js';
+import unifiedConversationService from '../services/unified-conversation.service.js';
 
 const router = express.Router();
 
@@ -326,6 +332,183 @@ router.get('/recent', authUser, async (req, res) => {
   } catch (error) {
     console.error('Error fetching recent messages:', error);
     res.status(500).json({ success: false, message: 'Failed to fetch messages', error: error.message });
+  }
+});
+
+/**
+ * Omnichannel AI Chat
+ * Unified Dr. iSHA conversation endpoint for all channels
+ * 
+ * Features:
+ * - Multilingual support (109 languages via LaBSE, 22 Indian languages via IndicTrans2)
+ * - Time-based greetings (Good morning/afternoon/evening)
+ * - Intent classification with Redis-based conversation state
+ * - Human handoff detection and routing
+ * - Patient context integration (appointments, prescriptions, allergies, etc.)
+ * - Prescription guardrails (Dr. iSHA cannot prescribe medications)
+ * 
+ * Request Body:
+ * {
+ *   message: string (required) - User's message
+ *   channel: string (optional) - 'web' | 'whatsapp' | 'admin' | 'support' (default: 'web')
+ *   language: string (optional) - ISO 639-1 code (auto-detected if not provided)
+ *   sessionId: string (optional) - Conversation session ID (auto-generated if not provided)
+ *   conversationId: string (optional) - Alternative to sessionId
+ *   identifier: string (optional) - User identifier (phone, email, userId)
+ *   userContext: object (optional) - Patient data for personalized responses
+ *     {
+ *       userId: number,
+ *       user: { id, name, email, phone },
+ *       profile: { dateOfBirth, gender, bloodGroup },
+ *       demographics: { age, city, state },
+ *       appointments: [...],
+ *       prescriptions: [...],
+ *       conditions: [...],
+ *       activeMedications: [...],
+ *       allergies: [...],
+ *       conversationHistory: [...],
+ *       summary: string
+ *     }
+ * }
+ * 
+ * Response:
+ * {
+ *   success: boolean,
+ *   shouldReply: boolean,
+ *   response: string - Dr. iSHA's response (translated to user's language)
+ *   sessionId: string,
+ *   language: string - Detected/provided language code
+ *   channel: string,
+ *   provider: string - 'unified' | 'unified-local' | 'unified-intent' | 'unified-fallback'
+ *   intent: string (optional) - Classified intent name
+ *   translation: object (optional) - Translation metadata
+ *   handoffSuggested: boolean (optional) - True if human handoff is recommended
+ *   handoffRequired: boolean (optional) - True if user explicitly requested human agent
+ *   handoffDepartment: string (optional) - Suggested department (billing, pharmacy, appointments, etc.)
+ *   handoffReason: string (optional) - Reason for handoff (user_requested, low_confidence, complex_query, etc.)
+ * }
+ * 
+ * Examples:
+ * 
+ * 1. Simple greeting:
+ *    POST /api/communication/chat
+ *    { "message": "Hi", "channel": "web" }
+ *    Response: { "response": "Good morning! I'm Dr. iSHA. How can I help you today?", ... }
+ * 
+ * 2. Multilingual greeting (Tamil):
+ *    POST /api/communication/chat
+ *    { "message": "வணக்கம்", "channel": "whatsapp" }
+ *    Response: { "response": "வணக்கம்! நான் Dr. iSHA. இன்று நான் உங்களுக்கு எப்படி உதவ முடியும்?", "language": "ta", ... }
+ * 
+ * 3. Medical query with context:
+ *    POST /api/communication/chat
+ *    {
+ *      "message": "What are my upcoming appointments?",
+ *      "channel": "web",
+ *      "userContext": {
+ *        "userId": 123,
+ *        "user": { "name": "Senthilkumar" },
+ *        "appointments": [{ "date": "2026-02-15", "doctor": "Dr. Sharma", "type": "Cardiology" }]
+ *      }
+ *    }
+ *    Response: { "response": "Hi Senthilkumar! You have an appointment with Dr. Sharma for Cardiology on February 15, 2026.", ... }
+ * 
+ * 4. Human handoff request:
+ *    POST /api/communication/chat
+ *    { "message": "I need to talk to a human agent", "channel": "support" }
+ *    Response: {
+ *      "response": "✅ I'm connecting you to a human agent now. Someone from our team will assist you shortly.",
+ *      "handoffRequired": true,
+ *      "handoffDepartment": "general",
+ *      "handoffReason": "user_requested",
+ *      ...
+ *    }
+ */
+router.post('/chat', authUser, async (req, res) => {
+  try {
+    const {
+      message,
+      channel = 'web',
+      language,
+      sessionId,
+      conversationId,
+      identifier,
+      userContext = {}
+    } = req.body;
+
+    if (!message || typeof message !== 'string') {
+      return res.status(400).json({
+        success: false,
+        message: 'Message is required and must be a string'
+      });
+    }
+
+    // Enhance userContext with authenticated user info
+    const enhancedContext = {
+      ...userContext,
+      userId: userContext.userId || req.user.id,
+      organizationId: userContext.organizationId || req.user.organizationId,
+      user: userContext.user || {
+        id: req.user.id,
+        name: req.user.name,
+        email: req.user.email,
+        phone: req.user.phone
+      }
+    };
+
+    // Process message through unified conversation service
+    // This handles:
+    // - Multilingual greeting detection and response
+    // - Language detection via LaBSE
+    // - Translation (input → English → AI → source language)
+    // - Intent classification with conversation state
+    // - AI routing to SIB FastAPI
+    // - Prescription guardrails
+    // - Human handoff detection
+    const result = await unifiedConversationService.processMessage({
+      message,
+      channel,
+      userContext: enhancedContext,
+      sessionId: sessionId || conversationId,
+      language,
+      identifier: identifier || req.user.email || req.user.phone || req.user.id
+    });
+
+    // Log the conversation for analytics
+    try {
+      await CommunicationLog.create({
+        type: 'chat',
+        recipient: identifier || req.user.email || req.user.phone,
+        body: message,
+        status: result.success ? 'delivered' : 'failed',
+        createdBy: req.user.id,
+        organizationId: req.user.organizationId,
+        metadata: {
+          channel,
+          language: result.language,
+          sessionId: result.sessionId,
+          provider: result.provider,
+          intent: result.intent,
+          handoffSuggested: result.handoffSuggested,
+          handoffRequired: result.handoffRequired,
+          handoffDepartment: result.handoffDepartment,
+          responseLength: result.response?.length || 0
+        }
+      });
+    } catch (logError) {
+      console.error('[CommunicationRoute] Failed to log chat:', logError);
+      // Don't fail the request if logging fails
+    }
+
+    // Return the AI response
+    res.json(result);
+  } catch (error) {
+    console.error('[CommunicationRoute] Error in /chat:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Failed to process chat message',
+      error: error.message
+    });
   }
 });
 

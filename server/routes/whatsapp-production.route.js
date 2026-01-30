@@ -3,11 +3,14 @@ import whatsappProductionService from '../services/whatsapp-production.service.j
 import unifiedConversationService from '../services/unified-conversation.service.js';
 import whatsAppUserContextService from '../services/whatsapp-user-context.service.js';
 import rocketChatService from '../services/rocketchat.service.js';
+import omnichannelChatService from '../services/omnichannel-chat.service.js';
 import n8nService from '../services/n8n.service.js';
 import { cache } from '../db/redis.js';
 import logger from '../config/logger.js';
+import axios from 'axios';
 
 const router = express.Router();
+const SIB_URL = process.env.SIB_URL || 'http://localhost:8001';
 
 const sanitizeReply = (text) => {
   const normalized = String(text || '').trim();
@@ -19,8 +22,25 @@ const sanitizeReply = (text) => {
   return normalized;
 };
 
+const compactWhatsAppReply = (text) => {
+  const normalized = String(text || '').trim();
+  if (!normalized) return normalized;
+  const maxChars = parseInt(process.env.WHATSAPP_MAX_REPLY_CHARS || '420', 10);
+  if (normalized.length <= maxChars) return normalized;
+  const sentences = normalized.split(/(?<=[.!?])\s+/);
+  let shortened = sentences.slice(0, 2).join(' ').trim();
+  if (!shortened || shortened.length < 80) {
+    shortened = normalized.slice(0, maxChars).trim();
+  }
+  if (shortened.length > maxChars) {
+    shortened = shortened.slice(0, maxChars).trim();
+  }
+  return `${shortened}…`;
+};
+
 const HANDOFF_KEY_PREFIX = 'whatsapp:handoff:';
 const HANDOFF_TTL_SECONDS = parseInt(process.env.WHATSAPP_HANDOFF_TTL || '86400', 10);
+const WHATSAPP_ROOM_ID = 'whatsapp_general';
 
 const normalizeWhatsAppNumber = (value) => {
   if (!value) return '';
@@ -74,6 +94,8 @@ const detectBookingIntent = (message) => {
     /schedule\s*(an?\s*)?(appointment|consultation|visit)/i,
     /i\s*want\s*to\s*(see|consult|meet|visit)\s*(a\s*)?(doctor|physician)/i,
     /need\s*(to\s*)?(see|consult)\s*(a\s*)?(doctor|physician)/i,
+    /need\s*(a\s*)?(doctor\s*)?consultation/i,
+    /doctor\s*consultation/i,
     /can\s*(you\s*)?book\s*(me\s*)?(an?\s*)?appointment/i,
     /yes\s*(please\s*)?(book|schedule)/i,
     /book\s*now/i,
@@ -788,10 +810,10 @@ router.post('/send-ai-response', async (req, res) => {
         source: 'ai_bot'
       };
       
-      await messages.push('general', aiMessageObj);
+      await messages.push(WHATSAPP_ROOM_ID, aiMessageObj);
       
       if (global.io) {
-        global.io.to('general').emit('new_message', aiMessageObj);
+        global.io.to(WHATSAPP_ROOM_ID).emit('new_message', aiMessageObj);
       }
       
       res.json({
@@ -828,14 +850,13 @@ router.get('/webhook', (req, res) => {
 
 /**
  * Debug endpoint to check team chat inbox messages
- * This is for testing - returns messages stored in #general room
+ * This is for testing - returns messages stored in the WhatsApp room
  */
 router.get('/team-inbox', async (req, res) => {
   try {
     const { chatRooms, messages } = await import('../utils/chatStorage.js');
-    const generalRoomId = 'general';
-    const room = await chatRooms.get(generalRoomId);
-    const roomMessages = await messages.get(generalRoomId) || [];
+    const room = await chatRooms.get(WHATSAPP_ROOM_ID);
+    const roomMessages = await messages.get(WHATSAPP_ROOM_ID) || [];
     
     // Filter to show only WhatsApp messages
     const whatsappMessages = roomMessages.filter(m => m.source === 'whatsapp');
@@ -858,9 +879,21 @@ router.get('/team-inbox', async (req, res) => {
 /**
  * Main webhook for incoming WhatsApp messages
  * Identifies user, retrieves context, and optionally responds with AI
+ * 
+ * ⚠️ PRODUCTION: Twilio POSTs here WITHOUT auth headers
+ * This endpoint must be fully public (no JWT required)
  */
-router.post('/webhook', async (req, res) => {
+router.post('/webhook', (req, res, next) => {
+  // Bypass any auth middleware for Twilio webhooks
+  console.log('🔓 [WhatsApp Webhook] Setting skipAuth=true');
+  req.skipAuth = true;
+  req.user = { id: 'twilio-webhook', role: 'webhook' };
+  req.userRole = 'webhook';
+  console.log('✅ [WhatsApp Webhook] Auth bypass set, calling next()');
+  next();
+}, async (req, res) => {
   try {
+    console.log('📱 [WhatsApp Webhook] Handler called, req.skipAuth=', req.skipAuth);
     const { From, Body, MessageSid, ProfileName, MediaUrl0, MediaContentType0 } = req.body;
     
     // Extract phone number (remove whatsapp: prefix)
@@ -891,18 +924,17 @@ router.post('/webhook', async (req, res) => {
     // Import chat rooms storage from chatStorage.js (Redis-backed)
     const { chatRooms, messages } = await import('../utils/chatStorage.js');
     
-    // Send WhatsApp messages to the #general room
-    const generalRoomId = 'general';
-    if (!(await chatRooms.has(generalRoomId))) {
-      await chatRooms.set(generalRoomId, {
-        id: generalRoomId,
-        type: 'channel',
+    // Send WhatsApp messages to the WhatsApp room
+    if (!(await chatRooms.has(WHATSAPP_ROOM_ID))) {
+      await chatRooms.set(WHATSAPP_ROOM_ID, {
+        id: WHATSAPP_ROOM_ID,
+        type: 'whatsapp_customer',
         participants: [],
         createdAt: new Date().toISOString(),
-        title: '#general',
-        description: 'General discussion and updates'
+        title: 'WhatsApp Customers',
+        description: 'Incoming messages from WhatsApp customers'
       });
-      await messages.set(generalRoomId, []);
+      await messages.set(WHATSAPP_ROOM_ID, []);
     }
     
     // Create enhanced message object with user context
@@ -931,40 +963,44 @@ router.post('/webhook', async (req, res) => {
     };
     
     // Add to chat messages using Redis-backed push
-    await messages.push(generalRoomId, messageObj);
-    const currentMessages = await messages.get(generalRoomId) || [];
+    await messages.push(WHATSAPP_ROOM_ID, messageObj);
+    const currentMessages = await messages.get(WHATSAPP_ROOM_ID) || [];
     
-    logger.info('✅ WhatsApp message added to #general room (Redis)', {
-      roomId: generalRoomId,
+    logger.info('✅ WhatsApp message added to WhatsApp room (Redis)', {
+      roomId: WHATSAPP_ROOM_ID,
       messageId: MessageSid,
       from: userContext.isKnownUser ? userContext.user.name : customerName,
       isKnownUser: userContext.isKnownUser,
       messageCount: currentMessages.length
     });
     
-    // Also post incoming WhatsApp message to RocketChat
-    try {
-      await rocketChatService.sendMessage(
-        'GENERAL',
-        `📱 *WhatsApp Message*\n👤 From: ${customerName} (+${phoneNumber})\n${userContext.isKnownUser ? `🆔 Patient: ${userContext.user.name} (ID: ${userContext.user.id})\n` : ''}⏰ ${new Date().toLocaleString()}\n\n💬 ${Body || '[Media Message]'}`
-      );
-      logger.info('✅ Customer message posted to RocketChat');
-    } catch (rcError) {
-      logger.error('Failed to post to RocketChat:', rcError.message);
-    }
+    // Post incoming WhatsApp message to RocketChat #general (non-blocking - fire and forget)
+    // This runs in background and doesn't delay the AI response
+    omnichannelChatService.sendToRocketChatWebhook({
+      from: phoneNumber,
+      text: Body || '[Media Message]',
+      userName: userContext.isKnownUser 
+        ? `${userContext.user.name} (Patient ID: ${userContext.user.id})` 
+        : customerName,
+      timestamp: new Date().toISOString()
+    }).then(() => {
+      logger.info('✅ WhatsApp message posted to RocketChat #general via incoming webhook');
+    }).catch(rcError => {
+      logger.error('❌ Failed to post to RocketChat webhook:', rcError.message);
+    });
     
     // Emit Socket.IO event to notify team members (if Socket.IO is available)
     if (global.io) {
-      global.io.to(generalRoomId).emit('new_message', messageObj);
+      global.io.to(WHATSAPP_ROOM_ID).emit('new_message', messageObj);
       
       // Also emit user context update for real-time dashboard
-      global.io.to(generalRoomId).emit('user_context', {
+      global.io.to(WHATSAPP_ROOM_ID).emit('user_context', {
         phoneNumber,
         ...userContext,
         timestamp: new Date().toISOString()
       });
       
-      logger.info('🔔 Socket.IO notification sent to #general room');
+      logger.info('🔔 Socket.IO notification sent to WhatsApp room');
     }
     
     // 2. CHECK FOR TEAM MEMBER REQUEST (e.g., "I want to chat with parinitha")
@@ -1087,45 +1123,109 @@ Is there anything else I can help you with? 💙`
         // Let the AI handle ALL messages with full user context from database
         // This allows Dr. iSHA to check appointments, prescriptions, etc. from DB
         
-        // Simple greeting gets fast response but complex queries go to AI
-        const isSimpleGreeting = /^(hi|hello|hey)$/i.test(Body.trim());
-        if (isSimpleGreeting && !userContext.isKnownUser) {
+        // Helper: Get time-based greeting
+        const getTimeBasedGreeting = () => {
+          const hour = new Date().getHours();
+          if (hour < 12) return 'Good morning';
+          if (hour < 17) return 'Good afternoon';
+          return 'Good evening';
+        };
+
+        // Simple greeting gets fast response for all users
+        const isSimpleGreeting = /^(hi|hello|hey|namaste|vanakkam)$/i.test(Body.trim());
+        if (isSimpleGreeting) {
+          const timeGreeting = getTimeBasedGreeting();
+          const greetingResponse = userContext.isKnownUser && userContext.user?.name
+            ? `${timeGreeting} ${userContext.user.name}! 👋 How can I help you today?`
+            : `${timeGreeting}! I'm Dr. iSHA. How can I help you today?`;
+          
+          logger.info('✅ Using STATIC greeting response', { response: greetingResponse });
           await whatsappProductionService.sendSessionMessage({
             to: phoneNumber,
-            body: sanitizeReply("Hi! I'm Dr. iSHA. How can I help you today?")
+            body: sanitizeReply(greetingResponse)
+          });
+          responseSent = true;
+          return res.type('text/xml').status(200).send('<?xml version="1.0" encoding="UTF-8"?><Response></Response>');
+        }
+
+        // Thank you / appreciation response
+        const isThanks = /^(thanks?|thank you|thanku|thnx|appreciate|grateful)$/i.test(Body.trim());
+        if (isThanks) {
+          const thanksResponse = "You're welcome! Happy to help. Is there anything else I can assist you with?";
+          logger.info('✅ Using STATIC thanks response', { response: thanksResponse });
+          await whatsappProductionService.sendSessionMessage({
+            to: phoneNumber,
+            body: sanitizeReply(thanksResponse)
+          });
+          responseSent = true;
+          return res.type('text/xml').status(200).send('<?xml version="1.0" encoding="UTF-8"?><Response></Response>');
+        }
+
+        // Goodbye response
+        const isGoodbye = /^(bye|goodbye|good bye|see you|take care|gotta go|gtg)$/i.test(Body.trim());
+        if (isGoodbye) {
+          const goodbyeResponse = userContext.isKnownUser && userContext.user?.name
+            ? `Take care, ${userContext.user.name}! Feel free to reach out anytime you need health assistance. Stay healthy! 💙`
+            : "Take care! Feel free to reach out anytime you need health assistance. Stay healthy! 💙";
+          logger.info('✅ Using STATIC goodbye response', { response: goodbyeResponse });
+          await whatsappProductionService.sendSessionMessage({
+            to: phoneNumber,
+            body: sanitizeReply(goodbyeResponse)
           });
           responseSent = true;
           return res.type('text/xml').status(200).send('<?xml version="1.0" encoding="UTF-8"?><Response></Response>');
         }
 
         // ALL other messages (including appointment status, medical queries, etc.)
-        // go through unified AI with full DB context
+        // go through SIB FastAPI directly for faster responses
 
-        // Choose handler based on configuration
-        // SIB Brain provides deep reasoning, user profiling, and context-aware responses
-        const handler = unifiedConversationService;
-        const handlerName = 'Unified Dr. iSHA';
-        
-        logger.info(`🧠 Processing via ${handlerName}`, {
+        logger.info(`🧠 Processing via SIB FastAPI`, {
           phoneNumber,
           messageLength: Body.length
         });
         
+        const startTime = Date.now();
+        
+        // Call SIB FastAPI directly with 3-second timeout (reduced from 5s for faster responses)
         const aiResponse = await Promise.race([
-          handler.processMessage({
+          axios.post(`${SIB_URL}/chat`, {
             message: Body,
-            channel: 'whatsapp',
-            sessionId: `whatsapp:${phoneNumber}`,
-            identifier: phoneNumber,
-            userContext: {
-              ...userContext,
-              phoneNumber,
-              profileName: ProfileName
+            phone_number: phoneNumber,
+            session_id: `whatsapp:${phoneNumber}`,
+            user_context: {
+              is_known_user: userContext.isKnownUser,
+              patient_id: userContext.user?.id,
+              patient_name: userContext.user?.name,
+              phone_number: phoneNumber,
+              profile_name: ProfileName,
+              appointments: userContext.appointments,
+              prescriptions: userContext.prescriptions
             }
+          }, {
+            timeout: 3000, // Reduced from 5000ms to 3000ms
+            headers: { 'Content-Type': 'application/json' }
+          }).then(response => {
+            const duration = Date.now() - startTime;
+            logger.info(`✅ SIB response received in ${duration}ms`);
+            return {
+              shouldReply: true,
+              response: response.data.chat_answer || response.data.response || response.data.message,
+              provider: 'sib-fastapi',
+              sessionId: `whatsapp:${phoneNumber}`,
+              isEmergency: response.data.is_emergency || false
+            };
+          }).catch(error => {
+            logger.error('SIB FastAPI error:', error.message);
+            return {
+              shouldReply: true,
+              response: "Hi! I'm Dr. iSHA. How can I help you today?",
+              provider: 'fallback'
+            };
           }),
-          new Promise(resolve => setTimeout(() => resolve(null), 8000))
+          new Promise(resolve => setTimeout(() => resolve(null), 3000)) // Reduced from 5000ms
         ]);
         const rawResponseText = String(aiResponse?.response || '').trim();
+        const compactResponseText = compactWhatsAppReply(rawResponseText);
         const normalizedResponseText = rawResponseText.toLowerCase();
         const isGenericErrorReply = normalizedResponseText.includes('there was an error processing your request');
         
@@ -1139,10 +1239,10 @@ Is there anything else I can help you with? 💙`
         }
 
         if (aiResponse.shouldReply) {
-          const replyText = rawResponseText
+          const replyText = compactResponseText
             ? (isGenericErrorReply
               ? "I'm sorry, I'm having trouble processing your request right now. Please try again in a few minutes or reply with more details."
-              : rawResponseText)
+              : compactResponseText)
             : "Hi! I'm Dr. iSHA. How can I help you today?";
           // Send AI response via WhatsApp
           await whatsappProductionService.sendSessionMessage({
@@ -1165,10 +1265,10 @@ Is there anything else I can help you with? 💙`
             isEmergency: aiResponse.isEmergency
           };
           
-          await messages.push(generalRoomId, aiMessageObj);
+          await messages.push(WHATSAPP_ROOM_ID, aiMessageObj);
           
           if (global.io) {
-            global.io.to(generalRoomId).emit('new_message', aiMessageObj);
+            global.io.to(WHATSAPP_ROOM_ID).emit('new_message', aiMessageObj);
           }
           
           // Also post AI response to RocketChat
