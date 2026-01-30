@@ -118,7 +118,7 @@ const renderPrescriptionHTML = (prescription) => {
  * @desc    Create prescription from appointment/consultation (Doctor only)
  * @access  Private (Doctor)
  */
-router.post('/from-appointment/:appointmentId', authUser, [
+router.post('/from-appointment/:appointmentId', authDoctor, [
   param('appointmentId').isInt().withMessage('Valid appointment ID is required'),
   body('diagnosis').notEmpty().withMessage('Diagnosis is required'),
   body('medications').isArray({ min: 1 }).withMessage('At least one medication is required')
@@ -149,13 +149,14 @@ router.post('/from-appointment/:appointmentId', authUser, [
     }
 
     // Verify doctor access
-    if (appointment.doctorId !== req.user.id) {
+    const doctorId = req.doctor?.id || req.doctor?.dataValues?.id || req.doctor?._id;
+    if (appointment.doctorId !== doctorId) {
       return res.status(403).json({ success: false, message: 'You can only create prescriptions for your own appointments' });
     }
 
     // Get doctor info
-    const doctor = await Doctor.findByPk(req.user.id);
-    if (!doctor) {
+    const doctor = req.doctor;
+    if (!doctor || !doctor.id) {
       return res.status(403).json({ success: false, message: 'Doctor access required' });
     }
 
@@ -273,7 +274,7 @@ router.post('/from-appointment/:appointmentId', authUser, [
  * @desc    Create a new prescription (Doctor only)
  * @access  Private (Doctor)
  */
-router.post('/', authUser, [
+router.post('/', authDoctor, [
   body('userId').optional(),
   body('patientId').optional(),
   body('diagnosis').notEmpty().withMessage('Diagnosis is required'),
@@ -307,9 +308,9 @@ router.post('/', authUser, [
     // Use patientId or userId
     const patientUserId = patientId || userId;
 
-    // Get doctor info
-    const doctor = await Doctor.findByPk(req.user.id);
-    if (!doctor) {
+    // Get doctor info from authenticated request
+    const doctor = req.doctor;
+    if (!doctor || !doctor.id) {
       return res.status(403).json({ success: false, message: 'Doctor access required' });
     }
 
@@ -419,18 +420,13 @@ router.post('/', authUser, [
  * @desc    Get all prescriptions created by the logged-in doctor
  * @access  Private (Doctor)
  */
-router.get('/doctor', authUser, async (req, res) => {
+router.get('/doctor', authDoctor, async (req, res) => {
   try {
-    // Get doctor ID from various possible locations
-    const doctorId = req.user?.id || req.user?.dataValues?.id || req.user?._id;
-
-    // Check if user has doctor role from token
-    if (req.user?.role !== 'doctor' && req.userRole !== 'doctor') {
-      return res.status(403).json({ success: false, message: 'Doctor access required' });
-    }
+    // Get doctor ID from authenticated request
+    const doctorId = req.doctor?.id || req.doctor?.dataValues?.id || req.doctor?._id;
 
     if (!doctorId) {
-      return res.status(400).json({ success: false, message: 'Doctor ID not found in token' });
+      return res.status(400).json({ success: false, message: 'Doctor ID not found' });
     }
 
     const prescriptions = await Prescription.findAll({
@@ -645,14 +641,12 @@ router.get('/appointment/:appointmentId', authUser, async (req, res) => {
  * @desc    Get all prescriptions issued by the doctor
  * @access  Private (Doctor)
  */
-router.get('/doctor/issued', authUser, async (req, res) => {
+router.get('/doctor/issued', authDoctor, async (req, res) => {
   try {
-    const doctorId = req.user.id;
+    const doctorId = req.doctor?.id || req.doctor?.dataValues?.id || req.doctor?._id;
 
-    // Verify doctor
-    const doctor = await Doctor.findByPk(doctorId);
-    if (!doctor) {
-      return res.status(403).json({ success: false, message: 'Doctor access required' });
+    if (!doctorId) {
+      return res.status(400).json({ success: false, message: 'Doctor ID not found' });
     }
 
     const prescriptions = await Prescription.findAll({
@@ -689,7 +683,7 @@ router.get('/doctor/issued', authUser, async (req, res) => {
  * @desc    Update prescription (Doctor only, if not dispensed)
  * @access  Private (Doctor)
  */
-router.put('/:id', authUser, async (req, res) => {
+router.put('/:id', authDoctor, async (req, res) => {
   try {
     const { id } = req.params;
 
@@ -699,7 +693,8 @@ router.put('/:id', authUser, async (req, res) => {
     }
 
     // Check if doctor owns this prescription
-    if (prescription.doctorId !== req.user.id) {
+    const doctorId = req.doctor?.id || req.doctor?.dataValues?.id || req.doctor?._id;
+    if (prescription.doctorId !== doctorId) {
       return res.status(403).json({ success: false, message: 'Not authorized to update this prescription' });
     }
 
@@ -750,7 +745,7 @@ router.put('/:id', authUser, async (req, res) => {
  * @desc    Update prescription status (creates EHR & health diary when issued)
  * @access  Private (Doctor)
  */
-router.patch('/:id/status', authUser, async (req, res) => {
+router.patch('/:id/status', authDoctor, async (req, res) => {
   try {
     const { id } = req.params;
     const { status } = req.body;
@@ -763,6 +758,12 @@ router.patch('/:id/status', authUser, async (req, res) => {
     const prescription = await Prescription.findByPk(id);
     if (!prescription) {
       return res.status(404).json({ success: false, message: 'Prescription not found' });
+    }
+
+    // Verify doctor ownership
+    const doctorId = req.doctor?.id || req.doctor?.dataValues?.id || req.doctor?._id;
+    if (prescription.doctorId !== doctorId) {
+      return res.status(403).json({ success: false, message: 'Not authorized to update this prescription' });
     }
 
     const previousStatus = prescription.status;
@@ -799,6 +800,76 @@ router.patch('/:id/status', authUser, async (req, res) => {
     res.status(500).json({
       success: false,
       message: 'Failed to update status',
+      error: error.message
+    });
+  }
+});
+
+/**
+ * @route   POST /api/prescriptions/:id/issue
+ * @desc    Issue a prescription (change status from draft to issued)
+ * @access  Private (Doctor)
+ */
+router.post('/:id/issue', authDoctor, async (req, res) => {
+  try {
+    const { id } = req.params;
+
+    const prescription = await Prescription.findByPk(id);
+    if (!prescription) {
+      return res.status(404).json({ success: false, message: 'Prescription not found' });
+    }
+
+    // Verify doctor ownership
+    const doctorId = req.doctor?.id || req.doctor?.dataValues?.id || req.doctor?._id;
+    if (prescription.doctorId !== doctorId) {
+      return res.status(403).json({ success: false, message: 'Not authorized to issue this prescription' });
+    }
+
+    // Can only issue draft prescriptions
+    if (prescription.status !== 'draft') {
+      return res.status(400).json({ success: false, message: `Cannot issue a ${prescription.status} prescription` });
+    }
+
+    const previousStatus = prescription.status;
+    await prescription.update({
+      status: 'issued',
+      issuedAt: new Date()
+    });
+
+    // When prescription is issued, create EHR record and health diary entries
+    if (prescription.patientId) {
+      try {
+        // Create EHR record
+        const ehrRecord = await EHRRecord.createFromPrescription(prescription);
+        console.log(`✅ EHR record created for prescription ${prescription.prescriptionNumber}`);
+
+        // Create health diary entries
+        await HealthDiary.createFromPrescription(prescription, ehrRecord.id);
+        console.log(`✅ Health diary entries created for patient ${prescription.patientId}`);
+      } catch (ehrError) {
+        console.error('EHR/Diary creation error:', ehrError.message);
+        // Don't fail the request, just log the error
+      }
+    }
+
+    res.json({
+      success: true,
+      message: 'Prescription issued successfully',
+      prescription: {
+        id: prescription.id,
+        prescriptionId: prescription.prescriptionId,
+        prescriptionNumber: prescription.prescriptionNumber,
+        status: 'issued',
+        issuedAt: prescription.issuedAt,
+        patientName: prescription.patientName,
+        diagnosis: prescription.diagnosis
+      }
+    });
+  } catch (error) {
+    console.error('Issue prescription error:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Failed to issue prescription',
       error: error.message
     });
   }
@@ -1165,7 +1236,7 @@ router.post('/:id/share/whatsapp/:phone', authDoctor, async (req, res) => {
  * @desc    Delete/Cancel prescription (Doctor only, if not dispensed)
  * @access  Private (Doctor)
  */
-router.delete('/:id', authUser, async (req, res) => {
+router.delete('/:id', authDoctor, async (req, res) => {
   try {
     const { id } = req.params;
 
@@ -1175,7 +1246,8 @@ router.delete('/:id', authUser, async (req, res) => {
     }
 
     // Check if doctor owns this prescription
-    if (prescription.doctorId !== req.user.id) {
+    const doctorId = req.doctor?.id || req.doctor?.dataValues?.id || req.doctor?._id;
+    if (prescription.doctorId !== doctorId) {
       return res.status(403).json({ success: false, message: 'Not authorized to delete this prescription' });
     }
 

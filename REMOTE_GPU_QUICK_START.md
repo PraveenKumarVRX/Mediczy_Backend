@@ -12,21 +12,22 @@ Service will start on `http://localhost:8001`
 
 ## 📋 Quick Facts
 
-| Component | Details |
-|-----------|---------|
-| **Service** | localhost:8001 |
-| **Remote GPU** | isha.buzz:8080 |
-| **LLM** | Bimedix.gguf |
-| **STT** | Whisper |
+| Component          | Details                          |
+| ------------------ | -------------------------------- |
+| **Service**        | localhost:8001                   |
+| **Remote GPU**     | isha.buzz:8080                   |
+| **LLM**            | Bimedix.gguf                     |
+| **STT**            | Whisper                          |
 | **Local Services** | Abbreviations, Templates, ICD-10 |
-| **Config** | scribe_service/config.py |
-| **Startup** | scribe_service/start.sh |
+| **Config**         | scribe_service/config.py         |
+| **Startup**        | scribe_service/start.sh          |
 
 ---
 
 ## 🔧 Configuration Methods
 
 ### Method 1: Startup Script (Recommended)
+
 ```bash
 ./start.sh                              # Default: remote isha.buzz 8080
 ./start.sh local                        # Local GPU mode
@@ -34,6 +35,7 @@ Service will start on `http://localhost:8001`
 ```
 
 ### Method 2: Environment Variables
+
 ```bash
 export GPU_MODE=remote
 export GPU_HOST=isha.buzz
@@ -42,6 +44,7 @@ python3 main.py
 ```
 
 ### Method 3: .env File
+
 ```bash
 # Create .env file
 cat > .env << EOF
@@ -64,27 +67,32 @@ python3 main.py
 ## 🧪 Quick Tests
 
 ### 1. Check Remote GPU
+
 ```bash
 curl http://isha.buzz:8080/api/scribe/health
 ```
 
 ### 2. Check Local Service
+
 ```bash
 curl http://localhost:8001/api/scribe/health
 ```
 
 ### 3. Test Abbreviations (Local, <100ms)
+
 ```bash
 curl -X POST http://localhost:8001/api/scribe/expand-abbreviations \
   -d "text=Patient with HTN and DM on treatment"
 ```
 
 ### 4. Test Specialties (Local, <50ms)
+
 ```bash
 curl http://localhost:8001/api/scribe/specialties
 ```
 
 ### 5. Test Remote Bimedix (10-30s)
+
 ```bash
 curl -X POST http://localhost:8001/api/scribe/process-medical-text \
   -d "text=62yo male with chest pain and ST elevation on ECG. HR 110 BP 160/95"
@@ -123,6 +131,7 @@ curl -X POST http://localhost:8001/api/scribe/process-medical-text \
 ## 🚀 Production Deployment
 
 ### Docker
+
 ```bash
 # Build and run
 cd /home/ubuntu/Mediczy/scribe_service
@@ -132,6 +141,7 @@ docker run -e GPU_MODE=remote -e GPU_HOST=isha.buzz -e GPU_PORT=8080 \
 ```
 
 ### Systemd Service
+
 ```ini
 [Unit]
 Description=Medical Scribe Service
@@ -153,6 +163,7 @@ WantedBy=multi-user.target
 ```
 
 ### PM2
+
 ```bash
 pm2 start /home/ubuntu/Mediczy/scribe_service/start.sh \
   --name medical-scribe \
@@ -166,6 +177,7 @@ pm2 startup
 ## 🔌 API Endpoints
 
 ### Abbreviation (Local - Fast)
+
 ```
 POST /api/scribe/expand-abbreviations
 Input:  { "text": "HTN patient" }
@@ -174,6 +186,7 @@ Time:   <100ms
 ```
 
 ### Templates (Local - Fast)
+
 ```
 GET /api/scribe/specialties
 GET /api/scribe/template/{specialty}
@@ -181,6 +194,7 @@ Time: <50ms
 ```
 
 ### Transcription (Remote - GPU)
+
 ```
 POST /api/scribe/transcribe
 Input:  audio file
@@ -189,6 +203,7 @@ Time:   2-5s per 10s audio
 ```
 
 ### Medical Enhancement (Remote - GPU)
+
 ```
 POST /api/scribe/process-medical-text
 Input:  { "text": "clinical note" }
@@ -197,6 +212,7 @@ Time:   3-8s
 ```
 
 ### Health Check
+
 ```
 GET /api/scribe/health
 Shows: GPU mode, remote/local status, memory usage
@@ -206,21 +222,22 @@ Shows: GPU mode, remote/local status, memory usage
 
 ## 📈 Performance Expectations
 
-| Operation | Time | Mode |
-|-----------|------|------|
-| Abbreviation expansion | <100ms | Local |
-| Template loading | <50ms | Local |
-| Specialty list | <50ms | Local |
-| Text analysis | 200-500ms | Local |
-| Whisper transcription | 2-5s | Remote GPU |
-| Bimedix enhancement | 3-8s | Remote GPU |
-| **Full pipeline** | **10-30s** | **Hybrid** |
+| Operation              | Time       | Mode       |
+| ---------------------- | ---------- | ---------- |
+| Abbreviation expansion | <100ms     | Local      |
+| Template loading       | <50ms      | Local      |
+| Specialty list         | <50ms      | Local      |
+| Text analysis          | 200-500ms  | Local      |
+| Whisper transcription  | 2-5s       | Remote GPU |
+| Bimedix enhancement    | 3-8s       | Remote GPU |
+| **Full pipeline**      | **10-30s** | **Hybrid** |
 
 ---
 
 ## ⚠️ Troubleshooting
 
 ### "Cannot reach remote GPU at isha.buzz:8080"
+
 ```bash
 # 1. Check connectivity
 ping isha.buzz
@@ -234,6 +251,7 @@ sudo ufw allow 8080
 ```
 
 ### "Service starts but times out on transcription"
+
 ```bash
 # 1. Check if remote GPU is responsive
 curl -X GET http://isha.buzz:8080/api/scribe/gpu-stats
@@ -247,6 +265,7 @@ ssh isha.buzz "docker logs medical-scribe-gpu"
 ```
 
 ### "Local services working but transcription fails"
+
 ```bash
 # Remote GPU is down - local abbreviation/templates still work
 # Service gracefully falls back to local processing
@@ -262,6 +281,7 @@ curl -X POST http://localhost:8001/api/scribe/expand-abbreviations
 ## 🔄 Switching Modes
 
 ### Switch to Local GPU
+
 ```bash
 ./start.sh local
 # Service uses local GPU for Whisper + Bimedix
@@ -269,6 +289,7 @@ curl -X POST http://localhost:8001/api/scribe/expand-abbreviations
 ```
 
 ### Switch to Remote GPU
+
 ```bash
 ./start.sh remote isha.buzz 8080
 # Service uses remote GPU for Whisper + Bimedix

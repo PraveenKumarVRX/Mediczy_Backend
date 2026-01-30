@@ -1,11 +1,7 @@
 from fastapi import FastAPI, UploadFile, File, HTTPException, BackgroundTasks, Query
 from fastapi.responses import JSONResponse
 from fastapi.middleware.cors import CORSMiddleware
-import aiofiles
 import asyncio
-import torch
-import whisper
-from llama_cpp import Llama
 import numpy as np
 import logging
 from pathlib import Path
@@ -14,14 +10,39 @@ import json
 import time
 import re
 import requests
-import httpx
+
+# Optional imports (only load if GPU mode)
+try:
+    import aiofiles
+except ImportError:
+    aiofiles = None
+
+try:
+    import torch
+except ImportError:
+    torch = None
+
+try:
+    import whisper
+except ImportError:
+    whisper = None
+
+try:
+    from llama_cpp import Llama
+except ImportError:
+    Llama = None
+
+try:
+    import httpx
+except ImportError:
+    httpx = None
 
 # Import configuration
 from config import GPU_MODE, REMOTE_GPU_BASE_URL, print_config
 from config import BIMEDIX_TEMPERATURE, BIMEDIX_TOP_P, BIMEDIX_TOP_K, BIMEDIX_REPEAT_PENALTY
 from config import REQUEST_TIMEOUT, LOG_LEVEL
 
-# Import custom services
+# Import custom services (always available)
 from services.abbreviation_service import AbbreviationExpander
 from services.template_service import SpecialtyTemplateManager
 
@@ -55,78 +76,95 @@ class ModelManager:
     def __init__(self):
         self.gpu_mode = GPU_MODE
         self.remote_gpu_url = REMOTE_GPU_BASE_URL
-        self.device = "cuda" if torch.cuda.is_available() else "cpu"
+        self.gpu_available = torch is not None and torch.cuda.is_available() if torch else False
+        self.device = "cuda" if self.gpu_available else "cpu"
         self.whisper_model = None
         self.bimedix_model = None
         self.abbreviation_expander = None
         self.template_manager = None
-        self.http_client = httpx.AsyncClient(timeout=REQUEST_TIMEOUT)
+        self.http_client = None
+        if httpx:
+            self.http_client = httpx.AsyncClient(timeout=REQUEST_TIMEOUT)
         self.load_models()
     
     def load_models(self):
-        """Load all models on startup"""
-        logger.info(f"Loading models (GPU Mode: {self.gpu_mode})...")
+        """Load models on startup (optional - core services don't need GPU)"""
+        logger.info(f"Loading services (GPU Mode: {self.gpu_mode}, GPU Available: {self.gpu_available})...")
         
-        if self.gpu_mode == "local":
-            self._load_local_models()
-        else:
-            self._load_remote_gpu_models()
-        
-        # Always load local abbreviation and template services
+        # Always load local abbreviation and template services (no GPU needed)
         logger.info("Loading medical abbreviation database...")
         self.abbreviation_expander = AbbreviationExpander()
-        logger.info("✓ Abbreviation database loaded")
+        logger.info("✓ Abbreviation database loaded (228+ abbreviations)")
         
         logger.info("Loading specialty templates...")
         self.template_manager = SpecialtyTemplateManager()
-        logger.info(f"✓ {len(self.template_manager.get_all_specialties())} specialty templates loaded")
+        specialties = self.template_manager.get_all_specialties()
+        logger.info(f"✓ {len(specialties)} specialty templates loaded")
+        
+        # Only load GPU models if available and not in remote mode
+        if self.gpu_available and self.gpu_mode == "local":
+            try:
+                self._load_local_models()
+            except Exception as e:
+                logger.warning(f"Could not load local GPU models: {e}")
+                logger.info("Core medical services (abbreviations, templates, ICD-10) remain available")
+        elif self.gpu_mode == "remote":
+            try:
+                self._load_remote_gpu_models()
+            except Exception as e:
+                logger.warning(f"Could not connect to remote GPU: {e}")
+                logger.info("Core medical services (abbreviations, templates, ICD-10) remain available")
+        else:
+            logger.info("Running in CPU-only mode (abbreviations, templates, ICD-10 available)")
     
     def _load_local_models(self):
-        """Load models locally on this GPU"""
-        logger.info("[LOCAL GPU MODE] Loading models locally...")
+        """Load GPU models locally (optional)"""
+        if not whisper or not Llama:
+            logger.warning("Whisper or Llama not available, skipping GPU model loading")
+            return
+            
+        logger.info("[LOCAL GPU MODE] Loading GPU models...")
         
-        # Load Whisper
-        logger.info("Loading Whisper model...")
-        self.whisper_model = whisper.load_model("base", device=self.device)
-        logger.info(f"✓ Whisper loaded on {self.device}")
+        # Load Whisper (optional)
+        if whisper:
+            try:
+                logger.info("Loading Whisper model...")
+                self.whisper_model = whisper.load_model("base", device=self.device)
+                logger.info(f"✓ Whisper loaded on {self.device}")
+            except Exception as e:
+                logger.warning(f"Could not load Whisper: {e}")
         
-        # Load Bimedix.gguf
-        logger.info("Loading Bimedix.gguf model...")
-        try:
-            from config import BIMEDIX_MODEL_PATH, BIMEDIX_N_GPU_LAYERS, BIMEDIX_N_CTX, BIMEDIX_N_THREADS
-            self.bimedix_model = Llama(
-                model_path=BIMEDIX_MODEL_PATH,
-                n_gpu_layers=BIMEDIX_N_GPU_LAYERS,
-                n_ctx=BIMEDIX_N_CTX,
-                n_threads=BIMEDIX_N_THREADS,
-                verbose=False
-            )
-            logger.info("✓ Bimedix.gguf loaded on GPU")
-        except Exception as e:
-            logger.error(f"Error loading Bimedix.gguf: {e}")
-            raise
+        # Load Bimedix.gguf (optional)
+        if Llama:
+            try:
+                logger.info("Loading Bimedix.gguf model...")
+                from config import BIMEDIX_MODEL_PATH, BIMEDIX_N_GPU_LAYERS, BIMEDIX_N_CTX, BIMEDIX_N_THREADS
+                self.bimedix_model = Llama(
+                    model_path=BIMEDIX_MODEL_PATH,
+                    n_gpu_layers=BIMEDIX_N_GPU_LAYERS,
+                    n_ctx=BIMEDIX_N_CTX,
+                    n_threads=BIMEDIX_N_THREADS,
+                    verbose=False
+                )
+                logger.info("✓ Bimedix.gguf loaded")
+            except Exception as e:
+                logger.warning(f"Could not load Bimedix.gguf: {e}")
     
     def _load_remote_gpu_models(self):
-        """Connect to remote GPU service at isha.buzz:8080"""
-        logger.info(f"[REMOTE GPU MODE] Connecting to GPU at {self.remote_gpu_url}...")
+        """Connect to remote GPU service (optional)"""
+        logger.info(f"[REMOTE GPU MODE] Attempting to connect to GPU at {self.remote_gpu_url}...")
         
         try:
             response = requests.get(f"{self.remote_gpu_url}/api/scribe/health", timeout=10)
             if response.status_code == 200:
                 health = response.json()
                 logger.info(f"✓ Connected to remote GPU service")
-                logger.info(f"  Device: {health.get('gpu', {}).get('device_name', 'Unknown')}")
-                logger.info(f"  Memory: {health.get('gpu', {}).get('memory_allocated', 'Unknown')}")
-                logger.info(f"  Models: {health.get('models', {})}")
                 self.bimedix_model = "remote"  # Marker for remote
                 self.whisper_model = "remote"  # Marker for remote
             else:
-                raise Exception(f"Health check failed: {response.status_code}")
+                logger.warning(f"Remote GPU health check failed: {response.status_code}")
         except Exception as e:
-            logger.error(f"✗ Failed to connect to remote GPU: {e}")
-            logger.warning("Falling back to local GPU loading...")
-            self.gpu_mode = "local"
-            self._load_local_models()
+            logger.warning(f"Could not connect to remote GPU: {e}")
     
     async def transcribe_remote(self, audio_path: str, field_name: str = "diagnosis"):
         """Send transcription request to remote GPU service"""
@@ -683,4 +721,5 @@ async def service_stats():
 
 if __name__ == "__main__":
     import uvicorn
-    uvicorn.run(app, host="0.0.0.0", port=8001, log_level="info")
+    from config import SERVICE_HOST, SERVICE_PORT
+    uvicorn.run(app, host=SERVICE_HOST, port=SERVICE_PORT, log_level="info")

@@ -291,7 +291,12 @@ export const authUser = async (req, res, next) => {
     // ✅ FIX: Ensure ID is always set (Sequelize may return dataValues structure)
     req.user = {
       ...user,
-      id: user.id || decoded.id,
+      id:
+        user.id ||
+        user._id ||
+        user.dataValues?.id ||
+        user.dataValues?._id ||
+        decoded.id,
       isTeam: user.isTeam || decoded.isTeam,
       isAdmin: user.isAdmin || decoded.isAdmin
     };
@@ -378,7 +383,15 @@ export const authDoctor = async (req, res, next) => {
       return res.status(401).json({ message: "Doctor not found" });
     }
 
-    req.doctor = doctor;
+    req.doctor = {
+      ...doctor,
+      id:
+        doctor.id ||
+        doctor._id ||
+        doctor.dataValues?.id ||
+        doctor.dataValues?._id ||
+        decoded.id
+    };
     const tenantBinding = bindTenantContext(req, resolveTenantFromEntity(doctor));
     if (!tenantBinding.ok) {
       return res.status(tenantBinding.status).json(tenantBinding.body);

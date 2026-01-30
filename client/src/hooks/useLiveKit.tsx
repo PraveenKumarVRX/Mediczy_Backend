@@ -31,14 +31,17 @@ export const useLiveKit = ({ onUserJoined, onUserLeft }: UseLiveKitProps = {}) =
    */
   const getJoinUrl = useCallback(async (roomId: string, userName: string): Promise<string | null> => {
     try {
-      const response = await api.post('/consultation/video/create-meeting', {
-        roomId,
-        userName,
-        provider: 'livekit'
+      const response = await api.post('/video/livekit/token', {
+        roomName: roomId
       });
       
-      if (response.data.success && response.data.video?.joinUrl) {
-        return response.data.video.joinUrl;
+      if (response.data.success) {
+        const joinUrl =
+          response.data.video?.joinUrl ||
+          response.data.video?.livekit?.joinUrl;
+        if (joinUrl) {
+          return joinUrl;
+        }
       }
       
       // Fallback to generic LiveKit URL

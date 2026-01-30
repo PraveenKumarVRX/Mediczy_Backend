@@ -1,12 +1,30 @@
-const express = require('express');
-const router = express.Router();
-const axios = require('axios');
-const FormData = require('form-data');
-const multer = require('multer');
-const fs = require('fs');
+import express from 'express';
+import axios from 'axios';
+import FormData from 'form-data';
+import multer from 'multer';
+import fs from 'fs';
+import { authDoctor } from '../middleware/auth.middleware.js';
 
-// GPU Scribe service URL
-const SCRIBE_API_URL = process.env.SCRIBE_API_URL || 'http://localhost:8001';
+const router = express.Router();
+
+// GPU Scribe service URL - defaults to localhost for direct connection
+const SCRIBE_API_URL = process.env.SCRIBE_API_URL || 'http://localhost:8005';
+
+// Health check endpoint (no auth required for monitoring)
+router.get('/health', async (req, res) => {
+  try {
+    const response = await axios.get(`${SCRIBE_API_URL}/api/scribe/health`);
+    res.json(response.data);
+  } catch (error) {
+    res.status(503).json({ 
+      status: 'unhealthy',
+      error: 'Scribe service unavailable'
+    });
+  }
+});
+
+// Require doctor authentication for all other scribe endpoints
+router.use(authDoctor);
 
 // Multer for audio upload
 const upload = multer({
@@ -231,4 +249,4 @@ router.get('/stats', async (req, res) => {
   }
 });
 
-module.exports = router;
+export default router;

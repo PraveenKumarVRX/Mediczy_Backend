@@ -39,6 +39,7 @@ import aiRouter from "./routes/ai.js";
 import medicalAIRouter from "./routes/medical-ai.route.js";
 import aiHealthRouter from "./routes/ai-health.route.js";
 import aiScribeRouter from "./routes/ai-scribe.route.js";
+import scribeRouter from "./routes/scribe.js";
 import recordingRouter from "./routes/recording.route.js";
 import uploadRouter from "./routes/upload.route.js";
 import healthAssessmentRouter from "./routes/health-assessment.route.js";
@@ -776,6 +777,8 @@ app.use('/api/tickets', ticketsRouter); // Support ticket management system
 app.use('/api/tenants', tenantRouter); // Multi-tenant organization management
 app.use('/api/tenant-domains', tenantDomainRouter); // Custom domain management
 app.use('/api/corporate', corporateRouter); // Corporate benefits and plans
+app.use('/api/scribe', scribeRouter); // AI Scribe - Public API entrypoint
+app.use('/api/hospital/scribe', scribeRouter); // AI Scribe - Hospital dashboard entrypoint
 app.use('/api', hospitalRouter); // Hospital directory and SPN network
 app.use('/api/hospital/practice', hospitalPracticeRouter); // Hospital practice management (appointments, patients, staff, resources)
 app.use('/api/hospital', hospitalPracticeRouter); // Alias practice endpoints for hospital dashboard modules

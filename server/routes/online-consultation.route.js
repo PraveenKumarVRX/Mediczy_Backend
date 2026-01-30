@@ -852,7 +852,11 @@ router.post('/payment/manual/:appointmentId', authUser, [
   try {
     const { appointmentId } = req.params;
     const { paymentMethod, transactionRef } = req.body;
-    const userId = req.user.id || req.user.dataValues?.id;
+    const userId =
+      req.user.id ||
+      req.user._id ||
+      req.user.dataValues?.id ||
+      req.user.dataValues?._id;
     const userRole = req.user.role || req.userRole;
 
     const appointment = await Appointment.findByPk(appointmentId);
@@ -1157,8 +1161,14 @@ router.get('/video/join/:appointmentId', authUser, async (req, res) => {
     }
 
     // Check authorization
-    const isPatient = appointment.userId === userId;
-    const isDoctor = appointment.doctorId === userId || userRole === 'doctor';
+    const normalizedUserId = userId ? String(userId) : null;
+    const appointmentUserId = appointment.userId ? String(appointment.userId) : null;
+    const appointmentDoctorId = appointment.doctorId ? String(appointment.doctorId) : null;
+    const isPatient = !!(normalizedUserId && appointmentUserId === normalizedUserId);
+    const isDoctor = !!(
+      normalizedUserId &&
+      appointmentDoctorId === normalizedUserId
+    ) || userRole === 'doctor';
     
     console.log('🔐 Authorization Check:', { 
       userId, 

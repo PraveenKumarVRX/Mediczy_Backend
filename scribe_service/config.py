@@ -7,7 +7,7 @@ import os
 from typing import Literal
 
 # GPU Configuration
-GPU_MODE: Literal["local", "remote"] = os.getenv("GPU_MODE", "remote")
+GPU_MODE: Literal["local", "remote"] = os.getenv("GPU_MODE", "local")
 GPU_HOST = os.getenv("GPU_HOST", "isha.buzz")
 GPU_PORT = int(os.getenv("GPU_PORT", "8080"))
 
@@ -39,7 +39,7 @@ BIMEDIX_REPEAT_PENALTY = float(os.getenv("BIMEDIX_REPEAT_PENALTY", "1.1"))
 
 # Service Configuration
 SERVICE_HOST = os.getenv("SERVICE_HOST", "0.0.0.0")
-SERVICE_PORT = int(os.getenv("SERVICE_PORT", "8001"))
+SERVICE_PORT = int(os.getenv("SERVICE_PORT", "8005"))
 SERVICE_WORKERS = int(os.getenv("SERVICE_WORKERS", "4"))
 
 # Request Timeouts

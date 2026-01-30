@@ -53,15 +53,15 @@ exec(open('main.py').read())
 
 ### Environment Variables
 
-| Variable | Default | Description |
-|----------|---------|-------------|
-| `GPU_MODE` | `remote` | `local` or `remote` GPU |
-| `GPU_HOST` | `isha.buzz` | Remote GPU hostname/IP |
-| `GPU_PORT` | `8080` | Remote GPU port |
-| `SERVICE_HOST` | `0.0.0.0` | Service bind address |
-| `SERVICE_PORT` | `8001` | Service port |
-| `LOG_LEVEL` | `INFO` | Logging level |
-| `REQUEST_TIMEOUT` | `300` | Request timeout (seconds) |
+| Variable          | Default     | Description               |
+| ----------------- | ----------- | ------------------------- |
+| `GPU_MODE`        | `remote`    | `local` or `remote` GPU   |
+| `GPU_HOST`        | `isha.buzz` | Remote GPU hostname/IP    |
+| `GPU_PORT`        | `8080`      | Remote GPU port           |
+| `SERVICE_HOST`    | `0.0.0.0`   | Service bind address      |
+| `SERVICE_PORT`    | `8001`      | Service port              |
+| `LOG_LEVEL`       | `INFO`      | Logging level             |
+| `REQUEST_TIMEOUT` | `300`       | Request timeout (seconds) |
 
 ### Remote GPU Service Architecture
 
@@ -88,6 +88,7 @@ exec(open('main.py').read())
 ## 📊 How It Works
 
 ### 1. **Local Abbreviation Expansion**
+
 ```
 User Input: "Patient with HTN and DM"
            ↓
@@ -98,6 +99,7 @@ Output: "Hypertension, Diabetes Mellitus"
 ```
 
 ### 2. **Remote Transcription with Bimedix**
+
 ```
 Audio File
    ↓
@@ -109,6 +111,7 @@ Return: {"transcription": "..."}
 ```
 
 ### 3. **Remote Medical Enhancement**
+
 ```
 Clinical Text
    ↓
@@ -126,6 +129,7 @@ Return: {"enhanced_text": "..."}
 All endpoints run on `localhost:8001`:
 
 ### Local Endpoints (No GPU Needed)
+
 ```
 GET  /api/scribe/specialties              - List 14 medical specialties
 GET  /api/scribe/template/{specialty}     - Get specialty template
@@ -135,12 +139,14 @@ GET  /api/scribe/stats                    - Service statistics
 ```
 
 ### Remote GPU Endpoints (Via isha.buzz:8080)
+
 ```
 POST /api/scribe/transcribe               - Audio to text (Whisper)
 POST /api/scribe/process-medical-text     - Bimedix enhancement
 ```
 
 ### Health & Diagnostics
+
 ```
 GET  /api/scribe/health                   - GPU status & configuration
 GET  /api/scribe/gpu-stats                - Detailed GPU statistics
@@ -151,11 +157,13 @@ GET  /api/scribe/gpu-stats                - Detailed GPU statistics
 ## 🧪 Testing Remote GPU Connection
 
 ### Test 1: Check Remote GPU Health
+
 ```bash
 curl http://isha.buzz:8080/api/scribe/health
 ```
 
 Expected response:
+
 ```json
 {
   "status": "healthy",
@@ -172,11 +180,13 @@ Expected response:
 ```
 
 ### Test 2: Check Local Service Health
+
 ```bash
 curl http://localhost:8001/api/scribe/health
 ```
 
 Expected response:
+
 ```json
 {
   "status": "healthy",
@@ -187,12 +197,14 @@ Expected response:
 ```
 
 ### Test 3: Test Abbreviation Expansion (Local)
+
 ```bash
 curl -X POST http://localhost:8001/api/scribe/expand-abbreviations \
   -d "text=Patient has HTN and DM"
 ```
 
 ### Test 4: Test Remote Transcription
+
 ```bash
 curl -X POST http://localhost:8001/api/scribe/transcribe \
   -F "file=@audio.wav" \
@@ -206,17 +218,20 @@ curl -X POST http://localhost:8001/api/scribe/transcribe \
 ### Issue: "Cannot reach remote GPU at isha.buzz:8080"
 
 **Solution 1**: Check network connectivity
+
 ```bash
 ping isha.buzz
 telnet isha.buzz 8080
 ```
 
 **Solution 2**: Verify isha.buzz is running Bimedix service
+
 ```bash
 curl http://isha.buzz:8080/api/scribe/health
 ```
 
 **Solution 3**: Check firewall rules
+
 ```bash
 # Linux
 sudo ufw allow 8080
@@ -228,6 +243,7 @@ sudo pfctl -f /etc/pf.conf
 ### Issue: Service starts but no response from remote GPU
 
 **Solution**: Check logs
+
 ```bash
 # View service logs
 docker logs <container_id>
@@ -239,11 +255,13 @@ tail -f /var/log/medical_scribe.log
 ### Issue: Slow response times
 
 **Solution 1**: Check GPU memory at isha.buzz
+
 ```bash
 curl http://isha.buzz:8080/api/scribe/gpu-stats
 ```
 
 **Solution 2**: Increase timeout
+
 ```bash
 export REQUEST_TIMEOUT=600  # 10 minutes
 ./start.sh remote isha.buzz 8080
@@ -254,6 +272,7 @@ export REQUEST_TIMEOUT=600  # 10 minutes
 ## 🔄 Switching Between Local and Remote GPU
 
 ### To Use Local GPU Instead:
+
 ```bash
 ./start.sh local
 # or
@@ -262,6 +281,7 @@ python3 main.py
 ```
 
 ### To Use Remote GPU Again:
+
 ```bash
 ./start.sh remote isha.buzz 8080
 # or
@@ -274,6 +294,7 @@ python3 main.py
 ## 📝 Configuration Files
 
 ### Main Configuration (`config.py`)
+
 ```python
 GPU_MODE = "remote"  # or "local"
 GPU_HOST = "isha.buzz"
@@ -282,6 +303,7 @@ REMOTE_GPU_BASE_URL = f"http://{GPU_HOST}:{GPU_PORT}"
 ```
 
 ### Service Code (`main.py`)
+
 - ModelManager class handles GPU mode detection
 - `_load_remote_gpu_models()` connects to isha.buzz:8080
 - `_load_local_models()` uses local GPU fallback
@@ -292,16 +314,19 @@ REMOTE_GPU_BASE_URL = f"http://{GPU_HOST}:{GPU_PORT}"
 ## 🎯 Expected Performance
 
 ### Local Processing (No GPU Call)
+
 - Abbreviation expansion: **<100ms**
 - Template loading: **<50ms**
 - Text analysis: **200-500ms**
 
 ### Remote GPU Processing
+
 - Transcription (Whisper): **2-5s** (per 10s audio)
 - Bimedix Enhancement: **3-8s**
 - Full pipeline: **10-30s**
 
 ### Network Overhead
+
 - Typical latency to isha.buzz: **1-5ms**
 - Upload/Download: **<500ms** for typical inputs
 
@@ -331,6 +356,7 @@ REMOTE_GPU_BASE_URL = f"http://{GPU_HOST}:{GPU_PORT}"
 ## 📊 Monitoring & Debugging
 
 ### View Service Logs
+
 ```bash
 # Follow logs in real-time
 tail -f /var/log/medical_scribe.log
@@ -340,6 +366,7 @@ docker logs -f medical-scribe-service
 ```
 
 ### Monitor GPU Usage
+
 ```bash
 # Check remote GPU
 watch curl http://isha.buzz:8080/api/scribe/gpu-stats
@@ -349,6 +376,7 @@ nvidia-smi -l 1  # Update every second
 ```
 
 ### Debug Mode
+
 ```bash
 export LOG_LEVEL=DEBUG
 ./start.sh remote isha.buzz 8080
@@ -361,7 +389,7 @@ export LOG_LEVEL=DEBUG
 ### Docker Compose Setup
 
 ```yaml
-version: '3.8'
+version: "3.8"
 services:
   medical-scribe:
     build: ./scribe_service
@@ -403,19 +431,19 @@ spec:
   template:
     spec:
       containers:
-      - name: medical-scribe
-        image: mediczy/medical-scribe:2.1.0
-        ports:
-        - containerPort: 8001
-        envFrom:
-        - configMapRef:
-            name: medical-scribe-config
-        livenessProbe:
-          httpGet:
-            path: /api/scribe/health
-            port: 8001
-          initialDelaySeconds: 30
-          periodSeconds: 10
+        - name: medical-scribe
+          image: mediczy/medical-scribe:2.1.0
+          ports:
+            - containerPort: 8001
+          envFrom:
+            - configMapRef:
+                name: medical-scribe-config
+          livenessProbe:
+            httpGet:
+              path: /api/scribe/health
+              port: 8001
+            initialDelaySeconds: 30
+            periodSeconds: 10
 ```
 
 ---
@@ -423,12 +451,14 @@ spec:
 ## 📞 Support
 
 ### For Issues:
+
 1. Check logs with `tail -f /var/log/medical_scribe.log`
 2. Test remote GPU: `curl http://isha.buzz:8080/api/scribe/health`
 3. Test local service: `curl http://localhost:8001/api/scribe/health`
 4. Review configuration in `config.py`
 
 ### API Documentation
+
 See API endpoints at: `http://localhost:8001/docs` (Swagger UI)
 
 ---
