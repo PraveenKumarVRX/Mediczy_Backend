@@ -83,7 +83,10 @@ router.post('/login', authLimiter, async (req, res) => {
     const token = jwt.sign(
       {
         id: pharmacy.id,
+        pharmacyId: pharmacy.id,
         email: pharmacy.email,
+        role: 'pharmacy',
+        userType: 'pharmacy',
         type: 'pharmacy',
         tenant_id: pharmacy.tenant_id
       },
@@ -162,7 +165,10 @@ router.post('/register', async (req, res) => {
     const token = jwt.sign(
       {
         id: pharmacy.id,
+        pharmacyId: pharmacy.id,
         email: pharmacy.email,
+        role: 'pharmacy',
+        userType: 'pharmacy',
         type: 'pharmacy',
         tenant_id: pharmacy.tenant_id
       },

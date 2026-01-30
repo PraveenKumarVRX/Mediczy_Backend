@@ -129,8 +129,10 @@ router.post('/login', authLimiter, async (req, res) => {
     const token = jwt.sign(
       {
         id: company.id,
+        insuranceCompanyId: company.id,
         email: company.email,
         role: 'insurance_company',
+        userType: 'insurance_company',
         companyName: company.companyName
       },
       JWT_CONFIG.SECRET,
@@ -449,8 +451,10 @@ router.post('/corporate/login', authLimiter, async (req, res) => {
     const token = jwt.sign(
       {
         id: corporate.id,
+        corporateId: corporate.id,
         email: corporate.email,
         role: 'corporate',
+        userType: 'corporate',
         corporateName: corporate.corporateName
       },
       JWT_CONFIG.SECRET,

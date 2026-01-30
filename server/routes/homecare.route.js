@@ -59,7 +59,10 @@ router.post('/login', authLimiter, async (req, res) => {
     const token = jwt.sign(
       {
         id: homecare.id,
+        homecareId: homecare.id,
         email: homecare.email,
+        role: 'homecare',
+        userType: 'homecare',
         type: 'homecare',
         tenant_id: homecare.tenant_id
       },
@@ -231,7 +234,10 @@ router.post('/register', async (req, res) => {
     const token = jwt.sign(
       {
         id: homecare.id,
+        homecareId: homecare.id,
         email: homecare.email,
+        role: 'homecare',
+        userType: 'homecare',
         type: 'homecare',
         tenant_id: homecare.tenant_id
       },

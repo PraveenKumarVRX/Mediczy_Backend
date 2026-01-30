@@ -339,11 +339,15 @@ router.post('/auth/login', asyncHandler(async (req, res) => {
     `, [deviceId, user.id, pushToken, req.mobileClient?.platform]);
   }
   
-  // Generate tokens
+  // Generate tokens with proper payload for authUser middleware
+  // FIXED: Include userId, role, userType fields for compatibility
   const accessToken = generateToken({
     id: user.id,
+    userId: user.id,
     email: user.email,
-    name: user.name
+    name: user.name,
+    role: 'user',      // authUser expects 'role' field
+    userType: 'user'   // Additional user type indicator
   }, 'patient');
   
   const refreshToken = generateRefreshToken(user.id, 'patient');
@@ -431,11 +435,15 @@ router.post('/auth/otp/verify', asyncHandler(async (req, res) => {
   // Delete used OTP
   await db.query('DELETE FROM otp_codes WHERE phone = $1', [phone]);
   
-  // Generate tokens
+  // Generate tokens with proper payload for authUser middleware
+  // FIXED: Include userId, role, userType fields for compatibility
   const accessToken = generateToken({
     id: user.id,
+    userId: user.id,
     phone: user.phone,
-    name: user.name
+    name: user.name,
+    role: 'user',      // authUser expects 'role' field
+    userType: 'user'   // Additional user type indicator
   }, 'patient');
   
   const refreshToken = generateRefreshToken(user.id, 'patient');

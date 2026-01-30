@@ -427,11 +427,34 @@ User.prototype.generateAuthToken = function() {
   if (!JWT_CONFIG.SECRET) {
     throw new Error('FATAL: JWT_SECRET not configured');
   }
-  
+
+  const role = this.isAdmin ? (this.role || 'system_admin') : (this.role || 'user');
+  const roleUserTypeMap = {
+    system_admin: 'admin',
+    super_admin: 'admin',
+    platform_admin: 'admin',
+    corporate_admin: 'corporate',
+    hospital_admin: 'hospital',
+    hospital_staff: 'hospital',
+    hospital_doctor: 'hospital',
+    clinic_admin: 'clinic',
+    lab_admin: 'lab',
+    pharmacy_admin: 'pharmacy',
+    tpa_admin: 'tpa',
+    psu_admin: 'psu',
+    ngo_admin: 'ngo',
+    insurer_admin: 'insurer',
+    homecare_admin: 'homecare',
+    ambulance_admin: 'ambulance',
+    doctor_assistant: 'assistant'
+  };
+  const userType = roleUserTypeMap[role] || role;
+
   const payload = {
     id: this.id,
     email: this.email,
-    role: this.isAdmin ? (this.role || 'system_admin') : (this.role || 'user'),
+    role,
+    userType,
     isAdmin: this.isAdmin,
     organization_id: this.organization_id,
     organization_type: this.organization_type,

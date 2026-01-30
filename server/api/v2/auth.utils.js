@@ -6,7 +6,8 @@
 import jwt from 'jsonwebtoken';
 import { JWT_CONFIG } from '../../config/auth.config.js';
 
-const JWT_SECRET = JWT_CONFIG.SECRET || 'mediczy-secret-key-change-in-production';
+// CRITICAL: Use only JWT_CONFIG.SECRET - no fallback to avoid signing mismatches
+const JWT_SECRET = JWT_CONFIG.SECRET;
 
 /**
  * Token configuration by role

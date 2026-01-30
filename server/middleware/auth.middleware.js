@@ -268,7 +268,7 @@ export const authUser = async (req, res, next) => {
     }
 
     // Check for corporate using either role or userType field
-    if (decoded.role === "corporate" || decoded.userType === "corporate") {
+    if ((decoded.role === "corporate" || decoded.userType === "corporate") && decoded.role !== "corporate_admin") {
       const corporateId = decoded.id || decoded.corporateId || decoded.userId;
       req.user = {
         id: corporateId,

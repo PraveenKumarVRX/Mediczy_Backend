@@ -200,6 +200,7 @@ const USER_TYPE_PERMISSIONS = {
   corporate: {
     allowedPaths: [
       '/api/corporate',
+      '/api/insurance-company/corporate',
       '/api/corporate/employees',
       '/api/corporate/appointments',
       '/api/corporate/analytics',
@@ -460,11 +461,13 @@ const ringFencingMiddleware = (req, res, next) => {
   const patientAuthPattern = /^\/api\/patient\/(login|signup)$/;
   const patientClinicSearchPattern = /^\/api\/patient\/clinics\/search$/;
   const clinicPatientAuthPattern = /^\/api\/clinic\/[^/]+\/patient\/(login|signup)$/;
+  const clinicStaffAuthPattern = /^\/api\/clinic\/staff\/(login|doctor-login|nurse-login|assistant-login)$/;
 
   if (hospitalStaffAuthPattern.test(requestPath) ||
       patientAuthPattern.test(requestPath) ||
       patientClinicSearchPattern.test(requestPath) ||
-      clinicPatientAuthPattern.test(requestPath)) {
+      clinicPatientAuthPattern.test(requestPath) ||
+      clinicStaffAuthPattern.test(requestPath)) {
     console.log('✅ Public auth endpoint allowed:', requestPath);
     return next();
   }

@@ -5,6 +5,7 @@
  */
 
 import { getPostgresPool } from '../db/postgres.js';
+import bcrypt from 'bcrypt';
 import { 
   NotFoundError, 
   UnauthorizedError, 
@@ -45,10 +46,8 @@ class AssistantService {
 
     const assistant = result.rows[0];
 
-    // Verify password (in production, use bcrypt)
-    // For demo purposes, checking direct match or hashed
-    const isValidPassword = assistant.password === password || 
-      await this.verifyPassword(password, assistant.password);
+    // FIXED: Use proper bcrypt verification
+    const isValidPassword = await this.verifyPassword(password, assistant.password);
 
     if (!isValidPassword) {
       throw new UnauthorizedError('Invalid credentials');
@@ -612,8 +611,19 @@ class AssistantService {
   }
 
   async verifyPassword(plainPassword, hashedPassword) {
-    // In production, use bcrypt.compare
-    // For demo, simple comparison
+    // FIXED: Use bcrypt for password verification
+    // Handle both bcrypt hashes and plain text (migration period)
+    if (!plainPassword || !hashedPassword) {
+      return false;
+    }
+    
+    // Check if password is bcrypt hashed
+    if (hashedPassword.startsWith('$2a$') || hashedPassword.startsWith('$2b$')) {
+      return bcrypt.compare(plainPassword, hashedPassword);
+    }
+    
+    // Fallback for unhashed passwords during migration
+    console.warn('⚠️ Unhashed password detected for assistant - migration needed');
     return plainPassword === hashedPassword;
   }
 }

@@ -217,7 +217,7 @@ Pharmacy.prototype.generateAuthToken = function() {
     isVerified: this.isVerified
   };
   
-  return jwt.sign(payload, JWT_CONFIG.SECRET || 'mediczy-secret-key', {
+  return jwt.sign(payload, JWT_CONFIG.SECRET, {
     expiresIn: '7d'
   });
 };

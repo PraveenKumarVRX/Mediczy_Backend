@@ -530,7 +530,7 @@ class IntelligentDatabaseAdapter {
               generateAuthToken: () => {
                 return jwt.sign(
                   { id: 'user_001', email: 'user@mediczy.com', role: 'user' },
-                  JWT_CONFIG.SECRET || 'fallback_secret',
+                  JWT_CONFIG.SECRET,
                   { expiresIn: '24h' }
                 );
               },
@@ -594,7 +594,7 @@ class IntelligentDatabaseAdapter {
             generateAuthToken: () => {
               return jwt.sign(
                 { id: `user_${Date.now()}`, email: userData.email, role: 'user' },
-                JWT_CONFIG.SECRET || 'fallback_secret',
+                JWT_CONFIG.SECRET,
                 { expiresIn: '24h' }
               );
             }
@@ -704,7 +704,7 @@ class IntelligentDatabaseAdapter {
                 generateAuthToken: () => {
                   return jwt.sign(
                     { id: doctor.id, email: doctor.email, role: 'doctor' },
-                    JWT_CONFIG.SECRET || 'fallback_secret',
+                    JWT_CONFIG.SECRET,
                     { expiresIn: '24h' }
                   );
                 },
@@ -728,7 +728,7 @@ class IntelligentDatabaseAdapter {
                 generateAuthToken: () => {
                   return jwt.sign(
                     { id: doctor.id, email: doctor.email, role: 'doctor' },
-                    JWT_CONFIG.SECRET || 'fallback_secret',
+                    JWT_CONFIG.SECRET,
                     { expiresIn: '24h' }
                   );
                 },
@@ -780,7 +780,7 @@ class IntelligentDatabaseAdapter {
               generateAuthToken: () => {
                 return jwt.sign(
                   { id: 'dr_test_001', email: 'doctor@mediczy.com', role: 'doctor' },
-                  JWT_CONFIG.SECRET || 'fallback_secret',
+                  JWT_CONFIG.SECRET,
                   { expiresIn: '24h' }
                 );
               },
@@ -937,7 +937,7 @@ class IntelligentDatabaseAdapter {
             generateAuthToken: () => {
               return jwt.sign(
                 { id: newDoctor.id, email: doctorData.email, role: 'doctor' },
-                JWT_CONFIG.SECRET || 'fallback_secret',
+                JWT_CONFIG.SECRET,
                 { expiresIn: '24h' }
               );
             }
@@ -1310,7 +1310,7 @@ class IntelligentDatabaseAdapter {
                 }
               },
               generateAuthToken: () => {
-                const jwtSecret = JWT_CONFIG.SECRET || 'fallback_secret';
+                const jwtSecret = JWT_CONFIG.SECRET;
                 return jwt.sign(
                   { 
                     id: 'admin_001', 

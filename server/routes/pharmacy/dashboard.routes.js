@@ -6,6 +6,7 @@
 import express from 'express';
 import { Pharmacy } from '../../models/index.js';
 import jwt from 'jsonwebtoken';
+import { JWT_CONFIG } from '../../config/auth.config.js';
 
 const router = express.Router();
 

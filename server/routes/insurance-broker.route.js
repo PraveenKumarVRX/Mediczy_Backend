@@ -92,7 +92,9 @@ router.post('/register', async (req, res) => {
       {
         id: broker.id,
         email: broker.email,
-        role: 'broker'
+        role: 'broker',
+        userType: 'broker',
+        brokerId: broker.id
       },
       JWT_CONFIG.SECRET,
       { expiresIn: '7d' }
@@ -177,7 +179,9 @@ router.post('/login', authLimiter, async (req, res) => {
       {
         id: broker.id,
         email: broker.email,
-        role: 'broker'
+        role: 'broker',
+        userType: 'broker',
+        brokerId: broker.id
       },
       JWT_CONFIG.SECRET,
       { expiresIn: '7d' }
