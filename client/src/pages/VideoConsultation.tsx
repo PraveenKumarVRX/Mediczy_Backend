@@ -132,17 +132,20 @@ const VideoConsultation = () => {
       try {
         const response = await api.get('/appointments', {
           params: {
-            userId: currentUser?._id,
-            consultationType: 'online',
-            status: 'confirmed,in-progress,scheduled,accepted'
+            status: 'confirmed,in-progress,scheduled,rescheduled,accepted'
           }
         });
         const appointments = response.data.appointments || response.data.data || [];
-        return appointments.map((appointment: any) => ({
-          ...appointment,
-          date: appointment.date || appointment.appointmentDate || '',
-          time: appointment.time || appointment.appointmentTime || ''
-        }));
+        return appointments
+          .map((appointment: any) => ({
+            ...appointment,
+            date: appointment.date || appointment.appointmentDate || '',
+            time: appointment.time || appointment.appointmentTime || ''
+          }))
+          .filter((appointment: any) => {
+            const type = String(appointment.consultationType || '').toLowerCase();
+            return ['video', 'online', 'telemedicine'].includes(type);
+          });
       } catch (err: any) {
         console.error('Failed to fetch video consultations:', err);
         return [];
@@ -514,7 +517,7 @@ const VideoConsultation = () => {
         specialization: '',
         date: '',
         time: '',
-        consultationType: 'online',
+        consultationType: 'video',
         status: 'in-progress',
         meetingLink: roomId || undefined
       };

@@ -1313,9 +1313,42 @@ router.post(
       // Normalize gender to match database enum (capitalize first letter)
       const normalizedGender = gender ? gender.charAt(0).toUpperCase() + gender.slice(1).toLowerCase() : 'Other';
 
+      const normalizedAllergies = Array.isArray(allergies)
+        ? allergies.map((entry) => String(entry).trim()).filter(Boolean)
+        : typeof allergies === 'string'
+          ? allergies.split(/[,\n]/).map((entry) => entry.trim()).filter(Boolean)
+          : [];
+
+      const emergencyContactText = typeof emergencyContact === 'string'
+        ? emergencyContact.trim()
+        : emergencyContact
+          ? String(emergencyContact).trim()
+          : '';
+      const emergencyContactPhone = emergencyContactText
+        ? emergencyContactText.match(/(\+?\d[\d\s-]{6,}\d)/)?.[1]?.replace(/\s+/g, '')
+        : null;
+      const emergencyContactJson = emergencyContactText
+        ? {
+            raw: emergencyContactText,
+            ...(emergencyContactPhone ? { phone: emergencyContactPhone } : {})
+          }
+        : null;
+
+      const addressText = typeof address === 'string'
+        ? address.trim()
+        : address
+          ? String(address).trim()
+          : '';
+      const medicalHistoryValue = typeof medicalHistory === 'string'
+        ? medicalHistory.trim()
+        : medicalHistory || null;
+      const medicalHistoryPayload = medicalHistoryValue
+        ? (typeof medicalHistoryValue === 'string'
+          ? { summary: medicalHistoryValue }
+          : medicalHistoryValue)
+        : undefined;
+
       // Create patient account
-      // Note: User model only supports basic fields
-      // Additional fields like bloodGroup, address, etc. should be in patient_profiles table
       const newPatient = await User.create({
         firstName,
         lastName,
@@ -1324,6 +1357,13 @@ router.post(
         phoneNumber,
         dateOfBirth: dateOfBirth ? new Date(dateOfBirth) : new Date('1990-01-01'),
         gender: normalizedGender,
+        bloodType: bloodGroup || null,
+        allergies: normalizedAllergies,
+        medicalHistory: medicalHistoryPayload,
+        emergencyContact_json: emergencyContactJson || undefined,
+        emergencyContact_phoneNumber: emergencyContactPhone || undefined,
+        address_street: addressText || undefined,
+        address_json: addressText ? { full: addressText } : undefined,
         status: 'active',         // Use status instead of isActive
         emailVerified: true,      // Doctor-created patients are auto-verified
         primaryDoctorId: doctorId // Set the creating doctor as primary doctor
@@ -1434,13 +1474,13 @@ router.get('/my-patients', authDoctor, async (req, res) => {
     // Get unique patient IDs from appointments
     const patientIds = [...new Set(appointments.map(apt => apt.userId).filter(Boolean))];
 
-    // Build patient search criteria - only include patients from appointments
-    // Note: primaryDoctorId is not available in current User model
-    let patientWhere = {};
-    
+    const patientScope = [];
     if (patientIds.length > 0) {
-      patientWhere.id = { [Op.in]: patientIds };
+      patientScope.push({ id: { [Op.in]: patientIds } });
     }
+    patientScope.push({ primaryDoctorId: parseInt(doctorId) });
+
+    let patientWhere = patientScope.length === 1 ? patientScope[0] : { [Op.or]: patientScope };
 
     if (search) {
       const searchCondition = {
@@ -1451,17 +1491,10 @@ router.get('/my-patients', authDoctor, async (req, res) => {
           { phoneNumber: { [Op.iLike]: `%${search}%` } }
         ]
       };
-      
-      if (patientIds.length > 0) {
-        patientWhere = {
-          [Op.and]: [
-            { id: { [Op.in]: patientIds } },
-            searchCondition
-          ]
-        };
-      } else {
-        patientWhere = searchCondition;
-      }
+
+      patientWhere = patientWhere
+        ? { [Op.and]: [patientWhere, searchCondition] }
+        : searchCondition;
     }
 
     // Get patients with appointment stats
@@ -1476,6 +1509,14 @@ router.get('/my-patients', authDoctor, async (req, res) => {
         'dateOfBirth',
         'gender',
         'bloodType',
+        'status',
+        'address_street',
+        'address_city',
+        'address_state',
+        'address_zipCode',
+        'address_country',
+        'address_json',
+        'emergencyContact_json',
         'createdAt'
       ],
       limit: parseInt(limit),
@@ -1532,7 +1573,15 @@ router.get('/my-patients', authDoctor, async (req, res) => {
           dateOfBirth: patient.dateOfBirth,
           age,
           gender: patient.gender,
-          bloodGroup: patient.bloodGroup,
+          bloodGroup: patient.bloodType || patient.bloodGroup,
+          status: patient.status,
+          address: patient.address_json?.full
+            || [patient.address_street, patient.address_city, patient.address_state, patient.address_zipCode, patient.address_country]
+              .filter(Boolean)
+              .join(', ') || null,
+          emergencyContact: patient.emergencyContact_json?.raw
+            || patient.emergencyContact_json?.phone
+            || null,
           totalAppointments,
           lastAppointment: lastAppointment ? {
             date: lastAppointment.appointmentDate,
@@ -1540,7 +1589,7 @@ router.get('/my-patients', authDoctor, async (req, res) => {
             status: lastAppointment.status,
             type: lastAppointment.consultationType
           } : null,
-          registeredAt: patient.createdAt
+          createdAt: patient.createdAt
         };
       })
     );
@@ -2132,7 +2181,7 @@ router.post('/appointments/:appointmentId/initiate-call', authDoctor, async (req
     }
 
     // Check if payment is completed (if required)
-    if (appointment.consultationType === 'online' && appointment.paymentStatus !== 'paid') {
+    if (['online', 'video'].includes(appointment.consultationType) && appointment.paymentStatus !== 'paid') {
       return res.status(402).json({
         success: false,
         message: 'Payment required before starting video consultation',

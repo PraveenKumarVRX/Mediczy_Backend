@@ -173,6 +173,15 @@ const DoctorPrescriptions = () => {
   const [showScribe, setShowScribe] = useState(false);
   const [currentScribeField, setCurrentScribeField] = useState<string>("diagnosis");
 
+  const getErrorMessage = (error: any, fallback: string) => {
+    return (
+      error.response?.data?.message ||
+      error.response?.data?.error ||
+      error.response?.data?.errors?.[0]?.msg ||
+      fallback
+    );
+  };
+
   // Check for imported prescription from AI recording
   useEffect(() => {
     const importedData = localStorage.getItem('importedPrescription');
@@ -254,7 +263,7 @@ const DoctorPrescriptions = () => {
     onError: (error: any) => {
       toast({
         title: "Error",
-        description: error.response?.data?.error || "Failed to create prescription",
+        description: getErrorMessage(error, "Failed to create prescription"),
         variant: "destructive",
       });
     },
@@ -278,7 +287,7 @@ const DoctorPrescriptions = () => {
     onError: (error: any) => {
       toast({
         title: "Error",
-        description: error.response?.data?.error || "Failed to update prescription",
+        description: getErrorMessage(error, "Failed to update prescription"),
         variant: "destructive",
       });
     },
@@ -287,7 +296,7 @@ const DoctorPrescriptions = () => {
   // Issue prescription mutation
   const issuePrescriptionMutation = useMutation({
     mutationFn: async (id: number) => {
-      const response = await api.post(`/prescriptions/${id}/issue`);
+      const response = await api.patch(`/prescriptions/${id}/status`, { status: "issued" });
       return response.data;
     },
     onSuccess: () => {
@@ -301,7 +310,7 @@ const DoctorPrescriptions = () => {
     onError: (error: any) => {
       toast({
         title: "Error",
-        description: error.response?.data?.error || "Failed to issue prescription",
+        description: getErrorMessage(error, "Failed to issue prescription"),
         variant: "destructive",
       });
     },
@@ -323,7 +332,7 @@ const DoctorPrescriptions = () => {
     onError: (error: any) => {
       toast({
         title: "Error",
-        description: error.response?.data?.error || "Failed to delete prescription",
+        description: getErrorMessage(error, "Failed to delete prescription"),
         variant: "destructive",
       });
     },
@@ -339,6 +348,14 @@ const DoctorPrescriptions = () => {
       toast({
         title: "Validation Error",
         description: "Patient name is required",
+        variant: "destructive",
+      });
+      return;
+    }
+    if (!formData.diagnosis.trim()) {
+      toast({
+        title: "Validation Error",
+        description: "Diagnosis is required",
         variant: "destructive",
       });
       return;

@@ -1,5 +1,5 @@
-import React from 'react';
-import { Bell, Check, CheckCheck, X, Video, MessageCircle, Calendar, AlertCircle, Info } from 'lucide-react';
+import React, { useState } from 'react';
+import { Bell, Check, CheckCheck, X, Video, MessageCircle, Calendar, AlertCircle, Info, Filter } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { ScrollArea } from '@/components/ui/scroll-area';
@@ -20,6 +20,8 @@ interface NotificationCenterProps {
 }
 
 const NotificationCenter: React.FC<NotificationCenterProps> = ({ userId, userType }) => {
+  const [filterStatus, setFilterStatus] = useState<'all' | 'unread' | 'read'>('all');
+  
   const {
     notifications,
     unreadCount,
@@ -134,6 +136,36 @@ const NotificationCenter: React.FC<NotificationCenterProps> = ({ userId, userTyp
           )}
         </div>
 
+        {/* Filter Tabs */}
+        {notifications.length > 0 && (
+          <div className="flex gap-2 px-4 py-2 border-b bg-muted/30">
+            <Button
+              size="sm"
+              variant={filterStatus === 'all' ? 'default' : 'outline'}
+              onClick={() => setFilterStatus('all')}
+              className="text-xs"
+            >
+              All ({notifications.length})
+            </Button>
+            <Button
+              size="sm"
+              variant={filterStatus === 'unread' ? 'default' : 'outline'}
+              onClick={() => setFilterStatus('unread')}
+              className="text-xs"
+            >
+              Unread ({unreadCount})
+            </Button>
+            <Button
+              size="sm"
+              variant={filterStatus === 'read' ? 'default' : 'outline'}
+              onClick={() => setFilterStatus('read')}
+              className="text-xs"
+            >
+              Read ({notifications.filter(n => n.read).length})
+            </Button>
+          </div>
+        )}
+
         {/* Notifications List */}
         <ScrollArea className="max-h-96">
           {notifications.length === 0 ? (
@@ -144,7 +176,13 @@ const NotificationCenter: React.FC<NotificationCenterProps> = ({ userId, userTyp
             </div>
           ) : (
             <div className="space-y-1 p-2">
-              {notifications.map((notification) => (
+              {notifications
+                .filter((notification) => {
+                  if (filterStatus === 'unread') return !notification.read;
+                  if (filterStatus === 'read') return notification.read;
+                  return true;
+                })
+                .map((notification) => (
                 <Card
                   key={notification.id}
                   className={cn(
