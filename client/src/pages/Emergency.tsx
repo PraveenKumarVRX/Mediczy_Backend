@@ -963,11 +963,34 @@ Hello, I'm Dr. iSHA, your AI emergency medical assistant powered by multimodal i
       // Verify Socket.IO is connected before proceeding
       if (!isSocketConnected) {
         console.warn('⚠️ Socket not connected, attempting to connect...');
-        socketService.connect();
-        // Wait a bit for connection
-        await new Promise(resolve => setTimeout(resolve, 1000));
         
-        if (!socketService.socket?.connected) {
+        // Get user ID for socket connection
+        const resolveSocketUserId = () => {
+          const userPayload = localStorage.getItem('userData') || localStorage.getItem('user');
+          if (userPayload) {
+            try {
+              const parsed = JSON.parse(userPayload);
+              return parsed?.id || parsed?.user_id || null;
+            } catch (error) {
+              console.warn('Failed to parse stored user payload:', error);
+            }
+          }
+          const storedId = localStorage.getItem('userId');
+          if (storedId) {
+            const id = Number(storedId);
+            return Number.isNaN(id) ? null : id;
+          }
+          return null;
+        };
+        
+        const userId = resolveSocketUserId();
+        if (userId) {
+          socketService.connect(userId, 'user');
+          // Wait a bit for connection
+          await new Promise(resolve => setTimeout(resolve, 1000));
+        }
+        
+        if (!socketService.getSocket()?.connected) {
           throw new Error('Cannot connect to notification system. Please refresh the page.');
         }
       }

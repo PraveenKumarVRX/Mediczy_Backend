@@ -256,7 +256,7 @@ const VideoConsultation = () => {
   // Generate meeting URL
   const generateMeetingUrl = useCallback((roomIdOrAppointment: string | Appointment) => {
     let room = '';
-    const name = currentUser?.name || currentUser?.firstName || 'Patient';
+    const name = currentUser?.firstName || 'Patient';
     let directJoinUrl = '';
     
     if (typeof roomIdOrAppointment === 'string') {
@@ -583,7 +583,7 @@ const VideoConsultation = () => {
             serverUrl={liveKitConnection.serverUrl}
             token={liveKitConnection.token}
             roomName={liveKitConnection.roomName}
-            participantName={currentUser?.name || currentUser?.firstName || 'Patient'}
+            participantName={currentUser?.firstName || 'Patient'}
             onDisconnect={() => {
               setIsInCall(false);
               setLiveKitConnection(null);
