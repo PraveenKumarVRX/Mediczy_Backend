@@ -232,6 +232,7 @@ import HospitalPracticeManagement from "@/pages/hospital/HospitalPracticeManagem
 import HospitalCorporateManagement from "@/pages/hospital/HospitalCorporateManagement";
 import HospitalInsurancePayerManagement from "@/pages/hospital/HospitalInsurancePayerManagement";
 import HospitalInsuranceBilling from "@/pages/hospital/HospitalInsuranceBilling";
+import HospitalInsuranceClaimsDashboard from "@/pages/hospital/HospitalInsuranceClaimsDashboard";
 import HospitalMRD from "@/pages/hospital/HospitalMRD";
 import HospitalEHR from "@/pages/hospital/HospitalEHR";
 import HospitalLabOrder from "@/pages/hospital/HospitalLabOrder";
@@ -401,6 +402,7 @@ const AppRoutes = () => {
       <Route path="/hospital/corporate-management" element={<HospitalCorporateManagement />} />
       <Route path="/hospital/insurance-payer-management" element={<HospitalInsurancePayerManagement />} />
       <Route path="/hospital/insurance-billing" element={<HospitalInsuranceBilling />} />
+      <Route path="/hospital/insurance-claims" element={<HospitalInsuranceClaimsDashboard />} />
       <Route path="/hospital/mrd" element={<HospitalMRD />} />
       <Route path="/hospital/ehr" element={<HospitalEHR />} />
       <Route path="/hospital/lab-order" element={<HospitalLabOrder />} />
