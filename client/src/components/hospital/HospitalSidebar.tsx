@@ -29,6 +29,7 @@ import {
   MessageSquare,
   Ambulance,
   Network,
+  BarChart3,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { useState } from "react";
@@ -64,6 +65,7 @@ const clinicalItems: SidebarItem[] = [
 ];
 
 const billingItems: SidebarItem[] = [
+  { icon: BarChart3, label: "Insurance Claims", href: "/hospital/insurance-claims" },
   { icon: Shield, label: "Insurance Billing", href: "/hospital/insurance-billing" },
   { icon: Receipt, label: "Billing", href: "/hospital/billing" },
   { icon: FileText, label: "Claims", href: "/hospital/claims" },
