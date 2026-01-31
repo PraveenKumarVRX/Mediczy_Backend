@@ -3,7 +3,7 @@
  * Main page wrapper for the comprehensive insurance claims management system
  */
 
-import { HospitalInsuranceDashboard } from "@/components/HospitalInsuranceDashboard";
+import HospitalInsuranceDashboard from "@/components/HospitalInsuranceDashboard";
 import "@/styles/HospitalInsuranceDashboard.css";
 
 const HospitalInsuranceClaimsDashboard = () => {
