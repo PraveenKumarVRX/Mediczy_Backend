@@ -232,9 +232,11 @@ import { JWT_CONFIG } from '../config/auth.config.js';
 
 import { validationResult } from "express-validator";
 import doctorModel from "../models/doctor.model.intelligent.js";
+import { User } from "../models/user.model.intelligent.js";
 import jwt from "jsonwebtoken";
 import intelligentDb from "../utils/intelligentDbClient.js";
 import { auditLoginAttempt } from "../middleware/audit.middleware.js";
+import { fn, col, where as sequelizeWhere } from "sequelize";
 
 const toPlainDoctor = (doctorInstance) => {
   if (!doctorInstance) return null;
@@ -344,6 +346,21 @@ export async function signInDoctor(req, res) {
       console.log('💚 [signInDoctor] No doctor found, returning 401');
       await auditLoginAttempt(req, null, normalizedEmail, false, 'Doctor not found');
       return res.status(401).json({ message: "Invalid email or password" });
+    }
+
+    // CROSS-ROLE GUARD: Prevent patient/user accounts from using doctor login endpoint
+    // This provides server-side validation in addition to client-side routing
+    const userRecord = await User.findOne({
+      where: sequelizeWhere(fn("lower", col("email")), normalizedEmail),
+      attributes: ["id", "isAdmin"]
+    });
+    
+    if (userRecord) {
+      console.log('💚 [signInDoctor] User/patient account found, blocking doctor login');
+      await auditLoginAttempt(req, userRecord.id, normalizedEmail, false, 'Patient/user attempted doctor login');
+      return res.status(403).json({ 
+        message: "Please use the patient login portal" 
+      });
     }
 
     console.log('💚 [signInDoctor] About to compare password...');

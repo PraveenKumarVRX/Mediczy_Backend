@@ -141,22 +141,58 @@ const registerUser = async (userData: any) => {
   return data;
 };
 
-// 🔹 Dynamic Login Function (Supports User, Doctor, Corporate, Nurse, Assistant, TPA, PSU, Insurer, NGO)
-const login = async ({ credentials, loginType }) => {
-  let endpoint = `/users/login`;
+// 🔹 Dynamic Login Function (Supports all role-specific endpoints)
+type ValidLoginType =
+  | "user"
+  | "doctor"
+  | "corporate"
+  | "nurse"
+  | "assistant"
+  | "lab"
+  | "admin"
+  | "team"
+  | "hospital"
+  | "clinic"
+  | "pharmacy"
+  | "ambulance"
+  | "homecare"
+  | "insuranceCompany"
+  | "insuranceBroker"
+  | "tpa"
+  | "psu"
+  | "insurer"
+  | "ngo";
 
-  if (loginType === "doctor") {
-    endpoint = `/doctors/login`;
-  } else if (loginType === "corporate") {
-    endpoint = `/corporate/login`;
-  } else if (loginType === "tpa") {
-    endpoint = `/tpa/login`;
-  } else if (loginType === "psu") {
-    endpoint = `/psu/login`;
-  } else if (loginType === "insurer") {
-    endpoint = `/insurer/login`;
-  } else if (loginType === "ngo") {
-    endpoint = `/ngo/login`;
+const LOGIN_ENDPOINTS: Record<ValidLoginType, string> = {
+  user: "/users/login",
+  doctor: "/doctors/login",
+  corporate: "/corporate/login",
+  nurse: "/nurse/login",
+  assistant: "/assistant/login",
+  lab: "/lab/login",
+  admin: "/admin/login",
+  team: "/team/login",
+  hospital: "/hospital/login",
+  clinic: "/clinic/login",
+  pharmacy: "/pharmacy/login",
+  ambulance: "/ambulance/login",
+  homecare: "/homecare/login",
+  insuranceCompany: "/insurance-company/login",
+  insuranceBroker: "/insurance-broker/login",
+  tpa: "/tpa/login",
+  psu: "/psu/login",
+  insurer: "/insurer/login",
+  ngo: "/ngo/login"
+};
+
+const login = async ({ credentials, loginType }: { credentials: any; loginType: ValidLoginType }) => {
+  if (!loginType) {
+    throw new Error('loginType is required for login.');
+  }
+
+  const endpoint = LOGIN_ENDPOINTS[loginType];
+  if (!endpoint) {
+    throw new Error(`Unsupported loginType: ${loginType}`);
   }
 
   // Use skipAuth to prevent existing tokens from being sent with login requests
@@ -205,7 +241,7 @@ export const useLogin = () => {
     Error,
     {
       credentials: { email: string; password: string };
-      loginType: "user" | "doctor" | "corporate" | "nurse" | "assistant" | "lab" | "tpa" | "psu" | "insurer" | "ngo";
+      loginType: ValidLoginType;
     }
   >({
     mutationFn: ({ credentials, loginType }) =>

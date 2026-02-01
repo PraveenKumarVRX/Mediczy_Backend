@@ -1,14 +1,17 @@
 import { useEffect, useState } from 'react';
 import { useNavigate, useLocation } from 'react-router-dom';
 
-interface RouteAccess {
+interface PortalConfig {
   allowedPaths: string[];
   tokenKey: string;
   loginPath: string;
   userType: string;
 }
 
-const USER_TYPES: Record<string, RouteAccess> = {
+const CORE_PUBLIC_PATHS = ['/login', '/register'];
+const LEGACY_PUBLIC_PATHS = ['/doctor-login', '/doc-register'];
+
+const USER_TYPES: Record<string, PortalConfig> = {
   user: {
     allowedPaths: [
       '/',
@@ -403,6 +406,24 @@ const USER_TYPES: Record<string, RouteAccess> = {
   }
 };
 
+const PUBLIC_PATHS = Array.from(new Set([
+  ...CORE_PUBLIC_PATHS,
+  ...Object.values(USER_TYPES).map((config) => config.loginPath),
+  ...LEGACY_PUBLIC_PATHS
+]));
+
+const ROUTE_TO_LOGIN_MAP: Record<string, string> = (() => {
+  const map: Record<string, string> = {};
+  Object.values(USER_TYPES).forEach((config) => {
+    config.allowedPaths.forEach((path) => {
+      if (!PUBLIC_PATHS.includes(path)) {
+        map[path] = config.loginPath;
+      }
+    });
+  });
+  return map;
+})();
+
 export const useRingFencing = () => {
   const navigate = useNavigate();
   const location = useLocation();
@@ -414,28 +435,7 @@ export const useRingFencing = () => {
       const currentPath = location.pathname;
       
       // Public paths that don't require authentication
-      const publicPaths = [
-        '/login', 
-        '/register', 
-        '/doctor-login', 
-        '/doc-register',
-        '/admin/login',
-        '/nurse/login',
-        '/assistant/login',
-        '/team/login',
-        '/corporate/login'
-        ,'/tpa/login'
-        ,'/psu/login'
-        ,'/insurer/login'
-        ,'/ngo/login'
-        ,'/hospital/login'
-        ,'/clinic/login'
-        ,'/lab/login'
-        ,'/pharmacy/login'
-        ,'/ambulance/login'
-        ,'/homecare/login'
-      ];
-      if (publicPaths.includes(currentPath)) {
+      if (PUBLIC_PATHS.includes(currentPath)) {
         setIsChecking(false);
         return;
       }
@@ -470,24 +470,31 @@ export const useRingFencing = () => {
       }
 
       // If no user is logged in and trying to access protected route
-      if (!loggedInUserType && !publicPaths.includes(currentPath)) {
+      if (!loggedInUserType && !PUBLIC_PATHS.includes(currentPath)) {
         console.log('🚫 No user logged in, redirecting to login');
-        // Route-specific login fallbacks for portal paths
-        if (currentPath.startsWith('/pharmacy')) {
-          navigate('/pharmacy/login', { replace: true });
-        } else if (currentPath.startsWith('/lab')) {
-          navigate('/lab/login', { replace: true });
-        } else if (currentPath.startsWith('/clinic')) {
-          navigate('/clinic/login', { replace: true });
-        } else if (currentPath.startsWith('/hospital')) {
-          navigate('/hospital/login', { replace: true });
-        } else if (currentPath.startsWith('/ambulance')) {
-          navigate('/ambulance/login', { replace: true });
-        } else if (currentPath.startsWith('/homecare')) {
-          navigate('/homecare/login', { replace: true });
+
+        // Find the best matching login page based on current path
+        let targetLogin = '/login'; // Default fallback for user login
+        
+        // Try exact match first
+        if (ROUTE_TO_LOGIN_MAP[currentPath]) {
+          targetLogin = ROUTE_TO_LOGIN_MAP[currentPath];
         } else {
-          navigate('/login', { replace: true });
+          // Try prefix match (e.g., /doctor/dashboard → /doctor/login)
+          for (const [protectedPath, loginPath] of Object.entries(ROUTE_TO_LOGIN_MAP)) {
+            if (currentPath.startsWith(protectedPath + '/')) {
+              targetLogin = loginPath;
+              break;
+            }
+            // Handle wildcard routes like /doctor/:id
+            if (protectedPath.includes('/:') && currentPath.startsWith(protectedPath.split('/:')[0])) {
+              targetLogin = loginPath;
+              break;
+            }
+          }
         }
+
+        navigate(targetLogin, { replace: true });
         setIsChecking(false);
         return;
       }
