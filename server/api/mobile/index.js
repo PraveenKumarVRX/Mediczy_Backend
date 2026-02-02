@@ -1283,6 +1283,236 @@ router.post('/video/token', authenticate(), asyncHandler(async (req, res) => {
   }
 }));
 
+// ============== Chat with Doctor ==============
+
+/**
+ * Get available doctors for chat
+ * GET /api/mobile/chat/doctors
+ */
+router.get('/chat/doctors', authenticate(), asyncHandler(async (req, res) => {
+  const { specialization, search, page = 1, limit = 20 } = req.query;
+  const offset = (parseInt(page) - 1) * parseInt(limit);
+  
+  let whereConditions = ['d.status = $1'];
+  let params = ['active'];
+  let paramIndex = 2;
+  
+  if (specialization) {
+    whereConditions.push(`d.specialization ILIKE $${paramIndex}`);
+    params.push(`%${specialization}%`);
+    paramIndex++;
+  }
+  
+  if (search) {
+    whereConditions.push(`(d."firstName" ILIKE $${paramIndex} OR d."lastName" ILIKE $${paramIndex} OR d.specialization ILIKE $${paramIndex})`);
+    params.push(`%${search}%`);
+    paramIndex++;
+  }
+  
+  const whereClause = whereConditions.join(' AND ');
+  
+  const result = await db.query(`
+    SELECT d.id,
+           d."firstName" AS first_name,
+           d."lastName" AS last_name,
+           d.specialization,
+           d."profileImage" AS avatar_url,
+           d.qualification,
+           d.experience,
+           d.rating,
+           d."totalReviews" AS total_reviews,
+           d."onlineConsultationFee" AS consultation_fee,
+           CASE WHEN d."isAvailableNow" = true THEN true ELSE false END AS is_online
+    FROM doctors d
+    WHERE ${whereClause}
+    ORDER BY d."isAvailableNow" DESC NULLS LAST, d.rating DESC NULLS LAST
+    LIMIT $${paramIndex} OFFSET $${paramIndex + 1}
+  `, [...params, parseInt(limit), offset]);
+  
+  res.json({
+    success: true,
+    data: {
+      doctors: result.rows.map(d => ({
+        id: d.id,
+        _id: String(d.id),
+        name: `${d.first_name || ''} ${d.last_name || ''}`.trim(),
+        firstName: d.first_name,
+        lastName: d.last_name,
+        specialization: d.specialization,
+        avatarUrl: d.avatar_url,
+        qualification: d.qualification,
+        experience: d.experience,
+        rating: d.rating,
+        totalReviews: d.total_reviews,
+        consultationFee: d.consultation_fee,
+        isOnline: d.is_online
+      })),
+      page: parseInt(page),
+      limit: parseInt(limit)
+    }
+  });
+}));
+
+/**
+ * Start/Get chat conversation with doctor
+ * POST /api/mobile/chat/start
+ */
+router.post('/chat/start', authenticate(), asyncHandler(async (req, res) => {
+  const { doctorId, appointmentId, message } = req.body;
+  const userId = req.userId;
+  
+  if (!doctorId) {
+    return res.status(400).json({
+      success: false,
+      error: { code: 'MISSING_DOCTOR', message: 'Doctor ID is required' }
+    });
+  }
+  
+  // Get doctor details
+  const doctorResult = await db.query(`
+    SELECT id, "firstName", "lastName", specialization, "profileImage"
+    FROM doctors WHERE id = $1
+  `, [doctorId]);
+  
+  if (doctorResult.rows.length === 0) {
+    return res.status(404).json({
+      success: false,
+      error: { code: 'DOCTOR_NOT_FOUND', message: 'Doctor not found' }
+    });
+  }
+  
+  const doctor = doctorResult.rows[0];
+  const conversationId = `chat_${userId}_${doctorId}`;
+  
+  // Check for existing conversation or create new
+  let conversationResult = await db.query(`
+    SELECT id FROM chat_conversations 
+    WHERE (user_id = $1 AND doctor_id = $2) OR id = $3
+    LIMIT 1
+  `, [userId, doctorId, conversationId]);
+  
+  let conversationDbId;
+  
+  if (conversationResult.rows.length === 0) {
+    // Create new conversation
+    const insertResult = await db.query(`
+      INSERT INTO chat_conversations (id, user_id, doctor_id, appointment_id, status, created_at, updated_at)
+      VALUES ($1, $2, $3, $4, 'active', NOW(), NOW())
+      ON CONFLICT (id) DO UPDATE SET updated_at = NOW()
+      RETURNING id
+    `, [conversationId, userId, doctorId, appointmentId || null]);
+    conversationDbId = insertResult.rows[0]?.id || conversationId;
+  } else {
+    conversationDbId = conversationResult.rows[0].id;
+  }
+  
+  // If initial message provided, save it
+  if (message) {
+    await db.query(`
+      INSERT INTO chat_messages (conversation_id, sender_id, sender_type, content, created_at)
+      VALUES ($1, $2, 'user', $3, NOW())
+    `, [conversationDbId, userId, message]);
+  }
+  
+  res.json({
+    success: true,
+    data: {
+      conversationId,
+      doctor: {
+        id: doctor.id,
+        name: `${doctor.firstName || ''} ${doctor.lastName || ''}`.trim(),
+        specialization: doctor.specialization,
+        avatarUrl: doctor.profileImage
+      },
+      status: 'active',
+      createdAt: new Date().toISOString()
+    }
+  });
+}));
+
+/**
+ * Send message in chat
+ * POST /api/mobile/chat/message
+ */
+router.post('/chat/message', authenticate(), asyncHandler(async (req, res) => {
+  const { conversationId, doctorId, content, messageType = 'text' } = req.body;
+  const userId = req.userId;
+  
+  if (!content) {
+    return res.status(400).json({
+      success: false,
+      error: { code: 'MISSING_CONTENT', message: 'Message content is required' }
+    });
+  }
+  
+  const chatConversationId = conversationId || `chat_${userId}_${doctorId}`;
+  
+  // Insert message
+  const result = await db.query(`
+    INSERT INTO chat_messages (conversation_id, sender_id, sender_type, content, message_type, created_at)
+    VALUES ($1, $2, 'user', $3, $4, NOW())
+    RETURNING id, created_at
+  `, [chatConversationId, userId, content, messageType]);
+  
+  // Update conversation timestamp
+  await db.query(`
+    UPDATE chat_conversations SET updated_at = NOW() WHERE id = $1
+  `, [chatConversationId]);
+  
+  res.json({
+    success: true,
+    data: {
+      messageId: result.rows[0].id,
+      conversationId: chatConversationId,
+      content,
+      messageType,
+      sender: { id: userId, type: 'user' },
+      sentAt: result.rows[0].created_at
+    }
+  });
+}));
+
+/**
+ * Get chat messages
+ * GET /api/mobile/chat/messages/:conversationId
+ */
+router.get('/chat/messages/:conversationId', authenticate(), asyncHandler(async (req, res) => {
+  const { conversationId } = req.params;
+  const { page = 1, limit = 50 } = req.query;
+  const offset = (parseInt(page) - 1) * parseInt(limit);
+  
+  const result = await db.query(`
+    SELECT m.id, m.content, m.message_type, m.sender_id, m.sender_type, m.created_at,
+           CASE WHEN m.sender_type = 'user' THEN u."firstName" || ' ' || u."lastName"
+                ELSE d.prefix || ' ' || d."firstName" || ' ' || d."lastName" END AS sender_name
+    FROM chat_messages m
+    LEFT JOIN users u ON m.sender_type = 'user' AND m.sender_id = u.id
+    LEFT JOIN doctors d ON m.sender_type = 'doctor' AND m.sender_id = d.id
+    WHERE m.conversation_id = $1
+    ORDER BY m.created_at DESC
+    LIMIT $2 OFFSET $3
+  `, [conversationId, parseInt(limit), offset]);
+  
+  res.json({
+    success: true,
+    data: {
+      messages: result.rows.reverse().map(m => ({
+        id: m.id,
+        content: m.content,
+        messageType: m.message_type,
+        sender: {
+          id: m.sender_id,
+          type: m.sender_type,
+          name: m.sender_name
+        },
+        createdAt: m.created_at
+      })),
+      page: parseInt(page),
+      limit: parseInt(limit)
+    }
+  });
+}));
+
 // ============== Appointments ==============
 
 router.get('/appointments', authenticate(), asyncHandler(async (req, res) => {
