@@ -1213,6 +1213,67 @@ router.get('/doctors/:id/availability', asyncHandler(async (req, res) => {
   });
 }));
 
+// ============== Video Consultation ==============
+
+import { buildLiveKitJoinData, createMeetingInfo } from '../../utils/videoProvider.js';
+
+/**
+ * Generate LiveKit token for video consultation
+ * POST /api/mobile/video/token
+ */
+router.post('/video/token', authenticate(), asyncHandler(async (req, res) => {
+  const { roomName, appointmentId } = req.body;
+  const userId = req.userId;
+  
+  // Get user details for display name
+  const userResult = await db.query(`
+    SELECT "firstName", "lastName", email, role
+    FROM users
+    WHERE id = $1
+  `, [userId]);
+  
+  if (userResult.rows.length === 0) {
+    return res.status(404).json({
+      success: false,
+      error: { code: 'USER_NOT_FOUND', message: 'User not found' }
+    });
+  }
+  
+  const user = userResult.rows[0];
+  const userRole = user.role || 'patient';
+  const displayName = [user.firstName, user.lastName].filter(Boolean).join(' ') || user.email || 'Mobile User';
+  
+  // Generate meeting ID if not provided
+  const meetingId = roomName || (appointmentId ? `apt-${appointmentId}` : createMeetingInfo({}).meetingId);
+  
+  try {
+    const livekitData = await buildLiveKitJoinData({
+      meetingId,
+      identity: `${userRole}-${userId}`,
+      name: displayName
+    });
+    
+    res.json({
+      success: true,
+      data: {
+        meetingId,
+        serverUrl: livekitData.serverUrl,
+        token: livekitData.token,
+        roomName: livekitData.roomName,
+        meetUrl: livekitData.meetUrl,
+        joinUrl: livekitData.joinUrl,
+        expiresAt: new Date(Date.now() + 60 * 60 * 1000).toISOString()
+      }
+    });
+  } catch (error) {
+    console.error('[Mobile] Failed to generate LiveKit token:', error);
+    return res.status(500).json({
+      success: false,
+      error: { code: 'LIVEKIT_ERROR', message: 'Failed to generate video token' }
+    });
+  }
+}));
+
 // ============== Appointments ==============
 
 router.get('/appointments', authenticate(), asyncHandler(async (req, res) => {
