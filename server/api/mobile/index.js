@@ -812,6 +812,124 @@ router.post('/auth/otp/verify', asyncHandler(async (req, res) => {
   });
 }));
 
+// ============== Signup Route ==============
+
+router.post('/auth/signup', asyncHandler(async (req, res) => {
+  const { email, password, firstName, first_name, lastName, last_name, phone, dateOfBirth, gender, deviceId, pushToken } = req.body;
+  
+  const userFirstName = firstName || first_name;
+  const userLastName = lastName || last_name;
+  
+  if (!email || !password) {
+    return res.status(400).json({
+      success: false,
+      error: { code: 'MISSING_CREDENTIALS', message: 'Email and password are required' }
+    });
+  }
+
+  if (!userFirstName || !userLastName) {
+    return res.status(400).json({
+      success: false,
+      error: { code: 'MISSING_NAME', message: 'First name and last name are required' }
+    });
+  }
+
+  if (password.length < 8) {
+    return res.status(400).json({
+      success: false,
+      error: { code: 'WEAK_PASSWORD', message: 'Password must be at least 8 characters' }
+    });
+  }
+
+  // Check if user already exists
+  const existingUser = await db.query('SELECT id FROM users WHERE email = $1', [email.toLowerCase()]);
+  if (existingUser.rows.length > 0) {
+    return res.status(409).json({
+      success: false,
+      error: { code: 'USER_EXISTS', message: 'An account with this email already exists' }
+    });
+  }
+
+  // Hash password
+  const hashedPassword = await bcrypt.hash(password, 10);
+
+  // Generate phone number placeholder if not provided
+  const phoneNumber = phone || `TEMP_${Date.now()}`;
+
+  // Create user
+  const result = await db.query(`
+    INSERT INTO users (
+      email, password, "firstName", "lastName", "phoneNumber",
+      "dateOfBirth", gender, role, status, "createdAt", "updatedAt"
+    ) VALUES ($1, $2, $3, $4, $5, $6, $7, 'patient', 'active', NOW(), NOW())
+    RETURNING id, email, "firstName" AS first_name, "lastName" AS last_name,
+              "phoneNumber" AS phone, "profileImage" AS avatar_url,
+              "dateOfBirth" AS date_of_birth, gender, "bloodType" AS blood_group,
+              role, status
+  `, [
+    email.toLowerCase(),
+    hashedPassword,
+    userFirstName,
+    userLastName,
+    phoneNumber,
+    dateOfBirth || '1990-01-01', // Default date if not provided
+    gender || 'Other'
+  ]);
+
+  const user = result.rows[0];
+
+  // Create patient record
+  await db.query(`
+    INSERT INTO patients ("userId", status, "createdAt", "updatedAt")
+    VALUES ($1, 'active', NOW(), NOW())
+    ON CONFLICT ("userId") DO NOTHING
+  `, [user.id]);
+
+  // Register device if provided
+  if (deviceId) {
+    await storeDeviceMetadata(user.id, {
+      deviceId,
+      pushToken: pushToken || null,
+      platform: req.mobileClient?.platform || 'unknown',
+      lastActive: new Date().toISOString()
+    });
+  }
+
+  if (deviceId && pushToken) {
+    await upsertFcmToken({
+      userId: user.id,
+      userType: 'patient',
+      token: pushToken,
+      deviceType: req.mobileClient?.platform
+    });
+  }
+
+  const userResponse = buildUserResponse(user);
+
+  // Generate tokens
+  const accessToken = generateToken({
+    id: user.id,
+    userId: user.id,
+    email: user.email,
+    name: userResponse.name,
+    role: 'patient',
+    userType: 'patient'
+  }, 'patient');
+  
+  const refreshToken = generateRefreshToken(user.id, 'patient');
+  
+  res.status(201).json({
+    success: true,
+    data: {
+      user: userResponse,
+      accessToken,
+      refreshToken,
+      expiresIn: '30d'
+    },
+    message: 'Account created successfully'
+  });
+}));
+
 // ============== User Profile ==============
 
 router.get('/user/profile', authenticate(), asyncHandler(async (req, res) => {
