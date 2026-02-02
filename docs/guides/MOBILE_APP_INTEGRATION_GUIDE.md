@@ -30,7 +30,7 @@ POST /api/mobile/auth/signup
   "first_name": "John",        // ✅ Required
   "last_name": "Doe",          // ✅ Required
   "email": "john@example.com", // ✅ Required
-  "phone": "9876543210",       // ✅ Required
+  "phone": "+919876543210",    // ✅ Required (with country code)
   "password": "SecurePass123!", // ✅ Required (min 8 chars)
   "dateOfBirth": "1990-05-15", // ✅ Required (YYYY-MM-DD)
   "gender": "Male"             // ✅ Required (Male/Female/Other)

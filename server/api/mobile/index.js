@@ -842,6 +842,15 @@ router.post('/auth/signup', asyncHandler(async (req, res) => {
     });
   }
 
+  // Validate phone number format with country code (e.g., +91xxxxxxxxxx, +1xxxxxxxxxx)
+  const phoneRegex = /^\+[1-9]\d{6,14}$/;
+  if (!phoneRegex.test(phone.replace(/\s/g, ''))) {
+    return res.status(400).json({
+      success: false,
+      error: { code: 'INVALID_PHONE', message: 'Phone number must include country code (e.g., +91xxxxxxxxxx)' }
+    });
+  }
+
   if (!dateOfBirth) {
     return res.status(400).json({
       success: false,

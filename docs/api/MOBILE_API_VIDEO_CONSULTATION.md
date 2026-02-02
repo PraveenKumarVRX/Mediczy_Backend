@@ -35,7 +35,7 @@ Content-Type: application/json
   "last_name": "Doe",
   "email": "john@example.com",
   "password": "SecurePass123!",
-  "phone": "9876543210",
+  "phone": "+919876543210",
   "dateOfBirth": "1990-05-15",
   "gender": "Male"
 }
@@ -47,7 +47,7 @@ Content-Type: application/json
 | `first_name` | string | ✅ Yes | User's first name |
 | `last_name` | string | ✅ Yes | User's last name |
 | `email` | string | ✅ Yes | Valid email address |
-| `phone` | string | ✅ Yes | Phone number |
+| `phone` | string | ✅ Yes | Phone with country code (e.g., +919876543210) |
 | `password` | string | ✅ Yes | Min 8 characters |
 | `dateOfBirth` | string | ✅ Yes | ISO date format (YYYY-MM-DD) |
 | `gender` | string | ✅ Yes | Male/Female/Other |
@@ -86,6 +86,9 @@ Content-Type: application/json
 ```json
 // Missing phone
 { "success": false, "error": { "code": "MISSING_PHONE", "message": "Phone number is required" } }
+
+// Invalid phone format
+{ "success": false, "error": { "code": "INVALID_PHONE", "message": "Phone number must include country code (e.g., +91xxxxxxxxxx)" } }
 
 // Missing name
 { "success": false, "error": { "code": "MISSING_NAME", "message": "First name and last name are required" } }
