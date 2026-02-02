@@ -35,7 +35,9 @@ Content-Type: application/json
   "last_name": "Doe",
   "email": "john@example.com",
   "password": "SecurePass123!",
-  "phone": "9876543210"
+  "phone": "9876543210",
+  "dateOfBirth": "1990-05-15",
+  "gender": "Male"
 }
 ```
 
@@ -47,8 +49,8 @@ Content-Type: application/json
 | `email` | string | ✅ Yes | Valid email address |
 | `phone` | string | ✅ Yes | Phone number |
 | `password` | string | ✅ Yes | Min 8 characters |
-| `dateOfBirth` | string | ❌ No | ISO date (YYYY-MM-DD) - can update in profile |
-| `gender` | string | ❌ No | Male/Female/Other - can update in profile |
+| `dateOfBirth` | string | ✅ Yes | ISO date format (YYYY-MM-DD) |
+| `gender` | string | ✅ Yes | Male/Female/Other |
 
 **Response (201 Created):**
 
@@ -87,6 +89,12 @@ Content-Type: application/json
 
 // Missing name
 { "success": false, "error": { "code": "MISSING_NAME", "message": "First name and last name are required" } }
+
+// Missing date of birth
+{ "success": false, "error": { "code": "MISSING_DOB", "message": "Date of birth is required" } }
+
+// Missing gender
+{ "success": false, "error": { "code": "MISSING_GENDER", "message": "Gender is required" } }
 
 // Weak password
 { "success": false, "error": { "code": "WEAK_PASSWORD", "message": "Password must be at least 8 characters" } }

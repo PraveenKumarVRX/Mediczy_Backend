@@ -12,17 +12,18 @@ This guide helps mobile app developers integrate the unified patient system into
 
 > **Recommended for Mobile Apps:** Use these dedicated mobile endpoints for better responses.
 
-| Feature | Endpoint | Method |
-|---------|----------|--------|
-| **Signup** | `/api/mobile/auth/signup` | POST |
-| **Login** | `/api/mobile/auth/login` | POST |
-| **OTP Request** | `/api/mobile/auth/otp/request` | POST |
-| **OTP Verify** | `/api/mobile/auth/otp/verify` | POST |
-| **Get Profile** | `/api/mobile/user/profile` | GET |
-| **Update Profile** | `/api/mobile/user/profile` | PUT |
-| **Video Token** | `/api/video/livekit/token` | POST |
+| Feature            | Endpoint                       | Method |
+| ------------------ | ------------------------------ | ------ |
+| **Signup**         | `/api/mobile/auth/signup`      | POST   |
+| **Login**          | `/api/mobile/auth/login`       | POST   |
+| **OTP Request**    | `/api/mobile/auth/otp/request` | POST   |
+| **OTP Verify**     | `/api/mobile/auth/otp/verify`  | POST   |
+| **Get Profile**    | `/api/mobile/user/profile`     | GET    |
+| **Update Profile** | `/api/mobile/user/profile`     | PUT    |
+| **Video Token**    | `/api/video/livekit/token`     | POST   |
 
-### Mobile Signup - Required Fields ONLY
+### Mobile Signup - Required Fields
+
 ```javascript
 POST /api/mobile/auth/signup
 {
@@ -30,8 +31,9 @@ POST /api/mobile/auth/signup
   "last_name": "Doe",          // ✅ Required
   "email": "john@example.com", // ✅ Required
   "phone": "9876543210",       // ✅ Required
-  "password": "SecurePass123!" // ✅ Required (min 8 chars)
-  // dateOfBirth, gender are OPTIONAL - can update in profile later
+  "password": "SecurePass123!", // ✅ Required (min 8 chars)
+  "dateOfBirth": "1990-05-15", // ✅ Required (YYYY-MM-DD)
+  "gender": "Male"             // ✅ Required (Male/Female/Other)
 }
 ```
 
@@ -53,18 +55,20 @@ For complete API documentation, see: [MOBILE_API_VIDEO_CONSULTATION.md](../api/M
 ### Step 1: Update API Endpoints
 
 **OLD (Clinic-specific - still works):**
+
 ```javascript
-POST /api/clinic/1/patient/signup
-POST /api/clinic/1/patient/login
+POST / api / clinic / 1 / patient / signup;
+POST / api / clinic / 1 / patient / login;
 ```
 
 **NEW (Unified - recommended for mobile app):**
+
 ```javascript
-POST /api/patient/signup
-POST /api/patient/login
-GET  /api/patient/clinics/search
-GET  /api/patient/profile
-PATCH /api/patient/profile
+POST / api / patient / signup;
+POST / api / patient / login;
+GET / api / patient / clinics / search;
+GET / api / patient / profile;
+PATCH / api / patient / profile;
 ```
 
 ### Step 2: Update Signup Flow
@@ -75,7 +79,7 @@ PATCH /api/patient/profile
 // 1. Let user search for clinic
 const searchClinics = async (searchQuery) => {
   const response = await fetch(
-    `${API_BASE_URL}/api/patient/clinics/search?query=${searchQuery}`
+    `${API_BASE_URL}/api/patient/clinics/search?query=${searchQuery}`,
   );
   const data = await response.json();
   return data.data.clinics; // Array of clinic objects
@@ -87,33 +91,36 @@ const searchClinics = async (searchQuery) => {
 // 3. Signup with clinic identifier
 const signup = async (userData) => {
   const response = await fetch(`${API_BASE_URL}/api/patient/signup`, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
     body: JSON.stringify({
-      clinic_slug: selectedClinic.slug,  // ← Clinic identifier
+      clinic_slug: selectedClinic.slug, // ← Clinic identifier
       email: userData.email,
       password: userData.password,
       first_name: userData.firstName,
       last_name: userData.lastName,
       phone: userData.phone,
       date_of_birth: userData.dateOfBirth,
-      gender: userData.gender
-    })
+      gender: userData.gender,
+    }),
   });
-  
+
   const data = await response.json();
-  
+
   if (data.success) {
     // Store JWT token
-    await SecureStore.setItemAsync('jwt_token', data.data.token);
-    
+    await SecureStore.setItemAsync("jwt_token", data.data.token);
+
     // Store clinic info for future logins
-    await AsyncStorage.setItem('last_clinic_slug', data.data.patient.clinic.slug);
-    await AsyncStorage.setItem('clinic_name', data.data.patient.clinic.name);
-    
+    await AsyncStorage.setItem(
+      "last_clinic_slug",
+      data.data.patient.clinic.slug,
+    );
+    await AsyncStorage.setItem("clinic_name", data.data.patient.clinic.name);
+
     return data.data;
   }
-  
+
   throw new Error(data.message);
 };
 ```
@@ -125,34 +132,40 @@ const signup = async (userData) => {
 ```javascript
 const login = async (credentials) => {
   // Retrieve last used clinic (optional - for better UX)
-  const lastClinicSlug = await AsyncStorage.getItem('last_clinic_slug');
-  
+  const lastClinicSlug = await AsyncStorage.getItem("last_clinic_slug");
+
   const response = await fetch(`${API_BASE_URL}/api/patient/login`, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
     body: JSON.stringify({
-      clinic_slug: credentials.clinicSlug || lastClinicSlug,  // ← Clinic identifier
+      clinic_slug: credentials.clinicSlug || lastClinicSlug, // ← Clinic identifier
       email: credentials.email,
-      password: credentials.password
-    })
+      password: credentials.password,
+    }),
   });
-  
+
   const data = await response.json();
-  
+
   if (data.success) {
     // Store JWT token
-    await SecureStore.setItemAsync('jwt_token', data.data.token);
-    
+    await SecureStore.setItemAsync("jwt_token", data.data.token);
+
     // Store clinic info
-    await AsyncStorage.setItem('last_clinic_slug', data.data.patient.clinic.slug);
-    await AsyncStorage.setItem('clinic_name', data.data.patient.clinic.name);
-    
+    await AsyncStorage.setItem(
+      "last_clinic_slug",
+      data.data.patient.clinic.slug,
+    );
+    await AsyncStorage.setItem("clinic_name", data.data.patient.clinic.name);
+
     // Cache patient profile
-    await AsyncStorage.setItem('patient_profile', JSON.stringify(data.data.patient));
-    
+    await AsyncStorage.setItem(
+      "patient_profile",
+      JSON.stringify(data.data.patient),
+    );
+
     return data.data;
   }
-  
+
   throw new Error(data.message);
 };
 ```
@@ -162,29 +175,35 @@ const login = async (credentials) => {
 **Example React Native component:**
 
 ```javascript
-import React, { useState } from 'react';
-import { View, TextInput, FlatList, TouchableOpacity, Text } from 'react-native';
+import React, { useState } from "react";
+import {
+  View,
+  TextInput,
+  FlatList,
+  TouchableOpacity,
+  Text,
+} from "react-native";
 
 const ClinicSearchScreen = ({ onClinicSelect }) => {
-  const [searchQuery, setSearchQuery] = useState('');
+  const [searchQuery, setSearchQuery] = useState("");
   const [clinics, setClinics] = useState([]);
   const [loading, setLoading] = useState(false);
 
   const searchClinics = async (query) => {
     if (query.length < 2) return;
-    
+
     setLoading(true);
     try {
       const response = await fetch(
-        `${API_BASE_URL}/api/patient/clinics/search?query=${query}`
+        `${API_BASE_URL}/api/patient/clinics/search?query=${query}`,
       );
       const data = await response.json();
-      
+
       if (data.success) {
         setClinics(data.data.clinics);
       }
     } catch (error) {
-      console.error('Search failed:', error);
+      console.error("Search failed:", error);
     } finally {
       setLoading(false);
     }
@@ -201,7 +220,7 @@ const ClinicSearchScreen = ({ onClinicSelect }) => {
           searchClinics(text);
         }}
       />
-      
+
       <FlatList
         data={clinics}
         keyExtractor={(item) => item.id.toString()}
@@ -218,7 +237,7 @@ const ClinicSearchScreen = ({ onClinicSelect }) => {
         )}
         ListEmptyComponent={
           <Text style={styles.emptyText}>
-            {searchQuery ? 'No clinics found' : 'Start typing to search'}
+            {searchQuery ? "No clinics found" : "Start typing to search"}
           </Text>
         }
       />
@@ -286,52 +305,55 @@ const ClinicSearchScreen = ({ onClinicSelect }) => {
 ### JWT Token Management
 
 **Store token securely:**
+
 ```javascript
-import * as SecureStore from 'expo-secure-store';
+import * as SecureStore from "expo-secure-store";
 
 // After login/signup
-await SecureStore.setItemAsync('jwt_token', data.data.token);
+await SecureStore.setItemAsync("jwt_token", data.data.token);
 
 // For API calls
-const token = await SecureStore.getItemAsync('jwt_token');
+const token = await SecureStore.getItemAsync("jwt_token");
 ```
 
 **Use token in API calls:**
+
 ```javascript
 const getProfile = async () => {
-  const token = await SecureStore.getItemAsync('jwt_token');
-  
+  const token = await SecureStore.getItemAsync("jwt_token");
+
   const response = await fetch(`${API_BASE_URL}/api/patient/profile`, {
     headers: {
-      'Authorization': `Bearer ${token}`
-    }
+      Authorization: `Bearer ${token}`,
+    },
   });
-  
+
   const data = await response.json();
   return data.data;
 };
 ```
 
 **Handle token expiration:**
+
 ```javascript
 const apiCall = async (url, options = {}) => {
-  const token = await SecureStore.getItemAsync('jwt_token');
-  
+  const token = await SecureStore.getItemAsync("jwt_token");
+
   const response = await fetch(url, {
     ...options,
     headers: {
       ...options.headers,
-      'Authorization': token ? `Bearer ${token}` : undefined
-    }
+      Authorization: token ? `Bearer ${token}` : undefined,
+    },
   });
-  
+
   if (response.status === 401) {
     // Token expired - redirect to login
-    await SecureStore.deleteItemAsync('jwt_token');
-    navigation.navigate('Login');
-    throw new Error('Session expired');
+    await SecureStore.deleteItemAsync("jwt_token");
+    navigation.navigate("Login");
+    throw new Error("Session expired");
   }
-  
+
   return response.json();
 };
 ```
@@ -344,11 +366,18 @@ const apiCall = async (url, options = {}) => {
 
 ```javascript
 // screens/ClinicSearchScreen.js
-import React, { useState, useEffect } from 'react';
-import { View, TextInput, FlatList, TouchableOpacity, Text, Image } from 'react-native';
+import React, { useState, useEffect } from "react";
+import {
+  View,
+  TextInput,
+  FlatList,
+  TouchableOpacity,
+  Text,
+  Image,
+} from "react-native";
 
 export default function ClinicSearchScreen({ navigation }) {
-  const [searchQuery, setSearchQuery] = useState('');
+  const [searchQuery, setSearchQuery] = useState("");
   const [clinics, setClinics] = useState([]);
   const [loading, setLoading] = useState(false);
 
@@ -368,28 +397,28 @@ export default function ClinicSearchScreen({ navigation }) {
     setLoading(true);
     try {
       const response = await fetch(
-        `${API_BASE_URL}/api/patient/clinics/search?query=${searchQuery}`
+        `${API_BASE_URL}/api/patient/clinics/search?query=${searchQuery}`,
       );
       const data = await response.json();
-      
+
       if (data.success) {
         setClinics(data.data.clinics);
       }
     } catch (error) {
-      console.error('Search error:', error);
+      console.error("Search error:", error);
     } finally {
       setLoading(false);
     }
   };
 
   const selectClinic = (clinic) => {
-    navigation.navigate('Signup', { clinic });
+    navigation.navigate("Signup", { clinic });
   };
 
   return (
     <View style={styles.container}>
       <Text style={styles.title}>Find Your Hospital or Clinic</Text>
-      
+
       <TextInput
         style={styles.searchInput}
         placeholder="Search by name or location"
@@ -397,7 +426,7 @@ export default function ClinicSearchScreen({ navigation }) {
         onChangeText={setSearchQuery}
         autoFocus
       />
-      
+
       <FlatList
         data={clinics}
         keyExtractor={(item) => item.id.toString()}
@@ -423,7 +452,7 @@ export default function ClinicSearchScreen({ navigation }) {
             <Text>Searching...</Text>
           ) : (
             <Text style={styles.emptyText}>
-              {searchQuery ? 'No clinics found' : 'Start typing to search'}
+              {searchQuery ? "No clinics found" : "Start typing to search"}
             </Text>
           )
         }
@@ -437,57 +466,57 @@ export default function ClinicSearchScreen({ navigation }) {
 
 ```javascript
 // screens/SignupScreen.js
-import React, { useState } from 'react';
-import { View, TextInput, Button, Text } from 'react-native';
-import * as SecureStore from 'expo-secure-store';
+import React, { useState } from "react";
+import { View, TextInput, Button, Text } from "react-native";
+import * as SecureStore from "expo-secure-store";
 
 export default function SignupScreen({ route, navigation }) {
   const { clinic } = route.params;
   const [formData, setFormData] = useState({
-    email: '',
-    password: '',
-    firstName: '',
-    lastName: '',
-    phone: ''
+    email: "",
+    password: "",
+    firstName: "",
+    lastName: "",
+    phone: "",
   });
   const [loading, setLoading] = useState(false);
-  const [error, setError] = useState('');
+  const [error, setError] = useState("");
 
   const handleSignup = async () => {
     setLoading(true);
-    setError('');
-    
+    setError("");
+
     try {
       const response = await fetch(`${API_BASE_URL}/api/patient/signup`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           clinic_slug: clinic.slug,
           email: formData.email,
           password: formData.password,
           first_name: formData.firstName,
           last_name: formData.lastName,
-          phone: formData.phone
-        })
+          phone: formData.phone,
+        }),
       });
-      
+
       const data = await response.json();
-      
+
       if (data.success) {
         // Store token
-        await SecureStore.setItemAsync('jwt_token', data.data.token);
-        
+        await SecureStore.setItemAsync("jwt_token", data.data.token);
+
         // Store clinic info
-        await AsyncStorage.setItem('last_clinic_slug', clinic.slug);
-        await AsyncStorage.setItem('clinic_name', clinic.name);
-        
+        await AsyncStorage.setItem("last_clinic_slug", clinic.slug);
+        await AsyncStorage.setItem("clinic_name", clinic.name);
+
         // Navigate to home
-        navigation.reset({ index: 0, routes: [{ name: 'Home' }] });
+        navigation.reset({ index: 0, routes: [{ name: "Home" }] });
       } else {
         setError(data.message);
       }
     } catch (err) {
-      setError('Signup failed. Please try again.');
+      setError("Signup failed. Please try again.");
     } finally {
       setLoading(false);
     }
@@ -496,9 +525,9 @@ export default function SignupScreen({ route, navigation }) {
   return (
     <View style={styles.container}>
       <Text style={styles.title}>Sign up with {clinic.name}</Text>
-      
+
       {error ? <Text style={styles.error}>{error}</Text> : null}
-      
+
       <TextInput
         style={styles.input}
         placeholder="Email"
@@ -507,7 +536,7 @@ export default function SignupScreen({ route, navigation }) {
         keyboardType="email-address"
         autoCapitalize="none"
       />
-      
+
       <TextInput
         style={styles.input}
         placeholder="Password"
@@ -515,21 +544,21 @@ export default function SignupScreen({ route, navigation }) {
         onChangeText={(text) => setFormData({ ...formData, password: text })}
         secureTextEntry
       />
-      
+
       <TextInput
         style={styles.input}
         placeholder="First Name"
         value={formData.firstName}
         onChangeText={(text) => setFormData({ ...formData, firstName: text })}
       />
-      
+
       <TextInput
         style={styles.input}
         placeholder="Last Name"
         value={formData.lastName}
         onChangeText={(text) => setFormData({ ...formData, lastName: text })}
       />
-      
+
       <TextInput
         style={styles.input}
         placeholder="Phone"
@@ -537,9 +566,9 @@ export default function SignupScreen({ route, navigation }) {
         onChangeText={(text) => setFormData({ ...formData, phone: text })}
         keyboardType="phone-pad"
       />
-      
+
       <Button
-        title={loading ? 'Signing up...' : 'Sign Up'}
+        title={loading ? "Signing up..." : "Sign Up"}
         onPress={handleSignup}
         disabled={loading}
       />
@@ -552,17 +581,17 @@ export default function SignupScreen({ route, navigation }) {
 
 ```javascript
 // screens/LoginScreen.js
-import React, { useState, useEffect } from 'react';
-import { View, TextInput, Button, Text, TouchableOpacity } from 'react-native';
-import * as SecureStore from 'expo-secure-store';
-import AsyncStorage from '@react-native-async-storage/async-storage';
+import React, { useState, useEffect } from "react";
+import { View, TextInput, Button, Text, TouchableOpacity } from "react-native";
+import * as SecureStore from "expo-secure-store";
+import AsyncStorage from "@react-native-async-storage/async-storage";
 
 export default function LoginScreen({ navigation }) {
-  const [email, setEmail] = useState('');
-  const [password, setPassword] = useState('');
-  const [clinicSlug, setClinicSlug] = useState('');
+  const [email, setEmail] = useState("");
+  const [password, setPassword] = useState("");
+  const [clinicSlug, setClinicSlug] = useState("");
   const [loading, setLoading] = useState(false);
-  const [error, setError] = useState('');
+  const [error, setError] = useState("");
 
   useEffect(() => {
     // Load last used clinic
@@ -570,7 +599,7 @@ export default function LoginScreen({ navigation }) {
   }, []);
 
   const loadLastClinic = async () => {
-    const lastClinic = await AsyncStorage.getItem('last_clinic_slug');
+    const lastClinic = await AsyncStorage.getItem("last_clinic_slug");
     if (lastClinic) {
       setClinicSlug(lastClinic);
     }
@@ -578,36 +607,42 @@ export default function LoginScreen({ navigation }) {
 
   const handleLogin = async () => {
     setLoading(true);
-    setError('');
-    
+    setError("");
+
     try {
       const response = await fetch(`${API_BASE_URL}/api/patient/login`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           clinic_slug: clinicSlug,
           email,
-          password
-        })
+          password,
+        }),
       });
-      
+
       const data = await response.json();
-      
+
       if (data.success) {
         // Store token
-        await SecureStore.setItemAsync('jwt_token', data.data.token);
-        
+        await SecureStore.setItemAsync("jwt_token", data.data.token);
+
         // Store clinic info
-        await AsyncStorage.setItem('last_clinic_slug', data.data.patient.clinic.slug);
-        await AsyncStorage.setItem('clinic_name', data.data.patient.clinic.name);
-        
+        await AsyncStorage.setItem(
+          "last_clinic_slug",
+          data.data.patient.clinic.slug,
+        );
+        await AsyncStorage.setItem(
+          "clinic_name",
+          data.data.patient.clinic.name,
+        );
+
         // Navigate to home
-        navigation.reset({ index: 0, routes: [{ name: 'Home' }] });
+        navigation.reset({ index: 0, routes: [{ name: "Home" }] });
       } else {
         setError(data.message);
       }
     } catch (err) {
-      setError('Login failed. Please try again.');
+      setError("Login failed. Please try again.");
     } finally {
       setLoading(false);
     }
@@ -616,18 +651,16 @@ export default function LoginScreen({ navigation }) {
   return (
     <View style={styles.container}>
       <Text style={styles.title}>Login to Mediczy</Text>
-      
+
       {error ? <Text style={styles.error}>{error}</Text> : null}
-      
+
       <TouchableOpacity
         style={styles.clinicSelector}
-        onPress={() => navigation.navigate('ClinicSearch')}
+        onPress={() => navigation.navigate("ClinicSearch")}
       >
-        <Text>
-          Clinic: {clinicSlug || 'Select Clinic'}
-        </Text>
+        <Text>Clinic: {clinicSlug || "Select Clinic"}</Text>
       </TouchableOpacity>
-      
+
       <TextInput
         style={styles.input}
         placeholder="Email"
@@ -636,7 +669,7 @@ export default function LoginScreen({ navigation }) {
         keyboardType="email-address"
         autoCapitalize="none"
       />
-      
+
       <TextInput
         style={styles.input}
         placeholder="Password"
@@ -644,17 +677,15 @@ export default function LoginScreen({ navigation }) {
         onChangeText={setPassword}
         secureTextEntry
       />
-      
+
       <Button
-        title={loading ? 'Logging in...' : 'Login'}
+        title={loading ? "Logging in..." : "Login"}
         onPress={handleLogin}
         disabled={loading || !clinicSlug}
       />
-      
-      <TouchableOpacity onPress={() => navigation.navigate('ClinicSearch')}>
-        <Text style={styles.signupLink}>
-          Don't have an account? Sign up
-        </Text>
+
+      <TouchableOpacity onPress={() => navigation.navigate("ClinicSearch")}>
+        <Text style={styles.signupLink}>Don't have an account? Sign up</Text>
       </TouchableOpacity>
     </View>
   );
@@ -668,6 +699,7 @@ export default function LoginScreen({ navigation }) {
 ### 1. Clinic Selection UX
 
 **Recommended Flow:**
+
 1. Show clinic search on first launch
 2. Remember last used clinic
 3. Allow changing clinic easily
@@ -676,18 +708,21 @@ export default function LoginScreen({ navigation }) {
 ### 2. Data Storage
 
 **What to Store:**
+
 - ✅ JWT token (SecureStore)
 - ✅ Last clinic slug (AsyncStorage)
 - ✅ Clinic name and logo URL (AsyncStorage)
 - ✅ Patient profile (AsyncStorage, cache)
 
 **What NOT to Store:**
+
 - ❌ Password (never store)
 - ❌ Sensitive medical data (use API)
 
 ### 3. Error Handling
 
 **Common Errors:**
+
 - Clinic not found → Redirect to clinic search
 - Invalid credentials → Show error, allow retry
 - Rate limited → Show "Too many attempts" message
@@ -697,11 +732,13 @@ export default function LoginScreen({ navigation }) {
 ### 4. Offline Support
 
 **Cache Data:**
+
 - Clinic list (search results)
 - Patient profile
 - Clinic details
 
 **Queue Actions:**
+
 - Profile updates
 - Appointments booking
 - Messages sending
@@ -711,6 +748,7 @@ export default function LoginScreen({ navigation }) {
 ## 🧪 Testing Scenarios
 
 ### Test Case 1: New Patient Signup
+
 1. Open app
 2. Click "Sign Up"
 3. Search for "Apollo Chennai"
@@ -721,6 +759,7 @@ export default function LoginScreen({ navigation }) {
 8. ✅ Should be logged in
 
 ### Test Case 2: Returning Patient Login
+
 1. Open app
 2. Click "Login"
 3. See last clinic pre-filled
@@ -730,6 +769,7 @@ export default function LoginScreen({ navigation }) {
 7. ✅ Should be logged in
 
 ### Test Case 3: Multi-Clinic Support
+
 1. Patient A signs up with Clinic A
 2. Patient A logs in → ✅ See Clinic A data
 3. Patient B signs up with Clinic B (same email)
@@ -741,11 +781,13 @@ export default function LoginScreen({ navigation }) {
 ## 📞 Support
 
 **API Base URLs:**
+
 - Development: `http://localhost:3000`
 - Staging: `https://staging-api.mediczy.com`
 - Production: `https://api.mediczy.com`
 
 **Documentation:**
+
 - User Guide: `MEDICZY_MOBILE_APP_MULTI_TENANT.md`
 - Technical Guide: `TECHNICAL_UNIFIED_PATIENT_IMPLEMENTATION.md`
 

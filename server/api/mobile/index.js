@@ -842,6 +842,20 @@ router.post('/auth/signup', asyncHandler(async (req, res) => {
     });
   }
 
+  if (!dateOfBirth) {
+    return res.status(400).json({
+      success: false,
+      error: { code: 'MISSING_DOB', message: 'Date of birth is required' }
+    });
+  }
+
+  if (!gender) {
+    return res.status(400).json({
+      success: false,
+      error: { code: 'MISSING_GENDER', message: 'Gender is required' }
+    });
+  }
+
   if (password.length < 8) {
     return res.status(400).json({
       success: false,
