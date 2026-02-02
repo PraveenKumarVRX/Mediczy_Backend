@@ -111,7 +111,8 @@ const USER_TYPE_PERMISSIONS = {
       '/api/cdss',  // Clinical Decision Support System
       '/api/billing',  // Billing and invoices
       '/api/notifications',  // Doctor notifications
-      '/api/v2/doctors'  // Enterprise API v2 doctor endpoints
+      '/api/v2/doctors',  // Enterprise API v2 doctor endpoints
+      '/api/mobile'  // Mobile API gateway for doctor app
     ],
     tokenField: 'doctorId'
   },
