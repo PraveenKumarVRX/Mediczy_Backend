@@ -379,8 +379,10 @@ const CorporateBenefits = () => {
     try {
       if (!selectedCheckup) return;
 
+      const bookingLocation = bookingDetails.location || bookingDetails.hospital;
       const bookingData = {
         ...bookingDetails,
+        location: bookingLocation,
         checkupName: selectedCheckup.name,
         checkupPrice: selectedCheckup.discountedPrice || selectedCheckup.price,
         userId: currentUser?.id
@@ -915,7 +917,11 @@ const CorporateBenefits = () => {
                 </Button>
                 <Button 
                   onClick={handleSubmitBooking}
-                  disabled={!bookingDetails.preferredDate || !bookingDetails.preferredTime || !bookingDetails.hospital}
+                  disabled={
+                    !bookingDetails.preferredDate ||
+                    !bookingDetails.preferredTime ||
+                    (!bookingDetails.hospital && !bookingDetails.location)
+                  }
                 >
                   Confirm Booking
                 </Button>

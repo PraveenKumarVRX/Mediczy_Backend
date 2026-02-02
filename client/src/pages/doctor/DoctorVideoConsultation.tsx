@@ -9,6 +9,7 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } f
 import { Switch } from "@/components/ui/switch";
 import RecordingControls from "@/components/consultation/RecordingControls";
 import TranscriptionViewer from "@/components/consultation/TranscriptionViewer";
+import OfflineScribePanel from "@/components/OfflineScribePanel";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import {
@@ -113,6 +114,7 @@ const DoctorVideoConsultation = () => {
   const [selectedConsultationForRecording, setSelectedConsultationForRecording] = useState<any>(null);
   const [showTranscriptionDialog, setShowTranscriptionDialog] = useState(false);
   const [selectedRecording, setSelectedRecording] = useState<any>(null);
+  const [showOfflineScribe, setShowOfflineScribe] = useState(false);
   
   // UI state
   const [isVideoEnabled, setIsVideoEnabled] = useState(true);
@@ -824,15 +826,69 @@ const DoctorVideoConsultation = () => {
                 </Card>
               </div>
               
-              <Button 
-                onClick={() => navigate('/doctor/prescriptions')}
-                variant="outline" 
-                className="w-full border-purple-300 text-purple-700 hover:bg-purple-50 dark:border-purple-700 dark:text-purple-400 dark:hover:bg-purple-950/30"
-              >
-                Go to Prescriptions to Test AI Features
-              </Button>
+              <div className="flex gap-2">
+                <Button 
+                  onClick={() => navigate('/doctor/prescriptions')}
+                  variant="outline" 
+                  className="flex-1 border-purple-300 text-purple-700 hover:bg-purple-50 dark:border-purple-700 dark:text-purple-400 dark:hover:bg-purple-950/30"
+                >
+                  Go to Prescriptions
+                </Button>
+                <Button 
+                  onClick={() => setShowOfflineScribe(true)}
+                  className="flex-1 bg-gradient-to-r from-indigo-600 to-purple-600 hover:from-indigo-700 hover:to-purple-700"
+                >
+                  <Mic className="h-4 w-4 mr-2" />
+                  Offline AI Scribe
+                </Button>
+              </div>
             </CardContent>
           </Card>
+
+          {/* Offline AI Scribe Panel - Collapsible */}
+          {showOfflineScribe && (
+            <Card className="border-indigo-200 dark:border-indigo-800">
+              <CardHeader className="pb-2">
+                <div className="flex items-center justify-between">
+                  <CardTitle className="flex items-center gap-2 text-indigo-700 dark:text-indigo-400">
+                    <Wifi className="h-5 w-5" />
+                    Offline AI Scribe
+                  </CardTitle>
+                  <Button 
+                    variant="ghost" 
+                    size="sm"
+                    onClick={() => setShowOfflineScribe(false)}
+                  >
+                    ✕
+                  </Button>
+                </div>
+                <CardDescription className="dark:text-slate-400">
+                  CPU-only, fully offline • Hindi, Tamil, Telugu, English
+                </CardDescription>
+              </CardHeader>
+              <CardContent>
+                <OfflineScribePanel
+                  compact
+                  defaultLanguage="hi"
+                  defaultDocumentType="prescription"
+                  patientContext={currentConsultation ? {
+                    name: currentConsultation.patient,
+                    patient_id: currentConsultation.patientId,
+                  } : undefined}
+                  onPrescriptionGenerated={(prescription) => {
+                    // Navigate to prescriptions with the data
+                    toast({
+                      title: "✅ Prescription Generated",
+                      description: "Navigate to Prescriptions to review and save.",
+                    });
+                    // Store in session for prescriptions page to pick up
+                    sessionStorage.setItem('offlineScribePrescription', JSON.stringify(prescription));
+                    navigate('/doctor/prescriptions');
+                  }}
+                />
+              </CardContent>
+            </Card>
+          )}
 
           {/* Upcoming Consultations */}
           <Card>

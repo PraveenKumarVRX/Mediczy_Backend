@@ -249,7 +249,7 @@ const MedalIcon: React.FC<{ type: 'gold' | 'silver' | 'bronze'; size?: 'sm' | 'l
 const CorporateGamification: React.FC = () => {
   const { toast } = useToast();
   const [loading, setLoading] = useState(true);
-  const [challenges, setChallenges] = useState<Challenge[]>(sampleChallenges);
+  const [challenges, setChallenges] = useState<Challenge[]>([]);
   const [selectedChallenge, setSelectedChallenge] = useState<Challenge | null>(null);
   const [leaderboard, setLeaderboard] = useState<LeaderboardEntry[]>([]);
   const [activeTab, setActiveTab] = useState('challenges');
@@ -284,9 +284,48 @@ const CorporateGamification: React.FC = () => {
     return challenges.filter(c => c.status === challengeFilter);
   }, [challenges, challengeFilter]);
 
+  const normalizeChallenge = (challenge: any): Challenge => {
+    const typeConfig = challengeTypes.find(t => t.value === challenge.type);
+    const resolvedIcon = challenge.icon || typeConfig?.icon || Target;
+    const resolvedColor = challenge.color || typeConfig?.color || 'from-slate-500 to-slate-600';
+    return {
+      id: String(challenge.id),
+      title: challenge.title || 'Untitled Challenge',
+      description: challenge.description || '',
+      type: (challenge.type || 'custom') as Challenge['type'],
+      target: Number(challenge.target) || typeConfig?.defaultTarget || 100,
+      unit: challenge.unit || typeConfig?.unit || 'points',
+      startDate: challenge.startDate || format(new Date(), 'yyyy-MM-dd'),
+      endDate: challenge.endDate || format(new Date(), 'yyyy-MM-dd'),
+      status: (challenge.status || 'draft') as Challenge['status'],
+      participants: Number(challenge.participants) || 0,
+      totalEmployees: Number(challenge.totalEmployees) || 0,
+      rewards: challenge.rewards || { gold: '', silver: '', bronze: '' },
+      icon: resolvedIcon,
+      color: resolvedColor
+    };
+  };
+
+  const loadChallenges = async () => {
+    try {
+      setLoading(true);
+      const { data } = await api.get('/corporate/challenges');
+      const list = ((data as any)?.data?.challenges || []) as any[];
+      setChallenges(list.map(normalizeChallenge));
+    } catch (error: any) {
+      setChallenges(sampleChallenges);
+      toast({
+        title: 'Failed to load challenges',
+        description: error?.response?.data?.message || 'Showing sample challenges.',
+        variant: 'destructive'
+      });
+    } finally {
+      setLoading(false);
+    }
+  };
+
   useEffect(() => {
-    // Simulate loading
-    setTimeout(() => setLoading(false), 500);
+    loadChallenges();
   }, []);
 
   const handleViewLeaderboard = (challenge: Challenge) => {
@@ -301,68 +340,113 @@ const CorporateGamification: React.FC = () => {
     setDeclareWinnersOpen(true);
   };
 
-  const handleCreateChallenge = () => {
+  const handleCreateChallenge = async () => {
     const typeConfig = challengeTypes.find(t => t.value === newChallenge.type);
-    const newChallengeData: Challenge = {
-      id: Date.now().toString(),
-      title: newChallenge.title,
-      description: newChallenge.description,
-      type: newChallenge.type as Challenge['type'],
-      target: newChallenge.target,
-      unit: newChallenge.unit,
-      startDate: format(newChallenge.startDate, 'yyyy-MM-dd'),
-      endDate: format(newChallenge.endDate, 'yyyy-MM-dd'),
-      status: 'draft',
-      participants: 0,
-      totalEmployees: 200,
-      rewards: {
-        gold: newChallenge.goldReward,
-        silver: newChallenge.silverReward,
-        bronze: newChallenge.bronzeReward
-      },
-      icon: typeConfig?.icon || Target,
-      color: typeConfig?.color || 'from-slate-500 to-slate-600'
-    };
+    
+    try {
+      const { data } = await api.post('/corporate/challenges', {
+        title: newChallenge.title,
+        description: newChallenge.description,
+        type: newChallenge.type,
+        target: newChallenge.target,
+        unit: newChallenge.unit,
+        startDate: format(newChallenge.startDate, 'yyyy-MM-dd'),
+        endDate: format(newChallenge.endDate, 'yyyy-MM-dd'),
+        rewards: {
+          gold: newChallenge.goldReward,
+          silver: newChallenge.silverReward,
+          bronze: newChallenge.bronzeReward
+        }
+      });
 
-    setChallenges([newChallengeData, ...challenges]);
-    setCreateDialogOpen(false);
-    setNewChallenge({
-      title: '',
-      description: '',
-      type: 'steps',
-      target: 10000,
-      unit: 'steps',
-      startDate: new Date(),
-      endDate: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000),
-      goldReward: '',
-      silverReward: '',
-      bronzeReward: ''
-    });
-    toast({
-      title: 'Challenge Created!',
-      description: 'Your new wellness challenge has been created as a draft.'
-    });
+      const created = (data as any)?.data?.challenge || {
+        id: Date.now().toString(),
+        title: newChallenge.title,
+        description: newChallenge.description,
+        type: newChallenge.type,
+        target: newChallenge.target,
+        unit: newChallenge.unit,
+        startDate: format(newChallenge.startDate, 'yyyy-MM-dd'),
+        endDate: format(newChallenge.endDate, 'yyyy-MM-dd'),
+        status: 'draft',
+        participants: 0,
+        totalEmployees: 0,
+        rewards: {
+          gold: newChallenge.goldReward,
+          silver: newChallenge.silverReward,
+          bronze: newChallenge.bronzeReward
+        }
+      };
+
+      const newChallengeData = normalizeChallenge({
+        ...created,
+        icon: typeConfig?.icon,
+        color: typeConfig?.color
+      });
+
+      setChallenges((prev) => [newChallengeData, ...prev]);
+      setCreateDialogOpen(false);
+      setNewChallenge({
+        title: '',
+        description: '',
+        type: 'steps',
+        target: 10000,
+        unit: 'steps',
+        startDate: new Date(),
+        endDate: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000),
+        goldReward: '',
+        silverReward: '',
+        bronzeReward: ''
+      });
+      toast({
+        title: 'Challenge Created!',
+        description: 'Your new wellness challenge has been created as a draft.'
+      });
+    } catch (error: any) {
+      toast({
+        title: 'Failed to create challenge',
+        description: error?.response?.data?.message || 'Please try again.',
+        variant: 'destructive'
+      });
+    }
   };
 
-  const handleLaunchChallenge = (challengeId: string) => {
-    setChallenges(challenges.map(c => 
-      c.id === challengeId ? { ...c, status: 'active' } : c
-    ));
-    toast({
-      title: 'Challenge Launched! 🚀',
-      description: 'Employees can now join and participate in this challenge.'
-    });
+  const handleLaunchChallenge = async (challengeId: string) => {
+    try {
+      await api.put(`/corporate/challenges/${encodeURIComponent(challengeId)}`, { status: 'active' });
+      setChallenges((prev) => prev.map(c => 
+        c.id === challengeId ? { ...c, status: 'active' } : c
+      ));
+      toast({
+        title: 'Challenge Launched! 🚀',
+        description: 'Employees can now join and participate in this challenge.'
+      });
+    } catch (error: any) {
+      toast({
+        title: 'Failed to launch challenge',
+        description: error?.response?.data?.message || 'Please try again.',
+        variant: 'destructive'
+      });
+    }
   };
 
-  const handleConfirmWinners = () => {
-    if (selectedChallenge) {
-      setChallenges(challenges.map(c => 
+  const handleConfirmWinners = async () => {
+    if (!selectedChallenge) return;
+    try {
+      await api.put(`/corporate/challenges/${encodeURIComponent(selectedChallenge.id)}`, { status: 'completed' });
+      setChallenges((prev) => prev.map(c => 
         c.id === selectedChallenge.id ? { ...c, status: 'completed' } : c
       ));
       setDeclareWinnersOpen(false);
       toast({
         title: 'Winners Declared! 🎉',
         description: 'Congratulations to the winners! Notifications have been sent.'
+      });
+    } catch (error: any) {
+      toast({
+        title: 'Failed to declare winners',
+        description: error?.response?.data?.message || 'Please try again.',
+        variant: 'destructive'
       });
     }
   };
@@ -396,7 +480,7 @@ const CorporateGamification: React.FC = () => {
           description="Create health challenges, track participation, and reward top performers"
           gradient="from-amber-500 to-orange-600"
           showRefresh={true}
-          onRefresh={() => setLoading(true)}
+          onRefresh={loadChallenges}
           stats={[
             { label: 'Active Challenges', value: stats.activeChallenges },
             { label: 'Total Participants', value: stats.totalParticipants },

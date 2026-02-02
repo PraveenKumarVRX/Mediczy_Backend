@@ -13,6 +13,7 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@
 import { Progress } from '@/components/ui/progress';
 import { ScrollArea } from '@/components/ui/scroll-area';
 import { Checkbox } from '@/components/ui/checkbox';
+import { io, Socket } from 'socket.io-client';
 import api from '@/utils/api';
 import { loadHospitalStore, saveHospitalStore } from '@/utils/hospitalStorage';
 import HospitalLayout from '@/components/hospital/HospitalLayout';
@@ -136,143 +137,13 @@ const HospitalInsuranceBilling = () => {
     insuranceRate: undefined,
     isActive: true,
   });
-  const initialClaims: InsuranceClaim[] = [
-    {
-      id: 'CLM001',
-      claimNumber: 'MED-2024-001234',
-      patientId: 'P001',
-      patientName: 'Rajesh Kumar',
-      uhid: 'UHID001234',
-      insurerId: 'INS001',
-      insurerName: 'Star Health Insurance',
-      tpaName: 'Medi Assist',
-      policyNumber: 'SH-2024-567890',
-      admissionDate: '2024-12-01',
-      dischargeDate: '2024-12-04',
-      claimType: 'Cashless',
-      estimatedAmount: 185000,
-      approvedAmount: 175000,
-      status: 'Approved',
-      priority: 'Normal',
-      diagnosis: 'Acute Myocardial Infarction',
-      procedureCodes: ['ICD-I21.9', 'CPT-92928'],
-      documents: ['Discharge Summary', 'Bills', 'Investigation Reports'],
-      createdAt: '2024-12-01',
-      updatedAt: '2024-12-04',
-      timeline: [
-        { date: '2024-12-01', status: 'Submitted', remarks: 'Claim submitted for pre-auth', updatedBy: 'Admin' },
-        { date: '2024-12-02', status: 'Pre-Auth Approved', remarks: 'Pre-authorization approved', updatedBy: 'TPA' },
-        { date: '2024-12-04', status: 'Approved', remarks: 'Final claim approved', updatedBy: 'Insurer' },
-      ]
-    },
-    {
-      id: 'CLM002',
-      claimNumber: 'MED-2024-001235',
-      patientId: 'P002',
-      patientName: 'Priya Singh',
-      uhid: 'UHID001235',
-      insurerId: 'INS002',
-      insurerName: 'HDFC Ergo',
-      policyNumber: 'HE-2024-123456',
-      admissionDate: '2024-12-02',
-      claimType: 'Cashless',
-      estimatedAmount: 95000,
-      status: 'Pre-Auth Pending',
-      priority: 'Urgent',
-      diagnosis: 'Cesarean Section',
-      procedureCodes: ['ICD-O82.0', 'CPT-59510'],
-      documents: ['Admission Form', 'Pre-Auth Request'],
-      createdAt: '2024-12-02',
-      updatedAt: '2024-12-03',
-      timeline: [
-        { date: '2024-12-02', status: 'Submitted', remarks: 'Emergency pre-auth request', updatedBy: 'Admin' },
-      ]
-    },
-    {
-      id: 'CLM003',
-      claimNumber: 'MED-2024-001236',
-      patientId: 'P003',
-      patientName: 'Amit Verma',
-      uhid: 'UHID001236',
-      insurerId: 'INS003',
-      insurerName: 'ICICI Lombard',
-      tpaName: 'Paramount TPA',
-      policyNumber: 'IL-2024-789012',
-      admissionDate: '2024-11-28',
-      dischargeDate: '2024-12-02',
-      claimType: 'Cashless',
-      estimatedAmount: 320000,
-      approvedAmount: 280000,
-      settledAmount: 280000,
-      status: 'Settled',
-      priority: 'Normal',
-      diagnosis: 'Lumbar Disc Herniation',
-      procedureCodes: ['ICD-M51.16', 'CPT-63030'],
-      documents: ['Discharge Summary', 'Final Bill', 'Investigation Reports', 'Surgery Notes'],
-      createdAt: '2024-11-28',
-      updatedAt: '2024-12-04',
-      timeline: [
-        { date: '2024-11-28', status: 'Pre-Auth Pending', remarks: 'Submitted for pre-authorization', updatedBy: 'Admin' },
-        { date: '2024-11-29', status: 'Pre-Auth Approved', remarks: 'Approved for ₹3,00,000', updatedBy: 'TPA' },
-        { date: '2024-12-02', status: 'Under Review', remarks: 'Final claim under review', updatedBy: 'Admin' },
-        { date: '2024-12-04', status: 'Settled', remarks: 'Payment received', updatedBy: 'Finance' },
-      ]
-    },
-    {
-      id: 'CLM004',
-      claimNumber: 'MED-2024-001237',
-      patientId: 'P004',
-      patientName: 'Neha Gupta',
-      uhid: 'UHID001237',
-      insurerId: 'INS001',
-      insurerName: 'Star Health Insurance',
-      policyNumber: 'SH-2024-345678',
-      admissionDate: '2024-12-03',
-      claimType: 'Cashless',
-      estimatedAmount: 45000,
-      status: 'Query Raised',
-      priority: 'Normal',
-      diagnosis: 'Dengue Fever',
-      procedureCodes: ['ICD-A90'],
-      documents: ['Admission Form', 'Lab Reports'],
-      queryDetails: 'Please provide dengue NS1 antigen test report and platelet count trend',
-      createdAt: '2024-12-03',
-      updatedAt: '2024-12-04',
-      timeline: [
-        { date: '2024-12-03', status: 'Submitted', remarks: 'Claim submitted', updatedBy: 'Admin' },
-        { date: '2024-12-04', status: 'Query Raised', remarks: 'Additional documents required', updatedBy: 'TPA' },
-      ]
-    },
-    {
-      id: 'CLM005',
-      claimNumber: 'MED-2024-001238',
-      patientId: 'P005',
-      patientName: 'Suresh Patel',
-      uhid: 'UHID001238',
-      insurerId: 'INS004',
-      insurerName: 'Max Bupa',
-      tpaName: 'Health India TPA',
-      policyNumber: 'MB-2024-901234',
-      admissionDate: '2024-11-25',
-      dischargeDate: '2024-11-30',
-      claimType: 'Reimbursement',
-      estimatedAmount: 150000,
-      status: 'Under Review',
-      priority: 'Normal',
-      diagnosis: 'Total Knee Replacement',
-      procedureCodes: ['ICD-M17.11', 'CPT-27447'],
-      documents: ['Discharge Summary', 'Bills', 'Surgery Notes', 'Implant Invoice'],
-      createdAt: '2024-12-01',
-      updatedAt: '2024-12-03',
-      timeline: [
-        { date: '2024-12-01', status: 'Submitted', remarks: 'Reimbursement claim submitted', updatedBy: 'Patient' },
-        { date: '2024-12-03', status: 'Under Review', remarks: 'Documents being verified', updatedBy: 'Admin' },
-      ]
-    },
-  ];
-  const [claims, setClaims] = useState<InsuranceClaim[]>(
-    () => loadHospitalStore('insurance-claims', initialClaims)
-  );
+  
+  // WebSocket connection state
+  const [socket, setSocket] = useState<Socket | null>(null);
+  const [dashboardData, setDashboardData] = useState<any>(null);
+  
+  // Initialize claims from API instead of sample data
+  const [claims, setClaims] = useState<InsuranceClaim[]>([]);
   const [newClaimForm, setNewClaimForm] = useState({
     uhid: '',
     patientName: '',
@@ -287,14 +158,171 @@ const HospitalInsuranceBilling = () => {
     remarks: ''
   });
 
+  // Fetch dashboard data from API
   useEffect(() => {
     const token = localStorage.getItem('hospitalToken');
     if (!token) {
       navigate('/hospital/login');
       return;
     }
-    setLoading(false);
+
+    const fetchDashboard = async () => {
+      try {
+        const response = await api.get('/hospital/insurance/dashboard', {
+          headers: hospitalHeaders()
+        });
+        setDashboardData(response.data.dashboard);
+      } catch (error) {
+        console.error('Failed to load dashboard:', error);
+        toast({
+          title: 'Dashboard error',
+          description: 'Could not load dashboard statistics',
+          variant: 'destructive'
+        });
+      }
+    };
+
+    const fetchClaims = async () => {
+      try {
+        const response = await api.get('/hospital/insurance/claims/submitted', {
+          headers: hospitalHeaders(),
+          params: { page: 1, limit: 100 }
+        });
+        if (response.data.success && response.data.claims) {
+          const formattedClaims = response.data.claims.map((c: any) => ({
+            id: c.id?.toString() || c.claimNumber,
+            claimNumber: c.claimNumber,
+            patientId: c.patientId?.toString(),
+            patientName: c.patient?.firstName + ' ' + c.patient?.lastName || 'Unknown',
+            uhid: c.patient?.uhid || c.patientId?.toString(),
+            insurerId: c.insuranceProvider?.replace(/\s/g, '-') || 'UNKNOWN',
+            insurerName: c.insuranceProvider || 'Unknown Insurer',
+            tpaName: c.tpaName,
+            policyNumber: c.policyNumber,
+            admissionDate: c.admissionDate || c.createdAt?.split('T')[0],
+            dischargeDate: c.dischargeDate?.split('T')[0],
+            claimType: c.claimType || 'Cashless',
+            estimatedAmount: c.claimAmount || 0,
+            approvedAmount: c.approvedAmount,
+            settledAmount: c.settledAmount,
+            status: c.status.charAt(0).toUpperCase() + c.status.slice(1),
+            priority: 'Normal',
+            diagnosis: c.diagnosis || 'Pending',
+            procedureCodes: c.procedureCodes || [],
+            documents: c.documents || [],
+            remarks: c.remarks,
+            queryDetails: c.queryDetails,
+            createdAt: c.createdAt?.split('T')[0],
+            updatedAt: c.updatedAt?.split('T')[0],
+            timeline: c.timeline || []
+          }));
+          setClaims(formattedClaims);
+          saveHospitalStore('insurance-claims', formattedClaims);
+        }
+      } catch (error) {
+        console.error('Failed to load claims:', error);
+        // Load from local storage as fallback
+        const cached = loadHospitalStore('insurance-claims', []);
+        if (cached.length > 0) {
+          setClaims(cached);
+        }
+      } finally {
+        setLoading(false);
+      }
+    };
+
+    fetchDashboard();
+    fetchClaims();
   }, [navigate]);
+
+  // WebSocket initialization for real-time updates
+  useEffect(() => {
+    const token = localStorage.getItem('hospitalToken');
+    if (!token) return;
+
+    // Connect to WebSocket server
+    const newSocket = io(import.meta.env.VITE_API_URL || 'http://localhost:8000', {
+      transports: ['websocket', 'polling'],
+      auth: { token }
+    });
+
+    // Authenticate with hospital details
+    const userStr = localStorage.getItem('hospitalUser');
+    if (userStr) {
+      try {
+        const user = JSON.parse(userStr);
+        newSocket.emit('authenticate', {
+          userId: user.id,
+          userType: 'hospital',
+          organizationId: user.organizationId || user.id
+        });
+      } catch (e) {
+        console.error('Failed to parse user data:', e);
+      }
+    }
+
+    // Listen for authentication success
+    newSocket.on('authenticated', (data) => {
+      console.log('✅ Connected to insurance real-time notifications', data);
+      toast({
+        title: 'Real-time updates enabled',
+        description: 'You will receive instant notifications for claim updates'
+      });
+    });
+
+    // Listen for claim updates
+    newSocket.on('claim:update', (notification) => {
+      console.log('📋 Claim update received:', notification);
+      
+      // Update claim in list
+      setClaims(prev => prev.map(claim => 
+        claim.id === notification.claimId?.toString() 
+          ? { ...claim, status: notification.status, updatedAt: new Date().toISOString().split('T')[0] }
+          : claim
+      ));
+
+      // Show toast notification
+      toast({
+        title: 'Claim Updated',
+        description: `Claim ${notification.claimNumber} is now ${notification.status}`,
+      });
+    });
+
+    // Listen for pre-auth updates
+    newSocket.on('preauth:update', (notification) => {
+      console.log('🔐 Pre-auth update:', notification);
+      toast({
+        title: 'Pre-Authorization Update',
+        description: `Pre-auth ${notification.preAuthNumber} ${notification.status}`,
+      });
+    });
+
+    // Listen for document updates
+    newSocket.on('document:update', (notification) => {
+      console.log('📄 Document update:', notification);
+      toast({
+        title: 'Document Update',
+        description: notification.message || 'Document status changed',
+      });
+    });
+
+    // Listen for query/clarification requests
+    newSocket.on('query:new', (notification) => {
+      console.log('❓ New query:', notification);
+      toast({
+        title: 'Clarification Required',
+        description: notification.message || 'Insurance provider has requested additional information',
+        variant: 'destructive'
+      });
+    });
+
+    setSocket(newSocket);
+
+    // Cleanup on unmount
+    return () => {
+      newSocket.disconnect();
+    };
+  }, [toast]);
 
 
   const preAuthorizations: PreAuthorization[] = [
@@ -351,27 +379,47 @@ const HospitalInsuranceBilling = () => {
     toast({ title: 'Export started', description: 'Claims CSV downloaded.' });
   };
 
-  const handlePrintClaim = (claim: InsuranceClaim) => {
-    const win = window.open('', '_blank');
-    if (!win) {
-      toast({ title: 'Popup blocked', description: 'Allow popups to print claim.', variant: 'destructive' });
-      return;
+  const handlePrintClaim = async (claim: InsuranceClaim) => {
+    try {
+      // Use real PDF generation API
+      const response = await api.get(`/hospital/insurance/claims/${claim.id}/pdf`, {
+        headers: hospitalHeaders()
+      });
+      
+      if (response.data.success && response.data.pdfUrl) {
+        // Open PDF in new tab
+        window.open(response.data.pdfUrl, '_blank');
+        toast({
+          title: 'PDF Generated',
+          description: `Claim ${claim.claimNumber} PDF is ready`,
+        });
+      } else {
+        throw new Error('PDF generation failed');
+      }
+    } catch (error: any) {
+      console.error('PDF generation error:', error);
+      // Fallback to browser print
+      const win = window.open('', '_blank');
+      if (!win) {
+        toast({ title: 'Popup blocked', description: 'Allow popups to print claim.', variant: 'destructive' });
+        return;
+      }
+      win.document.write(`
+        <html><head><title>Claim ${claim.claimNumber}</title></head>
+        <body style="font-family:Arial;padding:16px">
+          <h2>Claim ${claim.claimNumber}</h2>
+          <p><strong>Patient:</strong> ${claim.patientName} (${claim.uhid})</p>
+          <p><strong>Insurer:</strong> ${claim.insurerName}</p>
+          <p><strong>Type:</strong> ${claim.claimType}</p>
+          <p><strong>Status:</strong> ${claim.status}</p>
+          <p><strong>Amount:</strong> ₹${claim.estimatedAmount.toLocaleString()}</p>
+          ${claim.approvedAmount ? `<p><strong>Approved:</strong> ₹${claim.approvedAmount.toLocaleString()}</p>` : ''}
+        </body></html>
+      `);
+      win.document.close();
+      win.print();
+      win.close();
     }
-    win.document.write(`
-      <html><head><title>Claim ${claim.claimNumber}</title></head>
-      <body style="font-family:Arial;padding:16px">
-        <h2>Claim ${claim.claimNumber}</h2>
-        <p><strong>Patient:</strong> ${claim.patientName} (${claim.uhid})</p>
-        <p><strong>Insurer:</strong> ${claim.insurerName}</p>
-        <p><strong>Type:</strong> ${claim.claimType}</p>
-        <p><strong>Status:</strong> ${claim.status}</p>
-        <p><strong>Amount:</strong> ₹${claim.estimatedAmount.toLocaleString()}</p>
-        ${claim.approvedAmount ? `<p><strong>Approved:</strong> ₹${claim.approvedAmount.toLocaleString()}</p>` : ''}
-      </body></html>
-    `);
-    win.document.close();
-    win.print();
-    win.close();
   };
 
   const handleDownloadDoc = (doc: string, claim?: InsuranceClaim) => {
@@ -446,85 +494,89 @@ const HospitalInsuranceBilling = () => {
       return;
     }
 
-    const claimPayload = {
-      patientId: newClaimForm.uhid,
-      policyNumber: newClaimForm.policyNumber,
-      insuranceProvider: newClaimForm.insurerName,
-      claimAmount: parseFloat(newClaimForm.estimatedAmount)
-    };
-
     try {
-      try {
-        await api.post(
-          '/hospital/practice/insurance/claims',
-          claimPayload,
-          { headers: hospitalHeaders() }
-        );
-      } catch {
-        // Allow local persistence if API is unavailable
-      }
-
-      const today = new Date().toISOString().split('T')[0];
-      const created: InsuranceClaim = {
-        id: `CLM-${Date.now()}`,
-        claimNumber: `MED-${new Date().getFullYear()}-${Date.now().toString().slice(-6)}`,
-        patientId: newClaimForm.uhid,
-        patientName: newClaimForm.patientName,
-        uhid: newClaimForm.uhid,
-        insurerId: newClaimForm.insurerName.replace(/\s+/g, '-').toUpperCase(),
-        insurerName: newClaimForm.insurerName,
-        policyNumber: newClaimForm.policyNumber,
-        admissionDate: newClaimForm.admissionDate || today,
-        claimType: newClaimForm.claimType,
-        estimatedAmount: parseFloat(newClaimForm.estimatedAmount),
-        status: 'Submitted',
-        priority: newClaimForm.priority,
-        diagnosis: newClaimForm.diagnosis || 'Pending',
-        procedureCodes: newClaimForm.procedureCodes
-          ? newClaimForm.procedureCodes.split(',').map(code => code.trim()).filter(Boolean)
-          : [],
-        documents: [],
-        remarks: newClaimForm.remarks || '',
-        createdAt: today,
-        updatedAt: today,
-        timeline: [
-          {
-            date: today,
-            status: 'Submitted',
-            remarks: newClaimForm.remarks || 'Claim submitted',
-            updatedBy: 'Hospital Desk'
+      // Submit claim to real API
+      const response = await api.post(
+        '/hospital/insurance/claims/new',
+        {
+          patientId: newClaimForm.uhid,
+          policyNumber: newClaimForm.policyNumber,
+          insuranceProvider: newClaimForm.insurerName,
+          claimType: newClaimForm.claimType.toLowerCase(),
+          claimAmount: parseFloat(newClaimForm.estimatedAmount),
+          diagnosis: newClaimForm.diagnosis,
+          treatmentDetails: {
+            admissionDate: newClaimForm.admissionDate,
+            procedureCodes: newClaimForm.procedureCodes
           }
-        ]
-      };
+        },
+        { headers: hospitalHeaders() }
+      );
 
-      setClaims(prev => {
-        const next = [created, ...prev];
-        saveHospitalStore('insurance-claims', next);
-        return next;
-      });
+      if (response.data.success && response.data.claim) {
+        const apiClaim = response.data.claim;
+        const newClaim: InsuranceClaim = {
+          id: apiClaim.id?.toString() || `CLM-${Date.now()}`,
+          claimNumber: apiClaim.claimNumber,
+          patientId: newClaimForm.uhid,
+          patientName: newClaimForm.patientName,
+          uhid: newClaimForm.uhid,
+          insurerId: newClaimForm.insurerName.replace(/\s+/g, '-').toUpperCase(),
+          insurerName: newClaimForm.insurerName,
+          policyNumber: newClaimForm.policyNumber,
+          admissionDate: newClaimForm.admissionDate || new Date().toISOString().split('T')[0],
+          claimType: newClaimForm.claimType,
+          estimatedAmount: parseFloat(newClaimForm.estimatedAmount),
+          status: apiClaim.status || 'Draft',
+          priority: newClaimForm.priority,
+          diagnosis: newClaimForm.diagnosis || 'Pending',
+          procedureCodes: newClaimForm.procedureCodes
+            ? newClaimForm.procedureCodes.split(',').map(code => code.trim()).filter(Boolean)
+            : [],
+          documents: [],
+          remarks: newClaimForm.remarks || '',
+          createdAt: apiClaim.createdAt?.split('T')[0] || new Date().toISOString().split('T')[0],
+          updatedAt: new Date().toISOString().split('T')[0],
+          timeline: [
+            {
+              date: new Date().toISOString().split('T')[0],
+              status: 'Created',
+              remarks: newClaimForm.remarks || 'Claim created',
+              updatedBy: 'Hospital Desk'
+            }
+          ]
+        };
 
-      setNewClaimForm({
-        uhid: '',
-        patientName: '',
-        policyNumber: '',
-        insurerName: '',
-        claimType: 'Cashless',
-        priority: 'Normal',
-        admissionDate: '',
-        estimatedAmount: '',
-        diagnosis: '',
-        procedureCodes: '',
-        remarks: ''
-      });
-      setShowNewClaimDialog(false);
+        setClaims(prev => {
+          const updated = [newClaim, ...prev];
+          saveHospitalStore('insurance-claims', updated);
+          return updated;
+        });
 
-      toast({
-        title: 'Claim submitted',
-        description: `${created.claimNumber} has been created.`
-      });
+        toast({
+          title: 'Claim created',
+          description: `Claim ${newClaim.claimNumber} created successfully`,
+        });
+
+        setShowNewClaimDialog(false);
+        setNewClaimForm({
+          uhid: '',
+          patientName: '',
+          policyNumber: '',
+          insurerName: '',
+          claimType: 'Cashless',
+          priority: 'Normal',
+          admissionDate: '',
+          estimatedAmount: '',
+          diagnosis: '',
+          procedureCodes: '',
+          remarks: ''
+        });
+      }
     } catch (error: any) {
+      console.error('Claim submission error:', error);
       toast({
-        title: 'Failed to submit claim',
+        title: 'Failed to create claim',
         description: error.response?.data?.message || 'An error occurred',
         variant: 'destructive'
       });

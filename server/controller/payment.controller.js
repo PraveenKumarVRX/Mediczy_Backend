@@ -1,5 +1,6 @@
 import paymentService from '../services/payment.service.js';
 import { JWT_CONFIG } from '../config/auth.config.js';
+import kafkaEvents from '../services/kafka-events.service.js';
 
 // Temporary in-memory store for payment transactions
 const paymentTransactions = new Map();
@@ -174,6 +175,19 @@ class PaymentController {
           where: { razorpayOrderId: razorpay_order_id }
         }
       );
+
+      // Publish Kafka event for payment success
+      try {
+        const transaction = await db.PaymentTransaction.findOne({
+          where: { razorpayOrderId: razorpay_order_id }
+        });
+        if (transaction && req.user) {
+          await kafkaEvents.publishPaymentSuccess(transaction, req.user);
+          console.log('✅ Kafka event published: payment.success');
+        }
+      } catch (kafkaError) {
+        console.error('Failed to publish payment success to Kafka:', kafkaError);
+      }
 
       res.json({
         success: true,

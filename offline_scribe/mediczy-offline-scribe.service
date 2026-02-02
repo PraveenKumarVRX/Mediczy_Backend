@@ -1,0 +1,35 @@
+[Unit]
+Description=Mediczy Offline AI Scribe Service
+Documentation=https://github.com/mediczy/offline-scribe
+After=network.target
+
+[Service]
+Type=simple
+User=ubuntu
+Group=ubuntu
+WorkingDirectory=/home/ubuntu/Mediczy/offline_scribe
+
+# Environment
+Environment=MODELS_DIR=/home/ubuntu/models
+Environment=LOG_DIR=/home/ubuntu/Mediczy/logs
+Environment=PYTHONUNBUFFERED=1
+
+# Start command
+ExecStart=/usr/bin/python3 main.py
+
+# Restart policy
+Restart=on-failure
+RestartSec=10
+StartLimitInterval=200
+StartLimitBurst=3
+
+# Logging
+StandardOutput=append:/home/ubuntu/Mediczy/logs/offline-scribe.log
+StandardError=append:/home/ubuntu/Mediczy/logs/offline-scribe-error.log
+
+# Security hardening
+NoNewPrivileges=true
+PrivateTmp=true
+
+[Install]
+WantedBy=multi-user.target

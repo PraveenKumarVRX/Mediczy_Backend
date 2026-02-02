@@ -517,25 +517,31 @@ router.post('/auth/login', asyncHandler(async (req, res) => {
     });
   }
 
-  const result = await db.query(`
-    SELECT u.id,
-           u.email,
-           u.password,
-           u."firstName" AS first_name,
-           u."lastName" AS last_name,
-           u."phoneNumber" AS phone,
-           u."profileImage" AS avatar_url,
-           u."dateOfBirth" AS date_of_birth,
-           u.gender,
-           COALESCE(p."bloodGroup", u."bloodType") AS blood_group,
-           NULLIF(TRIM(CONCAT_WS(', ', u.address_street, u.address_city, u.address_state, u."address_zipCode", u.address_country)), '') AS address,
-           u.role,
-           u.status
-    FROM users u
-    LEFT JOIN patients p ON p."userId" = u.id
-    WHERE u.email = $1
-    LIMIT 1
-  `, [email]);
+  let result;
+  try {
+    result = await db.query(`
+      SELECT u.id,
+             u.email,
+             u.password,
+             u."firstName" AS first_name,
+             u."lastName" AS last_name,
+             u."phoneNumber" AS phone,
+             u."profileImage" AS avatar_url,
+             u."dateOfBirth" AS date_of_birth,
+             u.gender,
+             COALESCE(p."bloodGroup"::text, u."bloodType") AS blood_group,
+             NULLIF(TRIM(CONCAT_WS(', ', u.address_street, u.address_city, u.address_state, u."address_zipCode", u.address_country)), '') AS address,
+             u.role,
+             u.status
+      FROM users u
+      LEFT JOIN patients p ON p."userId" = u.id
+      WHERE u.email = $1
+      LIMIT 1
+    `, [email]);
+  } catch (dbError) {
+    console.error('Mobile login DB error:', dbError.code, dbError.message);
+    throw dbError;
+  }
   
   if (result.rows.length === 0) {
     return res.status(401).json({
@@ -684,7 +690,7 @@ router.post('/auth/otp/verify', asyncHandler(async (req, res) => {
            u."profileImage" AS avatar_url,
            u."dateOfBirth" AS date_of_birth,
            u.gender,
-           COALESCE(p."bloodGroup", u."bloodType") AS blood_group,
+           COALESCE(p."bloodGroup"::text, u."bloodType") AS blood_group,
            NULLIF(TRIM(CONCAT_WS(', ', u.address_street, u.address_city, u.address_state, u."address_zipCode", u.address_country)), '') AS address,
            u.role,
            u.status
@@ -818,7 +824,7 @@ router.get('/user/profile', authenticate(), asyncHandler(async (req, res) => {
            u."profileImage" AS avatar_url,
            u."dateOfBirth" AS date_of_birth,
            u.gender,
-           COALESCE(p."bloodGroup", u."bloodType") AS blood_group,
+           COALESCE(p."bloodGroup"::text, u."bloodType") AS blood_group,
            NULLIF(TRIM(CONCAT_WS(', ', u.address_street, u.address_city, u.address_state, u."address_zipCode", u.address_country)), '') AS address,
            u.role,
            u.status
@@ -890,6 +896,8 @@ router.put('/user/profile', authenticate(), asyncHandler(async (req, res) => {
 // ============== Doctors ==============
 
 router.get('/doctors', asyncHandler(async (req, res) => {
+  console.log('[Mobile API] GET /doctors called');
+  try {
   const { specialty, location, page = 1, limit = 20, search } = req.query;
   const safePage = Math.max(1, parseInt(page, 10) || 1);
   const safeLimit = Math.max(1, parseInt(limit, 10) || 20);
@@ -953,6 +961,10 @@ router.get('/doctors', asyncHandler(async (req, res) => {
       totalPages: Math.ceil(countResult.rows[0].count / safeLimit)
     }
   });
+  } catch (dbErr) {
+    console.error('[Mobile API] /doctors DB error:', dbErr.code, dbErr.message, dbErr.detail);
+    throw dbErr;
+  }
 }));
 
 router.get('/doctors/:id', asyncHandler(async (req, res) => {

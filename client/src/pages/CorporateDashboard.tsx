@@ -644,7 +644,7 @@ const CorporateDashboard = () => {
       icon: AlertTriangle,
       color: "warning-gradient border-warning/20",
       iconColor: "text-warning",
-      link: "/corporate/risk-monitor",
+      link: "/corporate/health-risk-assessment",
       pattern: "radial-gradient(circle at 50% 50%, hsl(var(--warning) / 0.05) 0%, transparent 50%)",
     },
     {

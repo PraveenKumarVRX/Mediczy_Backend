@@ -1282,8 +1282,8 @@ router.get('/claims/management/:id/download', authUser, requireRole('corporate')
 // Submit a new claim
 router.post('/claims', authUser, async (req, res) => {
   try {
-    const { type, amount, description, appointmentId, documents } = req.body;
-    const userId = req.user.id;
+    const { type, amount, description, appointmentId, documents, provider, serviceDate } = req.body;
+    const userId = req.user?.id;
 
     if (!type || !amount) {
       return res.status(400).json({
@@ -1292,23 +1292,29 @@ router.post('/claims', authUser, async (req, res) => {
       });
     }
 
-    // In production, create claim in database
+    const submittedDate = new Date().toISOString().slice(0, 10);
+    const normalizedAmount = typeof amount === 'number' ? amount.toFixed(2) : String(amount);
+
     const newClaim = {
-      id: `CLM-${Date.now()}`,
-      userId,
-      type,
-      amount,
-      description,
-      appointmentId,
-      documents: documents || [],
-      status: 'Pending',
-      submittedAt: new Date().toISOString()
+      id: `CLM${Date.now()}`,
+      employeeName: req.user?.firstName ? `${req.user.firstName} ${req.user.lastName || ''}`.trim() : (req.user?.email || 'Corporate User'),
+      employeeId: req.user?.employeeId || String(userId || 'EMP-UNKNOWN'),
+      claimType: type,
+      amount: normalizedAmount,
+      submittedDate,
+      status: 'pending',
+      provider: provider || 'Unknown Provider',
+      serviceDate: serviceDate || submittedDate,
+      description: description || '',
+      documents: Array.isArray(documents) ? documents.length : (documents ? Number(documents) : 0)
     };
+
+    corporateClaims.unshift(newClaim);
 
     res.json({
       success: true,
       message: 'Claim submitted successfully',
-      data: newClaim
+      data: { claim: newClaim }
     });
   } catch (error) {
     console.error('Error submitting claim:', error);
@@ -1635,6 +1641,227 @@ router.get('/wellness-calendar/employee/events', authUser, async (req, res) => {
       message: 'Failed to fetch wellness events',
       error: error.message
     });
+  }
+});
+
+// ---------------------------------------------------------------------------
+// Settings Routes
+// ---------------------------------------------------------------------------
+let corporateSettings = {
+  general: {
+    companyName: 'Acme Corporation',
+    industry: 'Technology',
+    timezone: 'Asia/Kolkata',
+    language: 'en'
+  },
+  notifications: {
+    emailNotifications: true,
+    smsNotifications: false,
+    pushNotifications: true,
+    weeklyDigest: true
+  },
+  security: {
+    twoFactorEnabled: false,
+    sessionTimeout: 30,
+    ipWhitelist: []
+  },
+  healthProgram: {
+    trackSteps: true,
+    trackSleep: true,
+    trackNutrition: true,
+    trackMentalHealth: true,
+    alertThreshold: 70
+  }
+};
+
+router.get('/settings', authUser, requireRole('corporate'), async (req, res) => {
+  res.json({ success: true, data: { settings: corporateSettings } });
+});
+
+router.put('/settings', authUser, requireRole('corporate'), async (req, res) => {
+  try {
+    const updates = req.body;
+    corporateSettings = { ...corporateSettings, ...updates };
+    res.json({ success: true, message: 'Settings saved successfully', data: { settings: corporateSettings } });
+  } catch (error) {
+    console.error('Error saving settings:', error);
+    res.status(500).json({ success: false, message: 'Failed to save settings', error: error.message });
+  }
+});
+
+// ---------------------------------------------------------------------------
+// Appointments Routes (for schedule appointment)
+// ---------------------------------------------------------------------------
+let corporateAppointments = [];
+
+router.post('/appointments', authUser, requireRole('corporate'), async (req, res) => {
+  try {
+    const { employeeId, employeeName, department, appointmentType, doctorName, facility, date, time, notes } = req.body;
+    
+    if (!employeeId || !appointmentType || !date || !time) {
+      return res.status(400).json({
+        success: false,
+        message: 'Employee, appointment type, date, and time are required'
+      });
+    }
+
+    const newAppointment = {
+      id: `APT${Date.now()}`,
+      employeeId,
+      employeeName: employeeName || 'Unknown Employee',
+      department: department || 'General',
+      appointmentType,
+      doctorName: doctorName || 'TBD',
+      facility: facility || 'Main Medical Center',
+      date,
+      time,
+      status: 'scheduled',
+      notes: notes || '',
+      createdAt: new Date().toISOString()
+    };
+
+    corporateAppointments.push(newAppointment);
+
+    res.status(201).json({
+      success: true,
+      message: 'Appointment scheduled successfully',
+      data: { appointment: newAppointment }
+    });
+  } catch (error) {
+    console.error('Error scheduling appointment:', error);
+    res.status(500).json({ success: false, message: 'Failed to schedule appointment', error: error.message });
+  }
+});
+
+router.get('/appointments', authUser, requireRole('corporate'), async (req, res) => {
+  res.json({ success: true, data: { appointments: corporateAppointments } });
+});
+
+// ---------------------------------------------------------------------------
+// Challenges Routes (for gamification)
+// ---------------------------------------------------------------------------
+let corporateChallenges = [];
+
+router.get('/challenges', authUser, requireRole('corporate'), async (req, res) => {
+  res.json({ success: true, data: { challenges: corporateChallenges } });
+});
+
+router.post('/challenges', authUser, requireRole('corporate'), async (req, res) => {
+  try {
+    const { title, description, type, target, unit, startDate, endDate, rewards } = req.body;
+
+    if (!title || !type || !target || !startDate || !endDate) {
+      return res.status(400).json({
+        success: false,
+        message: 'Title, type, target, start date, and end date are required'
+      });
+    }
+
+    const newChallenge = {
+      id: `CHL${Date.now()}`,
+      title,
+      description: description || '',
+      type,
+      target,
+      unit: unit || 'points',
+      startDate,
+      endDate,
+      status: 'draft',
+      participants: 0,
+      totalEmployees: corporateEmployees.length,
+      rewards: rewards || { gold: 'TBD', silver: 'TBD', bronze: 'TBD' },
+      createdAt: new Date().toISOString()
+    };
+
+    corporateChallenges.push(newChallenge);
+
+    res.status(201).json({
+      success: true,
+      message: 'Challenge created successfully',
+      data: { challenge: newChallenge }
+    });
+  } catch (error) {
+    console.error('Error creating challenge:', error);
+    res.status(500).json({ success: false, message: 'Failed to create challenge', error: error.message });
+  }
+});
+
+router.put('/challenges/:id', authUser, requireRole('corporate'), async (req, res) => {
+  try {
+    const { id } = req.params;
+    const updates = req.body;
+    const index = corporateChallenges.findIndex(c => c.id === id);
+    if (index === -1) {
+      return res.status(404).json({ success: false, message: 'Challenge not found' });
+    }
+    corporateChallenges[index] = { ...corporateChallenges[index], ...updates };
+    res.json({ success: true, data: { challenge: corporateChallenges[index] } });
+  } catch (error) {
+    res.status(500).json({ success: false, message: 'Failed to update challenge', error: error.message });
+  }
+});
+
+// ---------------------------------------------------------------------------
+// Benefits & Health Checkup Booking Routes
+// ---------------------------------------------------------------------------
+let healthCheckupBookings = [];
+
+router.post('/benefits/book-checkup', authUser, async (req, res) => {
+  try {
+    const { checkupType, preferredDate, preferredTime, location, notes } = req.body;
+    const userId = req.user.id;
+
+    if (!checkupType || !preferredDate) {
+      return res.status(400).json({
+        success: false,
+        message: 'Checkup type and preferred date are required'
+      });
+    }
+
+    const booking = {
+      id: `BK${Date.now()}`,
+      userId,
+      checkupType,
+      preferredDate,
+      preferredTime: preferredTime || '10:00 AM',
+      location: location || 'Main Medical Center',
+      notes: notes || '',
+      status: 'pending',
+      createdAt: new Date().toISOString()
+    };
+
+    healthCheckupBookings.push(booking);
+
+    res.status(201).json({
+      success: true,
+      message: 'Health checkup booked successfully',
+      data: { booking }
+    });
+  } catch (error) {
+    console.error('Error booking health checkup:', error);
+    res.status(500).json({ success: false, message: 'Failed to book health checkup', error: error.message });
+  }
+});
+
+router.get('/benefits/bookings', authUser, async (req, res) => {
+  const userId = req.user.id;
+  const userBookings = healthCheckupBookings.filter(b => b.userId === userId);
+  res.json({ success: true, data: { bookings: userBookings } });
+});
+
+// ---------------------------------------------------------------------------
+// Employee Details Route
+// ---------------------------------------------------------------------------
+router.get('/employees/:id', authUser, requireRole('corporate'), async (req, res) => {
+  try {
+    const { id } = req.params;
+    const employee = corporateEmployees.find(e => e.id === id || e.employeeId === id);
+    if (!employee) {
+      return res.status(404).json({ success: false, message: 'Employee not found' });
+    }
+    res.json({ success: true, data: { employee } });
+  } catch (error) {
+    res.status(500).json({ success: false, message: 'Failed to fetch employee', error: error.message });
   }
 });
 

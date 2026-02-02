@@ -10,6 +10,10 @@ import InsuranceClaim from '../models/postgres/insuranceClaim.model.postgres.js'
 import PreAuthorization from '../models/postgres/preAuthorization.model.postgres.js';
 import { User } from '../models/index.js';
 import { Op } from 'sequelize';
+import pdfGenerator from '../services/pdf-generator.service.js';
+import insuranceProvider from '../services/insurance-provider.service.js';
+import socketService from '../services/socket.service.js';
+import cacheService from '../services/cache.service.js';
 
 const router = Router();
 
@@ -23,6 +27,18 @@ router.get('/dashboard', authUser, requireRole(['hospital', 'admin']), async (re
   try {
     const { hospitalId } = req.query;
     const where = hospitalId ? { hospital_id: hospitalId } : {};
+
+    // Try to get from cache first
+    const cacheKey = `dashboard:stats:${hospitalId || 'all'}`;
+    const cached = await cacheService.get(cacheKey);
+    
+    if (cached) {
+      return res.json({
+        success: true,
+        dashboard: cached,
+        cached: true
+      });
+    }
 
     // Get counts by status
     const [pending, approved, rejected, query_pending] = await Promise.all([
@@ -55,23 +71,29 @@ router.get('/dashboard', authUser, requireRole(['hospital', 'admin']), async (re
       })
     };
 
+    const dashboardData = {
+      stats: {
+        pending,
+        approved,
+        rejected,
+        query: query_pending,
+        total: pending + approved + rejected + query_pending
+      },
+      recentActivity: recentClaims,
+      alerts,
+      charts: {
+        statusBreakdown: { pending, approved, rejected, query: query_pending },
+        monthlyTrend: [] // TODO: Add monthly trend data
+      }
+    };
+
+    // Cache for 5 minutes
+    await cacheService.set(cacheKey, dashboardData, 300);
+
     res.json({
       success: true,
-      dashboard: {
-        stats: {
-          pending,
-          approved,
-          rejected,
-          query: query_pending,
-          total: pending + approved + rejected + query_pending
-        },
-        recentActivity: recentClaims,
-        alerts,
-        charts: {
-          statusBreakdown: { pending, approved, rejected, query: query_pending },
-          monthlyTrend: [] // TODO: Add monthly trend data
-        }
-      }
+      dashboard: dashboardData,
+      cached: false
     });
   } catch (error) {
     console.error('Dashboard error:', error);
@@ -299,8 +321,17 @@ router.post('/claims/:claimId/submit', authUser, requireRole(['hospital', 'admin
       submittedBy: req.user.id
     });
 
-    // TODO: Integrate with actual TPA/Insurance API
-    // await tpaService.submitClaim(claim);
+    // Invalidate cache
+    await cacheService.invalidateClaimCaches(claim.hospital_id);
+
+    // Send WebSocket notification
+    socketService.emitClaimUpdate(claim.id, {
+      status: 'submitted',
+      claimNumber: claim.claimNumber,
+      message: 'Claim submitted successfully',
+      userId: claim.patientId,
+      hospitalId: claim.hospital_id
+    });
 
     res.json({
       success: true,
@@ -506,13 +537,18 @@ router.get('/claims/:claimId/pdf', authUser, requireRole(['hospital', 'admin']),
       return res.status(404).json({ success: false, message: 'Claim not found' });
     }
 
-    // TODO: Generate PDF using puppeteer or similar
-    // For now, return JSON data
+    // Generate PDF using pdfkit
+    const pdfPath = await pdfGenerator.generateClaimPDF(claim, claim.patient);
+
     res.json({
       success: true,
-      message: 'PDF generation feature coming soon',
-      claim,
-      documents: claim.documents
+      message: 'PDF generated successfully',
+      pdfUrl: pdfPath,
+      claim: {
+        claimNumber: claim.claimNumber,
+        claimAmount: claim.claimAmount,
+        status: claim.status
+      }
     });
   } catch (error) {
     console.error('PDF generation error:', error);
@@ -837,23 +873,52 @@ router.post('/patient/search', authUser, requireRole(['hospital', 'admin']), [
  */
 router.get('/patient/:patientId/eligibility', authUser, requireRole(['hospital', 'admin']), [
   param('patientId').isInt(),
-  query('policyNumber').notEmpty()
+  query('policyNumber').notEmpty(),
+  query('insuranceProvider').optional()
 ], async (req, res) => {
   try {
-    // TODO: Integrate with actual insurance provider API
-    // For now, return mock data
+    const { policyNumber, insuranceProvider } = req.query;
+    const patientId = req.params.patientId;
+
+    // Check cache first
+    const cacheKey = `eligibility:${policyNumber}`;
+    const cached = await cacheService.get(cacheKey);
+    
+    if (cached) {
+      return res.json({
+        success: true,
+        eligibility: cached,
+        cached: true
+      });
+    }
+
+    // Get patient details
+    const patient = await User.findByPk(patientId);
+    
+    if (!patient) {
+      return res.status(404).json({ success: false, message: 'Patient not found' });
+    }
+
+    // Check eligibility with insurance provider
+    const provider = insuranceProvider || 'Star Health'; // Default provider
+    const eligibility = await insuranceProvider.checkEligibility(
+      policyNumber,
+      provider,
+      {
+        firstName: patient.firstName,
+        lastName: patient.lastName,
+        dateOfBirth: patient.dateOfBirth,
+        hospitalId: req.user.organizationId
+      }
+    );
+
+    // Cache for 1 hour
+    await cacheService.set(cacheKey, eligibility, 3600);
+
     res.json({
       success: true,
-      eligibility: {
-        isValid: true,
-        policyNumber: req.query.policyNumber,
-        coverageAmount: 500000,
-        availableBalance: 450000,
-        expiryDate: '2027-12-31',
-        dependents: 4,
-        copayPercent: 10,
-        deductible: 5000
-      }
+      eligibility,
+      cached: false
     });
   } catch (error) {
     console.error('Eligibility check error:', error);

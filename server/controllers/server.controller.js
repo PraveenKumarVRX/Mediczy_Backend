@@ -2,6 +2,8 @@ import http from "http";
 import { Server } from "socket.io";
 import { setupSocketIO } from "../chat/chathandler.controller.js";
 import AppointmentNotificationService from "../services/appointment-notification.service.js";
+import socketService from "../services/socket.service.js";
+import cacheService from "../services/cache.service.js";
 
 /**
  * Server Controller
@@ -23,6 +25,16 @@ class ServerController {
     
     // Setup Socket.IO
     this.io = setupSocketIO(this.server);
+    
+    // Initialize Insurance WebSocket Service
+    console.log('🔌 Initializing Insurance WebSocket Service...');
+    socketService.initialize(this.server);
+    
+    // Initialize Redis Cache Service
+    console.log('💾 Initializing Redis Cache Service...');
+    await cacheService.initialize().catch(err => {
+      console.warn('⚠️  Redis not available - running without cache');
+    });
     
     // Initialize Appointment Notification Service
     console.log('🔔 Initializing Appointment Notification Service...');

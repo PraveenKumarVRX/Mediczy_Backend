@@ -1,0 +1,24 @@
+# Mediczy Offline AI Scribe - Requirements
+# Hospital-grade, CPU-only, fully offline
+
+# Core Framework
+fastapi>=0.104.0
+uvicorn>=0.24.0
+pydantic>=2.0.0
+
+# LLM (CPU-only)
+llama-cpp-python>=0.2.20
+
+# Speech-to-Text (pick one)
+faster-whisper>=0.9.0  # Recommended for CPU
+# openai-whisper>=20231117  # Alternative
+
+# Audio Processing
+pydub>=0.25.0  # For format conversion
+
+# Utilities
+python-multipart>=0.0.6  # For file uploads
+aiofiles>=23.0.0  # Async file handling
+
+# Optional but recommended
+# ffmpeg-python>=0.2.0  # Better audio handling (requires ffmpeg binary)

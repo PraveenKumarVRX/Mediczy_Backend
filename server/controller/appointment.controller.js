@@ -14,6 +14,7 @@ import {
 import intelligentDb from '../utils/intelligentDbClient.js';
 import n8nService from '../services/n8n.service.js';
 import notificationService from '../services/notification.service.js';
+import kafkaEvents from '../services/kafka-events.service.js';
 
 const normalizeTimeHHMM = (value = '') => {
   const trimmed = String(value || '').trim();
@@ -333,15 +334,10 @@ export const createAppointment = async (req, res) => {
       console.error('Failed to schedule reminder:', reminderError);
     }
 
-    // Publish to Kafka (async task)
+    // Publish to Kafka (async task) - Real-time event streaming
     try {
-      await publishAppointmentBooked({
-        appointmentId: appointment.id,
-        userId,
-        doctorId,
-        appointmentDate,
-        appointmentTime
-      });
+      await kafkaEvents.publishAppointmentCreated(appointment, user, doctor);
+      console.log('✅ Kafka event published: appointment.created');
     } catch (kafkaError) {
       console.error('Failed to publish to Kafka:', kafkaError);
     }
@@ -722,6 +718,18 @@ export const cancelAppointment = async (req, res) => {
       cancelledAt: new Date()
     });
 
+    // Publish Kafka event
+    try {
+      const patient = await User.findByPk(appointment.userId);
+      const doctor = await Doctor.findByPk(appointment.doctorId);
+      if (patient && doctor) {
+        await kafkaEvents.publishAppointmentCancelled(appointment, patient, doctor, cancelReason || defaultReason);
+        console.log('✅ Kafka event published: appointment.cancelled');
+      }
+    } catch (kafkaError) {
+      console.error('Failed to publish appointment cancellation to Kafka:', kafkaError);
+    }
+
     return res.status(200).json({
       message: 'Appointment cancelled successfully',
       appointment
@@ -786,12 +794,28 @@ export const rescheduleAppointment = async (req, res) => {
       });
     }
 
+    // Store old date and time for Kafka event
+    const oldDate = appointment.appointmentDate;
+    const oldTime = appointment.appointmentTime;
+
     // Update appointment
     await appointment.update({
       appointmentDate,
       appointmentTime,
       status: 'rescheduled'
     });
+
+    // Publish Kafka event
+    try {
+      const patient = await User.findByPk(appointment.userId);
+      const doctor = await Doctor.findByPk(appointment.doctorId);
+      if (patient && doctor) {
+        await kafkaEvents.publishAppointmentRescheduled(appointment, patient, doctor, oldDate, oldTime);
+        console.log('✅ Kafka event published: appointment.rescheduled');
+      }
+    } catch (kafkaError) {
+      console.error('Failed to publish appointment reschedule to Kafka:', kafkaError);
+    }
 
     return res.status(200).json({
       message: 'Appointment rescheduled successfully',
@@ -921,6 +945,18 @@ export const completeAppointment = async (req, res) => {
       notes: notes || appointment.notes,
       prescription: prescription || prescriptionData?.prescriptionId || appointment.prescription
     });
+
+    // Publish Kafka event
+    try {
+      const patient = await User.findByPk(appointment.userId);
+      const doctor = await Doctor.findByPk(appointment.doctorId);
+      if (patient && doctor) {
+        await kafkaEvents.publishAppointmentCompleted(appointment, patient, doctor);
+        console.log('✅ Kafka event published: appointment.completed');
+      }
+    } catch (kafkaError) {
+      console.error('Failed to publish appointment completion to Kafka:', kafkaError);
+    }
 
     return res.status(200).json({
       message: 'Appointment marked as completed',

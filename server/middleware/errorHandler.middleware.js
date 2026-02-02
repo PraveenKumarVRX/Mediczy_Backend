@@ -96,6 +96,14 @@ const handleZodError = (err) => {
 
 const handlePostgresError = (err) => {
   // Handle specific PostgreSQL error codes
+  console.error('PostgreSQL error details:', {
+    code: err.code,
+    message: err.message,
+    detail: err.detail,
+    hint: err.hint,
+    where: err.where,
+    stack: err.stack?.split('\n').slice(0, 5).join('\n')
+  });
   switch (err.code) {
     case '23505': // unique_violation
       return handleDuplicateFieldsDB(err);

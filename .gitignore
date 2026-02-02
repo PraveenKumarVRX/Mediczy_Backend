@@ -13,6 +13,9 @@ TEST_CREDENTIALS.md
 *_CREDENTIALS.md
 secrets/
 credentials/
+config/firebase-service-account.json
+**/google-services.json
+**/GoogleService-Info.plist
 
 # Build outputs
 dist/
@@ -88,3 +91,4 @@ PRODUCTION_DEPLOYMENT_CHECKLIST.md
 *.backup.*
 backup_*
 
+.venv/

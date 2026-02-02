@@ -1,4 +1,4 @@
-import React, { useMemo, useState } from 'react';
+import React, { useEffect, useMemo, useState } from 'react';
 import { Calendar, Clock, MapPin, Search, Filter, Plus, CheckCircle, XCircle, AlertCircle, Users, RefreshCw, CalendarCheck, Eye, Edit2, Ban, RotateCcw } from 'lucide-react';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
@@ -9,6 +9,7 @@ import { Label } from '@/components/ui/label';
 import { Textarea } from '@/components/ui/textarea';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { useToast } from '@/hooks/use-toast';
+import api from '@/utils/api';
 import CorporateLayout from '@/components/corporate/CorporateLayout';
 import CorporatePageHeader from '@/components/corporate/CorporatePageHeader';
 import CorporateStatusBadge from '@/components/corporate/CorporateStatusBadge';
@@ -27,6 +28,86 @@ interface Appointment {
   notes?: string;
 }
 
+interface EmployeeOption {
+  id: string;
+  name: string;
+  department: string;
+}
+
+const sampleEmployees: EmployeeOption[] = [
+  { id: 'EMP001', name: 'John Smith', department: 'Engineering' },
+  { id: 'EMP002', name: 'Emily Davis', department: 'Marketing' },
+  { id: 'EMP003', name: 'Robert Wilson', department: 'Finance' },
+];
+
+const sampleAppointments: Appointment[] = [
+  {
+    id: 'APT001',
+    employeeName: 'John Smith',
+    employeeId: 'EMP001',
+    department: 'Engineering',
+    appointmentType: 'Annual Health Checkup',
+    doctorName: 'Dr. Sarah Johnson',
+    facility: 'City Medical Center',
+    date: '2024-01-15',
+    time: '10:00 AM',
+    status: 'scheduled',
+    notes: 'Regular annual checkup as per company policy'
+  },
+  {
+    id: 'APT002',
+    employeeName: 'Emily Davis',
+    employeeId: 'EMP002',
+    department: 'Marketing',
+    appointmentType: 'Dental Checkup',
+    doctorName: 'Dr. Michael Brown',
+    facility: 'Dental Care Plus',
+    date: '2024-01-14',
+    time: '02:30 PM',
+    status: 'completed',
+    notes: 'Completed without issues'
+  },
+  {
+    id: 'APT003',
+    employeeName: 'Robert Wilson',
+    employeeId: 'EMP003',
+    department: 'Finance',
+    appointmentType: 'Eye Examination',
+    doctorName: 'Dr. Lisa Anderson',
+    facility: 'Vision Care Clinic',
+    date: '2024-01-13',
+    time: '11:00 AM',
+    status: 'cancelled',
+    notes: 'Employee requested cancellation'
+  },
+  {
+    id: 'APT004',
+    employeeName: 'Maria Garcia',
+    employeeId: 'EMP004',
+    department: 'HR',
+    appointmentType: 'Mental Health Consultation',
+    doctorName: 'Dr. James Taylor',
+    facility: 'Wellness Counseling Center',
+    date: '2024-01-16',
+    time: '03:00 PM',
+    status: 'scheduled',
+    notes: 'Confidential session'
+  },
+  {
+    id: 'APT005',
+    employeeName: 'David Lee',
+    employeeId: 'EMP005',
+    department: 'Operations',
+    appointmentType: 'Vaccination',
+    doctorName: 'Dr. Patricia White',
+    facility: 'City Medical Center',
+    date: '2024-01-12',
+    time: '09:00 AM',
+    status: 'no-show',
+    notes: 'Did not attend scheduled appointment'
+  }
+];
+
 const CorporateAppointments: React.FC = () => {
   const { toast } = useToast();
   const [searchQuery, setSearchQuery] = useState('');
@@ -34,75 +115,9 @@ const CorporateAppointments: React.FC = () => {
   const [isScheduleDialogOpen, setIsScheduleDialogOpen] = useState(false);
   const [selectedAppointment, setSelectedAppointment] = useState<Appointment | null>(null);
   const [isDetailsOpen, setIsDetailsOpen] = useState(false);
-
-  // Sample appointment data
-  const [appointments, setAppointments] = useState<Appointment[]>([
-    {
-      id: 'APT001',
-      employeeName: 'John Smith',
-      employeeId: 'EMP001',
-      department: 'Engineering',
-      appointmentType: 'Annual Health Checkup',
-      doctorName: 'Dr. Sarah Johnson',
-      facility: 'City Medical Center',
-      date: '2024-01-15',
-      time: '10:00 AM',
-      status: 'scheduled',
-      notes: 'Regular annual checkup as per company policy'
-    },
-    {
-      id: 'APT002',
-      employeeName: 'Emily Davis',
-      employeeId: 'EMP002',
-      department: 'Marketing',
-      appointmentType: 'Dental Checkup',
-      doctorName: 'Dr. Michael Brown',
-      facility: 'Dental Care Plus',
-      date: '2024-01-14',
-      time: '02:30 PM',
-      status: 'completed',
-      notes: 'Completed without issues'
-    },
-    {
-      id: 'APT003',
-      employeeName: 'Robert Wilson',
-      employeeId: 'EMP003',
-      department: 'Finance',
-      appointmentType: 'Eye Examination',
-      doctorName: 'Dr. Lisa Anderson',
-      facility: 'Vision Care Clinic',
-      date: '2024-01-13',
-      time: '11:00 AM',
-      status: 'cancelled',
-      notes: 'Employee requested cancellation'
-    },
-    {
-      id: 'APT004',
-      employeeName: 'Maria Garcia',
-      employeeId: 'EMP004',
-      department: 'HR',
-      appointmentType: 'Mental Health Consultation',
-      doctorName: 'Dr. James Taylor',
-      facility: 'Wellness Counseling Center',
-      date: '2024-01-16',
-      time: '03:00 PM',
-      status: 'scheduled',
-      notes: 'Confidential session'
-    },
-    {
-      id: 'APT005',
-      employeeName: 'David Lee',
-      employeeId: 'EMP005',
-      department: 'Operations',
-      appointmentType: 'Vaccination',
-      doctorName: 'Dr. Patricia White',
-      facility: 'City Medical Center',
-      date: '2024-01-12',
-      time: '09:00 AM',
-      status: 'no-show',
-      notes: 'Did not attend scheduled appointment'
-    }
-  ]);
+  const [appointments, setAppointments] = useState<Appointment[]>([]);
+  const [employeeOptions, setEmployeeOptions] = useState<EmployeeOption[]>(sampleEmployees);
+  const [isLoading, setIsLoading] = useState(false);
 
   const stats = {
     totalScheduled: appointments.filter(a => a.status === 'scheduled').length,
@@ -153,12 +168,105 @@ const CorporateAppointments: React.FC = () => {
     }
   };
 
-  const handleScheduleAppointment = () => {
-    toast({
-      title: "Appointment Scheduled",
-      description: "The appointment has been scheduled successfully."
-    });
-    setIsScheduleDialogOpen(false);
+  const [appointmentForm, setAppointmentForm] = useState({
+    employeeId: '',
+    employeeName: '',
+    department: '',
+    appointmentType: '',
+    doctorName: '',
+    facility: '',
+    date: '',
+    time: '',
+    notes: ''
+  });
+  const [isSubmitting, setIsSubmitting] = useState(false);
+
+  const loadAppointments = async () => {
+    try {
+      setIsLoading(true);
+      const { data } = await api.get('/corporate/appointments');
+      const list = ((data as any)?.data?.appointments || []) as Appointment[];
+      setAppointments(list);
+    } catch (error: any) {
+      setAppointments(sampleAppointments);
+      toast({
+        title: 'Failed to load appointments',
+        description: error?.response?.data?.message || 'Showing sample appointments.',
+        variant: 'destructive'
+      });
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  const loadEmployees = async () => {
+    try {
+      const { data } = await api.get('/corporate/employees');
+      const list = ((data as any)?.data?.employees || []) as any[];
+      const mapped = list
+        .map((emp) => ({
+          id: emp.employeeId || emp.id,
+          name: emp.name,
+          department: emp.department || 'General'
+        }))
+        .filter((emp) => emp.id && emp.name);
+      setEmployeeOptions(mapped.length ? mapped : sampleEmployees);
+    } catch (error) {
+      setEmployeeOptions(sampleEmployees);
+    }
+  };
+
+  useEffect(() => {
+    loadAppointments();
+    loadEmployees();
+  }, []);
+
+  const handleEmployeeSelect = (employeeId: string) => {
+    const selected = employeeOptions.find((emp) => emp.id === employeeId);
+    setAppointmentForm((prev) => ({
+      ...prev,
+      employeeId,
+      employeeName: selected?.name || prev.employeeName,
+      department: selected?.department || prev.department
+    }));
+  };
+
+  const handleScheduleAppointment = async () => {
+    if (!appointmentForm.employeeId || !appointmentForm.appointmentType || !appointmentForm.date || !appointmentForm.time) {
+      toast({
+        title: "Missing fields",
+        description: "Please fill in employee, appointment type, date, and time.",
+        variant: "destructive"
+      });
+      return;
+    }
+    try {
+      setIsSubmitting(true);
+      const { data } = await api.post('/corporate/appointments', appointmentForm);
+      const newAppointment = (data as any)?.data?.appointment;
+      if (newAppointment) {
+        setAppointments(prev => [newAppointment, ...prev]);
+      } else {
+        await loadAppointments();
+      }
+      toast({
+        title: "Appointment Scheduled",
+        description: "The appointment has been scheduled successfully."
+      });
+      setIsScheduleDialogOpen(false);
+      setAppointmentForm({
+        employeeId: '', employeeName: '', department: '', appointmentType: '',
+        doctorName: '', facility: '', date: '', time: '', notes: ''
+      });
+    } catch (error: any) {
+      toast({
+        title: "Scheduling failed",
+        description: error?.response?.data?.message || "Please try again.",
+        variant: "destructive"
+      });
+    } finally {
+      setIsSubmitting(false);
+    }
   };
 
   const handleViewDetails = (appointment: Appointment) => {
@@ -189,6 +297,7 @@ const CorporateAppointments: React.FC = () => {
   };
 
   const handleRefresh = () => {
+    loadAppointments();
     toast({ title: 'Appointments refreshed', description: 'Showing the latest appointment list.' });
   };
 
@@ -207,6 +316,7 @@ const CorporateAppointments: React.FC = () => {
           onSearchChange={setSearchQuery}
           showRefresh={true}
           onRefresh={handleRefresh}
+          isRefreshing={isLoading}
           stats={[
             { label: 'Scheduled', value: stats.totalScheduled },
             { label: 'Completed', value: stats.completedThisMonth },
@@ -230,59 +340,82 @@ const CorporateAppointments: React.FC = () => {
             <div className="grid gap-4 py-4">
               <div className="grid gap-2">
                 <Label htmlFor="employee">Employee</Label>
-                <Select>
+                <Select value={appointmentForm.employeeId} onValueChange={handleEmployeeSelect}>
                   <SelectTrigger id="employee">
                     <SelectValue placeholder="Select employee" />
                   </SelectTrigger>
                   <SelectContent>
-                    <SelectItem value="emp1">John Smith - EMP001</SelectItem>
-                    <SelectItem value="emp2">Emily Davis - EMP002</SelectItem>
-                    <SelectItem value="emp3">Robert Wilson - EMP003</SelectItem>
+                    {employeeOptions.map((emp) => (
+                      <SelectItem key={emp.id} value={emp.id}>
+                        {emp.name} - {emp.id}
+                      </SelectItem>
+                    ))}
                   </SelectContent>
                 </Select>
               </div>
               <div className="grid gap-2">
                 <Label htmlFor="type">Appointment Type</Label>
-                <Select>
+                <Select
+                  value={appointmentForm.appointmentType}
+                  onValueChange={(value) => setAppointmentForm((prev) => ({ ...prev, appointmentType: value }))}
+                >
                   <SelectTrigger id="type">
                     <SelectValue placeholder="Select type" />
                   </SelectTrigger>
                   <SelectContent>
-                    <SelectItem value="checkup">Annual Health Checkup</SelectItem>
-                    <SelectItem value="dental">Dental Checkup</SelectItem>
-                    <SelectItem value="eye">Eye Examination</SelectItem>
-                    <SelectItem value="mental">Mental Health Consultation</SelectItem>
-                    <SelectItem value="vaccination">Vaccination</SelectItem>
+                    <SelectItem value="Annual Health Checkup">Annual Health Checkup</SelectItem>
+                    <SelectItem value="Dental Checkup">Dental Checkup</SelectItem>
+                    <SelectItem value="Eye Examination">Eye Examination</SelectItem>
+                    <SelectItem value="Mental Health Consultation">Mental Health Consultation</SelectItem>
+                    <SelectItem value="Vaccination">Vaccination</SelectItem>
                   </SelectContent>
                 </Select>
               </div>
               <div className="grid gap-2">
                 <Label htmlFor="facility">Facility</Label>
-                <Select>
+                <Select
+                  value={appointmentForm.facility}
+                  onValueChange={(value) => setAppointmentForm((prev) => ({ ...prev, facility: value }))}
+                >
                   <SelectTrigger id="facility">
                     <SelectValue placeholder="Select facility" />
                   </SelectTrigger>
                   <SelectContent>
-                    <SelectItem value="city">City Medical Center</SelectItem>
-                    <SelectItem value="dental">Dental Care Plus</SelectItem>
-                    <SelectItem value="vision">Vision Care Clinic</SelectItem>
-                    <SelectItem value="wellness">Wellness Counseling Center</SelectItem>
+                    <SelectItem value="City Medical Center">City Medical Center</SelectItem>
+                    <SelectItem value="Dental Care Plus">Dental Care Plus</SelectItem>
+                    <SelectItem value="Vision Care Clinic">Vision Care Clinic</SelectItem>
+                    <SelectItem value="Wellness Counseling Center">Wellness Counseling Center</SelectItem>
                   </SelectContent>
                 </Select>
               </div>
               <div className="grid grid-cols-2 gap-4">
                 <div className="grid gap-2">
                   <Label htmlFor="date">Date</Label>
-                  <Input id="date" type="date" />
+                  <Input
+                    id="date"
+                    type="date"
+                    value={appointmentForm.date}
+                    onChange={(e) => setAppointmentForm((prev) => ({ ...prev, date: e.target.value }))}
+                  />
                 </div>
                 <div className="grid gap-2">
                   <Label htmlFor="time">Time</Label>
-                  <Input id="time" type="time" />
+                  <Input
+                    id="time"
+                    type="time"
+                    value={appointmentForm.time}
+                    onChange={(e) => setAppointmentForm((prev) => ({ ...prev, time: e.target.value }))}
+                  />
                 </div>
               </div>
               <div className="grid gap-2">
                 <Label htmlFor="notes">Notes (Optional)</Label>
-                <Textarea id="notes" placeholder="Add any relevant notes..." />
+                <Textarea
+                  id="notes"
+                  placeholder="Add any relevant notes..."
+                  value={appointmentForm.notes}
+                  onChange={(e) => setAppointmentForm((prev) => ({ ...prev, notes: e.target.value }))}
+                />
               </div>
             </div>
             <DialogFooter>

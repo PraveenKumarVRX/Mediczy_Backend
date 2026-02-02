@@ -33,6 +33,7 @@ import { useAuth } from "@/auth/AuthProvider";
 import api from "@/utils/api";
 import MainLayout from "@/components/layout/MainLayoutdoctor";
 import AIScribe from "@/components/AIScribe";
+import OfflineScribePanel from "@/components/OfflineScribePanel";
 import {
   Dialog,
   DialogContent,
@@ -752,9 +753,10 @@ const DoctorPrescriptions = () => {
             </DialogHeader>
 
             <Tabs defaultValue="patient" className="w-full">
-              <TabsList className="grid w-full grid-cols-2 sm:grid-cols-4 h-auto">
+              <TabsList className="grid w-full grid-cols-3 sm:grid-cols-5 h-auto">
                 <TabsTrigger value="patient" className="text-xs sm:text-sm py-1.5 sm:py-2">Patient</TabsTrigger>
                 <TabsTrigger value="vitals" className="text-xs sm:text-sm py-1.5 sm:py-2">Vitals</TabsTrigger>
+                <TabsTrigger value="ai-scribe" className="text-xs sm:text-sm py-1.5 sm:py-2">🎤 AI Scribe</TabsTrigger>
                 <TabsTrigger value="diagnosis" className="text-xs sm:text-sm py-1.5 sm:py-2">Diagnosis</TabsTrigger>
                 <TabsTrigger value="medications" className="text-xs sm:text-sm py-1.5 sm:py-2">Medications</TabsTrigger>
               </TabsList>
@@ -903,6 +905,60 @@ const DoctorPrescriptions = () => {
                     />
                   </div>
                 </div>
+              </TabsContent>
+
+              {/* AI Scribe Tab - Offline Mode */}
+              <TabsContent value="ai-scribe" className="space-y-4">
+                <OfflineScribePanel
+                  compact
+                  defaultLanguage="hi"
+                  defaultDocumentType="prescription"
+                  patientContext={{
+                    name: formData.patientName,
+                    age: formData.patientAge,
+                    gender: formData.patientGender,
+                    patient_id: formData.patientId ? String(formData.patientId) : undefined,
+                  }}
+                  onPrescriptionGenerated={(prescription) => {
+                    // Import the generated prescription data into the form
+                    setFormData(prev => ({
+                      ...prev,
+                      chiefComplaints: prescription.chiefComplaints || prev.chiefComplaints,
+                      diagnosis: prescription.diagnosis || prev.diagnosis,
+                      medications: prescription.medications?.length > 0 
+                        ? prescription.medications.map(med => ({
+                            name: med.name || '',
+                            composition: med.composition || '',
+                            dosage: med.dosage || '',
+                            frequency: med.frequency || 'BD',
+                            duration: med.duration || '7 days',
+                            quantity: med.quantity || '',
+                            instructions: med.instructions || 'After meals',
+                          }))
+                        : prev.medications,
+                      instructions: prescription.instructions?.length > 0 
+                        ? prescription.instructions 
+                        : prev.instructions,
+                      labTests: prescription.labTests?.length > 0 
+                        ? prescription.labTests 
+                        : prev.labTests,
+                      notes: prescription.notes || prev.notes,
+                      vitals: prescription.vitals ? {
+                        ...prev.vitals,
+                        bloodPressure: prescription.vitals.bp || prev.vitals?.bloodPressure,
+                        pulse: prescription.vitals.pulse || prev.vitals?.pulse,
+                        temperature: prescription.vitals.temperature || prev.vitals?.temperature,
+                        spo2: prescription.vitals.spo2 || prev.vitals?.spo2,
+                        weight: prescription.vitals.weight || prev.vitals?.weight,
+                      } : prev.vitals,
+                    }));
+                    
+                    toast({
+                      title: "✅ Prescription Imported",
+                      description: "AI-generated prescription has been imported into the form. Review and edit as needed.",
+                    });
+                  }}
+                />
               </TabsContent>
 
               <TabsContent value="diagnosis" className="space-y-4">

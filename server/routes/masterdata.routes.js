@@ -3,11 +3,14 @@ import fs from 'fs/promises';
 import path from 'path';
 import { fileURLToPath } from 'url';
 import XLSX from 'xlsx';
+import { authUser } from '../middleware/auth.middleware.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
 const router = express.Router();
+
+router.use(authUser);
 
 // Base paths for provider data
 const PROVIDERS_BASE = '/tmp/rag_cache/all_providers';

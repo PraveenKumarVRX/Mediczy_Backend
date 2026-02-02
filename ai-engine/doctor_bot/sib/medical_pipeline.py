@@ -46,9 +46,10 @@ class MedicalPipeline:
     Full medical NLP + RAG + LLM pipeline
     
     Components:
+    - TinyLlama Router for intent classification & backend routing
     - MedSpaCy for NER/negation
     - ClinicalBERT for embeddings
-    - FAISS for retrieval
+    - pgvector for retrieval
     - Bayesian Network for risk
     - Llama/Groq/Gemini for generation
     - Safety filter for output validation
@@ -58,9 +59,10 @@ class MedicalPipeline:
         self.config = config or {}
         self._nlp = None
         self._embed_model = None
-        self._faiss_loaded = False
+        self._pgvector_connected = False
         self._llm = None
         self._groq_client = None
+        self._intent_router = None
         
         # API keys
         self.groq_api_key = os.environ.get(
@@ -73,6 +75,53 @@ class MedicalPipeline:
         )
         
         logger.info("🏥 Medical Pipeline initialized")
+    
+    # ==================== Component 0: TinyLlama Intent Router ====================
+    
+    def _load_intent_router(self):
+        """Lazy load TinyLlama intent router"""
+        if self._intent_router is not None:
+            return self._intent_router
+        
+        try:
+            # Try relative import first (when used as module)
+            from .tinyllama_router import TinyLlamaRouter
+            self._intent_router = TinyLlamaRouter()
+            logger.info("✅ TinyLlama Intent Router loaded")
+        except ImportError:
+            try:
+                # Fallback for direct script execution
+                from tinyllama_router import TinyLlamaRouter
+                self._intent_router = TinyLlamaRouter()
+                logger.info("✅ TinyLlama Intent Router loaded (direct)")
+            except Exception as e:
+                logger.warning(f"⚠️ TinyLlama Router not available: {e}")
+                self._intent_router = None
+        except Exception as e:
+            logger.warning(f"⚠️ TinyLlama Router not available: {e}")
+            self._intent_router = None
+        
+        return self._intent_router
+    
+    def route_query(self, query: str, language: str = "en", context: Optional[Dict] = None, use_rag: bool = False):
+        """
+        Route query using TinyLlama intent classifier
+        
+        Args:
+            query: User message
+            language: Language code
+            context: Optional context with patient_id, conversation history
+            use_rag: Whether to use RAG for context-aware responses
+        
+        Returns:
+            RoutingDecision with intent, backend, and optional quick response
+        """
+        router = self._load_intent_router()
+        if router:
+            return router.classify(query, language, context, use_rag=use_rag)
+        
+        # Fallback if router not available
+        return None
     
     # ==================== Component 1: MedSpaCy NER ====================
     
@@ -257,29 +306,27 @@ class MedicalPipeline:
         embedding = model.encode([text], convert_to_numpy=True)
         return embedding[0].tolist()
     
-    # ==================== Component 3: FAISS Retrieval ====================
+    # ==================== Component 3: pgvector Retrieval ====================
     
     def retrieve_context(self, query: str, k: int = 5) -> List[Dict[str, Any]]:
-        """Retrieve relevant context from FAISS index"""
+        """Retrieve relevant context from pgvector"""
         try:
             import sys
-            # Add parent directory to path for utils import
             base_dir = Path(__file__).resolve().parent.parent
-            sys.path.insert(0, str(base_dir))
+            sys.path.insert(0, str(base_dir / "utils"))
             
-            from utils.embed_store import retrieve, load_index
+            from pgvector_store import retrieve, get_stats
             
-            if not self._faiss_loaded:
-                # Use absolute paths for FAISS files
-                faiss_path = base_dir / "embeddings" / "faiss_index.bin"
-                metadata_path = base_dir / "embeddings" / "chunk_metadata.pkl"
-                load_index(str(faiss_path), str(metadata_path))
-                self._faiss_loaded = True
+            if not self._pgvector_connected:
+                stats = get_stats()
+                if stats.get("status") == "connected":
+                    self._pgvector_connected = True
+                    logger.info(f"✅ pgvector: {stats.get('total_vectors')} vectors")
             
             results = retrieve(query, k=k)
             return results
         except Exception as e:
-            logger.warning(f"⚠️ FAISS retrieval failed: {e}")
+            logger.warning(f"⚠️ pgvector retrieval failed: {e}")
             return []
     
     # ==================== Component 4: Bayesian Risk ====================
@@ -426,56 +473,67 @@ class MedicalPipeline:
         if patient_data:
             patient_context = self._build_patient_context(patient_data)
         
-        default_system = """You are Dr. iSHA 👨‍⚕️, a warm, compassionate AI medical assistant at Mediczy.
+        default_system = """You are Dr. iSHA 👨‍⚕️, a professional AI medical assistant at Mediczy Healthcare.
 
-CONVERSATION STYLE:
-- Be conversational and ask questions to understand the patient's needs
-- DON'T immediately give treatment options - first understand the problem
-- Ask 1-2 clarifying questions before providing medical guidance
-- Build a dialogue, not a monologue
+🚫 CRITICAL: NO PRESCRIPTION AUTHORITY - STRICT ENFORCEMENT
+You are NOT a licensed physician and CANNOT prescribe medications under any circumstances.
 
-CONVERSATION FLOW:
-1. FIRST MESSAGE: Ask clarifying questions about symptoms, duration, severity
-2. SUBSEQUENT MESSAGES: Based on responses, either:
-   - Ask more questions if needed, OR
-   - Provide guidance and suggest doctor consultation
+When asked "What medicine should I take?" or similar:
+❌ NEVER say: "acetaminophen", "ibuprofen", "paracetamol", "aspirin" or ANY medication names
+❌ NEVER mention: "500mg", "twice daily", dosages, or specific drugs
+✅ ALWAYS say: "I cannot recommend specific medications. Please consult a licensed physician who can examine you and prescribe appropriate treatment. Would you like me to help book an appointment?"
 
-EXAMPLE FIRST RESPONSE (for "I have stomach ache"):
-"I'm sorry to hear you're having stomach discomfort! 😟
+Educational exceptions (ONLY when asked "What is [medicine] used for?"):
+✅ You CAN explain: "Paracetamol is commonly used as a fever reducer and pain reliever"
+✅ You CANNOT say: "Take paracetamol for your fever"
 
-To help you better, could you tell me:
-• How long have you been experiencing this pain?
-• Where exactly do you feel it - upper, lower, left, or right side?
-• Is the pain constant or does it come and go?
+CORRECT RESPONSES:
+User: "What medicine for fever?"
+You: "I cannot recommend specific medications. Fever can have many causes, and only a licensed doctor can prescribe the right treatment after examining you. Would you like me to help book a doctor's appointment?"
 
-This will help me understand your situation better and guide you appropriately. 💙"
+User: "What is paracetamol used for?"
+You: "Paracetamol (acetaminophen) is an over-the-counter medication used to reduce fever and relieve mild to moderate pain. However, I cannot advise you to take it - please consult a pharmacist or doctor for proper guidance on any medication."
 
-DOCTOR CONSULTATION OPTIONS:
-When user needs to see a doctor, ALWAYS offer these options:
-- 👨‍⚕️ **General Physician** - Available immediately for quick consultation
-- 🏥 **Specialist Doctor** - Based on their specific complaint (e.g., Gastroenterologist for stomach issues)
+⚠️ CRITICAL: MEDICAL ASSISTANT ONLY
+You ONLY answer health and medical-related questions. For non-medical queries (entrepreneurship, general knowledge, food reviews, career advice, etc.):
+Reply: "I'm Dr. iSHA, your health assistant. I'm designed to help with medical and health questions only. Is there anything health-related I can assist you with?"
 
-Example:
-"Based on what you've described, I recommend consulting a doctor:
+📋 USING PATIENT CONTEXT (MOST IMPORTANT):
+When PATIENT CONTEXT is provided above:
+- If asked about appointments: Give SPECIFIC dates/times from the data
+- If asked about prescriptions/medications: Reference the ACTUAL medication names from their history
+- If asked about health checkup: Look at the appointments for scheduled checkups
+- Use the patient's NAME when greeting them
+- NEVER say "contact the clinic" if you already have their data - GIVE THE ACTUAL INFORMATION
 
-👨‍⚕️ **Immediate Option:** Our General Physicians are available now for a quick consultation
-🏥 **Specialist Option:** A Gastroenterologist can provide specialized care for digestive issues
+EXAMPLE - Appointment Query:
+User: "When is my health checkup?"
+WRONG: "I would recommend contacting our clinic directly for your appointment schedule."
+RIGHT: "Senthilkumar, your next health checkup is scheduled with Dr. Sharma on February 5th at 10:30 AM. Is there anything else you'd like to know about your appointment?"
 
-Would you like me to help you book an appointment? Just say 'Book appointment' and I'll assist you! 📅"
+🗣️ CONVERSATION STYLE:
+- Use time-based greetings: "Good morning", "Good afternoon", "Good evening" based on current time
+- When user says thanks: "You're welcome! Happy to help. Is there anything else I can assist you with?"
+- ALWAYS end every response with: "Happy to help! Is there anything else I can assist you with?" OR "Would you like me to help book an appointment?"
+- When user says goodbye: "Take care! Feel free to reach out anytime. Stay healthy! 💙"
+- Be warm, empathetic, and professional
+- Ask 1-2 clarifying questions for symptoms before advising
+- Use patient's first name when available
+- Keep responses concise (2-3 short paragraphs max)
 
-APPOINTMENT BOOKING:
-If user says "book appointment", "fix appointment", "schedule", "I want to see a doctor":
-- Confirm the type of doctor they want
-- Confirm their preferred date/time
-- Say: "I'm setting up your appointment now..." 
-- Use trigger word: [BOOK_APPOINTMENT:{specialist_type}]
+🏥 DOCTOR CONSULTATION:
+When medical consultation is needed:
+- 👨‍⚕️ General Physician (available 24/7)
+- 🏥 Specialist (based on symptoms)
+Ask: "Would you like me to help book an appointment?"
 
-IMPORTANT RULES:
-1. ASK QUESTIONS FIRST - Don't jump to conclusions or treatments
-2. Be warm and empathetic, not clinical
-3. For emergencies (chest pain, difficulty breathing) → IMMEDIATELY advise emergency services
-4. Always offer doctor consultation when medical advice is needed
-5. End with a question or call-to-action (e.g., "Would you like to book an appointment?")"""
+⚡ STRICT RULES:
+1. ONLY respond to health/medical questions - decline others politely
+2. USE patient context data when available - give specific information
+3. For emergencies → Call 108/911 immediately
+4. You are NOT a replacement for professional medical care
+5. NEVER EVER recommend or name specific medications for treatment
+6. Keep responses concise and actionable"""
         
         system_prompt = system_prompt or default_system
         
@@ -735,30 +793,117 @@ Thank you for sharing your health concern with me.
         return self.process(query, patient_data, include_risk, include_retrieval)
     
     def process(self, query: str, patient_data: Optional[Dict] = None,
-                include_risk: bool = True, include_retrieval: bool = True) -> PipelineResult:
+                include_risk: bool = True, include_retrieval: bool = True,
+                language: str = "en", fast_mode: bool = True, use_rag: bool = False) -> PipelineResult:
         """
-        Run full medical AI pipeline
+        Run medical AI pipeline with TinyLlama routing
+        
+        OPTIMIZED Flow (fast_mode=True, default):
+        1. TinyLlama classifies intent → decides backend
+        2. If LOCAL: return quick response immediately (~0ms)
+        3. If MEDICAL: Skip NER/FAISS, call iSHA directly (~2s)
+        
+        RAG-Enhanced Flow (use_rag=True):
+        - Qwen retrieves patient context from FAISS
+        - Generates personalized responses using RAG
+        
+        Full Flow (fast_mode=False):
+        1. TinyLlama routing
+        2. MedSpaCy NER extraction
+        3. Bayesian risk assessment
+        4. FAISS context retrieval
+        5. LLM generation
         
         Args:
             query: User query
             patient_data: Optional patient health data for risk assessment
             include_risk: Whether to include Bayesian risk assessment
             include_retrieval: Whether to include FAISS context retrieval
+            language: Language code for responses
+            fast_mode: Skip NER/FAISS for speed (default True)
+            use_rag: Use RAG for context-aware responses (default False)
             
         Returns:
             PipelineResult with response and metadata
         """
         start_time = time.time()
         
-        # Step 1: NER extraction
+        # Build context with patient_id for RAG
+        context = {"patient_data": patient_data}
+        if patient_data:
+            context["patient_id"] = patient_data.get("id") or patient_data.get("patient_id")
+        
+        # ═══════════════════════════════════════════════════════════════
+        # Step 0: TinyLlama Intent Classification & Routing
+        # With optional RAG for context-aware responses
+        # ═══════════════════════════════════════════════════════════════
+        routing_decision = self.route_query(query, language, context, use_rag=use_rag)
+        
+        if routing_decision:
+            logger.info(f"🦙 TinyLlama routing: intent={routing_decision.intent}, "
+                       f"backend={routing_decision.backend}, "
+                       f"confidence={routing_decision.confidence:.0%}")
+            
+            # Handle LOCAL responses immediately (~0ms)
+            if routing_decision.backend == "local" and routing_decision.quick_response:
+                latency = (time.time() - start_time) * 1000
+                return PipelineResult(
+                    response=routing_decision.quick_response,
+                    entities=[],
+                    risk_assessment={},
+                    context_chunks=[],
+                    safety_alerts=[],
+                    provider="local-tinyllama",
+                    latency_ms=round(latency, 2),
+                    is_emergency=False
+                )
+            
+            # Store routing decision for backend selection
+            preferred_backend = routing_decision.backend
+            intent = routing_decision.intent
+        else:
+            preferred_backend = "isha"
+            intent = "unknown"
+        
+        # ═══════════════════════════════════════════════════════════════
+        # FAST PATH: Skip NER/FAISS for simple medical queries (~2s)
+        # ═══════════════════════════════════════════════════════════════
+        if fast_mode and intent in ("symptom_check", "medical_query", "medication_info"):
+            logger.info("⚡ Fast path: Direct API call (skipping NER/FAISS)")
+            
+            # Call iSHA API directly
+            response = self._call_isha(query, None, patient_data)
+            
+            if response:
+                # Quick safety check
+                filtered_response, safety_alerts, is_emergency = self.apply_safety_filter(response)
+                latency = (time.time() - start_time) * 1000
+                
+                return PipelineResult(
+                    response=filtered_response,
+                    entities=[],  # Skip NER for speed
+                    risk_assessment={},
+                    context_chunks=[],
+                    safety_alerts=safety_alerts,
+                    provider="isha-fast",
+                    latency_ms=round(latency, 2),
+                    is_emergency=is_emergency
+                )
+            
+            # Fall through to full pipeline if API fails
+            logger.warning("⚠️ Fast path failed, using full pipeline")
+        
+        # ═══════════════════════════════════════════════════════════════
+        # FULL PIPELINE: NER + Risk + FAISS + LLM
+        # ═══════════════════════════════════════════════════════════════
         ner_result = self.extract_entities(query)
         entities = ner_result["entities"]
         
-        # Step 2: Extract patient data from query if not provided
+        # Extract patient data from query if not provided
         if patient_data is None:
             patient_data = self.extract_patient_data_from_text(query)
         
-        # Step 3: Bayesian risk assessment
+        # Bayesian risk assessment (only if needed)
         risk_assessment = {}
         if include_risk and patient_data:
             risk_assessment = self.assess_risk(patient_data)
@@ -769,11 +914,14 @@ Thank you for sharing your health concern with me.
             retrieved = self.retrieve_context(query, k=5)
             context_chunks = [r["text"] for r in retrieved]
         
-        # Step 5: LLM generation with context AND patient data
-        response, provider = self.generate_response(
+        # ═══════════════════════════════════════════════════════════════
+        # Step 5: LLM generation with routed backend
+        # ═══════════════════════════════════════════════════════════════
+        response, provider = self.generate_response_routed(
             query,
             context=context_chunks if context_chunks else None,
-            patient_data=patient_data  # Pass patient context to LLM
+            patient_data=patient_data,
+            preferred_backend=preferred_backend
         )
         
         # Step 6: Safety filter
@@ -796,6 +944,156 @@ Thank you for sharing your health concern with me.
             latency_ms=round(latency, 2),
             is_emergency=is_emergency
         )
+    
+    def generate_response_routed(self, query: str, context: Optional[List[str]] = None,
+                                  patient_data: Optional[Dict] = None,
+                                  preferred_backend: str = "isha") -> Tuple[str, str]:
+        """
+        Generate response using the routed backend
+        
+        Backend priority based on TinyLlama routing:
+        - isha: iSHA.buzz API (medical RAG)
+        - groq: Groq Llama-3.1 (fast reasoning)
+        - gemini: Google Gemini (complex analysis)
+        """
+        
+        # Define backend order based on preference
+        backend_order = {
+            "isha": ["isha", "groq", "gemini"],
+            "groq": ["groq", "gemini", "isha"],
+            "gemini": ["gemini", "groq", "isha"]
+        }
+        
+        backends = backend_order.get(preferred_backend, ["isha", "groq", "gemini"])
+        
+        for backend in backends:
+            try:
+                if backend == "isha":
+                    response = self._call_isha(query, context, patient_data)
+                    if response:
+                        return response, "isha-api"
+                        
+                elif backend == "groq":
+                    response = self._call_groq(query, context, patient_data)
+                    if response:
+                        return response, "groq-llama"
+                        
+                elif backend == "gemini":
+                    response = self._call_gemini(query, context, patient_data)
+                    if response:
+                        return response, "gemini"
+                        
+            except Exception as e:
+                logger.warning(f"⚠️ Backend {backend} failed: {e}")
+                continue
+        
+        # Final fallback to standard generate_response
+        return self.generate_response(query, context, patient_data)
+    
+    def _call_isha(self, query: str, context: Optional[List[str]], 
+                   patient_data: Optional[Dict]) -> Optional[str]:
+        """Call iSHA.buzz API via /v1/chat/completions endpoint with connection pooling"""
+        try:
+            import requests
+            from requests.adapters import HTTPAdapter
+            from urllib3.util.retry import Retry
+            
+            # Use connection pooling (singleton session)
+            if not hasattr(self, '_isha_session'):
+                self._isha_session = requests.Session()
+                retry = Retry(total=2, backoff_factor=0.1)
+                adapter = HTTPAdapter(pool_connections=10, pool_maxsize=10, max_retries=retry)
+                self._isha_session.mount('https://', adapter)
+            
+            # Build concise system prompt
+            system_prompt = "You are Dr. iSHA, a medical AI. Be helpful, accurate, and concise."
+            if context:
+                system_prompt += f"\n\nContext:\n" + "\n".join(context[:2])
+            
+            # Use the correct endpoint with agent_type
+            response = self._isha_session.post(
+                "https://ai.isha.buzz/v1/chat/completions",
+                json={
+                    "agent_type": "Clinical",
+                    "messages": [
+                        {"role": "system", "content": system_prompt},
+                        {"role": "user", "content": query}
+                    ],
+                    "max_tokens": 150,  # Reduced for speed
+                    "temperature": 0.7,
+                    "stream": False
+                },
+                timeout=15  # Reduced timeout
+            )
+            
+            if response.status_code == 200:
+                data = response.json()
+                return data.get("choices", [{}])[0].get("message", {}).get("content")
+            
+            logger.warning(f"⚠️ iSHA API returned {response.status_code}: {response.text[:100]}")
+            return None
+        except Exception as e:
+            logger.warning(f"⚠️ iSHA API call failed: {e}")
+            return None
+    
+    def _call_groq(self, query: str, context: Optional[List[str]], 
+                   patient_data: Optional[Dict]) -> Optional[str]:
+        """Call Groq API (Fallback 1) - Fast cloud inference"""
+        try:
+            from groq import Groq
+            
+            if not self.groq_api_key:
+                logger.warning("⚠️ Groq API key not configured")
+                return None
+            
+            # Build system prompt
+            system_prompt = "You are Dr. iSHA, a medical AI assistant. Provide helpful, accurate, and concise medical information."
+            if context:
+                system_prompt += f"\n\nRelevant context:\n" + "\n".join(context[:2])
+            
+            client = Groq(api_key=self.groq_api_key)
+            
+            response = client.chat.completions.create(
+                model="llama-3.3-70b-versatile",
+                messages=[
+                    {"role": "system", "content": system_prompt},
+                    {"role": "user", "content": query}
+                ],
+                max_tokens=200,
+                temperature=0.7
+            )
+            
+            return response.choices[0].message.content
+            
+        except Exception as e:
+            logger.warning(f"⚠️ Groq API call failed: {e}")
+            return None
+    
+    def _call_gemini(self, query: str, context: Optional[List[str]], 
+                     patient_data: Optional[Dict]) -> Optional[str]:
+        """Call Gemini API (Fallback 2) - Google's AI"""
+        try:
+            import google.generativeai as genai
+            
+            if not self.gemini_api_key:
+                logger.warning("⚠️ Gemini API key not configured")
+                return None
+            
+            genai.configure(api_key=self.gemini_api_key)
+            model = genai.GenerativeModel('gemini-1.5-flash')
+            
+            # Build prompt with context
+            prompt = f"You are Dr. iSHA, a medical AI assistant. Provide helpful, accurate medical information.\n\n"
+            if context:
+                prompt += f"Context:\n" + "\n".join(context[:2]) + "\n\n"
+            prompt += f"User question: {query}\n\nProvide a helpful, concise response:"
+            
+            response = model.generate_content(prompt)
+            return response.text
+            
+        except Exception as e:
+            logger.warning(f"⚠️ Gemini API call failed: {e}")
+            return None
 
 
 # Singleton instance

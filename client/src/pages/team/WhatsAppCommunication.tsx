@@ -44,6 +44,47 @@ interface WhatsAppMessage {
   mediaUrl?: string;
 }
 
+const normalizeDirection = (direction?: string): 'incoming' | 'outgoing' => {
+  const normalized = (direction || '').toLowerCase();
+  if (normalized === 'incoming' || normalized === 'inbound') return 'incoming';
+  return 'outgoing';
+};
+
+const normalizeStatus = (status?: string): WhatsAppMessage['status'] => {
+  const normalized = (status || '').toLowerCase();
+  if (normalized === 'delivered' || normalized === 'read') return normalized;
+  if (normalized === 'failed' || normalized === 'undelivered') return 'failed';
+  return 'sent';
+};
+
+const normalizeConversation = (conversation: any): WhatsAppConversation | null => {
+  const phone = conversation?.customerPhone || conversation?.phoneNumber || conversation?.to || conversation?.from;
+  if (!phone) return null;
+  return {
+    id: conversation?.id || phone,
+    customerName: conversation?.customerName || phone,
+    customerPhone: phone,
+    lastMessage: conversation?.lastMessage || conversation?.lastMessage?.body || '',
+    lastMessageTime: conversation?.lastMessageTime || conversation?.lastActivity || new Date().toISOString(),
+    unreadCount: Number.isFinite(conversation?.unreadCount) ? conversation.unreadCount : 0,
+    status: conversation?.status || 'active',
+    assignedTo: conversation?.assignedTo
+  };
+};
+
+const normalizeMessages = (items: any[]): WhatsAppMessage[] => (
+  (items || []).map((msg) => ({
+    id: msg?.id || msg?.sid || `msg_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`,
+    from: msg?.from || '',
+    to: msg?.to || '',
+    body: msg?.body || msg?.message || '',
+    timestamp: msg?.timestamp || msg?.dateCreated || new Date().toISOString(),
+    direction: normalizeDirection(msg?.direction),
+    status: normalizeStatus(msg?.status),
+    mediaUrl: msg?.mediaUrl
+  }))
+);
+
 const WhatsAppCommunication = () => {
   const [conversations, setConversations] = useState<WhatsAppConversation[]>([]);
   const [activeConversation, setActiveConversation] = useState<WhatsAppConversation | null>(null);
@@ -66,10 +107,13 @@ const WhatsAppCommunication = () => {
   const loadConversations = async () => {
     try {
       setLoading(true);
-      const response = await api.get('/whatsapp/conversations', {
+      const response = await api.get('/whatsapp-production/conversations', {
         params: { status: filterStatus !== 'all' ? filterStatus : undefined }
       });
-      setConversations(response.data.conversations || []);
+      const normalized = (response.data.conversations || [])
+        .map(normalizeConversation)
+        .filter(Boolean) as WhatsAppConversation[];
+      setConversations(normalized);
     } catch (error) {
       console.error('Error loading conversations:', error);
     } finally {
@@ -79,8 +123,9 @@ const WhatsAppCommunication = () => {
 
   const loadMessages = async (conversationId: string) => {
     try {
-      const response = await api.get(`/whatsapp/conversations/${conversationId}/messages`);
-      setMessages(response.data.messages || []);
+      const encodedId = encodeURIComponent(conversationId);
+      const response = await api.get(`/whatsapp-production/conversations/${encodedId}/messages`);
+      setMessages(normalizeMessages(response.data.messages || []));
     } catch (error) {
       console.error('Error loading messages:', error);
     }
@@ -90,8 +135,8 @@ const WhatsAppCommunication = () => {
     if (!newMessage.trim() || !activeConversation) return;
 
     try {
-      const response = await api.post('/whatsapp-production/send/freeform', {
-        to: activeConversation.customerPhone,
+      const encodedPhone = encodeURIComponent(activeConversation.customerPhone);
+      const response = await api.post(`/whatsapp-production/conversations/${encodedPhone}/send`, {
         message: newMessage
       });
 

@@ -126,9 +126,17 @@ const bindTenantContext = (req, tenantId) => {
 };
 
 export const authUser = async (req, res, next) => {
+  // Skip auth for Twilio webhooks and other public endpoints that set skipAuth
+  console.log('🔐 [authUser] Called for path:', req.path, 'skipAuth:', req.skipAuth);
+  if (req.skipAuth) {
+    console.log('✅ [authUser] Skipping auth, skipAuth=true');
+    return next();
+  }
+
   const token = req.headers.authorization?.split(" ")[1];
 
   if (!token) {
+    console.log('❌ [authUser] No token found');
     return res.status(401).json({ message: "unauthorized token" });
   }
 
@@ -397,6 +405,28 @@ export const authUser = async (req, res, next) => {
       return next();
     }
 
+    if (decoded.role === "corporate") {
+      const corporateId = decoded.corporateId || decoded.userId || decoded.id;
+      req.user = {
+        id: corporateId,
+        corporateId,
+        email: decoded.email,
+        role: decoded.role,
+        userType: "corporate",
+        organization_id: decoded.organization_id || decoded.organizationId,
+        tenant_id: decoded.tenant_id || decoded.tenantId,
+      };
+      req.userRole = "corporate";
+      const tenantBinding = bindTenantContext(
+        req,
+        decoded.tenant_id || decoded.organization_id || null
+      );
+      if (!tenantBinding.ok) {
+        return res.status(tenantBinding.status).json(tenantBinding.body);
+      }
+      return next();
+    }
+
     const user = await safeFindByPk(
       UserPostgres,
       userModel,
@@ -448,7 +478,9 @@ export const authUser = async (req, res, next) => {
 
 export const requireRole = (role) => {
   return (req, res, next) => {
+    console.log('🔑 [requireRole] Called with role:', role, 'req.userRole:', req.userRole, 'path:', req.path);
     if (!req.userRole) {
+      console.log('❌ [requireRole] No userRole, returning 401');
       return res.status(401).json({ message: 'Unauthorized' });
     }
     

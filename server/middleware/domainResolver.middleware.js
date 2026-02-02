@@ -293,7 +293,17 @@ export async function getTenantDatabase(req) {
     case 'SCHEMA':
       // Set search_path to tenant schema
       const schemaPool = await getPostgresPool();
-      await schemaPool.query(`SET search_path TO ${context.dbName}, public`);
+      
+      // SECURITY: Validate dbName to prevent SQL injection
+      if (!context.dbName || !/^[a-zA-Z0-9_]+$/.test(context.dbName)) {
+        throw new Error('Invalid database name format');
+      }
+      
+      // SECURITY: Use parameterized query with proper identifier quoting
+      // PostgreSQL identifier quoting prevents SQL injection
+      const quotedDbName = `"${context.dbName.replace(/"/g, '""')}"`;
+      await schemaPool.query(`SET search_path TO ${quotedDbName}, public`);
+      
       return schemaPool;
 
     case 'SHARED':

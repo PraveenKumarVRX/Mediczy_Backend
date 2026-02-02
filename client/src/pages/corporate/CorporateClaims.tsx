@@ -122,12 +122,50 @@ const CorporateClaims: React.FC = () => {
     }
   };
 
-  const handleSubmitClaim = () => {
-    toast({
-      title: "Claim Submitted",
-      description: "Your insurance claim has been submitted successfully."
-    });
-    setIsSubmitDialogOpen(false);
+  const [claimForm, setClaimForm] = useState({
+    claimType: '',
+    amount: '',
+    provider: '',
+    serviceDate: '',
+    description: ''
+  });
+  const [isSubmitting, setIsSubmitting] = useState(false);
+
+  const handleSubmitClaim = async () => {
+    if (!claimForm.claimType || !claimForm.amount) {
+      toast({
+        title: "Missing fields",
+        description: "Please fill in claim type and amount.",
+        variant: "destructive"
+      });
+      return;
+    }
+    try {
+      setIsSubmitting(true);
+      await api.post('/corporate/claims', {
+        type: claimForm.claimType,
+        amount: claimForm.amount,
+        provider: claimForm.provider,
+        serviceDate: claimForm.serviceDate,
+        description: claimForm.description,
+        documents: []
+      });
+      toast({
+        title: "Claim Submitted",
+        description: "Your insurance claim has been submitted successfully."
+      });
+      setIsSubmitDialogOpen(false);
+      setClaimForm({ claimType: '', amount: '', provider: '', serviceDate: '', description: '' });
+      loadClaims();
+    } catch (error: any) {
+      toast({
+        title: "Submission failed",
+        description: error?.response?.data?.message || "Please try again.",
+        variant: "destructive"
+      });
+    } finally {
+      setIsSubmitting(false);
+    }
   };
 
   const handleView = (claim: Claim) => {
@@ -225,7 +263,7 @@ const CorporateClaims: React.FC = () => {
               </div>
               <div className="grid gap-2">
                 <Label htmlFor="claimType">Claim Type</Label>
-                <Select>
+                <Select value={claimForm.claimType} onValueChange={(value) => setClaimForm((prev) => ({ ...prev, claimType: value }))}>
                   <SelectTrigger id="claimType">
                     <SelectValue placeholder="Select claim type" />
                   </SelectTrigger>
@@ -242,20 +280,41 @@ const CorporateClaims: React.FC = () => {
               <div className="grid grid-cols-2 gap-4">
                 <div className="grid gap-2">
                   <Label htmlFor="amount">Claim Amount</Label>
-                  <Input id="amount" type="text" placeholder="$0.00" />
+                  <Input
+                    id="amount"
+                    type="text"
+                    placeholder="$0.00"
+                    value={claimForm.amount}
+                    onChange={(e) => setClaimForm((prev) => ({ ...prev, amount: e.target.value }))}
+                  />
                 </div>
                 <div className="grid gap-2">
                   <Label htmlFor="serviceDate">Service Date</Label>
-                  <Input id="serviceDate" type="date" />
+                  <Input
+                    id="serviceDate"
+                    type="date"
+                    value={claimForm.serviceDate}
+                    onChange={(e) => setClaimForm((prev) => ({ ...prev, serviceDate: e.target.value }))}
+                  />
                 </div>
               </div>
               <div className="grid gap-2">
                 <Label htmlFor="provider">Healthcare Provider</Label>
-                <Input id="provider" placeholder="Provider name" />
+                <Input
+                  id="provider"
+                  placeholder="Provider name"
+                  value={claimForm.provider}
+                  onChange={(e) => setClaimForm((prev) => ({ ...prev, provider: e.target.value }))}
+                />
               </div>
               <div className="grid gap-2">
                 <Label htmlFor="description">Description</Label>
-                <Textarea id="description" placeholder="Describe the medical service..." />
+                <Textarea
+                  id="description"
+                  placeholder="Describe the medical service..."
+                  value={claimForm.description}
+                  onChange={(e) => setClaimForm((prev) => ({ ...prev, description: e.target.value }))}
+                />
               </div>
               <div className="grid gap-2">
                 <Label htmlFor="documents">Upload Documents</Label>

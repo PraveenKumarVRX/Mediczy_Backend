@@ -16,7 +16,9 @@ import {
   FormMessage,
 } from "@/components/ui/form";
 import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
 import { useToast } from "@/hooks/use-toast";
+import { OTPInput } from "@/components/OTPInput";
 import { 
   Eye, 
   EyeOff, 
@@ -37,6 +39,7 @@ import {
   ArrowRight,
   Lock,
   Mail,
+  Phone,
 } from "lucide-react";
 import "../index.css";
 import { useLogin } from "../hooks/auth"; // Import useLogin hook
@@ -437,10 +440,10 @@ const Login = () => {
                   /* Step 1: Enter Phone/Email */
                   <>
                     <div className="space-y-3">
-                      <FormLabel className="text-slate-700 font-medium flex items-center gap-2">
+                      <Label className="text-slate-700 font-medium flex items-center gap-2">
                         <Phone className="h-4 w-4 text-primary" />
                         Email or Phone Number
-                      </FormLabel>
+                      </Label>
                       <div className="relative group">
                         <Mail className="absolute left-4 top-1/2 -translate-y-1/2 h-4 w-4 text-slate-400 group-focus-within:text-primary transition-colors" />
                         <Input

@@ -105,6 +105,8 @@ const USER_TYPE_PERMISSIONS = {
       '/api/video',
       '/api/chat',
       '/api/ai-scribe',
+      '/api/offline-scribe',  // Offline AI Scribe for prescription generation
+      '/api/scribe',  // AI Scribe public API
       '/api/recording',
       '/api/cdss',  // Clinical Decision Support System
       '/api/billing',  // Billing and invoices
@@ -354,6 +356,9 @@ const PUBLIC_ENDPOINTS = [
   '/api/status',
   '/metrics',
   '/api/sib/health', // SIB Control Layer health check (public monitoring)
+  '/api/offline-scribe/health', // Offline AI Scribe health check (public for frontend status)
+  '/api/offline-scribe/languages', // Offline AI Scribe supported languages (public)
+  '/api/offline-scribe/templates', // Offline AI Scribe document templates (public)
   '/api/auth/login', // Generic auth login endpoint
   '/api/auth/register', // Generic auth registration endpoint
   '/api/auth/send-otp', // OTP login (legacy alias)
@@ -424,7 +429,7 @@ const PUBLIC_ENDPOINTS = [
 const ringFencingMiddleware = (req, res, next) => {
   // FIXED: Removed the early return that was bypassing all ring-fencing security
   // The previous line `return next();` was causing ALL requests to bypass JWT role scoping
-  console.log('🔒 RING-FENCING MIDDLEWARE EXECUTED - URL:', req.originalUrl);
+  console.log('🔒 RING-FENCING MIDDLEWARE EXECUTED - URL:', req.originalUrl, 'skipAuth:', req.skipAuth);
   
   const requestPath = req.originalUrl.split('?')[0]; // Use originalUrl and strip query params
   const requestMethod = req.method;
@@ -435,14 +440,16 @@ const ringFencingMiddleware = (req, res, next) => {
     originalUrl: req.originalUrl, 
     baseUrl: req.baseUrl, 
     url: req.url, 
-    method: requestMethod 
+    method: requestMethod,
+    skipAuth: req.skipAuth
   });
 
-  // Bypass ring-fencing for WhatsApp webhooks entirely
+  // ⚠️ CRITICAL: Bypass ring-fencing for Twilio WhatsApp webhooks
+  // Twilio cannot send JWT auth headers; these endpoints must accept unauthenticated requests
   if (requestPath.startsWith('/api/whatsapp-production/webhook') ||
       requestPath.startsWith('/api/whatsapp-production/fallback') ||
       requestPath.startsWith('/api/whatsapp-production/status-callback')) {
-    console.log('✅ WhatsApp bypass triggered for:', requestPath);
+    console.log('✅ Twilio WhatsApp webhook bypass (public, no auth required):', requestPath);
     return next();
   }
 

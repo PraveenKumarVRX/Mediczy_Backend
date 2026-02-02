@@ -12,6 +12,7 @@ import { useToast } from '@/hooks/use-toast';
 import { ticketService } from '@/services/ticketService';
 import CorporateLayout from '@/components/corporate/CorporateLayout';
 import CorporatePageHeader from '@/components/corporate/CorporatePageHeader';
+import { useNavigate } from 'react-router-dom';
 
 interface FAQItem {
   question: string;
@@ -29,6 +30,7 @@ interface HelpResource {
 const CorporateHelp: React.FC = () => {
   const { toast } = useToast();
   const [searchQuery, setSearchQuery] = useState('');
+  const navigate = useNavigate();
 
   const [ticketOpen, setTicketOpen] = useState(false);
   const [ticketTitle, setTicketTitle] = useState('Support request');
@@ -151,25 +153,25 @@ const CorporateHelp: React.FC = () => {
       title: 'Documentation',
       description: 'Comprehensive guides and tutorials',
       icon: <Book className="h-6 w-6 text-blue-600" />,
-      link: 'https://docs.mediczy.com'
+      link: '/corporate/help#docs'
     },
     {
       title: 'Video Tutorials',
       description: 'Step-by-step video guides',
       icon: <Video className="h-6 w-6 text-purple-600" />,
-      link: 'https://www.youtube.com/results?search_query=mediczy+corporate+guide'
+      link: '/corporate/help#videos'
     },
     {
       title: 'Live Chat',
       description: 'Chat with our support team',
       icon: <MessageCircle className="h-6 w-6 text-green-600" />,
-      link: '#'
+      link: '#live-chat'
     },
     {
       title: 'Phone Support',
-      description: 'Call us at +1 (800) 123-4567',
+      description: 'Call us at +91 800-123-4567',
       icon: <Phone className="h-6 w-6 text-orange-600" />,
-      link: 'tel:+18001234567'
+      link: 'tel:+918001234567'
     },
     {
       title: 'Email Support',
@@ -181,7 +183,7 @@ const CorporateHelp: React.FC = () => {
       title: 'Knowledge Base',
       description: 'Browse articles and guides',
       icon: <FileText className="h-6 w-6 text-indigo-600" />,
-      link: 'https://support.mediczy.com/knowledge-base'
+      link: '/corporate/help#knowledge-base'
     }
   ];
 
@@ -225,7 +227,11 @@ const CorporateHelp: React.FC = () => {
                     openTicketDialog('technical', 'Live chat request');
                     return;
                   }
-                  if (resource.link.startsWith('http') || resource.link.startsWith('/')) {
+                  if (resource.link.startsWith('/')) {
+                    navigate(resource.link);
+                    return;
+                  }
+                  if (resource.link.startsWith('http')) {
                     window.open(resource.link, '_blank', 'noopener,noreferrer');
                     return;
                   }

@@ -22,7 +22,13 @@ export const getPool = () => {
  */
 export const query = async (text, params) => {
   const pool = getPostgresPool();
-  return pool.query(text, params);
+  try {
+    return await pool.query(text, params);
+  } catch (err) {
+    console.error('[DB ERROR] Query failed:', err.code, err.message);
+    console.error('[DB ERROR] Query:', text.substring(0, 200));
+    throw err;
+  }
 };
 
 /**

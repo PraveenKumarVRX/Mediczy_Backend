@@ -78,9 +78,17 @@ const CorporateSidebar = () => {
   }, []);
 
   const handleLogout = () => {
+    // Clear all auth-related storage
     localStorage.removeItem("token");
     localStorage.removeItem("userType");
-    navigate("/corporate/login");
+    localStorage.removeItem("corporateToken");
+    localStorage.removeItem("corporateData");
+    localStorage.removeItem("userId");
+    localStorage.removeItem("refreshToken");
+    sessionStorage.clear();
+    window.dispatchEvent(new CustomEvent('authChange'));
+    // Force navigation to login page
+    window.location.href = "/corporate/login";
   };
 
   const NavItem = ({ item }: { item: SidebarItem }) => {

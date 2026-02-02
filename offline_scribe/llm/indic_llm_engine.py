@@ -1,0 +1,518 @@
+"""
+Indic LLM Engine - CPU-Only Inference with Indic-Gemma-2B-Navarasa
+
+Hospital-grade medical document generation using:
+- Indic-Gemma-2B-Navarasa (Q4_K_M quantized)
+- llama.cpp for CPU inference
+- Strict prompts for medical safety
+
+IMPORTANT: This LLM does NOT:
+- Make diagnoses
+- Recommend treatments
+- Prescribe medications
+
+It ONLY:
+- Formats text
+- Structures documents
+- Cleans up language
+"""
+
+import logging
+from typing import Optional, Dict, Any, List
+from pathlib import Path
+import time
+import json
+import re
+
+# llama-cpp-python for local inference
+try:
+    from llama_cpp import Llama
+    LLAMA_AVAILABLE = True
+except ImportError:
+    LLAMA_AVAILABLE = False
+    Llama = None
+
+from config import (
+    INDIC_GEMMA_MODEL,
+    LLM_CONFIG,
+    GENERATION_CONFIG,
+    COMPLIANCE_DISCLAIMER,
+)
+
+logger = logging.getLogger(__name__)
+
+
+class IndicLLMEngine:
+    """
+    CPU-only LLM engine using Indic-Gemma-2B-Navarasa.
+    
+    Features:
+    - Fully offline operation
+    - Indian language support (Hindi, Tamil, Telugu + English)
+    - Medical document formatting
+    - Strict safety prompts
+    """
+    
+    def __init__(self):
+        self.model: Optional[Llama] = None
+        self.model_loaded = False
+        self.model_path = INDIC_GEMMA_MODEL
+        self._load_model()
+    
+    def _load_model(self):
+        """Load the Indic-Gemma model (CPU-only)"""
+        if not LLAMA_AVAILABLE:
+            logger.error("llama-cpp-python not installed. Run: pip install llama-cpp-python")
+            return
+        
+        if not self.model_path.exists():
+            logger.error(f"Model not found: {self.model_path}")
+            logger.info("Download with: ./scripts/download_models.sh")
+            return
+        
+        try:
+            logger.info(f"Loading Indic-Gemma-2B-Navarasa (CPU-only)...")
+            logger.info(f"Model path: {self.model_path}")
+            logger.info(f"Threads: {LLM_CONFIG['n_threads']}")
+            
+            start = time.time()
+            
+            self.model = Llama(
+                model_path=str(self.model_path),
+                n_ctx=LLM_CONFIG["n_ctx"],
+                n_threads=LLM_CONFIG["n_threads"],
+                n_batch=LLM_CONFIG["n_batch"],
+                n_gpu_layers=LLM_CONFIG["n_gpu_layers"],  # 0 = CPU only
+                verbose=LLM_CONFIG["verbose"],
+                seed=LLM_CONFIG["seed"],
+            )
+            
+            load_time = time.time() - start
+            self.model_loaded = True
+            logger.info(f"✅ Model loaded in {load_time:.2f}s")
+            
+        except Exception as e:
+            logger.error(f"Failed to load model: {e}")
+            self.model = None
+            self.model_loaded = False
+    
+    def generate(
+        self,
+        prompt: str,
+        system_prompt: str = None,
+        max_tokens: int = None,
+        temperature: float = None,
+        stop_sequences: List[str] = None,
+    ) -> Dict[str, Any]:
+        """
+        Generate text completion.
+        
+        Args:
+            prompt: User prompt
+            system_prompt: System instructions
+            max_tokens: Maximum tokens to generate
+            temperature: Sampling temperature (lower = more deterministic)
+            stop_sequences: Stop generation at these sequences
+        
+        Returns:
+            Dict with generated text and metadata
+        """
+        if not self.model_loaded or self.model is None:
+            return {
+                "success": False,
+                "error": "Model not loaded",
+                "text": ""
+            }
+        
+        # Use defaults if not specified
+        max_tokens = max_tokens or GENERATION_CONFIG["max_tokens"]
+        temperature = temperature or GENERATION_CONFIG["temperature"]
+        # Common stop sequences for instruction-tuned models
+        stop_sequences = stop_sequences or ["\n\n\n", "###", "```\n\n", "Medical Consultation"]
+        
+        # Build prompt - use completion-style for this model
+        # If no system prompt, just use the raw prompt (completion-style)
+        if system_prompt:
+            full_prompt = f"""{system_prompt}
+
+{prompt}"""
+        else:
+            # For completion-style, use the prompt as-is
+            full_prompt = prompt
+        
+        try:
+            start = time.time()
+            
+            response = self.model(
+                full_prompt,
+                max_tokens=max_tokens,
+                temperature=temperature,
+                top_p=GENERATION_CONFIG["top_p"],
+                top_k=GENERATION_CONFIG["top_k"],
+                repeat_penalty=GENERATION_CONFIG["repeat_penalty"],
+                stop=stop_sequences,
+                echo=False,
+            )
+            
+            generation_time = time.time() - start
+            
+            generated_text = response["choices"][0]["text"].strip()
+            tokens_generated = response["usage"]["completion_tokens"]
+            
+            return {
+                "success": True,
+                "text": generated_text,
+                "tokens": tokens_generated,
+                "generation_time": generation_time,
+                "tokens_per_second": tokens_generated / generation_time if generation_time > 0 else 0,
+            }
+            
+        except Exception as e:
+            logger.error(f"Generation error: {e}")
+            return {
+                "success": False,
+                "error": str(e),
+                "text": ""
+            }
+    
+    def format_prescription(self, transcript: str, patient_info: Dict = None) -> Dict[str, Any]:
+        """
+        Format transcript into structured OPD prescription.
+        
+        IMPORTANT: LLM only formats - does NOT add medications.
+        """
+        # Use a simpler, more direct completion-style prompt
+        # that works better with conversational models
+        prompt = f"""Medical Consultation Notes:
+{transcript}
+
+Based on the above, here is the prescription:
+
+DIAGNOSIS: """
+
+        result = self.generate(
+            prompt=prompt,
+            system_prompt=None,  # Skip system prompt for completion-style
+            max_tokens=512,
+            temperature=0.1,  # Very deterministic
+        )
+        
+        if result["success"]:
+            # Parse the generated text into structured format
+            structured = self._parse_prescription(result["text"])
+            result["structured"] = structured
+        
+        return result
+    
+    def format_opd_notes(self, transcript: str, patient_info: Dict = None) -> Dict[str, Any]:
+        """
+        Format transcript into OPD clinical notes.
+        """
+        system_prompt = """You are a medical documentation assistant for Indian hospitals.
+
+YOUR ROLE:
+- Format the doctor's dictation into clean OPD notes
+- DO NOT add clinical findings not mentioned
+- DO NOT make diagnoses
+- Output in English only
+
+RULES:
+1. Extract ONLY information from the transcript
+2. If information is missing, leave that section blank
+3. Be factual and precise
+4. Use standard medical terminology"""
+
+        user_prompt = f"""Convert this consultation transcript into structured OPD notes.
+
+TRANSCRIPT:
+{transcript}
+
+OUTPUT FORMAT:
+```
+CHIEF COMPLAINT:
+[Main symptoms and duration]
+
+HISTORY OF PRESENT ILLNESS:
+[Detailed history from transcript]
+
+PAST HISTORY:
+[Previous medical history if mentioned]
+
+EXAMINATION:
+[Physical examination findings if mentioned]
+
+VITALS:
+[Vital signs if mentioned]
+
+PROVISIONAL DIAGNOSIS:
+[Diagnosis if mentioned by doctor]
+
+PLAN:
+[Treatment plan as stated]
+
+FOLLOW-UP:
+[Follow-up advice]
+```
+
+IMPORTANT: Only include information explicitly mentioned in the transcript."""
+
+        result = self.generate(
+            prompt=user_prompt,
+            system_prompt=system_prompt,
+            max_tokens=768,
+            temperature=0.1,
+        )
+        
+        return result
+    
+    def format_discharge_summary(self, transcript: str, patient_info: Dict = None) -> Dict[str, Any]:
+        """
+        Format transcript into discharge summary.
+        """
+        system_prompt = """You are a medical documentation assistant for Indian hospitals.
+
+YOUR ROLE:
+- Format the discharge information into a clean summary
+- DO NOT add any medical information not mentioned
+- DO NOT make any clinical decisions
+- Output in English only
+
+RULES:
+1. Extract ONLY information from the transcript/notes
+2. If information is missing, mark as "Not documented"
+3. Be factual and precise
+4. Use standard medical format"""
+
+        user_prompt = f"""Create a discharge summary from this information.
+
+TRANSCRIPT/NOTES:
+{transcript}
+
+OUTPUT FORMAT:
+```
+DISCHARGE SUMMARY
+
+PATIENT DETAILS:
+[Extract from transcript]
+
+ADMISSION DATE:
+[If mentioned]
+
+DISCHARGE DATE:
+[If mentioned]
+
+CHIEF COMPLAINT:
+[Presenting complaints]
+
+HOSPITAL COURSE:
+[Summary of treatment during admission]
+
+INVESTIGATIONS:
+[Tests done if mentioned]
+
+DIAGNOSIS:
+[Final diagnosis]
+
+TREATMENT GIVEN:
+[Medications and procedures]
+
+CONDITION AT DISCHARGE:
+[Patient condition]
+
+DISCHARGE MEDICATIONS:
+1. [Drug] | [Dose] | [Frequency] | [Duration]
+
+ADVICE ON DISCHARGE:
+- [Advice points]
+
+FOLLOW-UP:
+[Follow-up schedule]
+
+EMERGENCY INSTRUCTIONS:
+[Warning signs to watch for]
+```
+
+IMPORTANT: Only include information explicitly mentioned."""
+
+        result = self.generate(
+            prompt=user_prompt,
+            system_prompt=system_prompt,
+            max_tokens=1024,
+            temperature=0.1,
+        )
+        
+        return result
+    
+    def format_ipd_notes(self, transcript: str, patient_info: Dict = None) -> Dict[str, Any]:
+        """
+        Format transcript into IPD daily progress notes.
+        """
+        system_prompt = """You are a medical documentation assistant for Indian hospitals.
+
+YOUR ROLE:
+- Format the doctor's rounds notes into IPD progress notes
+- DO NOT add findings not mentioned
+- Output in English only
+
+RULES:
+1. Extract ONLY information from the transcript
+2. Use SOAP format if appropriate
+3. Be concise and factual"""
+
+        user_prompt = f"""Convert this IPD round dictation into progress notes.
+
+TRANSCRIPT:
+{transcript}
+
+OUTPUT FORMAT:
+```
+IPD PROGRESS NOTE
+
+DATE/TIME:
+[Current]
+
+SUBJECTIVE:
+[Patient complaints today]
+
+OBJECTIVE:
+- Vitals: [if mentioned]
+- General: [examination findings]
+- Systemic: [system-wise findings]
+
+ASSESSMENT:
+[Current status/diagnosis]
+
+PLAN:
+[Today's plan - investigations, medications, procedures]
+```
+
+IMPORTANT: Only include information from the transcript."""
+
+        result = self.generate(
+            prompt=user_prompt,
+            system_prompt=system_prompt,
+            max_tokens=512,
+            temperature=0.1,
+        )
+        
+        return result
+    
+    def _parse_prescription(self, text: str) -> Dict[str, Any]:
+        """Parse generated prescription into structured format"""
+        structured = {
+            "diagnosis": "",
+            "medications": [],
+            "advice": [],
+            "follow_up": "",
+        }
+        
+        try:
+            # Extract diagnosis
+            diag_match = re.search(r"DIAGNOSIS:\s*\n?(.*?)(?=\n\n|MEDICINES|$)", text, re.DOTALL | re.IGNORECASE)
+            if diag_match:
+                structured["diagnosis"] = diag_match.group(1).strip()
+            
+            # Extract medications
+            med_section = re.search(r"MEDICINES?:\s*\n?(.*?)(?=\n\n|ADVICE|FOLLOW|$)", text, re.DOTALL | re.IGNORECASE)
+            if med_section:
+                med_lines = med_section.group(1).strip().split("\n")
+                for line in med_lines:
+                    line = line.strip()
+                    if line and not line.startswith("-"):
+                        # Remove numbering
+                        line = re.sub(r"^\d+\.\s*", "", line)
+                        parts = [p.strip() for p in line.split("|")]
+                        if len(parts) >= 2:
+                            structured["medications"].append({
+                                "name": parts[0],
+                                "dose": parts[1] if len(parts) > 1 else "",
+                                "frequency": parts[2] if len(parts) > 2 else "",
+                                "duration": parts[3] if len(parts) > 3 else "",
+                            })
+            
+            # Extract advice
+            advice_match = re.search(r"ADVICE:\s*\n?(.*?)(?=\n\n|FOLLOW|$)", text, re.DOTALL | re.IGNORECASE)
+            if advice_match:
+                advice_lines = advice_match.group(1).strip().split("\n")
+                for line in advice_lines:
+                    line = line.strip()
+                    if line:
+                        line = re.sub(r"^[-•]\s*", "", line)
+                        structured["advice"].append(line)
+            
+            # Extract follow-up
+            followup_match = re.search(r"FOLLOW[- ]?UP:\s*\n?(.*?)$", text, re.DOTALL | re.IGNORECASE)
+            if followup_match:
+                structured["follow_up"] = followup_match.group(1).strip()
+            
+        except Exception as e:
+            logger.error(f"Error parsing prescription: {e}")
+        
+        return structured
+    
+    def health_check(self) -> Dict[str, Any]:
+        """Check LLM engine health"""
+        return {
+            "status": "healthy" if self.model_loaded else "unhealthy",
+            "model_loaded": self.model_loaded,
+            "model_path": str(self.model_path),
+            "model_exists": self.model_path.exists(),
+            "llama_available": LLAMA_AVAILABLE,
+            "config": {
+                "n_ctx": LLM_CONFIG["n_ctx"],
+                "n_threads": LLM_CONFIG["n_threads"],
+                "n_gpu_layers": LLM_CONFIG["n_gpu_layers"],
+            }
+        }
+
+
+# =============================================================================
+# SINGLETON INSTANCE
+# =============================================================================
+_llm_engine: Optional[IndicLLMEngine] = None
+
+
+def get_llm_engine() -> IndicLLMEngine:
+    """Get or create the LLM engine singleton"""
+    global _llm_engine
+    if _llm_engine is None:
+        _llm_engine = IndicLLMEngine()
+    return _llm_engine
+
+
+# For testing
+if __name__ == "__main__":
+    logging.basicConfig(level=logging.INFO)
+    
+    engine = get_llm_engine()
+    
+    if engine.model_loaded:
+        print("\n" + "=" * 70)
+        print("TESTING INDIC LLM ENGINE")
+        print("=" * 70)
+        
+        # Test prescription formatting
+        test_transcript = """
+        Patient ko chest pain hai since two days. 
+        ECG normal hai. BP 130/90.
+        Give Ecosprin 75 mg OD, Pan 40 BD for 5 days.
+        Advice rest for 2 days, avoid oily food.
+        Follow up after 1 week.
+        """
+        
+        print("\nTest Transcript:")
+        print(test_transcript)
+        print("\nGenerating Prescription...")
+        
+        result = engine.format_prescription(test_transcript)
+        
+        if result["success"]:
+            print("\n--- GENERATED PRESCRIPTION ---")
+            print(result["text"])
+            print(f"\nGeneration time: {result['generation_time']:.2f}s")
+            print(f"Tokens: {result['tokens']}")
+            print(f"Speed: {result['tokens_per_second']:.1f} tokens/sec")
+        else:
+            print(f"Error: {result['error']}")
+    else:
+        print("Model not loaded. Please download the model first.")

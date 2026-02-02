@@ -374,16 +374,13 @@ class BotletRouter {
   }
 
   /**
-   * Classify intent using hybrid classifier
+   * Classify intent using hybrid classifier with state management
    */
-  async classifyIntent(query, language = 'en') {
+  async classifyIntent(query, language = 'en', sessionId = null, userContext = {}) {
     const detectedLanguage = language || intentClassifier.detectLanguage(query);
     
-    if (intentClassifier.hybridEnabled) {
-      return await intentClassifier.classifyHybrid(query, detectedLanguage);
-    }
-    
-    return intentClassifier.classify(query, detectedLanguage);
+    // Use enhanced classifier with state management
+    return await intentClassifier.classifyHybrid(query, detectedLanguage, sessionId, userContext);
   }
 
   /**

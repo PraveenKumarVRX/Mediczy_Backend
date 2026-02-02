@@ -40,6 +40,8 @@ import medicalAIRouter from "./routes/medical-ai.route.js";
 import aiHealthRouter from "./routes/ai-health.route.js";
 import aiScribeRouter from "./routes/ai-scribe.route.js";
 import scribeRouter from "./routes/scribe.js";
+import offlineScribeRouter from "./routes/offline-scribe.route.js";
+import localAiNodeRouter from "./routes/local-ai-node.route.js";
 import recordingRouter from "./routes/recording.route.js";
 import uploadRouter from "./routes/upload.route.js";
 import healthAssessmentRouter from "./routes/health-assessment.route.js";
@@ -96,6 +98,7 @@ import cartRouter from './routes/cart.route.js';
 import hospitalRouter from './routes/hospital.route.js';
 import hospitalAuthRouter from './routes/hospital-auth.route.js';
 import hospitalAuthAliasRouter from './routes/hospital/auth.routes.js';
+import hospitalInsuranceRouter from './routes/hospital-insurance.route.js';
 import clinicRouter from './routes/clinic.route.js';
 import pharmacyRouter from './routes/pharmacy.route.js';
 import ambulanceRouter from './routes/ambulance.route.js';
@@ -125,7 +128,7 @@ import n8nCallbackRouter from './routes/webhooks/n8n-callback.route.js';
 import oauthRouter from './routes/oauth.route.js';
 import doctorOAuthRouter from './routes/doctor-oauth.route.js';
 import authLoginRouter from './routes/auth.login.route.js';
-import { authUser } from './middleware/auth.middleware.js';
+import { authUser, requireRole } from './middleware/auth.middleware.js';
 import { requireAppKey } from './middleware/appAuth.middleware.js';
 import communicationRouter from './routes/communication.route.js';
 import consultationRecordingRouter from './routes/consultation-recording.route.js';
@@ -178,7 +181,146 @@ import { extractTenant } from './middleware/tenant.middleware.js';
 
 const app = express();
 
-// ABSOLUTE FIRST MIDDLEWARE - Log ALL requests
+// SECURITY: Enhanced error handling for unhandled rejections and uncaught exceptions
+import logger from './config/logger.js';  // Default export
+
+let isShuttingDown = false;
+
+// Graceful shutdown function
+async function gracefulShutdown(signal, exitCode = 0) {
+  if (isShuttingDown) {
+    logger.warn('Shutdown already in progress, forcing exit');
+    process.exit(1);
+  }
+  
+  isShuttingDown = true;
+  logger.info(`${signal} received, starting graceful shutdown...`);
+  
+  const shutdownTimeout = setTimeout(() => {
+    logger.error('Graceful shutdown timeout (30s), forcing exit');
+    process.exit(1);
+  }, 30000);
+  
+  try {
+    // Stop accepting new requests
+    if (global.httpServer) {
+      await new Promise((resolve) => {
+        global.httpServer.close(() => {
+          logger.info('HTTP server closed');
+          resolve();
+        });
+      });
+    }
+    
+    // Close database connections
+    if (global.sequelize) {
+      await global.sequelize.close();
+      logger.info('Database connections closed');
+    }
+    
+    // Close Redis
+    if (global.redisClient) {
+      await global.redisClient.quit();
+      logger.info('Redis connection closed');
+    }
+    
+    // Close Kafka
+    if (global.kafkaProducer) {
+      await global.kafkaProducer.disconnect();
+      logger.info('Kafka producer disconnected');
+    }
+    
+    clearTimeout(shutdownTimeout);
+    logger.info('Graceful shutdown complete');
+    process.exit(exitCode);
+    
+  } catch (error) {
+    logger.error('Error during graceful shutdown:', { error: error.message, stack: error.stack });
+    process.exit(1);
+  }
+}
+
+// Determine if error is critical and requires shutdown
+function isCriticalError(error) {
+  const criticalPatterns = [
+    'ECONNREFUSED',
+    'ENOTFOUND',
+    'ETIMEDOUT',
+    'Out of memory',
+    'ERR_IPC_CHANNEL_CLOSED',
+    'FATAL ERROR',
+    'Cannot find module',
+    'EADDRINUSE'
+  ];
+  
+  const errorString = error?.message || error?.code || String(error);
+  return criticalPatterns.some(pattern => errorString.includes(pattern));
+}
+
+// Catch unhandled promise rejections (async errors)
+process.on('unhandledRejection', async (reason, promise) => {
+  logger.error('Unhandled Promise Rejection', {
+    reason: reason?.message || reason,
+    stack: reason?.stack,
+    promise: promise.toString()
+  });
+  
+  // Send alert to monitoring system
+  try {
+    // TODO: Integrate with alerting system (Sentry, PagerDuty, etc.)
+    // await sendCriticalAlert('Unhandled Promise Rejection', { reason, env: process.env.NODE_ENV });
+  } catch (alertError) {
+    logger.error('Failed to send alert:', { error: alertError.message });
+  }
+  
+  // Graceful shutdown for critical errors
+  if (isCriticalError(reason)) {
+    logger.error('Critical error detected in promise rejection, initiating shutdown');
+    await gracefulShutdown('UNHANDLED_REJECTION', 1);
+  }
+});
+
+// Catch uncaught exceptions (sync errors)
+process.on('uncaughtException', async (error) => {
+  logger.error('Uncaught Exception', {
+    error: error?.message,
+    stack: error?.stack,
+    name: error?.name
+  });
+  
+  // Send alert
+  try {
+    // await sendCriticalAlert('Uncaught Exception', { error, env: process.env.NODE_ENV });
+  } catch (alertError) {
+    logger.error('Failed to send alert:', { error: alertError.message });
+  }
+  
+  // Always exit on uncaught exceptions (process is in unknown state)
+  logger.error('Uncaught exception detected, initiating emergency shutdown');
+  await gracefulShutdown('UNCAUGHT_EXCEPTION', 1);
+});
+
+// Handle SIGTERM (container orchestration, PM2)
+process.on('SIGTERM', async () => {
+  logger.info('SIGTERM signal received');
+  await gracefulShutdown('SIGTERM', 0);
+});
+
+// Handle SIGINT (Ctrl+C)
+process.on('SIGINT', async () => {
+  logger.info('SIGINT signal received');
+  await gracefulShutdown('SIGINT', 0);
+});
+
+// Handle warning events (deprecations, MaxListenersExceeded)
+process.on('warning', (warning) => {
+  logger.warn('Node.js warning', {
+    name: warning.name,
+    message: warning.message,
+    stack: warning.stack
+  });
+});
+
 app.use((req, res, next) => {
   if (req.path.includes('/doctors/services')) {
     process.stdout.write(`[${new Date().toISOString()}] 🚨 REQ: ${req.method} ${req.url}\n`);
@@ -434,7 +576,8 @@ app.use(hpp());
 app.use(auditMiddleware);
 
 // 7. Structured Logging (Production-grade)
-import logger, { requestLogger, errorLogger } from './config/logger.js';
+// Logger already imported above for error handling
+import { requestLogger, errorLogger } from './config/logger.js';
 app.use(requestLogger);
 
 // 8. Multi-Tenant Context Extraction
@@ -446,13 +589,25 @@ app.use((req, res, next) => {
   next();
 });
 app.use(activityLogger({
-  includeBody: false, // Set to true for detailed logging (be careful with sensitive data)
+  includeBody: false, // Set to detailed logging (be careful with sensitive data)
   excludePaths: ['/health', '/api/admin/activity-logs', '/api/admin/activity-stats']
 }));
 
+// Twilio WhatsApp Webhook Bypass - MUST RUN FIRST before session/auth checks
+// Allow unauthenticated requests for Twilio webhooks
+app.use((req, res, next) => {
+  console.log('🚀 [Bypass Check] Path:', req.path);
+  if (req.path.startsWith('/api/whatsapp-production/webhook') ||
+      req.path.startsWith('/api/whatsapp-production/fallback') ||
+      req.path.startsWith('/api/whatsapp-production/status-callback')) {
+    console.log('✅ [Bypass Check] Setting skipAuth=true for path:', req.path);
+    req.skipAuth = true;
+  }
+  next();
+});
+
 // 9. Session Timeout (HIPAA 15-minute idle timeout)
 app.use(sessionTimeout);
-
 // 10. Ring-Fencing Middleware (Prevent cross-user privilege escalation)
 app.use(ringFencingMiddleware);
 
@@ -461,7 +616,7 @@ app.use(errorLogger);
 
 // Routes
 // Liveness probe - simple check that server is running
-app.get('/health/live', (req, res) => {
+app.get('/health/live', authUser, requireRole('admin'), (req, res) => {
   res.status(200).json({
     status: 'alive',
     timestamp: new Date().toISOString()
@@ -469,7 +624,7 @@ app.get('/health/live', (req, res) => {
 });
 
 // Readiness probe - check if server can handle requests
-app.get('/health/ready', async (req, res) => {
+app.get('/health/ready', authUser, requireRole('admin'), async (req, res) => {
   try {
     const health = await orchestrator.healthCheck();
     const dbStates = health.databases || {
@@ -498,7 +653,7 @@ app.get('/health/ready', async (req, res) => {
 });
 
 // Detailed health check endpoint
-app.get('/health', async (req, res) => {
+app.get('/health', authUser, requireRole('admin'), async (req, res) => {
   try {
     const health = await orchestrator.healthCheck();
     const mem = process.memoryUsage();
@@ -549,7 +704,7 @@ app.get('/health', async (req, res) => {
 });
 
 // Database orchestrator health check endpoint
-app.get('/api/db/health', async (req, res) => {
+app.get('/api/db/health', authUser, requireRole('admin'), async (req, res) => {
   try {
     const health = await orchestrator.healthCheck();
     const statusCode = health.status === 'healthy' ? 200 : 503;
@@ -564,7 +719,7 @@ app.get('/api/db/health', async (req, res) => {
 });
 
 // Database orchestrator statistics endpoint
-app.get('/api/db/stats', (req, res) => {
+app.get('/api/db/stats', authUser, requireRole('admin'), (req, res) => {
   try {
     const stats = orchestrator.getStats();
     res.status(200).json(stats);
@@ -577,7 +732,7 @@ app.get('/api/db/stats', (req, res) => {
 });
 
 // Database intelligence metrics endpoint
-app.get('/api/db/intelligence/metrics', (req, res) => {
+app.get('/api/db/intelligence/metrics', authUser, requireRole('admin'), (req, res) => {
   try {
     const intelligence = orchestrator.getIntelligence();
     if (!intelligence) {
@@ -597,7 +752,7 @@ app.get('/api/db/intelligence/metrics', (req, res) => {
 });
 
 // Intelligent query endpoint
-app.post('/api/db/intelligence/query', async (req, res) => {
+app.post('/api/db/intelligence/query', authUser, requireRole('admin'), async (req, res) => {
   try {
     const intelligence = orchestrator.getIntelligence();
     if (!intelligence) {
@@ -626,7 +781,7 @@ app.post('/api/db/intelligence/query', async (req, res) => {
 });
 
 // Intelligent data collection endpoint
-app.post('/api/db/intelligence/collect', async (req, res) => {
+app.post('/api/db/intelligence/collect', authUser, requireRole('admin'), async (req, res) => {
   try {
     const intelligence = orchestrator.getIntelligence();
     if (!intelligence) {
@@ -654,8 +809,10 @@ app.post('/api/db/intelligence/collect', async (req, res) => {
   }
 });
 
-// API Documentation
-app.use('/', documentationRouter); // Swagger UI at /api-docs, Redoc at /docs
+// API Documentation (Specific paths only, NOT catch-all '/')
+app.use('/swagger.json', authUser, requireRole('admin'), documentationRouter);
+app.use('/api-docs', authUser, requireRole('admin'), documentationRouter);
+app.use('/docs', authUser, requireRole('admin'), documentationRouter);
 
 // Circuit Breaker Monitoring
 app.use('/api/circuit-breakers', circuitBreakerRouter);
@@ -712,6 +869,7 @@ app.use("/api/insurance", insuranceRouter);
 app.use("/api/insurance-policies", insurancePolicyRouter); // Comprehensive insurance policy & rule engine
 app.use("/api/insurance-company", insuranceCompanyRouter); // Insurance company & corporate login
 app.use("/api/insurance-broker", insuranceBrokerRouter); // Insurance broker/intermediary login
+app.use("/api/hospital/insurance", hospitalInsuranceRouter); // IHX-like hospital insurance claims dashboard
 app.use("/api/tpa", tpaRouter); // TPA (Third Party Administrator) login
 app.use("/api/appointments", appointmentRouter);
 app.use("/api/reports", reportsRouter);
@@ -759,7 +917,7 @@ app.use('/api/video', videoRouter); // Video calling endpoints
 app.use('/api/webhooks/n8n-callback', n8nCallbackRouter); // n8n workflow callbacks
 
 // Prometheus metrics endpoint
-app.get('/metrics', prometheus.metricsEndpoint);
+app.get('/metrics', authUser, requireRole('admin'), prometheus.metricsEndpoint);
 app.use('/api/sms', smsRouter); // SMS gateway management
 app.use('/api/video-config', videoConfigRouter); // Video configuration management
 app.use('/api/voice-config', voiceConfigRouter); // Voice call configuration management
@@ -779,6 +937,8 @@ app.use('/api/tenant-domains', tenantDomainRouter); // Custom domain management
 app.use('/api/corporate', corporateRouter); // Corporate benefits and plans
 app.use('/api/scribe', scribeRouter); // AI Scribe - Public API entrypoint
 app.use('/api/hospital/scribe', scribeRouter); // AI Scribe - Hospital dashboard entrypoint
+app.use('/api/offline-scribe', offlineScribeRouter); // Offline AI Scribe - CPU-only, Indian languages
+app.use('/api/ai-nodes', localAiNodeRouter); // Cloud Mother - Local AI Node management for hospital multi-tenancy
 app.use('/api', hospitalRouter); // Hospital directory and SPN network
 app.use('/api/hospital/practice', hospitalPracticeRouter); // Hospital practice management (appointments, patients, staff, resources)
 app.use('/api/hospital', hospitalPracticeRouter); // Alias practice endpoints for hospital dashboard modules

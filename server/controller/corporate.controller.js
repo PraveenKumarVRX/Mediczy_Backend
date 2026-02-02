@@ -474,6 +474,7 @@ export const corporateLogin = async (req, res) => {
     // Generate JWT token
     const token = jwt.sign(
       { 
+        id: corporateRecord.id,
         userId: corporateRecord.id,
         corporateId: corporateRecord.id,
         email: corporateRecord.email,

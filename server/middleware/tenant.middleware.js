@@ -25,6 +25,14 @@ export async function extractTenant(req, res, next) {
     // Skip tenant resolution for development/localhost
     const isDev = host.includes('localhost') || host.includes('127.0.0.1');
     
+    // Skip for mobile API health routes
+    const isMobilePublic = req.path.startsWith('/api/mobile');
+    if (isMobilePublic || isDev) {
+      req.tenant = null;
+      req.tenantId = null;
+      return next();
+    }
+    
     // Only query database for production domains
     if (!isDev) {
       // Specify which columns to select to avoid column-not-exists errors

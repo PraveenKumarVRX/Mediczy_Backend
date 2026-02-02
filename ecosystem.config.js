@@ -59,8 +59,8 @@ module.exports = {
         POSTGRES_USER: 'mediczy_helper',
         POSTGRES_PASSWORD: 'Mediczy2024Helper'
       },
-      error_file: './logs/sib-error.log',
-      out_file: './logs/sib-out.log',
+      error_file: '/home/ubuntu/Mediczy/logs/sib-error.log',
+      out_file: '/home/ubuntu/Mediczy/logs/sib-out.log',
       log_date_format: 'YYYY-MM-DD HH:mm:ss Z',
       merge_logs: true,
       max_memory_restart: '2G',
@@ -104,8 +104,8 @@ module.exports = {
       env: {
         NODE_ENV: 'production'
       },
-      error_file: '/home/ubuntu/Mediczy/logs/livekit-error.log',
-      out_file: '/home/ubuntu/Mediczy/logs/livekit-out.log',
+      error_file: '/tmp/livekit-error.log',
+      out_file: '/tmp/livekit-out.log',
       log_date_format: 'YYYY-MM-DD HH:mm:ss Z',
       merge_logs: true,
       max_memory_restart: '1G',

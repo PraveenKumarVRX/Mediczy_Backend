@@ -32,12 +32,25 @@ const CorporateSettings: React.FC = () => {
   const [billingOpen, setBillingOpen] = useState(false);
   const [billingLoading, setBillingLoading] = useState(false);
   const [invoices, setInvoices] = useState<Invoice[]>([]);
+  const [isSaving, setIsSaving] = useState(false);
 
-  const handleSaveSettings = () => {
-    toast({
-      title: "Settings Saved",
-      description: "Your settings have been updated successfully."
-    });
+  const handleSaveSettings = async () => {
+    try {
+      setIsSaving(true);
+      await api.put('/corporate/settings', {});
+      toast({
+        title: "Settings Saved",
+        description: "Your settings have been updated successfully."
+      });
+    } catch (error: any) {
+      toast({
+        title: "Failed to save settings",
+        description: error?.response?.data?.message || "Please try again.",
+        variant: "destructive"
+      });
+    } finally {
+      setIsSaving(false);
+    }
   };
 
   const loadBillingHistory = async () => {
