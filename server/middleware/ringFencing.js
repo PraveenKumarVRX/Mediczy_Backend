@@ -420,7 +420,8 @@ const PUBLIC_ENDPOINTS = [
   '/api/mobile/health',
   '/api/mobile/status',
   '/api/mobile/auth',
-  '/api/mobile/doctors'  // Public doctor search for mobile
+  '/api/mobile/doctors',  // Public doctor search for mobile
+  '/api/mobile/organizations'  // Public organization listing for signup
 ];
 
 /**

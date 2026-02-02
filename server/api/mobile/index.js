@@ -420,6 +420,141 @@ router.get('/status', (req, res) => {
   });
 });
 
+// ============== Organizations / Clinics ==============
+
+/**
+ * GET /api/mobile/organizations
+ * List available organizations for signup
+ * Can filter by type: clinic, hospital, corporate, lab, pharmacy, etc.
+ */
+router.get('/organizations', asyncHandler(async (req, res) => {
+  const { type, query, city, page = 1, limit = 20 } = req.query;
+  
+  let sql = `
+    SELECT id, name, slug, type, 
+           address->>'city' as city, 
+           address->>'state' as state
+    FROM tenants 
+    WHERE status = 'active'
+  `;
+  const params = [];
+  let paramIndex = 1;
+  
+  // Filter by organization type
+  if (type) {
+    sql += ` AND type = $${paramIndex}`;
+    params.push(type);
+    paramIndex++;
+  }
+  
+  // Search by name
+  if (query) {
+    sql += ` AND (name ILIKE $${paramIndex} OR slug ILIKE $${paramIndex})`;
+    params.push(`%${query}%`);
+    paramIndex++;
+  }
+  
+  // Filter by city
+  if (city) {
+    sql += ` AND address->>'city' ILIKE $${paramIndex}`;
+    params.push(`%${city}%`);
+    paramIndex++;
+  }
+  
+  sql += ` ORDER BY name ASC LIMIT $${paramIndex} OFFSET $${paramIndex + 1}`;
+  params.push(parseInt(limit), (parseInt(page) - 1) * parseInt(limit));
+  
+  const result = await db.query(sql, params);
+  
+  // Get total count
+  let countSql = 'SELECT COUNT(*) FROM tenants WHERE status = $1';
+  const countParams = ['active'];
+  if (type) {
+    countSql += ` AND type = $${countParams.length + 1}`;
+    countParams.push(type);
+  }
+  if (query) {
+    countSql += ` AND (name ILIKE $${countParams.length + 1} OR slug ILIKE $${countParams.length + 1})`;
+    countParams.push(`%${query}%`);
+  }
+  if (city) {
+    countSql += ` AND address->>'city' ILIKE $${countParams.length + 1}`;
+    countParams.push(`%${city}%`);
+  }
+  
+  const countResult = await db.query(countSql, countParams);
+  const total = parseInt(countResult.rows[0].count);
+  
+  res.json({
+    success: true,
+    data: {
+      organizations: result.rows.map(org => ({
+        id: org.id,
+        name: org.name,
+        slug: org.slug,
+        type: org.type,
+        location: org.city ? `${org.city}${org.state ? ', ' + org.state : ''}` : null
+      })),
+      pagination: {
+        page: parseInt(page),
+        limit: parseInt(limit),
+        total,
+        totalPages: Math.ceil(total / parseInt(limit))
+      }
+    }
+  });
+}));
+
+/**
+ * GET /api/mobile/organizations/:slug
+ * Get organization details by slug
+ */
+router.get('/organizations/:slug', asyncHandler(async (req, res) => {
+  const { slug } = req.params;
+  
+  const result = await db.query(`
+    SELECT id, name, slug, type, email, phone, website,
+           address->>'street' as street,
+           address->>'city' as city, 
+           address->>'state' as state,
+           address->>'country' as country,
+           address->>'pincode' as pincode
+    FROM tenants 
+    WHERE slug = $1 AND status = 'active'
+    LIMIT 1
+  `, [slug]);
+  
+  if (result.rows.length === 0) {
+    return res.status(404).json({
+      success: false,
+      error: { code: 'NOT_FOUND', message: 'Organization not found' }
+    });
+  }
+  
+  const org = result.rows[0];
+  res.json({
+    success: true,
+    data: {
+      id: org.id,
+      name: org.name,
+      slug: org.slug,
+      type: org.type,
+      contact: {
+        email: org.email,
+        phone: org.phone,
+        website: org.website
+      },
+      address: {
+        street: org.street,
+        city: org.city,
+        state: org.state,
+        country: org.country,
+        pincode: org.pincode
+      }
+    }
+  });
+}));
+
 // ============== Device Management ==============
 
 import db from '../v2/db.js';
@@ -814,8 +949,17 @@ router.post('/auth/otp/verify', asyncHandler(async (req, res) => {
 
 // ============== Signup Route ==============
 
+// Default organization for direct Mediqzy.com signups
+const DEFAULT_ORGANIZATION_SLUG = 'smarthealth-clinic';
+const DEFAULT_ORGANIZATION_ID = 3; // SmartHealth Clinic (subsidiary of My SmartHealth / Mediqzy)
+
 router.post('/auth/signup', asyncHandler(async (req, res) => {
-  const { email, password, firstName, first_name, lastName, last_name, phone, dateOfBirth, gender, deviceId, pushToken } = req.body;
+  const { 
+    email, password, firstName, first_name, lastName, last_name, phone, 
+    dateOfBirth, gender, deviceId, pushToken,
+    // Organization tagging - optional, defaults to SmartHealth Clinic
+    organization_id, organization_slug, clinic_id, clinic_slug
+  } = req.body;
   
   const userFirstName = firstName || first_name;
   const userLastName = lastName || last_name;
@@ -872,36 +1016,102 @@ router.post('/auth/signup', asyncHandler(async (req, res) => {
     });
   }
 
-  // Check if user already exists
-  const existingUser = await db.query('SELECT id FROM users WHERE email = $1', [email.toLowerCase()]);
+  // ============== Organization Tagging Logic ==============
+  // 1. If organization_id/clinic_id provided → use that organization
+  // 2. If organization_slug/clinic_slug provided → lookup and use that organization
+  // 3. If nothing provided (direct signup via mediqzy.com) → default to SmartHealth Clinic
+  
+  let targetOrganizationId = DEFAULT_ORGANIZATION_ID;
+  let targetOrganization = null;
+  
+  const providedOrgId = organization_id || clinic_id;
+  const providedOrgSlug = organization_slug || clinic_slug;
+  
+  if (providedOrgId) {
+    // Lookup organization by ID
+    const orgResult = await db.query(
+      'SELECT id, name, slug, type, status FROM tenants WHERE id = $1 AND status = $2',
+      [providedOrgId, 'active']
+    );
+    if (orgResult.rows.length === 0) {
+      return res.status(404).json({
+        success: false,
+        error: { code: 'ORG_NOT_FOUND', message: 'Organization not found or not active' }
+      });
+    }
+    targetOrganization = orgResult.rows[0];
+    targetOrganizationId = targetOrganization.id;
+  } else if (providedOrgSlug) {
+    // Lookup organization by slug
+    const orgResult = await db.query(
+      'SELECT id, name, slug, type, status FROM tenants WHERE slug = $1 AND status = $2',
+      [providedOrgSlug, 'active']
+    );
+    if (orgResult.rows.length === 0) {
+      return res.status(404).json({
+        success: false,
+        error: { code: 'ORG_NOT_FOUND', message: 'Organization not found or not active' }
+      });
+    }
+    targetOrganization = orgResult.rows[0];
+    targetOrganizationId = targetOrganization.id;
+  } else {
+    // Default: SmartHealth Clinic for direct Mediqzy.com signups
+    const orgResult = await db.query(
+      'SELECT id, name, slug, type, status FROM tenants WHERE id = $1',
+      [DEFAULT_ORGANIZATION_ID]
+    );
+    if (orgResult.rows.length > 0) {
+      targetOrganization = orgResult.rows[0];
+    }
+  }
+
+  console.log('📱 Mobile signup - Organization tagging:', {
+    email,
+    targetOrganizationId,
+    organizationName: targetOrganization?.name || 'SmartHealth Clinic',
+    signupSource: providedOrgId || providedOrgSlug ? 'specific_org' : 'direct_mediqzy'
+  });
+
+  // Check if user already exists in this organization
+  const existingUser = await db.query(
+    'SELECT id FROM users WHERE email = $1 AND organization_id = $2', 
+    [email.toLowerCase(), targetOrganizationId]
+  );
   if (existingUser.rows.length > 0) {
     return res.status(409).json({
       success: false,
-      error: { code: 'USER_EXISTS', message: 'An account with this email already exists' }
+      error: { 
+        code: 'USER_EXISTS', 
+        message: `An account with this email already exists in ${targetOrganization?.name || 'this organization'}` 
+      }
     });
   }
 
   // Hash password
   const hashedPassword = await bcrypt.hash(password, 10);
 
-  // Create user - only required fields, others can be updated in profile
+  // Create user with organization tagging
   const result = await db.query(`
     INSERT INTO users (
       email, password, "firstName", "lastName", "phoneNumber",
-      "dateOfBirth", gender, role, status, "createdAt", "updatedAt"
-    ) VALUES ($1, $2, $3, $4, $5, $6, $7, 'patient', 'active', NOW(), NOW())
+      "dateOfBirth", gender, role, status, 
+      organization_id, tenant_id,
+      "createdAt", "updatedAt"
+    ) VALUES ($1, $2, $3, $4, $5, $6, $7, 'patient', 'active', $8, $8, NOW(), NOW())
     RETURNING id, email, "firstName" AS first_name, "lastName" AS last_name,
               "phoneNumber" AS phone, "profileImage" AS avatar_url,
               "dateOfBirth" AS date_of_birth, gender, "bloodType" AS blood_group,
-              role, status
+              role, status, organization_id
   `, [
     email.toLowerCase(),
     hashedPassword,
     userFirstName,
     userLastName,
     phone,
-    dateOfBirth || '1990-01-01', // Default date - can be updated in profile
-    gender || 'Other' // Default gender - can be updated in profile
+    dateOfBirth || '1990-01-01',
+    gender || 'Other',
+    targetOrganizationId
   ]);
 
   const user = result.rows[0];
@@ -941,7 +1151,8 @@ router.post('/auth/signup', asyncHandler(async (req, res) => {
     email: user.email,
     name: userResponse.name,
     role: 'patient',
-    userType: 'patient'
+    userType: 'patient',
+    organization_id: targetOrganizationId
   }, 'patient');
   
   const refreshToken = generateRefreshToken(user.id, 'patient');
@@ -949,12 +1160,20 @@ router.post('/auth/signup', asyncHandler(async (req, res) => {
   res.status(201).json({
     success: true,
     data: {
-      user: userResponse,
+      user: {
+        ...userResponse,
+        organization: targetOrganization ? {
+          id: targetOrganization.id,
+          name: targetOrganization.name,
+          slug: targetOrganization.slug,
+          type: targetOrganization.type
+        } : null
+      },
       accessToken,
       refreshToken,
       expiresIn: '30d'
     },
-    message: 'Account created successfully'
+    message: `Account created successfully with ${targetOrganization?.name || 'SmartHealth Clinic'}`
   });
 }));
 
