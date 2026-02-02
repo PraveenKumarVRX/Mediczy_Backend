@@ -428,57 +428,70 @@ router.get('/status', (req, res) => {
  * Can filter by type: clinic, hospital, corporate, lab, pharmacy, etc.
  */
 router.get('/organizations', asyncHandler(async (req, res) => {
-  const { type, query, city, page = 1, limit = 20 } = req.query;
+  const { type, query, city, parent_id, page = 1, limit = 20 } = req.query;
   
   let sql = `
-    SELECT id, name, slug, type, 
-           address->>'city' as city, 
-           address->>'state' as state
-    FROM tenants 
-    WHERE status = 'active'
+    SELECT t.id, t.name, t.slug, t.type, t.parent_id,
+           t.address->>'city' as city, 
+           t.address->>'state' as state,
+           p.name as parent_name, p.slug as parent_slug, p.type as parent_type
+    FROM tenants t
+    LEFT JOIN tenants p ON t.parent_id = p.id
+    WHERE t.status = 'active'
   `;
   const params = [];
   let paramIndex = 1;
   
   // Filter by organization type
   if (type) {
-    sql += ` AND type = $${paramIndex}`;
+    sql += ` AND t.type = $${paramIndex}`;
     params.push(type);
+    paramIndex++;
+  }
+  
+  // Filter by parent_id (e.g., get all corporates under a broker)
+  if (parent_id) {
+    sql += ` AND t.parent_id = $${paramIndex}`;
+    params.push(parseInt(parent_id));
     paramIndex++;
   }
   
   // Search by name
   if (query) {
-    sql += ` AND (name ILIKE $${paramIndex} OR slug ILIKE $${paramIndex})`;
+    sql += ` AND (t.name ILIKE $${paramIndex} OR t.slug ILIKE $${paramIndex})`;
     params.push(`%${query}%`);
     paramIndex++;
   }
   
   // Filter by city
   if (city) {
-    sql += ` AND address->>'city' ILIKE $${paramIndex}`;
+    sql += ` AND t.address->>'city' ILIKE $${paramIndex}`;
     params.push(`%${city}%`);
     paramIndex++;
   }
   
-  sql += ` ORDER BY name ASC LIMIT $${paramIndex} OFFSET $${paramIndex + 1}`;
+  sql += ` ORDER BY t.name ASC LIMIT $${paramIndex} OFFSET $${paramIndex + 1}`;
   params.push(parseInt(limit), (parseInt(page) - 1) * parseInt(limit));
   
   const result = await db.query(sql, params);
   
   // Get total count
-  let countSql = 'SELECT COUNT(*) FROM tenants WHERE status = $1';
+  let countSql = 'SELECT COUNT(*) FROM tenants t WHERE t.status = $1';
   const countParams = ['active'];
   if (type) {
-    countSql += ` AND type = $${countParams.length + 1}`;
+    countSql += ` AND t.type = $${countParams.length + 1}`;
     countParams.push(type);
   }
+  if (parent_id) {
+    countSql += ` AND t.parent_id = $${countParams.length + 1}`;
+    countParams.push(parseInt(parent_id));
+  }
   if (query) {
-    countSql += ` AND (name ILIKE $${countParams.length + 1} OR slug ILIKE $${countParams.length + 1})`;
+    countSql += ` AND (t.name ILIKE $${countParams.length + 1} OR t.slug ILIKE $${countParams.length + 1})`;
     countParams.push(`%${query}%`);
   }
   if (city) {
-    countSql += ` AND address->>'city' ILIKE $${countParams.length + 1}`;
+    countSql += ` AND t.address->>'city' ILIKE $${countParams.length + 1}`;
     countParams.push(`%${city}%`);
   }
   
@@ -493,7 +506,13 @@ router.get('/organizations', asyncHandler(async (req, res) => {
         name: org.name,
         slug: org.slug,
         type: org.type,
-        location: org.city ? `${org.city}${org.state ? ', ' + org.state : ''}` : null
+        location: org.city ? `${org.city}${org.state ? ', ' + org.state : ''}` : null,
+        parent: org.parent_id ? {
+          id: org.parent_id,
+          name: org.parent_name,
+          slug: org.parent_slug,
+          type: org.parent_type
+        } : null
       })),
       pagination: {
         page: parseInt(page),

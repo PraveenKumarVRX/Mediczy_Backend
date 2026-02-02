@@ -63,10 +63,23 @@ const Tenant = sequelize.define('Tenant', {
       'tpa',        // Third Party Administrator
       'psu',        // Public Sector Undertaking
       'ngo',        // Non-Governmental Organization
-      'insurer'     // Insurance Company
+      'insurer',    // Insurance Company
+      'broker'      // Insurance Broker / Aggregator
     ),
     allowNull: false,
     comment: 'Type of healthcare organization'
+  },
+  
+  // Parent Organization (for hierarchical relationships - e.g., corporates tagged to broker/aggregator)
+  parent_id: {
+    type: DataTypes.INTEGER,
+    allowNull: true,
+    references: {
+      model: 'tenants',
+      key: 'id'
+    },
+    onDelete: 'SET NULL',
+    comment: 'Parent organization ID (e.g., broker/aggregator for corporates)'
   },
   
   // Contact Information
@@ -372,6 +385,30 @@ Tenant.beforeUpdate(async (tenant) => {
 Tenant.prototype.verifyAdminPassword = async function(password) {
   if (!this.admin_password) return false;
   return await bcrypt.compare(password, this.admin_password);
+};
+
+// Self-referential associations for parent-child hierarchy
+// Example: Corporates belong to a Broker/Aggregator
+Tenant.belongsTo(Tenant, { 
+  foreignKey: 'parent_id', 
+  as: 'parent'
+});
+Tenant.hasMany(Tenant, { 
+  foreignKey: 'parent_id', 
+  as: 'children'
+});
+
+// Instance method to get all child organizations
+Tenant.prototype.getChildOrganizations = async function() {
+  return await Tenant.findAll({
+    where: { parent_id: this.id, status: 'active' }
+  });
+};
+
+// Instance method to get parent organization
+Tenant.prototype.getParentOrganization = async function() {
+  if (!this.parent_id) return null;
+  return await Tenant.findByPk(this.parent_id);
 };
 
 // Associations (will be set up by sequelize in initialization)
