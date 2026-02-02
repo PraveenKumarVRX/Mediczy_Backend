@@ -820,6 +820,7 @@ router.post('/auth/signup', asyncHandler(async (req, res) => {
   const userFirstName = firstName || first_name;
   const userLastName = lastName || last_name;
   
+  // Required fields: name, email, phone number, password
   if (!email || !password) {
     return res.status(400).json({
       success: false,
@@ -831,6 +832,13 @@ router.post('/auth/signup', asyncHandler(async (req, res) => {
     return res.status(400).json({
       success: false,
       error: { code: 'MISSING_NAME', message: 'First name and last name are required' }
+    });
+  }
+
+  if (!phone) {
+    return res.status(400).json({
+      success: false,
+      error: { code: 'MISSING_PHONE', message: 'Phone number is required' }
     });
   }
 
@@ -853,10 +861,7 @@ router.post('/auth/signup', asyncHandler(async (req, res) => {
   // Hash password
   const hashedPassword = await bcrypt.hash(password, 10);
 
-  // Generate phone number placeholder if not provided
-  const phoneNumber = phone || `TEMP_${Date.now()}`;
-
-  // Create user
+  // Create user - only required fields, others can be updated in profile
   const result = await db.query(`
     INSERT INTO users (
       email, password, "firstName", "lastName", "phoneNumber",
@@ -871,9 +876,9 @@ router.post('/auth/signup', asyncHandler(async (req, res) => {
     hashedPassword,
     userFirstName,
     userLastName,
-    phoneNumber,
-    dateOfBirth || '1990-01-01', // Default date if not provided
-    gender || 'Other'
+    phone,
+    dateOfBirth || '1990-01-01', // Default date - can be updated in profile
+    gender || 'Other' // Default gender - can be updated in profile
   ]);
 
   const user = result.rows[0];
