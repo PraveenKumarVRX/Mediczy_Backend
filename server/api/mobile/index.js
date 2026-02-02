@@ -428,13 +428,13 @@ router.get('/status', (req, res) => {
  * Can filter by type: clinic, hospital, corporate, lab, pharmacy, etc.
  */
 router.get('/organizations', asyncHandler(async (req, res) => {
-  const { type, query, city, parent_id, page = 1, limit = 20 } = req.query;
+  const { type, query, city, parent_id, aggregator_uid, page = 1, limit = 20 } = req.query;
   
   let sql = `
-    SELECT t.id, t.name, t.slug, t.type, t.parent_id,
+    SELECT t.id, t.name, t.slug, t.type, t.parent_id, t.aggregator_uid,
            t.address->>'city' as city, 
            t.address->>'state' as state,
-           p.name as parent_name, p.slug as parent_slug, p.type as parent_type
+           p.name as parent_name, p.slug as parent_slug, p.type as parent_type, p.aggregator_uid as parent_aggregator_uid
     FROM tenants t
     LEFT JOIN tenants p ON t.parent_id = p.id
     WHERE t.status = 'active'
@@ -453,6 +453,13 @@ router.get('/organizations', asyncHandler(async (req, res) => {
   if (parent_id) {
     sql += ` AND t.parent_id = $${paramIndex}`;
     params.push(parseInt(parent_id));
+    paramIndex++;
+  }
+  
+  // Filter by aggregator_uid (e.g., get all corporates under aggregator A1B2C3D)
+  if (aggregator_uid) {
+    sql += ` AND p.aggregator_uid = $${paramIndex}`;
+    params.push(aggregator_uid.toUpperCase());
     paramIndex++;
   }
   
@@ -476,7 +483,7 @@ router.get('/organizations', asyncHandler(async (req, res) => {
   const result = await db.query(sql, params);
   
   // Get total count
-  let countSql = 'SELECT COUNT(*) FROM tenants t WHERE t.status = $1';
+  let countSql = 'SELECT COUNT(*) FROM tenants t LEFT JOIN tenants p ON t.parent_id = p.id WHERE t.status = $1';
   const countParams = ['active'];
   if (type) {
     countSql += ` AND t.type = $${countParams.length + 1}`;
@@ -485,6 +492,10 @@ router.get('/organizations', asyncHandler(async (req, res) => {
   if (parent_id) {
     countSql += ` AND t.parent_id = $${countParams.length + 1}`;
     countParams.push(parseInt(parent_id));
+  }
+  if (aggregator_uid) {
+    countSql += ` AND p.aggregator_uid = $${countParams.length + 1}`;
+    countParams.push(aggregator_uid.toUpperCase());
   }
   if (query) {
     countSql += ` AND (t.name ILIKE $${countParams.length + 1} OR t.slug ILIKE $${countParams.length + 1})`;
@@ -503,12 +514,14 @@ router.get('/organizations', asyncHandler(async (req, res) => {
     data: {
       organizations: result.rows.map(org => ({
         id: org.id,
+        aggregator_uid: org.aggregator_uid || null,  // Only for brokers
         name: org.name,
         slug: org.slug,
         type: org.type,
         location: org.city ? `${org.city}${org.state ? ', ' + org.state : ''}` : null,
         parent: org.parent_id ? {
           id: org.parent_id,
+          aggregator_uid: org.parent_aggregator_uid || null,
           name: org.parent_name,
           slug: org.parent_slug,
           type: org.parent_type

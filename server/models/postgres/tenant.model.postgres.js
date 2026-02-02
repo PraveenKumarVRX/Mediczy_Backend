@@ -70,6 +70,14 @@ const Tenant = sequelize.define('Tenant', {
     comment: 'Type of healthcare organization'
   },
   
+  // Aggregator UID (for brokers only) - Format: A + 6 alphanumeric (e.g., A1B2C3D)
+  aggregator_uid: {
+    type: DataTypes.STRING(7),
+    allowNull: true,
+    unique: true,
+    comment: 'Unique ID for brokers/aggregators - Format: A + 6 alphanumeric'
+  },
+  
   // Parent Organization (for hierarchical relationships - e.g., corporates tagged to broker/aggregator)
   parent_id: {
     type: DataTypes.INTEGER,
@@ -366,18 +374,51 @@ Tenant.prototype.resetMonthlyUsage = async function() {
   await this.save();
 };
 
-// Hooks for password hashing
+// Helper function to generate aggregator UID (A + 6 alphanumeric)
+const generateAggregatorUID = () => {
+  const chars = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789';
+  let uid = 'A'; // Always starts with 'A'
+  for (let i = 0; i < 6; i++) {
+    uid += chars.charAt(Math.floor(Math.random() * chars.length));
+  }
+  return uid;
+};
+
+// Hooks for password hashing and aggregator UID generation
 import bcrypt from 'bcryptjs';
 
 Tenant.beforeCreate(async (tenant) => {
   if (tenant.admin_password) {
     tenant.admin_password = await bcrypt.hash(tenant.admin_password, 10);
   }
+  
+  // Auto-generate aggregator_uid for brokers
+  if (tenant.type === 'broker' && !tenant.aggregator_uid) {
+    let uid = generateAggregatorUID();
+    // Ensure uniqueness
+    let exists = await Tenant.findOne({ where: { aggregator_uid: uid } });
+    while (exists) {
+      uid = generateAggregatorUID();
+      exists = await Tenant.findOne({ where: { aggregator_uid: uid } });
+    }
+    tenant.aggregator_uid = uid;
+  }
 });
 
 Tenant.beforeUpdate(async (tenant) => {
   if (tenant.changed('admin_password') && tenant.admin_password) {
     tenant.admin_password = await bcrypt.hash(tenant.admin_password, 10);
+  }
+  
+  // Generate aggregator_uid if type changed to broker
+  if (tenant.changed('type') && tenant.type === 'broker' && !tenant.aggregator_uid) {
+    let uid = generateAggregatorUID();
+    let exists = await Tenant.findOne({ where: { aggregator_uid: uid } });
+    while (exists) {
+      uid = generateAggregatorUID();
+      exists = await Tenant.findOne({ where: { aggregator_uid: uid } });
+    }
+    tenant.aggregator_uid = uid;
   }
 });
 
