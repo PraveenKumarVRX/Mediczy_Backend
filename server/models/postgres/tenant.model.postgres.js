@@ -70,12 +70,12 @@ const Tenant = sequelize.define('Tenant', {
     comment: 'Type of healthcare organization'
   },
   
-  // Aggregator UID (for brokers only) - Format: A + 6 alphanumeric (e.g., A1B2C3D)
+  // Aggregator UID (for brokers only) - Format: A + 5 alphanumeric (e.g., A1B2C)
   aggregator_uid: {
-    type: DataTypes.STRING(7),
+    type: DataTypes.STRING(6),
     allowNull: true,
     unique: true,
-    comment: 'Unique ID for brokers/aggregators - Format: A + 6 alphanumeric'
+    comment: 'Unique ID for brokers/aggregators - Format: A + 5 alphanumeric'
   },
   
   // Parent Organization (for hierarchical relationships - e.g., corporates tagged to broker/aggregator)
@@ -374,11 +374,11 @@ Tenant.prototype.resetMonthlyUsage = async function() {
   await this.save();
 };
 
-// Helper function to generate aggregator UID (A + 6 alphanumeric)
+// Helper function to generate aggregator UID (A + 5 alphanumeric)
 const generateAggregatorUID = () => {
   const chars = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789';
   let uid = 'A'; // Always starts with 'A'
-  for (let i = 0; i < 6; i++) {
+  for (let i = 0; i < 5; i++) {
     uid += chars.charAt(Math.floor(Math.random() * chars.length));
   }
   return uid;
