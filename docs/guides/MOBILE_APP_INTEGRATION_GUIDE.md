@@ -4,6 +4,39 @@
 
 This guide helps mobile app developers integrate the unified patient system into the Mediczy mobile app.
 
+**Last Updated:** February 2, 2026
+
+---
+
+## 📌 Quick Reference: Mobile-Specific API Endpoints
+
+> **Recommended for Mobile Apps:** Use these dedicated mobile endpoints for better responses.
+
+| Feature | Endpoint | Method |
+|---------|----------|--------|
+| **Signup** | `/api/mobile/auth/signup` | POST |
+| **Login** | `/api/mobile/auth/login` | POST |
+| **OTP Request** | `/api/mobile/auth/otp/request` | POST |
+| **OTP Verify** | `/api/mobile/auth/otp/verify` | POST |
+| **Get Profile** | `/api/mobile/user/profile` | GET |
+| **Update Profile** | `/api/mobile/user/profile` | PUT |
+| **Video Token** | `/api/video/livekit/token` | POST |
+
+### Mobile Signup - Required Fields ONLY
+```javascript
+POST /api/mobile/auth/signup
+{
+  "first_name": "John",        // ✅ Required
+  "last_name": "Doe",          // ✅ Required
+  "email": "john@example.com", // ✅ Required
+  "phone": "9876543210",       // ✅ Required
+  "password": "SecurePass123!" // ✅ Required (min 8 chars)
+  // dateOfBirth, gender are OPTIONAL - can update in profile later
+}
+```
+
+For complete API documentation, see: [MOBILE_API_VIDEO_CONSULTATION.md](../api/MOBILE_API_VIDEO_CONSULTATION.md)
+
 ---
 
 ## 🎯 What Changed?

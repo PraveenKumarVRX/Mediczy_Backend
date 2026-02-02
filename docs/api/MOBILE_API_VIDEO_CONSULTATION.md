@@ -2,10 +2,15 @@
 
 Complete API reference for integrating video consultation features into mobile applications.
 
+**Base URL:** `https://mediqzy.com`
+
+**Last Updated:** February 2, 2026
+
 ---
 
 ## 📋 Table of Contents
-1. [Authentication](#authentication)
+
+1. [Mobile API Authentication](#mobile-api-authentication)
 2. [Doctor Discovery](#doctor-discovery)
 3. [Appointment Booking](#appointment-booking)
 4. [Video Consultation](#video-consultation)
@@ -15,97 +20,196 @@ Complete API reference for integrating video consultation features into mobile a
 
 ---
 
-## 🔐 Authentication
+## 🔐 Mobile API Authentication
 
-### Register User
+> **Important:** The mobile app should use the dedicated `/api/mobile/` endpoints for better mobile-optimized responses.
+
+### Signup (Register New User)
+
 ```http
-POST /api/auth/register
+POST /api/mobile/auth/signup
 Content-Type: application/json
 
 {
-  "firstName": "John",
-  "lastName": "Doe",
+  "first_name": "John",
+  "last_name": "Doe",
   "email": "john@example.com",
   "password": "SecurePass123!",
-  "phoneNumber": "+919876543210"
+  "phone": "9876543210"
 }
 ```
 
-**Response:**
+**Required Fields:**
+| Field | Type | Required | Description |
+|-------|------|----------|-------------|
+| `first_name` | string | ✅ Yes | User's first name |
+| `last_name` | string | ✅ Yes | User's last name |
+| `email` | string | ✅ Yes | Valid email address |
+| `phone` | string | ✅ Yes | Phone number |
+| `password` | string | ✅ Yes | Min 8 characters |
+| `dateOfBirth` | string | ❌ No | ISO date (YYYY-MM-DD) - can update in profile |
+| `gender` | string | ❌ No | Male/Female/Other - can update in profile |
+
+**Response (201 Created):**
+
 ```json
 {
   "success": true,
-  "message": "Registration successful",
-  "user": {
-    "id": 123,
-    "firstName": "John",
-    "lastName": "Doe",
-    "email": "john@example.com",
-    "phoneNumber": "+919876543210"
+  "data": {
+    "user": {
+      "id": 123,
+      "name": "John Doe",
+      "first_name": "John",
+      "last_name": "Doe",
+      "email": "john@example.com",
+      "phone": "9876543210",
+      "avatar_url": null,
+      "date_of_birth": "1990-01-01T00:00:00.000Z",
+      "gender": "Other",
+      "blood_group": null,
+      "address": null,
+      "role": "patient",
+      "status": "active"
+    },
+    "accessToken": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...",
+    "refreshToken": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...",
+    "expiresIn": "30d"
   },
-  "token": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9..."
+  "message": "Account created successfully"
 }
 ```
 
-### Login
+**Error Responses:**
+
+```json
+// Missing phone
+{ "success": false, "error": { "code": "MISSING_PHONE", "message": "Phone number is required" } }
+
+// Missing name
+{ "success": false, "error": { "code": "MISSING_NAME", "message": "First name and last name are required" } }
+
+// Weak password
+{ "success": false, "error": { "code": "WEAK_PASSWORD", "message": "Password must be at least 8 characters" } }
+
+// User exists
+{ "success": false, "error": { "code": "USER_EXISTS", "message": "An account with this email already exists" } }
+```
+
+### Login (Email/Password)
+
 ```http
-POST /api/auth/login
+POST /api/mobile/auth/login
 Content-Type: application/json
 
 {
   "email": "john@example.com",
-  "password": "SecurePass123!"
+  "password": "SecurePass123!",
+  "deviceId": "optional-device-id",
+  "pushToken": "optional-fcm-token"
 }
 ```
 
 **Response:**
+
 ```json
 {
   "success": true,
-  "token": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...",
-  "user": {
-    "id": 123,
-    "firstName": "John",
-    "lastName": "Doe",
-    "email": "john@example.com",
-    "phoneNumber": "+919876543210",
-    "isVerified": true
+  "data": {
+    "user": {
+      "id": 123,
+      "name": "John Doe",
+      "first_name": "John",
+      "last_name": "Doe",
+      "email": "john@example.com",
+      "phone": "9876543210",
+      "avatar_url": "https://...",
+      "date_of_birth": "1990-05-15T00:00:00.000Z",
+      "gender": "Male",
+      "blood_group": "O+",
+      "address": "123 Main St, City",
+      "role": "patient",
+      "status": "active"
+    },
+    "accessToken": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...",
+    "refreshToken": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...",
+    "expiresIn": "30d"
   }
 }
 ```
 
-### OTP Login (Alternative)
+### OTP Login (Phone-based)
+
+**Step 1: Request OTP**
+
 ```http
-POST /api/users/login/send-otp
+POST /api/mobile/auth/otp/request
 Content-Type: application/json
 
 {
-  "phoneNumber": "+919876543210"
+  "phone": "9876543210"
 }
 ```
 
+**Response:**
+
+```json
+{
+  "success": true,
+  "message": "OTP sent successfully",
+  "data": { "expiresIn": 300 }
+}
+```
+
+**Step 2: Verify OTP**
+
 ```http
-POST /api/users/login/verify-otp
+POST /api/mobile/auth/otp/verify
 Content-Type: application/json
 
 {
-  "phoneNumber": "+919876543210",
-  "otp": "123456"
+  "phone": "9876543210",
+  "otp": "123456",
+  "deviceId": "optional-device-id",
+  "pushToken": "optional-fcm-token"
 }
 ```
 
-**Legacy aliases (if enabled):**
-```http
-POST /api/auth/send-otp
-POST /api/auth/verify-otp
+**Response:**
+
+```json
+{
+  "success": true,
+  "data": {
+    "user": { ... },
+    "accessToken": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...",
+    "refreshToken": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...",
+    "isNewUser": false
+  }
+}
 ```
 
-### Mobile App Credentials (Required)
-All mobile API calls must include app credentials:
+### Get User Profile
 
 ```http
-x-app-key: <mobile_app_key>
-x-app-secret: <mobile_app_secret>
+GET /api/mobile/user/profile
+Authorization: Bearer <accessToken>
+```
+
+### Update User Profile
+
+```http
+PUT /api/mobile/user/profile
+Authorization: Bearer <accessToken>
+Content-Type: application/json
+
+{
+  "name": "John Doe",
+  "dateOfBirth": "1990-05-15",
+  "gender": "Male",
+  "bloodGroup": "O+",
+  "address": "123 Main St, City",
+  "phone": "9876543210"
+}
 ```
 
 ---
@@ -113,12 +217,14 @@ x-app-secret: <mobile_app_secret>
 ## 👨‍⚕️ Doctor Discovery
 
 ### List Doctors
+
 ```http
 GET /api/consultation/doctors?specialty=Cardiology&sortBy=rating&limit=20&page=1
 Authorization: Bearer <token>
 ```
 
 **Query Parameters:**
+
 - `specialty` (optional): Filter by doctor specialization
 - `date` (optional): Check availability for specific date
 - `minRating` (optional): Minimum doctor rating (0-5)
@@ -128,6 +234,7 @@ Authorization: Bearer <token>
 - `limit` (default: 20): Items per page
 
 **Response:**
+
 ```json
 {
   "success": true,
@@ -156,12 +263,14 @@ Authorization: Bearer <token>
 ```
 
 ### Get Doctor Details
+
 ```http
 GET /api/doctors/:doctorId
 Authorization: Bearer <token>
 ```
 
 **Response:**
+
 ```json
 {
   "success": true,
@@ -189,6 +298,7 @@ Authorization: Bearer <token>
 ## 📅 Appointment Booking
 
 ### Create Video Consultation Appointment
+
 ```http
 POST /api/consultation/book
 Authorization: Bearer <token>
@@ -206,6 +316,7 @@ Content-Type: application/json
 ```
 
 **Response:**
+
 ```json
 {
   "success": true,
@@ -237,18 +348,21 @@ Content-Type: application/json
 ```
 
 ### Get My Appointments
+
 ```http
 GET /api/appointments?status=confirmed&consultationType=online&limit=10
 Authorization: Bearer <token>
 ```
 
 **Query Parameters:**
+
 - `status`: `all`, `confirmed`, `completed`, `cancelled`, `pending`
 - `consultationType`: `online`, `in-person`, `all`
 - `limit`: Number of results
 - `page`: Page number
 
 **Response:**
+
 ```json
 {
   "success": true,
@@ -277,6 +391,7 @@ Authorization: Bearer <token>
 ```
 
 ### Cancel Appointment
+
 ```http
 POST /api/appointments/:appointmentId/cancel
 Authorization: Bearer <token>
@@ -288,6 +403,7 @@ Content-Type: application/json
 ```
 
 **Response:**
+
 ```json
 {
   "success": true,
@@ -305,6 +421,7 @@ Content-Type: application/json
 ## 🎥 Video Consultation
 
 ### Get Video Room Token (LiveKit)
+
 ```http
 POST /api/video/livekit/token
 Authorization: Bearer <token>
@@ -316,19 +433,31 @@ Content-Type: application/json
 }
 ```
 
-**Response:**
+**⚠️ Authentication Required:** This endpoint requires a valid JWT Bearer token.
+
+**Response (200 OK):**
+
 ```json
 {
   "success": true,
   "token": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...",
-  "serverUrl": "wss://livekit.mediczy.com",
+  "serverUrl": "wss://video.mediqzy.com",
   "roomName": "apt-456",
   "participantName": "John Doe",
   "expiresAt": "2026-01-28T12:00:00.000Z"
 }
 ```
 
+**Error Response (401 Unauthorized):**
+```json
+{
+  "success": false,
+  "error": "Authentication required"
+}
+```
+
 ### Join Video Consultation
+
 ```http
 POST /api/video/room/:roomId/join
 Authorization: Bearer <token>
@@ -340,6 +469,7 @@ Content-Type: application/json
 ```
 
 **Response:**
+
 ```json
 {
   "success": true,
@@ -359,19 +489,21 @@ Content-Type: application/json
   },
   "video": {
     "token": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...",
-    "serverUrl": "wss://livekit.mediczy.com",
+    "serverUrl": "wss://video.mediqzy.com",
     "provider": "livekit"
   }
 }
 ```
 
 ### Leave Video Consultation
+
 ```http
 POST /api/video/room/:roomId/leave
 Authorization: Bearer <token>
 ```
 
 **Response:**
+
 ```json
 {
   "success": true,
@@ -382,12 +514,14 @@ Authorization: Bearer <token>
 ```
 
 ### Get Room Status
+
 ```http
 GET /api/video/room/:roomId/status
 Authorization: Bearer <token>
 ```
 
 **Response:**
+
 ```json
 {
   "success": true,
@@ -415,6 +549,7 @@ Authorization: Bearer <token>
 ```
 
 ### End Video Consultation (Doctor Only)
+
 ```http
 POST /api/consultation/video/end/:appointmentId
 Authorization: Bearer <doctor-token>
@@ -427,6 +562,7 @@ Content-Type: application/json
 ```
 
 **Response:**
+
 ```json
 {
   "success": true,
@@ -445,6 +581,7 @@ Content-Type: application/json
 ## 💊 Prescription Management
 
 ### Create Prescription (Doctor Only)
+
 ```http
 POST /api/prescriptions/from-appointment/:appointmentId
 Authorization: Bearer <doctor-token>
@@ -486,6 +623,7 @@ Content-Type: application/json
 ```
 
 **Response:**
+
 ```json
 {
   "success": true,
@@ -507,12 +645,14 @@ Content-Type: application/json
 ```
 
 ### Get Prescription by Appointment
+
 ```http
 GET /api/prescriptions/appointment/:appointmentId
 Authorization: Bearer <token>
 ```
 
 **Response:**
+
 ```json
 {
   "success": true,
@@ -539,6 +679,7 @@ Authorization: Bearer <token>
 ```
 
 ### Download Prescription PDF
+
 ```http
 GET /api/prescriptions/:prescriptionId/pdf
 Authorization: Bearer <token>
@@ -547,12 +688,14 @@ Authorization: Bearer <token>
 Returns PDF file for download.
 
 ### Share Prescription via WhatsApp
+
 ```http
 POST /api/prescriptions/:prescriptionId/share/whatsapp/:phoneNumber
 Authorization: Bearer <token>
 ```
 
 **Response:**
+
 ```json
 {
   "success": true,
@@ -566,12 +709,14 @@ Authorization: Bearer <token>
 ## 💰 Payment & Wallet
 
 ### Get Wallet Balance
+
 ```http
 GET /api/wallet/balance
 Authorization: Bearer <token>
 ```
 
 **Response:**
+
 ```json
 {
   "success": true,
@@ -586,6 +731,7 @@ Authorization: Bearer <token>
 ```
 
 ### Add Money to Wallet
+
 ```http
 POST /api/wallet/topup
 Authorization: Bearer <token>
@@ -598,6 +744,7 @@ Content-Type: application/json
 ```
 
 **Response:**
+
 ```json
 {
   "success": true,
@@ -610,12 +757,14 @@ Content-Type: application/json
 ```
 
 ### Calculate Consultation Cost
+
 ```http
 GET /api/wallet/appointment/calculate/:consultationFee
 Authorization: Bearer <token>
 ```
 
 **Response:**
+
 ```json
 {
   "success": true,
@@ -629,12 +778,14 @@ Authorization: Bearer <token>
 ```
 
 ### Transaction History
+
 ```http
 GET /api/wallet/transactions?type=consultation&limit=20&page=1
 Authorization: Bearer <token>
 ```
 
 **Response:**
+
 ```json
 {
   "success": true,
@@ -658,75 +809,80 @@ Authorization: Bearer <token>
 ## 🔔 Real-time Events (Socket.io)
 
 ### Connect to Socket
-```javascript
-import io from 'socket.io-client';
 
-const socket = io('https://mediczy.com', {
+```javascript
+import io from "socket.io-client";
+
+const socket = io("https://mediczy.com", {
   auth: {
-    token: 'Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...'
-  }
+    token: "Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...",
+  },
 });
 
-socket.on('connect', () => {
-  console.log('Connected to Mediczy');
+socket.on("connect", () => {
+  console.log("Connected to Mediczy");
 });
 ```
 
 ### Listen for Doctor Call Initiation
+
 ```javascript
-socket.on('doctor-initiated-call', (data) => {
+socket.on("doctor-initiated-call", (data) => {
   // {
   //   appointmentId: 456,
   //   doctorName: "Dr. Nandita Agarwal",
   //   meetingLink: "https://livekit.mediczy.com/join/apt-456",
   //   callInitiatedAt: "2026-01-28T10:00:00.000Z"
   // }
-  
+
   // Show notification to patient
   showNotification({
     title: `${data.doctorName} is calling`,
-    message: 'Tap to join video consultation',
-    action: () => joinVideoCall(data.appointmentId, data.meetingLink)
+    message: "Tap to join video consultation",
+    action: () => joinVideoCall(data.appointmentId, data.meetingLink),
   });
 });
 ```
 
 ### Listen for Appointment Updates
+
 ```javascript
-socket.on('appointment-update', (data) => {
+socket.on("appointment-update", (data) => {
   // {
   //   appointmentId: 456,
   //   status: "in-progress",
   //   message: "Doctor has joined the consultation"
   // }
-  
+
   updateAppointmentStatus(data.appointmentId, data.status);
 });
 ```
 
 ### Listen for Prescription Ready
+
 ```javascript
-socket.on('prescription-ready', (data) => {
+socket.on("prescription-ready", (data) => {
   // {
   //   appointmentId: 456,
   //   prescriptionId: 789,
   //   prescriptionNumber: "RX-789-2026",
   //   pdfUrl: "https://mediczy.com/prescriptions/RX-789-2026.pdf"
   // }
-  
+
   showNotification({
-    title: 'Prescription Ready',
-    message: 'Your prescription is ready to download',
-    action: () => downloadPrescription(data.pdfUrl)
+    title: "Prescription Ready",
+    message: "Your prescription is ready to download",
+    action: () => downloadPrescription(data.pdfUrl),
   });
 });
 ```
 
 ### Send Typing Indicator
+
 ```javascript
-socket.emit('typing', {
+socket.emit("typing", {
   appointmentId: 456,
-  isTyping: true
+  isTyping: true,
 });
 ```
 
@@ -747,15 +903,15 @@ All API responses follow a consistent error format:
 
 ### Common Error Codes
 
-| Code | Status | Description |
-|------|--------|-------------|
-| `UNAUTHORIZED` | 401 | Invalid or missing authentication token |
-| `FORBIDDEN` | 403 | Insufficient permissions |
-| `NOT_FOUND` | 404 | Resource not found |
-| `VALIDATION_ERROR` | 400 | Invalid request data |
-| `INSUFFICIENT_BALANCE` | 402 | Insufficient wallet balance |
-| `APPOINTMENT_CONFLICT` | 409 | Time slot already booked |
-| `SERVER_ERROR` | 500 | Internal server error |
+| Code                   | Status | Description                             |
+| ---------------------- | ------ | --------------------------------------- |
+| `UNAUTHORIZED`         | 401    | Invalid or missing authentication token |
+| `FORBIDDEN`            | 403    | Insufficient permissions                |
+| `NOT_FOUND`            | 404    | Resource not found                      |
+| `VALIDATION_ERROR`     | 400    | Invalid request data                    |
+| `INSUFFICIENT_BALANCE` | 402    | Insufficient wallet balance             |
+| `APPOINTMENT_CONFLICT` | 409    | Time slot already booked                |
+| `SERVER_ERROR`         | 500    | Internal server error                   |
 
 ---
 
@@ -773,45 +929,49 @@ All API responses follow a consistent error format:
 ## 📱 Mobile SDK Integration Examples
 
 ### React Native Example
-```javascript
-import axios from 'axios';
 
-const API_BASE_URL = 'https://mediczy.com/api';
+```javascript
+import axios from "axios";
+
+const API_BASE_URL = "https://mediczy.com/api";
 
 class MediczyAPI {
   constructor(token) {
     this.client = axios.create({
       baseURL: API_BASE_URL,
       headers: {
-        'Authorization': `Bearer ${token}`,
-        'Content-Type': 'application/json'
-      }
+        Authorization: `Bearer ${token}`,
+        "Content-Type": "application/json",
+      },
     });
   }
 
   async bookVideoConsultation(doctorId, date, time, symptoms) {
-    const response = await this.client.post('/consultation/book', {
+    const response = await this.client.post("/consultation/book", {
       doctorId,
-      consultationType: 'online',
+      consultationType: "online",
       appointmentDate: date,
       appointmentTime: time,
       symptoms,
-      paymentMethod: 'wallet'
+      paymentMethod: "wallet",
     });
     return response.data;
   }
 
   async joinVideoCall(appointmentId) {
-    const response = await this.client.post(`/video/room/apt-${appointmentId}/join`, {
-      appointmentId
-    });
+    const response = await this.client.post(
+      `/video/room/apt-${appointmentId}/join`,
+      {
+        appointmentId,
+      },
+    );
     return response.data;
   }
 
   async getVideoToken(roomName, participantName) {
-    const response = await this.client.post('/video/livekit/token', {
+    const response = await this.client.post("/video/livekit/token", {
       roomName,
-      participantName
+      participantName,
     });
     return response.data;
   }
@@ -821,6 +981,7 @@ export default MediczyAPI;
 ```
 
 ### Flutter/Dart Example
+
 ```dart
 import 'package:http/http.dart' as http;
 import 'dart:convert';
@@ -899,6 +1060,7 @@ class MediczyAPI {
 ## 🆘 Support
 
 For API support and questions:
+
 - **Email**: support@mediczy.com
 - **Documentation**: https://docs.mediczy.com
 - **Status Page**: https://status.mediczy.com
@@ -908,12 +1070,14 @@ For API support and questions:
 ## 📝 Changelog
 
 ### v2.0.0 (2026-01-27)
+
 - Added LiveKit video integration
 - Enhanced prescription system
 - Added wallet payment support
 - Improved real-time notifications
 
 ### v1.0.0 (2025-12-01)
+
 - Initial mobile API release
 - Basic video consultation features
 - Doctor booking system
