@@ -1322,10 +1322,10 @@ router.get('/chat/doctors', authenticate(), asyncHandler(async (req, res) => {
            d.rating,
            d."totalReviews" AS total_reviews,
            d."onlineConsultationFee" AS consultation_fee,
-           CASE WHEN d."isAvailableNow" = true THEN true ELSE false END AS is_online
+           COALESCE(d."isOnline", false) AS is_online
     FROM doctors d
     WHERE ${whereClause}
-    ORDER BY d."isAvailableNow" DESC NULLS LAST, d.rating DESC NULLS LAST
+    ORDER BY d."isOnline" DESC NULLS LAST, d.rating DESC NULLS LAST
     LIMIT $${paramIndex} OFFSET $${paramIndex + 1}
   `, [...params, parseInt(limit), offset]);
   
