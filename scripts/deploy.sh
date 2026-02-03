@@ -43,7 +43,7 @@ echo "📝 Logs: $LOG_FILE"
     cd /home/ubuntu/Mediczy/client
     
     # Use nice to lower priority and limit Node memory
-    export NODE_OPTIONS="--max-old-space-size=512"
+    export NODE_OPTIONS="--max-old-space-size=2048"
     nice -n 10 npm run build 2>&1
     
     echo "✅ Frontend build complete"
