@@ -23,6 +23,7 @@ Complete API reference for integrating video consultation features into mobile a
 5. [Prescription Management](#prescription-management)
 6. [Payment & Wallet](#payment--wallet)
 7. [Real-time Events](#real-time-events)
+8. [Push Notifications (FCM)](#-push-notifications-fcm)
 
 ---
 
@@ -1028,7 +1029,459 @@ socket.emit("typing", {
 
 ---
 
-## 📊 Error Handling
+## � Push Notifications (FCM)
+
+Firebase Cloud Messaging integration for push notifications on mobile devices.
+
+### Register FCM Token
+
+Register your device's FCM token to receive push notifications. Call this after login and whenever the token refreshes.
+
+```http
+POST /api/notifications/fcm/register
+Authorization: Bearer <token>
+Content-Type: application/json
+
+{
+  "token": "fMhkZ9Xt...FCM_TOKEN_HERE",
+  "deviceType": "android"
+}
+```
+
+**Request Parameters:**
+
+| Field        | Type   | Required | Description                          |
+| ------------ | ------ | -------- | ------------------------------------ |
+| `token`      | string | ✅ Yes   | FCM device token from Firebase SDK   |
+| `deviceType` | string | Optional | `android`, `ios`, or `web` (default) |
+
+**Response (200 OK):**
+
+```json
+{
+  "success": true,
+  "message": "FCM token registered successfully"
+}
+```
+
+### Register Device (Alternative)
+
+Alternative endpoint that registers device info along with FCM token.
+
+```http
+POST /api/mobile/devices/register
+Authorization: Bearer <token>
+Content-Type: application/json
+
+{
+  "deviceId": "unique-device-uuid",
+  "pushToken": "fMhkZ9Xt...FCM_TOKEN_HERE",
+  "platform": "android",
+  "model": "Samsung Galaxy S23",
+  "osVersion": "14.0"
+}
+```
+
+**Response:**
+
+```json
+{
+  "success": true,
+  "message": "Device registered successfully"
+}
+```
+
+### Update Push Token
+
+Update FCM token when it refreshes (Firebase can refresh tokens periodically).
+
+```http
+PUT /api/mobile/devices/push-token
+Authorization: Bearer <token>
+Content-Type: application/json
+
+{
+  "deviceId": "unique-device-uuid",
+  "pushToken": "NEW_FCM_TOKEN_HERE"
+}
+```
+
+**Response:**
+
+```json
+{
+  "success": true,
+  "message": "Push token updated"
+}
+```
+
+### Get Notifications
+
+Retrieve user's notification history.
+
+```http
+GET /api/notifications?page=1&limit=20&unreadOnly=true&type=appointment
+Authorization: Bearer <token>
+```
+
+**Query Parameters:**
+
+| Parameter    | Type    | Default | Description                                                                           |
+| ------------ | ------- | ------- | ------------------------------------------------------------------------------------- |
+| `page`       | number  | 1       | Page number                                                                           |
+| `limit`      | number  | 20      | Items per page                                                                        |
+| `unreadOnly` | boolean | false   | Only return unread notifications                                                      |
+| `type`       | string  | all     | Filter by type: `appointment`, `payment`, `consultation`, `prescription`, `promotion` |
+
+**Response:**
+
+```json
+{
+  "success": true,
+  "notifications": [
+    {
+      "id": 123,
+      "type": "appointment_booked",
+      "title": "Appointment Booked Successfully! ✅",
+      "message": "Your appointment with Dr. Nandita Agarwal is scheduled for Jan 28, 2026 at 10:00 AM",
+      "isRead": false,
+      "actionUrl": "/appointments/456",
+      "metadata": {
+        "appointmentId": 456,
+        "doctorId": 70
+      },
+      "createdAt": "2026-01-27T10:00:00.000Z"
+    }
+  ],
+  "pagination": {
+    "page": 1,
+    "limit": 20,
+    "total": 45,
+    "totalPages": 3
+  }
+}
+```
+
+### Get Unread Count
+
+Get the count of unread notifications (for badge display).
+
+```http
+GET /api/notifications/unread-count
+Authorization: Bearer <token>
+```
+
+**Response:**
+
+```json
+{
+  "success": true,
+  "unreadCount": 5
+}
+```
+
+### Mark Notification as Read
+
+```http
+POST /api/notifications/:id/read
+Authorization: Bearer <token>
+```
+
+**Response:**
+
+```json
+{
+  "success": true,
+  "message": "Notification marked as read"
+}
+```
+
+### Mark All as Read
+
+```http
+POST /api/notifications/read-all
+Authorization: Bearer <token>
+```
+
+**Response:**
+
+```json
+{
+  "success": true,
+  "message": "All notifications marked as read"
+}
+```
+
+### Delete Notification
+
+```http
+DELETE /api/notifications/:id
+Authorization: Bearer <token>
+```
+
+**Response:**
+
+```json
+{
+  "success": true,
+  "message": "Notification deleted"
+}
+```
+
+### Get Notification Preferences
+
+```http
+GET /api/notifications/preferences
+Authorization: Bearer <token>
+```
+
+**Response:**
+
+```json
+{
+  "success": true,
+  "preferences": {
+    "push": true,
+    "email": true,
+    "sms": true,
+    "inApp": true,
+    "appointmentReminders": true,
+    "paymentAlerts": true,
+    "promotions": false
+  }
+}
+```
+
+### Push Notification Types
+
+Your app will receive these notification types via FCM:
+
+| Type                     | Trigger                            | Priority | Channels               |
+| ------------------------ | ---------------------------------- | -------- | ---------------------- |
+| `appointment_booked`     | Appointment confirmed              | High     | Push, Email, WhatsApp  |
+| `appointment_accepted`   | Doctor accepts appointment         | High     | Push, Email            |
+| `appointment_rejected`   | Doctor rejects appointment         | Normal   | Push, Email            |
+| `payment_pending`        | Payment reminder                   | High     | Push                   |
+| `payment_received`       | Payment successful                 | High     | Push, Email, SMS       |
+| `payment_failed`         | Payment failed                     | High     | Push                   |
+| `consultation_reminder`  | 1 hour before consultation         | High     | Push, SMS              |
+| `consultation_starting`  | 15 mins before consultation        | Urgent   | Push                   |
+| `video_ready`            | Doctor is ready for video call     | Urgent   | Push                   |
+| `doctor_calling`         | Doctor initiates video call        | Urgent   | Push                   |
+| `prescription_ready`     | Prescription created               | High     | Push, Email, WhatsApp  |
+| `lab_report_ready`       | Lab results available              | High     | Push, Email            |
+| `membership_expiring`    | Membership expiry warning          | Normal   | Push, Email            |
+
+### FCM Payload Structure
+
+Your app will receive FCM messages with this structure:
+
+```json
+{
+  "notification": {
+    "title": "Appointment Booked Successfully! ✅",
+    "body": "Your appointment with Dr. Nandita is scheduled for Jan 28 at 10:00 AM"
+  },
+  "data": {
+    "type": "appointment_booked",
+    "appointmentId": "456",
+    "doctorId": "70",
+    "actionUrl": "/appointments/456",
+    "priority": "high",
+    "timestamp": "2026-01-27T10:00:00.000Z"
+  }
+}
+```
+
+### React Native FCM Integration
+
+```javascript
+import messaging from '@react-native-firebase/messaging';
+import AsyncStorage from '@react-native-async-storage/async-storage';
+
+// Request permission (iOS)
+async function requestPermission() {
+  const authStatus = await messaging().requestPermission();
+  const enabled =
+    authStatus === messaging.AuthorizationStatus.AUTHORIZED ||
+    authStatus === messaging.AuthorizationStatus.PROVISIONAL;
+  
+  if (enabled) {
+    console.log('Push notification permission granted');
+  }
+}
+
+// Get and register FCM token
+async function registerFCMToken(authToken) {
+  const fcmToken = await messaging().getToken();
+  
+  // Register with backend
+  await fetch('https://mediqzy.com/api/notifications/fcm/register', {
+    method: 'POST',
+    headers: {
+      'Authorization': `Bearer ${authToken}`,
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify({
+      token: fcmToken,
+      deviceType: Platform.OS, // 'android' or 'ios'
+    }),
+  });
+  
+  // Store locally to detect changes
+  await AsyncStorage.setItem('fcmToken', fcmToken);
+}
+
+// Listen for token refresh
+messaging().onTokenRefresh(async (newToken) => {
+  const authToken = await AsyncStorage.getItem('authToken');
+  if (authToken) {
+    await fetch('https://mediqzy.com/api/notifications/fcm/register', {
+      method: 'POST',
+      headers: {
+        'Authorization': `Bearer ${authToken}`,
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({
+        token: newToken,
+        deviceType: Platform.OS,
+      }),
+    });
+  }
+});
+
+// Handle foreground messages
+messaging().onMessage(async (remoteMessage) => {
+  console.log('Foreground notification:', remoteMessage);
+  
+  const { type, appointmentId, actionUrl } = remoteMessage.data;
+  
+  // Show local notification or in-app alert
+  showLocalNotification({
+    title: remoteMessage.notification.title,
+    body: remoteMessage.notification.body,
+    data: remoteMessage.data,
+  });
+  
+  // Handle specific notification types
+  if (type === 'doctor_calling' || type === 'video_ready') {
+    // Navigate to video call screen
+    navigation.navigate('VideoCall', { appointmentId });
+  }
+});
+
+// Handle background/quit state messages
+messaging().setBackgroundMessageHandler(async (remoteMessage) => {
+  console.log('Background notification:', remoteMessage);
+  // Handle data-only messages here
+});
+
+// Handle notification tap (app opened from notification)
+messaging().onNotificationOpenedApp((remoteMessage) => {
+  const { type, appointmentId, actionUrl } = remoteMessage.data;
+  
+  if (actionUrl) {
+    // Navigate to the relevant screen
+    handleDeepLink(actionUrl);
+  }
+});
+
+// Check if app was opened from a notification (cold start)
+messaging()
+  .getInitialNotification()
+  .then((remoteMessage) => {
+    if (remoteMessage) {
+      const { actionUrl } = remoteMessage.data;
+      if (actionUrl) {
+        handleDeepLink(actionUrl);
+      }
+    }
+  });
+```
+
+### Flutter FCM Integration
+
+```dart
+import 'package:firebase_messaging/firebase_messaging.dart';
+
+class PushNotificationService {
+  final FirebaseMessaging _fcm = FirebaseMessaging.instance;
+  final String baseUrl = 'https://mediqzy.com';
+  String? authToken;
+
+  Future<void> initialize(String token) async {
+    authToken = token;
+    
+    // Request permission (iOS)
+    NotificationSettings settings = await _fcm.requestPermission(
+      alert: true,
+      badge: true,
+      sound: true,
+    );
+    
+    if (settings.authorizationStatus == AuthorizationStatus.authorized) {
+      // Get FCM token and register
+      String? fcmToken = await _fcm.getToken();
+      if (fcmToken != null) {
+        await _registerToken(fcmToken);
+      }
+      
+      // Listen for token refresh
+      _fcm.onTokenRefresh.listen(_registerToken);
+      
+      // Handle foreground messages
+      FirebaseMessaging.onMessage.listen(_handleForegroundMessage);
+      
+      // Handle notification taps
+      FirebaseMessaging.onMessageOpenedApp.listen(_handleNotificationTap);
+    }
+  }
+
+  Future<void> _registerToken(String fcmToken) async {
+    final response = await http.post(
+      Uri.parse('$baseUrl/api/notifications/fcm/register'),
+      headers: {
+        'Authorization': 'Bearer $authToken',
+        'Content-Type': 'application/json',
+      },
+      body: jsonEncode({
+        'token': fcmToken,
+        'deviceType': Platform.isAndroid ? 'android' : 'ios',
+      }),
+    );
+    
+    if (response.statusCode == 200) {
+      print('FCM token registered successfully');
+    }
+  }
+
+  void _handleForegroundMessage(RemoteMessage message) {
+    print('Foreground message: ${message.notification?.title}');
+    
+    final data = message.data;
+    final type = data['type'];
+    
+    // Show local notification
+    _showLocalNotification(message);
+    
+    // Handle video call notifications immediately
+    if (type == 'doctor_calling' || type == 'video_ready') {
+      _navigateToVideoCall(data['appointmentId']);
+    }
+  }
+
+  void _handleNotificationTap(RemoteMessage message) {
+    final actionUrl = message.data['actionUrl'];
+    if (actionUrl != null) {
+      _handleDeepLink(actionUrl);
+    }
+  }
+}
+```
+
+---
+
+## �📊 Error Handling
 
 All API responses follow a consistent error format:
 
@@ -1225,7 +1678,9 @@ class MediczyAPI {
 - [ ] Add error handling and retry logic
 - [ ] Test video calls on different networks
 - [ ] Implement offline support for viewing past consultations
-- [ ] Add push notifications for appointment reminders
+- [x] Add push notifications for appointment reminders *(see FCM section)*
+- [ ] Register FCM token on login and token refresh
+- [ ] Handle background and foreground push notifications
 - [ ] Test on both iOS and Android platforms
 
 ---
@@ -1241,6 +1696,15 @@ For API support and questions:
 ---
 
 ## 📝 Changelog
+
+### v2.3.0 (2026-02-03)
+
+- **NEW**: Added comprehensive Push Notifications (FCM) section
+- **NEW**: FCM token registration endpoints (`/api/notifications/fcm/register`)
+- **NEW**: Device registration endpoints (`/api/mobile/devices/register`, `/api/mobile/devices/push-token`)
+- **NEW**: Notification management endpoints (list, read, delete)
+- **NEW**: React Native and Flutter FCM integration examples
+- **DOCS**: Added notification types and FCM payload structure reference
 
 ### v2.2.0 (2026-02-03)
 
