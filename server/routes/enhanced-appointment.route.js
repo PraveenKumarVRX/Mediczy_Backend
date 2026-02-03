@@ -6,6 +6,9 @@ import doctorModel from '../models/doctor.model.intelligent.js';
 import userModel from '../models/user.model.intelligent.js';
 import Appointment from '../models/appointment.model.intelligent.js';
 
+// Import usage metering service for SaaS tracking
+import usageMeteringService from '../services/usage-metering.service.js';
+
 const router = express.Router();
 
 const normalizeSymptoms = (value) => {
@@ -461,6 +464,21 @@ router.post('/book', authUser, [
       }
       console.log(`📧 New appointment notification sent to ${doctor.email}`);
     }, 1000);
+
+    // Track usage for SaaS metering (non-blocking)
+    try {
+      const tenantId = req.tenantId || doctor.organization_id || doctor.tenantId;
+      if (tenantId) {
+        usageMeteringService.trackAppointment(tenantId, {
+          appointmentId: dbAppointment.id,
+          doctorId: resolvedDoctorId,
+          patientId: req.user.id,
+          consultationType: dbConsultationType
+        }).catch(err => console.warn('Usage metering failed:', err.message));
+      }
+    } catch (meteringError) {
+      console.warn('Usage metering error (non-blocking):', meteringError.message);
+    }
 
     res.status(201).json({
       success: true,

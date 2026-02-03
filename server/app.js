@@ -134,6 +134,7 @@ import communicationRouter from './routes/communication.route.js';
 import consultationRecordingRouter from './routes/consultation-recording.route.js';
 import billingRouter from './routes/billing.route.js';
 import moduleAccessRouter from './routes/module-access.route.js';
+import roleRouter from './routes/role.route.js';
 import hospitalPracticeRouter from './routes/hospital/practice.route.js';
 import userAssociationRouter from './routes/userAssociation.route.js';
 
@@ -900,6 +901,8 @@ app.use('/stats', adminStatsRouter); // Admin dashboard statistics (public stats
 app.use('/api/admin', adminRouter);
 app.use('/api/admin/module-access', moduleAccessRouter);
 app.use('/api/module-access', moduleAccessRouter); // Public endpoint for checking user's own module access
+app.use('/api/admin/roles', roleRouter); // Role management with CRUD + module access
+app.use('/api/roles', roleRouter); // User-facing role endpoints (check own roles/modules)
 app.use('/api/team', teamRouter);
 app.use('/api/nurse', nurseRouter);
 app.use('/api/assistant', assistantRouter);
@@ -996,6 +999,19 @@ import unifiedHospitalStaffRouter from './routes/unified-hospital-staff.routes.j
 // Super Admin Routes
 import superadminClinicRouter from './routes/superadmin-clinic.routes.js';
 import superAdminTenantRouter from './routes/super-admin-tenant.route.js';
+
+// SaaS Platform Routes (Super Admin)
+import voiceScribeAdminRouter from './routes/voice-scriber-admin.route.js';
+import errorTrackingRouter from './routes/error-tracking.route.js';
+import saasDashboardRouter from './routes/saas-dashboard.route.js';
+import complianceDashboardRouter from './routes/compliance-dashboard.route.js';
+import reportBuilderRouter from './routes/report-builder.route.js';
+
+app.use('/api/admin/voice-scriber', voiceScribeAdminRouter); // Voice Scriber device management & analytics
+app.use('/api/admin/errors', errorTrackingRouter); // Error tracking & dashboard
+app.use('/api/admin/saas', saasDashboardRouter); // SaaS usage dashboard & tenant analytics
+app.use('/api/admin/compliance', complianceDashboardRouter); // HIPAA/DPDP compliance dashboard
+app.use('/api/admin/reports', reportBuilderRouter); // Custom report builder & scheduled reports
 
 app.use('/api/clinic/dashboard', clinicDashboardRouter); // Clinic practice management dashboard
 app.use('/api/clinic', clinicAuthRouter); // Clinic authentication (login, logout, verify)

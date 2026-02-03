@@ -146,8 +146,8 @@ export const DEFAULT_MODULE_ACCESS = {
  */
 const ModuleAccess = sequelize.define('ModuleAccess', {
   id: {
-    type: DataTypes.UUID,
-    defaultValue: DataTypes.UUIDV4,
+    type: DataTypes.INTEGER,
+    autoIncrement: true,
     primaryKey: true
   },
   
@@ -260,11 +260,12 @@ const ModuleAccess = sequelize.define('ModuleAccess', {
 }, {
   tableName: 'module_access',
   timestamps: true,
+  underscored: true,
   indexes: [
-    { fields: ['userType'] },
-    { fields: ['moduleId'] },
-    { fields: ['userType', 'moduleId'], unique: true },
-    { fields: ['isEnabled'] },
+    { fields: ['user_type'] },
+    { fields: ['module_id'] },
+    { fields: ['user_type', 'module_id'], unique: true },
+    { fields: ['is_enabled'] },
     { fields: ['category'] }
   ]
 });
@@ -275,14 +276,14 @@ const ModuleAccess = sequelize.define('ModuleAccess', {
  */
 const UserModuleOverride = sequelize.define('UserModuleOverride', {
   id: {
-    type: DataTypes.UUID,
-    defaultValue: DataTypes.UUIDV4,
+    type: DataTypes.INTEGER,
+    autoIncrement: true,
     primaryKey: true
   },
   
   // User ID this override applies to
   userId: {
-    type: DataTypes.UUID,
+    type: DataTypes.INTEGER,
     allowNull: false,
     comment: 'User ID for individual override'
   },
@@ -346,17 +347,18 @@ const UserModuleOverride = sequelize.define('UserModuleOverride', {
   
   // Who granted this override
   grantedBy: {
-    type: DataTypes.UUID,
+    type: DataTypes.INTEGER,
     allowNull: true,
     comment: 'Admin who granted this override'
   }
 }, {
   tableName: 'user_module_overrides',
   timestamps: true,
+  underscored: true,
   indexes: [
-    { fields: ['userId'] },
-    { fields: ['userId', 'moduleId'], unique: true },
-    { fields: ['expiresAt'] }
+    { fields: ['user_id'] },
+    { fields: ['user_id', 'module_id'], unique: true },
+    { fields: ['expires_at'] }
   ]
 });
 

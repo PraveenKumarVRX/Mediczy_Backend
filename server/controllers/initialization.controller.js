@@ -117,6 +117,16 @@ class InitializationController {
       console.log('📊 Starting doctor performance reports...');
       await import('../services/doctor-performance-cron.service.js');
       
+      // SaaS Platform: Auto-suspension scheduler (Phase 2)
+      console.log('🔒 Starting auto-suspension scheduler...');
+      const { default: autoSuspensionService } = await import('../services/auto-suspension.service.js');
+      autoSuspensionService.start();
+      
+      // SaaS Platform: System health monitoring (Phase 2)
+      console.log('💓 Starting system health monitoring...');
+      const { default: systemHealthService } = await import('../services/system-health.service.js');
+      systemHealthService.startPeriodicHealthCheck(60000); // Check every minute
+      
       console.log('✅ All cron jobs and automation services initialized successfully');
     } catch (error) {
       console.error('❌ Cron jobs initialization failed:', error.message);

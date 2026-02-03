@@ -41,6 +41,7 @@ Comprehensive monitoring, analytics, and control mechanisms for managing multi-t
 ```
 
 ### Quick Actions
+
 - 🚨 View Critical Alerts (3 pending)
 - 📊 Generate Monthly Report
 - 🏥 Onboard New Hospital
@@ -52,11 +53,11 @@ Comprehensive monitoring, analytics, and control mechanisms for managing multi-t
 
 ### Tenant List View
 
-| Hospital | Plan | Units | Users | OPD/Year | IPD/Year | Status | Health |
-|----------|------|-------|-------|----------|----------|--------|--------|
-| Apollo Kovilpatti | Phase 1 | 2/2 | 8/12 | 18,500/30,000 | 180/300 | Active | 🟢 |
-| Metro Hospital | Phase 1 | 1/2 | 4/12 | 25,200/30,000 | 290/300 | ⚠️ Near Limit | 🟡 |
-| City Care Clinic | Basic | 1/1 | 3/6 | 8,400/15,000 | 50/100 | Active | 🟢 |
+| Hospital          | Plan    | Units | Users | OPD/Year      | IPD/Year | Status        | Health |
+| ----------------- | ------- | ----- | ----- | ------------- | -------- | ------------- | ------ |
+| Apollo Kovilpatti | Phase 1 | 2/2   | 8/12  | 18,500/30,000 | 180/300  | Active        | 🟢     |
+| Metro Hospital    | Phase 1 | 1/2   | 4/12  | 25,200/30,000 | 290/300  | ⚠️ Near Limit | 🟡     |
+| City Care Clinic  | Basic   | 1/1   | 3/6   | 8,400/15,000  | 50/100   | Active        | 🟢     |
 
 ### Per-Tenant Dashboard
 
@@ -67,7 +68,7 @@ Tenant Details:
   Contract Start: 2026-01-15
   Contract End: 2027-01-14
   Plan: Phase 1 HIS + Voice Scriber
-  
+
 Units/Centers:
   - Kovilpatti Main (Unit 1) - Active
   - Kalugumalai Branch (Unit 2) - Active
@@ -138,7 +139,7 @@ Usage Limits:
 
 ```sql
 -- Daily patient counts per tenant
-SELECT 
+SELECT
   tenant_id,
   unit_id,
   DATE(created_at) as date,
@@ -153,14 +154,14 @@ ORDER BY date DESC;
 
 #### 2. Usage Metering Dashboard
 
-| Metric | Current | Limit | % Used | Trend | Alert |
-|--------|---------|-------|--------|-------|-------|
-| OPD Patients (YTD) | 18,500 | 30,000 | 61.7% | ▲ +340/day | ⚠️ 85% by Q3 |
-| IPD Admissions (YTD) | 180 | 300 | 60% | ▲ +2/day | Normal |
-| Active Users | 8 | 12 | 66.7% | Stable | Normal |
-| API Calls (24h) | 45,230 | 144,000 | 31.4% | Normal | Normal |
-| Storage Used | 45 GB | 100 GB | 45% | ▲ +0.5GB/mo | Normal |
-| Voice Minutes (MTD) | 1,240 | 5,000 | 24.8% | Normal | Normal |
+| Metric               | Current | Limit   | % Used | Trend       | Alert        |
+| -------------------- | ------- | ------- | ------ | ----------- | ------------ |
+| OPD Patients (YTD)   | 18,500  | 30,000  | 61.7%  | ▲ +340/day  | ⚠️ 85% by Q3 |
+| IPD Admissions (YTD) | 180     | 300     | 60%    | ▲ +2/day    | Normal       |
+| Active Users         | 8       | 12      | 66.7%  | Stable      | Normal       |
+| API Calls (24h)      | 45,230  | 144,000 | 31.4%  | Normal      | Normal       |
+| Storage Used         | 45 GB   | 100 GB  | 45%    | ▲ +0.5GB/mo | Normal       |
+| Voice Minutes (MTD)  | 1,240   | 5,000   | 24.8%  | Normal      | Normal       |
 
 #### 3. Usage Alerts Configuration
 
@@ -171,7 +172,7 @@ Usage Alerts:
       - level: warning
         percentage: 80
         action: email_admin
-      - level: critical  
+      - level: critical
         percentage: 95
         action: [email_admin, sms_admin, dashboard_alert]
       - level: exceeded
@@ -198,14 +199,14 @@ Usage Alerts:
 
 Track which features are being used:
 
-| Module | Daily Active Users | Sessions/Day | Avg Duration | Top Actions |
-|--------|-------------------|--------------|--------------|-------------|
-| Front Desk | 12 | 156 | 45 min | Register Patient, Check-in |
-| Doctor | 8 | 89 | 25 min | View Patient, Write Rx |
-| Lab | 4 | 67 | 15 min | Enter Results, Print Report |
-| Pharmacy | 3 | 134 | 8 min | Dispense, Stock Check |
-| Billing | 6 | 178 | 12 min | Generate Invoice, Payment |
-| Voice Scriber | 4 | 45 | 6 min | Start Recording, Edit Text |
+| Module        | Daily Active Users | Sessions/Day | Avg Duration | Top Actions                 |
+| ------------- | ------------------ | ------------ | ------------ | --------------------------- |
+| Front Desk    | 12                 | 156          | 45 min       | Register Patient, Check-in  |
+| Doctor        | 8                  | 89           | 25 min       | View Patient, Write Rx      |
+| Lab           | 4                  | 67           | 15 min       | Enter Results, Print Report |
+| Pharmacy      | 3                  | 134          | 8 min        | Dispense, Stock Check       |
+| Billing       | 6                  | 178          | 12 min       | Generate Invoice, Payment   |
+| Voice Scriber | 4                  | 45           | 6 min        | Start Recording, Edit Text  |
 
 ---
 
@@ -226,11 +227,11 @@ Revenue Breakdown:
 
 ### Billing Dashboard
 
-| Tenant | Plan | Annual Value | Next Invoice | Status | Actions |
-|--------|------|--------------|--------------|--------|---------|
-| Apollo Kovilpatti | Phase 1 | ₹5,04,880 | 2027-01-15 | ✅ Paid | View |
-| Metro Hospital | Phase 1 | ₹2,12,400 | 2026-03-01 | ⚠️ Due in 25 days | Remind |
-| City Care | Basic | ₹1,06,200 | 2026-02-15 | 🔴 Overdue | Contact |
+| Tenant            | Plan    | Annual Value | Next Invoice | Status            | Actions |
+| ----------------- | ------- | ------------ | ------------ | ----------------- | ------- |
+| Apollo Kovilpatti | Phase 1 | ₹5,04,880    | 2027-01-15   | ✅ Paid           | View    |
+| Metro Hospital    | Phase 1 | ₹2,12,400    | 2026-03-01   | ⚠️ Due in 25 days | Remind  |
+| City Care         | Basic   | ₹1,06,200    | 2026-02-15   | 🔴 Overdue        | Contact |
 
 ### Overage Tracking
 
@@ -259,18 +260,18 @@ Recommendation: Upgrade to Phase 2 plan
 const billingRules = {
   // Grace period before enforcement
   gracePeriodDays: 15,
-  
+
   // Overage charges
   overageRates: {
-    opdPatient: 3,      // ₹3 per patient over limit
-    ipdPatient: 50,     // ₹50 per admission over limit
-    storageGB: 100,     // ₹100 per GB over limit
-    voiceMinutes: 0.5,  // ₹0.50 per minute over limit
+    opdPatient: 3, // ₹3 per patient over limit
+    ipdPatient: 50, // ₹50 per admission over limit
+    storageGB: 100, // ₹100 per GB over limit
+    voiceMinutes: 0.5, // ₹0.50 per minute over limit
   },
-  
+
   // Late payment
   latePaymentPenalty: 0.02, // 2% per month
-  
+
   // Suspension rules
   suspensionAfterDays: 30,
   dataRetentionAfterSuspension: 90, // days
@@ -312,16 +313,16 @@ const tenantMetrics = {
     timestamp: "2026-02-03T12:00:00Z",
     apiMetrics: {
       requestsPerMinute: 145,
-      avgResponseTime: 89,  // ms
+      avgResponseTime: 89, // ms
       p95ResponseTime: 234, // ms
       p99ResponseTime: 567, // ms
-      errorRate: 0.02,      // %
+      errorRate: 0.02, // %
     },
     databaseMetrics: {
       activeConnections: 12,
       queryTime: {
-        avg: 23,   // ms
-        slow: 3,   // queries > 1s
+        avg: 23, // ms
+        slow: 3, // queries > 1s
       },
       rowsRead: 45000,
       rowsWritten: 1200,
@@ -330,8 +331,8 @@ const tenantMetrics = {
       activeSessions: 8,
       concurrentUsers: 6,
       actionsPerMinute: 45,
-    }
-  }
+    },
+  },
 };
 ```
 
@@ -371,14 +372,14 @@ Uptime History:
 
 ### Error Categorization
 
-| Category | Count | Trend | Top Error | Affected |
-|----------|-------|-------|-----------|----------|
-| API Errors | 45 | ▼ -12% | 500 Internal Server Error | 3 tenants |
-| Database | 12 | ▲ +5% | Connection timeout | 1 tenant |
-| Voice Scriber | 23 | Stable | Audio processing failed | 2 devices |
-| Authentication | 8 | ▼ -20% | Token expired | 5 users |
-| Payment Gateway | 5 | New | Razorpay timeout | 2 tenants |
-| File Upload | 34 | ▲ +15% | File too large | 8 users |
+| Category        | Count | Trend  | Top Error                 | Affected  |
+| --------------- | ----- | ------ | ------------------------- | --------- |
+| API Errors      | 45    | ▼ -12% | 500 Internal Server Error | 3 tenants |
+| Database        | 12    | ▲ +5%  | Connection timeout        | 1 tenant  |
+| Voice Scriber   | 23    | Stable | Audio processing failed   | 2 devices |
+| Authentication  | 8     | ▼ -20% | Token expired             | 5 users   |
+| Payment Gateway | 5     | New    | Razorpay timeout          | 2 tenants |
+| File Upload     | 34    | ▲ +15% | File too large            | 8 users   |
 
 ### Detailed Error Log
 
@@ -430,17 +431,17 @@ Alert Rules:
     condition: error_rate > 1% for 5 minutes
     severity: critical
     channels: [slack, pagerduty, email]
-    
+
   - name: Database Connection Issues
     condition: db_connection_errors > 5 in 1 minute
     severity: critical
     channels: [pagerduty, sms]
-    
+
   - name: Voice Scriber Failures
     condition: voice_api_errors > 10 in 5 minutes
     severity: warning
     channels: [slack, email]
-    
+
   - name: Payment Failures
     condition: payment_errors > 3 in 10 minutes
     severity: warning
@@ -512,12 +513,12 @@ Auto-Create Jira Ticket:
 
 ### Access Audit Log
 
-| Timestamp | User | Tenant | Action | IP | Status |
-|-----------|------|--------|--------|-----|--------|
-| 12:34:56 | admin@apollo.com | APL-001 | View Patient Record | 203.x.x.x | ✅ |
-| 12:33:21 | dr.sharma@apollo.com | APL-001 | Export Patient List | 203.x.x.x | ✅ |
-| 12:30:15 | unknown | - | Login Attempt | 45.x.x.x | ❌ Blocked |
-| 12:28:44 | nurse.priya@metro.com | MET-002 | Update Vitals | 117.x.x.x | ✅ |
+| Timestamp | User                  | Tenant  | Action              | IP        | Status     |
+| --------- | --------------------- | ------- | ------------------- | --------- | ---------- |
+| 12:34:56  | admin@apollo.com      | APL-001 | View Patient Record | 203.x.x.x | ✅         |
+| 12:33:21  | dr.sharma@apollo.com  | APL-001 | Export Patient List | 203.x.x.x | ✅         |
+| 12:30:15  | unknown               | -       | Login Attempt       | 45.x.x.x  | ❌ Blocked |
+| 12:28:44  | nurse.priya@metro.com | MET-002 | Update Vitals       | 117.x.x.x | ✅         |
 
 ### Compliance Monitoring
 
@@ -562,26 +563,26 @@ const securityAlerts = [
     type: "BRUTE_FORCE",
     threshold: "5 failed logins in 5 minutes",
     action: "block_ip_24h",
-    notify: ["security-team@mayden.com"]
+    notify: ["security-team@mayden.com"],
   },
   {
     type: "UNUSUAL_DATA_ACCESS",
     threshold: "User accessing >100 patient records/hour",
     action: "flag_for_review",
-    notify: ["compliance@mayden.com", "tenant_admin"]
+    notify: ["compliance@mayden.com", "tenant_admin"],
   },
   {
     type: "AFTER_HOURS_ACCESS",
     threshold: "PHI access between 11 PM - 6 AM",
     action: "log_and_alert",
-    notify: ["tenant_admin"]
+    notify: ["tenant_admin"],
   },
   {
     type: "DATA_EXPORT",
     threshold: "Any bulk export >1000 records",
     action: "require_approval",
-    notify: ["tenant_admin", "compliance@mayden.com"]
-  }
+    notify: ["tenant_admin", "compliance@mayden.com"],
+  },
 ];
 ```
 
@@ -591,12 +592,12 @@ const securityAlerts = [
 
 ### Device Status
 
-| Device ID | Hospital | User | Status | Last Sync | Battery | Storage |
-|-----------|----------|------|--------|-----------|---------|---------|
-| TAB-001 | Apollo Kovilpatti | Dr. Sharma | 🟢 Online | 2 min ago | 78% | 45% |
-| TAB-002 | Apollo Kovilpatti | Dr. Priya | 🟢 Recording | Now | 92% | 23% |
-| TAB-003 | Metro Hospital | Dr. Kumar | 🟡 Idle | 45 min ago | 34% | 67% |
-| TAB-004 | Metro Hospital | Dr. Singh | 🔴 Offline | 3 hours ago | 12% | 89% |
+| Device ID | Hospital          | User       | Status       | Last Sync   | Battery | Storage |
+| --------- | ----------------- | ---------- | ------------ | ----------- | ------- | ------- |
+| TAB-001   | Apollo Kovilpatti | Dr. Sharma | 🟢 Online    | 2 min ago   | 78%     | 45%     |
+| TAB-002   | Apollo Kovilpatti | Dr. Priya  | 🟢 Recording | Now         | 92%     | 23%     |
+| TAB-003   | Metro Hospital    | Dr. Kumar  | 🟡 Idle      | 45 min ago  | 34%     | 67%     |
+| TAB-004   | Metro Hospital    | Dr. Singh  | 🔴 Offline   | 3 hours ago | 12%     | 89%     |
 
 ### Voice Scriber Usage
 
@@ -605,12 +606,12 @@ Monthly Statistics:
   Total Recording Sessions: 1,247
   Total Minutes Recorded: 8,340
   Average Session Duration: 6.7 minutes
-  
+
 Transcription Metrics:
   Total Words Transcribed: 2,450,000
   Average Accuracy: 94.2%
   Manual Corrections: 12,340 (0.5%)
-  
+
 Cost Analysis:
   AI Processing Cost: ₹12,500
   Revenue from Voice Scriber: ₹2,48,000
@@ -660,14 +661,14 @@ Action Items:
 
 ### Ticket Categories
 
-| Category | Open | This Week | Avg Resolution | Trend |
-|----------|------|-----------|----------------|-------|
-| Login Issues | 3 | 12 | 0.5 hours | ▼ -20% |
-| Voice Scriber | 5 | 18 | 2.3 hours | ▲ +15% |
-| Billing/Invoice | 2 | 8 | 1.2 hours | Stable |
-| Feature Request | 8 | 15 | N/A | ▲ +25% |
-| Bug Report | 3 | 10 | 4.5 hours | ▼ -10% |
-| Training Request | 2 | 5 | 24 hours | Stable |
+| Category         | Open | This Week | Avg Resolution | Trend  |
+| ---------------- | ---- | --------- | -------------- | ------ |
+| Login Issues     | 3    | 12        | 0.5 hours      | ▼ -20% |
+| Voice Scriber    | 5    | 18        | 2.3 hours      | ▲ +15% |
+| Billing/Invoice  | 2    | 8         | 1.2 hours      | Stable |
+| Feature Request  | 8    | 15        | N/A            | ▲ +25% |
+| Bug Report       | 3    | 10        | 4.5 hours      | ▼ -10% |
+| Training Request | 2    | 5         | 24 hours       | Stable |
 
 ### Ticket Details View
 
@@ -685,21 +686,21 @@ Assigned To: support-l2@mayden.com
 Subject: Voice Scriber not saving transcriptions
 
 Description: |
-  Since this morning, the voice scriber on TAB-001 is recording 
+  Since this morning, the voice scriber on TAB-001 is recording
   but transcriptions are not being saved to patient records.
-  
+
 Timeline:
   10:30 - Ticket created
   10:35 - Auto-assigned to L1 support
   10:42 - L1 escalated to L2 (suspected API issue)
   11:15 - Backend team investigating
   11:45 - Root cause identified: Storage quota exceeded
-  
+
 Resolution: |
   Increased storage quota from 50GB to 100GB.
   Cleared old audio files (>90 days) per retention policy.
   Transcriptions now saving successfully.
-  
+
 Follow-up: Schedule storage monitoring alert for this tenant.
 ```
 
@@ -709,38 +710,37 @@ Follow-up: Schedule storage monitoring alert for this tenant.
 
 ### Scheduled Reports
 
-| Report | Frequency | Recipients | Last Generated |
-|--------|-----------|------------|----------------|
-| Executive Summary | Weekly | CEO, CTO | Feb 3, 2026 |
-| Usage Report (All Tenants) | Monthly | Finance, Sales | Feb 1, 2026 |
-| Tenant Health Report | Weekly | Account Managers | Feb 3, 2026 |
-| Security Audit Report | Monthly | Compliance, CISO | Feb 1, 2026 |
-| Error Summary | Daily | Dev Team | Feb 3, 2026 |
-| SLA Compliance | Monthly | Operations | Feb 1, 2026 |
+| Report                     | Frequency | Recipients       | Last Generated |
+| -------------------------- | --------- | ---------------- | -------------- |
+| Executive Summary          | Weekly    | CEO, CTO         | Feb 3, 2026    |
+| Usage Report (All Tenants) | Monthly   | Finance, Sales   | Feb 1, 2026    |
+| Tenant Health Report       | Weekly    | Account Managers | Feb 3, 2026    |
+| Security Audit Report      | Monthly   | Compliance, CISO | Feb 1, 2026    |
+| Error Summary              | Daily     | Dev Team         | Feb 3, 2026    |
+| SLA Compliance             | Monthly   | Operations       | Feb 1, 2026    |
 
 ### On-Demand Reports
 
 ```yaml
 Available Reports:
-  
   Business Reports:
     - Tenant Usage Summary
     - Revenue by Tenant
     - Churn Analysis
     - Feature Adoption
-    
+
   Technical Reports:
     - API Performance Report
     - Error Analysis Report
     - Database Performance
     - Infrastructure Costs
-    
+
   Compliance Reports:
     - Access Audit Trail
     - Data Export Log
     - PHI Access Report
     - Security Incident Report
-    
+
   Tenant-Specific:
     - Monthly Invoice Detail
     - Usage Statement
@@ -869,30 +869,30 @@ Tenants:
   GET    /tenants/:id/usage          # Get usage stats
   GET    /tenants/:id/users          # List tenant users
   POST   /tenants/:id/features       # Configure features
-  
+
 Billing:
   GET    /billing/summary            # Revenue overview
   GET    /billing/invoices           # All invoices
   POST   /billing/invoices/:id/send  # Send invoice
   GET    /billing/overages           # Overage report
-  
+
 Monitoring:
   GET    /health                     # System health
   GET    /metrics                    # Real-time metrics
   GET    /errors                     # Error dashboard
   GET    /errors/:id                 # Error details
-  
+
 Security:
   GET    /audit-logs                 # Access logs
   GET    /security/alerts            # Security alerts
   POST   /security/block-ip          # Block IP
-  
+
 Support:
   GET    /tickets                    # All tickets
   POST   /tickets                    # Create ticket
   PUT    /tickets/:id                # Update ticket
   GET    /tickets/:id/timeline       # Ticket history
-  
+
 Reports:
   GET    /reports/executive          # Executive summary
   GET    /reports/usage              # Usage report
@@ -905,6 +905,7 @@ Reports:
 ## 📞 Contact
 
 For implementation support:
+
 - **Technical:** tech@mayden.com
 - **Product:** product@mayden.com
 - **Sales:** sales@mayden.com
