@@ -151,6 +151,8 @@ const Index = () => {
     connectedAt?: string;
     lastSync?: string;
   }>>([]);
+  const onboardingStorageKey = currentUser?.id ? `onboarding:user:${currentUser.id}` : 'onboarding:user:guest';
+  const [onboardingDismissed, setOnboardingDismissed] = useState(false);
 
   // Helper function to get device icon based on type
   const getDeviceIcon = (type: string): string => {
@@ -170,6 +172,88 @@ const Index = () => {
     };
     return iconMap[type?.toLowerCase()] || '⌚';
   };
+
+  useEffect(() => {
+    const stored = localStorage.getItem(onboardingStorageKey);
+    setOnboardingDismissed(stored === 'dismissed');
+  }, [onboardingStorageKey]);
+
+  const dismissOnboarding = () => {
+    setOnboardingDismissed(true);
+    localStorage.setItem(onboardingStorageKey, 'dismissed');
+  };
+
+  const profileComplete = Boolean(
+    currentUser?.dateOfBirth &&
+    currentUser?.gender &&
+    (currentUser?.phoneNumber || currentUser?.phone)
+  );
+  const deviceConnected = connectedDevices.length > 0;
+  const hasUpcomingAppointment = upcomingAppointments.length > 0;
+
+  const onboardingSteps = [
+    {
+      id: 'profile',
+      title: 'Complete your profile',
+      description: 'Add DOB, gender, and a verified phone number.',
+      done: profileComplete,
+      link: '/profile',
+      cta: 'Complete profile'
+    },
+    {
+      id: 'device',
+      title: 'Connect a device',
+      description: 'Sync steps, sleep, heart rate, and more.',
+      done: deviceConnected,
+      link: '/patient/devices?action=pair-device',
+      cta: 'Connect device'
+    },
+    {
+      id: 'consult',
+      title: 'Book your first consult',
+      description: 'Talk to a doctor and build your care plan.',
+      done: hasUpcomingAppointment,
+      link: '/consultation',
+      cta: 'Book consult'
+    }
+  ];
+
+  const onboardingComplete = onboardingSteps.every((step) => step.done);
+  const showOnboarding = !onboardingDismissed && !onboardingComplete;
+  const completedCount = onboardingSteps.filter((step) => step.done).length;
+
+  const nextBestAction = !profileComplete
+    ? {
+        title: 'Complete your profile',
+        description: 'Unlock personalized care and accurate recommendations.',
+        link: '/profile',
+        cta: 'Finish profile',
+        icon: User
+      }
+    : !deviceConnected
+      ? {
+          title: 'Connect a device',
+          description: 'Start automatic health tracking in minutes.',
+          link: '/patient/devices?action=pair-device',
+          cta: 'Connect device',
+          icon: Bluetooth
+        }
+      : !hasUpcomingAppointment
+        ? {
+            title: 'Book a consultation',
+            description: 'Get expert guidance on your health goals.',
+            link: '/consultation',
+            cta: 'Book now',
+            icon: CalendarCheck
+          }
+        : {
+            title: 'Review today’s trends',
+            description: 'See how your sleep, activity, and vitals are moving.',
+            link: '/health-tracker',
+            cta: 'View trends',
+            icon: TrendingUp
+          };
+  const NextBestIcon = nextBestAction.icon;
 
   // Helper to detect device type from name
   const detectDeviceType = (name: string): { type: string; icon: string } => {
@@ -1066,6 +1150,114 @@ const Index = () => {
             </div>
           </div>
         </div>
+
+        {showOnboarding ? (
+          <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
+            <Card className="lg:col-span-2 bg-white dark:bg-slate-800/50 border-slate-200/80 dark:border-slate-700/50 shadow-sm">
+              <CardHeader className="flex flex-row items-center justify-between pb-2 border-b border-slate-100 dark:border-slate-700/50">
+                <div>
+                  <CardTitle className="text-lg font-semibold text-slate-800 dark:text-white">
+                    Getting Started
+                  </CardTitle>
+                  <p className="text-xs text-slate-500 dark:text-slate-400 mt-1">
+                    Quick setup for a personalized experience.
+                  </p>
+                </div>
+                <div className="flex items-center gap-2">
+                  <Badge variant="outline" className="text-xs">
+                    {completedCount}/{onboardingSteps.length} done
+                  </Badge>
+                  <Button variant="ghost" size="sm" onClick={dismissOnboarding} className="text-slate-500">
+                    Dismiss
+                  </Button>
+                </div>
+              </CardHeader>
+              <CardContent className="pt-4 space-y-3">
+                {onboardingSteps.map((step) => (
+                  <div
+                    key={step.id}
+                    className="flex items-center gap-3 p-3 rounded-xl bg-slate-50 dark:bg-slate-800/60 border border-slate-100 dark:border-slate-700/50"
+                  >
+                    <div className={`p-1.5 rounded-lg ${step.done ? 'bg-teal-50 dark:bg-teal-900/30' : 'bg-slate-100 dark:bg-slate-700'}`}>
+                      {step.done ? (
+                        <CheckCircle2 className="w-4 h-4 text-teal-600 dark:text-teal-400" />
+                      ) : (
+                        <AlertCircle className="w-4 h-4 text-slate-500 dark:text-slate-300" />
+                      )}
+                    </div>
+                    <div className="flex-1 min-w-0">
+                      <p className="text-sm font-medium text-slate-800 dark:text-white">{step.title}</p>
+                      <p className="text-xs text-slate-500 dark:text-slate-400">{step.description}</p>
+                    </div>
+                    {step.done ? (
+                      <Badge variant="outline" className="text-[10px] text-teal-600 dark:text-teal-400 border-teal-200 dark:border-teal-700">
+                        Done
+                      </Badge>
+                    ) : (
+                      <Link to={step.link}>
+                        <Button size="sm" variant="outline" className="text-xs">
+                          {step.cta}
+                        </Button>
+                      </Link>
+                    )}
+                  </div>
+                ))}
+              </CardContent>
+            </Card>
+
+            <Card className="bg-white dark:bg-slate-800/50 border-slate-200/80 dark:border-slate-700/50 shadow-sm">
+              <CardHeader className="flex flex-row items-center justify-between pb-2 border-b border-slate-100 dark:border-slate-700/50">
+                <CardTitle className="text-lg font-semibold text-slate-800 dark:text-white">
+                  Next Best Action
+                </CardTitle>
+                <Badge variant="outline" className="text-[10px]">Recommended</Badge>
+              </CardHeader>
+              <CardContent className="pt-4">
+                <div className="flex items-start gap-3">
+                  <div className="p-3 rounded-xl bg-teal-50 dark:bg-teal-900/30">
+                    <NextBestIcon className="w-5 h-5 text-teal-600 dark:text-teal-400" />
+                  </div>
+                  <div className="space-y-2">
+                    <p className="text-sm font-semibold text-slate-800 dark:text-white">{nextBestAction.title}</p>
+                    <p className="text-xs text-slate-500 dark:text-slate-400">{nextBestAction.description}</p>
+                    <Link to={nextBestAction.link}>
+                      <Button size="sm" className="bg-gradient-to-r from-teal-500 to-teal-600 hover:from-teal-600 hover:to-teal-700 text-white shadow-sm">
+                        {nextBestAction.cta}
+                        <ArrowRight className="w-4 h-4 ml-2" />
+                      </Button>
+                    </Link>
+                  </div>
+                </div>
+              </CardContent>
+            </Card>
+          </div>
+        ) : (
+          <Card className="bg-white dark:bg-slate-800/50 border-slate-200/80 dark:border-slate-700/50 shadow-sm">
+            <CardHeader className="flex flex-row items-center justify-between pb-2 border-b border-slate-100 dark:border-slate-700/50">
+              <CardTitle className="text-lg font-semibold text-slate-800 dark:text-white">
+                Next Best Action
+              </CardTitle>
+              <Badge variant="outline" className="text-[10px]">Recommended</Badge>
+            </CardHeader>
+            <CardContent className="pt-4">
+              <div className="flex items-start gap-3">
+                <div className="p-3 rounded-xl bg-teal-50 dark:bg-teal-900/30">
+                  <NextBestIcon className="w-5 h-5 text-teal-600 dark:text-teal-400" />
+                </div>
+                <div className="space-y-2">
+                  <p className="text-sm font-semibold text-slate-800 dark:text-white">{nextBestAction.title}</p>
+                  <p className="text-xs text-slate-500 dark:text-slate-400">{nextBestAction.description}</p>
+                  <Link to={nextBestAction.link}>
+                    <Button size="sm" className="bg-gradient-to-r from-teal-500 to-teal-600 hover:from-teal-600 hover:to-teal-700 text-white shadow-sm">
+                      {nextBestAction.cta}
+                      <ArrowRight className="w-4 h-4 ml-2" />
+                    </Button>
+                  </Link>
+                </div>
+              </div>
+            </CardContent>
+          </Card>
+        )}
 
         {/* Health Stats Row */}
         <div className="grid grid-cols-2 md:grid-cols-4 gap-4">

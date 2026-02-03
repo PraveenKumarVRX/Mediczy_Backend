@@ -53,7 +53,7 @@ function handleOAuthSuccess(req, res, userData, provider) {
     
     // Redirect to frontend with token
     const redirectUrl = process.env.NODE_ENV === 'production'
-      ? `https://mediqzy.com/oauth-callback?token=${token}&userType=user&provider=${provider}`
+      ? `https://app.mediqzy.com/oauth-callback?token=${token}&userType=user&provider=${provider}`
       : `http://localhost:3001/oauth-callback?token=${token}&userType=user&provider=${provider}`;
     
     res.redirect(redirectUrl);

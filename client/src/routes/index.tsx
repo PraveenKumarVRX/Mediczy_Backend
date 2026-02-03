@@ -581,8 +581,8 @@ const AppRoutes = () => {
       {/* Consolidated Health Dashboard - combines health-tracker and patient/devices */}
       {/* Unified Health Dashboard - Complete health overview */}
       <Route path="/health-dashboard" element={<UnifiedHealthDashboard />} />
-      {/* Smart Devices Management */}
-      <Route path="/patient/devices" element={<MainLayout><HealthDashboard /></MainLayout>} />
+      {/* Smart Devices Management - HealthDashboard has its own MainLayout */}
+      <Route path="/patient/devices" element={<HealthDashboard />} />
       {/* Manual Health Tracker (Fitness focus) */}
       <Route path="/health-tracker" element={<MainLayout><HealthTracker /></MainLayout>} />
       {/* Health Diary */}

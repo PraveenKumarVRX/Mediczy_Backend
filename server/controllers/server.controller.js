@@ -23,12 +23,14 @@ class ServerController {
   async createServer(app) {
     this.server = http.createServer(app);
     
-    // Setup Socket.IO
+    // Setup Socket.IO (single instance for all services)
     this.io = setupSocketIO(this.server);
     
-    // Initialize Insurance WebSocket Service
-    console.log('🔌 Initializing Insurance WebSocket Service...');
-    socketService.initialize(this.server);
+    // Share the existing Socket.IO instance with socketService
+    // DO NOT call socketService.initialize(this.server) - it creates a duplicate Socket.IO server
+    // which causes "handleUpgrade() was called more than once" errors in cluster mode
+    console.log('🔌 Sharing Socket.IO instance with services...');
+    socketService.setIO(this.io);
     
     // Initialize Redis Cache Service
     console.log('💾 Initializing Redis Cache Service...');

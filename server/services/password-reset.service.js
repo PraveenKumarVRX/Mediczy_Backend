@@ -101,6 +101,7 @@ class PasswordResetService {
         };
       }
 
+      const includeOtp = process.env.NODE_ENV === 'development' || process.env.OTP_DEBUG_RESPONSE === 'true';
       // Generate OTP for password reset
       const otp = await OTP.generate({
         phone: account.phoneNumber || account.phone,
@@ -115,17 +116,21 @@ class PasswordResetService {
 
       console.log(`✅ Password reset OTP sent to user ${account.id}:`, deliveryResults);
 
+      const responseData = {
+        otpId: otp.id,
+        expiresAt: otp.expiresAt,
+        expiresIn: '10 minutes',
+        deliveryChannels: deliveryResults
+      };
+
+      if (includeOtp) {
+        responseData.otp = otp.code;
+      }
+
       return {
         success: true,
         message: 'OTP sent successfully via Email, SMS, and WhatsApp',
-        data: {
-          otpId: otp.id,
-          expiresAt: otp.expiresAt,
-          expiresIn: '10 minutes',
-          deliveryChannels: deliveryResults,
-          // Include OTP for testing (remove in production)
-          otp: otp.code
-        }
+        data: responseData
       };
     } catch (error) {
       console.error('Password reset request error:', error);

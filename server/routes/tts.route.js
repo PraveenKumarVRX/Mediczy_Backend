@@ -84,14 +84,15 @@ router.post('/speak', async (req, res) => {
       });
     }
 
-    // Stream the audio response
+    // Send the audio response (don't use Transfer-Encoding with Content-Length)
+    const audioBuffer = await response.buffer();
+    
     res.set({
       'Content-Type': 'audio/mpeg',
-      'Cache-Control': 'no-cache',
-      'Transfer-Encoding': 'chunked'
+      'Content-Length': audioBuffer.length,
+      'Cache-Control': 'no-cache'
     });
 
-    const audioBuffer = await response.buffer();
     res.send(audioBuffer);
 
     console.log(`✅ TTS audio generated: ${audioBuffer.length} bytes`);

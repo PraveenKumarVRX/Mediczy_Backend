@@ -72,7 +72,26 @@ export const ensureMeetingInfo = (appointment) => {
   return { provider: 'livekit', meetingId, meetingLink, meetingDetails, needsUpdate };
 };
 
-export const buildLiveKitJoinData = async ({ meetingId, identity, name }) => {
+/**
+ * Build LiveKit join data with configurable TTL
+ * @param {Object} options
+ * @param {string} options.meetingId - Room/meeting ID
+ * @param {string} options.identity - Unique user identity
+ * @param {string} options.name - Display name
+ * @param {number} [options.ttl] - Token TTL in seconds (default: 1 hour, max: 7 days)
+ * @param {boolean} [options.canPublish=true] - Can publish audio/video
+ * @param {boolean} [options.canSubscribe=true] - Can subscribe to others
+ * @param {boolean} [options.roomAgnostic=false] - If true, token works for any room
+ */
+export const buildLiveKitJoinData = async ({ 
+  meetingId, 
+  identity, 
+  name, 
+  ttl,
+  canPublish = true,
+  canSubscribe = true,
+  roomAgnostic = false
+}) => {
   const settings = getProviderSettings();
   const serverUrl = settings.serverUrl || process.env.LIVEKIT_URL;
   const apiKey = settings.apiKey || process.env.LIVEKIT_API_KEY;
@@ -83,16 +102,25 @@ export const buildLiveKitJoinData = async ({ meetingId, identity, name }) => {
     throw new Error('LiveKit is not configured. Set LIVEKIT_URL, LIVEKIT_API_KEY, and LIVEKIT_API_SECRET');
   }
 
+  // Default TTL: 1 hour, Max TTL: 7 days (604800 seconds)
+  const DEFAULT_TTL = 60 * 60; // 1 hour
+  const MAX_TTL = 7 * 24 * 60 * 60; // 7 days
+  const tokenTtl = Math.min(ttl || DEFAULT_TTL, MAX_TTL);
+
   const token = new AccessToken(apiKey, apiSecret, {
     identity,
     name,
-    ttl: 60 * 60
+    ttl: tokenTtl
   });
+  
+  // Room-agnostic tokens can join any room (useful for persistent tokens)
+  const roomGrant = roomAgnostic ? '*' : meetingId;
+  
   token.addGrant({
     roomJoin: true,
-    room: meetingId,
-    canPublish: true,
-    canSubscribe: true
+    room: roomGrant,
+    canPublish,
+    canSubscribe
   });
 
   const jwt = await token.toJwt();

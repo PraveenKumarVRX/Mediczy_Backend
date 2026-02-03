@@ -433,6 +433,11 @@ router.post(
     }
 
     const { identifier } = req.body;
+    const includeOtp = process.env.NODE_ENV === 'development' || process.env.OTP_DEBUG_RESPONSE === 'true';
+    const genericResponse = {
+      success: true,
+      message: 'If an account exists, an OTP has been sent.'
+    };
 
     try {
       // Determine if identifier is email or phone
@@ -460,21 +465,8 @@ router.post(
         deliveryMethod = 'whatsapp';
       }
 
-      if (!user) {
-        return res.status(404).json({
-          success: false,
-          message: isEmail 
-            ? 'No account found with this email address' 
-            : 'No account found with this phone number'
-        });
-      }
-
-      // Check if user is active
-      if (user.status === 'inactive' || user.status === 'blocked') {
-        return res.status(403).json({
-          success: false,
-          message: 'Your account is not active. Please contact support.'
-        });
+      if (!user || user.status === 'inactive' || user.status === 'blocked') {
+        return res.status(200).json(genericResponse);
       }
 
       // Generate OTP for login
@@ -542,18 +534,21 @@ router.post(
         ? user.email.replace(/(.{2})(.*)(@.*)/, '$1****$3')
         : user.phoneNumber.replace(/(\d{2})(\d+)(\d{2})/, '$1******$3');
 
+      const responseData = {
+        otpId: otp.id,
+        expiresAt: otp.expiresAt,
+        expiresIn: '5 minutes',
+        deliveryMethod,
+        sentTo: maskedIdentifier
+      };
+
+      if (includeOtp) {
+        responseData.otp = otp.code;
+      }
+
       return res.status(200).json({
-        success: true,
-        message: `OTP sent successfully via ${deliveryMethod === 'email' ? 'Email' : 'WhatsApp'}`,
-        data: {
-          otpId: otp.id,
-          expiresAt: otp.expiresAt,
-          expiresIn: '5 minutes',
-          deliveryMethod,
-          sentTo: maskedIdentifier,
-          // Include OTP for testing (remove in production)
-          otp: otp.code
-        }
+        ...genericResponse,
+        data: responseData
       });
     } catch (error) {
       console.error('Send login OTP error:', error);
@@ -606,9 +601,9 @@ router.post(
       }
 
       if (!user) {
-        return res.status(404).json({
+        return res.status(400).json({
           success: false,
-          message: 'Account not found'
+          message: 'Invalid or expired OTP'
         });
       }
 
@@ -627,7 +622,7 @@ router.post(
         
         return res.status(400).json({
           success: false,
-          message: verifyResult.message || 'Invalid or expired OTP'
+          message: 'Invalid or expired OTP'
         });
       }
 

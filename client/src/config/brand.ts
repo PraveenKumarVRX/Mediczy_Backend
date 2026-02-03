@@ -53,7 +53,7 @@ export const BRAND = {
   support: {
     email: 'support@mediqzy.com',
     phone: '+91 1800-XXX-XXXX',
-    website: 'https://mediqzy.com',
+    website: 'https://app.mediqzy.com',
   },
   
   // Social links

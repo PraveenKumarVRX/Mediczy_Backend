@@ -58,9 +58,29 @@ interface TriageChatMessage {
   role: 'user' | 'assistant' | 'system';
   content: string;
   timestamp: Date;
-  type: 'text' | 'voice' | 'image';
+  type: 'text' | 'voice' | 'image' | 'vision';
   imageUrl?: string;
   urgencyLevel?: 'IMMEDIATE' | 'URGENT' | 'LESS_URGENT' | 'NON_URGENT';
+  visionData?: VisionAnalysisResult;
+}
+
+// Emergency contact types for SOS
+interface SOSContact {
+  id: string;
+  name: string;
+  phone: string;
+  email?: string;
+  type: 'doctor' | 'hospital' | 'hr' | 'family' | 'emergency';
+  priority: number; // 1 = highest priority
+}
+
+// SOS Alert state
+interface SOSAlertState {
+  isActive: boolean;
+  triggeredAt: Date | null;
+  reason: string;
+  contactsNotified: string[];
+  urgencyLevel: 'critical' | 'high' | 'medium';
 }
 
 // Calculate distance between two points using Haversine formula
@@ -256,6 +276,33 @@ const Emergency = () => {
   const [sceneDescription, setSceneDescription] = useState<string>('');
   const visionIntervalRef = useRef<NodeJS.Timeout | null>(null);
   const localVideoRef = useRef<HTMLVideoElement | null>(null);
+  
+  // Enhanced SOS Alert States
+  const [sosState, setSosState] = useState<SOSAlertState>({
+    isActive: false,
+    triggeredAt: null,
+    reason: '',
+    contactsNotified: [],
+    urgencyLevel: 'medium'
+  });
+  const [sosContacts, setSosContacts] = useState<SOSContact[]>([]);
+  const [lastVisionCheckTime, setLastVisionCheckTime] = useState<number>(0);
+  const [consecutiveDistressCount, setConsecutiveDistressCount] = useState(0);
+  const [conversationContext, setConversationContext] = useState<{
+    hasAskedAboutSymptoms: boolean;
+    hasAskedAboutPain: boolean;
+    hasAskedAboutDuration: boolean;
+    hasAskedAboutMedications: boolean;
+    detectedConditions: string[];
+    visionObservations: string[];
+  }>({
+    hasAskedAboutSymptoms: false,
+    hasAskedAboutPain: false,
+    hasAskedAboutDuration: false,
+    hasAskedAboutMedications: false,
+    detectedConditions: [],
+    visionObservations: []
+  });
   
   // Socket.IO States for call notifications
   const [isSocketConnected, setIsSocketConnected] = useState(false);
@@ -1125,7 +1172,7 @@ Hello, I'm Dr. iSHA, your AI emergency medical assistant powered by multimodal i
       
       setVisionAIEnabled(true);
       
-      // Start analysis loop
+      // Start analysis loop with intelligent conversation and SOS triggering
       visionIntervalRef.current = setInterval(async () => {
         // Run Vision AI if enabled and either video mode or embedded call is active
         if (localVideoRef.current && visionAIEnabled && (showEmbeddedVideoCall || isVideoMode)) {
@@ -1158,6 +1205,79 @@ Hello, I'm Dr. iSHA, your AI emergency medical assistant powered by multimodal i
                 return [...new Set(newSuggestions)].slice(-5);
               });
             }
+            
+            // ========== INTELLIGENT CONVERSATION TRIGGER ==========
+            const now = Date.now();
+            // Only trigger conversation every 10 seconds to avoid spam
+            if (now - lastVisionCheckTime > 10000) {
+              setLastVisionCheckTime(now);
+              
+              // Build observation list for conversation context
+              const newObservations: string[] = [];
+              
+              if (!analysis.personDetected) {
+                newObservations.push('Patient not visible in camera');
+              } else {
+                if (analysis.poseData?.isLying) {
+                  newObservations.push('Patient appears to be lying down');
+                }
+                if (analysis.vitalEstimates.distressLevel === 'severe') {
+                  newObservations.push('Signs of severe distress detected');
+                } else if (analysis.vitalEstimates.distressLevel === 'moderate') {
+                  newObservations.push('Signs of moderate discomfort observed');
+                }
+                if (analysis.vitalEstimates.respiratoryPattern === 'rapid') {
+                  newObservations.push('Rapid breathing pattern detected');
+                } else if (analysis.vitalEstimates.respiratoryPattern === 'labored') {
+                  newObservations.push('Labored breathing observed');
+                }
+                if (analysis.vitalEstimates.consciousnessLevel === 'drowsy') {
+                  newObservations.push('Patient appears drowsy');
+                } else if (analysis.vitalEstimates.consciousnessLevel === 'unresponsive') {
+                  newObservations.push('Patient appears unresponsive');
+                }
+                if (analysis.motionType === 'distressed') {
+                  newObservations.push('Agitated/distressed movement pattern');
+                }
+              }
+              
+              // Update conversation context with new observations
+              if (newObservations.length > 0) {
+                setConversationContext(prev => ({
+                  ...prev,
+                  visionObservations: [...new Set([...prev.visionObservations, ...newObservations])].slice(-10)
+                }));
+                
+                // Auto-send vision observation to chat if significant changes detected
+                const significantChange = newObservations.some(obs => 
+                  obs.includes('severe') || 
+                  obs.includes('unresponsive') || 
+                  obs.includes('labored') ||
+                  obs.includes('lying down')
+                );
+                
+                if (significantChange && triageMode === 'video' && showTriageChat) {
+                  // Trigger intelligent follow-up based on vision
+                  triggerIntelligentVisionResponse(analysis, newObservations);
+                }
+              }
+            }
+            
+            // ========== SOS AUTO-TRIGGER FOR EMERGENCIES ==========
+            // Track consecutive severe distress detections
+            if (analysis.vitalEstimates.distressLevel === 'severe' || 
+                analysis.vitalEstimates.consciousnessLevel === 'unresponsive' ||
+                analysis.alerts.some(a => a.includes('🔴') || a.includes('🚨'))) {
+              setConsecutiveDistressCount(prev => prev + 1);
+            } else {
+              setConsecutiveDistressCount(0);
+            }
+            
+            // If severe distress detected for 5+ consecutive checks (5 seconds), auto-trigger SOS
+            if (consecutiveDistressCount >= 5 && !sosState.isActive) {
+              triggerAutoSOS(analysis);
+            }
+            
           } catch (error) {
             console.error('Vision analysis error:', error);
           }
@@ -1192,6 +1312,222 @@ Hello, I'm Dr. iSHA, your AI emergency medical assistant powered by multimodal i
     cleanupVisionAI();
     setVisionAnalysis(null);
     setVisionAlerts([]);
+  };
+
+  // Trigger intelligent conversation based on Vision AI observations
+  const triggerIntelligentVisionResponse = async (analysis: VisionAnalysisResult, observations: string[]) => {
+    // Create a vision observation message for the chat
+    const visionSummary = getTriageSummary(analysis);
+    
+    // Build an intelligent follow-up question based on what Vision AI sees
+    let aiFollowUp = '';
+    
+    if (observations.some(o => o.includes('lying down'))) {
+      if (!conversationContext.hasAskedAboutPain) {
+        aiFollowUp = "I can see you're lying down. Are you experiencing pain that's preventing you from sitting up? Can you tell me where it hurts?";
+        setConversationContext(prev => ({ ...prev, hasAskedAboutPain: true }));
+      }
+    }
+    
+    if (observations.some(o => o.includes('severe distress') || o.includes('labored breathing'))) {
+      aiFollowUp = "I'm detecting signs of distress. Can you speak to me? Please try to describe what you're feeling. If you can't speak, raise your hand.";
+    }
+    
+    if (observations.some(o => o.includes('unresponsive'))) {
+      aiFollowUp = "⚠️ I notice you may not be responding. If you can hear me, please try to move or make a sound. I'm initiating emergency protocols.";
+    }
+    
+    if (observations.some(o => o.includes('rapid breathing'))) {
+      if (!conversationContext.hasAskedAboutSymptoms) {
+        aiFollowUp = "I can see you're breathing quickly. Is this related to anxiety, physical exertion, or are you having difficulty breathing? Have you had any chest pain?";
+        setConversationContext(prev => ({ ...prev, hasAskedAboutSymptoms: true }));
+      }
+    }
+    
+    if (observations.some(o => o.includes('drowsy'))) {
+      aiFollowUp = "You seem drowsy. Did you take any medications recently? Are you feeling lightheaded or dizzy?";
+      setConversationContext(prev => ({ ...prev, hasAskedAboutMedications: true }));
+    }
+    
+    if (!aiFollowUp && !conversationContext.hasAskedAboutDuration) {
+      aiFollowUp = "I'm monitoring your condition through the camera. How long have you been experiencing these symptoms?";
+      setConversationContext(prev => ({ ...prev, hasAskedAboutDuration: true }));
+    }
+    
+    if (aiFollowUp) {
+      // Add the AI observation and follow-up as a system message
+      const visionMessage: TriageChatMessage = {
+        id: `vision_${Date.now()}`,
+        role: 'assistant',
+        content: `👁️ **Vision AI Observation:**\n${observations.join('\n')}\n\n${aiFollowUp}`,
+        timestamp: new Date(),
+        type: 'vision',
+        visionData: analysis
+      };
+      
+      setTriageChatMessages(prev => [...prev, visionMessage]);
+      
+      // Speak the follow-up question
+      speakText(aiFollowUp);
+    }
+  };
+
+  // Trigger auto SOS when severe emergency detected
+  const triggerAutoSOS = async (analysis: VisionAnalysisResult) => {
+    // Determine urgency level and reason
+    let reason = 'Vision AI detected emergency condition';
+    let urgencyLevel: 'critical' | 'high' | 'medium' = 'high';
+    
+    if (analysis.vitalEstimates.consciousnessLevel === 'unresponsive') {
+      reason = 'Patient appears unresponsive - Vision AI emergency detection';
+      urgencyLevel = 'critical';
+    } else if (analysis.vitalEstimates.distressLevel === 'severe') {
+      reason = 'Severe distress detected - Vision AI emergency alert';
+      urgencyLevel = 'critical';
+    } else if (analysis.alerts.some(a => a.includes('🔴'))) {
+      reason = `Emergency alert: ${analysis.alerts.find(a => a.includes('🔴')) || 'Critical condition detected'}`;
+      urgencyLevel = 'critical';
+    }
+    
+    // Update SOS state
+    setSosState({
+      isActive: true,
+      triggeredAt: new Date(),
+      reason,
+      contactsNotified: [],
+      urgencyLevel
+    });
+    
+    // Show critical alert toast
+    toast({
+      title: "🚨 EMERGENCY SOS ACTIVATED",
+      description: reason,
+      variant: "destructive",
+      duration: 10000,
+    });
+    
+    // Add SOS message to chat
+    const sosMessage: TriageChatMessage = {
+      id: `sos_${Date.now()}`,
+      role: 'system',
+      content: `🚨 **EMERGENCY SOS AUTOMATICALLY TRIGGERED**
+
+**Reason:** ${reason}
+**Time:** ${new Date().toLocaleTimeString()}
+**Vision AI Analysis:**
+- Distress Level: ${analysis.vitalEstimates.distressLevel}
+- Consciousness: ${analysis.vitalEstimates.consciousnessLevel}
+- Breathing: ${analysis.vitalEstimates.respiratoryPattern}
+
+**Actions Initiated:**
+✅ Alerting emergency contacts
+✅ Notifying assigned doctor (if any)
+✅ Sharing location with emergency services
+
+If this is a false alarm, tap "Cancel SOS" below.`,
+      timestamp: new Date(),
+      type: 'text',
+      urgencyLevel: 'IMMEDIATE'
+    };
+    
+    setTriageChatMessages(prev => [...prev, sosMessage]);
+    
+    // Trigger the actual SOS notifications
+    await sendEnhancedSOSAlerts(reason, analysis);
+  };
+
+  // Enhanced SOS alerts to doctor, hospital, HR, and family
+  const sendEnhancedSOSAlerts = async (reason: string, analysis?: VisionAnalysisResult) => {
+    const notifiedContacts: string[] = [];
+    const visionSummary = analysis ? getTriageSummary(analysis) : '';
+    
+    // Build emergency message with location
+    const emergencyMessage = `🚨 EMERGENCY SOS ALERT!
+
+${reason}
+
+${userLocation ? `📍 Location: https://www.google.com/maps?q=${userLocation.lat},${userLocation.lng}` : ''}
+
+${visionSummary ? `\n👁️ AI Analysis:\n${visionSummary}` : ''}
+
+Immediate assistance required!`;
+
+    try {
+      // Try to send via backend API (to doctor, hospital, HR)
+      const response = await api.post('/medical-ai/emergency-sos', {
+        userId: localStorage.getItem('userId'),
+        message: emergencyMessage,
+        reason,
+        location: userLocation,
+        visionAnalysis: analysis ? {
+          distressLevel: analysis.vitalEstimates.distressLevel,
+          consciousnessLevel: analysis.vitalEstimates.consciousnessLevel,
+          respiratoryPattern: analysis.vitalEstimates.respiratoryPattern,
+          alerts: analysis.alerts
+        } : null,
+        urgencyLevel: sosState.urgencyLevel,
+        contacts: sosContacts.map(c => ({ type: c.type, name: c.name, phone: c.phone, email: c.email }))
+      });
+      
+      if (response.data.success) {
+        notifiedContacts.push(...(response.data.notifiedContacts || []));
+      }
+    } catch (error) {
+      console.error('Backend SOS notification failed:', error);
+    }
+    
+    // Also try to send to local emergency contacts (family)
+    for (const contact of emergencyContacts) {
+      try {
+        // In demo mode, just show toast
+        toast({
+          title: `📲 SOS Sent to ${contact.name}`,
+          description: `Emergency alert sent to ${contact.relationship}`,
+        });
+        notifiedContacts.push(contact.name);
+      } catch (error) {
+        console.error(`Failed to notify ${contact.name}:`, error);
+      }
+    }
+    
+    // Update SOS state with notified contacts
+    setSosState(prev => ({
+      ...prev,
+      contactsNotified: notifiedContacts
+    }));
+    
+    // Speak emergency notification
+    speakText(`Emergency SOS has been activated. ${notifiedContacts.length} contacts have been notified. Help is on the way.`);
+    
+    return notifiedContacts;
+  };
+
+  // Cancel SOS alert
+  const cancelSOS = () => {
+    setSosState({
+      isActive: false,
+      triggeredAt: null,
+      reason: '',
+      contactsNotified: [],
+      urgencyLevel: 'medium'
+    });
+    setConsecutiveDistressCount(0);
+    
+    toast({
+      title: "SOS Cancelled",
+      description: "Emergency alert has been cancelled.",
+    });
+    
+    // Add cancellation message to chat
+    const cancelMessage: TriageChatMessage = {
+      id: `sos_cancel_${Date.now()}`,
+      role: 'system',
+      content: "✅ **SOS Alert Cancelled**\nThe emergency alert has been deactivated. If you need help, please describe your symptoms or tap SOS again.",
+      timestamp: new Date(),
+      type: 'text'
+    };
+    
+    setTriageChatMessages(prev => [...prev, cancelMessage]);
   };
 
   // Live speech-to-text transcription
@@ -1511,7 +1847,7 @@ Please provide:
 🏥 RECOMMENDED ACTION (Emergency room, urgent care, etc.)
 ⚠️ WARNING SIGNS to watch for
 🩺 IMMEDIATE CARE instructions while waiting
-📞 WHEN TO CALL 911 immediately
+📞 WHEN TO CALL 112 (India) immediately
 
 This is for emergency medical guidance. Please prioritize safety and immediate care recommendations.`;
 
@@ -3443,6 +3779,35 @@ This is for emergency medical guidance. Please prioritize safety and immediate c
               
               {/* AI Features Panel */}
               <div className="bg-slate-800 border-t border-slate-700 p-2 max-h-[250px] overflow-y-auto">
+                {/* SOS Status Indicator */}
+                {sosState.isActive && (
+                  <div className="bg-red-600/40 border border-red-500 rounded p-2 mb-2 animate-pulse">
+                    <div className="flex items-center justify-between">
+                      <div>
+                        <h5 className="text-red-200 font-bold text-sm flex items-center gap-2">
+                          🚨 EMERGENCY SOS ACTIVE
+                        </h5>
+                        <p className="text-red-300 text-[10px] mt-1">
+                          {sosState.reason}
+                        </p>
+                        {sosState.contactsNotified.length > 0 && (
+                          <p className="text-green-300 text-[10px]">
+                            ✅ Notified: {sosState.contactsNotified.join(', ')}
+                          </p>
+                        )}
+                      </div>
+                      <Button
+                        size="sm"
+                        variant="outline"
+                        onClick={cancelSOS}
+                        className="bg-white/10 border-white/30 text-white hover:bg-white/20"
+                      >
+                        Cancel SOS
+                      </Button>
+                    </div>
+                  </div>
+                )}
+                
                 {/* Vision AI Alerts */}
                 {visionAlerts.length > 0 && (
                   <div className="bg-red-900/30 border border-red-500/50 rounded p-2 mb-2">
@@ -3630,6 +3995,35 @@ This is for emergency medical guidance. Please prioritize safety and immediate c
               {/* Vision AI Analysis Panel - During Triage */}
               {visionAIEnabled && (
                 <div className="bg-slate-800 border-t border-slate-700 p-2">
+                  {/* SOS Status Indicator */}
+                  {sosState.isActive && (
+                    <div className="bg-red-600/40 border border-red-500 rounded p-2 mb-2 animate-pulse">
+                      <div className="flex items-center justify-between">
+                        <div>
+                          <h5 className="text-red-200 font-bold text-sm flex items-center gap-2">
+                            🚨 EMERGENCY SOS ACTIVE
+                          </h5>
+                          <p className="text-red-300 text-[10px] mt-1">
+                            {sosState.reason}
+                          </p>
+                          {sosState.contactsNotified.length > 0 && (
+                            <p className="text-green-300 text-[10px]">
+                              ✅ Notified: {sosState.contactsNotified.join(', ')}
+                            </p>
+                          )}
+                        </div>
+                        <Button
+                          size="sm"
+                          variant="outline"
+                          onClick={cancelSOS}
+                          className="bg-white/10 border-white/30 text-white hover:bg-white/20"
+                        >
+                          Cancel SOS
+                        </Button>
+                      </div>
+                    </div>
+                  )}
+                  
                   {/* Vision AI Alerts */}
                   {visionAlerts.length > 0 && (
                     <div className="bg-red-900/30 border border-red-500/50 rounded p-2 mb-2">

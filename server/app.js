@@ -413,7 +413,7 @@ app.use((req, res, next) => {
 const allowedOrigins = process.env.CORS_ORIGIN 
   ? process.env.CORS_ORIGIN.split(',').map(o => o.trim()).filter(Boolean)
   : process.env.NODE_ENV === 'production'
-  ? ['https://mediqzy.com', 'https://www.mediqzy.com']
+  ? ['https://app.mediqzy.com', 'https://mediqzy.com', 'https://www.mediqzy.com']
   : [
       'http://localhost:5173', 
       'http://localhost:3000',

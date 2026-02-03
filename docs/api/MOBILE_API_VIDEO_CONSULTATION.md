@@ -2,9 +2,15 @@
 
 Complete API reference for integrating video consultation features into mobile applications.
 
-**Base URL:** `https://mediqzy.com`
+**Base URL:** `https://mediqzy.com` (NO `/api` suffix - use full endpoint paths)
 
-**Last Updated:** February 2, 2026
+**Last Updated:** February 3, 2026
+
+> ⚠️ **IMPORTANT:** Use the base domain WITHOUT `/api` suffix. All endpoints include the full path.
+>
+> ✅ Correct: `https://mediqzy.com` + `/api/mobile/video/token`
+>
+> ❌ Wrong: `https://mediqzy.com/api` + `/api/mobile/video/token` (causes double `/api/`)
 
 ---
 
@@ -431,7 +437,129 @@ Content-Type: application/json
 
 ## 🎥 Video Consultation
 
-### Get Video Room Token (LiveKit)
+### Get Mobile Video Token (Recommended) ✅
+
+> **📱 Recommended for Mobile Apps:** Use this endpoint for better mobile-optimized responses.
+
+```http
+POST /api/mobile/video/token
+Authorization: Bearer <token>
+Content-Type: application/json
+
+{
+  "appointmentId": 456
+}
+```
+
+**Or with custom room name:**
+
+```json
+{
+  "roomName": "custom-room-name"
+}
+```
+
+**Response (200 OK):**
+
+```json
+{
+  "success": true,
+  "data": {
+    "meetingId": "apt-456",
+    "serverUrl": "wss://video.mediqzy.com",
+    "token": "eyJhbGciOiJIUzI1NiJ9...",
+    "roomName": "apt-456",
+    "meetUrl": "https://video.mediqzy.com/rooms/apt-456",
+    "joinUrl": "https://video.mediqzy.com/rooms/apt-456?access_token=...",
+    "expiresAt": "2026-02-03T07:00:00.000Z"
+  }
+}
+```
+
+**Error Responses:**
+
+| Code             | Status | Description                    |
+| ---------------- | ------ | ------------------------------ |
+| `USER_NOT_FOUND` | 404    | User not found in database     |
+| `LIVEKIT_ERROR`  | 500    | Failed to generate video token |
+| `NO_TOKEN`       | 401    | Missing authentication token   |
+| `ACCESS_DENIED`  | 403    | Insufficient privileges        |
+
+---
+
+### Get Persistent Video Token (Long-lived) 🔐
+
+> **📱 For apps needing persistent tokens:** This endpoint generates a token valid for multiple days that can be reused for all video calls without requesting a new token each time.
+
+```http
+POST /api/mobile/video/persistent-token
+Authorization: Bearer <token>
+Content-Type: application/json
+
+{
+  "ttlDays": 7,
+  "roomAgnostic": true
+}
+```
+
+**Request Parameters:**
+
+| Field          | Type    | Default | Description                                             |
+| -------------- | ------- | ------- | ------------------------------------------------------- |
+| `ttlDays`      | number  | 1       | Token validity in days (1-7 days max)                   |
+| `roomAgnostic` | boolean | true    | If true, token works for ANY room; if false, restricted |
+
+**Response (200 OK):**
+
+```json
+{
+  "success": true,
+  "data": {
+    "token": "eyJhbGciOiJIUzI1NiJ9...<long-lived-token>",
+    "serverUrl": "wss://video.mediqzy.com",
+    "identity": "patient-123",
+    "displayName": "John Doe",
+    "roomAgnostic": true,
+    "validForDays": 7,
+    "expiresAt": "2026-02-10T12:00:00.000Z",
+    "usage": {
+      "note": "Store this token securely. It can be used for all video calls until expiry.",
+      "howToJoin": "Use serverUrl + token + any roomName to join calls"
+    }
+  },
+  "message": "Persistent token generated, valid for 7 day(s)"
+}
+```
+
+**⚠️ Security Considerations:**
+
+1. **Store securely** - Use encrypted storage (Keychain/Keystore)
+2. **Token rotation** - Refresh before expiry for seamless experience
+3. **Revocation** - Contact admin if token is compromised
+4. **Max TTL** - 7 days maximum for security
+
+**Usage in Mobile App:**
+
+```javascript
+// Store persistent token on first login or app install
+const { token, serverUrl, expiresAt } = await getPersistentToken({
+  ttlDays: 7,
+});
+
+// Use for any video call without requesting new token
+async function joinVideoCall(roomName) {
+  const room = new Room();
+  await room.connect(serverUrl, token, {
+    roomOptions: { adaptiveStream: true },
+  });
+  await room.localParticipant.setCameraEnabled(true);
+  await room.localParticipant.setMicrophoneEnabled(true);
+}
+```
+
+---
+
+### Get Video Room Token (Legacy)
 
 ```http
 POST /api/video/livekit/token
@@ -945,7 +1073,25 @@ All API responses follow a consistent error format:
 ```javascript
 import axios from "axios";
 
-const API_BASE_URL = "https://mediczy.com/api";
+// ✅ IMPORTANT: Use base domain WITHOUT /api suffix
+// All endpoints include the full path starting with /api/
+const API_BASE_URL = "https://mediqzy.com";
+
+// Endpoint constants for clarity and maintainability
+const ENDPOINTS = {
+  // Mobile-optimized endpoints (recommended)
+  mobileVideoToken: "/api/mobile/video/token",
+  mobileLogin: "/api/mobile/auth/login",
+  mobileSignup: "/api/mobile/auth/signup",
+  mobileProfile: "/api/mobile/user/profile",
+  mobileDoctors: "/api/mobile/doctors",
+  mobileAppointments: "/api/mobile/appointments",
+
+  // Legacy endpoints (still supported)
+  consultationBook: "/api/consultation/book",
+  videoJoin: "/api/video/room",
+  videoToken: "/api/video/livekit/token",
+};
 
 class MediczyAPI {
   constructor(token) {
@@ -958,8 +1104,16 @@ class MediczyAPI {
     });
   }
 
+  // ✅ RECOMMENDED: Use mobile-optimized endpoint
+  async getVideoToken(appointmentId) {
+    const response = await this.client.post(ENDPOINTS.mobileVideoToken, {
+      appointmentId,
+    });
+    return response.data;
+  }
+
   async bookVideoConsultation(doctorId, date, time, symptoms) {
-    const response = await this.client.post("/consultation/book", {
+    const response = await this.client.post(ENDPOINTS.consultationBook, {
       doctorId,
       consultationType: "online",
       appointmentDate: date,
@@ -972,19 +1126,9 @@ class MediczyAPI {
 
   async joinVideoCall(appointmentId) {
     const response = await this.client.post(
-      `/video/room/apt-${appointmentId}/join`,
-      {
-        appointmentId,
-      },
+      `${ENDPOINTS.videoJoin}/apt-${appointmentId}/join`,
+      { appointmentId },
     );
-    return response.data;
-  }
-
-  async getVideoToken(roomName, participantName) {
-    const response = await this.client.post("/video/livekit/token", {
-      roomName,
-      participantName,
-    });
     return response.data;
   }
 }
@@ -999,10 +1143,30 @@ import 'package:http/http.dart' as http;
 import 'dart:convert';
 
 class MediczyAPI {
-  final String baseUrl = 'https://mediczy.com/api';
+  // ✅ IMPORTANT: Use base domain WITHOUT /api suffix
+  // All endpoints include the full path starting with /api/
+  final String baseUrl = 'https://mediqzy.com';
   final String token;
 
   MediczyAPI(this.token);
+
+  // ✅ RECOMMENDED: Use mobile-optimized endpoint for video token
+  Future<Map<String, dynamic>> getVideoToken({
+    required int appointmentId,
+  }) async {
+    final response = await http.post(
+      Uri.parse('$baseUrl/api/mobile/video/token'),
+      headers: {
+        'Authorization': 'Bearer $token',
+        'Content-Type': 'application/json',
+      },
+      body: jsonEncode({
+        'appointmentId': appointmentId,
+      }),
+    );
+
+    return jsonDecode(response.body);
+  }
 
   Future<Map<String, dynamic>> bookVideoConsultation({
     required int doctorId,
@@ -1011,7 +1175,7 @@ class MediczyAPI {
     required String symptoms,
   }) async {
     final response = await http.post(
-      Uri.parse('$baseUrl/consultation/book'),
+      Uri.parse('$baseUrl/api/consultation/book'),
       headers: {
         'Authorization': 'Bearer $token',
         'Content-Type': 'application/json',
@@ -1029,19 +1193,16 @@ class MediczyAPI {
     return jsonDecode(response.body);
   }
 
-  Future<Map<String, dynamic>> getVideoToken({
-    required String roomName,
-    required String participantName,
+  Future<Map<String, dynamic>> login({
+    required String email,
+    required String password,
   }) async {
     final response = await http.post(
-      Uri.parse('$baseUrl/video/livekit/token'),
-      headers: {
-        'Authorization': 'Bearer $token',
-        'Content-Type': 'application/json',
-      },
+      Uri.parse('$baseUrl/api/mobile/auth/login'),
+      headers: {'Content-Type': 'application/json'},
       body: jsonEncode({
-        'roomName': roomName,
-        'participantName': participantName,
+        'email': email,
+        'password': password,
       }),
     );
 
@@ -1080,6 +1241,20 @@ For API support and questions:
 ---
 
 ## 📝 Changelog
+
+### v2.2.0 (2026-02-03)
+
+- **NEW**: Added `/api/mobile/video/persistent-token` endpoint for long-lived tokens (up to 7 days)
+- **NEW**: Room-agnostic tokens - single token can join any room
+- **IMPROVED**: Configurable TTL for video tokens (1 hour to 7 days)
+- Persistent tokens eliminate need for new token on each call
+
+### v2.1.0 (2026-02-03)
+
+- **BREAKING**: Clarified Base URL usage - use `https://mediqzy.com` WITHOUT `/api` suffix
+- Added `/api/mobile/video/token` endpoint for mobile-optimized video tokens
+- Updated SDK examples with correct endpoint configuration
+- Fixed double `/api/` prefix issue in documentation
 
 ### v2.0.0 (2026-01-27)
 

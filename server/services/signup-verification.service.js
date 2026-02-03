@@ -33,6 +33,7 @@ class SignupVerificationService {
    */
   async sendSignupOTP({ email, phoneNumber, firstName = 'User' }) {
     try {
+      const includeOtp = process.env.NODE_ENV === 'development' || process.env.OTP_DEBUG_RESPONSE === 'true';
       // Generate OTP for signup verification
       const otp = await OTP.generate({
         email,
@@ -52,17 +53,21 @@ class SignupVerificationService {
 
       console.log(`✅ Signup verification OTP sent:`, deliveryResults);
 
+      const responseData = {
+        otpId: otp.id,
+        expiresAt: otp.expiresAt,
+        expiresIn: '10 minutes',
+        deliveryChannels: deliveryResults
+      };
+
+      if (includeOtp) {
+        responseData.otp = otp.code;
+      }
+
       return {
         success: true,
         message: 'OTP sent successfully via Email and WhatsApp',
-        data: {
-          otpId: otp.id,
-          expiresAt: otp.expiresAt,
-          expiresIn: '10 minutes',
-          deliveryChannels: deliveryResults,
-          // Include OTP for testing (remove in production)
-          otp: otp.code
-        }
+        data: responseData
       };
     } catch (error) {
       console.error('Signup verification OTP error:', error);

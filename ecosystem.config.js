@@ -19,7 +19,7 @@ module.exports = {
     // ==================== Node.js Backend ====================
     {
       name: 'mediczy-server',
-      script: './index.js',
+      script: './start-wrapper.js',
       cwd: '/home/ubuntu/Mediczy/server',
       instances: 2,  // Reduced from 'max' (4) to 2 to prevent CPU overload
       exec_mode: 'cluster',
@@ -38,18 +38,18 @@ module.exports = {
       max_restarts: 10,
       min_uptime: '10s',
       listen_timeout: 8000,  // Increased from 3000 to allow slower startup
-      kill_timeout: 5000
+      kill_timeout: 10000,
+      restart_delay: 3000
     },
 
     // ==================== SIB FastAPI Service ====================
     {
       name: 'sib-fastapi',
-      script: '/home/ubuntu/Mediczy/ai-engine/doctor_bot/venv/bin/uvicorn',
-      args: 'app:app --host 0.0.0.0 --port 8001',
+      script: '/home/ubuntu/Mediczy/scripts/sib-fastapi-start.sh',
       cwd: '/home/ubuntu/Mediczy/ai-engine/doctor_bot',
       instances: 1,
       exec_mode: 'fork',
-      interpreter: 'none',
+      interpreter: 'bash',
       env: {
         PYTHONUNBUFFERED: '1',
         PORT: 8001,
@@ -66,14 +66,18 @@ module.exports = {
       max_memory_restart: '2G',
       watch: false,
       ignore_watch: ['node_modules', '__pycache__', '.git'],
-      max_restarts: 10,
-      min_uptime: '10s'
+      max_restarts: 50,
+      min_uptime: '60s',         // App needs 20-25s to load ClinicalBERT
+      kill_timeout: 15000,       // Give time for graceful shutdown
+      restart_delay: 10000,      // Wait 10s before restart to release port
+      autorestart: true,
+      exp_backoff_restart_delay: 1000  // Exponential backoff on crashes
     },
 
     // ==================== Background Worker ====================
     {
       name: 'mediczy-worker',
-      script: './worker-process.js',
+      script: './worker-wrapper.cjs',
       cwd: '/home/ubuntu/Mediczy/server',
       instances: 1,
       exec_mode: 'fork',
@@ -89,18 +93,19 @@ module.exports = {
       watch: false,
       ignore_watch: ['node_modules', 'logs', '.git'],
       max_restarts: 10,
-      min_uptime: '10s'
+      min_uptime: '10s',
+      kill_timeout: 10000,
+      restart_delay: 2000
     },
 
     // ==================== LiveKit Video Server ====================
     {
       name: 'livekit-server',
-      script: '/usr/local/bin/livekit-server',
-      args: '--config /home/ubuntu/livekit-config.yaml',
+      script: '/home/ubuntu/Mediczy/scripts/livekit-start.sh',
       cwd: '/home/ubuntu',
       instances: 1,
       exec_mode: 'fork',
-      interpreter: 'none',
+      interpreter: 'bash',
       env: {
         NODE_ENV: 'production'
       },
@@ -112,8 +117,64 @@ module.exports = {
       watch: false,
       autorestart: true,
       max_restarts: 20,
-      min_uptime: '10s',
-      restart_delay: 5000
+      min_uptime: '15s',
+      restart_delay: 5000,
+      kill_timeout: 10000,
+      wait_ready: true,
+      listen_timeout: 10000
+    },
+
+    // ==================== Kafka Server ====================
+    {
+      name: 'kafka-server',
+      script: '/home/ubuntu/Mediczy/scripts/kafka-start.sh',
+      cwd: '/opt/kafka',
+      instances: 1,
+      exec_mode: 'fork',
+      interpreter: 'bash',
+      env: {
+        KAFKA_HEAP_OPTS: '-Xmx512M -Xms256M'
+      },
+      error_file: '/tmp/kafka-error.log',
+      out_file: '/tmp/kafka-out.log',
+      log_date_format: 'YYYY-MM-DD HH:mm:ss Z',
+      merge_logs: true,
+      max_memory_restart: '1G',
+      watch: false,
+      autorestart: true,
+      max_restarts: 10,
+      min_uptime: '30s',
+      restart_delay: 10000,
+      kill_timeout: 15000
+    },
+
+    // ==================== n8n Workflow Automation ====================
+    {
+      name: 'n8n-server',
+      script: '/home/ubuntu/Mediczy/scripts/n8n-start.sh',
+      cwd: '/home/ubuntu',
+      instances: 1,
+      exec_mode: 'fork',
+      interpreter: 'bash',
+      env: {
+        N8N_PORT: 5678,
+        N8N_PROTOCOL: 'http',
+        N8N_HOST: 'localhost',
+        GENERIC_TIMEZONE: 'Asia/Kolkata',
+        N8N_ENCRYPTION_KEY: 'C6l9z3FSU3zJsUop9TL57bJZk/LB7Vzo',
+        N8N_ENFORCE_SETTINGS_FILE_PERMISSIONS: 'false'
+      },
+      error_file: '/tmp/n8n-error.log',
+      out_file: '/tmp/n8n-out.log',
+      log_date_format: 'YYYY-MM-DD HH:mm:ss Z',
+      merge_logs: true,
+      max_memory_restart: '1G',
+      watch: false,
+      autorestart: true,
+      max_restarts: 10,
+      min_uptime: '15s',
+      restart_delay: 5000,
+      kill_timeout: 10000
     }
   ],
 

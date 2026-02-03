@@ -14,10 +14,30 @@ class SocketService {
   }
 
   /**
+   * Set an existing Socket.IO instance (shared from main server)
+   * Use this instead of initialize() to avoid creating duplicate Socket.IO servers
+   * @param {Server} io - Existing Socket.IO instance
+   */
+  setIO(io) {
+    if (this.io) {
+      console.log('⚠️  Socket.IO instance already set, skipping');
+      return;
+    }
+    this.io = io;
+    // Note: Event handlers are set up by chathandler.controller.js
+    // This service just uses the io instance for sending notifications
+    console.log('✓ Socket.IO instance shared with SocketService');
+  }
+
+  /**
    * Initialize Socket.IO server
    * @param {Object} httpServer - HTTP server instance
+   * @deprecated Use setIO() with shared instance to avoid duplicate servers in cluster mode
    */
   initialize(httpServer) {
+    console.warn('⚠️  socketService.initialize() is deprecated - creates duplicate Socket.IO server');
+    console.warn('    Use setIO() with shared Socket.IO instance instead');
+    
     this.io = new Server(httpServer, {
       cors: {
         origin: process.env.CLIENT_URL || 'http://localhost:3000',

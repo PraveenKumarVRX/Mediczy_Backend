@@ -308,22 +308,29 @@ router.post('/emergency-triage', authUser, async (req, res) => {
     let triage;
     let sibUsed = false;
 
-    const sibResponse = await fetch(`${SIB_URL}/emergency-triage`, {
+    // Build emergency triage prompt for SIB /chat endpoint
+    const emergencyPrompt = `EMERGENCY TRIAGE REQUEST:
+
+Symptoms: ${symptoms}
+Description: ${description}
+
+Please provide an emergency triage assessment including:
+1. Urgency level (CRITICAL, HIGH, MODERATE, LOW)
+2. Whether immediate medical attention is required
+3. Whether to call an ambulance
+4. Recommended actions while waiting for help
+5. Any follow-up questions to assess severity`;
+
+    const sibResponse = await fetch(`${SIB_URL}/chat`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
-        symptoms,
-        description,
+        message: emergencyPrompt,
         language,
-        patient_id: req.user.id,
-        patient_data: {
-          patient_id: req.user.id,
-          name: `${req.user.firstName || 'Patient'} ${req.user.lastName || ''}`.trim(),
-          age: req.user.age || null,
-          gender: req.user.gender || null,
-          conditions: req.user.medicalConditions || null
-        },
-        multimodal_context: multimodalContext || null
+        patient_id: String(req.user.id),
+        user_id: req.user.id,
+        include_risk: true,
+        context_type: 'emergency_triage'
       })
     });
 
@@ -340,19 +347,45 @@ router.post('/emergency-triage', authUser, async (req, res) => {
     const sibResult = await sibResponse.json();
     sibUsed = true;
     
-    // Map SIB response to existing format
+    // Parse urgency from response (look for keywords)
+    const responseText = sibResult.response || sibResult.primary_response || sibResult.chat_answer || '';
+    const urgencyKeywords = {
+      'CRITICAL': /\b(critical|life.?threatening|call.?911|call.?ambulance|immediate.?emergency)\b/i,
+      'HIGH': /\b(high.?urgency|urgent|seek.?immediate|emergency.?room|ER)\b/i,
+      'MODERATE': /\b(moderate|see.?doctor|within.?24|schedule.?appointment)\b/i,
+      'LOW': /\b(low.?urgency|monitor|self.?care|rest)\b/i
+    };
+    
+    let detectedUrgency = 'HIGH'; // Default to HIGH for safety
+    for (const [level, pattern] of Object.entries(urgencyKeywords)) {
+      if (pattern.test(responseText)) {
+        detectedUrgency = level;
+        break;
+      }
+    }
+    
+    const requiresImmediate = ['CRITICAL', 'HIGH'].includes(detectedUrgency);
+    const callAmbulance = detectedUrgency === 'CRITICAL' || /\b(call.?911|call.?ambulance|emergency.?services)\b/i.test(responseText);
+    
+    // Map SIB response to triage format
     triage = {
       success: true,
-      urgencyLevel: sibResult.urgency_level,
-      urgencyDetails: sibResult.urgency_details,
-      response: sibResult.ai_assessment?.response || sibResult.response,
-      requiresImmediateAttention: sibResult.requires_immediate_attention,
-      callAmbulance: sibResult.call_ambulance,
-      recommendedActions: sibResult.recommended_actions || sibResult.urgency_details?.actions,
-      followUpQuestions: sibResult.follow_up_questions || [],
-      triageId: sibResult.triage_id,
+      urgencyLevel: detectedUrgency,
+      urgencyDetails: {
+        level: detectedUrgency,
+        reason: `Based on symptoms: ${symptoms}`,
+        actions: requiresImmediate ? ['Seek immediate medical attention'] : ['Monitor symptoms', 'Consult doctor if worsening']
+      },
+      response: responseText,
+      requiresImmediateAttention: requiresImmediate,
+      callAmbulance: callAmbulance,
+      recommendedActions: requiresImmediate 
+        ? ['Seek immediate medical attention', 'Do not drive yourself if feeling faint']
+        : ['Monitor your symptoms', 'Stay hydrated', 'Rest', 'Consult a doctor if symptoms persist'],
+      followUpQuestions: [],
+      triageId: `triage_${Date.now()}_${req.user.id}`,
       sibUsed: true,
-      processingTime: sibResult.processing_time_ms
+      processingTime: sibResult.processing_time_ms || null
     };
 
     // Log emergency triage attempts for audit
@@ -372,6 +405,212 @@ router.post('/emergency-triage', authUser, async (req, res) => {
       error: 'Emergency triage service temporarily unavailable',
       urgencyLevel: 'UNKNOWN',
       requiresImmediateAttention: true
+    });
+  }
+});
+
+/**
+ * @route   POST /api/medical-ai/emergency-sos
+ * @desc    Send emergency SOS alerts to doctor, hospital, HR, and family contacts
+ * @access  Private
+ */
+router.post('/emergency-sos', authUser, async (req, res) => {
+  try {
+    const { 
+      message, 
+      reason, 
+      location, 
+      visionAnalysis, 
+      urgencyLevel = 'high',
+      contacts = []
+    } = req.body;
+    
+    const userId = req.user.id;
+    const notifiedContacts = [];
+    const errors = [];
+
+    // Import required services
+    const { default: notificationService } = await import('../services/notification.service.js');
+    const { Appointment } = await import('../models/index.js');
+    const { default: emailService } = await import('../services/emailService.js');
+    
+    console.log(`🚨 EMERGENCY SOS from user ${userId}:`, {
+      reason,
+      urgencyLevel,
+      location,
+      visionAnalysis: visionAnalysis ? {
+        distressLevel: visionAnalysis.distressLevel,
+        consciousnessLevel: visionAnalysis.consciousnessLevel
+      } : null,
+      timestamp: new Date().toISOString()
+    });
+
+    // Build emergency notification content
+    const sosTitle = `🚨 EMERGENCY SOS ALERT - ${urgencyLevel.toUpperCase()}`;
+    const sosBody = `
+Emergency SOS Alert!
+
+Patient ID: ${userId}
+Reason: ${reason}
+Time: ${new Date().toLocaleString()}
+${location ? `Location: https://www.google.com/maps?q=${location.lat},${location.lng}` : ''}
+
+${visionAnalysis ? `
+Vision AI Analysis:
+- Distress Level: ${visionAnalysis.distressLevel}
+- Consciousness: ${visionAnalysis.consciousnessLevel}
+- Breathing: ${visionAnalysis.respiratoryPattern}
+${visionAnalysis.alerts ? `- Alerts: ${visionAnalysis.alerts.join(', ')}` : ''}
+` : ''}
+
+${message || 'Immediate assistance required!'}
+
+This is an automated emergency alert from Mediczy.
+    `.trim();
+
+    // 1. Notify assigned doctor (if user has recent appointment)
+    try {
+      const recentAppointment = await Appointment.findOne({
+        where: { patientId: userId },
+        order: [['createdAt', 'DESC']],
+        include: [{
+          model: (await import('../models/index.js')).Doctor,
+          as: 'doctor',
+          attributes: ['id', 'firstName', 'lastName', 'email', 'phone']
+        }]
+      });
+
+      if (recentAppointment?.doctor) {
+        const doctor = recentAppointment.doctor;
+        
+        // Send push notification to doctor
+        try {
+          await notificationService.send({
+            userId: doctor.id,
+            userType: 'doctor',
+            type: 'appointment_request', // Using existing template
+            variables: {
+              patientName: `Patient #${userId} - EMERGENCY SOS`,
+              date: new Date().toLocaleDateString(),
+              time: new Date().toLocaleTimeString()
+            },
+            data: {
+              type: 'emergency_sos',
+              patientId: userId,
+              reason,
+              location,
+              urgencyLevel
+            }
+          });
+          notifiedContacts.push({ type: 'doctor', name: `Dr. ${doctor.firstName} ${doctor.lastName}`, method: 'push' });
+        } catch (pushError) {
+          console.error('Push notification to doctor failed:', pushError.message);
+        }
+
+        // Send email to doctor
+        try {
+          if (doctor.email) {
+            await emailService.sendEmail(
+              doctor.email,
+              sosTitle,
+              sosBody
+            );
+            notifiedContacts.push({ type: 'doctor', name: `Dr. ${doctor.firstName} ${doctor.lastName}`, method: 'email' });
+          }
+        } catch (emailError) {
+          console.error('Email to doctor failed:', emailError.message);
+        }
+      }
+    } catch (doctorError) {
+      console.error('Doctor notification error:', doctorError.message);
+      errors.push('doctor_notification_failed');
+    }
+
+    // 2. Notify hospital emergency (if user belongs to an organization)
+    try {
+      const { User } = await import('../models/index.js');
+      const user = await User.findByPk(userId, {
+        attributes: ['organizationId', 'hrEmail', 'hrPhone']
+      });
+
+      if (user?.organizationId) {
+        // Get organization/hospital admin email
+        const { Organization } = await import('../models/index.js');
+        const org = await Organization.findByPk(user.organizationId, {
+          attributes: ['id', 'name', 'adminEmail', 'emergencyContact']
+        });
+
+        if (org?.emergencyContact || org?.adminEmail) {
+          const hospitalEmail = org.emergencyContact || org.adminEmail;
+          try {
+            await emailService.sendEmail(
+              hospitalEmail,
+              sosTitle,
+              sosBody
+            );
+            notifiedContacts.push({ type: 'hospital', name: org.name, method: 'email' });
+          } catch (hospError) {
+            console.error('Hospital notification error:', hospError.message);
+          }
+        }
+      }
+
+      // 3. Notify HR (if user has HR contact)
+      if (user?.hrEmail) {
+        try {
+          await emailService.sendEmail(
+            user.hrEmail,
+            sosTitle,
+            sosBody
+          );
+          notifiedContacts.push({ type: 'hr', name: 'HR Department', method: 'email' });
+        } catch (hrError) {
+          console.error('HR notification error:', hrError.message);
+        }
+      }
+    } catch (orgError) {
+      console.error('Organization/HR notification error:', orgError.message);
+      errors.push('organization_notification_failed');
+    }
+
+    // 4. Notify family/emergency contacts provided in request
+    for (const contact of contacts) {
+      if (contact.email) {
+        try {
+          await emailService.sendEmail(
+            contact.email,
+            sosTitle,
+            sosBody
+          );
+          notifiedContacts.push({ type: contact.type || 'family', name: contact.name, method: 'email' });
+        } catch (contactError) {
+          console.error(`Contact ${contact.name} notification error:`, contactError.message);
+        }
+      }
+    }
+
+    // Log SOS event for audit
+    console.log(`✅ SOS notifications sent:`, {
+      userId,
+      notifiedCount: notifiedContacts.length,
+      contacts: notifiedContacts,
+      errors
+    });
+
+    res.json({
+      success: true,
+      message: `Emergency SOS sent to ${notifiedContacts.length} contact(s)`,
+      notifiedContacts,
+      errors: errors.length > 0 ? errors : undefined,
+      timestamp: new Date().toISOString()
+    });
+
+  } catch (error) {
+    console.error('Emergency SOS API error:', error);
+    res.status(500).json({
+      success: false,
+      error: 'Failed to send emergency SOS alerts',
+      message: error.message
     });
   }
 });
@@ -480,9 +719,9 @@ router.post('/instant-triage-call', authUser, async (req, res) => {
     let hcWallet = null;
     
     if (paymentMethod === 'hc' || (creditsUsed >= creditLimit && pendingAmount > 0)) {
-      // Import HealthCoinsWallet to check balance
-      const { HealthCoinsWallet } = await import('../models/index.js');
-      hcWallet = await HealthCoinsWallet.findOne({ where: { userId: req.user.id } });
+      // Import UserWallet to check health coins balance
+      const UserWallet = (await import('../models/postgres/user-wallet.model.postgres.js')).default;
+      hcWallet = await UserWallet.findOne({ where: { userId: req.user.id } });
       
       if (hcWallet) {
         const hcBalance = parseFloat(hcWallet.balance || 0);
@@ -550,7 +789,7 @@ router.post('/instant-triage-call', authUser, async (req, res) => {
     // Deduct Health Coins if paying with HC
     if (isPayingWithHC && hcWallet) {
       const hcRequired = 50; // 500 INR = 50 HC
-      const { HealthCoinsTransaction } = await import('../models/index.js');
+      const HealthCoinsTransaction = (await import('../models/postgres/health-coins-transaction.model.postgres.js')).default;
       
       await hcWallet.update({
         balance: parseFloat(hcWallet.balance) - hcRequired,

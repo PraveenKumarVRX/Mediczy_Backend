@@ -1534,6 +1534,89 @@ router.post('/video/token', authenticate(), asyncHandler(async (req, res) => {
   }
 }));
 
+/**
+ * Generate persistent/long-lived LiveKit token
+ * POST /api/mobile/video/persistent-token
+ * 
+ * This endpoint generates a token that can be used for multiple calls
+ * without needing to request a new token each time.
+ * 
+ * ⚠️ Security Note: Use with caution. Long-lived tokens should be
+ * stored securely and can be revoked by changing LIVEKIT_API_SECRET.
+ */
+router.post('/video/persistent-token', authenticate(), asyncHandler(async (req, res) => {
+  const { 
+    ttlDays = 1,        // Token validity in days (default: 1 day, max: 7 days)
+    roomAgnostic = true // If true, can join any room; if false, needs specific room
+  } = req.body;
+  const userId = req.userId;
+  
+  // Get user details for display name
+  const userResult = await db.query(`
+    SELECT "firstName", "lastName", email, role
+    FROM users
+    WHERE id = $1
+  `, [userId]);
+  
+  if (userResult.rows.length === 0) {
+    return res.status(404).json({
+      success: false,
+      error: { code: 'USER_NOT_FOUND', message: 'User not found' }
+    });
+  }
+  
+  const user = userResult.rows[0];
+  const userRole = user.role || 'patient';
+  const displayName = [user.firstName, user.lastName].filter(Boolean).join(' ') || user.email || 'Mobile User';
+  
+  // Calculate TTL in seconds (max 7 days)
+  const maxDays = 7;
+  const validDays = Math.min(Math.max(ttlDays, 1), maxDays);
+  const ttlSeconds = validDays * 24 * 60 * 60;
+  
+  try {
+    // For persistent tokens, use user's unique identity
+    const identity = `${userRole}-${userId}`;
+    
+    const livekitData = await buildLiveKitJoinData({
+      meetingId: roomAgnostic ? `user-${userId}` : `apt-${Date.now()}`,
+      identity,
+      name: displayName,
+      ttl: ttlSeconds,
+      roomAgnostic
+    });
+    
+    const expiresAt = new Date(Date.now() + ttlSeconds * 1000);
+    
+    res.json({
+      success: true,
+      data: {
+        token: livekitData.token,
+        serverUrl: livekitData.serverUrl,
+        identity,
+        displayName,
+        roomAgnostic,
+        validForDays: validDays,
+        expiresAt: expiresAt.toISOString(),
+        // Instructions for mobile app
+        usage: {
+          note: 'Store this token securely. It can be used for all video calls until expiry.',
+          howToJoin: roomAgnostic 
+            ? 'Use serverUrl + token + any roomName to join calls'
+            : 'Token is restricted to specific rooms'
+        }
+      },
+      message: `Persistent token generated, valid for ${validDays} day(s)`
+    });
+  } catch (error) {
+    console.error('[Mobile] Failed to generate persistent token:', error);
+    return res.status(500).json({
+      success: false,
+      error: { code: 'LIVEKIT_ERROR', message: 'Failed to generate persistent video token' }
+    });
+  }
+}));
+
 // ============== Chat with Doctor ==============
 
 /**

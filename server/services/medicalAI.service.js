@@ -70,7 +70,7 @@ class MedicalAIService {
         console.error('❌ [MedicalAI] SIB failed:', sibError.message);
         result = {
           success: false,
-          response: `I apologize, but I'm having trouble connecting to our AI system. Please try again in a moment.\n\n🏥 **If this is urgent:**\n- For emergencies: Call 911 or 108\n- For non-urgent concerns: Please try again shortly`,
+          response: `I apologize, but I'm having trouble connecting to our AI system. Please try again in a moment.\n\n🏥 **If this is urgent:**\n- For emergencies: Call 112 (India) or 108\n- For non-urgent concerns: Please try again shortly`,
           provider: 'error',
           model: 'none'
         };

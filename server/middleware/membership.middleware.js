@@ -30,7 +30,10 @@ export const validateMembership = async (req, res, next) => {
     '/api/reports',
     '/api/labs',
     '/api/cart',
-    '/api/wallet'
+    '/api/wallet',
+    '/api/medical-ai',  // Dr. iSHA AI consultation - free for all users
+    '/api/ai',          // General AI features
+    '/api/ai-doctor'    // AI doctor consultations
   ]);
   if (membershipFreeBases.has(req.baseUrl)) {
     return next();
