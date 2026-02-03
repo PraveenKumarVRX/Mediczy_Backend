@@ -1256,21 +1256,21 @@ Authorization: Bearer <token>
 
 Your app will receive these notification types via FCM:
 
-| Type                     | Trigger                            | Priority | Channels               |
-| ------------------------ | ---------------------------------- | -------- | ---------------------- |
-| `appointment_booked`     | Appointment confirmed              | High     | Push, Email, WhatsApp  |
-| `appointment_accepted`   | Doctor accepts appointment         | High     | Push, Email            |
-| `appointment_rejected`   | Doctor rejects appointment         | Normal   | Push, Email            |
-| `payment_pending`        | Payment reminder                   | High     | Push                   |
-| `payment_received`       | Payment successful                 | High     | Push, Email, SMS       |
-| `payment_failed`         | Payment failed                     | High     | Push                   |
-| `consultation_reminder`  | 1 hour before consultation         | High     | Push, SMS              |
-| `consultation_starting`  | 15 mins before consultation        | Urgent   | Push                   |
-| `video_ready`            | Doctor is ready for video call     | Urgent   | Push                   |
-| `doctor_calling`         | Doctor initiates video call        | Urgent   | Push                   |
-| `prescription_ready`     | Prescription created               | High     | Push, Email, WhatsApp  |
-| `lab_report_ready`       | Lab results available              | High     | Push, Email            |
-| `membership_expiring`    | Membership expiry warning          | Normal   | Push, Email            |
+| Type                    | Trigger                        | Priority | Channels              |
+| ----------------------- | ------------------------------ | -------- | --------------------- |
+| `appointment_booked`    | Appointment confirmed          | High     | Push, Email, WhatsApp |
+| `appointment_accepted`  | Doctor accepts appointment     | High     | Push, Email           |
+| `appointment_rejected`  | Doctor rejects appointment     | Normal   | Push, Email           |
+| `payment_pending`       | Payment reminder               | High     | Push                  |
+| `payment_received`      | Payment successful             | High     | Push, Email, SMS      |
+| `payment_failed`        | Payment failed                 | High     | Push                  |
+| `consultation_reminder` | 1 hour before consultation     | High     | Push, SMS             |
+| `consultation_starting` | 15 mins before consultation    | Urgent   | Push                  |
+| `video_ready`           | Doctor is ready for video call | Urgent   | Push                  |
+| `doctor_calling`        | Doctor initiates video call    | Urgent   | Push                  |
+| `prescription_ready`    | Prescription created           | High     | Push, Email, WhatsApp |
+| `lab_report_ready`      | Lab results available          | High     | Push, Email           |
+| `membership_expiring`   | Membership expiry warning      | Normal   | Push, Email           |
 
 ### FCM Payload Structure
 
@@ -1296,8 +1296,8 @@ Your app will receive FCM messages with this structure:
 ### React Native FCM Integration
 
 ```javascript
-import messaging from '@react-native-firebase/messaging';
-import AsyncStorage from '@react-native-async-storage/async-storage';
+import messaging from "@react-native-firebase/messaging";
+import AsyncStorage from "@react-native-async-storage/async-storage";
 
 // Request permission (iOS)
 async function requestPermission() {
@@ -1305,42 +1305,42 @@ async function requestPermission() {
   const enabled =
     authStatus === messaging.AuthorizationStatus.AUTHORIZED ||
     authStatus === messaging.AuthorizationStatus.PROVISIONAL;
-  
+
   if (enabled) {
-    console.log('Push notification permission granted');
+    console.log("Push notification permission granted");
   }
 }
 
 // Get and register FCM token
 async function registerFCMToken(authToken) {
   const fcmToken = await messaging().getToken();
-  
+
   // Register with backend
-  await fetch('https://mediqzy.com/api/notifications/fcm/register', {
-    method: 'POST',
+  await fetch("https://mediqzy.com/api/notifications/fcm/register", {
+    method: "POST",
     headers: {
-      'Authorization': `Bearer ${authToken}`,
-      'Content-Type': 'application/json',
+      Authorization: `Bearer ${authToken}`,
+      "Content-Type": "application/json",
     },
     body: JSON.stringify({
       token: fcmToken,
       deviceType: Platform.OS, // 'android' or 'ios'
     }),
   });
-  
+
   // Store locally to detect changes
-  await AsyncStorage.setItem('fcmToken', fcmToken);
+  await AsyncStorage.setItem("fcmToken", fcmToken);
 }
 
 // Listen for token refresh
 messaging().onTokenRefresh(async (newToken) => {
-  const authToken = await AsyncStorage.getItem('authToken');
+  const authToken = await AsyncStorage.getItem("authToken");
   if (authToken) {
-    await fetch('https://mediqzy.com/api/notifications/fcm/register', {
-      method: 'POST',
+    await fetch("https://mediqzy.com/api/notifications/fcm/register", {
+      method: "POST",
       headers: {
-        'Authorization': `Bearer ${authToken}`,
-        'Content-Type': 'application/json',
+        Authorization: `Bearer ${authToken}`,
+        "Content-Type": "application/json",
       },
       body: JSON.stringify({
         token: newToken,
@@ -1352,34 +1352,34 @@ messaging().onTokenRefresh(async (newToken) => {
 
 // Handle foreground messages
 messaging().onMessage(async (remoteMessage) => {
-  console.log('Foreground notification:', remoteMessage);
-  
+  console.log("Foreground notification:", remoteMessage);
+
   const { type, appointmentId, actionUrl } = remoteMessage.data;
-  
+
   // Show local notification or in-app alert
   showLocalNotification({
     title: remoteMessage.notification.title,
     body: remoteMessage.notification.body,
     data: remoteMessage.data,
   });
-  
+
   // Handle specific notification types
-  if (type === 'doctor_calling' || type === 'video_ready') {
+  if (type === "doctor_calling" || type === "video_ready") {
     // Navigate to video call screen
-    navigation.navigate('VideoCall', { appointmentId });
+    navigation.navigate("VideoCall", { appointmentId });
   }
 });
 
 // Handle background/quit state messages
 messaging().setBackgroundMessageHandler(async (remoteMessage) => {
-  console.log('Background notification:', remoteMessage);
+  console.log("Background notification:", remoteMessage);
   // Handle data-only messages here
 });
 
 // Handle notification tap (app opened from notification)
 messaging().onNotificationOpenedApp((remoteMessage) => {
   const { type, appointmentId, actionUrl } = remoteMessage.data;
-  
+
   if (actionUrl) {
     // Navigate to the relevant screen
     handleDeepLink(actionUrl);
@@ -1411,27 +1411,27 @@ class PushNotificationService {
 
   Future<void> initialize(String token) async {
     authToken = token;
-    
+
     // Request permission (iOS)
     NotificationSettings settings = await _fcm.requestPermission(
       alert: true,
       badge: true,
       sound: true,
     );
-    
+
     if (settings.authorizationStatus == AuthorizationStatus.authorized) {
       // Get FCM token and register
       String? fcmToken = await _fcm.getToken();
       if (fcmToken != null) {
         await _registerToken(fcmToken);
       }
-      
+
       // Listen for token refresh
       _fcm.onTokenRefresh.listen(_registerToken);
-      
+
       // Handle foreground messages
       FirebaseMessaging.onMessage.listen(_handleForegroundMessage);
-      
+
       // Handle notification taps
       FirebaseMessaging.onMessageOpenedApp.listen(_handleNotificationTap);
     }
@@ -1449,7 +1449,7 @@ class PushNotificationService {
         'deviceType': Platform.isAndroid ? 'android' : 'ios',
       }),
     );
-    
+
     if (response.statusCode == 200) {
       print('FCM token registered successfully');
     }
@@ -1457,13 +1457,13 @@ class PushNotificationService {
 
   void _handleForegroundMessage(RemoteMessage message) {
     print('Foreground message: ${message.notification?.title}');
-    
+
     final data = message.data;
     final type = data['type'];
-    
+
     // Show local notification
     _showLocalNotification(message);
-    
+
     // Handle video call notifications immediately
     if (type == 'doctor_calling' || type == 'video_ready') {
       _navigateToVideoCall(data['appointmentId']);
@@ -1589,79 +1589,317 @@ class MediczyAPI {
 export default MediczyAPI;
 ```
 
-### Flutter/Dart Example
+### Complete React Native API Service
 
-```dart
-import 'package:http/http.dart' as http;
-import 'dart:convert';
+Here's a comprehensive API service class for React Native:
+
+```javascript
+// services/MediczyAPI.js
+import AsyncStorage from "@react-native-async-storage/async-storage";
+
+const API_BASE_URL = "https://mediqzy.com";
 
 class MediczyAPI {
-  // ✅ IMPORTANT: Use base domain WITHOUT /api suffix
-  // All endpoints include the full path starting with /api/
-  final String baseUrl = 'https://mediqzy.com';
-  final String token;
+  static instance = null;
+  token = null;
 
-  MediczyAPI(this.token);
-
-  // ✅ RECOMMENDED: Use mobile-optimized endpoint for video token
-  Future<Map<String, dynamic>> getVideoToken({
-    required int appointmentId,
-  }) async {
-    final response = await http.post(
-      Uri.parse('$baseUrl/api/mobile/video/token'),
-      headers: {
-        'Authorization': 'Bearer $token',
-        'Content-Type': 'application/json',
-      },
-      body: jsonEncode({
-        'appointmentId': appointmentId,
-      }),
-    );
-
-    return jsonDecode(response.body);
+  static getInstance() {
+    if (!MediczyAPI.instance) {
+      MediczyAPI.instance = new MediczyAPI();
+    }
+    return MediczyAPI.instance;
   }
 
-  Future<Map<String, dynamic>> bookVideoConsultation({
-    required int doctorId,
-    required String date,
-    required String time,
-    required String symptoms,
-  }) async {
-    final response = await http.post(
-      Uri.parse('$baseUrl/api/consultation/book'),
-      headers: {
-        'Authorization': 'Bearer $token',
-        'Content-Type': 'application/json',
-      },
-      body: jsonEncode({
-        'doctorId': doctorId,
-        'consultationType': 'online',
-        'appointmentDate': date,
-        'appointmentTime': time,
-        'symptoms': symptoms,
-        'paymentMethod': 'wallet',
-      }),
-    );
-
-    return jsonDecode(response.body);
+  async initialize() {
+    this.token = await AsyncStorage.getItem("authToken");
   }
 
-  Future<Map<String, dynamic>> login({
-    required String email,
-    required String password,
-  }) async {
-    final response = await http.post(
-      Uri.parse('$baseUrl/api/mobile/auth/login'),
-      headers: {'Content-Type': 'application/json'},
-      body: jsonEncode({
-        'email': email,
-        'password': password,
-      }),
-    );
+  setToken(token) {
+    this.token = token;
+  }
 
-    return jsonDecode(response.body);
+  getHeaders(includeAuth = true) {
+    const headers = { "Content-Type": "application/json" };
+    if (includeAuth && this.token) {
+      headers["Authorization"] = `Bearer ${this.token}`;
+    }
+    return headers;
+  }
+
+  async request(endpoint, options = {}) {
+    const url = `${API_BASE_URL}${endpoint}`;
+    const config = {
+      headers: this.getHeaders(options.auth !== false),
+      ...options,
+    };
+
+    if (options.body && typeof options.body === "object") {
+      config.body = JSON.stringify(options.body);
+    }
+
+    const response = await fetch(url, config);
+    const data = await response.json();
+
+    if (!response.ok) {
+      throw new Error(data.message || data.error || "Request failed");
+    }
+
+    return data;
+  }
+
+  // ============ AUTH ============
+  async login(email, password, deviceId, pushToken) {
+    const data = await this.request("/api/mobile/auth/login", {
+      method: "POST",
+      auth: false,
+      body: { email, password, deviceId, pushToken },
+    });
+
+    if (data.success) {
+      this.token = data.data.accessToken;
+      await AsyncStorage.setItem("authToken", this.token);
+      await AsyncStorage.setItem("refreshToken", data.data.refreshToken);
+      await AsyncStorage.setItem("user", JSON.stringify(data.data.user));
+    }
+
+    return data;
+  }
+
+  async signup(userData) {
+    const data = await this.request("/api/mobile/auth/signup", {
+      method: "POST",
+      auth: false,
+      body: userData,
+    });
+
+    if (data.success) {
+      this.token = data.data.accessToken;
+      await AsyncStorage.setItem("authToken", this.token);
+      await AsyncStorage.setItem("refreshToken", data.data.refreshToken);
+    }
+
+    return data;
+  }
+
+  async requestOTP(phone) {
+    return this.request("/api/mobile/auth/otp/request", {
+      method: "POST",
+      auth: false,
+      body: { phone },
+    });
+  }
+
+  async verifyOTP(phone, otp, deviceId, pushToken) {
+    const data = await this.request("/api/mobile/auth/otp/verify", {
+      method: "POST",
+      auth: false,
+      body: { phone, otp, deviceId, pushToken },
+    });
+
+    if (data.success) {
+      this.token = data.data.accessToken;
+      await AsyncStorage.setItem("authToken", this.token);
+    }
+
+    return data;
+  }
+
+  async logout() {
+    this.token = null;
+    await AsyncStorage.multiRemove([
+      "authToken",
+      "refreshToken",
+      "user",
+      "fcmToken",
+    ]);
+  }
+
+  // ============ PROFILE ============
+  async getProfile() {
+    return this.request("/api/mobile/user/profile");
+  }
+
+  async updateProfile(profileData) {
+    return this.request("/api/mobile/user/profile", {
+      method: "PUT",
+      body: profileData,
+    });
+  }
+
+  // ============ DOCTORS ============
+  async getDoctors(params = {}) {
+    const query = new URLSearchParams(params).toString();
+    return this.request(`/api/consultation/doctors?${query}`);
+  }
+
+  async getDoctorDetails(doctorId) {
+    return this.request(`/api/doctors/${doctorId}`);
+  }
+
+  // ============ APPOINTMENTS ============
+  async bookAppointment(appointmentData) {
+    return this.request("/api/consultation/book", {
+      method: "POST",
+      body: appointmentData,
+    });
+  }
+
+  async getAppointments(params = {}) {
+    const query = new URLSearchParams(params).toString();
+    return this.request(`/api/appointments?${query}`);
+  }
+
+  async cancelAppointment(appointmentId, reason) {
+    return this.request(`/api/appointments/${appointmentId}/cancel`, {
+      method: "POST",
+      body: { reason },
+    });
+  }
+
+  // ============ VIDEO ============
+  async getVideoToken(appointmentId) {
+    return this.request("/api/mobile/video/token", {
+      method: "POST",
+      body: { appointmentId },
+    });
+  }
+
+  async getPersistentVideoToken(ttlDays = 7) {
+    return this.request("/api/mobile/video/persistent-token", {
+      method: "POST",
+      body: { ttlDays, roomAgnostic: true },
+    });
+  }
+
+  async joinVideoRoom(roomId, appointmentId) {
+    return this.request(`/api/video/room/${roomId}/join`, {
+      method: "POST",
+      body: { appointmentId },
+    });
+  }
+
+  async leaveVideoRoom(roomId) {
+    return this.request(`/api/video/room/${roomId}/leave`, {
+      method: "POST",
+    });
+  }
+
+  // ============ PRESCRIPTIONS ============
+  async getPrescription(appointmentId) {
+    return this.request(`/api/prescriptions/appointment/${appointmentId}`);
+  }
+
+  async getPrescriptionPDF(prescriptionId) {
+    return this.request(`/api/prescriptions/${prescriptionId}/pdf`);
+  }
+
+  // ============ WALLET ============
+  async getWalletBalance() {
+    return this.request("/api/wallet/balance");
+  }
+
+  async topupWallet(amount, paymentMethod = "razorpay") {
+    return this.request("/api/wallet/topup", {
+      method: "POST",
+      body: { amount, paymentMethod },
+    });
+  }
+
+  async getTransactions(params = {}) {
+    const query = new URLSearchParams(params).toString();
+    return this.request(`/api/wallet/transactions?${query}`);
+  }
+
+  // ============ NOTIFICATIONS ============
+  async registerFCMToken(token, deviceType) {
+    return this.request("/api/notifications/fcm/register", {
+      method: "POST",
+      body: { token, deviceType },
+    });
+  }
+
+  async getNotifications(params = {}) {
+    const query = new URLSearchParams(params).toString();
+    return this.request(`/api/notifications?${query}`);
+  }
+
+  async getUnreadCount() {
+    return this.request("/api/notifications/unread-count");
+  }
+
+  async markNotificationRead(notificationId) {
+    return this.request(`/api/notifications/${notificationId}/read`, {
+      method: "POST",
+    });
+  }
+
+  async markAllNotificationsRead() {
+    return this.request("/api/notifications/read-all", {
+      method: "POST",
+    });
+  }
+
+  async getNotificationPreferences() {
+    return this.request("/api/notifications/preferences");
   }
 }
+
+export default MediczyAPI;
+```
+
+### Usage Examples
+
+```javascript
+// In your React Native components
+import MediczyAPI from "./services/MediczyAPI";
+
+const api = MediczyAPI.getInstance();
+
+// Login
+const handleLogin = async () => {
+  try {
+    const result = await api.login("user@example.com", "password123");
+    if (result.success) {
+      // Navigate to home
+    }
+  } catch (error) {
+    Alert.alert("Login Failed", error.message);
+  }
+};
+
+// Book appointment
+const handleBookAppointment = async () => {
+  try {
+    const result = await api.bookAppointment({
+      doctorId: 70,
+      consultationType: "online",
+      appointmentDate: "2026-02-05",
+      appointmentTime: "10:00 AM",
+      symptoms: "Headache and fever",
+      paymentMethod: "wallet",
+    });
+    if (result.success) {
+      Alert.alert("Success", "Appointment booked!");
+    }
+  } catch (error) {
+    Alert.alert("Booking Failed", error.message);
+  }
+};
+
+// Join video call
+const handleJoinVideoCall = async (appointmentId) => {
+  try {
+    const { data } = await api.getVideoToken(appointmentId);
+    // Use data.serverUrl and data.token with LiveKit SDK
+    navigation.navigate("VideoCall", {
+      serverUrl: data.serverUrl,
+      token: data.token,
+      roomName: data.roomName,
+    });
+  } catch (error) {
+    Alert.alert("Error", "Failed to join video call");
+  }
+};
 ```
 
 ---
@@ -1678,7 +1916,7 @@ class MediczyAPI {
 - [ ] Add error handling and retry logic
 - [ ] Test video calls on different networks
 - [ ] Implement offline support for viewing past consultations
-- [x] Add push notifications for appointment reminders *(see FCM section)*
+- [x] Add push notifications for appointment reminders _(see FCM section)_
 - [ ] Register FCM token on login and token refresh
 - [ ] Handle background and foreground push notifications
 - [ ] Test on both iOS and Android platforms
@@ -1703,7 +1941,7 @@ For API support and questions:
 - **NEW**: FCM token registration endpoints (`/api/notifications/fcm/register`)
 - **NEW**: Device registration endpoints (`/api/mobile/devices/register`, `/api/mobile/devices/push-token`)
 - **NEW**: Notification management endpoints (list, read, delete)
-- **NEW**: React Native and Flutter FCM integration examples
+- **NEW**: Complete React Native FCM integration with PushNotificationService class
 - **DOCS**: Added notification types and FCM payload structure reference
 
 ### v2.2.0 (2026-02-03)
