@@ -2,15 +2,23 @@
 
 Complete API reference for integrating video consultation features into mobile applications.
 
-**Base URL:** `https://mediqzy.com` (NO `/api` suffix - use full endpoint paths)
-
 **Last Updated:** February 3, 2026
+
+---
+
+## 🌐 Environment URLs
+
+| Environment      | Base URL                      | Purpose                       |
+| ---------------- | ----------------------------- | ----------------------------- |
+| **Production**   | `https://app.mediqzy.com`     | Live users, real transactions |
+| **Staging**      | `https://staging.mediqzy.com` | Testing before production     |
+| **Video Server** | `wss://video.mediqzy.com`     | LiveKit video (shared)        |
 
 > ⚠️ **IMPORTANT:** Use the base domain WITHOUT `/api` suffix. All endpoints include the full path.
 >
-> ✅ Correct: `https://mediqzy.com` + `/api/mobile/video/token`
+> ✅ Correct: `https://app.mediqzy.com` + `/api/mobile/video/token`
 >
-> ❌ Wrong: `https://mediqzy.com/api` + `/api/mobile/video/token` (causes double `/api/`)
+> ❌ Wrong: `https://app.mediqzy.com/api` + `/api/mobile/video/token` (causes double `/api/`)
 
 ---
 
@@ -1526,9 +1534,28 @@ All API responses follow a consistent error format:
 ```javascript
 import axios from "axios";
 
+// Environment configuration for React Native
+const ENVIRONMENTS = {
+  development: {
+    API_URL: "http://localhost:8000",
+    VIDEO_URL: "wss://video.mediqzy.com",
+  },
+  staging: {
+    API_URL: "https://staging.mediqzy.com",
+    VIDEO_URL: "wss://video.mediqzy.com",
+  },
+  production: {
+    API_URL: "https://app.mediqzy.com",
+    VIDEO_URL: "wss://video.mediqzy.com",
+  },
+};
+
+// Set environment based on build config
+const ENV = __DEV__ ? "staging" : "production";
+const config = ENVIRONMENTS[ENV];
+
 // ✅ IMPORTANT: Use base domain WITHOUT /api suffix
-// All endpoints include the full path starting with /api/
-const API_BASE_URL = "https://mediqzy.com";
+const API_BASE_URL = config.API_URL;
 
 // Endpoint constants for clarity and maintainability
 const ENDPOINTS = {
@@ -1591,13 +1618,34 @@ export default MediczyAPI;
 
 ### Complete React Native API Service
 
-Here's a comprehensive API service class for React Native:
+Here's a comprehensive API service class for React Native with environment support:
 
 ```javascript
 // services/MediczyAPI.js
 import AsyncStorage from "@react-native-async-storage/async-storage";
 
-const API_BASE_URL = "https://mediqzy.com";
+// Environment configuration
+const ENVIRONMENTS = {
+  development: {
+    API_URL: "http://localhost:8000",
+    VIDEO_URL: "wss://video.mediqzy.com",
+  },
+  staging: {
+    API_URL: "https://staging.mediqzy.com",
+    VIDEO_URL: "wss://video.mediqzy.com",
+  },
+  production: {
+    API_URL: "https://app.mediqzy.com",
+    VIDEO_URL: "wss://video.mediqzy.com",
+  },
+};
+
+// Set this based on your build configuration
+// For testing: 'staging', For release: 'production'
+const CURRENT_ENV = __DEV__ ? "staging" : "production";
+const config = ENVIRONMENTS[CURRENT_ENV];
+
+const API_BASE_URL = config.API_URL;
 
 class MediczyAPI {
   static instance = null;
