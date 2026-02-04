@@ -104,6 +104,7 @@ const USER_TYPE_PERMISSIONS = {
       '/api/prescriptions',
       '/api/video',
       '/api/chat',
+      '/api/call-notification',  // Doctor-to-patient call notifications
       '/api/ai-scribe',
       '/api/offline-scribe',  // Offline AI Scribe for prescription generation
       '/api/scribe',  // AI Scribe public API

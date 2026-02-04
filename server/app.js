@@ -53,6 +53,7 @@ import ttsRouter from './routes/tts.route.js';
 
 import adminRouter from './routes/admin.route.js';
 import fcmRouter from './routes/fcm.route.js';
+import callNotificationRouter from './routes/call-notification.route.js';
 import firebaseStatusRouter from './routes/firebase-status.route.js';
 import crmRouter from './routes/crm.route.js';
 import asyncRouter from './routes/async.route.js';
@@ -919,6 +920,7 @@ app.use('/api/patients', patientRouter); // Patient registration by multiple rol
 app.use('/api', activityLogRoutes); // Activity logging routes
 app.use('/api/crm', crmRouter);
 app.use('/api/fcm', fcmRouter);
+app.use('/api/call-notification', callNotificationRouter); // Doctor-to-patient call notifications
 app.use('/api/firebase', firebaseStatusRouter);
 app.use('/api/tts', ttsRouter); // Eleven Labs Text-to-Speech
 app.use('/api/async', asyncRouter);
