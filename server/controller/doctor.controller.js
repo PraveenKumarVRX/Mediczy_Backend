@@ -350,12 +350,13 @@ export async function signInDoctor(req, res) {
 
     // CROSS-ROLE GUARD: Prevent patient/user accounts from using doctor login endpoint
     // This provides server-side validation in addition to client-side routing
+    // Allow users with role='doctor' to proceed (they may have accounts in both tables)
     const userRecord = await User.findOne({
       where: sequelizeWhere(fn("lower", col("email")), normalizedEmail),
-      attributes: ["id", "isAdmin"]
+      attributes: ["id", "isAdmin", "role"]
     });
     
-    if (userRecord) {
+    if (userRecord && userRecord.role !== 'doctor' && !userRecord.isAdmin) {
       console.log('💚 [signInDoctor] User/patient account found, blocking doctor login');
       await auditLoginAttempt(req, userRecord.id, normalizedEmail, false, 'Patient/user attempted doctor login');
       return res.status(403).json({ 
