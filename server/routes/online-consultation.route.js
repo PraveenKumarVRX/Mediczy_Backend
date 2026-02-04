@@ -12,8 +12,44 @@ import {
   ensureMeetingInfo,
   getProviderLabel
 } from '../utils/videoProvider.js';
+import { Op } from 'sequelize';
 
 const router = express.Router();
+
+/**
+ * Helper function to find appointment by ID or meetingId
+ * Handles both numeric IDs and timestamp-based meetingId patterns
+ * @param {string|number} appointmentId - The ID to lookup
+ * @returns {Promise<Appointment|null>}
+ */
+async function findAppointmentFlexible(appointmentId) {
+  if (!appointmentId) return null;
+  
+  const idStr = String(appointmentId);
+  const idAsNumber = parseInt(idStr, 10);
+  
+  // Try direct lookup if it's a valid integer within PostgreSQL INTEGER range
+  if (!isNaN(idAsNumber) && idAsNumber <= 2147483647) {
+    const appointment = await Appointment.findByPk(idAsNumber);
+    if (appointment) return appointment;
+  }
+  
+  // Try looking up by meetingId pattern (apt-{timestamp})
+  const meetingIdPattern = `apt-${idStr}`;
+  let appointment = await Appointment.findOne({ 
+    where: { meetingId: meetingIdPattern }
+  });
+  if (appointment) return appointment;
+  
+  // Also try direct meetingId match (in case full meetingId is passed)
+  if (idStr.startsWith('apt-')) {
+    appointment = await Appointment.findOne({ 
+      where: { meetingId: idStr }
+    });
+  }
+  
+  return appointment;
+}
 
 // ============================================
 // STEP 1: BROWSE DOCTORS
@@ -1152,7 +1188,8 @@ router.get('/video/join/:appointmentId', authUser, async (req, res) => {
       });
     }
 
-    const appointment = await Appointment.findByPk(appointmentId);
+    // ✅ FIX: Use flexible lookup helper for both numeric ID and meetingId patterns
+    const appointment = await findAppointmentFlexible(appointmentId);
     
     if (!appointment) {
       return res.status(404).json({

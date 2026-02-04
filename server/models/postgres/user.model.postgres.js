@@ -207,6 +207,14 @@ const User = sequelize.define('User', {
     comment: 'Additional flexible metadata'
   },
   
+  // Primary Doctor (Family Doctor concept)
+  primaryDoctorId: {
+    type: DataTypes.INTEGER,
+    allowNull: true,
+    field: 'primary_doctor_id',
+    comment: 'Default family doctor assigned to patient'
+  },
+  
   // Activity Tracking
   lastLoginAt: {
     type: DataTypes.DATE,

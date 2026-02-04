@@ -101,6 +101,7 @@ const USER_TYPE_PERMISSIONS = {
       '/api/patients',
       '/api/appointments',
       '/api/enhanced-appointments',  // Enhanced appointment booking for doctors
+      '/api/consultation',  // Online consultation endpoints for doctors
       '/api/prescriptions',
       '/api/video',
       '/api/chat',
