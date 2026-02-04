@@ -856,6 +856,7 @@ app.use("/api/doctors", doctorRoutes); // Doctor routes (login, register, profil
 app.use("/api/doctor", doctorRoutes); // Alias route for singular 'doctor' endpoints
 app.use("/api/doctors", doctorEnhancedRoutes); // Enhanced doctor routes (search, public profiles)
 app.use("/api/doctors", availabilityRouter); // Availability routes
+app.use("/api/doctors", doctorSettingsRoutes); // Mount doctor settings under /api/doctors for attached pharmacies/labs
 app.use("/api/ai", aiScribeRouter); // AI Scribe for prescription generation
 app.use("/api/recordings", recordingRouter); // Consultation recording management
 app.use("/api/doctors/availability", doctorAvailabilityRoutes); // Doctor availability management

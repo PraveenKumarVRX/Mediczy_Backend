@@ -1279,4 +1279,162 @@ router.delete('/:id', authDoctor, async (req, res) => {
   }
 });
 
+/**
+ * @route   POST /api/prescriptions/:id/share
+ * @desc    Share prescription with attached pharmacy or lab
+ * @access  Private (Doctor)
+ */
+router.post('/:id/share', authDoctor, [
+  body('entityId').isInt().withMessage('Entity ID is required'),
+  body('entityType').isIn(['pharmacy', 'lab']).withMessage('Entity type must be pharmacy or lab'),
+  body('method').isIn(['email', 'sms', 'whatsapp']).withMessage('Method must be email, sms, or whatsapp'),
+  body('contact').optional().isString()
+], async (req, res) => {
+  try {
+    const errors = validationResult(req);
+    if (!errors.isEmpty()) {
+      return res.status(400).json({ success: false, errors: errors.array() });
+    }
+
+    const { id } = req.params;
+    const { entityId, entityType, method, contact } = req.body;
+
+    // Find prescription
+    const prescription = await Prescription.findOne({
+      where: isNaN(id)
+        ? { prescriptionId: id }
+        : { id: parseInt(id) }
+    });
+
+    if (!prescription) {
+      return res.status(404).json({ success: false, message: 'Prescription not found' });
+    }
+
+    // Verify doctor owns prescription
+    const doctorId = req.doctor?.id || req.doctor?.dataValues?.id || req.doctor?._id;
+    if (prescription.doctorId !== doctorId) {
+      return res.status(403).json({ success: false, message: 'Not authorized to share this prescription' });
+    }
+
+    // Generate shareable links
+    const baseUrl = process.env.FRONTEND_URL || 'https://mediqzy.com';
+    const jwt = await import('jsonwebtoken');
+    
+    // Generate a share token valid for 30 days
+    const shareToken = jwt.default.sign(
+      { 
+        prescriptionId: prescription.prescriptionId, 
+        entityId, 
+        entityType,
+        purpose: 'prescription_share' 
+      },
+      JWT_CONFIG.SECRET,
+      { expiresIn: '30d' }
+    );
+
+    const pdfUrl = `${baseUrl}/api/prescriptions/${prescription.prescriptionId}/pdf?token=${shareToken}`;
+    const htmlUrl = `${baseUrl}/api/prescriptions/${prescription.prescriptionId}/html?token=${shareToken}`;
+
+    // Format phone number for WhatsApp/SMS
+    const formatPhone = (phone) => {
+      if (!phone) return null;
+      const cleaned = phone.replace(/[^0-9]/g, '').replace(/^91/, '');
+      return cleaned.length === 10 ? cleaned : null;
+    };
+
+    // Build share message
+    const entityName = entityType === 'pharmacy' ? 'Pharmacy' : 'Lab';
+    const message = entityType === 'pharmacy' 
+      ? `🏥 *Prescription from ${prescription.doctorName || 'Doctor'}*\n\n` +
+        `Patient: ${prescription.patientName}\n` +
+        `Date: ${new Date(prescription.createdAt).toLocaleDateString('en-IN')}\n` +
+        `Prescription ID: ${prescription.prescriptionId}\n\n` +
+        `*Medications:*\n${(prescription.medications || []).map((m, i) => 
+          `${i + 1}. ${m.name} - ${m.dosage} - ${m.frequency} - ${m.duration}`
+        ).join('\n')}\n\n` +
+        `📥 Download PDF: ${pdfUrl}`
+      : `🔬 *Lab Test Request from ${prescription.doctorName || 'Doctor'}*\n\n` +
+        `Patient: ${prescription.patientName}\n` +
+        `Date: ${new Date(prescription.createdAt).toLocaleDateString('en-IN')}\n` +
+        `Prescription ID: ${prescription.prescriptionId}\n\n` +
+        `*Tests Advised:*\n${(prescription.labTests || []).map((t, i) => 
+          `${i + 1}. ${t.testName || t}`
+        ).join('\n')}\n\n` +
+        `📥 Download PDF: ${pdfUrl}`;
+
+    let shareResult = {};
+
+    if (method === 'whatsapp') {
+      const phoneNumber = formatPhone(contact);
+      if (!phoneNumber) {
+        return res.status(400).json({ success: false, message: 'Valid phone number required for WhatsApp' });
+      }
+      shareResult = {
+        whatsappUrl: `https://wa.me/91${phoneNumber}?text=${encodeURIComponent(message)}`,
+        phoneNumber: `+91${phoneNumber}`
+      };
+    } else if (method === 'sms') {
+      const phoneNumber = formatPhone(contact);
+      if (!phoneNumber) {
+        return res.status(400).json({ success: false, message: 'Valid phone number required for SMS' });
+      }
+      // SMS is typically sent via a service - here we return the details
+      shareResult = {
+        smsUrl: `sms:+91${phoneNumber}?body=${encodeURIComponent(message.replace(/\*/g, '').substring(0, 160))}`,
+        phoneNumber: `+91${phoneNumber}`,
+        message: message.replace(/\*/g, '').substring(0, 160)
+      };
+    } else if (method === 'email') {
+      // Email share
+      const subject = entityType === 'pharmacy' 
+        ? `Prescription for ${prescription.patientName} - ${prescription.prescriptionId}`
+        : `Lab Test Request for ${prescription.patientName} - ${prescription.prescriptionId}`;
+      
+      shareResult = {
+        emailSubject: subject,
+        emailBody: message.replace(/\*/g, ''),
+        mailtoUrl: `mailto:${contact || ''}?subject=${encodeURIComponent(subject)}&body=${encodeURIComponent(message.replace(/\*/g, ''))}`
+      };
+    }
+
+    // Log the share action
+    const shareLog = {
+      timestamp: new Date().toISOString(),
+      entityId,
+      entityType,
+      method,
+      contact,
+      sharedBy: doctorId
+    };
+
+    // Update prescription with share history (using metadata field)
+    const existingMetadata = prescription.metadata || {};
+    const shareHistory = existingMetadata.shareHistory || [];
+    shareHistory.push(shareLog);
+    
+    await prescription.update({
+      metadata: {
+        ...existingMetadata,
+        shareHistory,
+        lastSharedAt: new Date().toISOString()
+      }
+    });
+
+    res.json({
+      success: true,
+      message: `Prescription share link generated for ${entityName}`,
+      pdfUrl,
+      htmlUrl,
+      ...shareResult
+    });
+  } catch (error) {
+    console.error('Share prescription error:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Failed to share prescription',
+      error: error.message
+    });
+  }
+});
+
 export default router;

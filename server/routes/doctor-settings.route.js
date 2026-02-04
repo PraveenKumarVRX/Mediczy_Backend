@@ -541,4 +541,259 @@ router.get('/available-slots/:doctorId', async (req, res) => {
   }
 });
 
+// ============== ATTACHED ENTITIES (PHARMACIES & LABS) ==============
+
+/**
+ * @route   GET /api/doctors/attached-pharmacies
+ * @desc    Get doctor's attached pharmacies
+ * @access  Private (Doctor)
+ */
+router.get('/attached-pharmacies', authUser, async (req, res) => {
+  try {
+    if (req.user.role !== 'doctor') {
+      return res.status(403).json({ success: false, message: 'Doctor access required' });
+    }
+
+    const doctor = await Doctor.findByPk(req.user.id);
+    if (!doctor) {
+      return res.status(404).json({ success: false, message: 'Doctor not found' });
+    }
+
+    // Get attached pharmacies from doctor's settings
+    const attachedPharmacies = doctor.attachedPharmacies || [];
+
+    res.json({
+      success: true,
+      pharmacies: attachedPharmacies
+    });
+  } catch (error) {
+    console.error('Get attached pharmacies error:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Failed to fetch attached pharmacies',
+      error: error.message
+    });
+  }
+});
+
+/**
+ * @route   POST /api/doctors/attached-pharmacies
+ * @desc    Add an attached pharmacy
+ * @access  Private (Doctor)
+ */
+router.post('/attached-pharmacies', authUser, [
+  body('name').notEmpty().withMessage('Pharmacy name is required'),
+  body('phone').optional().isString(),
+  body('email').optional().isEmail(),
+  body('address').optional().isString()
+], async (req, res) => {
+  try {
+    if (req.user.role !== 'doctor') {
+      return res.status(403).json({ success: false, message: 'Doctor access required' });
+    }
+
+    const { name, phone, email, address, gstNumber, licenseNumber } = req.body;
+
+    const doctor = await Doctor.findByPk(req.user.id);
+    if (!doctor) {
+      return res.status(404).json({ success: false, message: 'Doctor not found' });
+    }
+
+    const attachedPharmacies = doctor.attachedPharmacies || [];
+    const newPharmacy = {
+      id: Date.now(),
+      name,
+      phone: phone || '',
+      email: email || '',
+      address: address || '',
+      gstNumber: gstNumber || '',
+      licenseNumber: licenseNumber || '',
+      addedAt: new Date().toISOString()
+    };
+
+    attachedPharmacies.push(newPharmacy);
+    await doctor.update({ attachedPharmacies });
+
+    res.json({
+      success: true,
+      message: 'Pharmacy added successfully',
+      pharmacy: newPharmacy
+    });
+  } catch (error) {
+    console.error('Add pharmacy error:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Failed to add pharmacy',
+      error: error.message
+    });
+  }
+});
+
+/**
+ * @route   DELETE /api/doctors/attached-pharmacies/:pharmacyId
+ * @desc    Remove an attached pharmacy
+ * @access  Private (Doctor)
+ */
+router.delete('/attached-pharmacies/:pharmacyId', authUser, async (req, res) => {
+  try {
+    if (req.user.role !== 'doctor') {
+      return res.status(403).json({ success: false, message: 'Doctor access required' });
+    }
+
+    const { pharmacyId } = req.params;
+
+    const doctor = await Doctor.findByPk(req.user.id);
+    if (!doctor) {
+      return res.status(404).json({ success: false, message: 'Doctor not found' });
+    }
+
+    const attachedPharmacies = doctor.attachedPharmacies || [];
+    const updatedPharmacies = attachedPharmacies.filter(p => p.id !== parseInt(pharmacyId));
+
+    if (attachedPharmacies.length === updatedPharmacies.length) {
+      return res.status(404).json({ success: false, message: 'Pharmacy not found' });
+    }
+
+    await doctor.update({ attachedPharmacies: updatedPharmacies });
+
+    res.json({
+      success: true,
+      message: 'Pharmacy removed successfully'
+    });
+  } catch (error) {
+    console.error('Remove pharmacy error:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Failed to remove pharmacy',
+      error: error.message
+    });
+  }
+});
+
+/**
+ * @route   GET /api/doctors/attached-labs
+ * @desc    Get doctor's attached labs
+ * @access  Private (Doctor)
+ */
+router.get('/attached-labs', authUser, async (req, res) => {
+  try {
+    if (req.user.role !== 'doctor') {
+      return res.status(403).json({ success: false, message: 'Doctor access required' });
+    }
+
+    const doctor = await Doctor.findByPk(req.user.id);
+    if (!doctor) {
+      return res.status(404).json({ success: false, message: 'Doctor not found' });
+    }
+
+    // Get attached labs from doctor's settings
+    const attachedLabs = doctor.attachedLabs || [];
+
+    res.json({
+      success: true,
+      labs: attachedLabs
+    });
+  } catch (error) {
+    console.error('Get attached labs error:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Failed to fetch attached labs',
+      error: error.message
+    });
+  }
+});
+
+/**
+ * @route   POST /api/doctors/attached-labs
+ * @desc    Add an attached lab
+ * @access  Private (Doctor)
+ */
+router.post('/attached-labs', authUser, [
+  body('name').notEmpty().withMessage('Lab name is required'),
+  body('phone').optional().isString(),
+  body('email').optional().isEmail(),
+  body('address').optional().isString()
+], async (req, res) => {
+  try {
+    if (req.user.role !== 'doctor') {
+      return res.status(403).json({ success: false, message: 'Doctor access required' });
+    }
+
+    const { name, phone, email, address, accreditation } = req.body;
+
+    const doctor = await Doctor.findByPk(req.user.id);
+    if (!doctor) {
+      return res.status(404).json({ success: false, message: 'Doctor not found' });
+    }
+
+    const attachedLabs = doctor.attachedLabs || [];
+    const newLab = {
+      id: Date.now(),
+      name,
+      phone: phone || '',
+      email: email || '',
+      address: address || '',
+      accreditation: accreditation || '',
+      addedAt: new Date().toISOString()
+    };
+
+    attachedLabs.push(newLab);
+    await doctor.update({ attachedLabs });
+
+    res.json({
+      success: true,
+      message: 'Lab added successfully',
+      lab: newLab
+    });
+  } catch (error) {
+    console.error('Add lab error:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Failed to add lab',
+      error: error.message
+    });
+  }
+});
+
+/**
+ * @route   DELETE /api/doctors/attached-labs/:labId
+ * @desc    Remove an attached lab
+ * @access  Private (Doctor)
+ */
+router.delete('/attached-labs/:labId', authUser, async (req, res) => {
+  try {
+    if (req.user.role !== 'doctor') {
+      return res.status(403).json({ success: false, message: 'Doctor access required' });
+    }
+
+    const { labId } = req.params;
+
+    const doctor = await Doctor.findByPk(req.user.id);
+    if (!doctor) {
+      return res.status(404).json({ success: false, message: 'Doctor not found' });
+    }
+
+    const attachedLabs = doctor.attachedLabs || [];
+    const updatedLabs = attachedLabs.filter(l => l.id !== parseInt(labId));
+
+    if (attachedLabs.length === updatedLabs.length) {
+      return res.status(404).json({ success: false, message: 'Lab not found' });
+    }
+
+    await doctor.update({ attachedLabs: updatedLabs });
+
+    res.json({
+      success: true,
+      message: 'Lab removed successfully'
+    });
+  } catch (error) {
+    console.error('Remove lab error:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Failed to remove lab',
+      error: error.message
+    });
+  }
+});
+
 export default router;

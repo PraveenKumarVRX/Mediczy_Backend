@@ -34,6 +34,7 @@ import api from "@/utils/api";
 import MainLayout from "@/components/layout/MainLayoutdoctor";
 import AIScribe from "@/components/AIScribe";
 import OfflineScribePanel from "@/components/OfflineScribePanel";
+import ConsultationRecorder from "@/components/ConsultationRecorder";
 import {
   Dialog,
   DialogContent,
@@ -173,6 +174,7 @@ const DoctorPrescriptions = () => {
   const [formData, setFormData] = useState<NewPrescription>({ ...emptyPrescription });
   const [showScribe, setShowScribe] = useState(false);
   const [currentScribeField, setCurrentScribeField] = useState<string>("diagnosis");
+  const [showConsultationRecorder, setShowConsultationRecorder] = useState(false);
 
   const getErrorMessage = (error: any, fallback: string) => {
     return (
@@ -555,10 +557,20 @@ const DoctorPrescriptions = () => {
               Create, manage, and issue prescriptions to your patients
             </p>
           </div>
-          <Button onClick={() => { resetForm(); setCreateDialogOpen(true); }} className="flex items-center gap-2">
-            <Plus className="h-4 w-4" />
-            New Prescription
-          </Button>
+          <div className="flex gap-2">
+            <Button 
+              onClick={() => setShowConsultationRecorder(true)} 
+              variant="outline"
+              className="flex items-center gap-2 border-purple-500 text-purple-600 hover:bg-purple-50"
+            >
+              <Mic className="h-4 w-4" />
+              AI Consultation Recorder
+            </Button>
+            <Button onClick={() => { resetForm(); setCreateDialogOpen(true); }} className="flex items-center gap-2">
+              <Plus className="h-4 w-4" />
+              New Prescription
+            </Button>
+          </div>
         </div>
 
         {/* Stats Cards */}
@@ -1479,6 +1491,27 @@ const DoctorPrescriptions = () => {
                 </>
               )}
             </DialogFooter>
+          </DialogContent>
+        </Dialog>
+
+        {/* AI Consultation Recorder Dialog */}
+        <Dialog open={showConsultationRecorder} onOpenChange={setShowConsultationRecorder}>
+          <DialogContent className="max-w-6xl max-h-[90vh] overflow-y-auto">
+            <DialogHeader className="sr-only">
+              <DialogTitle>AI Consultation Recorder</DialogTitle>
+              <DialogDescription>Record patient-doctor consultation and auto-generate prescription</DialogDescription>
+            </DialogHeader>
+            <ConsultationRecorder
+              onPrescriptionSaved={(prescriptionId) => {
+                toast({
+                  title: "✅ Prescription Created",
+                  description: `Prescription ${prescriptionId} saved successfully`,
+                });
+                queryClient.invalidateQueries({ queryKey: ["doctorPrescriptions"] });
+                setShowConsultationRecorder(false);
+              }}
+              onClose={() => setShowConsultationRecorder(false)}
+            />
           </DialogContent>
         </Dialog>
       </div>

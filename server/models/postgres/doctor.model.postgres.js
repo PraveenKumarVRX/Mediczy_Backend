@@ -385,6 +385,20 @@ const Doctor = sequelize.define('Doctor', {
     comment: 'Additional flexible metadata'
   },
 
+  // === ATTACHED ENTITIES (Pharmacies & Labs) ===
+  attachedPharmacies: {
+    type: DataTypes.JSONB,
+    defaultValue: [],
+    field: 'attached_pharmacies',
+    comment: 'Array of attached pharmacies for prescription sharing'
+  },
+  attachedLabs: {
+    type: DataTypes.JSONB,
+    defaultValue: [],
+    field: 'attached_labs',
+    comment: 'Array of attached diagnostic labs for test sharing'
+  },
+
   // === SERVICE ENROLLMENT ===
   // Second Opinion Service
   offersSecondOpinion: {
