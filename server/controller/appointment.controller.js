@@ -79,6 +79,20 @@ const mapConsultationTypeForDb = (requestedType) => {
   return 'online';
 };
 
+const resolveDoctorIdFromRequest = async (req) => {
+  const fallbackId = req.user?.id;
+  if (!fallbackId) return null;
+
+  const isHospitalDoctor = req.user?.userType === 'hospital' && req.user?.role === 'doctor';
+  const isClinicDoctor = req.user?.type === 'clinic_staff' && req.user?.role === 'doctor';
+  if ((isHospitalDoctor || isClinicDoctor) && req.user?.email) {
+    const doctorRecord = await Doctor.findOne({ where: { email: req.user.email } });
+    if (doctorRecord?.id) return doctorRecord.id;
+  }
+
+  return fallbackId;
+};
+
 /**
  * Resolve doctor by ID (accepts both numeric ID and alphanumeric unique_id)
  * @param {string|number} doctorIdOrUniqueId - Can be numeric (2, 3) or alphanumeric (D2C193)
@@ -575,7 +589,7 @@ export const getUserAppointments = async (req, res) => {
  */
 export const getDoctorAppointments = async (req, res) => {
   try {
-    const doctorId = req.user.id; // Assuming req.user contains doctor info
+    const doctorId = await resolveDoctorIdFromRequest(req);
     const { status, date, upcoming } = req.query;
 
     console.log('🔍 getDoctorAppointments called with:', {

@@ -80,11 +80,15 @@ function buildConfig() {
     database: process.env.POSTGRES_DATABASE || process.env.PG_DATABASE || 'mediczy_ai',
     user: process.env.POSTGRES_USER || process.env.PG_USER || 'mediczy_ai',
     password: process.env.POSTGRES_PASSWORD || process.env.PG_PASSWORD || 'change_me',
-    max: parseInt(process.env.POSTGRES_POOL_MAX || process.env.PG_POOL_MAX || '10', 10),
-    min: parseInt(process.env.POSTGRES_POOL_MIN || process.env.PG_POOL_MIN || '0', 10),
-    idleTimeoutMillis: 30000,
-    statement_timeout: 10000,
-    connectionTimeoutMillis: 5000,
+    // Connection pool limits (reduced to prevent connection exhaustion)
+    max: parseInt(process.env.POSTGRES_POOL_MAX || process.env.PG_POOL_MAX || '5', 10),
+    min: parseInt(process.env.POSTGRES_POOL_MIN || process.env.PG_POOL_MIN || '1', 10),
+    // Timeout settings (aggressive to prevent hanging)
+    idleTimeoutMillis: 10000,  // Release idle connections after 10 seconds
+    statement_timeout: 30000,  // Kill queries after 30 seconds
+    connectionTimeoutMillis: 5000,  // Timeout connection attempts after 5 seconds
+    query_timeout: 30000,  // Additional query timeout
+    // Application identification
     application_name: process.env.POSTGRES_APP_NAME || 'mediczy_helper',
     ssl: process.env.POSTGRES_SSL === 'true' || process.env.PG_SSL === 'true'
       ? { rejectUnauthorized: false }

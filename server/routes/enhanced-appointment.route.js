@@ -8,6 +8,7 @@ import Appointment from '../models/appointment.model.intelligent.js';
 
 // Import usage metering service for SaaS tracking
 import usageMeteringService from '../services/usage-metering.service.js';
+import notificationService from '../services/notification.service.js';
 
 const router = express.Router();
 
@@ -41,6 +42,20 @@ const mapEnhancedConsultationTypeToDb = (requestedType) => {
   if (normalized === 'in-person' || normalized === 'inperson') return 'in-person';
   // Default to online to keep the route permissive; callers can still see requested type in metadata.
   return 'online';
+};
+
+const resolveDoctorIdFromRequest = async (req) => {
+  const fallbackId = req.user?.id;
+  if (!fallbackId) return null;
+
+  const isHospitalDoctor = req.user?.userType === 'hospital' && req.user?.role === 'doctor';
+  const isClinicDoctor = req.user?.type === 'clinic_staff' && req.user?.role === 'doctor';
+  if ((isHospitalDoctor || isClinicDoctor) && req.user?.email) {
+    const doctorRecord = await doctorModel.findOne({ where: { email: req.user.email } });
+    if (doctorRecord?.id) return doctorRecord.id;
+  }
+
+  return fallbackId;
 };
 
 /**
@@ -346,6 +361,7 @@ router.post('/book', authUser, [
     // Create DB-backed appointment (canonical fields required by the Postgres model)
     const dbAppointment = await Appointment.create({
       userId: req.user.id,
+      patientId: req.user.id, // Link patient for doctor queries
       doctorId: resolvedDoctorId,
       appointmentDate,
       appointmentTime: normalizedStartTime,
@@ -464,6 +480,31 @@ router.post('/book', authUser, [
       }
       console.log(`📧 New appointment notification sent to ${doctor.email}`);
     }, 1000);
+
+    // Send appointment notification to doctor (async)
+    try {
+      const appointmentData = {
+        id: dbAppointment.id,
+        patientName,
+        patientEmail: patient.email,
+        patientPhone: patientPhone || req.user.phoneNumber,
+        doctorName,
+        doctorEmail: doctor.email,
+        specialization: doctor.specialization,
+        appointmentDate,
+        appointmentTime: normalizedStartTime,
+        duration: durationMinutes || 15,
+        consultationType: dbAppointment.consultationType,
+        consultationFee: totalFee,
+        symptoms: symptomsArray,
+        notes: notes || null,
+        location: doctor.practiceAddress || doctor.clinicHospitalName || null,
+        meetingLink: dbAppointment.metadata?.meeting?.meetingLink
+      };
+      await notificationService.notifyAppointmentRequest(dbAppointment, appointmentData);
+    } catch (notificationError) {
+      console.error('❌ Failed to send doctor appointment notification:', notificationError);
+    }
 
     // Track usage for SaaS metering (non-blocking)
     try {
@@ -804,8 +845,15 @@ router.get('/doctor-appointments', authUser, [
     }
 
     const { date, status, consultationType } = req.query;
+    const resolvedDoctorId = await resolveDoctorIdFromRequest(req);
+    if (!resolvedDoctorId) {
+      return res.status(400).json({
+        success: false,
+        message: 'Doctor ID could not be resolved'
+      });
+    }
 
-    const where = { doctorId: req.user.id };
+    const where = { doctorId: resolvedDoctorId };
     if (date) {
       where.appointmentDate = date;
     }

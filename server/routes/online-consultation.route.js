@@ -358,6 +358,7 @@ router.post('/book', authUser, [
     // Create appointment with 'pending' status (waiting for doctor approval)
     const appointment = await Appointment.create({
       userId: patientId,
+      patientId: patientId, // Link patient for doctor queries
       patientName: `${patient.firstName || ''} ${patient.lastName || ''}`.trim() || 'Patient',
       patientEmail: patient.email,
       patientPhone: patient.phoneNumber || patient.phone || '',

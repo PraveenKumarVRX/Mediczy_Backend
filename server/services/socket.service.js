@@ -6,6 +6,7 @@
 import { Server } from 'socket.io';
 import jwt from 'jsonwebtoken';
 import logger from '../config/logger.js';  // Default export
+import { JWT_CONFIG } from '../config/auth.config.js';
 
 class SocketService {
   constructor() {
@@ -59,8 +60,8 @@ class SocketService {
           return next(new Error('Authentication token required'));
         }
 
-        // Verify JWT
-        const decoded = jwt.verify(token, process.env.JWT_SECRET_KEY);
+        // Verify JWT using centralized config
+        const decoded = jwt.verify(token, JWT_CONFIG.SECRET);
         
         // Attach verified user data to socket
         socket.userId = decoded.id;

@@ -8,37 +8,42 @@ PORT=8001
 APP_DIR="/home/ubuntu/Mediczy/ai-engine/doctor_bot"
 VENV_UVICORN="$APP_DIR/venv/bin/uvicorn"
 
-echo "[$(date)] SIB FastAPI pre-start: Checking for stale processes on port $PORT..."
+# Wait for port to be available (with timeout)
+MAX_WAIT=30
+WAIT_COUNT=0
 
-# Kill any process using the port
-if sudo fuser -k $PORT/tcp 2>/dev/null; then
-    echo "[$(date)] Killed stale process on port $PORT"
-    sleep 2
-fi
+echo "[$(date)] SIB FastAPI pre-start: Waiting for port $PORT to be free..."
 
-# Kill any orphaned uvicorn/python processes running our app
-for PID in $(pgrep -f "uvicorn.*app:app.*8001" 2>/dev/null || true); do
-    # Check if this PID is the current PM2 process
-    PM2_PID_FILE="/home/ubuntu/.pm2/pids/sib-fastapi-*.pid"
-    IS_PM2_MANAGED=false
-    
-    for PF in $PM2_PID_FILE; do
-        if [ -f "$PF" ]; then
-            PM2_PID=$(cat "$PF" 2>/dev/null || echo "")
-            if [ "$PID" = "$PM2_PID" ]; then
-                IS_PM2_MANAGED=true
-                break
-            fi
-        fi
-    done
-    
-    if [ "$IS_PM2_MANAGED" = false ]; then
-        echo "[$(date)] Killing orphaned uvicorn process: $PID"
-        kill -9 $PID 2>/dev/null || true
+while [ $WAIT_COUNT -lt $MAX_WAIT ]; do
+    # Check if port is in use
+    if ! lsof -i:$PORT -t >/dev/null 2>&1; then
+        echo "[$(date)] Port $PORT is free"
+        break
     fi
+    
+    # Only try to kill on first attempt
+    if [ $WAIT_COUNT -eq 0 ]; then
+        echo "[$(date)] Port $PORT is in use, attempting cleanup..."
+        # Kill any process using the port (except our own)
+        CURRENT_PID=$$
+        for PID in $(lsof -i:$PORT -t 2>/dev/null || true); do
+            if [ "$PID" != "$CURRENT_PID" ]; then
+                echo "[$(date)] Killing process $PID using port $PORT"
+                kill -9 $PID 2>/dev/null || true
+            fi
+        done
+    fi
+    
+    WAIT_COUNT=$((WAIT_COUNT + 1))
+    sleep 1
 done
 
-# Brief pause to ensure port is released
+if [ $WAIT_COUNT -ge $MAX_WAIT ]; then
+    echo "[$(date)] ERROR: Port $PORT still in use after ${MAX_WAIT}s timeout"
+    exit 1
+fi
+
+# Extra pause to ensure port is fully released
 sleep 2
 
 echo "[$(date)] Starting SIB FastAPI server..."

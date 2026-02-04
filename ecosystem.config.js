@@ -21,23 +21,25 @@ module.exports = {
       name: 'mediczy-server',
       script: './start-wrapper.cjs',
       cwd: '/home/ubuntu/Mediczy/server',
-      instances: 2,  // Reduced from 'max' (4) to 2 to prevent CPU overload
+      instances: 2,  // Cluster mode for 400+ concurrent users
       exec_mode: 'cluster',
       env: {
         NODE_ENV: 'production',
-        PORT: 8000,
-        SIB_URL: 'http://localhost:8001'
+        PORT: 8888,
+        SIB_URL: 'http://localhost:8001',
+        POSTGRES_POOL_MAX: '25',  // Per instance (2 instances = 50 total)
+        POSTGRES_POOL_MIN: '5'
       },
       error_file: './logs/server-error.log',
       out_file: './logs/server-out.log',
       log_date_format: 'YYYY-MM-DD HH:mm:ss Z',
       merge_logs: true,
-      max_memory_restart: '800M',  // Reduced from 1G
+      max_memory_restart: '1500M',  // Increased for cluster mode
       watch: false,
       ignore_watch: ['node_modules', 'logs', '.git'],
-      max_restarts: 10,
+      max_restarts: 15,
       min_uptime: '10s',
-      listen_timeout: 8000,  // Increased from 3000 to allow slower startup
+      listen_timeout: 10000,
       kill_timeout: 10000,
       restart_delay: 3000
     },

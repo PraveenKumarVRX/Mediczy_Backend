@@ -262,6 +262,7 @@ router.post('/appointments', verifyHospitalToken, async (req, res) => {
     // Create appointment in PostgreSQL
     const appointment = await Appointment.create({
       userId: userId || null, // Optional - for walk-in patients
+      patientId: userId || null, // Link patient for doctor queries
       patientName,
       patientPhone,
       patientEmail: patientEmail || null,

@@ -811,6 +811,7 @@ router.post('/instant-triage-call', authUser, async (req, res) => {
     // Create emergency appointment record with credit/pay-later flag
     const appointment = await Appointment.create({
       userId: req.user.id,
+      patientId: req.user.id, // Link patient for doctor queries
       patientName: `${req.user.firstName || ''} ${req.user.lastName || ''}`.trim() || 'Patient',
       patientEmail: req.user.email,
       patientPhone: req.user.phoneNumber || '',
@@ -1475,6 +1476,7 @@ router.post('/book-appointment', authUser, async (req, res) => {
     // Create the appointment
     const appointment = await Appointment.create({
       userId: req.user.id,
+      patientId: req.user.id, // Link patient for doctor queries
       patientName,
       patientEmail,
       patientPhone,

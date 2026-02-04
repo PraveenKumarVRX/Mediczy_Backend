@@ -13,7 +13,7 @@ export const adminAuthMiddleware = (req, res, next) => {
       });
     }
 
-    const decoded = jwt.verify(token, JWT_CONFIG.SECRET || 'mediczy_secret_key');
+    const decoded = jwt.verify(token, JWT_CONFIG.SECRET);
     
     // Check if user is admin or team member
     const allowedRoles = ['admin', 'super_admin', 'team'];

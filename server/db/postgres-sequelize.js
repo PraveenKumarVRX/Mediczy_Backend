@@ -29,11 +29,11 @@ const postgresSequelize = new Sequelize(database, username, password, {
   },
   logging: process.env.NODE_ENV === 'development' ? console.log : false,
   pool: {
-    max: parseInt(process.env.POSTGRES_POOL_MAX || '20', 10),
-    min: parseInt(process.env.POSTGRES_POOL_MIN || '5', 10),
-    acquire: 30000,
-    idle: 10000,
-    evict: 10000
+    max: parseInt(process.env.POSTGRES_POOL_MAX || '50', 10),
+    min: parseInt(process.env.POSTGRES_POOL_MIN || '10', 10),
+    acquire: 60000,
+    idle: 30000,
+    evict: 30000
   },
   retry: {
     max: 3,

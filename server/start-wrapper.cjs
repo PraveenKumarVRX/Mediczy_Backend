@@ -25,13 +25,17 @@ function killProcessOnPort(port) {
 }
 
 async function main() {
-    log(`Pre-start check: Cleaning port ${PORT}...`);
+    // Skip port cleaning in cluster mode - PM2 handles this
+    const isClusterMode = process.env.exec_mode === 'cluster' || 
+                          (process.env.instances && parseInt(process.env.instances) > 1) ||
+                          process.env.PM2_INSTANCE_ID !== undefined;
     
-    // Only clean port on first cluster instance
-    if (!process.env.PM2_INSTANCE_ID || process.env.PM2_INSTANCE_ID === '0') {
+    if (!isClusterMode) {
+        log(`Pre-start check: Cleaning port ${PORT}...`);
         killProcessOnPort(PORT);
-        // Brief pause
         await new Promise(r => setTimeout(r, 1000));
+    } else {
+        log(`Cluster mode detected (instance ${process.env.PM2_INSTANCE_ID || 0}), skipping port cleanup`);
     }
     
     log('Starting Mediczy server...');
