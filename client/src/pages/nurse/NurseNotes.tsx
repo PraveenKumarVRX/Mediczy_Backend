@@ -5,8 +5,17 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Textarea } from '@/components/ui/textarea';
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { FileText, Activity, ArrowLeft } from 'lucide-react';
 import api from '@/utils/api';
+
+interface PatientOption {
+  id: string;
+  name?: string;
+  firstName?: string;
+  lastName?: string;
+  phoneNumber?: string;
+}
 
 const NurseNotes: React.FC = () => {
   const navigate = useNavigate();
@@ -15,6 +24,29 @@ const NurseNotes: React.FC = () => {
   const [loading, setLoading] = useState(false);
   const [message, setMessage] = useState('');
   const [history, setHistory] = useState<any[]>([]);
+  const [patients, setPatients] = useState<PatientOption[]>([]);
+  const [patientsLoading, setPatientsLoading] = useState(false);
+  const [patientsError, setPatientsError] = useState('');
+
+  const loadPatients = async () => {
+    setPatientsLoading(true);
+    setPatientsError('');
+    try {
+      const token = localStorage.getItem('nurseToken');
+      const { data } = await api.get('/nurse/patients', {
+        headers: { Authorization: `Bearer ${token}` }
+      });
+      if (data.success) {
+        setPatients(data.patients || []);
+      } else {
+        setPatientsError('Unable to load patients list');
+      }
+    } catch (e: any) {
+      setPatientsError(e.response?.data?.message || 'Unable to load patients list');
+    } finally {
+      setPatientsLoading(false);
+    }
+  };
 
   const loadHistory = async (pid: string) => {
     if (!pid) return;
@@ -32,6 +64,18 @@ const NurseNotes: React.FC = () => {
   useEffect(() => {
     if (patientId) loadHistory(patientId);
   }, [patientId]);
+
+  useEffect(() => {
+    loadPatients();
+  }, []);
+
+  const getPatientLabel = (patient: PatientOption) => {
+    const name =
+      patient.name ||
+      `${patient.firstName || ''} ${patient.lastName || ''}`.trim() ||
+      `Patient ${patient.id}`;
+    return `${name} (ID: ${patient.id})`;
+  };
 
   const onSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -71,7 +115,23 @@ const NurseNotes: React.FC = () => {
         {message && <p className="text-green-600 text-sm mb-3">{message}</p>}
         <form onSubmit={onSubmit} className="space-y-4">
           <div className="space-y-2">
-            <Label htmlFor="patientId">Patient ID</Label>
+            <Label>Patient</Label>
+            <Select value={patientId} onValueChange={setPatientId} disabled={patientsLoading || patients.length === 0}>
+              <SelectTrigger>
+                <SelectValue placeholder={patientsLoading ? 'Loading patients...' : 'Select a patient'} />
+              </SelectTrigger>
+              <SelectContent>
+                {patients.map((patient) => (
+                  <SelectItem key={patient.id} value={String(patient.id)}>
+                    {getPatientLabel(patient)}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+            {patientsError && <p className="text-xs text-red-600">{patientsError}</p>}
+          </div>
+          <div className="space-y-2">
+            <Label htmlFor="patientId">Patient ID (manual)</Label>
             <Input id="patientId" value={patientId} onChange={e => setPatientId(e.target.value)} required />
           </div>
           <div className="space-y-2">

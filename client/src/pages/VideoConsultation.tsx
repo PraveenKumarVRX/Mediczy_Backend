@@ -101,7 +101,10 @@ const VideoConsultation = () => {
   // Fetch LiveKit token when roomId is available
   useEffect(() => {
     const fetchLiveKitToken = async () => {
-      if (!roomId || !appointmentIdFromUrl) return;
+      if (!roomId || !appointmentIdFromUrl) {
+        console.warn('🎥 Missing roomId or appointmentId. Room:', roomId, 'Appointment:', appointmentIdFromUrl);
+        return;
+      }
       
       try {
         console.log('🎥 Fetching LiveKit token for room:', roomId);
@@ -120,12 +123,15 @@ const VideoConsultation = () => {
             roomName: response.data.roomName || roomId
           });
           console.log('✅ LiveKit connection initialized');
+        } else {
+          throw new Error('Missing token or serverUrl in response');
         }
-      } catch (error) {
+      } catch (error: any) {
         console.error('❌ Failed to fetch LiveKit token:', error);
+        const errorMessage = error.response?.data?.message || error.message || 'Failed to initialize video connection';
         toast({
           title: "Connection Error",
-          description: "Failed to initialize video connection. Please try again.",
+          description: errorMessage + ". Please try joining again or contact support if the issue persists.",
           variant: "destructive"
         });
       }

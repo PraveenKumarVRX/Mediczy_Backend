@@ -44,6 +44,31 @@ const formatRelativeTime = (value?: string) => {
   return `${days} day${days > 1 ? "s" : ""} ago`;
 };
 
+const parseDateValue = (value?: string | number | Date | null) => {
+  if (!value) return null;
+  const date = value instanceof Date ? value : new Date(value);
+  if (Number.isNaN(date.getTime())) return null;
+  return date;
+};
+
+const isSameDay = (value: Date, compare: Date) =>
+  value.getFullYear() === compare.getFullYear() &&
+  value.getMonth() === compare.getMonth() &&
+  value.getDate() === compare.getDate();
+
+const isWithinDays = (value: Date, days: number, from: Date = new Date()) => {
+  const start = new Date(from);
+  start.setHours(0, 0, 0, 0);
+  const end = new Date(start);
+  end.setDate(end.getDate() + days);
+  return value >= start && value <= end;
+};
+
+const buildMeta = (parts: Array<string | undefined | null>) => {
+  const meta = parts.filter(Boolean).join(" • ");
+  return meta ? meta : undefined;
+};
+
 const StatGrid = ({
   items,
   onStatClick,
@@ -332,78 +357,301 @@ const withSimpleItemAppend = (
   return <Component />;
 };
 
-export const ClinicAppointmentsPage = () =>
-  withSimpleItemAppend(
-    {
-      title: "Appointments",
-      subtitle: "Manage consultations and queue slots",
-      stats: [
-        { title: "Scheduled Today", value: "86" },
-        { title: "Check-ins", value: "64" },
-        { title: "Telehealth", value: "12" },
-        { title: "Average Wait", value: "9 min" },
-      ],
-      items: [
-        { label: "Dermatology camp", meta: "18 slots filled", status: "Live" },
-        { label: "Walk-in queue", meta: "24 patients", status: "Flow" },
-        { label: "Video consult", meta: "Dr. Kaur from 4PM", status: "Upcoming" },
-      ],
-      countStatIndex: 0,
-      persistKey: "clinic-appointments",
-      action: {
-        kind: "dialog",
-        actionLabel: "Add slot",
-        dialogTitle: "Add Slot",
-        dialogDescription: "Create a new appointment slot.",
-        fields: [
-          { key: "date", label: "Date", type: "date" },
-          { key: "time", label: "Time", type: "text" },
-          { key: "doctor", label: "Doctor", type: "text" },
-          { key: "notes", label: "Notes", type: "textarea" },
-        ],
-        onSubmit: () => {},
-      },
-    },
-    (v) => ({
-      label: v.doctor?.trim() ? `Slot added: ${v.doctor.trim()}` : "Slot added",
-      meta: [v.date, v.time].filter(Boolean).join(" • ") || undefined,
-      status: "Created",
-    })
-  );
+export const ClinicAppointmentsPage = () => {
+  const { toast } = useToast();
+  const filterKeys = ["scheduled", "check-ins", "telehealth", "avg-wait"] as const;
+  const [activeFilter, setActiveFilter] = useState(0);
+  const [stats, setStats] = useState<StatCardProps[]>([
+    { title: "Scheduled Today", value: "0" },
+    { title: "Check-ins", value: "0" },
+    { title: "Telehealth", value: "0" },
+    { title: "Average Wait", value: "—" },
+  ]);
+  const [itemsByFilter, setItemsByFilter] = useState<Record<string, { label: string; meta?: string; status?: string }[]>>({
+    scheduled: [],
+    "check-ins": [],
+    telehealth: [],
+    "avg-wait": [],
+  });
+  const [isLoading, setIsLoading] = useState(true);
+  const [errorMessage, setErrorMessage] = useState<string | null>(null);
 
-export const ClinicPatientsPage = () =>
-  withSimpleItemAppend(
-    {
-      title: "Patients",
-      subtitle: "Unified patient roster",
-      stats: [
-        { title: "Total", value: "4,120" },
-        { title: "New Today", value: "26" },
-        { title: "Follow-ups", value: "74" },
-        { title: "Pending Docs", value: "12" },
-      ],
-      items: [
-        { label: "Insurance verification", meta: "8 waiting", status: "Action" },
-        { label: "Chronic care", meta: "24 under plan", status: "Managed" },
-        { label: "Pediatric review", meta: "12 due tomorrow", status: "Reminder" },
-      ],
-      countStatIndex: 0,
-      persistKey: "clinic-patients",
-      action: {
-        kind: "dialog",
-        actionLabel: "Register patient",
-        dialogTitle: "Register Patient",
-        dialogDescription: "Add a patient to the clinic registry.",
-        fields: [
-          { key: "name", label: "Patient Name", type: "text" },
-          { key: "phone", label: "Phone", type: "text" },
-          { key: "notes", label: "Notes", type: "textarea" },
-        ],
-        onSubmit: () => {},
-      },
+  const activeKey = filterKeys[activeFilter];
+
+  const refreshAppointments = async () => {
+    setIsLoading(true);
+    setErrorMessage(null);
+    try {
+      const response = await api.get("/clinic/dashboard/appointments");
+      const appointments = response.data?.data || [];
+
+      const normalizeStatus = (value?: string) => (value || "").toLowerCase();
+      const normalizeType = (value?: string) => (value || "").toLowerCase();
+
+      const getStatus = (apt: any) => normalizeStatus(apt.status || apt.appointmentStatus || apt.state);
+      const getType = (apt: any) => normalizeType(apt.type || apt.consultationType || apt.mode);
+      const getLabel = (apt: any) =>
+        apt.patient || apt.patientName || apt.name || apt.patient_name || (apt.id ? `Appointment #${apt.id}` : "Appointment");
+      const getMeta = (apt: any) =>
+        buildMeta([
+          apt.time || apt.appointmentTime || apt.slotTime,
+          apt.type || apt.consultationType,
+          apt.phone || apt.patientPhone,
+        ]);
+
+      const toItem = (apt: any, metaOverride?: string) => ({
+        label: getLabel(apt),
+        meta: metaOverride ?? getMeta(apt),
+        status: apt.status || apt.appointmentStatus || apt.state || undefined,
+      });
+
+      const scheduledAppointments = appointments.filter((apt: any) => {
+        const status = getStatus(apt);
+        return ["scheduled", "confirmed", "booked", "upcoming"].some((flag) => status.includes(flag));
+      });
+
+      const checkInAppointments = appointments.filter((apt: any) => {
+        const status = getStatus(apt);
+        return ["waiting", "check", "arrived", "in-progress"].some((flag) => status.includes(flag));
+      });
+
+      const telehealthAppointments = appointments.filter((apt: any) => {
+        const type = getType(apt);
+        return ["tele", "video", "online", "virtual"].some((flag) => type.includes(flag));
+      });
+
+      const waitValues = appointments
+        .map((apt: any) => Number(apt.waitMinutes ?? apt.waitTime ?? apt.waitingMinutes))
+        .filter((value: number) => Number.isFinite(value) && value >= 0);
+      const averageWait = waitValues.length
+        ? `${Math.round(waitValues.reduce((sum, value) => sum + value, 0) / waitValues.length)} min`
+        : "—";
+
+      const avgWaitItems = checkInAppointments.map((apt: any) => {
+        const wait = Number(apt.waitMinutes ?? apt.waitTime ?? apt.waitingMinutes);
+        const meta = buildMeta([
+          apt.time || apt.appointmentTime || apt.slotTime,
+          Number.isFinite(wait) ? `Wait ${Math.round(wait)} min` : null,
+        ]);
+        return toItem(apt, meta);
+      });
+
+      setStats([
+        { title: "Scheduled Today", value: scheduledAppointments.length.toString() },
+        { title: "Check-ins", value: checkInAppointments.length.toString() },
+        { title: "Telehealth", value: telehealthAppointments.length.toString() },
+        { title: "Average Wait", value: averageWait },
+      ]);
+      setItemsByFilter({
+        scheduled: scheduledAppointments.map((apt: any) => toItem(apt)),
+        "check-ins": checkInAppointments.map((apt: any) => toItem(apt)),
+        telehealth: telehealthAppointments.map((apt: any) => toItem(apt)),
+        "avg-wait": avgWaitItems,
+      });
+    } catch (error: any) {
+      setErrorMessage(error?.response?.data?.message || "Unable to load appointments.");
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  useEffect(() => {
+    refreshAppointments();
+  }, []);
+
+  const action: ActionMode = {
+    kind: "dialog",
+    actionLabel: "Add slot",
+    dialogTitle: "Add Slot",
+    dialogDescription: "Create a new appointment slot.",
+    fields: [
+      { key: "patient", label: "Patient Name", type: "text" },
+      { key: "date", label: "Date", type: "date" },
+      { key: "time", label: "Time", type: "text" },
+      { key: "type", label: "Type", type: "text" },
+      { key: "phone", label: "Phone", type: "text" },
+      { key: "notes", label: "Notes", type: "textarea" },
+    ],
+    onSubmit: async (values) => {
+      try {
+        await api.post("/clinic/dashboard/appointments", {
+          patientName: values.patient,
+          date: values.date,
+          time: values.time,
+          type: values.type,
+          phone: values.phone,
+        });
+        toast({ title: "Saved", description: "Appointment slot added." });
+        await refreshAppointments();
+      } catch (error: any) {
+        toast({ title: "Save failed", description: error?.response?.data?.message || "Unable to add appointment." });
+      }
     },
-    (v) => ({ label: v.name?.trim() ? `Registered: ${v.name.trim()}` : "Registered patient", meta: v.phone || undefined, status: "Registered" })
+  };
+
+  return (
+    <ActionPage
+      title="Appointments"
+      subtitle="Manage consultations and queue slots"
+      stats={stats}
+      initialItems={itemsByFilter[activeKey] || []}
+      action={action}
+      onStatClick={(_, index) => setActiveFilter(index)}
+      activeStatIndex={activeFilter}
+      isLoading={isLoading}
+      errorMessage={errorMessage}
+      emptyMessage={activeKey === "avg-wait" ? "No waiting appointments right now." : "No appointments found."}
+    />
   );
+};
+
+export const ClinicPatientsPage = () => {
+  const { toast } = useToast();
+  const filterKeys = ["total", "new", "follow-ups", "pending-docs"] as const;
+  const [activeFilter, setActiveFilter] = useState(0);
+  const [stats, setStats] = useState<StatCardProps[]>([
+    { title: "Total", value: "0" },
+    { title: "New Today", value: "0" },
+    { title: "Follow-ups", value: "0" },
+    { title: "Pending Docs", value: "0" },
+  ]);
+  const [itemsByFilter, setItemsByFilter] = useState<Record<string, { label: string; meta?: string; status?: string }[]>>({
+    total: [],
+    new: [],
+    "follow-ups": [],
+    "pending-docs": [],
+  });
+  const [isLoading, setIsLoading] = useState(true);
+  const [errorMessage, setErrorMessage] = useState<string | null>(null);
+
+  const activeKey = filterKeys[activeFilter];
+
+  const refreshPatients = async () => {
+    setIsLoading(true);
+    setErrorMessage(null);
+    try {
+      const response = await api.get("/clinic/dashboard/patients");
+      const patients = response.data?.data || [];
+      const today = new Date();
+
+      const getLabel = (patient: any) =>
+        patient.name || patient.fullName || patient.patientName || patient.patient_name || (patient.id ? `Patient #${patient.id}` : "Patient");
+
+      const getMeta = (patient: any) =>
+        buildMeta([
+          patient.lastVisit || patient.last_visit ? `Last visit ${patient.lastVisit || patient.last_visit}` : null,
+          patient.nextVisit || patient.followUpDate ? `Next ${patient.nextVisit || patient.followUpDate}` : null,
+          patient.phone || patient.patientPhone,
+        ]);
+
+      const getPendingDocsCount = (patient: any) => {
+        if (Array.isArray(patient.pendingDocs)) return patient.pendingDocs.length;
+        if (Array.isArray(patient.documentsPending)) return patient.documentsPending.length;
+        const count = Number(patient.pendingDocsCount ?? patient.pendingDocuments ?? patient.pendingDocs);
+        return Number.isFinite(count) ? count : 0;
+      };
+
+      const isNewPatient = (patient: any) => {
+        const created = parseDateValue(patient.createdAt || patient.registeredAt || patient.created_at);
+        return created ? isSameDay(created, today) : false;
+      };
+
+      const isFollowUp = (patient: any) => {
+        const diagnosis = String(patient.diagnosis || "").toLowerCase();
+        if (diagnosis.includes("follow")) return true;
+        const nextVisit = parseDateValue(patient.nextVisit || patient.followUpDate);
+        return nextVisit ? isWithinDays(nextVisit, 7, today) : false;
+      };
+
+      const totalItems = patients.map((patient: any) => ({
+        label: getLabel(patient),
+        meta: getMeta(patient),
+        status: patient.status || (isFollowUp(patient) ? "Follow-up" : "Active"),
+      }));
+
+      const newItems = patients.filter(isNewPatient).map((patient: any) => ({
+        label: getLabel(patient),
+        meta: buildMeta([getMeta(patient), "Registered today"]),
+        status: "New",
+      }));
+
+      const followUpItems = patients.filter(isFollowUp).map((patient: any) => ({
+        label: getLabel(patient),
+        meta: buildMeta([patient.diagnosis, patient.nextVisit || patient.followUpDate]),
+        status: "Follow-up",
+      }));
+
+      const pendingDocItems = patients
+        .filter((patient: any) => getPendingDocsCount(patient) > 0)
+        .map((patient: any) => ({
+          label: getLabel(patient),
+          meta: `Pending docs: ${getPendingDocsCount(patient)}`,
+          status: "Pending",
+        }));
+
+      setStats([
+        { title: "Total", value: totalItems.length.toString() },
+        { title: "New Today", value: newItems.length.toString() },
+        { title: "Follow-ups", value: followUpItems.length.toString() },
+        { title: "Pending Docs", value: pendingDocItems.length.toString() },
+      ]);
+      setItemsByFilter({
+        total: totalItems,
+        new: newItems,
+        "follow-ups": followUpItems,
+        "pending-docs": pendingDocItems,
+      });
+    } catch (error: any) {
+      setErrorMessage(error?.response?.data?.message || "Unable to load patients.");
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  useEffect(() => {
+    refreshPatients();
+  }, []);
+
+  const action: ActionMode = {
+    kind: "dialog",
+    actionLabel: "Register patient",
+    dialogTitle: "Register Patient",
+    dialogDescription: "Add a patient to the clinic registry.",
+    fields: [
+      { key: "name", label: "Patient Name", type: "text" },
+      { key: "phone", label: "Phone", type: "text" },
+      { key: "notes", label: "Notes", type: "textarea" },
+    ],
+    onSubmit: async (values) => {
+      try {
+        await api.post("/clinic/dashboard/patients", {
+          name: values.name,
+          phone: values.phone,
+          address: values.notes,
+        });
+        toast({ title: "Saved", description: "Patient registered." });
+        await refreshPatients();
+      } catch (error: any) {
+        toast({ title: "Save failed", description: error?.response?.data?.message || "Unable to register patient." });
+      }
+    },
+  };
+
+  return (
+    <ActionPage
+      title="Patients"
+      subtitle="Unified patient roster"
+      stats={stats}
+      initialItems={itemsByFilter[activeKey] || []}
+      action={action}
+      onStatClick={(_, index) => setActiveFilter(index)}
+      activeStatIndex={activeFilter}
+      isLoading={isLoading}
+      errorMessage={errorMessage}
+      emptyMessage={activeKey === "pending-docs" ? "No pending documents." : "No patients found."}
+    />
+  );
+};
 
 export const ClinicQueuePage = () =>
   withSimpleItemAppend(
@@ -539,72 +787,270 @@ export const ClinicConsultationsPage = () =>
     (v) => ({ label: v.patient?.trim() ? `Consult logged: ${v.patient.trim()}` : "Consult logged", meta: v.complaint || undefined, status: "Logged" })
   );
 
-export const ClinicPrescriptionsPage = () =>
-  withSimpleItemAppend(
-    {
-      title: "Prescriptions",
-      subtitle: "Digital Rx and pharmacy sync",
-      stats: [
-        { title: "Generated Today", value: "96" },
-        { title: "eRx Shared", value: "88" },
-        { title: "Pending Sign", value: "6" },
-        { title: "Refills", value: "34" },
-      ],
-      items: [
-        { label: "Antibiotic stewardship", meta: "Compliant", status: "Healthy" },
-        { label: "Chronic meds", meta: "12 refills due", status: "Reminder" },
-        { label: "Allergy alerts", meta: "No mismatches", status: "Safe" },
-      ],
-      countStatIndex: 0,
-      persistKey: "clinic-prescriptions",
-      action: {
-        kind: "dialog",
-        actionLabel: "New prescription",
-        dialogTitle: "New Prescription",
-        dialogDescription: "Create a prescription record.",
-        fields: [
-          { key: "patient", label: "Patient Name", type: "text" },
-          { key: "medication", label: "Medication", type: "text" },
-          { key: "instructions", label: "Instructions", type: "textarea" },
-        ],
-        onSubmit: () => {},
-      },
-    },
-    (v) => ({ label: v.patient?.trim() ? `Rx created: ${v.patient.trim()}` : "Prescription created", meta: v.medication || undefined, status: "Created" })
-  );
+export const ClinicPrescriptionsPage = () => {
+  const { toast } = useToast();
+  const filterKeys = ["generated", "shared", "pending-sign", "refills"] as const;
+  const [activeFilter, setActiveFilter] = useState(0);
+  const [stats, setStats] = useState<StatCardProps[]>([
+    { title: "Generated Today", value: "0" },
+    { title: "eRx Shared", value: "0" },
+    { title: "Pending Sign", value: "0" },
+    { title: "Refills", value: "0" },
+  ]);
+  const [itemsByFilter, setItemsByFilter] = useState<Record<string, { label: string; meta?: string; status?: string }[]>>({
+    generated: [],
+    shared: [],
+    "pending-sign": [],
+    refills: [],
+  });
+  const [isLoading, setIsLoading] = useState(true);
+  const [errorMessage, setErrorMessage] = useState<string | null>(null);
 
-export const ClinicPharmacyPage = () =>
-  withSimpleItemAppend(
-    {
-      title: "Clinic Pharmacy",
-      subtitle: "Counter sales and stock in-sync",
-      stats: [
-        { title: "Bills Today", value: "182" },
-        { title: "Revenue", value: "₹2.1L" },
-        { title: "Low Stock", value: "4 alerts" },
-        { title: "Pending Orders", value: "3" },
-      ],
-      items: [
-        { label: "Cold storage", meta: "Temp maintained", status: "OK" },
-        { label: "IV fluids", meta: "Reorder triggered", status: "Action" },
-        { label: "OT meds", meta: "Synced with surgery", status: "Ready" },
-      ],
-      action: {
-        kind: "dialog",
-        actionLabel: "Raise PO",
-        dialogTitle: "Raise Purchase Order",
-        dialogDescription: "Create a purchase order request.",
-        fields: [
-          { key: "vendor", label: "Vendor", type: "text" },
-          { key: "item", label: "Item", type: "text" },
-          { key: "qty", label: "Quantity", type: "number" },
-          { key: "notes", label: "Notes", type: "textarea" },
-        ],
-        onSubmit: () => {},
-      },
+  const activeKey = filterKeys[activeFilter];
+
+  const refreshPrescriptions = async () => {
+    setIsLoading(true);
+    setErrorMessage(null);
+    try {
+      const response = await api.get("/clinic/dashboard/prescriptions");
+      const prescriptions = response.data?.data || [];
+      const statsData = response.data?.stats || {};
+      const today = new Date();
+
+      const getLabel = (rx: any) =>
+        rx.patientName || rx.patient_name || (rx.id ? `Prescription #${rx.id}` : "Prescription");
+      const getMeta = (rx: any) =>
+        buildMeta([
+          rx.doctorName ? `Dr. ${rx.doctorName}` : null,
+          rx.diagnosis,
+          rx.createdAt ? formatRelativeTime(rx.createdAt) : null,
+        ]);
+
+      const isGeneratedToday = (rx: any) => {
+        const createdAt = parseDateValue(rx.createdAt || rx.created_at);
+        return createdAt ? isSameDay(createdAt, today) : false;
+      };
+
+      const isPendingSign = (rx: any) => String(rx.status || "").toLowerCase() === "draft";
+
+      const isShared = (rx: any) => {
+        const status = String(rx.status || "").toLowerCase();
+        return ["issued", "dispensed"].includes(status);
+      };
+
+      const isRefillDue = (rx: any) => {
+        const validUntil = parseDateValue(rx.validUntil || rx.valid_until || rx.followUpDate);
+        return validUntil ? isWithinDays(validUntil, 7, today) : false;
+      };
+
+      const generatedItems = prescriptions.filter(isGeneratedToday).map((rx: any) => ({
+        label: getLabel(rx),
+        meta: getMeta(rx),
+        status: rx.status || "Generated",
+      }));
+
+      const sharedItems = prescriptions.filter(isShared).map((rx: any) => ({
+        label: getLabel(rx),
+        meta: getMeta(rx),
+        status: "Shared",
+      }));
+
+      const pendingItems = prescriptions.filter(isPendingSign).map((rx: any) => ({
+        label: getLabel(rx),
+        meta: getMeta(rx),
+        status: "Pending",
+      }));
+
+      const refillItems = prescriptions.filter(isRefillDue).map((rx: any) => ({
+        label: getLabel(rx),
+        meta: buildMeta([rx.validUntil ? `Valid until ${rx.validUntil}` : null, rx.diagnosis]),
+        status: "Refill",
+      }));
+
+      setStats([
+        { title: "Generated Today", value: String(statsData.generatedToday ?? generatedItems.length) },
+        { title: "eRx Shared", value: String(statsData.shared ?? sharedItems.length) },
+        { title: "Pending Sign", value: String(statsData.pendingSign ?? pendingItems.length) },
+        { title: "Refills", value: String(statsData.refills ?? refillItems.length) },
+      ]);
+      setItemsByFilter({
+        generated: generatedItems,
+        shared: sharedItems,
+        "pending-sign": pendingItems,
+        refills: refillItems,
+      });
+    } catch (error: any) {
+      setErrorMessage(error?.response?.data?.message || "Unable to load prescriptions.");
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  useEffect(() => {
+    refreshPrescriptions();
+  }, []);
+
+  const action: ActionMode = {
+    kind: "dialog",
+    actionLabel: "New prescription",
+    dialogTitle: "New Prescription",
+    dialogDescription: "Create a prescription record.",
+    fields: [
+      { key: "patient", label: "Patient Name", type: "text" },
+      { key: "medication", label: "Medication", type: "text" },
+      { key: "instructions", label: "Instructions", type: "textarea" },
+    ],
+    onSubmit: async () => {
+      toast({
+        title: "Saved",
+        description: "Prescription request captured. Sync with the clinical system to finalize.",
+      });
     },
-    (v) => ({ label: v.vendor?.trim() ? `PO raised: ${v.vendor.trim()}` : "PO raised", meta: v.item || undefined, status: "Requested" })
+  };
+
+  return (
+    <ActionPage
+      title="Prescriptions"
+      subtitle="Digital Rx and pharmacy sync"
+      stats={stats}
+      initialItems={itemsByFilter[activeKey] || []}
+      action={action}
+      onStatClick={(_, index) => setActiveFilter(index)}
+      activeStatIndex={activeFilter}
+      isLoading={isLoading}
+      errorMessage={errorMessage}
+      emptyMessage={activeKey === "pending-sign" ? "No pending prescriptions." : "No prescriptions found."}
+    />
   );
+};
+
+export const ClinicPharmacyPage = () => {
+  const { toast } = useToast();
+  const filterKeys = ["bills", "revenue", "low-stock", "pending-orders"] as const;
+  const [activeFilter, setActiveFilter] = useState(0);
+  const [stats, setStats] = useState<StatCardProps[]>([
+    { title: "Bills Today", value: "0" },
+    { title: "Revenue", value: "₹0" },
+    { title: "Low Stock", value: "0" },
+    { title: "Pending Orders", value: "0" },
+  ]);
+  const [itemsByFilter, setItemsByFilter] = useState<Record<string, { label: string; meta?: string; status?: string }[]>>({
+    bills: [],
+    revenue: [],
+    "low-stock": [],
+    "pending-orders": [],
+  });
+  const [isLoading, setIsLoading] = useState(true);
+  const [errorMessage, setErrorMessage] = useState<string | null>(null);
+
+  const activeKey = filterKeys[activeFilter];
+
+  const refreshPharmacy = async () => {
+    setIsLoading(true);
+    setErrorMessage(null);
+    try {
+      const [inventoryResponse, purchaseOrdersResponse] = await Promise.all([
+        api.get("/clinic/dashboard/inventory"),
+        api.get("/clinic/dashboard/purchase-orders"),
+      ]);
+
+      const inventory = inventoryResponse.data?.data || [];
+      const inventorySummary = inventoryResponse.data?.summary || {};
+      const purchaseOrders = purchaseOrdersResponse.data?.data || [];
+
+      const lowStockItems = inventory.filter((item: any) => {
+        const quantity = Number(item.quantity ?? item.stock);
+        const minStock = Number(item.minStock ?? item.reorderLevel ?? item.min_stock);
+        return Number.isFinite(quantity) && Number.isFinite(minStock) && quantity > 0 && quantity <= minStock;
+      });
+
+      const outOfStockItems = inventory.filter((item: any) => Number(item.quantity ?? item.stock) === 0);
+
+      const pendingOrders = purchaseOrders.filter((order: any) => String(order.status || "").toLowerCase() === "pending");
+
+      setStats([
+        { title: "Bills Today", value: String(inventorySummary.billsToday ?? 0) },
+        { title: "Revenue", value: inventorySummary.revenue ? `₹${inventorySummary.revenue}` : "₹0" },
+        { title: "Low Stock", value: String(inventorySummary.lowStock ?? lowStockItems.length) },
+        { title: "Pending Orders", value: String(pendingOrders.length) },
+      ]);
+
+      setItemsByFilter({
+        bills: [],
+        revenue: [],
+        "low-stock": lowStockItems.map((item: any) => ({
+          label: item.name || item.medicineName || `Item #${item.id}`,
+          meta: buildMeta([
+            item.quantity !== undefined ? `${item.quantity} left` : null,
+            item.category,
+          ]),
+          status: "Low",
+        })),
+        "pending-orders": pendingOrders.map((order: any) => ({
+          label: order.orderNumber || order.order_id || `Order #${order.id}`,
+          meta: buildMeta([
+            order.supplier,
+            order.expected_delivery_date ? `ETA ${order.expected_delivery_date}` : null,
+          ]),
+          status: "Pending",
+        })),
+      });
+
+      if (!pendingOrders.length && outOfStockItems.length) {
+        setItemsByFilter((prev) => ({
+          ...prev,
+          "pending-orders": outOfStockItems.map((item: any) => ({
+            label: item.name || item.medicineName || `Item #${item.id}`,
+            meta: "Out of stock - reorder needed",
+            status: "Action",
+          })),
+        }));
+      }
+    } catch (error: any) {
+      setErrorMessage(error?.response?.data?.message || "Unable to load pharmacy data.");
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  useEffect(() => {
+    refreshPharmacy();
+  }, []);
+
+  const action: ActionMode = {
+    kind: "dialog",
+    actionLabel: "Raise PO",
+    dialogTitle: "Raise Purchase Order",
+    dialogDescription: "Create a purchase order request.",
+    fields: [
+      { key: "vendor", label: "Vendor", type: "text" },
+      { key: "item", label: "Item", type: "text" },
+      { key: "qty", label: "Quantity", type: "number" },
+      { key: "notes", label: "Notes", type: "textarea" },
+    ],
+    onSubmit: async () => {
+      toast({
+        title: "Saved",
+        description: "Purchase order captured. Sync with inventory for processing.",
+      });
+    },
+  };
+
+  return (
+    <ActionPage
+      title="Clinic Pharmacy"
+      subtitle="Counter sales and stock in-sync"
+      stats={stats}
+      initialItems={itemsByFilter[activeKey] || []}
+      action={action}
+      onStatClick={(_, index) => setActiveFilter(index)}
+      activeStatIndex={activeFilter}
+      isLoading={isLoading}
+      errorMessage={errorMessage}
+      emptyMessage={activeKey === "pending-orders" ? "No pending orders yet." : "No pharmacy updates available."}
+    />
+  );
+};
 
 export const ClinicLabTestsPage = () => {
   const { toast } = useToast();

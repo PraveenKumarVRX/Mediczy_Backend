@@ -138,6 +138,12 @@ import roleRouter from './routes/role.route.js';
 import hospitalPracticeRouter from './routes/hospital/practice.route.js';
 import userAssociationRouter from './routes/userAssociation.route.js';
 
+// Webinar routes
+import adminWebinarRouter from './routes/admin/webinar.routes.js';
+import adminWebinarModulesRouter from './routes/admin/webinar-modules.routes.js';
+import doctorWebinarRouter from './routes/doctor/webinar.routes.js';
+import publicWebinarRouter from './routes/webinar.routes.js';
+
 // Load intelligent database models (PostgreSQL-backed)
 import "./models/user.model.intelligent.js";
 import "./models/doctor.model.intelligent.js";
@@ -899,11 +905,14 @@ app.use('/api/places', placesRouter);
 
 app.use('/stats', adminStatsRouter); // Admin dashboard statistics (public stats endpoint, outside /api to bypass middleware)
 app.use('/api/admin', adminRouter);
+app.use('/api/admin/webinars', authUser, requireRole('admin'), adminWebinarRouter); // Super admin webinar management
+app.use('/api/admin/webinar-modules', authUser, requireRole('admin'), adminWebinarModulesRouter); // Webinar module & notification configuration
 app.use('/api/admin/module-access', moduleAccessRouter);
 app.use('/api/module-access', moduleAccessRouter); // Public endpoint for checking user's own module access
 app.use('/api/admin/roles', roleRouter); // Role management with CRUD + module access
 app.use('/api/roles', roleRouter); // User-facing role endpoints (check own roles/modules)
 app.use('/api/team', teamRouter);
+app.use('/api/doctor/webinars', authUser, doctorWebinarRouter); // Doctor webinar hosting
 app.use('/api/nurse', nurseRouter);
 app.use('/api/assistant', assistantRouter);
 app.use('/api/patients', patientRouter); // Patient registration by multiple roles
@@ -915,6 +924,7 @@ app.use('/api/tts', ttsRouter); // Eleven Labs Text-to-Speech
 app.use('/api/async', asyncRouter);
 app.use('/api/privacy', privacyRouter); // GDPR/DPDP/HIPAA compliance endpoints
 app.use('/api/video', videoRouter); // Video calling endpoints
+app.use('/api/webinars', authUser, publicWebinarRouter); // Public webinar browsing and registration
 
 // n8n Webhook callbacks
 app.use('/api/webhooks/n8n-callback', n8nCallbackRouter); // n8n workflow callbacks

@@ -45,6 +45,7 @@ import "../index.css";
 import { useLogin } from "../hooks/auth"; // Import useLogin hook
 import { initializeFirebaseMessaging } from "@/lib/firebase-config";
 import api from "@/utils/api";
+import { clearAuthTokens } from "@/hooks/auth";
 
 const formSchema = z.object({
   email: z.string().email("Must be a valid email"),
@@ -144,6 +145,9 @@ const Login = () => {
         throw new Error(data?.message || "OTP verification failed");
       }
 
+      // Clear other portal tokens to prevent wrong redirects
+      clearAuthTokens();
+      
       localStorage.setItem("token", data.token);
       localStorage.setItem("userType", "user");
       if (data?.user?.id) {
@@ -193,6 +197,9 @@ const Login = () => {
       console.log('🚀 User: Using quick authentication bypass');
       
       const devToken = 'dev-user-token';
+      
+      // Clear other portal tokens to prevent wrong redirects
+      clearAuthTokens();
       
       localStorage.setItem('token', devToken);
       localStorage.setItem('userType', 'user');

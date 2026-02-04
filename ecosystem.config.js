@@ -19,7 +19,7 @@ module.exports = {
     // ==================== Node.js Backend ====================
     {
       name: 'mediczy-server',
-      script: './start-wrapper.js',
+      script: './start-wrapper.cjs',
       cwd: '/home/ubuntu/Mediczy/server',
       instances: 2,  // Reduced from 'max' (4) to 2 to prevent CPU overload
       exec_mode: 'cluster',

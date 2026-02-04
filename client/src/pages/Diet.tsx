@@ -408,6 +408,7 @@ const foodCategories = [
 const Diet = () => {
   const navigate = useNavigate();
   const [selectedPlan, setSelectedPlan] = useState<string>("maintenance");
+  const [personalizedPlan, setPersonalizedPlan] = useState<DietPlan | null>(null);
   const [weight, setWeight] = useState("");
   const [height, setHeight] = useState("");
   const [heightUnit, setHeightUnit] = useState("cm");
@@ -492,12 +493,14 @@ const Diet = () => {
       if (!weightNum || isNaN(weightNum) || weightNum <= 0) {
         console.warn('Invalid weight value');
         setSelectedPlan(type);
+        setPersonalizedPlan(null);
         return;
       }
       
       if (!heightInCm || isNaN(heightInCm) || heightInCm <= 0) {
         console.warn('Invalid height value');
         setSelectedPlan(type);
+        setPersonalizedPlan(null);
         return;
       }
       
@@ -528,9 +531,11 @@ const Diet = () => {
       }
       
       setSelectedPlan(type);
+      setPersonalizedPlan(plan);
     } catch (error) {
       console.error('Error changing diet plan:', error);
-      setSelectedPlan(type); // Still change the plan even if calculations fail
+      setSelectedPlan(type);
+      setPersonalizedPlan(null);
     }
   };
 
@@ -758,12 +763,12 @@ const Diet = () => {
               <div className="flex items-center justify-between mb-6">
                 <h3 className="text-xl font-medium text-slate-800 dark:text-white">Daily Calories</h3>
                 <Badge className="text-lg px-4 py-1 bg-gradient-to-r from-teal-500 to-teal-600 text-white">
-                  {dietPlans[selectedPlan]?.dailyCalories} cal
+                  {(personalizedPlan || dietPlans[selectedPlan])?.dailyCalories} cal
                 </Badge>
               </div>
 
               <div className="space-y-4">
-                {dietPlans[selectedPlan]?.meals.map((meal, index) => (
+                {(personalizedPlan || dietPlans[selectedPlan])?.meals.map((meal, index) => (
                   <div
                     key={index}
                     className="p-4 border border-slate-200 dark:border-slate-700 rounded-xl hover:border-teal-300 dark:hover:border-teal-600 hover:bg-teal-50 dark:hover:bg-teal-900/20 transition-all duration-200 group"
@@ -785,14 +790,14 @@ const Diet = () => {
                 ))}
               </div>
 
-              {dietPlans[selectedPlan]?.suggestions.length > 0 && (
+              {(personalizedPlan || dietPlans[selectedPlan])?.suggestions.length > 0 && (
                 <div className="mt-8">
                   <h3 className="text-xl font-medium mb-4 flex items-center gap-2 text-slate-800 dark:text-white">
                     <Utensils className="h-5 w-5 text-teal-600 dark:text-teal-400" />
                     Personalized Suggestions
                   </h3>
                   <ul className="space-y-3">
-                    {dietPlans[selectedPlan]?.suggestions.map((suggestion, index) => (
+                    {(personalizedPlan || dietPlans[selectedPlan])?.suggestions.map((suggestion, index) => (
                       <li key={index} className="flex items-center gap-3 text-sm text-slate-600 dark:text-slate-400 hover:text-slate-800 dark:hover:text-white transition-colors p-2 rounded-lg hover:bg-teal-50 dark:hover:bg-teal-900/20">
                         <Info className="h-4 w-4 text-teal-600 dark:text-teal-400 shrink-0" />
                         {suggestion}
@@ -814,7 +819,7 @@ const Diet = () => {
             
             <div className="space-y-4">
               <div className="grid md:grid-cols-2 gap-4">
-                {selectedPlan && dietPlans[selectedPlan]?.tips.map((tip, index) => (
+                {selectedPlan && (personalizedPlan || dietPlans[selectedPlan])?.tips.map((tip, index) => (
                   <div key={index} className="flex items-start gap-3 p-3 rounded-lg bg-teal-50 dark:bg-teal-900/20 border border-teal-100 dark:border-teal-800/50">
                     <div className="mt-1">
                       <Badge className="w-6 h-6 flex items-center justify-center rounded-full bg-gradient-to-r from-teal-500 to-teal-600 text-white text-xs">

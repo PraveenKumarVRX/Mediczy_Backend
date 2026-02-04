@@ -97,6 +97,10 @@ class InitializationController {
       console.log('🔔 Starting appointment reminder automation...');
       await import('../services/appointment-reminder-cron.service.js');
       
+      // Webinar reminder automation
+      console.log('📅 Starting webinar reminder automation...');
+      await import('../services/webinar-reminder-cron.service.js');
+      
       // Payment reminder automation
       console.log('💰 Starting payment reminder automation...');
       await import('../services/payment-reminder-cron.service.js');
@@ -120,7 +124,7 @@ class InitializationController {
       // SaaS Platform: Auto-suspension scheduler (Phase 2)
       console.log('🔒 Starting auto-suspension scheduler...');
       const { default: autoSuspensionService } = await import('../services/auto-suspension.service.js');
-      autoSuspensionService.start();
+      autoSuspensionService.initialize();
       
       // SaaS Platform: System health monitoring (Phase 2)
       console.log('💓 Starting system health monitoring...');

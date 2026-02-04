@@ -56,15 +56,23 @@ const MyReports = () => {
       const response = await api.get('/reports', { params: { limit: 100 } });
       if (response.data?.success && response.data?.data) {
         setReports(response.data.data);
+      } else if (Array.isArray(response.data)) {
+        // If response is directly an array
+        setReports(response.data);
+      } else if (response.data?.reports) {
+        // If response has reports property
+        setReports(response.data.reports);
       } else {
-        console.error('Failed to fetch reports');
+        console.error('Unexpected response format:', response.data);
+        setReports([]);
       }
-    } catch (error) {
+    } catch (error: any) {
       console.error('Error fetching reports:', error);
+      const errorMessage = error.response?.data?.message || error.message || 'Failed to load reports';
       toast({
         variant: 'destructive',
         title: 'Error',
-        description: 'Failed to load reports'
+        description: errorMessage
       });
     } finally {
       setIsLoading(false);

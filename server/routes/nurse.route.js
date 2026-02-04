@@ -329,6 +329,14 @@ router.post('/vitals', authNurse, async (req, res) => {
       });
     }
 
+    const patient = await userModel.findByPk(parsedPatientId, { attributes: ['id'] });
+    if (!patient) {
+      return res.status(404).json({
+        success: false,
+        message: 'Patient not found'
+      });
+    }
+
     // Validate vitals object exists
     if (!vitals || typeof vitals !== 'object') {
       return res.status(400).json({
@@ -463,6 +471,11 @@ router.post('/notes', authNurse, async (req, res) => {
     const parsedPatientId = Number(patientId);
     if (!Number.isFinite(parsedPatientId)) {
       return res.status(400).json({ success: false, message: 'Patient ID must be a valid number' });
+    }
+
+    const patient = await userModel.findByPk(parsedPatientId, { attributes: ['id'] });
+    if (!patient) {
+      return res.status(404).json({ success: false, message: 'Patient not found' });
     }
 
     const record = await PatientNote.create({

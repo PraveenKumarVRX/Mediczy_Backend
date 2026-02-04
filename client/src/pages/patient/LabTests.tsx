@@ -150,6 +150,7 @@ const LabTests = () => {
   const [isBooking, setIsBooking] = useState(false);
   const [labSearchQuery, setLabSearchQuery] = useState('');
   const [selectedLabId, setSelectedLabId] = useState<string>('');
+  const [labSearchCity, setLabSearchCity] = useState('');
   const [collectionType, setCollectionType] = useState<'home' | 'lab' | ''>('');
   const [selectedLab, setSelectedLab] = useState<LabFromAPI | null>(null);
   
@@ -1090,7 +1091,7 @@ const LabTests = () => {
 
         {/* Stats */}
         <div className="grid grid-cols-1 md:grid-cols-4 gap-4 mb-6">
-          <Card className="bg-white dark:bg-slate-800 border-slate-200 dark:border-slate-700">
+          <Card className="bg-white dark:bg-slate-800 border-slate-200 dark:border-slate-700 cursor-pointer hover:shadow-lg transition-shadow" onClick={() => setFilterStatus('all')}>
             <CardContent className="pt-6">
               <div className="text-center">
                 <div className="text-3xl font-bold text-gray-900 dark:text-white">{statusCounts.total}</div>
@@ -1098,7 +1099,7 @@ const LabTests = () => {
               </div>
             </CardContent>
           </Card>
-          <Card className="bg-white dark:bg-slate-800 border-slate-200 dark:border-slate-700">
+          <Card className="bg-white dark:bg-slate-800 border-slate-200 dark:border-slate-700 cursor-pointer hover:shadow-lg transition-shadow" onClick={() => setFilterStatus('pending')}>
             <CardContent className="pt-6">
               <div className="text-center">
                 <div className="text-3xl font-bold text-yellow-600 dark:text-yellow-400">{statusCounts.pending}</div>
@@ -1106,7 +1107,7 @@ const LabTests = () => {
               </div>
             </CardContent>
           </Card>
-          <Card className="bg-white dark:bg-slate-800 border-slate-200 dark:border-slate-700">
+          <Card className="bg-white dark:bg-slate-800 border-slate-200 dark:border-slate-700 cursor-pointer hover:shadow-lg transition-shadow" onClick={() => setFilterStatus('in_progress')}>
             <CardContent className="pt-6">
               <div className="text-center">
                 <div className="text-3xl font-bold text-blue-600 dark:text-blue-400">{statusCounts.in_progress}</div>
@@ -1114,7 +1115,7 @@ const LabTests = () => {
               </div>
             </CardContent>
           </Card>
-          <Card className="bg-white dark:bg-slate-800 border-slate-200 dark:border-slate-700">
+          <Card className="bg-white dark:bg-slate-800 border-slate-200 dark:border-slate-700 cursor-pointer hover:shadow-lg transition-shadow" onClick={() => setFilterStatus('completed')}>
             <CardContent className="pt-6">
               <div className="text-center">
                 <div className="text-3xl font-bold text-green-600 dark:text-green-400">{statusCounts.completed}</div>

@@ -39,7 +39,7 @@ interface FamilyMember {
 
 const ProfileEnhanced = () => {
   const { toast } = useToast();
-  const { currentUser, isLoading, refetchUser } = useAuth();
+  const { currentUser, isLoading } = useAuth();
   
   const [profileImage, setProfileImage] = useState<string | null>(null);
   const [uploadingImage, setUploadingImage] = useState(false);
@@ -61,14 +61,15 @@ const ProfileEnhanced = () => {
 
   useEffect(() => {
     if (currentUser) {
+      const currentUserAbha = (currentUser as { abhaHealthId?: string }).abhaHealthId;
       setProfileData({
         firstName: currentUser.firstName || "",
         lastName: currentUser.lastName || "",
         email: currentUser.email || "",
         phoneNumber: currentUser.phoneNumber || "",
-        abhaHealthId: currentUser.abhaHealthId || "",
+        abhaHealthId: currentUserAbha || "",
       });
-      setProfileImage(currentUser.profileImage || null);
+      setProfileImage(null);
     }
   }, [currentUser]);
 
@@ -117,7 +118,7 @@ const ProfileEnhanced = () => {
     formData.append("profilePicture", file);
 
     try {
-      const response = await api.post("/api/users/profile-picture", formData, {
+      const response = await api.post("/users/profile-picture", formData, {
         headers: {
           "Content-Type": "multipart/form-data",
         },
@@ -128,7 +129,6 @@ const ProfileEnhanced = () => {
         title: "Success",
         description: "Profile picture updated successfully",
       });
-      refetchUser?.();
     } catch (error: any) {
       toast({
         title: "Upload failed",
@@ -143,13 +143,12 @@ const ProfileEnhanced = () => {
   const handleSaveProfile = async () => {
     setSaving(true);
     try {
-      const response = await api.put("/api/users/profile", profileData);
+      const response = await api.put("/users/profile", profileData);
       toast({
         title: "Success",
         description: "Profile updated successfully",
       });
       setIsEditing(false);
-      refetchUser?.();
     } catch (error: any) {
       toast({
         title: "Error",
@@ -336,7 +335,7 @@ const ProfileEnhanced = () => {
                               lastName: currentUser.lastName || "",
                               email: currentUser.email || "",
                               phoneNumber: currentUser.phoneNumber || "",
-                              abhaHealthId: currentUser.abhaHealthId || "",
+                              abhaHealthId: "",
                             });
                           }
                         }}

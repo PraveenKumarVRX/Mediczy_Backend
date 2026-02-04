@@ -1,11 +1,20 @@
-import React, { useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import api from '@/utils/api';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Activity, HeartPulse, ArrowLeft } from 'lucide-react';
+
+interface PatientOption {
+  id: string;
+  name?: string;
+  firstName?: string;
+  lastName?: string;
+  phoneNumber?: string;
+}
 
 const NurseVitals: React.FC = () => {
   const navigate = useNavigate();
@@ -17,6 +26,41 @@ const NurseVitals: React.FC = () => {
   const [loading, setLoading] = useState(false);
   const [message, setMessage] = useState('');
   const [error, setError] = useState('');
+  const [patients, setPatients] = useState<PatientOption[]>([]);
+  const [patientsLoading, setPatientsLoading] = useState(false);
+  const [patientsError, setPatientsError] = useState('');
+
+  const loadPatients = async () => {
+    setPatientsLoading(true);
+    setPatientsError('');
+    try {
+      const token = localStorage.getItem('nurseToken');
+      const { data } = await api.get('/nurse/patients', {
+        headers: { Authorization: `Bearer ${token}` }
+      });
+      if (data.success) {
+        setPatients(data.patients || []);
+      } else {
+        setPatientsError('Unable to load patients list');
+      }
+    } catch (e: any) {
+      setPatientsError(e.response?.data?.message || 'Unable to load patients list');
+    } finally {
+      setPatientsLoading(false);
+    }
+  };
+
+  useEffect(() => {
+    loadPatients();
+  }, []);
+
+  const getPatientLabel = (patient: PatientOption) => {
+    const name =
+      patient.name ||
+      `${patient.firstName || ''} ${patient.lastName || ''}`.trim() ||
+      `Patient ${patient.id}`;
+    return `${name} (ID: ${patient.id})`;
+  };
 
   const onSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -73,7 +117,23 @@ const NurseVitals: React.FC = () => {
         {error && <p className="text-red-600 text-sm mb-3">{error}</p>}
         <form onSubmit={onSubmit} className="space-y-4">
           <div className="space-y-2">
-            <Label htmlFor="patientId">Patient ID</Label>
+            <Label>Patient</Label>
+            <Select value={patientId} onValueChange={setPatientId} disabled={patientsLoading || patients.length === 0}>
+              <SelectTrigger>
+                <SelectValue placeholder={patientsLoading ? 'Loading patients...' : 'Select a patient'} />
+              </SelectTrigger>
+              <SelectContent>
+                {patients.map((patient) => (
+                  <SelectItem key={patient.id} value={String(patient.id)}>
+                    {getPatientLabel(patient)}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+            {patientsError && <p className="text-xs text-red-600">{patientsError}</p>}
+          </div>
+          <div className="space-y-2">
+            <Label htmlFor="patientId">Patient ID (manual)</Label>
             <Input id="patientId" value={patientId} onChange={e => setPatientId(e.target.value)} required />
           </div>
 

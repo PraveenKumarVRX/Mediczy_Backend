@@ -52,7 +52,8 @@ Content-Type: application/json
   "password": "SecurePass123!",
   "phone": "+919876543210",
   "dateOfBirth": "1990-05-15",
-  "gender": "Male"
+  "gender": "Male",
+  "abhaHealthId": "12345678901234"
 }
 ```
 
@@ -66,6 +67,7 @@ Content-Type: application/json
 | `password` | string | ✅ Yes | Min 8 characters |
 | `dateOfBirth` | string | ✅ Yes | ISO date format (YYYY-MM-DD) |
 | `gender` | string | ✅ Yes | Male/Female/Other |
+| `abhaHealthId` | string | ⭕ Optional | 14-digit ABHA ID (Ayushman Bharat Health Account) |
 
 **Response (201 Created):**
 
@@ -85,6 +87,7 @@ Content-Type: application/json
       "gender": "Other",
       "blood_group": null,
       "address": null,
+      "abhaHealthId": "12345678901234",
       "role": "patient",
       "status": "active"
     },
@@ -153,6 +156,7 @@ Content-Type: application/json
       "gender": "Male",
       "blood_group": "O+",
       "address": "123 Main St, City",
+      "abhaHealthId": "12345678901234",
       "role": "patient",
       "status": "active"
     },
@@ -234,7 +238,30 @@ Content-Type: application/json
   "gender": "Male",
   "bloodGroup": "O+",
   "address": "123 Main St, City",
-  "phone": "9876543210"
+  "phone": "9876543210",
+  "abhaHealthId": "12345678901234"
+}
+```
+
+**Response:**
+
+```json
+{
+  "success": true,
+  "message": "Profile updated successfully",
+  "data": {
+    "user": {
+      "id": 123,
+      "name": "John Doe",
+      "email": "john@example.com",
+      "phone": "9876543210",
+      "dateOfBirth": "1990-05-15T00:00:00.000Z",
+      "gender": "Male",
+      "bloodGroup": "O+",
+      "address": "123 Main St, City",
+      "abhaHealthId": "12345678901234"
+    }
+  }
 }
 ```
 

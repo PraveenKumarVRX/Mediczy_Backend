@@ -1,8 +1,8 @@
 import express from 'express';
 import jwt from 'jsonwebtoken';
-import { Op } from 'sequelize';
+import { Op, QueryTypes } from 'sequelize';
 import { JWT_CONFIG } from '../../config/auth.config.js';
-import { Notification, Report } from '../../models/index.js';
+import { Notification, Report, Prescription } from '../../models/index.js';
 // import Clinic from '../../models/postgres/clinic.model.postgres.js'; // Lazy import
 // import { postgresSequelize } from '../../db/postgres-sequelize.js'; // Lazy import
 
@@ -605,6 +605,128 @@ router.post('/patients', verifyClinicToken, async (req, res) => {
     res.status(500).json({
       success: false,
       message: 'Failed to add patient',
+      error: error.message
+    });
+  }
+});
+
+// Get Prescriptions
+router.get('/prescriptions', verifyClinicToken, async (req, res) => {
+  try {
+    const clinicId = Number(req.clinicId);
+    if (!Number.isFinite(clinicId)) {
+      return res.json({
+        success: true,
+        data: [],
+        total: 0,
+        stats: { generatedToday: 0, shared: 0, pendingSign: 0, refills: 0 }
+      });
+    }
+
+    const { status, limit = 50, offset = 0 } = req.query;
+    const safeLimit = Math.min(100, Math.max(1, Number(limit) || 50));
+    const safeOffset = Math.max(0, Number(offset) || 0);
+
+    const baseWhere = { organization_type: 'clinic', organization_id: clinicId };
+    const listWhere = { ...baseWhere };
+    if (status) listWhere.status = status;
+
+    const { rows: prescriptions, count: total } = await Prescription.findAndCountAll({
+      where: listWhere,
+      order: [['createdAt', 'DESC']],
+      limit: safeLimit,
+      offset: safeOffset
+    });
+
+    const items = prescriptions.map((rx) => ({
+      id: rx.id,
+      prescriptionId: rx.prescriptionId,
+      patientName: rx.patientName,
+      doctorName: rx.doctorName,
+      diagnosis: rx.diagnosis,
+      status: rx.status,
+      createdAt: rx.createdAt,
+      validUntil: rx.validUntil,
+      medicationsCount: Array.isArray(rx.medications) ? rx.medications.length : 0
+    }));
+
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
+    const tomorrow = new Date(today);
+    tomorrow.setDate(tomorrow.getDate() + 1);
+    const weekAhead = new Date(today);
+    weekAhead.setDate(weekAhead.getDate() + 7);
+
+    const [generatedToday, pendingSign, shared, refills] = await Promise.all([
+      Prescription.count({ where: { ...baseWhere, createdAt: { [Op.gte]: today, [Op.lt]: tomorrow } } }),
+      Prescription.count({ where: { ...baseWhere, status: 'draft' } }),
+      Prescription.count({ where: { ...baseWhere, status: { [Op.in]: ['issued', 'dispensed'] } } }),
+      Prescription.count({ where: { ...baseWhere, validUntil: { [Op.gte]: today, [Op.lte]: weekAhead } } })
+    ]);
+
+    res.json({
+      success: true,
+      data: items,
+      total,
+      stats: { generatedToday, shared, pendingSign, refills }
+    });
+  } catch (error) {
+    console.error('Error fetching prescriptions:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Failed to fetch prescriptions',
+      error: error.message
+    });
+  }
+});
+
+// Get Purchase Orders
+router.get('/purchase-orders', verifyClinicToken, async (req, res) => {
+  try {
+    const clinicId = Number(req.clinicId);
+    if (!Number.isFinite(clinicId)) {
+      return res.json({ success: true, data: [], total: 0 });
+    }
+
+    const { status, limit = 50, offset = 0 } = req.query;
+    const safeLimit = Math.min(100, Math.max(1, Number(limit) || 50));
+    const safeOffset = Math.max(0, Number(offset) || 0);
+
+    const { postgresSequelize } = await getModels();
+    const statusClause = status ? 'AND status = :status' : '';
+    const replacements = { clinicId, limit: safeLimit, offset: safeOffset, status };
+
+    const orders = await postgresSequelize.query(
+      `SELECT id, supplier, total_amount, expected_delivery_date, status, created_at
+       FROM pharmacy_purchase_orders
+       WHERE pharmacy_id = :clinicId ${statusClause}
+       ORDER BY created_at DESC
+       LIMIT :limit OFFSET :offset`,
+      { replacements, type: QueryTypes.SELECT }
+    );
+
+    const totals = await postgresSequelize.query(
+      `SELECT COUNT(*)::int AS total
+       FROM pharmacy_purchase_orders
+       WHERE pharmacy_id = :clinicId ${statusClause}`,
+      { replacements: { clinicId, status }, type: QueryTypes.SELECT }
+    );
+
+    const total = totals[0]?.total || 0;
+
+    res.json({
+      success: true,
+      data: orders.map((order) => ({
+        ...order,
+        orderNumber: order.id ? `PO-${order.id}` : undefined
+      })),
+      total
+    });
+  } catch (error) {
+    console.error('Error fetching purchase orders:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Failed to fetch purchase orders',
       error: error.message
     });
   }

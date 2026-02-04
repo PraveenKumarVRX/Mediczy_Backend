@@ -1,0 +1,46 @@
+BEGIN:VCALENDAR
+VERSION:2.0
+PRODID:-//Mediczy//Webinar Calendar//EN
+CALSCALE:GREGORIAN
+METHOD:REQUEST
+X-WR-CALNAME:Mediczy Medical Webinars
+X-WR-TIMEZONE:Asia/Kolkata
+BEGIN:VEVENT
+UID:webinar-999@mediczy.com
+DTSTAMP:20260204T043057Z
+DTSTART:20260215T083000Z
+DTEND:20260215T093000Z
+SUMMARY:Diabetes Management & Prevention
+DESCRIPTION:Join Dr. Sarah for an informative session on managing diabetes through lifestyle changes\, medication\, and monitoring. Learn practical tips you can implement today!\n\nHost: Dr. Dr. Sarah Johnson\n\nMaximum Attendees: Unlimited\n\nRegistered as: John Doe\n\nJoin URL: https://meet.mediczy.com/diabetes-webinar-2026
+LOCATION:Online Webinar - Mediczy Platform
+ORGANIZER;CN=Dr. Dr. Sarah Johnson:mailto:dr.sarah@mediczy.com
+ATTENDEE;CN=John Doe;RSVP=TRUE:mailto:john.doe@example.com
+
+STATUS:CONFIRMED
+SEQUENCE:0
+TRANSP:OPAQUE
+CLASS:PUBLIC
+PRIORITY:5
+URL:https://app.mediqzy.com/webinar/999
+BEGIN:VALARM
+TRIGGER:-P7D
+DESCRIPTION:Webinar in 1 week: Diabetes Management & Prevention
+ACTION:DISPLAY
+END:VALARM
+BEGIN:VALARM
+TRIGGER:-P1D
+DESCRIPTION:Webinar tomorrow: Diabetes Management & Prevention
+ACTION:DISPLAY
+END:VALARM
+BEGIN:VALARM
+TRIGGER:-PT2H
+DESCRIPTION:Webinar in 2 hours: Diabetes Management & Prevention
+ACTION:DISPLAY
+END:VALARM
+BEGIN:VALARM
+TRIGGER:-PT15M
+DESCRIPTION:Webinar starting in 15 minutes!
+ACTION:DISPLAY
+END:VALARM
+END:VEVENT
+END:VCALENDAR
