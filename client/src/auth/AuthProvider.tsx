@@ -78,7 +78,8 @@ export const AuthProvider = ({ children }) => {
     queryFn: async () => {
       if (!authState.token || authState.userType !== "doctor") return null;
       const { data } = await api.get("/doctors/profile");
-      return data;
+      // Handle both wrapped {success, doctor} and unwrapped {id, ...} responses
+      return data?.doctor || data;
     },
     enabled: !!authState.token && authState.userType === "doctor",
     staleTime: Infinity, // Don't refetch unless token changes
