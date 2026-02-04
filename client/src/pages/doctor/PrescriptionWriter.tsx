@@ -55,9 +55,19 @@ import {
   Eye,
   Clock,
   AlertCircle,
-  RefreshCw
+  RefreshCw,
+  Languages,
+  Activity
 } from "lucide-react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
+import { 
+  getTranslation, 
+  languageOptions, 
+  translateFrequency, 
+  translateDuration,
+  getFontForLanguage,
+  type PrescriptionTranslation 
+} from "@/utils/prescriptionTranslations";
 import api from "@/utils/api";
 import { useToast } from "@/hooks/use-toast";
 import { cn } from "@/lib/utils";
@@ -168,6 +178,10 @@ const PrescriptionWriter = () => {
   const [patientSearchOpen, setPatientSearchOpen] = useState(false);
   const [patientSearchQuery, setPatientSearchQuery] = useState("");
   const [previewOpen, setPreviewOpen] = useState(false);
+  
+  // Multi-language support
+  const [prescriptionLanguage, setPrescriptionLanguage] = useState("en");
+  const t = getTranslation(prescriptionLanguage);
 
   const [prescription, setPrescription] = useState<PrescriptionData>({
     patientInfo: {
@@ -374,14 +388,18 @@ const PrescriptionWriter = () => {
     const printWindow = window.open('', '_blank');
     if (!printWindow) return;
 
+    // Get appropriate font for selected language
+    const fontFamily = getFontForLanguage(prescriptionLanguage);
+
     printWindow.document.write(`
       <!DOCTYPE html>
       <html>
         <head>
-          <title>Prescription - ${prescription.patientInfo.name}</title>
+          <title>${t.prescription} - ${prescription.patientInfo.name}</title>
+          <link href="https://fonts.googleapis.com/css2?family=Noto+Sans+Tamil&family=Noto+Sans+Devanagari&family=Noto+Sans+Telugu&family=Noto+Sans+Kannada&family=Noto+Sans+Malayalam&family=Noto+Sans+Bengali&family=Noto+Sans+Gujarati&family=Noto+Sans+Gurmukhi&family=Noto+Sans+Oriya&display=swap" rel="stylesheet">
           <style>
             * { margin: 0; padding: 0; box-sizing: border-box; }
-            body { font-family: 'Times New Roman', serif; font-size: 12pt; line-height: 1.4; }
+            body { font-family: ${fontFamily}; font-size: 12pt; line-height: 1.4; }
             .prescription { max-width: 210mm; margin: 0 auto; padding: 15mm; }
             .header { border-bottom: 2px solid #1a56db; padding-bottom: 10px; margin-bottom: 15px; }
             .header-content { display: flex; align-items: flex-start; gap: 15px; }
@@ -392,7 +410,7 @@ const PrescriptionWriter = () => {
             .doctor-info { text-align: right; font-size: 10pt; }
             .doctor-name { font-weight: bold; font-size: 12pt; }
             .patient-section { background: #f8f9fa; padding: 10px; border-radius: 5px; margin-bottom: 15px; }
-            .patient-row { display: flex; gap: 20px; margin-bottom: 5px; }
+            .patient-row { display: flex; gap: 20px; margin-bottom: 5px; flex-wrap: wrap; }
             .patient-field { }
             .patient-label { font-weight: bold; font-size: 10pt; color: #666; }
             .patient-value { font-size: 11pt; }
@@ -417,6 +435,7 @@ const PrescriptionWriter = () => {
             .vital-label { font-size: 9pt; color: #666; }
             .vital-value { font-weight: bold; }
             .allergy-warning { background: #fff3cd; color: #856404; padding: 5px 10px; border-radius: 3px; margin-bottom: 10px; font-size: 10pt; }
+            .disclaimer-text { font-size: 9pt; color: #666; margin-top: 15px; padding: 10px; background: #f9fafb; border-radius: 5px; text-align: center; }
             @media print {
               body { -webkit-print-color-adjust: exact; print-color-adjust: exact; }
               .prescription { padding: 10mm; }
@@ -444,7 +463,8 @@ const PrescriptionWriter = () => {
         patientId: prescription.patientInfo.id,
         appointmentId: appointmentIdFromUrl,
         ...prescription,
-        doctorId: currentDoctor?.id
+        doctorId: currentDoctor?.id,
+        language: prescriptionLanguage
       });
       return response.data;
     },
@@ -483,7 +503,21 @@ const PrescriptionWriter = () => {
               <h1 className="text-3xl font-bold text-slate-800 dark:text-white">Write Prescription</h1>
               <p className="text-slate-600 dark:text-slate-400 mt-1">Create a prescription with auto-filled patient and doctor information</p>
             </div>
-            <div className="flex gap-2">
+            <div className="flex flex-wrap gap-2 items-center">
+              {/* Language Selector */}
+              <Select value={prescriptionLanguage} onValueChange={setPrescriptionLanguage}>
+                <SelectTrigger className="w-[180px]">
+                  <Languages className="h-4 w-4 mr-2" />
+                  <SelectValue placeholder="Language" />
+                </SelectTrigger>
+                <SelectContent>
+                  {languageOptions.map((lang) => (
+                    <SelectItem key={lang.code} value={lang.code}>
+                      {lang.nativeName} ({lang.name})
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
               <Button variant="outline" onClick={() => setPreviewOpen(true)}>
                 <Eye className="h-4 w-4 mr-2" />
                 Preview
@@ -971,7 +1005,7 @@ const PrescriptionWriter = () => {
                     </div>
                     {clinicInfo.address && <div className="clinic-details">{clinicInfo.address}</div>}
                     <div className="clinic-details">
-                      {clinicInfo.phone && `Tel: ${clinicInfo.phone}`}
+                      {clinicInfo.phone && `${t.phone}: ${clinicInfo.phone}`}
                       {clinicInfo.email && ` | Email: ${clinicInfo.email}`}
                     </div>
                   </div>
@@ -979,7 +1013,7 @@ const PrescriptionWriter = () => {
                     <div className="doctor-name">{doctorStamp.name}</div>
                     <div>{doctorStamp.qualifications}</div>
                     <div>{doctorStamp.specialization}</div>
-                    {doctorStamp.registrationNo && <div>Reg. No: {doctorStamp.registrationNo}</div>}
+                    {doctorStamp.registrationNo && <div>{t.registrationNo}: {doctorStamp.registrationNo}</div>}
                   </div>
                 </div>
               </div>
@@ -988,27 +1022,27 @@ const PrescriptionWriter = () => {
               <div className="patient-section">
                 <div className="patient-row">
                   <div className="patient-field">
-                    <span className="patient-label">Patient: </span>
+                    <span className="patient-label">{t.patient}: </span>
                     <span className="patient-value">{prescription.patientInfo.name}</span>
                   </div>
                   <div className="patient-field">
-                    <span className="patient-label">Age/Gender: </span>
-                    <span className="patient-value">{prescription.patientInfo.age} yrs / {prescription.patientInfo.gender}</span>
+                    <span className="patient-label">{t.ageGender}: </span>
+                    <span className="patient-value">{prescription.patientInfo.age} {t.yrs} / {prescription.patientInfo.gender}</span>
                   </div>
                   <div className="patient-field">
-                    <span className="patient-label">Date: </span>
+                    <span className="patient-label">{t.date}: </span>
                     <span className="patient-value">{new Date().toLocaleDateString('en-IN')}</span>
                   </div>
                 </div>
                 {prescription.patientInfo.phone && (
                   <div className="patient-row">
                     <div className="patient-field">
-                      <span className="patient-label">Phone: </span>
+                      <span className="patient-label">{t.phone}: </span>
                       <span className="patient-value">{prescription.patientInfo.phone}</span>
                     </div>
                     {prescription.patientInfo.bloodGroup && (
                       <div className="patient-field">
-                        <span className="patient-label">Blood Group: </span>
+                        <span className="patient-label">{t.bloodGroup}: </span>
                         <span className="patient-value">{prescription.patientInfo.bloodGroup}</span>
                       </div>
                     )}
@@ -1019,49 +1053,49 @@ const PrescriptionWriter = () => {
               {/* Allergies Warning */}
               {prescription.patientInfo.allergies?.length > 0 && (
                 <div className="allergy-warning">
-                  ⚠️ <strong>Known Allergies:</strong> {prescription.patientInfo.allergies.join(', ')}
+                  ⚠️ <strong>{t.knownAllergies}:</strong> {prescription.patientInfo.allergies.join(', ')}
                 </div>
               )}
 
               {/* Vitals */}
               {(prescription.vitals.bp || prescription.vitals.pulse || prescription.vitals.temp) && (
                 <div className="section">
-                  <div className="section-title">Vital Signs</div>
+                  <div className="section-title">{t.vitalSigns}</div>
                   <div className="vitals-grid">
                     {prescription.vitals.bp && (
                       <div className="vital-item">
-                        <div className="vital-label">BP</div>
-                        <div className="vital-value">{prescription.vitals.bp} mmHg</div>
+                        <div className="vital-label">{t.bloodPressure}</div>
+                        <div className="vital-value">{prescription.vitals.bp} {t.mmHg}</div>
                       </div>
                     )}
                     {prescription.vitals.pulse && (
                       <div className="vital-item">
-                        <div className="vital-label">Pulse</div>
-                        <div className="vital-value">{prescription.vitals.pulse} bpm</div>
+                        <div className="vital-label">{t.pulse}</div>
+                        <div className="vital-value">{prescription.vitals.pulse} {t.bpm}</div>
                       </div>
                     )}
                     {prescription.vitals.temp && (
                       <div className="vital-item">
-                        <div className="vital-label">Temp</div>
-                        <div className="vital-value">{prescription.vitals.temp} °F</div>
+                        <div className="vital-label">{t.temperature}</div>
+                        <div className="vital-value">{prescription.vitals.temp} {t.fahrenheit}</div>
                       </div>
                     )}
                     {prescription.vitals.spo2 && (
                       <div className="vital-item">
-                        <div className="vital-label">SpO2</div>
+                        <div className="vital-label">{t.spO2}</div>
                         <div className="vital-value">{prescription.vitals.spo2}%</div>
                       </div>
                     )}
                     {prescription.vitals.weight && (
                       <div className="vital-item">
-                        <div className="vital-label">Weight</div>
-                        <div className="vital-value">{prescription.vitals.weight} kg</div>
+                        <div className="vital-label">{t.weight}</div>
+                        <div className="vital-value">{prescription.vitals.weight} {t.kg}</div>
                       </div>
                     )}
                     {prescription.vitals.height && (
                       <div className="vital-item">
-                        <div className="vital-label">Height</div>
-                        <div className="vital-value">{prescription.vitals.height} cm</div>
+                        <div className="vital-label">{t.height}</div>
+                        <div className="vital-value">{prescription.vitals.height} {t.cm}</div>
                       </div>
                     )}
                   </div>
@@ -1071,7 +1105,7 @@ const PrescriptionWriter = () => {
               {/* Chief Complaint */}
               {prescription.chiefComplaint && (
                 <div className="section">
-                  <div className="section-title">Chief Complaint</div>
+                  <div className="section-title">{t.chiefComplaint}</div>
                   <div>{prescription.chiefComplaint}</div>
                 </div>
               )}
@@ -1079,7 +1113,7 @@ const PrescriptionWriter = () => {
               {/* Diagnosis */}
               {prescription.diagnosis && (
                 <div className="section">
-                  <div className="section-title">Diagnosis</div>
+                  <div className="section-title">{t.diagnosis}</div>
                   <div>{prescription.diagnosis}</div>
                 </div>
               )}
@@ -1089,16 +1123,16 @@ const PrescriptionWriter = () => {
                 <div className="section">
                   <div className="section-title">
                     <span className="rx-symbol">℞</span>
-                    Medications
+                    {t.medications}
                   </div>
                   <table className="medication-table">
                     <thead>
                       <tr>
                         <th>#</th>
-                        <th>Medicine</th>
-                        <th>Dosage</th>
-                        <th>Frequency</th>
-                        <th>Duration</th>
+                        <th>{t.medicine}</th>
+                        <th>{t.dosage}</th>
+                        <th>{t.frequency}</th>
+                        <th>{t.duration}</th>
                       </tr>
                     </thead>
                     <tbody>
@@ -1112,8 +1146,8 @@ const PrescriptionWriter = () => {
                             )}
                           </td>
                           <td>{med.dosage}</td>
-                          <td>{med.frequency}</td>
-                          <td>{med.duration}</td>
+                          <td>{translateFrequency(med.frequency, prescriptionLanguage)}</td>
+                          <td>{translateDuration(med.duration, prescriptionLanguage)}</td>
                         </tr>
                       ))}
                     </tbody>
@@ -1124,7 +1158,7 @@ const PrescriptionWriter = () => {
               {/* Investigations */}
               {prescription.investigations && (
                 <div className="section">
-                  <div className="section-title">Investigations Advised</div>
+                  <div className="section-title">{t.investigationsAdvised}</div>
                   <div>{prescription.investigations}</div>
                 </div>
               )}
@@ -1132,7 +1166,7 @@ const PrescriptionWriter = () => {
               {/* Advice */}
               {prescription.advice && (
                 <div className="section">
-                  <div className="section-title">Advice</div>
+                  <div className="section-title">{t.advice}</div>
                   <div>{prescription.advice}</div>
                 </div>
               )}
@@ -1140,7 +1174,7 @@ const PrescriptionWriter = () => {
               {/* Follow-up */}
               {prescription.followUp && (
                 <div className="section">
-                  <div className="section-title">Follow-up</div>
+                  <div className="section-title">{t.followUp}</div>
                   <div>{prescription.followUp}</div>
                 </div>
               )}
@@ -1149,26 +1183,26 @@ const PrescriptionWriter = () => {
               <div className="footer">
                 <div className="stamp-area">
                   {templateSettings?.seal && (
-                    <img src={templateSettings.seal} alt="Seal" className="seal" />
+                    <img src={templateSettings.seal} alt={t.seal} className="seal" />
                   )}
                 </div>
                 <div className="signature-area">
                   {templateSettings?.signature && (
-                    <img src={templateSettings.signature} alt="Signature" className="signature" />
+                    <img src={templateSettings.signature} alt={t.doctorSignature} className="signature" />
                   )}
                   <div className="signature-name">{doctorStamp.name}</div>
                   <div className="signature-details">{doctorStamp.qualifications}</div>
                   <div className="signature-details">{doctorStamp.specialization}</div>
                   {doctorStamp.registrationNo && (
-                    <div className="signature-details">Reg. No: {doctorStamp.registrationNo}</div>
+                    <div className="signature-details">{t.registrationNo}: {doctorStamp.registrationNo}</div>
                   )}
                 </div>
               </div>
 
-              {/* Footer Text */}
-              {templateSettings?.footerText && (
-                <div className="footer-text">{templateSettings.footerText}</div>
-              )}
+              {/* Footer Text / Disclaimer */}
+              <div className="disclaimer-text">
+                {templateSettings?.footerText || t.disclaimer}
+              </div>
             </div>
           </div>
 
@@ -1176,7 +1210,7 @@ const PrescriptionWriter = () => {
           <Dialog open={previewOpen} onOpenChange={setPreviewOpen}>
             <DialogContent className="max-w-4xl max-h-[90vh] overflow-auto">
               <DialogHeader>
-                <DialogTitle className="text-slate-900 dark:text-white">Prescription Preview</DialogTitle>
+                <DialogTitle className="text-slate-900 dark:text-white">{t.prescription} Preview</DialogTitle>
                 <DialogDescription className="text-slate-600 dark:text-slate-400">Review before printing</DialogDescription>
               </DialogHeader>
               
@@ -1195,7 +1229,7 @@ const PrescriptionWriter = () => {
                         </h2>
                         {clinicInfo.address && <p className="text-sm text-muted-foreground">{clinicInfo.address}</p>}
                         <p className="text-sm text-muted-foreground">
-                          {clinicInfo.phone && `Tel: ${clinicInfo.phone}`}
+                          {clinicInfo.phone && `${t.phone}: ${clinicInfo.phone}`}
                           {clinicInfo.email && ` | ${clinicInfo.email}`}
                         </p>
                       </div>
@@ -1203,7 +1237,7 @@ const PrescriptionWriter = () => {
                         <p className="font-bold">{doctorStamp.name}</p>
                         <p className="text-muted-foreground">{doctorStamp.qualifications}</p>
                         <p>{doctorStamp.specialization}</p>
-                        {doctorStamp.registrationNo && <p className="text-xs">Reg. No: {doctorStamp.registrationNo}</p>}
+                        {doctorStamp.registrationNo && <p className="text-xs">{t.registrationNo}: {doctorStamp.registrationNo}</p>}
                       </div>
                     </div>
                   </div>
@@ -1211,23 +1245,23 @@ const PrescriptionWriter = () => {
                   {/* Patient Info */}
                   <div className="bg-slate-100 dark:bg-slate-800 p-3 rounded mb-4">
                     <div className="flex flex-wrap gap-4 text-sm text-slate-700 dark:text-slate-300">
-                      <span><strong className="text-slate-900 dark:text-white">Patient:</strong> {prescription.patientInfo.name}</span>
-                      <span><strong className="text-slate-900 dark:text-white">Age/Gender:</strong> {prescription.patientInfo.age} yrs / {prescription.patientInfo.gender}</span>
-                      <span><strong className="text-slate-900 dark:text-white">Date:</strong> {new Date().toLocaleDateString('en-IN')}</span>
+                      <span><strong className="text-slate-900 dark:text-white">{t.patient}:</strong> {prescription.patientInfo.name}</span>
+                      <span><strong className="text-slate-900 dark:text-white">{t.ageGender}:</strong> {prescription.patientInfo.age} {t.yrs} / {prescription.patientInfo.gender}</span>
+                      <span><strong className="text-slate-900 dark:text-white">{t.date}:</strong> {new Date().toLocaleDateString('en-IN')}</span>
                     </div>
                   </div>
 
                   {/* Content sections... */}
                   {prescription.chiefComplaint && (
                     <div className="mb-3">
-                      <h4 className="font-semibold text-sm border-b pb-1">Chief Complaint</h4>
+                      <h4 className="font-semibold text-sm border-b pb-1">{t.chiefComplaint}</h4>
                       <p className="text-sm mt-1">{prescription.chiefComplaint}</p>
                     </div>
                   )}
 
                   {prescription.diagnosis && (
                     <div className="mb-3">
-                      <h4 className="font-semibold text-sm border-b pb-1">Diagnosis</h4>
+                      <h4 className="font-semibold text-sm border-b pb-1">{t.diagnosis}</h4>
                       <p className="text-sm mt-1">{prescription.diagnosis}</p>
                     </div>
                   )}
@@ -1236,16 +1270,16 @@ const PrescriptionWriter = () => {
                     <div className="mb-3">
                       <h4 className="font-semibold text-sm border-b pb-1 flex items-center gap-2">
                         <span className="text-2xl text-blue-600">℞</span>
-                        Medications
+                        {t.medications}
                       </h4>
                       <table className="w-full mt-2 text-sm">
                         <thead className="bg-gray-100">
                           <tr>
                             <th className="p-2 text-left">#</th>
-                            <th className="p-2 text-left">Medicine</th>
-                            <th className="p-2 text-left">Dosage</th>
-                            <th className="p-2 text-left">Frequency</th>
-                            <th className="p-2 text-left">Duration</th>
+                            <th className="p-2 text-left">{t.medicine}</th>
+                            <th className="p-2 text-left">{t.dosage}</th>
+                            <th className="p-2 text-left">{t.frequency}</th>
+                            <th className="p-2 text-left">{t.duration}</th>
                           </tr>
                         </thead>
                         <tbody>
@@ -1257,8 +1291,8 @@ const PrescriptionWriter = () => {
                                 {med.instructions && <span className="text-xs text-muted-foreground block">{med.instructions}</span>}
                               </td>
                               <td className="p-2">{med.dosage}</td>
-                              <td className="p-2">{med.frequency}</td>
-                              <td className="p-2">{med.duration}</td>
+                              <td className="p-2">{translateFrequency(med.frequency, prescriptionLanguage)}</td>
+                              <td className="p-2">{translateDuration(med.duration, prescriptionLanguage)}</td>
                             </tr>
                           ))}
                         </tbody>
@@ -1266,20 +1300,25 @@ const PrescriptionWriter = () => {
                     </div>
                   )}
 
+                  {/* Disclaimer */}
+                  <div className="text-xs text-center text-muted-foreground mt-4 p-2 bg-slate-50 rounded">
+                    {t.disclaimer}
+                  </div>
+
                   {/* Signature area */}
                   <div className="flex justify-between items-end mt-8 pt-4">
                     <div className="text-center">
                       {templateSettings?.seal && (
-                        <img src={templateSettings.seal} alt="Seal" className="w-20 h-20 object-contain opacity-80" />
+                        <img src={templateSettings.seal} alt={t.seal} className="w-20 h-20 object-contain opacity-80" />
                       )}
                     </div>
                     <div className="text-right">
                       {templateSettings?.signature && (
-                        <img src={templateSettings.signature} alt="Signature" className="w-32 h-12 object-contain ml-auto" />
+                        <img src={templateSettings.signature} alt={t.doctorSignature} className="w-32 h-12 object-contain ml-auto" />
                       )}
                       <p className="font-bold mt-1">{doctorStamp.name}</p>
                       <p className="text-xs text-muted-foreground">{doctorStamp.qualifications}</p>
-                      {doctorStamp.registrationNo && <p className="text-xs">Reg. No: {doctorStamp.registrationNo}</p>}
+                      {doctorStamp.registrationNo && <p className="text-xs">{t.registrationNo}: {doctorStamp.registrationNo}</p>}
                     </div>
                   </div>
                 </div>
