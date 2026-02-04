@@ -34,6 +34,7 @@ class SystemHealthService {
     this.maxHistorySize = 1440; // 24 hours at 1-minute intervals
     this.lastCheck = null;
     this.services = new Map();
+    this.healthCheckInterval = null;
   }
 
   /**
@@ -103,6 +104,39 @@ class SystemHealthService {
 
     this.lastCheck = healthReport;
     return healthReport;
+  }
+
+  /**
+   * Start periodic health checks
+   */
+  startPeriodicHealthCheck(intervalMs = 60000) {
+    if (this.healthCheckInterval) {
+      console.log('⚠️  System health check already running');
+      return;
+    }
+
+    const runCheck = async () => {
+      try {
+        await this.getHealthStatus();
+      } catch (error) {
+        console.error('❌ System health check failed:', error.message);
+      }
+    };
+
+    runCheck();
+    this.healthCheckInterval = setInterval(runCheck, intervalMs);
+    console.log(`✅ System health monitoring started (every ${intervalMs}ms)`);
+  }
+
+  /**
+   * Stop periodic health checks
+   */
+  stopPeriodicHealthCheck() {
+    if (this.healthCheckInterval) {
+      clearInterval(this.healthCheckInterval);
+      this.healthCheckInterval = null;
+      console.log('🛑 System health monitoring stopped');
+    }
   }
 
   /**

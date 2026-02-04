@@ -4,6 +4,9 @@
  * Exports PostgreSQL models as primary database models
  */
 
+// Import sequelize
+import { postgresSequelize as sequelize } from '../db/postgres-sequelize.js';
+
 // PostgreSQL Models (Primary)
 import UserPostgres from './postgres/user.model.postgres.js';
 import DoctorPostgres from './postgres/doctor.model.postgres.js';
@@ -23,6 +26,7 @@ import LabTestPostgres from './postgres/labTest.model.postgres.js';
 import { EHRRecord as EHRRecordPostgres, HealthDiary as HealthDiaryPostgres } from './postgres/ehr.model.postgres.js';
 import CouponPostgres from './postgres/coupon.model.postgres.js';
 import CouponUsagePostgres from './postgres/coupon-usage.model.postgres.js';
+import PharmacyInventoryPostgres from './postgres/pharmacyInventory.model.postgres.js';
 
 // Export PostgreSQL as default
 export const User = UserPostgres;
@@ -44,6 +48,8 @@ export const EHRRecord = EHRRecordPostgres;
 export const HealthDiary = HealthDiaryPostgres;
 export const Coupon = CouponPostgres;
 export const CouponUsage = CouponUsagePostgres;
+export const PharmacyInventory = PharmacyInventoryPostgres;
+export { sequelize };
 
 // Default exports
 export default {
@@ -65,7 +71,9 @@ export default {
   EHRRecord: EHRRecordPostgres,
   HealthDiary: HealthDiaryPostgres,
   Coupon: CouponPostgres,
-  CouponUsage: CouponUsagePostgres
+  CouponUsage: CouponUsagePostgres,
+  PharmacyInventory: PharmacyInventoryPostgres,
+  sequelize
 };
 
 // Named exports for both
@@ -88,5 +96,6 @@ export {
   EHRRecordPostgres,
   HealthDiaryPostgres,
   CouponPostgres,
-  CouponUsagePostgres
+  CouponUsagePostgres,
+  PharmacyInventoryPostgres
 };

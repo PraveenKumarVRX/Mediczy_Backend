@@ -78,7 +78,7 @@ class WebinarReminderService {
          FROM webinars w
          LEFT JOIN doctors d ON w.doctor_id = d.id
          LEFT JOIN webinar_registrations wr ON w.id = wr.webinar_id 
-           AND wr.status IN ('registered', 'approved')
+           AND wr.registration_status IN ('registered', 'approved')
          WHERE w.status = 'scheduled'
            AND w.scheduled_at > $1
          GROUP BY w.id, d.name, d.email
