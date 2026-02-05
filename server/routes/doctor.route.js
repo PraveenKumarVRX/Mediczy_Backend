@@ -2290,42 +2290,11 @@ router.post('/appointments/:appointmentId/initiate-call', authDoctor, async (req
       Number.isSafeInteger(numericAppointmentId) &&
       numericAppointmentId > 0 &&
       numericAppointmentId <= 2147483647;
-    const skipIdLookup = normalizedAppointmentId.length > 10;
-    console.error('initiate-call debug', {
-      appointmentId: normalizedAppointmentId,
-      length: normalizedAppointmentId.length,
-      isNumericAppointmentId,
-      numericAppointmentId,
-      isSafeIntId,
-      skipIdLookup
-    });
+    const isLongNumericId = isNumericAppointmentId && normalizedAppointmentId.length > 10;
 
     // Get appointment with patient and doctor details
     let appointment = null;
-    if (isSafeIntId && !skipIdLookup) {
-      try {
-        appointment = await Appointment.findOne({
-          where: { id: numericAppointmentId, doctorId },
-          include: [
-            {
-              model: User,
-              as: 'patient',
-              attributes: ['id', 'firstName', 'lastName', 'email', 'phoneNumber']
-            },
-            {
-              model: Doctor,
-              as: 'doctor',
-              attributes: ['id', 'firstName', 'lastName', 'prefix', 'specialization']
-            }
-          ]
-        });
-      } catch (lookupError) {
-        console.error('⚠️ Initiate-call id lookup failed:', lookupError);
-        appointment = null;
-      }
-    }
-
-    if (!appointment) {
+    if (isLongNumericId) {
       const candidateMeetingIds = new Set([
         normalizedAppointmentId,
         `apt-${normalizedAppointmentId}`
@@ -2354,34 +2323,116 @@ router.post('/appointments/:appointmentId/initiate-call', authDoctor, async (req
         console.error('⚠️ Initiate-call meetingId lookup failed:', lookupError);
         appointment = null;
       }
-    }
 
-    if (!appointment) {
-      const meetingIdToken = `room=${normalizedAppointmentId}`;
-      const meetingIdTokenWithPrefix = `room=apt-${normalizedAppointmentId}`;
-      appointment = await Appointment.findOne({
-        where: {
-          doctorId,
-          meetingLink: {
-            [Op.or]: [
-              { [Op.iLike]: `%${meetingIdToken}%` },
-              { [Op.iLike]: `%${meetingIdTokenWithPrefix}%` }
-            ]
-          }
-        },
-        include: [
-          {
-            model: User,
-            as: 'patient',
-            attributes: ['id', 'firstName', 'lastName', 'email', 'phoneNumber']
+      if (!appointment) {
+        const meetingIdToken = `room=${normalizedAppointmentId}`;
+        const meetingIdTokenWithPrefix = `room=apt-${normalizedAppointmentId}`;
+        appointment = await Appointment.findOne({
+          where: {
+            doctorId,
+            meetingLink: {
+              [Op.or]: [
+                { [Op.iLike]: `%${meetingIdToken}%` },
+                { [Op.iLike]: `%${meetingIdTokenWithPrefix}%` }
+              ]
+            }
           },
-          {
-            model: Doctor,
-            as: 'doctor',
-            attributes: ['id', 'firstName', 'lastName', 'prefix', 'specialization']
-          }
-        ]
-      });
+          include: [
+            {
+              model: User,
+              as: 'patient',
+              attributes: ['id', 'firstName', 'lastName', 'email', 'phoneNumber']
+            },
+            {
+              model: Doctor,
+              as: 'doctor',
+              attributes: ['id', 'firstName', 'lastName', 'prefix', 'specialization']
+            }
+          ]
+        });
+      }
+    } else {
+      if (isSafeIntId) {
+        try {
+          appointment = await Appointment.findOne({
+            where: { id: numericAppointmentId, doctorId },
+            include: [
+              {
+                model: User,
+                as: 'patient',
+                attributes: ['id', 'firstName', 'lastName', 'email', 'phoneNumber']
+              },
+              {
+                model: Doctor,
+                as: 'doctor',
+                attributes: ['id', 'firstName', 'lastName', 'prefix', 'specialization']
+              }
+            ]
+          });
+        } catch (lookupError) {
+          console.error('⚠️ Initiate-call id lookup failed:', lookupError);
+          appointment = null;
+        }
+      }
+
+      if (!appointment) {
+        const candidateMeetingIds = new Set([
+          normalizedAppointmentId,
+          `apt-${normalizedAppointmentId}`
+        ]);
+
+        try {
+          appointment = await Appointment.findOne({
+            where: {
+              doctorId,
+              meetingId: Array.from(candidateMeetingIds)
+            },
+            include: [
+              {
+                model: User,
+                as: 'patient',
+                attributes: ['id', 'firstName', 'lastName', 'email', 'phoneNumber']
+              },
+              {
+                model: Doctor,
+                as: 'doctor',
+                attributes: ['id', 'firstName', 'lastName', 'prefix', 'specialization']
+              }
+            ]
+          });
+        } catch (lookupError) {
+          console.error('⚠️ Initiate-call meetingId lookup failed:', lookupError);
+          appointment = null;
+        }
+      }
+
+      if (!appointment) {
+        const meetingIdToken = `room=${normalizedAppointmentId}`;
+        const meetingIdTokenWithPrefix = `room=apt-${normalizedAppointmentId}`;
+        appointment = await Appointment.findOne({
+          where: {
+            doctorId,
+            meetingLink: {
+              [Op.or]: [
+                { [Op.iLike]: `%${meetingIdToken}%` },
+                { [Op.iLike]: `%${meetingIdTokenWithPrefix}%` }
+              ]
+            }
+          },
+          include: [
+            {
+              model: User,
+              as: 'patient',
+              attributes: ['id', 'firstName', 'lastName', 'email', 'phoneNumber']
+            },
+            {
+              model: Doctor,
+              as: 'doctor',
+              attributes: ['id', 'firstName', 'lastName', 'prefix', 'specialization']
+            }
+          ]
+        });
+      }
     }
 
     if (!appointment) {
