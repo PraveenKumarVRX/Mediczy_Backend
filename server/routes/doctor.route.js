@@ -2181,12 +2181,27 @@ router.post('/appointments/:appointmentId/initiate-call', authDoctor, async (req
     }
 
     // Check if payment is completed (if required)
+    // Allow if: payment is marked as paid OR user has active membership plan
     if (['online', 'video'].includes(appointment.consultationType) && appointment.paymentStatus !== 'paid') {
-      return res.status(402).json({
-        success: false,
-        message: 'Payment required before starting video consultation',
-        paymentStatus: appointment.paymentStatus
+      // Check if user has an active membership plan
+      const UserPlan = (await import('../models/postgres/membershipPlan.model.postgres.js')).UserPlan;
+      const activePlan = await UserPlan.findOne({
+        where: {
+          userId: appointment.userId,
+          status: 'active',
+          startDate: { [require('sequelize').Op.lte]: new Date() },
+          endDate: { [require('sequelize').Op.gte]: new Date() }
+        }
       });
+
+      if (!activePlan) {
+        return res.status(402).json({
+          success: false,
+          message: 'Payment required before starting video consultation. Please pay now or use a membership plan.',
+          paymentStatus: appointment.paymentStatus,
+          suggestion: 'You can pay with Health Coins or subscribe to a membership plan'
+        });
+      }
     }
 
     // Generate or get meeting link

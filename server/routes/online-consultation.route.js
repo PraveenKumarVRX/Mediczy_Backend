@@ -1235,11 +1235,25 @@ router.get('/video/join/:appointmentId', authUser, async (req, res) => {
     }
 
     if (appointment.paymentStatus !== 'paid') {
-      return res.status(402).json({
-        success: false,
-        message: 'Payment required before joining video consultation',
-        consultationFee: appointment.consultationFee
+      // Check if user has an active membership plan
+      const { UserPlan } = (await import('../models/postgres/membershipPlan.model.postgres.js'));
+      const activePlan = await UserPlan.findOne({
+        where: {
+          userId: appointment.userId,
+          status: 'active',
+          startDate: { [require('sequelize').Op.lte]: new Date() },
+          endDate: { [require('sequelize').Op.gte]: new Date() }
+        }
       });
+
+      if (!activePlan) {
+        return res.status(402).json({
+          success: false,
+          message: 'Payment required before joining video consultation',
+          consultationFee: appointment.consultationFee,
+          suggestion: 'You can pay with Health Coins or subscribe to a membership plan'
+        });
+      }
     }
 
     // Check if within appointment window (15 mins before to 1 hour after)
