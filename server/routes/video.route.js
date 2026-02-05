@@ -28,6 +28,17 @@ router.post(
 );
 
 /**
+ * @route   GET /api/video/livekit/token
+ * @desc    Generate LiveKit token without appointment context (GET version for compatibility)
+ * @access  Private
+ */
+router.get(
+  '/livekit/token',
+  authUser,
+  VideoController.generateLiveKitTokenFromQuery
+);
+
+/**
  * @route   POST /api/video/livekit/token
  * @desc    Generate LiveKit token without appointment context
  * @access  Private

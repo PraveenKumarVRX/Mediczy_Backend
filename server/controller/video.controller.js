@@ -84,6 +84,58 @@ class VideoController {
     }
   };
 
+  // Generate LiveKit token from query parameters (GET endpoint)
+  static generateLiveKitTokenFromQuery = async (req, res) => {
+    try {
+      const { roomId, appointmentId, identity } = req.query;
+      const userId = req.user.id;
+      const userRole = req.user.role || 'user';
+      const displayName =
+        [req.user.firstName, req.user.lastName].filter(Boolean).join(' ') ||
+        req.user.name ||
+        req.user.email ||
+        'Mediczy User';
+
+      // Use provided roomId or generate one from appointmentId
+      const meetingId = roomId || appointmentId || createMeetingInfo({}).meetingId;
+      
+      console.log('🎥 Generating LiveKit token from query params:', {
+        roomId,
+        appointmentId,
+        meetingId,
+        identity: identity || `${userRole}-${userId}`
+      });
+
+      const livekitData = await buildLiveKitJoinData({
+        meetingId,
+        identity: identity || `${userRole}-${userId}`,
+        name: displayName
+      });
+
+      // Return in format expected by client
+      res.json({
+        token: livekitData.token,
+        serverUrl: livekitData.serverUrl,
+        roomName: meetingId,
+        success: true,
+        video: {
+          meetingId,
+          meetingLink: livekitData.meetUrl,
+          joinUrl: livekitData.joinUrl,
+          livekit: livekitData
+        },
+        expiresAt: new Date(Date.now() + 60 * 60 * 1000).toISOString()
+      });
+    } catch (error) {
+      console.error('❌ Failed to generate LiveKit token from query:', error);
+      res.status(500).json({
+        success: false,
+        message: 'Failed to generate LiveKit token: ' + error.message,
+        error: error.message
+      });
+    }
+  };
+
   // Generate LiveKit token without appointment context
   static generateLiveKitToken = async (req, res) => {
     try {
