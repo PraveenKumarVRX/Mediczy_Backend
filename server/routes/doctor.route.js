@@ -2281,28 +2281,36 @@ router.post('/appointments/:appointmentId/initiate-call', authDoctor, async (req
   try {
     const { appointmentId } = req.params;
     const doctorId = req.doctor.id;
+    const normalizedAppointmentId = String(appointmentId || '').trim();
+    const isNumericAppointmentId = /^\d+$/.test(normalizedAppointmentId);
+    const isSafeIntId =
+      isNumericAppointmentId &&
+      Number(normalizedAppointmentId) <= 2147483647;
 
     // Get appointment with patient and doctor details
-    let appointment = await Appointment.findOne({
-      where: { id: appointmentId, doctorId },
-      include: [
-        {
-          model: User,
-          as: 'patient',
-          attributes: ['id', 'firstName', 'lastName', 'email', 'phoneNumber']
-        },
-        {
-          model: Doctor,
-          as: 'doctor',
-          attributes: ['id', 'firstName', 'lastName', 'prefix', 'specialization']
-        }
-      ]
-    });
+    let appointment = null;
+    if (isSafeIntId) {
+      appointment = await Appointment.findOne({
+        where: { id: normalizedAppointmentId, doctorId },
+        include: [
+          {
+            model: User,
+            as: 'patient',
+            attributes: ['id', 'firstName', 'lastName', 'email', 'phoneNumber']
+          },
+          {
+            model: Doctor,
+            as: 'doctor',
+            attributes: ['id', 'firstName', 'lastName', 'prefix', 'specialization']
+          }
+        ]
+      });
+    }
 
     if (!appointment) {
       const candidateMeetingIds = new Set([
-        appointmentId,
-        `apt-${appointmentId}`
+        normalizedAppointmentId,
+        `apt-${normalizedAppointmentId}`
       ]);
 
       appointment = await Appointment.findOne({
