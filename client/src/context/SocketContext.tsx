@@ -16,7 +16,9 @@ export const SocketProvider = ({ children }: { children: React.ReactNode }) => {
   const socketRef = useRef<Socket | null>(null);
   const { currentUser, currentDoctor, userType } = useAuth();
 
-  const currentId = userType === "user" ? currentUser?._id : currentDoctor?._id;
+  const currentId = userType === "user"
+    ? (currentUser?._id || currentUser?.id)
+    : (currentDoctor?._id || currentDoctor?.id);
 
   useEffect(() => {
     if (!currentId) return;

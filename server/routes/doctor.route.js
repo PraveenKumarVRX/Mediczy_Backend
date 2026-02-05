@@ -2505,7 +2505,7 @@ router.post('/appointments/:appointmentId/initiate-call', authDoctor, async (req
       await notificationService.send({
         userId: appointment.userId,
         userType: 'patient',
-        type: 'doctor_calling',
+        type: 'consultation_started',
         title: `📞 ${doctorName} is calling`,
         message: `Your doctor has started the video consultation. Tap to join now!`,
         variables: {
@@ -2521,7 +2521,7 @@ router.post('/appointments/:appointmentId/initiate-call', authDoctor, async (req
         },
         actionUrl: meetingLink,
         channels: ['push', 'in-app'],
-        priority: 'critical'
+        priority: 'urgent'
       });
 
       console.log('✅ Patient notification sent successfully');

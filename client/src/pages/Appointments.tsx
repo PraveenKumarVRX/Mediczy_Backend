@@ -401,7 +401,11 @@ const Appointments = () => {
 
   // Socket.io connection for incoming doctor calls
   useEffect(() => {
-    const socketUrl = import.meta.env.VITE_SOCKET_URL || 'http://localhost:3000';
+    const socketUrl =
+      import.meta.env.VITE_SOCKET_URL ||
+      (import.meta.env.VITE_API_URL
+        ? import.meta.env.VITE_API_URL.replace(/\/api\/?$/, '')
+        : window.location.origin);
     const newSocket = io(socketUrl, {
       auth: {
         token: localStorage.getItem('token')
