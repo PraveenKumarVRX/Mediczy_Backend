@@ -280,6 +280,11 @@ const DoctorVideoConsultation = () => {
     if (customRoomId && customRoomId.match(/^apt-(\d+)$/)) {
       appointmentId = customRoomId.replace('apt-', '');
     } else if (customRoomId && /^\d+$/.test(customRoomId)) {
+      if (customRoomId.length > 10) {
+        setRoomId(customRoomId);
+        setShowPreCallCheck(true);
+        return;
+      }
       appointmentId = customRoomId;
     }
     
@@ -335,6 +340,11 @@ const DoctorVideoConsultation = () => {
     }
     
     // No appointment ID available
+    if (customRoomId) {
+      setRoomId(customRoomId);
+      setShowPreCallCheck(true);
+      return;
+    }
     toast({
       variant: "destructive",
       title: "Invalid Room",
