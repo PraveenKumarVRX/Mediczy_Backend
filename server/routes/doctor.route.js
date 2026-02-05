@@ -2290,12 +2290,6 @@ router.post('/appointments/:appointmentId/initiate-call', authDoctor, async (req
       Number.isSafeInteger(numericAppointmentId) &&
       numericAppointmentId > 0 &&
       numericAppointmentId <= 2147483647;
-    console.log('🔎 initiate-call lookup', {
-      appointmentId: normalizedAppointmentId,
-      isNumericAppointmentId,
-      numericAppointmentId,
-      isSafeIntId
-    });
 
     // Get appointment with patient and doctor details
     let appointment = null;
@@ -2328,10 +2322,43 @@ router.post('/appointments/:appointmentId/initiate-call', authDoctor, async (req
         `apt-${normalizedAppointmentId}`
       ]);
 
+      try {
+        appointment = await Appointment.findOne({
+          where: {
+            doctorId,
+            meetingId: Array.from(candidateMeetingIds)
+          },
+          include: [
+            {
+              model: User,
+              as: 'patient',
+              attributes: ['id', 'firstName', 'lastName', 'email', 'phoneNumber']
+            },
+            {
+              model: Doctor,
+              as: 'doctor',
+              attributes: ['id', 'firstName', 'lastName', 'prefix', 'specialization']
+            }
+          ]
+        });
+      } catch (lookupError) {
+        console.error('⚠️ Initiate-call meetingId lookup failed:', lookupError);
+        appointment = null;
+      }
+    }
+
+    if (!appointment) {
+      const meetingIdToken = `room=${normalizedAppointmentId}`;
+      const meetingIdTokenWithPrefix = `room=apt-${normalizedAppointmentId}`;
       appointment = await Appointment.findOne({
         where: {
           doctorId,
-          meetingId: Array.from(candidateMeetingIds)
+          meetingLink: {
+            [Op.or]: [
+              { [Op.iLike]: `%${meetingIdToken}%` },
+              { [Op.iLike]: `%${meetingIdTokenWithPrefix}%` }
+            ]
+          }
         },
         include: [
           {
