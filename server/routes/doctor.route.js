@@ -2291,6 +2291,14 @@ router.post('/appointments/:appointmentId/initiate-call', authDoctor, async (req
       numericAppointmentId > 0 &&
       numericAppointmentId <= 2147483647;
     const skipIdLookup = normalizedAppointmentId.length > 10;
+    console.error('initiate-call debug', {
+      appointmentId: normalizedAppointmentId,
+      length: normalizedAppointmentId.length,
+      isNumericAppointmentId,
+      numericAppointmentId,
+      isSafeIntId,
+      skipIdLookup
+    });
 
     // Get appointment with patient and doctor details
     let appointment = null;
