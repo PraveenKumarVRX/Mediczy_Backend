@@ -1002,7 +1002,15 @@ router.get('/payment/hc-check/:appointmentId', authUser, async (req, res) => {
       });
     }
 
-    const consultationFee = parseFloat(appointment.consultationFee);
+    const consultationFee = parseFloat(
+      appointment.paymentAmount ?? appointment.consultationFee ?? appointment.paymentDetails?.amountINR ?? 0
+    );
+    if (!Number.isFinite(consultationFee) || consultationFee <= 0) {
+      return res.status(400).json({
+        success: false,
+        message: 'Invalid consultation fee for this appointment'
+      });
+    }
     const canPayResult = await healthCoinsService.canPayWithHC(patientId, consultationFee);
 
     res.json({
@@ -1052,7 +1060,7 @@ router.post('/payment/hc/:appointmentId', authUser, async (req, res) => {
       });
     }
 
-    if (appointment.status !== 'accepted' && appointment.status !== 'pending') {
+    if (!['accepted', 'pending', 'scheduled'].includes(appointment.status)) {
       return res.status(400).json({
         success: false,
         message: `Cannot pay for appointment with status: ${appointment.status}`
@@ -1066,7 +1074,15 @@ router.post('/payment/hc/:appointmentId', authUser, async (req, res) => {
       });
     }
 
-    const consultationFee = parseFloat(appointment.paymentAmount);
+    const consultationFee = parseFloat(
+      appointment.paymentAmount ?? appointment.consultationFee ?? appointment.paymentDetails?.amountINR ?? 0
+    );
+    if (!Number.isFinite(consultationFee) || consultationFee <= 0) {
+      return res.status(400).json({
+        success: false,
+        message: 'Invalid consultation fee for this appointment'
+      });
+    }
     
     // Check if user can pay with HC
     const canPayResult = await healthCoinsService.canPayWithHC(patientId, consultationFee);
@@ -1241,8 +1257,8 @@ router.get('/video/join/:appointmentId', authUser, async (req, res) => {
         where: {
           userId: appointment.userId,
           status: 'active',
-          startDate: { [require('sequelize').Op.lte]: new Date() },
-          endDate: { [require('sequelize').Op.gte]: new Date() }
+          startDate: { [Op.lte]: new Date() },
+          endDate: { [Op.gte]: new Date() }
         }
       });
 

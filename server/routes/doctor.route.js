@@ -1628,11 +1628,7 @@ router.get("/video-consultations/stats", authDoctor, async (req, res) => {
     today.setHours(0, 0, 0, 0);
 
     const videoFilter = {
-      [Op.or]: [
-        { type: { [Op.in]: ['video', 'emergency_triage', 'telemedicine'] } },
-        { consultationType: { [Op.in]: ['online', 'video', 'telemedicine'] } },
-        { channel: { [Op.in]: ['video'] } }
-      ]
+      consultationType: 'online'
     };
 
     const [totalConsultations, todayConsultations, completedConsultations] = await Promise.all([
@@ -1682,15 +1678,16 @@ router.get("/video-consultations/recent", authDoctor, async (req, res) => {
   try {
     const doctorId = req.doctor.id;
     const limit = parseInt(req.query.limit) || 10;
+    const resolveDate = (value) => {
+      if (!value) return null;
+      const date = value instanceof Date ? value : new Date(value);
+      return Number.isNaN(date.getTime()) ? null : date;
+    };
 
     const consultations = await Appointment.findAll({
       where: {
         doctorId,
-        [Op.or]: [
-          { type: { [Op.in]: ['video', 'emergency_triage', 'telemedicine'] } },
-          { consultationType: { [Op.in]: ['online', 'video', 'telemedicine'] } },
-          { channel: { [Op.in]: ['video'] } }
-        ]
+        consultationType: 'online'
       },
       include: [
         {
@@ -1709,18 +1706,20 @@ router.get("/video-consultations/recent", authDoctor, async (req, res) => {
         const patientName = c.patient
           ? `${c.patient.firstName} ${c.patient.lastName}`
           : 'Unknown Patient';
-        const appointmentDate = c.appointmentDate || c.createdAt;
-        const formattedDate = appointmentDate.toLocaleDateString('en-IN', { month: 'short', day: 'numeric', year: 'numeric' });
+        const appointmentDate = resolveDate(c.appointmentDate) || resolveDate(c.createdAt);
+        const formattedDate = appointmentDate
+          ? appointmentDate.toLocaleDateString('en-IN', { month: 'short', day: 'numeric', year: 'numeric' })
+          : 'Unknown Date';
 
         return {
           id: c.id,
           patientId: c.patientId,
           patient: patientName,
-          type: c.type,
+          type: c.consultationType,
           status: c.status,
           date: formattedDate,
           duration: '30 mins',
-          roomId: c.videoRoomId,
+          roomId: c.meetingId || c.meetingDetails?.roomId || null,
           notes: c.notes
         };
       })
@@ -1740,15 +1739,29 @@ router.get("/video-consultations/upcoming", authDoctor, async (req, res) => {
   try {
     const doctorId = req.doctor.id;
     const now = new Date();
+    const resolveDate = (value) => {
+      if (!value) return null;
+      const date = value instanceof Date ? value : new Date(value);
+      return Number.isNaN(date.getTime()) ? null : date;
+    };
+    const resolveTime = (dateValue, timeValue) => {
+      if (timeValue) {
+        const timeDate = new Date(`1970-01-01T${timeValue}`);
+        if (!Number.isNaN(timeDate.getTime())) {
+          return timeDate.toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit' });
+        }
+        return timeValue;
+      }
+      const date = resolveDate(dateValue);
+      return date
+        ? date.toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit' })
+        : 'Not scheduled';
+    };
 
     const consultations = await Appointment.findAll({
       where: {
         doctorId,
-        [Op.or]: [
-          { type: { [Op.in]: ['video', 'emergency_triage', 'telemedicine'] } },
-          { consultationType: { [Op.in]: ['online', 'video', 'telemedicine'] } },
-          { channel: { [Op.in]: ['video'] } }
-        ],
+        consultationType: 'online',
         status: { [Op.in]: ['pending', 'confirmed', 'scheduled'] },
         [Op.or]: [
           { appointmentDate: { [Op.gte]: now } },
@@ -1772,18 +1785,18 @@ router.get("/video-consultations/upcoming", authDoctor, async (req, res) => {
         const patientName = c.patient
           ? `${c.patient.firstName} ${c.patient.lastName}`
           : 'Unknown Patient';
-        const appointmentTime = c.appointmentDate ? c.appointmentDate.toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit' }) : 'Not scheduled';
+        const appointmentTime = resolveTime(c.appointmentDate || c.createdAt, c.appointmentTime);
 
         return {
           id: c.id,
           patientId: c.patientId,
           patient: patientName,
-          type: c.type,
+          type: c.consultationType,
           status: c.status,
           date: c.appointmentDate || c.createdAt,
           time: appointmentTime,
           duration: '30 mins',
-          roomId: c.videoRoomId,
+          roomId: c.meetingId || c.meetingDetails?.roomId || null,
           meetingLink: c.meetingLink
         };
       })
@@ -2189,8 +2202,8 @@ router.post('/appointments/:appointmentId/initiate-call', authDoctor, async (req
         where: {
           userId: appointment.userId,
           status: 'active',
-          startDate: { [require('sequelize').Op.lte]: new Date() },
-          endDate: { [require('sequelize').Op.gte]: new Date() }
+          startDate: { [Op.lte]: new Date() },
+          endDate: { [Op.gte]: new Date() }
         }
       });
 

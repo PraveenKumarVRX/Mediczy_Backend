@@ -618,7 +618,7 @@ const VideoConsultation = () => {
     return (
       <div 
         ref={containerRef}
-        className={`${isFullscreen ? 'fixed inset-0 z-50' : 'min-h-screen'} bg-slate-900 flex flex-col`}
+        className={`${isFullscreen ? 'fixed inset-0 z-50' : 'min-h-[100svh]'} bg-slate-900 flex flex-col`}
       >
         {/* Video Call Header */}
         <div className="flex items-center justify-between px-4 py-3 bg-slate-800/80 backdrop-blur-sm border-b border-slate-700">
@@ -770,8 +770,8 @@ const VideoConsultation = () => {
               </CardDescription>
             </CardHeader>
             <CardContent>
-              <div className="flex flex-col md:flex-row gap-4">
-                <div className="flex-1">
+              <div className="flex flex-col gap-4 lg:flex-row">
+                <div className="flex-1 min-w-0">
                   <Label htmlFor="roomId" className="text-slate-700 dark:text-slate-300">Meeting Code / Room ID</Label>
                   <Input
                     id="roomId"
@@ -782,11 +782,11 @@ const VideoConsultation = () => {
                     className="mt-1 bg-white dark:bg-slate-800"
                   />
                 </div>
-                <div className="flex items-end gap-2">
+                <div className="flex w-full flex-col gap-2 sm:flex-row sm:items-end sm:justify-end">
                   <Button 
                     onClick={() => initiateVideoCall(undefined, roomId)} 
                     disabled={!roomId.trim()}
-                    className="gap-2 bg-teal-600 hover:bg-teal-700"
+                    className="w-full gap-2 bg-teal-600 hover:bg-teal-700 sm:w-auto"
                   >
                     <Play className="h-4 w-4" />
                     Join Meeting
@@ -796,6 +796,7 @@ const VideoConsultation = () => {
                     variant="outline"
                     disabled={!roomId.trim()}
                     title="Copy meeting link"
+                    className="w-full sm:w-auto"
                   >
                     <Link2 className="h-4 w-4" />
                   </Button>
@@ -1046,7 +1047,7 @@ const VideoConsultation = () => {
         }
         setShowPreCallCheck(open);
       }}>
-        <DialogContent className="max-w-lg">
+        <DialogContent className="w-[95vw] max-w-lg max-h-[90vh] overflow-y-auto">
           <DialogHeader>
             <DialogTitle className="flex items-center gap-2">
               <Settings className="h-5 w-5 text-teal-600" />
@@ -1078,7 +1079,7 @@ const VideoConsultation = () => {
             </div>
             
             {/* Device Status */}
-            <div className="grid grid-cols-2 gap-4">
+            <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
               <div className={`p-3 rounded-lg border ${
                 cameraPermission === 'granted' && cameraWorking
                   ? 'border-green-200 bg-green-50 dark:border-green-800 dark:bg-green-950/30'

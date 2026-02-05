@@ -815,10 +815,25 @@ const DoctorListBooking = () => {
           setPaymentMethod("inr");
           return;
         } catch (hcError: any) {
-          console.error("HC payment failed:", hcError);
+          const errorData = hcError?.response?.data;
+          const errorMessage =
+            (Array.isArray(errorData?.errors)
+              ? errorData.errors.map((err) => err?.message || err?.msg).filter(Boolean).join(", ")
+              : null) ||
+            (typeof errorData === "string" ? errorData : null) ||
+            errorData?.message ||
+            errorData?.error ||
+            hcError?.message;
+
+          console.error("HC payment failed:", {
+            status: hcError?.response?.status,
+            message: errorMessage,
+            data: errorData
+          });
+
           toast({
             title: "Booking created, HC payment failed",
-            description: hcError.response?.data?.message || "Health Coins payment failed. You can pay later from My Bookings.",
+            description: errorMessage || "Health Coins payment failed. You can pay later from My Bookings.",
             variant: "destructive"
           });
           setShowBookingModal(false);

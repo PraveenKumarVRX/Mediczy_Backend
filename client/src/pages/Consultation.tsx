@@ -759,8 +759,18 @@ const Consultation = () => {
       return;
     }
 
+    const doctorId = doctor?._id ?? (doctor as any)?.id;
+    if (!doctorId || doctorId === "undefined" || doctorId === "null") {
+      toast({
+        title: "Unable to book appointment",
+        description: "Doctor profile is missing an ID. Please refresh and try again.",
+        variant: "destructive",
+      });
+      return;
+    }
+
     const tierParam = tierName ? `?tier=${encodeURIComponent(tierName)}` : '';
-    navigate(`/consultation/${doctor._id}${tierParam}`, {
+    navigate(`/consultation/${doctorId}${tierParam}`, {
       state: { doctor }
     });
   };

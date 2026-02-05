@@ -172,14 +172,17 @@ const ConsultationBooking = () => {
     let cancelled = false;
 
     const fetchDoctor = async () => {
-      if (!doctorId) return;
+      const safeDoctorId = doctorId?.trim?.() ?? doctorId;
+      if (!safeDoctorId || safeDoctorId === "undefined" || safeDoctorId === "null") {
+        return;
+      }
 
       try {
         if (!fallbackDoctor) {
           setDoctorLoading(true);
         }
 
-        const { data } = await api.get(`/doctors/${doctorId}/public`);
+        const { data } = await api.get(`/doctors/${safeDoctorId}/public`);
         if (cancelled) return;
         setDoctor(data?.doctor || data);
         setUsingFallbackDoctor(false);

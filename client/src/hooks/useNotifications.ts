@@ -224,6 +224,7 @@ export const useNotifications = ({
   }, [addNotification]);
 
   const notifyAppointment = useCallback((doctorName: string, appointmentTime: string, appointmentId: string) => {
+    const safeAppointmentId = appointmentId?.trim?.() ?? appointmentId;
     return addNotification({
       title: 'Appointment Reminder',
       message: `Your appointment with Dr. ${doctorName} is in 15 minutes`,
@@ -232,7 +233,11 @@ export const useNotifications = ({
       actionText: 'Join',
       actionCallback: () => {
         // Navigate to video consultation
-        window.location.href = `/consultation/${appointmentId}`;
+        if (!safeAppointmentId || safeAppointmentId === 'undefined' || safeAppointmentId === 'null') {
+          window.location.href = '/appointments';
+          return;
+        }
+        window.location.href = `/video-consultation?appointmentId=${safeAppointmentId}`;
       },
       data: { appointmentId, doctorName, appointmentTime }
     });
