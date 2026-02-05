@@ -257,6 +257,11 @@ const DoctorAppointments = () => {
   };
 
   const handleStartConsultation = async (appointment: Appointment) => {
+    const isLongNumericId = (value?: string | number) => {
+      if (value === null || value === undefined) return false;
+      const str = String(value);
+      return /^\d+$/.test(str) && str.length > 10;
+    };
     const isExternalMeetingLink = (meetingLink?: string) => {
       if (!meetingLink) return false;
       try {
@@ -283,6 +288,12 @@ const DoctorAppointments = () => {
           title: "📞 Starting Call...",
           description: "Notifying patient and preparing video room...",
         });
+
+        if (isLongNumericId(appointment.id)) {
+          const roomId = appointment.meetingId || appointment.meetingLink || String(appointment.id);
+          navigate(`/doctor/video?room=${encodeURIComponent(roomId)}&appointmentId=${appointment.id}&userId=${appointment.userId}`);
+          return;
+        }
 
         const response = await api.post(`/doctors/appointments/${appointment.id}/initiate-call`);
         

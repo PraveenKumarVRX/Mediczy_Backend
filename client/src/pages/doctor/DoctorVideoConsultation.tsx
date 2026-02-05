@@ -277,6 +277,17 @@ const DoctorVideoConsultation = () => {
     
     // Extract appointment ID from custom room ID if provided
     let appointmentId = consultation?.id;
+    const isLongNumericId = (value?: string | number | null) => {
+      if (value === null || value === undefined) return false;
+      const str = String(value);
+      return /^\d+$/.test(str) && str.length > 10;
+    };
+    if (consultation?.id && isLongNumericId(consultation.id)) {
+      const roomFromConsultation = consultation.roomId || consultation.id;
+      setRoomId(String(roomFromConsultation));
+      setShowPreCallCheck(true);
+      return;
+    }
     if (customRoomId && customRoomId.match(/^apt-(\d+)$/)) {
       appointmentId = customRoomId.replace('apt-', '');
     } else if (customRoomId && /^\d+$/.test(customRoomId)) {
