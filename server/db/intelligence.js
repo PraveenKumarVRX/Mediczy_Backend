@@ -189,13 +189,12 @@ class DatabaseIntelligence {
       return routing;
     }
 
-    // Rule 2: Document/nested data → MongoDB
+    // Rule 2: Document/nested data → PostgreSQL (JSONB)
     if (analysis.queryType === 'document' || this.isFlexibleSchema(analysis)) {
-      routing.targetDB = 'mongo';
-      routing.fallbackDB = 'postgres';
+      routing.targetDB = 'postgres';
       routing.cacheable = true;
       routing.cacheTTL = 300;
-      routing.reason = 'Document/flexible schema query';
+      routing.reason = 'Document/flexible schema query (Postgres JSONB)';
       routing.confidence = 0.85;
       return routing;
     }
@@ -250,8 +249,6 @@ class DatabaseIntelligence {
       switch (routing.targetDB) {
         case 'duckdb':
           return await this.executeDuckDBQuery(db, query);
-        case 'mongo':
-          return await this.executeMongoQuery(db, query, context);
         case 'postgres':
           return await this.executePostgresQuery(db, query, context);
         case 'cache':
@@ -370,18 +367,13 @@ class DatabaseIntelligence {
       strategy.requiresIndexing = true;
     }
 
-    // Strategy 2: Store flexible/nested data in MongoDB
-    if (classification.structure === 'nested' || classification.type === 'document') {
-      strategy.replicas.push('mongo');
-    }
-
-    // Strategy 3: Store analytics-heavy data in DuckDB
+    // Strategy 2: Store analytics-heavy data in DuckDB
     if (classification.size > 100000 || metadata.analyticsRequired) {
       strategy.replicas.push('duckdb');
       strategy.analytics = true;
     }
 
-    // Strategy 4: Store searchable text in Vector DB
+    // Strategy 3: Store searchable text in Vector DB
     if (classification.searchability > 0.7) {
       strategy.vectorizable = true;
       strategy.replicas.push('vector');
@@ -436,8 +428,6 @@ class DatabaseIntelligence {
     switch (dbName) {
       case 'postgres':
         return await this.storeInPostgres(dbConnection, data, metadata);
-      case 'mongo':
-        return await this.storeInMongoDB(dbConnection, data, metadata);
       case 'duckdb':
         return await this.storeInDuckDB(dbConnection, data, metadata);
       case 'vector':
@@ -751,7 +741,6 @@ class DatabaseIntelligence {
   mapDBToOperation(dbName) {
     const mapping = {
       maria: 'transactional',
-      mongo: 'document',
       duckdb: 'analytics',
       cache: 'cache',
       redis: 'cache',
@@ -811,11 +800,6 @@ class DatabaseIntelligence {
     return await db.allAsync(query);
   }
 
-  async executeMongoQuery(db, query, context) {
-    // Simplified - implement actual MongoDB query logic
-    return { success: true, message: 'MongoDB query executed' };
-  }
-
   async executePostgresQuery(db, query, context) {
     // Simplified - implement actual PostgreSQL query logic
     return { success: true, message: 'PostgreSQL query executed' };
@@ -827,10 +811,6 @@ class DatabaseIntelligence {
 
   async storeInPostgres(db, data, metadata) {
     return { success: true, database: 'postgres', id: Date.now() };
-  }
-
-  async storeInMongoDB(db, data, metadata) {
-    return { success: true, database: 'mongo', id: Date.now() };
   }
 
   async storeInDuckDB(db, data, metadata) {
