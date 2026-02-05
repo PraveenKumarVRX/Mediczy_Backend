@@ -1140,13 +1140,20 @@ router.get("/:doctorId/user-slots", async (req, res) => {
     const { doctorId } = req.params;
     const { date } = req.query;
 
-    const doctor = await Doctor.findByPk(doctorId);
+    let doctor = null;
+    if (/^\d+$/.test(doctorId)) {
+      doctor = await Doctor.findByPk(doctorId);
+    } else if (/^D[A-Z0-9]{5}$/i.test(doctorId)) {
+      doctor = await Doctor.findOne({ where: { unique_id: doctorId.toUpperCase() } });
+    }
     if (!doctor) {
       return res.status(404).json({
         success: false,
         message: 'Doctor not found'
       });
     }
+
+    const resolvedDoctorId = doctor.id;
 
     // Get doctor's appointment configuration
     const slotDuration = doctor.slotDuration || 30;
@@ -1199,7 +1206,7 @@ router.get("/:doctorId/user-slots", async (req, res) => {
       // Get booked appointments for this date
       const bookedAppointments = await Appointment.findAll({
         where: {
-          doctorId,
+          doctorId: resolvedDoctorId,
           appointmentDate: date,
           status: {
             [Op.notIn]: ['cancelled', 'no-show']

@@ -44,6 +44,8 @@ interface TimeSlot {
 
 const TIME_24H_REGEX = /^([01]\d|2[0-3]):[0-5]\d$/;
 const TIME_12H_REGEX = /^(\d{1,2}):(\d{2})\s*(AM|PM)$/i;
+const DOCTOR_ID_REGEX = /^\d+$/;
+const DOCTOR_PUBLIC_ID_REGEX = /^D[A-Z0-9]{5}$/i;
 
 const normalizeTimeString = (value?: string) => {
   if (!value) return "";
@@ -291,7 +293,7 @@ const ConsultationBooking = () => {
 
       const doctorIdentifier = (doctor?.id ?? doctor?._id ?? doctorId)?.toString();
 
-      if (!doctorIdentifier || !/^\d+$/.test(doctorIdentifier)) {
+      if (!doctorIdentifier || (!DOCTOR_ID_REGEX.test(doctorIdentifier) && !DOCTOR_PUBLIC_ID_REGEX.test(doctorIdentifier))) {
         toast({
           title: "Booking unavailable",
           description: "This doctor profile is missing a valid identifier. Please try another doctor.",
@@ -306,7 +308,9 @@ const ConsultationBooking = () => {
         0;
 
       const bookingData = {
-        doctorId: parseInt(doctorIdentifier, 10),
+        doctorId: DOCTOR_ID_REGEX.test(doctorIdentifier)
+          ? parseInt(doctorIdentifier, 10)
+          : doctorIdentifier.toUpperCase(),
         appointmentDate: selectedDate,
         appointmentTime: selectedTime,
         consultationType: consultationType === 'walkin' ? 'in-person' : 'video',

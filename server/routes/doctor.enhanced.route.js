@@ -11,6 +11,7 @@ import { postgresSequelize as sequelize } from '../db/postgres-sequelize.js';
 import { JWT_CONFIG } from '../config/auth.config.js';
 import { authLimiter } from '../middleware/rateLimiter.middleware.js';
 import { auditLoginAttempt } from '../middleware/audit.middleware.js';
+import { Doctor } from '../models/index.js';
 
 const router = express.Router();
 
@@ -582,7 +583,20 @@ router.get('/:doctorId/slots', [
     const { doctorId } = req.params;
     const { date, consultationType = 'online' } = req.query;
 
-    const slots = await doctorModel.getAvailableSlots(doctorId, date, consultationType);
+    let doctor = null;
+    if (/^\d+$/.test(doctorId)) {
+      doctor = await Doctor.findByPk(doctorId);
+    } else if (/^D[A-Z0-9]{5}$/i.test(doctorId)) {
+      doctor = await Doctor.findOne({ where: { unique_id: doctorId.toUpperCase() } });
+    }
+    if (!doctor) {
+      return res.status(404).json({
+        success: false,
+        message: 'Doctor not found'
+      });
+    }
+
+    const slots = await doctorModel.getAvailableSlots(doctor.id, date, consultationType);
 
     res.json({
       success: true,

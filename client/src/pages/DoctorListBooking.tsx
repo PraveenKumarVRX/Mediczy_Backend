@@ -216,6 +216,8 @@ const parseClinicInfo = (clinicAddress: any) => {
 };
 
 const TIME_24H_REGEX = /^([01]\d|2[0-3]):[0-5]\d$/;
+const DOCTOR_ID_REGEX = /^\d+$/;
+const DOCTOR_PUBLIC_ID_REGEX = /^D[A-Z0-9]{5}$/i;
 
 const toBackendTime = (label: string) => {
   if (!label) return "";
@@ -256,11 +258,12 @@ const normalizeDoctorFromApi = (doctor: any): Doctor => {
     onlineFee || 1000
   );
 
-  const fallbackId = doctor?.id || doctor?._id || `temp-${Math.random().toString(36).slice(2)}`;
+  const fallbackId = doctor?.id || doctor?.unique_id || `temp-${Math.random().toString(36).slice(2)}`;
+  const hasLiveId = Boolean(doctor?.id || doctor?.unique_id);
 
   return {
     _id: String(fallbackId),
-    isLive: true,
+    isLive: hasLiveId,
     firstName: doctor?.firstName || "Doctor",
     lastName: doctor?.lastName || "",
     profileImage: doctor?.profileImage || "",
@@ -298,7 +301,7 @@ const normalizeMasterDoctor = (doc: any): Doctor => {
 
   return {
     _id: String(doc?.id || `master-${Math.random().toString(36).slice(2)}`),
-    isLive: true,
+    isLive: false,
     firstName: firstName || "Doctor",
     lastName,
     profileImage: "",
@@ -355,6 +358,11 @@ const DoctorListBooking = () => {
   
   const { toast } = useToast();
   const navigate = useNavigate();
+
+  const isValidDoctorIdentifier = (value?: string) => {
+    if (!value) return false;
+    return DOCTOR_ID_REGEX.test(value) || DOCTOR_PUBLIC_ID_REGEX.test(value);
+  };
 
   useEffect(() => {
     const handler = () => setUserType(getUserType());
@@ -557,6 +565,15 @@ const DoctorListBooking = () => {
       return;
     }
 
+    if (!isValidDoctorIdentifier(doctor._id)) {
+      toast({
+        title: "Booking unavailable",
+        description: "This doctor profile is not linked to a live ID yet. Please choose another doctor.",
+        variant: "destructive",
+      });
+      return;
+    }
+
     setSelectedDoctor(doctor);
     setShowBookingModal(true);
     setDoctorSlots(null); // Reset slots when opening modal
@@ -565,6 +582,10 @@ const DoctorListBooking = () => {
 
   const fetchDoctorSlots = async (doctorId: string, date?: Date) => {
     if (!doctorId) return;
+    if (!isValidDoctorIdentifier(doctorId)) {
+      setDoctorSlots(null);
+      return;
+    }
     
     setLoadingSlots(true);
     try {
@@ -761,6 +782,15 @@ const DoctorListBooking = () => {
         return;
       }
 
+      if (!isValidDoctorIdentifier(doctorIdentifier)) {
+        toast({
+          title: "Booking unavailable",
+          description: "This doctor profile is not linked to a live ID yet. Please choose another doctor.",
+          variant: "destructive",
+        });
+        return;
+      }
+
       if (!selectedDoctor.isLive) {
         toast({
           title: "Live doctor required",
@@ -770,13 +800,12 @@ const DoctorListBooking = () => {
         return;
       }
 
-      // Convert doctor ID to number if possible, otherwise use as string
+      // Convert doctor ID to number if possible, otherwise use public doctor ID (Dxxxxx)
       let doctorId: number | string;
-      if (/^\d+$/.test(doctorIdentifier)) {
+      if (DOCTOR_ID_REGEX.test(doctorIdentifier)) {
         doctorId = parseInt(doctorIdentifier, 10);
       } else {
-        // For non-numeric IDs (like MongoDB ObjectIDs), use as string
-        doctorId = doctorIdentifier;
+        doctorId = doctorIdentifier.toUpperCase();
       }
       
       const consultationFee = consultationType === "online" 
