@@ -2,6 +2,7 @@ import express from 'express';
 import { body, param, query, validationResult } from 'express-validator';
 import { authUser } from '../middleware/auth.middleware.js';
 import { Appointment, Doctor } from '../models/index.js';
+import { UserPlan } from '../models/postgres/membershipPlan.model.postgres.js';
 import userModel from '../models/user.model.intelligent.js';
 import paymentService from '../services/payment.service.js';
 import notificationService from '../services/notification.service.js';
@@ -1236,7 +1237,6 @@ router.get('/video/join/:appointmentId', authUser, async (req, res) => {
 
     if (appointment.paymentStatus !== 'paid') {
       // Check if user has an active membership plan
-      const { UserPlan } = (await import('../models/postgres/membershipPlan.model.postgres.js'));
       const activePlan = await UserPlan.findOne({
         where: {
           userId: appointment.userId,

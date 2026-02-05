@@ -10,6 +10,7 @@ import {
 import { authDoctor } from "../middleware/auth.middleware.js";
 import { authLimiter } from "../middleware/rateLimiter.middleware.js";
 import { Doctor, Appointment, User } from "../models/index.js";
+import { UserPlan } from "../models/postgres/membershipPlan.model.postgres.js";
 import { Op } from 'sequelize';
 import bcrypt from 'bcrypt';
 import crypto from 'crypto';
@@ -2184,7 +2185,6 @@ router.post('/appointments/:appointmentId/initiate-call', authDoctor, async (req
     // Allow if: payment is marked as paid OR user has active membership plan
     if (['online', 'video'].includes(appointment.consultationType) && appointment.paymentStatus !== 'paid') {
       // Check if user has an active membership plan
-      const UserPlan = (await import('../models/postgres/membershipPlan.model.postgres.js')).UserPlan;
       const activePlan = await UserPlan.findOne({
         where: {
           userId: appointment.userId,
