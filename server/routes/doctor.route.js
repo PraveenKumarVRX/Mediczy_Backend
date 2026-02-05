@@ -2290,21 +2290,26 @@ router.post('/appointments/:appointmentId/initiate-call', authDoctor, async (req
     // Get appointment with patient and doctor details
     let appointment = null;
     if (isSafeIntId) {
-      appointment = await Appointment.findOne({
-        where: { id: normalizedAppointmentId, doctorId },
-        include: [
-          {
-            model: User,
-            as: 'patient',
-            attributes: ['id', 'firstName', 'lastName', 'email', 'phoneNumber']
-          },
-          {
-            model: Doctor,
-            as: 'doctor',
-            attributes: ['id', 'firstName', 'lastName', 'prefix', 'specialization']
-          }
-        ]
-      });
+      try {
+        appointment = await Appointment.findOne({
+          where: { id: normalizedAppointmentId, doctorId },
+          include: [
+            {
+              model: User,
+              as: 'patient',
+              attributes: ['id', 'firstName', 'lastName', 'email', 'phoneNumber']
+            },
+            {
+              model: Doctor,
+              as: 'doctor',
+              attributes: ['id', 'firstName', 'lastName', 'prefix', 'specialization']
+            }
+          ]
+        });
+      } catch (lookupError) {
+        console.error('⚠️ Initiate-call id lookup failed:', lookupError);
+        appointment = null;
+      }
     }
 
     if (!appointment) {
