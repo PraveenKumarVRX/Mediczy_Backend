@@ -2530,7 +2530,12 @@ router.post('/appointments/:appointmentId/initiate-call', authDoctor, async (req
     });
 
   } catch (error) {
-    console.error('❌ Initiate call error:', error);
+    console.error('❌ Initiate call error:', {
+      message: error?.message,
+      name: error?.name,
+      sql: error?.parent?.sql,
+      parameters: error?.parent?.parameters
+    });
     res.status(500).json({
       success: false,
       message: 'Failed to initiate call',
