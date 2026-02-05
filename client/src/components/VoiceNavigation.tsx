@@ -215,13 +215,23 @@ const VoiceNavigation: React.FC = () => {
         return;
       }
 
-      const response = await api.post(
-        '/ai/text-to-speech',
-        { text },
-        {
-          headers: { Authorization: `Bearer ${token}` },
-        }
-      );
+      // Create AbortController with timeout
+      const controller = new AbortController();
+      const timeoutId = setTimeout(() => controller.abort(), 25000); // 25s timeout
+
+      let response;
+      try {
+        response = await api.post(
+          '/ai/text-to-speech',
+          { text },
+          {
+            headers: { Authorization: `Bearer ${token}` },
+            signal: controller.signal
+          }
+        );
+      } finally {
+        clearTimeout(timeoutId);
+      }
 
       const data = response.data;
 

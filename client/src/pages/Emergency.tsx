@@ -531,21 +531,30 @@ const Emergency = () => {
     setIsSpeaking(true);
     
     try {
-      // Use Eleven Labs API via backend
-      const response = await fetch('/api/tts/speak', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({
-          text: cleanText,
-          voiceId: 'pjcYQlDFKMbcOUp6F5GD', // Dr. iSHA female voice
-          model: 'eleven_turbo_v2_5',
-        }),
-      });
+      // Use Eleven Labs API via backend with AbortController timeout
+      const controller = new AbortController();
+      const timeoutId = setTimeout(() => controller.abort(), 25000); // 25s timeout for browser
+      
+      let response;
+      try {
+        response = await fetch('/api/tts/speak', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify({
+            text: cleanText,
+            voiceId: 'pjcYQlDFKMbcOUp6F5GD', // Dr. iSHA female voice
+            model: 'eleven_turbo_v2_5',
+          }),
+          signal: controller.signal
+        });
+      } finally {
+        clearTimeout(timeoutId);
+      }
       
       if (!response.ok) {
-        throw new Error('TTS API failed');
+        throw new Error(`TTS API failed with status ${response.status}`);
       }
       
       const audioBlob = await response.blob();

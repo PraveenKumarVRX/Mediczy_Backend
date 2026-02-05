@@ -51,27 +51,37 @@ router.post('/speak', async (req, res) => {
 
     console.log(`🔊 Eleven Labs TTS: "${cleanText.substring(0, 50)}..." (${cleanText.length} chars)`);
 
-    const response = await fetch(
-      `https://api.elevenlabs.io/v1/text-to-speech/${voiceId || DEFAULT_VOICE_ID}`,
-      {
-        method: 'POST',
-        headers: {
-          'Accept': 'audio/mpeg',
-          'Content-Type': 'application/json',
-          'xi-api-key': ELEVENLABS_API_KEY,
-        },
-        body: JSON.stringify({
-          text: cleanText,
-          model_id: model,
-          voice_settings: {
-            stability: 0.5,
-            similarity_boost: 0.8,
-            style: 0.3,
-            use_speaker_boost: true
-          }
-        }),
-      }
-    );
+    // Add timeout with AbortController (30s for Eleven Labs API)
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), 30000);
+
+    let response;
+    try {
+      response = await fetch(
+        `https://api.elevenlabs.io/v1/text-to-speech/${voiceId || DEFAULT_VOICE_ID}`,
+        {
+          method: 'POST',
+          headers: {
+            'Accept': 'audio/mpeg',
+            'Content-Type': 'application/json',
+            'xi-api-key': ELEVENLABS_API_KEY,
+          },
+          body: JSON.stringify({
+            text: cleanText,
+            model_id: model,
+            voice_settings: {
+              stability: 0.5,
+              similarity_boost: 0.8,
+              style: 0.3,
+              use_speaker_boost: true
+            }
+          }),
+          signal: controller.signal
+        }
+      );
+    } finally {
+      clearTimeout(timeoutId);
+    }
 
     if (!response.ok) {
       const errorText = await response.text();
@@ -98,7 +108,18 @@ router.post('/speak', async (req, res) => {
     console.log(`✅ TTS audio generated: ${audioBuffer.length} bytes`);
 
   } catch (error) {
-    console.error('❌ TTS error:', error);
+    console.error('❌ TTS error:', error.message);
+    
+    // Handle timeout errors specifically
+    if (error.name === 'AbortError') {
+      return res.status(504).json({
+        success: false,
+        message: 'TTS request timed out - using fallback',
+        error: 'timeout',
+        fallback: true
+      });
+    }
+    
     res.status(500).json({
       success: false,
       message: 'TTS service error',
@@ -118,11 +139,21 @@ router.get('/voices', async (req, res) => {
       return res.status(503).json({ success: false, message: 'TTS service not configured' });
     }
 
-    const response = await fetch('https://api.elevenlabs.io/v1/voices', {
-      headers: {
-        'xi-api-key': ELEVENLABS_API_KEY,
-      },
-    });
+    // Add timeout for voices request (10s is sufficient for list)
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), 10000);
+
+    let response;
+    try {
+      response = await fetch('https://api.elevenlabs.io/v1/voices', {
+        headers: {
+          'xi-api-key': ELEVENLABS_API_KEY,
+        },
+        signal: controller.signal
+      });
+    } finally {
+      clearTimeout(timeoutId);
+    }
 
     if (!response.ok) {
       throw new Error('Failed to fetch voices');
@@ -141,7 +172,13 @@ router.get('/voices', async (req, res) => {
     });
 
   } catch (error) {
-    console.error('❌ Error fetching voices:', error);
+    console.error('❌ Error fetching voices:', error.message);
+    
+    // Handle timeout
+    if (error.name === 'AbortError') {
+      return res.status(504).json({ success: false, message: 'Voice list request timed out' });
+    }
+    
     res.status(500).json({ success: false, message: error.message });
   }
 });
