@@ -1,4 +1,5 @@
 import { useState } from "react";
+import { useNavigate } from "react-router-dom";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { format } from "date-fns";
 import {
@@ -73,6 +74,7 @@ const DoctorAppointments = () => {
   const { toast } = useToast();
   const { currentDoctor } = useAuth();
   const queryClient = useQueryClient();
+  const navigate = useNavigate();
   const doctorId = (currentDoctor as any)?.id ?? (currentDoctor as any)?._id;
 
   const [selectedAppointment, setSelectedAppointment] = useState<Appointment | null>(null);
@@ -255,6 +257,16 @@ const DoctorAppointments = () => {
   };
 
   const handleStartConsultation = async (appointment: Appointment) => {
+    const isExternalMeetingLink = (meetingLink?: string) => {
+      if (!meetingLink) return false;
+      try {
+        const parsed = new URL(meetingLink);
+        return !parsed.hostname.endsWith('mediqzy.com');
+      } catch (error) {
+        return false;
+      }
+    };
+
     // Navigate to video consultation page based on consultation type
     const channel = String(appointment.channel || "").toLowerCase();
     const consultType = String(appointment.consultationType || "").toLowerCase();
@@ -283,11 +295,11 @@ const DoctorAppointments = () => {
             description: `${response.data.appointment?.patientName || 'Patient'} has been notified. Opening video room...`,
           });
 
-          // Open meeting link directly if available, otherwise use room-based URL
-          if (meetingLink) {
+          // Open external meeting link directly if available, otherwise use in-app video route
+          if (meetingLink && isExternalMeetingLink(meetingLink)) {
             window.open(meetingLink, '_blank', 'width=1280,height=720');
           } else {
-            window.location.href = `/doctor/video?room=${encodeURIComponent(roomId)}&appointmentId=${appointment.id}&userId=${appointment.userId}`;
+            navigate(`/doctor/video?room=${encodeURIComponent(roomId)}&appointmentId=${appointment.id}&userId=${appointment.userId}`);
           }
         }
       } catch (error: any) {
@@ -299,7 +311,7 @@ const DoctorAppointments = () => {
         });
         // Fallback: still navigate to video page
         const roomId = `apt-${appointment.id}`;
-        window.location.href = `/doctor/video?room=${encodeURIComponent(roomId)}&appointmentId=${appointment.id}&userId=${appointment.userId}`;
+        navigate(`/doctor/video?room=${encodeURIComponent(roomId)}&appointmentId=${appointment.id}&userId=${appointment.userId}`);
       }
     } else {
       // For phone/chat consultations, go to chat

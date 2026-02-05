@@ -244,12 +244,23 @@ const DoctorVideoConsultation = () => {
     if (room.startsWith('http')) {
       try {
         const parsed = new URL(room);
+        const isAppRoute = parsed.pathname.includes('/video-consultation') || parsed.pathname.includes('/doctor/video');
+        if (isAppRoute) {
+          const roomFromQuery =
+            parsed.searchParams.get('room') ||
+            parsed.searchParams.get('roomId') ||
+            parsed.searchParams.get('meetingId');
+          if (roomFromQuery) {
+            room = roomFromQuery;
+          }
+        } else {
         if (
           parsed.pathname.includes('/rooms/') ||
           parsed.pathname.includes('/room/') ||
           parsed.searchParams.has('access_token')
         ) {
           return parsed.toString();
+        }
         }
       } catch (error) {
         // Fall back to LiveKit URL if parsing fails.

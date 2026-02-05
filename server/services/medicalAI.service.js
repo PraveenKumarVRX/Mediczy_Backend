@@ -11,9 +11,27 @@ class MedicalAIService {
     this.sibBaseUrl = process.env.SIB_FASTAPI_URL || 'http://localhost:8001';
     this.sibAvailable = false;
     this.conversationHistory = new Map();
+    this.MAX_CONVERSATIONS = 500; // Limit to prevent memory leak
+    this.CONVERSATION_TTL = 2 * 60 * 60 * 1000; // 2 hours
     
     // Check SIB health on startup
     this.checkSibHealth();
+    
+    // Cleanup old conversations every 30 minutes
+    setInterval(() => {
+      const now = Date.now();
+      for (const [sessionId, data] of this.conversationHistory.entries()) {
+        if (data.lastActivity && (now - data.lastActivity > this.CONVERSATION_TTL)) {
+          this.conversationHistory.delete(sessionId);
+        }
+      }
+      // Enforce max size
+      if (this.conversationHistory.size > this.MAX_CONVERSATIONS) {
+        const keysToDelete = Array.from(this.conversationHistory.keys()).slice(0, this.conversationHistory.size - this.MAX_CONVERSATIONS);
+        keysToDelete.forEach(k => this.conversationHistory.delete(k));
+      }
+      console.log(`🧹 Cleaned up AI conversations. Current size: ${this.conversationHistory.size}`);
+    }, 30 * 60 * 1000);
   }
 
   async checkSibHealth() {

@@ -225,16 +225,26 @@ const MyBookings = () => {
   };
 
   const handleJoinVideoCall = (booking: Booking) => {
+    const resolveRoomId = (meetingLink?: string) => {
+      if (!meetingLink) return `apt-${booking.id}`;
+      if (meetingLink.includes('/rooms/')) return meetingLink.split('/rooms/')[1]?.split('?')[0];
+      if (meetingLink.includes('/room/')) return meetingLink.split('/room/')[1]?.split('?')[0];
+      if (meetingLink.includes('/join/')) return meetingLink.split('/join/')[1]?.split('?')[0];
+      try {
+        const parsed = new URL(meetingLink);
+        return (
+          parsed.searchParams.get('room') ||
+          parsed.searchParams.get('roomId') ||
+          parsed.searchParams.get('meetingId') ||
+          meetingLink
+        );
+      } catch (error) {
+        return meetingLink;
+      }
+    };
+
     // Navigate to embedded video consultation page with room parameter
-    const roomId = booking.meetingLink
-      ? (booking.meetingLink.includes('/rooms/')
-        ? booking.meetingLink.split('/rooms/')[1]?.split('?')[0]
-        : booking.meetingLink.includes('/room/')
-          ? booking.meetingLink.split('/room/')[1]?.split('?')[0]
-          : booking.meetingLink.includes('/join/')
-            ? booking.meetingLink.split('/join/')[1]?.split('?')[0]
-            : booking.meetingLink)
-      : `apt-${booking.id}`;
+    const roomId = resolveRoomId(booking.meetingLink);
 
     navigate(`/video-consultation?room=${encodeURIComponent(roomId)}`);
 
@@ -291,16 +301,26 @@ const MyBookings = () => {
   };
 
   const handleJoinCall = (booking: Booking) => {
+    const resolveRoomId = (meetingLink?: string) => {
+      if (!meetingLink) return `apt-${booking.id}`;
+      if (meetingLink.includes('/rooms/')) return meetingLink.split('/rooms/')[1]?.split('?')[0];
+      if (meetingLink.includes('/room/')) return meetingLink.split('/room/')[1]?.split('?')[0];
+      if (meetingLink.includes('/join/')) return meetingLink.split('/join/')[1]?.split('?')[0];
+      try {
+        const parsed = new URL(meetingLink);
+        return (
+          parsed.searchParams.get('room') ||
+          parsed.searchParams.get('roomId') ||
+          parsed.searchParams.get('meetingId') ||
+          meetingLink
+        );
+      } catch (error) {
+        return meetingLink;
+      }
+    };
+
     // Generate room ID from appointment or meeting link
-    const roomId = booking.meetingLink
-      ? (booking.meetingLink.includes('/rooms/')
-        ? booking.meetingLink.split('/rooms/')[1]?.split('?')[0]
-        : booking.meetingLink.includes('/room/')
-          ? booking.meetingLink.split('/room/')[1]?.split('?')[0]
-          : booking.meetingLink.includes('/join/')
-            ? booking.meetingLink.split('/join/')[1]?.split('?')[0]
-            : booking.meetingLink)
-      : `apt-${booking.id}`;
+    const roomId = resolveRoomId(booking.meetingLink);
 
     // Navigate to video consultation page
     navigate(`/video-consultation?room=${encodeURIComponent(roomId)}&appointmentId=${booking.id}`);

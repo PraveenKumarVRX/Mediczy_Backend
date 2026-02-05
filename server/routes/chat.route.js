@@ -21,6 +21,24 @@ router.get('/health', (req, res) => {
 export { chatRooms, messages };
 
 const activeUsers = new Map();
+const MAX_ACTIVE_USERS = 10000; // Limit to prevent memory leak
+
+// Cleanup inactive users every 15 minutes
+setInterval(() => {
+  const now = Date.now();
+  const INACTIVE_TIMEOUT = 30 * 60 * 1000; // 30 minutes
+  for (const [userId, data] of activeUsers.entries()) {
+    if (data.lastSeen && (now - data.lastSeen > INACTIVE_TIMEOUT)) {
+      activeUsers.delete(userId);
+    }
+  }
+  // Enforce max size
+  if (activeUsers.size > MAX_ACTIVE_USERS) {
+    const keysToDelete = Array.from(activeUsers.keys()).slice(0, activeUsers.size - MAX_ACTIVE_USERS);
+    keysToDelete.forEach(k => activeUsers.delete(k));
+  }
+  console.log(`🧹 Cleaned up active users. Current size: ${activeUsers.size}`);
+}, 15 * 60 * 1000); // Every 15 minutes
 
 /**
  * Chat Room Types:

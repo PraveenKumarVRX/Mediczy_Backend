@@ -1598,8 +1598,26 @@ router.get('/doctor/appointments', authUser, async (req, res) => {
 // CONSULTATION CHAT ENDPOINTS
 // ============================================
 
-// In-memory store for consultation chat messages (replace with DB in production)
+// In-memory store for consultation chat messages with automatic cleanup
 const consultationChats = new Map();
+const MAX_CHAT_ENTRIES = 500; // Limit to prevent memory leak
+const CHAT_TTL = 24 * 60 * 60 * 1000; // 24 hours
+
+// Cleanup old chat entries every hour
+setInterval(() => {
+  const now = Date.now();
+  for (const [key, value] of consultationChats.entries()) {
+    if (value.lastActivity && (now - value.lastActivity > CHAT_TTL)) {
+      consultationChats.delete(key);
+    }
+  }
+  // Also enforce max size
+  if (consultationChats.size > MAX_CHAT_ENTRIES) {
+    const keysToDelete = Array.from(consultationChats.keys()).slice(0, consultationChats.size - MAX_CHAT_ENTRIES);
+    keysToDelete.forEach(k => consultationChats.delete(k));
+  }
+  console.log(`🧹 Cleaned up consultation chats. Current size: ${consultationChats.size}`);
+}, 60 * 60 * 1000); // Every hour
 
 /**
  * @route   GET /api/consultation/chat/conversations

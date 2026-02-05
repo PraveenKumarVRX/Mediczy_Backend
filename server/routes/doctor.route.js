@@ -33,6 +33,20 @@ const ALERT_STATE_TTL = 7 * 24 * 60 * 60;
 const MESSAGE_TTL = 7 * 24 * 60 * 60;
 const localAlertState = new Map();
 const localMessages = new Map();
+const MAX_CACHE_ENTRIES = 1000; // Limit to prevent memory leak
+
+// Cleanup old entries every 30 minutes
+setInterval(() => {
+  if (localAlertState.size > MAX_CACHE_ENTRIES) {
+    const keysToDelete = Array.from(localAlertState.keys()).slice(0, localAlertState.size - MAX_CACHE_ENTRIES);
+    keysToDelete.forEach(k => localAlertState.delete(k));
+  }
+  if (localMessages.size > MAX_CACHE_ENTRIES) {
+    const keysToDelete = Array.from(localMessages.keys()).slice(0, localMessages.size - MAX_CACHE_ENTRIES);
+    keysToDelete.forEach(k => localMessages.delete(k));
+  }
+  console.log(`🧹 Cleaned up doctor caches. Alerts: ${localAlertState.size}, Messages: ${localMessages.size}`);
+}, 30 * 60 * 1000); // Every 30 minutes
 
 const getCachedValue = async (key, fallbackMap, defaultValue) => {
   const cached = await cache.get(key);

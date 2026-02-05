@@ -39,6 +39,32 @@ export default function VideoCallNotification() {
   const vibrateIntervalRef = useRef<NodeJS.Timeout | null>(null);
   const navigate = useNavigate();
   const { currentUser, currentDoctor } = useAuth();
+  const isExternalMeetingLink = (meetingLink?: string) => {
+    if (!meetingLink) return false;
+    try {
+      const parsed = new URL(meetingLink);
+      return !parsed.hostname.endsWith('mediqzy.com');
+    } catch (error) {
+      return false;
+    }
+  };
+  const extractRoomIdFromLink = (meetingLink?: string) => {
+    if (!meetingLink) return '';
+    if (meetingLink.includes('/rooms/')) return meetingLink.split('/rooms/')[1]?.split('?')[0] || '';
+    if (meetingLink.includes('/room/')) return meetingLink.split('/room/')[1]?.split('?')[0] || '';
+    if (meetingLink.includes('/join/')) return meetingLink.split('/join/')[1]?.split('?')[0] || '';
+    try {
+      const parsed = new URL(meetingLink);
+      return (
+        parsed.searchParams.get('room') ||
+        parsed.searchParams.get('roomId') ||
+        parsed.searchParams.get('meetingId') ||
+        ''
+      );
+    } catch (error) {
+      return '';
+    }
+  };
 
   // Initialize audio elements
   useEffect(() => {
@@ -82,7 +108,7 @@ export default function VideoCallNotification() {
         appointmentId: data.appointmentId,
         appointmentTime: data.appointmentTime || new Date().toISOString(),
         doctorName: data.doctorName,
-        roomId: data.meetingLink?.split('/').pop() || `apt-${data.appointmentId}`,
+        roomId: extractRoomIdFromLink(data.meetingLink) || `apt-${data.appointmentId}`,
         meetingLink: data.meetingLink,
         timeRemaining: 'now',
         action: 'answer',
@@ -299,30 +325,11 @@ export default function VideoCallNotification() {
 
     stopRinging();
     
-    // If we have a direct meeting link, open it
-    if (notification.meetingLink) {
-      const isLiveKitLink =
-        (notification.meetingLink.includes('/rooms/') || notification.meetingLink.includes('/room/')) &&
-        !notification.meetingLink.includes('access_token=');
-
-      if (!isLiveKitLink) {
-        // Open in new window for better video experience
-        window.open(notification.meetingLink, '_blank', 'width=1280,height=720');
-        setNotification(null);
-        return;
-      }
-
-      try {
-        const response = await api.get(`/consultation/video/join/${notification.appointmentId}`);
-        const joinUrl = response.data?.video?.joinUrl || response.data?.video?.directJoinUrl;
-        if (joinUrl) {
-          window.open(joinUrl, '_blank', 'width=1280,height=720');
-          setNotification(null);
-          return;
-        }
-      } catch (error) {
-        console.error('Failed to fetch LiveKit join URL:', error);
-      }
+    // If we have a direct meeting link for an external provider, open it
+    if (notification.meetingLink && isExternalMeetingLink(notification.meetingLink)) {
+      window.open(notification.meetingLink, '_blank', 'width=1280,height=720');
+      setNotification(null);
+      return;
     }
     
     // Navigate to video consultation page with room ID

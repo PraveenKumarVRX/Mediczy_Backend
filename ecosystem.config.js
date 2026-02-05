@@ -23,6 +23,7 @@ module.exports = {
       cwd: '/home/ubuntu/Mediczy/server',
       instances: 2,  // Cluster mode for 400+ concurrent users
       exec_mode: 'cluster',
+      node_args: '--max-old-space-size=512',  // Limit heap to 512MB per instance
       env: {
         NODE_ENV: 'production',
         PORT: 8888,
@@ -34,7 +35,7 @@ module.exports = {
       out_file: './logs/server-out.log',
       log_date_format: 'YYYY-MM-DD HH:mm:ss Z',
       merge_logs: true,
-      max_memory_restart: '1500M',  // Increased for cluster mode
+      max_memory_restart: '768M',  // Restart if RSS exceeds 768MB
       watch: false,
       ignore_watch: ['node_modules', 'logs', '.git'],
       max_restarts: 15,

@@ -93,6 +93,13 @@ const extractRoomId = (meetingLink?: string) => {
   }
   try {
     const parsed = new URL(meetingLink);
+    const roomFromQuery =
+      parsed.searchParams.get("room") ||
+      parsed.searchParams.get("roomId") ||
+      parsed.searchParams.get("meetingId");
+    if (roomFromQuery) {
+      return roomFromQuery;
+    }
     const parts = parsed.pathname.split("/").filter(Boolean);
     const joinIndex = parts.findIndex((segment) => ["rooms", "room", "join"].includes(segment));
     if (joinIndex >= 0 && parts[joinIndex + 1]) {
@@ -102,6 +109,16 @@ const extractRoomId = (meetingLink?: string) => {
     // Ignore parsing errors and fall back to raw value.
   }
   return meetingLink;
+};
+
+const isExternalMeetingLink = (meetingLink?: string) => {
+  if (!meetingLink) return false;
+  try {
+    const parsed = new URL(meetingLink);
+    return !parsed.hostname.endsWith("mediqzy.com");
+  } catch (error) {
+    return false;
+  }
 };
 
 const Appointments = () => {
@@ -495,10 +512,9 @@ const Appointments = () => {
     const doctorId = appointment.doctor.id;
     const meetingRoomFromLink = extractRoomId(appointment.meetingLink);
     const roomId =
-      appointment.meetingLink ||
+      meetingRoomFromLink ||
       appointment.roomId ||
       appointment.meetingId ||
-      meetingRoomFromLink ||
       (appointment.backendId ? `apt-${appointment.backendId}` : undefined) ||
       (doctorId ? `doc-${doctorId}` : undefined);
 
@@ -619,29 +635,7 @@ const Appointments = () => {
           appointmentTime={incomingCall.appointmentTime}
           onAccept={async () => {
             const meetingLink = incomingCall.meetingLink;
-            const isLiveKitLink =
-              (meetingLink?.includes('/rooms/') || meetingLink?.includes('/room/')) &&
-              !meetingLink.includes('access_token=');
-
-            if (isLiveKitLink) {
-              try {
-                const response = await api.get(`/consultation/video/join/${incomingCall.appointmentId}`);
-                const joinUrl = response.data?.video?.joinUrl || response.data?.video?.directJoinUrl;
-                if (joinUrl) {
-                  window.open(joinUrl, '_blank', 'width=1280,height=720');
-                  setIncomingCall(null);
-                  toast({
-                    title: "Joined Call",
-                    description: "Opening video consultation...",
-                  });
-                  return;
-                }
-              } catch (error) {
-                console.error('Failed to fetch LiveKit join URL:', error);
-              }
-            }
-
-            if (meetingLink) {
+            if (meetingLink && isExternalMeetingLink(meetingLink)) {
               // Open meeting link in new window
               window.open(meetingLink, '_blank', 'width=1280,height=720');
               setIncomingCall(null);
@@ -652,8 +646,9 @@ const Appointments = () => {
               return;
             }
 
+            const roomIdFromLink = extractRoomId(meetingLink);
             setIncomingCall(null);
-            navigate(`/video-consultation?appointmentId=${incomingCall.appointmentId}`);
+            navigate(`/video-consultation?room=${encodeURIComponent(roomIdFromLink || `apt-${incomingCall.appointmentId}`)}&appointmentId=${incomingCall.appointmentId}`);
           }}
           onDecline={() => {
             setIncomingCall(null);

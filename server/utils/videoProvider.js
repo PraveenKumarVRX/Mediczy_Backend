@@ -25,17 +25,23 @@ export const resolveVideoProvider = () => 'livekit';
 
 export const getProviderLabel = () => 'LiveKit';
 
-export const buildMeetingLink = (provider, meetingId) => {
+const resolveFrontendBaseUrl = () => {
+  const base = process.env.FRONTEND_URL || process.env.SITE_URL || 'https://mediqzy.com';
+  return normalizeUrl(base);
+};
+
+export const buildMeetingLink = (provider, meetingId, appointmentId) => {
   if (!meetingId) return null;
-  // Meeting links should point to the LiveKit Meet UI (HTTPS).
-  const settings = getProviderSettings();
-  const meetBase = resolveMeetBaseUrl(settings);
-  return `${meetBase}/rooms/${meetingId}`;
+  const frontendBase = resolveFrontendBaseUrl();
+  const derivedAppointmentId =
+    appointmentId || (meetingId.startsWith('apt-') ? meetingId.replace('apt-', '') : null);
+  const appointmentParam = derivedAppointmentId ? `&appointmentId=${encodeURIComponent(derivedAppointmentId)}` : '';
+  return `${frontendBase}/video-consultation?room=${encodeURIComponent(meetingId)}${appointmentParam}`;
 };
 
 export const createMeetingInfo = ({ appointmentId } = {}) => {
   const meetingId = `apt-${appointmentId || Date.now()}`;
-  const meetingLink = buildMeetingLink('livekit', meetingId);
+  const meetingLink = buildMeetingLink('livekit', meetingId, appointmentId);
   const meetingDetails = {
     platform: 'LiveKit',
     roomId: meetingId
@@ -49,14 +55,27 @@ export const ensureMeetingInfo = (appointment) => {
   let meetingLink = appointment?.meetingLink;
   let meetingDetails = appointment?.meetingDetails || {};
   let needsUpdate = false;
+  const shouldReplaceLink = (link) => {
+    if (!link) return true;
+    try {
+      const parsed = new URL(link);
+      const isVideoHost = parsed.hostname === 'video.mediqzy.com';
+      const isLivekitPath = parsed.pathname.startsWith('/rooms') || parsed.pathname.startsWith('/room') || parsed.pathname.startsWith('/join');
+      return isVideoHost && isLivekitPath;
+    } catch (error) {
+      return false;
+    }
+  };
 
   if (!meetingId) {
     meetingId = `apt-${appointment?.id || Date.now()}`;
     needsUpdate = true;
   }
 
-  if (!meetingLink) {
-    meetingLink = buildMeetingLink('livekit', meetingId);
+  if (!meetingLink || shouldReplaceLink(meetingLink)) {
+    const derivedAppointmentId =
+      appointment?.id || (meetingId?.startsWith('apt-') ? meetingId.replace('apt-', '') : null);
+    meetingLink = buildMeetingLink('livekit', meetingId, derivedAppointmentId);
     needsUpdate = true;
   }
 

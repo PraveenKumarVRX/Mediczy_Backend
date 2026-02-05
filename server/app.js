@@ -852,11 +852,12 @@ app.use((req, res, next) => {
 app.use("/api/reports", uploadRouter); // Medical report upload
 app.use("/api/health-assessment", healthAssessmentRouter); // Health risk assessment
 app.use("/api/reports", reportAnalysisRouter); // Report analysis
-app.use("/api/doctors", doctorRoutes); // Doctor routes (login, register, profile)
-app.use("/api/doctor", doctorRoutes); // Alias route for singular 'doctor' endpoints
-app.use("/api/doctors", doctorEnhancedRoutes); // Enhanced doctor routes (search, public profiles)
-app.use("/api/doctors", availabilityRouter); // Availability routes
-app.use("/api/doctors", doctorSettingsRoutes); // Mount doctor settings under /api/doctors for attached pharmacies/labs
+
+// Doctor routes - all mounted under /api/doctors for consistency
+app.use("/api/doctors", doctorRoutes); // Core: login, register, profile, appointments
+app.use("/api/doctors", doctorEnhancedRoutes); // Enhanced: search, public profiles
+app.use("/api/doctors", availabilityRouter); // Availability management
+app.use("/api/doctors", doctorSettingsRoutes); // Settings: attached pharmacies/labs
 app.use("/api/ai", aiScribeRouter); // AI Scribe for prescription generation
 app.use("/api/recordings", recordingRouter); // Consultation recording management
 app.use("/api/doctors/availability", doctorAvailabilityRoutes); // Doctor availability management

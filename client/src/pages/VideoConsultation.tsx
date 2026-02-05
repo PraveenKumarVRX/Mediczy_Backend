@@ -286,26 +286,38 @@ const VideoConsultation = () => {
     if (directJoinUrl) {
       try {
         const parsed = new URL(directJoinUrl);
-        if (
-          parsed.pathname.includes('/rooms/') ||
-          parsed.pathname.includes('/room/') ||
-          parsed.searchParams.has('access_token')
-        ) {
+        const isAppRoute = parsed.pathname.includes('/video-consultation') || parsed.pathname.includes('/doctor/video');
+        if (isAppRoute) {
+          const roomFromQuery =
+            parsed.searchParams.get('room') ||
+            parsed.searchParams.get('roomId') ||
+            parsed.searchParams.get('meetingId');
+          if (roomFromQuery) {
+            room = roomFromQuery;
+          }
+          directJoinUrl = '';
+        } else {
+          if (
+            parsed.pathname.includes('/rooms/') ||
+            parsed.pathname.includes('/room/') ||
+            parsed.searchParams.has('access_token')
+          ) {
+            return parsed.toString();
+          }
+          if (!parsed.searchParams.has('name')) {
+            parsed.searchParams.set('name', name);
+          }
+          if (!parsed.searchParams.has('audio')) {
+            parsed.searchParams.set('audio', '1');
+          }
+          if (!parsed.searchParams.has('video')) {
+            parsed.searchParams.set('video', '1');
+          }
+          if (!parsed.searchParams.has('notify')) {
+            parsed.searchParams.set('notify', '0');
+          }
           return parsed.toString();
         }
-        if (!parsed.searchParams.has('name')) {
-          parsed.searchParams.set('name', name);
-        }
-        if (!parsed.searchParams.has('audio')) {
-          parsed.searchParams.set('audio', '1');
-        }
-        if (!parsed.searchParams.has('video')) {
-          parsed.searchParams.set('video', '1');
-        }
-        if (!parsed.searchParams.has('notify')) {
-          parsed.searchParams.set('notify', '0');
-        }
-        return parsed.toString();
       } catch (error) {
         // Fall back to room-based URL if parsing fails.
       }
