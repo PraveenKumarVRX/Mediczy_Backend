@@ -351,14 +351,9 @@ const DoctorVideoConsultation = () => {
     const isLiveKitMeeting = meetingUrl.includes('/rooms/') || meetingUrl.includes('/room/');
     if (isLiveKitMeeting && !preferEmbeddedJoin) {
       toast({
-        title: "Opening LiveKit",
-        description: "Launching LiveKit in a new window...",
+        title: "Embedded Mode Enabled",
+        description: "Video will open inside the app. Use the external link button to open a new window.",
       });
-      window.open(meetingUrl, '_blank', 'width=1280,height=720');
-      setIsInCall(false);
-      setConnectionStatus('disconnected');
-      setCurrentMeetingUrl("");
-      return;
     }
 
     setCurrentMeetingUrl(meetingUrl);
