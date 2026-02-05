@@ -2283,16 +2283,20 @@ router.post('/appointments/:appointmentId/initiate-call', authDoctor, async (req
     const doctorId = req.doctor.id;
     const normalizedAppointmentId = String(appointmentId || '').trim();
     const isNumericAppointmentId = /^\d+$/.test(normalizedAppointmentId);
+    const numericAppointmentId = isNumericAppointmentId
+      ? Number.parseInt(normalizedAppointmentId, 10)
+      : NaN;
     const isSafeIntId =
-      isNumericAppointmentId &&
-      Number(normalizedAppointmentId) <= 2147483647;
+      Number.isSafeInteger(numericAppointmentId) &&
+      numericAppointmentId > 0 &&
+      numericAppointmentId <= 2147483647;
 
     // Get appointment with patient and doctor details
     let appointment = null;
     if (isSafeIntId) {
       try {
         appointment = await Appointment.findOne({
-          where: { id: normalizedAppointmentId, doctorId },
+          where: { id: numericAppointmentId, doctorId },
           include: [
             {
               model: User,
