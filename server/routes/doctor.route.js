@@ -2283,7 +2283,7 @@ router.post('/appointments/:appointmentId/initiate-call', authDoctor, async (req
     const doctorId = req.doctor.id;
 
     // Get appointment with patient and doctor details
-    const appointment = await Appointment.findOne({
+    let appointment = await Appointment.findOne({
       where: { id: appointmentId, doctorId },
       include: [
         {
@@ -2298,6 +2298,32 @@ router.post('/appointments/:appointmentId/initiate-call', authDoctor, async (req
         }
       ]
     });
+
+    if (!appointment) {
+      const candidateMeetingIds = new Set([
+        appointmentId,
+        `apt-${appointmentId}`
+      ]);
+
+      appointment = await Appointment.findOne({
+        where: {
+          doctorId,
+          meetingId: Array.from(candidateMeetingIds)
+        },
+        include: [
+          {
+            model: User,
+            as: 'patient',
+            attributes: ['id', 'firstName', 'lastName', 'email', 'phoneNumber']
+          },
+          {
+            model: Doctor,
+            as: 'doctor',
+            attributes: ['id', 'firstName', 'lastName', 'prefix', 'specialization']
+          }
+        ]
+      });
+    }
 
     if (!appointment) {
       return res.status(404).json({
@@ -2421,15 +2447,20 @@ router.post('/appointments/:appointmentId/initiate-call', authDoctor, async (req
     };
 
     if (provider === 'livekit') {
-      const livekitData = await buildLiveKitJoinData({
-        meetingId,
-        identity: `doctor-${doctorId}`,
-        name: doctorName
-      });
-      videoPayload.livekit = livekitData;
-      videoPayload.joinUrl = livekitData.joinUrl;
-      if (!videoPayload.meetingLink) {
-        videoPayload.meetingLink = livekitData.meetUrl;
+      try {
+        const livekitData = await buildLiveKitJoinData({
+          meetingId,
+          identity: `doctor-${doctorId}`,
+          name: doctorName
+        });
+        videoPayload.livekit = livekitData;
+        videoPayload.joinUrl = livekitData.joinUrl;
+        if (!videoPayload.meetingLink) {
+          videoPayload.meetingLink = livekitData.meetUrl;
+        }
+      } catch (livekitError) {
+        console.error('⚠️ LiveKit join data failed:', livekitError);
+        videoPayload.warning = 'LiveKit token generation failed. Using meeting link only.';
       }
     }
 
