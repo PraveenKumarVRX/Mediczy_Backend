@@ -7,6 +7,7 @@ import {
   getAvailableDoctors,
   updateDoctorStatus,
 } from "../controller/doctor.controller.js";
+import { getDoctorAppointments } from "../controller/appointment.controller.js";
 import { authDoctor } from "../middleware/auth.middleware.js";
 import { authLimiter } from "../middleware/rateLimiter.middleware.js";
 import { Doctor, Appointment, User } from "../models/index.js";
@@ -132,6 +133,84 @@ router.post(
 
 // Get Doctor Profile (Protected Route)
 router.get("/profile", authDoctor, getDoctorProfile);
+
+/**
+ * @route   GET /api/doctors/appointments
+ * @desc    Get all appointments for the logged-in doctor
+ * @access  Private (Doctor only)
+ */
+router.get("/appointments", authDoctor, async (req, res) => {
+  try {
+    const doctorId = req.doctor.id;
+    const { status, date, upcoming } = req.query;
+
+    // Build query filters
+    const where = { doctorId };
+
+    // Filter by status if provided
+    if (status) {
+      where.status = status;
+    }
+
+    // Filter by date if provided
+    if (date) {
+      where.appointmentDate = date;
+    }
+
+    // Filter upcoming appointments
+    if (upcoming === 'true') {
+      const today = new Date();
+      today.setHours(0, 0, 0, 0);
+      where.appointmentDate = { [Op.gte]: today };
+      where.status = { [Op.in]: ['scheduled', 'confirmed', 'in-progress'] };
+    }
+
+    const appointments = await Appointment.findAll({
+      where,
+      include: [
+        {
+          model: User,
+          as: 'patient',
+          attributes: ['id', 'firstName', 'lastName', 'email', 'phoneNumber']
+        }
+      ],
+      order: [['appointmentDate', 'ASC'], ['appointmentTime', 'ASC']]
+    });
+
+    res.json({
+      success: true,
+      appointments: appointments.map(apt => ({
+        id: apt.id,
+        patientId: apt.userId,
+        patientName: apt.patient 
+          ? `${apt.patient.firstName} ${apt.patient.lastName}`
+          : apt.patientName || 'Unknown',
+        patientEmail: apt.patient?.email,
+        patientPhone: apt.patient?.phoneNumber,
+        appointmentDate: apt.appointmentDate,
+        appointmentTime: apt.appointmentTime,
+        consultationType: apt.consultationType,
+        status: apt.status,
+        paymentStatus: apt.paymentStatus,
+        consultationFee: apt.consultationFee,
+        symptoms: apt.symptoms,
+        reason: apt.reason,
+        notes: apt.notes,
+        meetingId: apt.meetingId,
+        meetingLink: apt.meetingLink,
+        createdAt: apt.createdAt,
+        updatedAt: apt.updatedAt
+      }))
+    });
+  } catch (error) {
+    console.error('Get doctor appointments error:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Failed to fetch appointments',
+      error: error.message
+    });
+  }
+});
 
 // Update Doctor Status
 router.put("/status", updateDoctorStatus);
@@ -1615,6 +1694,28 @@ router.get('/my-patients', authDoctor, async (req, res) => {
 // ============================================
 // VIDEO CONSULTATIONS ROUTES
 // ============================================
+
+/**
+ * @route   GET /api/doctors/appointments
+ * @desc    Get doctor's appointments (alias for /api/appointments/doctor)
+ * @access  Private (Doctor only)
+ */
+router.get("/appointments", authDoctor, async (req, res) => {
+  try {
+    // Normalize to authUser-compatible shape for shared controller usage
+    req.user = req.user || {};
+    req.user.id = req.user.id || req.doctor?.id;
+    req.user.email = req.user.email || req.doctor?.email;
+    req.user.role = req.user.role || 'doctor';
+    return await getDoctorAppointments(req, res);
+  } catch (error) {
+    console.error('Get doctor appointments (alias) error:', error);
+    return res.status(500).json({
+      message: 'Failed to fetch appointments',
+      error: error.message
+    });
+  }
+});
 
 /**
  * @route   GET /api/doctors/video-consultations/stats
