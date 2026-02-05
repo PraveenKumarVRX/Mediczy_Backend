@@ -606,8 +606,8 @@ const AiDoctor = () => {
 
   return (
     <MainLayout>
-      <div className="flex flex-col h-screen bg-slate-50 dark:bg-slate-900 overflow-hidden">
-        {/* Header - Sticky at top */}
+      <div className="fixed inset-0 top-16 bottom-16 md:bottom-0 md:left-64 flex flex-col bg-slate-50 dark:bg-slate-900">
+        {/* Header - Fixed at top */}
         <div className="flex-shrink-0 flex items-center justify-between px-4 py-3 border-b border-slate-200 dark:border-slate-700 bg-white/95 dark:bg-slate-800/95 backdrop-blur-sm">
           <div className="flex items-center gap-3">
             <div className="w-10 h-10 md:w-12 md:h-12 rounded-full bg-gradient-to-br from-teal-500 to-teal-600 flex items-center justify-center shadow-lg">
@@ -815,7 +815,7 @@ const AiDoctor = () => {
             </div>
           </ScrollArea>
 
-          {/* Input Area - Sticky at bottom */}
+          {/* Input Area - Fixed at bottom */}
           <div className="flex-shrink-0 border-t border-slate-200 dark:border-slate-700 bg-white/95 dark:bg-slate-800/95 backdrop-blur-sm p-3 md:p-4">
             {/* Attached File Preview */}
             {uploadedFile && (
