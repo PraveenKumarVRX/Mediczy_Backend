@@ -361,7 +361,7 @@ async function verifyTenant(req, res, next) {
     const client = await pool.connect();
     try {
       const result = await client.query(
-        'SELECT * FROM tenants WHERE tenant_id = $1 AND status = $2',
+        'SELECT * FROM tenants WHERE id = $1 AND status = $2',
         [requestedTenantId, 'active']
       );
 
@@ -375,6 +375,13 @@ async function verifyTenant(req, res, next) {
       }
 
       req.tenant = result.rows[0];
+      
+      // Set PostgreSQL session variable for RLS (Row-Level Security)
+      await client.query(
+        'SET LOCAL app.current_tenant = $1',
+        [requestedTenantId]
+      );
+      
       next();
       
     } finally {

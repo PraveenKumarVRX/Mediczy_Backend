@@ -159,7 +159,7 @@ router.get('/:id', async (req, res) => {
         w.*,
         d.id as doctor_id,
         d.name as doctor_name,
-        d.email as doctor_email,
+        u.email as doctor_email,
         d.specialization as doctor_specialization,
         d.profile_image as doctor_image,
         d.qualifications as doctor_qualifications,
@@ -168,9 +168,10 @@ router.get('/:id', async (req, res) => {
         COUNT(DISTINCT CASE WHEN wr.registration_status = 'approved' THEN wr.id END) as approved_count
       FROM webinars w
       LEFT JOIN doctors d ON w.doctor_id = d.id
+      LEFT JOIN users u ON d.user_id = u.id
       LEFT JOIN webinar_registrations wr ON w.id = wr.webinar_id
       WHERE w.id = $1
-      GROUP BY w.id, d.id`,
+      GROUP BY w.id, d.id, u.email`,
       [id]
     );
 
@@ -334,9 +335,10 @@ router.post('/:id/register', verifyAuth, async (req, res) => {
       if (userResult.length > 0 && registrationStatus === 'approved') {
         // Get complete webinar data with doctor info
         const webinarWithDoctor = await sequelize.query(
-          `SELECT w.*, d.name as doctor_name, d.email as doctor_email
+          `SELECT w.*, d.name as doctor_name, u.email as doctor_email
            FROM webinars w
            LEFT JOIN doctors d ON w.doctor_id = d.id
+           LEFT JOIN users u ON d.user_id = u.id
            WHERE w.id = $1`,
           { replacements: [id], type: Sequelize.QueryTypes.SELECT }
         );

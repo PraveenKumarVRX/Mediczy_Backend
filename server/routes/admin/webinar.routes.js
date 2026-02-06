@@ -266,7 +266,7 @@ router.get('/webinars/:id', verifySuperAdmin, async (req, res) => {
       `SELECT 
         w.*,
         d.name as doctor_name,
-        d.email as doctor_email,
+        du.email as doctor_email,
         d.specialization as doctor_specialization,
         u.name as created_by_name,
         a.total_registrations,
@@ -278,6 +278,7 @@ router.get('/webinars/:id', verifySuperAdmin, async (req, res) => {
         a.engagement_score
       FROM webinars w
       LEFT JOIN doctors d ON w.doctor_id = d.id
+      LEFT JOIN users du ON d.user_id = du.id
       LEFT JOIN users u ON w.created_by = u.id
       LEFT JOIN webinar_analytics a ON w.id = a.webinar_id
       WHERE w.id = $1`,

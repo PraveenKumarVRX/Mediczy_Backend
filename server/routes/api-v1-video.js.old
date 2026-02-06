@@ -1,0 +1,290 @@
+/**
+ * Video Consultation Routes - Mediqzy API v1
+ * Created: February 6, 2026
+ * 
+ * Endpoints:
+ * - POST /v1/{tenant-id}/video/token - Generate video room token
+ * - GET /v1/{tenant-id}/video/room/{room_id} - Get room status
+ * - POST /v1/{tenant-id}/video/room/{room_id}/end - End video call
+ */
+
+import express from 'express';
+import { verifyToken, verifyTenant, requireScopes, logAudit } from '../middleware/api-auth.js';
+import { AccessToken } from 'livekit-server-sdk';
+import pg from 'pg';
+const { Pool } = pg;
+
+const router = express.Router();
+
+const pool = new Pool({
+  host: process.env.DB_HOST || 'localhost',
+  port: process.env.DB_PORT || 5432,
+  database: process.env.DB_NAME || 'mediczy_ai',
+  user: process.env.DB_USER || 'mediczy_helper',
+  password: process.env.DB_PASSWORD,
+});
+
+const LIVEKIT_API_KEY = process.env.LIVEKIT_API_KEY;
+const LIVEKIT_API_SECRET = process.env.LIVEKIT_API_SECRET;
+const LIVEKIT_WS_URL = process.env.LIVEKIT_WS_URL || 'wss://mediczy-livekit.com';
+
+/**
+ * POST /v1/{tenant-id}/video/token
+ * Generate LiveKit access token for video consultation
+ */
+router.post('/token', verifyToken, verifyTenant, requireScopes('consultations.video'), async (req, res) => {
+  try {
+    const { tenantId, user } = req;
+    const {
+      appointment_id,
+      participant_type, // patient, doctor
+      user_id,
+      name
+    } = req.body;
+
+    // Validation
+    if (!appointment_id || !participant_type || !user_id || !name) {
+      return res.status(400).json({
+        error: {
+          code: 'INVALID_REQUEST',
+          message: 'appointment_id, participant_type, user_id, and name are required'
+        }
+      });
+    }
+
+    // Get appointment
+    const appointmentResult = await pool.query(
+      'SELECT * FROM api_appointments WHERE tenant_id = $1 AND appointment_id = $2',
+      [tenantId, appointment_id]
+    );
+
+    if (appointmentResult.rows.length === 0) {
+      return res.status(404).json({
+        error: {
+          code: 'APPOINTMENT_NOT_FOUND',
+          message: 'Appointment not found'
+        }
+      });
+    }
+
+    const appointment = appointmentResult.rows[0];
+
+    // Verify appointment is confirmed
+    if (appointment.status !== 'confirmed' && appointment.status !== 'in_progress') {
+      return res.status(400).json({
+        error: {
+          code: 'APPOINTMENT_NOT_READY',
+          message: `Appointment must be confirmed. Current status: ${appointment.status}`
+        }
+      });
+    }
+
+    // Get canonical room ID
+    const roomId = appointment.meeting_details?.room_id || appointment.appointment_id;
+
+    // Generate LiveKit token
+    const at = new AccessToken(LIVEKIT_API_KEY, LIVEKIT_API_SECRET, {
+      identity: user_id,
+      name: name,
+      metadata: JSON.stringify({
+        tenant_id: tenantId,
+        appointment_id: appointment_id,
+        participant_type: participant_type,
+        user_id: user_id
+      })
+    });
+
+    // Grant permissions based on participant type
+    at.addGrant({
+      roomJoin: true,
+      room: roomId,
+      canPublish: true,
+      canSubscribe: true,
+      canPublishData: true,
+      canUpdateOwnMetadata: true
+    });
+
+    const token = at.toJwt();
+
+    // Update appointment status to in_progress if not already
+    if (appointment.status === 'confirmed') {
+      await pool.query(
+        `UPDATE api_appointments SET
+          status = 'in_progress',
+          started_at = CURRENT_TIMESTAMP
+         WHERE tenant_id = $1 AND appointment_id = $2`,
+        [tenantId, appointment_id]
+      );
+    }
+
+    // Log audit
+    await logAudit({
+      tenant_id: tenantId,
+      user_id: user.user_id,
+      action: 'video.token_generated',
+      resource_type: 'video_consultation',
+      resource_id: appointment_id,
+      after_state: { room_id: roomId, participant_type }
+    });
+
+    res.status(200).json({
+      token,
+      room_id: roomId,
+      ws_url: LIVEKIT_WS_URL,
+      participant: {
+        identity: user_id,
+        name: name,
+        type: participant_type
+      },
+      expires_in: 3600 // 1 hour
+    });
+
+  } catch (error) {
+    console.error('Video token generation error:', error);
+    res.status(500).json({
+      error: {
+        code: 'TOKEN_GENERATION_FAILED',
+        message: 'Failed to generate video token'
+      }
+    });
+  }
+});
+
+/**
+ * GET /v1/{tenant-id}/video/room/{room_id}
+ * Get video room status
+ */
+router.get('/room/:room_id', verifyToken, verifyTenant, requireScopes('consultations.video'), async (req, res) => {
+  try {
+    const { tenantId } = req;
+    const { room_id } = req.params;
+
+    // Find appointment by room_id
+    const appointmentResult = await pool.query(
+      `SELECT * FROM api_appointments
+       WHERE tenant_id = $1
+       AND (meeting_details->>'room_id' = $2 OR appointment_id = $2)`,
+      [tenantId, room_id]
+    );
+
+    if (appointmentResult.rows.length === 0) {
+      return res.status(404).json({
+        error: {
+          code: 'ROOM_NOT_FOUND',
+          message: 'Video room not found'
+        }
+      });
+    }
+
+    const appointment = appointmentResult.rows[0];
+
+    res.status(200).json({
+      room_id: room_id,
+      appointment_id: appointment.appointment_id,
+      status: appointment.status,
+      started_at: appointment.started_at,
+      ended_at: appointment.ended_at,
+      participants: appointment.meeting_details?.participants || [],
+      duration_minutes: calculateDuration(appointment.started_at, appointment.ended_at)
+    });
+
+  } catch (error) {
+    console.error('Room status fetch error:', error);
+    res.status(500).json({
+      error: {
+        code: 'ROOM_STATUS_FAILED',
+        message: 'Failed to fetch room status'
+      }
+    });
+  }
+});
+
+/**
+ * POST /v1/{tenant-id}/video/room/{room_id}/end
+ * End video consultation
+ */
+router.post('/room/:room_id/end', verifyToken, verifyTenant, requireScopes('consultations.video'), async (req, res) => {
+  try {
+    const { tenantId, user } = req;
+    const { room_id } = req.params;
+    const { duration_minutes, recording_url } = req.body;
+
+    // Find appointment
+    const appointmentResult = await pool.query(
+      `SELECT * FROM api_appointments
+       WHERE tenant_id = $1
+       AND (meeting_details->>'room_id' = $2 OR appointment_id = $2)`,
+      [tenantId, room_id]
+    );
+
+    if (appointmentResult.rows.length === 0) {
+      return res.status(404).json({
+        error: {
+          code: 'ROOM_NOT_FOUND',
+          message: 'Video room not found'
+        }
+      });
+    }
+
+    const appointment = appointmentResult.rows[0];
+
+    // Update appointment
+    const meetingDetails = {
+      ...appointment.meeting_details,
+      duration_minutes: duration_minutes,
+      recording_url: recording_url,
+      ended_by: user.user_id
+    };
+
+    const result = await pool.query(
+      `UPDATE api_appointments SET
+        status = 'completed',
+        ended_at = CURRENT_TIMESTAMP,
+        meeting_details = $1
+       WHERE tenant_id = $2 AND appointment_id = $3
+       RETURNING *`,
+      [JSON.stringify(meetingDetails), tenantId, appointment.appointment_id]
+    );
+
+    // Log audit
+    await logAudit({
+      tenant_id: tenantId,
+      user_id: user.user_id,
+      action: 'video.call_ended',
+      resource_type: 'video_consultation',
+      resource_id: appointment.appointment_id,
+      after_state: { room_id, duration_minutes }
+    });
+
+    res.status(200).json({
+      appointment_id: appointment.appointment_id,
+      room_id: room_id,
+      status: 'ended',
+      ended_at: result.rows[0].ended_at,
+      duration_minutes: duration_minutes
+    });
+
+  } catch (error) {
+    console.error('Video call end error:', error);
+    res.status(500).json({
+      error: {
+        code: 'END_CALL_FAILED',
+        message: 'Failed to end video call'
+      }
+    });
+  }
+});
+
+/**
+ * Helper: Calculate duration
+ */
+function calculateDuration(startedAt, endedAt) {
+  if (!startedAt || !endedAt) return null;
+  
+  const start = new Date(startedAt);
+  const end = new Date(endedAt);
+  const durationMs = end - start;
+  return Math.round(durationMs / 1000 / 60); // minutes
+}
+
+export default router;

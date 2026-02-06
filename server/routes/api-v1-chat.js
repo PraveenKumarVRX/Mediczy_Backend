@@ -18,6 +18,8 @@ import { verifyToken, verifyTenant, requireScopes } from '../middleware/api-auth
 import { chatValidation, handleValidationErrors } from '../middleware/validation.js';
 import * as chatController from '../controllers/api-v1/ChatController.js';
 
+const router = express.Router();
+
 // Apply authentication and tenant verification to all routes
 router.use(verifyToken, verifyTenant);
 

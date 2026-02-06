@@ -1,0 +1,506 @@
+/**
+ * Appointments Routes - Mediqzy API v1
+ * Created: February 6, 2026
+ * 
+ * Endpoints:
+ * - POST /v1/{tenant-id}/appointments - Create appointment
+ * - GET /v1/{tenant-id}/appointments - List appointments
+ * - GET /v1/{tenant-id}/appointments/{appointment_id} - Get appointment details
+ * - PUT /v1/{tenant-id}/appointments/{appointment_id}/reschedule - Reschedule
+ * - POST /v1/{tenant-id}/appointments/{appointment_id}/cancel - Cancel
+ * - POST /v1/{tenant-id}/appointments/{appointment_id}/complete - Mark complete
+ */
+
+import express from 'express';
+import { verifyToken, verifyTenant, requireScopes, logAudit } from '../middleware/api-auth.js';
+import pg from 'pg';
+import crypto from 'crypto';
+const { Pool } = pg;
+
+const router = express.Router();
+
+const pool = new Pool({
+  host: process.env.DB_HOST || 'localhost',
+  port: process.env.DB_PORT || 5432,
+  database: process.env.DB_NAME || 'mediczy_ai',
+  user: process.env.DB_USER || 'mediczy_helper',
+  password: process.env.DB_PASSWORD,
+});
+
+/**
+ * POST /v1/{tenant-id}/appointments
+ * Create new appointment
+ */
+router.post('/', verifyToken, verifyTenant, requireScopes('appointments.write'), async (req, res) => {
+  try {
+    const { tenantId, user } = req;
+    const {
+      doctor_id,
+      user_id,
+      appointment_date,
+      appointment_time,
+      consultation_type = 'online',
+      reason,
+      symptoms,
+      payment_method = 'wallet'
+    } = req.body;
+
+    // Validation
+    if (!doctor_id || !user_id || !appointment_date || !appointment_time) {
+      return res.status(400).json({
+        error: {
+          code: 'INVALID_REQUEST',
+          message: 'doctor_id, user_id, appointment_date, and appointment_time are required'
+        }
+      });
+    }
+
+    // Check doctor exists
+    const doctorResult = await pool.query(
+      'SELECT * FROM api_doctors WHERE tenant_id = $1 AND doctor_id = $2',
+      [tenantId, doctor_id]
+    );
+
+    if (doctorResult.rows.length === 0) {
+      return res.status(404).json({
+        error: {
+          code: 'DOCTOR_NOT_FOUND',
+          message: 'Doctor not found'
+        }
+      });
+    }
+
+    const doctor = doctorResult.rows[0];
+
+    // Check slot availability
+    const slotCheck = await pool.query(
+      `SELECT COUNT(*) FROM api_appointments
+       WHERE tenant_id = $1 AND doctor_id = $2
+       AND appointment_date = $3 AND appointment_time = $4
+       AND status NOT IN ('cancelled', 'completed')`,
+      [tenantId, doctor_id, appointment_date, appointment_time]
+    );
+
+    if (parseInt(slotCheck.rows[0].count) > 0) {
+      return res.status(409).json({
+        error: {
+          code: 'SLOT_NOT_AVAILABLE',
+          message: 'This time slot is already booked'
+        }
+      });
+    }
+
+    // Generate appointment ID
+    const appointmentId = `apt-${Date.now()}-${Math.random().toString(36).substring(7)}`;
+    
+    // Generate canonical meeting ID
+    const meetingHash = crypto.createHash('md5').update(`${appointmentId}-${tenantId}`).digest('hex').substring(0, 8);
+    const canonicalMeetingId = `apt-${appointmentId}-${meetingHash}`;
+
+    // Calculate fees
+    const consultationFee = doctor.consultation_fee || 0;
+    const platformFee = consultationFee * 0.1; // 10% platform fee
+    const totalAmount = consultationFee + platformFee;
+
+    // Create appointment
+    const result = await pool.query(
+      `INSERT INTO api_appointments (
+        appointment_id, tenant_id, doctor_id, user_id,
+        appointment_date, appointment_time, consultation_type,
+        reason, symptoms, consultation_fee, platform_fee, total_amount,
+        payment_method, payment_status, status, meeting_details
+      ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16)
+      RETURNING *`,
+      [
+        appointmentId, tenantId, doctor_id, user_id,
+        appointment_date, appointment_time, consultation_type,
+        reason, JSON.stringify(symptoms), consultationFee, platformFee, totalAmount,
+        payment_method, 'pending', 'pending',
+        JSON.stringify({ room_id: canonicalMeetingId })
+      ]
+    );
+
+    const appointment = result.rows[0];
+
+    // Log audit
+    await logAudit({
+      tenant_id: tenantId,
+      user_id: user.user_id,
+      action: 'appointment.created',
+      resource_type: 'appointment',
+      resource_id: appointmentId,
+      after_state: appointment
+    });
+
+    res.status(201).json(formatAppointmentResponse(appointment));
+
+  } catch (error) {
+    console.error('Appointment creation error:', error);
+    res.status(500).json({
+      error: {
+        code: 'APPOINTMENT_CREATION_FAILED',
+        message: 'Failed to create appointment'
+      }
+    });
+  }
+});
+
+/**
+ * GET /v1/{tenant-id}/appointments
+ * List appointments with filters
+ */
+router.get('/', verifyToken, verifyTenant, requireScopes('appointments.read'), async (req, res) => {
+  try {
+    const { tenantId } = req;
+    const {
+      user_id,
+      doctor_id,
+      status,
+      from_date,
+      to_date,
+      limit = 20,
+      offset = 0
+    } = req.query;
+
+    let query = 'SELECT * FROM api_appointments WHERE tenant_id = $1';
+    const params = [tenantId];
+    let paramCount = 1;
+
+    if (user_id) {
+      paramCount++;
+      query += ` AND user_id = $${paramCount}`;
+      params.push(user_id);
+    }
+
+    if (doctor_id) {
+      paramCount++;
+      query += ` AND doctor_id = $${paramCount}`;
+      params.push(doctor_id);
+    }
+
+    if (status) {
+      paramCount++;
+      query += ` AND status = $${paramCount}`;
+      params.push(status);
+    }
+
+    if (from_date) {
+      paramCount++;
+      query += ` AND appointment_date >= $${paramCount}`;
+      params.push(from_date);
+    }
+
+    if (to_date) {
+      paramCount++;
+      query += ` AND appointment_date <= $${paramCount}`;
+      params.push(to_date);
+    }
+
+    query += ' ORDER BY appointment_date DESC, appointment_time DESC';
+    
+    paramCount++;
+    query += ` LIMIT $${paramCount}`;
+    params.push(parseInt(limit));
+    
+    paramCount++;
+    query += ` OFFSET $${paramCount}`;
+    params.push(parseInt(offset));
+
+    const result = await pool.query(query, params);
+
+    res.status(200).json({
+      appointments: result.rows.map(formatAppointmentResponse),
+      pagination: {
+        limit: parseInt(limit),
+        offset: parseInt(offset)
+      }
+    });
+
+  } catch (error) {
+    console.error('Appointments fetch error:', error);
+    res.status(500).json({
+      error: {
+        code: 'APPOINTMENTS_FETCH_FAILED',
+        message: 'Failed to fetch appointments'
+      }
+    });
+  }
+});
+
+/**
+ * GET /v1/{tenant-id}/appointments/{appointment_id}
+ * Get appointment details
+ */
+router.get('/:appointment_id', verifyToken, verifyTenant, requireScopes('appointments.read'), async (req, res) => {
+  try {
+    const { tenantId } = req;
+    const { appointment_id } = req.params;
+
+    const result = await pool.query(
+      'SELECT * FROM api_appointments WHERE tenant_id = $1 AND appointment_id = $2',
+      [tenantId, appointment_id]
+    );
+
+    if (result.rows.length === 0) {
+      return res.status(404).json({
+        error: {
+          code: 'APPOINTMENT_NOT_FOUND',
+          message: 'Appointment not found'
+        }
+      });
+    }
+
+    res.status(200).json(formatAppointmentResponse(result.rows[0]));
+
+  } catch (error) {
+    console.error('Appointment fetch error:', error);
+    res.status(500).json({
+      error: {
+        code: 'APPOINTMENT_FETCH_FAILED',
+        message: 'Failed to fetch appointment'
+      }
+    });
+  }
+});
+
+/**
+ * PUT /v1/{tenant-id}/appointments/{appointment_id}/reschedule
+ * Reschedule appointment
+ */
+router.put('/:appointment_id/reschedule', verifyToken, verifyTenant, requireScopes('appointments.write'), async (req, res) => {
+  try {
+    const { tenantId, user } = req;
+    const { appointment_id } = req.params;
+    const { new_date, new_time } = req.body;
+
+    if (!new_date || !new_time) {
+      return res.status(400).json({
+        error: {
+          code: 'INVALID_REQUEST',
+          message: 'new_date and new_time are required'
+        }
+      });
+    }
+
+    // Get existing appointment
+    const existingResult = await pool.query(
+      'SELECT * FROM api_appointments WHERE tenant_id = $1 AND appointment_id = $2',
+      [tenantId, appointment_id]
+    );
+
+    if (existingResult.rows.length === 0) {
+      return res.status(404).json({
+        error: {
+          code: 'APPOINTMENT_NOT_FOUND',
+          message: 'Appointment not found'
+        }
+      });
+    }
+
+    const existing = existingResult.rows[0];
+
+    // Check new slot availability
+    const slotCheck = await pool.query(
+      `SELECT COUNT(*) FROM api_appointments
+       WHERE tenant_id = $1 AND doctor_id = $2
+       AND appointment_date = $3 AND appointment_time = $4
+       AND status NOT IN ('cancelled', 'completed')
+       AND appointment_id != $5`,
+      [tenantId, existing.doctor_id, new_date, new_time, appointment_id]
+    );
+
+    if (parseInt(slotCheck.rows[0].count) > 0) {
+      return res.status(409).json({
+        error: {
+          code: 'SLOT_NOT_AVAILABLE',
+          message: 'This time slot is already booked'
+        }
+      });
+    }
+
+    // Update appointment
+    const result = await pool.query(
+      `UPDATE api_appointments SET
+        appointment_date = $1,
+        appointment_time = $2,
+        rescheduled_from = $3,
+        rescheduled_at = CURRENT_TIMESTAMP
+       WHERE tenant_id = $4 AND appointment_id = $5
+       RETURNING *`,
+      [new_date, new_time, JSON.stringify({ date: existing.appointment_date, time: existing.appointment_time }), tenantId, appointment_id]
+    );
+
+    // Log audit
+    await logAudit({
+      tenant_id: tenantId,
+      user_id: user.user_id,
+      action: 'appointment.rescheduled',
+      resource_type: 'appointment',
+      resource_id: appointment_id,
+      before_state: existing,
+      after_state: result.rows[0]
+    });
+
+    res.status(200).json(formatAppointmentResponse(result.rows[0]));
+
+  } catch (error) {
+    console.error('Appointment reschedule error:', error);
+    res.status(500).json({
+      error: {
+        code: 'RESCHEDULE_FAILED',
+        message: 'Failed to reschedule appointment'
+      }
+    });
+  }
+});
+
+/**
+ * POST /v1/{tenant-id}/appointments/{appointment_id}/cancel
+ * Cancel appointment
+ */
+router.post('/:appointment_id/cancel', verifyToken, verifyTenant, requireScopes('appointments.write'), async (req, res) => {
+  try {
+    const { tenantId, user } = req;
+    const { appointment_id } = req.params;
+    const { cancellation_reason } = req.body;
+
+    const existingResult = await pool.query(
+      'SELECT * FROM api_appointments WHERE tenant_id = $1 AND appointment_id = $2',
+      [tenantId, appointment_id]
+    );
+
+    if (existingResult.rows.length === 0) {
+      return res.status(404).json({
+        error: {
+          code: 'APPOINTMENT_NOT_FOUND',
+          message: 'Appointment not found'
+        }
+      });
+    }
+
+    const existing = existingResult.rows[0];
+
+    if (existing.status === 'cancelled') {
+      return res.status(400).json({
+        error: {
+          code: 'ALREADY_CANCELLED',
+          message: 'Appointment is already cancelled'
+        }
+      });
+    }
+
+    const result = await pool.query(
+      `UPDATE api_appointments SET
+        status = 'cancelled',
+        cancellation_reason = $1,
+        cancelled_at = CURRENT_TIMESTAMP
+       WHERE tenant_id = $2 AND appointment_id = $3
+       RETURNING *`,
+      [cancellation_reason, tenantId, appointment_id]
+    );
+
+    // Log audit
+    await logAudit({
+      tenant_id: tenantId,
+      user_id: user.user_id,
+      action: 'appointment.cancelled',
+      resource_type: 'appointment',
+      resource_id: appointment_id,
+      before_state: existing,
+      after_state: result.rows[0]
+    });
+
+    res.status(200).json(formatAppointmentResponse(result.rows[0]));
+
+  } catch (error) {
+    console.error('Appointment cancellation error:', error);
+    res.status(500).json({
+      error: {
+        code: 'CANCELLATION_FAILED',
+        message: 'Failed to cancel appointment'
+      }
+    });
+  }
+});
+
+/**
+ * POST /v1/{tenant-id}/appointments/{appointment_id}/complete
+ * Mark appointment as completed
+ */
+router.post('/:appointment_id/complete', verifyToken, verifyTenant, requireScopes('appointments.write'), async (req, res) => {
+  try {
+    const { tenantId, user } = req;
+    const { appointment_id } = req.params;
+
+    const result = await pool.query(
+      `UPDATE api_appointments SET
+        status = 'completed',
+        completed_at = CURRENT_TIMESTAMP
+       WHERE tenant_id = $1 AND appointment_id = $2
+       RETURNING *`,
+      [tenantId, appointment_id]
+    );
+
+    if (result.rows.length === 0) {
+      return res.status(404).json({
+        error: {
+          code: 'APPOINTMENT_NOT_FOUND',
+          message: 'Appointment not found'
+        }
+      });
+    }
+
+    // Log audit
+    await logAudit({
+      tenant_id: tenantId,
+      user_id: user.user_id,
+      action: 'appointment.completed',
+      resource_type: 'appointment',
+      resource_id: appointment_id,
+      after_state: result.rows[0]
+    });
+
+    res.status(200).json(formatAppointmentResponse(result.rows[0]));
+
+  } catch (error) {
+    console.error('Appointment completion error:', error);
+    res.status(500).json({
+      error: {
+        code: 'COMPLETION_FAILED',
+        message: 'Failed to complete appointment'
+      }
+    });
+  }
+});
+
+/**
+ * Helper: Format appointment response
+ */
+function formatAppointmentResponse(appointment) {
+  return {
+    appointment_id: appointment.appointment_id,
+    doctor_id: appointment.doctor_id,
+    user_id: appointment.user_id,
+    appointment_date: appointment.appointment_date,
+    appointment_time: appointment.appointment_time,
+    consultation_type: appointment.consultation_type,
+    status: appointment.status,
+    reason: appointment.reason,
+    symptoms: appointment.symptoms,
+    consultation_fee: appointment.consultation_fee,
+    platform_fee: appointment.platform_fee,
+    total_amount: appointment.total_amount,
+    payment_method: appointment.payment_method,
+    payment_status: appointment.payment_status,
+    meeting_details: appointment.meeting_details,
+    prescription_id: appointment.prescription_id,
+    rescheduled_from: appointment.rescheduled_from,
+    cancellation_reason: appointment.cancellation_reason,
+    created_at: appointment.created_at,
+    updated_at: appointment.updated_at,
+    cancelled_at: appointment.cancelled_at,
+    completed_at: appointment.completed_at
+  };
+}
+
+export default router;

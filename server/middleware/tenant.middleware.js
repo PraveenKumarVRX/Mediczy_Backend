@@ -6,7 +6,14 @@
 import Tenant from '../models/postgres/tenant.model.postgres.js';
 
 // RULE: Tenant context must come from domain/JWT; header override is opt-in only.
+// SECURITY: NEVER set ALLOW_TENANT_HEADER=true in production!
 const allowHeaderTenant = process.env.ALLOW_TENANT_HEADER === 'true';
+
+if (allowHeaderTenant && process.env.NODE_ENV === 'production') {
+  console.error('⚠️  SECURITY WARNING: ALLOW_TENANT_HEADER is enabled in production!');
+  console.error('⚠️  This allows tenant override via X-Tenant-ID header - MAJOR SECURITY RISK');
+  console.error('⚠️  Set ALLOW_TENANT_HEADER=false immediately!');
+}
 
 /**
  * Extract tenant from subdomain or custom domain
@@ -65,6 +72,14 @@ export async function extractTenant(req, res, next) {
       } else {
         const tenantId = parseInt(headerTenantId, 10);
         if (!Number.isNaN(tenantId)) {
+          // Verify user belongs to this tenant (if authenticated)
+          if (req.user && req.user.tenant_id && req.user.tenant_id !== tenantId) {
+            console.error(
+              `[tenant] SECURITY: User ${req.user.id} attempted to access tenant ${tenantId} but belongs to tenant ${req.user.tenant_id}`
+            );
+            throw new Error('Unauthorized tenant access attempt');
+          }
+          
           tenant = await Tenant.findOne({
             where: { id: tenantId, status: 'active' },
             attributes: ['id', 'name', 'slug', 'subdomain', 'custom_domain', 'status']

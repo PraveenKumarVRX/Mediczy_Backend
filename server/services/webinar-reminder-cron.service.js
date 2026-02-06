@@ -73,15 +73,16 @@ class WebinarReminderService {
       const upcomingWebinars = await sequelize.query(
         `SELECT w.*, 
           d.name as doctor_name, 
-          d.email as doctor_email,
+          u.email as doctor_email,
           COUNT(wr.id) as registered_count
          FROM webinars w
          LEFT JOIN doctors d ON w.doctor_id = d.id
+         LEFT JOIN users u ON d.user_id = u.id
          LEFT JOIN webinar_registrations wr ON w.id = wr.webinar_id 
            AND wr.registration_status IN ('registered', 'approved')
          WHERE w.status = 'scheduled'
            AND w.scheduled_at > $1
-         GROUP BY w.id, d.name, d.email
+         GROUP BY w.id, d.name, u.email
          ORDER BY w.scheduled_at ASC`,
         { 
           replacements: [now.toISOString()], 
@@ -152,9 +153,10 @@ class WebinarReminderService {
   async sendTestReminder(webinarId, reminderType = '24h') {
     try {
       const webinar = await sequelize.query(
-        `SELECT w.*, d.name as doctor_name, d.email as doctor_email
+        `SELECT w.*, d.name as doctor_name, u.email as doctor_email
          FROM webinars w
          LEFT JOIN doctors d ON w.doctor_id = d.id
+         LEFT JOIN users u ON d.user_id = u.id
          WHERE w.id = $1`,
         { replacements: [webinarId], type: Sequelize.QueryTypes.SELECT }
       );
