@@ -151,7 +151,7 @@ const Index = () => {
     connectedAt?: string;
     lastSync?: string;
   }>>([]);
-  const onboardingStorageKey = currentUser?.id ? `onboarding:user:${currentUser.id}` : 'onboarding:user:guest';
+  const onboardingStorageKey = currentUser?.id ? `onboarding:user:${currentUser?.id}` : 'onboarding:user:guest';
   const [onboardingDismissed, setOnboardingDismissed] = useState(false);
 
   // Helper function to get device icon based on type

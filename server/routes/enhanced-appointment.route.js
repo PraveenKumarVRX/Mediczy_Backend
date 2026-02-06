@@ -1,7 +1,9 @@
 import express from 'express';
 import { body, param, query } from 'express-validator';
 import { Op } from 'sequelize';
+import crypto from 'crypto';
 import { authUser } from '../middleware/auth.middleware.js';
+import { generateCanonicalMeetingId, verifyCanonicalMeetingId } from '../utils/videoProvider.js';
 import doctorModel from '../models/doctor.model.intelligent.js';
 import userModel from '../models/user.model.intelligent.js';
 import Appointment from '../models/appointment.model.intelligent.js';
@@ -11,6 +13,7 @@ import usageMeteringService from '../services/usage-metering.service.js';
 import notificationService from '../services/notification.service.js';
 
 const router = express.Router();
+
 
 const normalizeSymptoms = (value) => {
   if (!value) return [];
@@ -293,44 +296,10 @@ router.post('/book', authUser, [
     const patientGender = patient.gender || 'Not specified';
     const patientAge = patient.dateOfBirth ? calculateAge(patient.dateOfBirth) : patient.age;
 
-    // Generate meeting details
-    const meetingRoom = consultationType === 'online' ? `mediczy-room-${Date.now()}` : null;
-    
-    // PRE-CREATE VIDEO ROOM FOR ONLINE CONSULTATIONS
+    // Room creation moved to lazy loading (on join)
+    // This prevents unnecessary room creation if appointment is cancelled
     let roomToken = null;
     let roomCreated = false;
-    if (meetingRoom) {
-      try {
-        console.log(`🎥 Pre-creating video room: ${meetingRoom}`);
-        // Call video service to create room and get token
-        const videoApiUrl = process.env.VIDEO_API_URL || 'http://localhost:3000';
-        const roomResponse = await fetch(`${videoApiUrl}/api/video/room/create`, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            roomId: meetingRoom,
-            appointmentId: null, // Will be set after DB creation
-            doctorId: resolvedDoctorId,
-            patientId: req.user.id,
-            maxParticipants: 2,
-            duration: 30 // minutes
-          })
-        }).catch(err => {
-          console.warn('⚠️ Video room pre-creation failed:', err.message);
-          return null;
-        });
-        
-        if (roomResponse?.ok) {
-          const roomData = await roomResponse.json();
-          roomToken = roomData.roomToken || roomData.token;
-          roomCreated = roomData.success || true;
-          console.log(`✅ Video room created: ${meetingRoom}, Token: ${roomToken ? 'YES' : 'NO'}`);
-        }
-      } catch (err) {
-        console.warn('⚠️ Video room creation error:', err.message);
-        // Continue without token - patient can still access room
-      }
-    }
     
     // Calculate fees
     const baseFee = doctor.consultationTypes[consultationType].fee;
@@ -404,13 +373,38 @@ router.post('/book', authUser, [
           currency: 'INR'
         },
         meeting: {
-          meetingLink: requestedConsultationType === 'online' ? `https://meet.mediczy.com/${meetingRoom}` : null,
-          roomId: meetingRoom,
-          roomToken: roomToken,
-          roomCreated: roomCreated
+          roomId: null, // Will be set after appointment creation
+          meetingLink: null,
+          roomToken: null,
+          roomCreated: false
         }
       }
     });
+
+    // PHASE 1: Generate appointment-based room ID after creation
+    const meetingRoom = consultationType === 'online' ? `apt-${dbAppointment.id}` : null;
+    
+    // PHASE 3.1: Generate canonical meeting ID (derived, non-sequential)
+    // This ensures both doctor and patient always use the exact same room ID
+    // regardless of which one initiates the join
+    let canonicalMeetingId = null;
+    if (meetingRoom) {
+      canonicalMeetingId = generateCanonicalMeetingId(dbAppointment.id);
+      console.log(`🔐 Canonical Meeting ID: ${canonicalMeetingId} (derived from appointment #${dbAppointment.id})`);
+    }
+    
+    // Update metadata with canonical room ID
+    if (canonicalMeetingId) {
+      dbAppointment.metadata.meeting = {
+        roomId: canonicalMeetingId,                                    // PHASE 3.1: Use canonical ID
+        fallbackRoomId: meetingRoom,                                   // Keep fallback for backward compat
+        meetingLink: `https://meet.mediczy.com/${canonicalMeetingId}`,
+        roomToken: null, // Tokens generated on-demand at join time
+        roomCreated: false // Room created lazily when first participant joins
+      };
+      await dbAppointment.save();
+      console.log(`📞 Appointment #${dbAppointment.id} created with canonical room: ${canonicalMeetingId}`);
+    }
 
     // Build enhanced view object (keeps previous response shape as much as possible)
     const appointment = {
@@ -438,11 +432,12 @@ router.post('/book', authUser, [
       },
       paymentStatus: dbAppointment.paymentStatus,
       meetingDetails: {
-        meetingLink: consultationType === 'online' ? `https://meet.mediczy.com/${meetingRoom}` : null,
-        roomId: meetingRoom,
-        roomToken: roomToken,
-        roomCreated: roomCreated,
-        joinInstructions: consultationType === 'online' ? 'Room is ready. Click the meeting link to join or use the access code provided' : null
+        roomId: canonicalMeetingId,               // PHASE 3.1: Use canonical meeting ID
+        fallbackRoomId: meetingRoom,              // Keep for backward compat
+        meetingLink: consultationType === 'online' ? `https://meet.mediczy.com/${canonicalMeetingId}` : null,
+        roomToken: null, // Tokens generated lazily at join time (Phase 2)
+        roomCreated: false, // Room created on-demand when first participant joins
+        joinInstructions: consultationType === 'online' ? `Your video consultation room is ready. Join using code: ${canonicalMeetingId}` : null
       },
       patient: {
         name: patientName,

@@ -2,7 +2,7 @@ import { validationResult } from 'express-validator';
 import { JWT_CONFIG } from '../config/auth.config.js';
 import jwt from 'jsonwebtoken';
 import { Appointment, Prescription, Doctor, User } from '../models/index.js';
-import { buildLiveKitJoinData, createMeetingInfo } from '../utils/videoProvider.js';
+import { buildLiveKitJoinData, createMeetingInfo, generateCanonicalMeetingId, verifyCanonicalMeetingId } from '../utils/videoProvider.js';
 
 // Simple WebRTC video calling controller
 class VideoController {
@@ -180,8 +180,8 @@ class VideoController {
     }
   };
 
-  // Join video room
-  static joinRoom = (req, res) => {
+  // PHASE 2: Join video room with lazy room creation
+  static joinRoom = async (req, res) => {
     try {
       const errors = validationResult(req);
       if (!errors.isEmpty()) {
@@ -191,13 +191,119 @@ class VideoController {
       const { roomId } = req.params;
       const userId = req.user.id;
       const userRole = req.user.role || 'user';
+      const displayName = 
+        [req.user.firstName, req.user.lastName].filter(Boolean).join(' ') ||
+        req.user.name ||
+        req.user.email ||
+        `${userRole}-${userId}`;
 
-      // In a real implementation, you'd check room permissions, appointment validity, etc.
+      console.log(`📞 Join request: ${roomId} by ${displayName} (${userRole})`);
+
+      // PHASE 2: When room ID follows apt-{id} format, verify appointment exists
+      let appointmentId = null;
+      let isAppointmentRoom = false;
+      
+      if (roomId.startsWith('apt-')) {
+        // PHASE 3.1: Extract appointment ID and verify canonical meeting ID
+        // Format: apt-{appointmentId}-{hash} or apt-{appointmentId} (backward compat)
+        const roomParts = roomId.substring(4).split('-');
+        appointmentId = roomParts[0]; // First numeric part is the appointment ID
+        isAppointmentRoom = true;
+        
+        // Verify appointment exists and user is authorized
+        const appointment = await Appointment.findByPk(appointmentId);
+        if (!appointment) {
+          return res.status(404).json({
+            success: false,
+            message: 'Appointment not found'
+          });
+        }
+
+        // PHASE 3.1: Verify canonical meeting ID to ensure both doctor/patient use same room
+        const canonicalMeetingId = generateCanonicalMeetingId(appointmentId);
+        const providedMeetingId = roomId;
+        const isFallbackFormat = !roomId.includes('-', 4); // apt-{id} format without hash
+        
+        if (!isFallbackFormat && !verifyCanonicalMeetingId(appointmentId, providedMeetingId)) {
+          console.warn(`🔐 SECURITY: Invalid meeting ID provided: ${providedMeetingId} vs expected: ${canonicalMeetingId}`);
+          return res.status(403).json({
+            success: false,
+            message: 'Invalid meeting room code',
+            details: 'The meeting code does not match the expected canonical ID for this appointment'
+          });
+        }
+        
+        console.log(`🔐 Meeting ID verified: ${providedMeetingId} (canonical: ${canonicalMeetingId})`);
+
+        // Verify user is doctor or patient for this appointment
+        const isDoctor = appointment.doctorId === userId;
+        const isPatient = appointment.userId === userId || appointment.patientId === userId;
+        
+        if (!isDoctor && !isPatient) {
+          console.warn(`⚠️ Unauthorized join attempt: user ${userId} for appointment ${appointmentId}`);
+          return res.status(403).json({
+            success: false,
+            message: 'Unauthorized: You are not part of this appointment'
+          });
+        }
+
+        console.log(`✅ Appointment verified: ${appointmentId} - ${displayName} is ${isDoctor ? 'doctor' : 'patient'}`);
+      }
+
+      // PHASE 2: Lazy room creation - create room if it doesn't exist
+      let videoRoomToken = null;
+      try {
+        const videoApiUrl = process.env.VIDEO_API_URL || 'http://localhost:3000';
+        
+        // First, try to ensure room exists
+        const createRoomResponse = await fetch(`${videoApiUrl}/api/video/room/create`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            roomId,
+            appointmentId: appointmentId || null,
+            doctorId: req.user.role === 'doctor' ? userId : null,
+            patientId: req.user.role !== 'doctor' ? userId : null,
+            maxParticipants: 2,
+            duration: 60 // minutes
+          })
+        }).catch(err => {
+          console.warn(`⚠️ Room creation failed: ${err.message}`);
+          return null;
+        });
+
+        if (createRoomResponse?.ok) {
+          const roomData = await createRoomResponse.json();
+          videoRoomToken = roomData.roomToken || roomData.token;
+          console.log(`✅ Room created/verified: ${roomId}, Token: ${videoRoomToken ? 'YES' : 'NO'}`);
+        }
+      } catch (err) {
+        console.warn(`⚠️ Lazy room creation error: ${err.message}`);
+        // Continue without token - participant can still join
+      }
+
+      // Generate LiveKit token for this participant
+      const livekitData = await buildLiveKitJoinData({
+        meetingId: roomId,
+        identity: `${userRole}-${userId}`,
+        name: displayName
+      }).catch(err => {
+        console.warn(`⚠️ LiveKit token generation failed: ${err.message}`);
+        return null;
+      });
+
       const roomData = {
         roomId,
         userId,
         userRole,
         joinedAt: new Date().toISOString(),
+        appointmentId: appointmentId || null,
+        videoToken: videoRoomToken,
+        livekit: livekitData || {
+          token: null,
+          serverUrl: process.env.LIVEKIT_URL || 'ws://localhost:7880',
+          roomName: roomId
+        },
         iceServers: [
           { urls: 'stun:stun.l.google.com:19302' },
           { urls: 'stun:stun1.l.google.com:19302' }
@@ -207,7 +313,8 @@ class VideoController {
       res.json({
         success: true,
         message: 'Successfully joined video room',
-        roomData
+        roomData,
+        livekit: livekitData
       });
 
     } catch (error) {

@@ -251,17 +251,28 @@ async function gracefulShutdown(signal, exitCode = 0) {
 // Determine if error is critical and requires shutdown
 function isCriticalError(error) {
   const criticalPatterns = [
-    'ECONNREFUSED',
-    'ENOTFOUND',
-    'ETIMEDOUT',
     'Out of memory',
     'ERR_IPC_CHANNEL_CLOSED',
-    'FATAL ERROR',
     'Cannot find module',
     'EADDRINUSE'
   ];
   
+  // Don't treat database/cache connection errors as critical during startup
+  // Allow app to run in degraded mode if databases are unavailable
+  const nonCriticalPatterns = [
+    'ECONNREFUSED',
+    'ENOTFOUND',
+    'ETIMEDOUT',
+    'maxRetriesPerRequest'
+  ];
+  
   const errorString = error?.message || error?.code || String(error);
+  
+  // First check if it's a non-critical pattern (should NOT exit)
+  if (nonCriticalPatterns.some(pattern => errorString.includes(pattern))) {
+    return false;
+  }
+  
   return criticalPatterns.some(pattern => errorString.includes(pattern));
 }
 

@@ -1,4 +1,5 @@
 import { AccessToken } from 'livekit-server-sdk';
+import crypto from 'crypto';
 import videoService from '../services/video.service.js';
 
 const normalizeUrl = (url) => (url ? url.replace(/\/+$/, '') : '');
@@ -20,6 +21,24 @@ const resolveMeetBaseUrl = (settings = {}) => {
 
 const getProviderSettings = () =>
   videoService?.config?.providers?.livekit?.settings || {};
+
+// PHASE 3.1: Canonical Meeting ID Generation
+// Generate deterministic, non-sequential meeting IDs from appointment IDs
+export const generateCanonicalMeetingId = (appointmentId) => {
+  const secret = process.env.MEETING_ID_SECRET || 'mediczy-appointment-videoroom-v1';
+  const hash = crypto
+    .createHmac('sha256', secret)
+    .update(String(appointmentId))
+    .digest('hex')
+    .substring(0, 8);
+  return `apt-${appointmentId}-${hash}`;
+};
+
+// Verify that provided meeting ID matches canonical ID for appointment
+export const verifyCanonicalMeetingId = (appointmentId, providedMeetingId) => {
+  const expectedMeetingId = generateCanonicalMeetingId(appointmentId);
+  return providedMeetingId === expectedMeetingId;
+};
 
 export const resolveVideoProvider = () => 'livekit';
 
