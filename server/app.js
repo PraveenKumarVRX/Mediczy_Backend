@@ -132,6 +132,9 @@ import authLoginRouter from './routes/auth.login.route.js';
 import { authUser, requireRole } from './middleware/auth.middleware.js';
 import { requireAppKey } from './middleware/appAuth.middleware.js';
 import communicationRouter from './routes/communication.route.js';
+
+// API v1 Routes (Multi-tenant wellness platform API)
+import apiV1Router from './routes/api-v1-index.js';
 import consultationRecordingRouter from './routes/consultation-recording.route.js';
 import billingRouter from './routes/billing.route.js';
 import moduleAccessRouter from './routes/module-access.route.js';
@@ -840,6 +843,9 @@ app.use('/api/circuit-breakers', circuitBreakerRouter);
 app.use('/api/auth', oauthRouter);
 app.use('/api/auth/doctor', doctorOAuthRouter);
 app.use('/api/auth', authLoginRouter);
+
+// API v1 - Multi-tenant Wellness Platform (OIDC-based authentication)
+app.use('/v1', apiV1Router);
 
 app.use("/api/users", userRouter);
 app.use("/api/addresses", addressRouter);
