@@ -13,7 +13,9 @@ import { useQuery } from "@tanstack/react-query";
 import api from "@/utils/api";
 import { useNavigate } from "react-router-dom";
 import { useToast } from "@/hooks/use-toast";
+import { useAuth } from "@/auth/AuthProvider";
 import { io, Socket } from "socket.io-client";
+import { normalizeSocketUrl } from "@/utils/socket";
 import {
   Calendar,
   Clock,
@@ -124,6 +126,7 @@ const isExternalMeetingLink = (meetingLink?: string) => {
 const Appointments = () => {
   const navigate = useNavigate();
   const { toast } = useToast();
+  const { currentUser } = useAuth();
 
   const [activeTab, setActiveTab] = useState("upcoming");
   const [showBookingModal, setShowBookingModal] = useState(false);
@@ -401,11 +404,14 @@ const Appointments = () => {
 
   // Socket.io connection for incoming doctor calls
   useEffect(() => {
-    const socketUrl =
+    const userId = currentUser?.id || currentUser?._id;
+    if (!userId) return;
+
+    const socketUrl = normalizeSocketUrl(
       import.meta.env.VITE_SOCKET_URL ||
-      (import.meta.env.VITE_API_URL
-        ? import.meta.env.VITE_API_URL.replace(/\/api\/?$/, '')
-        : window.location.origin);
+      import.meta.env.VITE_API_URL ||
+      window.location.origin
+    );
     const newSocket = io(socketUrl, {
       auth: {
         token: localStorage.getItem('token')
@@ -443,6 +449,10 @@ const Appointments = () => {
 
     newSocket.on('connect', () => {
       console.log('✅ Socket connected');
+      newSocket.emit('user-connect', {
+        userId,
+        userType: 'user'
+      });
     });
 
     newSocket.on('disconnect', () => {
@@ -452,7 +462,7 @@ const Appointments = () => {
     return () => {
       newSocket.disconnect();
     };
-  }, [toast]);
+  }, [toast, currentUser?.id, currentUser?._id]);
 
   const getStatusIcon = (status: string) => {
     switch (status) {
@@ -989,8 +999,8 @@ const Appointments = () => {
                               <Badge
                                 variant="outline"
                                 className={`text-xs ${suggestion.priority === 'high' ? 'border-red-500 text-red-600' :
-                                    suggestion.priority === 'medium' ? 'border-orange-500 text-orange-600' :
-                                      'border-blue-500 text-blue-600'
+                                  suggestion.priority === 'medium' ? 'border-orange-500 text-orange-600' :
+                                    'border-blue-500 text-blue-600'
                                   }`}
                               >
                                 {suggestion.priority} priority
