@@ -89,8 +89,6 @@ const normalizeParticipants = (payload: any): Recipient[] => {
     rawList = payload;
   } else if (payload?.success && Array.isArray(payload?.data?.doctors)) {
     rawList = payload.data.doctors;
-  } else if (payload?.success && Array.isArray(payload?.data)) {
-    rawList = payload.data;
   }
   
   console.log('📋 Extracted raw list:', rawList.length, 'items');
