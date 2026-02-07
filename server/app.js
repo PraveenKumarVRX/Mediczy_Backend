@@ -454,12 +454,12 @@ const baseOrigins = envOrigins.length > 0
   ? envOrigins
   : (process.env.NODE_ENV === 'production' ? defaultProdOrigins : defaultDevOrigins);
 
-// Always include core production domains even if CORS_ORIGIN is set incorrectly.
-const allowedOrigins = Array.from(new Set(
-  process.env.NODE_ENV === 'production'
-    ? [...baseOrigins, ...defaultProdOrigins]
-    : baseOrigins
-));
+// Always include core production + dev domains regardless of NODE_ENV.
+const allowedOrigins = Array.from(new Set([
+  ...baseOrigins,
+  ...defaultProdOrigins,
+  ...defaultDevOrigins
+]));
 
 // Debug CORS configuration
 console.log('🔒 CORS Configuration:');
