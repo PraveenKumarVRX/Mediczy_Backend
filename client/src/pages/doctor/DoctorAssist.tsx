@@ -296,7 +296,7 @@ const queryAICDSS = async (query: string, category: string, specialty: string, t
       query,
       category,
       specialty,
-      searchKnowledge: false // Skip knowledge search for speed
+      searchKnowledge: true
     }, { signal: controller.signal });
     
     clearTimeout(timeout);
@@ -1199,6 +1199,8 @@ const DoctorAssist = () => {
   const [selectedSources, setSelectedSources] = useState<string[]>(['gale', 'bmj', 'nejm', 'ijmr', 'nice', 'who']);
   const [showSourceFilter, setShowSourceFilter] = useState(false);
   const [knowledgeStats, setKnowledgeStats] = useState<{ total_entries: number; unique_sources: number; sources: string[] }>({ total_entries: 0, unique_sources: 0, sources: [] });
+  const [cdssHealth, setCdssHealth] = useState<{ status: string; providers: { sib: boolean; groq: boolean; knowledgeBase: boolean }; lastCheck?: string } | null>(null);
+  const [isHealthLoading, setIsHealthLoading] = useState(false);
   const [showKnowledgeUpload, setShowKnowledgeUpload] = useState(false);
   const [isUploading, setIsUploading] = useState(false);
   
@@ -1210,6 +1212,24 @@ const DoctorAssist = () => {
   useEffect(() => {
     getKnowledgeStats().then(stats => setKnowledgeStats(stats));
   }, []);
+
+  const refreshCDSSHealth = useCallback(async () => {
+    setIsHealthLoading(true);
+    try {
+      const response = await api.get('/cdss/knowledge/health');
+      setCdssHealth(response.data);
+    } catch (error) {
+      console.warn('[CDSS] Health check failed:', error);
+      setCdssHealth(null);
+    } finally {
+      setIsHealthLoading(false);
+    }
+  }, []);
+
+  // Load CDSS health on mount
+  useEffect(() => {
+    refreshCDSSHealth();
+  }, [refreshCDSSHealth]);
   
   // Handle PDF upload for knowledge base
   const handlePDFUpload = async (file: File) => {
@@ -1312,6 +1332,21 @@ const DoctorAssist = () => {
     navigator.clipboard.writeText(text);
     toast({ title: "Copied to clipboard" });
   };
+
+  const cdssHealthStatus = cdssHealth?.status || 'unknown';
+  const cdssHealthLabel = cdssHealthStatus === 'healthy'
+    ? 'AI Health: OK'
+    : cdssHealthStatus === 'degraded'
+      ? 'AI Health: Degraded'
+      : 'AI Health: Unknown';
+  const cdssHealthClass = cdssHealthStatus === 'healthy'
+    ? 'bg-emerald-100 text-emerald-700'
+    : cdssHealthStatus === 'degraded'
+      ? 'bg-amber-100 text-amber-700'
+      : 'bg-slate-100 text-slate-600';
+  const cdssHealthLastChecked = cdssHealth?.lastCheck
+    ? new Date(cdssHealth.lastCheck).toLocaleString()
+    : null;
   
   return (
     <MainLayout>
@@ -1325,6 +1360,24 @@ const DoctorAssist = () => {
               </div>
               Doctor Assist
               <Badge className="bg-purple-100 text-purple-700 text-xs">CDSS</Badge>
+              <Badge className={cn("text-xs", cdssHealthClass)}>{cdssHealthLabel}</Badge>
+              {cdssHealthLastChecked && (
+                <span className="text-xs text-muted-foreground">Last checked: {cdssHealthLastChecked}</span>
+              )}
+              <Button
+                variant="ghost"
+                size="icon"
+                className="h-7 w-7"
+                onClick={refreshCDSSHealth}
+                disabled={isHealthLoading}
+                title="Refresh AI health"
+              >
+                {isHealthLoading ? (
+                  <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                ) : (
+                  <RefreshCw className="h-3.5 w-3.5" />
+                )}
+              </Button>
             </h1>
             <p className="text-muted-foreground mt-1">
               Clinical Decision Support System • Evidence-based medical guidance

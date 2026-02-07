@@ -56,7 +56,8 @@ router.post('/query', async (req, res) => {
     });
   } catch (error) {
     console.error('[CDSS API] Query error:', error);
-    res.status(500).json({ 
+    res.status(200).json({
+      success: false,
       error: error.message,
       fallbackMessage: 'AI services temporarily unavailable. Please try again or use the built-in clinical guidelines.'
     });

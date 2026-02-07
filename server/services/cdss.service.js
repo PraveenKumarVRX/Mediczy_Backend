@@ -143,6 +143,7 @@ Be concise. Cite NICE/WHO/AHA/GOLD guidelines. Include Indian context. Output ON
    */
   async queryWithGroq(query, category, specialty, knowledgeContext = '') {
     if (!GROQ_API_KEY) {
+      console.warn('[CDSS] GROQ_API_KEY not set; Groq fallback disabled');
       throw new Error('Groq API key not configured');
     }
 
