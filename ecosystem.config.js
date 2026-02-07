@@ -14,13 +14,21 @@
  *   pm2 monitor
  */
 
+const path = require('path');
+
+const ROOT_DIR = process.env.MEDICZY_HOME || __dirname;
+const SERVER_DIR = path.join(ROOT_DIR, 'server');
+const SCRIPTS_DIR = path.join(ROOT_DIR, 'scripts');
+const AI_ENGINE_DIR = path.join(ROOT_DIR, 'ai-engine', 'doctor_bot');
+const LOGS_DIR = path.join(ROOT_DIR, 'logs');
+
 module.exports = {
   apps: [
     // ==================== Node.js Backend ====================
     {
       name: 'mediczy-server',
       script: './start-wrapper.cjs',
-      cwd: '/home/ubuntu/Mediczy/server',
+      cwd: SERVER_DIR,
       instances: 2,  // Cluster mode for 400+ concurrent users
       exec_mode: 'cluster',
       node_args: '--max-old-space-size=512',  // Limit heap to 512MB per instance
@@ -31,8 +39,8 @@ module.exports = {
         POSTGRES_POOL_MAX: '25',  // Per instance (2 instances = 50 total)
         POSTGRES_POOL_MIN: '5'
       },
-      error_file: './logs/server-error.log',
-      out_file: './logs/server-out.log',
+      error_file: path.join(LOGS_DIR, 'server-error.log'),
+      out_file: path.join(LOGS_DIR, 'server-out.log'),
       log_date_format: 'YYYY-MM-DD HH:mm:ss Z',
       merge_logs: true,
       max_memory_restart: '768M',  // Restart if RSS exceeds 768MB
@@ -48,8 +56,8 @@ module.exports = {
     // ==================== SIB FastAPI Service ====================
     {
       name: 'sib-fastapi',
-      script: '/home/ubuntu/Mediczy/scripts/sib-fastapi-start.sh',
-      cwd: '/home/ubuntu/Mediczy/ai-engine/doctor_bot',
+      script: path.join(SCRIPTS_DIR, 'sib-fastapi-start.sh'),
+      cwd: AI_ENGINE_DIR,
       instances: 1,
       exec_mode: 'fork',
       interpreter: 'bash',
@@ -57,13 +65,13 @@ module.exports = {
         PYTHONUNBUFFERED: '1',
         PORT: 8001,
         POSTGRES_HOST: '127.0.0.1',
-        POSTGRES_PORT: '5432',
-        POSTGRES_DB: 'mediczy',
+        POSTGRES_PORT: '5433',
+        POSTGRES_DB: 'mediczy_ai',
         POSTGRES_USER: 'mediczy_helper',
         POSTGRES_PASSWORD: 'Mediczy2024Helper'
       },
-      error_file: '/home/ubuntu/Mediczy/logs/sib-error.log',
-      out_file: '/home/ubuntu/Mediczy/logs/sib-out.log',
+      error_file: path.join(LOGS_DIR, 'sib-error.log'),
+      out_file: path.join(LOGS_DIR, 'sib-out.log'),
       log_date_format: 'YYYY-MM-DD HH:mm:ss Z',
       merge_logs: true,
       max_memory_restart: '2G',
@@ -81,15 +89,15 @@ module.exports = {
     {
       name: 'mediczy-worker',
       script: './worker-wrapper.cjs',
-      cwd: '/home/ubuntu/Mediczy/server',
+      cwd: SERVER_DIR,
       instances: 1,
       exec_mode: 'fork',
       env: {
         NODE_ENV: 'production',
         WORKER_CONCURRENCY: 10
       },
-      error_file: './logs/worker-error.log',
-      out_file: './logs/worker-out.log',
+      error_file: path.join(LOGS_DIR, 'worker-error.log'),
+      out_file: path.join(LOGS_DIR, 'worker-out.log'),
       log_date_format: 'YYYY-MM-DD HH:mm:ss Z',
       merge_logs: true,
       max_memory_restart: '500M',
@@ -104,7 +112,7 @@ module.exports = {
     // ==================== LiveKit Video Server ====================
     {
       name: 'livekit-server',
-      script: '/home/ubuntu/Mediczy/scripts/livekit-start.sh',
+      script: path.join(SCRIPTS_DIR, 'livekit-start.sh'),
       cwd: '/home/ubuntu',
       instances: 1,
       exec_mode: 'fork',
@@ -130,7 +138,7 @@ module.exports = {
     // ==================== Kafka Server ====================
     {
       name: 'kafka-server',
-      script: '/home/ubuntu/Mediczy/scripts/kafka-start.sh',
+      script: path.join(SCRIPTS_DIR, 'kafka-start.sh'),
       cwd: '/opt/kafka',
       instances: 1,
       exec_mode: 'fork',
@@ -154,7 +162,7 @@ module.exports = {
     // ==================== n8n Workflow Automation ====================
     {
       name: 'n8n-server',
-      script: '/home/ubuntu/Mediczy/scripts/n8n-start.sh',
+      script: path.join(SCRIPTS_DIR, 'n8n-start.sh'),
       cwd: '/home/ubuntu',
       instances: 1,
       exec_mode: 'fork',

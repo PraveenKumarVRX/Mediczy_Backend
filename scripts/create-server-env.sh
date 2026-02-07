@@ -19,12 +19,12 @@ fi
 # Read values with defaults from example
 read -p "DB_HOST (default: localhost): " DB_HOST
 DB_HOST=${DB_HOST:-localhost}
-read -p "DB_PORT (default: 3306): " DB_PORT
-DB_PORT=${DB_PORT:-3306}
-read -p "DB_NAME (default: mediczy): " DB_NAME
-DB_NAME=${DB_NAME:-mediczy}
-read -p "DB_USER (default: root): " DB_USER
-DB_USER=${DB_USER:-root}
+read -p "DB_PORT (default: 5433): " DB_PORT
+DB_PORT=${DB_PORT:-5433}
+read -p "DB_NAME (default: mediczy_ai): " DB_NAME
+DB_NAME=${DB_NAME:-mediczy_ai}
+read -p "DB_USER (default: mediczy_helper): " DB_USER
+DB_USER=${DB_USER:-mediczy_helper}
 read -s -p "DB_PASSWORD (input will be hidden): " DB_PASSWORD
 echo
 

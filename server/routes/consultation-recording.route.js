@@ -1,6 +1,6 @@
 import express from 'express';
 import { body, param, query } from 'express-validator';
-import { authDoctor } from '../middleware/auth.middleware.js';
+import { authDoctor, authUser } from '../middleware/auth.middleware.js';
 import ConsultationRecording from '../models/consultationRecording.model.intelligent.js';
 import Appointment from '../models/appointment.model.intelligent.js';
 import fs from 'fs';
@@ -431,6 +431,17 @@ router.get('/appointment/:appointmentId', authDoctor, [
       order: [['createdAt', 'DESC']]
     });
 
+    // Log access for each recording viewed
+    for (const recording of recordings) {
+      await recording.logAccess(
+        req.doctor.id,
+        'doctor',
+        req.doctor.firstName + ' ' + req.doctor.lastName,
+        'view',
+        req.ip || req.connection?.remoteAddress
+      );
+    }
+
     res.json({
       success: true,
       recordings
@@ -526,6 +537,15 @@ router.get('/:id', authDoctor, [
       });
     }
 
+    // Log access for audit trail
+    await recording.logAccess(
+      req.doctor.id,
+      'doctor',
+      req.doctor.firstName + ' ' + req.doctor.lastName,
+      'view',
+      req.ip || req.connection?.remoteAddress
+    );
+
     res.json({
       success: true,
       recording
@@ -566,6 +586,15 @@ router.delete('/:id', authDoctor, [
         message: 'Unauthorized'
       });
     }
+
+    // Log deletion action for audit trail
+    await recording.logAccess(
+      req.doctor.id,
+      'doctor',
+      req.doctor.firstName + ' ' + req.doctor.lastName,
+      'delete',
+      req.ip || req.connection?.remoteAddress
+    );
 
     // Delete physical file if exists
     if (recording.recordingPath && fs.existsSync(recording.recordingPath)) {
@@ -677,6 +706,199 @@ router.post('/:id/transcribe', authDoctor, [
     res.status(500).json({
       success: false,
       message: 'Failed to transcribe recording',
+      error: error.message
+    });
+  }
+});
+
+// ==================== ADMIN/CLINIC ADMIN ROUTES ====================
+
+/**
+ * @route   GET /api/consultation-recordings/admin/all
+ * @desc    Get all recordings for clinic/hospital admin
+ * @access  Private (Admin/Clinic Admin)
+ */
+router.get('/admin/all', authUser, [
+  query('organizationId').optional().isInt(),
+  query('doctorId').optional().isInt(),
+  query('status').optional().isIn(['recording', 'processing', 'completed', 'failed']),
+  query('fromDate').optional().isISO8601(),
+  query('toDate').optional().isISO8601(),
+  query('limit').optional().isInt({ min: 1, max: 500 })
+], async (req, res) => {
+  try {
+    // Verify user is admin or clinic_admin
+    const allowedRoles = ['admin', 'super_admin', 'clinic_admin', 'hospital_admin'];
+    if (!allowedRoles.includes(req.user.role)) {
+      return res.status(403).json({
+        success: false,
+        message: 'Admin access only'
+      });
+    }
+
+    const { organizationId, doctorId, status, fromDate, toDate, limit = 100 } = req.query;
+
+    const where = {};
+    
+    // Filter by doctor if specified
+    if (doctorId) {
+      where.doctorId = doctorId;
+    }
+
+    // Filter by status
+    if (status) {
+      where.status = status;
+    }
+
+    // Filter by date range
+    if (fromDate || toDate) {
+      where.createdAt = {};
+      if (fromDate) where.createdAt['>='] = new Date(fromDate);
+      if (toDate) where.createdAt['<='] = new Date(toDate);
+    }
+
+    const recordings = await ConsultationRecording.findAll({
+      where,
+      include: [
+        {
+          model: Appointment,
+          as: 'appointment',
+          attributes: ['id', 'patientName', 'appointmentDate', 'appointmentTime', 'organizationId']
+        }
+      ],
+      order: [['createdAt', 'DESC']],
+      limit: parseInt(limit)
+    });
+
+    // Log admin access for each recording viewed
+    for (const recording of recordings) {
+      await recording.logAccess(
+        req.user.id,
+        req.user.role,
+        req.user.firstName + ' ' + req.user.lastName || 'Admin',
+        'admin_view',
+        req.ip || req.connection?.remoteAddress
+      );
+    }
+
+    res.json({
+      success: true,
+      count: recordings.length,
+      recordings
+    });
+  } catch (error) {
+    console.error('Admin get recordings error:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Failed to fetch recordings',
+      error: error.message
+    });
+  }
+});
+
+/**
+ * @route   GET /api/consultation-recordings/admin/:id
+ * @desc    Get specific recording (admin access)
+ * @access  Private (Admin/Clinic Admin)
+ */
+router.get('/admin/:id', authUser, [
+  param('id').isInt().withMessage('Valid recording ID required')
+], async (req, res) => {
+  try {
+    // Verify user is admin or clinic_admin
+    const allowedRoles = ['admin', 'super_admin', 'clinic_admin', 'hospital_admin'];
+    if (!allowedRoles.includes(req.user.role)) {
+      return res.status(403).json({
+        success: false,
+        message: 'Admin access only'
+      });
+    }
+
+    const { id } = req.params;
+    
+    const recording = await ConsultationRecording.findByPk(id, {
+      include: [
+        {
+          model: Appointment,
+          as: 'appointment',
+          attributes: ['id', 'patientName', 'appointmentDate', 'appointmentTime', 'symptoms', 'diagnosis', 'organizationId']
+        }
+      ]
+    });
+
+    if (!recording) {
+      return res.status(404).json({
+        success: false,
+        message: 'Recording not found'
+      });
+    }
+
+    // Log admin access
+    await recording.logAccess(
+      req.user.id,
+      req.user.role,
+      req.user.firstName + ' ' + req.user.lastName || 'Admin',
+      'admin_view',
+      req.ip || req.connection?.remoteAddress
+    );
+
+    res.json({
+      success: true,
+      recording
+    });
+  } catch (error) {
+    console.error('Admin get recording error:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Failed to fetch recording',
+      error: error.message
+    });
+  }
+});
+
+/**
+ * @route   GET /api/consultation-recordings/admin/:id/access-log
+ * @desc    Get access audit log for a specific recording
+ * @access  Private (Admin/Clinic Admin)
+ */
+router.get('/admin/:id/access-log', authUser, [
+  param('id').isInt().withMessage('Valid recording ID required')
+], async (req, res) => {
+  try {
+    // Verify user is admin or clinic_admin
+    const allowedRoles = ['admin', 'super_admin', 'clinic_admin', 'hospital_admin'];
+    if (!allowedRoles.includes(req.user.role)) {
+      return res.status(403).json({
+        success: false,
+        message: 'Admin access only'
+      });
+    }
+
+    const { id } = req.params;
+    
+    const recording = await ConsultationRecording.findByPk(id, {
+      attributes: ['id', 'appointmentId', 'doctorId', 'patientId', 'accessLog', 'createdAt']
+    });
+
+    if (!recording) {
+      return res.status(404).json({
+        success: false,
+        message: 'Recording not found'
+      });
+    }
+
+    res.json({
+      success: true,
+      recordingId: recording.id,
+      appointmentId: recording.appointmentId,
+      accessLog: recording.accessLog || [],
+      totalAccesses: (recording.accessLog || []).length
+    });
+  } catch (error) {
+    console.error('Get access log error:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Failed to fetch access log',
       error: error.message
     });
   }

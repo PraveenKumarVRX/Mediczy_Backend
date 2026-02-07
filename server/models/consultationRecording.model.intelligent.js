@@ -80,6 +80,24 @@ const ConsultationRecording = sequelize.define('ConsultationRecording', {
     type: DataTypes.JSON,
     allowNull: true,
     defaultValue: {}
+  },
+  // Audit Trail for Access Tracking
+  accessLog: {
+    type: DataTypes.JSON,
+    allowNull: true,
+    defaultValue: [],
+    comment: 'Track who accessed/downloaded this recording and when - for audit compliance'
+  },
+  // Retention Policy
+  retentionDays: {
+    type: DataTypes.INTEGER,
+    defaultValue: 90,
+    comment: 'How long to retain this recording (HIPAA compliance)'
+  },
+  expiresAt: {
+    type: DataTypes.DATE,
+    allowNull: true,
+    comment: 'Auto-calculated expiration date based on retentionDays'
   }
 }, {
   tableName: 'consultation_recordings',
@@ -89,8 +107,37 @@ const ConsultationRecording = sequelize.define('ConsultationRecording', {
     { fields: ['doctorId'] },
     { fields: ['patientId'] },
     { fields: ['roomId'] },
-    { fields: ['status'] }
+    { fields: ['status'] },
+    { fields: ['expiresAt'] }
   ]
 });
+
+// Hooks to auto-calculate expiration date
+ConsultationRecording.addHook('beforeCreate', (recording) => {
+  if (recording.retentionDays && !recording.expiresAt) {
+    const expirationDate = new Date();
+    expirationDate.setDate(expirationDate.getDate() + recording.retentionDays);
+    recording.expiresAt = expirationDate;
+  }
+});
+
+// Instance method to log access
+ConsultationRecording.prototype.logAccess = async function(userId, userType, userName, action = 'view', ipAddress = null) {
+  const accessEntry = {
+    userId,
+    userType, // 'doctor', 'clinic_admin', 'patient', 'system'
+    userName,
+    action, // 'view', 'download', 'transcribe', 'delete'
+    timestamp: new Date().toISOString(),
+    ipAddress
+  };
+  
+  const currentLog = this.accessLog || [];
+  currentLog.push(accessEntry);
+  
+  await this.update({ accessLog: currentLog });
+  
+  return accessEntry;
+};
 
 export default ConsultationRecording;

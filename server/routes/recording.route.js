@@ -320,6 +320,19 @@ router.get('/download/:recordingId', async (req, res) => {
       });
     }
 
+    // Log download for audit trail
+    const userName = userType === 'doctor' 
+      ? (req.doctor.firstName + ' ' + req.doctor.lastName)
+      : (req.user.firstName + ' ' + req.user.lastName || 'Patient');
+    
+    await recording.logAccess(
+      userId,
+      userType,
+      userName,
+      'download',
+      req.ip || req.connection?.remoteAddress
+    );
+
     // Check if file exists
     try {
       await fs.access(recording.filePath);

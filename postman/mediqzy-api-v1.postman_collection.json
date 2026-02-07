@@ -1,0 +1,654 @@
+{
+  "info": {
+    "name": "Mediqzy API v1",
+    "description": "Complete API collection for Mediqzy multi-tenant wellness platform",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json",
+    "version": "1.0.0"
+  },
+  "auth": {
+    "type": "bearer",
+    "bearer": [
+      {
+        "key": "token",
+        "value": "{{access_token}}",
+        "type": "string"
+      }
+    ]
+  },
+  "variable": [
+    {
+      "key": "base_url",
+      "value": "http://localhost:5000/v1",
+      "type": "string"
+    },
+    {
+      "key": "tenant_id",
+      "value": "clinic-demo",
+      "type": "string"
+    },
+    {
+      "key": "access_token",
+      "value": "",
+      "type": "string"
+    },
+    {
+      "key": "refresh_token",
+      "value": "",
+      "type": "string"
+    },
+    {
+      "key": "user_id",
+      "value": "",
+      "type": "string"
+    },
+    {
+      "key": "doctor_id",
+      "value": "",
+      "type": "string"
+    },
+    {
+      "key": "appointment_id",
+      "value": "",
+      "type": "string"
+    }
+  ],
+  "item": [
+    {
+      "name": "Authentication",
+      "item": [
+        {
+          "name": "Exchange Token",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "if (pm.response.code === 200) {",
+                  "    const response = pm.response.json();",
+                  "    pm.environment.set('access_token', response.access_token);",
+                  "    pm.environment.set('refresh_token', response.refresh_token);",
+                  "    pm.environment.set('user_id', response.user_id);",
+                  "    pm.test('Token exchange successful', () => {",
+                  "        pm.expect(response.access_token).to.exist;",
+                  "        pm.expect(response.refresh_token).to.exist;",
+                  "    });",
+                  "}"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "auth": {
+              "type": "noauth"
+            },
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"provider_token\": \"eyJhbGciOiJSUzI1NiIsInR5cCI6IkpXVCJ9...\",\n  \"provider\": \"azure_ad\",\n  \"external_user_id\": \"user-12345\",\n  \"role\": \"patient\",\n  \"tenant_id\": \"{{tenant_id}}\"\n}"
+            },
+            "url": {
+              "raw": "{{base_url}}/auth/exchange",
+              "host": ["{{base_url}}"],
+              "path": ["auth", "exchange"]
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Refresh Token",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "if (pm.response.code === 200) {",
+                  "    const response = pm.response.json();",
+                  "    pm.environment.set('access_token', response.access_token);",
+                  "    pm.test('Token refreshed successfully', () => {",
+                  "        pm.expect(response.access_token).to.exist;",
+                  "    });",
+                  "}"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "auth": {
+              "type": "noauth"
+            },
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"refresh_token\": \"{{refresh_token}}\"\n}"
+            },
+            "url": {
+              "raw": "{{base_url}}/auth/refresh",
+              "host": ["{{base_url}}"],
+              "path": ["auth", "refresh"]
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Revoke Token",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"token\": \"{{access_token}}\"\n}"
+            },
+            "url": {
+              "raw": "{{base_url}}/auth/revoke",
+              "host": ["{{base_url}}"],
+              "path": ["auth", "revoke"]
+            }
+          },
+          "response": []
+        }
+      ]
+    },
+    {
+      "name": "Users",
+      "item": [
+        {
+          "name": "Create User",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "if (pm.response.code === 200) {",
+                  "    const response = pm.response.json();",
+                  "    pm.environment.set('user_id', response.user_id);",
+                  "    pm.test('User created successfully', () => {",
+                  "        pm.expect(response.user_id).to.exist;",
+                  "        pm.expect(response.email).to.exist;",
+                  "    });",
+                  "}"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"external_user_id\": \"ext-user-001\",\n  \"email\": \"john.doe@example.com\",\n  \"phone\": \"+91-9876543210\",\n  \"first_name\": \"John\",\n  \"last_name\": \"Doe\",\n  \"date_of_birth\": \"1990-01-15\",\n  \"gender\": \"male\",\n  \"address\": {\n    \"street\": \"123 Main Street\",\n    \"city\": \"Mumbai\",\n    \"state\": \"Maharashtra\",\n    \"postal_code\": \"400001\",\n    \"country\": \"India\"\n  },\n  \"tenant_meta\": {\n    \"employee_id\": \"EMP-12345\",\n    \"department\": \"Engineering\"\n  }\n}"
+            },
+            "url": {
+              "raw": "{{base_url}}/{{tenant_id}}/users",
+              "host": ["{{base_url}}"],
+              "path": ["{{tenant_id}}", "users"]
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Get User Profile",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/{{tenant_id}}/users/{{user_id}}",
+              "host": ["{{base_url}}"],
+              "path": ["{{tenant_id}}", "users", "{{user_id}}"]
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Update User Profile",
+          "request": {
+            "method": "PUT",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"phone\": \"+91-9999999999\",\n  \"address\": {\n    \"street\": \"456 New Street\",\n    \"city\": \"Mumbai\",\n    \"state\": \"Maharashtra\",\n    \"postal_code\": \"400002\",\n    \"country\": \"India\"\n  }\n}"
+            },
+            "url": {
+              "raw": "{{base_url}}/{{tenant_id}}/users/{{user_id}}",
+              "host": ["{{base_url}}"],
+              "path": ["{{tenant_id}}", "users", "{{user_id}}"]
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Get Health Profile",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/{{tenant_id}}/users/{{user_id}}/health-profile",
+              "host": ["{{base_url}}"],
+              "path": ["{{tenant_id}}", "users", "{{user_id}}", "health-profile"]
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Update Health Profile",
+          "request": {
+            "method": "PUT",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"height_cm\": 175,\n  \"weight_kg\": 70,\n  \"blood_type\": \"A+\",\n  \"allergies\": [\"Peanuts\", \"Penicillin\"],\n  \"chronic_conditions\": [\"Hypertension\"],\n  \"medications\": [\n    {\n      \"name\": \"Amlodipine\",\n      \"dosage\": \"5mg\",\n      \"frequency\": \"Once daily\"\n    }\n  ],\n  \"emergency_contact\": {\n    \"name\": \"Jane Doe\",\n    \"relationship\": \"Spouse\",\n    \"phone\": \"+91-9876543211\"\n  }\n}"
+            },
+            "url": {
+              "raw": "{{base_url}}/{{tenant_id}}/users/{{user_id}}/health-profile",
+              "host": ["{{base_url}}"],
+              "path": ["{{tenant_id}}", "users", "{{user_id}}", "health-profile"]
+            }
+          },
+          "response": []
+        }
+      ]
+    },
+    {
+      "name": "Doctors",
+      "item": [
+        {
+          "name": "Search Doctors",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "if (pm.response.code === 200) {",
+                  "    const response = pm.response.json();",
+                  "    if (response.doctors && response.doctors.length > 0) {",
+                  "        pm.environment.set('doctor_id', response.doctors[0].doctor_id);",
+                  "    }",
+                  "    pm.test('Doctors retrieved successfully', () => {",
+                  "        pm.expect(response.doctors).to.be.an('array');",
+                  "    });",
+                  "}"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/{{tenant_id}}/doctors?specialty=Cardiology&city=Mumbai&min_rating=4.0&limit=10",
+              "host": ["{{base_url}}"],
+              "path": ["{{tenant_id}}", "doctors"],
+              "query": [
+                {
+                  "key": "specialty",
+                  "value": "Cardiology"
+                },
+                {
+                  "key": "city",
+                  "value": "Mumbai"
+                },
+                {
+                  "key": "min_rating",
+                  "value": "4.0"
+                },
+                {
+                  "key": "limit",
+                  "value": "10"
+                }
+              ]
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Get Doctor Details",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/{{tenant_id}}/doctors/{{doctor_id}}",
+              "host": ["{{base_url}}"],
+              "path": ["{{tenant_id}}", "doctors", "{{doctor_id}}"]
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Get Doctor Availability",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/{{tenant_id}}/doctors/{{doctor_id}}/availability?start_date=2026-02-10&end_date=2026-02-17",
+              "host": ["{{base_url}}"],
+              "path": ["{{tenant_id}}", "doctors", "{{doctor_id}}", "availability"],
+              "query": [
+                {
+                  "key": "start_date",
+                  "value": "2026-02-10"
+                },
+                {
+                  "key": "end_date",
+                  "value": "2026-02-17"
+                }
+              ]
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Get Available Slots",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/{{tenant_id}}/doctors/{{doctor_id}}/slots?date=2026-02-10&consultation_type=online",
+              "host": ["{{base_url}}"],
+              "path": ["{{tenant_id}}", "doctors", "{{doctor_id}}", "slots"],
+              "query": [
+                {
+                  "key": "date",
+                  "value": "2026-02-10"
+                },
+                {
+                  "key": "consultation_type",
+                  "value": "online"
+                }
+              ]
+            }
+          },
+          "response": []
+        }
+      ]
+    },
+    {
+      "name": "Appointments",
+      "item": [
+        {
+          "name": "Create Appointment",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "if (pm.response.code === 201) {",
+                  "    const response = pm.response.json();",
+                  "    pm.environment.set('appointment_id', response.appointment_id);",
+                  "    pm.test('Appointment created successfully', () => {",
+                  "        pm.expect(response.appointment_id).to.exist;",
+                  "        pm.expect(response.meeting_details.room_id).to.exist;",
+                  "    });",
+                  "}"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"doctor_id\": \"{{doctor_id}}\",\n  \"user_id\": \"{{user_id}}\",\n  \"appointment_date\": \"2026-02-10\",\n  \"appointment_time\": \"10:00\",\n  \"consultation_type\": \"online\",\n  \"reason\": \"Chest pain and breathing difficulty\",\n  \"symptoms\": [\n    \"Chest pain\",\n    \"Shortness of breath\",\n    \"Fatigue\"\n  ],\n  \"payment_method\": \"wallet\"\n}"
+            },
+            "url": {
+              "raw": "{{base_url}}/{{tenant_id}}/appointments",
+              "host": ["{{base_url}}"],
+              "path": ["{{tenant_id}}", "appointments"]
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "List Appointments",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/{{tenant_id}}/appointments?user_id={{user_id}}&status=pending&limit=20",
+              "host": ["{{base_url}}"],
+              "path": ["{{tenant_id}}", "appointments"],
+              "query": [
+                {
+                  "key": "user_id",
+                  "value": "{{user_id}}"
+                },
+                {
+                  "key": "status",
+                  "value": "pending"
+                },
+                {
+                  "key": "limit",
+                  "value": "20"
+                }
+              ]
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Get Appointment Details",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/{{tenant_id}}/appointments/{{appointment_id}}",
+              "host": ["{{base_url}}"],
+              "path": ["{{tenant_id}}", "appointments", "{{appointment_id}}"]
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Reschedule Appointment",
+          "request": {
+            "method": "PUT",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"new_date\": \"2026-02-11\",\n  \"new_time\": \"14:00\"\n}"
+            },
+            "url": {
+              "raw": "{{base_url}}/{{tenant_id}}/appointments/{{appointment_id}}/reschedule",
+              "host": ["{{base_url}}"],
+              "path": ["{{tenant_id}}", "appointments", "{{appointment_id}}", "reschedule"]
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Cancel Appointment",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"cancellation_reason\": \"Emergency came up, need to reschedule\"\n}"
+            },
+            "url": {
+              "raw": "{{base_url}}/{{tenant_id}}/appointments/{{appointment_id}}/cancel",
+              "host": ["{{base_url}}"],
+              "path": ["{{tenant_id}}", "appointments", "{{appointment_id}}", "cancel"]
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Complete Appointment",
+          "request": {
+            "method": "POST",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/{{tenant_id}}/appointments/{{appointment_id}}/complete",
+              "host": ["{{base_url}}"],
+              "path": ["{{tenant_id}}", "appointments", "{{appointment_id}}", "complete"]
+            }
+          },
+          "response": []
+        }
+      ]
+    },
+    {
+      "name": "Video Consultation",
+      "item": [
+        {
+          "name": "Generate Video Token",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "if (pm.response.code === 200) {",
+                  "    const response = pm.response.json();",
+                  "    pm.test('Video token generated successfully', () => {",
+                  "        pm.expect(response.token).to.exist;",
+                  "        pm.expect(response.room_id).to.exist;",
+                  "        pm.expect(response.ws_url).to.exist;",
+                  "    });",
+                  "}"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"appointment_id\": \"{{appointment_id}}\",\n  \"participant_type\": \"patient\",\n  \"user_id\": \"{{user_id}}\",\n  \"name\": \"John Doe\"\n}"
+            },
+            "url": {
+              "raw": "{{base_url}}/{{tenant_id}}/video/token",
+              "host": ["{{base_url}}"],
+              "path": ["{{tenant_id}}", "video", "token"]
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "Get Room Status",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/{{tenant_id}}/video/room/{{appointment_id}}",
+              "host": ["{{base_url}}"],
+              "path": ["{{tenant_id}}", "video", "room", "{{appointment_id}}"]
+            }
+          },
+          "response": []
+        },
+        {
+          "name": "End Video Call",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"duration_minutes\": 25,\n  \"recording_url\": \"https://storage.mediqzy.com/recordings/apt-12345.mp4\"\n}"
+            },
+            "url": {
+              "raw": "{{base_url}}/{{tenant_id}}/video/room/{{appointment_id}}/end",
+              "host": ["{{base_url}}"],
+              "path": ["{{tenant_id}}", "video", "room", "{{appointment_id}}", "end"]
+            }
+          },
+          "response": []
+        }
+      ]
+    },
+    {
+      "name": "API Health Check",
+      "request": {
+        "auth": {
+          "type": "noauth"
+        },
+        "method": "GET",
+        "header": [],
+        "url": {
+          "raw": "{{base_url}}/health",
+          "host": ["{{base_url}}"],
+          "path": ["health"]
+        }
+      },
+      "response": []
+    },
+    {
+      "name": "API Info",
+      "request": {
+        "auth": {
+          "type": "noauth"
+        },
+        "method": "GET",
+        "header": [],
+        "url": {
+          "raw": "{{base_url}}/",
+          "host": ["{{base_url}}"],
+          "path": [""]
+        }
+      },
+      "response": []
+    }
+  ]
+}

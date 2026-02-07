@@ -1,7 +1,5 @@
-import WebhooksService from '../../services/api-v1/WebhooksService.js';
+import webhooksService from '../../services/api-v1/WebhooksService.js';
 import { asyncHandler } from '../../middleware/errorHandler.js';
-
-const webhooksService = new WebhooksService();
 
 /**
  * Create a new webhook

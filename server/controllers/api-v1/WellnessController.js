@@ -1,7 +1,5 @@
-import WellnessService from '../../services/api-v1/WellnessService.js';
+import wellnessService from '../../services/api-v1/WellnessService.js';
 import { asyncHandler } from '../../middleware/errorHandler.js';
-
-const wellnessService = new WellnessService();
 
 /**
  * Create a new health risk assessment

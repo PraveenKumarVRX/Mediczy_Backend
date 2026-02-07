@@ -1,7 +1,5 @@
-import LabsService from '../../services/api-v1/LabsService.js';
+import labsService from '../../services/api-v1/LabsService.js';
 import { asyncHandler } from '../../middleware/errorHandler.js';
-
-const labsService = new LabsService();
 
 /**
  * Create a new lab booking

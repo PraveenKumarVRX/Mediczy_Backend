@@ -17,13 +17,19 @@ const REDIS_CONFIG = {
   password: process.env.REDIS_PASSWORD || undefined,
   db: parseInt(process.env.REDIS_DB) || 0,
   retryStrategy: (times) => {
-    const delay = Math.min(times * 50, 2000);
+    // Retry up to 5 times
+    if (times > 5) {
+      console.error('❌ Redis: Max retries reached, giving up');
+      return null; // Stop retrying
+    }
+    const delay = Math.min(times * 100, 2000);
+    console.log(`⏳ Redis: Retry ${times} in ${delay}ms`);
     return delay;
   },
   maxRetriesPerRequest: 3,
   enableReadyCheck: true,
   lazyConnect: false,
-  connectTimeout: 10000,
+  connectTimeout: 5000,
   keepAlive: 30000,
   family: 4, // IPv4
 };
@@ -158,7 +164,9 @@ export const cache = {
    */
   async set(key, value, ttl = 3600) {
     try {
-      if (!isConnected) await connectRedis();
+      if (!isConnected) {
+        throw new Error('Redis not connected');
+      }
       const serialized = JSON.stringify(value);
       if (ttl > 0) {
         await redisClient.setex(key, ttl, serialized);
@@ -168,7 +176,7 @@ export const cache = {
       return true;
     } catch (error) {
       console.error('❌ Redis: Cache set error:', error.message);
-      return false;
+      throw error;
     }
   },
 
@@ -178,12 +186,14 @@ export const cache = {
    */
   async get(key) {
     try {
-      if (!isConnected) await connectRedis();
+      if (!isConnected) {
+        return null; // Allow reads to fail gracefully
+      }
       const value = await redisClient.get(key);
       return value ? JSON.parse(value) : null;
     } catch (error) {
       console.error('❌ Redis: Cache get error:', error.message);
-      return null;
+      return null; // Graceful fallback for reads
     }
   },
 
@@ -193,12 +203,14 @@ export const cache = {
    */
   async del(key) {
     try {
-      if (!isConnected) await connectRedis();
+      if (!isConnected) {
+        throw new Error('Redis not connected');
+      }
       await redisClient.del(key);
       return true;
     } catch (error) {
       console.error('❌ Redis: Cache delete error:', error.message);
-      return false;
+      throw error;
     }
   },
 
@@ -208,7 +220,9 @@ export const cache = {
    */
   async exists(key) {
     try {
-      if (!isConnected) await connectRedis();
+      if (!isConnected) {
+        return false; // Graceful fallback for existence checks
+      }
       const exists = await redisClient.exists(key);
       return exists === 1;
     } catch (error) {
@@ -222,12 +236,14 @@ export const cache = {
    */
   async flush() {
     try {
-      if (!isConnected) await connectRedis();
+      if (!isConnected) {
+        throw new Error('Redis not connected');
+      }
       await redisClient.flushdb();
       return true;
     } catch (error) {
       console.error('❌ Redis: Cache flush error:', error.message);
-      return false;
+      throw error;
     }
   }
 };

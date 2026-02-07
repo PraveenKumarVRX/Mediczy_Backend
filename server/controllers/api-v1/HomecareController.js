@@ -1,7 +1,5 @@
-import HomecareService from '../../services/api-v1/HomecareService.js';
+import homecareService from '../../services/api-v1/HomecareService.js';
 import { asyncHandler } from '../../middleware/errorHandler.js';
-
-const homecareService = new HomecareService();
 
 /**
  * Create a new homecare booking

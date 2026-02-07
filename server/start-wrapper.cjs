@@ -8,7 +8,7 @@ const { execSync, spawn } = require('child_process');
 const path = require('path');
 
 const PORT = process.env.PORT || 8000;
-const SERVER_DIR = '/home/ubuntu/Mediczy/server';
+const SERVER_DIR = path.resolve(__dirname);
 
 function log(msg) {
     console.log(`[${new Date().toISOString()}] ${msg}`);

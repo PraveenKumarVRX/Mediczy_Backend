@@ -7,7 +7,7 @@
 const { execSync } = require('child_process');
 const path = require('path');
 
-const WORKER_DIR = '/home/ubuntu/Mediczy/server';
+const WORKER_DIR = path.resolve(__dirname);
 
 function log(msg) {
     console.log(`[${new Date().toISOString()}] ${msg}`);

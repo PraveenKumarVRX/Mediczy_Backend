@@ -121,15 +121,17 @@ class DatabaseOrchestrator {
       this.healthStatus.duckdb = false;
     }
 
-    // Connect to Redis (CACHE - Optional but recommended)
+    // Connect to Redis (CACHE - Critical for production)
     try {
       console.log('🔌 Connecting to Redis (Cache Database)...');
       this.connections.redis = await connectRedis();
       this.healthStatus.redis = true;
       console.log('✅ Redis connected successfully');
     } catch (error) {
-      console.warn('⚠️  Redis connection failed (continuing without cache):', error.message);
+      console.error('❌ Redis connection failed:', error.message);
       this.healthStatus.redis = false;
+      criticalFailures++;
+      throw new Error(`Redis connection failed: ${error.message}`);
     }
 
     // Summary

@@ -1,7 +1,5 @@
-import PharmacyService from '../../services/api-v1/PharmacyService.js';
+import pharmacyService from '../../services/api-v1/PharmacyService.js';
 import { asyncHandler } from '../../middleware/errorHandler.js';
-
-const pharmacyService = new PharmacyService();
 
 /**
  * Create a new prescription

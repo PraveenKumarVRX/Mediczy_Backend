@@ -106,10 +106,13 @@ const USER_TYPE_PERMISSIONS = {
       '/api/video',
       '/api/chat',
       '/api/call-notification',  // Doctor-to-patient call notifications
+      '/api/ai',  // AI endpoints including prescription generation
       '/api/ai-scribe',
       '/api/offline-scribe',  // Offline AI Scribe for prescription generation
       '/api/scribe',  // AI Scribe public API
       '/api/recording',
+      '/api/recordings',  // Consultation recordings
+      '/api/consultation-recordings',  // Consultation recordings (alternative route)
       '/api/cdss',  // Clinical Decision Support System
       '/api/billing',  // Billing and invoices
       '/api/notifications',  // Doctor notifications
@@ -156,7 +159,9 @@ const USER_TYPE_PERMISSIONS = {
       '/api/crm',
       '/api/reports',
       '/api/settings',
-      '/api/masterdata'
+      '/api/masterdata',
+      '/api/recordings',  // Admin access to consultation recordings
+      '/api/consultation-recordings'  // Admin access to consultation recordings
     ],
     tokenField: 'adminId'
   },

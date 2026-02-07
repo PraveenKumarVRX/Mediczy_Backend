@@ -1,7 +1,5 @@
-import ChatService from '../../services/api-v1/ChatService.js';
+import chatService from '../../services/api-v1/ChatService.js';
 import { asyncHandler } from '../../middleware/errorHandler.js';
-
-const chatService = new ChatService();
 
 /**
  * Create a new chat room

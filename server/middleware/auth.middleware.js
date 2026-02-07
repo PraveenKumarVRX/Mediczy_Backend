@@ -15,7 +15,7 @@ import { validateMembership, checkMembershipExpiry } from "./membership.middlewa
 const DEV_TOKEN_ALLOWLIST = new Set(["dev-user-token", "dev-doctor-token", "dev-corporate-token"]);
 const ALLOW_DEV_TOKENS = ["development", "test"].includes(process.env.NODE_ENV);
 
-const TENANT_BYPASS_ROLES = new Set(["admin", "super_admin", "system_admin", "platform_admin"]);
+const TENANT_BYPASS_ROLES = new Set(["admin", "super_admin", "system_admin", "platform_admin", "doctor"]);
 
 // Organization admin roles
 const ORG_ADMIN_ROLES = new Set([
