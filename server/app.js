@@ -432,22 +432,34 @@ app.use((req, res, next) => {
 });
 
 // 2. CORS - Strict whitelist (no silent allow-all)
-const allowedOrigins = process.env.CORS_ORIGIN 
+const envOrigins = process.env.CORS_ORIGIN
   ? process.env.CORS_ORIGIN.split(',').map(o => o.trim()).filter(Boolean)
-  : process.env.NODE_ENV === 'production'
-  ? ['https://app.mediqzy.com', 'https://mediqzy.com', 'https://www.mediqzy.com']
-  : [
-      'http://localhost:5173', 
-      'http://localhost:3000',
-      'http://localhost',
-      'https://localhost',
-      'https://localhost:9443',
-      'http://localhost:9443',
-      'https://192.168.1.72:9443',
-      'http://192.168.1.72:9443',
-      'https://192.168.1.72',
-      'http://192.168.1.72'
-    ]; // Default for development
+  : [];
+
+const defaultProdOrigins = ['https://app.mediqzy.com', 'https://mediqzy.com', 'https://www.mediqzy.com'];
+const defaultDevOrigins = [
+  'http://localhost:5173',
+  'http://localhost:3000',
+  'http://localhost',
+  'https://localhost',
+  'https://localhost:9443',
+  'http://localhost:9443',
+  'https://192.168.1.72:9443',
+  'http://192.168.1.72:9443',
+  'https://192.168.1.72',
+  'http://192.168.1.72'
+];
+
+const baseOrigins = envOrigins.length > 0
+  ? envOrigins
+  : (process.env.NODE_ENV === 'production' ? defaultProdOrigins : defaultDevOrigins);
+
+// Always include core production domains even if CORS_ORIGIN is set incorrectly.
+const allowedOrigins = Array.from(new Set(
+  process.env.NODE_ENV === 'production'
+    ? [...baseOrigins, ...defaultProdOrigins]
+    : baseOrigins
+));
 
 // Debug CORS configuration
 console.log('🔒 CORS Configuration:');

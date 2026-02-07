@@ -1,6 +1,7 @@
 import express from 'express';
 import { authDoctor } from '../middleware/auth.middleware.js';
 import medicalAIService from '../services/medicalAI.service.js';
+import { Prescription, Appointment, User, Doctor } from '../models/index.js';
 
 const router = express.Router();
 
@@ -11,7 +12,19 @@ const router = express.Router();
  */
 router.post('/generate-prescription', authDoctor, async (req, res) => {
   try {
-    const { consultationNotes, sessionNotes, existingData } = req.body;
+    const {
+      consultationNotes,
+      sessionNotes,
+      existingData,
+      appointmentId,
+      patientId,
+      patientName,
+      patientAge,
+      patientGender,
+      patientPhone,
+      vitals,
+      saveToDatabase = true
+    } = req.body;
 
     if (!consultationNotes?.trim()) {
       return res.status(400).json({
@@ -128,7 +141,7 @@ Generate the prescription JSON:`;
     }
 
     // Validate and sanitize prescription data
-    const prescription = {
+    const prescriptionContent = {
       chiefComplaints: prescriptionData.chiefComplaints || '',
       diagnosis: prescriptionData.diagnosis || '',
       medications: Array.isArray(prescriptionData.medications) ? prescriptionData.medications : [],
@@ -137,9 +150,106 @@ Generate the prescription JSON:`;
       notes: prescriptionData.notes || ''
     };
 
+    // Save to database if requested
+    let savedPrescription = null;
+    if (saveToDatabase) {
+      try {
+        // Get doctor info
+        const doctor = req.doctor;
+        const doctorId = doctor.id || doctor.dataValues?.id || doctor._id;
+
+        // Get patient info if patientId is provided
+        let patientData = {
+          patientName: patientName || 'Patient',
+          patientAge: patientAge || null,
+          patientGender: patientGender || 'Not specified',
+          patientPhone: patientPhone || null
+        };
+
+        if (patientId) {
+          const patient = await User.findByPk(patientId);
+          if (patient) {
+            let age = patientAge;
+            if (!age && patient.dateOfBirth) {
+              const dob = new Date(patient.dateOfBirth);
+              const today = new Date();
+              age = today.getFullYear() - dob.getFullYear();
+            }
+
+            patientData = {
+              patientName: `${patient.firstName || ''} ${patient.lastName || ''}`.trim() || patientName,
+              patientAge: age,
+              patientGender: patient.gender || patientGender || 'Not specified',
+              patientPhone: patient.phoneNumber || patient.phone || patientPhone
+            };
+          }
+        }
+
+        // Get appointment if appointmentId is provided
+        let appointment = null;
+        if (appointmentId) {
+          appointment = await Appointment.findByPk(appointmentId);
+        }
+
+        // Generate prescription ID
+        const prescriptionNumber = `RX${Date.now()}${Math.floor(Math.random() * 1000)}`;
+
+        // Create prescription in database
+        savedPrescription = await Prescription.create({
+          prescriptionId: prescriptionNumber,
+          appointmentId: appointmentId || null,
+          patientId: patientId || null,
+          ...patientData,
+          doctorId: doctorId,
+          doctorName: `${doctor.firstName || ''} ${doctor.lastName || ''}`.trim(),
+          doctorQualifications: doctor.qualifications || 'MBBS',
+          doctorRegNo: doctor.registrationNumber || null,
+          specialty: doctor.specialty || 'General Medicine',
+          clinicName: doctor.clinicName || 'Mediczy Healthcare',
+          clinicAddress: doctor.clinicAddress || 'Virtual Consultation',
+          clinicPhone: doctor.clinicPhone || doctor.phone || null,
+          clinicEmail: doctor.clinicEmail || doctor.email || null,
+          vitals: vitals || {},
+          chiefComplaints: Array.isArray(prescriptionContent.chiefComplaints)
+            ? prescriptionContent.chiefComplaints
+            : [prescriptionContent.chiefComplaints],
+          diagnosis: prescriptionContent.diagnosis,
+          medications: prescriptionContent.medications,
+          adviceList: prescriptionContent.instructions || [],
+          advice: prescriptionContent.instructions ? prescriptionContent.instructions.join('; ') : null,
+          labTests: prescriptionContent.labTests.map(test => ({
+            testName: typeof test === 'string' ? test : test.testName || test.name || 'Lab Test',
+            reason: typeof test === 'object' ? test.reason : null
+          })),
+          notes: prescriptionContent.notes,
+          additionalNotes: {
+            consultationNotes: consultationNotes
+          },
+          status: 'issued',
+          metadata: {
+            generatedBy: 'AI',
+            generatedAt: new Date().toISOString(),
+            aiModel: 'Llama-3.1-8B-Instruct',
+            source: 'ai-prescription-demo'
+          }
+        });
+
+        console.log(`✅ Prescription saved to database: ${prescriptionNumber}`);
+      } catch (dbError) {
+        console.error('❌ Failed to save prescription to database:', dbError);
+        // Continue anyway, return the prescription data even if save fails
+      }
+    }
+
     res.json({
       success: true,
-      prescription,
+      prescription: prescriptionContent,
+      savedPrescription: savedPrescription ? {
+        id: savedPrescription.id,
+        prescriptionId: savedPrescription.prescriptionId,
+        prescriptionNumber: savedPrescription.prescriptionId,
+        createdAt: savedPrescription.createdAt
+      } : null,
       aiResponse: aiResponse.text || aiResponse.response,
       model: aiResponse.model || 'AI',
       timestamp: new Date().toISOString()

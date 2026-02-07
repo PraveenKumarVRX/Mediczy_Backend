@@ -434,10 +434,44 @@ router.get('/doctor', authDoctor, async (req, res) => {
       order: [['createdAt', 'DESC']]
     });
 
+    const normalizeInstructions = (prescription) => {
+      if (Array.isArray(prescription.adviceList) && prescription.adviceList.length > 0) {
+        return prescription.adviceList;
+      }
+      if (typeof prescription.advice === 'string' && prescription.advice.trim()) {
+        return prescription.advice
+          .split(';')
+          .map(item => item.trim())
+          .filter(Boolean);
+      }
+      return [];
+    };
+
+    const normalizeLabTests = (labTests) => {
+      if (!Array.isArray(labTests)) {
+        return [];
+      }
+
+      return labTests
+        .map((test) => {
+          if (typeof test === 'string') {
+            return test;
+          }
+          return test?.testName || test?.name || null;
+        })
+        .filter(Boolean);
+    };
+
+    const normalizedPrescriptions = prescriptions.map((prescription) => ({
+      ...prescription.toJSON(),
+      instructions: normalizeInstructions(prescription),
+      labTests: normalizeLabTests(prescription.labTests)
+    }));
+
     res.json({
       success: true,
-      count: prescriptions.length,
-      prescriptions
+      count: normalizedPrescriptions.length,
+      prescriptions: normalizedPrescriptions
     });
   } catch (error) {
     console.error('Get doctor prescriptions error:', error);

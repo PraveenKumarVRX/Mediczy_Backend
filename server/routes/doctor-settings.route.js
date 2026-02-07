@@ -1,6 +1,6 @@
 import express from 'express';
 import { body, validationResult } from 'express-validator';
-import { authUser } from '../middleware/auth.middleware.js';
+import { authUser, authDoctor } from '../middleware/auth.middleware.js';
 import { Doctor } from '../models/index.js';
 
 const router = express.Router();
@@ -548,13 +548,9 @@ router.get('/available-slots/:doctorId', async (req, res) => {
  * @desc    Get doctor's attached pharmacies
  * @access  Private (Doctor)
  */
-router.get('/attached-pharmacies', authUser, async (req, res) => {
+router.get('/attached-pharmacies', authDoctor, async (req, res) => {
   try {
-    if (req.user.role !== 'doctor') {
-      return res.status(403).json({ success: false, message: 'Doctor access required' });
-    }
-
-    const doctor = await Doctor.findByPk(req.user.id);
+    const doctor = await Doctor.findByPk(req.doctor.id);
     if (!doctor) {
       return res.status(404).json({ success: false, message: 'Doctor not found' });
     }
@@ -581,20 +577,16 @@ router.get('/attached-pharmacies', authUser, async (req, res) => {
  * @desc    Add an attached pharmacy
  * @access  Private (Doctor)
  */
-router.post('/attached-pharmacies', authUser, [
+router.post('/attached-pharmacies', authDoctor, [
   body('name').notEmpty().withMessage('Pharmacy name is required'),
   body('phone').optional().isString(),
   body('email').optional().isEmail(),
   body('address').optional().isString()
 ], async (req, res) => {
   try {
-    if (req.user.role !== 'doctor') {
-      return res.status(403).json({ success: false, message: 'Doctor access required' });
-    }
-
     const { name, phone, email, address, gstNumber, licenseNumber } = req.body;
 
-    const doctor = await Doctor.findByPk(req.user.id);
+    const doctor = await Doctor.findByPk(req.doctor.id);
     if (!doctor) {
       return res.status(404).json({ success: false, message: 'Doctor not found' });
     }
@@ -634,15 +626,11 @@ router.post('/attached-pharmacies', authUser, [
  * @desc    Remove an attached pharmacy
  * @access  Private (Doctor)
  */
-router.delete('/attached-pharmacies/:pharmacyId', authUser, async (req, res) => {
+router.delete('/attached-pharmacies/:pharmacyId', authDoctor, async (req, res) => {
   try {
-    if (req.user.role !== 'doctor') {
-      return res.status(403).json({ success: false, message: 'Doctor access required' });
-    }
-
     const { pharmacyId } = req.params;
 
-    const doctor = await Doctor.findByPk(req.user.id);
+    const doctor = await Doctor.findByPk(req.doctor.id);
     if (!doctor) {
       return res.status(404).json({ success: false, message: 'Doctor not found' });
     }
@@ -675,13 +663,9 @@ router.delete('/attached-pharmacies/:pharmacyId', authUser, async (req, res) => 
  * @desc    Get doctor's attached labs
  * @access  Private (Doctor)
  */
-router.get('/attached-labs', authUser, async (req, res) => {
+router.get('/attached-labs', authDoctor, async (req, res) => {
   try {
-    if (req.user.role !== 'doctor') {
-      return res.status(403).json({ success: false, message: 'Doctor access required' });
-    }
-
-    const doctor = await Doctor.findByPk(req.user.id);
+    const doctor = await Doctor.findByPk(req.doctor.id);
     if (!doctor) {
       return res.status(404).json({ success: false, message: 'Doctor not found' });
     }
@@ -708,20 +692,16 @@ router.get('/attached-labs', authUser, async (req, res) => {
  * @desc    Add an attached lab
  * @access  Private (Doctor)
  */
-router.post('/attached-labs', authUser, [
+router.post('/attached-labs', authDoctor, [
   body('name').notEmpty().withMessage('Lab name is required'),
   body('phone').optional().isString(),
   body('email').optional().isEmail(),
   body('address').optional().isString()
 ], async (req, res) => {
   try {
-    if (req.user.role !== 'doctor') {
-      return res.status(403).json({ success: false, message: 'Doctor access required' });
-    }
-
     const { name, phone, email, address, accreditation } = req.body;
 
-    const doctor = await Doctor.findByPk(req.user.id);
+    const doctor = await Doctor.findByPk(req.doctor.id);
     if (!doctor) {
       return res.status(404).json({ success: false, message: 'Doctor not found' });
     }
@@ -760,15 +740,11 @@ router.post('/attached-labs', authUser, [
  * @desc    Remove an attached lab
  * @access  Private (Doctor)
  */
-router.delete('/attached-labs/:labId', authUser, async (req, res) => {
+router.delete('/attached-labs/:labId', authDoctor, async (req, res) => {
   try {
-    if (req.user.role !== 'doctor') {
-      return res.status(403).json({ success: false, message: 'Doctor access required' });
-    }
-
     const { labId } = req.params;
 
-    const doctor = await Doctor.findByPk(req.user.id);
+    const doctor = await Doctor.findByPk(req.doctor.id);
     if (!doctor) {
       return res.status(404).json({ success: false, message: 'Doctor not found' });
     }
