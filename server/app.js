@@ -95,6 +95,7 @@ import videoEventsRouter from './routes/video-events.route.js';
 import otpRouter from './routes/otp.route.js';
 import enhancedLabRouter from './routes/lab.route.enhanced.js';
 import corporateRouter from './routes/corporate.route.js';
+import aggregatorRouter from './routes/aggregator.route.js';
 import cartRouter from './routes/cart.route.js';
 import hospitalRouter from './routes/hospital.route.js';
 import hospitalAuthRouter from './routes/hospital-auth.route.js';
@@ -981,6 +982,9 @@ app.use('/api/tickets', ticketsRouter); // Support ticket management system
 app.use('/api/tenants', tenantRouter); // Multi-tenant organization management
 app.use('/api/tenant-domains', tenantDomainRouter); // Custom domain management
 app.use('/api/corporate', corporateRouter); // Corporate benefits and plans
+app.use('/api/aggregators', aggregatorRouter); // Aggregator organizational hierarchy
+app.use('/api/corporates', aggregatorRouter); // Corporate management endpoints
+app.use('/api/corporate', aggregatorRouter); // Self-service corporate endpoints
 app.use('/api/scribe', scribeRouter); // AI Scribe - Public API entrypoint
 app.use('/api/hospital/scribe', scribeRouter); // AI Scribe - Hospital dashboard entrypoint
 app.use('/api/offline-scribe', offlineScribeRouter); // Offline AI Scribe - CPU-only, Indian languages
