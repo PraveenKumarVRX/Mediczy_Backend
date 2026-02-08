@@ -218,7 +218,11 @@ const USER_TYPE_PERMISSIONS = {
       '/api/corporate/claims',
       '/api/corporate/departments',
       '/api/corporate/compliance',
-      '/api/corporate/reports'
+      '/api/corporate/reports',
+      '/api/video',  // Enable video calls for corporate users
+      '/api/doctors',  // Allow browsing doctors
+      '/api/appointments',  // Allow user appointment management
+      '/api/chat'  // Allow chat functionality
     ],
     tokenField: 'corporateId'
   },
