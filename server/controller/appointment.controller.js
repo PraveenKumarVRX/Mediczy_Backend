@@ -15,6 +15,7 @@ import intelligentDb from '../utils/intelligentDbClient.js';
 import n8nService from '../services/n8n.service.js';
 import notificationService from '../services/notification.service.js';
 import kafkaEvents from '../services/kafka-events.service.js';
+import tenantPartnerService from '../services/tenant-partner.service.js';
 
 const normalizeTimeHHMM = (value = '') => {
   const trimmed = String(value || '').trim();
@@ -183,6 +184,23 @@ export const createAppointment = async (req, res) => {
     // Use the resolved internal ID for database operations
     const resolvedDoctorId = doctor.id;
 
+    const corporateTenantId = req.user?.organization_type === 'corporate'
+      ? (req.user.organization_id || req.user.tenant_id)
+      : null;
+    const clinicTenantId = doctor.organization_type === 'clinic'
+      ? doctor.organization_id
+      : null;
+
+    if (corporateTenantId && clinicTenantId) {
+      const isPartnered = await tenantPartnerService.isActivePartner(corporateTenantId, clinicTenantId);
+      if (!isPartnered) {
+        return res.status(403).json({
+          success: false,
+          message: 'Selected doctor is not part of your corporate partner clinics'
+        });
+      }
+    }
+
     // Check if doctor has an appointment at this time (prevent doctor double-booking)
     const doctorConflict = await Appointment.findOne({
       where: {
@@ -261,8 +279,9 @@ export const createAppointment = async (req, res) => {
       }
     }
 
-    // Auto-assign organization_id from doctor's hospital/organization
+    // Auto-assign organization_id from doctor's organization
     const organizationId = doctor.organization_id || doctor.hospitalId || req.userTenantId || null;
+    const organizationType = doctor.organization_type || (doctor.hospitalId ? 'hospital' : null);
 
     console.log('🏥 Auto-assigning organization_id:', {
       doctorId: resolvedDoctorId,
@@ -309,12 +328,15 @@ export const createAppointment = async (req, res) => {
       status: 'scheduled',
       paymentStatus: 'pending',
       organization_id: organizationId,
-      organization_type: organizationId ? 'hospital' : null,
+      organization_type: organizationType,
+      tenant_id: organizationId,
+      corporate_tenant_id: corporateTenantId,
       meetingId,
       meetingLink,
       meetingDetails,
       metadata: {
         ...(req.userTenantId ? { organizationId: req.userTenantId } : {}),
+        ...(corporateTenantId ? { corporateTenantId } : {}),
         requestedConsultationType: requestedConsultationType || null,
         doctorPublicId: doctor.unique_id || null,
         channel:
@@ -891,6 +913,10 @@ export const completeAppointment = async (req, res) => {
 
             const newPrescription = await Prescription.create({
               appointmentId: appointment.id,
+              tenant_id: appointment.tenant_id || appointment.organization_id || null,
+              corporate_tenant_id: appointment.corporate_tenant_id || null,
+              organization_id: appointment.organization_id || null,
+              organization_type: appointment.organization_type || null,
               patientId: appointment.userId,
               patientName: `${patient.firstName || ''} ${patient.lastName || ''}`.trim() || appointment.patientName,
               patientAge,

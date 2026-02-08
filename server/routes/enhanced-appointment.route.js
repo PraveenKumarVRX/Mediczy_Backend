@@ -11,6 +11,7 @@ import Appointment from '../models/appointment.model.intelligent.js';
 // Import usage metering service for SaaS tracking
 import usageMeteringService from '../services/usage-metering.service.js';
 import notificationService from '../services/notification.service.js';
+import tenantPartnerService from '../services/tenant-partner.service.js';
 
 const router = express.Router();
 
@@ -166,6 +167,23 @@ router.post('/book', authUser, [
     
     // Use the resolved internal ID for database operations
     const resolvedDoctorId = doctor.id;
+
+    const corporateTenantId = req.user?.organization_type === 'corporate'
+      ? (req.user.organization_id || req.user.tenant_id)
+      : null;
+    const clinicTenantId = doctor.organization_type === 'clinic'
+      ? doctor.organization_id
+      : null;
+
+    if (corporateTenantId && clinicTenantId) {
+      const isPartnered = await tenantPartnerService.isActivePartner(corporateTenantId, clinicTenantId);
+      if (!isPartnered) {
+        return res.status(403).json({
+          success: false,
+          message: 'Selected doctor is not part of your corporate partner clinics'
+        });
+      }
+    }
 
     // Check if doctor is verified
     if (!doctor.isVerified) {
@@ -347,6 +365,10 @@ router.post('/book', authUser, [
       notes: notes || null,
       status: 'scheduled',
       paymentStatus: 'pending',
+      organization_id: doctor.organization_id || doctor.hospitalId || null,
+      organization_type: doctor.organization_type || (doctor.hospitalId ? 'hospital' : null),
+      tenant_id: doctor.organization_id || doctor.hospitalId || null,
+      corporate_tenant_id: corporateTenantId,
       patientDetails: {
         ...(patientAge ? { age: patientAge } : {}),
         ...(patientGender ? { gender: patientGender } : {}),
@@ -359,6 +381,7 @@ router.post('/book', authUser, [
         ...(doctor.practiceAddress ? { address: doctor.practiceAddress } : {})
       },
       metadata: {
+        ...(corporateTenantId ? { corporateTenantId } : {}),
         requestedConsultationType,
         channel,
         preferredLanguage: preferredLanguage || null,

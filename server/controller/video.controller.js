@@ -368,6 +368,10 @@ class VideoController {
                 // Auto-create prescription draft
                 const prescription = await Prescription.create({
                   appointmentId: appointment.id,
+                  tenant_id: appointment.tenant_id || appointment.organization_id || null,
+                  corporate_tenant_id: appointment.corporate_tenant_id || null,
+                  organization_id: appointment.organization_id || null,
+                  organization_type: appointment.organization_type || null,
                   patientId: appointment.userId,
                   patientName: `${patient.firstName || ''} ${patient.lastName || ''}`.trim() || appointment.patientName,
                   patientAge,

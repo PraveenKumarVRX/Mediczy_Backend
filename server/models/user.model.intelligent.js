@@ -145,7 +145,23 @@ const User = sequelize.define('User', {
     type: DataTypes.STRING(50),
     allowNull: true,
     defaultValue: 'user',
-    comment: 'User role: user, doctor, admin, team, etc.'
+    comment: 'User role: user, doctor, admin, team, corporate, etc.'
+  },
+  // Multi-Tenant Fields
+  organization_id: {
+    type: DataTypes.INTEGER,
+    allowNull: true,
+    comment: 'Organization/Tenant ID for multi-tenant isolation'
+  },
+  organization_type: {
+    type: DataTypes.STRING(50),
+    allowNull: true,
+    comment: 'Type of organization user belongs to (clinic, corporate, hospital)'
+  },
+  tenant_id: {
+    type: DataTypes.INTEGER,
+    allowNull: true,
+    comment: 'Reference to tenant this user belongs to'
   }
 }, {
   tableName: 'users',
@@ -225,14 +241,21 @@ export const generateAuthTokenForUser = (userInstance) => {
     throw new Error('JWT_SECRET is not configured');
   }
 
+  // Resolve role: DB role field takes precedence for non-default roles (corporate, team, etc.)
+  const dbRole = userInstance.role || userInstance.dataValues?.role;
+  const resolvedRole = userInstance.isAdmin ? 'admin'
+    : (dbRole && dbRole !== 'user' ? dbRole : 'user');
+
   const payload = {
     id: userInstance.id,
     userId: userInstance.id,  // Explicit userId for ring-fencing
     email: userInstance.email,
-    role: userInstance.isAdmin ? 'admin' : 'user',
-    userType: userInstance.isAdmin ? 'admin' : 'user',  // userType for ring-fencing
+    role: resolvedRole,
+    userType: resolvedRole,  // userType for ring-fencing
     isAdmin: userInstance.isAdmin || false,
-    corporateId: userInstance.corporateId || null
+    corporateId: userInstance.corporateId || null,
+    organization_id: userInstance.organization_id || userInstance.dataValues?.organization_id || null,
+    tenant_id: userInstance.tenant_id || userInstance.dataValues?.tenant_id || null
   };
 
   return jwt.sign(payload, JWT_CONFIG.SECRET, {

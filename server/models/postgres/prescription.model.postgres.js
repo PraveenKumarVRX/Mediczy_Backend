@@ -30,6 +30,16 @@ const Prescription = sequelize.define('Prescription', {
     type: DataTypes.ENUM('hospital', 'clinic', 'individual'),
     allowNull: true
   },
+  tenant_id: {
+    type: DataTypes.INTEGER,
+    allowNull: true,
+    comment: 'Primary tenant (clinic/hospital) that owns the prescription'
+  },
+  corporate_tenant_id: {
+    type: DataTypes.INTEGER,
+    allowNull: true,
+    comment: 'Corporate tenant ID for cross-tenant visibility'
+  },
   
   // Links
   appointmentId: {

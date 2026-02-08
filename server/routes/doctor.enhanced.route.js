@@ -12,6 +12,7 @@ import { JWT_CONFIG } from '../config/auth.config.js';
 import { authLimiter } from '../middleware/rateLimiter.middleware.js';
 import { auditLoginAttempt } from '../middleware/audit.middleware.js';
 import { Doctor } from '../models/index.js';
+import tenantPartnerService from '../services/tenant-partner.service.js';
 
 const router = express.Router();
 
@@ -137,6 +138,62 @@ router.get('/available', [
     res.status(500).json({
       success: false,
       message: 'Failed to fetch available doctors',
+      error: error.message
+    });
+  }
+});
+
+/**
+ * @route   GET /api/doctors/partnered
+ * @desc    List doctors from partner clinics for corporate users
+ * @access  Private (Corporate user)
+ */
+router.get('/partnered', authUser, async (req, res) => {
+  try {
+    const corporateTenantId = req.user?.organization_type === 'corporate'
+      ? (req.user.organization_id || req.user.tenant_id)
+      : null;
+
+    if (!corporateTenantId) {
+      return res.status(403).json({
+        success: false,
+        message: 'Corporate tenant context required'
+      });
+    }
+
+    const partnerIds = await tenantPartnerService.listActivePartnerIds(corporateTenantId);
+    if (partnerIds.length === 0) {
+      return res.json({
+        success: true,
+        doctors: [],
+        count: 0
+      });
+    }
+
+    const doctors = await doctorModel.findAll({
+      where: {
+        organization_type: 'clinic',
+        organization_id: { [sequelize.Sequelize.Op.in]: partnerIds },
+        isVerified: true
+      },
+      attributes: { exclude: ['password', 'verificationDocuments'] },
+      order: [
+        ['isOnline', 'DESC'],
+        ['rating', 'DESC'],
+        ['createdAt', 'DESC']
+      ]
+    });
+
+    return res.json({
+      success: true,
+      doctors,
+      count: doctors.length
+    });
+  } catch (error) {
+    console.error('Get partnered doctors error:', error);
+    return res.status(500).json({
+      success: false,
+      message: 'Failed to fetch partner clinic doctors',
       error: error.message
     });
   }

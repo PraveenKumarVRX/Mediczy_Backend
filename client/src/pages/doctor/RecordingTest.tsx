@@ -72,7 +72,7 @@ const RecordingTestPage = () => {
         </div>
 
         {/* Features Overview */}
-        <Card className="border-purple-200 bg-gradient-to-r from-purple-50 to-blue-50">
+        <Card className="border-border bg-card">
           <CardHeader>
             <CardTitle className="flex items-center gap-2">
               <Brain className="h-5 w-5 text-purple-600" />
@@ -81,7 +81,7 @@ const RecordingTestPage = () => {
           </CardHeader>
           <CardContent>
             <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-              <Card className="p-4 bg-white">
+              <Card className="p-4 bg-muted/40">
                 <div className="flex items-center gap-2 mb-2">
                   <FileVideo className="h-5 w-5 text-purple-600" />
                   <span className="font-semibold">Step 1: Record</span>
@@ -90,7 +90,7 @@ const RecordingTestPage = () => {
                   Start recording to create a consultation record. Normally linked to LiveKit video.
                 </p>
               </Card>
-              <Card className="p-4 bg-white">
+              <Card className="p-4 bg-muted/40">
                 <div className="flex items-center gap-2 mb-2">
                   <Brain className="h-5 w-5 text-blue-600" />
                   <span className="font-semibold">Step 2: Transcribe</span>
@@ -99,7 +99,7 @@ const RecordingTestPage = () => {
                   Whisper AI transcribes the audio (simulated in test mode).
                 </p>
               </Card>
-              <Card className="p-4 bg-white">
+              <Card className="p-4 bg-muted/40">
                 <div className="flex items-center gap-2 mb-2">
                   <CheckCircle className="h-5 w-5 text-green-600" />
                   <span className="font-semibold">Step 3: Extract</span>
@@ -252,16 +252,16 @@ const RecordingTestPage = () => {
           </CardHeader>
           <CardContent>
             <div className="space-y-2 text-sm font-mono">
-              <div className="p-2 bg-slate-100 rounded">
+              <div className="p-2 bg-muted/40 rounded">
                 <span className="text-green-600">POST</span> /api/consultation-recordings/start
               </div>
-              <div className="p-2 bg-slate-100 rounded">
+              <div className="p-2 bg-muted/40 rounded">
                 <span className="text-orange-600">POST</span> /api/consultation-recordings/stop/:id
               </div>
-              <div className="p-2 bg-slate-100 rounded">
+              <div className="p-2 bg-muted/40 rounded">
                 <span className="text-blue-600">GET</span> /api/consultation-recordings/:id
               </div>
-              <div className="p-2 bg-slate-100 rounded">
+              <div className="p-2 bg-muted/40 rounded">
                 <span className="text-orange-600">POST</span> /api/consultation-recordings/:id/transcribe
               </div>
             </div>

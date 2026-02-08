@@ -24,6 +24,16 @@ const Appointment = sequelize.define('Appointment', {
     type: DataTypes.ENUM('hospital', 'clinic', 'corporate', 'individual'),
     allowNull: true
   },
+  tenant_id: {
+    type: DataTypes.INTEGER,
+    allowNull: true,
+    comment: 'Primary tenant (clinic/hospital) that owns the appointment'
+  },
+  corporate_tenant_id: {
+    type: DataTypes.INTEGER,
+    allowNull: true,
+    comment: 'Corporate tenant ID for cross-tenant visibility'
+  },
   
   // Patient Information
   userId: {
@@ -337,6 +347,8 @@ const Appointment = sequelize.define('Appointment', {
     { fields: ['userId'] },
     { fields: ['doctorId'] },
     { fields: ['organization_id'] },
+    { fields: ['tenant_id'] },
+    { fields: ['corporate_tenant_id'] },
     { fields: ['appointmentDate'] },
     { fields: ['appointmentDateTime'] },
     { fields: ['status'] },

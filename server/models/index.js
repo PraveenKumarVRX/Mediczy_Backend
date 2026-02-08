@@ -21,6 +21,7 @@ import PharmacyPostgres from './postgres/pharmacy.model.postgres.js';
 import AmbulancePostgres from './postgres/ambulance.model.postgres.js';
 import HomecareProviderPostgres from './postgres/homecare.model.postgres.js';
 import ClinicPostgres from './postgres/clinic.model.postgres.js';
+import TenantPartnerPostgres from './postgres/tenant-partner.model.postgres.js';
 import ReportPostgres from './postgres/report.model.postgres.js';
 import LabTestPostgres from './postgres/labTest.model.postgres.js';
 import { EHRRecord as EHRRecordPostgres, HealthDiary as HealthDiaryPostgres } from './postgres/ehr.model.postgres.js';
@@ -42,6 +43,7 @@ export const Pharmacy = PharmacyPostgres;
 export const Ambulance = AmbulancePostgres;
 export const HomecareProvider = HomecareProviderPostgres;
 export const Clinic = ClinicPostgres;
+export const TenantPartner = TenantPartnerPostgres;
 export const Report = ReportPostgres;
 export const LabTest = LabTestPostgres;
 export const EHRRecord = EHRRecordPostgres;
@@ -66,6 +68,7 @@ export default {
   Ambulance: AmbulancePostgres,
   HomecareProvider: HomecareProviderPostgres,
   Clinic: ClinicPostgres,
+  TenantPartner: TenantPartnerPostgres,
   Report: ReportPostgres,
   LabTest: LabTestPostgres,
   EHRRecord: EHRRecordPostgres,
@@ -91,6 +94,7 @@ export {
   AmbulancePostgres,
   HomecareProviderPostgres,
   ClinicPostgres,
+  TenantPartnerPostgres,
   ReportPostgres,
   LabTestPostgres,
   EHRRecordPostgres,

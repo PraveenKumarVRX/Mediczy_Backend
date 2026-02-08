@@ -232,12 +232,12 @@ const AIScribe: React.FC<AIScribeProps> = ({
 
   return (
     <div className="space-y-3">
-      <Card className="p-4 bg-gradient-to-r from-purple-50 to-blue-50 border-purple-200">
+      <Card className="p-4 bg-card border-border">
         <div className="flex items-center justify-between mb-3">
           <div className="flex items-center gap-2">
-            <Brain className="h-5 w-5 text-purple-600" />
-            <h3 className="font-semibold text-purple-900">AI Medical Scribe</h3>
-            <Badge variant="secondary" className="bg-purple-100 text-purple-700">
+            <Brain className="h-5 w-5 text-primary" />
+            <h3 className="font-semibold text-foreground">AI Medical Scribe</h3>
+            <Badge variant="secondary" className="bg-primary/10 text-primary">
               <Sparkles className="h-3 w-3 mr-1" />
               AI Powered
             </Badge>
@@ -285,23 +285,23 @@ const AIScribe: React.FC<AIScribeProps> = ({
           </Button>
 
           <div className="flex-1">
-            <p className="text-sm text-gray-600 mb-1">
+            <p className="text-sm text-muted-foreground mb-1">
               {isListening ? (
                 <span className="flex items-center gap-2 text-red-600 font-medium">
                   <span className="w-2 h-2 bg-red-600 rounded-full animate-pulse" />
                   Recording... Speak now
                 </span>
               ) : (
-                <span className="text-gray-500">Click microphone to start dictation</span>
+                <span className="text-muted-foreground">Click microphone to start dictation</span>
               )}
             </p>
             
             {(transcript || interimTranscript) && (
-              <div className="bg-white rounded-lg p-3 border border-gray-200">
+              <div className="bg-card rounded-lg p-3 border border-border">
                 <p className="text-sm">
                   {transcript}
                   {interimTranscript && (
-                    <span className="text-gray-400 italic">{interimTranscript}</span>
+                    <span className="text-muted-foreground italic">{interimTranscript}</span>
                   )}
                 </p>
               </div>
@@ -338,17 +338,17 @@ const AIScribe: React.FC<AIScribeProps> = ({
 
       {/* AI Suggestions */}
       {suggestions.length > 0 && (
-        <Card className="p-3 bg-blue-50 border-blue-200">
+        <Card className="p-3 bg-muted/50 border-border">
           <div className="flex items-center gap-2 mb-2">
-            <Sparkles className="h-4 w-4 text-blue-600" />
-            <h4 className="text-sm font-semibold text-blue-900">AI Suggestions</h4>
+            <Sparkles className="h-4 w-4 text-primary" />
+            <h4 className="text-sm font-semibold text-foreground">AI Suggestions</h4>
           </div>
           <div className="flex flex-wrap gap-2">
             {suggestions.map((suggestion, index) => (
               <Badge
                 key={index}
                 variant="outline"
-                className="cursor-pointer hover:bg-blue-100 transition-colors bg-white border-blue-300 text-blue-700"
+                className="cursor-pointer hover:bg-muted transition-colors bg-card border-border text-foreground"
                 onClick={() => onTranscript(suggestion, currentField)}
               >
                 {suggestion}
@@ -359,12 +359,12 @@ const AIScribe: React.FC<AIScribeProps> = ({
       )}
 
       {/* Quick Commands */}
-      <Card className="p-3 bg-gray-50">
+      <Card className="p-3 bg-muted/40">
         <details>
-          <summary className="text-xs text-gray-600 cursor-pointer hover:text-gray-800 font-medium">
+          <summary className="text-xs text-muted-foreground cursor-pointer hover:text-foreground font-medium">
             💡 Voice Commands Help
           </summary>
-          <div className="mt-2 space-y-1 text-xs text-gray-600">
+          <div className="mt-2 space-y-1 text-xs text-muted-foreground">
             <p>• Say "new paragraph" to add a line break</p>
             <p>• Say "comma" or "period" for punctuation</p>
             <p>• Say "clear" to clear the transcript</p>

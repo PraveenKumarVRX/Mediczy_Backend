@@ -284,11 +284,15 @@ export const authUser = async (req, res, next) => {
         email: decoded.email,
         companyName: decoded.companyName,
         role: "corporate",
+        userType: "corporate",
+        organization_id: decoded.organization_id || decoded.organizationId,
+        organization_type: decoded.organization_type || 'corporate',
+        tenant_id: decoded.tenant_id || decoded.tenantId,
       };
       req.userRole = "corporate";
       const tenantBinding = bindTenantContext(
         req,
-        decoded.tenantId || decoded.organizationId || null
+        decoded.tenant_id || decoded.organization_id || decoded.tenantId || decoded.organizationId || null
       );
       if (!tenantBinding.ok) {
         return res.status(tenantBinding.status).json(tenantBinding.body);
@@ -453,7 +457,7 @@ export const authUser = async (req, res, next) => {
       isTeam: user.isTeam || decoded.isTeam,
       isAdmin: user.isAdmin || decoded.isAdmin
     };
-    req.userRole = decoded.role || (user?.isAdmin ? "admin" : (user?.isTeam ? "team" : "user"));
+    req.userRole = decoded.role || user?.role || (user?.isAdmin ? "admin" : (user?.isTeam ? "team" : "user"));
     const tenantBinding = bindTenantContext(req, resolveTenantFromEntity(user));
     if (!tenantBinding.ok) {
       return res.status(tenantBinding.status).json(tenantBinding.body);

@@ -543,7 +543,26 @@ export const getCorporateEmployeesHealth = async (req, res) => {
 
 export const getCorporateAppointments = async (req, res) => {
   try {
-    return res.json({ success: true, data: { appointments: seededAppointments } });
+    const { Appointment, Doctor, User } = await import('../models/index.js');
+    const corporateTenantId = req.user?.organization_id || req.user?.tenant_id;
+
+    if (!corporateTenantId) {
+      return res.status(403).json({
+        success: false,
+        message: 'Corporate tenant context required'
+      });
+    }
+
+    const appointments = await Appointment.findAll({
+      where: { corporate_tenant_id: corporateTenantId },
+      include: [
+        { model: Doctor, as: 'doctor', attributes: ['id', 'firstName', 'lastName', 'specialization', 'email'] },
+        { model: User, as: 'patient', attributes: ['id', 'firstName', 'lastName', 'email', 'phoneNumber'] }
+      ],
+      order: [['appointmentDate', 'DESC'], ['appointmentTime', 'DESC']]
+    });
+
+    return res.json({ success: true, data: { appointments } });
   } catch (error) {
     console.error('Corporate appointments error:', error);
     return res.status(500).json({ success: false, message: 'Failed to fetch appointments' });

@@ -1733,9 +1733,7 @@ router.post('/appointments', authUser, requireRole('corporate'), async (req, res
   }
 });
 
-router.get('/appointments', authUser, requireRole('corporate'), async (req, res) => {
-  res.json({ success: true, data: { appointments: corporateAppointments } });
-});
+router.get('/appointments', authUser, requireRole('corporate'), getCorporateAppointments);
 
 // ---------------------------------------------------------------------------
 // Challenges Routes (for gamification)

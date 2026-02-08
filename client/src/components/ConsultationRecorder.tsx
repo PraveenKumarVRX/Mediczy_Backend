@@ -1145,7 +1145,7 @@ const ConsultationRecorder: React.FC<ConsultationRecorderProps> = ({
                 <ScrollArea className="max-h-[400px]">
                   <div className="space-y-3">
                     {prescription.medications.map((med, idx) => (
-                      <Card key={med.id} className="p-3 bg-slate-50">
+                      <Card key={med.id} className="p-3 bg-muted/40">
                         <div className="grid grid-cols-12 gap-2 items-start">
                           <div className="col-span-1 flex items-center justify-center pt-2">
                             <Badge variant="secondary">{idx + 1}</Badge>
@@ -1328,7 +1328,7 @@ const ConsultationRecorder: React.FC<ConsultationRecorderProps> = ({
 
           {/* PREVIEW TAB */}
           <TabsContent value="preview" className="space-y-4">
-            <Card className="p-6 bg-white border-2">
+            <Card className="p-6 bg-card border-2">
               {/* Prescription Preview Content */}
               <div className="space-y-4">
                 {/* Header */}
@@ -1342,7 +1342,7 @@ const ConsultationRecorder: React.FC<ConsultationRecorderProps> = ({
                 </div>
 
                 {/* Patient Info */}
-                <div className="bg-slate-100 p-3 rounded">
+                <div className="bg-muted/60 p-3 rounded">
                   <div className="flex flex-wrap gap-4 text-sm">
                     <span><strong>{t.patient}:</strong> {patientInfo?.name || 'N/A'}</span>
                     <span><strong>{t.ageGender}:</strong> {patientInfo?.age || 'N/A'} {t.yrs} / {patientInfo?.gender || 'N/A'}</span>
@@ -1372,7 +1372,7 @@ const ConsultationRecorder: React.FC<ConsultationRecorderProps> = ({
                       {t.medications}
                     </h4>
                     <table className="w-full mt-2 text-sm">
-                      <thead className="bg-gray-100">
+                      <thead className="bg-muted/60">
                         <tr>
                           <th className="p-2 text-left">#</th>
                           <th className="p-2 text-left">{t.medicine}</th>
@@ -1432,7 +1432,7 @@ const ConsultationRecorder: React.FC<ConsultationRecorderProps> = ({
                 )}
 
                 {/* Disclaimer */}
-                <div className="text-xs text-center text-muted-foreground mt-4 p-2 bg-slate-50 rounded">
+                <div className="text-xs text-center text-muted-foreground mt-4 p-2 bg-muted/40 rounded">
                   {t.disclaimer}
                 </div>
               </div>
@@ -1471,7 +1471,7 @@ const ConsultationRecorder: React.FC<ConsultationRecorderProps> = ({
                     {attachedPharmacies.length > 0 ? (
                       <div className="space-y-2">
                         {attachedPharmacies.map((pharmacy) => (
-                          <div key={pharmacy.id} className="flex items-center justify-between p-3 bg-slate-50 rounded">
+                          <div key={pharmacy.id} className="flex items-center justify-between p-3 bg-muted/40 rounded">
                             <div className="flex items-center gap-3">
                               <Checkbox
                                 checked={selectedShareEntities.includes(pharmacy.id)}
@@ -1509,7 +1509,7 @@ const ConsultationRecorder: React.FC<ConsultationRecorderProps> = ({
                     {attachedLabs.length > 0 ? (
                       <div className="space-y-2">
                         {attachedLabs.map((lab) => (
-                          <div key={lab.id} className="flex items-center justify-between p-3 bg-slate-50 rounded">
+                          <div key={lab.id} className="flex items-center justify-between p-3 bg-muted/40 rounded">
                             <div className="flex items-center gap-3">
                               <Checkbox
                                 checked={selectedShareEntities.includes(lab.id)}
@@ -1582,7 +1582,7 @@ const ConsultationRecorder: React.FC<ConsultationRecorderProps> = ({
         </Tabs>
       </CardContent>
 
-      <CardFooter className="border-t bg-slate-50 flex justify-between">
+      <CardFooter className="border-t bg-muted/40 flex justify-between">
         <div className="flex gap-2">
           <Button variant="outline" onClick={printPrescription}>
             <Printer className="h-4 w-4 mr-2" />

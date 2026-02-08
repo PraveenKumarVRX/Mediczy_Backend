@@ -1328,7 +1328,7 @@ const DoctorPrescriptions = () => {
             {selectedPrescription && (
               <div className="space-y-6">
                 {/* Patient Info */}
-                <Card className="p-4 bg-slate-50">
+                <Card className="p-4 bg-muted/60">
                   <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
                     <div>
                       <p className="text-sm text-muted-foreground">Patient</p>
