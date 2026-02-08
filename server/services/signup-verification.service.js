@@ -15,11 +15,20 @@ class SignupVerificationService {
     const accountSid = process.env.TWILIO_ACCOUNT_SID;
     const authToken = process.env.TWILIO_AUTH_TOKEN;
     
-    if (accountSid && authToken) {
+    // Check if Twilio credentials are real (not placeholders)
+    const isTwilioConfigured = accountSid && authToken 
+      && !accountSid.includes('your-') 
+      && !accountSid.includes('twilio-')
+      && accountSid.length > 10;
+    
+    if (isTwilioConfigured) {
       this.twilioClient = twilio(accountSid, authToken);
+      this.twilioConfigured = true;
       console.log('✅ Twilio WhatsApp initialized for signup verification (fallback)');
     } else {
-      console.warn('⚠️  Twilio WhatsApp not configured for signup verification');
+      this.twilioClient = null;
+      this.twilioConfigured = false;
+      console.warn('⚠️  Twilio WhatsApp not configured for signup verification - using email fallback');
     }
     
     // Flag to use n8n for OTP delivery
@@ -256,10 +265,13 @@ class SignupVerificationService {
 
   /**
    * Send OTP via WhatsApp using Twilio
+   * Falls back to Email if Twilio is not configured
    */
   async sendOTPViaWhatsApp(account, otpCode) {
-    if (!this.twilioClient) {
-      throw new Error('WhatsApp not configured');
+    // If Twilio is not configured, fallback to email
+    if (!this.twilioClient || !this.twilioConfigured) {
+      console.warn('⚠️  Twilio WhatsApp not available - falling back to Email OTP');
+      return await this.sendOTPViaEmail(account, otpCode);
     }
 
     try {
@@ -288,8 +300,10 @@ class SignupVerificationService {
       console.log(`📱 Signup WhatsApp OTP sent to ${whatsappTo}, SID: ${message.sid}`);
       
     } catch (error) {
-      console.error('Signup WhatsApp OTP error:', error);
-      throw error;
+      console.error('❌ Signup WhatsApp OTP error:', error);
+      console.warn('⚠️  WhatsApp delivery failed - falling back to Email OTP');
+      // Fallback to email if Twilio fails
+      return await this.sendOTPViaEmail(account, otpCode);
     }
   }
 }
