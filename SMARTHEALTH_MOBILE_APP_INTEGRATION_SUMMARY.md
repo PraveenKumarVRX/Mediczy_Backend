@@ -26,13 +26,14 @@ SmartHealth mobile app is fully integrated with Mediczy backend. This document c
 
 ## 📊 Key Integration Points
 
-### 1. User Authentication
-**Endpoint:** `POST /api/users/login` or `POST /api/patient/login`
+### 1. User Authentication (Email & Password)
+**Endpoint:** `POST /api/patient/login`  
+**Auth Base URL:** `https://app.mediqzy.com/api`
 
 ```javascript
-// Login
+// Email/Password Login
 const login = async (email, password, clinicSlug) => {
-  const response = await fetch(`${API_BASE}/api/patient/login`, {
+  const response = await fetch(`${AUTH_BASE}/api/patient/login`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({
@@ -45,6 +46,7 @@ const login = async (email, password, clinicSlug) => {
   if (data.success) {
     // Store JWT token securely
     await SecureStore.setItemAsync('jwt_token', data.data.token);
+    await SecureStore.setItemAsync('user_id', data.data.user.id);
   }
   return data;
 };
@@ -52,12 +54,61 @@ const login = async (email, password, clinicSlug) => {
 
 **Token Storage:** Use `expo-secure-store` (iOS Keychain, Android Keystore)
 
-### 2. Doctor Authentication
+### 2. OTP-Based Login (Phone & OTP) ⭐ **RECOMMENDED**
+**Step 1: Send OTP**  
+**Endpoint:** `POST /api/auth/send-otp`
+
+```javascript
+const sendOTP = async (phoneNumber) => {
+  const response = await fetch(`${AUTH_BASE}/api/auth/send-otp`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      phone_number: phoneNumber,  // Format: +91XXXXXXXXXX for India
+      country_code: 'IN'           // ISO country code
+    })
+  });
+  const data = await response.json();
+  if (data.success) {
+    console.log('✅ OTP sent successfully');
+    return data.data.otp_session_id;  // Save for next step
+  }
+  return null;
+};
+```
+
+**Step 2: Verify OTP**  
+**Endpoint:** `POST /api/auth/verify-otp`
+
+```javascript
+const verifyOTP = async (otpSessionId, otpCode) => {
+  const response = await fetch(`${AUTH_BASE}/api/auth/verify-otp`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      otp_session_id: otpSessionId,
+      otp_code: otpCode                // 6-digit code sent via SMS
+    })
+  });
+  const data = await response.json();
+  if (data.success) {
+    // Store tokens
+    await SecureStore.setItemAsync('jwt_token', data.data.token);
+    await SecureStore.setItemAsync('user_id', data.data.user.id);
+    console.log('✅ OTP verified and logged in');
+    return data.data;
+  } else {
+    throw new Error(data.message || 'OTP verification failed');
+  }
+};
+```
+
+### 3. Doctor Authentication
 **Endpoint:** `POST /api/doctors/login`
 
 ```javascript
 const doctorLogin = async (email, password) => {
-  const response = await fetch(`${API_BASE}/api/doctors/login`, {
+  const response = await fetch(`${AUTH_BASE}/api/doctors/login`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ email, password })
@@ -65,12 +116,13 @@ const doctorLogin = async (email, password) => {
   const data = await response.json();
   if (data.success) {
     await SecureStore.setItemAsync('doctorToken', data.token);
+    await SecureStore.setItemAsync('doctor_id', data.data.doctor.id);
   }
   return data;
 };
 ```
 
-### 3. Health Data Sync
+### 4. Health Data Sync
 
 #### Apple Health (iOS)
 ```javascript
@@ -146,7 +198,7 @@ const syncGoogleFit = async () => {
 };
 ```
 
-### 4. Appointments
+### 5. Appointments
 **Endpoint:** `POST /api/appointments`
 
 ```javascript
@@ -169,7 +221,7 @@ const bookAppointment = async (appointmentData) => {
 };
 ```
 
-### 5. Get Doctors List
+### 6. Get Doctors List
 **Endpoint:** `GET /api/doctors?clinic_slug=xxx`
 
 ```javascript
@@ -190,7 +242,7 @@ const getDoctors = async (clinicSlug, filters = {}) => {
 };
 ```
 
-### 6. Prescriptions
+### 7. Prescriptions
 **Endpoint:** `GET /api/prescriptions`
 
 ```javascript
@@ -206,7 +258,7 @@ const getPrescriptions = async () => {
 };
 ```
 
-### 7. Push Notifications (FCM)
+### 8. Push Notifications (FCM)
 **Endpoint:** `POST /api/notifications/register-device`
 
 ```javascript
@@ -324,13 +376,23 @@ smarthealth-mobile/
 Create `.env` file:
 
 ```bash
-# API Configuration
+# Auth Configuration (IMPORTANT: Use app.mediqzy.com for auth endpoints)  
+AUTH_BASE_URL=https://app.mediqzy.com/api
+AUTH_TIMEOUT=30000
+
+# API Configuration (Use api.mediqzy.com for regular API calls)
 API_BASE_URL=https://api.mediqzy.com
 API_TIMEOUT=30000
 
 # Firebase Configuration
 FIREBASE_API_KEY=your_firebase_api_key
 FIREBASE_APP_ID=your_firebase_app_id
+FIREBASE_MESSAGING_SENDER_ID=your_sender_id
+FIREBASE_PROJECT_ID=mediczy-notifications
+
+# Firebase Messaging (FCM) Configuration
+FCM_ENABLED=true
+FCM_PUBLIC_VAPID_KEY=your_vapid_key
 
 # Apple Health Configuration (iOS)
 APPLE_HEALTH_ENABLED=true
@@ -352,17 +414,16 @@ LIVEKIT_API_SECRET=your_livekit_api_secret
 ## ✅ Complete API Endpoints Reference
 
 ### Authentication Endpoints
-| Method | Endpoint | Purpose |
-|--------|----------|---------|
-| POST | `/api/patient/signup` | User registration |
-| POST | `/api/patient/login` | Patient login |
-| POST | `/api/doctors/login` | Doctor login |
-| POST | `/api/users/profile` | Get user profile |
-| PUT | `/api/users/profile` | Update profile |
-| POST | `/api/users/logout` | Logout |
-
-### Appointment Endpoints
-| Method | Endpoint | Purpose |
+| Method | Endpoint | Purpose | Auth Base URL |
+|--------|----------|---------|----------------|
+| POST | `/api/patient/signup` | User registration | app.mediqzy.com/api |
+| POST | `/api/patient/login` | Patient email/password login | app.mediqzy.com/api |
+| POST | `/api/auth/send-otp` | Send OTP to phone | app.mediqzy.com/api |
+| POST | `/api/auth/verify-otp` | Verify OTP and login | app.mediqzy.com/api |
+| POST | `/api/doctors/login` | Doctor login | app.mediqzy.com/api |
+| POST | `/api/users/profile` | Get user profile | api.mediqzy.com |
+| PUT | `/api/users/profile` | Update profile | api.mediqzy.com |
+| POST | `/api/users/logout` | Logout | api.mediqzy.com |
 |--------|----------|---------|
 | GET | `/api/doctors` | List all doctors |
 | GET | `/api/doctors/:id` | Get doctor details |
@@ -392,19 +453,958 @@ LIVEKIT_API_SECRET=your_livekit_api_secret
 | POST | `/api/consultations/start` | Start consultation |
 | GET | `/api/consultations/token` | Get LiveKit token |
 | POST | `/api/consultations/end` | End consultation |
-
-### Push Notifications
-| Method | Endpoint | Purpose |
-|--------|----------|---------|
-| POST | `/api/notifications/register-device` | Register FCM token |
-| POST | `/api/notifications/send` | Send notification |
+| GET | `/api/consultations/:id` | Get consultation details |
+| POST | `/api/consultations/:id/recording` | Start/stop recording |
+| GET | `/api/consultations/:id/recording` | Get recording status |
 | GET | `/api/notifications` | Get notification history |
 
 ---
 
-## 🛠️ Setup Instructions for Your Team
+## 🔐 API Credentials Setup (SmartHealth Security)
 
-### Step 1: Initialize React Native Project
+**IMPORTANT:** Your SmartHealth mobile app uses a dual-layer security model with separate API credentials.
+
+### How It Works
+
+```
+Layer 1: API Credentials (Generated by Super Admin)
+  ├─ client_id (unique identifier)
+  ├─ client_secret (secure password)
+  └─ Stored in: iOS Keychain / Android Keystore
+
+Layer 2: User Credentials (User's Account)
+  ├─ email
+  ├─ password
+  └─ JWT token (session management)
+
+Every API request includes both layers for maximum security
+```
+
+### Getting Your API Credentials
+
+**Step 1: Super Admin generates credentials**
+```bash
+curl -X POST https://api.mediqzy.com/api/admin/api-credentials/generate \
+  -H "Authorization: Bearer SUPER_ADMIN_TOKEN" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "name": "SmartHealth Mobile App",
+    "description": "React Native iOS/Android app",
+    "integration_type": "mobile_app",
+    "rotation_days": 90
+  }'
+```
+
+**Response:**
+```json
+{
+  "success": true,
+  "data": {
+    "credential_id": "cred_uuid_123456",
+    "client_id": "smarthealth_mobile_prod_789",
+    "client_secret": "sk_live_abcdefghijklmnopqrstuvwxyz123456",
+    "created_at": "2026-02-08T16:00:00Z",
+    "rotation_days": 90,
+    "expires_at": "2026-05-09T16:00:00Z"
+  }
+}
+```
+
+**Step 2: Store securely in mobile app**
+```javascript
+import * as SecureStore from 'expo-secure-store';
+
+const storeAPICredentials = async (clientId, clientSecret) => {
+  try {
+    await SecureStore.setItemAsync('api_client_id', clientId);
+    await SecureStore.setItemAsync('api_client_secret', clientSecret);
+    console.log('✅ API credentials stored securely');
+  } catch (error) {
+    console.error('❌ Failed to store credentials:', error);
+  }
+};
+
+// Usage
+await storeAPICredentials(
+  'smarthealth_mobile_prod_789',
+  'sk_live_abcdefghijklmnopqrstuvwxyz123456'
+);
+```
+
+**Step 3: Use in API requests with Basic Auth**
+```javascript
+import axios from 'axios';
+import * as SecureStore from 'expo-secure-store';
+
+// Separate clients for auth vs API endpoints
+const authClient = axios.create({
+  baseURL: process.env.REACT_APP_AUTH_BASE_URL || 'https://app.mediqzy.com/api',
+  timeout: 30000,
+});
+
+const apiClient = axios.create({
+  baseURL: process.env.REACT_APP_API_BASE_URL || 'https://api.mediqzy.com',
+  timeout: 30000,
+});
+
+// Intercept all requests to add credentials
+apiClient.interceptors.request.use(async (config) => {
+  try {
+    const clientId = await SecureStore.getItemAsync('api_client_id');
+    const clientSecret = await SecureStore.getItemAsync('api_client_secret');
+    
+    if (clientId && clientSecret) {
+      // Create Basic Auth header: base64(clientId:clientSecret)
+      const credentials = `${clientId}:${clientSecret}`;
+      const base64Credentials = Buffer.from(credentials).toString('base64');
+      config.headers.Authorization = `Basic ${base64Credentials}`;
+    }
+    
+    // Add JWT token for user authentication
+    const jwtToken = await SecureStore.getItemAsync('jwt_token');
+    if (jwtToken) {
+      config.headers['X-User-Token'] = jwtToken;
+    }
+  } catch (error) {
+    console.error('Error adding credentials to request:', error);
+  }
+  
+  return config;
+});
+
+export default apiClient;
+```
+
+### Full Credential Management Workflows
+
+#### Workflow 1: Login with API Credentials
+```javascript
+const loginWithAPICredentials = async (email, password, clinicSlug) => {
+  try {
+    const clientId = await SecureStore.getItemAsync('api_client_id');
+    const clientSecret = await SecureStore.getItemAsync('api_client_secret');
+    
+    if (!clientId || !clientSecret) {
+      throw new Error('API credentials not found. Contact Super Admin.');
+    }
+    
+    const credentials = `${clientId}:${clientSecret}`;
+    const base64Credentials = Buffer.from(credentials).toString('base64');
+    
+    const response = await fetch('https://api.mediqzy.com/api/mobile/auth/api-credentials', {
+      method: 'POST',
+      headers: {
+        'Authorization': `Basic ${base64Credentials}`,
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({
+        email,
+        password,
+        clinic_slug: clinicSlug,
+        device_id: await getDeviceId(),
+        push_token: await getPushToken(),
+      })
+    });
+    
+    const data = await response.json();
+    
+    if (data.success) {
+      // Store JWT token
+      await SecureStore.setItemAsync('jwt_token', data.data.token);
+      await SecureStore.setItemAsync('user_id', data.data.user.id);
+      return data;
+    } else {
+      throw new Error(data.message || 'Login failed');
+    }
+  } catch (error) {
+    console.error('Login error:', error);
+    throw error;
+  }
+};
+```
+
+#### Workflow 2: Rotate Credentials (Admin Only)
+```bash
+# Super Admin rotates credentials without affecting users
+curl -X POST https://api.mediqzy.com/api/admin/api-credentials/cred_uuid_123/rotate \
+  -H "Authorization: Bearer SUPER_ADMIN_TOKEN" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "grace_period_hours": 24,
+    "new_rotation_days": 90
+  }'
+
+# Response includes:
+# - old_client_id (still works for 24 hours)
+# - new_client_id (ready to use immediately)
+# - new_client_secret (secure password)
+# - grace_period_until (24 hours from now)
+```
+
+#### Workflow 3: Emergency Revoke (Instant)
+```bash
+# If compromised, Super Admin can revoke instantly
+curl -X POST https://api.mediqzy.com/api/admin/api-credentials/cred_uuid_123/revoke \
+  -H "Authorization: Bearer SUPER_ADMIN_TOKEN" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "reason": "Potential compromise detected",
+    "replace_with_new": true
+  }'
+
+# All requests using old credentials fail immediately
+# New credentials provided for app to use
+```
+
+### Complete Reference
+
+For exhaustive API Credentials documentation, see:
+- **SMARTHEALTH_RN_API_CREDENTIALS_IMPLEMENTATION.md** - Complete implementation (576 lines)
+- **SMARTHEALTH_RN_SUPER_ADMIN_QUICK_REFERENCE.md** - Admin management guide
+- **API_CREDENTIALS_QUICK_REFERENCE.md** - One-page summary
+- **SMARTHEALTH_RN_API_CREDENTIALS_DEPLOYMENT_GUIDE.md** - Deployment procedures
+
+---
+
+## 🎥 Exhaustive Video Consultation Integration
+
+### Architecture & Flow
+
+```
+┌────────────────────────────────────────────────────────────┐
+│                  VIDEO CONSULTATION FLOW                    │
+├────────────────────────────────────────────────────────────┤
+│                                                              │
+│  1. User/Doctor initiates call → Request starts on backend │
+│  2. Backend creates LiveKit room & generates token         │
+│  3. Mobile app gets token via `/api/consultations/token`   │
+│  4. App connects to LiveKit server (wss://livekit-url)    │
+│  5. Real-time video/audio streams                          │
+│  6. Optional: Recording starts on backend                  │
+│  7. Either party ends call                                 │
+│  8. Recording finalized & available for download           │
+│  9. Charges applied & notification sent                    │
+│                                                              │
+└────────────────────────────────────────────────────────────┘
+```
+
+### Complete Setup Instructions
+
+#### Step 1: Install LiveKit Dependencies
+```bash
+npm install livekit-client @livekit/react-native @livekit/components-react
+npm install react-native-webrtc  # For WebRTC support on React Native
+```
+
+#### Step 2: Create VideoConsultation Service
+```javascript
+// services/videoConsultation.js
+import { Room, Participant, Track } from 'livekit-client';
+import * as SecureStore from 'expo-secure-store';
+
+export class VideoConsultationService {
+  constructor(apiBaseUrl = 'https://api.mediqzy.com') {
+    this.apiBase = apiBaseUrl;
+    this.room = null;
+    this.listeners = {};
+  }
+
+  // Event management
+  on(event, handler) {
+    if (!this.listeners[event]) {
+      this.listeners[event] = [];
+    }
+    this.listeners[event].push(handler);
+  }
+
+  off(event, handler) {
+    if (this.listeners[event]) {
+      this.listeners[event] = this.listeners[event].filter(h => h !== handler);
+    }
+  }
+
+  emit(event, data) {
+    if (this.listeners[event]) {
+      this.listeners[event].forEach(handler => handler(data));
+    }
+  }
+
+  // Get LiveKit token from backend
+  async getConsultationToken(appointmentId, consultationType = 'video') {
+    try {
+      const jwtToken = await SecureStore.getItemAsync('jwt_token');
+      
+      const response = await fetch(`${this.apiBase}/api/consultations/token`, {
+        method: 'POST',
+        headers: {
+          'Authorization': `Bearer ${jwtToken}`,
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          appointment_id: appointmentId,
+          consultation_type: consultationType,
+        })
+      });
+
+      if (!response.ok) {
+        throw new Error(`HTTP error! status: ${response.status}`);
+      }
+
+      const data = await response.json();
+      
+      if (!data.success) {
+        throw new Error(data.message || 'Failed to get token');
+      }
+
+      return {
+        token: data.data.token,
+        liveKitUrl: data.data.livekit_url,
+        roomName: data.data.room_name,
+        participantName: data.data.participant_name,
+        consultationId: data.data.consultation_id,
+      };
+    } catch (error) {
+      this.emit('error', {
+        type: 'TOKEN_ERROR',
+        message: error.message,
+        error,
+      });
+      throw error;
+    }
+  }
+
+  // Connect to video room with error handling & auto-reconnect
+  async connectToRoom(token, liveKitUrl, roomName, options = {}) {
+    const defaultOptions = {
+      audio: true,
+      video: { width: 640, height: 480 },
+      maxRetries: 3,
+      retryDelay: 2000,
+      autoSubscribe: true,
+      ...options,
+    };
+
+    let retries = 0;
+    const maxRetries = defaultOptions.maxRetries;
+
+    while (retries < maxRetries) {
+      try {
+        this.room = new Room({
+          audio: defaultOptions.audio,
+          video: defaultOptions.video,
+          autoSubscribe: defaultOptions.autoSubscribe,
+        });
+
+        // Setup room event listeners
+        this.setupRoomListeners();
+
+        // Connect to LiveKit server
+        await this.room.connect(liveKitUrl, token, {
+          reconnectFallbackUrls: [],
+          maxRetries: 3,
+        });
+
+        this.emit('connected', {
+          roomName,
+          participantCount: this.room.numParticipants,
+          localParticipant: this.room.localParticipant,
+        });
+
+        return this.room;
+      } catch (error) {
+        retries++;
+        console.error(`Connection attempt ${retries}/${maxRetries} failed:`, error);
+
+        if (retries < maxRetries) {
+          this.emit('reconnecting', {
+            attempt: retries,
+            maxRetries,
+            nextRetryIn: defaultOptions.retryDelay / 1000,
+          });
+
+          // Wait before retrying
+          await new Promise(resolve => 
+            setTimeout(resolve, defaultOptions.retryDelay * Math.pow(2, retries - 1))
+          );
+        } else {
+          this.emit('error', {
+            type: 'CONNECTION_FAILED',
+            message: `Failed to connect after ${maxRetries} attempts`,
+            error,
+          });
+          throw new Error(`Connection failed after ${maxRetries} attempts: ${error.message}`);
+        }
+      }
+    }
+  }
+
+  // Setup room event listeners
+  setupRoomListeners() {
+    if (!this.room) return;
+
+    // Participant events
+    this.room.on('participantConnected', (participant) => {
+      console.log(`👤 ${participant.name} joined`);
+      this.emit('participantConnected', participant);
+    });
+
+    this.room.on('participantDisconnected', (participant) => {
+      console.log(`👤 ${participant.name} left`);
+      this.emit('participantDisconnected', participant);
+    });
+
+    // Track events
+    this.room.on('trackSubscribed', (track, publication, participant) => {
+      console.log(`📹 Track subscribed from ${participant.name}:`, track.kind);
+      this.emit('trackSubscribed', { track, publication, participant });
+    });
+
+    this.room.on('trackUnsubscribed', (track, publication) => {
+      console.log(`📹 Track unsubscribed:`, track.kind);
+      this.emit('trackUnsubscribed', { track, publication });
+    });
+
+    // Connection events
+    this.room.on('disconnected', () => {
+      console.log('❌ Disconnected from room');
+      this.emit('disconnected', { reason: 'user' });
+    });
+
+    this.room.on('connectionQualityChanged', (quality, participant) => {
+      console.log(`📊 Connection quality for ${participant.name}:`, quality);
+      this.emit('qualityChanged', { quality, participant });
+    });
+
+    // Room events
+    this.room.on('activeParticipantsChanged', (participants) => {
+      console.log(`🎤 Active speakers:`, participants.length);
+      this.emit('activeSpeakersChanged', participants);
+    });
+  }
+
+  // Enable/Disable audio
+  async toggleAudio(enabled) {
+    try {
+      if (!this.room?.localParticipant) {
+        throw new Error('Not connected to room');
+      }
+
+      await this.room.localParticipant.setMicrophoneEnabled(enabled);
+      this.emit('audioToggled', { enabled });
+      console.log(`🔊 Audio ${enabled ? 'enabled' : 'disabled'}`);
+    } catch (error) {
+      this.emit('error', {
+        type: 'AUDIO_ERROR',
+        message: error.message,
+        error,
+      });
+      throw error;
+    }
+  }
+
+  // Enable/Disable video
+  async toggleVideo(enabled) {
+    try {
+      if (!this.room?.localParticipant) {
+        throw new Error('Not connected to room');
+      }
+
+      await this.room.localParticipant.setCameraEnabled(enabled);
+      this.emit('videoToggled', { enabled });
+      console.log(`📹 Video ${enabled ? 'enabled' : 'disabled'}`);
+    } catch (error) {
+      this.emit('error', {
+        type: 'VIDEO_ERROR',
+        message: error.message,
+        error,
+      });
+      throw error;
+    }
+  }
+
+  // Switch camera (front/back)
+  async switchCamera() {
+    try {
+      const videoTrack = this.room?.localParticipant.videoTrackPublications[0]?.track;
+      if (!videoTrack) {
+        throw new Error('No video track found');
+      }
+
+      // Get current device ID
+      const constraints = await navigator.mediaDevices.enumerateDevices();
+      const videoDevices = constraints.filter(d => d.kind === 'videoinput');
+      
+      if (videoDevices.length > 1) {
+        // Switch to next camera
+        const currentDeviceId = videoTrack.getSettings().deviceId;
+        const nextCamera = videoDevices.find(d => d.deviceId !== currentDeviceId);
+        
+        if (nextCamera) {
+          await this.room.localParticipant.setCameraEnabled(false);
+          await this.room.localParticipant.setCameraEnabled(true);
+          this.emit('cameraSwitched', { camera: nextCamera });
+        }
+      }
+    } catch (error) {
+      console.warn('Camera switch not available:', error.message);
+    }
+  }
+
+  // Start recording (server-side)
+  async startRecording(consultationId) {
+    try {
+      const jwtToken = await SecureStore.getItemAsync('jwt_token');
+
+      const response = await fetch(
+        `${this.apiBase}/api/consultations/${consultationId}/recording`,
+        {
+          method: 'POST',
+          headers: {
+            'Authorization': `Bearer ${jwtToken}`,
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify({ action: 'start' })
+        }
+      );
+
+      const data = await response.json();
+
+      if (data.success) {
+        this.emit('recordingStarted', {
+          recordingId: data.data.recording_id,
+          startedAt: data.data.started_at,
+        });
+        console.log('✅ Recording started');
+        return data.data;
+      } else {
+        throw new Error(data.message || 'Failed to start recording');
+      }
+    } catch (error) {
+      this.emit('error', {
+        type: 'RECORDING_ERROR',
+        message: error.message,
+        error,
+      });
+      throw error;
+    }
+  }
+
+  // Stop recording (server-side)
+  async stopRecording(consultationId) {
+    try {
+      const jwtToken = await SecureStore.getItemAsync('jwt_token');
+
+      const response = await fetch(
+        `${this.apiBase}/api/consultations/${consultationId}/recording`,
+        {
+          method: 'POST',
+          headers: {
+            'Authorization': `Bearer ${jwtToken}`,
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify({ action: 'stop' })
+        }
+      );
+
+      const data = await response.json();
+
+      if (data.success) {
+        this.emit('recordingStopped', {
+          recordingId: data.data.recording_id,
+          duration: data.data.duration,
+          fileUrl: data.data.file_url,
+        });
+        console.log('✅ Recording stopped');
+        return data.data;
+      } else {
+        throw new Error(data.message || 'Failed to stop recording');
+      }
+    } catch (error) {
+      this.emit('error', {
+        type: 'RECORDING_ERROR',
+        message: error.message,
+        error,
+      });
+      throw error;
+    }
+  }
+
+  // Get room statistics
+  getRoomStats() {
+    if (!this.room) return null;
+
+    return {
+      roomName: this.room.name,
+      participantCount: this.room.numParticipants,
+      localParticipant: this.room.localParticipant?.name,
+      isConnected: this.room.isConnected,
+      audioEnabled: this.room.localParticipant?.isMicrophoneEnabled,
+      videoEnabled: this.room.localParticipant?.isCameraEnabled,
+      participants: Array.from(this.room.remoteParticipants.values()).map(p => ({
+        name: p.name,
+        audioEnabled: p.audioTrackPublications.length > 0,
+        videoEnabled: p.videoTrackPublications.length > 0,
+      })),
+    };
+  }
+
+  // Graceful disconnect
+  async disconnect() {
+    try {
+      if (this.room) {
+        await this.room.disconnect();
+        this.room = null;
+        console.log('✅ Disconnected from room');
+      }
+    } catch (error) {
+      console.error('Error disconnecting:', error);
+      throw error;
+    }
+  }
+
+  // End consultation (notify backend)
+  async endConsultation(consultationId, feedback = null) {
+    try {
+      const jwtToken = await SecureStore.getItemAsync('jwt_token');
+
+      const response = await fetch(
+        `${this.apiBase}/api/consultations/${consultationId}/end`,
+        {
+          method: 'POST',
+          headers: {
+            'Authorization': `Bearer ${jwtToken}`,
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify({
+            ended_by: 'user',
+            feedback,
+            ended_at: new Date().toISOString(),
+          })
+        }
+      );
+
+      const data = await response.json();
+
+      if (data.success) {
+        this.emit('consultationEnded', {
+          consultationId,
+          duration: data.data.duration,
+          charges: data.data.charges,
+        });
+        
+        // Disconnect from room
+        await this.disconnect();
+        return data.data;
+      } else {
+        throw new Error(data.message || 'Failed to end consultation');
+      }
+    } catch (error) {
+      this.emit('error', {
+        type: 'END_CONSULTATION_ERROR',
+        message: error.message,
+        error,
+      });
+      throw error;
+    }
+  }
+}
+
+export default new VideoConsultationService();
+```
+
+#### Step 3: Use in React Native Component
+```javascript
+// screens/VideoConsultationScreen.js
+import React, { useState, useEffect, useRef } from 'react';
+import { View, Text, TouchableOpacity, Alert } from 'react-native';
+import { LiveKitRoom, VideoConference } from '@livekit/react-native';
+import VideoConsultationService from '../services/videoConsultation';
+
+export default function VideoConsultationScreen({ route, navigation }) {
+  const { appointmentId } = route.params;
+  const [connectionState, setConnectionState] = useState('idle'); // idle, connecting, connected, error
+  const [token, setToken] = useState(null);
+  const [liveKitUrl, setLiveKitUrl] = useState(null);
+  const [roomName, setRoomName] = useState(null);
+  const [audioEnabled, setAudioEnabled] = useState(true);
+  const [videoEnabled, setVideoEnabled] = useState(true);
+  const [recordingEnabled, setRecordingEnabled] = useState(false);
+  const [error, setError] = useState(null);
+  const serviceRef = useRef(VideoConsultationService);
+
+  useEffect(() => {
+    // Setup event listeners
+    serviceRef.current.on('connected', handleConnected);
+    serviceRef.current.on('disconnected', handleDisconnected);
+    serviceRef.current.on('error', handleError);
+    serviceRef.current.on('reconnecting', handleReconnecting);
+    serviceRef.current.on('recordingStarted', handleRecordingStarted);
+    serviceRef.current.on('recordingStopped', handleRecordingStopped);
+
+    // Get token and connect
+    initializeConsultation();
+
+    return () => {
+      // Cleanup
+      serviceRef.current.disconnect();
+    };
+  }, [appointmentId]);
+
+  const initializeConsultation = async () => {
+    try {
+      setConnectionState('connecting');
+      const tokenData = await serviceRef.current.getConsultationToken(appointmentId);
+      setToken(tokenData.token);
+      setLiveKitUrl(tokenData.liveKitUrl);
+      setRoomName(tokenData.roomName);
+    } catch (err) {
+      handleError({ message: err.message });
+    }
+  };
+
+  const handleConnected = (data) => {
+    setConnectionState('connected');
+    console.log('✅ Connected to consultation');
+  };
+
+  const handleDisconnected = () => {
+    setConnectionState('disconnected');
+    Alert.alert('Consultation Ended', 'The call has been disconnected.', [
+      { text: 'OK', onPress: () => navigation.goBack() }
+    ]);
+  };
+
+  const handleError = (data) => {
+    setConnectionState('error');
+    setError(data.message);
+    console.error('❌ Error:', data);
+    Alert.alert('Error', data.message);
+  };
+
+  const handleReconnecting = (data) => {
+    console.log(`🔄 Reconnecting... (attempt ${data.attempt}/${data.maxRetries})`);
+  };
+
+  const handleRecordingStarted = () => {
+    setRecordingEnabled(true);
+    console.log('🔴 Recording started');
+  };
+
+  const handleRecordingStopped = () => {
+    setRecordingEnabled(false);
+    console.log('⏹️ Recording stopped');
+  };
+
+  const toggleAudio = async () => {
+    try {
+      await serviceRef.current.toggleAudio(!audioEnabled);
+      setAudioEnabled(!audioEnabled);
+    } catch (err) {
+      Alert.alert('Error', 'Failed to toggle audio');
+    }
+  };
+
+  const toggleVideo = async () => {
+    try {
+      await serviceRef.current.toggleVideo(!videoEnabled);
+      setVideoEnabled(!videoEnabled);
+    } catch (err) {
+      Alert.alert('Error', 'Failed to toggle video');
+    }
+  };
+
+  const toggleRecording = async () => {
+    try {
+      if (recordingEnabled) {
+        await serviceRef.current.stopRecording(appointmentId);
+      } else {
+        await serviceRef.current.startRecording(appointmentId);
+      }
+    } catch (err) {
+      Alert.alert('Error', 'Failed to toggle recording');
+    }
+  };
+
+  const endConsultation = async () => {
+    Alert.alert('End Consultation', 'Are you sure you want to end this call?', [
+      {
+        text: 'Cancel',
+        style: 'cancel',
+      },
+      {
+        text: 'End Call',
+        style: 'destructive',
+        onPress: async () => {
+          try {
+            await serviceRef.current.endConsultation(appointmentId, {
+              rating: 5,
+              comments: '',
+            });
+          } catch (err) {
+            Alert.alert('Error', 'Failed to end consultation');
+          }
+        },
+      },
+    ]);
+  };
+
+  if (connectionState === 'connecting') {
+    return (
+      <View style={{ flex: 1, justifyContent: 'center', alignItems: 'center' }}
+      >
+        <Text>Connecting to consultation...</Text>
+      </View>
+    );
+  }
+
+  if (connectionState === 'error' || !token) {
+    return (
+      <View style={{ flex: 1, justifyContent: 'center', alignItems: 'center' }}>
+        <Text style={{ color: 'red', marginBottom: 20 }}>Connection Error</Text>
+        <Text>{error}</Text>
+        <TouchableOpacity onPress={() => navigation.goBack()}>
+          <Text>Go Back</Text>
+        </TouchableOpacity>
+      </View>
+    );
+  }
+
+  return (
+    <View style={{ flex: 1 }}>
+      <LiveKitRoom
+        url={liveKitUrl}
+        token={token}
+        connect={true}
+        audio={audioEnabled}
+        video={videoEnabled}
+      >
+        <VideoConference />
+      </LiveKitRoom>
+
+      {/* Controls */}
+      <View style={{ flexDirection: 'row', justifyContent: 'space-around', padding: 20 }}>
+        <TouchableOpacity onPress={toggleAudio}>
+          <Text style={{ color: audioEnabled ? 'green' : 'red' }}>
+            🔊 Audio
+          </Text>
+        </TouchableOpacity>
+
+        <TouchableOpacity onPress={toggleVideo}>
+          <Text style={{ color: videoEnabled ? 'green' : 'red' }}>
+            📹 Video
+          </Text>
+        </TouchableOpacity>
+
+        <TouchableOpacity onPress={toggleRecording}>
+          <Text style={{ color: recordingEnabled ? 'red' : 'gray' }}>
+            {recordingEnabled ? '🔴 Recording' : '⭕ Record'}
+          </Text>
+        </TouchableOpacity>
+
+        <TouchableOpacity
+          onPress={endConsultation}
+          style={{
+            backgroundColor: 'red',
+            padding: 10,
+            borderRadius: 5,
+          }}
+        >
+          <Text style={{ color: 'white' }}>📞 End Call</Text>
+        </TouchableOpacity>
+      </View>
+    </View>
+  );
+}
+```
+
+### Error Handling Guide
+
+| Error | Cause | Solution |
+|-------|-------|----------|
+| `TOKEN_ERROR` | Failed to get token from backend | Check JWT token, internet connection, verify appointment ID |
+| `CONNECTION_FAILED` | Can't connect to LiveKit after retries | Check LiveKit URL, verify network, check firewall rules |
+| `AUDIO_ERROR` | Microphone permission denied | Request audio permission in app settings |
+| `VIDEO_ERROR` | Camera permission denied | Request camera permission in app settings |
+| `RECORDING_ERROR` | Failed to start/stop recording | Verify consultation is active, check backend logs |
+| `END_CONSULTATION_ERROR` | Failed to end call on backend | Check internet, verify consultation exists |
+
+### Network Resilience
+
+```javascript
+// Auto-reconnect on network change
+import { useNetInfo } from '@react-native-community/netinfo';
+
+useEffect(() => {
+  const unsubscribe = netInfo.addEventListener(state => {
+    if (!state.isConnected) {
+      console.warn('📶 Network disconnected');
+      // Prepare for reconnection
+    } else if (state.isConnected && connectionState === 'disconnected') {
+      console.log('📶 Network restored - attempting to reconnect');
+      initializeConsultation();
+    }
+  });
+
+  return () => unsubscribe();
+}, [connectionState]);
+```
+
+### Performance Optimization
+
+```javascript
+// Memoize video component
+const MemoizedVideoConference = React.memo(VideoConference);
+
+// Lazy load heavy components
+const VideoConsultationScreen = lazy(() => 
+  import('./VideoConsultationScreen')
+);
+
+// Monitor connection quality
+serviceRef.current.on('qualityChanged', (data) => {
+  if (data.quality === 'poor') {
+    console.warn('⚠️ Poor connection detected - reducing video quality');
+    // Lower video resolution
+  }
+});
+```
+
+### Testing Video Integration
+
+```bash
+# Test token generation
+curl -X POST https://api.mediqzy.com/api/consultations/token \
+  -H "Authorization: Bearer JWT_TOKEN" \
+  -H "Content-Type: application/json" \
+  -d '{"appointment_id": "appt_123", "consultation_type": "video"}'
+
+# Test recording (after consultation starts)
+curl -X POST https://api.mediqzy.com/api/consultations/consult_123/recording \
+  -H "Authorization: Bearer JWT_TOKEN" \
+  -H "Content-Type: application/json" \
+  -d '{"action": "start"}'
+```
+
+### Troubleshooting Checklist
+
+- [ ] LiveKit server is running and accessible
+- [ ] SQLite_TOKEN has `consultation_grants` with appropriate permissions
+- [ ] Camera & microphone permissions granted in app settings
+- [ ] Network connectivity stable (test with speedtest)
+- [ ] LiveKit URL accessible from device
+- [ ] Firebase Cloud Messaging configured for notifications
+- [ ] Recording endpoint returns 200 OK
+- [ ] Device has sufficient storage for recordings
+- [ ] TLS certificate is valid (not expired)
+
+---
+
+### Push Notifications
+| Method | Endpoint | Purpose |
+|--------|----------|---------|  
+| POST | `/api/notifications/register-device` | Register FCM token |
+| POST | `/api/notifications/send` | Send notification |
+| GET | `/api/notifications` | Get notification history |
 ```bash
 npx create-expo-app SmartHealthApp
 cd SmartHealthApp
@@ -563,6 +1563,244 @@ const startCall = async (roomId) => {
 };
 ```
 
+### OTP Login Screen (React Native Component)
+
+```javascript
+// screens/OTPLoginScreen.js
+import React, { useState, useRef } from 'react';
+import { View, Text, TextInput, TouchableOpacity, Alert, ActivityIndicator } from 'react-native';
+import * as SecureStore from 'expo-secure-store';
+
+const AUTH_BASE = 'https://app.mediqzy.com/api';
+
+export default function OTPLoginScreen({ navigation }) {
+  const [step, setStep] = useState('phone'); // 'phone' or 'otp'
+  const [phoneNumber, setPhoneNumber] = useState('');
+  const [otpCode, setOtpCode] = useState('');
+  const [otp SessionId, setOtpSessionId] = useState(null);
+  const [loading, setLoading] = useState(false);
+  const [resendTimer, setResendTimer] = useState(0);
+  const otpInputRef = useRef(null);
+
+  // Step 1: Send OTP
+  const handleSendOTP = async () => {
+    if (!phoneNumber || phoneNumber.length < 10) {
+      Alert.alert('Invalid Phone', 'Please enter a valid 10-digit phone number');
+      return;
+    }
+
+    setLoading(true);
+    try {
+      const response = await fetch(`${AUTH_BASE}/api/auth/send-otp`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          phone_number: `+91${phoneNumber}`,
+          country_code: 'IN'
+        })
+      });
+
+      const data = await response.json();
+
+      if (data.success) {
+        setOtpSessionId(data.data.otp_session_id);
+        setStep('otp');
+        setResendTimer(60);  // 60 second cooldown
+        
+        // Start countdown
+        const interval = setInterval(() => {
+          setResendTimer(prev => {
+            if (prev <= 1) {
+              clearInterval(interval);
+              return 0;
+            }
+            return prev - 1;
+          });
+        }, 1000);
+
+        Alert.alert('✅ OTP Sent', 'Check your SMS for the 6-digit code');
+        otpInputRef.current?.focus();
+      } else {
+        Alert.alert('Error', data.message || 'Failed to send OTP');
+      }
+    } catch (error) {
+      Alert.alert('Error', error.message);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  // Step 2: Verify OTP
+  const handleVerifyOTP = async () => {
+    if (!otpCode || otpCode.length !== 6) {
+      Alert.alert('Invalid OTP', 'Please enter the 6-digit OTP');
+      return;
+    }
+
+    setLoading(true);
+    try {
+      const response = await fetch(`${AUTH_BASE}/api/auth/verify-otp`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          otp_session_id: otpSessionId,
+          otp_code: otpCode
+        })
+      });
+
+      const data = await response.json();
+
+      if (data.success) {
+        // Store tokens securely
+        await SecureStore.setItemAsync('jwt_token', data.data.token);
+        await SecureStore.setItemAsync('user_id', data.data.user.id);
+        await SecureStore.setItemAsync('user_phone', phoneNumber);
+        
+        Alert.alert('✅ Logged In', `Welcome back, ${data.data.user.name}!`);
+        navigation.replace('MainApp'); // Navigate to app
+      } else {
+        Alert.alert('Error', data.message || 'Invalid OTP');
+      }
+    } catch (error) {
+      Alert.alert('Error', error.message);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const resendOTP = async () => {
+    if (resendTimer > 0) return;
+    setOtpCode('');
+    await handleSendOTP();
+  };
+
+  if (step === 'phone') {
+    return (
+      <View style={{ flex: 1, padding: 20, justifyContent: 'center' }}>
+        <Text style={{ fontSize: 24, fontWeight: 'bold', marginBottom: 20 }}>
+          Login with Phone
+        </Text>
+        
+        <Text style={{ marginBottom: 10, color: '#666' }}>Enter your 10-digit phone number</Text>
+        
+        <View style={{ flexDirection: 'row', marginBottom: 20 }}>
+          <Text style={{
+            fontSize: 18,
+            padding: 12,
+            backgroundColor: '#f0f0f0',
+            borderRadius: 5,
+            marginRight: 10,
+            fontWeight: 'bold'
+          }}>
+            +91
+          </Text>
+          
+          <TextInput
+            style={{
+              flex: 1,
+              borderWidth: 1,
+              borderColor: '#ddd',
+              borderRadius: 5,
+              paddingHorizontal: 15,
+              fontSize: 16
+            }}
+            placeholder="XXXXXXXXXX"
+            keyboardType="numeric"
+            maxLength={10}
+            value={phoneNumber}
+            onChangeText={setPhoneNumber}
+          />
+        </View>
+
+        <TouchableOpacity
+          onPress={handleSendOTP}
+          disabled={loading}
+          style={{
+            backgroundColor: loading ? '#ccc' : '#2196F3',
+            padding: 15,
+            borderRadius: 5,
+            alignItems: 'center'
+          }}
+        >
+          {loading ? (
+            <ActivityIndicator color="#fff" />
+          ) : (
+            <Text style={{ color: '#fff', fontSize: 16, fontWeight: 'bold' }}>
+              Send OTP
+            </Text>
+          )}
+        </TouchableOpacity>
+      </View>
+    );
+  }
+
+  return (
+    <View style={{ flex: 1, padding: 20, justifyContent: 'center' }}>
+      <Text style={{ fontSize: 24, fontWeight: 'bold', marginBottom: 20 }}>
+        Verify OTP
+      </Text>
+      
+      <Text style={{ marginBottom: 10, color: '#666' }}>
+        Enter the 6-digit code sent to +91{phoneNumber}
+      </Text>
+
+      <TextInput
+        ref={otpInputRef}
+        style={{
+          borderWidth: 2,
+          borderColor: '#2196F3',
+          borderRadius: 5,
+          padding: 15,
+          fontSize: 20,
+          marginBottom: 20,
+          letterSpacing: 5,
+          textAlign: 'center',
+          fontWeight: 'bold'
+        }}
+        placeholder="000000"
+        keyboardType="numeric"
+        maxLength={6}
+        value={otpCode}
+        onChangeText={setOtpCode}
+      />
+
+      <TouchableOpacity
+        onPress={handleVerifyOTP}
+        disabled={loading}
+        style={{
+          backgroundColor: loading ? '#ccc' : '#2196F3',
+          padding: 15,
+          borderRadius: 5,
+          alignItems: 'center',
+          marginBottom: 15
+        }}
+      >
+        {loading ? (
+          <ActivityIndicator color="#fff" />
+        ) : (
+          <Text style={{ color: '#fff', fontSize: 16, fontWeight: 'bold' }}>
+            Verify & Login
+          </Text>
+        )}
+      </TouchableOpacity>
+
+      <TouchableOpacity
+        onPress={resendOTP}
+        disabled={resendTimer > 0}
+      >
+        <Text style={{
+          textAlign: 'center',
+          color: resendTimer > 0 ? '#ccc' : '#2196F3',
+          fontSize: 14
+        }}>
+          {resendTimer > 0 ? `Resend OTP in ${resendTimer}s` : 'Resend OTP'}
+        </Text>
+      </TouchableOpacity>
+    </View>
+  );
+}
+```
+
 ### Push Notifications with FCM
 Firebase Cloud Messaging is pre-configured. Simply register device token on app launch.
 
@@ -587,6 +1825,57 @@ Before launching to production:
 
 ## 📞 Support & Q&A
 
+**OTP Login Issues:**
+
+1. **OTP not sending:**
+   - Verify phone number format: `+91XXXXXXXXXX` (10 digits after +91)
+   - Check that SMS service is configured in backend
+   - Verify Auth Base URL is `https://app.mediqzy.com/api`
+   - Check server logs: `sudo docker logs mediczy-backend | grep -i otp`
+
+2. **OTP verification failing:**
+   - Ensure OTP entered correctly (case-sensitive)
+   - OTP expires after 10 minutes (call `/api/auth/send-otp` again for new code)
+   - Check that `otp_session_id` from step 1 is passed to step 2
+   - Verify phone number matches the one used in step 1
+
+3. **OTP sending 403 error:**
+   ```
+   Error: POST /api/auth/send-otp 403
+   ```
+   - Check if Auth credentials are correct
+   - Verify firewall isn't blocking requests
+   - Check CORS settings in nginx
+
+**Firebase Messaging Issues:**
+
+1. **Firebase 403 Error (Your Current Issue):**
+   ```
+   POST https://firebaseinstallations.googleapis.com/v1/projects/mediczy-notifications/installations 403
+   ```
+   
+   **Solution:** Disable Firebase SW for SSL compatibility (temporary):
+   ```javascript
+   // Only use web-based FCM, not Service Worker
+   const registerFCMToken = async () => {
+     try {
+       const token = await getToken(messaging);
+       console.log('✅ FCM Token:', token);
+     } catch (error) {
+       console.warn('⚠️ FCM disabled for SSL compatibility:', error);
+     }
+   };
+   ```
+
+2. **Service Worker Registration Failed:**
+   - Verify app is served over HTTPS (required for FCM)
+   - Clear browser cache and service workers
+   - Check browser console for SW errors
+
+3. **IndexedDB Access Denied:**
+   - Check browser privacy settings
+   - Disable private browsing mode
+
 **Common Issues:**
 
 1. **Token expiration:** Implement refresh token mechanism
@@ -605,12 +1894,22 @@ Before launching to production:
 
 ---
 
-## 📝 API Base URL
+## 📝 API Base URLs - Reference
 
-**Production:** `https://api.mediqzy.com`  
-**Staging:** `https://staging-api.mediqzy.com` (if available)
+| Purpose | Base URL | Example Endpoint |
+|---------|----------|-----------------|
+| **Authentication** | `https://app.mediqzy.com/api` | POST /api/auth/send-otp |
+| **User API Calls** | `https://api.mediqzy.com` | GET /api/users/profile |
+| **Health Data** | `https://api.mediqzy.com` | POST /api/apple-health/sync |
+| **Appointments** | `https://api.mediqzy.com` | POST /api/appointments |
+| **Video Consultation** | `https://api.mediqzy.com` | POST /api/consultations/token |
+| **Notifications** | `https://api.mediqzy.com` | POST /api/notifications/register-device |
 
-All endpoints are RESTful JSON APIs. Include `Content-Type: application/json` header in all requests.
+**Important:** Always use correct base URL:
+- 🔐 **Auth endpoints** → `https://app.mediqzy.com/api`
+- 📱 **Everything else** → `https://api.mediqzy.com`
+
+All endpoints require `Content-Type: application/json` header in requests.
 
 ---
 
