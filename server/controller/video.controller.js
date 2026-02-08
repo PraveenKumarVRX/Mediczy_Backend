@@ -255,17 +255,32 @@ class VideoController {
       try {
         const videoApiUrl = process.env.VIDEO_API_URL || 'http://localhost:3000';
         
+        // Determine room type and get appropriate max participants for Zoom-like multi-participant support
+        let roomType = 'appointment'; // default for appointment-based calls
+        let maxParticipants = 2;
+        
+        if (isAppointmentRoom) {
+          // Standard appointment is 1-on-1
+          roomType = 'appointment';
+          maxParticipants = 2;
+        } else {
+          // For non-appointment rooms (group consultations, etc.), support up to 100 participants
+          roomType = 'generic';
+          maxParticipants = 100;
+        }
+        
         // First, try to ensure room exists
         const createRoomResponse = await fetch(`${videoApiUrl}/api/video/room/create`, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
             roomId,
+            roomType,
             appointmentId: appointmentId || null,
             doctorId: req.user.role === 'doctor' ? userId : null,
             patientId: req.user.role !== 'doctor' ? userId : null,
-            maxParticipants: 2,
-            duration: 60 // minutes
+            maxParticipants: maxParticipants,
+            duration: roomType === 'appointment' ? 60 : 120 // minutes
           })
         }).catch(err => {
           console.warn(`⚠️ Room creation failed: ${err.message}`);
@@ -296,6 +311,7 @@ class VideoController {
         roomId,
         userId,
         userRole,
+        displayName,
         joinedAt: new Date().toISOString(),
         appointmentId: appointmentId || null,
         videoToken: videoRoomToken,
@@ -314,6 +330,11 @@ class VideoController {
         success: true,
         message: 'Successfully joined video room',
         roomData,
+        roomCapacity: {
+          max: isAppointmentRoom ? 2 : 100,
+          type: isAppointmentRoom ? 'appointment' : 'group',
+          description: isAppointmentRoom ? '1-on-1 video call' : 'Multi-participant video conference (Zoom-like)'
+        },
         livekit: livekitData
       });
 
@@ -459,14 +480,32 @@ class VideoController {
     try {
       const { roomId } = req.params;
 
+      // Determine room capacity based on room type (supports Zoom-like multi-participant video)
+      const isAppointmentRoom = roomId.startsWith('apt-');
+      const maxParticipants = isAppointmentRoom ? 2 : 100;
+      const roomType = isAppointmentRoom ? 'appointment' : 'generic';
+
       // In a real implementation, you'd query active room participants
       const roomStatus = {
         roomId,
         status: 'active',
+        roomType: roomType,
+        capacity: {
+          max: maxParticipants,
+          type: roomType,
+          description: isAppointmentRoom ? '1-on-1 video call' : 'Multi-participant video conference (Zoom-like)'
+        },
         participants: [],
         createdAt: new Date().toISOString(),
-        maxParticipants: 2, // Doctor + Patient
-        duration: '00:00:00'
+        maxParticipants: maxParticipants,
+        duration: '00:00:00',
+        features: {
+          screenShare: true,
+          recording: true,
+          chat: true,
+          whiteboard: !isAppointmentRoom,
+          fileShare: true
+        }
       };
 
       res.json({

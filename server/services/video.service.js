@@ -10,16 +10,16 @@ class VideoService {
     this.config = {
       provider: 'livekit', // webrtc, livekit, jitsi, zoom, custom
       settings: {
-        maxParticipants: 2,
-        recordingSetting: false,
+        maxParticipants: 100, // Supports group calls and webinars (Zoom-like)
+        recordingSetting: true,
         videoQuality: 'high', // low, medium, high, hd
         audioQuality: 'high', // low, medium, high
         enableScreenShare: true,
-        enableFileShare: false,
+        enableFileShare: true,
         enableChat: true,
-        enableWhiteboard: false,
-        sessionTimeout: 3600, // 1 hour in seconds
-        autoEndSession: true,
+        enableWhiteboard: true,
+        sessionTimeout: 7200, // 2 hours in seconds
+        autoEndSession: false,
         requireAuth: true
       },
       iceServers: [
@@ -99,6 +99,17 @@ class VideoService {
       }
     };
 
+    // Room-type specific configurations for Zoom-like multi-participant support
+    this.roomTypeConfigs = {
+      appointment: { maxParticipants: 2, defaultName: 'Appointment Video Call' },
+      consultation: { maxParticipants: 5, defaultName: 'Medical Consultation' },
+      group_consultation: { maxParticipants: 10, defaultName: 'Group Consultation' },
+      webinar: { maxParticipants: 100, defaultName: 'Webinar' },
+      team_meeting: { maxParticipants: 50, defaultName: 'Team Meeting' },
+      classroom: { maxParticipants: 100, defaultName: 'Virtual Classroom' },
+      generic: { maxParticipants: 100, defaultName: 'Video Conference' }
+    };
+
     this.sessions = new Map(); // Active video sessions
     this.sessionLogs = []; // Session history
   }
@@ -140,12 +151,29 @@ class VideoService {
   }
 
   /**
+   * Get room-type specific max participants for Zoom-like multi-participant support
+   */
+  getMaxParticipantsForRoom(roomType = 'generic') {
+    const config = this.roomTypeConfigs[roomType] || this.roomTypeConfigs.generic;
+    return config.maxParticipants;
+  }
+
+  /**
+   * Get room type display name
+   */
+  getRoomTypeName(roomType = 'generic') {
+    const config = this.roomTypeConfigs[roomType] || this.roomTypeConfigs.generic;
+    return config.defaultName;
+  }
+
+  /**
    * Get current configuration
    */
   getConfig() {
     return {
       provider: this.config.provider,
       settings: this.config.settings,
+      roomTypes: this.roomTypeConfigs,
       iceServers: this.config.iceServers,
       providers: Object.keys(this.config.providers).map(key => ({
         id: key,
