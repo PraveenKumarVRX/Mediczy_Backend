@@ -6,7 +6,7 @@ import {
   TrendingUp, Activity, MessageSquare, DollarSign, FileText, 
   Settings, LogOut, RefreshCw, Plus, Edit, Trash2, Eye, 
   CheckCircle, XCircle, Clock, Send, Download, Upload,
-  Search, Filter, MoreVertical, ShieldCheck, AlertCircle
+  Search, Filter, MoreVertical, ShieldCheck, AlertCircle, Award
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Card, CardHeader, CardTitle, CardContent, CardDescription } from '@/components/ui/card';
@@ -286,6 +286,7 @@ const ComprehensiveAdminDashboard = () => {
                 { id: 'users', icon: Users, label: 'Users' },
                 { id: 'doctors', icon: Stethoscope, label: 'Doctors' },
                 { id: 'corporates', icon: Building2, label: 'Corporate Plans' },
+                { id: 'brokers', icon: DollarSign, label: 'Brokers' },
                 { id: 'bulk-upload', icon: Upload, label: 'Bulk Upload' },
                 { id: 'analytics', icon: Activity, label: 'Analytics' },
                 { id: 'messaging', icon: MessageSquare, label: 'Messaging' },
@@ -672,6 +673,72 @@ const ComprehensiveAdminDashboard = () => {
                           <h4 className="font-medium text-blue-900">Corporate Benefits Portal</h4>
                           <p className="text-sm text-blue-700 mt-1">
                             Corporate users can access their benefits at <code className="bg-blue-100 px-2 py-0.5 rounded">/corporate/login</code>
+                          </p>
+                        </div>
+                      </div>
+                    </div>
+                  </CardContent>
+                </Card>
+              </TabsContent>
+
+              {/* Brokers Tab */}
+              <TabsContent value="brokers" className="space-y-6 mt-0">
+                <Card className="border-none shadow-md">
+                  <CardHeader className="bg-gradient-to-br from-amber-50 to-white border-b border-amber-100">
+                    <div className="flex items-center justify-between">
+                      <div>
+                        <CardTitle className="flex items-center gap-2 text-amber-700">
+                          <DollarSign className="w-5 h-5" />
+                          Brokers & Aggregators Management
+                        </CardTitle>
+                        <CardDescription>Manage insurance brokers and business aggregators</CardDescription>
+                      </div>
+                      <Button 
+                        className="bg-amber-600 hover:bg-amber-700 shadow-md shadow-amber-200"
+                        onClick={() => navigate('/admin/brokers')}
+                      >
+                        <Settings className="w-4 h-4 mr-2" />
+                        Open Full Manager
+                      </Button>
+                    </div>
+                  </CardHeader>
+                  <CardContent className="p-6">
+                    <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+                      <Card className="border border-amber-100 hover:shadow-lg transition-all duration-300 cursor-pointer" onClick={() => navigate('/admin/brokers')}>
+                        <CardContent className="p-6 text-center">
+                          <div className="w-16 h-16 bg-amber-100 rounded-2xl flex items-center justify-center mx-auto mb-4">
+                            <Building2 className="w-8 h-8 text-amber-600" />
+                          </div>
+                          <h3 className="font-semibold text-lg text-slate-900">View All Brokers</h3>
+                          <p className="text-sm text-slate-500 mt-2">Browse and manage all registered brokers</p>
+                        </CardContent>
+                      </Card>
+                      <Card className="border border-yellow-100 hover:shadow-lg transition-all duration-300 cursor-pointer" onClick={() => navigate('/admin/brokers')}>
+                        <CardContent className="p-6 text-center">
+                          <div className="w-16 h-16 bg-yellow-100 rounded-2xl flex items-center justify-center mx-auto mb-4">
+                            <Plus className="w-8 h-8 text-yellow-600" />
+                          </div>
+                          <h3 className="font-semibold text-lg text-slate-900">Add New Broker</h3>
+                          <p className="text-sm text-slate-500 mt-2">Register a new broker or aggregator</p>
+                        </CardContent>
+                      </Card>
+                      <Card className="border border-orange-100 hover:shadow-lg transition-all duration-300 cursor-pointer" onClick={() => navigate('/admin/brokers')}>
+                        <CardContent className="p-6 text-center">
+                          <div className="w-16 h-16 bg-orange-100 rounded-2xl flex items-center justify-center mx-auto mb-4">
+                            <Activity className="w-8 h-8 text-orange-600" />
+                          </div>
+                          <h3 className="font-semibold text-lg text-slate-900">Network Analytics</h3>
+                          <p className="text-sm text-slate-500 mt-2">View broker performance and network stats</p>
+                        </CardContent>
+                      </Card>
+                    </div>
+                    <div className="mt-6 p-4 bg-amber-50 rounded-lg border border-amber-100">
+                      <div className="flex items-start gap-3">
+                        <Award className="w-5 h-5 text-amber-600 mt-0.5" />
+                        <div>
+                          <h4 className="font-medium text-amber-900">Broker Management Portal</h4>
+                          <p className="text-sm text-amber-700 mt-1">
+                            View and manage brokers at <code className="bg-amber-100 px-2 py-0.5 rounded">/admin/brokers</code>
                           </p>
                         </div>
                       </div>

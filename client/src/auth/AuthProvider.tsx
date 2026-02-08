@@ -293,6 +293,32 @@ export const AuthProvider = ({ children }) => {
       setAuthState(prev => ({ ...prev, hasCheckedAuth: true }));
       return;
     }
+
+    // Check insurance broker routes - require insuranceBrokerToken
+    const isBrokerRoute = location.pathname.startsWith('/insurance-broker');
+    if (isBrokerRoute) {
+      const brokerToken = localStorage.getItem('insuranceBrokerToken');
+      if (!brokerToken && location.pathname !== '/insurance-broker/login' && location.pathname !== '/intermediary/login') {
+        setAuthState(prev => ({ ...prev, hasCheckedAuth: true }));
+        navigate("/intermediary/login", { replace: true });
+        return;
+      }
+      setAuthState(prev => ({ ...prev, hasCheckedAuth: true }));
+      return;
+    }
+
+    // Check aggregator routes - require aggregatorToken
+    const isAggregatorRoute = location.pathname.startsWith('/aggregator');
+    if (isAggregatorRoute) {
+      const aggregatorToken = localStorage.getItem('aggregatorToken');
+      if (!aggregatorToken && location.pathname !== '/aggregator/login') {
+        setAuthState(prev => ({ ...prev, hasCheckedAuth: true }));
+        navigate("/aggregator/login", { replace: true });
+        return;
+      }
+      setAuthState(prev => ({ ...prev, hasCheckedAuth: true }));
+      return;
+    }
     
     // Check doctor routes - require doctorToken
     if (isDoctorRoute) {
@@ -327,7 +353,10 @@ export const AuthProvider = ({ children }) => {
       "/tpa/login",
       "/psu/login",
       "/insurer/login",
-      "/ngo/login"
+      "/ngo/login",
+      "/intermediary/login",
+      "/insurance-broker/login",
+      "/aggregator/login"
     ].includes(location.pathname);
     
     if (!authState.token && !isPublicRoute) {

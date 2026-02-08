@@ -103,6 +103,7 @@ import AmbulanceManagement from '@/pages/admin/AmbulanceManagement';
 import OHCManagement from '@/pages/admin/OHCManagement';
 import InsurerManagement from '@/pages/admin/InsurerManagement';
 import TPAManagement from '@/pages/admin/TPAManagement';
+import BrokerManagement from '@/pages/admin/BrokerManagement';
 import MedivacManagement from '@/pages/admin/MedivacManagement';
 import NGOManagement from '@/pages/admin/NGOManagement';
 import PSUManagement from '@/pages/admin/PSUManagement';
@@ -224,7 +225,12 @@ import HospitalCommunicationHub from "@/pages/hospital/HospitalCommunicationHub"
 import HospitalAmbulance from "@/pages/hospital/HospitalAmbulance";
 import HospitalBranchesClinic from "@/pages/hospital/HospitalBranchesClinic";
 import HospitalTeamChat from "@/pages/hospital/HospitalTeamChat";
+import BrokerDashboard from "@/pages/insurance-broker/BrokerDashboard";
 import BrokerCommunication from "@/pages/insurance-broker/BrokerCommunication";
+import AggregatorLogin from "@/pages/aggregator/AggregatorLogin";
+import AggregatorDashboard from "@/pages/aggregator/AggregatorDashboard";
+import AggregatorCorporates from "@/pages/aggregator/AggregatorCorporates";
+import AggregatorPartners from "@/pages/aggregator/AggregatorPartners";
 import InsuranceCommunication from "@/pages/insurance-company/InsuranceCommunication";
 import HospitalLogin from "@/pages/hospital/HospitalLogin";
 import HospitalDashboard from "@/pages/hospital/HospitalDashboard";
@@ -343,6 +349,7 @@ import {
 import HomecareLogin from "@/pages/homecare/HomecareLogin";
 import HomecareDashboard from "@/pages/homecare/HomecareDashboard";
 import InsuranceBrokerLogin from "@/pages/insurance-broker/InsuranceBrokerLogin";
+import BrokerDashboard from "@/pages/insurance-broker/BrokerDashboard";
 import InsuranceCompanyLogin from "@/pages/insurance-company/InsuranceCompanyLogin";
 import CorporateCompliance from "@/pages/corporate/CorporateCompliance";
 import CorporateSupport from "@/pages/corporate/CorporateSupport";
@@ -512,6 +519,14 @@ const AppRoutes = () => {
       <Route path="/homecare/login" element={<HomecareLogin />} />
       <Route path="/intermediary/login" element={<InsuranceBrokerLogin />} />
       <Route path="/intermediary/communication" element={<BrokerCommunication />} />
+      <Route path="/insurance-broker/dashboard" element={<BrokerDashboard />} />
+      <Route path="/aggregator/login" element={<AggregatorLogin />} />
+      <Route path="/aggregator/dashboard" element={<AggregatorDashboard />} />
+      <Route path="/aggregator/corporates" element={<AggregatorCorporates />} />
+      <Route path="/aggregator/partners" element={<AggregatorPartners />} />
+      <Route path="/aggregator/notifications" element={<div>Notifications</div>} />
+      <Route path="/aggregator/settings" element={<div>Settings</div>} />
+      <Route path="/aggregator/support" element={<div>Support</div>} />
       <Route path="/tpa/login" element={<TpaLogin />} />
       <Route path="/tpa/dashboard" element={<TPADashboard />} />
       <Route path="/tpa/claims" element={<TPAClaims />} />
@@ -719,6 +734,7 @@ const AppRoutes = () => {
   <Route path="/admin/tenants" element={<AdminTenantManagement />} />
   <Route path="/admin/insurer" element={<InsurerManagement />} />
   <Route path="/admin/tpa" element={<TPAManagement />} />
+  <Route path="/admin/brokers" element={<BrokerManagement />} />
   <Route path="/admin/hospitals" element={<HospitalsManagement />} />
   <Route path="/admin/clinics" element={<ClinicsManagement />} />
   <Route path="/admin/corporates" element={<CorporatesManagement />} />

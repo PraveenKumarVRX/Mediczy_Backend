@@ -400,6 +400,323 @@ class AggregatorController {
       });
     }
   };
+
+  // ============================================
+  // ADMIN CRUD ENDPOINTS
+  // ============================================
+
+  /**
+   * POST /api/admin/aggregators
+   * Create a new aggregator (admin only)
+   */
+  static createAggregator = async (req, res) => {
+    try {
+      const {
+        broker_name,
+        email,
+        phone_number,
+        contact_person,
+        irdai_license_number,
+        business_type,
+        commission_percentage,
+        status,
+        is_verified,
+        website,
+        address,
+        city,
+        state,
+        pincode,
+      } = req.body;
+
+      if (!broker_name || !email) {
+        return res.status(400).json({
+          success: false,
+          message: 'Broker name and email are required',
+        });
+      }
+
+      // Check if broker already exists
+      const { InsuranceBroker } = require('../models/index.js');
+      const existingBroker = await InsuranceBroker.findOne({
+        where: { email },
+      });
+
+      if (existingBroker) {
+        return res.status(409).json({
+          success: false,
+          message: 'A broker with this email already exists',
+        });
+      }
+
+      // Create new broker
+      const newBroker = await InsuranceBroker.create({
+        broker_name,
+        email,
+        phone_number,
+        contact_person,
+        irdai_license_number,
+        business_type: business_type || 'insurance_broker',
+        commission_percentage: commission_percentage || 5,
+        status: status || 'pending',
+        is_verified: is_verified || false,
+        website,
+        address,
+        city,
+        state,
+        pincode,
+      });
+
+      res.status(201).json({
+        success: true,
+        message: 'Aggregator created successfully',
+        data: newBroker,
+      });
+    } catch (error) {
+      console.error('Error creating aggregator:', error);
+      res.status(500).json({
+        success: false,
+        message: 'Error creating aggregator',
+        error: error.message,
+      });
+    }
+  };
+
+  /**
+   * GET /api/admin/aggregators
+   * List all aggregators with pagination (admin only)
+   */
+  static getAggregators = async (req, res) => {
+    try {
+      const { limit = 25, offset = 0, status = null, verified = null } = req.query;
+      const { InsuranceBroker, sequelize } = require('../models/index.js');
+
+      let where = {};
+      if (status) where.status = status;
+      if (verified !== null) where.is_verified = verified === 'true';
+
+      const { count, rows } = await InsuranceBroker.findAndCountAll({
+        where,
+        limit: parseInt(limit),
+        offset: parseInt(offset),
+        order: [['created_at', 'DESC']],
+      });
+
+      // Enrich with stats
+      const enrichedBrokers = await Promise.all(
+        rows.map(async (broker) => {
+          const corporateCount = await sequelize.query(
+            'SELECT COUNT(*) as count FROM corporates WHERE aggregator_id = ? AND aggregator_type = ?',
+            {
+              replacements: [broker.id, 'broker'],
+              type: sequelize.QueryTypes.SELECT,
+            }
+          );
+
+          const partnerCount = await sequelize.query(
+            'SELECT COUNT(*) as count FROM aggregator_wellness_network WHERE aggregator_id = ? AND aggregator_type = ?',
+            {
+              replacements: [broker.id, 'broker'],
+              type: sequelize.QueryTypes.SELECT,
+            }
+          );
+
+          return {
+            ...broker.toJSON(),
+            corporate_count: corporateCount[0]?.count || 0,
+            partner_count: partnerCount[0]?.count || 0,
+          };
+        })
+      );
+
+      res.json({
+        success: true,
+        data: enrichedBrokers,
+        total: count,
+        pagination: {
+          limit: parseInt(limit),
+          offset: parseInt(offset),
+          total: count,
+        },
+      });
+    } catch (error) {
+      console.error('Error fetching aggregators:', error);
+      res.status(500).json({
+        success: false,
+        message: 'Error fetching aggregators',
+        error: error.message,
+      });
+    }
+  };
+
+  /**
+   * GET /api/admin/aggregators/:id
+   * Get a specific aggregator (admin only)
+   */
+  static getAggregator = async (req, res) => {
+    try {
+      const { id } = req.params;
+      const { InsuranceBroker, sequelize } = require('../models/index.js');
+
+      const broker = await InsuranceBroker.findByPk(id);
+
+      if (!broker) {
+        return res.status(404).json({
+          success: false,
+          message: 'Aggregator not found',
+        });
+      }
+
+      // Get corporate and partner counts
+      const corporateCount = await sequelize.query(
+        'SELECT COUNT(*) as count FROM corporates WHERE aggregator_id = ? AND aggregator_type = ?',
+        {
+          replacements: [broker.id, 'broker'],
+          type: sequelize.QueryTypes.SELECT,
+        }
+      );
+
+      const partnerCount = await sequelize.query(
+        'SELECT COUNT(*) as count FROM aggregator_wellness_network WHERE aggregator_id = ? AND aggregator_type = ?',
+        {
+          replacements: [broker.id, 'broker'],
+          type: sequelize.QueryTypes.SELECT,
+        }
+      );
+
+      res.json({
+        success: true,
+        data: {
+          ...broker.toJSON(),
+          corporate_count: corporateCount[0]?.count || 0,
+          partner_count: partnerCount[0]?.count || 0,
+        },
+      });
+    } catch (error) {
+      console.error('Error fetching aggregator:', error);
+      res.status(500).json({
+        success: false,
+        message: 'Error fetching aggregator',
+        error: error.message,
+      });
+    }
+  };
+
+  /**
+   * PUT /api/admin/aggregators/:id
+   * Update an aggregator (admin only)
+   */
+  static updateAggregator = async (req, res) => {
+    try {
+      const { id } = req.params;
+      const {
+        broker_name,
+        email,
+        phone_number,
+        contact_person,
+        irdai_license_number,
+        business_type,
+        commission_percentage,
+        status,
+        is_verified,
+        website,
+        address,
+        city,
+        state,
+        pincode,
+      } = req.body;
+
+      const { InsuranceBroker } = require('../models/index.js');
+      const broker = await InsuranceBroker.findByPk(id);
+
+      if (!broker) {
+        return res.status(404).json({
+          success: false,
+          message: 'Aggregator not found',
+        });
+      }
+
+      // Check if new email is already in use
+      if (email && email !== broker.email) {
+        const existingBroker = await InsuranceBroker.findOne({
+          where: { email },
+        });
+        if (existingBroker) {
+          return res.status(409).json({
+            success: false,
+            message: 'A broker with this email already exists',
+          });
+        }
+      }
+
+      // Update broker
+      const updateData = {
+        ...(broker_name !== undefined && { broker_name }),
+        ...(email !== undefined && { email }),
+        ...(phone_number !== undefined && { phone_number }),
+        ...(contact_person !== undefined && { contact_person }),
+        ...(irdai_license_number !== undefined && { irdai_license_number }),
+        ...(business_type !== undefined && { business_type }),
+        ...(commission_percentage !== undefined && { commission_percentage }),
+        ...(status !== undefined && { status }),
+        ...(is_verified !== undefined && { is_verified }),
+        ...(website !== undefined && { website }),
+        ...(address !== undefined && { address }),
+        ...(city !== undefined && { city }),
+        ...(state !== undefined && { state }),
+        ...(pincode !== undefined && { pincode }),
+      };
+
+      await broker.update(updateData);
+
+      res.json({
+        success: true,
+        message: 'Aggregator updated successfully',
+        data: broker,
+      });
+    } catch (error) {
+      console.error('Error updating aggregator:', error);
+      res.status(500).json({
+        success: false,
+        message: 'Error updating aggregator',
+        error: error.message,
+      });
+    }
+  };
+
+  /**
+   * DELETE /api/admin/aggregators/:id
+   * Delete an aggregator (admin only)
+   */
+  static deleteAggregator = async (req, res) => {
+    try {
+      const { id } = req.params;
+      const { InsuranceBroker } = require('../models/index.js');
+
+      const broker = await InsuranceBroker.findByPk(id);
+
+      if (!broker) {
+        return res.status(404).json({
+          success: false,
+          message: 'Aggregator not found',
+        });
+      }
+
+      const brokerName = broker.broker_name;
+      await broker.destroy();
+
+      res.json({
+        success: true,
+        message: `${brokerName} has been deleted successfully`,
+      });
+    } catch (error) {
+      console.error('Error deleting aggregator:', error);
+      res.status(500).json({
+        success: false,
+        message: 'Error deleting aggregator',
+        error: error.message,
+      });
+    }
+  };
 }
 
 export default AggregatorController;

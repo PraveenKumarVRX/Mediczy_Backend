@@ -96,6 +96,7 @@ import otpRouter from './routes/otp.route.js';
 import enhancedLabRouter from './routes/lab.route.enhanced.js';
 import corporateRouter from './routes/corporate.route.js';
 import aggregatorRouter from './routes/aggregator.route.js';
+import aggregatorAuthRouter from './routes/aggregator-auth.route.js';
 import cartRouter from './routes/cart.route.js';
 import hospitalRouter from './routes/hospital.route.js';
 import hospitalAuthRouter from './routes/hospital-auth.route.js';
@@ -148,6 +149,11 @@ import adminWebinarRouter from './routes/admin/webinar.routes.js';
 import adminWebinarModulesRouter from './routes/admin/webinar-modules.routes.js';
 import doctorWebinarRouter from './routes/doctor/webinar.routes.js';
 import publicWebinarRouter from './routes/webinar.routes.js';
+
+// Admin API routes (API credentials, aggregators, etc.)
+import adminApiRouter from './api/admin/index.js';
+import authApiRouter from './api/auth/index.js';
+import doctorApiRouter from './api/doctors/index.js';
 
 // Load intelligent database models (PostgreSQL-backed)
 import "./models/user.model.intelligent.js";
@@ -938,6 +944,7 @@ app.use('/api/places', placesRouter);
 
 app.use('/stats', adminStatsRouter); // Admin dashboard statistics (public stats endpoint, outside /api to bypass middleware)
 app.use('/api/admin', adminRouter);
+app.use('/api/admin', adminApiRouter); // API credentials, aggregators, and other admin APIs
 app.use('/api/admin/webinars', authUser, requireRole('admin'), adminWebinarRouter); // Super admin webinar management
 app.use('/api/admin/webinar-modules', authUser, requireRole('admin'), adminWebinarModulesRouter); // Webinar module & notification configuration
 app.use('/api/admin/module-access', moduleAccessRouter);
@@ -983,6 +990,7 @@ app.use('/api/tenants', tenantRouter); // Multi-tenant organization management
 app.use('/api/tenant-domains', tenantDomainRouter); // Custom domain management
 app.use('/api/corporate', corporateRouter); // Corporate benefits and plans
 app.use('/api/aggregators', aggregatorRouter); // Aggregator organizational hierarchy
+app.use('/api/aggregator-auth', aggregatorAuthRouter); // Aggregator authentication (login/register)
 app.use('/api/corporates', aggregatorRouter); // Corporate management endpoints
 app.use('/api/corporate', aggregatorRouter); // Self-service corporate endpoints
 app.use('/api/scribe', scribeRouter); // AI Scribe - Public API entrypoint
@@ -1029,6 +1037,7 @@ app.use('/api/admin/clinics', adminClinicsRouter); // Admin clinic CRUD operatio
 app.use('/api/admin/pharmacies', adminPharmaciesRouter); // Admin pharmacy CRUD operations
 app.use('/api/admin/doctors', adminDoctorsRouter); // Admin doctor CRUD operations
 app.use('/api/admin/appointments', adminAppointmentsRouter); // Admin appointment oversight
+app.use('/api/admin/aggregators', aggregatorRouter); // Admin broker/aggregator CRUD operations
 
 // Clinic Portal Routes
 import clinicAuthRouter from './routes/clinic/auth.routes.js';

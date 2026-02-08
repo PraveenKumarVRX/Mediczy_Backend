@@ -242,4 +242,106 @@ router.get(
   }
 );
 
+// ============================================
+// ADMIN ENDPOINTS (Broker/Aggregator Management)
+// ============================================
+
+/**
+ * @route   POST /api/admin/aggregators
+ * @desc    Create a new aggregator/broker (admin only)
+ * @access  Private (Super Admin)
+ * @body    broker_name, email, commission_percentage, status, etc.
+ */
+// Note: Routes are registered under /api/admin prefix in app.js
+// Creating route for `` path since parent router is at /api/admin/aggregators
+router.post(
+  '',
+  authUser,
+  [
+    body('broker_name').trim().notEmpty().withMessage('Broker name is required'),
+    body('email').isEmail().normalizeEmail().withMessage('Valid email is required'),
+    body('phone_number').optional().trim(),
+    body('contact_person').optional().trim(),
+    body('irdai_license_number').optional().trim(),
+    body('business_type').optional().isIn(['insurance_broker', 'insurance_agent', 'tpa', 'other']),
+    body('commission_percentage').optional().isFloat({ min: 0, max: 100 }),
+    body('status').optional().isIn(['active', 'inactive', 'pending', 'suspended']),
+    body('is_verified').optional().isBoolean(),
+  ],
+  AggregatorController.createAggregator
+);
+
+/**
+ * @route   GET /api/admin/aggregators
+ * @desc    List all aggregators with pagination (admin only)
+ * @access  Private (Super Admin)
+ * @query   limit, offset, status, verified
+ */
+router.get(
+  '',
+  authUser,
+  [
+    query('limit').optional().isInt({ min: 1, max: 100 }),
+    query('offset').optional().isInt({ min: 0 }),
+    query('status').optional().isIn(['all', 'active', 'inactive', 'pending', 'suspended']),
+    query('verified').optional().isIn(['true', 'false']),
+  ],
+  AggregatorController.getAggregators
+);
+
+/**
+ * @route   GET /api/admin/aggregators/:id
+ * @desc    Get a specific aggregator (admin only)
+ * @access  Private (Super Admin)
+ * @params  id - Aggregator ID
+ */
+router.get(
+  '/:id',
+  authUser,
+  [
+    param('id').isInt().withMessage('Valid aggregator ID required'),
+  ],
+  AggregatorController.getAggregator
+);
+
+/**
+ * @route   PUT /api/admin/aggregators/:id
+ * @desc    Update an aggregator (admin only)
+ * @access  Private (Super Admin)
+ * @params  id - Aggregator ID
+ * @body    broker_name, email, commission_percentage, status, etc.
+ */
+router.put(
+  '/:id',
+  authUser,
+  [
+    param('id').isInt().withMessage('Valid aggregator ID required'),
+    body('broker_name').optional().trim(),
+    body('email').optional().isEmail().normalizeEmail(),
+    body('phone_number').optional().trim(),
+    body('contact_person').optional().trim(),
+    body('irdai_license_number').optional().trim(),
+    body('business_type').optional().isIn(['insurance_broker', 'insurance_agent', 'tpa', 'other']),
+    body('commission_percentage').optional().isFloat({ min: 0, max: 100 }),
+    body('status').optional().isIn(['active', 'inactive', 'pending', 'suspended']),
+    body('is_verified').optional().isBoolean(),
+  ],
+  AggregatorController.updateAggregator
+);
+
+/**
+ * @route   DELETE /api/admin/aggregators/:id
+ * @desc    Delete an aggregator (admin only)
+ * @access  Private (Super Admin)
+ * @params  id - Aggregator ID
+ */
+router.delete(
+  '/:id',
+  authUser,
+  [
+    param('id').isInt().withMessage('Valid aggregator ID required'),
+  ],
+  AggregatorController.deleteAggregator
+);
+
 export default router;

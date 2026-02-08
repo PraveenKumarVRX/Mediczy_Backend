@@ -1209,6 +1209,373 @@ router.post('/auth/signup', asyncHandler(async (req, res) => {
   });
 }));
 
+// ============== Corporate Employee Authentication (SmartHealth RN) ==============
+
+/**
+ * POST /api/mobile/auth/corporate-login
+ * Login for corporate employees (e.g., My SmartHealth employees)
+ * Used by SmartHealth RN mobile app for Mayden broker
+ * 
+ * @body {email, password, deviceId, pushToken, corporateSlug (optional)}
+ * @returns {user with corporate context, accessToken, refreshToken}
+ */
+router.post('/auth/corporate-login', asyncHandler(async (req, res) => {
+  const { email, password, deviceId, pushToken, corporateSlug } = req.body;
+  
+  if (!email || !password) {
+    return res.status(400).json({
+      success: false,
+      error: { code: 'MISSING_CREDENTIALS', message: 'Email and password are required' }
+    });
+  }
+
+  // First, get the corporate context if slug provided
+  let corporateId = null;
+  let corporateInfo = null;
+  
+  if (corporateSlug) {
+    const corpResult = await db.query(`
+      SELECT id, name, slug, type, status, aggregator_uid
+      FROM tenants
+      WHERE slug = $1 AND type = 'corporate' AND status = 'active'
+      LIMIT 1
+    `, [corporateSlug]);
+    
+    if (corpResult.rows.length === 0) {
+      return res.status(404).json({
+        success: false,
+        error: { code: 'CORPORATE_NOT_FOUND', message: 'Corporate organization not found' }
+      });
+    }
+    
+    corporateInfo = corpResult.rows[0];
+    corporateId = corporateInfo.id;
+  }
+
+  // Look up user - if corporate specified, check within that corporate
+  let userQuery = `
+    SELECT u.id,
+           u.email,
+           u.password,
+           u."firstName" AS first_name,
+           u."lastName" AS last_name,
+           u."phoneNumber" AS phone,
+           u."profileImage" AS avatar_url,
+           u."dateOfBirth" AS date_of_birth,
+           u.gender,
+           COALESCE(p."bloodGroup"::text, u."bloodType") AS blood_group,
+           NULLIF(TRIM(CONCAT_WS(', ', u.address_street, u.address_city, u.address_state, u."address_zipCode", u.address_country)), '') AS address,
+           u.role,
+           u.status,
+           u.organization_id,
+           t.slug as corporate_slug,
+           t.name as corporate_name,
+           t.type as organization_type
+    FROM users u
+    LEFT JOIN patients p ON p."userId" = u.id
+    LEFT JOIN tenants t ON u.organization_id = t.id
+    WHERE u.email = $1
+  `;
+  
+  const userParams = [email];
+  
+  // If corporate slug provided, verify user belongs to that corporate
+  if (corporateSlug) {
+    userQuery += ` AND u.organization_id = $2`;
+    userParams.push(corporateId);
+  }
+  
+  userQuery += ` LIMIT 1`;
+
+  const result = await db.query(userQuery, userParams);
+  
+  if (result.rows.length === 0) {
+    return res.status(401).json({
+      success: false,
+      error: { code: 'AUTH_FAILED', message: 'Invalid credentials or user not found in corporate' }
+    });
+  }
+  
+  const user = result.rows[0];
+  
+  // Verify password
+  const isPasswordValid = await bcrypt.compare(password, user.password);
+  if (!isPasswordValid) {
+    return res.status(401).json({
+      success: false,
+      error: { code: 'AUTH_FAILED', message: 'Invalid credentials' }
+    });
+  }
+  
+  // Register device
+  if (deviceId) {
+    await storeDeviceMetadata(user.id, {
+      deviceId,
+      pushToken: pushToken || null,
+      platform: req.mobileClient?.platform || 'unknown',
+      corporateSlug: corporateSlug || user.corporate_slug,
+      appName: 'SmartHealth RN',
+      lastActive: new Date().toISOString()
+    });
+  }
+
+  if (deviceId && pushToken) {
+    await upsertFcmToken({
+      userId: user.id,
+      userType: 'patient',
+      token: pushToken,
+      deviceType: req.mobileClient?.platform
+    });
+  }
+  
+  const userResponse = buildUserResponse(user);
+
+  // Generate tokens with corporate context
+  const accessToken = generateToken({
+    id: user.id,
+    userId: user.id,
+    email: user.email,
+    name: userResponse.name,
+    role: user.role || 'patient',
+    userType: 'patient',
+    organizationId: user.organization_id,
+    corporateSlug: user.corporate_slug || corporateSlug,
+    corporateName: user.corporate_name
+  }, 'patient');
+  
+  const refreshToken = generateRefreshToken(user.id, 'patient');
+  
+  res.json({
+    success: true,
+    data: {
+      user: {
+        ...userResponse,
+        corporate: user.organization_id ? {
+          id: user.organization_id,
+          name: user.corporate_name,
+          slug: user.corporate_slug,
+          type: user.organization_type
+        } : null
+      },
+      accessToken,
+      refreshToken,
+      expiresIn: '30d'
+    },
+    message: `Welcome ${userResponse.name}! You're accessing Mediqzy wellness services via ${user.corporate_name}`
+  });
+}));
+
+/**
+ * GET /api/mobile/corporate/profile
+ * Get corporate employee's profile with corporate context
+ * Shows which corporate they belong to and what services are available
+ */
+router.get('/corporate/profile', authenticate(), asyncHandler(async (req, res) => {
+  const result = await db.query(`
+    SELECT u.id,
+           u.email,
+           u."firstName" AS first_name,
+           u."lastName" AS last_name,
+           u."phoneNumber" AS phone,
+           u."profileImage" AS avatar_url,
+           u."dateOfBirth" AS date_of_birth,
+           u.gender,
+           COALESCE(p."bloodGroup"::text, u."bloodType") AS blood_group,
+           NULLIF(TRIM(CONCAT_WS(', ', u.address_street, u.address_city, u.address_state, u."address_zipCode", u.address_country)), '') AS address,
+           u.role,
+           u.status,
+           u.organization_id,
+           t.id as corporate_id,
+           t.slug as corporate_slug,
+           t.name as corporate_name,
+           t.type as organization_type,
+           t.aggregator_uid as aggregator_uid
+    FROM users u
+    LEFT JOIN patients p ON p."userId" = u.id
+    LEFT JOIN tenants t ON u.organization_id = t.id
+    WHERE u.id = $1
+    LIMIT 1
+  `, [req.userId]);
+  
+  if (result.rows.length === 0) {
+    return res.status(404).json({
+      success: false,
+      error: { code: 'NOT_FOUND', message: 'User not found' }
+    });
+  }
+  
+  const user = result.rows[0];
+  
+  // Get corporate's available services
+  let servicesAvailable = [];
+  if (user.corporate_id) {
+    const servicesResult = await db.query(`
+      SELECT DISTINCT service_type
+      FROM corporate_services
+      WHERE corporate_id = $1 AND is_active = true
+    `, [user.corporate_id]);
+    
+    servicesAvailable = servicesResult.rows.map(r => r.service_type) || [
+      'doctor_consultations',
+      'video_consultation',
+      'lab_services',
+      'pharmacy_services',
+      'homecare_services',
+      'ambulance_services'
+    ];
+  }
+
+  res.json({
+    success: true,
+    data: {
+      ...buildUserResponse(user),
+      corporate: user.organization_id ? {
+        id: user.corporate_id,
+        name: user.corporate_name,
+        slug: user.corporate_slug,
+        type: user.organization_type,
+        aggregatorUid: user.aggregator_uid
+      } : null,
+      services: servicesAvailable,
+      accessContext: 'mediqzy_wellness_platform'
+    }
+  });
+}));
+
+/**
+ * GET /api/mobile/corporate/dashboard
+ * Corporate employee dashboard - shows wellness services they can access
+ * Used by SmartHealth RN app to display available services
+ */
+router.get('/corporate/dashboard', authenticate(), asyncHandler(async (req, res) => {
+  // Get user's corporate context
+  const userResult = await db.query(`
+    SELECT u.id, u.organization_id, t.id as corporate_id, t.name as corporate_name, t.slug as corporate_slug
+    FROM users u
+    LEFT JOIN tenants t ON u.organization_id = t.id
+    WHERE u.id = $1
+    LIMIT 1
+  `, [req.userId]);
+  
+  if (userResult.rows.length === 0) {
+    return res.status(404).json({
+      success: false,
+      error: { code: 'NOT_FOUND', message: 'User not found' }
+    });
+  }
+  
+  const user = userResult.rows[0];
+  
+  if (!user.corporate_id) {
+    return res.status(403).json({
+      success: false,
+      error: { code: 'NO_CORPORATE', message: 'User is not part of a corporate' }
+    });
+  }
+
+  // Get user's recent appointments
+  const appointmentsResult = await db.query(`
+    SELECT id,
+           "appointmentDate" AS appointment_date,
+           "appointmentTime" AS appointment_time,
+           "consultationType" AS type,
+           status,
+           COALESCE("doctorName", CONCAT_WS(' ', d.prefix, d."firstName", d."lastName")) AS doctor_name,
+           COALESCE(specialization, d.specialization) AS doctor_specialty
+    FROM appointments a
+    LEFT JOIN doctors d ON a."doctorId" = d.id
+    WHERE a."userId" = $1 AND a."appointmentDate" >= CURRENT_DATE
+    ORDER BY a."appointmentDate" ASC
+    LIMIT 5
+  `, [req.userId]);
+
+  // Available wellness services for corporate
+  const services = [
+    {
+      id: 'doctors',
+      name: 'Doctor Consultations',
+      description: 'Connect with verified doctors for online and in-person consultations',
+      icon: 'stethoscope',
+      action: '/doctors'
+    },
+    {
+      id: 'video_consultation',
+      name: 'Video Consultation',
+      description: 'Live video calls with doctors for immediate medical advice',
+      icon: 'video',
+      action: '/video'
+    },
+    {
+      id: 'lab_services',
+      name: 'Lab Services',
+      description: 'Home sample collection and pathology tests',
+      icon: 'microscope',
+      action: '/lab'
+    },
+    {
+      id: 'pharmacy_services',
+      name: 'Pharmacy Services',
+      description: 'Medicine delivery and pharmacy consultations',
+      icon: 'pill-bottle',
+      action: '/pharmacy'
+    },
+    {
+      id: 'homecare_services',
+      name: 'Homecare Services',
+      description: 'Nursing care and medical support at home',
+      icon: 'home',
+      action: '/homecare'
+    },
+    {
+      id: 'ambulance_services',
+      name: 'Ambulance Services',
+      description: 'Emergency and non-emergency ambulance availability',
+      icon: 'ambulance',
+      action: '/ambulance'
+    }
+  ];
+
+  res.json({
+    success: true,
+    data: {
+      corporate: {
+        id: user.corporate_id,
+        name: user.corporate_name,
+        slug: user.corporate_slug
+      },
+      wellness_platform: {
+        name: 'Mediqzy',
+        description: 'Comprehensive wellness services for corporate employees',
+        baseUrl: '/api/mobile'
+      },
+      upcoming_appointments: appointmentsResult.rows,
+      available_services: services,
+      quick_actions: [
+        {
+          title: 'Book Appointment',
+          icon: 'calendar',
+          action: '/doctors'
+        },
+        {
+          title: 'My Health',
+          icon: 'heart',
+          action: '/health-dashboard'
+        },
+        {
+          title: 'Lab Tests',
+          icon: 'beaker',
+          action: '/lab'
+        },
+        {
+          title: 'Support',
+          icon: 'life-buoy',
+          action: '/support'
+        }
+      ]
+    }
+  });
+}));
+
 // ============== User Profile ==============
 
 router.get('/user/profile', authenticate(), asyncHandler(async (req, res) => {
@@ -1295,7 +1662,7 @@ router.put('/user/profile', authenticate(), asyncHandler(async (req, res) => {
 router.get('/doctors', asyncHandler(async (req, res) => {
   console.log('[Mobile API] GET /doctors called');
   try {
-  const { specialty, location, page = 1, limit = 20, search } = req.query;
+  const { specialty, location, page = 1, limit = 20, search, corporateOnly = 'false' } = req.query;
   const safePage = Math.max(1, parseInt(page, 10) || 1);
   const safeLimit = Math.max(1, parseInt(limit, 10) || 20);
   const offset = (safePage - 1) * safeLimit;
@@ -1303,6 +1670,29 @@ router.get('/doctors', asyncHandler(async (req, res) => {
   let whereConditions = ['d.status = $1'];
   let params = ['active'];
   let paramIndex = 2;
+  
+  // If corporateOnly is true and user is authenticated, filter by corporate network
+  if (corporateOnly === 'true' && req.userId) {
+    const userResult = await db.query(`
+      SELECT u.organization_id, t.id as corporate_id
+      FROM users u
+      LEFT JOIN tenants t ON u.organization_id = t.id
+      WHERE u.id = $1
+      LIMIT 1
+    `, [req.userId]);
+    
+    if (userResult.rows.length > 0 && userResult.rows[0].corporate_id) {
+      // Join with corporate_doctors to filter by corporate network
+      whereConditions.push(`EXISTS (
+        SELECT 1 FROM corporate_doctors cd
+        WHERE cd.doctor_id = d.id
+        AND cd.corporate_id = $${paramIndex}
+        AND cd.is_active = true
+      )`);
+      params.push(userResult.rows[0].corporate_id);
+      paramIndex++;
+    }
+  }
   
   if (specialty) {
     whereConditions.push(`(d.specialization ILIKE $${paramIndex} OR $${paramIndex} = ANY(d.specializations))`);
@@ -1356,6 +1746,11 @@ router.get('/doctors', asyncHandler(async (req, res) => {
       limit: safeLimit,
       total: parseInt(countResult.rows[0].count),
       totalPages: Math.ceil(countResult.rows[0].count / safeLimit)
+    },
+    filter: {
+      corporateOnly: corporateOnly === 'true',
+      specialty: specialty || null,
+      search: search || null
     }
   });
   } catch (dbErr) {
@@ -2056,6 +2451,394 @@ router.put('/appointments/:id/cancel', authenticate(), asyncHandler(async (req, 
     success: true,
     message: 'Appointment cancelled successfully',
     data: result.rows[0]
+  });
+}));
+
+// ============== Wellness Services (Corporate Employees) ==============
+
+/**
+ * GET /api/mobile/wellness/services
+ * Get available wellness services for corporate employee
+ * Shows Lab, Pharmacy, Homecare, Ambulance services
+ */
+router.get('/wellness/services', authenticate(), asyncHandler(async (req, res) => {
+  // Get user's corporate context
+  const userResult = await db.query(`
+    SELECT u.id, u.organization_id, t.id as corporate_id, t.name as corporate_name
+    FROM users u
+    LEFT JOIN tenants t ON u.organization_id = t.id
+    WHERE u.id = $1
+    LIMIT 1
+  `, [req.userId]);
+  
+  if (userResult.rows.length === 0) {
+    return res.status(404).json({
+      success: false,
+      error: { code: 'NOT_FOUND', message: 'User not found' }
+    });
+  }
+  
+  const services = [
+    {
+      id: 'lab_services',
+      name: 'Lab Services',
+      description: 'Home pathology tests with free sample collection',
+      category: 'diagnostics',
+      features: [
+        'Blood tests',
+        'COVID-19 testing',
+        'Home sample collection',
+        'Reports in 24 hours',
+        'Doctor consultation'
+      ],
+      icon: 'microscope',
+      action: '/wellness/lab'
+    },
+    {
+      id: 'pharmacy_services',
+      name: 'Pharmacy Services',
+      description: 'Medicine delivery and online pharmacy consultations',
+      category: 'pharmacy',
+      features: [
+        'Fast medicine delivery',
+        'Prescription verification',
+        'Generic alternatives',
+        'Pharmacist consultation',
+        '24/7 availability'
+      ],
+      icon: 'pill-bottle',
+      action: '/wellness/pharmacy'
+    },
+    {
+      id: 'homecare_services',
+      name: 'Homecare Services',
+      description: 'Nursing care and medical support at home',
+      category: 'healthcare',
+      features: [
+        'Trained nurses',
+        'Post-operative care',
+        'Chronic disease management',
+        'Wound dressing',
+        'IV therapy'
+      ],
+      icon: 'home',
+      action: '/wellness/homecare'
+    },
+    {
+      id: 'ambulance_services',
+      name: 'Ambulance Services',
+      description: 'Emergency and non-emergency ambulance availability',
+      category: 'emergency',
+      features: [
+        'BLS equipped',
+        'ALS equipped',
+        'ICU ambulance',
+        '24/7 availability',
+        'GPS tracking'
+      ],
+      icon: 'ambulance',
+      action: '/wellness/ambulance'
+    }
+  ];
+  
+  res.json({
+    success: true,
+    data: {
+      corporate: userResult.rows[0].corporate_id ? {
+        id: userResult.rows[0].corporate_id,
+        name: userResult.rows[0].corporate_name
+      } : null,
+      services,
+      baseUrl: '/api/mobile/wellness'
+    }
+  });
+}));
+
+/**
+ * POST /api/mobile/wellness/lab/request
+ * Request lab service for home sample collection
+ */
+router.post('/wellness/lab/request', authenticate(), asyncHandler(async (req, res) => {
+  const { testType, preferredDate, preferredTime, address } = req.body;
+  
+  if (!testType) {
+    return res.status(400).json({
+      success: false,
+      error: { code: 'MISSING_TEST_TYPE', message: 'Test type is required' }
+    });
+  }
+
+  // Get user details
+  const userResult = await db.query(`
+    SELECT u.id, u."firstName", u."lastName", u."phoneNumber", u.organization_id
+    FROM users u
+    WHERE u.id = $1
+    LIMIT 1
+  `, [req.userId]);
+  
+  if (userResult.rows.length === 0) {
+    return res.status(404).json({
+      success: false,
+      error: { code: 'NOT_FOUND', message: 'User not found' }
+    });
+  }
+
+  const user = userResult.rows[0];
+
+  // Create lab request
+  const result = await db.query(`
+    INSERT INTO wellness_lab_requests (
+      user_id, test_type, preferred_date, preferred_time, address,
+      corporate_id, status, created_at, updated_at
+    ) VALUES ($1, $2, $3, $4, $5, $6, 'pending', NOW(), NOW())
+    RETURNING id, test_type, preferred_date, preferred_time, status, created_at
+  `, [req.userId, testType, preferredDate || null, preferredTime || null, address || null, user.organization_id || null]);
+
+  res.status(201).json({
+    success: true,
+    message: 'Lab service request created successfully',
+    data: {
+      id: result.rows[0].id,
+      testType: result.rows[0].test_type,
+      preferredDate: result.rows[0].preferred_date,
+      preferredTime: result.rows[0].preferred_time,
+      status: result.rows[0].status,
+      createdAt: result.rows[0].created_at,
+      nextSteps: 'Our team will contact you within 2 hours to confirm the appointment'
+    }
+  });
+}));
+
+/**
+ * POST /api/mobile/wellness/pharmacy/order
+ * Order medicines from pharmacy
+ */
+router.post('/wellness/pharmacy/order', authenticate(), asyncHandler(async (req, res) => {
+  const { medicines, prescriptionUrl, deliveryAddress, notes } = req.body;
+  
+  if (!medicines || !Array.isArray(medicines) || medicines.length === 0) {
+    return res.status(400).json({
+      success: false,
+      error: { code: 'MISSING_MEDICINES', message: 'At least one medicine is required' }
+    });
+  }
+
+  const userResult = await db.query(`
+    SELECT u.id, u."firstName", u."lastName", u."phoneNumber", u.organization_id
+    FROM users u
+    WHERE u.id = $1
+    LIMIT 1
+  `, [req.userId]);
+  
+  if (userResult.rows.length === 0) {
+    return res.status(404).json({
+      success: false,
+      error: { code: 'NOT_FOUND', message: 'User not found' }
+    });
+  }
+
+  const user = userResult.rows[0];
+
+  const result = await db.query(`
+    INSERT INTO wellness_pharmacy_orders (
+      user_id, medicines, prescription_url, delivery_address, notes,
+      corporate_id, status, created_at, updated_at
+    ) VALUES ($1, $2::jsonb, $3, $4, $5, $6, 'pending', NOW(), NOW())
+    RETURNING id, medicines, status, created_at
+  `, [
+    req.userId,
+    JSON.stringify(medicines),
+    prescriptionUrl || null,
+    deliveryAddress || null,
+    notes || null,
+    user.organization_id || null
+  ]);
+
+  res.status(201).json({
+    success: true,
+    message: 'Pharmacy order created successfully',
+    data: {
+      orderId: result.rows[0].id,
+      medicines: result.rows[0].medicines,
+      status: result.rows[0].status,
+      createdAt: result.rows[0].created_at,
+      estimatedDelivery: '2-4 hours'
+    }
+  });
+}));
+
+/**
+ * POST /api/mobile/wellness/homecare/request
+ * Request homecare services (nursing, medical support)
+ */
+router.post('/wellness/homecare/request', authenticate(), asyncHandler(async (req, res) => {
+  const { serviceType, duration, preferredDate, specialRequirements, address } = req.body;
+  
+  if (!serviceType) {
+    return res.status(400).json({
+      success: false,
+      error: { code: 'MISSING_SERVICE_TYPE', message: 'Service type is required' }
+    });
+  }
+
+  const userResult = await db.query(`
+    SELECT u.id, u."firstName", u."lastName", u."phoneNumber", u.organization_id
+    FROM users u
+    WHERE u.id = $1
+    LIMIT 1
+  `, [req.userId]);
+  
+  if (userResult.rows.length === 0) {
+    return res.status(404).json({
+      success: false,
+      error: { code: 'NOT_FOUND', message: 'User not found' }
+    });
+  }
+
+  const user = userResult.rows[0];
+
+  const result = await db.query(`
+    INSERT INTO wellness_homecare_requests (
+      user_id, service_type, duration, preferred_date, special_requirements, address,
+      corporate_id, status, created_at, updated_at
+    ) VALUES ($1, $2, $3, $4, $5, $6, $7, 'pending', NOW(), NOW())
+    RETURNING id, service_type, preferred_date, status, created_at
+  `, [
+    req.userId,
+    serviceType,
+    duration || null,
+    preferredDate || null,
+    specialRequirements || null,
+    address || null,
+    user.organization_id || null
+  ]);
+
+  res.status(201).json({
+    success: true,
+    message: 'Homecare service request created successfully',
+    data: {
+      id: result.rows[0].id,
+      serviceType: result.rows[0].service_type,
+      preferredDate: result.rows[0].preferred_date,
+      status: result.rows[0].status,
+      createdAt: result.rows[0].created_at,
+      nextSteps: 'A care coordinator will contact you to confirm details'
+    }
+  });
+}));
+
+/**
+ * POST /api/mobile/wellness/ambulance/request
+ * Request ambulance service (emergency or non-emergency)
+ */
+router.post('/wellness/ambulance/request', authenticate(), asyncHandler(async (req, res) => {
+  const { emergency, serviceType, pickupAddress, destinationAddress, reason, notes } = req.body;
+  
+  if (!serviceType) {
+    return res.status(400).json({
+      success: false,
+      error: { code: 'MISSING_SERVICE_TYPE', message: 'Service type is required' }
+    });
+  }
+
+  const userResult = await db.query(`
+    SELECT u.id, u."firstName", u."lastName", u."phoneNumber", u.organization_id
+    FROM users u
+    WHERE u.id = $1
+    LIMIT 1
+  `, [req.userId]);
+  
+  if (userResult.rows.length === 0) {
+    return res.status(404).json({
+      success: false,
+      error: { code: 'NOT_FOUND', message: 'User not found' }
+    });
+  }
+
+  const user = userResult.rows[0];
+
+  const result = await db.query(`
+    INSERT INTO wellness_ambulance_requests (
+      user_id, is_emergency, service_type, pickup_address, destination_address,
+      reason, notes, corporate_id, status, created_at, updated_at
+    ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, 'pending', NOW(), NOW())
+    RETURNING id, is_emergency, service_type, status, created_at
+  `, [
+    req.userId,
+    emergency === true || emergency === 'true',
+    serviceType,
+    pickupAddress || null,
+    destinationAddress || null,
+    reason || null,
+    notes || null,
+    user.organization_id || null
+  ]);
+
+  res.status(201).json({
+    success: true,
+    message: 'Ambulance service request submitted',
+    data: {
+      id: result.rows[0].id,
+      isEmergency: result.rows[0].is_emergency,
+      serviceType: result.rows[0].service_type,
+      status: result.rows[0].status,
+      createdAt: result.rows[0].created_at,
+      estimatedArrival: result.rows[0].is_emergency ? '5-10 minutes' : '15-30 minutes'
+    }
+  });
+}));
+
+/**
+ * GET /api/mobile/wellness/requests
+ * Get all wellness service requests for this user
+ */
+router.get('/wellness/requests', authenticate(), asyncHandler(async (req, res) => {
+  const { type = 'all' } = req.query;
+
+  let query = `
+    SELECT 'lab' as request_type, id, test_type as service_detail, preferred_date, preferred_time, 
+           status, created_at
+    FROM wellness_lab_requests
+    WHERE user_id = $1
+  `;
+  
+  if (type === 'all' || type === 'pharmacy') {
+    query += `
+      UNION ALL
+      SELECT 'pharmacy', id, NULL, NULL, NULL, status, created_at
+      FROM wellness_pharmacy_orders
+      WHERE user_id = $1
+    `;
+  }
+  
+  if (type === 'all' || type === 'homecare') {
+    query += `
+      UNION ALL
+      SELECT 'homecare', id, service_type, preferred_date, NULL, status, created_at
+      FROM wellness_homecare_requests
+      WHERE user_id = $1
+    `;
+  }
+  
+  if (type === 'all' || type === 'ambulance') {
+    query += `
+      UNION ALL
+      SELECT 'ambulance', id, service_type, NULL, NULL, status, created_at
+      FROM wellness_ambulance_requests
+      WHERE user_id = $1
+    `;
+  }
+  
+  query += ` ORDER BY created_at DESC`;
+
+  const result = await db.query(query, [req.userId]);
+
+  res.json({
+    success: true,
+    data: {
+      requests: result.rows,
+      total: result.rows.length
+    }
   });
 }));
 

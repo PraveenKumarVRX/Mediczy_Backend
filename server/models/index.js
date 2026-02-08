@@ -28,6 +28,10 @@ import { EHRRecord as EHRRecordPostgres, HealthDiary as HealthDiaryPostgres } fr
 import CouponPostgres from './postgres/coupon.model.postgres.js';
 import CouponUsagePostgres from './postgres/coupon-usage.model.postgres.js';
 import PharmacyInventoryPostgres from './postgres/pharmacyInventory.model.postgres.js';
+import AuditLog from './auditLog.model.intelligent.js';
+import InsuranceBroker from './insurance-broker.model.intelligent.js';
+import InsuranceCompany from './insurance-company.model.intelligent.js';
+import InsurancePolicy from './insurance-policy.model.intelligent.js';
 
 // Export PostgreSQL as default
 export const User = UserPostgres;
@@ -76,6 +80,10 @@ export default {
   Coupon: CouponPostgres,
   CouponUsage: CouponUsagePostgres,
   PharmacyInventory: PharmacyInventoryPostgres,
+  InsuranceBroker,
+  InsuranceCompany,
+  InsurancePolicy,
+  AuditLog,
   sequelize
 };
 
@@ -101,5 +109,9 @@ export {
   HealthDiaryPostgres,
   CouponPostgres,
   CouponUsagePostgres,
-  PharmacyInventoryPostgres
+  PharmacyInventoryPostgres,
+  InsuranceBroker,
+  InsuranceCompany,
+  InsurancePolicy,
+  AuditLog
 };
