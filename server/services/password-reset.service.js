@@ -37,11 +37,21 @@ class PasswordResetService {
     const accountSid = process.env.TWILIO_ACCOUNT_SID;
     const authToken = process.env.TWILIO_AUTH_TOKEN;
     
-    if (accountSid && authToken) {
+    // Validate that Twilio credentials are real (not placeholder values)
+    const isTwilioConfigured = accountSid && authToken 
+      && !accountSid.includes('your-') 
+      && !accountSid.includes('twilio-')
+      && accountSid.length > 10
+      && accountSid.startsWith('AC'); // Twilio Account SIDs start with 'AC'
+    
+    if (isTwilioConfigured) {
       this.twilioClient = twilio(accountSid, authToken);
+      this.twilioConfigured = true;
       console.log('✅ Twilio WhatsApp initialized for password reset');
     } else {
-      console.warn('⚠️  Twilio WhatsApp not configured');
+      this.twilioClient = null;
+      this.twilioConfigured = false;
+      console.warn('⚠️  Twilio WhatsApp not configured - using email/SMS fallback for password reset');
     }
   }
 
@@ -302,16 +312,18 @@ class PasswordResetService {
     }
 
     try {
-      // Check if Twilio client is initialized
-      if (!this.twilioClient) {
-        throw new Error('Twilio WhatsApp client not initialized');
+      // Check if Twilio client is initialized and configured
+      if (!this.twilioClient || !this.twilioConfigured) {
+        console.warn('⚠️  Twilio WhatsApp not available for password reset - falling back to Email OTP');
+        return await this.sendOTPViaEmail(account, otpCode);
       }
 
       const phoneNumber = account.phone || account.phoneNumber;
       const whatsappFrom = process.env.TWILIO_WHATSAPP_NUMBER;
       
       if (!whatsappFrom) {
-        throw new Error('TWILIO_WHATSAPP_NUMBER not configured');
+        console.warn('⚠️  TWILIO_WHATSAPP_NUMBER not configured - falling back to Email OTP');
+        return await this.sendOTPViaEmail(account, otpCode);
       }
 
       // Format phone number for WhatsApp
@@ -335,8 +347,9 @@ class PasswordResetService {
       // Return message SID for tracking
       return { messageSid: message.sid, status: message.status };
     } catch (error) {
-      console.error('WhatsApp OTP sending failed:', error);
-      throw error;
+      console.error('⚠️  WhatsApp OTP sending failed for password reset - falling back to Email:', error.message);
+      // Fallback to email if WhatsApp fails
+      return await this.sendOTPViaEmail(account, otpCode);
     }
   }
 

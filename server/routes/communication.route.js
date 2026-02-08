@@ -29,9 +29,22 @@ const smsService = new SMSService({
 
 // Initialize Twilio for WhatsApp
 let twilioClient = null;
-if (process.env.TWILIO_ACCOUNT_SID && process.env.TWILIO_AUTH_TOKEN) {
-  twilioClient = twilio(process.env.TWILIO_ACCOUNT_SID, process.env.TWILIO_AUTH_TOKEN);
+const accountSid = process.env.TWILIO_ACCOUNT_SID;
+const authToken = process.env.TWILIO_AUTH_TOKEN;
+
+// Check if Twilio is properly configured (not placeholder values)
+const isPlaceholder = !accountSid || 
+                     !authToken || 
+                     accountSid.includes('your-') || 
+                     authToken.includes('your-');
+
+const isValidAccountSid = accountSid && accountSid.startsWith('AC');
+
+if (!isPlaceholder && isValidAccountSid) {
+  twilioClient = twilio(accountSid, authToken);
   console.log('✅ Twilio WhatsApp client initialized for communication module');
+} else {
+  console.warn('⚠️  Twilio not configured for communication routes - WhatsApp features disabled');
 }
 
 /**

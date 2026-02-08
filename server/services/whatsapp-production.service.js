@@ -3,17 +3,33 @@ import twilio from 'twilio';
 
 dotenv.config();
 
-const client = twilio(
-  process.env.TWILIO_ACCOUNT_SID,
-  process.env.TWILIO_AUTH_TOKEN
-);
-
 /**
  * WhatsApp Service for Production
  * Handles template-based and session messages
  */
 class WhatsAppProductionService {
   constructor() {
+    // Validate Twilio credentials before initialization
+    const accountSid = process.env.TWILIO_ACCOUNT_SID;
+    const authToken = process.env.TWILIO_AUTH_TOKEN;
+    
+    // Check if Twilio is properly configured (not placeholder values)
+    const isPlaceholder = !accountSid || 
+                         !authToken || 
+                         accountSid.includes('your-') || 
+                         authToken.includes('your-');
+    
+    const isValidAccountSid = accountSid && accountSid.startsWith('AC');
+    
+    if (isPlaceholder || !isValidAccountSid) {
+      console.warn('⚠️  Twilio WhatsApp Production Service not configured - service disabled');
+      this.twilioConfigured = false;
+      this.client = null;
+    } else {
+      this.twilioConfigured = true;
+      this.client = twilio(accountSid, authToken);
+    }
+    
     this.fromNumber = process.env.TWILIO_WHATSAPP_NUMBER;
     this.templates = {
       appointmentConfirmation: process.env.WHATSAPP_TEMPLATE_APPOINTMENT_CONFIRMATION,
@@ -29,11 +45,15 @@ class WhatsAppProductionService {
    * Send appointment confirmation
    */
   async sendAppointmentConfirmation({ to, patientName, doctorName, date, time, location }) {
+    if (!this.twilioConfigured) {
+      throw new Error('Twilio WhatsApp is not configured');
+    }
+    
     if (!this.templates.appointmentConfirmation) {
       throw new Error('Appointment confirmation template not configured');
     }
 
-    return await client.messages.create({
+    return await this.client.messages.create({
       from: this.fromNumber,
       to: `whatsapp:${to}`,
       contentSid: this.templates.appointmentConfirmation,
@@ -51,11 +71,15 @@ class WhatsAppProductionService {
    * Send appointment reminder
    */
   async sendAppointmentReminder({ to, patientName, doctorName, time, location }) {
+    if (!this.twilioConfigured) {
+      throw new Error('Twilio WhatsApp is not configured');
+    }
+    
     if (!this.templates.appointmentReminder) {
       throw new Error('Appointment reminder template not configured');
     }
 
-    return await client.messages.create({
+    return await this.client.messages.create({
       from: this.fromNumber,
       to: `whatsapp:${to}`,
       contentSid: this.templates.appointmentReminder,
@@ -72,11 +96,15 @@ class WhatsAppProductionService {
    * Send health report notification
    */
   async sendHealthReportReady({ to, patientName }) {
+    if (!this.twilioConfigured) {
+      throw new Error('Twilio WhatsApp is not configured');
+    }
+    
     if (!this.templates.healthReport) {
       throw new Error('Health report template not configured');
     }
 
-    return await client.messages.create({
+    return await this.client.messages.create({
       from: this.fromNumber,
       to: `whatsapp:${to}`,
       contentSid: this.templates.healthReport,
@@ -90,11 +118,15 @@ class WhatsAppProductionService {
    * Send prescription notification
    */
   async sendPrescriptionReady({ to, patientName, doctorName, prescriptionUrl, medications, followUpDate }) {
+    if (!this.twilioConfigured) {
+      throw new Error('Twilio WhatsApp is not configured');
+    }
+    
     if (!this.templates.prescription) {
       throw new Error('Prescription template not configured');
     }
 
-    return await client.messages.create({
+    return await this.client.messages.create({
       from: this.fromNumber,
       to: `whatsapp:${to}`,
       contentSid: this.templates.prescription,
@@ -112,11 +144,15 @@ class WhatsAppProductionService {
    * Send OTP for verification
    */
   async sendOTP({ to, otp }) {
+    if (!this.twilioConfigured) {
+      throw new Error('Twilio WhatsApp is not configured');
+    }
+    
     if (!this.templates.otp) {
       throw new Error('OTP template not configured');
     }
 
-    return await client.messages.create({
+    return await this.client.messages.create({
       from: this.fromNumber,
       to: `whatsapp:${to}`,
       contentSid: this.templates.otp,
@@ -130,11 +166,15 @@ class WhatsAppProductionService {
    * Send health checkup reminder
    */
   async sendCheckupReminder({ to, patientName }) {
+    if (!this.twilioConfigured) {
+      throw new Error('Twilio WhatsApp is not configured');
+    }
+    
     if (!this.templates.checkupReminder) {
       throw new Error('Checkup reminder template not configured');
     }
 
-    return await client.messages.create({
+    return await this.client.messages.create({
       from: this.fromNumber,
       to: `whatsapp:${to}`,
       contentSid: this.templates.checkupReminder,
@@ -167,8 +207,12 @@ class WhatsAppProductionService {
       ? "I'm here to help. Please share a bit more detail so I can assist you." 
       : normalizedBody;
 
+    if (!this.twilioConfigured) {
+      throw new Error('Twilio WhatsApp is not configured');
+    }
+
     // Add timeout to prevent hanging
-    const sendPromise = client.messages.create({
+    const sendPromise = this.client.messages.create({
       from: this.fromNumber,
       to: `whatsapp:${to}`,
       body: safeBody
@@ -194,7 +238,11 @@ class WhatsAppProductionService {
    * Get message status
    */
   async getMessageStatus(messageSid) {
-    return await client.messages(messageSid).fetch();
+    if (!this.twilioConfigured) {
+      throw new Error('Twilio WhatsApp is not configured');
+    }
+    
+    return await this.client.messages(messageSid).fetch();
   }
 
   /**
