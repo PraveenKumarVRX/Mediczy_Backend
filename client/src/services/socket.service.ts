@@ -1,6 +1,7 @@
 import { io, Socket } from 'socket.io-client';
+import { getSocketUrl } from '@/utils/socket';
 
-const SOCKET_URL = import.meta.env.VITE_SOCKET_URL || 'http://localhost:8001';
+const SOCKET_URL = getSocketUrl();
 
 class SocketService {
   private socket: Socket | null = null;

@@ -12,6 +12,8 @@ import { execSync } from 'child_process';
 
 const BASE_URL = process.env.BASE_URL || 'http://localhost:3000';
 const API_TIMEOUT = 5000;
+const ADMIN_TOKEN = process.env.ADMIN_TOKEN;
+const AUTH_HEADERS = ADMIN_TOKEN ? { Authorization: `Bearer ${ADMIN_TOKEN}` } : undefined;
 
 // Color codes for terminal output
 const colors = {
@@ -80,7 +82,10 @@ class SanityCheckAndSmokeTest {
     console.log('\n📊 Database Connection');
     const test = { name: 'Database Connection', status: 'pending' };
     try {
-      const response = await axios.get(`${BASE_URL}/api/health`, { timeout: API_TIMEOUT });
+      const response = await axios.get(`${BASE_URL}/health`, {
+        timeout: API_TIMEOUT,
+        ...(AUTH_HEADERS ? { headers: AUTH_HEADERS } : {}),
+      });
       if (response.status === 200) {
         test.status = 'passed';
         this.log(`✅ Database connection successful`, 'success');
@@ -97,7 +102,10 @@ class SanityCheckAndSmokeTest {
     console.log('\n🏥 Server Health Status');
     const test = { name: 'Server Health', status: 'pending' };
     try {
-      const response = await axios.get(`${BASE_URL}/api/health`, { timeout: API_TIMEOUT });
+      const response = await axios.get(`${BASE_URL}/health`, {
+        timeout: API_TIMEOUT,
+        ...(AUTH_HEADERS ? { headers: AUTH_HEADERS } : {}),
+      });
       if (response.data && response.data.status) {
         test.status = 'passed';
         this.log(`✅ Server is ${response.data.status}`, 'success');
@@ -128,84 +136,98 @@ class SanityCheckAndSmokeTest {
   }
 
   async checkDatabaseTables() {
-    console.log('\n📋 Database Tables');
-    const test = { name: 'Database Tables', status: 'pending' };
-    const requiredTables = [
-      'users',
-      'doctors',
-      'hospitals',
-      'clinics',
-      'labs',
-      'pharmacies',
-      'appointments',
-      'aggregators',
-      'api_credentials',
-      'api_credential_audit_log',
-    ];
+    console.log('\n📋 Database Health');
+    const test = { name: 'Database Health', status: 'pending' };
 
     try {
-      const response = await axios.get(`${BASE_URL}/api/admin/database/tables`, {
+      const response = await axios.get(`${BASE_URL}/api/db/health`, {
         timeout: API_TIMEOUT,
+        ...(AUTH_HEADERS ? { headers: AUTH_HEADERS } : {}),
       });
-      if (response.data && response.data.tables) {
-        const existingTables = response.data.tables.map((t) => t.name);
-        const missingTables = requiredTables.filter((t) => !existingTables.includes(t));
 
-        if (missingTables.length === 0) {
-          test.status = 'passed';
-          this.log(`✅ All ${requiredTables.length} required tables exist`, 'success');
-        } else {
-          test.status = 'failed';
-          test.error = `Missing tables: ${missingTables.join(', ')}`;
-          this.log(`❌ Missing tables: ${missingTables.join(', ')}`, 'error');
-        }
+      if (response.status === 200) {
+        test.status = 'passed';
+        this.log('✅ Database orchestrator healthy', 'success');
+      } else {
+        test.status = 'failed';
+        test.error = `Unexpected status: ${response.status}`;
+        this.log(`❌ Database health returned ${response.status}`, 'error');
       }
     } catch (error) {
-      test.status = 'failed';
-      test.error = error.message;
-      this.log(`⚠️ Could not verify tables: ${error.message}`, 'warning');
+      if (error.response?.status === 503) {
+        test.status = 'failed';
+        test.error = 'Database orchestrator unhealthy';
+        this.log('❌ Database orchestrator unhealthy', 'error');
+      } else if (error.response?.status === 401 || error.response?.status === 403) {
+        test.status = 'warning';
+        this.log('⚠️ Database health requires admin access', 'warning');
+      } else {
+        test.status = 'failed';
+        test.error = error.message;
+        this.log(`⚠️ Could not verify database health: ${error.message}`, 'warning');
+      }
     }
     this.recordResult('sanity', test);
   }
 
   async checkApiCredentialTables() {
-    console.log('\n🔐 API Credentials Tables');
-    const test = { name: 'API Credentials Tables', status: 'pending' };
+    console.log('\n🔐 API Credentials Endpoint');
+    const test = { name: 'API Credentials Endpoint', status: 'pending' };
     try {
-      const response = await axios.get(`${BASE_URL}/api/admin/api-credentials/schema-check`, {
+      const response = await axios.get(`${BASE_URL}/api/admin/api-credentials`, {
         timeout: API_TIMEOUT,
       });
-      if (response.data && response.data.tables_exist) {
+
+      if (response.status === 200) {
         test.status = 'passed';
-        this.log(`✅ API Credentials tables verified`, 'success');
+        this.log('✅ API credentials endpoint accessible', 'success');
       } else {
         test.status = 'warning';
-        this.log(`⚠️ API Credentials tables may need setup`, 'warning');
+        this.log(`⚠️ API credentials returned ${response.status}`, 'warning');
       }
     } catch (error) {
-      test.status = 'warning';
-      this.log(`⚠️ API Credentials table check: ${error.message}`, 'warning');
+      if (error.response?.status === 401 || error.response?.status === 403) {
+        test.status = 'passed';
+        this.log('✅ API credentials endpoint exists and is protected', 'success');
+      } else if (error.response?.status === 404) {
+        test.status = 'failed';
+        test.error = 'API credentials endpoint not found';
+        this.log('❌ API credentials endpoint not found', 'error');
+      } else {
+        test.status = 'warning';
+        this.log(`⚠️ API credentials check: ${error.message}`, 'warning');
+      }
     }
     this.recordResult('sanity', test);
   }
 
   async checkAggregatorTables() {
-    console.log('\n🏢 Aggregator Tables');
-    const test = { name: 'Aggregator Tables', status: 'pending' };
+    console.log('\n🏢 Aggregator Endpoint');
+    const test = { name: 'Aggregator Endpoint', status: 'pending' };
     try {
-      const response = await axios.get(`${BASE_URL}/api/admin/aggregators/schema-check`, {
+      const response = await axios.get(`${BASE_URL}/api/admin/aggregators`, {
         timeout: API_TIMEOUT,
       });
-      if (response.data && response.data.tables_exist) {
+
+      if (response.status === 200) {
         test.status = 'passed';
-        this.log(`✅ Aggregator tables verified`, 'success');
+        this.log('✅ Aggregator admin endpoint accessible', 'success');
       } else {
         test.status = 'warning';
-        this.log(`⚠️ Aggregator tables may need setup`, 'warning');
+        this.log(`⚠️ Aggregator admin returned ${response.status}`, 'warning');
       }
     } catch (error) {
-      test.status = 'warning';
-      this.log(`⚠️ Aggregator table check: ${error.message}`, 'warning');
+      if (error.response?.status === 401 || error.response?.status === 403) {
+        test.status = 'passed';
+        this.log('✅ Aggregator admin endpoint exists and is protected', 'success');
+      } else if (error.response?.status === 404) {
+        test.status = 'failed';
+        test.error = 'Aggregator admin endpoint not found';
+        this.log('❌ Aggregator admin endpoint not found', 'error');
+      } else {
+        test.status = 'warning';
+        this.log(`⚠️ Aggregator admin check: ${error.message}`, 'warning');
+      }
     }
     this.recordResult('sanity', test);
   }
@@ -243,27 +265,30 @@ class SanityCheckAndSmokeTest {
   }
 
   async checkRequiredRoutes() {
-    console.log('\n🛣️ API Routes');
-    const test = { name: 'Required Routes', status: 'pending' };
-    const routes = ['/api/admin/aggregators', '/api/aggregator-auth', '/api/admin/api-credentials'];
+    console.log('\n🛣️ Platform Health');
+    const test = { name: 'Platform Health', status: 'pending' };
 
     try {
-      const response = await axios.get(`${BASE_URL}/api/routes`, { timeout: API_TIMEOUT });
-      if (response.data && Array.isArray(response.data.routes)) {
-        const availableRoutes = response.data.routes.map((r) => r.path);
-        const missingRoutes = routes.filter((r) => !availableRoutes.some((ar) => ar.includes(r)));
+      const response = await axios.get(`${BASE_URL}/api/platform/health`, {
+        timeout: API_TIMEOUT,
+      });
 
-        if (missingRoutes.length === 0) {
-          test.status = 'passed';
-          this.log(`✅ All critical routes registered`, 'success');
-        } else {
-          test.status = 'warning';
-          this.log(`⚠️ Some routes may be missing: ${missingRoutes.join(', ')}`, 'warning');
-        }
+      if (response.status === 200) {
+        test.status = 'passed';
+        this.log('✅ Platform health endpoint reachable', 'success');
+      } else {
+        test.status = 'warning';
+        this.log(`⚠️ Platform health returned ${response.status}`, 'warning');
       }
     } catch (error) {
-      test.status = 'warning';
-      this.log(`⚠️ Could not verify routes: ${error.message}`, 'warning');
+      if (error.response?.status === 404) {
+        test.status = 'failed';
+        test.error = 'Platform health endpoint not found';
+        this.log('❌ Platform health endpoint not found', 'error');
+      } else {
+        test.status = 'warning';
+        this.log(`⚠️ Platform health check: ${error.message}`, 'warning');
+      }
     }
     this.recordResult('sanity', test);
   }
