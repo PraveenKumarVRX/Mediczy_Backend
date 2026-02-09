@@ -1,5 +1,6 @@
 import express from "express";
 import { body, validationResult } from "express-validator";
+import { col, fn, where as sequelizeWhere } from "sequelize";
 import crypto from "crypto";
 import bcrypt from "bcrypt";
 import {
@@ -19,6 +20,12 @@ import Consent from "../models/consent.model.intelligent.js";
 import { auditLoginAttempt } from "../middleware/audit.middleware.js";
 import { authLimiter } from "../middleware/rateLimiter.middleware.js";
 import intelligentDb from "../utils/intelligentDbClient.js";
+import {
+  buildProfileKeyPrefix,
+  buildPublicFileUrl,
+  createPresignedUpload,
+  getUploadsBucket
+} from "../services/s3-presign.service.js";
 
 const router = express.Router();
 
@@ -442,7 +449,8 @@ router.post(
     try {
       // Determine if identifier is email or phone
       const isEmail = /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(identifier);
-      const isPhone = /^[0-9]{10}$/.test(identifier.replace(/[^0-9]/g, ''));
+      const normalizedDigits = identifier.replace(/[^0-9]/g, '');
+      const isPhone = normalizedDigits.length >= 10;
 
       if (!isEmail && !isPhone) {
         return res.status(400).json({
@@ -460,8 +468,15 @@ router.post(
         deliveryMethod = 'email';
       } else {
         // Find user by phone number
-        const cleanPhone = identifier.replace(/[^0-9]/g, '');
-        user = await userModel.findOne({ where: { phoneNumber: cleanPhone } });
+        const cleanPhone = normalizedDigits.length > 10
+          ? normalizedDigits.slice(-10)
+          : normalizedDigits;
+        user = await userModel.findOne({
+          where: sequelizeWhere(
+            fn("regexp_replace", col("phoneNumber"), "[^0-9]", "", "g"),
+            cleanPhone
+          ),
+        });
         deliveryMethod = 'whatsapp';
       }
 
@@ -523,7 +538,8 @@ router.post(
         } else {
           await signupVerificationService.sendOTPViaWhatsApp({
             phoneNumber: user.phoneNumber,
-            firstName: user.firstName || 'User'
+            firstName: user.firstName || 'User',
+            email: user.email
           }, otp.code);
           console.log(`📱 Login OTP sent via WhatsApp (direct) to ${user.phoneNumber}`);
         }
@@ -596,8 +612,16 @@ router.post(
       if (isEmail) {
         user = await userModel.findOne({ where: { email: identifier } });
       } else {
-        const cleanPhone = identifier.replace(/[^0-9]/g, '');
-        user = await userModel.findOne({ where: { phoneNumber: cleanPhone } });
+        const normalizedDigits = identifier.replace(/[^0-9]/g, '');
+        const cleanPhone = normalizedDigits.length > 10
+          ? normalizedDigits.slice(-10)
+          : normalizedDigits;
+        user = await userModel.findOne({
+          where: sequelizeWhere(
+            fn("regexp_replace", col("phoneNumber"), "[^0-9]", "", "g"),
+            cleanPhone
+          ),
+        });
       }
 
       if (!user) {
@@ -695,6 +719,116 @@ router.put("/status", updateUserStatus);
 
 router.get("/available", getAvailableUsers);
 
+const profileImageTypes = ['image/jpeg', 'image/jpg', 'image/png', 'image/gif', 'image/webp'];
+
+const validateProfileImageType = (contentType) => profileImageTypes.includes(contentType);
+
+/**
+ * @route   POST /api/users/profile-picture/presign
+ * @desc    Create presigned URL for profile picture upload
+ * @access  Private
+ */
+router.post("/profile-picture/presign", authUser, [
+  body('fileName').notEmpty().withMessage('fileName is required'),
+  body('contentType').notEmpty().withMessage('contentType is required')
+], async (req, res) => {
+  const errors = validationResult(req);
+  if (!errors.isEmpty()) {
+    return res.status(400).json({ success: false, errors: errors.array() });
+  }
+
+  try {
+    const { fileName, contentType } = req.body;
+    if (!validateProfileImageType(contentType)) {
+      return res.status(400).json({
+        success: false,
+        message: 'Invalid file type. Only JPEG, PNG, GIF, and WebP images are allowed'
+      });
+    }
+
+    const tenantId = req.tenantId || req.user.organization_id || null;
+    const keyPrefix = buildProfileKeyPrefix(tenantId, req.user.id).replace(/\/$/, '');
+
+    const presign = await createPresignedUpload({
+      keyPrefix,
+      fileName,
+      contentType,
+      tenantId,
+      userId: req.user.id,
+      metadata: { kind: 'profile_picture' }
+    });
+
+    return res.status(200).json({
+      success: true,
+      message: 'Presigned upload URL generated',
+      data: presign
+    });
+  } catch (error) {
+    console.error('Profile picture presign error:', error);
+    return res.status(500).json({
+      success: false,
+      message: 'Failed to generate presigned URL',
+      error: error.message
+    });
+  }
+});
+
+/**
+ * @route   POST /api/users/profile-picture/confirm
+ * @desc    Save profile picture after S3 upload
+ * @access  Private
+ */
+router.post("/profile-picture/confirm", authUser, [
+  body('fileKey').notEmpty().withMessage('fileKey is required'),
+  body('fileName').notEmpty().withMessage('fileName is required'),
+  body('fileSize').isInt({ min: 1 }).withMessage('fileSize must be a number'),
+  body('mimeType').notEmpty().withMessage('mimeType is required')
+], async (req, res) => {
+  const errors = validationResult(req);
+  if (!errors.isEmpty()) {
+    return res.status(400).json({ success: false, errors: errors.array() });
+  }
+
+  try {
+    const { fileKey, mimeType } = req.body;
+    if (!validateProfileImageType(mimeType)) {
+      return res.status(400).json({
+        success: false,
+        message: 'Invalid file type. Only JPEG, PNG, GIF, and WebP images are allowed'
+      });
+    }
+
+    const tenantId = req.tenantId || req.user.organization_id || null;
+    const expectedPrefix = buildProfileKeyPrefix(tenantId, req.user.id);
+    if (!fileKey.startsWith(expectedPrefix)) {
+      return res.status(400).json({
+        success: false,
+        message: 'Invalid file key for user'
+      });
+    }
+
+    const bucket = getUploadsBucket();
+    const fileUrl = buildPublicFileUrl(fileKey, bucket);
+
+    const user = await userModel.findByPk(req.user.id);
+    user.profileImage = fileUrl;
+    await user.save();
+
+    return res.status(200).json({
+      success: true,
+      message: 'Profile picture saved successfully',
+      profileImage: user.profileImage
+    });
+  } catch (error) {
+    console.error('Profile picture confirm error:', error);
+    return res.status(500).json({
+      success: false,
+      message: 'Failed to save profile picture',
+      error: error.message
+    });
+  }
+});
+
 /**
  * @route   POST /api/users/profile-picture
  * @desc    Upload profile picture
@@ -712,8 +846,7 @@ router.post("/profile-picture", authUser, async (req, res) => {
     const profilePicture = req.files.profilePicture;
     
     // Validate file type
-    const allowedTypes = ['image/jpeg', 'image/jpg', 'image/png', 'image/gif', 'image/webp'];
-    if (!allowedTypes.includes(profilePicture.mimetype)) {
+    if (!profileImageTypes.includes(profilePicture.mimetype)) {
       return res.status(400).json({
         success: false,
         message: "Invalid file type. Only JPEG, PNG, GIF, and WebP images are allowed"
