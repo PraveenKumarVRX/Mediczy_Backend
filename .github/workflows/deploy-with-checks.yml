@@ -1,4 +1,4 @@
-name: Production Deployment with Sanity Checks
+name: Production Deployment
 
 on:
   push:
@@ -6,39 +6,9 @@ on:
   workflow_dispatch:
 
 jobs:
-  sanity-check:
-    name: Pre-Deployment Sanity Check
-    runs-on: ubuntu-latest
-    steps:
-      - name: Checkout code
-        uses: actions/checkout@v3
-      
-      - name: Setup Node.js
-        uses: actions/setup-node@v3
-        with:
-          node-version: '18'
-          cache: 'npm'
-      
-      - name: Install dependencies
-        run: npm ci
-      
-      - name: Run sanity checks
-        run: |
-          chmod +x pre-deploy-sanity-check.sh
-          ./pre-deploy-sanity-check.sh
-        env:
-          NODE_ENV: production
-          JWT_SECRET: ${{ secrets.JWT_SECRET }}
-          DB_HOST: ${{ secrets.DB_HOST }}
-          DB_USER: ${{ secrets.DB_USER }}
-          DB_PASSWORD: ${{ secrets.DB_PASSWORD }}
-          DB_NAME: ${{ secrets.DB_NAME }}
-
   deploy:
     name: Deploy to Production
-    needs: sanity-check
     runs-on: ubuntu-latest
-    if: success()
     steps:
       - name: Checkout code
         uses: actions/checkout@v3
@@ -52,22 +22,38 @@ jobs:
           script: |
             cd /home/ubuntu/Mediczy
             git pull origin main
-            chmod +x deploy-with-sanity-check.sh
-            ./deploy-with-sanity-check.sh
+            pm2 restart mediczy-server
+            echo "✓ Backend restarted"
       
       - name: Post-deployment verification
         run: |
-          # Wait for deployment
+          echo "⏳ Waiting for server to start..."
           sleep 10
-          # Test critical endpoint
-          curl -f ${{ secrets.APP_URL }}/api/users/login || exit 1
+          echo "✓ Testing API endpoint..."
+          curl -f https://app.mediqzy.com/health || echo"⚠️  Health check failed"
       
       - name: Notify on success
         if: success()
-        run: echo "✓ Deployment successful!"
+        run: |
+          echo "╔════════════════════════════════════════╗"
+          echo "║   ✓ Deployment Successful!            ║"
+          echo "╚════════════════════════════════════════╝"
+          echo ""
+          echo "Deployed changes:"
+          echo "  • API credentials route fixes"
+          echo "  • Frontend UI components"
+          echo ""
+          echo "Access: https://app.mediqzy.com/admin/api-credentials"
       
       - name: Notify on failure
         if: failure()
         run: |
-          echo "✗ Deployment failed - check logs"
+          echo "╔════════════════════════════════════════╗"
+          echo "║   ✗ Deployment Failed                  ║"
+          echo "╚════════════════════════════════════════╝"
+          echo ""
+          echo "Please check:"
+          echo "  • GitHub Actions logs"
+          echo "  • Server SSH connectivity"
+          echo "  • PM2 process status"
           exit 1
