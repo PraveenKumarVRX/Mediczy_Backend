@@ -1,0 +1,133 @@
+import crypto from 'crypto';
+import path from 'path';
+import { S3Client, PutObjectCommand } from '@aws-sdk/client-s3';
+import { getSignedUrl } from '@aws-sdk/s3-request-presigner';
+
+const s3Region = process.env.S3_REGION || process.env.AWS_REGION || 'us-east-1';
+const s3Bucket = process.env.S3_UPLOADS_BUCKET;
+const s3RecordingsBucket = process.env.S3_RECORDINGS_BUCKET || s3Bucket;
+const s3PublicBaseUrl = process.env.S3_PUBLIC_BASE_URL;
+const presignExpiresIn = Number(process.env.S3_PRESIGN_EXPIRES || 300);
+
+const s3Client = new S3Client({ region: s3Region });
+
+const sanitizeFileName = (fileName) => {
+  const baseName = path.basename(fileName || 'file');
+  return baseName.replace(/[^a-zA-Z0-9._-]/g, '_').slice(0, 200);
+};
+
+const buildTenantSegment = (tenantId) => {
+  if (!tenantId) {
+    return 'tenant-unknown';
+  }
+  return `tenant-${tenantId}`;
+};
+
+const buildPublicUrl = (bucket, region, key, publicBaseUrl) => {
+  if (publicBaseUrl) {
+    return `${publicBaseUrl.replace(/\/$/, '')}/${key}`;
+  }
+  return `https://${bucket}.s3.${region}.amazonaws.com/${key}`;
+};
+
+const buildPrefixedKey = ({ prefix, fileName, tenantId, userId }) => {
+  const safeName = sanitizeFileName(fileName);
+  const randomSuffix = crypto.randomBytes(6).toString('hex');
+  const tenantSegment = buildTenantSegment(tenantId);
+  return `${prefix}/${tenantSegment}/${userId}/${Date.now()}_${randomSuffix}_${safeName}`;
+};
+
+export const buildReportKeyPrefix = (tenantId, userId) => {
+  const tenantSegment = buildTenantSegment(tenantId);
+  return `uploads/reports/${tenantSegment}/${userId}/`;
+};
+
+export const buildProfileKeyPrefix = (tenantId, userId) => {
+  const tenantSegment = buildTenantSegment(tenantId);
+  return `uploads/profiles/${tenantSegment}/${userId}/`;
+};
+
+export const buildDoctorMediaKeyPrefix = (tenantId, doctorId, mediaType) => {
+  const tenantSegment = buildTenantSegment(tenantId);
+  return `uploads/doctors/${tenantSegment}/${doctorId}/${mediaType}/`;
+};
+
+export const buildChatKeyPrefix = (tenantId, userId, roomId = 'general') => {
+  const tenantSegment = buildTenantSegment(tenantId);
+  return `uploads/chat/${tenantSegment}/${roomId}/${userId}/`;
+};
+
+export const buildRecordingKeyPrefix = (tenantId, doctorId, recordingId = 'session') => {
+  const tenantSegment = buildTenantSegment(tenantId);
+  return `uploads/recordings/${tenantSegment}/${doctorId}/${recordingId}/`;
+};
+
+export const getUploadsBucket = () => s3Bucket;
+
+export const getRecordingsBucket = () => s3RecordingsBucket;
+
+export const getUploadsRegion = () => s3Region;
+
+export const buildPublicFileUrl = (key, bucketOverride) => {
+  const bucket = bucketOverride || s3Bucket;
+  if (!bucket) {
+    throw new Error('S3_UPLOADS_BUCKET is not set');
+  }
+  return buildPublicUrl(bucket, s3Region, key, s3PublicBaseUrl);
+};
+
+export const createPresignedUpload = async ({
+  bucket,
+  keyPrefix,
+  fileName,
+  contentType,
+  tenantId,
+  userId,
+  metadata = {}
+}) => {
+  const resolvedBucket = bucket || s3Bucket;
+  if (!resolvedBucket) {
+    throw new Error('S3_UPLOADS_BUCKET is not set');
+  }
+
+  const objectKey = buildPrefixedKey({
+    prefix: keyPrefix,
+    fileName,
+    tenantId,
+    userId
+  });
+
+  const command = new PutObjectCommand({
+    Bucket: resolvedBucket,
+    Key: objectKey,
+    ContentType: contentType,
+    Metadata: {
+      tenant_id: tenantId ? String(tenantId) : 'unknown',
+      user_id: String(userId),
+      ...metadata
+    }
+  });
+
+  const uploadUrl = await getSignedUrl(s3Client, command, { expiresIn: presignExpiresIn });
+
+  return {
+    uploadUrl,
+    fileKey: objectKey,
+    fileUrl: buildPublicUrl(resolvedBucket, s3Region, objectKey, s3PublicBaseUrl),
+    bucket: resolvedBucket,
+    region: s3Region,
+    expiresIn: presignExpiresIn
+  };
+};
+
+export const createReportUploadPresign = async ({ tenantId, userId, fileName, contentType, reportType }) => {
+  const keyPrefix = buildReportKeyPrefix(tenantId, userId).replace(/\/$/, '');
+  return createPresignedUpload({
+    keyPrefix,
+    fileName,
+    contentType,
+    tenantId,
+    userId,
+    metadata: { report_type: reportType || 'general' }
+  });
+};
