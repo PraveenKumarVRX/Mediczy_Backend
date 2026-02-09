@@ -13,8 +13,33 @@ YELLOW='\033[1;33m'
 RED='\033[0;31m'
 NC='\033[0m' # No Color
 
+# Load database credentials from .env file
+if [ -f .env ]; then
+    echo -e "${YELLOW}Loading database credentials from .env...${NC}"
+    export $(grep -E '^DB_PASSWORD=' .env | xargs)
+    export $(grep -E '^DB_USER=' .env | xargs)
+    export $(grep -E '^DB_NAME=' .env | xargs)
+    export $(grep -E '^DB_HOST=' .env | xargs)
+    export $(grep -E '^DB_PORT=' .env | xargs)
+    
+    # Set PostgreSQL password environment variable
+    export PGPASSWORD="${DB_PASSWORD}"
+    
+    # Use values from .env or defaults
+    DB_USER="${DB_USER:-mediczy_helper}"
+    DB_NAME="${DB_NAME:-mediczy_ai}"
+    DB_HOST="${DB_HOST:-127.0.0.1}"
+    DB_PORT="${DB_PORT:-5433}"
+else
+    echo -e "${YELLOW}No .env file found, using defaults${NC}"
+    DB_USER="mediczy_helper"
+    DB_NAME="mediczy_ai"
+    DB_HOST="127.0.0.1"
+    DB_PORT="5433"
+fi
+
 echo -e "${YELLOW}Step 1: Checking database connection...${NC}"
-if psql -h 127.0.0.1 -U mediczy_helper -d mediczy_ai -c '\q' 2>/dev/null; then
+if PGPASSWORD="${PGPASSWORD}" psql -h ${DB_HOST} -p ${DB_PORT} -U ${DB_USER} -d ${DB_NAME} -c '\q' 2>/dev/null; then
     echo -e "${GREEN}✓ Database connection successful${NC}"
 else
     echo -e "${RED}✗ Database connection failed${NC}"
@@ -24,32 +49,32 @@ fi
 
 echo ""
 echo -e "${YELLOW}Step 2: Checking if api_credentials table exists...${NC}"
-TABLE_EXISTS=$(psql -h 127.0.0.1 -U mediczy_helper -d mediczy_ai -tAc "SELECT EXISTS (SELECT FROM information_schema.tables WHERE table_name='api_credentials');")
+TABLE_EXISTS=$(PGPASSWORD="${PGPASSWORD}" psql -h ${DB_HOST} -p ${DB_PORT} -U ${DB_USER} -d ${DB_NAME} -tAc "SELECT EXISTS (SELECT FROM information_schema.tables WHERE table_name='api_credentials');")
 
 if [ "$TABLE_EXISTS" = "t" ]; then
     echo -e "${GREEN}✓ Table already exists${NC}"
     echo ""
     echo "Table structure:"
-    psql -h 127.0.0.1 -U mediczy_helper -d mediczy_ai -c '\d api_credentials'
+    PGPASSWORD="${PGPASSWORD}" psql -h ${DB_HOST} -p ${DB_PORT} -U ${DB_USER} -d ${DB_NAME} -c '\d api_credentials'
 else
     echo -e "${YELLOW}Table does not exist. Creating it now...${NC}"
     
     # Create the table
-    psql -h 127.0.0.1 -U mediczy_helper -d mediczy_ai -f /home/ubuntu/Mediczy/create-api-credentials-table.sql
+    PGPASSWORD="${PGPASSWORD}" psql -h ${DB_HOST} -p ${DB_PORT} -U ${DB_USER} -d ${DB_NAME} -f create-api-credentials-table.sql
     
     echo -e "${GREEN}✓ Table created successfully${NC}"
     echo ""
     echo "Table structure:"
-    psql -h 127.0.0.1 -U mediczy_helper -d mediczy_ai -c '\d api_credentials'
+    PGPASSWORD="${PGPASSWORD}" psql -h ${DB_HOST} -p ${DB_PORT} -U ${DB_USER} -d ${DB_NAME} -c '\d api_credentials'
 fi
 
 echo ""
 echo -e "${YELLOW}Step 3: Verifying admin user exists...${NC}"
-ADMIN_EXISTS=$(psql -h 127.0.0.1 -U mediczy_helper -d mediczy_ai -tAc "SELECT EXISTS (SELECT 1 FROM users WHERE email='admin@mediczy.com' AND role IN ('admin', 'super_admin'));")
+ADMIN_EXISTS=$(PGPASSWORD="${PGPASSWORD}" psql -h ${DB_HOST} -p ${DB_PORT} -U ${DB_USER} -d ${DB_NAME} -tAc "SELECT EXISTS (SELECT 1 FROM users WHERE email='admin@mediczy.com' AND role IN ('admin', 'super_admin'));")
 
 if [ "$ADMIN_EXISTS" = "t" ]; then
     echo -e "${GREEN}✓ Admin user exists${NC}"
-    psql -h 127.0.0.1 -U mediczy_helper -d mediczy_ai -c "SELECT id, email, role, \"firstName\", \"lastName\" FROM users WHERE email='admin@mediczy.com';"
+    PGPASSWORD="${PGPASSWORD}" psql -h ${DB_HOST} -p ${DB_PORT} -U ${DB_USER} -d ${DB_NAME} -c "SELECT id, email, role, \"firstName\", \"lastName\" FROM users WHERE email='admin@mediczy.com';"
 else
     echo -e "${YELLOW}Admin user not found${NC}"
     echo "Please create an admin user first"
