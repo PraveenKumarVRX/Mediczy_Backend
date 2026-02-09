@@ -258,9 +258,11 @@ export const generateAuthTokenForUser = (userInstance) => {
     tenant_id: userInstance.tenant_id || userInstance.dataValues?.tenant_id || null
   };
 
-  return jwt.sign(payload, JWT_CONFIG.SECRET, {
+  const token = jwt.sign(payload, JWT_CONFIG.SECRET, {
     expiresIn: '7d'
   });
+
+  return token.replace(/[\r\n]+/g, '');
 };
 
 export { User };
