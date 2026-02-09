@@ -408,6 +408,12 @@ const DoctorListBooking = () => {
       ? response.data.data
       : Array.isArray(response.data?.doctors)
       ? response.data.doctors
+      : Array.isArray(response.data?.data?.doctors)
+      ? response.data.data.doctors
+      : Array.isArray(response.data?.data?.rows)
+      ? response.data.data.rows
+      : Array.isArray(response.data?.data?.data)
+      ? response.data.data.data
       : [];
     return apiDoctors.map(normalizeDoctorFromApi).filter(Boolean);
   };
@@ -479,13 +485,26 @@ const DoctorListBooking = () => {
 
   const filterDoctors = () => {
     let filtered = [...doctors];
+    const normalizedSearch = searchTerm
+      .toLowerCase()
+      .replace(/\bdr\.?\b/g, "")
+      .replace(/\s+/g, " ")
+      .trim();
 
-    if (searchTerm) {
-      filtered = filtered.filter(doctor => 
-        doctor.firstName.toLowerCase().includes(searchTerm.toLowerCase()) ||
-        doctor.lastName.toLowerCase().includes(searchTerm.toLowerCase()) ||
-        doctor.specialization.toLowerCase().includes(searchTerm.toLowerCase())
-      );
+    if (normalizedSearch) {
+      filtered = filtered.filter(doctor => {
+        const firstName = doctor.firstName || "";
+        const lastName = doctor.lastName || "";
+        const specialization = doctor.specialization || "";
+        const fullName = `${firstName} ${lastName}`.trim();
+        const haystack = `${firstName} ${lastName} ${fullName} ${specialization}`
+          .toLowerCase()
+          .replace(/\bdr\.?\b/g, "")
+          .replace(/\s+/g, " ")
+          .trim();
+
+        return haystack.includes(normalizedSearch);
+      });
     }
 
     if (selectedSpecialization) {

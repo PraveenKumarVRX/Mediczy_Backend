@@ -98,6 +98,8 @@ const USER_TYPE_PERMISSIONS = {
     allowedPaths: [
       '/api/doctor',
       '/api/doctors',
+      '/api/doctor-settings',
+      '/api/users',
       '/api/patients',
       '/api/appointments',
       '/api/enhanced-appointments',  // Enhanced appointment booking for doctors

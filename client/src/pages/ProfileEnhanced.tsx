@@ -14,6 +14,7 @@ import { useAuth } from "@/auth/AuthProvider";
 import MainLayout from "@/components/layout/MainLayout";
 import { Camera, Plus, Edit, Trash2, Users } from "lucide-react";
 import api from "@/utils/api";
+import { useQueryClient } from "@tanstack/react-query";
 import { FamilyMemberDialog } from "@/components/profile/FamilyMemberDialog";
 import {
   Table,
@@ -40,6 +41,7 @@ interface FamilyMember {
 const ProfileEnhanced = () => {
   const { toast } = useToast();
   const { currentUser, isLoading } = useAuth();
+  const queryClient = useQueryClient();
   
   const [profileImage, setProfileImage] = useState<string | null>(null);
   const [uploadingImage, setUploadingImage] = useState(false);
@@ -144,6 +146,25 @@ const ProfileEnhanced = () => {
     setSaving(true);
     try {
       const response = await api.put("/users/profile", profileData);
+      const updatedProfile = response.data?.user || response.data;
+
+      if (updatedProfile) {
+        setProfileData({
+          firstName: updatedProfile.firstName || profileData.firstName,
+          lastName: updatedProfile.lastName || profileData.lastName,
+          email: updatedProfile.email || profileData.email,
+          phoneNumber: updatedProfile.phoneNumber || profileData.phoneNumber,
+          abhaHealthId: updatedProfile.abhaHealthId ?? profileData.abhaHealthId,
+        });
+        if (updatedProfile.profileImage) {
+          setProfileImage(updatedProfile.profileImage);
+        }
+      }
+
+      const token = localStorage.getItem("token");
+      queryClient.setQueryData(["currentUser", token], response.data);
+      queryClient.invalidateQueries({ queryKey: ["currentUser"] });
+
       toast({
         title: "Success",
         description: "Profile updated successfully",

@@ -404,9 +404,11 @@ GOOGLE_FIT_ENABLED=true
 DEFAULT_CLINIC_SLUG=default
 
 # LiveKit Configuration (for Video Calls)
-LIVEKIT_URL=wss://your-livekit-server.com
+LIVEKIT_URL=wss://video.mediqzy.com
 LIVEKIT_API_KEY=your_livekit_api_key
 LIVEKIT_API_SECRET=your_livekit_api_secret
+
+# Note: LIVEKIT_URL is the video host. Keep REST API calls on app.mediqzy.com.
 ```
 
 ---
@@ -451,12 +453,14 @@ LIVEKIT_API_SECRET=your_livekit_api_secret
 | Method | Endpoint | Purpose |
 |--------|----------|---------|
 | POST | `/api/consultations/start` | Start consultation |
-| GET | `/api/consultations/token` | Get LiveKit token |
+| POST | `/api/mobile/video/token` | Get LiveKit token |
 | POST | `/api/consultations/end` | End consultation |
 | GET | `/api/consultations/:id` | Get consultation details |
 | POST | `/api/consultations/:id/recording` | Start/stop recording |
 | GET | `/api/consultations/:id/recording` | Get recording status |
 | GET | `/api/notifications` | Get notification history |
+
+Note: `app.mediqzy.com` is the REST API base. `video.mediqzy.com` is the LiveKit host used by the SDK and meeting URLs.
 
 ---
 
@@ -484,7 +488,7 @@ Every API request includes both layers for maximum security
 
 **Step 1: Super Admin generates credentials**
 ```bash
-curl -X POST https://api.mediqzy.com/api/admin/api-credentials/generate \
+curl -X POST https://app.mediqzy.com/api/admin/api-credentials/generate \
   -H "Authorization: Bearer SUPER_ADMIN_TOKEN" \
   -H "Content-Type: application/json" \
   -d '{
@@ -543,7 +547,7 @@ const authClient = axios.create({
 });
 
 const apiClient = axios.create({
-  baseURL: process.env.REACT_APP_API_BASE_URL || 'https://api.mediqzy.com',
+  baseURL: process.env.REACT_APP_API_BASE_URL || 'https://app.mediqzy.com',
   timeout: 30000,
 });
 
@@ -591,7 +595,7 @@ const loginWithAPICredentials = async (email, password, clinicSlug) => {
     const credentials = `${clientId}:${clientSecret}`;
     const base64Credentials = Buffer.from(credentials).toString('base64');
     
-    const response = await fetch('https://api.mediqzy.com/api/mobile/auth/api-credentials', {
+    const response = await fetch('https://app.mediqzy.com/api/mobile/auth/api-credentials', {
       method: 'POST',
       headers: {
         'Authorization': `Basic ${base64Credentials}`,
@@ -626,7 +630,7 @@ const loginWithAPICredentials = async (email, password, clinicSlug) => {
 #### Workflow 2: Rotate Credentials (Admin Only)
 ```bash
 # Super Admin rotates credentials without affecting users
-curl -X POST https://api.mediqzy.com/api/admin/api-credentials/cred_uuid_123/rotate \
+curl -X POST https://app.mediqzy.com/api/admin/api-credentials/cred_uuid_123/rotate \
   -H "Authorization: Bearer SUPER_ADMIN_TOKEN" \
   -H "Content-Type: application/json" \
   -d '{
@@ -644,7 +648,7 @@ curl -X POST https://api.mediqzy.com/api/admin/api-credentials/cred_uuid_123/rot
 #### Workflow 3: Emergency Revoke (Instant)
 ```bash
 # If compromised, Super Admin can revoke instantly
-curl -X POST https://api.mediqzy.com/api/admin/api-credentials/cred_uuid_123/revoke \
+curl -X POST https://app.mediqzy.com/api/admin/api-credentials/cred_uuid_123/revoke \
   -H "Authorization: Bearer SUPER_ADMIN_TOKEN" \
   -H "Content-Type: application/json" \
   -d '{
@@ -677,7 +681,7 @@ For exhaustive API Credentials documentation, see:
 │                                                              │
 │  1. User/Doctor initiates call → Request starts on backend │
 │  2. Backend creates LiveKit room & generates token         │
-│  3. Mobile app gets token via `/api/consultations/token`   │
+│  3. Mobile app gets token via `/api/mobile/video/token`   │
 │  4. App connects to LiveKit server (wss://livekit-url)    │
 │  5. Real-time video/audio streams                          │
 │  6. Optional: Recording starts on backend                  │
@@ -703,7 +707,7 @@ import { Room, Participant, Track } from 'livekit-client';
 import * as SecureStore from 'expo-secure-store';
 
 export class VideoConsultationService {
-  constructor(apiBaseUrl = 'https://api.mediqzy.com') {
+  constructor(apiBaseUrl = 'https://app.mediqzy.com') {
     this.apiBase = apiBaseUrl;
     this.room = null;
     this.listeners = {};
@@ -734,15 +738,15 @@ export class VideoConsultationService {
     try {
       const jwtToken = await SecureStore.getItemAsync('jwt_token');
       
-      const response = await fetch(`${this.apiBase}/api/consultations/token`, {
+      const response = await fetch(`${this.apiBase}/api/mobile/video/token`, {
         method: 'POST',
         headers: {
           'Authorization': `Bearer ${jwtToken}`,
           'Content-Type': 'application/json',
         },
         body: JSON.stringify({
-          appointment_id: appointmentId,
-          consultation_type: consultationType,
+          appointmentId: appointmentId,
+          roomName: null,
         })
       });
 
@@ -1373,13 +1377,13 @@ serviceRef.current.on('qualityChanged', (data) => {
 
 ```bash
 # Test token generation
-curl -X POST https://api.mediqzy.com/api/consultations/token \
+curl -X POST https://app.mediqzy.com/api/mobile/video/token \
   -H "Authorization: Bearer JWT_TOKEN" \
   -H "Content-Type: application/json" \
-  -d '{"appointment_id": "appt_123", "consultation_type": "video"}'
+  -d '{"appointmentId": 123, "roomName": "apt-123"}'
 
 # Test recording (after consultation starts)
-curl -X POST https://api.mediqzy.com/api/consultations/consult_123/recording \
+curl -X POST https://app.mediqzy.com/api/consultations/consult_123/recording \
   -H "Authorization: Bearer JWT_TOKEN" \
   -H "Content-Type: application/json" \
   -d '{"action": "start"}'
@@ -1466,7 +1470,7 @@ export const AuthProvider = ({ children }) => {
 import axios from 'axios';
 import * as SecureStore from 'expo-secure-store';
 
-const API_BASE = process.env.REACT_APP_API_BASE_URL || 'https://api.mediqzy.com';
+const API_BASE = process.env.REACT_APP_API_BASE_URL || 'https://app.mediqzy.com';
 
 const apiClient = axios.create({
   baseURL: API_BASE,
@@ -1500,7 +1504,7 @@ export default apiClient;
 ### Step 5: Test Connectivity
 ```bash
 # Test API endpoint
-curl -X GET https://api.mediqzy.com/api/health \
+curl -X GET https://app.mediqzy.com/api/health \
   -H "Content-Type: application/json"
 
 # Expected response: { "status": "ok", "message": "Server is running" }
@@ -1540,13 +1544,13 @@ import { Room, Participant } from 'livekit-client';
 
 const startCall = async (roomId) => {
   // Get token from backend
-  const response = await fetch(`${API_BASE}/api/consultations/token`, {
+  const response = await fetch(`${API_BASE}/api/mobile/video/token`, {
     method: 'POST',
     headers: {
       'Authorization': `Bearer ${token}`,
       'Content-Type': 'application/json'
     },
-    body: JSON.stringify({ room: roomId })
+    body: JSON.stringify({ roomName: roomId })
   });
   
   const { token: liveKitToken } = await response.json();
@@ -1899,15 +1903,15 @@ Before launching to production:
 | Purpose | Base URL | Example Endpoint |
 |---------|----------|-----------------|
 | **Authentication** | `https://app.mediqzy.com/api` | POST /api/auth/send-otp |
-| **User API Calls** | `https://api.mediqzy.com` | GET /api/users/profile |
-| **Health Data** | `https://api.mediqzy.com` | POST /api/apple-health/sync |
-| **Appointments** | `https://api.mediqzy.com` | POST /api/appointments |
-| **Video Consultation** | `https://api.mediqzy.com` | POST /api/consultations/token |
-| **Notifications** | `https://api.mediqzy.com` | POST /api/notifications/register-device |
+| **User API Calls** | `https://app.mediqzy.com` | GET /api/users/profile |
+| **Health Data** | `https://app.mediqzy.com` | POST /api/apple-health/sync |
+| **Appointments** | `https://app.mediqzy.com` | POST /api/appointments |
+| **Video Consultation** | `https://app.mediqzy.com` | POST /api/mobile/video/token |
+| **Notifications** | `https://app.mediqzy.com` | POST /api/notifications/register-device |
 
 **Important:** Always use correct base URL:
 - 🔐 **Auth endpoints** → `https://app.mediqzy.com/api`
-- 📱 **Everything else** → `https://api.mediqzy.com`
+- 📱 **Everything else** → `https://app.mediqzy.com`
 
 All endpoints require `Content-Type: application/json` header in requests.
 

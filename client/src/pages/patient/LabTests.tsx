@@ -373,7 +373,7 @@ const LabTests = () => {
       return;
     }
 
-    if (!selectedLabId) {
+    if (!collectionType) {
       toast({
         title: 'Collection Type Required',
         description: 'Please select Home Collection or Visit Lab',
@@ -382,10 +382,19 @@ const LabTests = () => {
       return;
     }
 
+    if (collectionType === 'lab' && !selectedLab) {
+      toast({
+        title: 'Lab Required',
+        description: 'Please choose a lab before booking',
+        variant: 'destructive'
+      });
+      return;
+    }
+
     // Determine the actual lab ID to send
-    const actualLabId = selectedLabId === 'home' || selectedLabId === 'in_lab' 
-      ? (bookingForm.labId ? parseInt(bookingForm.labId) : null)
-      : parseInt(selectedLabId);
+    const actualLabId = collectionType === 'lab'
+      ? selectedLab?.id || null
+      : null;
 
     try {
       setIsBooking(true);
@@ -394,7 +403,7 @@ const LabTests = () => {
         testName: selectedTest.name,
         hospitalId: actualLabId,
         appointmentDate: bookingForm.appointmentDate,
-        notes: `${selectedLabId === 'home' ? '[Home Collection] ' : '[Visit Lab] '}${bookingForm.notes}`,
+        notes: `${collectionType === 'home' ? '[Home Collection] ' : '[Visit Lab] '}${bookingForm.notes}`,
         urgency: 'routine'
       });
 
@@ -402,13 +411,16 @@ const LabTests = () => {
       if (data?.success) {
         toast({
           title: 'Test Booked!',
-          description: `Your ${selectedTest.name} has been booked for ${new Date(bookingForm.appointmentDate).toLocaleDateString()}${selectedLabId === 'home' ? ' (Home Collection)' : ''}`
+          description: `Your ${selectedTest.name} has been booked for ${new Date(bookingForm.appointmentDate).toLocaleDateString()}${collectionType === 'home' ? ' (Home Collection)' : ''}`
         });
         setShowBookDialog(false);
         setSelectedTest(null);
         setBookingForm({ testName: '', appointmentDate: '', testType: 'blood_test', notes: '', labId: '' });
+        setCollectionType('');
+        setSelectedLab(null);
         setSelectedLabId('');
         setLabSearchCity('');
+        setLabSearchQuery('');
         fetchMyLabTests(); // Refresh list
       } else {
         toast({

@@ -4,7 +4,7 @@ import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { useToast } from "@/hooks/use-toast";
-import axios from "axios";
+import api from "@/utils/api";
 
 interface AIScribeProps {
   onTranscript: (text: string, field: string) => void;
@@ -105,7 +105,7 @@ const AIScribe: React.FC<AIScribeProps> = ({
     setIsProcessing(true);
     try {
       // Send to AI for processing and suggestions
-      const response = await axios.post('/api/ai/scribe', {
+      const response = await api.post('/ai/scribe', {
         text,
         field,
         context

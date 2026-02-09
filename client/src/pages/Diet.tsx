@@ -539,6 +539,16 @@ const Diet = () => {
     }
   };
 
+  useEffect(() => {
+    const hasWeight = Boolean(weight);
+    const hasHeight = heightUnit === "cm" ? Boolean(height) : Boolean(feet || inches);
+    if (!hasWeight || !hasHeight) {
+      return;
+    }
+
+    handlePlanChange(selectedPlan as "weight_loss" | "weight_gain" | "maintenance");
+  }, [weight, height, feet, inches, heightUnit, age, gender, activityLevel, selectedPlan]);
+
   const bmi = calculateBMI();
   const tdee = calculateTDEE();
 

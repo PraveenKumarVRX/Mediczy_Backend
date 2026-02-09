@@ -1,5 +1,6 @@
 import { useState, useEffect, useRef } from "react";
 import MainLayout from "@/components/layout/MainLayout";
+import MainLayoutdoctor from "@/components/layout/MainLayoutdoctor";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
@@ -115,7 +116,10 @@ const Chat = () => {
   const { socket } = useSocket();
   const queryClient = useQueryClient();
   const { currentUser, currentDoctor, userType } = useAuth();
-  const currentId = userType === "user" ? currentUser?._id : currentDoctor?._id;
+  const currentId =
+    userType === "user"
+      ? String(currentUser?.id ?? currentUser?._id ?? "")
+      : String(currentDoctor?.id ?? currentDoctor?._id ?? "");
   const [selectedRecipient, setSelectedRecipient] = useState<
     User | Doctor | null
   >(null);
@@ -465,8 +469,10 @@ const Chat = () => {
     return `${recipient.firstName} ${recipient.lastName}`;
   };
 
+  const Layout = userType === "doctor" ? MainLayoutdoctor : MainLayout;
+
   return (
-    <MainLayout>
+    <Layout>
       <div className="container mx-auto animate-in">
         <div className="flex justify-between items-center mb-6">
           <h1 className="text-2xl font-bold">
