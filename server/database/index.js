@@ -17,20 +17,22 @@ dotenv.config();
 const { Pool } = pg;
 
 // Database configuration from environment variables
+// Support both DB_* and POSTGRES_* prefixes
 const dbConfig = {
-  user: process.env.DB_USER || 'postgres',
-  password: process.env.DB_PASSWORD || 'postgres',
-  host: process.env.DB_HOST || 'localhost',
-  port: process.env.DB_PORT || 5432,
-  database: process.env.DB_NAME || 'mediczy',
+  user: process.env.DB_USER || process.env.POSTGRES_USER || 'postgres',
+  password: process.env.DB_PASSWORD || process.env.POSTGRES_PASSWORD || 'postgres',
+  host: process.env.DB_HOST || process.env.POSTGRES_HOST || 'localhost',
+  port: process.env.DB_PORT || process.env.POSTGRES_PORT || 5432,
+  database: process.env.DB_NAME || process.env.POSTGRES_DATABASE || 'mediczy',
   // Connection pool settings
-  max: parseInt(process.env.DB_POOL_MAX || '20'),
+  max: parseInt(process.env.DB_POOL_MAX || process.env.POSTGRES_POOL_MAX || '20'),
   idleTimeoutMillis: parseInt(process.env.DB_IDLE_TIMEOUT || '30000'),
   connectionTimeoutMillis: parseInt(process.env.DB_CONNECT_TIMEOUT || '2000'),
 };
 
 console.log(`[DB] Initializing PostgreSQL connection pool...`);
 console.log(`[DB] Host: ${dbConfig.host}:${dbConfig.port}/${dbConfig.database}`);
+console.log(`[DB] User: ${dbConfig.user}`);
 console.log(`[DB] Pool Size: ${dbConfig.max} connections`);
 
 // Create connection pool
