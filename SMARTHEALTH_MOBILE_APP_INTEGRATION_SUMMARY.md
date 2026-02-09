@@ -27,13 +27,13 @@ SmartHealth mobile app is fully integrated with Mediczy backend. This document c
 ## 📊 Key Integration Points
 
 ### 1. User Authentication (Email & Password)
-**Endpoint:** `POST /api/patient/login`  
+**Endpoint:** `POST /api/users/login`  
 **Auth Base URL:** `https://app.mediqzy.com/api`
 
 ```javascript
 // Email/Password Login
 const login = async (email, password, clinicSlug) => {
-  const response = await fetch(`${AUTH_BASE}/api/patient/login`, {
+  const response = await fetch(`${AUTH_BASE}/api/users/login`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({
@@ -182,7 +182,7 @@ const syncGoogleFit = async () => {
       
       GoogleFit.getDailyStepCountSamples({ startDate, endDate })
         .then(async (steps) => {
-          await fetch(`${API_BASE}/api/fitness/store`, {
+          await fetch(`${API_BASE}/api/fitness-data/store`, {
             method: 'POST',
             headers: { 
               'Authorization': `Bearer ${token}`,
@@ -243,11 +243,11 @@ const getDoctors = async (clinicSlug, filters = {}) => {
 ```
 
 ### 7. Prescriptions
-**Endpoint:** `GET /api/prescriptions`
+**Endpoint:** `GET /api/prescriptions/patient`
 
 ```javascript
 const getPrescriptions = async () => {
-  const response = await fetch(`${API_BASE}/api/prescriptions`, {
+  const response = await fetch(`${API_BASE}/api/prescriptions/patient`, {
     method: 'GET',
     headers: {
       'Authorization': `Bearer ${token}`,
@@ -380,8 +380,8 @@ Create `.env` file:
 AUTH_BASE_URL=https://app.mediqzy.com/api
 AUTH_TIMEOUT=30000
 
-# API Configuration (Use api.mediqzy.com for regular API calls)
-API_BASE_URL=https://api.mediqzy.com
+# API Configuration (Use app.mediqzy.com for API calls)
+API_BASE_URL=https://app.mediqzy.com/api
 API_TIMEOUT=30000
 
 # Firebase Configuration
@@ -417,13 +417,13 @@ LIVEKIT_API_SECRET=your_livekit_api_secret
 | Method | Endpoint | Purpose | Auth Base URL |
 |--------|----------|---------|----------------|
 | POST | `/api/patient/signup` | User registration | app.mediqzy.com/api |
-| POST | `/api/patient/login` | Patient email/password login | app.mediqzy.com/api |
+| POST | `/api/users/login` | Patient email/password login | app.mediqzy.com/api |
 | POST | `/api/auth/send-otp` | Send OTP to phone | app.mediqzy.com/api |
 | POST | `/api/auth/verify-otp` | Verify OTP and login | app.mediqzy.com/api |
 | POST | `/api/doctors/login` | Doctor login | app.mediqzy.com/api |
-| POST | `/api/users/profile` | Get user profile | api.mediqzy.com |
-| PUT | `/api/users/profile` | Update profile | api.mediqzy.com |
-| POST | `/api/users/logout` | Logout | api.mediqzy.com |
+| GET | `/api/users/profile` | Get user profile | app.mediqzy.com/api |
+| PUT | `/api/users/profile` | Update profile | app.mediqzy.com/api |
+| POST | `/api/users/logout` | Logout | app.mediqzy.com/api |
 |--------|----------|---------|
 | GET | `/api/doctors` | List all doctors |
 | GET | `/api/doctors/:id` | Get doctor details |
@@ -436,14 +436,14 @@ LIVEKIT_API_SECRET=your_livekit_api_secret
 | Method | Endpoint | Purpose |
 |--------|----------|---------|
 | POST | `/api/apple-health/sync` | Sync Apple Health data |
-| POST | `/api/fitness/store` | Store fitness data |
-| GET | `/api/fitness/summary?days=7` | Get fitness summary |
-| GET | `/api/health-metrics` | Get health metrics |
+| POST | `/api/fitness-data/store` | Store fitness data |
+| GET | `/api/fitness-data/summary?days=7` | Get fitness summary |
+| GET | `/api/health/latest` | Get health metrics |
 
 ### Prescription Endpoints
 | Method | Endpoint | Purpose |
 |--------|----------|---------|
-| GET | `/api/prescriptions` | Get user prescriptions |
+| GET | `/api/prescriptions/patient` | Get user prescriptions |
 | GET | `/api/prescriptions/:id` | Get prescription details |
 | POST | `/api/prescriptions/:id/refill` | Request refill |
 
