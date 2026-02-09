@@ -22,11 +22,12 @@ if [ -f ~/Mediczy/.env ]; then
     source <(grep -E '^(DB_|POSTGRES_)' ~/Mediczy/.env 2>/dev/null | sed 's/^/export /')
 fi
 
-# Try with DB_ prefix (used by database/index.js)
-DB_HOST="${DB_HOST:-localhost}"
-DB_PORT="${DB_PORT:-5432}"
-DB_USER="${DB_USER:-mediczy_helper}"
-DB_NAME="${DB_NAME:-mediczy_ai}"
+# Try with POSTGRES_ prefix first (most common), fallback to DB_
+DB_HOST="${DB_HOST:-${POSTGRES_HOST:-localhost}}"
+DB_PORT="${DB_PORT:-${POSTGRES_PORT:-5432}}"
+DB_USER="${DB_USER:-${POSTGRES_USER:-mediczy_helper}}"
+DB_NAME="${DB_NAME:-${POSTGRES_DATABASE:-mediczy_ai}}"
+DB_PASSWORD="${DB_PASSWORD:-${POSTGRES_PASSWORD}}"
 
 echo "Will attempt connection with:"
 echo "  Host: $DB_HOST"
