@@ -628,7 +628,7 @@ router.post('/doctor/reject/:appointmentId', authUser, [
     // Update appointment status to 'rejected'
     await appointment.update({
       status: 'cancelled',
-      cancelledBy: 'doctor',
+      cancelledBy: appointment.doctorId,
       cancellationReason: reason,
       cancelledAt: new Date()
     });

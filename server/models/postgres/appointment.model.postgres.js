@@ -246,7 +246,7 @@ const Appointment = sequelize.define('Appointment', {
     allowNull: true
   },
   cancelledBy: {
-    type: DataTypes.ENUM('patient', 'doctor', 'admin', 'system'),
+    type: DataTypes.INTEGER,
     allowNull: true
   },
   cancelledAt: {

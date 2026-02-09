@@ -898,7 +898,7 @@ class NotificationService {
     });
 
     if (notification) {
-      await notification.update({ status: 'read', readAt: new Date() });
+      await notification.update({ isRead: true, readAt: new Date() });
       return { success: true };
     }
 
@@ -909,13 +909,13 @@ class NotificationService {
    * Mark all notifications as read
    */
   async markAllAsRead(userId, userType) {
-    const where = { userId, status: { [postgresSequelize.Sequelize.Op.ne]: 'read' } };
+    const where = { userId, isRead: false };
     // Only filter by userType if provided
     if (userType) {
       where.userType = userType;
     }
     await Notification.update(
-      { status: 'read', readAt: new Date() },
+      { isRead: true, readAt: new Date() },
       { where }
     );
     return { success: true };
@@ -925,7 +925,7 @@ class NotificationService {
    * Get unread count
    */
   async getUnreadCount(userId, userType) {
-    const where = { userId, status: { [postgresSequelize.Sequelize.Op.ne]: 'read' } };
+    const where = { userId, isRead: false };
     // Only filter by userType if provided
     if (userType) {
       where.userType = userType;

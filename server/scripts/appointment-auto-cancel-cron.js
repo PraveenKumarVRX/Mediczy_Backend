@@ -52,11 +52,12 @@ const cancelExpiredAppointments = async () => {
         await appointment.update({
           status: 'no-show',
           cancellationReason: 'Patient did not attend - appointment expired (auto-cancelled by system)',
-          cancelledBy: 'system',
+          cancelledBy: null,
           cancelledAt: new Date(),
           metadata: {
             ...appointment.metadata,
             autoCancelledAt: new Date().toISOString(),
+            cancelledByRole: 'system',
             previousStatus: appointment.status
           }
         });

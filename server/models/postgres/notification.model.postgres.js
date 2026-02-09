@@ -102,7 +102,7 @@ const Notification = postgresSequelize.define('Notification', {
     type: DataTypes.STRING(50),
     defaultValue: 'pending',
     validate: {
-      isIn: [['pending', 'sent', 'failed', 'cancelled']]
+      isIn: [['pending', 'sent', 'failed', 'cancelled', 'read']]
     }
   },
   // Delivery channels

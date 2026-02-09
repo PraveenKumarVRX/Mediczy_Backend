@@ -741,15 +741,18 @@ export const cancelAppointment = async (req, res) => {
     }
 
     // Determine who is cancelling
-    const cancelledBy = appointment.userId === userId ? 'patient' : 'doctor';
-    const defaultReason = cancelledBy === 'patient'
+    const cancelledByRole = appointment.userId === userId ? 'patient' : 'doctor';
+    const cancelledById = cancelledByRole === 'patient'
+      ? appointment.userId
+      : appointment.doctorId;
+    const defaultReason = cancelledByRole === 'patient'
       ? 'Cancelled by patient'
       : 'Cancelled by doctor';
 
     // Update appointment
     await appointment.update({
       status: 'cancelled',
-      cancelledBy,
+      cancelledBy: cancelledById,
       cancellationReason: cancelReason || defaultReason,
       cancelledAt: new Date()
     });

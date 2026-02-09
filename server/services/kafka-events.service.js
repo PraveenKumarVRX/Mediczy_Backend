@@ -77,6 +77,13 @@ class KafkaEventsService {
 
   async publishAppointmentCancelled(appointment, patient, doctor, reason) {
     try {
+      const cancelledByRole = appointment.cancelledBy == null
+        ? 'system'
+        : appointment.cancelledBy === appointment.userId
+          ? 'patient'
+          : appointment.cancelledBy === appointment.doctorId
+            ? 'doctor'
+            : 'admin';
       await publishEvent(KAFKA_TOPICS.APPOINTMENT_EVENTS, {
         type: 'appointment.cancelled',
         eventType: 'appointment.cancelled',
@@ -90,7 +97,7 @@ class KafkaEventsService {
         appointmentDate: appointment.appointmentDate,
         appointmentTime: appointment.appointmentTime,
         cancellationReason: reason || 'Not specified',
-        cancelledBy: appointment.cancelledBy || 'patient',
+        cancelledBy: cancelledByRole,
         consultationFee: appointment.consultationFee,
         refundStatus: appointment.refundStatus || 'pending',
         organizationId: appointment.organization_id,

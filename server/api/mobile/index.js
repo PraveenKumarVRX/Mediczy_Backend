@@ -2428,7 +2428,7 @@ router.put('/appointments/:id/cancel', authenticate(), asyncHandler(async (req, 
     UPDATE appointments 
     SET status = 'cancelled',
         "cancellationReason" = $1,
-        "cancelledBy" = 'patient',
+        "cancelledBy" = $4,
         "cancelledAt" = NOW(),
         "updatedAt" = NOW()
     WHERE id = $2 AND "userId" = $3
@@ -2438,7 +2438,7 @@ router.put('/appointments/:id/cancel', authenticate(), asyncHandler(async (req, 
               "appointmentDate" AS appointment_date,
               "appointmentTime" AS appointment_time,
               "doctorId" AS doctor_id
-  `, [reason, req.params.id, req.userId]);
+          `, [reason, req.params.id, req.userId, req.userId]);
   
   if (result.rows.length === 0) {
     return res.status(404).json({
