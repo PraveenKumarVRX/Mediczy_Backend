@@ -22,13 +22,17 @@ echo "📊 Current memory status:"
 free -h
 echo ""
 
-# Save PM2 process list
-echo "💾 Saving PM2 process list..."
-pm2 save --force
+if command -v pm2 >/dev/null 2>&1; then
+    # Save PM2 process list
+    echo "💾 Saving PM2 process list..."
+    pm2 save --force
 
-# Stop PM2 processes to free memory
-echo "⏸️  Stopping PM2 processes to free memory..."
-pm2 stop all
+    # Stop PM2 processes to free memory
+    echo "⏸️  Stopping PM2 processes to free memory..."
+    pm2 stop all
+else
+    echo "⚠️  PM2 not found; skipping PM2 stop/resume steps"
+fi
 
 echo ""
 echo "📊 Memory after stopping PM2:"
@@ -55,18 +59,20 @@ fi
 # Return to root
 cd /workspaces/Mediczy
 
-# Restart PM2 processes
-echo ""
-echo "🔄 Restarting PM2 processes..."
-pm2 resurrect
+if command -v pm2 >/dev/null 2>&1; then
+    # Restart PM2 processes
+    echo ""
+    echo "🔄 Restarting PM2 processes..."
+    pm2 resurrect
 
-# Wait for services to stabilize
-sleep 5
+    # Wait for services to stabilize
+    sleep 5
 
-# Check PM2 status
-echo ""
-echo "📊 PM2 Process Status:"
-pm2 list
+    # Check PM2 status
+    echo ""
+    echo "📊 PM2 Process Status:"
+    pm2 list
+fi
 
 echo ""
 echo "📊 Final memory status:"

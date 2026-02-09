@@ -36,10 +36,15 @@ else
     echo "No TypeScript servers found running"
 fi
 
-# Also stop PM2
-echo ""
-echo "⏸️  Stopping PM2 processes..."
-pm2 stop all >/dev/null 2>&1
+if command -v pm2 >/dev/null 2>&1; then
+    # Also stop PM2
+    echo ""
+    echo "⏸️  Stopping PM2 processes..."
+    pm2 stop all >/dev/null 2>&1
+else
+    echo ""
+    echo "⚠️  PM2 not found; skipping PM2 stop/resume steps"
+fi
 
 echo ""
 echo "📊 Memory after cleanup:"
@@ -74,18 +79,20 @@ fi
 # Return to root
 cd /workspaces/Mediczy
 
-# Restart PM2
-echo ""
-echo "🔄 Restarting PM2 processes..."
-pm2 start ecosystem.config.js >/dev/null 2>&1
+if command -v pm2 >/dev/null 2>&1; then
+    # Restart PM2
+    echo ""
+    echo "🔄 Restarting PM2 processes..."
+    pm2 start ecosystem.config.js >/dev/null 2>&1
 
-# Wait for services
-sleep 5
+    # Wait for services
+    sleep 5
 
-# PM2 status
-echo ""
-echo "📊 PM2 Process Status:"
-pm2 list
+    # PM2 status
+    echo ""
+    echo "📊 PM2 Process Status:"
+    pm2 list
+fi
 
 echo ""
 echo "📊 Final memory status:"

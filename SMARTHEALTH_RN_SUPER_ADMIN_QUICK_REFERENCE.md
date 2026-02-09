@@ -41,7 +41,7 @@ Dashboard → Admin → Integrations → Create API Credential
 
 #### Via API (Alternative)
 ```bash
-curl -X POST https://api.mediczy.com/api/admin/api-credentials/generate \
+curl -X POST https://app.mediqzy.com/api/admin/api-credentials/generate \
   -H "Authorization: Bearer YOUR_SUPER_ADMIN_TOKEN" \
   -H "Content-Type: application/json" \
   -d '{
@@ -81,7 +81,7 @@ Dashboard → Admin → Integrations → API Credentials
 
 #### Via API
 ```bash
-curl https://api.mediczy.com/api/admin/api-credentials \
+curl https://app.mediqzy.com/api/admin/api-credentials \
   -H "Authorization: Bearer YOUR_SUPER_ADMIN_TOKEN"
 ```
 
@@ -127,7 +127,7 @@ curl https://api.mediczy.com/api/admin/api-credentials \
 
 #### Check Usage Stats
 ```bash
-curl https://api.mediczy.com/api/admin/api-credentials/cred_uuid_123 \
+curl https://app.mediqzy.com/api/admin/api-credentials/cred_uuid_123 \
   -H "Authorization: Bearer YOUR_SUPER_ADMIN_TOKEN"
 ```
 
@@ -139,7 +139,7 @@ curl https://api.mediczy.com/api/admin/api-credentials/cred_uuid_123 \
 
 #### View Audit Log
 ```bash
-curl https://api.mediczy.com/api/admin/api-credentials/cred_uuid_123/audit-log \
+curl https://app.mediqzy.com/api/admin/api-credentials/cred_uuid_123/audit-log \
   -H "Authorization: Bearer YOUR_SUPER_ADMIN_TOKEN"
 ```
 
@@ -172,7 +172,7 @@ Dashboard → Admin → Integrations → API Credentials
 
 #### Via API
 ```bash
-curl -X POST https://api.mediczy.com/api/admin/api-credentials/cred_uuid_123/rotate \
+curl -X POST https://app.mediqzy.com/api/admin/api-credentials/cred_uuid_123/rotate \
   -H "Authorization: Bearer YOUR_SUPER_ADMIN_TOKEN" \
   -H "Content-Type: application/json" \
   -d '{
@@ -219,7 +219,7 @@ Dashboard → Admin → Integrations → API Credentials
 
 #### Via API
 ```bash
-curl -X POST https://api.mediczy.com/api/admin/api-credentials/cred_uuid_123/revoke \
+curl -X POST https://app.mediqzy.com/api/admin/api-credentials/cred_uuid_123/revoke \
   -H "Authorization: Bearer YOUR_SUPER_ADMIN_TOKEN" \
   -H "Content-Type: application/json" \
   -d '{

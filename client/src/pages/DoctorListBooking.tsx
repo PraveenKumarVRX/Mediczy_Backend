@@ -835,13 +835,13 @@ const DoctorListBooking = () => {
         doctorId,
         appointmentDate: format(selectedDate, "yyyy-MM-dd"),
         appointmentTime: normalizedTime,
-        consultationType: consultationType === "online" ? "video" : "in-person",
+        type: consultationType === "online" ? "online" : "in-person",
         symptoms,
-        consultationFee
+        notes: null
       };
 
       // First, create the appointment
-      const response = await api.post("/appointments", bookingData);
+      const response = await api.post("/mobile/appointments", bookingData);
       const appointmentId = response.data?.appointment?.id;
 
       // If paying with Health Coins, process HC payment
