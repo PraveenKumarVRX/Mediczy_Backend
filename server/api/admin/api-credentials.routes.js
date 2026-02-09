@@ -22,8 +22,9 @@ import express from 'express';
 import crypto from 'crypto';
 import bcrypt from 'bcrypt';
 import { asyncHandler } from '../../middleware/errorHandler.middleware.js';
-import { authenticate } from '../v2/auth.utils.js';
+import { authenticate, generateToken, generateRefreshToken } from '../v2/auth.utils.js';
 import { requireRole } from '../../middleware/auth.middleware.js';
+import db from '../../database/index.js';
 
 const router = express.Router();
 
