@@ -133,7 +133,7 @@ CREATE TABLE api_credential_audit_log (
  *   rotation_required_in_days: number (default: 90)
  * }
  */
-router.post('/api-credentials/generate', 
+router.post('/generate', 
   authenticate(), 
   requireRole(['super_admin', 'admin']), 
   asyncHandler(async (req, res) => {
@@ -255,7 +255,7 @@ router.post('/api-credentials/generate',
  * GET /api/admin/api-credentials
  * List all API credentials with status
  */
-router.get('/api-credentials',
+router.get('/',
   authenticate(),
   requireRole(['super_admin', 'admin']),
   asyncHandler(async (req, res) => {
@@ -331,7 +331,7 @@ router.get('/api-credentials',
  * 
  * The old secret still works for configured grace period
  */
-router.post('/api-credentials/:id/rotate',
+router.post('/:id/rotate',
   authenticate(),
   requireRole(['super_admin', 'admin']),
   asyncHandler(async (req, res) => {
@@ -419,7 +419,7 @@ router.post('/api-credentials/:id/rotate',
  * Immediately revoke/disable credentials
  * Client cannot authenticate with this credential anymore
  */
-router.post('/api-credentials/:id/revoke',
+router.post('/:id/revoke',
   authenticate(),
   requireRole(['super_admin', 'admin']),
   asyncHandler(async (req, res) => {

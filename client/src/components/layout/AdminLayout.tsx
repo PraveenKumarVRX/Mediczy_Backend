@@ -50,7 +50,8 @@ import {
   PanelLeft,
   Moon,
   Sun,
-  RefreshCw
+  RefreshCw,
+  Key
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Sheet, SheetContent, SheetTrigger } from '@/components/ui/sheet';
@@ -359,6 +360,7 @@ const AdminLayout = ({ children }: AdminLayoutProps) => {
       color: 'text-slate-500',
       items: [
         { icon: Shield, label: 'Module Access', path: '/admin/module-access', color: 'text-blue-500', bg: 'bg-blue-500/10', highlight: true },
+        { icon: Key, label: 'API Credentials', path: '/admin/api-credentials', color: 'text-purple-500', bg: 'bg-purple-500/10' },
         { icon: Activity, label: 'Activity Log', path: '/admin/activity-log', color: 'text-teal-500', bg: 'bg-teal-500/10' },
         { icon: Workflow, label: 'Automation', path: '/admin/workflow-automation', color: 'text-indigo-500', bg: 'bg-indigo-500/10', highlight: true },
         { icon: Settings, label: 'Settings', path: '/admin/settings', color: 'text-slate-500', bg: 'bg-slate-500/10' },

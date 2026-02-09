@@ -104,6 +104,7 @@ import OHCManagement from '@/pages/admin/OHCManagement';
 import InsurerManagement from '@/pages/admin/InsurerManagement';
 import TPAManagement from '@/pages/admin/TPAManagement';
 import BrokerManagement from '@/pages/admin/BrokerManagement';
+import ApiCredentialsManagement from '@/pages/admin/ApiCredentialsManagement';
 import MedivacManagement from '@/pages/admin/MedivacManagement';
 import NGOManagement from '@/pages/admin/NGOManagement';
 import PSUManagement from '@/pages/admin/PSUManagement';
@@ -735,6 +736,7 @@ const AppRoutes = () => {
   <Route path="/admin/insurer" element={<InsurerManagement />} />
   <Route path="/admin/tpa" element={<TPAManagement />} />
   <Route path="/admin/brokers" element={<BrokerManagement />} />
+  <Route path="/admin/api-credentials" element={<ApiCredentialsManagement />} />
   <Route path="/admin/hospitals" element={<HospitalsManagement />} />
   <Route path="/admin/clinics" element={<ClinicsManagement />} />
   <Route path="/admin/corporates" element={<CorporatesManagement />} />

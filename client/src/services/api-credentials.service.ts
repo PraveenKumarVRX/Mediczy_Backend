@@ -82,6 +82,27 @@ class ApiCredentialsService {
   }
 
   /**
+   * Get all API credentials (super admin only)
+   */
+  async getAllCredentials(): Promise<ApiCredential[]> {
+    try {
+      const response = await api.get(
+        '/api/admin/api-credentials',
+        {
+          headers: { Authorization: `Bearer ${this.token}` },
+        }
+      );
+
+      return response.data.data || [];
+    } catch (error: any) {
+      console.error('Error fetching API credentials:', error);
+      throw new Error(
+        error.response?.data?.message || 'Failed to fetch API credentials'
+      );
+    }
+  }
+
+  /**
    * Get API credentials for an aggregator
    */
   async getAggregatorCredentials(
