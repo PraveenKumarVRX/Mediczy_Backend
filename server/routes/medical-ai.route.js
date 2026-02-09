@@ -5,6 +5,7 @@ import handleIntentEscalation, { getDoctorSuggestions } from '../services/intent
 import { Appointment } from '../models/appointment.model.intelligent.js';
 import doctorModel from '../models/doctor.model.intelligent.js';
 import { User } from '../models/user.model.intelligent.js';
+import { buildLiveKitJoinData } from '../utils/videoProvider.js';
 
 const router = express.Router();
 const SIB_URL = process.env.SIB_URL || 'http://localhost:8001';
@@ -854,10 +855,35 @@ router.post('/instant-triage-call', authUser, async (req, res) => {
       console.log(`✅ Emergency credit used for user ${req.user.id}. Credits: ${creditsUsed + 1}/${creditLimit}, Pending: ₹${(pendingAmount + consultationFee).toFixed(2)}`);
     }
 
-    // LiveKit URL
+    // LiveKit URLs (tokenized when config is available)
     const livekitBaseUrl = process.env.LIVEKIT_MEET_URL || 'https://video.mediqzy.com';
-    const patientJoinUrl = `${livekitBaseUrl}/rooms/${roomId}`;
-    const doctorJoinUrl = `${livekitBaseUrl}/rooms/${roomId}`;
+    let patientJoinUrl = `${livekitBaseUrl}/rooms/${roomId}`;
+    let doctorJoinUrl = `${livekitBaseUrl}/rooms/${roomId}`;
+    let livekitJoinData = null;
+
+    try {
+      const patientName = `${req.user.firstName || ''} ${req.user.lastName || ''}`.trim() || 'Patient';
+      const doctorName = `${doctor.prefix || 'Dr.'} ${doctor.firstName} ${doctor.lastName}`.trim();
+      const patientLivekit = await buildLiveKitJoinData({
+        meetingId: roomId,
+        identity: `user-${req.user.id}`,
+        name: patientName
+      });
+      const doctorLivekit = await buildLiveKitJoinData({
+        meetingId: roomId,
+        identity: `doctor-${doctor.id}`,
+        name: doctorName
+      });
+
+      patientJoinUrl = patientLivekit.joinUrl;
+      doctorJoinUrl = doctorLivekit.joinUrl;
+      livekitJoinData = {
+        patient: patientLivekit,
+        doctor: doctorLivekit
+      };
+    } catch (error) {
+      console.warn('LiveKit token generation failed, falling back to meet URL:', error.message);
+    }
 
     // Send real-time socket notification to doctor (WhatsApp-style call notification)
     try {
@@ -924,7 +950,8 @@ router.post('/instant-triage-call', authUser, async (req, res) => {
         roomId,
         patientJoinUrl,
         doctorJoinUrl,
-        platform: 'LiveKit'
+        platform: 'LiveKit',
+        livekit: livekitJoinData
       },
       billing: {
         paymentType: isPayingWithHC ? 'health_coins' : (isUsingCredit ? 'credit' : 'pending'),

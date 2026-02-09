@@ -885,6 +885,7 @@ app.use((req, res, next) => {
   next();
 });
 
+app.use("/api/reports", reportsRouter); // Patient medical reports
 app.use("/api/reports", uploadRouter); // Medical report upload
 app.use("/api/health-assessment", healthAssessmentRouter); // Health risk assessment
 app.use("/api/reports", reportAnalysisRouter); // Report analysis
@@ -918,7 +919,6 @@ app.use("/api/insurance-broker", insuranceBrokerRouter); // Insurance broker/int
 app.use("/api/hospital/insurance", hospitalInsuranceRouter); // IHX-like hospital insurance claims dashboard
 app.use("/api/tpa", tpaRouter); // TPA (Third Party Administrator) login
 app.use("/api/appointments", appointmentRouter);
-app.use("/api/reports", reportsRouter);
 app.use("/api/lab-tests", labTestsRouter);
 app.use("/api/cart", cartRouter); // Lab test cart management
 app.use("/api/prescriptions", prescriptionRouter); // Prescription CRUD and PDF generation
