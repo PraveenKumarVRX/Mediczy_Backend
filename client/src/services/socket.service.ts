@@ -24,13 +24,13 @@ class SocketService {
     console.log('🔌 Connecting to Socket.IO server:', SOCKET_URL);
     
     this.socket = io(SOCKET_URL, {
-      transports: ['websocket', 'polling'],
+      transports: ['websocket'],
       reconnection: true,
       reconnectionAttempts: this.maxReconnectAttempts,
       reconnectionDelay: 1000,
       reconnectionDelayMax: 5000,
       timeout: 20000,
-      path: '/socket.io/', // Ensure correct path
+      path: '/socket.io', // Ensure correct path
     });
 
     this.socket.on('connect', () => {

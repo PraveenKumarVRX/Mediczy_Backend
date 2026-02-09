@@ -31,6 +31,8 @@ export const SocketProvider = ({ children }: { children: React.ReactNode }) => {
 
     // Connect to socket server
     socketRef.current = io(socketOrigin, {
+      transports: ['websocket'],
+      path: '/socket.io',
       query: {
         userId: currentId,
         userType,
