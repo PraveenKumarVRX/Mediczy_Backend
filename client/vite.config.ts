@@ -80,16 +80,27 @@ export default defineConfig(({ mode }) => ({
     ],
   },
   build: {
-    // Production build optimization
+    // Production build optimization with memory constraints
     chunkSizeWarningLimit: 2000,
     sourcemap: false,
     minify: 'esbuild',
+    // Reduce memory usage during build
+    target: 'es2020',
+    cssCodeSplit: true,
+    reportCompressedSize: false, // Disable to save memory
     rollupOptions: {
+      // Optimize for memory-constrained environments
+      maxParallelFileOps: 2,
       output: {
-        // Force new hash by adding timestamp to entry chunk name
-        entryFileNames: `assets/[name]-[hash]-${Date.now()}.js`,
-        chunkFileNames: `assets/[name]-[hash]-${Date.now()}.js`,
-        assetFileNames: `assets/[name]-[hash].[ext]`
+        manualChunks: {
+          vendor: ['react', 'react-dom', 'react-router-dom'],
+          ui: ['lucide-react', '@radix-ui/react-dialog', '@radix-ui/react-dropdown-menu']
+        },
+        entryFileNames: 'assets/[name]-[hash].js',
+        chunkFileNames: 'assets/[name]-[hash].js',
+        assetFileNames: 'assets/[name]-[hash].[ext]',
+        // Reduce chunk size for better memory usage
+        compact: true,
       }
     }
   },
