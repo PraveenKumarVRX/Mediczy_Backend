@@ -73,7 +73,9 @@ echo "📝 Logs: $LOG_FILE"
     # Quick health check
     echo ""
     echo "Health Check:"
-    curl -s -o /dev/null -w "  Backend: HTTP %{http_code}\n" http://localhost:8000/api/health || echo "  Backend: Check failed"
+    HEALTH_BASE=${HEALTH_BASE:-http://localhost:8888}
+    curl -s -o /dev/null -w "  Backend (/v1/health): HTTP %{http_code}\n" "$HEALTH_BASE/v1/health" || echo "  Backend (/v1/health): Check failed"
+    curl -s -o /dev/null -w "  Backend (/api/health): HTTP %{http_code}\n" "$HEALTH_BASE/api/health" || echo "  Backend (/api/health): Check failed"
     curl -s -o /dev/null -w "  Frontend: HTTP %{http_code}\n" https://mediqzy.com || echo "  Frontend: Check failed"
 
 } >> "$LOG_FILE" 2>&1 &
