@@ -26,9 +26,12 @@ import { Label } from "@/components/ui/label";
 import { Search, Star, Clock, ArrowRight, Info, Stethoscope, Heart, FlaskConical, MapPin, Video, Building, Home, Syringe, TestTube } from "lucide-react";
 import api from "@/utils/api";
 import { useAuth } from "@/auth/AuthProvider";
+import { useToast } from "@/hooks/use-toast";
 
 interface Doctor {
   _id: string;
+  id?: string;
+  doctor_id?: string;
   firstName: string;
   lastName: string;
   profileImage?: string;
@@ -99,6 +102,7 @@ export default function QuickAppointmentModal({
   const navigate = useNavigate();
   const location = useLocation();
   const { userType } = useAuth();
+  const { toast } = useToast();
   const normalizedPath = location.pathname.toLowerCase();
   const [providerType, setProviderType] = useState<ProviderType>("doctors");
   const [searchTerm, setSearchTerm] = useState("");
@@ -114,6 +118,8 @@ export default function QuickAppointmentModal({
   const isLabPortal = normalizedPath === "/lab" || normalizedPath.startsWith("/lab/");
   const isHomecarePortal = normalizedPath === "/homecare" || normalizedPath.startsWith("/homecare/");
   const isStaffBooking = isDoctorPortal || isNursePortal || isAssistantPortal || isLabPortal || isHomecarePortal;
+
+  const resolveDoctorId = (doctor: Doctor) => doctor._id || doctor.id || doctor.doctor_id || "";
 
   // Fetch doctors
   const { data: doctors = [], isLoading: isDoctorsLoading } = useQuery({
@@ -370,7 +376,23 @@ export default function QuickAppointmentModal({
                 <>
                   <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                     {doctors.map((doctor: Doctor) => (
-                      <Card key={doctor._id} className="p-4 hover:border-[#00FFF3]/40 transition-all cursor-pointer" onClick={() => handleProviderSelect(doctor._id)}>
+                      <Card
+                        key={doctor._id || doctor.id || doctor.doctor_id || `${doctor.firstName}-${doctor.lastName}-${doctor.specialization}`}
+                        className="p-4 hover:border-[#00FFF3]/40 transition-all cursor-pointer"
+                        onClick={() => {
+                          const doctorId = resolveDoctorId(doctor);
+                          if (!doctorId) {
+                            console.warn("Selected doctor is missing an id.", doctor);
+                            toast({
+                              title: "Unable to open doctor",
+                              description: "This doctor profile is missing an id. Please choose another doctor.",
+                              variant: "destructive",
+                            });
+                            return;
+                          }
+                          handleProviderSelect(doctorId);
+                        }}
+                      >
                         <div className="flex gap-4">
                           <img src={doctor.profileImage || "/default-doctor.png"} alt={`${doctor.firstName} ${doctor.lastName}`} className="w-16 h-16 rounded-full object-cover" />
                           <div className="flex-1 min-w-0">

@@ -13,6 +13,12 @@ import { authLimiter } from '../middleware/rateLimiter.middleware.js';
 import { auditLoginAttempt } from '../middleware/audit.middleware.js';
 import { Doctor } from '../models/index.js';
 import tenantPartnerService from '../services/tenant-partner.service.js';
+import {
+  buildDoctorMediaKeyPrefix,
+  buildPublicFileUrl,
+  createPresignedUpload,
+  getUploadsBucket
+} from '../services/s3-presign.service.js';
 
 const router = express.Router();
 
@@ -47,6 +53,18 @@ const upload = multer({
     }
   }
 });
+
+const validMediaTypes = ['profilePicture', 'digitalSignature', 'medicalSeal', 'clinicImage'];
+const doctorMediaMimeTypes = [
+  'image/jpeg',
+  'image/jpg',
+  'image/png',
+  'image/gif',
+  'image/webp',
+  'application/pdf',
+  'application/msword',
+  'application/vnd.openxmlformats-officedocument.wordprocessingml.document'
+];
 
 // ==========================================================================
 // DOCTOR LISTING & SEARCH
@@ -698,7 +716,6 @@ router.post('/upload/:mediaType', authUser, upload.single('file'), async (req, r
       });
     }
 
-    const validMediaTypes = ['profilePicture', 'digitalSignature', 'medicalSeal', 'clinicImage'];
     if (!validMediaTypes.includes(mediaType)) {
       return res.status(400).json({
         success: false,
@@ -721,6 +738,131 @@ router.post('/upload/:mediaType', authUser, upload.single('file'), async (req, r
     res.status(500).json({
       success: false,
       message: 'Failed to upload media',
+      error: error.message
+    });
+  }
+});
+
+/**
+ * @route   POST /api/doctors/upload/:mediaType/presign
+ * @desc    Create presigned URL for doctor media upload
+ * @access  Private (Doctor)
+ */
+router.post('/upload/:mediaType/presign', authUser, [
+  body('fileName').notEmpty().withMessage('fileName is required'),
+  body('contentType').notEmpty().withMessage('contentType is required')
+], async (req, res) => {
+  try {
+    if (req.user.role !== 'doctor') {
+      return res.status(403).json({
+        success: false,
+        message: 'Access denied. Doctor role required.'
+      });
+    }
+
+    const { mediaType } = req.params;
+    const { fileName, contentType } = req.body;
+
+    if (!validMediaTypes.includes(mediaType)) {
+      return res.status(400).json({
+        success: false,
+        message: 'Invalid media type'
+      });
+    }
+
+    if (!doctorMediaMimeTypes.includes(contentType)) {
+      return res.status(400).json({
+        success: false,
+        message: 'Invalid file type'
+      });
+    }
+
+    const tenantId = req.tenantId || req.user.organization_id || null;
+    const keyPrefix = buildDoctorMediaKeyPrefix(tenantId, req.user.id, mediaType).replace(/\/$/, '');
+
+    const presign = await createPresignedUpload({
+      keyPrefix,
+      fileName,
+      contentType,
+      tenantId,
+      userId: req.user.id,
+      metadata: { media_type: mediaType }
+    });
+
+    return res.status(200).json({
+      success: true,
+      message: 'Presigned upload URL generated',
+      data: presign
+    });
+  } catch (error) {
+    console.error('Doctor media presign error:', error);
+    return res.status(500).json({
+      success: false,
+      message: 'Failed to generate presigned URL',
+      error: error.message
+    });
+  }
+});
+
+/**
+ * @route   POST /api/doctors/upload/:mediaType/confirm
+ * @desc    Save doctor media after S3 upload
+ * @access  Private (Doctor)
+ */
+router.post('/upload/:mediaType/confirm', authUser, [
+  body('fileKey').notEmpty().withMessage('fileKey is required'),
+  body('mimeType').notEmpty().withMessage('mimeType is required')
+], async (req, res) => {
+  try {
+    if (req.user.role !== 'doctor') {
+      return res.status(403).json({
+        success: false,
+        message: 'Access denied. Doctor role required.'
+      });
+    }
+
+    const { mediaType } = req.params;
+    const { fileKey, mimeType } = req.body;
+
+    if (!validMediaTypes.includes(mediaType)) {
+      return res.status(400).json({
+        success: false,
+        message: 'Invalid media type'
+      });
+    }
+
+    if (!doctorMediaMimeTypes.includes(mimeType)) {
+      return res.status(400).json({
+        success: false,
+        message: 'Invalid file type'
+      });
+    }
+
+    const tenantId = req.tenantId || req.user.organization_id || null;
+    const expectedPrefix = buildDoctorMediaKeyPrefix(tenantId, req.user.id, mediaType);
+    if (!fileKey.startsWith(expectedPrefix)) {
+      return res.status(400).json({
+        success: false,
+        message: 'Invalid file key for doctor'
+      });
+    }
+
+    const bucket = getUploadsBucket();
+    const fileUrl = buildPublicFileUrl(fileKey, bucket);
+
+    await doctorModel.updateMedia(req.user.id, mediaType, fileUrl);
+
+    return res.json({
+      success: true,
+      message: 'Media saved successfully',
+      mediaType,
+      url: fileUrl
+    });
+  } catch (error) {
+    console.error('Doctor media confirm error:', error);
+    return res.status(500).json({
+      success: false,
+      message: 'Failed to save media',
       error: error.message
     });
   }
@@ -806,7 +948,12 @@ router.get('/:doctorId/public', [
   try {
     const { doctorId } = req.params;
 
-    const doctor = await doctorModel.findByPk(doctorId);
+    let doctor = null;
+    if (/^\d+$/.test(doctorId)) {
+      doctor = await doctorModel.findByPk(doctorId);
+    } else if (/^D[A-Z0-9]{5}$/i.test(doctorId)) {
+      doctor = await Doctor.findOne({ where: { unique_id: doctorId.toUpperCase() } });
+    }
     if (!doctor) {
       return res.status(404).json({
         success: false,
