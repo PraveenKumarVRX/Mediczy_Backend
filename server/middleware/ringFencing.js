@@ -128,6 +128,7 @@ const USER_TYPE_PERMISSIONS = {
       '/api/superadmin', // Super admin tenant/organization management
       '/api/platform', // Platform management routes
       '/api/sib', // SIB Control Layer management
+      '/api/health',
       '/api/users',
       '/api/doctors',
       '/api/team',
