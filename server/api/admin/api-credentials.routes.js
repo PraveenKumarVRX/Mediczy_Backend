@@ -168,7 +168,7 @@ router.post('/generate',
     
     // Hash the secret (one-way, like password)
     const client_secret_hash = await bcrypt.hash(client_secret, 12);
-    const client_secret_salt = generateSalt(32);
+    const client_secret_salt = generateSalt(16); // 16 bytes = 32 hex chars
 
     // Calculate dates
     const created_at = new Date();
