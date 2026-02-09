@@ -1,5 +1,5 @@
 // Service Worker for Mediczy Healthcare Platform
-const CACHE_NAME = 'mediczy-v12'; // Updated cache version - React dedupe fix rollout
+const CACHE_NAME = 'mediczy-v13'; // Cache bump for socket/FCM fixes
 const ESSENTIAL_URLS = [
   '/',
   '/index.html'
@@ -7,7 +7,7 @@ const ESSENTIAL_URLS = [
 
 // Install event - cache only essential files
 self.addEventListener('install', (event) => {
-  console.log('🔧 ServiceWorker v12 installing...');
+  console.log('🔧 ServiceWorker v13 installing...');
   event.waitUntil(
     caches.open(CACHE_NAME)
       .then((cache) => {
@@ -26,7 +26,7 @@ self.addEventListener('install', (event) => {
 
 // Activate event - clean up old caches and take control
 self.addEventListener('activate', (event) => {
-  console.log('🚀 ServiceWorker v12 activating...');
+  console.log('🚀 ServiceWorker v13 activating...');
   event.waitUntil(
     caches.keys().then((cacheNames) => {
       return Promise.all(

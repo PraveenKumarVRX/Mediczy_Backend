@@ -99,17 +99,14 @@ router.post('/earn/daily-login', authUser, async (req, res) => {
     const result = await healthCoinsService.awardDailyLogin(req.user.id);
     
     if (!result.success) {
-      if (result.message === 'Daily login already rewarded today') {
-        return res.status(200).json({
-          success: true,
-          message: result.message,
-          coinsEarned: 0,
-          bonusCoins: 0,
-          streak: result.streak || 0,
-          newBalance: result.newBalance
-        });
-      }
-      return res.status(400).json(result);
+      return res.status(200).json({
+        success: false,
+        message: result.message || 'Daily login reward unavailable',
+        coinsEarned: 0,
+        bonusCoins: 0,
+        streak: result.streak || 0,
+        newBalance: result.newBalance
+      });
     }
     
     res.json({

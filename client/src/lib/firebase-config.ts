@@ -22,7 +22,9 @@ const app = initializeApp(firebaseConfig);
 let messaging: any = null;
 
 // Feature flag: gate FCM until Installations API is enabled
-const ENABLE_FCM = (import.meta.env.VITE_ENABLE_FCM ?? 'false') === 'true';
+// Disable FCM in production unless explicitly enabled later.
+const ENABLE_FCM = (import.meta.env.VITE_ENABLE_FCM ?? 'false') === 'true'
+  && import.meta.env.MODE !== 'production';
 
 // Check if messaging is supported before initializing
 // Enhanced check for FCM browser support
