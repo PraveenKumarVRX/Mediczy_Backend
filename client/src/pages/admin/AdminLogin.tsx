@@ -6,6 +6,7 @@ import { Input } from '@/components/ui/input';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
 import { Alert, AlertDescription } from '@/components/ui/alert';
 import { Shield, Eye, EyeOff, Activity, Lock, ArrowRight, CheckCircle2, LifeBuoy, ArrowLeft } from 'lucide-react';
+import axios from 'axios';
 import api from '@/utils/api';
 import { clearAuthTokens } from '@/hooks/auth';
 
@@ -64,7 +65,23 @@ const AdminLogin = () => {
       // Add timeout to prevent long waits
       timeoutId = setTimeout(() => controller.abort(), 10000); // 10 second timeout
 
-      const { data } = await api.post('/admin/login', { email, password }, { signal: controller.signal, skipAuth: true });
+      const resolveAdminLoginUrl = () => {
+        const envBase = import.meta.env.VITE_API_URL as string | undefined;
+        if (envBase && envBase.trim()) {
+          const trimmed = envBase.replace(/\/+$/, '');
+          if (trimmed.endsWith('/api')) {
+            return `${trimmed}/admin/login`;
+          }
+          return `${trimmed}/api/admin/login`;
+        }
+        if (typeof window !== 'undefined') {
+          return `${window.location.origin}/api/admin/login`;
+        }
+        return '/api/admin/login';
+      };
+
+      const loginUrl = resolveAdminLoginUrl();
+      const { data } = await axios.post(loginUrl, { email, password }, { signal: controller.signal });
       
       if (import.meta.env.DEV) {
         console.log('Login response:', data);

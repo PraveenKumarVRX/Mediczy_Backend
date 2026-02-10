@@ -50,7 +50,7 @@ class ApiCredentialsService {
   ): Promise<{ client_id: string; client_secret: string; credential_id: string }> {
     try {
       const response = await api.post(
-        '/api/admin/api-credentials/generate',
+        '/admin/api-credentials/generate',
         {
           organization_id: aggregatorId, // Map aggregator to organization
           name: `${brokerName} - Mobile API Credential`,
@@ -87,7 +87,7 @@ class ApiCredentialsService {
   async getAllCredentials(): Promise<ApiCredential[]> {
     try {
       const response = await api.get(
-        '/api/admin/api-credentials',
+        '/admin/api-credentials',
         {
           headers: { Authorization: `Bearer ${this.token}` },
         }
@@ -110,7 +110,7 @@ class ApiCredentialsService {
   ): Promise<ApiCredential[]> {
     try {
       const response = await api.get(
-        `/api/admin/api-credentials?organization_id=${aggregatorId}`,
+        `/admin/api-credentials?organization_id=${aggregatorId}`,
         {
           headers: { Authorization: `Bearer ${this.token}` },
         }
@@ -134,7 +134,7 @@ class ApiCredentialsService {
   ): Promise<{ status: string; grace_period_ends_at: string }> {
     try {
       const response = await api.post(
-        `/api/admin/api-credentials/${credentialId}/rotate`,
+        `/admin/api-credentials/${credentialId}/rotate`,
         {
           grace_period_days: gracePeriodDays || 7,
         },
@@ -161,7 +161,7 @@ class ApiCredentialsService {
   ): Promise<{ status: string }> {
     try {
       const response = await api.post(
-        `/api/admin/api-credentials/${credentialId}/revoke`,
+        `/admin/api-credentials/${credentialId}/revoke`,
         {
           reason: reason || 'Revoked by super admin',
         },

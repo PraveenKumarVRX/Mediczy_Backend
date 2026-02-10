@@ -1,6 +1,8 @@
 import express from 'express';
 import { authDoctor } from '../middleware/auth.middleware.js';
 import medicalAIService from '../services/medicalAI.service.js';
+import medicalTerminologyService from '../services/medical-terminology.service.js';
+import cimsService from '../services/cims.service.js';
 import { Prescription, Appointment, User, Doctor } from '../models/index.js';
 
 const router = express.Router();
@@ -307,6 +309,124 @@ router.post('/scribe', authDoctor, async (req, res) => {
       success: false,
       message: 'Failed to process text',
       error: error.message
+    });
+  }
+});
+
+/**
+ * @route   GET /api/ai/scribe/autocomplete
+ * @desc    Get medical term autocomplete suggestions (diagnoses, drugs, symptoms, etc.)
+ * @access  Private (Doctor)
+ * @queryParam q - Search query
+ * @queryParam limit - Max results (default 8)
+ * @queryParam type - Filter by type: diagnosis, symptom, abbreviation, drug, labtest, instruction, dosage
+ */
+router.get('/autocomplete', authDoctor, async (req, res) => {
+  try {
+    const { q, limit = 8, type } = req.query;
+
+    if (!q || q.length < 2) {
+      return res.json({
+        success: true,
+        suggestions: [],
+        message: 'Query too short (minimum 2 characters)',
+      });
+    }
+
+    const suggestions = [];
+
+    // 1. Search medical terminology (diagnoses, symptoms, abbreviations, etc.)
+    const medicalSuggestions = medicalTerminologyService.search(q, 5);
+    suggestions.push(...medicalSuggestions);
+
+    // 2. Search CIMS medicines (if not already covered)
+    try {
+      const drugResults = await cimsService.searchMedicines(q);
+      if (drugResults && Array.isArray(drugResults)) {
+        drugResults.slice(0, 3).forEach(drug => {
+          suggestions.push({
+            text: drug.name,
+            category: 'Medicine',
+            full: `${drug.name} - ${drug.category || 'Drug'}`,
+            type: 'drug',
+            cimsId: drug.id,
+            dosageOptions: drug.strength ? [drug.strength] : [],
+          });
+        });
+      }
+    } catch (error) {
+      console.warn('CIMS search error:', error.message);
+      // Continue even if CIMS search fails
+    }
+
+    // 3. Filter by type if specified
+    let filtered = suggestions;
+    if (type) {
+      filtered = suggestions.filter(s => s.type === type.toLowerCase());
+    }
+
+    // 4. Take first 'limit' results
+    const results = filtered.slice(0, parseInt(limit) || 8);
+
+    res.json({
+      success: true,
+      suggestions: results,
+      count: results.length,
+      query: q,
+    });
+
+  } catch (error) {
+    console.error('Autocomplete error:', error);
+    res.status(500).json({
+      success: false,
+      error: error.message || 'Autocomplete search failed',
+    });
+  }
+});
+
+/**
+ * @route   GET /api/ai/scribe/reference/:type
+ * @desc    Get full reference list for a medical term type
+ * @access  Private (Doctor)
+ * @params  type - 'abbreviations', 'diagnoses', 'dosages', 'labtests'
+ */
+router.get('/reference/:type', authDoctor, async (req, res) => {
+  try {
+    const { type } = req.params;
+    let reference = [];
+
+    switch (type.toLowerCase()) {
+      case 'abbreviations':
+        reference = medicalTerminologyService.getAbbreviations();
+        break;
+      case 'diagnoses':
+        reference = medicalTerminologyService.getDiagnoses();
+        break;
+      case 'dosages':
+        reference = medicalTerminologyService.getDosages();
+        break;
+      case 'labtests':
+        reference = medicalTerminologyService.getLabTests();
+        break;
+      default:
+        return res.status(400).json({
+          success: false,
+          error: 'Invalid reference type. Try: abbreviations, diagnoses, dosages, labtests',
+        });
+    }
+
+    res.json({
+      success: true,
+      type,
+      data: reference,
+      count: reference.length,
+    });
+
+  } catch (error) {
+    console.error('Reference error:', error);
+    res.status(500).json({
+      success: false,
+      error: error.message || 'Failed to fetch reference',
     });
   }
 });

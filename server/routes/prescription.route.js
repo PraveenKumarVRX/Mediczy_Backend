@@ -13,6 +13,7 @@ import { Prescription, Appointment, User, Doctor } from '../models/index.js';
 import { EHRRecord, HealthDiary } from '../models/index.js';
 import { authUser, authDoctor } from '../middleware/auth.middleware.js';
 import { JWT_CONFIG } from '../config/auth.config.js';
+import AuditLog from '../models/auditLog.model.intelligent.js';
 
 const router = express.Router();
 const __filename = fileURLToPath(import.meta.url);
@@ -279,6 +280,24 @@ router.post('/', authDoctor, [
   body('patientId').optional(),
   body('diagnosis').notEmpty().withMessage('Diagnosis is required'),
   body('medications').isArray({ min: 1 }).withMessage('At least one medication is required')
+    .custom((medications) => {
+      for (let i = 0; i < medications.length; i++) {
+        const med = medications[i];
+        if (!med.name || !med.name.trim()) {
+          throw new Error(`Medication ${i + 1}: Medicine name is required`);
+        }
+        if (!med.dosage || !med.dosage.trim()) {
+          throw new Error(`Medication ${i + 1}: Dosage is required`);
+        }
+        if (!med.frequency || !med.frequency.trim()) {
+          throw new Error(`Medication ${i + 1}: Frequency is required`);
+        }
+        if (!med.duration || !med.duration.trim()) {
+          throw new Error(`Medication ${i + 1}: Duration is required`);
+        }
+      }
+      return true;
+    })
 ], async (req, res) => {
   try {
     const errors = validationResult(req);
@@ -389,6 +408,38 @@ router.post('/', authDoctor, [
         { prescription: prescription.prescriptionId },
         { where: { id: appointmentId } }
       );
+    }
+
+    // Audit logging for prescription creation (HIPAA compliance)
+    try {
+      await AuditLog.create({
+        userId: doctor.id,
+        userType: 'doctor',
+        userEmail: doctor.email,
+        action: 'CREATE',
+        resourceType: 'prescription',
+        resourceId: prescription.id.toString(),
+        dataFields: {
+          prescriptionId: prescription.prescriptionId,
+          patientName: prescription.patientName,
+          patientId: patientUserId,
+          diagnosis: prescription.diagnosis,
+          medicationsCount: prescription.medications.length,
+          status: 'draft'
+        },
+        changesAfter: {
+          prescriptionId: prescription.prescriptionId,
+          status: 'draft'
+        },
+        req,
+        status: 'SUCCESS',
+        statusCode: 201,
+        isPHI: true,
+        purpose: 'Prescription Create',
+      });
+    } catch (auditError) {
+      console.error('Audit log creation failed:', auditError);
+      // Don't fail the request if audit logging fails
     }
 
     res.status(201).json({
@@ -732,9 +783,9 @@ router.put('/:id', authDoctor, async (req, res) => {
       return res.status(403).json({ success: false, message: 'Not authorized to update this prescription' });
     }
 
-    // Cannot update dispensed prescriptions
-    if (prescription.status === 'dispensed') {
-      return res.status(400).json({ success: false, message: 'Cannot update dispensed prescription' });
+    // Cannot update issued/dispensed prescriptions
+    if (['issued', 'dispensed', 'cancelled'].includes(prescription.status)) {
+      return res.status(400).json({ success: false, message: `Cannot update ${prescription.status} prescription` });
     }
 
     const {
@@ -748,16 +799,89 @@ router.put('/:id', authDoctor, async (req, res) => {
       notes
     } = req.body;
 
+    // Validate medications if provided
+    if (medications && Array.isArray(medications)) {
+      if (medications.length === 0) {
+        return res.status(400).json({ success: false, message: 'At least one medication is required' });
+      }
+      for (let i = 0; i < medications.length; i++) {
+        const med = medications[i];
+        if (!med.name || !med.name.trim()) {
+          return res.status(400).json({ success: false, message: `Medication ${i + 1}: Medicine name is required` });
+        }
+        if (!med.dosage || !med.dosage.trim()) {
+          return res.status(400).json({ success: false, message: `Medication ${i + 1}: Dosage is required` });
+        }
+        if (!med.frequency || !med.frequency.trim()) {
+          return res.status(400).json({ success: false, message: `Medication ${i + 1}: Frequency is required` });
+        }
+        if (!med.duration || !med.duration.trim()) {
+          return res.status(400).json({ success: false, message: `Medication ${i + 1}: Duration is required` });
+        }
+      }
+    }
+
+    // Validate diagnosis if provided
+    if (diagnosis && !diagnosis.trim()) {
+      return res.status(400).json({ success: false, message: 'Diagnosis cannot be empty' });
+    }
+
+    // Store old values for audit trail
+    const oldValues = {
+      diagnosis: prescription.diagnosis,
+      medications: prescription.medications,
+      labTests: prescription.labTests,
+      instructions: prescription.instructions,
+      vitals: prescription.vitals,
+      followUpDate: prescription.followUpDate,
+      notes: prescription.notes
+    };
+
     await prescription.update({
-      diagnosis: diagnosis || prescription.diagnosis,
-      chiefComplaints: chiefComplaints || prescription.chiefComplaints,
-      medications: medications || prescription.medications,
-      labTests: labTests || prescription.labTests,
-      instructions: instructions || prescription.instructions,
-      vitals: vitals || prescription.vitals,
-      followUpDate: followUpDate || prescription.followUpDate,
-      notes: notes || prescription.notes
+      diagnosis: diagnosis !== undefined ? diagnosis : prescription.diagnosis,
+      chiefComplaints: chiefComplaints !== undefined ? chiefComplaints : prescription.chiefComplaints,
+      medications: medications !== undefined ? medications : prescription.medications,
+      labTests: labTests !== undefined ? labTests : prescription.labTests,
+      instructions: instructions !== undefined ? instructions : prescription.instructions,
+      vitals: vitals !== undefined ? vitals : prescription.vitals,
+      followUpDate: followUpDate !== undefined ? followUpDate : prescription.followUpDate,
+      notes: notes !== undefined ? notes : prescription.notes
     });
+
+    // Audit logging for prescription update (HIPAA compliance)
+    try {
+      const doctorId = req.doctor?.id || req.doctor?.dataValues?.id || req.doctor?._id;
+      await AuditLog.create({
+        userId: doctorId,
+        userType: 'doctor',
+        userEmail: req.doctor?.email,
+        action: 'UPDATE',
+        resourceType: 'prescription',
+        resourceId: prescription.id.toString(),
+        dataFields: {
+          prescriptionId: prescription.prescriptionId,
+          patientName: prescription.patientName,
+          status: prescription.status
+        },
+        changesBefore: oldValues,
+        changesAfter: {
+          diagnosis: prescription.diagnosis,
+          medications: prescription.medications,
+          labTests: prescription.labTests,
+          instructions: prescription.instructions,
+          vitals: prescription.vitals,
+          followUpDate: prescription.followUpDate,
+          notes: prescription.notes
+        },
+        req,
+        status: 'SUCCESS',
+        statusCode: 200,
+        isPHI: true,
+        purpose: 'Prescription Update',
+      });
+    } catch (auditError) {
+      console.error('Audit log creation failed:', auditError);
+    }
 
     res.json({
       success: true,
@@ -805,6 +929,33 @@ router.patch('/:id/status', authDoctor, async (req, res) => {
       status,
       issuedAt: status === 'issued' ? new Date() : prescription.issuedAt
     });
+
+    // Audit logging for prescription status change (HIPAA compliance)
+    try {
+      await AuditLog.create({
+        userId: doctorId,
+        userType: 'doctor',
+        userEmail: req.doctor?.email,
+        action: 'UPDATE',
+        resourceType: 'prescription',
+        resourceId: prescription.id.toString(),
+        dataFields: {
+          prescriptionId: prescription.prescriptionNumber || prescription.prescriptionId,
+          patientName: prescription.patientName,
+          previousStatus,
+          newStatus: status
+        },
+        changesBefore: { status: previousStatus },
+        changesAfter: { status, issuedAt: status === 'issued' ? new Date() : null },
+        req,
+        status: 'SUCCESS',
+        statusCode: 200,
+        isPHI: true,
+        purpose: `Prescription Status Update: ${previousStatus} → ${status}`,
+      });
+    } catch (auditError) {
+      console.error('Audit log creation failed:', auditError);
+    }
 
     // When prescription is issued, create EHR record and health diary entries
     if (status === 'issued' && previousStatus !== 'issued' && prescription.patientId) {
@@ -1288,6 +1439,34 @@ router.delete('/:id', authDoctor, async (req, res) => {
     // Cannot delete dispensed prescriptions, only cancel
     if (prescription.status === 'dispensed') {
       await prescription.update({ status: 'cancelled' });
+      
+      // Audit logging for prescription cancellation
+      try {
+        await AuditLog.create({
+          userId: doctorId,
+          userType: 'doctor',
+          userEmail: req.doctor?.email,
+          action: 'DELETE',
+          resourceType: 'prescription',
+          resourceId: prescription.id.toString(),
+          dataFields: {
+            prescriptionId: prescription.prescriptionId,
+            patientName: prescription.patientName,
+            previousStatus: 'dispensed',
+            newStatus: 'cancelled'
+          },
+          changesBefore: { status: 'dispensed' },
+          changesAfter: { status: 'cancelled' },
+          req,
+          status: 'SUCCESS',
+          statusCode: 200,
+          isPHI: true,
+          purpose: 'Prescription Cancellation',
+        });
+      } catch (auditError) {
+        console.error('Audit log creation failed:', auditError);
+      }
+      
       return res.json({
         success: true,
         message: 'Prescription cancelled (was already dispensed)',
@@ -1297,6 +1476,33 @@ router.delete('/:id', authDoctor, async (req, res) => {
 
     // Soft delete by cancelling
     await prescription.update({ status: 'cancelled' });
+
+    // Audit logging for prescription deletion
+    try {
+      await AuditLog.create({
+        userId: doctorId,
+        userType: 'doctor',
+        userEmail: req.doctor?.email,
+        action: 'DELETE',
+        resourceType: 'prescription',
+        resourceId: prescription.id.toString(),
+        dataFields: {
+          prescriptionId: prescription.prescriptionId,
+          patientName: prescription.patientName,
+          previousStatus: prescription.status,
+          newStatus: 'cancelled'
+        },
+        changesBefore: { status: prescription.status },
+        changesAfter: { status: 'cancelled' },
+        req,
+        status: 'SUCCESS',
+        statusCode: 200,
+        isPHI: true,
+        purpose: 'Prescription Deletion',
+      });
+    } catch (auditError) {
+      console.error('Audit log creation failed:', auditError);
+    }
 
     res.json({
       success: true,

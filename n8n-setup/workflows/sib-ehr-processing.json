@@ -11,7 +11,10 @@
       "name": "Webhook - EHR Ingested",
       "type": "n8n-nodes-base.webhook",
       "typeVersion": 1,
-      "position": [250, 300],
+      "position": [
+        250,
+        300
+      ],
       "webhookId": "sib-ehr-processing"
     },
     {
@@ -35,7 +38,10 @@
       "name": "Update Patient Profile",
       "type": "n8n-nodes-base.httpRequest",
       "typeVersion": 4,
-      "position": [500, 200]
+      "position": [
+        500,
+        200
+      ]
     },
     {
       "parameters": {
@@ -58,7 +64,10 @@
       "name": "Trigger Risk Assessment",
       "type": "n8n-nodes-base.httpRequest",
       "typeVersion": 4,
-      "position": [500, 300]
+      "position": [
+        500,
+        300
+      ]
     },
     {
       "parameters": {
@@ -81,7 +90,10 @@
       "name": "Extract Structured Data",
       "type": "n8n-nodes-base.httpRequest",
       "typeVersion": 4,
-      "position": [500, 400]
+      "position": [
+        500,
+        400
+      ]
     },
     {
       "parameters": {
@@ -104,7 +116,10 @@
       "name": "Check Drug Interactions",
       "type": "n8n-nodes-base.httpRequest",
       "typeVersion": 4,
-      "position": [500, 500]
+      "position": [
+        500,
+        500
+      ]
     },
     {
       "parameters": {
@@ -127,7 +142,10 @@
       "name": "Generate Clinical Summary",
       "type": "n8n-nodes-base.httpRequest",
       "typeVersion": 4,
-      "position": [750, 300]
+      "position": [
+        750,
+        300
+      ]
     },
     {
       "parameters": {
@@ -150,7 +168,10 @@
       "name": "Log to Analytics",
       "type": "n8n-nodes-base.httpRequest",
       "typeVersion": 4,
-      "position": [1000, 300]
+      "position": [
+        1000,
+        300
+      ]
     },
     {
       "parameters": {
@@ -188,7 +209,10 @@
       "name": "Respond to Webhook",
       "type": "n8n-nodes-base.set",
       "typeVersion": 3,
-      "position": [1250, 300]
+      "position": [
+        1250,
+        300
+      ]
     }
   ],
   "connections": {
@@ -285,7 +309,7 @@
       ]
     }
   },
-  "active": true,
+  "active": false,
   "settings": {
     "executionOrder": "v1"
   },
@@ -294,12 +318,6 @@
   "meta": {
     "instanceId": "mediczy-n8n"
   },
-  "tags": [
-    {
-      "name": "sib-automation"
-    },
-    {
-      "name": "ehr-processing"
-    }
-  ]
+  "activeVersionId": null,
+  "versionCounter": 1
 }

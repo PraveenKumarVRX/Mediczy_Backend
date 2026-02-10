@@ -1,0 +1,38 @@
+groups:
+  - name: mediczy-ops
+    rules:
+      - alert: MediczyApiDown
+        expr: probe_success == 0
+        for: 2m
+        labels:
+          severity: critical
+        annotations:
+          summary: "API endpoint probe failed"
+          description: "Blackbox probe failed for {{ $labels.instance }}"
+
+      - alert: MediczyApiHighLatencyP95
+        expr: histogram_quantile(0.95, sum by (le) (rate(http_request_duration_seconds_bucket[5m]))) > 2
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: "API p95 latency high"
+          description: "p95 latency above 2s for 5m"
+
+      - alert: MediczyApi5xxRateHigh
+        expr: sum(rate(http_requests_total{status_code=~'5..'}[5m])) > 1
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: "API 5xx rate elevated"
+          description: "5xx rate above 1 rps for 5m"
+
+      - alert: MediczyPm2Restarts
+        expr: increase(pm2_restarts[10m]) > 0
+        for: 2m
+        labels:
+          severity: warning
+        annotations:
+          summary: "PM2 process restarts detected"
+          description: "One or more PM2 processes restarted in last 10m"

@@ -14,7 +14,10 @@
       "name": "Webhook (Appointment Request)",
       "type": "n8n-nodes-base.webhook",
       "typeVersion": 1,
-      "position": [250, 400],
+      "position": [
+        250,
+        400
+      ],
       "webhookId": "sib-appointment-booking"
     },
     {
@@ -33,7 +36,10 @@
       "name": "Check Trigger Type",
       "type": "n8n-nodes-base.if",
       "typeVersion": 1,
-      "position": [450, 400]
+      "position": [
+        450,
+        400
+      ]
     },
     {
       "parameters": {
@@ -43,7 +49,10 @@
       "name": "Calculate Appointment Slot",
       "type": "n8n-nodes-base.function",
       "typeVersion": 1,
-      "position": [650, 300]
+      "position": [
+        650,
+        300
+      ]
     },
     {
       "parameters": {
@@ -94,7 +103,10 @@
       "name": "Create Appointment in System",
       "type": "n8n-nodes-base.httpRequest",
       "typeVersion": 1,
-      "position": [850, 300]
+      "position": [
+        850,
+        300
+      ]
     },
     {
       "parameters": {
@@ -122,7 +134,10 @@
       "name": "Notify Patient (Multi-channel)",
       "type": "n8n-nodes-base.httpRequest",
       "typeVersion": 1,
-      "position": [1050, 300]
+      "position": [
+        1050,
+        300
+      ]
     },
     {
       "parameters": {
@@ -146,7 +161,10 @@
       "name": "Create Preparation Task",
       "type": "n8n-nodes-base.httpRequest",
       "typeVersion": 1,
-      "position": [1050, 450]
+      "position": [
+        1050,
+        450
+      ]
     },
     {
       "parameters": {
@@ -160,7 +178,10 @@
       "name": "Log to Analytics",
       "type": "n8n-nodes-base.postgres",
       "typeVersion": 1,
-      "position": [1250, 300],
+      "position": [
+        1250,
+        300
+      ],
       "credentials": {
         "postgres": {
           "id": "1",
@@ -177,7 +198,10 @@
       "name": "Respond to Webhook",
       "type": "n8n-nodes-base.respondToWebhook",
       "typeVersion": 1,
-      "position": [1450, 300]
+      "position": [
+        1450,
+        300
+      ]
     },
     {
       "parameters": {
@@ -188,7 +212,10 @@
       "name": "Respond (Skipped)",
       "type": "n8n-nodes-base.respondToWebhook",
       "typeVersion": 1,
-      "position": [650, 500]
+      "position": [
+        650,
+        500
+      ]
     }
   ],
   "connections": {
@@ -271,7 +298,7 @@
       ]
     }
   },
-  "active": true,
+  "active": false,
   "settings": {
     "executionOrder": "v1"
   },
@@ -279,18 +306,6 @@
   "meta": {
     "instanceId": "sib-appointment-booking-workflow"
   },
-  "tags": [
-    {
-      "name": "SIB",
-      "id": "1"
-    },
-    {
-      "name": "Appointment",
-      "id": "4"
-    },
-    {
-      "name": "Automation",
-      "id": "5"
-    }
-  ]
+  "activeVersionId": null,
+  "versionCounter": 1
 }

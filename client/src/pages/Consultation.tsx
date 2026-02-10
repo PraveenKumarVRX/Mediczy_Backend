@@ -103,7 +103,7 @@ export const specializations = [
   "Oncologist",
 ];
 
-export const dummyDoctors: Doctor[] = [
+const dummyDoctors: Doctor[] = [
   {
     _id: "1",
     firstName: "John",

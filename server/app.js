@@ -38,6 +38,7 @@ import appleHealthRouter from "./routes/apple-health.route.js";
 import aiRouter from "./routes/ai.js";
 import medicalAIRouter from "./routes/medical-ai.route.js";
 import aiHealthRouter from "./routes/ai-health.route.js";
+import aiVisionRouter from "./routes/ai-vision.route.js";
 import aiScribeRouter from "./routes/ai-scribe.route.js";
 import scribeRouter from "./routes/scribe.js";
 import offlineScribeRouter from "./routes/offline-scribe.route.js";
@@ -895,7 +896,8 @@ app.use("/api/doctors", doctorRoutes); // Core: login, register, profile, appoin
 app.use("/api/doctors", doctorEnhancedRoutes); // Enhanced: search, public profiles
 app.use("/api/doctors", availabilityRouter); // Availability management
 app.use("/api/doctors", doctorSettingsRoutes); // Settings: attached pharmacies/labs
-app.use("/api/ai", aiScribeRouter); // AI Scribe for prescription generation
+app.use("/api/ai/scribe", aiScribeRouter); // AI Scribe for prescription generation
+app.use("/api/ai/vision", aiVisionRouter); // AI Vision for medical image analysis
 app.use("/api/recordings", recordingRouter); // Consultation recording management
 app.use("/api/doctors/availability", doctorAvailabilityRoutes); // Doctor availability management
 app.use("/api/doctor-settings", doctorSettingsRoutes); // Doctor appointment configuration
@@ -971,6 +973,18 @@ app.use('/api/webinars', authUser, publicWebinarRouter); // Public webinar brows
 app.use('/api/webhooks/n8n-callback', n8nCallbackRouter); // n8n workflow callbacks
 
 // Prometheus metrics endpoint
+const isLocalMetricsRequest = (req) => {
+  const ip = req.ip || req.connection?.remoteAddress || '';
+  return ip === '127.0.0.1' || ip === '::1' || ip === '::ffff:127.0.0.1';
+};
+
+app.get('/metrics/internal', (req, res, next) => {
+  if (!isLocalMetricsRequest(req)) {
+    return res.status(403).json({ success: false, message: 'Forbidden' });
+  }
+  return prometheus.metricsEndpoint(req, res, next);
+});
+
 app.get('/metrics', authUser, requireRole('admin'), prometheus.metricsEndpoint);
 app.use('/api/sms', smsRouter); // SMS gateway management
 app.use('/api/video-config', videoConfigRouter); // Video configuration management

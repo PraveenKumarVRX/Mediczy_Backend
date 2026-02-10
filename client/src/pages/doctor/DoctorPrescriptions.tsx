@@ -346,6 +346,19 @@ const DoctorPrescriptions = () => {
     setEditMode(false);
   };
 
+  const validateMedications = (medications: Medication[]): string | null => {
+    if (medications.length === 0) return "At least one medication is required";
+    
+    for (let i = 0; i < medications.length; i++) {
+      const med = medications[i];
+      if (!med.name?.trim()) return `Medication ${i + 1}: Medicine name is required`;
+      if (!med.dosage?.trim()) return `Medication ${i + 1}: Dosage is required`;
+      if (!med.frequency?.trim()) return `Medication ${i + 1}: Frequency is required`;
+      if (!med.duration?.trim()) return `Medication ${i + 1}: Duration is required`;
+    }
+    return null;
+  };
+
   const handleCreatePrescription = () => {
     if (!formData.patientName.trim()) {
       toast({
@@ -363,19 +376,50 @@ const DoctorPrescriptions = () => {
       });
       return;
     }
-    if (formData.medications.length === 0 || !formData.medications[0].name.trim()) {
+    
+    const medicationError = validateMedications(formData.medications);
+    if (medicationError) {
       toast({
         title: "Validation Error",
-        description: "At least one medication is required",
+        description: medicationError,
         variant: "destructive",
       });
       return;
     }
+    
     createPrescriptionMutation.mutate(formData);
   };
 
   const handleUpdatePrescription = () => {
     if (!selectedPrescription) return;
+    
+    if (!formData.patientName.trim()) {
+      toast({
+        title: "Validation Error",
+        description: "Patient name is required",
+        variant: "destructive",
+      });
+      return;
+    }
+    if (!formData.diagnosis.trim()) {
+      toast({
+        title: "Validation Error",
+        description: "Diagnosis is required",
+        variant: "destructive",
+      });
+      return;
+    }
+    
+    const medicationError = validateMedications(formData.medications);
+    if (medicationError) {
+      toast({
+        title: "Validation Error",
+        description: medicationError,
+        variant: "destructive",
+      });
+      return;
+    }
+    
     updatePrescriptionMutation.mutate({
       id: selectedPrescription.id,
       data: formData,

@@ -12,7 +12,10 @@
       "name": "Webhook Trigger",
       "type": "n8n-nodes-base.webhook",
       "typeVersion": 1,
-      "position": [250, 300]
+      "position": [
+        250,
+        300
+      ]
     },
     {
       "parameters": {
@@ -53,7 +56,10 @@
       "name": "Set Variables",
       "type": "n8n-nodes-base.set",
       "typeVersion": 1,
-      "position": [450, 300]
+      "position": [
+        450,
+        300
+      ]
     },
     {
       "parameters": {
@@ -65,7 +71,10 @@
       "name": "Workflow Description",
       "type": "n8n-nodes-base.stickyNote",
       "typeVersion": 1,
-      "position": [250, 100]
+      "position": [
+        250,
+        100
+      ]
     },
     {
       "parameters": {
@@ -102,7 +111,10 @@
       "name": "Callback to Mediczy",
       "type": "n8n-nodes-base.httpRequest",
       "typeVersion": 2,
-      "position": [850, 300]
+      "position": [
+        850,
+        300
+      ]
     },
     {
       "parameters": {
@@ -113,7 +125,10 @@
       "name": "Respond to Webhook",
       "type": "n8n-nodes-base.respondToWebhook",
       "typeVersion": 1,
-      "position": [650, 300]
+      "position": [
+        650,
+        300
+      ]
     }
   ],
   "connections": {
@@ -151,21 +166,13 @@
       ]
     }
   },
-  "active": true,
+  "active": false,
   "settings": {},
   "versionId": "1",
   "id": "appointment-reminder-multichannel",
   "meta": {
     "instanceId": "mediczy-n8n"
   },
-  "tags": [
-    {
-      "name": "healthcare",
-      "id": "1"
-    },
-    {
-      "name": "appointments",
-      "id": "2"
-    }
-  ]
+  "activeVersionId": null,
+  "versionCounter": 1
 }

@@ -4,6 +4,15 @@
 
 set -e
 
+# Trust proxy so rate limiter honors X-Forwarded-For behind Cloudflare/Nginx.
+export N8N_TRUST_PROXY=true
+
+# Public URLs for editor/telemetry so browser does not target localhost.
+export N8N_HOST=n8n.mediqzy.com
+export N8N_PROTOCOL=https
+export N8N_EDITOR_BASE_URL=https://n8n.mediqzy.com
+export WEBHOOK_URL=https://n8n.mediqzy.com/
+
 N8N_PORT=5678
 N8N_BIN="/usr/bin/n8n"
 

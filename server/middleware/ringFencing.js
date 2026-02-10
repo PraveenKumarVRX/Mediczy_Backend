@@ -435,7 +435,15 @@ const PUBLIC_ENDPOINTS = [
   '/api/mobile/status',
   '/api/mobile/auth',
   '/api/mobile/doctors',  // Public doctor search for mobile
-  '/api/mobile/organizations'  // Public organization listing for signup
+  '/api/mobile/organizations',  // Public organization listing for signup
+  // CDSS Knowledge Base (Clinical Decision Support System) - public for doctors and patients
+  '/api/cdss/knowledge/query', // AI-powered clinical decision support queries
+  '/api/cdss/knowledge/health', // CDSS service health check
+  '/api/cdss/knowledge/drug-interactions', // Check for drug interactions
+  '/api/cdss/knowledge/medication-alternatives', // Get medication alternatives from CIMS
+  '/api/cdss/knowledge/search', // Semantic search in knowledge base
+  '/api/cdss/knowledge/stats', // Knowledge base statistics
+  '/api/cdss/knowledge/sources', // Available knowledge sources
 ];
 
 /**

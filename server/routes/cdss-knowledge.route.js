@@ -77,6 +77,86 @@ router.get('/health', async (req, res) => {
   }
 });
 
+/**
+ * POST /cdss/knowledge/drug-interactions
+ * Check for potential drug interactions using CIMS data
+ * 
+ * Body:
+ * {
+ *   medications: [
+ *     { name: "Paracetamol", genericName: "Acetaminophen" },
+ *     { name: "Ibuprofen", genericName: "Ibuprofen" }
+ *   ]
+ * }
+ */
+router.post('/drug-interactions', async (req, res) => {
+  try {
+    const { medications = [] } = req.body;
+
+    if (!medications || medications.length < 2) {
+      return res.status(400).json({ 
+        success: false, 
+        error: 'At least 2 medications required to check interactions' 
+      });
+    }
+
+    const result = await cdssService.checkDrugInteractions(medications);
+
+    res.json({
+      success: true,
+      ...result,
+      message: result.hasInteractions 
+        ? `Found ${result.interactions.length} potential interaction(s)` 
+        : 'No significant interactions detected'
+    });
+  } catch (error) {
+    console.error('[CDSS API] Drug interaction check error:', error);
+    res.status(500).json({
+      success: false,
+      error: error.message
+    });
+  }
+});
+
+/**
+ * POST /cdss/knowledge/medication-alternatives
+ * Get alternative medications from CIMS for a given drug
+ * 
+ * Body:
+ * {
+ *   genericName: "Paracetamol",
+ *   limit: 5
+ * }
+ */
+router.post('/medication-alternatives', async (req, res) => {
+  try {
+    const { genericName, limit = 5 } = req.body;
+
+    if (!genericName || typeof genericName !== 'string' || genericName.trim().length === 0) {
+      return res.status(400).json({ 
+        success: false, 
+        error: 'Generic drug name is required' 
+      });
+    }
+
+    const alternatives = await cdssService.getMedicationAlternatives(genericName.trim(), limit);
+
+    res.json({
+      success: true,
+      genericName,
+      count: alternatives.length,
+      data: alternatives,
+      source: 'CIMS Database'
+    });
+  } catch (error) {
+    console.error('[CDSS API] Medication alternatives error:', error);
+    res.status(500).json({
+      success: false,
+      error: error.message
+    });
+  }
+});
+
 // Configure multer for PDF uploads
 const storage = multer.diskStorage({
   destination: (req, file, cb) => {

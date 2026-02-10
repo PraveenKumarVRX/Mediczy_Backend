@@ -11,7 +11,10 @@
       "name": "Webhook - Risk Alert",
       "type": "n8n-nodes-base.webhook",
       "typeVersion": 1,
-      "position": [250, 300],
+      "position": [
+        250,
+        300
+      ],
       "webhookId": "sib-risk-alert"
     },
     {
@@ -28,14 +31,17 @@
         },
         "sendBody": true,
         "specifyBody": "json",
-        "jsonBody": "={\n  \"workflow\": \"risk-alert\",\n  \"action\": \"trigger_notification\",\n  \"payload\": {\n    \"notification_data\": {\n      \"patient_id\": \"{{$node[\"Webhook - Risk Alert\"].json[\"data\"][\"patient_id\"]}}\",\n      \"title\": \"⚠\ufe0f High Risk Alert\",\n      \"message\": \"High cardiovascular risk detected. Risk score: {{$node[\"Webhook - Risk Alert\"].json[\"data\"][\"framingham_score\"]}}%. Please schedule a follow-up appointment.\",\n      \"type\": \"risk_alert\",\n      \"severity\": \"critical\",\n      \"channels\": [\"in_app\", \"push\", \"email\"]\n    }\n  }\n}",
+        "jsonBody": "={\n  \"workflow\": \"risk-alert\",\n  \"action\": \"trigger_notification\",\n  \"payload\": {\n    \"notification_data\": {\n      \"patient_id\": \"{{$node[\"Webhook - Risk Alert\"].json[\"data\"][\"patient_id\"]}}\",\n      \"title\": \"\u26a0\ufe0f High Risk Alert\",\n      \"message\": \"High cardiovascular risk detected. Risk score: {{$node[\"Webhook - Risk Alert\"].json[\"data\"][\"framingham_score\"]}}%. Please schedule a follow-up appointment.\",\n      \"type\": \"risk_alert\",\n      \"severity\": \"critical\",\n      \"channels\": [\"in_app\", \"push\", \"email\"]\n    }\n  }\n}",
         "options": {}
       },
       "id": "notify-patient",
       "name": "Notify Patient",
       "type": "n8n-nodes-base.httpRequest",
       "typeVersion": 4,
-      "position": [500, 200]
+      "position": [
+        500,
+        200
+      ]
     },
     {
       "parameters": {
@@ -51,14 +57,17 @@
         },
         "sendBody": true,
         "specifyBody": "json",
-        "jsonBody": "={\n  \"to\": \"care-team@mediczy.com\",\n  \"subject\": \"🚨 High Risk Patient Alert\",\n  \"body\": \"Patient ID: {{$node[\"Webhook - Risk Alert\"].json[\"data\"][\"patient_id\"]}}\\n\\nRisk Category: {{$node[\"Webhook - Risk Alert\"].json[\"data\"][\"risk_category\"]}}\\nFramingham Score: {{$node[\"Webhook - Risk Alert\"].json[\"data\"][\"framingham_score\"]}}%\\nASCVD Score: {{$node[\"Webhook - Risk Alert\"].json[\"data\"][\"ascvd_score\"]}}%\\n\\nRisk Factors:\\n{{JSON.stringify($node[\"Webhook - Risk Alert\"].json[\"data\"][\"risk_factors\"], null, 2)}}\\n\\nActions Required:\\n{{$node[\"Webhook - Risk Alert\"].json[\"data\"][\"actions_required\"].join('\\\\n')}}\",\n  \"priority\": \"high\"\n}",
+        "jsonBody": "={\n  \"to\": \"care-team@mediczy.com\",\n  \"subject\": \"\ud83d\udea8 High Risk Patient Alert\",\n  \"body\": \"Patient ID: {{$node[\"Webhook - Risk Alert\"].json[\"data\"][\"patient_id\"]}}\\n\\nRisk Category: {{$node[\"Webhook - Risk Alert\"].json[\"data\"][\"risk_category\"]}}\\nFramingham Score: {{$node[\"Webhook - Risk Alert\"].json[\"data\"][\"framingham_score\"]}}%\\nASCVD Score: {{$node[\"Webhook - Risk Alert\"].json[\"data\"][\"ascvd_score\"]}}%\\n\\nRisk Factors:\\n{{JSON.stringify($node[\"Webhook - Risk Alert\"].json[\"data\"][\"risk_factors\"], null, 2)}}\\n\\nActions Required:\\n{{$node[\"Webhook - Risk Alert\"].json[\"data\"][\"actions_required\"].join('\\\\n')}}\",\n  \"priority\": \"high\"\n}",
         "options": {}
       },
       "id": "notify-care-team",
       "name": "Notify Care Team",
       "type": "n8n-nodes-base.httpRequest",
       "typeVersion": 4,
-      "position": [500, 300]
+      "position": [
+        500,
+        300
+      ]
     },
     {
       "parameters": {
@@ -81,7 +90,10 @@
       "name": "Create Follow-up Task",
       "type": "n8n-nodes-base.httpRequest",
       "typeVersion": 4,
-      "position": [500, 400]
+      "position": [
+        500,
+        400
+      ]
     },
     {
       "parameters": {
@@ -104,7 +116,10 @@
       "name": "Log to Analytics",
       "type": "n8n-nodes-base.httpRequest",
       "typeVersion": 4,
-      "position": [750, 300]
+      "position": [
+        750,
+        300
+      ]
     },
     {
       "parameters": {
@@ -138,7 +153,10 @@
       "name": "Respond to Webhook",
       "type": "n8n-nodes-base.set",
       "typeVersion": 3,
-      "position": [1000, 300]
+      "position": [
+        1000,
+        300
+      ]
     }
   ],
   "connections": {
@@ -208,7 +226,7 @@
       ]
     }
   },
-  "active": true,
+  "active": false,
   "settings": {
     "executionOrder": "v1"
   },
@@ -217,12 +235,6 @@
   "meta": {
     "instanceId": "mediczy-n8n"
   },
-  "tags": [
-    {
-      "name": "sib-automation"
-    },
-    {
-      "name": "risk-assessment"
-    }
-  ]
+  "activeVersionId": null,
+  "versionCounter": 1
 }

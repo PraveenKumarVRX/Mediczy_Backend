@@ -12,7 +12,10 @@
       "name": "Payment Webhook",
       "type": "n8n-nodes-base.webhook",
       "typeVersion": 1,
-      "position": [250, 300]
+      "position": [
+        250,
+        300
+      ]
     },
     {
       "parameters": {
@@ -34,11 +37,11 @@
             },
             {
               "name": "title",
-              "value": "Payment Successful ✅"
+              "value": "Payment Successful \u2705"
             },
             {
               "name": "message",
-              "value": "=Payment of ₹{{ $json.data.amount }} received. Your consultation is confirmed."
+              "value": "=Payment of \u20b9{{ $json.data.amount }} received. Your consultation is confirmed."
             },
             {
               "name": "channels",
@@ -52,7 +55,10 @@
       "name": "Notify Patient",
       "type": "n8n-nodes-base.httpRequest",
       "typeVersion": 3,
-      "position": [500, 200]
+      "position": [
+        500,
+        200
+      ]
     },
     {
       "parameters": {
@@ -78,7 +84,7 @@
             },
             {
               "name": "message",
-              "value": "=Payment of ₹{{ $json.data.amount }} received for appointment with {{ $json.data.patientName }}"
+              "value": "=Payment of \u20b9{{ $json.data.amount }} received for appointment with {{ $json.data.patientName }}"
             },
             {
               "name": "channels",
@@ -92,7 +98,10 @@
       "name": "Notify Doctor",
       "type": "n8n-nodes-base.httpRequest",
       "typeVersion": 3,
-      "position": [500, 400]
+      "position": [
+        500,
+        400
+      ]
     },
     {
       "parameters": {
@@ -103,7 +112,10 @@
       "name": "Kafka Analytics",
       "type": "n8n-nodes-base.kafka",
       "typeVersion": 1,
-      "position": [750, 300]
+      "position": [
+        750,
+        300
+      ]
     },
     {
       "parameters": {
@@ -114,7 +126,10 @@
       "name": "Respond",
       "type": "n8n-nodes-base.respondToWebhook",
       "typeVersion": 1,
-      "position": [950, 300]
+      "position": [
+        950,
+        300
+      ]
     }
   ],
   "connections": {
@@ -170,5 +185,9 @@
   },
   "settings": {
     "executionOrder": "v1"
-  }
+  },
+  "active": false,
+  "versionId": "377c7b38-a79e-4e53-8a07-76b72f3f519a",
+  "activeVersionId": null,
+  "versionCounter": 1
 }

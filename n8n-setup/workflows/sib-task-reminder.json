@@ -11,7 +11,10 @@
       "name": "Webhook - Task Created",
       "type": "n8n-nodes-base.webhook",
       "typeVersion": 1,
-      "position": [250, 300],
+      "position": [
+        250,
+        300
+      ],
       "webhookId": "sib-task-reminder"
     },
     {
@@ -24,7 +27,10 @@
       "name": "Wait 24h Before Due",
       "type": "n8n-nodes-base.wait",
       "typeVersion": 1,
-      "position": [500, 200]
+      "position": [
+        500,
+        200
+      ]
     },
     {
       "parameters": {
@@ -47,7 +53,10 @@
       "name": "Send 24h Reminder",
       "type": "n8n-nodes-base.httpRequest",
       "typeVersion": 4,
-      "position": [750, 200]
+      "position": [
+        750,
+        200
+      ]
     },
     {
       "parameters": {
@@ -59,7 +68,10 @@
       "name": "Wait 2h Before Due",
       "type": "n8n-nodes-base.wait",
       "typeVersion": 1,
-      "position": [500, 300]
+      "position": [
+        500,
+        300
+      ]
     },
     {
       "parameters": {
@@ -82,7 +94,10 @@
       "name": "Send 2h Reminder",
       "type": "n8n-nodes-base.httpRequest",
       "typeVersion": 4,
-      "position": [750, 300]
+      "position": [
+        750,
+        300
+      ]
     },
     {
       "parameters": {
@@ -94,7 +109,10 @@
       "name": "Wait 15min Before Due",
       "type": "n8n-nodes-base.wait",
       "typeVersion": 1,
-      "position": [500, 400]
+      "position": [
+        500,
+        400
+      ]
     },
     {
       "parameters": {
@@ -117,7 +135,10 @@
       "name": "Send 15min Urgent Reminder",
       "type": "n8n-nodes-base.httpRequest",
       "typeVersion": 4,
-      "position": [750, 400]
+      "position": [
+        750,
+        400
+      ]
     },
     {
       "parameters": {
@@ -143,7 +164,10 @@
       "name": "Respond to Webhook",
       "type": "n8n-nodes-base.set",
       "typeVersion": 3,
-      "position": [1000, 300]
+      "position": [
+        1000,
+        300
+      ]
     }
   ],
   "connections": {
@@ -235,7 +259,7 @@
       ]
     }
   },
-  "active": true,
+  "active": false,
   "settings": {
     "executionOrder": "v1"
   },
@@ -244,12 +268,6 @@
   "meta": {
     "instanceId": "mediczy-n8n"
   },
-  "tags": [
-    {
-      "name": "sib-automation"
-    },
-    {
-      "name": "tasks"
-    }
-  ]
+  "activeVersionId": null,
+  "versionCounter": 1
 }

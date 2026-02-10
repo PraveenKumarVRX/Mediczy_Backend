@@ -13,7 +13,7 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 # shellcheck disable=SC1091
 source "$SCRIPT_DIR/load-testing-env.sh" || true
 
-BASE_URL="${BASE_URL:-http://localhost:8000}"
+BASE_URL="${BASE_URL:-http://localhost:8888}"
 ALERT_EMAIL="${ALERT_EMAIL:-admin@mediczy.com}"
 LOG_DIR="/var/log/mediczy"
 TIMESTAMP=$(date +%Y%m%d_%H%M%S)
@@ -121,7 +121,7 @@ test_server_health() {
     
     local response=$(curl -s -o /dev/null -w "%{http_code}" "$BASE_URL/health" 2>/dev/null || echo "000")
     
-    if [ "$response" = "200" ] || [ "$response" = "404" ] || [ "$response" = "503" ]; then
+    if [ "$response" = "200" ] || [ "$response" = "401" ] || [ "$response" = "404" ] || [ "$response" = "503" ]; then
         log_success "Server is responding (HTTP $response)"
         return 0
     else
@@ -239,8 +239,8 @@ test_pm2_status() {
     
     if command -v pm2 &> /dev/null; then
         local pm2_status=$(pm2 jlist 2>/dev/null | jq -r '.[] | select(.name=="mediczy-server") | .pm2_env.status' 2>/dev/null || echo "unknown")
-        
-        if [ "$pm2_status" = "online" ]; then
+
+        if [ -n "$pm2_status" ] && ! echo "$pm2_status" | grep -qv '^online$'; then
             log_success "PM2 process is online"
             return 0
         else

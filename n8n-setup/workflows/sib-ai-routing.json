@@ -12,7 +12,10 @@
       "name": "Webhook - AI Routing Trigger",
       "type": "n8n-nodes-base.webhook",
       "typeVersion": 1,
-      "position": [250, 300],
+      "position": [
+        250,
+        300
+      ],
       "webhookId": "sib-ai-routing-webhook"
     },
     {
@@ -23,7 +26,10 @@
       "name": "AI Context Analysis",
       "type": "n8n-nodes-base.function",
       "typeVersion": 1,
-      "position": [450, 300]
+      "position": [
+        450,
+        300
+      ]
     },
     {
       "parameters": {
@@ -41,7 +47,10 @@
       "name": "Check Workflows Exist",
       "type": "n8n-nodes-base.if",
       "typeVersion": 1,
-      "position": [650, 300]
+      "position": [
+        650,
+        300
+      ]
     },
     {
       "parameters": {
@@ -51,7 +60,10 @@
       "name": "Split Workflows",
       "type": "n8n-nodes-base.function",
       "typeVersion": 1,
-      "position": [850, 250]
+      "position": [
+        850,
+        250
+      ]
     },
     {
       "parameters": {
@@ -69,7 +81,10 @@
       "name": "Route: Appointment Booking",
       "type": "n8n-nodes-base.switch",
       "typeVersion": 1,
-      "position": [1050, 150]
+      "position": [
+        1050,
+        150
+      ]
     },
     {
       "parameters": {
@@ -87,7 +102,10 @@
       "name": "Route: Escalation",
       "type": "n8n-nodes-base.switch",
       "typeVersion": 1,
-      "position": [1050, 300]
+      "position": [
+        1050,
+        300
+      ]
     },
     {
       "parameters": {
@@ -105,7 +123,10 @@
       "name": "Route: WhatsApp",
       "type": "n8n-nodes-base.switch",
       "typeVersion": 1,
-      "position": [1050, 450]
+      "position": [
+        1050,
+        450
+      ]
     },
     {
       "parameters": {
@@ -137,7 +158,10 @@
       "name": "Trigger Appointment Workflow",
       "type": "n8n-nodes-base.httpRequest",
       "typeVersion": 3,
-      "position": [1250, 150]
+      "position": [
+        1250,
+        150
+      ]
     },
     {
       "parameters": {
@@ -165,7 +189,10 @@
       "name": "Trigger Escalation Workflow",
       "type": "n8n-nodes-base.httpRequest",
       "typeVersion": 3,
-      "position": [1250, 300]
+      "position": [
+        1250,
+        300
+      ]
     },
     {
       "parameters": {
@@ -193,7 +220,10 @@
       "name": "Trigger WhatsApp Workflow",
       "type": "n8n-nodes-base.httpRequest",
       "typeVersion": 3,
-      "position": [1250, 450]
+      "position": [
+        1250,
+        450
+      ]
     },
     {
       "parameters": {
@@ -205,7 +235,10 @@
       "name": "Log Routing Decision",
       "type": "n8n-nodes-base.postgres",
       "typeVersion": 1,
-      "position": [1450, 300],
+      "position": [
+        1450,
+        300
+      ],
       "credentials": {
         "postgres": {
           "id": "1",
@@ -223,7 +256,10 @@
       "name": "Respond Success",
       "type": "n8n-nodes-base.respondToWebhook",
       "typeVersion": 1,
-      "position": [1650, 250]
+      "position": [
+        1650,
+        250
+      ]
     },
     {
       "parameters": {
@@ -235,7 +271,10 @@
       "name": "Respond No Workflows",
       "type": "n8n-nodes-base.respondToWebhook",
       "typeVersion": 1,
-      "position": [850, 400]
+      "position": [
+        850,
+        400
+      ]
     }
   ],
   "connections": {
@@ -378,7 +417,10 @@
       ]
     }
   },
-  "active": true,
+  "active": false,
   "settings": {},
-  "id": "sib-ai-routing"
+  "id": "sib-ai-routing",
+  "versionId": "66d65053-04f3-4085-83de-172c16c0c8aa",
+  "activeVersionId": null,
+  "versionCounter": 1
 }

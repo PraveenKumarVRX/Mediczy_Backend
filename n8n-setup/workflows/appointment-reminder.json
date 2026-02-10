@@ -12,7 +12,10 @@
       "name": "Reminder Webhook",
       "type": "n8n-nodes-base.webhook",
       "typeVersion": 1,
-      "position": [250, 300]
+      "position": [
+        250,
+        300
+      ]
     },
     {
       "parameters": {
@@ -30,7 +33,10 @@
       "name": "Check Type",
       "type": "n8n-nodes-base.if",
       "typeVersion": 1,
-      "position": [450, 300]
+      "position": [
+        450,
+        300
+      ]
     },
     {
       "parameters": {
@@ -52,7 +58,7 @@
             },
             {
               "name": "title",
-              "value": "⏰ Appointment in 1 Hour"
+              "value": "\u23f0 Appointment in 1 Hour"
             },
             {
               "name": "message",
@@ -74,7 +80,10 @@
       "name": "1 Hour - Patient",
       "type": "n8n-nodes-base.httpRequest",
       "typeVersion": 3,
-      "position": [650, 200]
+      "position": [
+        650,
+        200
+      ]
     },
     {
       "parameters": {
@@ -96,7 +105,7 @@
             },
             {
               "name": "title",
-              "value": "⏰ Appointment in 1 Hour"
+              "value": "\u23f0 Appointment in 1 Hour"
             },
             {
               "name": "message",
@@ -114,7 +123,10 @@
       "name": "1 Hour - Doctor",
       "type": "n8n-nodes-base.httpRequest",
       "typeVersion": 3,
-      "position": [650, 350]
+      "position": [
+        650,
+        350
+      ]
     },
     {
       "parameters": {
@@ -136,7 +148,7 @@
             },
             {
               "name": "title",
-              "value": "📅 Appointment Tomorrow"
+              "value": "\ud83d\udcc5 Appointment Tomorrow"
             },
             {
               "name": "message",
@@ -154,7 +166,10 @@
       "name": "24 Hour - Patient",
       "type": "n8n-nodes-base.httpRequest",
       "typeVersion": 3,
-      "position": [650, 500]
+      "position": [
+        650,
+        500
+      ]
     },
     {
       "parameters": {
@@ -166,7 +181,10 @@
       "name": "Log to PostgreSQL",
       "type": "n8n-nodes-base.postgres",
       "typeVersion": 2,
-      "position": [900, 300],
+      "position": [
+        900,
+        300
+      ],
       "credentials": {
         "postgres": {
           "id": "mediczy-postgres",
@@ -183,7 +201,10 @@
       "name": "Respond",
       "type": "n8n-nodes-base.respondToWebhook",
       "typeVersion": 1,
-      "position": [1100, 300]
+      "position": [
+        1100,
+        300
+      ]
     }
   ],
   "connections": {
@@ -268,5 +289,9 @@
   },
   "settings": {
     "executionOrder": "v1"
-  }
+  },
+  "active": false,
+  "versionId": "e0e735fc-6a45-4dc3-9211-59a1e0a9065c",
+  "activeVersionId": null,
+  "versionCounter": 1
 }

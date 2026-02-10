@@ -11,7 +11,10 @@
       "name": "Webhook - SMS Trigger",
       "type": "n8n-nodes-base.webhook",
       "typeVersion": 1,
-      "position": [250, 300],
+      "position": [
+        250,
+        300
+      ],
       "webhookId": "sib-notification-sms"
     },
     {
@@ -27,7 +30,10 @@
       "name": "Send SMS (Twilio)",
       "type": "n8n-nodes-base.twilio",
       "typeVersion": 1,
-      "position": [500, 300],
+      "position": [
+        500,
+        300
+      ],
       "credentials": {
         "twilioApi": {
           "id": "2",
@@ -56,7 +62,10 @@
       "name": "Log to Database",
       "type": "n8n-nodes-base.httpRequest",
       "typeVersion": 4,
-      "position": [750, 300]
+      "position": [
+        750,
+        300
+      ]
     },
     {
       "parameters": {
@@ -86,7 +95,10 @@
       "name": "Respond to Webhook",
       "type": "n8n-nodes-base.set",
       "typeVersion": 3,
-      "position": [1000, 300]
+      "position": [
+        1000,
+        300
+      ]
     }
   ],
   "connections": {
@@ -124,7 +136,7 @@
       ]
     }
   },
-  "active": true,
+  "active": false,
   "settings": {
     "executionOrder": "v1"
   },
@@ -133,12 +145,6 @@
   "meta": {
     "instanceId": "mediczy-n8n"
   },
-  "tags": [
-    {
-      "name": "sib-automation"
-    },
-    {
-      "name": "notifications"
-    }
-  ]
+  "activeVersionId": null,
+  "versionCounter": 1
 }

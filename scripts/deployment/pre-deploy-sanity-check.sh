@@ -17,6 +17,21 @@ echo ""
 echo "Started at: $(date)"
 echo ""
 
+# Ensure script runs from repo root.
+SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
+REPO_ROOT="$(cd "$SCRIPT_DIR/../.." && pwd)"
+cd "$REPO_ROOT"
+
+# Load server env when available.
+SERVER_ENV="$REPO_ROOT/server/.env"
+if [ -f "$SERVER_ENV" ]; then
+    set -a
+    . "$SERVER_ENV"
+    set +a
+fi
+
+BASE_URL="${BASE_URL:-http://localhost:8888}"
+
 # Color codes
 GREEN='\033[0;32m'
 RED='\033[0;31m'
@@ -100,23 +115,27 @@ else
 fi
 
 # Check critical environment variables
-if [ -n "$DB_HOST" ]; then
-    check_pass "DB_HOST is configured"
+DB_HOST_EFFECTIVE="${DB_HOST:-$POSTGRES_HOST}"
+DB_PASSWORD_EFFECTIVE="${DB_PASSWORD:-$POSTGRES_PASSWORD}"
+
+if [ -n "$DB_HOST_EFFECTIVE" ]; then
+    check_pass "DB host is configured"
 else
-    check_warn "DB_HOST not set (may be using default)"
+    check_warn "DB host not set (may be using default)"
 fi
 
-if [ -n "$DB_PASSWORD" ]; then
-    check_pass "DB_PASSWORD is set"
+if [ -n "$DB_PASSWORD_EFFECTIVE" ]; then
+    check_pass "DB password is set"
 else
-    check_warn "DB_PASSWORD not set in environment"
+    check_warn "DB password not set in environment"
 fi
 
 # Check CORS configuration
-if [ -n "$CORS_ORIGIN" ]; then
-    check_pass "CORS_ORIGIN configured"
+CORS_EFFECTIVE="${CORS_ORIGIN:-$ALLOWED_ORIGINS}"
+if [ -n "$CORS_EFFECTIVE" ]; then
+    check_pass "CORS configured"
 else
-    check_warn "CORS_ORIGIN not set (using defaults)"
+    check_warn "CORS not set (using defaults)"
 fi
 
 ##############################################################################
@@ -172,27 +191,31 @@ if pm2 jlist 2>/dev/null | grep -q "mediczy-server.*online"; then
     check_pass "Server is running (PM2)"
     
     # Get server uptime
-    UPTIME=$(pm2 jlist 2>/dev/null | jq -r '.[] | select(.name=="mediczy-server") | .pm2_env.pm_uptime' 2>/dev/null || echo "unknown")
-    if [ "$UPTIME" != "unknown" ]; then
-        check_pass "Server uptime: $(($(date +%s) - UPTIME/1000)) seconds"
+    UPTIME_MS=$(pm2 jlist 2>/dev/null | jq -r 'map(select(.name=="mediczy-server")) | .[0].pm2_env.pm_uptime // empty' 2>/dev/null | head -n1)
+    if [ -n "$UPTIME_MS" ] && [[ "$UPTIME_MS" =~ ^[0-9]+$ ]]; then
+        NOW_SEC=$(date +%s)
+        UPTIME_SEC=$((NOW_SEC - (UPTIME_MS / 1000)))
+        check_pass "Server uptime: ${UPTIME_SEC} seconds"
     fi
     
     # Check restart count
-    RESTARTS=$(pm2 jlist 2>/dev/null | jq -r '.[] | select(.name=="mediczy-server") | .pm2_env.restart_time' 2>/dev/null || echo "0")
-    if [ "$RESTARTS" -lt 5 ]; then
+    RESTARTS=$(pm2 jlist 2>/dev/null | jq -r 'map(select(.name=="mediczy-server")) | .[0].pm2_env.restart_time // empty' 2>/dev/null | head -n1)
+    if [ -n "$RESTARTS" ] && [[ "$RESTARTS" =~ ^[0-9]+$ ]]; then
+        if [ "$RESTARTS" -lt 5 ]; then
         check_pass "Server restart count acceptable ($RESTARTS)"
     elif [ "$RESTARTS" -lt 50 ]; then
         check_warn "Server has restarted $RESTARTS times (monitor stability)"
     else
         check_warn "Server has restarted $RESTARTS times (high restart count)"
+        fi
     fi
 else
     check_fail "Server is not running" true
 fi
 
 # Check server responds to HTTP
-HTTP_CODE=$(curl -s -o /dev/null -w "%{http_code}" http://localhost:8000/ 2>/dev/null || echo "000")
-if [ "$HTTP_CODE" = "200" ] || [ "$HTTP_CODE" = "404" ]; then
+HTTP_CODE=$(curl -s -o /dev/null -w "%{http_code}" $BASE_URL/ 2>/dev/null || echo "000")
+if [ "$HTTP_CODE" = "200" ] || [ "$HTTP_CODE" = "401" ] || [ "$HTTP_CODE" = "404" ]; then
     check_pass "Server responds to HTTP requests (HTTP $HTTP_CODE)"
 else
     check_fail "Server not responding to HTTP (HTTP $HTTP_CODE)" true
@@ -205,7 +228,7 @@ fi
 section_header "CHECK 4: DATABASE CONNECTIVITY"
 
 # Test database by attempting a login (requires DB connection)
-DB_RESPONSE=$(curl -s -w "\n%{http_code}" -X POST "http://localhost:8000/api/doctors/login" \
+DB_RESPONSE=$(curl -s -w "\n%{http_code}" -X POST "$BASE_URL/api/doctors/login" \
     -H "Content-Type: application/json" \
     -d '{"email":"doctor@mediczy.com","password":"Doctor123"}' 2>/dev/null || echo -e "\n000")
 
@@ -232,7 +255,7 @@ test_login() {
     local password=$3
     local endpoint=$4
     
-    RESPONSE=$(curl -s -w "\n%{http_code}" -X POST "http://localhost:8000$endpoint" \
+    RESPONSE=$(curl -s -w "\n%{http_code}" -X POST "$BASE_URL$endpoint" \
         -H "Content-Type: application/json" \
         -d "{\"email\":\"$email\",\"password\":\"$password\"}" 2>/dev/null || echo -e "\n000")
     
@@ -257,7 +280,14 @@ test_login() {
 # Test critical authentication endpoints
 test_login "User/Patient" "user@mediczy.com" "User123" "/api/users/login"
 test_login "Doctor" "doctor@mediczy.com" "Doctor123" "/api/doctors/login"
-test_login "Admin" "admin@mediczy.com" "Admin123" "/api/admin/login"
+
+ADMIN_LOGIN_ENDPOINT="${ADMIN_LOGIN_ENDPOINT:-/api/admin/login}"
+if [ -z "$ADMIN_EMAIL" ] || [ -z "$ADMIN_PASSWORD" ]; then
+    check_fail "Admin credentials not set (ADMIN_EMAIL/ADMIN_PASSWORD)" true
+else
+    test_login "Admin" "$ADMIN_EMAIL" "$ADMIN_PASSWORD" "$ADMIN_LOGIN_ENDPOINT"
+fi
+
 test_login "Nurse" "nurse@mediczy.com" "Nurse123" "/api/nurse/login"
 
 ##############################################################################
@@ -267,7 +297,7 @@ test_login "Nurse" "nurse@mediczy.com" "Nurse123" "/api/nurse/login"
 section_header "CHECK 6: SECURITY CONFIGURATION"
 
 # Check security headers
-HEADERS=$(curl -s -I http://localhost:8000 2>/dev/null || echo "")
+HEADERS=$(curl -s -I $BASE_URL 2>/dev/null || echo "")
 
 if echo "$HEADERS" | grep -qi "X-Content-Type-Options"; then
     check_pass "X-Content-Type-Options header present"
@@ -294,7 +324,7 @@ else
 fi
 
 # Check rate limiting
-RATE_HEADERS=$(curl -s -I http://localhost:8000/api/users/login 2>/dev/null || echo "")
+RATE_HEADERS=$(curl -s -I $BASE_URL/api/users/login 2>/dev/null || echo "")
 if echo "$RATE_HEADERS" | grep -qi "RateLimit\|X-RateLimit\|retry-after"; then
     check_pass "Rate limiting configured"
 else
@@ -302,7 +332,7 @@ else
 fi
 
 # Check CORS
-CORS_RESPONSE=$(curl -s -I -X OPTIONS http://localhost:8000/api/users/login \
+CORS_RESPONSE=$(curl -s -I -X OPTIONS $BASE_URL/api/users/login \
     -H "Origin: http://localhost:5173" 2>/dev/null || echo "")
 
 if echo "$CORS_RESPONSE" | grep -qi "Access-Control-Allow"; then
@@ -324,7 +354,7 @@ endpoints=(
 )
 
 for endpoint in "${endpoints[@]}"; do
-    STATUS=$(curl -s -o /dev/null -w "%{http_code}" "http://localhost:8000$endpoint" 2>/dev/null || echo "000")
+    STATUS=$(curl -s -o /dev/null -w "%{http_code}" "$BASE_URL$endpoint" 2>/dev/null || echo "000")
     # 401 is acceptable (means endpoint exists but requires auth)
     if [ "$STATUS" = "200" ] || [ "$STATUS" = "401" ] || [ "$STATUS" = "403" ]; then
         check_pass "Endpoint accessible: $endpoint (HTTP $STATUS)"

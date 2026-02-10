@@ -100,17 +100,31 @@ const MyBookings = () => {
 
   // Filter bookings by tab
   const bookings = allBookings.filter(booking => {
-    const appointmentDate = new Date(booking.appointmentDate);
-    const today = new Date();
-    today.setHours(0, 0, 0, 0);
+    // Parse appointment date/time combination for accurate comparison
+    const appointmentDateStr = booking.appointmentDate;
+    const appointmentTimeStr = booking.appointmentTime || "00:00";
+    const dateTimeStr = `${appointmentDateStr} ${appointmentTimeStr}`;
+    const appointmentDateTime = new Date(dateTimeStr);
+    
+    // Handle invalid date
+    if (isNaN(appointmentDateTime.getTime())) {
+      console.warn(`Invalid appointment date format: ${dateTimeStr}`);
+      return activeTab !== "upcoming"; // Show in history/all but not upcoming
+    }
+
+    const now = new Date();
 
     if (activeTab === "upcoming") {
+      // Show appointments that are either:
+      // 1. In the future (after now)
+      // 2. OR currently in-progress (status = "in-progress")
+      // AND not cancelled or no-show
       return (
-        appointmentDate >= today &&
-        ["scheduled", "confirmed"].includes(booking.status)
+        (appointmentDateTime > now || booking.status === "in-progress") &&
+        !["cancelled", "no-show", "completed"].includes(booking.status)
       );
     } else if (activeTab === "history") {
-      // Show all appointments in history tab regardless of status
+      // Show all past appointments and completed/cancelled ones
       return true;
     }
     // "all" tab shows everything

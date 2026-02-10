@@ -12,7 +12,10 @@
       "name": "Consultation Webhook",
       "type": "n8n-nodes-base.webhook",
       "typeVersion": 1,
-      "position": [250, 300]
+      "position": [
+        250,
+        300
+      ]
     },
     {
       "parameters": {
@@ -34,7 +37,7 @@
             },
             {
               "name": "title",
-              "value": "🩺 Doctor is Ready!"
+              "value": "\ud83e\ude7a Doctor is Ready!"
             },
             {
               "name": "message",
@@ -60,7 +63,10 @@
       "name": "Notify Patient",
       "type": "n8n-nodes-base.httpRequest",
       "typeVersion": 3,
-      "position": [500, 200]
+      "position": [
+        500,
+        200
+      ]
     },
     {
       "parameters": {
@@ -71,7 +77,10 @@
       "name": "Kafka Video Event",
       "type": "n8n-nodes-base.kafka",
       "typeVersion": 1,
-      "position": [500, 400]
+      "position": [
+        500,
+        400
+      ]
     },
     {
       "parameters": {
@@ -83,7 +92,10 @@
       "name": "Update Appointment",
       "type": "n8n-nodes-base.postgres",
       "typeVersion": 2,
-      "position": [750, 300],
+      "position": [
+        750,
+        300
+      ],
       "credentials": {
         "postgres": {
           "id": "mediczy-postgres",
@@ -100,7 +112,10 @@
       "name": "Respond",
       "type": "n8n-nodes-base.respondToWebhook",
       "typeVersion": 1,
-      "position": [950, 300]
+      "position": [
+        950,
+        300
+      ]
     }
   ],
   "connections": {
@@ -156,5 +171,9 @@
   },
   "settings": {
     "executionOrder": "v1"
-  }
+  },
+  "active": false,
+  "versionId": "3ad5ee8d-b0cc-4681-a183-238901e3e0c2",
+  "activeVersionId": null,
+  "versionCounter": 1
 }
