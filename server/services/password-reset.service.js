@@ -342,12 +342,14 @@ class PasswordResetService {
         })
       });
 
-      console.log(`✅ Password reset OTP sent to WhatsApp: ${formattedPhone} (Message SID: ${message.sid})`);
+      console.log(`✅ Password reset OTP sent to WhatsApp: ${formattedPhone}`);
+      console.log(`   Message SID: ${message.sid}, Status: ${message.status}`);
       
       // Return message SID for tracking
       return { messageSid: message.sid, status: message.status };
     } catch (error) {
-      console.error('⚠️  WhatsApp OTP sending failed for password reset - falling back to Email:', error.message);
+      console.error(`❌ WhatsApp OTP Twilio error (Code: ${error.code}):`, error.message);
+      console.warn('   Falling back to Email OTP...');
       // Fallback to email if WhatsApp fails
       return await this.sendOTPViaEmail(account, otpCode);
     }

@@ -297,7 +297,7 @@ class SignupVerificationService {
         })
       });
 
-      console.log(`📱 Signup WhatsApp OTP sent to ${whatsappTo}, SID: ${message.sid}`);
+      console.log(`📱 ✅ Signup WhatsApp OTP sent to ${whatsappTo}, SID: ${message.sid}, Status: ${message.status}`);
       
     } catch (error) {
       console.error('❌ Signup WhatsApp OTP error:', error);

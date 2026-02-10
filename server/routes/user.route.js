@@ -566,12 +566,13 @@ router.post(
               firstName: user.firstName || 'User',
               email: user.email
             }, otp.code);
-            console.log(`📱 Login OTP sent via WhatsApp (direct) to ${user.phoneNumber}`);
+            console.log(`📱 ✅ Login OTP sent via WhatsApp to ${user.phoneNumber}`);
             actualDeliveryMethod = 'whatsapp';
             deliverySuccess = true;
           } catch (whatsappError) {
             // If WhatsApp fails, try Email as final fallback
-            console.warn('⚠️  WhatsApp delivery failed, final fallback to Email:', whatsappError.message);
+            console.warn(`⚠️  WhatsApp delivery error (${whatsappError.code}): ${whatsappError.message}`);
+            console.log(`   Falling back to Email for ${user.phoneNumber}...`);
             await signupVerificationService.sendOTPViaEmail({
               email: user.email,
               firstName: user.firstName || 'User'
