@@ -441,10 +441,6 @@ router.post(
 
     const { identifier } = req.body;
     const includeOtp = process.env.NODE_ENV === 'development' || process.env.OTP_DEBUG_RESPONSE === 'true';
-    const genericResponse = {
-      success: true,
-      message: 'If an account exists, an OTP has been sent.'
-    };
 
     try {
       // Determine if identifier is email or phone
@@ -458,6 +454,10 @@ router.post(
           message: 'Please provide a valid email address or 10-digit phone number'
         });
       }
+
+      // Generate placeholder OTP ID for security (user enumeration prevention)
+      const placeholderOtpId = crypto.randomBytes(8).toString('hex');
+      const placeholderExpiresAt = new Date(Date.now() + 5 * 60 * 1000);
 
       let user;
       let deliveryMethod;
@@ -480,8 +480,23 @@ router.post(
         deliveryMethod = 'whatsapp';
       }
 
+      // SECURITY: Always return same response structure whether user exists or not
+      // This prevents user enumeration attacks
       if (!user || user.status === 'inactive' || user.status === 'blocked') {
-        return res.status(200).json(genericResponse);
+        // Return consistent response structure even if user doesn't exist
+        const responseData = {
+          otpId: placeholderOtpId,
+          expiresAt: placeholderExpiresAt,
+          expiresIn: '5 minutes',
+          deliveryMethod: isEmail ? 'email' : 'whatsapp',
+          sentTo: isEmail ? identifier.replace(/(.{2})(.*)(@.*)/, '$1****$3') : 'hidden for security'
+        };
+        
+        return res.status(200).json({
+          success: true,
+          message: 'If an account exists, an OTP has been sent.',
+          data: responseData
+        });
       }
 
       // Generate OTP for login
@@ -563,7 +578,8 @@ router.post(
       }
 
       return res.status(200).json({
-        ...genericResponse,
+        success: true,
+        message: 'If an account exists, an OTP has been sent.',
         data: responseData
       });
     } catch (error) {
