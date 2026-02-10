@@ -508,6 +508,10 @@ router.post(
         expiryMinutes: 5
       });
 
+      // Track actual delivery method used (not just intended)
+      let actualDeliveryMethod = deliveryMethod;
+      let deliverySuccess = false;
+
       // Send OTP via n8n first, fallback to direct delivery
       const useN8n = process.env.USE_N8N_OTP !== 'false';
       let n8nSuccess = false;
@@ -533,6 +537,8 @@ router.post(
 
           if (n8nResult.success) {
             n8nSuccess = true;
+            deliverySuccess = true;
+            actualDeliveryMethod = `${deliveryMethod}_via_n8n`;
             console.log(`✅ Login OTP sent via n8n (${deliveryMethod})`);
           } else {
             console.warn('⚠️  n8n delivery failed, using fallback');
@@ -550,13 +556,30 @@ router.post(
             firstName: user.firstName || 'User'
           }, otp.code);
           console.log(`📧 Login OTP sent via Email (direct) to ${user.email}`);
+          actualDeliveryMethod = 'email';
+          deliverySuccess = true;
         } else {
-          await signupVerificationService.sendOTPViaWhatsApp({
-            phoneNumber: user.phoneNumber,
-            firstName: user.firstName || 'User',
-            email: user.email
-          }, otp.code);
-          console.log(`📱 Login OTP sent via WhatsApp (direct) to ${user.phoneNumber}`);
+          // Try WhatsApp first (may fall back to Email inside the function)
+          try {
+            await signupVerificationService.sendOTPViaWhatsApp({
+              phoneNumber: user.phoneNumber,
+              firstName: user.firstName || 'User',
+              email: user.email
+            }, otp.code);
+            console.log(`📱 Login OTP sent via WhatsApp (direct) to ${user.phoneNumber}`);
+            actualDeliveryMethod = 'whatsapp';
+            deliverySuccess = true;
+          } catch (whatsappError) {
+            // If WhatsApp fails, try Email as final fallback
+            console.warn('⚠️  WhatsApp delivery failed, final fallback to Email:', whatsappError.message);
+            await signupVerificationService.sendOTPViaEmail({
+              email: user.email,
+              firstName: user.firstName || 'User'
+            }, otp.code);
+            console.log(`📧 Login OTP sent via Email (final fallback) to ${user.email}`);
+            actualDeliveryMethod = 'email';
+            deliverySuccess = true;
+          }
         }
       }
 
@@ -569,7 +592,7 @@ router.post(
         otpId: otp.id,
         expiresAt: otp.expiresAt,
         expiresIn: '5 minutes',
-        deliveryMethod,
+        deliveryMethod: actualDeliveryMethod,
         sentTo: maskedIdentifier
       };
 
