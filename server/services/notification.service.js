@@ -140,6 +140,14 @@ class NotificationService {
         channels: ['push', 'in-app'],
         priority: 'urgent'
       },
+
+      // Doctor initiated call
+      consultation_started: {
+        title: '📞 {{doctorName}} is calling',
+        message: 'Your doctor has started the video consultation. Tap to join now!',
+        channels: ['push', 'in-app'],
+        priority: 'urgent'
+      },
       
       // Video call ready
       video_ready: {

@@ -2,6 +2,7 @@ import OTP from '../models/otp.model.intelligent.js';
 import emailService from './emailService.js';
 import twilio from 'twilio';
 import n8nOTPService from './n8n-otp.service.js';
+import twilioOTPService from './twilio-otp.service.js';
 
 /**
  * Signup Verification Service
@@ -105,21 +106,45 @@ class SignupVerificationService {
 
   /**
    * Send OTP to all channels (Email, WhatsApp)
-   * Routes through n8n with fallback to direct delivery
+   * Routes through direct Twilio with fallback to n8n and email
    */
   async sendOTPToAllChannels(account, otpCode) {
     const results = {
       email: { sent: false, error: null },
       whatsapp: { sent: false, error: null },
+      viaDirectTwilio: false,
       viaN8n: false
     };
 
     const { email, phoneNumber, firstName } = account;
 
-    // Try n8n delivery first if enabled
-    if (this.useN8n) {
+    // Try direct Twilio delivery FIRST for WhatsApp (most reliable)
+    if (phoneNumber) {
       try {
-        console.log('📤 Attempting OTP delivery via n8n...');
+        console.log('📤 Attempting WhatsApp OTP delivery via Direct Twilio...');
+        const twilioResult = await twilioOTPService.sendWhatsAppOTP({
+          phone: phoneNumber,
+          otp: otpCode,
+          name: firstName || 'User',
+          purpose: 'signup'
+        });
+
+        if (twilioResult.success) {
+          results.whatsapp.sent = true;
+          results.viaDirectTwilio = true;
+          console.log('✅ WhatsApp OTP delivered via Direct Twilio successfully:', twilioResult.sid);
+        } else {
+          console.warn('⚠️  Direct Twilio delivery failed, falling back to n8n:', twilioResult.error);
+        }
+      } catch (twilioError) {
+        console.warn('⚠️  Direct Twilio delivery error:', twilioError.message);
+      }
+    }
+
+    // Try n8n delivery if Direct Twilio failed
+    if (!results.whatsapp.sent && this.useN8n && phoneNumber) {
+      try {
+        console.log('📤 Attempting OTP delivery via n8n (fallback)...');
         const n8nResult = await n8nOTPService.sendBothOTP({
           email,
           phone: phoneNumber,
@@ -133,7 +158,7 @@ class SignupVerificationService {
           results.email.sent = true;
           results.whatsapp.sent = true;
           results.viaN8n = true;
-          console.log('✅ OTP delivered via n8n successfully');
+          console.log('✅ OTP delivered via n8n (fallback) successfully');
           return results;
         } else {
           console.warn('⚠️  n8n delivery failed, falling back to direct delivery:', n8nResult.error);
@@ -143,8 +168,8 @@ class SignupVerificationService {
       }
     }
 
-    // Fallback to direct delivery
-    console.log('📤 Using direct delivery (fallback)...');
+    // Fallback to direct email and WhatsApp delivery
+    console.log('📤 Using fallback direct delivery (email + SMS if WhatsApp failed)...');
     await Promise.allSettled([
       // Email delivery
       email && this.sendOTPViaEmail({ email, firstName }, otpCode).then(() => {
@@ -155,8 +180,8 @@ class SignupVerificationService {
         console.error('❌ Email delivery failed:', error.message);
       }),
 
-      // WhatsApp delivery
-      phoneNumber && this.sendOTPViaWhatsApp({ phoneNumber, firstName }, otpCode).then(() => {
+      // WhatsApp delivery (fallback if not yet sent)
+      phoneNumber && !results.whatsapp.sent && this.sendOTPViaWhatsApp({ phoneNumber, firstName }, otpCode).then(() => {
         results.whatsapp.sent = true;
         console.log(`✅ WhatsApp verification OTP sent to ${phoneNumber}`);
       }).catch(error => {

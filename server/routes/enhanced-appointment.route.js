@@ -3,7 +3,7 @@ import { body, param, query } from 'express-validator';
 import { Op } from 'sequelize';
 import crypto from 'crypto';
 import { authUser } from '../middleware/auth.middleware.js';
-import { generateCanonicalMeetingId, verifyCanonicalMeetingId } from '../utils/videoProvider.js';
+import { buildMeetingLink, generateCanonicalMeetingId, verifyCanonicalMeetingId } from '../utils/videoProvider.js';
 import doctorModel from '../models/doctor.model.intelligent.js';
 import userModel from '../models/user.model.intelligent.js';
 import Appointment from '../models/appointment.model.intelligent.js';
@@ -418,12 +418,19 @@ router.post('/book', authUser, [
     
     // Update metadata with canonical room ID
     if (canonicalMeetingId) {
+      const meetingLink = buildMeetingLink('livekit', canonicalMeetingId, dbAppointment.id);
       dbAppointment.metadata.meeting = {
         roomId: canonicalMeetingId,                                    // PHASE 3.1: Use canonical ID
         fallbackRoomId: meetingRoom,                                   // Keep fallback for backward compat
-        meetingLink: `https://meet.mediczy.com/${canonicalMeetingId}`,
+        meetingLink,
         roomToken: null, // Tokens generated on-demand at join time
         roomCreated: false // Room created lazily when first participant joins
+      };
+      dbAppointment.meetingId = canonicalMeetingId;
+      dbAppointment.meetingLink = meetingLink;
+      dbAppointment.meetingDetails = {
+        platform: 'LiveKit',
+        roomId: canonicalMeetingId
       };
       await dbAppointment.save();
       console.log(`📞 Appointment #${dbAppointment.id} created with canonical room: ${canonicalMeetingId}`);
@@ -457,7 +464,9 @@ router.post('/book', authUser, [
       meetingDetails: {
         roomId: canonicalMeetingId,               // PHASE 3.1: Use canonical meeting ID
         fallbackRoomId: meetingRoom,              // Keep for backward compat
-        meetingLink: consultationType === 'online' ? `https://meet.mediczy.com/${canonicalMeetingId}` : null,
+        meetingLink: consultationType === 'online'
+          ? buildMeetingLink('livekit', canonicalMeetingId, dbAppointment.id)
+          : null,
         roomToken: null, // Tokens generated lazily at join time (Phase 2)
         roomCreated: false, // Room created on-demand when first participant joins
         joinInstructions: consultationType === 'online' ? `Your video consultation room is ready. Join using code: ${canonicalMeetingId}` : null

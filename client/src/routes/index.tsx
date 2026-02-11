@@ -624,9 +624,9 @@ const AppRoutes = () => {
       <Route path="/nurse-booking/:nurseId" element={<NurseBooking />} />
       <Route path="/lab-booking/:labId" element={<LabBooking />} />
       <Route path="/homecare-booking/:homecareId" element={<HomecareBooking />} />
-      <Route path="/my-bookings" element={<MainLayout><MyBookings /></MainLayout>} />
+      <Route path="/my-bookings" element={<Navigate to="/appointments" replace />} />
       <Route path="/appointments" element={<Appointments />} />
-      <Route path="/my-appointments" element={<Appointments />} />
+      <Route path="/my-appointments" element={<Navigate to="/appointments" replace />} />
       <Route path="/my-prescriptions" element={<MyPrescriptions />} />
   <Route path="/my-plans" element={<MainLayout><MyPlans /></MainLayout>} />
       <Route path="/membership-card" element={<MainLayout><MyMembershipCard /></MainLayout>} />

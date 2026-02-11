@@ -96,6 +96,55 @@ class VideoController {
         req.user.email ||
         'Mediczy User';
 
+      if (appointmentId) {
+        const appointment = await Appointment.findByPk(appointmentId);
+        if (!appointment) {
+          return res.status(404).json({
+            success: false,
+            message: 'Appointment not found'
+          });
+        }
+
+        const isPatient = String(appointment.userId) === String(userId);
+        const isDoctor = String(appointment.doctorId) === String(userId) || userRole === 'doctor';
+        if (!isPatient && !isDoctor) {
+          return res.status(403).json({
+            success: false,
+            message: 'Not authorized to join this consultation'
+          });
+        }
+
+        if (!['confirmed', 'in-progress'].includes(appointment.status)) {
+          return res.status(400).json({
+            success: false,
+            message: `Cannot join video call. Appointment status: ${appointment.status}`,
+            currentStatus: appointment.status
+          });
+        }
+
+        const appointmentDateTime = new Date(`${appointment.appointmentDate}T${appointment.appointmentTime}`);
+        const now = new Date();
+        const windowStart = new Date(appointmentDateTime.getTime() - 15 * 60 * 1000);
+        const windowEnd = new Date(appointmentDateTime.getTime() + 60 * 60 * 1000);
+
+        if (now < windowStart) {
+          return res.status(400).json({
+            success: false,
+            message: 'Video call will be available 15 minutes before the appointment',
+            appointmentTime: appointmentDateTime.toISOString(),
+            canJoinAt: windowStart.toISOString()
+          });
+        }
+
+        if (now > windowEnd) {
+          return res.status(400).json({
+            success: false,
+            message: 'Appointment time has passed',
+            appointmentTime: appointmentDateTime.toISOString()
+          });
+        }
+      }
+
       // Use provided roomId or generate one from appointmentId
       const meetingId = roomId || appointmentId || createMeetingInfo({}).meetingId;
       

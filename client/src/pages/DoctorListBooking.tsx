@@ -754,9 +754,11 @@ const DoctorListBooking = () => {
                 ) : (
                   <Button 
                     onClick={() => handleBookAppointment(doctor)}
+                    disabled={!doctor.isLive}
                     className="bg-gradient-to-r from-teal-500 to-teal-600 hover:from-teal-600 hover:to-teal-700 text-white shadow-lg hover:shadow-xl transition-all rounded-full px-6"
+                    title={doctor.isLive ? "" : "This profile is not yet available for booking."}
                   >
-                    Book Now
+                    {doctor.isLive ? "Book Now" : "Unavailable"}
                     <ArrowRight className="h-4 w-4 ml-2" />
                   </Button>
                 )}

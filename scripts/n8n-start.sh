@@ -4,6 +4,16 @@
 
 set -e
 
+# Load n8n environment configuration from ~/.n8n/.env
+if [ -f "$HOME/.n8n/.env" ]; then
+    echo "[$(date)] Loading n8n configuration from $HOME/.n8n/.env"
+    set -a  # Export all variables
+    source "$HOME/.n8n/.env"
+    set +a  # Unset it again
+else
+    echo "[$(date)] WARNING: n8n config file not found at $HOME/.n8n/.env"
+fi
+
 # Trust proxy so rate limiter honors X-Forwarded-For behind Cloudflare/Nginx.
 export N8N_TRUST_PROXY=true
 

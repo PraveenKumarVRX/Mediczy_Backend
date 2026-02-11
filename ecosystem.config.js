@@ -65,7 +65,7 @@ module.exports = {
         PYTHONUNBUFFERED: '1',
         PORT: 8001,
         POSTGRES_HOST: '127.0.0.1',
-        POSTGRES_PORT: '5433',
+        POSTGRES_PORT: '5432',
         POSTGRES_DB: 'mediczy_ai',
         POSTGRES_USER: 'mediczy_helper',
         POSTGRES_PASSWORD: 'Mediczy2024Helper'
@@ -133,30 +133,6 @@ module.exports = {
       kill_timeout: 10000,
       wait_ready: true,
       listen_timeout: 10000
-    },
-
-    // ==================== Kafka Server ====================
-    {
-      name: 'kafka-server',
-      script: path.join(SCRIPTS_DIR, 'kafka-start.sh'),
-      cwd: '/opt/kafka',
-      instances: 1,
-      exec_mode: 'fork',
-      interpreter: 'bash',
-      env: {
-        KAFKA_HEAP_OPTS: '-Xmx512M -Xms256M'
-      },
-      error_file: '/tmp/kafka-error.log',
-      out_file: '/tmp/kafka-out.log',
-      log_date_format: 'YYYY-MM-DD HH:mm:ss Z',
-      merge_logs: true,
-      max_memory_restart: '1G',
-      watch: false,
-      autorestart: true,
-      max_restarts: 10,
-      min_uptime: '30s',
-      restart_delay: 10000,
-      kill_timeout: 15000
     },
 
     // ==================== n8n Workflow Automation ====================

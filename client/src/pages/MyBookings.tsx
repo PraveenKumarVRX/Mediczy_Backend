@@ -260,7 +260,7 @@ const MyBookings = () => {
     // Navigate to embedded video consultation page with room parameter
     const roomId = resolveRoomId(booking.meetingLink);
 
-    navigate(`/video-consultation?room=${encodeURIComponent(roomId)}`);
+    navigate(`/video-consultation?room=${encodeURIComponent(roomId)}&appointmentId=${booking.id}`);
 
     toast({
       title: "Joining Video Call",

@@ -486,19 +486,43 @@ const DoctorTriage = () => {
       // Close incoming call notification
       setIncomingCall(null);
 
-      // Join video room
+      // Get video room ID
       const roomId = response.data.appointment.roomId;
-      const doctorName = encodeURIComponent(`Dr.${currentDoctor?.firstName || 'Doctor'}`);
-      const videoUrl = `${LIVEKIT_BASE_URL}/rooms/${roomId}?name=${doctorName}`;
+      const doctorName = `Dr.${currentDoctor?.firstName || 'Doctor'}`;
       
-      setCurrentVideoUrl(videoUrl);
-      setIsInVideoCall(true);
-      setConnectionStatus('connecting');
-      
-      // Start AI features
-      startAIFeatures();
-      
-      setTimeout(() => setConnectionStatus('connected'), 3000);
+      try {
+        // Fetch token from API
+        const tokenResponse = await api.get('/video/livekit/token', {
+          params: {
+            roomId: roomId,
+            appointmentId: appointmentId,
+            identity: `doctor-${currentDoctor?.id}`
+          }
+        });
+        
+        const token = tokenResponse.data.token;
+        const videoUrl = `${LIVEKIT_BASE_URL}/rooms/${roomId}?access_token=${encodeURIComponent(token)}&name=${encodeURIComponent(doctorName)}`;
+        
+        setCurrentVideoUrl(videoUrl);
+        setIsInVideoCall(true);
+        setConnectionStatus('connecting');
+        
+        // Start AI features
+        startAIFeatures();
+        
+        setTimeout(() => setConnectionStatus('connected'), 3000);
+      } catch (tokenError) {
+        console.error('Failed to get video token:', tokenError);
+        // Fallback URL without token (may not work)
+        const videoUrl = `${LIVEKIT_BASE_URL}/rooms/${roomId}?name=${encodeURIComponent(doctorName)}`;
+        setCurrentVideoUrl(videoUrl);
+        setIsInVideoCall(true);
+        toast({
+          title: "⚠️ Warning",
+          description: "Opening video room (token unavailable)",
+          variant: "destructive",
+        });
+      }
     } catch (error: any) {
       console.error('Failed to accept call:', error);
       toast({
@@ -545,18 +569,38 @@ const DoctorTriage = () => {
   const handleStartVideoCall = async (caseItem: TriageCase) => {
     try {
       let roomId = caseItem.videoRoomId || `triage-${caseItem.id}-${Date.now()}`;
+      let appointmentId = caseItem.appointmentId;
 
-      if (caseItem.appointmentId) {
+      if (appointmentId) {
         const response = await api.post('/doctors/triage/accept-call', {
-          appointmentId: caseItem.appointmentId
+          appointmentId: appointmentId
         });
         roomId = response.data?.appointment?.roomId || roomId;
       }
 
-      const doctorName = encodeURIComponent(`Dr.${currentDoctor?.firstName || 'Doctor'}`);
-      const videoUrl = `${LIVEKIT_BASE_URL}/rooms/${roomId}?name=${doctorName}`;
+      const doctorName = `Dr.${currentDoctor?.firstName || 'Doctor'}`;
+      
+      try {
+        // Fetch token from API
+        const tokenResponse = await api.get('/video/livekit/token', {
+          params: {
+            roomId: roomId,
+            appointmentId: appointmentId,
+            identity: `doctor-${currentDoctor?.id}`
+          }
+        });
+        
+        const token = tokenResponse.data.token;
+        const videoUrl = `${LIVEKIT_BASE_URL}/rooms/${roomId}?access_token=${encodeURIComponent(token)}&name=${encodeURIComponent(doctorName)}`;
+        
+        setCurrentVideoUrl(videoUrl);
+      } catch (tokenError) {
+        console.error('Failed to get video token:', tokenError);
+        // Fallback URL without token
+        const videoUrl = `${LIVEKIT_BASE_URL}/rooms/${roomId}?name=${encodeURIComponent(doctorName)}`;
+        setCurrentVideoUrl(videoUrl);
+      }
 
-      setCurrentVideoUrl(videoUrl);
       setSelectedCase(caseItem);
       setIsInVideoCall(true);
       setConnectionStatus('connecting');

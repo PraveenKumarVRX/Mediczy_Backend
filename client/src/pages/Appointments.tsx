@@ -258,6 +258,24 @@ const Appointments = () => {
     retry: 1,
   });
 
+  const handleSuggestionAction = (suggestion: SmartSuggestion) => {
+    if (suggestion.type === 'reschedule') {
+      setActiveTab('upcoming');
+      toast({
+        title: "Choose an appointment",
+        description: "Open an upcoming appointment to reschedule.",
+      });
+      return;
+    }
+
+    if (['follow-up', 'specialist', 'preventive'].includes(suggestion.type)) {
+      setShowBookingModal(true);
+      return;
+    }
+
+    setShowAIChat(true);
+  };
+
   useEffect(() => {
     if (appointmentsError) {
       console.error("📅 Appointments fetch error:", appointmentsError);
@@ -523,6 +541,14 @@ const Appointments = () => {
   };
 
   const handleJoinCall = (appointment: Appointment) => {
+    if (appointment.meetingLink && isExternalMeetingLink(appointment.meetingLink)) {
+      window.open(appointment.meetingLink, '_blank', 'width=1280,height=720');
+      toast({
+        title: "Joined Call",
+        description: "Opening the video consultation...",
+      });
+      return;
+    }
     const doctorId = appointment.doctor.id;
     const meetingRoomFromLink = extractRoomId(appointment.meetingLink);
     const roomId =
@@ -604,6 +630,25 @@ const Appointments = () => {
       String(appointment.time ?? "")
     );
     if (!appointmentTime) return;
+    const DATE_REGEX = /^\d{4}-\d{2}-\d{2}$/;
+    const TIME_REGEX = /^([01]\d|2[0-3]):[0-5]\d$/;
+    if (!DATE_REGEX.test(appointmentDate) || !TIME_REGEX.test(appointmentTime)) {
+      toast({
+        title: "Invalid date or time",
+        description: "Use YYYY-MM-DD and HH:MM (24-hour) format.",
+        variant: "destructive",
+      });
+      return;
+    }
+    const rescheduleDateTime = new Date(`${appointmentDate}T${appointmentTime}`);
+    if (Number.isNaN(rescheduleDateTime.getTime()) || rescheduleDateTime < new Date()) {
+      toast({
+        title: "Invalid reschedule time",
+        description: "Choose a future date and time.",
+        variant: "destructive",
+      });
+      return;
+    }
 
     setActionLoadingId(appointment.id);
     try {
@@ -1011,7 +1056,12 @@ const Appointments = () => {
                             </div>
                           </div>
                           {suggestion.actionable && (
-                            <Button size="sm" variant="outline" className="border-[#00FFF3]/30 text-[#00FFF3]">
+                            <Button
+                              size="sm"
+                              variant="outline"
+                              className="border-[#00FFF3]/30 text-[#00FFF3]"
+                              onClick={() => handleSuggestionAction(suggestion)}
+                            >
                               Take Action
                             </Button>
                           )}

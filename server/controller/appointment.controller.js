@@ -292,24 +292,6 @@ export const createAppointment = async (req, res) => {
           req.userTenantId ? 'tenant' : 'none'
     });
 
-    // Generate meeting link for video/audio/telemedicine consultations
-    let meetingId = null;
-    let meetingLink = null;
-    let meetingDetails = {};
-
-    if (['video', 'audio', 'telemedicine'].includes(requestedConsultationType)) {
-      const meetingInfo = createMeetingInfo({ appointmentId: Date.now() });
-      meetingId = meetingInfo.meetingId;
-      meetingLink = meetingInfo.meetingLink;
-      meetingDetails = meetingInfo.meetingDetails;
-      console.log('📹 Generated video meeting link:', {
-        meetingId,
-        meetingLink,
-        type: requestedConsultationType,
-        platform: meetingDetails.platform
-      });
-    }
-
     // Create appointment
     const appointment = await Appointment.create({
       userId,
@@ -331,9 +313,6 @@ export const createAppointment = async (req, res) => {
       organization_type: organizationType,
       tenant_id: organizationId,
       corporate_tenant_id: corporateTenantId,
-      meetingId,
-      meetingLink,
-      meetingDetails,
       metadata: {
         ...(req.userTenantId ? { organizationId: req.userTenantId } : {}),
         ...(corporateTenantId ? { corporateTenantId } : {}),
@@ -349,6 +328,33 @@ export const createAppointment = async (req, res) => {
                 : 'video'
       }
     });
+
+    // Generate meeting link for video/audio/telemedicine consultations
+    if (['video', 'audio', 'telemedicine'].includes(requestedConsultationType)) {
+      const meetingInfo = createMeetingInfo({ appointmentId: appointment.id });
+      await appointment.update({
+        meetingId: meetingInfo.meetingId,
+        meetingLink: meetingInfo.meetingLink,
+        meetingDetails: meetingInfo.meetingDetails,
+        metadata: {
+          ...(appointment.metadata || {}),
+          meeting: {
+            roomId: meetingInfo.meetingId,
+            meetingLink: meetingInfo.meetingLink,
+            roomCreated: false
+          }
+        }
+      });
+      appointment.meetingId = meetingInfo.meetingId;
+      appointment.meetingLink = meetingInfo.meetingLink;
+      appointment.meetingDetails = meetingInfo.meetingDetails;
+      console.log('📹 Generated video meeting link:', {
+        meetingId: meetingInfo.meetingId,
+        meetingLink: meetingInfo.meetingLink,
+        type: requestedConsultationType,
+        platform: meetingInfo.meetingDetails.platform
+      });
+    }
 
     // Send confirmation email (async task)
     try {

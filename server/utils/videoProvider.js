@@ -52,14 +52,18 @@ const resolveFrontendBaseUrl = () => {
 export const buildMeetingLink = (provider, meetingId, appointmentId) => {
   if (!meetingId) return null;
   const frontendBase = resolveFrontendBaseUrl();
-  const derivedAppointmentId =
-    appointmentId || (meetingId.startsWith('apt-') ? meetingId.replace('apt-', '') : null);
+  const deriveAppointmentId = (id) => {
+    if (!id || !id.startsWith('apt-')) return null;
+    const parts = id.split('-');
+    return parts.length >= 2 ? parts[1] : null;
+  };
+  const derivedAppointmentId = appointmentId || deriveAppointmentId(meetingId);
   const appointmentParam = derivedAppointmentId ? `&appointmentId=${encodeURIComponent(derivedAppointmentId)}` : '';
   return `${frontendBase}/video-consultation?room=${encodeURIComponent(meetingId)}${appointmentParam}`;
 };
 
 export const createMeetingInfo = ({ appointmentId } = {}) => {
-  const meetingId = `apt-${appointmentId || Date.now()}`;
+  const meetingId = appointmentId ? generateCanonicalMeetingId(appointmentId) : `apt-${Date.now()}`;
   const meetingLink = buildMeetingLink('livekit', meetingId, appointmentId);
   const meetingDetails = {
     platform: 'LiveKit',
@@ -74,26 +78,51 @@ export const ensureMeetingInfo = (appointment) => {
   let meetingLink = appointment?.meetingLink;
   let meetingDetails = appointment?.meetingDetails || {};
   let needsUpdate = false;
+  const canonicalMeetingId = appointment?.id ? generateCanonicalMeetingId(appointment.id) : null;
   const shouldReplaceLink = (link) => {
     if (!link) return true;
     try {
       const parsed = new URL(link);
       const isVideoHost = parsed.hostname === 'video.mediqzy.com';
       const isLivekitPath = parsed.pathname.startsWith('/rooms') || parsed.pathname.startsWith('/room') || parsed.pathname.startsWith('/join');
+      if (meetingId && parsed.searchParams.get('room') && parsed.searchParams.get('room') !== meetingId) {
+        return true;
+      }
+      if (meetingId && parsed.searchParams.get('roomId') && parsed.searchParams.get('roomId') !== meetingId) {
+        return true;
+      }
+      if (meetingId && parsed.searchParams.get('meetingId') && parsed.searchParams.get('meetingId') !== meetingId) {
+        return true;
+      }
+      if (meetingId && parsed.pathname.includes('/rooms/') && !parsed.pathname.includes(`/rooms/${meetingId}`)) {
+        return true;
+      }
+      if (meetingId && parsed.pathname.includes('/room/') && !parsed.pathname.includes(`/room/${meetingId}`)) {
+        return true;
+      }
       return isVideoHost && isLivekitPath;
     } catch (error) {
       return false;
     }
   };
 
-  if (!meetingId) {
-    meetingId = `apt-${appointment?.id || Date.now()}`;
+  if (!meetingId && canonicalMeetingId) {
+    meetingId = canonicalMeetingId;
+    needsUpdate = true;
+  }
+
+  if (meetingId && canonicalMeetingId && meetingId.startsWith('apt-') && meetingId !== canonicalMeetingId) {
+    meetingId = canonicalMeetingId;
     needsUpdate = true;
   }
 
   if (!meetingLink || shouldReplaceLink(meetingLink)) {
-    const derivedAppointmentId =
-      appointment?.id || (meetingId?.startsWith('apt-') ? meetingId.replace('apt-', '') : null);
+    const deriveAppointmentId = (id) => {
+      if (!id || !id.startsWith('apt-')) return null;
+      const parts = id.split('-');
+      return parts.length >= 2 ? parts[1] : null;
+    };
+    const derivedAppointmentId = appointment?.id || deriveAppointmentId(meetingId);
     meetingLink = buildMeetingLink('livekit', meetingId, derivedAppointmentId);
     needsUpdate = true;
   }

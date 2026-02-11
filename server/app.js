@@ -94,6 +94,7 @@ import paymentRouter from './routes/payment.route.js';
 import orderRouter from './routes/order.route.js';
 import videoEventsRouter from './routes/video-events.route.js';
 import otpRouter from './routes/otp.route.js';
+import otpTestRouter from './routes/otp.test.route.js';
 import enhancedLabRouter from './routes/lab.route.enhanced.js';
 import corporateRouter from './routes/corporate.route.js';
 import aggregatorRouter from './routes/aggregator.route.js';
@@ -1030,6 +1031,7 @@ app.use('/api/health-camps', healthCampRouter); // Outdoor health camp managemen
 app.use('/api/email', emailRouter); // Production-ready email management system
 app.use('/api/orders', orderRouter); // Order processing & team task management
 app.use('/api/otp', otpRouter); // OTP generation, verification, and SMS delivery
+app.use('/api/otp', otpTestRouter); // OTP testing - Direct Twilio WhatsApp delivery
 app.use('/api/queues', queueRouter); // BullMQ queue management and monitoring
 app.use('/api/video-events', videoEventsRouter); // Video streaming events for Kafka
 

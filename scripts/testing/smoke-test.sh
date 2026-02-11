@@ -15,7 +15,7 @@ source "$SCRIPT_DIR/load-testing-env.sh" || true
 
 BASE_URL="${BASE_URL:-http://localhost:8888}"
 ALERT_EMAIL="${ALERT_EMAIL:-admin@mediczy.com}"
-LOG_DIR="/var/log/mediczy"
+LOG_DIR="${LOG_DIR:-/var/log/mediczy}"
 TIMESTAMP=$(date +%Y%m%d_%H%M%S)
 LOG_FILE="$LOG_DIR/smoke-test-$TIMESTAMP.log"
 SLACK_WEBHOOK="${SLACK_WEBHOOK:-}"

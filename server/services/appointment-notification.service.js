@@ -110,8 +110,9 @@ class AppointmentNotificationService {
    * Send 15-minute warning notification
    */
   async send15MinuteWarning(appointment) {
-    const roomId = appointment.metadata?.meeting?.roomId || `apt-${appointment.id}`;
-    const meetingLink = appointment.metadata?.meeting?.meetingLink;
+    const meetingInfo = appointment.metadata?.meeting || {};
+    const roomId = meetingInfo.roomId || appointment.meetingId || `apt-${appointment.id}`;
+    const meetingLink = meetingInfo.meetingLink || appointment.meetingLink;
 
     const patientData = {
       type: 'appointment_reminder',
@@ -151,8 +152,9 @@ class AppointmentNotificationService {
    * Send 5-minute warning notification
    */
   async send5MinuteWarning(appointment) {
-    const roomId = appointment.metadata?.meeting?.roomId || `apt-${appointment.id}`;
-    const meetingLink = appointment.metadata?.meeting?.meetingLink;
+    const meetingInfo = appointment.metadata?.meeting || {};
+    const roomId = meetingInfo.roomId || appointment.meetingId || `apt-${appointment.id}`;
+    const meetingLink = meetingInfo.meetingLink || appointment.meetingLink;
 
     const patientData = {
       type: 'appointment_reminder',
@@ -194,8 +196,9 @@ class AppointmentNotificationService {
    * Send urgent 1-minute notification
    */
   async sendUrgentCallNotification(appointment) {
-    const roomId = appointment.metadata?.meeting?.roomId || `apt-${appointment.id}`;
-    const meetingLink = appointment.metadata?.meeting?.meetingLink;
+    const meetingInfo = appointment.metadata?.meeting || {};
+    const roomId = meetingInfo.roomId || appointment.meetingId || `apt-${appointment.id}`;
+    const meetingLink = meetingInfo.meetingLink || appointment.meetingLink;
 
     const patientData = {
       type: 'incoming_call',
@@ -242,8 +245,9 @@ class AppointmentNotificationService {
    * Send call now notification (appointment time reached)
    */
   async sendCallNowNotification(appointment) {
-    const roomId = appointment.metadata?.meeting?.roomId || `apt-${appointment.id}`;
-    const meetingLink = appointment.metadata?.meeting?.meetingLink;
+    const meetingInfo = appointment.metadata?.meeting || {};
+    const roomId = meetingInfo.roomId || appointment.meetingId || `apt-${appointment.id}`;
+    const meetingLink = meetingInfo.meetingLink || appointment.meetingLink;
 
     const patientData = {
       type: 'incoming_call',
