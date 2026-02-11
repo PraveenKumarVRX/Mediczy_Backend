@@ -24,7 +24,9 @@ import {
 import { useToast } from "@/hooks/use-toast";
 import { HeartPulse, Eye, EyeOff, Chrome, Facebook, Calendar } from "lucide-react";
 import "../index.css";
-import { useRegister } from "@/hooks/auth";
+import { OTPInput } from "@/components/OTPInput";
+import api from "@/utils/api";
+import { setAuthData } from "@/hooks/auth";
 
 const formSchema = z.object({
   email: z.string().email("Must be a valid email"),
@@ -54,6 +56,16 @@ const Register = () => {
   const { toast } = useToast();
   const navigate = useNavigate();
   const [showPassword, setShowPassword] = useState(false);
+  const [otpStep, setOtpStep] = useState(false);
+  const [otpSending, setOtpSending] = useState(false);
+  const [emailOtp, setEmailOtp] = useState("");
+  const [whatsappOtp, setWhatsappOtp] = useState("");
+  const [emailVerified, setEmailVerified] = useState(false);
+  const [whatsappVerified, setWhatsappVerified] = useState(false);
+  const [verifyingEmail, setVerifyingEmail] = useState(false);
+  const [verifyingWhatsapp, setVerifyingWhatsapp] = useState(false);
+  const [registering, setRegistering] = useState(false);
+  const [signupData, setSignupData] = useState<z.infer<typeof formSchema> | null>(null);
 
   const form = useForm<z.infer<typeof formSchema>>({
     resolver: zodResolver(formSchema),
@@ -67,7 +79,6 @@ const Register = () => {
       gender: undefined,
     },
   });
-  const userRegister = useRegister();
 
   // Handle OAuth2 Signup
   const handleOAuthSignup = (provider: 'google' | 'facebook') => {
@@ -79,25 +90,139 @@ const Register = () => {
     window.location.href = `${baseUrl}/api/auth/${provider}`;
   };
 
-  const onSubmit = (values: z.infer<typeof formSchema>) => {
-    userRegister.mutate(values, {
-      onSuccess: () => {
-        toast({
-          title: "Success",
-          description: "Account created successfully. Redirecting to login...",
-        });
-        navigate("/");
-      },
-      onError: (error) => {
-        console.log(error);
+  const onSubmit = async (values: z.infer<typeof formSchema>) => {
+    setOtpSending(true);
+    try {
+      const payload = {
+        email: values.email,
+        phoneNumber: values.phoneNumber,
+        firstName: values.firstName
+      };
+      await api.post("/users/register/send-otp", payload, { skipAuth: true } as any);
+      setSignupData(values);
+      setOtpStep(true);
+      setEmailOtp("");
+      setWhatsappOtp("");
+      setEmailVerified(false);
+      setWhatsappVerified(false);
+      toast({
+        title: "OTP sent",
+        description: "Check your email and WhatsApp for the OTP codes.",
+      });
+    } catch (error: any) {
+      toast({
+        variant: "destructive",
+        title: "Error",
+        description: error?.response?.data?.message || "Failed to send OTP",
+      });
+    } finally {
+      setOtpSending(false);
+    }
+  };
 
-        toast({
-          variant: "destructive",
-          title: "Error",
-          description: (error as any).response.data.message,
-        });
-      },
-    });
+  const handleVerifyEmailOtp = async () => {
+    if (!signupData) return;
+    if (emailOtp.length !== 6) {
+      toast({
+        variant: "destructive",
+        title: "Invalid OTP",
+        description: "Email OTP must be 6 digits.",
+      });
+      return;
+    }
+    setVerifyingEmail(true);
+    try {
+      await api.post(
+        "/users/register/verify-email-otp",
+        {
+          email: signupData.email,
+          phoneNumber: signupData.phoneNumber,
+          code: emailOtp
+        },
+        { skipAuth: true } as any
+      );
+      setEmailVerified(true);
+      toast({ title: "Email verified", description: "Email OTP verified successfully." });
+    } catch (error: any) {
+      toast({
+        variant: "destructive",
+        title: "Verification failed",
+        description: error?.response?.data?.message || "Failed to verify email OTP",
+      });
+    } finally {
+      setVerifyingEmail(false);
+    }
+  };
+
+  const handleVerifyWhatsappOtp = async () => {
+    if (!signupData) return;
+    if (whatsappOtp.length !== 6) {
+      toast({
+        variant: "destructive",
+        title: "Invalid OTP",
+        description: "WhatsApp OTP must be 6 digits.",
+      });
+      return;
+    }
+    setVerifyingWhatsapp(true);
+    try {
+      await api.post(
+        "/users/register/verify-whatsapp-otp",
+        {
+          email: signupData.email,
+          phoneNumber: signupData.phoneNumber,
+          code: whatsappOtp
+        },
+        { skipAuth: true } as any
+      );
+      setWhatsappVerified(true);
+      toast({ title: "WhatsApp verified", description: "WhatsApp OTP verified successfully." });
+    } catch (error: any) {
+      toast({
+        variant: "destructive",
+        title: "Verification failed",
+        description: error?.response?.data?.message || "Failed to verify WhatsApp OTP",
+      });
+    } finally {
+      setVerifyingWhatsapp(false);
+    }
+  };
+
+  const handleCompleteRegistration = async () => {
+    if (!signupData) return;
+    if (!emailVerified || !whatsappVerified) {
+      toast({
+        variant: "destructive",
+        title: "Verification required",
+        description: "Please verify both email and WhatsApp OTPs.",
+      });
+      return;
+    }
+    setRegistering(true);
+    try {
+      const { data } = await api.post(
+        "/users/register/verify-otp",
+        signupData,
+        { skipAuth: true } as any
+      );
+      if (data?.token) {
+        const userId = data.user?.id || data.user?.user_id;
+        setAuthData(data.token, "user", userId);
+      }
+      toast({
+        title: "Success",
+        description: "Account created successfully. Redirecting to login...",
+      });
+      navigate("/");
+    } catch (error: any) {
+      toast({
+        variant: "destructive",
+        title: "Error",
+        description: error?.response?.data?.message || "Failed to complete registration",
+      });
+    } finally {
+      setRegistering(false);
+    }
   };
 
   return (
@@ -175,7 +300,7 @@ const Register = () => {
                   <FormItem>
                     <FormLabel>First Name</FormLabel>
                     <FormControl>
-                      <Input placeholder="John" {...field} autoFocus />
+                      <Input placeholder="John" {...field} autoFocus disabled={otpStep} />
                     </FormControl>
                     <FormMessage />
                   </FormItem>
@@ -188,7 +313,7 @@ const Register = () => {
                   <FormItem>
                     <FormLabel>Last Name</FormLabel>
                     <FormControl>
-                      <Input placeholder="Doe" {...field} />
+                      <Input placeholder="Doe" {...field} disabled={otpStep} />
                     </FormControl>
                     <FormMessage />
                   </FormItem>
@@ -205,6 +330,7 @@ const Register = () => {
                         type="email"
                         placeholder="name@example.com"
                         {...field}
+                        disabled={otpStep}
                       />
                     </FormControl>
                     <FormMessage />
@@ -223,6 +349,7 @@ const Register = () => {
                           type={showPassword ? "text" : "password"}
                           placeholder="••••••••"
                           {...field}
+                          disabled={otpStep}
                         />
                       </FormControl>
                       <button
@@ -248,7 +375,7 @@ const Register = () => {
                   <FormItem>
                     <FormLabel>Phone Number</FormLabel>
                     <FormControl>
-                      <Input placeholder="+1234567890" {...field} />
+                      <Input placeholder="+1234567890" {...field} disabled={otpStep} />
                     </FormControl>
                     <FormMessage />
                   </FormItem>
@@ -267,6 +394,7 @@ const Register = () => {
                           {...field}
                           className="pr-10"
                           placeholder="DD/MM/YYYY"
+                          disabled={otpStep}
                         />
                         <Calendar className="absolute right-3 top-1/2 transform -translate-y-1/2 h-4 w-4 text-muted-foreground pointer-events-none" />
                       </div>
@@ -284,6 +412,7 @@ const Register = () => {
                     <Select
                       onValueChange={field.onChange}
                       defaultValue={field.value}
+                      disabled={otpStep}
                     >
                       <FormControl>
                         <SelectTrigger>
@@ -303,9 +432,9 @@ const Register = () => {
               <Button
                 type="submit"
                 className="w-full"
-                disabled={userRegister.isPending}
+                disabled={otpSending || otpStep}
               >
-                {userRegister.isPending ? (
+                {otpSending ? (
                   <div className="flex items-center gap-2">
                     <svg
                       className="animate-spin h-4 w-4 text-white"
@@ -327,12 +456,50 @@ const Register = () => {
                         d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"
                       ></path>
                     </svg>
-                    Creating account...
+                    Sending OTP...
                   </div>
                 ) : (
-                  "Create account"
+                  "Send OTP"
                 )}
               </Button>
+              {otpStep && (
+                <div className="space-y-4 rounded-lg border p-4">
+                  <div className="space-y-2">
+                    <FormLabel>Email OTP</FormLabel>
+                    <OTPInput value={emailOtp} onChange={setEmailOtp} length={6} />
+                    <Button
+                      type="button"
+                      className="w-full"
+                      variant={emailVerified ? "secondary" : "default"}
+                      onClick={handleVerifyEmailOtp}
+                      disabled={verifyingEmail || emailVerified}
+                    >
+                      {emailVerified ? "Email Verified" : verifyingEmail ? "Verifying..." : "Verify Email OTP"}
+                    </Button>
+                  </div>
+                  <div className="space-y-2">
+                    <FormLabel>WhatsApp OTP</FormLabel>
+                    <OTPInput value={whatsappOtp} onChange={setWhatsappOtp} length={6} />
+                    <Button
+                      type="button"
+                      className="w-full"
+                      variant={whatsappVerified ? "secondary" : "default"}
+                      onClick={handleVerifyWhatsappOtp}
+                      disabled={verifyingWhatsapp || whatsappVerified}
+                    >
+                      {whatsappVerified ? "WhatsApp Verified" : verifyingWhatsapp ? "Verifying..." : "Verify WhatsApp OTP"}
+                    </Button>
+                  </div>
+                  <Button
+                    type="button"
+                    className="w-full"
+                    onClick={handleCompleteRegistration}
+                    disabled={!emailVerified || !whatsappVerified || registering}
+                  >
+                    {registering ? "Creating account..." : "Complete Registration"}
+                  </Button>
+                </div>
+              )}
             </form>
           </Form>
 

@@ -43,7 +43,7 @@ export const clearAuthTokens = () => {
   keysToClear.forEach((key) => localStorage.removeItem(key));
 };
 
-const setAuthData = (
+export const setAuthData = (
   token: string,
   userType:
     | "user"

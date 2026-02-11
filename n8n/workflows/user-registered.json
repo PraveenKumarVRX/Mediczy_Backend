@@ -1,0 +1,119 @@
+{
+  "name": "Mediczy - User Registered",
+  "nodes": [
+    {
+      "parameters": {
+        "path": "user-registered",
+        "method": "POST",
+        "responseMode": "onReceived",
+        "responseData": "allEntries"
+      },
+      "id": "user-registered-webhook",
+      "name": "User Registered Webhook",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 1,
+      "position": [240, 200],
+      "notes": "Trigger: POST /webhook/user-registered"
+    },
+    {
+      "parameters": {
+        "values": {
+          "string": [
+            {
+              "name": "toEmail",
+              "value": "={{$json[\"email\"]}}"
+            },
+            {
+              "name": "toPhone",
+              "value": "={{$json[\"phone\"]}}"
+            },
+            {
+              "name": "emailSubject",
+              "value": "Welcome to Mediczy"
+            },
+            {
+              "name": "emailBody",
+              "value": "Hi {{$json[\"name\"] || 'there'}}, your account is ready."
+            },
+            {
+              "name": "whatsappBody",
+              "value": "Welcome to Mediczy, {{$json[\"name\"] || 'there'}}. Your account is ready."
+            }
+          ]
+        }
+      },
+      "id": "prepare-message",
+      "name": "Prepare Message",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 2,
+      "position": [520, 200]
+    },
+    {
+      "parameters": {
+        "url": "={{$env.MEDICZY_BASE_URL}}/api/communication/email/send",
+        "method": "POST",
+        "sendBody": true,
+        "jsonParameters": true,
+        "options": {
+          "timeout": 10000
+        },
+        "bodyParametersJson": "={\n  \"to\": $json[\"toEmail\"],\n  \"subject\": $json[\"emailSubject\"],\n  \"html\": $json[\"emailBody\"]\n}",
+        "headerParametersJson": "={\n  \"Authorization\": \"Bearer {{$env.MEDICZY_INTERNAL_TOKEN}}\"\n}"
+      },
+      "id": "send-email",
+      "name": "Send Email (Backend)",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4,
+      "position": [800, 120],
+      "notes": "Requires MEDICZY_BASE_URL and MEDICZY_INTERNAL_TOKEN in n8n env"
+    },
+    {
+      "parameters": {
+        "resource": "message",
+        "operation": "send",
+        "from": "={{$env.TWILIO_WHATSAPP_NUMBER}}",
+        "to": "={{$json[\"toPhone\"]}}",
+        "message": "={{$json[\"whatsappBody\"]}}"
+      },
+      "id": "send-whatsapp",
+      "name": "Send WhatsApp (Twilio)",
+      "type": "n8n-nodes-base.twilio",
+      "typeVersion": 1,
+      "position": [800, 280],
+      "notes": "Requires Twilio credentials in n8n"
+    }
+  ],
+  "connections": {
+    "User Registered Webhook": {
+      "main": [
+        [
+          {
+            "node": "Prepare Message",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Prepare Message": {
+      "main": [
+        [
+          {
+            "node": "Send Email (Backend)",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Send WhatsApp (Twilio)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": false,
+  "settings": {
+    "executionOrder": "v1"
+  }
+}

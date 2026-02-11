@@ -17,6 +17,7 @@ import InsurancePolicy from '../../models/postgres/insurancePolicy.model.postgre
 import MedicalRecord from '../../models/postgres/medicalRecord.model.postgres.js';
 import EHRRecord from '../../models/postgres/ehrRecord.model.postgres.js';
 import VitalSign from '../../models/postgres/vitalSign.model.postgres.js';
+import n8nService from '../../services/n8n.service.js';
 
 const router = express.Router();
 const JWT_SECRET = JWT_CONFIG.SECRET;
@@ -1189,6 +1190,44 @@ router.post('/prescriptions', verifyHospitalToken, async (req, res) => {
         type: QueryTypes.INSERT
       }
     );
+
+    // Notify via n8n (best-effort)
+    try {
+      let patient;
+      let doctor;
+
+      if (patientId) {
+        [patient] = await sequelize.query(
+          'SELECT id, "firstName", "lastName", email, "phoneNumber" FROM users WHERE id = :id',
+          { replacements: { id: patientId }, type: QueryTypes.SELECT }
+        );
+      }
+
+      if (doctorId) {
+        [doctor] = await sequelize.query(
+          'SELECT id, "firstName", "lastName", email FROM users WHERE id = :id',
+          { replacements: { id: doctorId }, type: QueryTypes.SELECT }
+        );
+      }
+
+      await n8nService.prescriptionIssued({
+        id: prescription?.[0]?.id,
+        patientId: patientId,
+        patientName: patient
+          ? `${patient.firstName || ''} ${patient.lastName || ''}`.trim()
+          : undefined,
+        patientEmail: patient?.email,
+        patientPhone: patient?.phoneNumber,
+        doctorName: doctor
+          ? `${doctor.firstName || ''} ${doctor.lastName || ''}`.trim()
+          : undefined,
+        medications: medications,
+        instructions: notes,
+        pharmacyPreference: 'hospital-practice'
+      });
+    } catch (n8nError) {
+      console.error('Failed to trigger n8n prescription workflow:', n8nError);
+    }
 
     res.status(201).json({ success: true, message: 'Prescription created successfully', data: prescription[0] });
   } catch (error) {

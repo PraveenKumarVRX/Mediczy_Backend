@@ -1,4 +1,6 @@
 import pharmacyService from '../../services/api-v1/PharmacyService.js';
+import n8nService from '../../services/n8n.service.js';
+import { User, Doctor } from '../../models/index.js';
 import { asyncHandler } from '../../middleware/errorHandler.js';
 
 /**
@@ -6,6 +8,35 @@ import { asyncHandler } from '../../middleware/errorHandler.js';
  */
 export const createPrescription = asyncHandler(async (req, res) => {
   const prescription = await pharmacyService.createPrescription(req.tenantId, req.body);
+
+  // Notify via n8n (best-effort)
+  try {
+    const patient = req.body?.user_id
+      ? await User.findByPk(req.body.user_id)
+      : null;
+    const doctor = req.body?.doctor_id
+      ? await Doctor.findByPk(req.body.doctor_id)
+      : null;
+
+    await n8nService.prescriptionIssued({
+      id: prescription?.prescription_id || prescription?.id,
+      patientId: req.body?.user_id,
+      patientName: patient
+        ? `${patient.firstName || ''} ${patient.lastName || ''}`.trim()
+        : undefined,
+      patientEmail: patient?.email,
+      patientPhone: patient?.phoneNumber || patient?.phone,
+      doctorName: doctor
+        ? `${doctor.firstName || ''} ${doctor.lastName || ''}`.trim()
+        : undefined,
+      medications: prescription?.medications,
+      instructions: prescription?.instructions,
+      pharmacyPreference: 'api-v1'
+    });
+  } catch (n8nError) {
+    console.error('Failed to trigger n8n prescription workflow:', n8nError);
+  }
+
   res.status(201).json(prescription);
 });
 

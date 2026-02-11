@@ -14,6 +14,7 @@ import { EHRRecord, HealthDiary } from '../models/index.js';
 import { authUser, authDoctor } from '../middleware/auth.middleware.js';
 import { JWT_CONFIG } from '../config/auth.config.js';
 import AuditLog from '../models/auditLog.model.intelligent.js';
+import n8nService from '../services/n8n.service.js';
 
 const router = express.Router();
 const __filename = fileURLToPath(import.meta.url);
@@ -973,6 +974,30 @@ router.patch('/:id/status', authDoctor, async (req, res) => {
       }
     }
 
+    if (status === 'issued' && previousStatus !== 'issued') {
+      try {
+        const patient = prescription.patientId
+          ? await User.findByPk(prescription.patientId)
+          : null;
+
+        await n8nService.prescriptionIssued({
+          id: prescription.prescriptionId || prescription.prescriptionNumber || prescription.id,
+          patientId: prescription.patientId,
+          patientName: prescription.patientName,
+          patientEmail: patient?.email,
+          patientPhone: prescription.patientPhone,
+          doctorName: prescription.doctorName,
+          medications: prescription.medications?.length
+            ? prescription.medications
+            : prescription.medicines,
+          instructions: prescription.advice || prescription.adviceList,
+          pharmacyPreference: prescription.pharmacyPreference
+        });
+      } catch (n8nError) {
+        console.error('Failed to trigger n8n prescription workflow:', n8nError);
+      }
+    }
+
     res.json({
       success: true,
       message: 'Prescription status updated',
@@ -1035,6 +1060,28 @@ router.post('/:id/issue', authDoctor, async (req, res) => {
         console.error('EHR/Diary creation error:', ehrError.message);
         // Don't fail the request, just log the error
       }
+    }
+
+    try {
+      const patient = prescription.patientId
+        ? await User.findByPk(prescription.patientId)
+        : null;
+
+      await n8nService.prescriptionIssued({
+        id: prescription.prescriptionId || prescription.prescriptionNumber || prescription.id,
+        patientId: prescription.patientId,
+        patientName: prescription.patientName,
+        patientEmail: patient?.email,
+        patientPhone: prescription.patientPhone,
+        doctorName: prescription.doctorName,
+        medications: prescription.medications?.length
+          ? prescription.medications
+          : prescription.medicines,
+        instructions: prescription.advice || prescription.adviceList,
+        pharmacyPreference: prescription.pharmacyPreference
+      });
+    } catch (n8nError) {
+      console.error('Failed to trigger n8n prescription workflow:', n8nError);
     }
 
     res.json({

@@ -16,10 +16,14 @@ import doctorModel from "../models/doctor.model.intelligent.js";
 import passwordResetService from "../services/password-reset.service.js";
 import signupVerificationService from "../services/signup-verification.service.js";
 import n8nOTPService from "../services/n8n-otp.service.js";
+import twilioOTPService from "../services/twilio-otp.service.js";
+import n8nService from "../services/n8n.service.js";
 import Consent from "../models/consent.model.intelligent.js";
 import { auditLoginAttempt } from "../middleware/audit.middleware.js";
 import { authLimiter } from "../middleware/rateLimiter.middleware.js";
 import intelligentDb from "../utils/intelligentDbClient.js";
+import OTP from "../models/otp.model.intelligent.js";
+import { cache } from "../db/redis.js";
 import {
   buildProfileKeyPrefix,
   buildPublicFileUrl,
@@ -29,12 +33,21 @@ import {
 
 const router = express.Router();
 
+const SIGNUP_OTP_TTL_MINUTES = 10;
+const SIGNUP_VERIFY_TTL_SECONDS = 15 * 60;
+
+const normalizeEmail = (value) => String(value || "").trim().toLowerCase();
+const normalizePhone = (value) => String(value || "").replace(/[^0-9]/g, "");
+const buildSignupVerificationKey = (email, phoneNumber) => {
+  return `signup:verify:${normalizeEmail(email)}:${normalizePhone(phoneNumber)}`;
+};
+
 /**
  * @swagger
  * /api/users/register/send-otp:
  *   post:
  *     summary: Send OTP for user registration
- *     description: Send OTP to email and WhatsApp for verification before registration
+ *     description: Send separate OTPs to email and WhatsApp for verification before registration
  *     tags: [Users]
  */
 router.post(
@@ -73,19 +86,85 @@ router.post(
         });
       }
 
-      // Send OTP via Email and WhatsApp using verified working service
-      const result = await signupVerificationService.sendSignupOTP({
+      const includeOtp = process.env.NODE_ENV === 'development' || process.env.OTP_DEBUG_RESPONSE === 'true';
+      const verificationKey = buildSignupVerificationKey(email, phoneNumber);
+
+      try {
+        await cache.del(verificationKey);
+      } catch (cacheError) {
+        console.warn('⚠️  Signup verification cache reset skipped:', cacheError.message);
+      }
+
+      const emailOtp = await OTP.generate({
         email,
-        phoneNumber,
-        firstName: firstName || 'User'
+        purpose: 'signup_email_otp',
+        expiryMinutes: SIGNUP_OTP_TTL_MINUTES
       });
+
+      const whatsappOtp = await OTP.generate({
+        phone: phoneNumber,
+        purpose: 'signup_whatsapp_otp',
+        expiryMinutes: SIGNUP_OTP_TTL_MINUTES
+      });
+
+      const deliveryChannels = {
+        email: { sent: false, error: null },
+        whatsapp: { sent: false, error: null }
+      };
+
+      try {
+        await signupVerificationService.sendOTPViaEmail({
+          email,
+          firstName: firstName || 'User'
+        }, emailOtp.code);
+        deliveryChannels.email.sent = true;
+      } catch (emailError) {
+        deliveryChannels.email.error = emailError.message;
+      }
+
+      try {
+        const whatsappResult = await twilioOTPService.sendWhatsAppOTP({
+          phone: phoneNumber,
+          otp: whatsappOtp.code,
+          name: firstName || 'User',
+          purpose: 'signup'
+        });
+        if (whatsappResult.success) {
+          deliveryChannels.whatsapp.sent = true;
+        } else {
+          deliveryChannels.whatsapp.error = whatsappResult.error || whatsappResult.message;
+        }
+      } catch (whatsappError) {
+        deliveryChannels.whatsapp.error = whatsappError.message;
+      }
+
+      if (!deliveryChannels.email.sent || !deliveryChannels.whatsapp.sent) {
+        return res.status(502).json({
+          success: false,
+          message: 'Failed to deliver OTP to all channels',
+          data: { deliveryChannels }
+        });
+      }
+
+      const responseData = {
+        emailOtpId: emailOtp.id,
+        whatsappOtpId: whatsappOtp.id,
+        expiresAt: emailOtp.expiresAt,
+        expiresIn: `${SIGNUP_OTP_TTL_MINUTES} minutes`,
+        deliveryChannels
+      };
+
+      if (includeOtp) {
+        responseData.emailOtp = emailOtp.code;
+        responseData.whatsappOtp = whatsappOtp.code;
+      }
 
       console.log('📧 Registration OTP sent via Email + WhatsApp:', { email, phoneNumber });
 
       return res.status(200).json({
         success: true,
         message: 'OTP sent successfully to your email and WhatsApp',
-        data: result.data
+        data: responseData
       });
     } catch (error) {
       console.error('Send registration OTP error:', error);
@@ -100,10 +179,140 @@ router.post(
 
 /**
  * @swagger
+ * /api/users/register/verify-email-otp:
+ *   post:
+ *     summary: Verify email OTP for registration
+ *     description: Verify email OTP before completing registration
+ *     tags: [Users]
+ */
+router.post(
+  "/register/verify-email-otp",
+  [
+    body("email").isEmail().withMessage("Must be a valid email"),
+    body("phoneNumber").isMobilePhone().withMessage("Must be a valid mobile phone number"),
+    body("code").isLength({ min: 6, max: 6 }).withMessage("OTP must be 6 digits")
+  ],
+  async (req, res) => {
+    const errors = validationResult(req);
+    if (!errors.isEmpty()) {
+      return res.status(400).json({ errors: errors.array() });
+    }
+
+    const { email, phoneNumber, code } = req.body;
+
+    try {
+      const verifyResult = await OTP.verify({
+        email,
+        code,
+        purpose: 'signup_email_otp'
+      });
+
+      if (!verifyResult.success) {
+        return res.status(400).json({
+          success: false,
+          message: verifyResult.message || 'Invalid or expired OTP'
+        });
+      }
+
+      const verificationKey = buildSignupVerificationKey(email, phoneNumber);
+      const currentState = (await cache.get(verificationKey)) || { emailVerified: false, phoneVerified: false };
+
+      await cache.set(verificationKey, {
+        ...currentState,
+        emailVerified: true,
+        verifiedAt: new Date().toISOString()
+      }, SIGNUP_VERIFY_TTL_SECONDS);
+
+      return res.status(200).json({
+        success: true,
+        message: 'Email OTP verified',
+        data: {
+          emailVerified: true,
+          phoneVerified: currentState.phoneVerified || false
+        }
+      });
+    } catch (error) {
+      console.error('Verify email OTP error:', error);
+      return res.status(500).json({
+        success: false,
+        message: 'Failed to verify OTP',
+        error: process.env.NODE_ENV === 'development' ? error.message : undefined
+      });
+    }
+  }
+);
+
+/**
+ * @swagger
+ * /api/users/register/verify-whatsapp-otp:
+ *   post:
+ *     summary: Verify WhatsApp OTP for registration
+ *     description: Verify WhatsApp OTP before completing registration
+ *     tags: [Users]
+ */
+router.post(
+  "/register/verify-whatsapp-otp",
+  [
+    body("email").isEmail().withMessage("Must be a valid email"),
+    body("phoneNumber").isMobilePhone().withMessage("Must be a valid mobile phone number"),
+    body("code").isLength({ min: 6, max: 6 }).withMessage("OTP must be 6 digits")
+  ],
+  async (req, res) => {
+    const errors = validationResult(req);
+    if (!errors.isEmpty()) {
+      return res.status(400).json({ errors: errors.array() });
+    }
+
+    const { email, phoneNumber, code } = req.body;
+
+    try {
+      const verifyResult = await OTP.verify({
+        phone: phoneNumber,
+        code,
+        purpose: 'signup_whatsapp_otp'
+      });
+
+      if (!verifyResult.success) {
+        return res.status(400).json({
+          success: false,
+          message: verifyResult.message || 'Invalid or expired OTP'
+        });
+      }
+
+      const verificationKey = buildSignupVerificationKey(email, phoneNumber);
+      const currentState = (await cache.get(verificationKey)) || { emailVerified: false, phoneVerified: false };
+
+      await cache.set(verificationKey, {
+        ...currentState,
+        phoneVerified: true,
+        verifiedAt: new Date().toISOString()
+      }, SIGNUP_VERIFY_TTL_SECONDS);
+
+      return res.status(200).json({
+        success: true,
+        message: 'WhatsApp OTP verified',
+        data: {
+          emailVerified: currentState.emailVerified || false,
+          phoneVerified: true
+        }
+      });
+    } catch (error) {
+      console.error('Verify WhatsApp OTP error:', error);
+      return res.status(500).json({
+        success: false,
+        message: 'Failed to verify OTP',
+        error: process.env.NODE_ENV === 'development' ? error.message : undefined
+      });
+    }
+  }
+);
+
+/**
+ * @swagger
  * /api/users/register/verify-otp:
  *   post:
- *     summary: Verify OTP and complete registration
- *     description: Complete user registration after OTP verification
+ *     summary: Complete registration after OTP verification
+ *     description: Finish registration after verifying both email and WhatsApp OTPs
  *     tags: [Users]
  */
 router.post(
@@ -111,7 +320,6 @@ router.post(
   [
     body("email").isEmail().withMessage("Must be a valid email"),
     body("phoneNumber").isMobilePhone().withMessage("Must be a valid mobile phone number"),
-    body("code").isLength({ min: 6, max: 6 }).withMessage("OTP must be 6 digits"),
     body("password").isLength({ min: 4 }).withMessage("Password must be at least 4 characters long"),
     body("firstName").isLength({ min: 3, max: 20 }).withMessage("First name must be between 3 to 20 characters"),
     body("lastName").isLength({ min: 3, max: 20 }).withMessage("Last name must be between 3 to 20 characters"),
@@ -124,20 +332,16 @@ router.post(
       return res.status(400).json({ errors: errors.array() });
     }
 
-    const { email, phoneNumber, code, password, firstName, lastName, dateOfBirth, gender } = req.body;
+    const { email, phoneNumber, password, firstName, lastName, dateOfBirth, gender } = req.body;
 
     try {
-      // Verify OTP using signup verification service
-      const verifyResult = await signupVerificationService.verifySignupOTP({
-        email,
-        phoneNumber,
-        code
-      });
+      const verificationKey = buildSignupVerificationKey(email, phoneNumber);
+      const verificationState = await cache.get(verificationKey);
 
-      if (!verifyResult.success) {
+      if (!verificationState?.emailVerified || !verificationState?.phoneVerified) {
         return res.status(400).json({
           success: false,
-          message: verifyResult.message || 'Invalid or expired OTP'
+          message: 'Email and WhatsApp OTP verification required'
         });
       }
 
@@ -166,6 +370,12 @@ router.post(
 
       console.log('✅ New user registered with OTP verification:', newUser.id);
 
+      try {
+        await cache.del(verificationKey);
+      } catch (cacheError) {
+        console.warn('⚠️  Signup verification cache cleanup skipped:', cacheError.message);
+      }
+
       // Generate JWT Token
       const token = generateAuthTokenForUser(newUser);
 
@@ -183,6 +393,19 @@ router.post(
 
       // Audit the successful login after registration
       await auditLoginAttempt(req, newUser.id, newUser.email, true);
+
+      // Trigger n8n workflow for user registration (best-effort)
+      try {
+        await n8nService.userRegistered({
+          id: newUser.id,
+          name: `${newUser.firstName} ${newUser.lastName}`.trim(),
+          email: newUser.email,
+          phone: newUser.phoneNumber,
+          userType: 'patient'
+        });
+      } catch (n8nError) {
+        console.error('Failed to trigger n8n user registration workflow:', n8nError);
+      }
 
       // Mirror patient profile into intelligent DB
       (async () => {
@@ -219,13 +442,13 @@ router.post(
           phoneVerified: true,
           role: newUser.role || 'user',
           corporateId: newUser.corporateId || null
-        },
+        }
       });
     } catch (error) {
-      console.error('Registration verification error:', error);
+      console.error('Verify registration OTP error:', error);
       return res.status(500).json({
         success: false,
-        message: 'Failed to complete registration',
+        message: 'Failed to verify OTP',
         error: process.env.NODE_ENV === 'development' ? error.message : undefined
       });
     }
@@ -429,9 +652,13 @@ router.post(
   "/login/send-otp",
   authLimiter,
   [
-    body("identifier")
-      .notEmpty()
-      .withMessage("Email or phone number is required"),
+    body().custom((_, { req }) => {
+      const rawIdentifier = req.body?.identifier ?? req.body?.email ?? req.body?.phoneNumber ?? req.body?.phone;
+      if (!rawIdentifier || !String(rawIdentifier).trim()) {
+        throw new Error("Email or phone number is required");
+      }
+      return true;
+    }),
   ],
   async (req, res) => {
     const errors = validationResult(req);
@@ -439,7 +666,9 @@ router.post(
       return res.status(400).json({ errors: errors.array() });
     }
 
-    const { identifier } = req.body;
+    const identifier = String(
+      req.body?.identifier ?? req.body?.email ?? req.body?.phoneNumber ?? req.body?.phone
+    ).trim();
     const includeOtp = process.env.NODE_ENV === 'development' || process.env.OTP_DEBUG_RESPONSE === 'true';
 
     try {
@@ -512,11 +741,40 @@ router.post(
       let actualDeliveryMethod = deliveryMethod;
       let deliverySuccess = false;
 
-      // Send OTP via n8n first, fallback to direct delivery
+      // Prefer direct delivery first, then fallback to n8n
       const useN8n = process.env.USE_N8N_OTP !== 'false';
-      let n8nSuccess = false;
+      let directError = null;
 
-      if (useN8n) {
+      if (deliveryMethod === 'email') {
+        try {
+          await signupVerificationService.sendOTPViaEmail({
+            email: user.email,
+            firstName: user.firstName || 'User'
+          }, otp.code);
+          console.log(`📧 Login OTP sent via Email (direct) to ${user.email}`);
+          actualDeliveryMethod = 'email';
+          deliverySuccess = true;
+        } catch (emailError) {
+          directError = emailError;
+          console.warn('⚠️  Direct email delivery failed, trying n8n:', emailError.message);
+        }
+      } else {
+        try {
+          await signupVerificationService.sendOTPViaWhatsApp({
+            phoneNumber: user.phoneNumber,
+            firstName: user.firstName || 'User',
+            email: user.email
+          }, otp.code);
+          console.log(`📱 ✅ Login OTP sent via WhatsApp to ${user.phoneNumber}`);
+          actualDeliveryMethod = 'whatsapp';
+          deliverySuccess = true;
+        } catch (whatsappError) {
+          directError = whatsappError;
+          console.warn(`⚠️  WhatsApp delivery error (${whatsappError.code}): ${whatsappError.message}`);
+        }
+      }
+
+      if (!deliverySuccess && useN8n) {
         try {
           console.log('📤 Attempting login OTP delivery via n8n...');
           const n8nResult = deliveryMethod === 'email'
@@ -536,52 +794,19 @@ router.post(
               });
 
           if (n8nResult.success) {
-            n8nSuccess = true;
             deliverySuccess = true;
             actualDeliveryMethod = `${deliveryMethod}_via_n8n`;
             console.log(`✅ Login OTP sent via n8n (${deliveryMethod})`);
           } else {
-            console.warn('⚠️  n8n delivery failed, using fallback');
+            console.warn('⚠️  n8n delivery failed');
           }
         } catch (n8nError) {
-          console.warn('⚠️  n8n error, using fallback:', n8nError.message);
+          console.warn('⚠️  n8n error:', n8nError.message);
         }
       }
 
-      // Fallback to direct delivery if n8n failed
-      if (!n8nSuccess) {
-        if (deliveryMethod === 'email') {
-          await signupVerificationService.sendOTPViaEmail({
-            email: user.email,
-            firstName: user.firstName || 'User'
-          }, otp.code);
-          console.log(`📧 Login OTP sent via Email (direct) to ${user.email}`);
-          actualDeliveryMethod = 'email';
-          deliverySuccess = true;
-        } else {
-          // Try WhatsApp first (may fall back to Email inside the function)
-          try {
-            await signupVerificationService.sendOTPViaWhatsApp({
-              phoneNumber: user.phoneNumber,
-              firstName: user.firstName || 'User',
-              email: user.email
-            }, otp.code);
-            console.log(`📱 ✅ Login OTP sent via WhatsApp to ${user.phoneNumber}`);
-            actualDeliveryMethod = 'whatsapp';
-            deliverySuccess = true;
-          } catch (whatsappError) {
-            // If WhatsApp fails, try Email as final fallback
-            console.warn(`⚠️  WhatsApp delivery error (${whatsappError.code}): ${whatsappError.message}`);
-            console.log(`   Falling back to Email for ${user.phoneNumber}...`);
-            await signupVerificationService.sendOTPViaEmail({
-              email: user.email,
-              firstName: user.firstName || 'User'
-            }, otp.code);
-            console.log(`📧 Login OTP sent via Email (final fallback) to ${user.email}`);
-            actualDeliveryMethod = 'email';
-            deliverySuccess = true;
-          }
-        }
+      if (!deliverySuccess) {
+        throw directError || new Error('OTP delivery failed');
       }
 
       // Mask email/phone for response
@@ -629,9 +854,13 @@ router.post(
   "/login/verify-otp",
   authLimiter,
   [
-    body("identifier")
-      .notEmpty()
-      .withMessage("Email or phone number is required"),
+    body().custom((_, { req }) => {
+      const rawIdentifier = req.body?.identifier ?? req.body?.email ?? req.body?.phoneNumber ?? req.body?.phone;
+      if (!rawIdentifier || !String(rawIdentifier).trim()) {
+        throw new Error("Email or phone number is required");
+      }
+      return true;
+    }),
     body("code")
       .isLength({ min: 6, max: 6 })
       .withMessage("OTP must be 6 digits"),
@@ -642,7 +871,10 @@ router.post(
       return res.status(400).json({ errors: errors.array() });
     }
 
-    const { identifier, code } = req.body;
+    const identifier = String(
+      req.body?.identifier ?? req.body?.email ?? req.body?.phoneNumber ?? req.body?.phone
+    ).trim();
+    const { code } = req.body;
 
     try {
       // Determine if identifier is email or phone

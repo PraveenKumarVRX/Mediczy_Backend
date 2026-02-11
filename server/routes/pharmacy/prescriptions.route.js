@@ -4,6 +4,7 @@
 
 import express from 'express';
 import { db } from '../../db/index.js';
+import n8nService from '../../services/n8n.service.js';
 
 const router = express.Router();
 
@@ -56,6 +57,42 @@ router.post('/', async (req, res) => {
         medicine.frequency,
         medicine.days
       ]);
+    }
+
+    // Notify via n8n (best-effort)
+    try {
+      let patient;
+      let doctor;
+
+      if (patientId) {
+        const patientResult = await db.query(
+          'SELECT name, phone, email FROM patients WHERE id = $1',
+          [patientId]
+        );
+        patient = patientResult.rows?.[0];
+      }
+
+      if (doctorId) {
+        const doctorResult = await db.query(
+          'SELECT name, phone, email FROM doctors WHERE id = $1',
+          [doctorId]
+        );
+        doctor = doctorResult.rows?.[0];
+      }
+
+      await n8nService.prescriptionIssued({
+        id: prescription.id,
+        patientId,
+        patientName: patient?.name,
+        patientEmail: patient?.email,
+        patientPhone: patient?.phone,
+        doctorName: doctor?.name,
+        medications: medicines,
+        instructions: notes,
+        pharmacyPreference: 'pharmacy'
+      });
+    } catch (n8nError) {
+      console.error('Failed to trigger n8n prescription workflow:', n8nError);
     }
 
     res.json({

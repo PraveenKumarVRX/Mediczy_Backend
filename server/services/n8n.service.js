@@ -154,6 +154,24 @@ class N8NService {
   }
 
   // ============================================
+  // USER WORKFLOWS
+  // ============================================
+
+  /**
+   * Trigger user registered workflow
+   */
+  async userRegistered(userData) {
+    return this.trigger('user-registered', {
+      userId: userData.id,
+      userType: userData.userType || 'patient',
+      name: userData.name,
+      email: userData.email,
+      phone: userData.phone,
+      timestamp: new Date().toISOString()
+    });
+  }
+
+  // ============================================
   // PAYMENT WORKFLOWS
   // ============================================
 
@@ -212,6 +230,24 @@ class N8NService {
       medications: prescriptionData.medications,
       instructions: prescriptionData.instructions,
       pharmacyPreference: prescriptionData.pharmacyPreference,
+      timestamp: new Date().toISOString()
+    });
+  }
+
+  /**
+   * Trigger health report ready workflow
+   */
+  async healthReportReady(reportData) {
+    return this.trigger('health-report-ready', {
+      reportId: reportData.reportId,
+      bookingId: reportData.bookingId,
+      patientId: reportData.patientId,
+      patientName: reportData.patientName,
+      patientEmail: reportData.patientEmail,
+      patientPhone: reportData.patientPhone,
+      reportUrl: reportData.reportUrl,
+      tests: reportData.tests,
+      source: reportData.source || 'labs',
       timestamp: new Date().toISOString()
     });
   }

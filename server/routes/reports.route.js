@@ -13,6 +13,7 @@ import { fileURLToPath } from 'url';
 import { Report } from '../models/index.js';
 import { validationResult } from 'express-validator';
 import { body } from 'express-validator';
+import n8nService from '../services/n8n.service.js';
 
 const router = express.Router();
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
@@ -130,6 +131,26 @@ router.post('/', authUser, upload.single('file'), async (req, res) => {
       size: req.file.size,
       type: reportType
     });
+
+    // Notify via n8n (best-effort)
+    try {
+      await n8nService.healthReportReady({
+        reportId: savedReport.id,
+        patientId: userId,
+        patientName: req.user?.name || `${req.user?.firstName || ''} ${req.user?.lastName || ''}`.trim(),
+        patientEmail: req.user?.email,
+        patientPhone: req.user?.phoneNumber || req.user?.phone,
+        reportUrl: savedReport.fileUrl,
+        tests: {
+          reportType,
+          testName,
+          labName
+        },
+        source: 'reports'
+      });
+    } catch (n8nError) {
+      console.error('Failed to trigger n8n report workflow:', n8nError);
+    }
 
     return res.status(201).json({
       success: true,

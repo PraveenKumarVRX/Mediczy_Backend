@@ -1,4 +1,6 @@
 import labsService from '../../services/api-v1/LabsService.js';
+import n8nService from '../../services/n8n.service.js';
+import { User } from '../../models/index.js';
 import { asyncHandler } from '../../middleware/errorHandler.js';
 
 /**
@@ -52,6 +54,33 @@ export const uploadReport = asyncHandler(async (req, res) => {
   const { reportUrl } = req.body;
   
   const booking = await labsService.uploadReport(req.tenantId, bookingId, reportUrl);
+
+  // Notify via n8n (best-effort)
+  try {
+    let patientEmail;
+    let patientPhone;
+
+    if (booking?.user_id) {
+      const patient = await User.findByPk(booking.user_id);
+      patientEmail = patient?.email;
+      patientPhone = patient?.phoneNumber || patient?.phone;
+    }
+
+    await n8nService.healthReportReady({
+      reportId: booking?.report_id || null,
+      bookingId: booking?.booking_id || bookingId,
+      patientId: booking?.user_id,
+      patientName: booking?.patient_name,
+      patientEmail,
+      patientPhone,
+      reportUrl: booking?.report_url || reportUrl,
+      tests: booking?.tests,
+      source: 'labs-v1'
+    });
+  } catch (n8nError) {
+    console.error('Failed to trigger n8n health report workflow:', n8nError);
+  }
+
   res.json(booking);
 });
 

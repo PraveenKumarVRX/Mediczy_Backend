@@ -1,0 +1,125 @@
+{
+  "name": "Mediczy - Health Report Ready",
+  "nodes": [
+    {
+      "parameters": {
+        "path": "health-report-ready",
+        "method": "POST",
+        "responseMode": "onReceived",
+        "responseData": "allEntries"
+      },
+      "id": "health-report-webhook",
+      "name": "Health Report Webhook",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 1,
+      "position": [240, 200],
+      "notes": "Trigger: POST /webhook/health-report-ready"
+    },
+    {
+      "parameters": {
+        "values": {
+          "string": [
+            {
+              "name": "toEmail",
+              "value": "={{$json[\"patientEmail\"]}}"
+            },
+            {
+              "name": "toPhone",
+              "value": "={{$json[\"patientPhone\"]}}"
+            },
+            {
+              "name": "patientName",
+              "value": "={{$json[\"patientName\"]}}"
+            },
+            {
+              "name": "reportUrl",
+              "value": "={{$json[\"reportUrl\"]}}"
+            },
+            {
+              "name": "emailSubject",
+              "value": "Your health report is ready"
+            },
+            {
+              "name": "emailBody",
+              "value": "Hi {{$json[\"patientName\"] || 'there'}}, your report is ready: {{$json[\"reportUrl\"]}}"
+            }
+          ]
+        }
+      },
+      "id": "prepare-message",
+      "name": "Prepare Message",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 2,
+      "position": [520, 200]
+    },
+    {
+      "parameters": {
+        "url": "={{$env.MEDICZY_BASE_URL}}/api/communication/email/send",
+        "method": "POST",
+        "sendBody": true,
+        "jsonParameters": true,
+        "options": {
+          "timeout": 10000
+        },
+        "bodyParametersJson": "={\n  \"to\": $json[\"toEmail\"],\n  \"subject\": $json[\"emailSubject\"],\n  \"html\": $json[\"emailBody\"]\n}",
+        "headerParametersJson": "={\n  \"Authorization\": \"Bearer {{$env.MEDICZY_INTERNAL_TOKEN}}\"\n}"
+      },
+      "id": "send-email",
+      "name": "Send Email (Backend)",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4,
+      "position": [800, 120],
+      "notes": "Requires MEDICZY_BASE_URL and MEDICZY_INTERNAL_TOKEN in n8n env"
+    },
+    {
+      "parameters": {
+        "url": "={{$env.MEDICZY_BASE_URL}}/api/whatsapp-production/send/health-report",
+        "method": "POST",
+        "sendBody": true,
+        "jsonParameters": true,
+        "options": {
+          "timeout": 10000
+        },
+        "bodyParametersJson": "={\n  \"to\": $json[\"toPhone\"],\n  \"patientName\": $json[\"patientName\"]\n}"
+      },
+      "id": "send-whatsapp",
+      "name": "Send WhatsApp (Backend)",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4,
+      "position": [800, 280]
+    }
+  ],
+  "connections": {
+    "Health Report Webhook": {
+      "main": [
+        [
+          {
+            "node": "Prepare Message",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Prepare Message": {
+      "main": [
+        [
+          {
+            "node": "Send Email (Backend)",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Send WhatsApp (Backend)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": false,
+  "settings": {
+    "executionOrder": "v1"
+  }
+}
