@@ -392,6 +392,7 @@ const PUBLIC_ENDPOINTS = [
   '/api/nurse/login',
   '/api/assistant/login',
   '/api/corporate/login',
+  '/api/password-reset', // Password reset OTP endpoints (public)
   '/api/corporate/auth/login',
   '/api/hospital/login',
   '/api/hospital/auth/login',
