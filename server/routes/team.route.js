@@ -107,7 +107,7 @@ router.post('/login', authLimiter, [
     // Fetch assigned corporates for team member
     let assignedCorporates = [];
     try {
-      const [corporates] = await postgresSequelize.query(`
+      const corporates = await postgresSequelize.query(`
         SELECT DISTINCT c.id, c."companyName", c.industry, c.status
         FROM corporates c
         JOIN user_associations ua ON ua."entityId" = c.id
@@ -119,9 +119,11 @@ router.post('/login', authLimiter, [
         replacements: { userId: user.id },
         type: postgresSequelize.QueryTypes.SELECT
       });
-      assignedCorporates = corporates || [];
+      // Query returns array directly with SELECT
+      assignedCorporates = Array.isArray(corporates) ? corporates : [];
     } catch (err) {
       console.warn('Could not fetch assigned corporates:', err.message);
+      assignedCorporates = [];
     }
 
     // Generate JWT token
@@ -134,7 +136,7 @@ router.post('/login', authLimiter, [
         userType: 'team',
         isTeam: true,
         isAdmin: user.isAdmin || false,
-        assignedCorporates: assignedCorporates.map(c => c.id) // Include corporate IDs in token
+        assignedCorporates: Array.isArray(assignedCorporates) ? assignedCorporates.map(c => c.id) : [] // Include corporate IDs in token
       },
       JWT_CONFIG.SECRET,
       { expiresIn: '8h' }
