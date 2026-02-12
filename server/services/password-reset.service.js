@@ -479,6 +479,21 @@ class PasswordResetService {
    */
   async resetPassword({ resetToken, newPassword, userType = 'user' }) {
     try {
+      // Validate inputs
+      if (!resetToken || typeof resetToken !== 'string') {
+        return {
+          success: false,
+          message: 'Invalid reset token provided'
+        };
+      }
+
+      if (!newPassword || typeof newPassword !== 'string' || newPassword.length < 6) {
+        return {
+          success: false,
+          message: 'Invalid password provided'
+        };
+      }
+
       // Hash the token
       const resetTokenHash = crypto.createHash('sha256').update(resetToken).digest('hex');
 
