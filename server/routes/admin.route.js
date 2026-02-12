@@ -339,6 +339,78 @@ router.get('/corporates', authUser, requireRole(['admin', 'team']), async (req, 
       console.log(`[Corporates] Admin user ${req.user.email} - Found ${corporates.length} total corporates`);
     }
     
+    // Fetch plans for all corporates
+    const corporateIds = corporates.map(c => c.id).filter(Boolean);
+    let plansMap = {};
+    
+    if (corporateIds.length > 0) {
+      const [plans] = await postgresSequelize.query(`
+        SELECT 
+          cps.id as sponsorship_id,
+          cps.corporate_id,
+          cps.plan_id,
+          cps.clinic_id,
+          cps.doctor_id,
+          cps.start_date,
+          cps.end_date,
+          cps.is_active,
+          cps.sponsorship_type,
+          cps.corporate_share,
+          cps.employee_share
+        FROM corporate_plan_sponsorships cps
+        WHERE cps.corporate_id = ANY(:corporateIds)
+        ORDER BY cps.start_date DESC
+      `, {
+        replacements: { corporateIds },
+        type: postgresSequelize.QueryTypes.SELECT
+      });
+      
+      // Fetch network partners for each sponsorship
+      const sponsorshipIds = (plans || []).map(p => p.sponsorship_id).filter(Boolean);
+      let partnersMap = {};
+      
+      if (sponsorshipIds.length > 0) {
+        const [partners] = await postgresSequelize.query(`
+          SELECT sponsorship_id, partner_tenant_id, status
+          FROM tenant_partners
+          WHERE sponsorship_id = ANY(:sponsorshipIds)
+        `, {
+          replacements: { sponsorshipIds },
+          type: postgresSequelize.QueryTypes.SELECT
+        });
+        
+        // Group partners by sponsorship_id
+        (partners || []).forEach(p => {
+          if (!partnersMap[p.sponsorship_id]) {
+            partnersMap[p.sponsorship_id] = { hospitals: [], labs: [] };
+          }
+          // We'll need to determine if it's a hospital or lab - for now add to hospitals
+          // In production, you'd query the partner type or join with tenants table
+          partnersMap[p.sponsorship_id].hospitals.push(p.partner_tenant_id);
+        });
+      }
+      
+      // Group plans by corporate_id
+      (plans || []).forEach(plan => {
+        if (!plansMap[plan.corporate_id]) {
+          plansMap[plan.corporate_id] = [];
+        }
+        plansMap[plan.corporate_id].push({
+          sponsorshipId: plan.sponsorship_id,
+          planId: plan.plan_id,
+          clinicId: plan.clinic_id,
+          doctorId: plan.doctor_id,
+          startDate: plan.start_date,
+          endDate: plan.end_date,
+          isActive: plan.is_active,
+          sponsorshipType: plan.sponsorship_type,
+          corporateShare: plan.corporate_share,
+          employeeShare: plan.employee_share,
+          networkPartners: partnersMap[plan.sponsorship_id] || { hospitals: [], labs: [] }
+        });
+      });
+    }
+    
     // Map to expected format
     const formattedCorporates = corporates.map(c => {
       let metadata = {};
@@ -364,10 +436,7 @@ router.get('/corporates', authUser, requireRole(['admin', 'team']), async (req, 
         createdAt: c.createdAt,
         // Onboarding details
         assignedTeamMemberId: c.assignedTo,
-        clinicId: metadata.clinicId,
-        doctorId: metadata.doctorId,
-        membershipPlanId: metadata.membershipPlanId,
-        networkPartners: metadata.networkPartners || { hospitals: [], labs: [] }
+        plans: plansMap[c.id] || [] // Array of plans with clinic, doctor, partners
       };
     });
     
@@ -749,16 +818,15 @@ router.delete('/assistants/:id', authUser, requireRole('admin'), async (req, res
   }
 });
 
-// Corporate admin stub create for login/config
 router.post('/corporates', authUser, requireRole(['admin', 'team']), async (req, res) => {
   try {
     const corporateData = req.body?.corporate || req.body;
     const { 
       companyName, contactPerson, email, phoneNumber, industry, employeeCount, 
       packageType, gstNumber, panNumber, status,
-      // New onboarding fields
-      assignedTeamMemberId, clinicId, doctorId, membershipPlanId, 
-      networkPartners // { hospitals: [ids], labs: [ids] }
+      // Onboarding fields
+      assignedTeamMemberId,
+      plans // Array of: { planId, clinicId, doctorId, startDate, endDate, networkPartners }
     } = corporateData;
     
     if (!companyName || !email) {
@@ -783,15 +851,14 @@ router.post('/corporates', authUser, requireRole(['admin', 'team']), async (req,
       });
     }
     
-    // Build metadata with onboarding details
+    // Build metadata
     const metadata = {
-      clinicId: clinicId || null,
-      doctorId: doctorId || null,
-      membershipPlanId: membershipPlanId || null,
-      networkPartners: networkPartners || { hospitals: [], labs: [] },
       onboardedAt: new Date().toISOString(),
       onboardedBy: req.user.email
     };
+    
+    // Parse assignedTeamMemberId
+    const parsedAssignedTeamMemberId = assignedTeamMemberId === null ? null : (parseInt(assignedTeamMemberId) || null);
     
     // Insert new corporate
     const [result] = await postgresSequelize.query(`
@@ -818,7 +885,7 @@ router.post('/corporates', authUser, requireRole(['admin', 'team']), async (req,
         gstNumber: gstNumber || null,
         panNumber: panNumber || null,
         status: status || 'Active',
-        assignedTo: assignedTeamMemberId || (req.user.isTeam ? req.user.id : null),
+        assignedTo: parsedAssignedTeamMemberId || (req.user.isTeam ? req.user.id : null),
         metadata: JSON.stringify(metadata)
       },
       type: postgresSequelize.QueryTypes.INSERT
@@ -827,13 +894,13 @@ router.post('/corporates', authUser, requireRole(['admin', 'team']), async (req,
     const newCorporate = result && result[0] ? result[0] : { id: Date.now() };
     
     // Create user association for assigned team member
-    if (assignedTeamMemberId && newCorporate.id) {
+    if (parsedAssignedTeamMemberId && newCorporate.id) {
       await postgresSequelize.query(`
         INSERT INTO user_associations ("userId", "entityType", "entityId", role, "isPrimary", status, "startDate", "createdAt", "updatedAt")
         VALUES (:userId, 'corporate', :corporateId, 'manager', true, 'active', NOW(), NOW(), NOW())
         ON CONFLICT DO NOTHING
       `, {
-        replacements: { userId: assignedTeamMemberId, corporateId: newCorporate.id }
+        replacements: { userId: parsedAssignedTeamMemberId, corporateId: newCorporate.id }
       });
     } else if (req.user.isTeam && !req.user.isAdmin && newCorporate.id) {
       // Fallback: assign to current user if team member
@@ -846,51 +913,98 @@ router.post('/corporates', authUser, requireRole(['admin', 'team']), async (req,
       });
     }
     
-    // Link membership plan if provided
-    if (membershipPlanId && newCorporate.id) {
-      await postgresSequelize.query(`
-        INSERT INTO corporate_plan_sponsorships 
-        ("corporateId", "planId", "sponsorshipType", "coveragePercentage", "startDate", "endDate", status, "createdAt", "updatedAt")
-        VALUES (:corporateId, :planId, 'full', 100, NOW(), NOW() + INTERVAL '1 year', 'active', NOW(), NOW())
-        ON CONFLICT DO NOTHING
-      `, {
-        replacements: { corporateId: newCorporate.id, planId: membershipPlanId }
-      });
-    }
-    
-    // Link network partners (hospitals and labs)
-    if (networkPartners && newCorporate.id) {
-      const { hospitals = [], labs = [] } = networkPartners;
-      
-      // Link hospitals
-      for (const hospitalId of hospitals) {
-        await postgresSequelize.query(`
-          INSERT INTO tenant_partners ("tenantId", "tenantType", "partnerId", "partnerType", status, "createdAt", "updatedAt")
-          VALUES (:tenantId, 'corporate', :partnerId, 'hospital', 'active', NOW(), NOW())
-          ON CONFLICT DO NOTHING
+    // Create multiple membership plans
+    const createdPlans = [];
+    if (plans && Array.isArray(plans) && plans.length > 0 && newCorporate.id) {
+      for (const plan of plans) {
+        const {
+          planId,
+          clinicId,
+          doctorId,
+          startDate,
+          endDate,
+          networkPartners
+        } = plan;
+        
+        // Parse and validate IDs
+        const parsedPlanId = planId ? parseInt(planId) : null;
+        const parsedClinicId = clinicId ? parseInt(clinicId) : null;
+        const parsedDoctorId = doctorId ? parseInt(doctorId) : null;
+        
+        if (!parsedPlanId) continue; // Skip if no plan ID
+        
+        // Insert into corporate_plan_sponsorships (using snake_case for actual DB)
+        const [sponsorshipResult] = await postgresSequelize.query(`
+          INSERT INTO corporate_plan_sponsorships 
+          (corporate_id, plan_id, clinic_id, doctor_id, sponsorship_type, corporate_share, employee_share, 
+           start_date, end_date, is_active, created_at, updated_at)
+          VALUES (:corporateId, :planId, :clinicId, :doctorId, 'full', 100, 0,
+                  :startDate, :endDate, true, NOW(), NOW())
+          RETURNING id
         `, {
-          replacements: { tenantId: newCorporate.id, partnerId: hospitalId }
+          replacements: {
+            corporateId: newCorporate.id,
+            planId: parsedPlanId,
+            clinicId: parsedClinicId,
+            doctorId: parsedDoctorId,
+            startDate: startDate || new Date().toISOString(),
+            endDate: endDate || new Date(Date.now() + 365 * 24 * 60 * 60 * 1000).toISOString()
+          },
+          type: postgresSequelize.QueryTypes.INSERT
         });
-      }
-      
-      // Link labs
-      for (const labId of labs) {
-        await postgresSequelize.query(`
-          INSERT INTO tenant_partners ("tenantId", "tenantType", "partnerId", "partnerType", status, "createdAt", "updatedAt")
-          VALUES (:tenantId, 'corporate', :partnerId, 'lab', 'active', NOW(), NOW())
-          ON CONFLICT DO NOTHING
-        `, {
-          replacements: { tenantId: newCorporate.id, partnerId: labId }
+        
+        const sponsorshipId = sponsorshipResult && sponsorshipResult[0] ? sponsorshipResult[0].id : null;
+        
+        // Link network partners to this specific sponsorship
+        if (sponsorshipId && networkPartners) {
+          const { hospitals = [], labs = [] } = networkPartners;
+          
+          // Link hospitals
+          for (const hospitalId of hospitals) {
+            await postgresSequelize.query(`
+              INSERT INTO tenant_partners (corporate_tenant_id, partner_tenant_id, sponsorship_id, status, "createdAt", "updatedAt")
+              VALUES (:corporateId, :partnerId, :sponsorshipId, 'active', NOW(), NOW())
+              ON CONFLICT DO NOTHING
+            `, {
+              replacements: { 
+                corporateId: newCorporate.id, 
+                partnerId: parseInt(hospitalId),
+                sponsorshipId
+              }
+            });
+          }
+          
+          // Link labs
+          for (const labId of labs) {
+            await postgresSequelize.query(`
+              INSERT INTO tenant_partners (corporate_tenant_id, partner_tenant_id, sponsorship_id, status, "createdAt", "updatedAt")
+              VALUES (:corporateId, :partnerId, :sponsorshipId, 'active', NOW(), NOW())
+              ON CONFLICT DO NOTHING
+            `, {
+              replacements: { 
+                corporateId: newCorporate.id, 
+                partnerId: parseInt(labId),
+                sponsorshipId
+              }
+            });
+          }
+        }
+        
+        createdPlans.push({
+          sponsorshipId,
+          planId: parsedPlanId,
+          clinicId: parsedClinicId,
+          doctorId: parsedDoctorId,
+          startDate,
+          endDate,
+          networkPartners
         });
       }
     }
     
     console.log(`[Corporates] Created corporate ${companyName} by ${req.user.email}`);
     console.log(`[Corporates] - Team Member: ${assignedTeamMemberId || req.user.id}`);
-    console.log(`[Corporates] - Clinic: ${clinicId || 'None'}`);
-    console.log(`[Corporates] - Doctor: ${doctorId || 'None'}`);
-    console.log(`[Corporates] - Plan: ${membershipPlanId || 'None'}`);
-    console.log(`[Corporates] - Network: ${(networkPartners?.hospitals?.length || 0)} hospitals, ${(networkPartners?.labs?.length || 0)} labs`);
+    console.log(`[Corporates] - Plans: ${createdPlans.length} plan(s) created`);
     
     return res.status(201).json({
       success: true,
@@ -902,10 +1016,7 @@ router.post('/corporates', authUser, requireRole(['admin', 'team']), async (req,
         email: newCorporate.email || email,
         status: newCorporate.status || 'Active',
         assignedTeamMemberId: assignedTeamMemberId || (req.user.isTeam ? req.user.id : null),
-        clinicId,
-        doctorId,
-        membershipPlanId,
-        networkPartners,
+        plans: createdPlans,
         isActive: true,
         createdAt: new Date().toISOString()
       },
@@ -932,10 +1043,11 @@ router.put('/corporates/:id', authUser, requireRole(['admin', 'team']), async (r
       companyName, contactPerson, email, phoneNumber, industry, employeeCount, 
       packageType, gstNumber, panNumber, status,
       // Onboarding fields
-      assignedTeamMemberId, clinicId, doctorId, membershipPlanId, networkPartners
+      assignedTeamMemberId,
+      plans // Array of: { sponsorshipId (optional), planId, clinicId, doctorId, startDate, endDate, networkPartners }
     } = corporateData;
     
-    // Verify corporate exists and get current metadata
+    // Verify corporate exists
     const [existing] = await postgresSequelize.query(`
       SELECT id, metadata, "assignedTo" FROM corporates WHERE id = :corporateId
     `, {
@@ -951,27 +1063,6 @@ router.put('/corporates/:id', authUser, requireRole(['admin', 'team']), async (r
         message: 'Corporate not found'
       });
     }
-    
-    // Parse existing metadata
-    let currentMetadata = {};
-    try {
-      currentMetadata = existingCorporate.metadata ? 
-        (typeof existingCorporate.metadata === 'string' ? JSON.parse(existingCorporate.metadata) : existingCorporate.metadata) 
-        : {};
-    } catch (e) {
-      currentMetadata = {};
-    }
-    
-    // Update metadata with new onboarding details
-    const updatedMetadata = {
-      ...currentMetadata,
-      clinicId: clinicId !== undefined ? clinicId : currentMetadata.clinicId,
-      doctorId: doctorId !== undefined ? doctorId : currentMetadata.doctorId,
-      membershipPlanId: membershipPlanId !== undefined ? membershipPlanId : currentMetadata.membershipPlanId,
-      networkPartners: networkPartners !== undefined ? networkPartners : (currentMetadata.networkPartners || { hospitals: [], labs: [] }),
-      lastUpdatedAt: new Date().toISOString(),
-      lastUpdatedBy: req.user.email
-    };
     
     // Build update query dynamically based on provided fields
     const updates = [];
@@ -1019,34 +1110,23 @@ router.put('/corporates/:id', authUser, requireRole(['admin', 'team']), async (r
     }
     if (assignedTeamMemberId !== undefined) {
       updates.push('"assignedTo" = :assignedTo');
-      replacements.assignedTo = assignedTeamMemberId;
+      replacements.assignedTo = assignedTeamMemberId === null ? null : (parseInt(assignedTeamMemberId) || null);
     }
     
-    // Always update metadata if any onboarding fields changed
-    if (clinicId !== undefined || doctorId !== undefined || membershipPlanId !== undefined || networkPartners !== undefined) {
-      updates.push('metadata = :metadata');
-      replacements.metadata = JSON.stringify(updatedMetadata);
-    }
-    
-    if (updates.length === 0) {
-      return res.status(400).json({
-        success: false,
-        message: 'No fields to update'
+    // Always add updatedAt if there are any updates
+    if (updates.length > 0) {
+      updates.push('"updatedAt" = NOW()');
+      
+      // Execute update
+      await postgresSequelize.query(`
+        UPDATE corporates 
+        SET ${updates.join(', ')}
+        WHERE id = :corporateId
+      `, {
+        replacements,
+        type: postgresSequelize.QueryTypes.UPDATE
       });
     }
-    
-    // Add updatedAt
-    updates.push('"updatedAt" = NOW()');
-    
-    // Execute update
-    await postgresSequelize.query(`
-      UPDATE corporates 
-      SET ${updates.join(', ')}
-      WHERE id = :corporateId
-    `, {
-      replacements,
-      type: postgresSequelize.QueryTypes.UPDATE
-    });
     
     // Update user association if team member changed
     if (assignedTeamMemberId !== undefined && assignedTeamMemberId !== existingCorporate.assignedTo) {
@@ -1059,78 +1139,164 @@ router.put('/corporates/:id', authUser, requireRole(['admin', 'team']), async (r
         replacements: { corporateId }
       });
       
-      // Create new association
-      if (assignedTeamMemberId) {
+      // Create new association (only if assignedTeamMemberId is not null)
+      const parsedTeamMemberId = assignedTeamMemberId === null ? null : (parseInt(assignedTeamMemberId) || null);
+      if (parsedTeamMemberId) {
         await postgresSequelize.query(`
           INSERT INTO user_associations ("userId", "entityType", "entityId", role, "isPrimary", status, "startDate", "createdAt", "updatedAt")
           VALUES (:userId, 'corporate', :corporateId, 'manager', true, 'active', NOW(), NOW(), NOW())
           ON CONFLICT DO NOTHING
         `, {
-          replacements: { userId: assignedTeamMemberId, corporateId }
+          replacements: { userId: parsedTeamMemberId, corporateId }
         });
       }
     }
     
-    // Update membership plan if changed
-    if (membershipPlanId !== undefined && membershipPlanId !== currentMetadata.membershipPlanId) {
-      // Deactivate old plan sponsorships
-      await postgresSequelize.query(`
-        UPDATE corporate_plan_sponsorships 
-        SET status = 'inactive', "updatedAt" = NOW()
-        WHERE "corporateId" = :corporateId
+    // Handle plans array (add/update/remove)
+    if (plans && Array.isArray(plans)) {
+      // Get existing plans for this corporate
+      const [existingPlans] = await postgresSequelize.query(`
+        SELECT id as sponsorship_id, plan_id, clinic_id, doctor_id, start_date, end_date
+        FROM corporate_plan_sponsorships
+        WHERE corporate_id = :corporateId
       `, {
-        replacements: { corporateId }
+        replacements: { corporateId },
+        type: postgresSequelize.QueryTypes.SELECT
       });
       
-      // Create new plan sponsorship
-      if (membershipPlanId) {
-        await postgresSequelize.query(`
-          INSERT INTO corporate_plan_sponsorships 
-          ("corporateId", "planId", "sponsorshipType", "coveragePercentage", "startDate", "endDate", status, "createdAt", "updatedAt")
-          VALUES (:corporateId, :planId, 'full', 100, NOW(), NOW() + INTERVAL '1 year', 'active', NOW(), NOW())
-          ON CONFLICT DO NOTHING
-        `, {
-          replacements: { corporateId, planId: membershipPlanId }
-        });
-      }
-    }
-    
-    // Update network partners if changed
-    if (networkPartners !== undefined) {
-      // Remove old partners
-      await postgresSequelize.query(`
-        DELETE FROM tenant_partners 
-        WHERE "tenantId" = :corporateId AND "tenantType" = 'corporate'
-      `, {
-        replacements: { corporateId }
+      const existingPlanMap = {};
+      (existingPlans || []).forEach(p => {
+        existingPlanMap[p.sponsorship_id] = p;
       });
       
-      const { hospitals = [], labs = [] } = networkPartners;
+      const updatedSponsorshipIds = [];
       
-      // Add new hospitals
-      for (const hospitalId of hospitals) {
-        await postgresSequelize.query(`
-          INSERT INTO tenant_partners ("tenantId", "tenantType", "partnerId", "partnerType", status, "createdAt", "updatedAt")
-          VALUES (:tenantId, 'corporate', :partnerId, 'hospital', 'active', NOW(), NOW())
-          ON CONFLICT DO NOTHING
-        `, {
-          replacements: { tenantId: corporateId, partnerId: hospitalId }
-        });
+      // Process each plan in the request
+      for (const plan of plans) {
+        const {
+          sponsorshipId,
+          planId,
+          clinicId,
+          doctorId,
+          startDate,
+          endDate,
+          networkPartners
+        } = plan;
+        
+        const parsedPlanId = planId ? parseInt(planId) : null;
+        const parsedClinicId = clinicId ? parseInt(clinicId) : null;
+        const parsedDoctorId = doctorId ? parseInt(doctorId) : null;
+        
+        if (!parsedPlanId) continue; // Skip if no plan ID
+        
+        if (sponsorshipId && existingPlanMap[sponsorshipId]) {
+          // Update existing plan
+          await postgresSequelize.query(`
+            UPDATE corporate_plan_sponsorships
+            SET plan_id = :planId,
+                clinic_id = :clinicId,
+                doctor_id = :doctorId,
+                start_date = :startDate,
+                end_date = :endDate,
+                updated_at = NOW()
+            WHERE id = :sponsorshipId AND corporate_id = :corporateId
+          `, {
+            replacements: {
+              sponsorshipId,
+              corporateId,
+              planId: parsedPlanId,
+              clinicId: parsedClinicId,
+              doctorId: parsedDoctorId,
+              startDate: startDate || new Date().toISOString(),
+              endDate: endDate || new Date(Date.now() + 365 * 24 * 60 * 60 * 1000).toISOString()
+            }
+          });
+          
+          updatedSponsorshipIds.push(sponsorshipId);
+          
+          // Update network partners for this sponsorship
+          await postgresSequelize.query(`
+            DELETE FROM tenant_partners WHERE sponsorship_id = :sponsorshipId
+          `, { replacements: { sponsorshipId } });
+          
+        } else {
+          // Insert new plan
+          const [sponsorshipResult] = await postgresSequelize.query(`
+            INSERT INTO corporate_plan_sponsorships 
+            (corporate_id, plan_id, clinic_id, doctor_id, sponsorship_type, corporate_share, employee_share,
+             start_date, end_date, is_active, created_at, updated_at)
+            VALUES (:corporateId, :planId, :clinicId, :doctorId, 'full', 100, 0,
+                    :startDate, :endDate, true, NOW(), NOW())
+            RETURNING id
+          `, {
+            replacements: {
+              corporateId,
+              planId: parsedPlanId,
+              clinicId: parsedClinicId,
+              doctorId: parsedDoctorId,
+              startDate: startDate || new Date().toISOString(),
+              endDate: endDate || new Date(Date.now() + 365 * 24 * 60 * 60 * 1000).toISOString()
+            },
+            type: postgresSequelize.QueryTypes.INSERT
+          });
+          
+          const newSponsorshipId = sponsorshipResult && sponsorshipResult[0] ? sponsorshipResult[0].id : null;
+          if (newSponsorshipId) {
+            updatedSponsorshipIds.push(newSponsorshipId);
+          }
+        }
+        
+        // Link network partners to sponsorship
+        const currentSponsorshipId = sponsorshipId || updatedSponsorshipIds[updatedSponsorshipIds.length - 1];
+        if (currentSponsorshipId && networkPartners) {
+          const { hospitals = [], labs = [] } = networkPartners;
+          
+          // Add hospitals
+          for (const hospitalId of hospitals) {
+            await postgresSequelize.query(`
+              INSERT INTO tenant_partners (corporate_tenant_id, partner_tenant_id, sponsorship_id, status, "createdAt", "updatedAt")
+              VALUES (:corporateId, :partnerId, :sponsorshipId, 'active', NOW(), NOW())
+              ON CONFLICT DO NOTHING
+            `, {
+              replacements: { 
+                corporateId, 
+                partnerId: parseInt(hospitalId),
+                sponsorshipId: currentSponsorshipId
+              }
+            });
+          }
+          
+          // Add labs
+          for (const labId of labs) {
+            await postgresSequelize.query(`
+              INSERT INTO tenant_partners (corporate_tenant_id, partner_tenant_id, sponsorship_id, status, "createdAt", "updatedAt")
+              VALUES (:corporateId, :partnerId, :sponsorshipId, 'active', NOW(), NOW())
+              ON CONFLICT DO NOTHING
+            `, {
+              replacements: { 
+                corporateId, 
+                partnerId: parseInt(labId),
+                sponsorshipId: currentSponsorshipId
+              }
+            });
+          }
+        }
       }
       
-      // Add new labs
-      for (const labId of labs) {
+      // Remove plans that were not in the updated list
+      const existingIds = Object.keys(existingPlanMap).map(id => parseInt(id));
+      const toRemove = existingIds.filter(id => !updatedSponsorshipIds.includes(id));
+      
+      for (const removeId of toRemove) {
         await postgresSequelize.query(`
-          INSERT INTO tenant_partners ("tenantId", "tenantType", "partnerId", "partnerType", status, "createdAt", "updatedAt")
-          VALUES (:tenantId, 'corporate', :partnerId, 'lab', 'active', NOW(), NOW())
-          ON CONFLICT DO NOTHING
+          DELETE FROM corporate_plan_sponsorships WHERE id = :sponsorshipId AND corporate_id = :corporateId
         `, {
-          replacements: { tenantId: corporateId, partnerId: labId }
+          replacements: { sponsorshipId: removeId, corporateId }
         });
       }
     }
     
-    // Fetch updated record
+    // Fetch updated record with plans
     const [updated] = await postgresSequelize.query(`
       SELECT * FROM corporates WHERE id = :corporateId
     `, {
@@ -1140,16 +1306,25 @@ router.put('/corporates/:id', authUser, requireRole(['admin', 'team']), async (r
     
     const updatedCorporate = Array.isArray(updated) ? updated[0] : updated;
     
-    let finalMetadata = {};
-    try {
-      finalMetadata = updatedCorporate.metadata ? 
-        (typeof updatedCorporate.metadata === 'string' ? JSON.parse(updatedCorporate.metadata) : updatedCorporate.metadata) 
-        : {};
-    } catch (e) {
-      finalMetadata = {};
-    }
+    // Fetch updated plans
+    const [updatedPlans] = await postgresSequelize.query(`
+      SELECT 
+        id as sponsorship_id,
+        plan_id,
+        clinic_id,
+        doctor_id,
+        start_date,
+        end_date,
+        is_active
+      FROM corporate_plan_sponsorships
+      WHERE corporate_id = :corporateId
+    `, {
+      replacements: { corporateId },
+      type: postgresSequelize.QueryTypes.SELECT
+    });
     
     console.log(`[Corporates] Updated corporate ID ${corporateId} by ${req.user.email}`);
+    console.log(`[Corporates] - Plans: ${(updatedPlans || []).length} plan(s) active`);
     
     return res.json({
       success: true,
@@ -1167,10 +1342,15 @@ router.put('/corporates/:id', authUser, requireRole(['admin', 'team']), async (r
         gstNumber: updatedCorporate.gstNumber,
         panNumber: updatedCorporate.panNumber,
         assignedTeamMemberId: updatedCorporate.assignedTo,
-        clinicId: finalMetadata.clinicId,
-        doctorId: finalMetadata.doctorId,
-        membershipPlanId: finalMetadata.membershipPlanId,
-        networkPartners: finalMetadata.networkPartners || { hospitals: [], labs: [] },
+        plans: (updatedPlans || []).map(p => ({
+          sponsorshipId: p.sponsorship_id,
+          planId: p.plan_id,
+          clinicId: p.clinic_id,
+          doctorId: p.doctor_id,
+          startDate: p.start_date,
+          endDate: p.end_date,
+          isActive: p.is_active
+        })),
         updatedAt: updatedCorporate.updatedAt
       }
     });

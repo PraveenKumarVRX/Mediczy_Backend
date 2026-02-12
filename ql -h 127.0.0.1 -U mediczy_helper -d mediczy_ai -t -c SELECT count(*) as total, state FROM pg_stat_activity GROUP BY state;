@@ -1,8 +1,0 @@
- total_connections |        state        | wait_event_type 
--------------------+---------------------+-----------------
-                21 | idle                | Client
-                 8 |                     | 
-                 2 | active              | 
-                 1 | idle in transaction | Client
-(4 rows)
-
