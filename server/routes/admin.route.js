@@ -340,21 +340,36 @@ router.get('/corporates', authUser, requireRole(['admin', 'team']), async (req, 
     }
     
     // Map to expected format
-    const formattedCorporates = corporates.map(c => ({
-      id: c.id?.toString() || c.uid,
-      companyName: c.companyName,
-      contactPerson: c.contactPerson,
-      email: c.email,
-      phoneNumber: c.phoneNumber,
-      industry: c.industry,
-      employeeCount: c.employeeCount || 0,
-      packageType: c.packageType || 'Standard',
-      billingCycle: c.billingCycle || 'Yearly',
-      status: c.status || 'Active',
-      gstNumber: c.gstNumber,
-      panNumber: c.panNumber,
-      createdAt: c.createdAt
-    }));
+    const formattedCorporates = corporates.map(c => {
+      let metadata = {};
+      try {
+        metadata = c.metadata ? (typeof c.metadata === 'string' ? JSON.parse(c.metadata) : c.metadata) : {};
+      } catch (e) {
+        metadata = {};
+      }
+      
+      return {
+        id: c.id?.toString() || c.uid,
+        companyName: c.companyName,
+        contactPerson: c.contactPerson,
+        email: c.email,
+        phoneNumber: c.phoneNumber,
+        industry: c.industry,
+        employeeCount: c.employeeCount || 0,
+        packageType: c.packageType || 'Standard',
+        billingCycle: c.billingCycle || 'Yearly',
+        status: c.status || 'Active',
+        gstNumber: c.gstNumber,
+        panNumber: c.panNumber,
+        createdAt: c.createdAt,
+        // Onboarding details
+        assignedTeamMemberId: c.assignedTo,
+        clinicId: metadata.clinicId,
+        doctorId: metadata.doctorId,
+        membershipPlanId: metadata.membershipPlanId,
+        networkPartners: metadata.networkPartners || { hospitals: [], labs: [] }
+      };
+    });
     
     return res.json({ 
       success: true, 
@@ -738,7 +753,13 @@ router.delete('/assistants/:id', authUser, requireRole('admin'), async (req, res
 router.post('/corporates', authUser, requireRole(['admin', 'team']), async (req, res) => {
   try {
     const corporateData = req.body?.corporate || req.body;
-    const { companyName, contactPerson, email, phoneNumber, industry, employeeCount, packageType, gstNumber, panNumber, status } = corporateData;
+    const { 
+      companyName, contactPerson, email, phoneNumber, industry, employeeCount, 
+      packageType, gstNumber, panNumber, status,
+      // New onboarding fields
+      assignedTeamMemberId, clinicId, doctorId, membershipPlanId, 
+      networkPartners // { hospitals: [ids], labs: [ids] }
+    } = corporateData;
     
     if (!companyName || !email) {
       return res.status(400).json({
@@ -762,10 +783,28 @@ router.post('/corporates', authUser, requireRole(['admin', 'team']), async (req,
       });
     }
     
+    // Build metadata with onboarding details
+    const metadata = {
+      clinicId: clinicId || null,
+      doctorId: doctorId || null,
+      membershipPlanId: membershipPlanId || null,
+      networkPartners: networkPartners || { hospitals: [], labs: [] },
+      onboardedAt: new Date().toISOString(),
+      onboardedBy: req.user.email
+    };
+    
     // Insert new corporate
     const [result] = await postgresSequelize.query(`
-      INSERT INTO corporates ("companyName", "contactPerson", email, "phoneNumber", industry, "employeeCount", "packageType", "gstNumber", "panNumber", status, "createdAt", "updatedAt")
-      VALUES (:companyName, :contactPerson, :email, :phoneNumber, :industry, :employeeCount, :packageType, :gstNumber, :panNumber, :status, NOW(), NOW())
+      INSERT INTO corporates (
+        "companyName", "contactPerson", email, "phoneNumber", industry, 
+        "employeeCount", "packageType", "gstNumber", "panNumber", status, 
+        "assignedTo", metadata, "createdAt", "updatedAt"
+      )
+      VALUES (
+        :companyName, :contactPerson, :email, :phoneNumber, :industry, 
+        :employeeCount, :packageType, :gstNumber, :panNumber, :status, 
+        :assignedTo, :metadata, NOW(), NOW()
+      )
       RETURNING id, uid, "companyName", email, status
     `, {
       replacements: {
@@ -778,15 +817,26 @@ router.post('/corporates', authUser, requireRole(['admin', 'team']), async (req,
         packageType: packageType || 'Standard',
         gstNumber: gstNumber || null,
         panNumber: panNumber || null,
-        status: status || 'Active'
+        status: status || 'Active',
+        assignedTo: assignedTeamMemberId || (req.user.isTeam ? req.user.id : null),
+        metadata: JSON.stringify(metadata)
       },
       type: postgresSequelize.QueryTypes.INSERT
     });
     
     const newCorporate = result && result[0] ? result[0] : { id: Date.now() };
     
-    // If team user created, link them to the corporate
-    if (req.user.isTeam && !req.user.isAdmin && newCorporate.id) {
+    // Create user association for assigned team member
+    if (assignedTeamMemberId && newCorporate.id) {
+      await postgresSequelize.query(`
+        INSERT INTO user_associations ("userId", "entityType", "entityId", role, "isPrimary", status, "startDate", "createdAt", "updatedAt")
+        VALUES (:userId, 'corporate', :corporateId, 'manager', true, 'active', NOW(), NOW(), NOW())
+        ON CONFLICT DO NOTHING
+      `, {
+        replacements: { userId: assignedTeamMemberId, corporateId: newCorporate.id }
+      });
+    } else if (req.user.isTeam && !req.user.isAdmin && newCorporate.id) {
+      // Fallback: assign to current user if team member
       await postgresSequelize.query(`
         INSERT INTO user_associations ("userId", "entityType", "entityId", role, "isPrimary", status, "startDate", "createdAt", "updatedAt")
         VALUES (:userId, 'corporate', :corporateId, 'manager', true, 'active', NOW(), NOW(), NOW())
@@ -796,17 +846,66 @@ router.post('/corporates', authUser, requireRole(['admin', 'team']), async (req,
       });
     }
     
+    // Link membership plan if provided
+    if (membershipPlanId && newCorporate.id) {
+      await postgresSequelize.query(`
+        INSERT INTO corporate_plan_sponsorships 
+        ("corporateId", "planId", "sponsorshipType", "coveragePercentage", "startDate", "endDate", status, "createdAt", "updatedAt")
+        VALUES (:corporateId, :planId, 'full', 100, NOW(), NOW() + INTERVAL '1 year', 'active', NOW(), NOW())
+        ON CONFLICT DO NOTHING
+      `, {
+        replacements: { corporateId: newCorporate.id, planId: membershipPlanId }
+      });
+    }
+    
+    // Link network partners (hospitals and labs)
+    if (networkPartners && newCorporate.id) {
+      const { hospitals = [], labs = [] } = networkPartners;
+      
+      // Link hospitals
+      for (const hospitalId of hospitals) {
+        await postgresSequelize.query(`
+          INSERT INTO tenant_partners ("tenantId", "tenantType", "partnerId", "partnerType", status, "createdAt", "updatedAt")
+          VALUES (:tenantId, 'corporate', :partnerId, 'hospital', 'active', NOW(), NOW())
+          ON CONFLICT DO NOTHING
+        `, {
+          replacements: { tenantId: newCorporate.id, partnerId: hospitalId }
+        });
+      }
+      
+      // Link labs
+      for (const labId of labs) {
+        await postgresSequelize.query(`
+          INSERT INTO tenant_partners ("tenantId", "tenantType", "partnerId", "partnerType", status, "createdAt", "updatedAt")
+          VALUES (:tenantId, 'corporate', :partnerId, 'lab', 'active', NOW(), NOW())
+          ON CONFLICT DO NOTHING
+        `, {
+          replacements: { tenantId: newCorporate.id, partnerId: labId }
+        });
+      }
+    }
+    
     console.log(`[Corporates] Created corporate ${companyName} by ${req.user.email}`);
+    console.log(`[Corporates] - Team Member: ${assignedTeamMemberId || req.user.id}`);
+    console.log(`[Corporates] - Clinic: ${clinicId || 'None'}`);
+    console.log(`[Corporates] - Doctor: ${doctorId || 'None'}`);
+    console.log(`[Corporates] - Plan: ${membershipPlanId || 'None'}`);
+    console.log(`[Corporates] - Network: ${(networkPartners?.hospitals?.length || 0)} hospitals, ${(networkPartners?.labs?.length || 0)} labs`);
     
     return res.status(201).json({
       success: true,
-      message: 'Corporate created successfully',
+      message: 'Corporate created successfully with onboarding details',
       corporate: {
         id: newCorporate.id,
         uid: newCorporate.uid,
         companyName: newCorporate.companyName || companyName,
         email: newCorporate.email || email,
         status: newCorporate.status || 'Active',
+        assignedTeamMemberId: assignedTeamMemberId || (req.user.isTeam ? req.user.id : null),
+        clinicId,
+        doctorId,
+        membershipPlanId,
+        networkPartners,
         isActive: true,
         createdAt: new Date().toISOString()
       },
@@ -829,22 +928,50 @@ router.put('/corporates/:id', authUser, requireRole(['admin', 'team']), async (r
   try {
     const corporateId = req.params.id;
     const corporateData = req.body?.corporate || req.body;
-    const { companyName, contactPerson, email, phoneNumber, industry, employeeCount, packageType, gstNumber, panNumber, status } = corporateData;
+    const { 
+      companyName, contactPerson, email, phoneNumber, industry, employeeCount, 
+      packageType, gstNumber, panNumber, status,
+      // Onboarding fields
+      assignedTeamMemberId, clinicId, doctorId, membershipPlanId, networkPartners
+    } = corporateData;
     
-    // Verify corporate exists
+    // Verify corporate exists and get current metadata
     const [existing] = await postgresSequelize.query(`
-      SELECT id FROM corporates WHERE id = :corporateId
+      SELECT id, metadata, "assignedTo" FROM corporates WHERE id = :corporateId
     `, {
       replacements: { corporateId },
       type: postgresSequelize.QueryTypes.SELECT
     });
     
-    if (!existing || existing.length === 0) {
+    const existingCorporate = Array.isArray(existing) ? existing[0] : existing;
+    
+    if (!existingCorporate) {
       return res.status(404).json({
         success: false,
         message: 'Corporate not found'
       });
     }
+    
+    // Parse existing metadata
+    let currentMetadata = {};
+    try {
+      currentMetadata = existingCorporate.metadata ? 
+        (typeof existingCorporate.metadata === 'string' ? JSON.parse(existingCorporate.metadata) : existingCorporate.metadata) 
+        : {};
+    } catch (e) {
+      currentMetadata = {};
+    }
+    
+    // Update metadata with new onboarding details
+    const updatedMetadata = {
+      ...currentMetadata,
+      clinicId: clinicId !== undefined ? clinicId : currentMetadata.clinicId,
+      doctorId: doctorId !== undefined ? doctorId : currentMetadata.doctorId,
+      membershipPlanId: membershipPlanId !== undefined ? membershipPlanId : currentMetadata.membershipPlanId,
+      networkPartners: networkPartners !== undefined ? networkPartners : (currentMetadata.networkPartners || { hospitals: [], labs: [] }),
+      lastUpdatedAt: new Date().toISOString(),
+      lastUpdatedBy: req.user.email
+    };
     
     // Build update query dynamically based on provided fields
     const updates = [];
@@ -890,6 +1017,16 @@ router.put('/corporates/:id', authUser, requireRole(['admin', 'team']), async (r
       updates.push('status = :status');
       replacements.status = status;
     }
+    if (assignedTeamMemberId !== undefined) {
+      updates.push('"assignedTo" = :assignedTo');
+      replacements.assignedTo = assignedTeamMemberId;
+    }
+    
+    // Always update metadata if any onboarding fields changed
+    if (clinicId !== undefined || doctorId !== undefined || membershipPlanId !== undefined || networkPartners !== undefined) {
+      updates.push('metadata = :metadata');
+      replacements.metadata = JSON.stringify(updatedMetadata);
+    }
     
     if (updates.length === 0) {
       return res.status(400).json({
@@ -911,6 +1048,88 @@ router.put('/corporates/:id', authUser, requireRole(['admin', 'team']), async (r
       type: postgresSequelize.QueryTypes.UPDATE
     });
     
+    // Update user association if team member changed
+    if (assignedTeamMemberId !== undefined && assignedTeamMemberId !== existingCorporate.assignedTo) {
+      // Deactivate old association
+      await postgresSequelize.query(`
+        UPDATE user_associations 
+        SET status = 'inactive', "updatedAt" = NOW()
+        WHERE "entityType" = 'corporate' AND "entityId" = :corporateId
+      `, {
+        replacements: { corporateId }
+      });
+      
+      // Create new association
+      if (assignedTeamMemberId) {
+        await postgresSequelize.query(`
+          INSERT INTO user_associations ("userId", "entityType", "entityId", role, "isPrimary", status, "startDate", "createdAt", "updatedAt")
+          VALUES (:userId, 'corporate', :corporateId, 'manager', true, 'active', NOW(), NOW(), NOW())
+          ON CONFLICT DO NOTHING
+        `, {
+          replacements: { userId: assignedTeamMemberId, corporateId }
+        });
+      }
+    }
+    
+    // Update membership plan if changed
+    if (membershipPlanId !== undefined && membershipPlanId !== currentMetadata.membershipPlanId) {
+      // Deactivate old plan sponsorships
+      await postgresSequelize.query(`
+        UPDATE corporate_plan_sponsorships 
+        SET status = 'inactive', "updatedAt" = NOW()
+        WHERE "corporateId" = :corporateId
+      `, {
+        replacements: { corporateId }
+      });
+      
+      // Create new plan sponsorship
+      if (membershipPlanId) {
+        await postgresSequelize.query(`
+          INSERT INTO corporate_plan_sponsorships 
+          ("corporateId", "planId", "sponsorshipType", "coveragePercentage", "startDate", "endDate", status, "createdAt", "updatedAt")
+          VALUES (:corporateId, :planId, 'full', 100, NOW(), NOW() + INTERVAL '1 year', 'active', NOW(), NOW())
+          ON CONFLICT DO NOTHING
+        `, {
+          replacements: { corporateId, planId: membershipPlanId }
+        });
+      }
+    }
+    
+    // Update network partners if changed
+    if (networkPartners !== undefined) {
+      // Remove old partners
+      await postgresSequelize.query(`
+        DELETE FROM tenant_partners 
+        WHERE "tenantId" = :corporateId AND "tenantType" = 'corporate'
+      `, {
+        replacements: { corporateId }
+      });
+      
+      const { hospitals = [], labs = [] } = networkPartners;
+      
+      // Add new hospitals
+      for (const hospitalId of hospitals) {
+        await postgresSequelize.query(`
+          INSERT INTO tenant_partners ("tenantId", "tenantType", "partnerId", "partnerType", status, "createdAt", "updatedAt")
+          VALUES (:tenantId, 'corporate', :partnerId, 'hospital', 'active', NOW(), NOW())
+          ON CONFLICT DO NOTHING
+        `, {
+          replacements: { tenantId: corporateId, partnerId: hospitalId }
+        });
+      }
+      
+      // Add new labs
+      for (const labId of labs) {
+        await postgresSequelize.query(`
+          INSERT INTO tenant_partners ("tenantId", "tenantType", "partnerId", "partnerType", status, "createdAt", "updatedAt")
+          VALUES (:tenantId, 'corporate', :partnerId, 'lab', 'active', NOW(), NOW())
+          ON CONFLICT DO NOTHING
+        `, {
+          replacements: { tenantId: corporateId, partnerId: labId }
+        });
+      }
+    }
+    
     // Fetch updated record
     const [updated] = await postgresSequelize.query(`
       SELECT * FROM corporates WHERE id = :corporateId
@@ -920,6 +1139,15 @@ router.put('/corporates/:id', authUser, requireRole(['admin', 'team']), async (r
     });
     
     const updatedCorporate = Array.isArray(updated) ? updated[0] : updated;
+    
+    let finalMetadata = {};
+    try {
+      finalMetadata = updatedCorporate.metadata ? 
+        (typeof updatedCorporate.metadata === 'string' ? JSON.parse(updatedCorporate.metadata) : updatedCorporate.metadata) 
+        : {};
+    } catch (e) {
+      finalMetadata = {};
+    }
     
     console.log(`[Corporates] Updated corporate ID ${corporateId} by ${req.user.email}`);
     
@@ -938,6 +1166,11 @@ router.put('/corporates/:id', authUser, requireRole(['admin', 'team']), async (r
         status: updatedCorporate.status || 'Active',
         gstNumber: updatedCorporate.gstNumber,
         panNumber: updatedCorporate.panNumber,
+        assignedTeamMemberId: updatedCorporate.assignedTo,
+        clinicId: finalMetadata.clinicId,
+        doctorId: finalMetadata.doctorId,
+        membershipPlanId: finalMetadata.membershipPlanId,
+        networkPartners: finalMetadata.networkPartners || { hospitals: [], labs: [] },
         updatedAt: updatedCorporate.updatedAt
       }
     });
