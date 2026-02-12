@@ -231,44 +231,78 @@ const CorporatesManagement = () => {
   // Fetch dropdown options on component mount
   useEffect(() => {
     const fetchDropdownOptions = async () => {
+      // Helper to safely extract array from response
+      const safeArray = (data: any): any[] => {
+        if (Array.isArray(data)) return data;
+        if (data?.data && Array.isArray(data.data)) return data.data;
+        if (data?.results && Array.isArray(data.results)) return data.results;
+        return [];
+      };
+
+      // Fetch team members
       try {
-        // Fetch team members
-        const { data: teamData } = await api.get('/admin/team', {
+        const { data } = await api.get('/admin/team', {
           headers: token ? { Authorization: `Bearer ${token}` } : undefined
         });
-        setTeamMembers(teamData?.data || []);
-
-        // Fetch clinics
-        const { data: clinicsData } = await api.get('/masterdata/clinics', {
-          headers: token ? { Authorization: `Bearer ${token}` } : undefined
-        });
-        setClinics(clinicsData?.data || clinicsData || []);
-
-        // Fetch doctors
-        const { data: doctorsData } = await api.get('/masterdata/doctors', {
-          headers: token ? { Authorization: `Bearer ${token}` } : undefined
-        });
-        setDoctors(doctorsData?.data || doctorsData || []);
-
-        // Fetch membership plans
-        const { data: plansData } = await api.get('/membership/plans', {
-          headers: token ? { Authorization: `Bearer ${token}` } : undefined
-        });
-        setMembershipPlans(plansData?.data || plansData || []);
-
-        // Fetch hospitals
-        const { data: hospitalsData } = await api.get('/masterdata/hospitals', {
-          headers: token ? { Authorization: `Bearer ${token}` } : undefined
-        });
-        setHospitals(hospitalsData?.data || hospitalsData || []);
-
-        // Fetch labs
-        const { data: labsData } = await api.get('/admin/labs', {
-          headers: token ? { Authorization: `Bearer ${token}` } : undefined
-        });
-        setLabs(labsData?.data || labsData || []);
+        setTeamMembers(safeArray(data));
       } catch (err) {
-        console.error('Failed to fetch dropdown options:', err);
+        console.error('Failed to fetch team members:', err);
+        setTeamMembers([]);
+      }
+
+      // Fetch clinics
+      try {
+        const { data } = await api.get('/masterdata/clinics', {
+          headers: token ? { Authorization: `Bearer ${token}` } : undefined
+        });
+        setClinics(safeArray(data));
+      } catch (err) {
+        console.error('Failed to fetch clinics:', err);
+        setClinics([]);
+      }
+
+      // Fetch doctors
+      try {
+        const { data } = await api.get('/masterdata/doctors', {
+          headers: token ? { Authorization: `Bearer ${token}` } : undefined
+        });
+        setDoctors(safeArray(data));
+      } catch (err) {
+        console.error('Failed to fetch doctors:', err);
+        setDoctors([]);
+      }
+
+      // Fetch membership plans
+      try {
+        const { data } = await api.get('/membership/plans', {
+          headers: token ? { Authorization: `Bearer ${token}` } : undefined
+        });
+        setMembershipPlans(safeArray(data));
+      } catch (err) {
+        console.error('Failed to fetch membership plans:', err);
+        setMembershipPlans([]);
+      }
+
+      // Fetch hospitals
+      try {
+        const { data } = await api.get('/masterdata/hospitals', {
+          headers: token ? { Authorization: `Bearer ${token}` } : undefined
+        });
+        setHospitals(safeArray(data));
+      } catch (err) {
+        console.error('Failed to fetch hospitals:', err);
+        setHospitals([]);
+      }
+
+      // Fetch labs
+      try {
+        const { data } = await api.get('/admin/labs', {
+          headers: token ? { Authorization: `Bearer ${token}` } : undefined
+        });
+        setLabs(safeArray(data));
+      } catch (err) {
+        console.error('Failed to fetch labs:', err);
+        setLabs([]);
       }
     };
 
@@ -936,7 +970,7 @@ const CorporatesManagement = () => {
                           </SelectTrigger>
                           <SelectContent>
                             <SelectItem value="">None</SelectItem>
-                            {teamMembers.map(member => (
+                            {Array.isArray(teamMembers) && teamMembers.map(member => (
                               <SelectItem key={member.id} value={member.id.toString()}>
                                 {member.name} ({member.email})
                               </SelectItem>
@@ -956,7 +990,7 @@ const CorporatesManagement = () => {
                           </SelectTrigger>
                           <SelectContent>
                             <SelectItem value="">None</SelectItem>
-                            {clinics.map(clinic => (
+                            {Array.isArray(clinics) && clinics.map(clinic => (
                               <SelectItem key={clinic.id} value={clinic.id.toString()}>
                                 {clinic.name || clinic.clinicName}
                               </SelectItem>
@@ -976,7 +1010,7 @@ const CorporatesManagement = () => {
                           </SelectTrigger>
                           <SelectContent>
                             <SelectItem value="">None</SelectItem>
-                            {doctors.map(doctor => (
+                            {Array.isArray(doctors) && doctors.map(doctor => (
                               <SelectItem key={doctor.id} value={doctor.id.toString()}>
                                 {doctor.name || doctor.doctorName} {doctor.specialization ? `- ${doctor.specialization}` : ''}
                               </SelectItem>
@@ -996,7 +1030,7 @@ const CorporatesManagement = () => {
                           </SelectTrigger>
                           <SelectContent>
                             <SelectItem value="">None</SelectItem>
-                            {membershipPlans.map(plan => (
+                            {Array.isArray(membershipPlans) && membershipPlans.map(plan => (
                               <SelectItem key={plan.id} value={plan.id.toString()}>
                                 {plan.name || plan.planName} {plan.price ? `- ₹${plan.price}` : ''}
                               </SelectItem>
@@ -1029,7 +1063,7 @@ const CorporatesManagement = () => {
                               <SelectValue placeholder="Add hospital" />
                             </SelectTrigger>
                             <SelectContent>
-                              {hospitals.map(hospital => (
+                              {Array.isArray(hospitals) && hospitals.map(hospital => (
                                 <SelectItem key={hospital.id} value={hospital.id.toString()}>
                                   {hospital.name || hospital.hospitalName}
                                 </SelectItem>
@@ -1037,8 +1071,8 @@ const CorporatesManagement = () => {
                             </SelectContent>
                           </Select>
                           <div className="mt-2 flex flex-wrap gap-2">
-                            {newCorporate.networkPartners.hospitals.map(hospitalId => {
-                              const hospital = hospitals.find(h => h.id === hospitalId);
+                            {Array.isArray(newCorporate.networkPartners.hospitals) && newCorporate.networkPartners.hospitals.map(hospitalId => {
+                              const hospital = Array.isArray(hospitals) ? hospitals.find(h => h.id === hospitalId) : null;
                               return hospital ? (
                                 <Badge key={hospitalId} variant="secondary" className="cursor-pointer" onClick={() => {
                                   setNewCorporate({
@@ -1076,7 +1110,7 @@ const CorporatesManagement = () => {
                               <SelectValue placeholder="Add lab" />
                             </SelectTrigger>
                             <SelectContent>
-                              {labs.map(lab => (
+                              {Array.isArray(labs) && labs.map(lab => (
                                 <SelectItem key={lab.id} value={lab.id.toString()}>
                                   {lab.name || lab.labName}
                                 </SelectItem>
@@ -1084,8 +1118,8 @@ const CorporatesManagement = () => {
                             </SelectContent>
                           </Select>
                           <div className="mt-2 flex flex-wrap gap-2">
-                            {newCorporate.networkPartners.labs.map(labId => {
-                              const lab = labs.find(l => l.id === labId);
+                            {Array.isArray(newCorporate.networkPartners.labs) && newCorporate.networkPartners.labs.map(labId => {
+                              const lab = Array.isArray(labs) ? labs.find(l => l.id === labId) : null;
                               return lab ? (
                                 <Badge key={labId} variant="secondary" className="cursor-pointer" onClick={() => {
                                   setNewCorporate({
