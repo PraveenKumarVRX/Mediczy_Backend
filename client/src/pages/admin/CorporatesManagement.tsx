@@ -94,10 +94,10 @@ const CorporatesManagement = () => {
     gstNumber: '',
     panNumber: '',
     packageAmount: '',
-    assignedTeamMemberId: '',
-    clinicId: '',
-    doctorId: '',
-    membershipPlanId: '',
+    assignedTeamMemberId: '0',
+    clinicId: '0',
+    doctorId: '0',
+    membershipPlanId: '0',
     networkPartners: { hospitals: [], labs: [] }
   });
 
@@ -354,10 +354,10 @@ const CorporatesManagement = () => {
         ...newCorporate,
         employeeCount: newCorporate.employeeCount ? parseInt(newCorporate.employeeCount) : null,
         packageAmount: newCorporate.packageAmount ? parseFloat(newCorporate.packageAmount) : null,
-        assignedTeamMemberId: newCorporate.assignedTeamMemberId ? parseInt(newCorporate.assignedTeamMemberId) : null,
-        clinicId: newCorporate.clinicId ? parseInt(newCorporate.clinicId) : null,
-        doctorId: newCorporate.doctorId ? parseInt(newCorporate.doctorId) : null,
-        membershipPlanId: newCorporate.membershipPlanId ? parseInt(newCorporate.membershipPlanId) : null,
+        assignedTeamMemberId: newCorporate.assignedTeamMemberId && newCorporate.assignedTeamMemberId !== '0' ? parseInt(newCorporate.assignedTeamMemberId) : null,
+        clinicId: newCorporate.clinicId && newCorporate.clinicId !== '0' ? parseInt(newCorporate.clinicId) : null,
+        doctorId: newCorporate.doctorId && newCorporate.doctorId !== '0' ? parseInt(newCorporate.doctorId) : null,
+        membershipPlanId: newCorporate.membershipPlanId && newCorporate.membershipPlanId !== '0' ? parseInt(newCorporate.membershipPlanId) : null,
         networkPartners: newCorporate.networkPartners
       };
       
@@ -390,10 +390,10 @@ const CorporatesManagement = () => {
         gstNumber: '',
         panNumber: '',
         packageAmount: '',
-        assignedTeamMemberId: '',
-        clinicId: '',
-        doctorId: '',
-        membershipPlanId: '',
+        assignedTeamMemberId: '0',
+        clinicId: '0',
+        doctorId: '0',
+        membershipPlanId: '0',
         networkPartners: { hospitals: [], labs: [] }
       });
       setEditingCorporate(null);
@@ -454,10 +454,10 @@ const CorporatesManagement = () => {
       gstNumber: corporate.gstNumber || '',
       panNumber: corporate.panNumber || '',
       packageAmount: corporate.packageAmount?.toString() || '',
-      assignedTeamMemberId: corporate.assignedTeamMemberId?.toString() || '',
-      clinicId: corporate.clinicId?.toString() || '',
-      doctorId: corporate.doctorId?.toString() || '',
-      membershipPlanId: corporate.membershipPlanId?.toString() || '',
+      assignedTeamMemberId: corporate.assignedTeamMemberId?.toString() || '0',
+      clinicId: corporate.clinicId?.toString() || '0',
+      doctorId: corporate.doctorId?.toString() || '0',
+      membershipPlanId: corporate.membershipPlanId?.toString() || '0',
       networkPartners: corporate.networkPartners || { hospitals: [], labs: [] }
     });
     setActiveTab('single');
@@ -969,7 +969,7 @@ const CorporatesManagement = () => {
                             <SelectValue placeholder="Select team member" />
                           </SelectTrigger>
                           <SelectContent>
-                            <SelectItem value="">None</SelectItem>
+                            <SelectItem value="0">None</SelectItem>
                             {Array.isArray(teamMembers) && teamMembers.map(member => (
                               <SelectItem key={member.id} value={member.id.toString()}>
                                 {member.name} ({member.email})
@@ -989,7 +989,7 @@ const CorporatesManagement = () => {
                             <SelectValue placeholder="Select clinic" />
                           </SelectTrigger>
                           <SelectContent>
-                            <SelectItem value="">None</SelectItem>
+                            <SelectItem value="0">None</SelectItem>
                             {Array.isArray(clinics) && clinics.map(clinic => (
                               <SelectItem key={clinic.id} value={clinic.id.toString()}>
                                 {clinic.name || clinic.clinicName}
@@ -1009,7 +1009,7 @@ const CorporatesManagement = () => {
                             <SelectValue placeholder="Select doctor" />
                           </SelectTrigger>
                           <SelectContent>
-                            <SelectItem value="">None</SelectItem>
+                            <SelectItem value="0">None</SelectItem>
                             {Array.isArray(doctors) && doctors.map(doctor => (
                               <SelectItem key={doctor.id} value={doctor.id.toString()}>
                                 {doctor.name || doctor.doctorName} {doctor.specialization ? `- ${doctor.specialization}` : ''}
@@ -1029,7 +1029,7 @@ const CorporatesManagement = () => {
                             <SelectValue placeholder="Select membership plan" />
                           </SelectTrigger>
                           <SelectContent>
-                            <SelectItem value="">None</SelectItem>
+                            <SelectItem value="0">None</SelectItem>
                             {Array.isArray(membershipPlans) && membershipPlans.map(plan => (
                               <SelectItem key={plan.id} value={plan.id.toString()}>
                                 {plan.name || plan.planName} {plan.price ? `- ₹${plan.price}` : ''}
@@ -1161,10 +1161,10 @@ const CorporatesManagement = () => {
                           gstNumber: '',
                           panNumber: '',
                           packageAmount: '',
-                          assignedTeamMemberId: '',
-                          clinicId: '',
-                          doctorId: '',
-                          membershipPlanId: '',
+                          assignedTeamMemberId: '0',
+                          clinicId: '0',
+                          doctorId: '0',
+                          membershipPlanId: '0',
                           networkPartners: { hospitals: [], labs: [] }
                         });
                         setActiveTab('list');
