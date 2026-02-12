@@ -1857,11 +1857,11 @@ router.get('/team', authUser, requireRole('admin'), async (req, res) => {
         firstName: user.firstName,
         lastName: user.lastName,
         email: user.email,
-        phoneNumber: user.phone || '',
+        phoneNumber: user.phoneNumber || '',
         employeeId: metadata.employeeId || '',
         department: metadata.department || '',
         designation: metadata.designation || '',
-        role: user.role || 'team',
+        role: metadata.roleTitle || 'Team Member', // Return role title from metadata for display
         permissions: metadata.permissions || [],
         address: metadata.address || { street: '', city: '', state: '', pincode: '' },
         emergencyContact: metadata.emergencyContact || { name: '', relationship: '', phone: '' },
@@ -1931,6 +1931,7 @@ router.post('/team', authUser, requireRole('admin'), async (req, res) => {
       employeeId: userData.employeeId,
       department: userData.department,
       designation: userData.designation,
+      roleTitle: userData.role || 'Team Member', // Store display role in metadata
       permissions: userData.permissions || [],
       address: userData.address || {},
       emergencyContact: userData.emergencyContact || {},
@@ -2088,12 +2089,13 @@ router.put('/team/:id', authUser, requireRole('admin'), async (req, res) => {
       existingMetadata = {};
     }
 
-    // Update metadata
+    // Update metadata (store role title in metadata, not in role field)
     const updatedMetadata = {
       ...existingMetadata,
       employeeId: userData.employeeId || existingMetadata.employeeId,
       department: userData.department || existingMetadata.department,
       designation: userData.designation || existingMetadata.designation,
+      roleTitle: userData.role || existingMetadata.roleTitle || 'Team Member', // Store display role in metadata
       permissions: userData.permissions || existingMetadata.permissions,
       address: userData.address || existingMetadata.address,
       emergencyContact: userData.emergencyContact || existingMetadata.emergencyContact,
@@ -2108,7 +2110,7 @@ router.put('/team/:id', authUser, requireRole('admin'), async (req, res) => {
       lastName: userData.lastName || teamUser.lastName,
       email: userData.email || teamUser.email,
       phoneNumber: userData.phoneNumber || teamUser.phoneNumber,
-      role: userData.role || teamUser.role || 'team',
+      role: 'team', // Always keep role as 'team' for team members
       membershipType: 'team',
       metadata: JSON.stringify(updatedMetadata)
     };
