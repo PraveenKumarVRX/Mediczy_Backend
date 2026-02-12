@@ -171,6 +171,7 @@ const USER_TYPE_PERMISSIONS = {
   team: {
     allowedPaths: [
       '/api/team',
+      '/api/admin',  // Allow access to admin routes for team members
       '/api/users',
       '/api/doctors',
       '/api/appointments',

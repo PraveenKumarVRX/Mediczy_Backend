@@ -382,7 +382,6 @@ router.get('/corporates', authUser, requireRole(['admin', 'team']), async (req, 
         LEFT JOIN corporate_team_assignments cta
           ON cta.corporate_id = c.id
           AND cta.team_member_id = :userId
-          AND cta.is_active = true
         WHERE (ua.id IS NOT NULL OR cta.id IS NOT NULL)
         ORDER BY c."companyName" ASC
       `, {
