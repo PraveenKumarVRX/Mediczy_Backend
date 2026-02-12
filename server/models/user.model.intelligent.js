@@ -18,6 +18,12 @@ const User = sequelize.define('User', {
     allowNull: false,
     comment: 'Public-facing unique identifier (UUID)'
   },
+  unique_id: {
+    type: DataTypes.STRING(6),
+    allowNull: true,
+    unique: true,
+    comment: 'Human-readable alphanumeric ID (e.g., T12AB3 for team members)'
+  },
   firstName: {
     type: DataTypes.STRING,
     allowNull: false

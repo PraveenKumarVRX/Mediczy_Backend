@@ -55,10 +55,10 @@ const router = express.Router();
 /**
  * Generate unique alphanumeric ID
  * @param {string} prefix - 'C' for Corporate, 'T' for Team member
- * @param {number} length - Total length including prefix (default: 7)
+ * @param {number} length - Total length including prefix (default: 6)
  * @returns {string} Unique ID like C12AB3 or T45XY6
  */
-function generateUniqueId(prefix, length = 7) {
+function generateUniqueId(prefix, length = 6) {
   const chars = '0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZ';
   const randomLength = length - prefix.length;
   let result = prefix;
@@ -1160,6 +1160,7 @@ router.post('/corporates', authUser, requireRole(['admin', 'team']), async (req,
       corporate: {
         id: newCorporate.id,
         uid: newCorporate.uid,
+        uniqueId: newCorporate.unique_id,
         companyName: newCorporate.companyName || companyName,
         email: newCorporate.email || email,
         status: newCorporate.status || 'Active',
@@ -2808,6 +2809,7 @@ router.post('/team', authUser, requireRole('admin'), async (req, res) => {
       message: 'Team user created successfully. Welcome email sent with login credentials.',
       user: {
         id: newUser.id,
+        uniqueId: newUser.unique_id,
         firstName: newUser.firstName,
         lastName: newUser.lastName,
         email: newUser.email,
