@@ -63,7 +63,7 @@ const AdminLogin = () => {
     
     try {
       // Add timeout to prevent long waits
-      timeoutId = setTimeout(() => controller.abort(), 10000); // 10 second timeout
+      timeoutId = setTimeout(() => controller.abort(), 30000); // 30 second timeout
 
       const resolveAdminLoginUrl = () => {
         const envBase = import.meta.env.VITE_API_URL as string | undefined;
@@ -81,7 +81,11 @@ const AdminLogin = () => {
       };
 
       const loginUrl = resolveAdminLoginUrl();
-      const { data } = await axios.post(loginUrl, { email, password }, { signal: controller.signal });
+      const { data } = await axios.post(loginUrl, { email, password }, { 
+        signal: controller.signal,
+        withCredentials: true,
+        timeout: 30000
+      });
       
       if (import.meta.env.DEV) {
         console.log('Login response:', data);

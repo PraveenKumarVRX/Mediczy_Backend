@@ -72,6 +72,11 @@ class PasswordResetService {
             return email
               ? await doctorModel.findOne({ where: { email } })
               : await doctorModel.findOne({ where: { phone } });
+
+          case 'team':
+            return email
+              ? await userModel.findOne({ where: { email } })
+              : await userModel.findOne({ where: { phoneNumber: phone } });
           
           case 'hospital':
             return email
@@ -383,6 +388,11 @@ class PasswordResetService {
             return email
               ? await doctorModel.findOne({ where: { email } })
               : await doctorModel.findOne({ where: { phone } });
+
+          case 'team':
+            return email
+              ? await userModel.findOne({ where: { email } })
+              : await userModel.findOne({ where: { phoneNumber: phone } });
           
           case 'hospital':
             return email
@@ -430,6 +440,7 @@ class PasswordResetService {
       const getModelByType = () => {
         switch (userType) {
           case 'doctor': return doctorModel;
+          case 'team': return userModel;
           case 'hospital': return Hospital;
           case 'nurse': return Nurse;
           case 'pharmacy': return Pharmacy;
@@ -475,6 +486,7 @@ class PasswordResetService {
       const getModelByType = () => {
         switch (userType) {
           case 'doctor': return doctorModel;
+          case 'team': return userModel;
           case 'hospital': return Hospital;
           case 'nurse': return Nurse;
           case 'pharmacy': return Pharmacy;

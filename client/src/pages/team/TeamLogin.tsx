@@ -261,6 +261,14 @@ const TeamLogin = () => {
                     {showPassword ? <EyeOff className="h-4 w-4" aria-hidden="true" /> : <Eye className="h-4 w-4" aria-hidden="true" />}
                   </button>
                 </div>
+                <div className="text-right">
+                  <Link
+                    to="/forgot-password?type=team"
+                    className="text-xs text-purple-600 hover:text-purple-700 hover:underline transition-colors"
+                  >
+                    Forgot password?
+                  </Link>
+                </div>
               </div>
 
               {/* Submit Button with gradient */}

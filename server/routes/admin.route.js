@@ -1830,11 +1830,17 @@ router.get('/doctors/filters/specialties', async (req, res) => {
 // List team users from database
 router.get('/team', authUser, requireRole('admin'), async (req, res) => {
   try {
+    // Support ?includeInactive=true to show deleted users
+    const includeInactive = req.query.includeInactive === 'true';
+    
     // Fetch team users from database
+    const whereClause = { role: 'team' };
+    if (!includeInactive) {
+      whereClause.status = 'active'; // Filter for active status
+    }
+    
     const teamUsers = await userModel.findAll({ 
-      where: { 
-        role: 'team'
-      },
+      where: whereClause,
       order: [['createdAt', 'DESC']]
     });
 
@@ -1867,8 +1873,15 @@ router.get('/team', authUser, requireRole('admin'), async (req, res) => {
       };
     });
 
-    // If no team users found, return demo data for initial setup
-    const responseData = formattedUsers.length > 0 ? formattedUsers : demoTeamUsers;
+    // Return actual team users (could be empty if all are inactive and filter is applied)
+    // Only return demo data if no users exist at all (check without filter)
+    let responseData = formattedUsers;
+    if (formattedUsers.length === 0 && !includeInactive) {
+      // Check if there are ANY team users (active or inactive)
+      const totalCount = await userModel.count({ where: { role: 'team' } });
+      // Only use demo data if truly no users exist
+      responseData = totalCount === 0 ? demoTeamUsers : [];
+    }
 
     return res.json({
       success: true,
@@ -2126,7 +2139,7 @@ router.put('/team/:id', authUser, requireRole('admin'), async (req, res) => {
   }
 });
 
-// Delete team user
+// Delete team user (soft delete)
 router.delete('/team/:id', authUser, requireRole('admin'), async (req, res) => {
   try {
     const teamUser = await userModel.findOne({ where: { id: req.params.id, role: 'team' } });
@@ -2138,8 +2151,8 @@ router.delete('/team/:id', authUser, requireRole('admin'), async (req, res) => {
       });
     }
 
-    // Soft delete - set isActive to false
-    await teamUser.update({ isActive: false });
+    // Soft delete - set status to 'inactive'
+    await teamUser.update({ status: 'inactive' });
 
     return res.status(200).json({
       success: true,
@@ -2150,6 +2163,41 @@ router.delete('/team/:id', authUser, requireRole('admin'), async (req, res) => {
     return res.status(500).json({
       success: false,
       message: error.message || 'Failed to delete team user'
+    });
+  }
+});
+
+// Restore team user (undo soft delete)
+router.patch('/team/:id/restore', authUser, requireRole('admin'), async (req, res) => {
+  try {
+    const teamUser = await userModel.findOne({ where: { id: req.params.id, role: 'team' } });
+
+    if (!teamUser) {
+      return res.status(404).json({
+        success: false,
+        message: 'Team user not found'
+      });
+    }
+
+    // Restore - set status to 'active'  
+    await teamUser.update({ status: 'active' });
+    await teamUser.reload();
+
+    return res.status(200).json({
+      success: true,
+      message: 'Team user restored successfully',
+      user: {
+        id: teamUser.id,
+        email: teamUser.email,
+        status: teamUser.status,
+        isActive: teamUser.isActive
+      }
+    });
+  } catch (error) {
+    console.error('Error restoring team user:', error);
+    return res.status(500).json({
+      success: false,
+      message: error.message || 'Failed to restore team user'
     });
   }
 });

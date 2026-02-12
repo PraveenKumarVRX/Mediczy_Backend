@@ -5,7 +5,7 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Textarea } from '@/components/ui/textarea';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
-import { Upload, Download, Plus, Users, Shield, Briefcase, Eye, Edit, Trash2, LayoutGrid, List, Mail, Phone, Calendar } from 'lucide-react';
+import { Upload, Download, Plus, Users, Shield, Briefcase, Eye, Edit, Trash2, LayoutGrid, List, Mail, Phone, Calendar, RotateCcw } from 'lucide-react';
 import api from '@/utils/api';
 import { Label } from '@/components/ui/label';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
@@ -79,6 +79,7 @@ const TeamManagement = () => {
   const [editingUser, setEditingUser] = useState<TeamUser | null>(null);
   const [viewingUser, setViewingUser] = useState<TeamUser | null>(null);
   const [viewMode, setViewMode] = useState<'grid' | 'table'>('grid');
+  const [showInactive, setShowInactive] = useState(false);
   const token = localStorage.getItem('adminToken');
 
   const [newUser, setNewUser] = useState<TeamUser>({
@@ -101,13 +102,14 @@ const TeamManagement = () => {
 
   useEffect(() => {
     fetchTeamUsers();
-  }, []);
+  }, [showInactive]);
 
   const fetchTeamUsers = async () => {
     try {
       setLoading(true);
       const { data } = await api.get('/admin/team', {
         headers: token ? { Authorization: `Bearer ${token}` } : undefined,
+        params: { includeInactive: showInactive }
       });
       setTeamUsers((data as any).teamUsers || data || []);
     } catch (err: any) {
@@ -176,10 +178,45 @@ const TeamManagement = () => {
       await api.delete(`/admin/team/${userId}`, {
         headers: token ? { Authorization: `Bearer ${token}` } : undefined,
       });
-      setResult({ message: 'Team user deleted successfully' });
+      toast({
+        title: 'Team member deleted',
+        description: 'Team member has been deactivated successfully.',
+      });
       fetchTeamUsers();
     } catch (err: any) {
-      setError(err?.response?.data?.message || 'Failed to delete team user');
+      const errorMsg = err?.response?.data?.message || 'Failed to delete team user';
+      setError(errorMsg);
+      toast({
+        variant: 'destructive',
+        title: 'Delete failed',
+        description: errorMsg,
+      });
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleRestoreUser = async (userId: number) => {
+    if (!confirm('Are you sure you want to restore this team user?')) return;
+    
+    try {
+      setLoading(true);
+      await api.patch(`/admin/team/${userId}/restore`, {}, {
+        headers: token ? { Authorization: `Bearer ${token}` } : undefined,
+      });
+      toast({
+        title: 'Team member restored',
+        description: 'Team member has been reactivated successfully.',
+      });
+      fetchTeamUsers();
+    } catch (err: any) {
+      const errorMsg = err?.response?.data?.message || 'Failed to restore team user';
+      setError(errorMsg);
+      toast({
+        variant: 'destructive',
+        title: 'Restore failed',
+        description: errorMsg,
+      });
     } finally {
       setLoading(false);
     }
@@ -335,8 +372,20 @@ const TeamManagement = () => {
             <Card>
               <CardContent className="p-4">
                 <div className="flex items-center justify-between">
-                  <div className="text-sm text-muted-foreground">
-                    Showing {teamUsers.length} team member{teamUsers.length !== 1 ? 's' : ''}
+                  <div className="flex items-center gap-4">
+                    <div className="text-sm text-muted-foreground">
+                      Showing {teamUsers.length} team member{teamUsers.length !== 1 ? 's' : ''}
+                    </div>
+                    <div className="flex items-center gap-2">
+                      <Switch 
+                        id="show-inactive"
+                        checked={showInactive}
+                        onCheckedChange={setShowInactive}
+                      />
+                      <Label htmlFor="show-inactive" className="text-sm cursor-pointer">
+                        Show Inactive Users
+                      </Label>
+                    </div>
                   </div>
                   <div className="flex items-center gap-2">
                     <Button 
@@ -487,15 +536,24 @@ const TeamManagement = () => {
                             </DialogContent>
                           </Dialog>
                           
-                          <Button variant="outline" size="sm" onClick={() => startEditUser(user)}>
-                            <Edit className="h-4 w-4 mr-2" />
-                            Edit
-                          </Button>
-                          
-                          <Button variant="destructive" size="sm" onClick={() => handleDeleteUser(user.id!)}>
-                            <Trash2 className="h-4 w-4 mr-2" />
-                            Delete
-                          </Button>
+                          {user.isActive ? (
+                            <>
+                              <Button variant="outline" size="sm" onClick={() => startEditUser(user)}>
+                                <Edit className="h-4 w-4 mr-2" />
+                                Edit
+                              </Button>
+                              
+                              <Button variant="destructive" size="sm" onClick={() => handleDeleteUser(user.id!)}>
+                                <Trash2 className="h-4 w-4 mr-2" />
+                                Delete
+                              </Button>
+                            </>
+                          ) : (
+                            <Button variant="default" size="sm" onClick={() => handleRestoreUser(user.id!)} className="bg-green-600 hover:bg-green-700">
+                              <RotateCcw className="h-4 w-4 mr-2" />
+                              Restore
+                            </Button>
+                          )}
                         </div>
                       </div>
                     </CardContent>
@@ -635,20 +693,33 @@ const TeamManagement = () => {
                                     )}
                                   </DialogContent>
                                 </Dialog>
-                                <Button 
-                                  variant="ghost" 
-                                  size="sm"
-                                  onClick={() => startEditUser(user)}
-                                >
-                                  <Edit className="h-4 w-4" />
-                                </Button>
-                                <Button 
-                                  variant="ghost" 
-                                  size="sm"
-                                  onClick={() => handleDeleteUser(user.id!)}
-                                >
-                                  <Trash2 className="h-4 w-4 text-red-500" />
-                                </Button>
+                                {user.isActive ? (
+                                  <>
+                                    <Button 
+                                      variant="ghost" 
+                                      size="sm"
+                                      onClick={() => startEditUser(user)}
+                                    >
+                                      <Edit className="h-4 w-4" />
+                                    </Button>
+                                    <Button 
+                                      variant="ghost" 
+                                      size="sm"
+                                      onClick={() => handleDeleteUser(user.id!)}
+                                    >
+                                      <Trash2 className="h-4 w-4 text-red-500" />
+                                    </Button>
+                                  </>
+                                ) : (
+                                  <Button 
+                                    variant="ghost" 
+                                    size="sm"
+                                    onClick={() => handleRestoreUser(user.id!)}
+                                    className="text-green-600 hover:text-green-700"
+                                  >
+                                    <RotateCcw className="h-4 w-4" />
+                                  </Button>
+                                )}
                               </div>
                             </td>
                           </tr>

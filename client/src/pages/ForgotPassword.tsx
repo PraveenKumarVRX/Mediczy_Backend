@@ -30,8 +30,8 @@ const ForgotPassword = () => {
   const [newPassword, setNewPassword] = useState("");
   const [confirmPassword, setConfirmPassword] = useState("");
   const [resetToken, setResetToken] = useState("");
-  const [userType, setUserType] = useState<"user" | "doctor">(
-    typeFromUrl === "doctor" ? "doctor" : "user"
+  const [userType, setUserType] = useState<"user" | "doctor" | "team">(
+    typeFromUrl === "doctor" ? "doctor" : typeFromUrl === "team" ? "team" : "user"
   );
   const [isLoading, setIsLoading] = useState(false);
   const [deliveryStatus, setDeliveryStatus] = useState<DeliveryStatus>({});
@@ -221,6 +221,7 @@ const ForgotPassword = () => {
       const { data } = await api.post("/password-reset/reset", {
         resetToken,
         newPassword,
+        userType,
       }, {
         skipAuth: true,
       } as any);
@@ -232,7 +233,7 @@ const ForgotPassword = () => {
 
       // Redirect to login after 2 seconds
       setTimeout(() => {
-        navigate(userType === "doctor" ? "/doctor/login" : "/login");
+        navigate(userType === "doctor" ? "/doctor/login" : userType === "team" ? "/team/login" : "/login");
       }, 2000);
     } catch (error: any) {
       console.error("Reset password error:", error);
@@ -269,6 +270,12 @@ const ForgotPassword = () => {
                   <RadioGroupItem value="user" id="user" />
                   <Label htmlFor="user" className="cursor-pointer flex-1">
                     Patient Account
+                  </Label>
+                </div>
+                <div className="flex items-center space-x-2 p-3 border rounded-lg">
+                  <RadioGroupItem value="team" id="team" />
+                  <Label htmlFor="team" className="cursor-pointer flex-1">
+                    Team Member Account
                   </Label>
                 </div>
                 <div className="flex items-center space-x-2 p-3 border rounded-lg">
@@ -337,7 +344,7 @@ const ForgotPassword = () => {
               )}
             </Button>
 
-            <Link to={userType === "doctor" ? "/doctor/login" : "/login"}>
+            <Link to={userType === "doctor" ? "/doctor/login" : userType === "team" ? "/team/login" : "/login"}>
               <Button variant="ghost" className="w-full">
                 <ArrowLeft className="h-4 w-4 mr-2" />
                 Back to Login
