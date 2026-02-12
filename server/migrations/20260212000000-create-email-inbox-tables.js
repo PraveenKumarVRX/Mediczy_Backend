@@ -34,6 +34,11 @@ export async function up() {
       type: DataTypes.STRING(500),
       allowNull: false
     },
+    fromName: {
+      type: DataTypes.STRING(500),
+      allowNull: true,
+      field: 'from_name'
+    },
     to: {
       type: DataTypes.TEXT,
       allowNull: false
@@ -97,6 +102,11 @@ export async function up() {
       type: DataTypes.STRING(500),
       allowNull: true,
       field: 'in_reply_to'
+    },
+    hasReplied: {
+      type: DataTypes.BOOLEAN,
+      defaultValue: false,
+      field: 'has_replied'
     },
     aiProcessed: {
       type: DataTypes.BOOLEAN,
