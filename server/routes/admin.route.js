@@ -822,6 +822,187 @@ router.post('/corporates', authUser, requireRole(['admin', 'team']), async (req,
 });
 
 /**
+ * Update Corporate
+ * PUT /api/admin/corporates/:id
+ */
+router.put('/corporates/:id', authUser, requireRole(['admin', 'team']), async (req, res) => {
+  try {
+    const corporateId = req.params.id;
+    const corporateData = req.body?.corporate || req.body;
+    const { companyName, contactPerson, email, phoneNumber, industry, employeeCount, packageType, gstNumber, panNumber, status } = corporateData;
+    
+    // Verify corporate exists
+    const [existing] = await postgresSequelize.query(`
+      SELECT id FROM corporates WHERE id = :corporateId
+    `, {
+      replacements: { corporateId },
+      type: postgresSequelize.QueryTypes.SELECT
+    });
+    
+    if (!existing || existing.length === 0) {
+      return res.status(404).json({
+        success: false,
+        message: 'Corporate not found'
+      });
+    }
+    
+    // Build update query dynamically based on provided fields
+    const updates = [];
+    const replacements = { corporateId };
+    
+    if (companyName !== undefined) {
+      updates.push('"companyName" = :companyName');
+      replacements.companyName = companyName;
+    }
+    if (contactPerson !== undefined) {
+      updates.push('"contactPerson" = :contactPerson');
+      replacements.contactPerson = contactPerson;
+    }
+    if (email !== undefined) {
+      updates.push('email = :email');
+      replacements.email = email.toLowerCase();
+    }
+    if (phoneNumber !== undefined) {
+      updates.push('"phoneNumber" = :phoneNumber');
+      replacements.phoneNumber = phoneNumber;
+    }
+    if (industry !== undefined) {
+      updates.push('industry = :industry');
+      replacements.industry = industry;
+    }
+    if (employeeCount !== undefined) {
+      updates.push('"employeeCount" = :employeeCount');
+      replacements.employeeCount = parseInt(employeeCount) || 0;
+    }
+    if (packageType !== undefined) {
+      updates.push('"packageType" = :packageType');
+      replacements.packageType = packageType;
+    }
+    if (gstNumber !== undefined) {
+      updates.push('"gstNumber" = :gstNumber');
+      replacements.gstNumber = gstNumber || null;
+    }
+    if (panNumber !== undefined) {
+      updates.push('"panNumber" = :panNumber');
+      replacements.panNumber = panNumber || null;
+    }
+    if (status !== undefined) {
+      updates.push('status = :status');
+      replacements.status = status;
+    }
+    
+    if (updates.length === 0) {
+      return res.status(400).json({
+        success: false,
+        message: 'No fields to update'
+      });
+    }
+    
+    // Add updatedAt
+    updates.push('"updatedAt" = NOW()');
+    
+    // Execute update
+    await postgresSequelize.query(`
+      UPDATE corporates 
+      SET ${updates.join(', ')}
+      WHERE id = :corporateId
+    `, {
+      replacements,
+      type: postgresSequelize.QueryTypes.UPDATE
+    });
+    
+    // Fetch updated record
+    const [updated] = await postgresSequelize.query(`
+      SELECT * FROM corporates WHERE id = :corporateId
+    `, {
+      replacements: { corporateId },
+      type: postgresSequelize.QueryTypes.SELECT
+    });
+    
+    const updatedCorporate = Array.isArray(updated) ? updated[0] : updated;
+    
+    console.log(`[Corporates] Updated corporate ID ${corporateId} by ${req.user.email}`);
+    
+    return res.json({
+      success: true,
+      message: 'Corporate updated successfully',
+      corporate: {
+        id: updatedCorporate.id?.toString(),
+        companyName: updatedCorporate.companyName,
+        contactPerson: updatedCorporate.contactPerson,
+        email: updatedCorporate.email,
+        phoneNumber: updatedCorporate.phoneNumber,
+        industry: updatedCorporate.industry,
+        employeeCount: updatedCorporate.employeeCount || 0,
+        packageType: updatedCorporate.packageType || 'Standard',
+        status: updatedCorporate.status || 'Active',
+        gstNumber: updatedCorporate.gstNumber,
+        panNumber: updatedCorporate.panNumber,
+        updatedAt: updatedCorporate.updatedAt
+      }
+    });
+  } catch (error) {
+    console.error('Failed to update corporate:', error);
+    return res.status(500).json({
+      success: false,
+      message: 'Failed to update corporate',
+      error: error.message
+    });
+  }
+});
+
+/**
+ * Delete/Deactivate Corporate
+ * DELETE /api/admin/corporates/:id
+ */
+router.delete('/corporates/:id', authUser, requireRole(['admin', 'team']), async (req, res) => {
+  try {
+    const corporateId = req.params.id;
+    
+    // Verify corporate exists
+    const [existing] = await postgresSequelize.query(`
+      SELECT id, "companyName", status FROM corporates WHERE id = :corporateId
+    `, {
+      replacements: { corporateId },
+      type: postgresSequelize.QueryTypes.SELECT
+    });
+    
+    const corporate = Array.isArray(existing) ? existing[0] : existing;
+    
+    if (!corporate) {
+      return res.status(404).json({
+        success: false,
+        message: 'Corporate not found'
+      });
+    }
+    
+    // Soft delete: Update status to Inactive
+    await postgresSequelize.query(`
+      UPDATE corporates 
+      SET status = 'Inactive', "updatedAt" = NOW()
+      WHERE id = :corporateId
+    `, {
+      replacements: { corporateId },
+      type: postgresSequelize.QueryTypes.UPDATE
+    });
+    
+    console.log(`[Corporates] Deactivated corporate ${corporate.companyName} (ID ${corporateId}) by ${req.user.email}`);
+    
+    return res.json({
+      success: true,
+      message: 'Corporate deactivated successfully'
+    });
+  } catch (error) {
+    console.error('Failed to delete corporate:', error);
+    return res.status(500).json({
+      success: false,
+      message: 'Failed to delete corporate',
+      error: error.message
+    });
+  }
+});
+
+/**
  * Create Corporate HR/Admin User
  * POST /api/admin/corporate-users
  * Creates a user account with corporate_admin role and links to corporate
