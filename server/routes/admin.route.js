@@ -370,13 +370,20 @@ router.get('/corporates', authUser, requireRole(['admin', 'team']), async (req, 
     let corporates;
     
     if (isTeam && !isAdmin) {
-      // Team users: Get only assigned corporates via user_associations
+      // Team users: Get assigned corporates from both old and new systems
+      // Old system: user_associations table
+      // New system: corporate_team_assignments table
       const [assigned] = await postgresSequelize.query(`
-        SELECT c.* FROM corporates c
-        INNER JOIN user_associations ua ON ua."entityId" = c.id
-        WHERE ua."userId" = :userId 
-        AND ua."entityType" = 'corporate'
-        AND ua.status = 'active'
+        SELECT DISTINCT c.* FROM corporates c
+        LEFT JOIN user_associations ua 
+          ON ua."entityId" = c.id 
+          AND ua."userId" = :userId 
+          AND ua."entityType" = 'corporate'
+        LEFT JOIN corporate_team_assignments cta
+          ON cta.corporate_id = c.id
+          AND cta.team_member_id = :userId
+          AND cta.is_active = true
+        WHERE (ua.id IS NOT NULL OR cta.id IS NOT NULL)
         ORDER BY c."companyName" ASC
       `, {
         replacements: { userId },
