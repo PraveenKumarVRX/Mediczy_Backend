@@ -3,6 +3,7 @@ import { body } from 'express-validator';
 import { authUser, requireRole } from '../middleware/auth.middleware.js';
 import { authLimiter } from '../middleware/rateLimiter.middleware.js';
 import bcrypt from 'bcrypt';
+import crypto from 'crypto';
 import userModel, { generateAuthTokenForUser } from '../models/user.model.intelligent.js';
 import { Corporate } from '../models/crm.model.intelligent.js';
 import { Corporate as InsuranceCorporate, InsuranceCompany } from '../models/insurance-company.model.intelligent.js';
@@ -50,6 +51,62 @@ import {
 } from '../controller/whatsapp.controller.js';
 
 const router = express.Router();
+
+/**
+ * Generate unique alphanumeric ID
+ * @param {string} prefix - 'C' for Corporate, 'T' for Team member
+ * @param {number} length - Total length including prefix (default: 7)
+ * @returns {string} Unique ID like C12AB3 or T45XY6
+ */
+function generateUniqueId(prefix, length = 7) {
+  const chars = '0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZ';
+  const randomLength = length - prefix.length;
+  let result = prefix;
+  
+  for (let i = 0; i < randomLength; i++) {
+    const randomIndex = crypto.randomInt(0, chars.length);
+    result += chars[randomIndex];
+  }
+  
+  return result;
+}
+
+/**
+ * Check if unique ID exists in database
+ * @param {string} uniqueId - The ID to check
+ * @param {string} table - 'corporates' or 'users'
+ * @returns {Promise<boolean>}
+ */
+async function isUniqueIdExists(uniqueId, table) {
+  try {
+    const [result] = await postgresSequelize.query(
+      `SELECT unique_id FROM ${table} WHERE unique_id = :uniqueId LIMIT 1`,
+      { replacements: { uniqueId }, type: postgresSequelize.QueryTypes.SELECT }
+    );
+    return result && result.length > 0;
+  } catch (error) {
+    return false;
+  }
+}
+
+/**
+ * Generate guaranteed unique ID with retries
+ * @param {string} prefix - 'C' for Corporate, 'T' for Team member
+ * @param {string} table - 'corporates' or 'users'
+ * @param {number} maxRetries - Maximum retry attempts (default: 10)
+ * @returns {Promise<string>}
+ */
+async function generateGuaranteedUniqueId(prefix, table, maxRetries = 10) {
+  for (let i = 0; i < maxRetries; i++) {
+    const uniqueId = generateUniqueId(prefix);
+    const exists = await isUniqueIdExists(uniqueId, table);
+    if (!exists) {
+      return uniqueId;
+    }
+  }
+  // Fallback: use timestamp suffix if all retries failed
+  return `${prefix}${Date.now().toString(36).slice(-5).toUpperCase()}`;
+}
 
 // --------------------------------------------------------------------------
 // Demo data for admin tables (team/users/doctors) - non-persistent
@@ -452,6 +509,7 @@ router.get('/corporates', authUser, requireRole(['admin', 'team']), async (req, 
       
       return {
         id: c.id?.toString() || c.uid,
+        uniqueId: c.unique_id || null,
         companyName: c.companyName,
         contactPerson: c.contactPerson,
         email: c.email,
@@ -892,19 +950,22 @@ router.post('/corporates', authUser, requireRole(['admin', 'team']), async (req,
     // Parse assignedTeamMemberId
     const parsedAssignedTeamMemberId = assignedTeamMemberId === null ? null : (parseInt(assignedTeamMemberId) || null);
     
+    // Generate unique corporate ID
+    const corporateUniqueId = await generateGuaranteedUniqueId('C', 'corporates');
+    
     // Insert new corporate
     const [result] = await postgresSequelize.query(`
       INSERT INTO corporates (
         "companyName", "contactPerson", email, "phoneNumber", industry, 
         "employeeCount", "packageType", "gstNumber", "panNumber", status, 
-        "assignedTo", metadata, "createdAt", "updatedAt"
+        "assignedTo", metadata, unique_id, "createdAt", "updatedAt"
       )
       VALUES (
         :companyName, :contactPerson, :email, :phoneNumber, :industry, 
         :employeeCount, :packageType, :gstNumber, :panNumber, :status, 
-        :assignedTo, :metadata, NOW(), NOW()
+        :assignedTo, :metadata, :uniqueId, NOW(), NOW()
       )
-      RETURNING id, uid, "companyName", email, status
+      RETURNING id, uid, unique_id, "companyName", email, status
     `, {
       replacements: {
         companyName,
@@ -918,7 +979,8 @@ router.post('/corporates', authUser, requireRole(['admin', 'team']), async (req,
         panNumber: panNumber || null,
         status: status || 'Active',
         assignedTo: parsedAssignedTeamMemberId || (req.user.isTeam ? req.user.id : null),
-        metadata: JSON.stringify(metadata)
+        metadata: JSON.stringify(metadata),
+        uniqueId: corporateUniqueId
       },
       type: postgresSequelize.QueryTypes.INSERT
     });
@@ -2617,6 +2679,7 @@ router.get('/team', authUser, requireRole('admin'), async (req, res) => {
 
       return {
         id: user.id,
+        uniqueId: user.unique_id || null,
         firstName: user.firstName,
         lastName: user.lastName,
         email: user.email,
@@ -2689,6 +2752,9 @@ router.post('/team', authUser, requireRole('admin'), async (req, res) => {
     // Generate secure temporary password
     const temporaryPassword = welcomeEmailService.generateSecurePassword();
 
+    // Generate unique team member ID
+    const teamUniqueId = await generateGuaranteedUniqueId('T', 'users');
+
     // Create team user in database with metadata
     const teamMetadata = {
       employeeId: userData.employeeId,
@@ -2714,6 +2780,7 @@ router.post('/team', authUser, requireRole('admin'), async (req, res) => {
       gender: userData.gender || 'Other',
       role: 'team',
       membershipType: 'team',
+      unique_id: teamUniqueId,
       metadata: teamMetadata,  // Pass as object, not JSON string
       status: userData.isActive === false ? 'inactive' : 'active'
     });

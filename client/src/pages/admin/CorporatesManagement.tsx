@@ -51,6 +51,7 @@ interface Plan {
 
 interface CorporateData {
   id: string;
+  uniqueId?: string; // Added: Alphanumeric unique ID (e.g., C12AB3X)
   companyName: string;
   contactPerson: string;
   email: string;
@@ -697,7 +698,9 @@ const CorporatesManagement = () => {
                                 </div>
                                 <div>
                                   <div className="font-medium">{corporate.companyName}</div>
-                                  <div className="text-sm text-muted-foreground">ID: {corporate.id}</div>
+                                  <div className="text-sm text-muted-foreground">
+                                    {corporate.uniqueId ? corporate.uniqueId : `ID: ${corporate.id}`}
+                                  </div>
                                 </div>
                               </div>
                             </TableCell>

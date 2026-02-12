@@ -16,6 +16,7 @@ import { useToast } from '@/hooks/use-toast';
 
 interface TeamUser {
   id?: number;
+  uniqueId?: string; // Added: Alphanumeric unique ID (e.g., T12AB3X)
   firstName: string;
   lastName: string;
   email: string;
@@ -463,7 +464,9 @@ const TeamManagement = () => {
                             <h3 className="text-lg font-semibold">{user.firstName} {user.lastName}</h3>
                             <p className="text-sm text-muted-foreground">{user.designation}</p>
                             <p className="text-sm text-muted-foreground">{user.department}</p>
-                            <p className="text-xs text-muted-foreground">ID: {user.employeeId}</p>
+                            <p className="text-xs text-muted-foreground">
+                              {user.uniqueId ? user.uniqueId : `EMP: ${user.employeeId}`}
+                            </p>
                           </div>
                           <div className="flex flex-col items-end gap-2">
                             <div className={`px-2 py-1 rounded-full text-xs ${user.isActive ? 'bg-green-100 text-green-700' : 'bg-gray-100 text-gray-700'}`}>
