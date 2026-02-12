@@ -435,7 +435,29 @@ const CorporateEmployeesManagement = () => {
         });
         setResult({ message: 'Employee updated successfully' });
       } else {
-        await api.post('/admin/corporate-employees', newEmployee, {
+        // Backend expects { corporateId, employees: [...] } format
+        const payload = {
+          corporateId: newEmployee.corporateId,
+          employees: [{
+            firstName: newEmployee.firstName,
+            lastName: newEmployee.lastName,
+            email: newEmployee.email,
+            phoneNumber: newEmployee.phoneNumber,
+            employeeId: newEmployee.employeeId,
+            department: newEmployee.department,
+            designation: newEmployee.designation,
+            dateOfJoining: newEmployee.dateOfJoining,
+            dateOfBirth: newEmployee.dateOfBirth,
+            gender: newEmployee.gender,
+            address: newEmployee.address,
+            emergencyContact: newEmployee.emergencyContact,
+            isEligible: newEmployee.isEligible,
+            tags: newEmployee.tags,
+            status: newEmployee.status
+          }]
+        };
+        
+        await api.post('/admin/corporate-employees', payload, {
           headers: token ? { Authorization: `Bearer ${token}` } : undefined
         });
         setResult({ message: 'Employee created successfully' });
