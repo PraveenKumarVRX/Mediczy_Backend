@@ -45,6 +45,14 @@ interface CorporateData {
   gstNumber?: string;
   panNumber?: string;
   createdAt: string;
+  assignedTeamMemberId?: number | string;
+  clinicId?: number | string;
+  doctorId?: number | string;
+  membershipPlanId?: number | string;
+  networkPartners?: {
+    hospitals: number[];
+    labs: number[];
+  };
 }
 
 const packageTypes = ['Basic', 'Standard', 'Premium', 'Enterprise', 'Custom'];
@@ -85,8 +93,21 @@ const CorporatesManagement = () => {
     status: 'Pending',
     gstNumber: '',
     panNumber: '',
-    packageAmount: ''
+    packageAmount: '',
+    assignedTeamMemberId: '',
+    clinicId: '',
+    doctorId: '',
+    membershipPlanId: '',
+    networkPartners: { hospitals: [], labs: [] }
   });
+
+  // Dropdown options
+  const [teamMembers, setTeamMembers] = useState<any[]>([]);
+  const [clinics, setClinics] = useState<any[]>([]);
+  const [doctors, setDoctors] = useState<any[]>([]);
+  const [membershipPlans, setMembershipPlans] = useState<any[]>([]);
+  const [hospitals, setHospitals] = useState<any[]>([]);
+  const [labs, setLabs] = useState<any[]>([]);
 
   // Fetch corporates list
   const fetchCorporates = async () => {
@@ -207,6 +228,53 @@ const CorporatesManagement = () => {
     fetchCorporates();
   }, [page]);
 
+  // Fetch dropdown options on component mount
+  useEffect(() => {
+    const fetchDropdownOptions = async () => {
+      try {
+        // Fetch team members
+        const { data: teamData } = await api.get('/admin/team', {
+          headers: token ? { Authorization: `Bearer ${token}` } : undefined
+        });
+        setTeamMembers(teamData?.data || []);
+
+        // Fetch clinics
+        const { data: clinicsData } = await api.get('/masterdata/clinics', {
+          headers: token ? { Authorization: `Bearer ${token}` } : undefined
+        });
+        setClinics(clinicsData?.data || clinicsData || []);
+
+        // Fetch doctors
+        const { data: doctorsData } = await api.get('/masterdata/doctors', {
+          headers: token ? { Authorization: `Bearer ${token}` } : undefined
+        });
+        setDoctors(doctorsData?.data || doctorsData || []);
+
+        // Fetch membership plans
+        const { data: plansData } = await api.get('/membership/plans', {
+          headers: token ? { Authorization: `Bearer ${token}` } : undefined
+        });
+        setMembershipPlans(plansData?.data || plansData || []);
+
+        // Fetch hospitals
+        const { data: hospitalsData } = await api.get('/masterdata/hospitals', {
+          headers: token ? { Authorization: `Bearer ${token}` } : undefined
+        });
+        setHospitals(hospitalsData?.data || hospitalsData || []);
+
+        // Fetch labs
+        const { data: labsData } = await api.get('/admin/labs', {
+          headers: token ? { Authorization: `Bearer ${token}` } : undefined
+        });
+        setLabs(labsData?.data || labsData || []);
+      } catch (err) {
+        console.error('Failed to fetch dropdown options:', err);
+      }
+    };
+
+    fetchDropdownOptions();
+  }, []);
+
   const handleExcelUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0]; if(!file) return;
     try {
@@ -251,7 +319,12 @@ const CorporatesManagement = () => {
       const corporate = {
         ...newCorporate,
         employeeCount: newCorporate.employeeCount ? parseInt(newCorporate.employeeCount) : null,
-        packageAmount: newCorporate.packageAmount ? parseFloat(newCorporate.packageAmount) : null
+        packageAmount: newCorporate.packageAmount ? parseFloat(newCorporate.packageAmount) : null,
+        assignedTeamMemberId: newCorporate.assignedTeamMemberId ? parseInt(newCorporate.assignedTeamMemberId) : null,
+        clinicId: newCorporate.clinicId ? parseInt(newCorporate.clinicId) : null,
+        doctorId: newCorporate.doctorId ? parseInt(newCorporate.doctorId) : null,
+        membershipPlanId: newCorporate.membershipPlanId ? parseInt(newCorporate.membershipPlanId) : null,
+        networkPartners: newCorporate.networkPartners
       };
       
       if (editingCorporate) {
@@ -282,7 +355,12 @@ const CorporatesManagement = () => {
         status: 'Pending',
         gstNumber: '',
         panNumber: '',
-        packageAmount: ''
+        packageAmount: '',
+        assignedTeamMemberId: '',
+        clinicId: '',
+        doctorId: '',
+        membershipPlanId: '',
+        networkPartners: { hospitals: [], labs: [] }
       });
       setEditingCorporate(null);
       setActiveTab('list');
@@ -341,7 +419,12 @@ const CorporatesManagement = () => {
       status: corporate.status,
       gstNumber: corporate.gstNumber || '',
       panNumber: corporate.panNumber || '',
-      packageAmount: corporate.packageAmount?.toString() || ''
+      packageAmount: corporate.packageAmount?.toString() || '',
+      assignedTeamMemberId: corporate.assignedTeamMemberId?.toString() || '',
+      clinicId: corporate.clinicId?.toString() || '',
+      doctorId: corporate.doctorId?.toString() || '',
+      membershipPlanId: corporate.membershipPlanId?.toString() || '',
+      networkPartners: corporate.networkPartners || { hospitals: [], labs: [] }
     });
     setActiveTab('single');
   };
@@ -837,7 +920,193 @@ const CorporatesManagement = () => {
                       </Select>
                     </div>
                   </div>
-                  <div className="flex gap-4">
+
+                  {/* Corporate Onboarding Fields */}
+                  <div className="mt-6 pt-6 border-t">
+                    <h3 className="text-lg font-semibold mb-4">Corporate Onboarding Details</h3>
+                    <div className="grid md:grid-cols-2 gap-4">
+                      <div>
+                        <Label>Assigned Team Member</Label>
+                        <Select 
+                          value={newCorporate.assignedTeamMemberId} 
+                          onValueChange={(val) => setNewCorporate({...newCorporate, assignedTeamMemberId: val})}
+                        >
+                          <SelectTrigger>
+                            <SelectValue placeholder="Select team member" />
+                          </SelectTrigger>
+                          <SelectContent>
+                            <SelectItem value="">None</SelectItem>
+                            {teamMembers.map(member => (
+                              <SelectItem key={member.id} value={member.id.toString()}>
+                                {member.name} ({member.email})
+                              </SelectItem>
+                            ))}
+                          </SelectContent>
+                        </Select>
+                      </div>
+                      
+                      <div>
+                        <Label>Clinic</Label>
+                        <Select 
+                          value={newCorporate.clinicId} 
+                          onValueChange={(val) => setNewCorporate({...newCorporate, clinicId: val})}
+                        >
+                          <SelectTrigger>
+                            <SelectValue placeholder="Select clinic" />
+                          </SelectTrigger>
+                          <SelectContent>
+                            <SelectItem value="">None</SelectItem>
+                            {clinics.map(clinic => (
+                              <SelectItem key={clinic.id} value={clinic.id.toString()}>
+                                {clinic.name || clinic.clinicName}
+                              </SelectItem>
+                            ))}
+                          </SelectContent>
+                        </Select>
+                      </div>
+                      
+                      <div>
+                        <Label>Doctor</Label>
+                        <Select 
+                          value={newCorporate.doctorId} 
+                          onValueChange={(val) => setNewCorporate({...newCorporate, doctorId: val})}
+                        >
+                          <SelectTrigger>
+                            <SelectValue placeholder="Select doctor" />
+                          </SelectTrigger>
+                          <SelectContent>
+                            <SelectItem value="">None</SelectItem>
+                            {doctors.map(doctor => (
+                              <SelectItem key={doctor.id} value={doctor.id.toString()}>
+                                {doctor.name || doctor.doctorName} {doctor.specialization ? `- ${doctor.specialization}` : ''}
+                              </SelectItem>
+                            ))}
+                          </SelectContent>
+                        </Select>
+                      </div>
+                      
+                      <div>
+                        <Label>Membership Plan</Label>
+                        <Select 
+                          value={newCorporate.membershipPlanId} 
+                          onValueChange={(val) => setNewCorporate({...newCorporate, membershipPlanId: val})}
+                        >
+                          <SelectTrigger>
+                            <SelectValue placeholder="Select membership plan" />
+                          </SelectTrigger>
+                          <SelectContent>
+                            <SelectItem value="">None</SelectItem>
+                            {membershipPlans.map(plan => (
+                              <SelectItem key={plan.id} value={plan.id.toString()}>
+                                {plan.name || plan.planName} {plan.price ? `- ₹${plan.price}` : ''}
+                              </SelectItem>
+                            ))}
+                          </SelectContent>
+                        </Select>
+                      </div>
+                    </div>
+
+                    <div className="mt-4">
+                      <h4 className="text-md font-medium mb-2">Network Partners</h4>
+                      <div className="grid md:grid-cols-2 gap-4">
+                        <div>
+                          <Label>Hospitals</Label>
+                          <Select 
+                            value="" 
+                            onValueChange={(val) => {
+                              if (val && !newCorporate.networkPartners.hospitals.includes(parseInt(val))) {
+                                setNewCorporate({
+                                  ...newCorporate,
+                                  networkPartners: {
+                                    ...newCorporate.networkPartners,
+                                    hospitals: [...newCorporate.networkPartners.hospitals, parseInt(val)]
+                                  }
+                                });
+                              }
+                            }}
+                          >
+                            <SelectTrigger>
+                              <SelectValue placeholder="Add hospital" />
+                            </SelectTrigger>
+                            <SelectContent>
+                              {hospitals.map(hospital => (
+                                <SelectItem key={hospital.id} value={hospital.id.toString()}>
+                                  {hospital.name || hospital.hospitalName}
+                                </SelectItem>
+                              ))}
+                            </SelectContent>
+                          </Select>
+                          <div className="mt-2 flex flex-wrap gap-2">
+                            {newCorporate.networkPartners.hospitals.map(hospitalId => {
+                              const hospital = hospitals.find(h => h.id === hospitalId);
+                              return hospital ? (
+                                <Badge key={hospitalId} variant="secondary" className="cursor-pointer" onClick={() => {
+                                  setNewCorporate({
+                                    ...newCorporate,
+                                    networkPartners: {
+                                      ...newCorporate.networkPartners,
+                                      hospitals: newCorporate.networkPartners.hospitals.filter(id => id !== hospitalId)
+                                    }
+                                  });
+                                }}>
+                                  {hospital.name || hospital.hospitalName} ✕
+                                </Badge>
+                              ) : null;
+                            })}
+                          </div>
+                        </div>
+                        
+                        <div>
+                          <Label>Labs</Label>
+                          <Select 
+                            value="" 
+                            onValueChange={(val) => {
+                              if (val && !newCorporate.networkPartners.labs.includes(parseInt(val))) {
+                                setNewCorporate({
+                                  ...newCorporate,
+                                  networkPartners: {
+                                    ...newCorporate.networkPartners,
+                                    labs: [...newCorporate.networkPartners.labs, parseInt(val)]
+                                  }
+                                });
+                              }
+                            }}
+                          >
+                            <SelectTrigger>
+                              <SelectValue placeholder="Add lab" />
+                            </SelectTrigger>
+                            <SelectContent>
+                              {labs.map(lab => (
+                                <SelectItem key={lab.id} value={lab.id.toString()}>
+                                  {lab.name || lab.labName}
+                                </SelectItem>
+                              ))}
+                            </SelectContent>
+                          </Select>
+                          <div className="mt-2 flex flex-wrap gap-2">
+                            {newCorporate.networkPartners.labs.map(labId => {
+                              const lab = labs.find(l => l.id === labId);
+                              return lab ? (
+                                <Badge key={labId} variant="secondary" className="cursor-pointer" onClick={() => {
+                                  setNewCorporate({
+                                    ...newCorporate,
+                                    networkPartners: {
+                                      ...newCorporate.networkPartners,
+                                      labs: newCorporate.networkPartners.labs.filter(id => id !== labId)
+                                    }
+                                  });
+                                }}>
+                                  {lab.name || lab.labName} ✕
+                                </Badge>
+                              ) : null;
+                            })}
+                          </div>
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+
+                  <div className="flex gap-4 mt-6">
                     <Button type="submit" disabled={loading} className="flex-1">
                       <Plus className="mr-2 h-4 w-4" />
                       {loading ? (editingCorporate ? 'Updating...' : 'Creating...') : (editingCorporate ? 'Update Corporate' : 'Create Corporate')}
@@ -857,7 +1126,12 @@ const CorporatesManagement = () => {
                           status: 'Pending',
                           gstNumber: '',
                           panNumber: '',
-                          packageAmount: ''
+                          packageAmount: '',
+                          assignedTeamMemberId: '',
+                          clinicId: '',
+                          doctorId: '',
+                          membershipPlanId: '',
+                          networkPartners: { hospitals: [], labs: [] }
                         });
                         setActiveTab('list');
                       }}>
