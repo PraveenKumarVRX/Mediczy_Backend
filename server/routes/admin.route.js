@@ -358,7 +358,7 @@ router.get('/corporates', authUser, requireRole(['admin', 'team']), async (req, 
           cps.corporate_share,
           cps.employee_share
         FROM corporate_plan_sponsorships cps
-        WHERE cps.corporate_id = ANY(:corporateIds)
+        WHERE cps.corporate_id IN (:corporateIds)
         ORDER BY cps.start_date DESC
       `, {
         replacements: { corporateIds },
@@ -373,7 +373,7 @@ router.get('/corporates', authUser, requireRole(['admin', 'team']), async (req, 
         const [partners] = await postgresSequelize.query(`
           SELECT sponsorship_id, partner_tenant_id, status
           FROM tenant_partners
-          WHERE sponsorship_id = ANY(:sponsorshipIds)
+          WHERE sponsorship_id IN (:sponsorshipIds)
         `, {
           replacements: { sponsorshipIds },
           type: postgresSequelize.QueryTypes.SELECT
@@ -421,7 +421,7 @@ router.get('/corporates', authUser, requireRole(['admin', 'team']), async (req, 
           cta.clinic_id,
           cta.is_primary
         FROM corporate_team_assignments cta
-        WHERE cta.corporate_id = ANY(:corporateIds)
+        WHERE cta.corporate_id IN (:corporateIds)
         ORDER BY cta.is_primary DESC, cta.created_at ASC
       `, {
         replacements: { corporateIds },
@@ -2188,7 +2188,7 @@ router.post('/corporate-package-assignments', authUser, requireRole(['admin', 't
       employeesToAssign = await postgresSequelize.query(`
         SELECT u.id, u.email, u."firstName", u."lastName"
         FROM users u
-        WHERE u.id = ANY(:employeeIds)
+        WHERE u.id IN (:employeeIds)
       `, {
         replacements: { employeeIds },
         type: postgresSequelize.QueryTypes.SELECT
