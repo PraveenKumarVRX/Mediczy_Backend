@@ -56,9 +56,12 @@ const designations = [
   'Intern', 'Consultant', 'Specialist', 'Coordinator', 'Administrator'
 ];
 
-const roles = [
-  'Super Admin', 'Admin', 'Manager', 'Supervisor', 'Executive', 'Support Staff',
-  'Data Analyst', 'Content Manager', 'System Administrator', 'User Support'
+// Team member role titles (display only - all stored as role='team' in DB)
+const teamRoles = [
+  'Manager', 'Supervisor', 'Executive', 'Team Lead', 'Support Staff',
+  'Data Analyst', 'Content Manager', 'System Administrator', 'User Support',
+  'Operations Manager', 'HR Manager', 'Finance Manager', 'IT Support',
+  'Quality Analyst', 'Coordinator', 'Assistant Manager', 'Senior Executive'
 ];
 
 const permissions = [
@@ -873,7 +876,7 @@ const TeamManagement = () => {
                             <SelectValue placeholder="Select role" />
                           </SelectTrigger>
                           <SelectContent>
-                            {roles.map((role) => (
+                            {teamRoles.map((role) => (
                               <SelectItem key={role} value={role}>{role}</SelectItem>
                             ))}
                           </SelectContent>
