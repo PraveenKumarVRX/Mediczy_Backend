@@ -65,6 +65,7 @@ import availabilityRouter from './routes/availability.route.js';
 import membershipRouter from './routes/membership.route.js';
 import orgMembershipPlansRouter from './routes/org-membership-plans.route.js';
 import teamRouter from './routes/team.route.js';
+import teamEmailRouter from './routes/teamEmail.route.js';
 import nurseRouter from './routes/nurse.route.js';
 import assistantRouter from './routes/assistant.route.js';
 import prometheus from './config/prometheus.js';
@@ -955,6 +956,7 @@ app.use('/api/module-access', moduleAccessRouter); // Public endpoint for checki
 app.use('/api/admin/roles', roleRouter); // Role management with CRUD + module access
 app.use('/api/roles', roleRouter); // User-facing role endpoints (check own roles/modules)
 app.use('/api/team', teamRouter);
+app.use('/api/team/emails', teamEmailRouter); // Team email inbox with AI processing
 app.use('/api/doctor/webinars', authUser, doctorWebinarRouter); // Doctor webinar hosting
 app.use('/api/nurse', nurseRouter);
 app.use('/api/assistant', assistantRouter);

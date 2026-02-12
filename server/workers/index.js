@@ -3,6 +3,7 @@ import { createRedisConnection } from '../config/redis-connection.js';
 import { QUEUE_NAMES } from '../config/queues.js';
 import { queueJobsTotal, queueJobDuration } from '../config/prometheus.js';
 import emailService from '../services/emailService.js';
+import emailSyncWorker from './email-sync.worker.js';
 
 // Kafka-n8n notification worker
 let kafkaN8NWorker = null;
@@ -24,6 +25,24 @@ const initKafkaWorker = async () => {
 if (process.env.KAFKA_ENABLED === 'true') {
   initKafkaWorker();
 }
+
+// Initialize Email Inbox Sync worker
+const initEmailSyncWorker = async () => {
+  try {
+    const initialized = await emailSyncWorker.initialize();
+    if (initialized) {
+      await emailSyncWorker.start();
+      // Schedule periodic sync every 5 minutes
+      await emailSyncWorker.schedulePeriodicSync();
+      console.log('✅ Email inbox sync worker started and scheduled');
+    }
+  } catch (error) {
+    console.warn('⚠️  Email sync worker initialization failed:', error.message);
+  }
+};
+
+// Start email sync worker (non-blocking)
+initEmailSyncWorker();
 
 // Redis connection for workers
 const connection = createRedisConnection();
@@ -190,7 +209,8 @@ export const workers = {
   dataExport: createWorker(QUEUE_NAMES.DATA_EXPORT, processDataExportJob),
   analytics: createWorker(QUEUE_NAMES.ANALYTICS, processAnalyticsJob),
   cleanup: createWorker(QUEUE_NAMES.CLEANUP, processCleanupJob),
-  kafkaN8N: kafkaN8NWorker
+  kafkaN8N: kafkaN8NWorker,
+  emailSync: emailSyncWorker
 };
 
 // Export Kafka worker status
@@ -203,6 +223,9 @@ export const getKafkaWorkerAnalytics = async (timeRange = '24h') => {
   return kafkaN8NWorker ? await kafkaN8NWorker.getAnalytics(timeRange) : null;
 };
 
+// Export Email Sync worker
+export const getEmailSyncWorker = () => emailSyncWorker;
+
 console.log('✅ All workers initialized');
 
 // Graceful shutdown
@@ -211,6 +234,9 @@ const shutdown = async () => {
   await Promise.all(Object.values(workers).filter(w => w && typeof w.close === 'function').map(w => w.close()));
   if (kafkaN8NWorker) {
     await kafkaN8NWorker.stop();
+  }
+  if (emailSyncWorker) {
+    await emailSyncWorker.stop();
   }
   await connection.quit();
   console.log('✅ Workers closed');

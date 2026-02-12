@@ -23,10 +23,12 @@ import {
   Stethoscope,
   MessageSquare,
   Ticket,
-  MessageCircle
+  MessageCircle,
+  Mail
 } from 'lucide-react';
 import { Link, useNavigate } from 'react-router-dom';
 import api from '@/utils/api';
+import EmailInbox from '@/components/team/EmailInbox';
 
 interface TeamUser {
   id: number | string;
@@ -45,6 +47,7 @@ const TeamDashboard = () => {
   const navigate = useNavigate();
   const [teamUser, setTeamUser] = useState<TeamUser | null>(null);
   const [loading, setLoading] = useState(true);
+  const [activeTab, setActiveTab] = useState<'dashboard' | 'emails'>('dashboard');
 
   useEffect(() => {
     const fetchTeamProfile = async () => {
@@ -250,6 +253,36 @@ const TeamDashboard = () => {
   return (
     <MainLayout>
       <div className="max-w-7xl mx-auto animate-in fade-in duration-700">
+        {/* Dashboard vs Email Tabs */}
+        <div className="flex gap-2 mb-8">
+          <Button
+            onClick={() => setActiveTab('dashboard')}
+            variant={activeTab === 'dashboard' ? 'default' : 'outline'}
+            className="gap-2"
+          >
+            <BarChart3 className="h-4 w-4" />
+            Dashboard
+          </Button>
+          <Button
+            onClick={() => setActiveTab('emails')}
+            variant={activeTab === 'emails' ? 'default' : 'outline'}
+            className="gap-2"
+          >
+            <Mail className="h-4 w-4" />
+            Email Inbox
+          </Button>
+        </div>
+
+        {/* Email Inbox Tab */}
+        {activeTab === 'emails' && (
+          <div className="mb-8">
+            <EmailInbox />
+          </div>
+        )}
+
+        {/* Dashboard Tab */}
+        {activeTab === 'dashboard' && (
+          <>
         {/* Welcome Section */}
         <div className="relative overflow-hidden rounded-2xl bg-gradient-to-r from-purple-500/5 to-blue-500/5 border border-purple-500/20 p-8 mb-8 backdrop-blur-xl">
           {/* Subtle background pattern */}
@@ -411,6 +444,8 @@ const TeamDashboard = () => {
             </div>
           </CardContent>
         </Card>
+        </>
+        )}
       </div>
 
       <style>{`
