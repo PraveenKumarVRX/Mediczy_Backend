@@ -503,6 +503,25 @@ router.get('/corporates', authUser, requireRole(['admin', 'team']), async (req, 
         });
       });
     }
+
+    // Fetch employee counts for all corporates
+    let employeeCountMap = {};
+    if (corporateIds.length > 0) {
+      const [employeeCounts] = await postgresSequelize.query(`
+        SELECT "entityId" as corporate_id, COUNT(DISTINCT "userId") as employee_count
+        FROM user_associations
+        WHERE "entityType" = 'corporate'
+        AND "entityId" IN (:corporateIds)
+        GROUP BY "entityId"
+      `, {
+        replacements: { corporateIds },
+        type: postgresSequelize.QueryTypes.SELECT
+      });
+
+      (employeeCounts || []).forEach(ec => {
+        employeeCountMap[ec.corporate_id] = parseInt(ec.employee_count, 10) || 0;
+      });
+    }
     
     // Map to expected format
     const formattedCorporates = corporates.map(c => {
@@ -521,7 +540,7 @@ router.get('/corporates', authUser, requireRole(['admin', 'team']), async (req, 
         email: c.email,
         phoneNumber: c.phoneNumber,
         industry: c.industry,
-        employeeCount: c.employeeCount || 0,
+        employeeCount: employeeCountMap[c.id] ?? c.employeeCount ?? 0,
         packageType: c.packageType || 'Standard',
         billingCycle: c.billingCycle || 'Yearly',
         status: c.status || 'Active',
