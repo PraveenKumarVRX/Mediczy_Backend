@@ -30,6 +30,12 @@ import { parseExcelFile, downloadExcelTemplate } from '@/utils/excelParser';
 import { Label } from '@/components/ui/label';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 
+interface TeamAssignment {
+  teamMemberId: number | string;
+  clinicId: number | string;
+  isPrimary?: boolean;
+}
+
 interface Plan {
   sponsorshipId?: number | string;
   planId: number | string;
@@ -59,6 +65,7 @@ interface CorporateData {
   panNumber?: string;
   createdAt: string;
   assignedTeamMemberId?: number | string;
+  teamAssignments?: TeamAssignment[]; // Array of team member assignments with clinics
   plans?: Plan[]; // Array of plans instead of single fields
 }
 
@@ -102,6 +109,7 @@ const CorporatesManagement = () => {
     panNumber: '',
     packageAmount: '',
     assignedTeamMemberId: '0',
+    teamAssignments: [] as TeamAssignment[], // Array of team assignments
     plans: [] as Plan[] // Array of plans
   });
 
@@ -359,6 +367,11 @@ const CorporatesManagement = () => {
         employeeCount: newCorporate.employeeCount ? parseInt(newCorporate.employeeCount) : null,
         packageAmount: newCorporate.packageAmount ? parseFloat(newCorporate.packageAmount) : null,
         assignedTeamMemberId: newCorporate.assignedTeamMemberId && newCorporate.assignedTeamMemberId !== '0' ? parseInt(newCorporate.assignedTeamMemberId) : null,
+        teamAssignments: newCorporate.teamAssignments.map(assignment => ({
+          teamMemberId: assignment.teamMemberId && assignment.teamMemberId !== '0' ? parseInt(assignment.teamMemberId as string) : null,
+          clinicId: assignment.clinicId && assignment.clinicId !== '0' ? parseInt(assignment.clinicId as string) : null,
+          isPrimary: assignment.isPrimary || false
+        })).filter(assignment => assignment.teamMemberId),
         plans: newCorporate.plans.map(plan => ({
           sponsorshipId: plan.sponsorshipId,
           planId: plan.planId && plan.planId !== '0' ? parseInt(plan.planId as string) : null,
@@ -400,6 +413,7 @@ const CorporatesManagement = () => {
         panNumber: '',
         packageAmount: '',
         assignedTeamMemberId: '0',
+        teamAssignments: [],
         plans: [],
       });
       setEditingCorporate(null);
@@ -461,6 +475,11 @@ const CorporatesManagement = () => {
       panNumber: corporate.panNumber || '',
       packageAmount: corporate.packageAmount?.toString() || '',
       assignedTeamMemberId: corporate.assignedTeamMemberId?.toString() || '0',
+      teamAssignments: (corporate.teamAssignments || []).map(assignment => ({
+        teamMemberId: assignment.teamMemberId?.toString() || '0',
+        clinicId: assignment.clinicId?.toString() || '0',
+        isPrimary: assignment.isPrimary || false
+      })),
       plans: (corporate.plans || []).map(plan => ({
         sponsorshipId: plan.sponsorshipId,
         planId: plan.planId?.toString() || '0',
@@ -520,6 +539,36 @@ const CorporatesManagement = () => {
               }
             }
           : plan
+      )
+    }));
+  };
+
+  const handleAddTeamAssignment = () => {
+    setNewCorporate(prev => ({
+      ...prev,
+      teamAssignments: [
+        ...prev.teamAssignments,
+        {
+          teamMemberId: '0',
+          clinicId: '0',
+          isPrimary: prev.teamAssignments.length === 0 // First assignment is primary by default
+        }
+      ]
+    }));
+  };
+
+  const handleRemoveTeamAssignment = (index: number) => {
+    setNewCorporate(prev => ({
+      ...prev,
+      teamAssignments: prev.teamAssignments.filter((_, i) => i !== index)
+    }));
+  };
+
+  const handleUpdateTeamAssignment = (index: number, field: string, value: any) => {
+    setNewCorporate(prev => ({
+      ...prev,
+      teamAssignments: prev.teamAssignments.map((assignment, i) => 
+        i === index ? { ...assignment, [field]: value } : assignment
       )
     }));
   };
@@ -1041,6 +1090,95 @@ const CorporatesManagement = () => {
                           </SelectContent>
                         </Select>
                       </div>
+                    </div>
+
+                    <div className="mt-6">
+                      <div className="flex items-center justify-between mb-4">
+                        <h4 className="text-md font-semibold">Team Assignments</h4>
+                        <Button type="button" variant="outline" size="sm" onClick={handleAddTeamAssignment}>
+                          <Plus className="mr-2 h-4 w-4" />
+                          Add Team Member
+                        </Button>
+                      </div>
+
+                      {newCorporate.teamAssignments.length === 0 ? (
+                        <div className="text-center py-8 text-muted-foreground border-2 border-dashed rounded-lg">
+                          No team members assigned. Click "Add Team Member" to assign team members with default clinics.
+                        </div>
+                      ) : (
+                        <div className="space-y-4">
+                          {newCorporate.teamAssignments.map((assignment, index) => (
+                            <div key={index} className="border rounded-lg p-4 space-y-4 bg-muted/30">
+                              <div className="flex items-center justify-between">
+                                <h5 className="font-medium">Team Member {index + 1}</h5>
+                                <Button 
+                                  type="button" 
+                                  variant="destructive" 
+                                  size="sm"
+                                  onClick={() => handleRemoveTeamAssignment(index)}
+                                >
+                                  Remove
+                                </Button>
+                              </div>
+
+                              <div className="grid md:grid-cols-2 gap-4">
+                                <div>
+                                  <Label>Team Member *</Label>
+                                  <Select 
+                                    value={assignment.teamMemberId?.toString() || '0'} 
+                                    onValueChange={(val) => handleUpdateTeamAssignment(index, 'teamMemberId', val)}
+                                  >
+                                    <SelectTrigger>
+                                      <SelectValue placeholder="Select team member" />
+                                    </SelectTrigger>
+                                    <SelectContent>
+                                      <SelectItem value="0">None</SelectItem>
+                                      {Array.isArray(teamMembers) && teamMembers.map(member => (
+                                        <SelectItem key={member.id} value={member.id.toString()}>
+                                          {member.name} ({member.email})
+                                        </SelectItem>
+                                      ))}
+                                    </SelectContent>
+                                  </Select>
+                                </div>
+
+                                <div>
+                                  <Label>Default Clinic *</Label>
+                                  <Select 
+                                    value={assignment.clinicId?.toString() || '0'} 
+                                    onValueChange={(val) => handleUpdateTeamAssignment(index, 'clinicId', val)}
+                                  >
+                                    <SelectTrigger>
+                                      <SelectValue placeholder="Select clinic" />
+                                    </SelectTrigger>
+                                    <SelectContent>
+                                      <SelectItem value="0">None</SelectItem>
+                                      {Array.isArray(clinics) && clinics.map(clinic => (
+                                        <SelectItem key={clinic.id} value={clinic.id.toString()}>
+                                          {clinic.name || clinic.clinicName}
+                                        </SelectItem>
+                                      ))}
+                                    </SelectContent>
+                                  </Select>
+                                </div>
+                              </div>
+
+                              <div className="flex items-center space-x-2">
+                                <input
+                                  type="checkbox"
+                                  id={`primary-${index}`}
+                                  checked={assignment.isPrimary || false}
+                                  onChange={(e) => handleUpdateTeamAssignment(index, 'isPrimary', e.target.checked)}
+                                  className="rounded border-gray-300"
+                                />
+                                <Label htmlFor={`primary-${index}`} className="cursor-pointer">
+                                  Primary Team Member
+                                </Label>
+                              </div>
+                            </div>
+                          ))}
+                        </div>
+                      )}
                     </div>
 
                     <div className="mt-6">

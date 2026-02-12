@@ -411,6 +411,36 @@ router.get('/corporates', authUser, requireRole(['admin', 'team']), async (req, 
       });
     }
     
+    // Fetch team assignments for all corporates
+    let teamAssignmentsMap = {};
+    if (corporateIds.length > 0) {
+      const [teamAssignments] = await postgresSequelize.query(`
+        SELECT 
+          cta.corporate_id,
+          cta.team_member_id,
+          cta.clinic_id,
+          cta.is_primary
+        FROM corporate_team_assignments cta
+        WHERE cta.corporate_id = ANY(:corporateIds)
+        ORDER BY cta.is_primary DESC, cta.created_at ASC
+      `, {
+        replacements: { corporateIds },
+        type: postgresSequelize.QueryTypes.SELECT
+      });
+      
+      // Group team assignments by corporate_id
+      (teamAssignments || []).forEach(ta => {
+        if (!teamAssignmentsMap[ta.corporate_id]) {
+          teamAssignmentsMap[ta.corporate_id] = [];
+        }
+        teamAssignmentsMap[ta.corporate_id].push({
+          teamMemberId: ta.team_member_id,
+          clinicId: ta.clinic_id,
+          isPrimary: ta.is_primary
+        });
+      });
+    }
+    
     // Map to expected format
     const formattedCorporates = corporates.map(c => {
       let metadata = {};
@@ -435,7 +465,8 @@ router.get('/corporates', authUser, requireRole(['admin', 'team']), async (req, 
         panNumber: c.panNumber,
         createdAt: c.createdAt,
         // Onboarding details
-        assignedTeamMemberId: c.assignedTo,
+        assignedTeamMemberId: c.assignedTo, // Kept for backward compatibility
+        teamAssignments: teamAssignmentsMap[c.id] || [], // Array of {teamMemberId, clinicId, isPrimary}
         plans: plansMap[c.id] || [] // Array of plans with clinic, doctor, partners
       };
     });
@@ -826,6 +857,7 @@ router.post('/corporates', authUser, requireRole(['admin', 'team']), async (req,
       packageType, gstNumber, panNumber, status,
       // Onboarding fields
       assignedTeamMemberId,
+      teamAssignments, // Array of: { teamMemberId, clinicId, isPrimary }
       plans // Array of: { planId, clinicId, doctorId, startDate, endDate, networkPartners }
     } = corporateData;
     
@@ -911,6 +943,52 @@ router.post('/corporates', authUser, requireRole(['admin', 'team']), async (req,
       `, {
         replacements: { userId: req.user.id, corporateId: newCorporate.id }
       });
+    }
+    
+    // Create team assignments
+    const createdTeamAssignments = [];
+    if (teamAssignments && Array.isArray(teamAssignments) && teamAssignments.length > 0 && newCorporate.id) {
+      for (const assignment of teamAssignments) {
+        const { teamMemberId, clinicId, isPrimary } = assignment;
+        const parsedTeamMemberId = teamMemberId ? parseInt(teamMemberId) : null;
+        const parsedClinicId = clinicId ? parseInt(clinicId) : null;
+        
+        if (!parsedTeamMemberId) continue; // Skip if no team member ID
+        
+        await postgresSequelize.query(`
+          INSERT INTO corporate_team_assignments 
+          (corporate_id, team_member_id, clinic_id, is_primary, created_at, updated_at)
+          VALUES (:corporateId, :teamMemberId, :clinicId, :isPrimary, NOW(), NOW())
+          ON CONFLICT (corporate_id, team_member_id) 
+          DO UPDATE SET clinic_id = :clinicId, is_primary = :isPrimary, updated_at = NOW()
+        `, {
+          replacements: {
+            corporateId: newCorporate.id,
+            teamMemberId: parsedTeamMemberId,
+            clinicId: parsedClinicId,
+            isPrimary: isPrimary || false
+          }
+        });
+        
+        // Also create user association for each team member
+        await postgresSequelize.query(`
+          INSERT INTO user_associations ("userId", "entityType", "entityId", role, "isPrimary", status, "startDate", "createdAt", "updatedAt")
+          VALUES (:userId, 'corporate', :corporateId, 'manager', :isPrimary, 'active', NOW(), NOW(), NOW())
+          ON CONFLICT DO NOTHING
+        `, {
+          replacements: { 
+            userId: parsedTeamMemberId, 
+            corporateId: newCorporate.id,
+            isPrimary: isPrimary || false
+          }
+        });
+        
+        createdTeamAssignments.push({
+          teamMemberId: parsedTeamMemberId,
+          clinicId: parsedClinicId,
+          isPrimary: isPrimary || false
+        });
+      }
     }
     
     // Create multiple membership plans
@@ -1004,6 +1082,7 @@ router.post('/corporates', authUser, requireRole(['admin', 'team']), async (req,
     
     console.log(`[Corporates] Created corporate ${companyName} by ${req.user.email}`);
     console.log(`[Corporates] - Team Member: ${assignedTeamMemberId || req.user.id}`);
+    console.log(`[Corporates] - Team Assignments: ${createdTeamAssignments.length} assignment(s) created`);
     console.log(`[Corporates] - Plans: ${createdPlans.length} plan(s) created`);
     
     return res.status(201).json({
@@ -1016,6 +1095,7 @@ router.post('/corporates', authUser, requireRole(['admin', 'team']), async (req,
         email: newCorporate.email || email,
         status: newCorporate.status || 'Active',
         assignedTeamMemberId: assignedTeamMemberId || (req.user.isTeam ? req.user.id : null),
+        teamAssignments: createdTeamAssignments,
         plans: createdPlans,
         isActive: true,
         createdAt: new Date().toISOString()
@@ -1044,6 +1124,7 @@ router.put('/corporates/:id', authUser, requireRole(['admin', 'team']), async (r
       packageType, gstNumber, panNumber, status,
       // Onboarding fields
       assignedTeamMemberId,
+      teamAssignments, // Array of: { teamMemberId, clinicId, isPrimary }
       plans // Array of: { sponsorshipId (optional), planId, clinicId, doctorId, startDate, endDate, networkPartners }
     } = corporateData;
     
@@ -1296,6 +1377,74 @@ router.put('/corporates/:id', authUser, requireRole(['admin', 'team']), async (r
       }
     }
     
+    // Handle team assignments array (add/update/remove)
+    if (teamAssignments && Array.isArray(teamAssignments)) {
+      // Get existing team assignments for this corporate
+      const [existingAssignments] = await postgresSequelize.query(`
+        SELECT team_member_id, clinic_id, is_primary
+        FROM corporate_team_assignments
+        WHERE corporate_id = :corporateId
+      `, {
+        replacements: { corporateId },
+        type: postgresSequelize.QueryTypes.SELECT
+      });
+      
+      const existingTeamMemberIds = (existingAssignments || []).map(a => a.team_member_id);
+      const updatedTeamMemberIds = [];
+      
+      // Process each team assignment in the request
+      for (const assignment of teamAssignments) {
+        const { teamMemberId, clinicId, isPrimary } = assignment;
+        const parsedTeamMemberId = teamMemberId ? parseInt(teamMemberId) : null;
+        const parsedClinicId = clinicId ? parseInt(clinicId) : null;
+        
+        if (!parsedTeamMemberId) continue; // Skip if no team member ID
+        
+        updatedTeamMemberIds.push(parsedTeamMemberId);
+        
+        // Upsert team assignment
+        await postgresSequelize.query(`
+          INSERT INTO corporate_team_assignments 
+          (corporate_id, team_member_id, clinic_id, is_primary, created_at, updated_at)
+          VALUES (:corporateId, :teamMemberId, :clinicId, :isPrimary, NOW(), NOW())
+          ON CONFLICT (corporate_id, team_member_id) 
+          DO UPDATE SET clinic_id = :clinicId, is_primary = :isPrimary, updated_at = NOW()
+        `, {
+          replacements: {
+            corporateId,
+            teamMemberId: parsedTeamMemberId,
+            clinicId: parsedClinicId,
+            isPrimary: isPrimary || false
+          }
+        });
+        
+        // Also update user association
+        await postgresSequelize.query(`
+          INSERT INTO user_associations ("userId", "entityType", "entityId", role, "isPrimary", status, "startDate", "createdAt", "updatedAt")
+          VALUES (:userId, 'corporate', :corporateId, 'manager', :isPrimary, 'active', NOW(), NOW(), NOW())
+          ON CONFLICT DO NOTHING
+        `, {
+          replacements: { 
+            userId: parsedTeamMemberId, 
+            corporateId,
+            isPrimary: isPrimary || false
+          }
+        });
+      }
+      
+      // Remove team assignments that were not in the updated list
+      const toRemoveTeamMembers = existingTeamMemberIds.filter(id => !updatedTeamMemberIds.includes(id));
+      
+      for (const removeTeamMemberId of toRemoveTeamMembers) {
+        await postgresSequelize.query(`
+          DELETE FROM corporate_team_assignments 
+          WHERE corporate_id = :corporateId AND team_member_id = :teamMemberId
+        `, {
+          replacements: { corporateId, teamMemberId: removeTeamMemberId }
+        });
+      }
+    }
+    
     // Fetch updated record with plans
     const [updated] = await postgresSequelize.query(`
       SELECT * FROM corporates WHERE id = :corporateId
@@ -1305,6 +1454,20 @@ router.put('/corporates/:id', authUser, requireRole(['admin', 'team']), async (r
     });
     
     const updatedCorporate = Array.isArray(updated) ? updated[0] : updated;
+    
+    // Fetch updated team assignments
+    const [updatedTeamAssignments] = await postgresSequelize.query(`
+      SELECT 
+        team_member_id,
+        clinic_id,
+        is_primary
+      FROM corporate_team_assignments
+      WHERE corporate_id = :corporateId
+      ORDER BY is_primary DESC, created_at ASC
+    `, {
+      replacements: { corporateId },
+      type: postgresSequelize.QueryTypes.SELECT
+    });
     
     // Fetch updated plans
     const [updatedPlans] = await postgresSequelize.query(`
@@ -1324,6 +1487,7 @@ router.put('/corporates/:id', authUser, requireRole(['admin', 'team']), async (r
     });
     
     console.log(`[Corporates] Updated corporate ID ${corporateId} by ${req.user.email}`);
+    console.log(`[Corporates] - Team Assignments: ${(updatedTeamAssignments || []).length} assignment(s) active`);
     console.log(`[Corporates] - Plans: ${(updatedPlans || []).length} plan(s) active`);
     
     return res.json({
@@ -1342,6 +1506,11 @@ router.put('/corporates/:id', authUser, requireRole(['admin', 'team']), async (r
         gstNumber: updatedCorporate.gstNumber,
         panNumber: updatedCorporate.panNumber,
         assignedTeamMemberId: updatedCorporate.assignedTo,
+        teamAssignments: (updatedTeamAssignments || []).map(ta => ({
+          teamMemberId: ta.team_member_id,
+          clinicId: ta.clinic_id,
+          isPrimary: ta.is_primary
+        })),
         plans: (updatedPlans || []).map(p => ({
           sponsorshipId: p.sponsorship_id,
           planId: p.plan_id,
