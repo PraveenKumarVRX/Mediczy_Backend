@@ -1938,6 +1938,40 @@ router.post('/corporate-employees', authUser, requireRole(['admin', 'team', 'cor
 router.get('/corporate-employees/:corporateId', authUser, requireRole(['admin', 'team', 'corporate_admin']), async (req, res) => {
   try {
     const { corporateId } = req.params;
+    const numericCorporateId = parseInt(corporateId, 10);
+    const userId = req.user.id;
+    const isAdmin = req.user.isAdmin;
+
+    // Validate corporate ID format
+    if (isNaN(numericCorporateId)) {
+      console.error(`Invalid corporate ID format: ${corporateId}`);
+      return res.status(400).json({
+        success: false,
+        message: 'Invalid corporate ID format. Expected numeric ID.'
+      });
+    }
+
+    // Authorization: team members can only access their assigned corporates
+    if (!isAdmin) {
+      const [hasAccess] = await postgresSequelize.query(`
+        SELECT 1 FROM user_associations
+        WHERE "userId" = :userId
+          AND "entityId" = :corporateId
+          AND "entityType" = 'corporate'
+          AND status = 'active'
+        LIMIT 1
+      `, {
+        replacements: { userId, corporateId: numericCorporateId },
+        type: postgresSequelize.QueryTypes.SELECT
+      });
+
+      if (!hasAccess) {
+        return res.status(403).json({
+          success: false,
+          message: 'Access denied. You do not have permission to access this corporate.'
+        });
+      }
+    }
     
     const employees = await postgresSequelize.query(`
       SELECT u.id, u.email, u."firstName", u."lastName", u."phoneNumber",
@@ -1949,7 +1983,7 @@ router.get('/corporate-employees/:corporateId', authUser, requireRole(['admin', 
         AND ua.role = 'employee'
       ORDER BY u."firstName"
     `, {
-      replacements: { corporateId },
+      replacements: { corporateId: numericCorporateId },
       type: postgresSequelize.QueryTypes.SELECT
     });
     
@@ -1977,6 +2011,40 @@ router.get('/corporate-employees/:corporateId', authUser, requireRole(['admin', 
 router.get('/corporate-health-packages/:corporateId', authUser, requireRole(['admin', 'team', 'corporate_admin']), async (req, res) => {
   try {
     const { corporateId } = req.params;
+    const numericCorporateId = parseInt(corporateId, 10);
+    const userId = req.user.id;
+    const isAdmin = req.user.isAdmin;
+
+    // Validate corporate ID format
+    if (isNaN(numericCorporateId)) {
+      console.error(`Invalid corporate ID format: ${corporateId}`);
+      return res.status(400).json({
+        success: false,
+        message: 'Invalid corporate ID format. Expected numeric ID.'
+      });
+    }
+
+    // Authorization: team members can only access their assigned corporates
+    if (!isAdmin) {
+      const [hasAccess] = await postgresSequelize.query(`
+        SELECT 1 FROM user_associations
+        WHERE "userId" = :userId
+          AND "entityId" = :corporateId
+          AND "entityType" = 'corporate'
+          AND status = 'active'
+        LIMIT 1
+      `, {
+        replacements: { userId, corporateId: numericCorporateId },
+        type: postgresSequelize.QueryTypes.SELECT
+      });
+
+      if (!hasAccess) {
+        return res.status(403).json({
+          success: false,
+          message: 'Access denied. You do not have permission to access this corporate.'
+        });
+      }
+    }
 
     const packages = await postgresSequelize.query(`
       SELECT "packageId", "packageName", "packageDetails",
@@ -1987,7 +2055,7 @@ router.get('/corporate-health-packages/:corporateId', authUser, requireRole(['ad
       GROUP BY "packageId", "packageName", "packageDetails"
       ORDER BY "packageName" ASC
     `, {
-      replacements: { corporateId },
+      replacements: { corporateId: numericCorporateId },
       type: postgresSequelize.QueryTypes.SELECT
     });
 
@@ -2017,6 +2085,40 @@ router.get('/corporate-health-packages/:corporateId', authUser, requireRole(['ad
 router.get('/corporate-plans/:corporateId', authUser, requireRole(['admin', 'team', 'corporate_admin']), async (req, res) => {
   try {
     const { corporateId } = req.params;
+    const numericCorporateId = parseInt(corporateId, 10);
+    const userId = req.user.id;
+    const isAdmin = req.user.isAdmin;
+
+    // Validate corporate ID format
+    if (isNaN(numericCorporateId)) {
+      console.error(`Invalid corporate ID format: ${corporateId}`);
+      return res.status(400).json({
+        success: false,
+        message: 'Invalid corporate ID format. Expected numeric ID.'
+      });
+    }
+
+    // Authorization: team members can only access their assigned corporates
+    if (!isAdmin) {
+      const [hasAccess] = await postgresSequelize.query(`
+        SELECT 1 FROM user_associations
+        WHERE "userId" = :userId
+          AND "entityId" = :corporateId
+          AND "entityType" = 'corporate'
+          AND status = 'active'
+        LIMIT 1
+      `, {
+        replacements: { userId, corporateId: numericCorporateId },
+        type: postgresSequelize.QueryTypes.SELECT
+      });
+
+      if (!hasAccess) {
+        return res.status(403).json({
+          success: false,
+          message: 'Access denied. You do not have permission to access this corporate.'
+        });
+      }
+    }
 
     const plans = await postgresSequelize.query(`
       SELECT p.id, p.name, p.slug, p.price, p.annual_price, p.currency, p.billing_cycle, p.is_active,
@@ -2027,7 +2129,7 @@ router.get('/corporate-plans/:corporateId', authUser, requireRole(['admin', 'tea
         FROM user_subscriptions us
         JOIN user_associations ua ON ua."userId" = us.user_id
         WHERE ua."entityType" = 'corporate'
-          AND ua."entityId" = :corporateId
+          AND ua."entityId" = :corporateId::
           AND ua.role = 'employee'
           AND us.status = 'ACTIVE'
         GROUP BY us.plan_id

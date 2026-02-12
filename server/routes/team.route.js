@@ -6,6 +6,7 @@ import { authTeam, requireModule, attachAccessLevel } from '../middleware/team.m
 import { JWT_CONFIG } from '../config/auth.config.js';
 import { authLimiter } from '../middleware/rateLimiter.middleware.js';
 import { auditLoginAttempt } from '../middleware/audit.middleware.js';
+import { postgresSequelize } from '../db/postgres-sequelize.js';
 
 const router = express.Router();
 
@@ -103,6 +104,26 @@ router.post('/login', authLimiter, [
       ]
     };
 
+    // Fetch assigned corporates for team member
+    let assignedCorporates = [];
+    try {
+      const [corporates] = await postgresSequelize.query(`
+        SELECT DISTINCT c.id, c."companyName", c.industry, c.status
+        FROM corporates c
+        JOIN user_associations ua ON ua."entityId" = c.id
+        WHERE ua."userId" = :userId
+          AND ua."entityType" = 'corporate'
+          AND ua.status = 'active'
+        ORDER BY c."companyName" ASC
+      `, {
+        replacements: { userId: user.id },
+        type: postgresSequelize.QueryTypes.SELECT
+      });
+      assignedCorporates = corporates || [];
+    } catch (err) {
+      console.warn('Could not fetch assigned corporates:', err.message);
+    }
+
     // Generate JWT token
     const token = jwt.sign(
       {
@@ -112,7 +133,8 @@ router.post('/login', authLimiter, [
         role: user.role || 'team',  // Use actual user role (admin, team, etc.)
         userType: 'team',
         isTeam: true,
-        isAdmin: user.isAdmin || false
+        isAdmin: user.isAdmin || false,
+        assignedCorporates: assignedCorporates.map(c => c.id) // Include corporate IDs in token
       },
       JWT_CONFIG.SECRET,
       { expiresIn: '8h' }
@@ -127,7 +149,8 @@ router.post('/login', authLimiter, [
       success: true,
       message: 'Team login successful',
       token,
-      teamUser
+      teamUser,
+      assignedCorporates  // Include available corporates for team member
     });
 
   } catch (error) {

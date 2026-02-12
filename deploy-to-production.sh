@@ -14,7 +14,7 @@ NC='\033[0m' # No Color
 # Production server details
 PROD_SERVER="ubuntu@13.234.17.52"
 PROD_PATH="/home/ubuntu/Mediczy"
-SSH_KEY=".venv/bin/mediqzy.pem"
+SSH_KEY="$HOME/.ssh/mediqzy.pem"
 
 echo -e "${BLUE}╔════════════════════════════════════════╗${NC}"
 echo -e "${BLUE}║   Mediczy Production Deployment       ║${NC}"
