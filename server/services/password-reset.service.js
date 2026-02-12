@@ -436,6 +436,11 @@ class PasswordResetService {
       const resetTokenHash = crypto.createHash('sha256').update(resetToken).digest('hex');
       const resetTokenExpiry = new Date(Date.now() + 3600000); // 1 hour
 
+      console.log(`🔑 Generating reset token for ${userType} account ID: ${account.id}`);
+      console.log(`   Reset token (first 16 chars): ${resetToken.substring(0, 16)}...`);
+      console.log(`   Reset token hash (first 16 chars): ${resetTokenHash.substring(0, 16)}...`);
+      console.log(`   Expiry: ${resetTokenExpiry}`);
+
       // Get the appropriate model for updating
       const getModelByType = () => {
         switch (userType) {
@@ -459,6 +464,8 @@ class PasswordResetService {
         { where: { id: account.id } }
       );
 
+      console.log(`✅ Reset token saved to database for account ID: ${account.id}`);
+
       return {
         success: true,
         message: 'OTP verified successfully',
@@ -481,6 +488,7 @@ class PasswordResetService {
     try {
       // Validate inputs
       if (!resetToken || typeof resetToken !== 'string') {
+        console.warn('⚠️ Password reset: Invalid reset token type or empty');
         return {
           success: false,
           message: 'Invalid reset token provided'
@@ -488,6 +496,7 @@ class PasswordResetService {
       }
 
       if (!newPassword || typeof newPassword !== 'string' || newPassword.length < 6) {
+        console.warn('⚠️ Password reset: Invalid password (too short or wrong type)');
         return {
           success: false,
           message: 'Invalid password provided'
@@ -496,6 +505,9 @@ class PasswordResetService {
 
       // Hash the token
       const resetTokenHash = crypto.createHash('sha256').update(resetToken).digest('hex');
+      console.log(`🔍 Password reset attempt for ${userType}:`);
+      console.log(`   Token (first 16 chars): ${resetToken.substring(0, 16)}...`);
+      console.log(`   Token hash (first 16 chars): ${resetTokenHash.substring(0, 16)}...`);
 
       // Get the appropriate model based on userType
       const getModelByType = () => {
@@ -521,11 +533,26 @@ class PasswordResetService {
       });
 
       if (!account) {
+        console.warn(`❌ Password reset: No account found with matching token for ${userType}`);
         return {
           success: false,
           message: 'Invalid or expired reset token'
         };
       }
+
+      console.log(`✓ Account found: ID ${account.id}, Email: ${account.email || account.name}`);
+
+      // Check if token has expired
+      if (!account.passwordResetExpires || new Date() > new Date(account.passwordResetExpires)) {
+        console.warn(`❌ Password reset: Token expired for account ID ${account.id}`);
+        console.warn(`   Expiry: ${account.passwordResetExpires}, Current: ${new Date()}`);
+        return {
+          success: false,
+          message: 'Reset token has expired. Please request a new password reset.'
+        };
+      }
+
+      console.log(`✓ Token is valid and not expired`);
 
       // Update password directly on the instance (will trigger beforeUpdate hook)
       account.password = newPassword;

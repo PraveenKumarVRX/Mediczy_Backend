@@ -2076,6 +2076,10 @@ router.put('/team/:id', authUser, requireRole('admin'), async (req, res) => {
       });
     }
 
+    console.log(`📝 Updating team member ID ${req.params.id}:`);
+    console.log(`   Current status: ${teamUser.status}`);
+    console.log(`   isActive from request: ${userData.isActive}`);
+
     // Parse existing metadata
     let existingMetadata = {};
     try {
@@ -2106,9 +2110,13 @@ router.put('/team/:id', authUser, requireRole('admin'), async (req, res) => {
       phoneNumber: userData.phoneNumber || teamUser.phoneNumber,
       role: userData.role || teamUser.role || 'team',
       membershipType: 'team',
-      metadata: JSON.stringify(updatedMetadata),
-      status: userData.isActive === false ? 'inactive' : 'active'
+      metadata: JSON.stringify(updatedMetadata)
     };
+
+    // Only update status if explicitly provided
+    if (userData.isActive !== undefined) {
+      updateData.status = userData.isActive === false ? 'inactive' : 'active';
+    }
 
     // Only update password if provided
     if (userData.password && userData.password.trim() !== '') {
@@ -2116,6 +2124,8 @@ router.put('/team/:id', authUser, requireRole('admin'), async (req, res) => {
     }
 
     await teamUser.update(updateData);
+
+    console.log(`✅ Team member updated - New status: ${teamUser.status}`);
 
     return res.status(200).json({
       success: true,

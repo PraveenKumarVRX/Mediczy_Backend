@@ -62,10 +62,44 @@ const roles = [
 ];
 
 const permissions = [
-  'Dashboard Access', 'User Management', 'Doctor Management', 'Hospital Management',
-  'Appointment Management', 'Insurance Management', 'Plan Management', 'Reports Access',
-  'Settings Management', 'Audit Logs', 'Backup Management', 'System Configuration',
-  'Financial Reports', 'User Analytics', 'Content Management', 'Support Tickets'
+  // Core Access
+  'Dashboard Access',
+  
+  // User & Team Management
+  'User Management',
+  'Team Directory Access',
+  
+  // Healthcare Provider Management
+  'Doctor Management',
+  'Hospital Management',
+  'Clinic Management',
+  'Lab Management',
+  'Pharmacy Management',
+  
+  // Client & Partner Management
+  'Corporate Management',
+  'Insurance Management',
+  
+  // Operations
+  'Appointment Management',
+  'Health Plans Access',
+  
+  // Communication & Support
+  'Chat Dashboard Access',
+  'Chat Analytics',
+  'Support Tickets',
+  
+  // Reports & Analytics
+  'Reports Access',
+  'Financial Reports',
+  'User Analytics',
+  
+  // System & Administration
+  'Settings Management',
+  'System Configuration',
+  'Audit Logs',
+  'Backup Management',
+  'Content Management'
 ];
 
 const TeamManagement = () => {
