@@ -790,8 +790,8 @@ app.get('/api/health', async (req, res) => {
   }
 });
 
-// Database orchestrator health check endpoint
-app.get('/api/db/health', authUser, requireRole('admin'), async (req, res) => {
+// Database orchestrator health check endpoint (public for monitoring)
+app.get('/api/db/health', async (req, res) => {
   try {
     const health = await orchestrator.healthCheck();
     const statusCode = health.status === 'healthy' ? 200 : 503;

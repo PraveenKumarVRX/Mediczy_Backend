@@ -129,9 +129,9 @@ import {
   TeamAppointmentsPage,
   TeamChatDashboardPage,
   TeamHealthPlansPage,
-  TeamActivityLogsPage,
-  TeamSettingsPage
+  TeamActivityLogsPage
 } from '@/pages/team/TeamModulePages';
+import TeamSettings from '@/pages/team/TeamSettings';
 import TeamManagement from '@/pages/admin/TeamManagement';
 import TeamPrivileges from '@/pages/admin/TeamPrivileges';
 import NurseLogin from '@/pages/nurse/NurseLogin';
@@ -678,7 +678,7 @@ const AppRoutes = () => {
   <Route path="/team/whatsapp" element={<WhatsAppCommunication />} />
   <Route path="/team/health-plans" element={<TeamHealthPlansPage />} />
   <Route path="/team/activity" element={<TeamActivityLogsPage />} />
-  <Route path="/team/settings" element={<TeamSettingsPage />} />
+  <Route path="/team/settings" element={<TeamSettings />} />
   <Route path="/admin/team" element={<TeamManagement />} />
   {/* Ambulance */}
   <Route path="/ambulance/dashboard" element={<AmbulanceDashboard />} />

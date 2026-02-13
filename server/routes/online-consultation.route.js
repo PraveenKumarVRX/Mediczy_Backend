@@ -1215,10 +1215,17 @@ router.get('/video/join/:appointmentId', authUser, async (req, res) => {
       });
     }
 
+    // Detect emergency triage appointments early for special handling
+    const isEmergencyTriage = appointment.sourceChannel === 'emergency_triage' || 
+                              appointment.notes_json?.type === 'emergency_triage';
+
     // Check authorization
     const normalizedUserId = userId ? String(userId) : null;
     const appointmentUserId = appointment.userId ? String(appointment.userId) : null;
     const appointmentDoctorId = appointment.doctorId ? String(appointment.doctorId) : null;
+    
+    // For emergency triage with null userId (guest), allow any authenticated user or match by appointment ID
+    const isEmergencyGuest = isEmergencyTriage && appointmentUserId === null;
     const isPatient = !!(normalizedUserId && appointmentUserId === normalizedUserId);
     const isDoctor = !!(
       normalizedUserId &&
@@ -1230,10 +1237,13 @@ router.get('/video/join/:appointmentId', authUser, async (req, res) => {
       appointmentUserId: appointment.userId, 
       appointmentDoctorId: appointment.doctorId,
       isPatient, 
-      isDoctor 
+      isDoctor,
+      isEmergencyGuest,
+      isEmergencyTriage
     });
     
-    if (!isPatient && !isDoctor) {
+    // Allow access if: patient, doctor, or emergency guest user
+    if (!isPatient && !isDoctor && !isEmergencyGuest) {
       return res.status(403).json({
         success: false,
         message: 'Not authorized to join this consultation'
@@ -1251,7 +1261,12 @@ router.get('/video/join/:appointmentId', authUser, async (req, res) => {
       });
     }
 
-    if (appointment.paymentStatus !== 'paid') {
+    // Check payment status - allow emergency triage on credit
+    const isPaymentValid = appointment.paymentStatus === 'paid' || 
+                           appointment.paymentStatus === 'credit' ||
+                           isEmergencyTriage;
+
+    if (!isPaymentValid) {
       // Check if user has an active membership plan
       const activePlan = await UserPlan.findOne({
         where: {
@@ -1273,26 +1288,31 @@ router.get('/video/join/:appointmentId', authUser, async (req, res) => {
     }
 
     // Check if within appointment window (15 mins before to 1 hour after)
-    const appointmentDateTime = new Date(`${appointment.appointmentDate}T${appointment.appointmentTime}`);
-    const now = new Date();
-    const windowStart = new Date(appointmentDateTime.getTime() - 15 * 60 * 1000);
-    const windowEnd = new Date(appointmentDateTime.getTime() + 60 * 60 * 1000);
+    // Skip timing check for emergency triage appointments (immediate access)
+    if (!isEmergencyTriage) {
+      const appointmentDateTime = new Date(`${appointment.appointmentDate}T${appointment.appointmentTime}`);
+      const now = new Date();
+      const windowStart = new Date(appointmentDateTime.getTime() - 15 * 60 * 1000);
+      const windowEnd = new Date(appointmentDateTime.getTime() + 60 * 60 * 1000);
 
-    if (now < windowStart) {
-      return res.status(400).json({
-        success: false,
-        message: 'Video call will be available 15 minutes before the appointment',
-        appointmentTime: appointmentDateTime.toISOString(),
-        canJoinAt: windowStart.toISOString()
-      });
-    }
+      if (now < windowStart) {
+        return res.status(400).json({
+          success: false,
+          message: 'Video call will be available 15 minutes before the appointment',
+          appointmentTime: appointmentDateTime.toISOString(),
+          canJoinAt: windowStart.toISOString()
+        });
+      }
 
-    if (now > windowEnd) {
-      return res.status(400).json({
-        success: false,
-        message: 'Appointment time has passed',
-        appointmentTime: appointmentDateTime.toISOString()
-      });
+      if (now > windowEnd) {
+        return res.status(400).json({
+          success: false,
+          message: 'Appointment time has passed',
+          appointmentTime: appointmentDateTime.toISOString()
+        });
+      }
+    } else {
+      console.log('⚡ Emergency triage appointment - bypassing timing window check');
     }
 
     // Generate or get meeting link

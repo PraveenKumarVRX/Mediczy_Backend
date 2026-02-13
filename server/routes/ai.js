@@ -649,6 +649,10 @@ ${recentHistory}
       console.log(`🧠 Routing request to SIB (Synthetic Intelligence Brain)...`);
       const sibBaseUrl = process.env.SIB_URL || 'http://localhost:8001';
 
+      // Use AbortController for timeout (native fetch doesn't support timeout option)
+      const controller = new AbortController();
+      const timeout = setTimeout(() => controller.abort(), 10000);
+
       const sibResponse = await fetch(`${sibBaseUrl}/chat`, {
         method: 'POST',
         headers: {
@@ -660,8 +664,10 @@ ${recentHistory}
           language: language,
           session_id: sessionId
         }),
-        timeout: 10000
+        signal: controller.signal
       });
+
+      clearTimeout(timeout);
 
       if (!sibResponse.ok) {
         const errorText = await sibResponse.text().catch(() => '');

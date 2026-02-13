@@ -452,7 +452,8 @@ class MedicalPipeline:
     # ==================== Component 5: LLM Generation ====================
     
     def generate_response(self, query: str, context: List[str] = None, 
-                         system_prompt: str = None, patient_data: Dict = None) -> Tuple[str, str]:
+                         system_prompt: str = "You are Dr. iSHA, a helpful medical AI assistant.",
+                         patient_data: Dict = None) -> Tuple[str, str]:
         """
         Generate response using LLM (Groq primary, then fallbacks)
         
@@ -655,15 +656,19 @@ Ask: "Would you like me to help book an appointment?"
             if self._groq_client is None:
                 self._groq_client = Groq(api_key=self.groq_api_key)
             
+            # Ensure system_prompt is a string
+            if not isinstance(system_prompt, str):
+                system_prompt = str(system_prompt) if system_prompt else "You are Dr. iSHA, a helpful medical AI assistant."
+            
             start = time.time()
             response = self._groq_client.chat.completions.create(
-                model="llama-3.3-70b-versatile",
+                model="llama-3.1-8b-instant",  # Using available model (70b blocked at project level)
                 messages=[
                     {"role": "system", "content": system_prompt},
                     {"role": "user", "content": prompt}
                 ],
                 temperature=0.7,
-                max_tokens=150
+                max_tokens=800  # Increased from 150 to allow proper responses
             )
             
             latency = (time.time() - start) * 1000
@@ -697,7 +702,7 @@ Ask: "Would you like me to help book an appointment?"
                     {"role": "system", "content": system_prompt},
                     {"role": "user", "content": prompt}
                 ],
-                max_tokens=150,
+                max_tokens=800,  # Increased from 150
                 temperature=0.7
             )
             

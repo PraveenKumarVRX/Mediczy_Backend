@@ -369,6 +369,7 @@ const resolveUserType = (decoded) => {
 const PUBLIC_ENDPOINTS = [
   '/health',
   '/api/health',              // Main health check endpoint
+  '/api/db/health',           // Database health check endpoint (monitoring)
   '/api/health-check',
   '/api/status',
   '/metrics',

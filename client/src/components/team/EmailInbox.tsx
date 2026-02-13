@@ -1,9 +1,10 @@
 import React, { useState, useEffect } from 'react';
-import { Mail, Star, Trash2, Archive, Clock, AlertCircle, CheckCircle } from 'lucide-react';
+import { Mail, Star, Trash2, Archive, Clock, AlertCircle, CheckCircle, Settings } from 'lucide-react';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import api from '@/utils/api';
+import { Link } from 'react-router-dom';
 
 interface Email {
   id: string;
@@ -167,6 +168,16 @@ const EmailInbox: React.FC = () => {
                 }}
               >
                 Unread ({stats?.unread || 0})
+              </Button>
+              <Button
+                variant="outline"
+                size="sm"
+                asChild
+              >
+                <Link to="/team/settings" className="flex items-center gap-2">
+                  <Settings className="w-4 h-4" />
+                  SMTP Settings
+                </Link>
               </Button>
             </div>
           </CardHeader>

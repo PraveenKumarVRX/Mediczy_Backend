@@ -10,11 +10,16 @@ let io; // Store io instance for external use
 
 export function setupSocketIO(server) {
   io = new Server(server, {
+    path: '/socket.io', // Ensure Socket.io is on standard path
+    transports: ['websocket', 'polling'], // Support both WebSocket and polling fallback
     cors: {
       origin: "*", // Allow all origins for testing
       methods: ["GET", "POST"],
       credentials: true,
     },
+    // Increase ping timeout for production reliability
+    pingInterval: 25000,
+    pingTimeout: 20000,
   });
 
   io.on("connection", (socket) => {
