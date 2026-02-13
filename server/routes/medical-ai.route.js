@@ -698,7 +698,7 @@ router.get('/triage-doctors', authUser, async (req, res) => {
  */
 router.post('/instant-triage-call', async (req, res) => {
   try {
-    const { doctorId, symptoms, urgencyLevel, triageId, paymentMethod, guestEmail, guestPhone } = req.body;
+    const { doctorId, symptoms, urgencyLevel, triageId, paymentMethod, guestEmail, guestPhone, guestName } = req.body;
     const { Doctor, Appointment } = await import('../models/index.js');
     const { User } = await import('../models/user.model.intelligent.js');
     const crypto = await import('crypto');

@@ -414,6 +414,7 @@ const PUBLIC_ENDPOINTS = [
   '/api/otp',
   '/api/masterdata', // Public read-only provider data (hospitals, labs, clinics)
   '/api/medical-ai/test', // AI medical consultation test endpoint (for demos and testing)
+  '/api/medical-ai/instant-triage-call', // Emergency triage endpoint - accessible without authentication
   '/api/tts', // Text-to-Speech for emergency triage (Eleven Labs)
   '/api/membership/plans', // Public membership plans listing
   '/api/membership-plans', // Public membership plans (alternative route)
