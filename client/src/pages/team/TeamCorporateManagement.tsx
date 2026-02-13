@@ -356,7 +356,15 @@ const TeamCorporateManagement = () => {
   const fetchNetworkPartners = async (corporateId: number) => {
     try {
       const token = localStorage.getItem('teamToken');
-      const response = await api.get(`/admin/corporate-network/${corporateId}`, {
+      const numericId = parseInt(String(corporateId), 10);
+      if (isNaN(numericId)) {
+        console.error('Invalid corporate ID:', corporateId);
+        setLabPartners([]);
+        setHospitalPartners([]);
+        setClinicPartners([]);
+        return;
+      }
+      const response = await api.get(`/admin/corporate-network/${numericId}`, {
         headers: token ? { Authorization: `Bearer ${token}` } : undefined
       });
 
