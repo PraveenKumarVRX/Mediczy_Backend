@@ -692,57 +692,89 @@ router.get('/triage-doctors', authUser, async (req, res) => {
 /**
  * @route   POST /api/medical-ai/instant-triage-call
  * @desc    Create instant video call room with triage doctor
+ *          EMERGENCY ENDPOINT - Accessible without authentication
  *          Uses CREDIT SYSTEM - 1 free emergency consultation per user (pay later)
- * @access  Private
+ * @access  Public (emergency - no auth required)
  */
-router.post('/instant-triage-call', authUser, async (req, res) => {
+router.post('/instant-triage-call', async (req, res) => {
   try {
-    const { doctorId, symptoms, urgencyLevel, triageId, paymentMethod } = req.body;
+    const { doctorId, symptoms, urgencyLevel, triageId, paymentMethod, guestEmail, guestPhone } = req.body;
     const { Doctor, Appointment } = await import('../models/index.js');
     const { User } = await import('../models/user.model.intelligent.js');
     const crypto = await import('crypto');
     
-    // Check user's emergency triage credit
-    const user = await User.findByPk(req.user.id);
-    if (!user) {
-      return res.status(404).json({
-        success: false,
-        error: 'User not found'
-      });
+    // Check if user is authenticated (optional for emergencies)
+    let user = null;
+    let userId = req.user?.id;
+    
+    // If unauthenticated, create temporary guest record
+    if (!userId && guestEmail) {
+      // Try to find user by email (in case they have account but aren't logged in)
+      user = await User.findOne({ where: { email: guestEmail } });
+      if (user) {
+        userId = user.id;
+      } else {
+        // Create temporary guest emergency record
+        console.log(`📱 Emergency call from unregistered (guest): ${guestEmail}`);
+        userId = null; // Will handle as guest user
+      }
+    } else if (userId) {
+      // Find authenticated user
+      user = await User.findByPk(userId);
+      if (!user) {
+        return res.status(404).json({
+          success: false,
+          error: 'User not found'
+        });
+      }
+    } else {
+      // Emergency without auth and without guest email - still allow but with restrictions
+      console.log('⚠️ Emergency call from completely anonymous user');
+      userId = null;
     }
     
-    const creditsUsed = user.emergencyTriageCreditsUsed || 0;
-    const creditLimit = user.emergencyTriageCreditLimit || 1;
-    const pendingAmount = parseFloat(user.emergencyTriagePendingAmount || 0);
-    
-    // Check if user wants to pay with Health Coins
+    // Credit checking only applies to registered users
     let canProceedWithHC = false;
     let hcWallet = null;
+    let creditsUsed = 0;
+    let creditLimit = 1;
+    let pendingAmount = 0;
     
-    if (paymentMethod === 'hc' || (creditsUsed >= creditLimit && pendingAmount > 0)) {
-      // Import UserWallet to check health coins balance
-      const UserWallet = (await import('../models/postgres/user-wallet.model.postgres.js')).default;
-      hcWallet = await UserWallet.findOne({ where: { userId: req.user.id } });
+    if (user) {
+      // Check credits for authenticated users
+      creditsUsed = user.emergencyTriageCreditsUsed || 0;
+      creditLimit = user.emergencyTriageCreditLimit || 1;
+      pendingAmount = parseFloat(user.emergencyTriagePendingAmount || 0);
       
-      if (hcWallet) {
-        const hcBalance = parseFloat(hcWallet.balance || 0);
-        // Emergency consultation typically costs 500 INR = 50 HC (10:1 ratio)
-        const hcRequired = 50;
-        canProceedWithHC = hcBalance >= hcRequired;
+      // Check if user wants to pay with Health Coins
+      if (paymentMethod === 'hc' || (creditsUsed >= creditLimit && pendingAmount > 0)) {
+        // Import UserWallet to check health coins balance
+        const UserWallet = (await import('../models/postgres/user-wallet.model.postgres.js')).default;
+        hcWallet = await UserWallet.findOne({ where: { userId: userId } });
+        
+        if (hcWallet) {
+          const hcBalance = parseFloat(hcWallet.balance || 0);
+          // Emergency consultation typically costs 500 INR = 50 HC (10:1 ratio)
+          const hcRequired = 50;
+          canProceedWithHC = hcBalance >= hcRequired;
+        }
       }
-    }
-    
-    // Check if user has already used their emergency credit and hasn't paid AND doesn't have HC
-    if (creditsUsed >= creditLimit && pendingAmount > 0 && !canProceedWithHC) {
-      return res.status(402).json({
-        success: false,
-        error: 'Emergency credit exhausted',
-        message: `You have already used your ${creditLimit} free emergency consultation. Please pay your pending amount of ₹${pendingAmount.toFixed(2)} or use Health Coins to continue.`,
-        pendingAmount: pendingAmount,
-        paymentRequired: true,
-        hcAvailable: hcWallet ? parseFloat(hcWallet.balance || 0) : 0,
-        hcRequired: 50
-      });
+      
+      // Check if user has already used their emergency credit and hasn't paid AND doesn't have HC
+      if (creditsUsed >= creditLimit && pendingAmount > 0 && !canProceedWithHC) {
+        return res.status(402).json({
+          success: false,
+          error: 'Emergency credit exhausted',
+          message: `You have already used your ${creditLimit} free emergency consultation. Please pay your pending amount of ₹${pendingAmount.toFixed(2)} or use Health Coins to continue.`,
+          pendingAmount: pendingAmount,
+          paymentRequired: true,
+          hcAvailable: hcWallet ? parseFloat(hcWallet.balance || 0) : 0,
+          hcRequired: 50
+        });
+      }
+    } else {
+      // Guest users (unauthenticated) get emergency access for free
+      console.log('🆓 Allowing emergency access for guest user');
     }
     
     // Find only doctors who are online AND have opted for emergency consultations
@@ -787,8 +819,8 @@ router.post('/instant-triage-call', authUser, async (req, res) => {
     // Generate unique room ID for LiveKit
     const roomId = `triage_${crypto.randomBytes(8).toString('hex')}_${Date.now()}`;
     
-    // Deduct Health Coins if paying with HC
-    if (isPayingWithHC && hcWallet) {
+    // Deduct Health Coins if paying with HC (only for authenticated users)
+    if (isPayingWithHC && hcWallet && user) {
       const hcRequired = 50; // 500 INR = 50 HC
       const HealthCoinsTransaction = (await import('../models/postgres/health-coins-transaction.model.postgres.js')).default;
       
@@ -798,7 +830,7 @@ router.post('/instant-triage-call', authUser, async (req, res) => {
       });
       
       await HealthCoinsTransaction.create({
-        userId: req.user.id,
+        userId: user.id,
         type: 'SPEND',
         amount: hcRequired,
         description: `Emergency consultation with Dr. ${doctor.firstName} ${doctor.lastName}`,
@@ -806,16 +838,26 @@ router.post('/instant-triage-call', authUser, async (req, res) => {
         balanceAfter: parseFloat(hcWallet.balance) - hcRequired
       });
       
-      console.log(`✅ Deducted ${hcRequired} HC from user ${req.user.id} for emergency consultation`);
+      console.log(`✅ Deducted ${hcRequired} HC from user ${user.id} for emergency consultation`);
     }
+    
+    // Get patient info from user or request body (for guests)
+    const patientId = user ? user.id : null;
+    const patientName = user 
+      ? `${user.firstName || ''} ${user.lastName || ''}`.trim() || 'Patient'
+      : (guestName || 'Guest Patient');
+    const patientEmail = user ? user.email : (guestEmail || '');
+    const patientPhone = user ? (user.phoneNumber || '') : (guestPhone || '');
     
     // Create emergency appointment record with credit/pay-later flag
     const appointment = await Appointment.create({
-      userId: req.user.id,
-      patientId: req.user.id, // Link patient for doctor queries
-      patientName: `${req.user.firstName || ''} ${req.user.lastName || ''}`.trim() || 'Patient',
-      patientEmail: req.user.email,
-      patientPhone: req.user.phoneNumber || '',
+      userId: patientId, // NULL for guest users
+      patientId: patientId, // NULL for guest users
+      patientName: patientName,
+      patientEmail: patientEmail,
+      patientPhone: patientPhone,
+      guestEmail: !user ? guestEmail : null, // Store guest email if applicable
+      guestPhone: !user ? guestPhone : null, // Store guest phone if applicable
       doctorId: doctor.id,
       doctorName: `${doctor.prefix || 'Dr.'} ${doctor.firstName} ${doctor.lastName}`,
       specialization: doctor.specialization,
@@ -824,7 +866,7 @@ router.post('/instant-triage-call', authUser, async (req, res) => {
       status: 'confirmed',
       reason: `Emergency Triage: ${symptoms || 'Immediate consultation requested'}`,
       symptoms: Array.isArray(symptoms) ? symptoms : (symptoms ? [symptoms] : ['Emergency triage consultation']),
-      notes: `Emergency Triage Request - Urgency: ${urgencyLevel || 'HIGH'} | Payment: ${isPayingWithHC ? 'HEALTH_COINS' : (isUsingCredit ? 'CREDIT (Pay Later)' : 'Pending')}`,
+      notes: `Emergency Triage Request - Urgency: ${urgencyLevel || 'HIGH'} | Patient Type: ${user ? 'Registered' : 'Guest'} | Payment: ${isPayingWithHC ? 'HEALTH_COINS' : (isUsingCredit ? 'CREDIT (Pay Later)' : 'Pending')}`,
       notes_json: {
         triageId,
         urgencyLevel,
@@ -832,8 +874,9 @@ router.post('/instant-triage-call', authUser, async (req, res) => {
         roomId,
         type: 'emergency_triage',
         initiatedAt: new Date().toISOString(),
+        guestAccess: !user,
         paymentType: isPayingWithHC ? 'health_coins' : (isUsingCredit ? 'credit' : 'pending'),
-        creditUsed: isUsingCredit,
+        creditUsed: isUsingCredit && user ? true : false,
         healthCoinsUsed: isPayingWithHC ? 50 : 0,
         consultationFee: consultationFee
       },
@@ -844,15 +887,15 @@ router.post('/instant-triage-call', authUser, async (req, res) => {
       sourceChannel: 'emergency_triage'
     });
     
-    // Update user's emergency credit usage if using credit
-    if (isUsingCredit) {
+    // Update user's emergency credit usage if using credit (only for authenticated users)
+    if (isUsingCredit && user) {
       await User.update({
         emergencyTriageCreditsUsed: creditsUsed + 1,
         emergencyTriagePendingAmount: pendingAmount + consultationFee
       }, {
-        where: { id: req.user.id }
+        where: { id: user.id }
       });
-      console.log(`✅ Emergency credit used for user ${req.user.id}. Credits: ${creditsUsed + 1}/${creditLimit}, Pending: ₹${(pendingAmount + consultationFee).toFixed(2)}`);
+      console.log(`✅ Emergency credit used for user ${user.id}. Credits: ${creditsUsed + 1}/${creditLimit}, Pending: ₹${(pendingAmount + consultationFee).toFixed(2)}`);
     }
 
     // LiveKit URLs (tokenized when config is available)
@@ -862,17 +905,17 @@ router.post('/instant-triage-call', authUser, async (req, res) => {
     let livekitJoinData = null;
 
     try {
-      const patientName = `${req.user.firstName || ''} ${req.user.lastName || ''}`.trim() || 'Patient';
-      const doctorName = `${doctor.prefix || 'Dr.'} ${doctor.firstName} ${doctor.lastName}`.trim();
+      // Create unique identity for guest vs registered users
+      const patientIdentity = user ? `user-${user.id}` : `guest-${appointment.id}`;
       const patientLivekit = await buildLiveKitJoinData({
         meetingId: roomId,
-        identity: `user-${req.user.id}`,
+        identity: patientIdentity,
         name: patientName
       });
       const doctorLivekit = await buildLiveKitJoinData({
         meetingId: roomId,
         identity: `doctor-${doctor.id}`,
-        name: doctorName
+        name: `${doctor.prefix || 'Dr.'} ${doctor.firstName} ${doctor.lastName}`.trim()
       });
 
       patientJoinUrl = patientLivekit.joinUrl;
@@ -891,9 +934,10 @@ router.post('/instant-triage-call', authUser, async (req, res) => {
       const callData = {
         appointmentId: appointment.id,
         roomId,
-        patientId: req.user.id,
-        patientName: `${req.user.firstName || ''} ${req.user.lastName || ''}`.trim() || 'Patient',
-        patientPhone: req.user.phoneNumber || '',
+        patientId: patientId,
+        patientName: patientName,
+        patientPhone: patientPhone,
+        patientType: user ? 'registered' : 'guest',
         symptoms: symptoms || 'Emergency consultation',
         urgencyLevel: urgencyLevel || 'HIGH',
         joinUrl: doctorJoinUrl,
@@ -916,13 +960,14 @@ router.post('/instant-triage-call', authUser, async (req, res) => {
         type: 'video_ready',
         variables: {
           doctorName: `${doctor.firstName} ${doctor.lastName}`,
-          patientName: req.user.firstName || 'Patient'
+          patientName: patientName
         },
         data: {
           appointmentId: appointment.id,
           roomId,
-          patientId: req.user.id,
-          patientName: `${req.user.firstName || ''} ${req.user.lastName || ''}`.trim(),
+          patientId: patientId,
+          patientName: patientName,
+          patientType: user ? 'registered' : 'guest',
           symptoms,
           urgencyLevel,
           joinUrl: doctorJoinUrl
