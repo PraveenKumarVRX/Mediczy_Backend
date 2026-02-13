@@ -533,7 +533,7 @@ router.get('/corporates', authUser, requireRole(['admin', 'team']), async (req, 
       }
       
       return {
-        id: c.id?.toString() || c.uid,
+        id: Number(c.id) || c.id,
         uniqueId: c.unique_id || null,
         companyName: c.companyName,
         contactPerson: c.contactPerson,
