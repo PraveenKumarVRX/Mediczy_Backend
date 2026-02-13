@@ -368,6 +368,7 @@ const resolveUserType = (decoded) => {
 // Public endpoints that don't require authentication
 const PUBLIC_ENDPOINTS = [
   '/health',
+  '/api/health',              // Main health check endpoint
   '/api/health-check',
   '/api/status',
   '/metrics',

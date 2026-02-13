@@ -747,6 +747,49 @@ app.get('/health', authUser, requireRole('admin'), async (req, res) => {
   }
 });
 
+// Public health check endpoint (for monitoring tools, load balancers, etc.)
+app.get('/api/health', async (req, res) => {
+  try {
+    const health = await orchestrator.healthCheck();
+    const mem = process.memoryUsage();
+    const dbStates = health.databases || {
+      postgres: health.postgres,
+      duckdb: health.duckdb,
+      redis: health.redis
+    };
+
+    const normalizedDbStates = Object.fromEntries(
+      Object.entries(dbStates).map(([db, isConnected]) => [
+        db,
+        isConnected ? 'connected' : 'disconnected'
+      ])
+    );
+
+    const criticalHealthy = Boolean(dbStates.postgres);
+
+    const healthCheck = {
+      status: criticalHealthy ? 'healthy' : 'degraded',
+      timestamp: new Date().toISOString(),
+      uptime: Math.floor(process.uptime()),
+      environment: process.env.NODE_ENV || 'development',
+      version: process.env.npm_package_version || '1.0.0',
+      memory: {
+        heapUsed: Math.round((mem.heapUsed / 1024 / 1024) * 100) / 100 + ' MB',
+        heapTotal: Math.round((mem.heapTotal / 1024 / 1024) * 100) / 100 + ' MB'
+      },
+      databases: normalizedDbStates
+    };
+    
+    res.status(criticalHealthy ? 200 : 503).json(healthCheck);
+  } catch (error) {
+    res.status(503).json({
+      status: 'error',
+      message: error.message,
+      timestamp: new Date().toISOString()
+    });
+  }
+});
+
 // Database orchestrator health check endpoint
 app.get('/api/db/health', authUser, requireRole('admin'), async (req, res) => {
   try {
