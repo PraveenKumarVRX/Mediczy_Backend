@@ -89,13 +89,9 @@ export default defineConfig(({ mode }) => ({
     cssCodeSplit: true,
     reportCompressedSize: false, // Disable to save memory
     rollupOptions: {
-      // Optimize for memory-constrained environments
+      // Optimize for memory-constrained environments  
       maxParallelFileOps: 2,
       output: {
-        manualChunks: {
-          vendor: ['react', 'react-dom', 'react-router-dom'],
-          ui: ['lucide-react', '@radix-ui/react-dialog', '@radix-ui/react-dropdown-menu']
-        },
         entryFileNames: 'assets/[name]-[hash].js',
         chunkFileNames: 'assets/[name]-[hash].js',
         assetFileNames: 'assets/[name]-[hash].[ext]',
