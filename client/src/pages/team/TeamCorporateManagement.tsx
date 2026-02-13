@@ -1,3 +1,4 @@
+// Version: 2.1.0 - Numeric Corporate ID Conversion Ready
 import { useState, useEffect, useRef } from 'react';
 import MainLayout from '@/components/layout/MainLayout';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
