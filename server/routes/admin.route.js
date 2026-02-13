@@ -544,11 +544,13 @@ router.get('/corporates', authUser, requireRole(['admin', 'team']), async (req, 
     if (corporateIds.length > 0) {
       try {
         const result = await postgresSequelize.query(`
-          SELECT corporate_id, COUNT(DISTINCT id) as employee_count
-          FROM users
-          WHERE corporate_id IN (:corporateIds)
+          SELECT "entityId" as corporate_id, COUNT(DISTINCT "userId") as employee_count
+          FROM user_associations
+          WHERE "entityType" = 'corporate'
+          AND "entityId" IN (:corporateIds)
+          AND role = 'employee'
           AND status = 'active'
-          GROUP BY corporate_id
+          GROUP BY "entityId"
         `, {
           replacements: { corporateIds },
           type: postgresSequelize.QueryTypes.SELECT
