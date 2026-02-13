@@ -38,6 +38,31 @@ export const MEMBERSHIP_PLANS = [
       videoCalls: { enabled: true, limit: 2, period: 'month', description: '2 video consultations per month' },
       audioCalls: { enabled: true, limit: 3, period: 'month', description: '3 audio consultations per month' },
       chatConsultations: { enabled: true, limit: 5, period: 'month', description: '5 chat consultations per month' },
+      doctorOnChat: { enabled: true, limit: 5, period: 'month', description: 'Chat with doctors' },
+      
+      // Health Testing & Assessment
+      healthTestPackage: { enabled: true, limit: 1, period: 'month', description: '1 health test package per month' },
+      healthRiskAssessment: { enabled: true, limit: 1, period: 'month', description: '1 risk assessment per month' },
+      healthMonitoring: { enabled: true, description: 'Basic health monitoring' },
+      
+      // Health & Wellness Services
+      pharmacy: { enabled: true, description: 'Access to pharmacy services' },
+      homecare: { enabled: false },
+      ambulance: { enabled: false },
+      
+      // Wellness & Education
+      dietPlans: { enabled: true, limit: 1, description: '1 basic diet plan' },
+      wellnessChallenges: { enabled: true, limit: 2, period: 'month', description: 'Join 2 wellness challenges per month' },
+      healthFeed: { enabled: true, description: 'Access health feed & articles' },
+      healthBlogs: { enabled: true, limit: 'unlimited', description: 'Read unlimited health blogs' },
+      healthDiary: { enabled: true, description: 'Daily health diary' },
+      
+      // Community & Events
+      healthWeekly: { enabled: true, limit: 4, period: 'month', description: 'Join 4 webinars per month' },
+      healthCamp: { enabled: true, limit: 2, period: 'year', description: 'Attend 2 health camps per year' },
+      
+      // Insurance & Support
+      insuranceAccess: { enabled: false },
       
       // Health Tracking
       healthTracker: { enabled: true, description: 'Basic health metrics tracking' },
@@ -52,7 +77,6 @@ export const MEMBERSHIP_PLANS = [
       // AI Features
       aiScribe: { enabled: false },
       symptomChecker: { enabled: true, limit: 5, period: 'month', description: '5 symptom checks per month' },
-      healthRiskAssessment: { enabled: true, limit: 1, period: 'month', description: '1 assessment per month' },
       
       // Family & Appointments
       familyMembers: { enabled: true, limit: 2, description: 'Add up to 2 family members' },
@@ -91,6 +115,26 @@ export const MEMBERSHIP_PLANS = [
       videoCalls: { enabled: true, limit: 5, period: 'month', description: '5 video consultations per month' },
       audioCalls: { enabled: true, limit: 10, period: 'month', description: '10 audio consultations per month' },
       chatConsultations: { enabled: true, limit: 20, period: 'month', description: '20 chat consultations per month' },
+      doctorOnChat: { enabled: true, limit: 20, period: 'month', description: '20 doctor chats per month' },
+      
+      healthTestPackage: { enabled: true, limit: 2, period: 'month', description: '2 health test packages per month' },
+      healthRiskAssessment: { enabled: true, limit: 4, period: 'month', description: '4 risk assessments per month' },
+      healthMonitoring: { enabled: true, description: 'Complete health monitoring' },
+      
+      pharmacy: { enabled: true, description: 'Premium pharmacy access' },
+      homecare: { enabled: true, limit: 1, period: 'month', description: '1 homecare visit per month' },
+      ambulance: { enabled: false },
+      
+      dietPlans: { enabled: true, limit: 'unlimited', description: 'Unlimited personalized diet plans' },
+      wellnessChallenges: { enabled: true, limit: 'unlimited', description: 'Unlimited wellness challenges' },
+      healthFeed: { enabled: true, description: 'Priority health feed access' },
+      healthBlogs: { enabled: true, limit: 'unlimited', description: 'Unlimited premium health blogs' },
+      healthDiary: { enabled: true, description: 'Advanced health diary with analytics' },
+      
+      healthWeekly: { enabled: true, limit: 'unlimited', description: 'Unlimited webinar attendance' },
+      healthCamp: { enabled: true, limit: 4, period: 'year', description: '4 health camps per year' },
+      
+      insuranceAccess: { enabled: false },
       
       healthTracker: { enabled: true, description: 'Complete health metrics tracking' },
       vitalSigns: { enabled: true, limit: 'unlimited', description: 'Unlimited vital signs logging' },
@@ -102,7 +146,6 @@ export const MEMBERSHIP_PLANS = [
       
       aiScribe: { enabled: true, limit: 5, period: 'month', description: '5 AI-scribed consultations' },
       symptomChecker: { enabled: true, limit: 20, period: 'month', description: '20 symptom checks per month' },
-      healthRiskAssessment: { enabled: true, limit: 4, period: 'month', description: '4 assessments per month' },
       
       familyMembers: { enabled: true, limit: 4, description: 'Add up to 4 family members' },
       appointmentBooking: { enabled: true, limit: 10, period: 'month', description: 'Book 10 appointments per month' },
@@ -137,6 +180,26 @@ export const MEMBERSHIP_PLANS = [
       videoCalls: { enabled: true, limit: 'unlimited', description: 'Unlimited video consultations' },
       audioCalls: { enabled: true, limit: 'unlimited', description: 'Unlimited audio consultations' },
       chatConsultations: { enabled: true, limit: 'unlimited', description: 'Unlimited chat consultations' },
+      doctorOnChat: { enabled: true, limit: 'unlimited', description: 'Unlimited doctor chat access' },
+      
+      healthTestPackage: { enabled: true, limit: 'unlimited', description: 'Unlimited health test packages' },
+      healthRiskAssessment: { enabled: true, limit: 'unlimited', description: 'Unlimited risk assessments' },
+      healthMonitoring: { enabled: true, description: 'Advanced health analytics & insights' },
+      
+      pharmacy: { enabled: true, description: 'Priority pharmacy with delivery' },
+      homecare: { enabled: true, limit: 4, period: 'month', description: '4 homecare visits per month' },
+      ambulance: { enabled: true, description: 'Priority ambulance access' },
+      
+      dietPlans: { enabled: true, limit: 'unlimited', description: 'Unlimited diet plans with AI coaching' },
+      wellnessChallenges: { enabled: true, limit: 'unlimited', description: 'Unlimited wellness challenges' },
+      healthFeed: { enabled: true, description: 'Exclusive health feed content' },
+      healthBlogs: { enabled: true, limit: 'unlimited', description: 'Unlimited exclusive health blogs' },
+      healthDiary: { enabled: true, description: 'Premium health diary with insights' },
+      
+      healthWeekly: { enabled: true, limit: 'unlimited', description: 'Unlimited webinar & expert sessions' },
+      healthCamp: { enabled: true, limit: 'unlimited', description: 'Unlimited health camps & events' },
+      
+      insuranceAccess: { enabled: false },
       
       healthTracker: { enabled: true, description: 'Advanced health analytics & insights' },
       vitalSigns: { enabled: true, limit: 'unlimited', description: 'Unlimited vital signs with trends' },
@@ -148,7 +211,6 @@ export const MEMBERSHIP_PLANS = [
       
       aiScribe: { enabled: true, limit: 'unlimited', description: 'Unlimited AI-scribed consultations' },
       symptomChecker: { enabled: true, limit: 'unlimited', description: 'Unlimited symptom checks' },
-      healthRiskAssessment: { enabled: true, limit: 'unlimited', description: 'Unlimited risk assessments' },
       aiHealthInsights: { enabled: true, description: 'AI-powered personalized health insights' },
       
       familyMembers: { enabled: true, limit: 8, description: 'Add up to 8 family members' },
@@ -192,6 +254,26 @@ export const MEMBERSHIP_PLANS = [
       videoCalls: { enabled: true, limit: 'unlimited', description: 'Unlimited 4K video consultations' },
       audioCalls: { enabled: true, limit: 'unlimited', description: 'Unlimited HD audio consultations' },
       chatConsultations: { enabled: true, limit: 'unlimited', description: 'Unlimited priority chat' },
+      doctorOnChat: { enabled: true, limit: 'unlimited', description: '24/7 doctor chat priority access' },
+      
+      healthTestPackage: { enabled: true, limit: 'unlimited', description: 'Unlimited comprehensive health tests' },
+      healthRiskAssessment: { enabled: true, limit: 'unlimited', description: 'Continuous risk monitoring' },
+      healthMonitoring: { enabled: true, description: 'Enterprise health analytics with ML insights' },
+      
+      pharmacy: { enabled: true, description: 'Concierge pharmacy service' },
+      homecare: { enabled: true, limit: 'unlimited', description: 'Unlimited homecare visits' },
+      ambulance: { enabled: true, description: 'Priority 24/7 ambulance service' },
+      
+      dietPlans: { enabled: true, limit: 'unlimited', description: 'Unlimited personalized diet coaching' },
+      wellnessChallenges: { enabled: true, limit: 'unlimited', description: 'Exclusive wellness programs' },
+      healthFeed: { enabled: true, description: 'Exclusive premium health content' },
+      healthBlogs: { enabled: true, limit: 'unlimited', description: 'Unlimited exclusive expert blogs' },
+      healthDiary: { enabled: true, description: 'AI-powered health diary with predictions' },
+      
+      healthWeekly: { enabled: true, limit: 'unlimited', description: '24/7 access to webinars & experts' },
+      healthCamp: { enabled: true, limit: 'unlimited', description: 'VIP access to all health camps' },
+      
+      insuranceAccess: { enabled: false },
       
       healthTracker: { enabled: true, description: 'Enterprise health analytics with ML insights' },
       vitalSigns: { enabled: true, limit: 'unlimited', description: 'Real-time vital signs monitoring' },
@@ -203,7 +285,6 @@ export const MEMBERSHIP_PLANS = [
       
       aiScribe: { enabled: true, limit: 'unlimited', description: 'Unlimited AI medical scribe' },
       symptomChecker: { enabled: true, limit: 'unlimited', description: 'Unlimited AI symptom analysis' },
-      healthRiskAssessment: { enabled: true, limit: 'unlimited', description: 'Continuous risk monitoring' },
       aiHealthInsights: { enabled: true, description: 'Advanced AI health predictions' },
       
       familyMembers: { enabled: true, limit: 'unlimited', description: 'Unlimited family members' },
@@ -256,6 +337,26 @@ export const MEMBERSHIP_PLANS = [
       videoCalls: { enabled: true, limit: 3, period: 'month', description: '3 video consultations per month' },
       audioCalls: { enabled: true, limit: 5, period: 'month', description: '5 audio consultations per month' },
       chatConsultations: { enabled: true, limit: 10, period: 'month', description: '10 chat consultations per month' },
+      doctorOnChat: { enabled: true, limit: 10, period: 'month', description: 'Chat with doctors' },
+      
+      healthTestPackage: { enabled: true, limit: 1, period: 'month', description: '1 health test package per month' },
+      healthRiskAssessment: { enabled: true, limit: 2, period: 'month', description: '2 assessments per month' },
+      healthMonitoring: { enabled: true, description: 'Employee health monitoring' },
+      
+      pharmacy: { enabled: true, description: 'Employee pharmacy access' },
+      homecare: { enabled: false },
+      ambulance: { enabled: false },
+      
+      dietPlans: { enabled: true, limit: 2, description: '2 diet plans' },
+      wellnessChallenges: { enabled: true, description: 'Company wellness programs' },
+      healthFeed: { enabled: true, description: 'Health feed access' },
+      healthBlogs: { enabled: true, limit: 'unlimited', description: 'Unlimited health blogs' },
+      healthDiary: { enabled: true, description: 'Health diary' },
+      
+      healthWeekly: { enabled: true, limit: 4, period: 'month', description: '4 webinars per month' },
+      healthCamp: { enabled: true, limit: 2, period: 'year', description: '2 health camps per year' },
+      
+      insuranceAccess: { enabled: false },
       
       healthTracker: { enabled: true, description: 'Employee health tracking' },
       vitalSigns: { enabled: true, limit: 20, period: 'month', description: '20 vital signs per month' },
@@ -267,7 +368,6 @@ export const MEMBERSHIP_PLANS = [
       
       aiScribe: { enabled: true, limit: 3, period: 'month', description: '3 AI-scribed consultations' },
       symptomChecker: { enabled: true, limit: 10, period: 'month', description: '10 symptom checks' },
-      healthRiskAssessment: { enabled: true, limit: 2, period: 'month', description: '2 assessments per month' },
       
       familyMembers: { enabled: true, limit: 3, description: 'Add 3 family members' },
       appointmentBooking: { enabled: true, limit: 5, period: 'month', description: '5 appointments per month' },
@@ -307,6 +407,26 @@ export const MEMBERSHIP_PLANS = [
       videoCalls: { enabled: true, limit: 10, period: 'month', description: '10 video consultations' },
       audioCalls: { enabled: true, limit: 15, period: 'month', description: '15 audio consultations' },
       chatConsultations: { enabled: true, limit: 30, period: 'month', description: '30 chat consultations' },
+      doctorOnChat: { enabled: true, limit: 30, period: 'month', description: 'Priority doctor chats' },
+      
+      healthTestPackage: { enabled: true, limit: 4, period: 'month', description: '4 health test packages per month' },
+      healthRiskAssessment: { enabled: true, limit: 'unlimited', description: 'Unlimited assessments' },
+      healthMonitoring: { enabled: true, description: 'Advanced employee analytics' },
+      
+      pharmacy: { enabled: true, description: 'Premium pharmacy access' },
+      homecare: { enabled: true, limit: 2, period: 'month', description: '2 homecare visits per month' },
+      ambulance: { enabled: false },
+      
+      dietPlans: { enabled: true, limit: 'unlimited', description: 'Unlimited personalized diets' },
+      wellnessChallenges: { enabled: true, limit: 'unlimited', description: 'Custom wellness programs' },
+      healthFeed: { enabled: true, description: 'Priority health feed' },
+      healthBlogs: { enabled: true, limit: 'unlimited', description: 'Unlimited expert blogs' },
+      healthDiary: { enabled: true, description: 'Advanced health diary' },
+      
+      healthWeekly: { enabled: true, limit: 'unlimited', description: 'Unlimited webinar access' },
+      healthCamp: { enabled: true, limit: 4, period: 'year', description: '4 health camps per year' },
+      
+      insuranceAccess: { enabled: false },
       
       healthTracker: { enabled: true, description: 'Advanced employee analytics' },
       vitalSigns: { enabled: true, limit: 'unlimited', description: 'Unlimited vital signs' },
@@ -318,7 +438,6 @@ export const MEMBERSHIP_PLANS = [
       
       aiScribe: { enabled: true, limit: 10, period: 'month', description: '10 AI-scribed consultations' },
       symptomChecker: { enabled: true, limit: 'unlimited', description: 'Unlimited symptom checks' },
-      healthRiskAssessment: { enabled: true, limit: 'unlimited', description: 'Unlimited assessments' },
       aiHealthInsights: { enabled: true, description: 'AI health insights' },
       
       familyMembers: { enabled: true, limit: 5, description: 'Add 5 family members' },
@@ -366,6 +485,26 @@ export const MEMBERSHIP_PLANS = [
       videoCalls: { enabled: true, limit: 'unlimited', description: 'Unlimited video consultations' },
       audioCalls: { enabled: true, limit: 'unlimited', description: 'Unlimited audio consultations' },
       chatConsultations: { enabled: true, limit: 'unlimited', description: 'Unlimited chat consultations' },
+      doctorOnChat: { enabled: true, limit: 'unlimited', description: '24/7 priority doctor chat' },
+      
+      healthTestPackage: { enabled: true, limit: 'unlimited', description: 'Unlimited comprehensive tests' },
+      healthRiskAssessment: { enabled: true, limit: 'unlimited', description: 'Continuous monitoring' },
+      healthMonitoring: { enabled: true, description: 'Enterprise health platform' },
+      
+      pharmacy: { enabled: true, description: 'Concierge pharmacy service' },
+      homecare: { enabled: true, limit: 4, period: 'month', description: '4 homecare visits per month' },
+      ambulance: { enabled: true, description: 'Dedicated ambulance service' },
+      
+      dietPlans: { enabled: true, limit: 'unlimited', description: 'Unlimited diet planning' },
+      wellnessChallenges: { enabled: true, limit: 'unlimited', description: 'Branded wellness programs' },
+      healthFeed: { enabled: true, description: 'Exclusive premium content' },
+      healthBlogs: { enabled: true, limit: 'unlimited', description: 'Unlimited premium blogs' },
+      healthDiary: { enabled: true, description: 'AI-powered health diary' },
+      
+      healthWeekly: { enabled: true, limit: 'unlimited', description: '24/7 webinar access' },
+      healthCamp: { enabled: true, limit: 'unlimited', description: 'VIP health camp events' },
+      
+      insuranceAccess: { enabled: false },
       
       healthTracker: { enabled: true, description: 'Enterprise health platform' },
       vitalSigns: { enabled: true, limit: 'unlimited', description: 'Real-time monitoring' },
@@ -377,7 +516,6 @@ export const MEMBERSHIP_PLANS = [
       
       aiScribe: { enabled: true, limit: 'unlimited', description: 'Unlimited AI scribe' },
       symptomChecker: { enabled: true, limit: 'unlimited', description: 'Unlimited symptom checks' },
-      healthRiskAssessment: { enabled: true, limit: 'unlimited', description: 'Continuous monitoring' },
       aiHealthInsights: { enabled: true, description: 'Enterprise AI insights' },
       
       familyMembers: { enabled: true, limit: 'unlimited', description: 'Unlimited family members' },
