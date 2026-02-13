@@ -948,6 +948,7 @@ router.post('/instant-triage-call', authUser, async (req, res) => {
       },
       videoCall: {
         roomId,
+        joinUrl: patientJoinUrl,  // Add joined alias for compatibility
         patientJoinUrl,
         doctorJoinUrl,
         platform: 'LiveKit',

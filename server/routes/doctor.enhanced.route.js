@@ -144,6 +144,7 @@ router.get('/available', [
     res.json({
       success: true,
       doctors,
+      data: doctors,  // Add data alias for compatibility with frontend
       pagination: {
         page: parseInt(page),
         limit: parseInt(limit),

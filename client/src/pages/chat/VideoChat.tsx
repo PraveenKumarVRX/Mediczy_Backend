@@ -142,10 +142,13 @@ const Chat = () => {
   const { data: availableUsers = [] } = useQuery<Recipient[]>({
     queryKey: ["available-users", userType],
     queryFn: async () => {
-      const { data } = await api.get(
+      const response = await api.get(
         userType === "user" ? "/doctors/available" : "/users/available"
       );
-      return normalizeParticipants(data);
+      // Handle both response formats: {data: []} and {doctors: []} and {users: []}
+      const payload = response.data;
+      const participantsList = payload.data || payload.doctors || payload.users || payload;
+      return normalizeParticipants(participantsList);
     },
     enabled: !!currentId,
   });
