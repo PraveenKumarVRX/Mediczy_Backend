@@ -1258,7 +1258,36 @@ router.post('/doctor/invoices/create', authDoctor, async (req, res) => {
     if (!patientId || !items || items.length === 0) {
       return res.status(400).json({
         success: false,
-        message: 'Patient ID and at least one item are required'
+        message: 'Patient ID and at least one item are required',
+        details: {
+          patientIdMissing: !patientId,
+          itemsMissing: !items || items.length === 0,
+          itemsCount: items?.length || 0
+        }
+      });
+    }
+
+    // Validate items
+    if (!Array.isArray(items)) {
+      return res.status(400).json({
+        success: false,
+        message: 'Items must be an array',
+        details: { receivedType: typeof items }
+      });
+    }
+
+    // Validate each item has required fields
+    const invalidItems = items.filter(item => 
+      !item.description || 
+      item.quantity === undefined || 
+      item.unitPrice === undefined
+    );
+
+    if (invalidItems.length > 0) {
+      return res.status(400).json({
+        success: false,
+        message: 'Each item must have description, quantity, and unitPrice',
+        details: { invalidItemCount: invalidItems.length }
       });
     }
 
@@ -1378,10 +1407,31 @@ router.post('/doctor/invoices/create', authDoctor, async (req, res) => {
 
   } catch (error) {
     console.error('Create doctor invoice error:', error);
-    return res.status(500).json({
+    
+    // Provide detailed error messages for debugging
+    let errorMessage = 'Failed to create invoice';
+    let statusCode = 500;
+    
+    if (error.message.includes('Not found')) {
+      errorMessage = 'Patient not found. Please verify the patient ID.';
+      statusCode = 404;
+    } else if (error.message.includes('validation')) {
+      errorMessage = 'Invalid data provided. Please check all fields.';
+      statusCode = 400;
+    } else if (error.message.includes('constraint')) {
+      errorMessage = 'Database constraint error. Please contact support.';
+      statusCode = 400;
+    }
+    
+    return res.status(statusCode).json({
       success: false,
-      message: 'Failed to create invoice',
-      error: error.message
+      message: errorMessage,
+      error: process.env.NODE_ENV === 'development' ? error.message : 'An error occurred',
+      details: {
+        timestamp: new Date().toISOString(),
+        patientId: req.body.patientId,
+        itemsCount: req.body.items?.length || 0
+      }
     });
   }
 });

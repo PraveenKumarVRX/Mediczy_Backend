@@ -259,7 +259,9 @@ const DoctorPrescriptions = () => {
         title: "Prescription Created",
         description: "Prescription has been saved as draft.",
       });
+      // Invalidate both prescriptions and appointments to refresh patient list
       queryClient.invalidateQueries({ queryKey: ["doctorPrescriptions"] });
+      queryClient.invalidateQueries({ queryKey: ["doctorAppointmentsForPrescription"] });
       setCreateDialogOpen(false);
       resetForm();
     },
@@ -283,7 +285,9 @@ const DoctorPrescriptions = () => {
         title: "Prescription Updated",
         description: "Changes have been saved.",
       });
+      // Invalidate both prescriptions and appointments to refresh patient list
       queryClient.invalidateQueries({ queryKey: ["doctorPrescriptions"] });
+      queryClient.invalidateQueries({ queryKey: ["doctorAppointmentsForPrescription"] });
       setViewDialogOpen(false);
       setEditMode(false);
     },
@@ -307,7 +311,9 @@ const DoctorPrescriptions = () => {
         title: "Prescription Issued",
         description: "Prescription has been issued to the patient.",
       });
+      // Invalidate both prescriptions and appointments to refresh patient list
       queryClient.invalidateQueries({ queryKey: ["doctorPrescriptions"] });
+      queryClient.invalidateQueries({ queryKey: ["doctorAppointmentsForPrescription"] });
       setViewDialogOpen(false);
     },
     onError: (error: any) => {
@@ -330,7 +336,9 @@ const DoctorPrescriptions = () => {
         title: "Prescription Deleted",
         description: "Prescription has been removed.",
       });
+      // Invalidate both prescriptions and appointments to refresh patient list
       queryClient.invalidateQueries({ queryKey: ["doctorPrescriptions"] });
+      queryClient.invalidateQueries({ queryKey: ["doctorAppointmentsForPrescription"] });
     },
     onError: (error: any) => {
       toast({

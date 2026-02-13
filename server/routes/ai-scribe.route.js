@@ -28,10 +28,20 @@ router.post('/generate-prescription', authDoctor, async (req, res) => {
       saveToDatabase = true
     } = req.body;
 
+    // Verify doctor is authenticated
+    if (!req.doctor || !req.doctor.id) {
+      return res.status(401).json({
+        success: false,
+        message: 'Doctor authentication required. Please login again.',
+        code: 'DOCTOR_AUTH_REQUIRED'
+      });
+    }
+
     if (!consultationNotes?.trim()) {
       return res.status(400).json({
         success: false,
-        message: 'Consultation notes are required'
+        message: 'Consultation notes are required',
+        code: 'NOTES_REQUIRED'
       });
     }
 
@@ -97,39 +107,52 @@ IMPORTANT:
 
 Generate the prescription JSON:`;
 
-    // Call AI service
-    const aiResponse = await medicalAIService.consultMedical(
-      prompt,
-      `prescription_${Date.now()}`,
-      'en',
-      {
-        analysisType: 'prescription_generation',
-        doctorId: req.doctor.id
-      }
-    );
+    // Call AI service with error handling and fallback
+    let aiResponse;
+    let usesFallback = false;
 
-    if (!aiResponse.success) {
-      throw new Error('AI service failed');
+    try {
+      aiResponse = await medicalAIService.consultMedical(
+        prompt,
+        `prescription_${Date.now()}`,
+        'en',
+        {
+          analysisType: 'prescription_generation',
+          doctorId: req.doctor.id
+        }
+      );
+
+      if (!aiResponse.success) {
+        console.warn('AI service returned unsuccessful response, using fallback');
+        usesFallback = true;
+      }
+    } catch (aiError) {
+      console.warn('AI service error, using fallback extraction:', aiError.message);
+      usesFallback = true;
     }
 
     // Parse AI response to extract JSON
     let prescriptionData;
     try {
-      const responseText = aiResponse.text || aiResponse.response || '';
-      
-      // Try to extract JSON from markdown code blocks
-      const jsonMatch = responseText.match(/```json\s*([\s\S]*?)\s*```/) || 
-                       responseText.match(/\{[\s\S]*\}/);
-      
-      if (jsonMatch) {
-        const jsonStr = jsonMatch[1] || jsonMatch[0];
-        prescriptionData = JSON.parse(jsonStr);
+      if (!usesFallback && aiResponse?.text) {
+        const responseText = aiResponse.text || aiResponse.response || '';
+        
+        // Try to extract JSON from markdown code blocks
+        const jsonMatch = responseText.match(/```json\s*([\s\S]*?)\s*```/) || 
+                         responseText.match(/\{[\s\S]*\}/);
+        
+        if (jsonMatch) {
+          const jsonStr = jsonMatch[1] || jsonMatch[0];
+          prescriptionData = JSON.parse(jsonStr);
+        } else {
+          // Fallback: parse entire response
+          prescriptionData = JSON.parse(responseText);
+        }
       } else {
-        // Fallback: parse entire response
-        prescriptionData = JSON.parse(responseText);
+        throw new Error('Using fallback extraction');
       }
     } catch (parseError) {
-      console.error('JSON parsing error:', parseError);
+      console.warn('Prescription parsing failed, using fallback extraction:', parseError.message);
       
       // Fallback: Create basic structure from notes
       prescriptionData = {
@@ -140,8 +163,10 @@ Generate the prescription JSON:`;
         labTests: extractLabTests(consultationNotes),
         notes: consultationNotes
       };
-    }
 
+      // Log successful fallback usage
+      console.log(`✓ Fallback extraction used for prescription (Doctor: ${req.doctor.id})`);
+    }
     // Validate and sanitize prescription data
     const prescriptionContent = {
       chiefComplaints: prescriptionData.chiefComplaints || '',
@@ -252,17 +277,29 @@ Generate the prescription JSON:`;
         prescriptionNumber: savedPrescription.prescriptionId,
         createdAt: savedPrescription.createdAt
       } : null,
-      aiResponse: aiResponse.text || aiResponse.response,
-      model: aiResponse.model || 'AI',
+      usingFallback: usesFallback,
       timestamp: new Date().toISOString()
     });
 
   } catch (error) {
     console.error('Prescription generation error:', error);
-    res.status(500).json({
-      success: false,
-      message: 'Failed to generate prescription',
-      error: error.message
+    
+    // Return a basic fallback prescription even on error
+    const fallbackData = {
+      chiefComplaints: extractSection(consultationNotes, ['complaint', 'symptom', 'problem']),
+      diagnosis: extractSection(consultationNotes, ['diagnosis', 'diagnosed with', 'condition']),
+      medications: [],
+      instructions: [],
+      labTests: [],
+      notes: 'Could not process consultation notes. Please review and edit.'
+    };
+    
+    res.status(200).json({
+      success: true,
+      prescription: fallbackData,
+      usingFallback: true,
+      warning: 'AI service unavailable, using basic extraction. Please review and edit the prescription.',
+      timestamp: new Date().toISOString()
     });
   }
 });
