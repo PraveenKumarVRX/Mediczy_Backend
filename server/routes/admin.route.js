@@ -556,20 +556,27 @@ router.get('/corporates', authUser, requireRole(['admin', 'team']), async (req, 
           type: postgresSequelize.QueryTypes.SELECT
         });
         
-        console.log('[Corporates] Employee counts query result type:', typeof result, 'isArray:', Array.isArray(result));
-        if (result && result[0]) {
-          console.log('[Corporates] Employee counts result[0] type:', typeof result[0], 'isArray:', Array.isArray(result[0]));
+        console.log('[Corporates] Employee counts raw result:', result);
+        
+        // Handle both array and direct result formats
+        let employeeCounts = result;
+        if (Array.isArray(result) && result.length > 0) {
+          // If result is array with single item that's an array, use that
+          if (Array.isArray(result[0])) {
+            employeeCounts = result[0];
+          }
         }
         
-        const employeeCounts = Array.isArray(result) ? result[0] : result;
-        
-        if (Array.isArray(employeeCounts)) {
-          employeeCounts.forEach(ec => {
-            employeeCountMap[ec.corporate_id] = parseInt(ec.employee_count, 10) || 0;
-          });
-        } else {
-          console.warn('[Corporates] Employee counts is not an array:', employeeCounts);
+        // Ensure employeeCounts is always an array
+        if (!Array.isArray(employeeCounts)) {
+          employeeCounts = employeeCounts ? [employeeCounts] : [];
         }
+        
+        console.log('[Corporates] Processing employee counts:', employeeCounts);
+        
+        employeeCounts.forEach(ec => {
+          employeeCountMap[ec.corporate_id] = parseInt(ec.employee_count, 10) || 0;
+        });
       } catch (queryError) {
         console.error('[Corporates] Employee counts query error:', queryError.message);
         // Continue without employee counts
