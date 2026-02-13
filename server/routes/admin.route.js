@@ -373,35 +373,47 @@ router.get('/corporates', authUser, requireRole(['admin', 'team']), async (req, 
       // Team users: Get assigned corporates from both old and new systems
       // Old system: user_associations table
       // New system: corporate_team_assignments table
-      const [assigned] = await postgresSequelize.query(`
-        SELECT DISTINCT c.* FROM corporates c
-        LEFT JOIN user_associations ua 
-          ON ua."entityId" = c.id 
-          AND ua."userId" = :userId 
-          AND ua."entityType" = 'corporate'
-        LEFT JOIN corporate_team_assignments cta
-          ON cta.corporate_id = c.id
-          AND cta.team_member_id = :userId
-        WHERE (ua.id IS NOT NULL OR cta.id IS NOT NULL)
-        ORDER BY c."companyName" ASC
-      `, {
-        replacements: { userId },
-        type: postgresSequelize.QueryTypes.SELECT
-      });
-      
-      corporates = Array.isArray(assigned) ? assigned : [assigned].filter(Boolean);
-      
-      console.log(`[Corporates] Team user ${req.user.email} - Found ${corporates.length} assigned corporates`);
+      try {
+        const assignedResult = await postgresSequelize.query(`
+          SELECT DISTINCT c.* FROM corporates c
+          LEFT JOIN user_associations ua 
+            ON ua."entityId" = c.id 
+            AND ua."userId" = :userId 
+            AND ua."entityType" = 'corporate'
+          LEFT JOIN corporate_team_assignments cta
+            ON cta.corporate_id = c.id
+            AND cta.team_member_id = :userId
+          WHERE (ua.id IS NOT NULL OR cta.id IS NOT NULL)
+          ORDER BY c."companyName" ASC
+        `, {
+          replacements: { userId },
+          type: postgresSequelize.QueryTypes.SELECT
+        });
+        
+        const assigned = Array.isArray(assignedResult) ? assignedResult[0] : assignedResult;
+        corporates = Array.isArray(assigned) ? assigned : [assigned].filter(Boolean);
+        
+        console.log(`[Corporates] Team user ${req.user.email} - Found ${corporates.length} assigned corporates`);
+      } catch (teamQueryError) {
+        console.error('[Corporates] Team corporates query error:', teamQueryError.message);
+        corporates = [];
+      }
     } else {
       // Admin users: Get all corporates from database
-      const [all] = await postgresSequelize.query(`
-        SELECT * FROM corporates ORDER BY "companyName" ASC
-      `, {
-        type: postgresSequelize.QueryTypes.SELECT
-      });
-      
-      corporates = all || [];
-      console.log(`[Corporates] Admin user ${req.user.email} - Found ${corporates.length} total corporates`);
+      try {
+        const allResult = await postgresSequelize.query(`
+          SELECT * FROM corporates ORDER BY "companyName" ASC
+        `, {
+          type: postgresSequelize.QueryTypes.SELECT
+        });
+        
+        const all = Array.isArray(allResult) ? allResult[0] : allResult;
+        corporates = all || [];
+        console.log(`[Corporates] Admin user ${req.user.email} - Found ${corporates.length} total corporates`);
+      } catch (adminQueryError) {
+        console.error('[Corporates] All corporates query error:', adminQueryError.message);
+        corporates = [];
+      }
     }
     
     // Fetch plans for all corporates
@@ -409,120 +421,157 @@ router.get('/corporates', authUser, requireRole(['admin', 'team']), async (req, 
     let plansMap = {};
     
     if (corporateIds.length > 0) {
-      const [plans] = await postgresSequelize.query(`
-        SELECT 
-          cps.id as sponsorship_id,
-          cps.corporate_id,
-          cps.plan_id,
-          cps.clinic_id,
-          cps.doctor_id,
-          cps.start_date,
-          cps.end_date,
-          cps.is_active,
-          cps.sponsorship_type,
-          cps.corporate_share,
-          cps.employee_share
-        FROM corporate_plan_sponsorships cps
-        WHERE cps.corporate_id IN (:corporateIds)
-        ORDER BY cps.start_date DESC
-      `, {
-        replacements: { corporateIds },
-        type: postgresSequelize.QueryTypes.SELECT
-      });
-      
-      // Fetch network partners for each sponsorship
-      const sponsorshipIds = (plans || []).map(p => p.sponsorship_id).filter(Boolean);
-      let partnersMap = {};
-      
-      if (sponsorshipIds.length > 0) {
-        const [partners] = await postgresSequelize.query(`
-          SELECT sponsorship_id, partner_tenant_id, status
-          FROM tenant_partners
-          WHERE sponsorship_id IN (:sponsorshipIds)
+      try {
+        const plansResult = await postgresSequelize.query(`
+          SELECT 
+            cps.id as sponsorship_id,
+            cps.corporate_id,
+            cps.plan_id,
+            cps.clinic_id,
+            cps.doctor_id,
+            cps.start_date,
+            cps.end_date,
+            cps.is_active,
+            cps.sponsorship_type,
+            cps.corporate_share,
+            cps.employee_share
+          FROM corporate_plan_sponsorships cps
+          WHERE cps.corporate_id IN (:corporateIds)
+          ORDER BY cps.start_date DESC
         `, {
-          replacements: { sponsorshipIds },
+          replacements: { corporateIds },
           type: postgresSequelize.QueryTypes.SELECT
         });
         
-        // Group partners by sponsorship_id
-        (partners || []).forEach(p => {
-          if (!partnersMap[p.sponsorship_id]) {
-            partnersMap[p.sponsorship_id] = { hospitals: [], labs: [] };
+        const plans = Array.isArray(plansResult) ? plansResult[0] : plansResult;
+        
+        // Fetch network partners for each sponsorship
+        const sponsorshipIds = (plans || []).map(p => p.sponsorship_id).filter(Boolean);
+        let partnersMap = {};
+        
+        if (sponsorshipIds.length > 0) {
+          try {
+            const partnersResult = await postgresSequelize.query(`
+              SELECT sponsorship_id, partner_tenant_id, status
+              FROM tenant_partners
+              WHERE sponsorship_id IN (:sponsorshipIds)
+            `, {
+              replacements: { sponsorshipIds },
+              type: postgresSequelize.QueryTypes.SELECT
+            });
+            
+            const partners = Array.isArray(partnersResult) ? partnersResult[0] : partnersResult;
+            
+            // Group partners by sponsorship_id
+            (partners || []).forEach(p => {
+              if (!partnersMap[p.sponsorship_id]) {
+                partnersMap[p.sponsorship_id] = { hospitals: [], labs: [] };
+              }
+              // We'll need to determine if it's a hospital or lab - for now add to hospitals
+              // In production, you'd query the partner type or join with tenants table
+              partnersMap[p.sponsorship_id].hospitals.push(p.partner_tenant_id);
+            });
+          } catch (partnersError) {
+            console.error('[Corporates] Partners query error:', partnersError.message);
+            // Continue without partners data
           }
-          // We'll need to determine if it's a hospital or lab - for now add to hospitals
-          // In production, you'd query the partner type or join with tenants table
-          partnersMap[p.sponsorship_id].hospitals.push(p.partner_tenant_id);
-        });
-      }
-      
-      // Group plans by corporate_id
-      (plans || []).forEach(plan => {
-        if (!plansMap[plan.corporate_id]) {
-          plansMap[plan.corporate_id] = [];
         }
-        plansMap[plan.corporate_id].push({
-          sponsorshipId: plan.sponsorship_id,
-          planId: plan.plan_id,
-          clinicId: plan.clinic_id,
-          doctorId: plan.doctor_id,
-          startDate: plan.start_date,
-          endDate: plan.end_date,
-          isActive: plan.is_active,
-          sponsorshipType: plan.sponsorship_type,
-          corporateShare: plan.corporate_share,
-          employeeShare: plan.employee_share,
-          networkPartners: partnersMap[plan.sponsorship_id] || { hospitals: [], labs: [] }
+        
+        // Group plans by corporate_id
+        (plans || []).forEach(plan => {
+          if (!plansMap[plan.corporate_id]) {
+            plansMap[plan.corporate_id] = [];
+          }
+          plansMap[plan.corporate_id].push({
+            sponsorshipId: plan.sponsorship_id,
+            planId: plan.plan_id,
+            clinicId: plan.clinic_id,
+            doctorId: plan.doctor_id,
+            startDate: plan.start_date,
+            endDate: plan.end_date,
+            isActive: plan.is_active,
+            sponsorshipType: plan.sponsorship_type,
+            corporateShare: plan.corporate_share,
+            employeeShare: plan.employee_share,
+            networkPartners: partnersMap[plan.sponsorship_id] || { hospitals: [], labs: [] }
+          });
         });
-      });
+      } catch (plansError) {
+        console.error('[Corporates] Plans query error:', plansError.message);
+        // Continue without plans data
+      }
     }
     
     // Fetch team assignments for all corporates
     let teamAssignmentsMap = {};
     if (corporateIds.length > 0) {
-      const [teamAssignments] = await postgresSequelize.query(`
-        SELECT 
-          cta.corporate_id,
-          cta.team_member_id,
-          cta.clinic_id,
-          cta.is_primary
-        FROM corporate_team_assignments cta
-        WHERE cta.corporate_id IN (:corporateIds)
-        ORDER BY cta.is_primary DESC, cta.created_at ASC
-      `, {
-        replacements: { corporateIds },
-        type: postgresSequelize.QueryTypes.SELECT
-      });
-      
-      // Group team assignments by corporate_id
-      (teamAssignments || []).forEach(ta => {
-        if (!teamAssignmentsMap[ta.corporate_id]) {
-          teamAssignmentsMap[ta.corporate_id] = [];
-        }
-        teamAssignmentsMap[ta.corporate_id].push({
-          teamMemberId: ta.team_member_id,
-          clinicId: ta.clinic_id,
-          isPrimary: ta.is_primary
+      try {
+        const teamAssignmentsResult = await postgresSequelize.query(`
+          SELECT 
+            cta.corporate_id,
+            cta.team_member_id,
+            cta.clinic_id,
+            cta.is_primary
+          FROM corporate_team_assignments cta
+          WHERE cta.corporate_id IN (:corporateIds)
+          ORDER BY cta.is_primary DESC, cta.created_at ASC
+        `, {
+          replacements: { corporateIds },
+          type: postgresSequelize.QueryTypes.SELECT
         });
-      });
+        
+        const teamAssignments = Array.isArray(teamAssignmentsResult) ? teamAssignmentsResult[0] : teamAssignmentsResult;
+        
+        // Group team assignments by corporate_id
+        (teamAssignments || []).forEach(ta => {
+          if (!teamAssignmentsMap[ta.corporate_id]) {
+            teamAssignmentsMap[ta.corporate_id] = [];
+          }
+          teamAssignmentsMap[ta.corporate_id].push({
+            teamMemberId: ta.team_member_id,
+            clinicId: ta.clinic_id,
+            isPrimary: ta.is_primary
+          });
+        });
+      } catch (teamError) {
+        console.error('[Corporates] Team assignments query error:', teamError.message);
+        // Continue without team assignments
+      }
     }
 
     // Fetch employee counts for all corporates
     let employeeCountMap = {};
     if (corporateIds.length > 0) {
-      const [employeeCounts] = await postgresSequelize.query(`
-        SELECT "entityId" as corporate_id, COUNT(DISTINCT "userId") as employee_count
-        FROM user_associations
-        WHERE "entityType" = 'corporate'
-        AND "entityId" IN (:corporateIds)
-        GROUP BY "entityId"
-      `, {
-        replacements: { corporateIds },
-        type: postgresSequelize.QueryTypes.SELECT
-      });
-
-      (employeeCounts || []).forEach(ec => {
-        employeeCountMap[ec.corporate_id] = parseInt(ec.employee_count, 10) || 0;
-      });
+      try {
+        const result = await postgresSequelize.query(`
+          SELECT "entityId" as corporate_id, COUNT(DISTINCT "userId") as employee_count
+          FROM user_associations
+          WHERE "entityType" = 'corporate'
+          AND "entityId" IN (:corporateIds)
+          GROUP BY "entityId"
+        `, {
+          replacements: { corporateIds },
+          type: postgresSequelize.QueryTypes.SELECT
+        });
+        
+        console.log('[Corporates] Employee counts query result type:', typeof result, 'isArray:', Array.isArray(result));
+        if (result && result[0]) {
+          console.log('[Corporates] Employee counts result[0] type:', typeof result[0], 'isArray:', Array.isArray(result[0]));
+        }
+        
+        const employeeCounts = Array.isArray(result) ? result[0] : result;
+        
+        if (Array.isArray(employeeCounts)) {
+          employeeCounts.forEach(ec => {
+            employeeCountMap[ec.corporate_id] = parseInt(ec.employee_count, 10) || 0;
+          });
+        } else {
+          console.warn('[Corporates] Employee counts is not an array:', employeeCounts);
+        }
+      } catch (queryError) {
+        console.error('[Corporates] Employee counts query error:', queryError.message);
+        // Continue without employee counts
+      }
     }
     
     // Map to expected format
