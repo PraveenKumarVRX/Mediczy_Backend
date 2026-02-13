@@ -856,8 +856,6 @@ router.post('/instant-triage-call', async (req, res) => {
       patientName: patientName,
       patientEmail: patientEmail,
       patientPhone: patientPhone,
-      guestEmail: !user ? guestEmail : null, // Store guest email if applicable
-      guestPhone: !user ? guestPhone : null, // Store guest phone if applicable
       doctorId: doctor.id,
       doctorName: `${doctor.prefix || 'Dr.'} ${doctor.firstName} ${doctor.lastName}`,
       specialization: doctor.specialization,
