@@ -1,6 +1,8 @@
 import express from 'express';
 import { Op, Sequelize } from 'sequelize';
 import Lab from '../models/postgres/lab.model.postgres.js';
+import { Appointment } from '../models/index.js';
+import { authUser } from '../middleware/auth.middleware.js';
 import { orchestrator } from '../db/orchestrator.js';
 
 const router = express.Router();
@@ -622,7 +624,7 @@ function calculateSuitabilityScore(lab, criteria) {
  * POST /api/labs/book
  * Book a lab test appointment
  */
-router.post('/book', async (req, res) => {
+router.post('/book', authUser, async (req, res) => {
   try {
     const {
       labId,
@@ -659,36 +661,84 @@ router.post('/book', async (req, res) => {
     const testFees = tests.reduce((sum, test) => sum + (test.price || 0), 0);
     const totalFee = baseFee + testFees;
 
-    // Create appointment record
-    const appointment = {
-      id: `lab-appt-${Date.now()}`,
-      labId,
-      patientName: patientName || 'Patient',
-      patientPhone: patientPhone || '',
+    // Get lab details
+    const lab = await Lab.findByPk(labId);
+    if (!lab) {
+      return res.status(404).json({
+        success: false,
+        message: 'Lab not found'
+      });
+    }
+
+    // Create appointment record in database
+    const appointment = await Appointment.create({
+      userId: req.user?.id,
+      patientName: patientName || req.user?.name || `${req.user?.firstName || ''} ${req.user?.lastName || ''}`.trim() || 'Patient',
+      patientEmail: req.user?.email || null,
+      patientPhone: patientPhone || req.user?.phoneNumber || req.user?.phone || '',
+      patientDetails: {
+        address: patientAddress || {},
+        symptoms: symptoms || '',
+        notes: notes || ''
+      },
+      doctorName: 'Lab',
+      specialization: 'Laboratory',
+      doctorDetails: {
+        labId,
+        labName: lab.name,
+        labAddress: lab.address,
+        labPhone: lab.phone
+      },
       appointmentDate,
       appointmentTime,
-      serviceType,
-      testType: testType || '',
-      tests,
-      symptoms: symptoms || '',
-      notes: notes || '',
-      patientAddress: patientAddress || {},
-      prescriptionUrl: prescriptionUrl || null,
+      consultationType: 'lab-test',
+      channel: 'lab',
+      clinicId: labId,
+      clinicName: lab.name,
+      clinicAddress: lab.address,
       status: 'scheduled',
-      bookingTime: new Date().toISOString(),
-      fee: totalFee,
-      reportStatus: 'pending'
-    };
+      isLab: true,
+      meetingLink: null,
+      description: `Lab appointment for ${serviceType} - ${testType}`,
+      metadata: {
+        serviceType,
+        testType,
+        tests,
+        totalFee,
+        baseFee,
+        testFees,
+        prescriptionUrl: prescriptionUrl || null
+      }
+    });
 
-    // TODO: Store in database once LabAppointment model is created
+    console.log('[Lab Booking] ✅ Appointment created:', {
+      id: appointment.id,
+      userId: req.user?.id,
+      labId,
+      patientName,
+      appointmentDate,
+      appointmentTime
+    });
 
-    res.json({
+    res.status(201).json({
       success: true,
       message: 'Lab appointment booked successfully',
-      appointment
+      appointment: {
+        id: appointment.id,
+        patientName: appointment.patientName,
+        appointmentDate: appointment.appointmentDate,
+        appointmentTime: appointment.appointmentTime,
+        labName: lab.name,
+        labAddress: lab.address,
+        serviceType,
+        testType,
+        tests,
+        totalFee,
+        status: 'scheduled'
+      }
     });
   } catch (error) {
-    console.error('Lab booking error:', error);
+    console.error('[Lab Booking] ❌ Error:', error);
     res.status(500).json({
       success: false,
       message: 'Failed to book lab appointment',
