@@ -578,7 +578,7 @@ const ringFencingMiddleware = (req, res, next) => {
       console.log(`🚫 Ring-fencing: ${userType} attempted unauthorized access to: ${requestPath}`);
       console.log(`   Allowed paths for ${userType}:`, permissions.allowedPaths);
       return res.status(403).json({
-        error: 'Access denied - insufficient privileges - UPDATED VERSION TEST',
+        error: 'Access denied - insufficient privileges',
         code: 'ACCESS_DENIED',
         userType: userType,
         requestedPath: requestPath
