@@ -247,7 +247,13 @@ const TeamCorporateManagement = () => {
   const fetchEmployees = async (corporateId: number) => {
     try {
       const token = localStorage.getItem('teamToken');
-      const response = await api.get(`/admin/corporate-employees/${corporateId}`, {
+      const numericId = parseInt(String(corporateId), 10);
+      if (isNaN(numericId)) {
+        console.error('Invalid corporate ID:', corporateId);
+        setEmployees([]);
+        return;
+      }
+      const response = await api.get(`/admin/corporate-employees/${numericId}`, {
         headers: token ? { Authorization: `Bearer ${token}` } : undefined
       });
       
@@ -276,7 +282,13 @@ const TeamCorporateManagement = () => {
   const fetchHealthPackages = async (corporateId: number) => {
     try {
       const token = localStorage.getItem('teamToken');
-      const response = await api.get(`/admin/corporate-health-packages/${corporateId}`, {
+      const numericId = parseInt(String(corporateId), 10);
+      if (isNaN(numericId)) {
+        console.error('Invalid corporate ID:', corporateId);
+        setHealthPackages([]);
+        return;
+      }
+      const response = await api.get(`/admin/corporate-health-packages/${numericId}`, {
         headers: token ? { Authorization: `Bearer ${token}` } : undefined
       });
 
@@ -310,7 +322,13 @@ const TeamCorporateManagement = () => {
   const fetchCorporatePlans = async (corporateId: number) => {
     try {
       const token = localStorage.getItem('teamToken');
-      const response = await api.get(`/admin/corporate-plans/${corporateId}`, {
+      const numericId = parseInt(String(corporateId), 10);
+      if (isNaN(numericId)) {
+        console.error('Invalid corporate ID:', corporateId);
+        setCorporatePlans([]);
+        return;
+      }
+      const response = await api.get(`/admin/corporate-plans/${numericId}`, {
         headers: token ? { Authorization: `Bearer ${token}` } : undefined
       });
 
