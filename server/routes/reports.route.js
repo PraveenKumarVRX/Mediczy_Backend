@@ -21,13 +21,6 @@ const __dirname = path.dirname(fileURLToPath(import.meta.url));
 // Configure multer for file upload
 const uploadDir = path.join(__dirname, '../../uploads/reports');
 
-// Ensure upload directory exists
-try {
-  await fs.mkdir(uploadDir, { recursive: true });
-} catch (err) {
-  console.error('Failed to create upload directory:', err);
-}
-
 const storage = multer.diskStorage({
   destination: async (req, file, cb) => {
     try {
