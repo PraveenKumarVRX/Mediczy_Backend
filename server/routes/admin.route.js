@@ -396,7 +396,9 @@ router.get('/corporates', authUser, requireRole(['admin', 'team']), async (req, 
       // Admin users: Get all corporates from database
       const [all] = await postgresSequelize.query(`
         SELECT * FROM corporates ORDER BY "companyName" ASC
-      `);
+      `, {
+        type: postgresSequelize.QueryTypes.SELECT
+      });
       
       corporates = all || [];
       console.log(`[Corporates] Admin user ${req.user.email} - Found ${corporates.length} total corporates`);
