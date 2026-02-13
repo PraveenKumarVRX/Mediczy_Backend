@@ -562,8 +562,14 @@ router.get('/corporates', authUser, requireRole(['admin', 'team']), async (req, 
     });
   } catch (error) {
     console.error('[Corporates] Error fetching corporates:', error);
-    // Fallback to demo data on error
-    return res.json({ success: true, data: demoAdminCorporates, total: demoAdminCorporates.length });
+    console.error('[Corporates] Error stack:', error.stack);
+    // Return empty list instead of demo data to force frontend to use team login data
+    return res.status(500).json({ 
+      success: false, 
+      message: 'Failed to fetch corporates',
+      error: error.message,
+      data: []
+    });
   }
 });
 
