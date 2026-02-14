@@ -14,7 +14,7 @@ echo ""
 ROCKETCHAT_URL="${ROCKETCHAT_URL:-https://smart-chat.live}"
 ROCKETCHAT_ADMIN="${ROCKETCHAT_ADMIN:-admin}"
 ROCKETCHAT_PASSWORD="${ROCKETCHAT_PASSWORD:-admin}"
-OAUTH_BASE_URL="https://mediqzy.com"
+OAUTH_BASE_URL="https://app.mediqzy.com"
 
 echo "📋 Configuration:"
 echo "  RC URL: $ROCKETCHAT_URL"
