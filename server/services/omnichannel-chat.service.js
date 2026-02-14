@@ -10,6 +10,7 @@
 import axios from 'axios';
 import crypto from 'crypto';
 import { cache } from '../db/redis.js';
+import whatsappBotService from './whatsapp-bot.service.js';
 
 class OmnichannelChatService {
   constructor() {
@@ -78,6 +79,8 @@ class OmnichannelChatService {
    */
   async registerVisitor(patient) {
     try {
+      console.log(`   🔐 RocketChat Auth: Token=${this.authToken ? '✅' : '❌'}, UserId=${this.userId ? '✅' : '❌'}`);
+      
       const visitorToken = this.generateVisitorToken(patient.id);
       
       const visitorData = {
@@ -96,6 +99,7 @@ class OmnichannelChatService {
         }
       };
 
+      console.log(`   📤 Registering visitor in RocketChat...`);
       const response = await axios.post(
         `${this.rocketChatUrl}/api/v1/livechat/visitor`,
         visitorData,
@@ -108,8 +112,12 @@ class OmnichannelChatService {
         visitor: response.data.visitor
       };
     } catch (error) {
-      console.error('Register visitor error:', error.response?.data || error.message);
-      return { success: false, error: error.message };
+      console.error(`   ❌ Register visitor failed!`);
+      console.error(`      Status: ${error.response?.status}`);
+      console.error(`      Message: ${error.message}`);
+      console.error(`      RocketChat Response:`, JSON.stringify(error.response?.data, null, 2));
+      console.error(`      Request Data was:`, JSON.stringify(visitorData, null, 2));
+      return { success: false, error: error.message, details: error.response?.data };
     }
   }
 
@@ -137,16 +145,22 @@ class OmnichannelChatService {
   async createOrGetRoom(visitorToken, department = 'general', initialMessage = null) {
     try {
       // First check for existing open room
+      console.log(`   🔍 Checking for existing room (token: ${visitorToken.substring(0, 20)}...)`);
       const existingRoom = await this.getOpenRoom(visitorToken);
       if (existingRoom) {
+        console.log(`   ✅ Found existing room: ${existingRoom._id}`);
         return { success: true, room: existingRoom, isNew: false };
       }
 
       // Create new room
+      console.log(`   📝 Creating new room for department: ${department}`);
       const roomData = {
         token: visitorToken,
         department: this.departments[department] || this.departments.general
       };
+      
+      console.log(`   📤 Calling RocketChat GET /api/v1/livechat/room...`);
+      console.log(`      Params:`, roomData);
 
       const response = await axios.get(
         `${this.rocketChatUrl}/api/v1/livechat/room`,
@@ -157,6 +171,7 @@ class OmnichannelChatService {
       );
 
       const room = response.data.room;
+      console.log(`   ✅ Room created: ${room._id}`);
 
       // Send initial message if provided
       if (initialMessage && room) {
@@ -165,8 +180,11 @@ class OmnichannelChatService {
 
       return { success: true, room, isNew: true };
     } catch (error) {
-      console.error('Create room error:', error.response?.data || error.message);
-      return { success: false, error: error.message };
+      console.error(`   ❌ Create room failed!`);
+      console.error(`      Status: ${error.response?.status}`);
+      console.error(`      Message: ${error.message}`);
+      console.error(`      RocketChat Response:`, JSON.stringify(error.response?.data, null, 2));
+      return { success: false, error: error.message, details: error.response?.data };
     }
   }
 
@@ -321,21 +339,25 @@ class OmnichannelChatService {
   }
 
   /**
-   * Handle incoming WhatsApp message and forward to RocketChat
+   * Handle incoming WhatsApp message with bot response + handoff logic
    * Called by your WhatsApp webhook handler
    * @param {Object} whatsappMessage - WhatsApp message data
    */
   async handleWhatsAppMessage(whatsappMessage) {
     try {
+      console.log(`📱 Incoming WhatsApp message from ${whatsappMessage.from}: "${whatsappMessage.body.substring(0, 50)}..."`);
+      
       const { from, body, mediaUrl, patientId, patient } = whatsappMessage;
 
       // Get or create visitor
       let visitorToken;
       if (patient) {
+        console.log(`   👤 Patient found: ${patient.firstName} ${patient.lastName}`);
         const visitorResult = await this.registerVisitor(patient);
         visitorToken = visitorResult.visitorToken;
       } else {
         // Anonymous WhatsApp user
+        console.log(`   😊 Anonymous user`);
         visitorToken = this.generateVisitorToken(`whatsapp-${from}`);
         await this.registerVisitor({
           id: `whatsapp-${from}`,
@@ -346,38 +368,134 @@ class OmnichannelChatService {
       }
 
       // Get or create room
+      console.log(`   🏠 Creating/getting RocketChat room...`);
       const roomResult = await this.createOrGetRoom(visitorToken, 'general');
       if (!roomResult.success) {
         throw new Error(roomResult.error);
       }
 
-      // Format message with WhatsApp indicator
-      let formattedMessage = `📱 *WhatsApp*: ${body}`;
+      const roomId = roomResult.room._id;
+      console.log(`   ✅ Room: ${roomId}`);
+
+      // ========== BOT DECISION LOGIC ==========
       
-      // Handle media attachments
-      let attachments = null;
-      if (mediaUrl) {
-        attachments = [{
-          title: 'WhatsApp Attachment',
-          image_url: mediaUrl
-        }];
+      // Step 1: Detect language and department
+      console.log(`   🔍 Analyzing message...`);
+      const messageLanguage = whatsappBotService.detectLanguage(body);
+      const detectedDepartment = whatsappBotService.getSuggestedDepartment(body);
+      
+      // Step 2: Check if this is a handoff state (customer already talked to bot)
+      const handoffState = await cache.get(`whatsapp:handoff:${from}`);
+      if (handoffState?.active && handoffState?.reason === 'bot_response_given') {
+        console.log('🔄 Customer already received bot response, checking for explicit handoff...');
       }
 
-      // Send to RocketChat
-      const sendResult = await this.sendMessage(
-        roomResult.room._id,
-        visitorToken,
-        formattedMessage,
-        attachments
+      // Step 3: Get bot response from Dr.iSHA
+      console.log('🤖 Getting bot response...');
+      const botResponse = await whatsappBotService.getBotResponse(body, messageLanguage);
+
+      // Log any API issues
+      if (!botResponse.success) {
+        console.warn(`⚠️ Dr.iSHA API failed: ${botResponse.error}`);
+        console.log('📞 Falling back to agent handoff due to API error');
+      }
+
+      // Step 4: Determine if handoff is needed
+      const handoffDecision = whatsappBotService.determineHandoffNeeded(
+        body,
+        botResponse,
+        detectedDepartment
       );
 
-      return {
-        success: true,
-        roomId: roomResult.room._id,
-        messageId: sendResult.message?._id
-      };
+      console.log(`🔍 Handoff Decision: ${handoffDecision.handoff ? 'YES' : 'NO'} (${handoffDecision.reason})`);
+
+      // ========== CASE 1: BOT CAN HANDLE ==========
+      if (!handoffDecision.handoff && botResponse.success) {
+        // Format bot response
+        const formattedBotResponse = whatsappBotService.formatBotResponse(botResponse, messageLanguage);
+        
+        // Send customer message first
+        const customerMsg = `📱 *Customer* (${messageLanguage === 'hi' ? 'Hindi' : 'English'}): ${body}`;
+        await this.sendMessage(roomId, visitorToken, customerMsg);
+
+        // Send bot response
+        await this.sendMessage(roomId, visitorToken, formattedBotResponse);
+
+        // Update handoff state - bot response given
+        await cache.set(
+          `whatsapp:handoff:${from}`,
+          {
+            active: true,
+            reason: 'bot_response_given',
+            botResponse: botResponse.response.substring(0, 100),
+            confidence: botResponse.confidence,
+            timestamp: new Date().toISOString()
+          },
+          300  // 5 minutes TTL - if no follow-up, assume resolved
+        );
+
+        console.log(`✅ Bot handled message for ${from}`);
+        return { success: true, handled: 'bot', roomId };
+      }
+
+      // ========== CASE 2: HANDOFF NEEDED ==========
+      else {
+        console.log(`📞 Handing off to ${detectedDepartment} agent for ${from}...`);
+
+        // Send customer message to RocketChat
+        let customerMsg = `📱 *Customer* (${messageLanguage === 'hi' ? 'Hindi' : 'English'}): ${body}`;
+        if (handoffDecision.reason === 'emergency_detected') {
+          customerMsg = `🚨 *EMERGENCY* - ${customerMsg}`;
+        }
+        
+        await this.sendMessage(roomId, visitorToken, customerMsg);
+
+        // Send bot context if available (so agent knows what bot tried)
+        if (botResponse.success && botResponse.response) {
+          const context = `\n📋 *Bot Context*:\n${botResponse.response.substring(0, 200)}...\n(Confidence: ${(botResponse.confidence * 100).toFixed(0)}%)`;
+          await this.sendMessage(roomId, visitorToken, context);
+        }
+
+        // Transfer to appropriate department agent
+        const transferResult = await this.transferToDepartment(
+          roomId,
+          visitorToken,
+          detectedDepartment
+        );
+
+        if (!transferResult.success) {
+          console.error('Transfer failed:', transferResult.error);
+        }
+
+        // Find and notify available agents
+        const agents = await this.getAvailableAgents(detectedDepartment);
+        console.log(`👥 Routed to ${detectedDepartment} (${agents.agents?.length || 0} agents available)`);
+
+        // Set handoff state - waiting for agent
+        await cache.set(
+          `whatsapp:handoff:${from}`,
+          {
+            active: true,
+            reason: 'waiting_for_agent',
+            department: detectedDepartment,
+            priority: handoffDecision.priority,
+            timestamp: new Date().toISOString()
+          },
+          3600  // 1 hour TTL
+        );
+
+        // Send message back to customer (via webhook or direct)
+        const waitingMsg = messageLanguage === 'hi'
+          ? '⏳ एक मिनट में हमारी सहायता टीम आ जाएगी। कृपया प्रतीक्षा करें...'
+          : '⏳ Our support team will be with you shortly. Please wait...';
+        
+        await this.sendMessage(roomId, visitorToken, waitingMsg);
+
+        return { success: true, handled: 'handoff', department: detectedDepartment, roomId };
+      }
     } catch (error) {
-      console.error('WhatsApp bridge error:', error);
+      console.error(`❌ WhatsApp handler error: ${error.message}`);
+      console.error(`   Stack: ${error.stack?.split('\n')[1]}`);
       return { success: false, error: error.message };
     }
   }
@@ -766,6 +884,152 @@ class OmnichannelChatService {
     } catch (error) {
       console.error('Get transcript error:', error);
       return { success: false, transcript: [] };
+    }
+  }
+
+  // AGENT ROUTING & HANDOFF
+  // ============================================================================
+
+  /**
+   * Transfer chat room to specific department
+   * @param {string} roomId - RocketChat room ID
+   * @param {string} visitorToken - Visitor session token
+   * @param {string} department - Target department
+   */
+  async transferToDepartment(roomId, visitorToken, department = 'general') {
+    try {
+      // Map internal department to RocketChat department
+      const departmentName = this.departments[department] || this.departments.general;
+
+      const response = await axios.post(
+        `${this.rocketChatUrl}/api/v1/livechat/room.transfer`,
+        {
+          rid: roomId,
+          token: visitorToken,
+          department: departmentName
+        },
+        { headers: this.getHeaders() }
+      );
+
+      if (response.data.success) {
+        console.log(`✅ Room ${roomId} transferred to ${departmentName}`);
+        return { success: true, department: departmentName };
+      } else {
+        throw new Error(response.data.error || 'Transfer failed');
+      }
+    } catch (error) {
+      console.error('Department transfer error:', error.response?.data || error.message);
+      return { success: false, error: error.message };
+    }
+  }
+
+  /**
+   * Get available agents in a department
+   * @param {string} department - Department name
+   */
+  async getAvailableAgents(department = 'general') {
+    try {
+      const departmentName = this.departments[department] || this.departments.general;
+
+      const response = await axios.get(
+        `${this.rocketChatUrl}/api/v1/livechat/agents`,
+        {
+          headers: this.getHeaders(),
+          params: {
+            count: 100
+          }
+        }
+      );
+
+      if (!response.data.success) {
+        throw new Error('Failed to fetch agents');
+      }
+
+      // Filter online agents
+      const onlineAgents = response.data.agents.filter(agent => agent.status === 'online');
+
+      // If department-specific filtering needed, add department check here
+      // For now, return all online agents that can handle this department
+
+      return {
+        success: true,
+        agents: onlineAgents,
+        count: onlineAgents.length,
+        department: departmentName
+      };
+    } catch (error) {
+      console.error('Get available agents error:', error.response?.data || error.message);
+      return { success: false, agents: [], count: 0, error: error.message };
+    }
+  }
+
+  /**
+   * Route to specific agent
+   * @param {string} roomId - RocketChat room ID
+   * @param {string} visitorToken - Visitor session token
+   * @param {string} agentId - Specific agent ID
+   */
+  async routeToAgent(roomId, visitorToken, agentId) {
+    try {
+      // First transfer to department, then assign to specific agent
+      const response = await axios.post(
+        `${this.rocketChatUrl}/api/v1/livechat/room.visitor`,
+        {
+          rid: roomId,
+          token: visitorToken,
+          agentId: agentId
+        },
+        { headers: this.getHeaders() }
+      );
+
+      if (response.data.success) {
+        console.log(`✅ Room ${roomId} assigned to agent ${agentId}`);
+        return { success: true, agentId };
+      } else {
+        throw new Error(response.data.error || 'Agent assignment failed');
+      }
+    } catch (error) {
+      console.error('Route to agent error:', error.response?.data || error.message);
+      return { success: false, error: error.message };
+    }
+  }
+
+  /**
+   * Send priority/priority flag to agent dashboard
+   * Useful for marking emergency or urgent chats
+   * @param {string} roomId - RocketChat room ID
+   * @param {string} priority - 'low' | 'normal' | 'high' | 'urgent' | 'emergency'
+   * @param {string} reason - Reason for priority
+   */
+  async setPriority(roomId, priority = 'normal', reason = '') {
+    try {
+      // Send a message to alert agents
+      const priorityEmojis = {
+        emergency: '🚨',
+        urgent: '⚠️',
+        high: '📌',
+        normal: '📝',
+        low: '📋'
+      };
+
+      const emoji = priorityEmojis[priority] || '📝';
+      const message = `${emoji} *Priority: ${priority.toUpperCase()}* ${reason ? `- ${reason}` : ''}`;
+
+      const response = await axios.post(
+        `${this.rocketChatUrl}/api/v1/chat.sendMessage`,
+        {
+          rid: roomId,
+          msg: message,
+          alias: 'System',
+          avatar: 'https://via.placeholder.com/48'
+        },
+        { headers: this.getHeaders() }
+      );
+
+      return { success: true };
+    } catch (error) {
+      console.error('Set priority error:', error.response?.data || error.message);
+      return { success: false, error: error.message };
     }
   }
 }

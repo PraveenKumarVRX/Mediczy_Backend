@@ -337,13 +337,18 @@ router.get('/departments', async (req, res) => {
  */
 router.post('/webhook/whatsapp', async (req, res) => {
   try {
+    console.log(`📞 WhatsApp webhook received`);
     const { from, body, mediaUrl, profileName } = req.body;
+    console.log(`   From: ${from}, Body: "${body.substring(0, 50)}..."`);
 
     // Try to find patient by phone number
+    console.log(`   🔍 Looking up patient...`);
     const patient = await userModel.findOne({
       where: { phoneNumber: from }
     });
+    console.log(`   Patient found: ${patient ? 'YES' : 'NO'}`);
 
+    console.log(`   📨 Calling handleWhatsAppMessage...`);
     const result = await omnichannelChatService.handleWhatsAppMessage({
       from,
       body,
@@ -363,9 +368,11 @@ router.post('/webhook/whatsapp', async (req, res) => {
       }
     });
 
+    console.log(`   ✅ Handler result:`, result);
     return res.json({ success: true, data: result });
   } catch (error) {
-    console.error('WhatsApp webhook error:', error);
+    console.error(`❌ WhatsApp webhook error:`, error.message);
+    console.error(`   Stack:`, error.stack?.split('\n')[1]);
     return res.status(500).json({ success: false, message: 'Failed to process message' });
   }
 });

@@ -1,240 +1,323 @@
+/**
+ * OAuth 2.0 SSO Routes for Rocket.Chat Integration
+ * 
+ * Endpoints:
+ * - GET  /oauth/authorize    - Authorization endpoint (user authorization)
+ * - POST /oauth/token        - Token endpoint (code->token exchange)
+ * - GET  /oauth/userinfo     - Userinfo endpoint (token->user profile)
+ */
+
 import express from 'express';
-import passport from '../config/oauth.config.js';
-import jwt from 'jsonwebtoken';
-import { JWT_CONFIG } from '../config/auth.config.js';
+import { authUser } from '../middleware/auth.middleware.js';
+import userModel from '../models/postgres/user.model.postgres.js';
+import oauthTokenService from '../services/oauth-token.service.js';
+import {
+  validateOAuthClient,
+  validateRedirectUri,
+  getClientScopes
+} from '../db/oauth-clients.js';
 
 const router = express.Router();
 
+// ============================================================================
+// AUTHORIZATION ENDPOINT (Step 1 - User Authorization)
+// ============================================================================
+
 /**
- * OAuth2 Routes for Mediczy
+ * GET /oauth/authorize
+ * User authorization endpoint - redirects to login if needed, then issues auth code
  * 
- * Endpoints:
- * - GET /api/auth/google - Initiate Google OAuth2 flow
- * - GET /api/auth/google/callback - Google OAuth2 callback
- * - GET /api/auth/facebook - Initiate Facebook OAuth2 flow
- * - GET /api/auth/facebook/callback - Facebook OAuth2 callback
+ * Query Parameters:
+ * - client_id: OAuth client ID
+ * - redirect_uri: Where to redirect after authorization
+ * - response_type: must be 'code'
+ * - scope: space-separated scopes (optional)
+ * - state: CSRF protection parameter (recommended)
+ * 
+ * Example:
+ * https://mediqzy.com/oauth/authorize?
+ *   client_id=rocketchat&
+ *   redirect_uri=http://localhost:3100/_oauth/mediqzy&
+ *   response_type=code&
+ *   scope=openid%20email%20profile&
+ *   state=abc123
  */
-
-/**
- * Generate JWT token for authenticated user
- * FIXED: Use JWT_SECRET (JWT_CONFIG.SECRET) and include required id/role fields
- */
-function generateToken(user) {
-  const payload = {
-    id: user.id,         // Required for authUser middleware
-    userId: user.id,
-    email: user.email,
-    role: 'user',        // Required for authUser middleware role check
-    userType: 'user',
-    firstName: user.firstName,
-    lastName: user.lastName
-  };
-  
-  return jwt.sign(payload, JWT_CONFIG.SECRET || process.env.JWT_SECRET, {
-    expiresIn: '30d'
-  });
-}
-
-/**
- * Handle successful OAuth authentication
- */
-function handleOAuthSuccess(req, res, userData, provider) {
+router.get('/authorize', authUser, async (req, res) => {
   try {
-    const { user, accessToken, refreshToken } = userData;
-    
-    // Generate JWT token for our application
-    const token = generateToken(user);
-    
-    console.log(`✅ ${provider} OAuth successful for: ${user.email}`);
-    
-    // Store OAuth tokens if needed for later API calls
-    // For now, we'll just log them
-    console.log(`${provider} Access Token available for user ${user.id}`);
-    
-    // Redirect to frontend with token
-    const redirectUrl = process.env.NODE_ENV === 'production'
-      ? `https://app.mediqzy.com/oauth-callback?token=${token}&userType=user&provider=${provider}`
-      : `http://localhost:3001/oauth-callback?token=${token}&userType=user&provider=${provider}`;
-    
-    res.redirect(redirectUrl);
-  } catch (error) {
-    console.error(`Error handling ${provider} OAuth success:`, error);
-    const errorUrl = process.env.NODE_ENV === 'production'
-      ? `https://mediqzy.com/login?error=oauth_failed&provider=${provider}`
-      : `http://localhost:3001/login?error=oauth_failed&provider=${provider}`;
-    res.redirect(errorUrl);
-  }
-}
+    const { client_id, redirect_uri, response_type, scope, state } = req.query;
 
-/**
- * Handle OAuth authentication failure
- */
-function handleOAuthFailure(provider, error, res) {
-  console.error(`❌ ${provider} OAuth failed:`, error);
-  const errorUrl = process.env.NODE_ENV === 'production'
-    ? `https://mediqzy.com/login?error=${error.message || 'oauth_failed'}&provider=${provider}`
-    : `http://localhost:3001/login?error=${error.message || 'oauth_failed'}&provider=${provider}`;
-  res.redirect(errorUrl);
-}
-
-// ==================== GOOGLE OAUTH2 ====================
-
-/**
- * @swagger
- * /api/auth/google:
- *   get:
- *     summary: Initiate Google OAuth2 authentication
- *     description: Redirects user to Google login page
- *     tags: [OAuth2]
- *     responses:
- *       302:
- *         description: Redirect to Google OAuth2 consent screen
- */
-router.get(
-  '/google',
-  (req, res, next) => {
-    console.log('🔵 Initiating Google OAuth flow...');
-    next();
-  },
-  passport.authenticate('google', { 
-    scope: ['profile', 'email'],
-    session: false 
-  })
-);
-
-/**
- * @swagger
- * /api/auth/google/callback:
- *   get:
- *     summary: Google OAuth2 callback endpoint
- *     description: Handles callback from Google after user authentication
- *     tags: [OAuth2]
- *     parameters:
- *       - in: query
- *         name: code
- *         required: true
- *         schema:
- *           type: string
- *         description: Authorization code from Google
- *     responses:
- *       302:
- *         description: Redirect to frontend with JWT token
- */
-router.get(
-  '/google/callback',
-  (req, res, next) => {
-    console.log('🔵 Google OAuth callback received');
-    console.log('Query params:', req.query);
-    next();
-  },
-  passport.authenticate('google', { 
-    session: false,
-    failureRedirect: '/login?error=google_auth_failed'
-  }),
-  (req, res) => {
-    console.log('✅ Google OAuth authentication successful');
-    handleOAuthSuccess(req, res, req.user, 'google');
-  }
-);
-
-// ==================== FACEBOOK OAUTH2 ====================
-
-/**
- * @swagger
- * /api/auth/facebook:
- *   get:
- *     summary: Initiate Facebook OAuth2 authentication
- *     description: Redirects user to Facebook login page
- *     tags: [OAuth2]
- *     responses:
- *       302:
- *         description: Redirect to Facebook OAuth2 consent screen
- */
-router.get(
-  '/facebook',
-  passport.authenticate('facebook', { 
-    scope: ['email', 'public_profile'],
-    session: false 
-  })
-);
-
-/**
- * @swagger
- * /api/auth/facebook/callback:
- *   get:
- *     summary: Facebook OAuth2 callback endpoint
- *     description: Handles callback from Facebook after user authentication
- *     tags: [OAuth2]
- *     parameters:
- *       - in: query
- *         name: code
- *         required: true
- *         schema:
- *           type: string
- *         description: Authorization code from Facebook
- *     responses:
- *       302:
- *         description: Redirect to frontend with JWT token
- */
-router.get(
-  '/facebook/callback',
-  passport.authenticate('facebook', { 
-    session: false,
-    failureRedirect: '/login?error=facebook_auth_failed'
-  }),
-  (req, res) => {
-    handleOAuthSuccess(req, res, req.user, 'facebook');
-  }
-);
-
-// ==================== OAUTH STATUS ENDPOINT ====================
-
-/**
- * @swagger
- * /api/auth/oauth/status:
- *   get:
- *     summary: Check OAuth2 configuration status
- *     description: Returns which OAuth providers are configured and available
- *     tags: [OAuth2]
- *     responses:
- *       200:
- *         description: OAuth configuration status
- *         content:
- *           application/json:
- *             schema:
- *               type: object
- *               properties:
- *                 google:
- *                   type: object
- *                   properties:
- *                     configured:
- *                       type: boolean
- *                     url:
- *                       type: string
- *                 facebook:
- *                   type: object
- *                   properties:
- *                     configured:
- *                       type: boolean
- *                     url:
- *                       type: string
- */
-router.get('/oauth/status', (req, res) => {
-  const baseUrl = process.env.NODE_ENV === 'production'
-    ? 'https://mediqzy.com'
-    : 'http://localhost:8000';
-  
-  res.json({
-    google: {
-      configured: !!(process.env.GOOGLE_CLIENT_ID && process.env.GOOGLE_CLIENT_SECRET),
-      url: `${baseUrl}/api/auth/google`,
-      enabled: !!(process.env.GOOGLE_CLIENT_ID && process.env.GOOGLE_CLIENT_SECRET)
-    },
-    facebook: {
-      configured: !!(process.env.FACEBOOK_APP_ID && process.env.FACEBOOK_APP_SECRET),
-      url: `${baseUrl}/api/auth/facebook`,
-      enabled: !!(process.env.FACEBOOK_APP_ID && process.env.FACEBOOK_APP_SECRET)
+    // ✅ Step 1: Validate request parameters
+    if (!client_id || !redirect_uri || response_type !== 'code') {
+      console.warn(`❌ OAuth: Invalid authorization request`);
+      return res.status(400).json({
+        error: 'invalid_request',
+        error_description: 'Missing or invalid parameters'
+      });
     }
+
+    // ✅ Step 2: Validate OAuth client
+    const client = validateOAuthClient(client_id);
+    if (!client) {
+      console.warn(`❌ OAuth: Unknown client: ${client_id}`);
+      return res.status(401).json({
+        error: 'unauthorized_client',
+        error_description: 'Client not registered'
+      });
+    }
+
+    // ✅ Step 3: Validate redirect URI
+    if (!validateRedirectUri(client_id, redirect_uri)) {
+      console.warn(`❌ OAuth: Invalid redirect_uri: ${redirect_uri}`);
+      return res.status(400).json({
+        error: 'invalid_request',
+        error_description: 'Redirect URI not allowed'
+      });
+    }
+
+    // ✅ Step 4: Get current user (already authenticated by authUser middleware)
+    const user = req.user;
+    if (!user || !user.id) {
+      return res.status(403).json({
+        error: 'access_denied',
+        error_description: 'User not authenticated'
+      });
+    }
+
+    // ✅ Step 5: Get requested scopes
+    const requestedScopes = scope ? scope.split(' ') : [];
+    const allowedScopes = getClientScopes(client_id);
+    const approvedScopes = requestedScopes.filter(s => allowedScopes.includes(s)) || allowedScopes;
+
+    // ✅ Step 6: Generate authorization code
+    const authCode = await oauthTokenService.generateAuthorizationCode(
+      user,
+      client_id,
+      redirect_uri,
+      approvedScopes
+    );
+
+    // ✅ Step 7: Redirect to client with code
+    const redirectUrl = new URL(redirect_uri);
+    redirectUrl.searchParams.append('code', authCode);
+    if (state) {
+      redirectUrl.searchParams.append('state', state);
+    }
+
+    console.log(`✅ OAuth: User ${user.email} authorized, redirecting to ${redirect_uri}`);
+    return res.redirect(redirectUrl.toString());
+
+  } catch (error) {
+    console.error('❌ OAuth authorize error:', error.message);
+    return res.status(500).json({
+      error: 'server_error',
+      error_description: error.message
+    });
+  }
+});
+
+// ============================================================================
+// TOKEN ENDPOINT (Step 2 - Code to Token Exchange)
+// ============================================================================
+
+/**
+ * POST /oauth/token
+ * Token endpoint - exchanges authorization code for access token
+ * 
+ * Body (form-urlencoded):
+ * - grant_type: 'authorization_code'
+ * - code: authorization code from /authorize
+ * - redirect_uri: must match original redirect_uri
+ * - client_id: OAuth client ID
+ * - client_secret: OAuth client secret (for confidential clients)
+ * 
+ * Example Request:
+ * POST /oauth/token HTTP/1.1
+ * Content-Type: application/x-www-form-urlencoded
+ * 
+ * grant_type=authorization_code&
+ * code=ABC123&
+ * redirect_uri=http://localhost:3100/_oauth/mediqzy&
+ * client_id=rocketchat&
+ * client_secret=secret123
+ * 
+ * Response:
+ * {
+ *   "access_token": "eyJhbGc...",
+ *   "token_type": "Bearer",
+ *   "expires_in": 3600,
+ *   "scope": "openid email profile"
+ * }
+ */
+router.post('/token', async (req, res) => {
+  try {
+    const { grant_type, code, redirect_uri, client_id, client_secret } = req.body;
+
+    // ✅ Step 1: Validate request
+    if (grant_type !== 'authorization_code') {
+      return res.status(400).json({
+        error: 'unsupported_grant_type',
+        error_description: 'Only authorization_code grant supported'
+      });
+    }
+
+    if (!code || !client_id || !redirect_uri) {
+      return res.status(400).json({
+        error: 'invalid_request',
+        error_description: 'Missing required parameters'
+      });
+    }
+
+    // ✅ Step 2: Validate OAuth client
+    const client = validateOAuthClient(client_id, client_secret);
+    if (!client) {
+      console.warn(`❌ OAuth: Token endpoint - invalid credentials for ${client_id}`);
+      return res.status(401).json({
+        error: 'invalid_client',
+        error_description: 'Client authentication failed'
+      });
+    }
+
+    // ✅ Step 3: Exchange code for token
+    const tokenResponse = await oauthTokenService.exchangeCodeForToken(
+      code,
+      client_id,
+      redirect_uri
+    );
+
+    console.log(`✅ OAuth: Token issued for client ${client_id}`);
+    return res.json(tokenResponse);
+
+  } catch (error) {
+    console.error('❌ OAuth token error:', error.message);
+    return res.status(400).json({
+      error: 'invalid_grant',
+      error_description: error.message
+    });
+  }
+});
+
+// ============================================================================
+// USERINFO ENDPOINT (Step 3 - Fetch User Profile)
+// ============================================================================
+
+/**
+ * GET /oauth/userinfo
+ * Userinfo endpoint - returns authenticated user profile
+ * 
+ * Headers:
+ * - Authorization: Bearer <access_token>
+ * 
+ * Response:
+ * {
+ *   "sub": "user_123",
+ *   "email": "user@example.com",
+ *   "username": "username",
+ *   "name": "John Doe"
+ * }
+ */
+router.get('/userinfo', async (req, res) => {
+  try {
+    // ✅ Step 1: Extract token from Authorization header
+    const authHeader = req.headers.authorization || '';
+    const match = authHeader.match(/^Bearer\s+(.+)$/);
+
+    if (!match || !match[1]) {
+      console.warn(`❌ OAuth: Missing or invalid Authorization header`);
+      return res.status(401).json({
+        error: 'invalid_token',
+        error_description: 'Missing or invalid token'
+      });
+    }
+
+    const token = match[1];
+
+    // ✅ Step 2: Validate token
+    const payload = oauthTokenService.validateAccessToken(token);
+
+    // ✅ Step 3: Fetch user from Postgres
+    const user = await userModel.findByPk(payload.sub);
+
+    if (!user) {
+      console.warn(`❌ OAuth: User not found: ${payload.sub}`);
+      return res.status(404).json({
+        error: 'user_not_found',
+        error_description: 'User profile not found'
+      });
+    }
+
+    // ✅ Step 4: Return user profile (OpenID Connect format)
+    const userProfile = {
+      sub: user.id.toString(),
+      email: user.email,
+      email_verified: user.emailVerified || false,
+      username: user.username,
+      name: `${user.firstName} ${user.lastName}`.trim(),
+      given_name: user.firstName,
+      family_name: user.lastName,
+      phone_number: user.phoneNumber || null,
+      updated_at: Math.floor(user.updatedAt.getTime() / 1000)
+    };
+
+    console.log(`✅ OAuth: Userinfo retrieved for ${user.email}`);
+    return res.json(userProfile);
+
+  } catch (error) {
+    console.error('❌ OAuth userinfo error:', error.message);
+
+    if (error.message === 'Invalid or expired token') {
+      return res.status(401).json({
+        error: 'invalid_token',
+        error_description: 'Token is invalid or expired'
+      });
+    }
+
+    return res.status(500).json({
+      error: 'server_error',
+      error_description: error.message
+    });
+  }
+});
+
+// ============================================================================
+// METADATA ENDPOINTS (Optional but useful)
+// ============================================================================
+
+/**
+ * GET /oauth/.well-known/oauth-authorization-server
+ * OAuth server metadata (helps OAuth clients auto-configure)
+ */
+router.get('/.well-known/oauth-authorization-server', (req, res) => {
+  const baseUrl = process.env.APP_BASE_URL || `${req.protocol}://${req.get('host')}`;
+
+  return res.json({
+    issuer: baseUrl,
+    authorization_endpoint: `${baseUrl}/oauth/authorize`,
+    token_endpoint: `${baseUrl}/oauth/token`,
+    userinfo_endpoint: `${baseUrl}/oauth/userinfo`,
+    scopes_supported: ['openid', 'email', 'profile'],
+    response_types_supported: ['code'],
+    grant_types_supported: ['authorization_code'],
+    token_endpoint_auth_methods_supported: ['client_secret_basic', 'client_secret_post']
+  });
+});
+
+/**
+ * GET /oauth/.well-known/openid-configuration
+ * OpenID Connect metadata
+ */
+router.get('/.well-known/openid-configuration', (req, res) => {
+  const baseUrl = process.env.APP_BASE_URL || `${req.protocol}://${req.get('host')}`;
+
+  return res.json({
+    issuer: baseUrl,
+    authorization_endpoint: `${baseUrl}/oauth/authorize`,
+    token_endpoint: `${baseUrl}/oauth/token`,
+    userinfo_endpoint: `${baseUrl}/oauth/userinfo`,
+    scopes_supported: ['openid', 'email', 'profile'],
+    response_types_supported: ['code'],
+    subject_types_supported: ['public'],
+    id_token_signing_alg_values_supported: ['HS256', 'RS256'],
+    claims_supported: ['sub', 'email', 'email_verified', 'name', 'given_name', 'family_name', 'username']
   });
 });
 

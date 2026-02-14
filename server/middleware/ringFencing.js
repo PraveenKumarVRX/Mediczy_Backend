@@ -413,6 +413,7 @@ const PUBLIC_ENDPOINTS = [
   '/api/homecare/login',
   '/api/ngo/login',
   '/api/oauth',
+  '/oauth',  // OAuth 2.0 SSO endpoints (Rocket.Chat integration)
   '/api/otp',
   '/api/masterdata', // Public read-only provider data (hospitals, labs, clinics)
   '/api/medical-ai/test', // AI medical consultation test endpoint (for demos and testing)
@@ -423,6 +424,8 @@ const PUBLIC_ENDPOINTS = [
   '/api/whatsapp-production/webhook', // WhatsApp incoming message webhook (Twilio)
   '/api/whatsapp-production/status-callback', // WhatsApp message status callback (Twilio)
   '/api/whatsapp-production/fallback', // WhatsApp fallback webhook (Twilio)
+  '/api/support/webhook/rocketchat', // RocketChat outgoing webhook (agent replies)
+  '/api/support/webhook/whatsapp', // WhatsApp support webhook
   '/api/whatsapp-production/user-context', // WhatsApp user context lookup
   '/api/whatsapp-production/ai-respond', // WhatsApp AI response generation
   '/api/whatsapp-production/send-ai-response', // WhatsApp AI response send

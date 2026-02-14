@@ -638,12 +638,14 @@ app.use(activityLogger({
 }));
 
 // Twilio WhatsApp Webhook Bypass - MUST RUN FIRST before session/auth checks
-// Allow unauthenticated requests for Twilio webhooks
+// Allow unauthenticated requests for Twilio webhooks and RocketChat outgoing webhooks
 app.use((req, res, next) => {
   console.log('🚀 [Bypass Check] Path:', req.path);
   if (req.path.startsWith('/api/whatsapp-production/webhook') ||
       req.path.startsWith('/api/whatsapp-production/fallback') ||
-      req.path.startsWith('/api/whatsapp-production/status-callback')) {
+      req.path.startsWith('/api/whatsapp-production/status-callback') ||
+      req.path.startsWith('/api/support/webhook/rocketchat') ||
+      req.path.startsWith('/api/support/webhook/whatsapp')) {
     console.log('✅ [Bypass Check] Setting skipAuth=true for path:', req.path);
     req.skipAuth = true;
   }
@@ -908,6 +910,9 @@ app.use('/api/circuit-breakers', circuitBreakerRouter);
 app.use('/api/auth', oauthRouter);
 app.use('/api/auth/doctor', doctorOAuthRouter);
 app.use('/api/auth', authLoginRouter);
+
+// OAuth Server Routes (Rocket.Chat SSO - standard OAuth endpoints)
+app.use('/oauth', oauthRouter);
 
 // API v1 - Multi-tenant Wellness Platform (OIDC-based authentication)
 app.use('/v1', apiV1Router);

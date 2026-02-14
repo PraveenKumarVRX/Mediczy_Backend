@@ -5,6 +5,7 @@ import whatsAppUserContextService from '../services/whatsapp-user-context.servic
 import rocketChatService from '../services/rocketchat.service.js';
 import omnichannelChatService from '../services/omnichannel-chat.service.js';
 import n8nService from '../services/n8n.service.js';
+import whatsAppSIBBrain from '../services/whatsapp-sib-brain.service.js';
 import { cache } from '../db/redis.js';
 import logger from '../config/logger.js';
 import axios from 'axios';
@@ -122,6 +123,7 @@ const detectBookingIntent = (message) => {
 
 // Configuration for AI auto-reply - unified Dr. iSHA
 const AI_AUTO_REPLY_ENABLED = process.env.WHATSAPP_AI_AUTO_REPLY === 'true' || false;
+const USE_SIB_BRAIN = process.env.USE_SIB_BRAIN !== 'false'; // Default true
 
 /**
  * Send appointment confirmation
@@ -1186,12 +1188,13 @@ Is there anything else I can help you with? 💙`
         
         const startTime = Date.now();
         
-        // Call SIB FastAPI directly with 3-second timeout (reduced from 5s for faster responses)
+        // Call SIB FastAPI directly with 5-second timeout
         const aiResponse = await Promise.race([
           axios.post(`${SIB_URL}/chat`, {
             message: Body,
             phone_number: phoneNumber,
             session_id: `whatsapp:${phoneNumber}`,
+            patient_id: String(userContext.user?.id || `whatsapp_${phoneNumber}`),
             user_context: {
               is_known_user: userContext.isKnownUser,
               patient_id: userContext.user?.id,
@@ -1202,27 +1205,35 @@ Is there anything else I can help you with? 💙`
               prescriptions: userContext.prescriptions
             }
           }, {
-            timeout: 3000, // Reduced from 5000ms to 3000ms
+            timeout: 5000,
             headers: { 'Content-Type': 'application/json' }
           }).then(response => {
             const duration = Date.now() - startTime;
             logger.info(`✅ SIB response received in ${duration}ms`);
+            // chat_answer can be a string or [string, array] tuple
+            let answer = response.data.chat_answer || response.data.response || response.data.message;
+            if (Array.isArray(answer)) answer = answer[0] || answer;
             return {
               shouldReply: true,
-              response: response.data.chat_answer || response.data.response || response.data.message,
-              provider: 'sib-fastapi',
+              response: String(answer || ''),
+              provider: response.data.provider || 'sib-fastapi',
               sessionId: `whatsapp:${phoneNumber}`,
               isEmergency: response.data.is_emergency || false
             };
           }).catch(error => {
-            logger.error('SIB FastAPI error:', error.message);
+            logger.error('SIB FastAPI error:', {
+              message: error.message,
+              status: error.response?.status,
+              data: error.response?.data,
+              code: error.code
+            });
             return {
               shouldReply: true,
               response: "Hi! I'm Dr. iSHA. How can I help you today?",
               provider: 'fallback'
             };
           }),
-          new Promise(resolve => setTimeout(() => resolve(null), 3000)) // Reduced from 5000ms
+          new Promise(resolve => setTimeout(() => resolve(null), 5000)) // Match axios timeout
         ]);
         const rawResponseText = String(aiResponse?.response || '').trim();
         const compactResponseText = compactWhatsAppReply(rawResponseText);
