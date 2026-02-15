@@ -976,19 +976,27 @@ router.post('/webhook', (req, res, next) => {
       messageCount: currentMessages.length
     });
     
-    // Post incoming WhatsApp message to RocketChat #general (non-blocking - fire and forget)
-    // This runs in background and doesn't delay the AI response
-    omnichannelChatService.sendToRocketChatWebhook({
-      from: phoneNumber,
-      text: Body || '[Media Message]',
-      userName: userContext.isKnownUser 
-        ? `${userContext.user.name} (Patient ID: ${userContext.user.id})` 
-        : customerName,
-      timestamp: new Date().toISOString()
-    }).then(() => {
-      logger.info('✅ WhatsApp message posted to RocketChat #general via incoming webhook');
+    // Post incoming WhatsApp message to RocketChat #general
+    // Try using rocketChatService first (more reliable)
+    const rcMessage = `📱 **WhatsApp Message from ${userContext.isKnownUser ? userContext.user.name + ' (Patient ID: ' + userContext.user.id + ')' : customerName}** (${phoneNumber})\n\n${Body || '[Media Message]'}`;
+    
+    rocketChatService.sendMessage('GENERAL', rcMessage).then(() => {
+      logger.info('✅ WhatsApp message posted to RocketChat #general via rocketChatService');
     }).catch(rcError => {
-      logger.error('❌ Failed to post to RocketChat webhook:', rcError.message);
+      logger.error('⚠️ rocketChatService failed, trying omnichannelChatService:', rcError.message);
+      // Fallback to omnichannel service
+      omnichannelChatService.sendToRocketChatWebhook({
+        from: phoneNumber,
+        text: Body || '[Media Message]',
+        userName: userContext.isKnownUser 
+          ? `${userContext.user.name} (Patient ID: ${userContext.user.id})` 
+          : customerName,
+        timestamp: new Date().toISOString()
+      }).then(() => {
+        logger.info('✅ WhatsApp message posted to RocketChat #general via omnichannel');
+      }).catch(omnichannelError => {
+        logger.error('❌ Failed to post to RocketChat via both methods:', omnichannelError.message);
+      });
     });
     
     // Emit Socket.IO event to notify team members (if Socket.IO is available)

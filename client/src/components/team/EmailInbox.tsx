@@ -129,10 +129,10 @@ const EmailInbox: React.FC = () => {
     return icons[intent] || <Mail className="w-4 h-4" />;
   };
 
-  const getPriorityColor = (priority: string) => {
-    const colors: Record<string, string> = {
+  const getPriorityColor = (priority: string): 'default' | 'destructive' | 'secondary' | 'outline' | 'success' => {
+    const colors: Record<string, 'default' | 'destructive' | 'secondary' | 'outline' | 'success'> = {
       urgent: 'destructive',
-      high: 'warning',
+      high: 'destructive',
       normal: 'default',
       low: 'secondary'
     };

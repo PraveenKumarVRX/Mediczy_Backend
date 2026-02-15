@@ -14,6 +14,19 @@ const ChatConversationModel = sequelize.define('ChatConversation', {
     unique: true,
     allowNull: false
   },
+  // Explicit user references for analytics and linking
+  userId1: {
+    type: DataTypes.INTEGER,
+    allowNull: false,
+    field: 'user_id_1',
+    comment: 'First participant user ID'
+  },
+  userId2: {
+    type: DataTypes.INTEGER,
+    allowNull: false,
+    field: 'user_id_2',
+    comment: 'Second participant user ID'
+  },
   type: {
     type: DataTypes.STRING(20),
     defaultValue: 'direct'
@@ -23,6 +36,29 @@ const ChatConversationModel = sequelize.define('ChatConversation', {
     allowNull: true,
     defaultValue: []
   },
+  // Health diary tracking
+  healthContext: {
+    type: DataTypes.JSONB,
+    allowNull: true,
+    comment: 'Health-related context from conversation (symptoms, medications, etc.)'
+  },
+  // Conversation categorization for analytics
+  category: {
+    type: DataTypes.STRING(50),
+    defaultValue: 'general',
+    comment: 'conversation category: general, medical, appointment, prescription, etc.'
+  },
+  // Archive status for retention/compliance
+  isArchived: {
+    type: DataTypes.BOOLEAN,
+    defaultValue: false,
+    field: 'is_archived'
+  },
+  archivedAt: {
+    type: DataTypes.DATE,
+    allowNull: true,
+    field: 'archived_at'
+  },
   lastMessageAt: {
     type: DataTypes.DATE,
     allowNull: true
@@ -30,6 +66,11 @@ const ChatConversationModel = sequelize.define('ChatConversation', {
   lastMessagePreview: {
     type: DataTypes.TEXT,
     allowNull: true
+  },
+  messageCount: {
+    type: DataTypes.INTEGER,
+    defaultValue: 0,
+    comment: 'Total messages in conversation for analytics'
   },
   metadata: {
     type: DataTypes.JSONB,
@@ -39,7 +80,13 @@ const ChatConversationModel = sequelize.define('ChatConversation', {
   tableName: 'chat_conversations',
   timestamps: true,
   createdAt: 'createdAt',
-  updatedAt: 'updatedAt'
+  updatedAt: 'updatedAt',
+  indexes: [
+    { fields: ['user_id_1'] },
+    { fields: ['user_id_2'] },
+    { fields: ['category'] },
+    { fields: ['is_archived'] }
+  ]
 });
 
 // Define ChatMessage model for PostgreSQL
@@ -55,7 +102,8 @@ const ChatMessageModel = sequelize.define('ChatMessage', {
   },
   senderId: {
     type: DataTypes.INTEGER,
-    allowNull: false
+    allowNull: false,
+    comment: 'Sender user ID from users table'
   },
   senderType: {
     type: DataTypes.STRING(20),
@@ -63,7 +111,8 @@ const ChatMessageModel = sequelize.define('ChatMessage', {
   },
   recipientId: {
     type: DataTypes.INTEGER,
-    allowNull: false
+    allowNull: false,
+    comment: 'Recipient user ID from users table'
   },
   recipientType: {
     type: DataTypes.STRING(20),
@@ -75,7 +124,24 @@ const ChatMessageModel = sequelize.define('ChatMessage', {
   },
   messageType: {
     type: DataTypes.STRING(20),
-    defaultValue: 'text'
+    defaultValue: 'text',
+    comment: 'text, image, audio, file, prescription, health_update'
+  },
+  // Health diary extraction fields
+  healthKeywords: {
+    type: DataTypes.JSONB,
+    allowNull: true,
+    comment: 'Extracted health keywords: symptoms, medications, vitals'
+  },
+  healthSentiment: {
+    type: DataTypes.STRING(20),
+    allowNull: true,
+    comment: 'positive, neutral, negative for patient mood/health sentiment'
+  },
+  channel: {
+    type: DataTypes.STRING(20),
+    defaultValue: 'app',
+    comment: 'app, whatsapp, email, rocketchat, sms'
   },
   attachments: {
     type: DataTypes.JSONB,
@@ -102,7 +168,15 @@ const ChatMessageModel = sequelize.define('ChatMessage', {
   tableName: 'chat_messages',
   timestamps: true,
   createdAt: 'createdAt',
-  updatedAt: 'updatedAt'
+  updatedAt: 'updatedAt',
+  indexes: [
+    { fields: ['conversationId'] },
+    { fields: ['senderId'] },
+    { fields: ['recipientId'] },
+    { fields: ['channel'] },
+    { fields: ['healthSentiment'] },
+    { fields: ['createdAt'] }
+  ]
 });
 
 // Set up associations
@@ -127,7 +201,10 @@ class ChatModel {
     if (!conversation) {
       conversation = await ChatConversationModel.create({
         conversationId,
+        userId1: Math.min(userId1, userId2),  // Store in consistent order for easier querying
+        userId2: Math.max(userId1, userId2),
         type: 'direct',
+        category: 'general',
         participants: [
           { id: userId1, type: types.user1 },
           { id: userId2, type: types.user2 }
@@ -275,6 +352,163 @@ class ChatModel {
       limit,
       offset
     });
+  }
+
+  /**
+   * Get analytics for a specific user's conversations
+   */
+  async getUserConversationAnalytics(userId, startDate = null, endDate = null) {
+    const whereClause = {
+      [Op.or]: [
+        { userId1: userId },
+        { userId2: userId }
+      ]
+    };
+
+    if (startDate || endDate) {
+      whereClause.createdAt = {};
+      if (startDate) whereClause.createdAt[Op.gte] = startDate;
+      if (endDate) whereClause.createdAt[Op.lte] = endDate;
+    }
+
+    const conversations = await ChatConversationModel.findAll({
+      where: whereClause,
+      include: [{
+        model: ChatMessageModel,
+        as: 'messages',
+        attributes: ['id', 'createdAt', 'healthSentiment', 'channel']
+      }],
+      raw: false
+    });
+
+    return {
+      totalConversations: conversations.length,
+      totalMessages: conversations.reduce((sum, conv) => sum + (conv.messages?.length || 0), 0),
+      conversations: conversations.map(conv => ({
+        conversationId: conv.conversationId,
+        category: conv.category,
+        messageCount: conv.messages?.length || 0,
+        lastMessageAt: conv.lastMessageAt,
+        createdAt: conv.createdAt,
+        healthSentiments: conv.messages?.map(m => m.healthSentiment).filter(s => s)
+      }))
+    };
+  }
+
+  /**
+   * Extract health insights from conversations for health diary
+   */
+  async getUserHealthInsights(userId, startDate = null, endDate = null) {
+    const whereClause = {
+      [Op.or]: [
+        { senderId: userId },
+        { recipientId: userId }
+      ]
+    };
+
+    if (startDate || endDate) {
+      whereClause.createdAt = {};
+      if (startDate) whereClause.createdAt[Op.gte] = startDate;
+      if (endDate) whereClause.createdAt[Op.lte] = endDate;
+    }
+
+    const messages = await ChatMessageModel.findAll({
+      where: whereClause,
+      attributes: ['id', 'content', 'healthKeywords', 'healthSentiment', 'channel', 'createdAt', 'messageType']
+    });
+
+    const healthMessages = messages.filter(m => m.healthKeywords || m.messageType === 'health_update');
+    const sentiments = messages
+      .filter(m => m.healthSentiment)
+      .map(m => m.healthSentiment);
+
+    return {
+      totalMessages: messages.length,
+      healthRelatedMessages: healthMessages.length,
+      sentimentBreakdown: {
+        positive: sentiments.filter(s => s === 'positive').length,
+        neutral: sentiments.filter(s => s === 'neutral').length,
+        negative: sentiments.filter(s => s === 'negative').length
+      },
+      channels: [...new Set(messages.map(m => m.channel))],
+      healthInsights: healthMessages.map(m => ({
+        date: m.createdAt,
+        keywords: m.healthKeywords,
+        sentiment: m.healthSentiment,
+        type: m.messageType
+      }))
+    };
+  }
+
+  /**
+   * Get conversation statistics for analytics dashboard
+   */
+  async getConversationStats(userId) {
+    const now = new Date();
+    const oneWeekAgo = new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000);
+    const oneMonthAgo = new Date(now.getTime() - 30 * 24 * 60 * 60 * 1000);
+
+    const userConvs = {
+      [Op.or]: [
+        { userId1: userId },
+        { userId2: userId }
+      ]
+    };
+
+    const weekConvs = await ChatConversationModel.findAll({
+      where: {
+        ...userConvs,
+        createdAt: { [Op.gte]: oneWeekAgo }
+      }
+    });
+
+    const monthConvs = await ChatConversationModel.findAll({
+      where: {
+        ...userConvs,
+        createdAt: { [Op.gte]: oneMonthAgo }
+      }
+    });
+
+    const allConvs = await ChatConversationModel.findAll({
+      where: userConvs
+    });
+
+    return {
+      thisWeek: weekConvs.length,
+      thisMonth: monthConvs.length,
+      allTime: allConvs.length,
+      averageConversationLength: allConvs.length > 0 ? Math.round(
+        allConvs.reduce((sum, conv) => sum + (conv.messageCount || 0), 0) / allConvs.length
+      ) : 0,
+      lastConversationAt: allConvs.length > 0 ? 
+        new Date(Math.max(...allConvs.map(c => c.lastMessageAt?.getTime() || 0))) : null
+    };
+  }
+
+  /**
+   * Archive old conversations for compliance
+   */
+  async archiveOldConversations(olderThanDays = 90) {
+    const cutoffDate = new Date();
+    cutoffDate.setDate(cutoffDate.getDate() - olderThanDays);
+
+    const result = await ChatConversationModel.update(
+      { 
+        isArchived: true, 
+        archivedAt: new Date() 
+      },
+      {
+        where: {
+          lastMessageAt: { [Op.lt]: cutoffDate },
+          isArchived: false
+        }
+      }
+    );
+
+    return {
+      archived: result[0],
+      timestamp: new Date()
+    };
   }
 }
 

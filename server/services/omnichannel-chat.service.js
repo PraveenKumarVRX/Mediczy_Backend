@@ -18,6 +18,8 @@ class OmnichannelChatService {
     this.rocketChatUrl = process.env.ROCKETCHAT_URL || 'http://localhost:3100';
     this.rocketChatAdminUser = process.env.ROCKETCHAT_ADMIN_USER;
     this.rocketChatAdminPassword = process.env.ROCKETCHAT_ADMIN_PASSWORD;
+    this.rocketChatUserId = process.env.ROCKETCHAT_USER_ID; // Admin user ID for API auth
+    this.rocketChatAuthToken = process.env.ROCKETCHAT_AUTH_TOKEN; // Admin auth token for API
     this.webhookSecret = process.env.ROCKETCHAT_WEBHOOK_SECRET || 'mediczy-webhook-secret';
     this.incomingWebhookUrl = process.env.ROCKETCHAT_INCOMING_WEBHOOK_URL;
     
@@ -305,10 +307,15 @@ class OmnichannelChatService {
    */
   async sendToRocketChatWebhook(messageData) {
     try {
+      console.log('🔵 [RC Webhook] Called with:', { from: messageData.from, text: messageData.text?.substring(0, 50) });
+      
       if (!this.incomingWebhookUrl) {
-        console.warn('⚠️ ROCKETCHAT_INCOMING_WEBHOOK_URL not configured');
+        console.warn('⚠️ [RC Webhook] ROCKETCHAT_INCOMING_WEBHOOK_URL not configured');
+        console.warn('  Configured URL:', this.incomingWebhookUrl);
         return { success: false, error: 'Webhook URL not configured' };
       }
+
+      console.log('🔵 [RC Webhook] Using URL:', this.incomingWebhookUrl.substring(0, 80) + '...');
 
       const { from, text, userName = 'WhatsApp User', timestamp = new Date().toISOString() } = messageData;
 
@@ -341,20 +348,99 @@ class OmnichannelChatService {
         ]
       };
 
+      console.log('🔵 [RC Webhook] Sending payload...');
       const response = await axios.post(this.incomingWebhookUrl, payload, {
         headers: { 'Content-Type': 'application/json' },
         timeout: 5000
       });
 
-      console.log('✅ WhatsApp message sent to RocketChat #general:', { from, text: text.substring(0, 50) });
+      console.log('✅ [RC Webhook] SUCCESS - Status:', response.status, 'Data:', response.data);
       
       return {
         success: true,
         response: response.data
       };
-    } catch (error) {
-      console.error('❌ Failed to send to RocketChat webhook:', error.message);
-      return { success: false, error: error.message };
+    } catch (webhookError) {
+      console.error('❌ [RC Webhook] FAILED:', webhookError.message);
+      console.error('❌ [RC Webhook] Status:', webhookError.response?.status);
+      console.error('❌ [RC Webhook] Data:', webhookError.response?.data);
+      // Fallback: Try using RocketChat API directly
+      console.log('🔄 [RC Webhook] Attempting API fallback...');
+      return await this.sendToRocketChatViaAPI(messageData);
+    }
+  }
+
+  /**
+   * Send WhatsApp message to RocketChat #general via API (fallback)
+   * This is more reliable than webhooks
+   */
+  async sendToRocketChatViaAPI(messageData) {
+    try {
+      const { from, text, userName = 'WhatsApp User', timestamp = new Date().toISOString() } = messageData;
+
+      // Use authenticated admin credentials
+      if (!this.rocketChatAuthToken || !this.rocketChatUserId) {
+        console.error('❌ [RC API] Missing RocketChat auth credentials');
+        console.error('   Token:', this.rocketChatAuthToken ? 'SET' : 'MISSING');
+        console.error('   UserId:', this.rocketChatUserId ? 'SET' : 'MISSING');
+        return { success: false, error: 'Missing RocketChat auth credentials' };
+      }
+
+      console.log('🔵 [RC API] Sending via API to:', this.rocketChatUrl);
+      console.log('🔵 [RC API] User:', userName);
+
+      // Call RocketChat API using authenticated admin account
+      const response = await axios.post(
+        `${this.rocketChatUrl}/api/v1/chat.postMessage`,
+        {
+          channel: '#general',
+          text: `📱 **WhatsApp Message from ${userName}** (${from})\n\n${text}`,
+          attachments: [
+            {
+              title: 'WhatsApp Message',
+              text: text,
+              color: '#25D366', // WhatsApp green
+              fields: [
+                {
+                  title: 'From',
+                  value: `${userName} (${from})`,
+                  short: true
+                },
+                {
+                  title: 'Time',
+                  value: new Date(timestamp).toLocaleString('en-IN', { 
+                    timeZone: 'Asia/Kolkata',
+                    dateStyle: 'short',
+                    timeStyle: 'short'
+                  }),
+                  short: true
+                }
+              ]
+            }
+          ]
+        },
+        {
+          headers: {
+            'Content-Type': 'application/json',
+            'X-Auth-Token': this.rocketChatAuthToken,
+            'X-User-Id': this.rocketChatUserId
+          },
+          timeout: 10000
+        }
+      );
+
+      console.log('✅ [RC API] SUCCESS - Message posted to RocketChat #general via API');
+      return {
+        success: true,
+        response: response.data,
+        method: 'api'
+      };
+    } catch (apiError) {
+      console.error('❌ [RC API] FAILED:', apiError.message);
+      if (apiError.response?.data) {
+        console.error('❌ [RC API] Error details:', apiError.response.data);
+      }
+      return { success: false, error: apiError.message };
     }
   }
 
