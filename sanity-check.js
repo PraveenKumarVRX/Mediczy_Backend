@@ -114,9 +114,9 @@ async function runTests() {
   });
 
   await test('NODE_ENV set', async () => {
-    const envVars = process.env;
-    if (!envVars.NODE_ENV) {
-      throw new Error('NODE_ENV not set');
+    const envContent = fs.readFileSync('/home/ubuntu/Mediczy/.env', 'utf-8');
+    if (!envContent.match(/^NODE_ENV=/m)) {
+      throw new Error('NODE_ENV not set in .env');
     }
   });
 
@@ -172,21 +172,22 @@ async function runTests() {
 
   let pm2Instances = 0;
   await test('PM2 running with mediczy-server', async () => {
-    const { stdout } = await execAsync('pm2 list --no-header');
-    if (!stdout.includes('mediczy-server')) {
-      throw new Error('mediczy-server not found in PM2');
-    }
-    pm2Instances = (stdout.match(/mediczy-server/g) || []).length;
+    const { stdout } = await execAsync('pm2 jlist');
+    const list = JSON.parse(stdout || '[]');
+    const matches = list.filter((proc) => proc.name === 'mediczy-server');
+    pm2Instances = matches.length;
     if (pm2Instances === 0) {
       throw new Error('No mediczy-server instances running');
     }
   });
 
   await test(`PM2 instances online (${pm2Instances} found)`, async () => {
-    const { stdout } = await execAsync('pm2 list --no-header');
-    const onlineMatches = stdout.match(/online/g) || [];
-    if (onlineMatches.length < pm2Instances) {
-      throw new Error(`Only ${onlineMatches.length}/${pm2Instances} instances online`);
+    const { stdout } = await execAsync('pm2 jlist');
+    const list = JSON.parse(stdout || '[]');
+    const matches = list.filter((proc) => proc.name === 'mediczy-server');
+    const online = matches.filter((proc) => proc.pm2_env?.status === 'online');
+    if (online.length < matches.length) {
+      throw new Error(`Only ${online.length}/${matches.length} instances online`);
     }
   });
 

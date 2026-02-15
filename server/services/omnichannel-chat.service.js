@@ -78,12 +78,12 @@ class OmnichannelChatService {
    * @param {Object} patient - Patient data from Mediczy
    */
   async registerVisitor(patient) {
+    const visitorToken = this.generateVisitorToken(patient.id);
+    let visitorData = null;
     try {
       console.log(`   🔐 RocketChat Auth: Token=${this.authToken ? '✅' : '❌'}, UserId=${this.userId ? '✅' : '❌'}`);
       
-      const visitorToken = this.generateVisitorToken(patient.id);
-      
-      const visitorData = {
+      visitorData = {
         visitor: {
           token: visitorToken,
           name: `${patient.firstName} ${patient.lastName}`,
@@ -116,8 +116,10 @@ class OmnichannelChatService {
       console.error(`      Status: ${error.response?.status}`);
       console.error(`      Message: ${error.message}`);
       console.error(`      RocketChat Response:`, JSON.stringify(error.response?.data, null, 2));
-      console.error(`      Request Data was:`, JSON.stringify(visitorData, null, 2));
-      return { success: false, error: error.message, details: error.response?.data };
+      if (visitorData) {
+        console.error(`      Request Data was:`, JSON.stringify(visitorData, null, 2));
+      }
+      return { success: false, visitorToken, error: error.message, details: error.response?.data };
     }
   }
 
@@ -155,20 +157,38 @@ class OmnichannelChatService {
       // Create new room
       console.log(`   📝 Creating new room for department: ${department}`);
       const roomData = {
-        token: visitorToken,
-        department: this.departments[department] || this.departments.general
+        token: visitorToken
       };
+
+      const defaultDepartmentId = process.env.ROCKETCHAT_DEFAULT_DEPARTMENT_ID;
+      if (defaultDepartmentId) {
+        roomData.departmentId = defaultDepartmentId;
+      }
       
       console.log(`   📤 Calling RocketChat GET /api/v1/livechat/room...`);
       console.log(`      Params:`, roomData);
 
-      const response = await axios.get(
-        `${this.rocketChatUrl}/api/v1/livechat/room`,
-        { 
-          params: roomData,
-          headers: this.getHeaders() 
+      let response;
+      for (let attempt = 1; attempt <= 4; attempt++) {
+        try {
+          response = await axios.get(
+            `${this.rocketChatUrl}/api/v1/livechat/room`,
+            { 
+              params: roomData,
+              headers: this.getHeaders() 
+            }
+          );
+          break;
+        } catch (error) {
+          if (error.response?.status === 429 && attempt < 4) {
+            const delayMs = 1000 * attempt;
+            console.warn(`   ⚠️ Livechat rate limit (429). Retrying in ${delayMs}ms...`);
+            await new Promise(resolve => setTimeout(resolve, delayMs));
+            continue;
+          }
+          throw error;
         }
-      );
+      }
 
       const room = response.data.room;
       console.log(`   ✅ Room created: ${room._id}`);
@@ -355,16 +375,22 @@ class OmnichannelChatService {
         console.log(`   👤 Patient found: ${patient.firstName} ${patient.lastName}`);
         const visitorResult = await this.registerVisitor(patient);
         visitorToken = visitorResult.visitorToken;
+        if (!visitorResult.success) {
+          console.warn(`   ⚠️ Visitor registration failed, continuing with token`);
+        }
       } else {
         // Anonymous WhatsApp user
         console.log(`   😊 Anonymous user`);
-        visitorToken = this.generateVisitorToken(`whatsapp-${from}`);
-        await this.registerVisitor({
+        const visitorResult = await this.registerVisitor({
           id: `whatsapp-${from}`,
           firstName: 'WhatsApp',
           lastName: 'User',
           phoneNumber: from
         });
+        visitorToken = visitorResult.visitorToken;
+        if (!visitorResult.success) {
+          console.warn(`   ⚠️ Visitor registration failed, continuing with token`);
+        }
       }
 
       // Get or create room
@@ -413,6 +439,7 @@ class OmnichannelChatService {
       if (!handoffDecision.handoff && botResponse.success) {
         // Format bot response
         const formattedBotResponse = whatsappBotService.formatBotResponse(botResponse, messageLanguage);
+        const safeBotResponse = botResponse.response || '';
         
         // Send customer message first
         const customerMsg = `📱 *Customer* (${messageLanguage === 'hi' ? 'Hindi' : 'English'}): ${body}`;
@@ -427,7 +454,7 @@ class OmnichannelChatService {
           {
             active: true,
             reason: 'bot_response_given',
-            botResponse: botResponse.response.substring(0, 100),
+            botResponse: safeBotResponse ? safeBotResponse.substring(0, 100) : '',
             confidence: botResponse.confidence,
             timestamp: new Date().toISOString()
           },
