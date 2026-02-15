@@ -32,6 +32,8 @@ import AuditLog from './auditLog.model.intelligent.js';
 import InsuranceBroker from './insurance-broker.model.intelligent.js';
 import InsuranceCompany from './insurance-company.model.intelligent.js';
 import InsurancePolicy from './insurance-policy.model.intelligent.js';
+import EmailInboxModel from './emailInbox.model.js';
+import EmailSettingsModel from './emailSettings.model.js';
 
 // Export PostgreSQL as default
 export const User = UserPostgres;
@@ -55,6 +57,8 @@ export const HealthDiary = HealthDiaryPostgres;
 export const Coupon = CouponPostgres;
 export const CouponUsage = CouponUsagePostgres;
 export const PharmacyInventory = PharmacyInventoryPostgres;
+export const EmailInbox = EmailInboxModel;
+export const EmailSettings = EmailSettingsModel;
 export { sequelize };
 
 // Default exports
@@ -80,6 +84,8 @@ export default {
   Coupon: CouponPostgres,
   CouponUsage: CouponUsagePostgres,
   PharmacyInventory: PharmacyInventoryPostgres,
+  EmailInbox: EmailInboxModel,
+  EmailSettings: EmailSettingsModel,
   InsuranceBroker,
   InsuranceCompany,
   InsurancePolicy,
@@ -113,5 +119,7 @@ export {
   InsuranceBroker,
   InsuranceCompany,
   InsurancePolicy,
-  AuditLog
+  AuditLog,
+  EmailInboxModel,
+  EmailSettingsModel
 };
