@@ -84,6 +84,7 @@ import { Link } from "react-router-dom";
 import { analyzeVideoFrame, initializeVisionAI, cleanupVisionAI, getTriageSummary, type VisionAnalysisResult } from '@/services/visionAI';
 import socketService from '@/services/socket.service';
 import { IncomingCallNotification } from '@/components/IncomingCallNotification';
+import { SimpleLiveKitRoom } from '@/components/video/LiveKitRoom';
 
 interface TriageCase {
   id: string;
@@ -225,34 +226,6 @@ const generateSampleTriageCases = (): TriageCase[] => {
   ];
 };
 
-// =============================================
-// MEMOIZED VIDEO IFRAME COMPONENT
-// Prevents unnecessary re-renders of the video
-// =============================================
-interface StableVideoFrameProps {
-  url: string;
-  iframeRef: React.RefObject<HTMLIFrameElement>;
-}
-
-const StableVideoFrame = memo(({ url, iframeRef }: StableVideoFrameProps) => {
-  // Only re-render when URL actually changes
-  return (
-    <iframe
-      ref={iframeRef}
-      src={url}
-      className="w-full h-full border-0"
-      allow="camera *; microphone *; display-capture *; fullscreen *; autoplay *; encrypted-media *; picture-in-picture *; clipboard-write *"
-      allowFullScreen
-      title="Triage Video Consultation"
-    />
-  );
-}, (prevProps, nextProps) => {
-  // Custom comparison - only re-render if URL changes
-  return prevProps.url === nextProps.url;
-});
-
-StableVideoFrame.displayName = 'StableVideoFrame';
-
 const DoctorTriage = () => {
   const { currentDoctor } = useAuth();
   const { toast } = useToast();
@@ -269,7 +242,9 @@ const DoctorTriage = () => {
   // Video consultation state
   const [isInVideoCall, setIsInVideoCall] = useState(false);
   const [isFullscreen, setIsFullscreen] = useState(false);
-  const [currentVideoUrl, setCurrentVideoUrl] = useState('');
+  const [currentVideoToken, setCurrentVideoToken] = useState('');
+  const [currentVideoServerUrl, setCurrentVideoServerUrl] = useState('');
+  const [currentVideoJoinUrl, setCurrentVideoJoinUrl] = useState('');
   const [connectionStatus, setConnectionStatus] = useState<'connecting' | 'connected' | 'disconnected'>('disconnected');
   
   // AI Features state
@@ -294,7 +269,6 @@ const DoctorTriage = () => {
   
   // Refs
   const audioRef = useRef<HTMLAudioElement | null>(null);
-  const iframeRef = useRef<HTMLIFrameElement>(null);
   const containerRef = useRef<HTMLDivElement>(null);
   const localVideoRef = useRef<HTMLVideoElement>(null);
   const visionIntervalRef = useRef<NodeJS.Timeout | null>(null);
@@ -499,10 +473,13 @@ const DoctorTriage = () => {
           }
         });
         
-        const token = tokenResponse.data.token;
-        const videoUrl = `${LIVEKIT_BASE_URL}/rooms/${roomId}?access_token=${encodeURIComponent(token)}&name=${encodeURIComponent(doctorName)}`;
-        
-        setCurrentVideoUrl(videoUrl);
+        const token = tokenResponse.data?.token;
+        const serverUrl = tokenResponse.data?.serverUrl || import.meta.env.VITE_LIVEKIT_URL || 'wss://video.mediqzy.com';
+        const joinUrl = tokenResponse.data?.video?.joinUrl || `${LIVEKIT_BASE_URL}/rooms/${roomId}?access_token=${encodeURIComponent(token)}&name=${encodeURIComponent(doctorName)}`;
+
+        setCurrentVideoToken(token || '');
+        setCurrentVideoServerUrl(serverUrl);
+        setCurrentVideoJoinUrl(joinUrl);
         setIsInVideoCall(true);
         setConnectionStatus('connecting');
         
@@ -585,10 +562,13 @@ const DoctorTriage = () => {
           }
         });
         
-        const token = tokenResponse.data.token;
-        const videoUrl = `${LIVEKIT_BASE_URL}/rooms/${roomId}?access_token=${encodeURIComponent(token)}&name=${encodeURIComponent(doctorName)}`;
-        
-        setCurrentVideoUrl(videoUrl);
+        const token = tokenResponse.data?.token;
+        const serverUrl = tokenResponse.data?.serverUrl || import.meta.env.VITE_LIVEKIT_URL || 'wss://video.mediqzy.com';
+        const joinUrl = tokenResponse.data?.video?.joinUrl || `${LIVEKIT_BASE_URL}/rooms/${roomId}?access_token=${encodeURIComponent(token)}&name=${encodeURIComponent(doctorName)}`;
+
+        setCurrentVideoToken(token || '');
+        setCurrentVideoServerUrl(serverUrl);
+        setCurrentVideoJoinUrl(joinUrl);
       } catch (tokenError) {
         console.error('Failed to get video token:', tokenError);
         toast({
@@ -625,8 +605,8 @@ const DoctorTriage = () => {
 
   // Open video in new tab (fallback)
   const openVideoInNewTab = () => {
-    if (currentVideoUrl) {
-      window.open(currentVideoUrl, '_blank');
+    if (currentVideoJoinUrl) {
+      window.open(currentVideoJoinUrl, '_blank');
     }
   };
 
@@ -849,7 +829,9 @@ const DoctorTriage = () => {
   const endVideoCall = () => {
     setIsInVideoCall(false);
     setConnectionStatus('disconnected');
-    setCurrentVideoUrl('');
+    setCurrentVideoToken('');
+    setCurrentVideoServerUrl('');
+    setCurrentVideoJoinUrl('');
     stopVisionAI();
     if (recognitionRef.current) {
       recognitionRef.current.stop();
@@ -910,18 +892,7 @@ const DoctorTriage = () => {
     return true;
   }) || [];
 
-  // Stable video URL ref to prevent unnecessary re-renders
-  const stableVideoUrlRef = useRef<string>('');
-  
-  // Update ref only when URL meaningfully changes
-  useEffect(() => {
-    if (currentVideoUrl && currentVideoUrl !== stableVideoUrlRef.current) {
-      stableVideoUrlRef.current = currentVideoUrl;
-    }
-  }, [currentVideoUrl]);
-
   // Video Call UI Component - renders inline to prevent remounting
-  // The StableVideoFrame component handles iframe memoization
   const renderVideoConsultationPanel = () => {
     if (!isInVideoCall) return null;
     
@@ -1006,7 +977,16 @@ const DoctorTriage = () => {
       <div className="flex-1 flex">
         {/* Video Frame - key prevents remounting */}
         <div className="flex-1 relative" key="video-frame-container">
-          <StableVideoFrame url={stableVideoUrlRef.current || currentVideoUrl} iframeRef={iframeRef} />
+          {currentVideoToken && currentVideoServerUrl ? (
+            <SimpleLiveKitRoom
+              serverUrl={currentVideoServerUrl}
+              token={currentVideoToken}
+            />
+          ) : (
+            <div className="h-full w-full flex items-center justify-center text-slate-300">
+              Connecting to secure video session...
+            </div>
+          )}
           
           {/* Vision AI Overlay */}
           {isVisionAIEnabled && (
