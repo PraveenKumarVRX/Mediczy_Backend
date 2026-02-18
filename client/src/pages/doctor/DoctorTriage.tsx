@@ -605,8 +605,25 @@ const DoctorTriage = () => {
 
   // Open video in new tab (fallback)
   const openVideoInNewTab = () => {
-    if (currentVideoJoinUrl) {
+    if (!currentVideoJoinUrl) return;
+    try {
+      const parsed = new URL(currentVideoJoinUrl);
+      const isLegacyRoomUrl = parsed.hostname.includes('video.mediqzy.com') && parsed.pathname.startsWith('/rooms/');
+      if (isLegacyRoomUrl) {
+        toast({
+          title: 'Open in new tab unavailable',
+          description: 'Use in-app secure video. External /rooms links are not supported.',
+          variant: 'destructive',
+        });
+        return;
+      }
       window.open(currentVideoJoinUrl, '_blank');
+    } catch {
+      toast({
+        title: 'Invalid meeting link',
+        description: 'Could not open external meeting URL.',
+        variant: 'destructive',
+      });
     }
   };
 
