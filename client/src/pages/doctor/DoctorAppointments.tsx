@@ -244,6 +244,10 @@ const DoctorAppointments = () => {
     return `Online • ${channelLabel}`;
   };
 
+  const normalizeStatus = (status?: string) => String(status || '').toLowerCase().replace(/_/g, '-');
+  const canInitiateCall = (status?: string) =>
+    ['scheduled', 'confirmed', 'accepted', 'in-progress'].includes(normalizeStatus(status));
+
   const handleAddNotes = (appointment: Appointment) => {
     setSelectedAppointment(appointment);
     setNotes(appointment.notes || "");
@@ -283,6 +287,15 @@ const DoctorAppointments = () => {
 
     if (isVideoConsultation) {
       try {
+        if (!canInitiateCall(appointment.status)) {
+          toast({
+            variant: "destructive",
+            title: "Cannot Start Call",
+            description: `Appointment status is ${appointment.status}. Only scheduled/confirmed/in-progress calls can be started.`,
+          });
+          return;
+        }
+
         // Call initiate-call API to notify patient and get meeting link
         toast({
           title: "📞 Starting Call...",
@@ -320,9 +333,6 @@ const DoctorAppointments = () => {
           title: "Failed to Start Call",
           description: error.response?.data?.message || "Please try again",
         });
-        // Fallback: still navigate to video page
-        const roomId = `apt-${appointment.id}`;
-        navigate(`/doctor/video?room=${encodeURIComponent(roomId)}&appointmentId=${appointment.id}&userId=${appointment.userId}`);
       }
     } else {
       // For phone/chat consultations, go to chat
@@ -439,7 +449,7 @@ const DoctorAppointments = () => {
       )}
 
       <div className="flex items-center gap-3 flex-wrap pt-4 border-t">
-        {["scheduled", "confirmed"].includes(appointment.status) && (
+        {canInitiateCall(appointment.status) && (
           <Button
             onClick={() => handleStartConsultation(appointment)}
             size="sm"
