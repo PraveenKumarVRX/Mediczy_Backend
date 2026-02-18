@@ -2663,7 +2663,7 @@ router.post("/triage/accept-call", authDoctor, async (req, res) => {
     }
 
     // Update appointment status
-    await appointment.update({ status: 'in_progress' });
+    await appointment.update({ status: 'in-progress' });
 
     // Notify patient via hybrid notification (Socket.IO + FCM)
     const { emitCallAccepted } = await import('../chat/chathandler.controller.js');

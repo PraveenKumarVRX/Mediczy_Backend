@@ -495,7 +495,6 @@ const DoctorTriage = () => {
         const tokenResponse = await api.get('/video/livekit/token', {
           params: {
             roomId: roomId,
-            appointmentId: appointmentId,
             identity: `doctor-${currentDoctor?.id}`
           }
         });
@@ -513,15 +512,12 @@ const DoctorTriage = () => {
         setTimeout(() => setConnectionStatus('connected'), 3000);
       } catch (tokenError) {
         console.error('Failed to get video token:', tokenError);
-        // Fallback URL without token (may not work)
-        const videoUrl = `${LIVEKIT_BASE_URL}/rooms/${roomId}?name=${encodeURIComponent(doctorName)}`;
-        setCurrentVideoUrl(videoUrl);
-        setIsInVideoCall(true);
         toast({
-          title: "⚠️ Warning",
-          description: "Opening video room (token unavailable)",
+          title: "Error",
+          description: "Failed to get secure video token",
           variant: "destructive",
         });
+        return;
       }
     } catch (error: any) {
       console.error('Failed to accept call:', error);
@@ -585,7 +581,6 @@ const DoctorTriage = () => {
         const tokenResponse = await api.get('/video/livekit/token', {
           params: {
             roomId: roomId,
-            appointmentId: appointmentId,
             identity: `doctor-${currentDoctor?.id}`
           }
         });
@@ -596,9 +591,12 @@ const DoctorTriage = () => {
         setCurrentVideoUrl(videoUrl);
       } catch (tokenError) {
         console.error('Failed to get video token:', tokenError);
-        // Fallback URL without token
-        const videoUrl = `${LIVEKIT_BASE_URL}/rooms/${roomId}?name=${encodeURIComponent(doctorName)}`;
-        setCurrentVideoUrl(videoUrl);
+        toast({
+          title: 'Error',
+          description: 'Failed to get secure video token',
+          variant: 'destructive',
+        });
+        return;
       }
 
       setSelectedCase(caseItem);

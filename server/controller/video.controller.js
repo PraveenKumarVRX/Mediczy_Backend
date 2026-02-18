@@ -114,7 +114,8 @@ class VideoController {
           });
         }
 
-        if (!['confirmed', 'in-progress'].includes(appointment.status)) {
+        const normalizedStatus = String(appointment.status || '').replace('_', '-');
+        if (!['confirmed', 'in-progress'].includes(normalizedStatus)) {
           return res.status(400).json({
             success: false,
             message: `Cannot join video call. Appointment status: ${appointment.status}`,
