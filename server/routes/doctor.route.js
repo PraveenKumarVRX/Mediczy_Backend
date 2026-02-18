@@ -2281,6 +2281,41 @@ router.post('/appointments/:appointmentId/initiate-call', authDoctor, async (req
   try {
     const { appointmentId } = req.params;
     const doctorId = req.doctor.id;
+    const normalizedDoctorId = String(doctorId || '').trim();
+    const doctorIdCandidates = new Set();
+
+    if (doctorId !== undefined && doctorId !== null) {
+      doctorIdCandidates.add(doctorId);
+      doctorIdCandidates.add(normalizedDoctorId);
+      if (/^\d+$/.test(normalizedDoctorId)) {
+        doctorIdCandidates.add(Number.parseInt(normalizedDoctorId, 10));
+      }
+    }
+
+    if (req.doctor?.email) {
+      try {
+        const linkedDoctorUser = await User.findOne({
+          where: {
+            email: req.doctor.email,
+            role: 'doctor'
+          },
+          attributes: ['id']
+        });
+
+        if (linkedDoctorUser?.id !== undefined && linkedDoctorUser?.id !== null) {
+          const linkedUserId = String(linkedDoctorUser.id).trim();
+          doctorIdCandidates.add(linkedDoctorUser.id);
+          doctorIdCandidates.add(linkedUserId);
+          if (/^\d+$/.test(linkedUserId)) {
+            doctorIdCandidates.add(Number.parseInt(linkedUserId, 10));
+          }
+        }
+      } catch (doctorLookupError) {
+        console.warn('⚠️ Could not resolve linked doctor user ID for initiate-call:', doctorLookupError?.message || doctorLookupError);
+      }
+    }
+
+    const doctorWhere = { [Op.in]: Array.from(doctorIdCandidates) };
     const normalizedAppointmentId = String(appointmentId || '').trim();
     const isNumericAppointmentId = /^\d+$/.test(normalizedAppointmentId);
     const numericAppointmentId = isNumericAppointmentId
@@ -2303,7 +2338,7 @@ router.post('/appointments/:appointmentId/initiate-call', authDoctor, async (req
       try {
         appointment = await Appointment.findOne({
           where: {
-            doctorId,
+            doctorId: doctorWhere,
             meetingId: Array.from(candidateMeetingIds)
           },
           include: [
@@ -2329,7 +2364,7 @@ router.post('/appointments/:appointmentId/initiate-call', authDoctor, async (req
         const meetingIdTokenWithPrefix = `room=apt-${normalizedAppointmentId}`;
         appointment = await Appointment.findOne({
           where: {
-            doctorId,
+            doctorId: doctorWhere,
             meetingLink: {
               [Op.or]: [
                 { [Op.iLike]: `%${meetingIdToken}%` },
@@ -2355,7 +2390,7 @@ router.post('/appointments/:appointmentId/initiate-call', authDoctor, async (req
       if (isSafeIntId) {
         try {
           appointment = await Appointment.findOne({
-            where: { id: numericAppointmentId, doctorId },
+            where: { id: numericAppointmentId, doctorId: doctorWhere },
             include: [
               {
                 model: User,
@@ -2384,7 +2419,7 @@ router.post('/appointments/:appointmentId/initiate-call', authDoctor, async (req
         try {
           appointment = await Appointment.findOne({
             where: {
-              doctorId,
+              doctorId: doctorWhere,
               meetingId: Array.from(candidateMeetingIds)
             },
             include: [
@@ -2411,7 +2446,7 @@ router.post('/appointments/:appointmentId/initiate-call', authDoctor, async (req
         const meetingIdTokenWithPrefix = `room=apt-${normalizedAppointmentId}`;
         appointment = await Appointment.findOne({
           where: {
-            doctorId,
+            doctorId: doctorWhere,
             meetingLink: {
               [Op.or]: [
                 { [Op.iLike]: `%${meetingIdToken}%` },
@@ -2443,8 +2478,9 @@ router.post('/appointments/:appointmentId/initiate-call', authDoctor, async (req
     }
 
     // Check if appointment is in valid state for call
-    // Allow 'in-progress' so doctor can rejoin an ongoing call
-    if (!['confirmed', 'scheduled', 'accepted', 'in-progress'].includes(appointment.status)) {
+    // Allow both 'in-progress' and legacy 'in_progress'
+    const normalizedAppointmentStatus = String(appointment.status || '').toLowerCase().replace(/_/g, '-');
+    if (!['confirmed', 'scheduled', 'accepted', 'in-progress'].includes(normalizedAppointmentStatus)) {
       return res.status(400).json({
         success: false,
         message: `Cannot initiate call. Appointment status is ${appointment.status}. Only confirmed/scheduled/in-progress appointments can be started.`,

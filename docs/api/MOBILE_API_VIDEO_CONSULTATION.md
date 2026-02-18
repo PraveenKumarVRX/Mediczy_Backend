@@ -2,7 +2,7 @@
 
 Complete API reference for integrating video consultation features into mobile applications.
 
-**Last Updated:** February 3, 2026
+**Last Updated:** February 18, 2026
 
 ---
 
@@ -296,9 +296,9 @@ Authorization: Bearer <token>
     {
       "id": 70,
       "name": "Dr. Nandita Agarwal",
-      "email": "nandita@mediczy.com",
+      "email": "nandita@mediqzy.com",
       "phone": "+919876543210",
-      "profileImage": "https://mediczy.com/images/doctors/nandita.jpg",
+      "profileImage": "https://mediqzy.com/images/doctors/nandita.jpg",
       "specialization": "Cardiology",
       "qualifications": "MBBS, MD (Cardiology)",
       "experience": 15,
@@ -428,7 +428,7 @@ Authorization: Bearer <token>
         "id": 70,
         "name": "Dr. Nandita Agarwal",
         "specialization": "Cardiology",
-        "profileImage": "https://mediczy.com/images/doctors/nandita.jpg"
+        "profileImage": "https://mediqzy.com/images/doctors/nandita.jpg"
       },
       "consultationType": "online",
       "appointmentDate": "2026-01-28",
@@ -812,9 +812,9 @@ Content-Type: application/json
     "patientId": 123,
     "diagnosis": "Viral Fever with Myalgia",
     "medications": [...],
-    "pdfUrl": "https://mediczy.com/prescriptions/RX-789-2026.pdf",
-    "shareUrl": "https://mediczy.com/rx/RX-789-2026",
-    "whatsappShareUrl": "https://mediczy.com/api/prescriptions/RX-789-2026/share/whatsapp",
+    "pdfUrl": "https://mediqzy.com/prescriptions/RX-789-2026.pdf",
+    "shareUrl": "https://mediqzy.com/rx/RX-789-2026",
+    "whatsappShareUrl": "https://mediqzy.com/api/prescriptions/RX-789-2026/share/whatsapp",
     "createdAt": "2026-01-28T10:20:00.000Z"
   }
 }
@@ -848,7 +848,7 @@ Authorization: Bearer <token>
     "diagnosis": "Viral Fever with Myalgia",
     "medications": [...],
     "labTests": ["CBC", "ESR"],
-    "pdfUrl": "https://mediczy.com/prescriptions/RX-789-2026.pdf",
+    "pdfUrl": "https://mediqzy.com/prescriptions/RX-789-2026.pdf",
     "createdAt": "2026-01-28T10:20:00.000Z"
   }
 }
@@ -928,7 +928,7 @@ Content-Type: application/json
   "amount": 1000,
   "currency": "INR",
   "razorpayKey": "rzp_live_xxxxx",
-  "callback": "https://mediczy.com/api/wallet/topup/callback"
+  "callback": "https://mediqzy.com/api/wallet/topup/callback"
 }
 ```
 
@@ -989,7 +989,7 @@ Authorization: Bearer <token>
 ```javascript
 import io from "socket.io-client";
 
-const socket = io("https://mediczy.com", {
+const socket = io("https://mediqzy.com", {
   auth: {
     token: "Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...",
   },
@@ -997,8 +997,17 @@ const socket = io("https://mediczy.com", {
 
 socket.on("connect", () => {
   console.log("Connected to Mediczy");
+
+  // REQUIRED: join personal notification room after connect
+  socket.emit("user-connect", {
+    userId: currentUser.id,
+    userType: "patient", // use "doctor" for doctor app
+    // fcmToken: optional
+  });
 });
 ```
+
+> ⚠️ **Important:** `doctor-initiated-call` is emitted to room `user-{userId}`. If `user-connect` is not sent after socket connection, the patient device will not join that room and will miss the call event.
 
 ### Listen for Doctor Call Initiation
 
@@ -1007,8 +1016,11 @@ socket.on("doctor-initiated-call", (data) => {
   // {
   //   appointmentId: 456,
   //   doctorName: "Dr. Nandita Agarwal",
-  //   meetingLink: "https://livekit.mediczy.com/join/apt-456",
-  //   callInitiatedAt: "2026-01-28T10:00:00.000Z"
+  //   doctorId: 70,
+  //   meetingLink: "https://video.mediqzy.com/rooms/apt-456",
+  //   callInitiatedAt: "2026-01-28T10:00:00.000Z",
+  //   appointmentDate: "2026-01-28",
+  //   appointmentTime: "10:00 AM"
   // }
 
   // Show notification to patient
@@ -1042,7 +1054,7 @@ socket.on("prescription-ready", (data) => {
   //   appointmentId: 456,
   //   prescriptionId: 789,
   //   prescriptionNumber: "RX-789-2026",
-  //   pdfUrl: "https://mediczy.com/prescriptions/RX-789-2026.pdf"
+  //   pdfUrl: "https://mediqzy.com/prescriptions/RX-789-2026.pdf"
   // }
 
   showNotification({
@@ -2002,9 +2014,9 @@ const handleJoinVideoCall = async (appointmentId) => {
 
 For API support and questions:
 
-- **Email**: support@mediczy.com
-- **Documentation**: https://docs.mediczy.com
-- **Status Page**: https://status.mediczy.com
+- **Email**: support@mediqzy.com
+- **Documentation**: https://docs.mediqzy.com
+- **Status Page**: https://status.mediqzy.com
 
 ---
 
@@ -2018,6 +2030,13 @@ For API support and questions:
 - **NEW**: Notification management endpoints (list, read, delete)
 - **NEW**: Complete React Native FCM integration with PushNotificationService class
 - **DOCS**: Added notification types and FCM payload structure reference
+
+### v2.4.0 (2026-02-18)
+
+- **FIXED**: Realtime socket contract clarified for call notifications
+- **NEW**: Added required `user-connect` handshake immediately after socket connection
+- **UPDATED**: `doctor-initiated-call` payload example now matches backend fields (`doctorId`, `appointmentDate`, `appointmentTime`)
+- **DOCS**: Normalized domain references to `mediqzy.com` for consistency
 
 ### v2.2.0 (2026-02-03)
 
