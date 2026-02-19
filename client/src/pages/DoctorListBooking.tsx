@@ -243,6 +243,28 @@ const toDisplayTime = (value: string) => {
   return format(parsed, "hh:mm a");
 };
 
+// Group slots by time of day
+const groupSlotsByTimeOfDay = (slots: any[]) => {
+  const morning: any[] = [];
+  const afternoon: any[] = [];
+  const evening: any[] = [];
+  
+  slots.forEach(slot => {
+    const time = slot.time;
+    const hour = parseInt(time.split(':')[0]);
+    
+    if (hour >= 6 && hour < 12) {
+      morning.push(slot);
+    } else if (hour >= 12 && hour < 17) {
+      afternoon.push(slot);
+    } else {
+      evening.push(slot);
+    }
+  });
+  
+  return { morning, afternoon, evening };
+};
+
 const normalizeDoctorFromApi = (doctor: any): Doctor => {
   const clinicInfo = parseClinicInfo(doctor?.clinicAddress);
   const languages = toArray(doctor?.languages, ["English"]);
@@ -341,20 +363,26 @@ const DoctorListBooking = () => {
   const [showBookingModal, setShowBookingModal] = useState(false);
   const [selectedDoctor, setSelectedDoctor] = useState<Doctor | null>(null);
   const [consultationType, setConsultationType] = useState<"online" | "inPerson">("online");
-  const [selectedDate, setSelectedDate] = useState<Date | undefined>(new Date());
+  const [selectedDate, setSelectedDate] = useState<Date | undefined>(undefined);
   const [selectedTime, setSelectedTime] = useState<string>("");
+  const [bookingStep, setBookingStep] = useState<1 | 2 | 3 | 4>(1);
   const [symptoms, setSymptoms] = useState("");
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [viewMode, setViewMode] = useState<"all" | "categories">("all");
   const [doctorSlots, setDoctorSlots] = useState<any>(null);
   const [loadingSlots, setLoadingSlots] = useState(false);
   const [userType, setUserType] = useState<string | null>(() => getUserType());
+  const [monthAvailability, setMonthAvailability] = useState<Record<string, boolean>>({});
   
   // Health Coins payment states
   const [paymentMethod, setPaymentMethod] = useState<"inr" | "hc">("inr");
   const [hcCalculation, setHcCalculation] = useState<HCCalculation | null>(null);
   const [loadingHC, setLoadingHC] = useState(false);
   const [walletBalance, setWalletBalance] = useState<number>(0);
+  
+  // Confirmation dialog state
+  const [showConfirmation, setShowConfirmation] = useState(false);
+  const [bookedAppointment, setBookedAppointment] = useState<any>(null);
   
   const { toast } = useToast();
   const navigate = useNavigate();
@@ -553,7 +581,7 @@ const DoctorListBooking = () => {
     return spec ? spec.color : "text-blue-500";
   };
 
-  const handleBookAppointment = (doctor: Doctor) => {
+  const handleBookAppointment = async (doctor: Doctor) => {
     if (userType === "doctor") {
       toast({
         title: "Not available for doctors",
@@ -596,7 +624,75 @@ const DoctorListBooking = () => {
     setSelectedDoctor(doctor);
     setShowBookingModal(true);
     setDoctorSlots(null); // Reset slots when opening modal
-    fetchDoctorSlots(doctor._id, selectedDate);
+    setSelectedTime(""); // Clear time selection
+    
+    // Smart date initialization: Try to find first available date
+    const smartDate = await findNextAvailableDate(doctor._id);
+    setSelectedDate(smartDate);
+    fetchDoctorSlots(doctor._id, smartDate);
+  };
+
+  // Find the next available date with slots (up to 14 days ahead)
+  const findNextAvailableDate = async (doctorId: string): Promise<Date> => {
+    const today = new Date();
+    
+    // Try next 14 days to find a date with available slots
+    for (let i = 0; i < 14; i++) {
+      const checkDate = addDays(today, i);
+      try {
+        const dateParam = format(checkDate, 'yyyy-MM-dd');
+        const { data } = await api.get(`/doctors/${doctorId}/user-slots`, {
+          params: { date: dateParam }
+        });
+        
+        // Check if this date has any available slots
+        if (data && !data.isOff) {
+          const hasAvailableOnline = data.slots?.online?.some((s: any) => s.available && !s.blocked);
+          const hasAvailableInPerson = data.slots?.inPerson?.some((s: any) => s.available && !s.blocked);
+          
+          if (hasAvailableOnline || hasAvailableInPerson) {
+            return checkDate; // Found a date with availability
+          }
+        }
+      } catch (error) {
+        // Continue checking next dates
+      }
+    }
+    
+    // If no available date found, default to today
+    return today;
+  };
+
+  // Load availability for the entire month to show indicators on calendar
+  const loadMonthAvailability = async (doctorId: string, month: Date) => {
+    const startDate = new Date(month.getFullYear(), month.getMonth(), 1);
+    const endDate = new Date(month.getFullYear(), month.getMonth() + 1, 0);
+    const availability: Record<string, boolean> = {};
+    
+    // Check each day in the month (could be optimized with batch API in future)
+    for (let date = new Date(startDate); date <= endDate; date.setDate(date.getDate() + 1)) {
+      if (isBefore(date, startOfDay(new Date()))) continue; // Skip past dates
+      
+      try {
+        const dateParam = format(date, 'yyyy-MM-dd');
+        const { data } = await api.get(`/doctors/${doctorId}/user-slots`, {
+          params: { date: dateParam }
+        });
+        
+        if (data && !data.isOff) {
+          const hasAvailable = 
+            data.slots?.online?.some((s: any) => s.available && !s.blocked) ||
+            data.slots?.inPerson?.some((s: any) => s.available && !s.blocked);
+          availability[dateParam] = hasAvailable;
+        } else {
+          availability[dateParam] = false;
+        }
+      } catch (error) {
+        availability[format(date, 'yyyy-MM-dd')] = false;
+      }
+    }
+    
+    setMonthAvailability(availability);
   };
 
   const fetchDoctorSlots = async (doctorId: string, date?: Date) => {
@@ -892,26 +988,41 @@ const DoctorListBooking = () => {
         }
       }
       
-      toast({
-        title: "Success!",
-        description: "Your appointment has been booked successfully. View your bookings to check status.",
-        action: {
-          label: "View my bookings",
-          onClick: () => navigate("/my-bookings"),
-        },
+      
+      // Success - show confirmation dialog
+      setBookedAppointment({
+        id: appointmentId,
+        doctor: selectedDoctor,
+        date: selectedDate,
+        time: normalizedTime,
+        type: consultationType,
+        fee: consultationFee,
+        paymentMethod,
       });
-
       setShowBookingModal(false);
-      // Reset payment method
-      setPaymentMethod("inr");
-      // Stay on the doctors page after booking; patient can navigate to My Bookings manually
-      // navigate("/my-bookings");
+      setShowConfirmation(true);
       
     } catch (error: any) {
       console.error("Error booking appointment:", error);
+
+      const errorData = error?.response?.data;
+      const errorMessage =
+        errorData?.message ||
+        errorData?.error?.message ||
+        (typeof errorData?.error === "string" ? errorData.error : null) ||
+        error?.message ||
+        "Failed to book appointment";
+
+      if (error?.response?.status === 409 && selectedDoctor && selectedDate) {
+        setSelectedTime("");
+        fetchDoctorSlots(selectedDoctor._id, selectedDate);
+      }
+
       toast({
         title: "Booking Failed",
-        description: error.response?.data?.message || "Failed to book appointment",
+        description: error?.response?.status === 409
+          ? `${errorMessage} Availability has been refreshed.`
+          : errorMessage,
         variant: "destructive"
       });
     } finally {
@@ -1228,15 +1339,59 @@ const DoctorListBooking = () => {
 
         {/* Booking Modal */}
         <Dialog open={showBookingModal} onOpenChange={setShowBookingModal}>
-          <DialogContent className="max-w-2xl max-h-[90vh] overflow-y-auto">
+          <DialogContent className="max-w-4xl max-h-[90vh] overflow-y-auto">
             <DialogHeader className="pb-4 border-b">
               <DialogTitle className="text-xl flex items-center gap-2">
                 <Calendar className="h-5 w-5 text-blue-600" />
-                Book Appointment
+                Book Appointment with Dr. {selectedDoctor?.firstName} {selectedDoctor?.lastName}
               </DialogTitle>
-              <DialogDescription>
-                Schedule your consultation with Dr. {selectedDoctor?.firstName} {selectedDoctor?.lastName}
-              </DialogDescription>
+              
+              {/* Step Indicator */}
+              <div className="flex items-center justify-center gap-2 mt-4">
+                <div className={cn(
+                  "flex items-center gap-2 px-3 py-1.5 rounded-full text-sm font-medium transition-all",
+                  consultationType ? "bg-blue-100 text-blue-700" : "bg-gray-100 text-gray-400"
+                )}>
+                  <div className={cn(
+                    "w-6 h-6 rounded-full flex items-center justify-center text-xs font-bold",
+                    consultationType ? "bg-blue-600 text-white" : "bg-gray-300 text-gray-600"
+                  )}>1</div>
+                  <span>Type</span>
+                </div>
+                <div className="h-0.5 w-8 bg-gray-200"></div>
+                <div className={cn(
+                  "flex items-center gap-2 px-3 py-1.5 rounded-full text-sm font-medium transition-all",
+                  selectedDate && selectedTime ? "bg-blue-100 text-blue-700" : "bg-gray-100 text-gray-400"
+                )}>
+                  <div className={cn(
+                    "w-6 h-6 rounded-full flex items-center justify-center text-xs font-bold",
+                    selectedDate && selectedTime ? "bg-blue-600 text-white" : "bg-gray-300 text-gray-600"
+                  )}>2</div>
+                  <span>Date & Time</span>
+                </div>
+                <div className="h-0.5 w-8 bg-gray-200"></div>
+                <div className={cn(
+                  "flex items-center gap-2 px-3 py-1.5 rounded-full text-sm font-medium transition-all",
+                  symptoms ? "bg-blue-100 text-blue-700" : "bg-gray-100 text-gray-400"
+                )}>
+                  <div className={cn(
+                    "w-6 h-6 rounded-full flex items-center justify-center text-xs font-bold",
+                    symptoms ? "bg-blue-600 text-white" : "bg-gray-300 text-gray-600"
+                  )}>3</div>
+                  <span>Details</span>
+                </div>
+                <div className="h-0.5 w-8 bg-gray-200"></div>
+                <div className={cn(
+                  "flex items-center gap-2 px-3 py-1.5 rounded-full text-sm font-medium transition-all",
+                  paymentMethod ? "bg-blue-100 text-blue-700" : "bg-gray-100 text-gray-400"
+                )}>
+                  <div className={cn(
+                    "w-6 h-6 rounded-full flex items-center justify-center text-xs font-bold",
+                    paymentMethod ? "bg-blue-600 text-white" : "bg-gray-300 text-gray-600"
+                  )}>4</div>
+                  <span>Payment</span>
+                </div>
+              </div>
             </DialogHeader>
 
             <div className="space-y-6 pt-4">
@@ -1278,7 +1433,11 @@ const DoctorListBooking = () => {
                 <Label className="text-base font-semibold">Consultation Type</Label>
                 <RadioGroup 
                   value={consultationType} 
-                  onValueChange={(value: "online" | "inPerson") => setConsultationType(value)}
+                  onValueChange={(value: "online" | "inPerson") => {
+                    setConsultationType(value);
+                    // Clear selected time when switching consultation type
+                    setSelectedTime("");
+                  }}
                 >
                   <div className={cn(
                     "flex items-center space-x-3 p-4 border-2 rounded-xl cursor-pointer transition-all",
@@ -1345,10 +1504,33 @@ const DoctorListBooking = () => {
                     <CalendarComponent
                       mode="single"
                       selected={selectedDate}
-                      onSelect={setSelectedDate}
+                      onSelect={(date) => {
+                        setSelectedDate(date);
+                        setSelectedTime(""); // Clear time when date changes
+                      }}
                       disabled={isDateDisabled}
+                      modifiers={{
+                        hasSlots: (date) => {
+                          const dateKey = format(date, 'yyyy-MM-dd');
+                          return monthAvailability[dateKey] === true;
+                        }
+                      }}
+                      modifiersClassNames={{
+                        hasSlots: "bg-green-50 text-green-900 font-semibold relative after:content-[''] after:absolute after:bottom-1 after:left-1/2 after:-translate-x-1/2 after:w-1 after:h-1 after:bg-green-500 after:rounded-full"
+                      }}
+                      onMonthChange={(month) => {
+                        if (selectedDoctor) {
+                          loadMonthAvailability(selectedDoctor._id, month);
+                        }
+                      }}
                       initialFocus
                     />
+                    <div className="p-3 border-t bg-gray-50 text-xs text-gray-600">
+                      <div className="flex items-center gap-2">
+                        <div className="w-2 h-2 bg-green-500 rounded-full"></div>
+                        <span>Dates with available slots</span>
+                      </div>
+                    </div>
                   </PopoverContent>
                 </Popover>
               </div>
@@ -1367,36 +1549,144 @@ const DoctorListBooking = () => {
                     {/* Online Slots */}
                     {consultationType === "online" && doctorSlots.slots?.online?.length > 0 ? (
                       <div>
-                        <div className="flex items-center gap-2 mb-2">
+                        <div className="flex items-center gap-2 mb-3">
                           <Video className="h-4 w-4 text-blue-600" />
                           <span className="text-sm font-semibold text-gray-700">Online Consultation Slots</span>
                           <Badge variant="outline" className="text-xs">
                             {doctorSlots.slotDuration || 30} min slots
                           </Badge>
                         </div>
-                        <div className="grid grid-cols-4 sm:grid-cols-6 gap-2">
-                          {doctorSlots.slots.online
-                            .filter((slot: any) => slot.available && !slot.blocked)
-                            .map((slot: any) => {
-                              const slotTime = slot.time;
-                              return (
-                                <Button
-                                  key={slotTime}
-                                  variant={selectedTime === slotTime ? "default" : "outline"}
-                                  size="sm"
-                                  onClick={() => setSelectedTime(slotTime)}
-                                  className={cn(
-                                    "text-xs rounded-lg",
-                                    selectedTime === slotTime && "bg-gradient-to-r from-blue-600 to-blue-500 border-0"
-                                  )}
-                                >
-                                  {slotTime}
-                                </Button>
-                              );
-                            })}
-                        </div>
+                        
+                        {(() => {
+                          const { morning, afternoon, evening } = groupSlotsByTimeOfDay(doctorSlots.slots.online);
+                          
+                          return (
+                            <div className="space-y-4">
+                              {/* Morning Slots */}
+                              {morning.length > 0 && (
+                                <div>
+                                  <div className="flex items-center gap-2 mb-2">
+                                    <div className="text-xs font-medium text-gray-600 bg-orange-50 px-2 py-1 rounded">
+                                      🌅 Morning (6 AM - 12 PM)
+                                    </div>
+                                  </div>
+                                  <div className="grid grid-cols-4 sm:grid-cols-6 gap-2">
+                                    {morning.map((slot: any) => {
+                                      const slotTime = slot.time;
+                                      const isAvailable = slot.available && !slot.blocked;
+                                      const isBooked = !slot.available;
+                                      const isBlocked = slot.blocked;
+                                      
+                                      return (
+                                        <Button
+                                          key={slotTime}
+                                          variant={selectedTime === slotTime ? "default" : "outline"}
+                                          size="sm"
+                                          onClick={() => isAvailable && setSelectedTime(slotTime)}
+                                          disabled={!isAvailable}
+                                          className={cn(
+                                            "text-xs rounded-lg relative",
+                                            selectedTime === slotTime && "bg-gradient-to-r from-blue-600 to-blue-500 border-0",
+                                            isBooked && "bg-gray-100 text-gray-400 cursor-not-allowed border-gray-200",
+                                            isBlocked && "bg-red-50 text-red-400 cursor-not-allowed border-red-200"
+                                          )}
+                                          title={isBooked ? "Already booked" : isBlocked ? "Blocked by doctor" : "Available"}
+                                        >
+                                          {slotTime}
+                                          {isBooked && <span className="absolute -top-1 -right-1 h-2 w-2 bg-gray-400 rounded-full" />}
+                                          {isBlocked && <span className="absolute -top-1 -right-1 h-2 w-2 bg-red-400 rounded-full" />}
+                                        </Button>
+                                      );
+                                    })}
+                                  </div>
+                                </div>
+                              )}
+                              
+                              {/* Afternoon Slots */}
+                              {afternoon.length > 0 && (
+                                <div>
+                                  <div className="flex items-center gap-2 mb-2">
+                                    <div className="text-xs font-medium text-gray-600 bg-yellow-50 px-2 py-1 rounded">
+                                      ☀️ Afternoon (12 PM - 5 PM)
+                                    </div>
+                                  </div>
+                                  <div className="grid grid-cols-4 sm:grid-cols-6 gap-2">
+                                    {afternoon.map((slot: any) => {
+                                      const slotTime = slot.time;
+                                      const isAvailable = slot.available && !slot.blocked;
+                                      const isBooked = !slot.available;
+                                      const isBlocked = slot.blocked;
+                                      
+                                      return (
+                                        <Button
+                                          key={slotTime}
+                                          variant={selectedTime === slotTime ? "default" : "outline"}
+                                          size="sm"
+                                          onClick={() => isAvailable && setSelectedTime(slotTime)}
+                                          disabled={!isAvailable}
+                                          className={cn(
+                                            "text-xs rounded-lg relative",
+                                            selectedTime === slotTime && "bg-gradient-to-r from-blue-600 to-blue-500 border-0",
+                                            isBooked && "bg-gray-100 text-gray-400 cursor-not-allowed border-gray-200",
+                                            isBlocked && "bg-red-50 text-red-400 cursor-not-allowed border-red-200"
+                                          )}
+                                          title={isBooked ? "Already booked" : isBlocked ? "Blocked by doctor" : "Available"}
+                                        >
+                                          {slotTime}
+                                          {isBooked && <span className="absolute -top-1 -right-1 h-2 w-2 bg-gray-400 rounded-full" />}
+                                          {isBlocked && <span className="absolute -top-1 -right-1 h-2 w-2 bg-red-400 rounded-full" />}
+                                        </Button>
+                                      );
+                                    })}
+                                  </div>
+                                </div>
+                              )}
+                              
+                              {/* Evening Slots */}
+                              {evening.length > 0 && (
+                                <div>
+                                  <div className="flex items-center gap-2 mb-2">
+                                    <div className="text-xs font-medium text-gray-600 bg-indigo-50 px-2 py-1 rounded">
+                                      🌙 Evening (5 PM onwards)
+                                    </div>
+                                  </div>
+                                  <div className="grid grid-cols-4 sm:grid-cols-6 gap-2">
+                                    {evening.map((slot: any) => {
+                                      const slotTime = slot.time;
+                                      const isAvailable = slot.available && !slot.blocked;
+                                      const isBooked = !slot.available;
+                                      const isBlocked = slot.blocked;
+                                      
+                                      return (
+                                        <Button
+                                          key={slotTime}
+                                          variant={selectedTime === slotTime ? "default" : "outline"}
+                                          size="sm"
+                                          onClick={() => isAvailable && setSelectedTime(slotTime)}
+                                          disabled={!isAvailable}
+                                          className={cn(
+                                            "text-xs rounded-lg relative",
+                                            selectedTime === slotTime && "bg-gradient-to-r from-blue-600 to-blue-500 border-0",
+                                            isBooked && "bg-gray-100 text-gray-400 cursor-not-allowed border-gray-200",
+                                            isBlocked && "bg-red-50 text-red-400 cursor-not-allowed border-red-200"
+                                          )}
+                                          title={isBooked ? "Already booked" : isBlocked ? "Blocked by doctor" : "Available"}
+                                        >
+                                          {slotTime}
+                                          {isBooked && <span className="absolute -top-1 -right-1 h-2 w-2 bg-gray-400 rounded-full" />}
+                                          {isBlocked && <span className="absolute -top-1 -right-1 h-2 w-2 bg-red-400 rounded-full" />}
+                                        </Button>
+                                      );
+                                    })}
+                                  </div>
+                                </div>
+                              )}
+                            </div>
+                          );
+                        })()}
+                        
                         {doctorSlots.slots.online.filter((s: any) => s.available && !s.blocked).length === 0 && (
-                          <p className="text-sm text-gray-500 py-4 text-center">No available online slots for this date</p>
+                          <p className="text-sm text-amber-600 py-4 text-center bg-amber-50 rounded-lg border border-amber-200">⚠️ All online slots are booked or unavailable for this date. Please try another date.</p>
                         )}
                       </div>
                     ) : null}
@@ -1428,29 +1718,136 @@ const DoctorListBooking = () => {
                           </div>
                         )}
                         
-                        <div className="grid grid-cols-4 sm:grid-cols-6 gap-2">
-                          {doctorSlots.slots.inPerson
-                            .filter((slot: any) => slot.available && !slot.blocked)
-                            .map((slot: any) => {
-                              const slotTime = slot.time;
-                              return (
-                                <Button
-                                  key={slotTime}
-                                  variant={selectedTime === slotTime ? "default" : "outline"}
-                                  size="sm"
-                                  onClick={() => setSelectedTime(slotTime)}
-                                  className={cn(
-                                    "text-xs rounded-lg",
-                                    selectedTime === slotTime && "bg-gradient-to-r from-green-600 to-green-500 border-0"
-                                  )}
-                                >
-                                  {slotTime}
-                                </Button>
-                              );
-                            })}
-                        </div>
+                        {(() => {
+                          const { morning, afternoon, evening } = groupSlotsByTimeOfDay(doctorSlots.slots.inPerson);
+                          
+                          return (
+                            <div className="space-y-4">
+                              {/* Morning Slots */}
+                              {morning.length > 0 && (
+                                <div>
+                                  <div className="flex items-center gap-2 mb-2">
+                                    <div className="text-xs font-medium text-gray-600 bg-orange-50 px-2 py-1 rounded">
+                                      🌅 Morning (6 AM - 12 PM)
+                                    </div>
+                                  </div>
+                                  <div className="grid grid-cols-4 sm:grid-cols-6 gap-2">
+                                    {morning.map((slot: any) => {
+                                      const slotTime = slot.time;
+                                      const isAvailable = slot.available && !slot.blocked;
+                                      const isBooked = !slot.available;
+                                      const isBlocked = slot.blocked;
+                                      
+                                      return (
+                                        <Button
+                                          key={slotTime}
+                                          variant={selectedTime === slotTime ? "default" : "outline"}
+                                          size="sm"
+                                          onClick={() => isAvailable && setSelectedTime(slotTime)}
+                                          disabled={!isAvailable}
+                                          className={cn(
+                                            "text-xs rounded-lg relative",
+                                            selectedTime === slotTime && "bg-gradient-to-r from-green-600 to-green-500 border-0",
+                                            isBooked && "bg-gray-100 text-gray-400 cursor-not-allowed border-gray-200",
+                                            isBlocked && "bg-red-50 text-red-400 cursor-not-allowed border-red-200"
+                                          )}
+                                          title={isBooked ? "Already booked" : isBlocked ? "Blocked by doctor" : "Available"}
+                                        >
+                                          {slotTime}
+                                          {isBooked && <span className="absolute -top-1 -right-1 h-2 w-2 bg-gray-400 rounded-full" />}
+                                          {isBlocked && <span className="absolute -top-1 -right-1 h-2 w-2 bg-red-400 rounded-full" />}
+                                        </Button>
+                                      );
+                                    })}
+                                  </div>
+                                </div>
+                              )}
+                              
+                              {/* Afternoon Slots */}
+                              {afternoon.length > 0 && (
+                                <div>
+                                  <div className="flex items-center gap-2 mb-2">
+                                    <div className="text-xs font-medium text-gray-600 bg-yellow-50 px-2 py-1 rounded">
+                                      ☀️ Afternoon (12 PM - 5 PM)
+                                    </div>
+                                  </div>
+                                  <div className="grid grid-cols-4 sm:grid-cols-6 gap-2">
+                                    {afternoon.map((slot: any) => {
+                                      const slotTime = slot.time;
+                                      const isAvailable = slot.available && !slot.blocked;
+                                      const isBooked = !slot.available;
+                                      const isBlocked = slot.blocked;
+                                      
+                                      return (
+                                        <Button
+                                          key={slotTime}
+                                          variant={selectedTime === slotTime ? "default" : "outline"}
+                                          size="sm"
+                                          onClick={() => isAvailable && setSelectedTime(slotTime)}
+                                          disabled={!isAvailable}
+                                          className={cn(
+                                            "text-xs rounded-lg relative",
+                                            selectedTime === slotTime && "bg-gradient-to-r from-green-600 to-green-500 border-0",
+                                            isBooked && "bg-gray-100 text-gray-400 cursor-not-allowed border-gray-200",
+                                            isBlocked && "bg-red-50 text-red-400 cursor-not-allowed border-red-200"
+                                          )}
+                                          title={isBooked ? "Already booked" : isBlocked ? "Blocked by doctor" : "Available"}
+                                        >
+                                          {slotTime}
+                                          {isBooked && <span className="absolute -top-1 -right-1 h-2 w-2 bg-gray-400 rounded-full" />}
+                                          {isBlocked && <span className="absolute -top-1 -right-1 h-2 w-2 bg-red-400 rounded-full" />}
+                                        </Button>
+                                      );
+                                    })}
+                                  </div>
+                                </div>
+                              )}
+                              
+                              {/* Evening Slots */}
+                              {evening.length > 0 && (
+                                <div>
+                                  <div className="flex items-center gap-2 mb-2">
+                                    <div className="text-xs font-medium text-gray-600 bg-indigo-50 px-2 py-1 rounded">
+                                      🌙 Evening (5 PM onwards)
+                                    </div>
+                                  </div>
+                                  <div className="grid grid-cols-4 sm:grid-cols-6 gap-2">
+                                    {evening.map((slot: any) => {
+                                      const slotTime = slot.time;
+                                      const isAvailable = slot.available && !slot.blocked;
+                                      const isBooked = !slot.available;
+                                      const isBlocked = slot.blocked;
+                                      
+                                      return (
+                                        <Button
+                                          key={slotTime}
+                                          variant={selectedTime === slotTime ? "default" : "outline"}
+                                          size="sm"
+                                          onClick={() => isAvailable && setSelectedTime(slotTime)}
+                                          disabled={!isAvailable}
+                                          className={cn(
+                                            "text-xs rounded-lg relative",
+                                            selectedTime === slotTime && "bg-gradient-to-r from-green-600 to-green-500 border-0",
+                                            isBooked && "bg-gray-100 text-gray-400 cursor-not-allowed border-gray-200",
+                                            isBlocked && "bg-red-50 text-red-400 cursor-not-allowed border-red-200"
+                                          )}
+                                          title={isBooked ? "Already booked" : isBlocked ? "Blocked by doctor" : "Available"}
+                                        >
+                                          {slotTime}
+                                          {isBooked && <span className="absolute -top-1 -right-1 h-2 w-2 bg-gray-400 rounded-full" />}
+                                          {isBlocked && <span className="absolute -top-1 -right-1 h-2 w-2 bg-red-400 rounded-full" />}
+                                        </Button>
+                                      );
+                                    })}
+                                  </div>
+                                </div>
+                              )}
+                            </div>
+                          );
+                        })()}
+                        
                         {doctorSlots.slots.inPerson.filter((s: any) => s.available && !s.blocked).length === 0 && (
-                          <p className="text-sm text-gray-500 py-4 text-center">No available in-person slots for this date</p>
+                          <p className="text-sm text-amber-600 py-4 text-center bg-amber-50 rounded-lg border border-amber-200">⚠️ All in-person slots are booked or unavailable for this date. Please try another date.</p>
                         )}
                       </div>
                     ) : null}
@@ -1469,27 +1866,13 @@ const DoctorListBooking = () => {
                     <p className="text-gray-600 font-medium">Doctor is not available on this day</p>
                     <p className="text-sm text-gray-500 mt-1">Please select a different date</p>
                   </div>
-                ) : (
-                  <div className="grid grid-cols-4 sm:grid-cols-6 gap-2">
-                    {timeSlots.map((time) => {
-                      const backendTime = toBackendTime(time);
-                      return (
-                        <Button
-                          key={time}
-                          variant={selectedTime === backendTime ? "default" : "outline"}
-                          size="sm"
-                          onClick={() => setSelectedTime(backendTime)}
-                          className={cn(
-                            "text-xs rounded-lg",
-                            selectedTime === backendTime && "bg-gradient-to-r from-blue-600 to-green-600 border-0"
-                          )}
-                        >
-                          {time}
-                        </Button>
-                      );
-                    })}
+                ) : selectedDate ? (
+                  <div className="py-8 text-center">
+                    <Clock className="h-12 w-12 text-gray-300 mx-auto mb-3" />
+                    <p className="text-gray-600 font-medium">Unable to load slot availability</p>
+                    <p className="text-sm text-gray-500 mt-1">Please try selecting a different date or refresh the page</p>
                   </div>
-                )}
+                ) : null}
                 {selectedTime && !loadingSlots ? (
                   <p className="text-xs text-muted-foreground">
                     Selected slot: <span className="font-medium text-foreground">{selectedTime}</span>
@@ -1676,6 +2059,46 @@ const DoctorListBooking = () => {
                 )}
               </div>
 
+              {/* Inline Validation Messages */}
+              {!selectedDate && (
+                <div className="p-3 bg-blue-50 border border-blue-200 rounded-lg text-sm text-blue-800 flex items-start gap-2">
+                  <Calendar className="h-4 w-4 mt-0.5" />
+                  <p>Please select a date for your appointment</p>
+                </div>
+              )}
+              
+              {selectedDate && !selectedTime && !loadingSlots && (
+                <div className="p-3 bg-blue-50 border border-blue-200 rounded-lg text-sm text-blue-800 flex items-start gap-2">
+                  <Clock className="h-4 w-4 mt-0.5" />
+                  <p>Please select a time slot for your appointment</p>
+                </div>
+              )}
+
+              {/* Slot Status Legend */}
+              {selectedDate && doctorSlots && !loadingSlots && (
+                <div className="p-3 bg-gray-50 rounded-lg border border-gray-200">
+                  <p className="text-xs font-semibold text-gray-700 mb-2">Slot Status:</p>
+                  <div className="flex flex-wrap gap-3 text-xs">
+                    <div className="flex items-center gap-1.5">
+                      <div className="w-3 h-3 border-2 border-blue-500 rounded"></div>
+                      <span className="text-gray-600">Available</span>
+                    </div>
+                    <div className="flex items-center gap-1.5">
+                      <div className="w-3 h-3 bg-gray-200 rounded relative">
+                        <span className="absolute -top-0.5 -right-0.5 h-1.5 w-1.5 bg-gray-400 rounded-full" />
+                      </div>
+                      <span className="text-gray-600">Booked</span>
+                    </div>
+                    <div className="flex items-center gap-1.5">
+                      <div className="w-3 h-3 bg-red-50 rounded relative">
+                        <span className="absolute -top-0.5 -right-0.5 h-1.5 w-1.5 bg-red-400 rounded-full" />
+                      </div>
+                      <span className="text-gray-600">Blocked</span>
+                    </div>
+                  </div>
+                </div>
+              )}
+
               {/* Action Buttons */}
               <div className="flex gap-3 pt-2">
                 <Button 
@@ -1703,6 +2126,97 @@ const DoctorListBooking = () => {
                 </Button>
               </div>
             </div>
+          </DialogContent>
+        </Dialog>
+
+        {/* Booking Confirmation Dialog */}
+        <Dialog open={showConfirmation} onOpenChange={setShowConfirmation}>
+          <DialogContent className="max-w-md">
+            <DialogHeader>
+              <div className="mx-auto w-16 h-16 bg-green-100 rounded-full flex items-center justify-center mb-4">
+                <CheckCircle className="h-8 w-8 text-green-600" />
+              </div>
+              <DialogTitle className="text-2xl text-center">Booking Confirmed!</DialogTitle>
+              <DialogDescription className="text-center">
+                Your appointment has been successfully booked
+              </DialogDescription>
+            </DialogHeader>
+            
+            {bookedAppointment && (
+              <div className="space-y-4">
+                {/* Doctor Info */}
+                <Card>
+                  <CardContent className="pt-6">
+                    <div className="flex items-center gap-3 mb-4">
+                      <Avatar className="h-12 w-12">
+                        <AvatarImage src={bookedAppointment.doctor?.profileImage} />
+                        <AvatarFallback>
+                          {bookedAppointment.doctor?.firstName?.[0]}{bookedAppointment.doctor?.lastName?.[0]}
+                        </AvatarFallback>
+                      </Avatar>
+                      <div>
+                        <h4 className="font-bold text-gray-900">
+                          Dr. {bookedAppointment.doctor?.firstName} {bookedAppointment.doctor?.lastName}
+                        </h4>
+                        <p className="text-sm text-gray-600">{bookedAppointment.doctor?.specialization}</p>
+                      </div>
+                    </div>
+                    
+                    <Separator className="my-4" />
+                    
+                    {/* Appointment Details */}
+                    <div className="space-y-3 text-sm">
+                      <div className="flex justify-between">
+                        <span className="text-gray-600">Date & Time:</span>
+                        <span className="font-semibold text-gray-900">
+                          {format(bookedAppointment.date, "MMM d, yyyy")} at {toDisplayTime(bookedAppointment.time)}
+                        </span>
+                      </div>
+                      <div className="flex justify-between">
+                        <span className="text-gray-600">Type:</span>
+                        <Badge variant={bookedAppointment.type === "online" ? "default" : "secondary"}>
+                          {bookedAppointment.type === "online" ? "Online Video" : "In-Person"}
+                        </Badge>
+                      </div>
+                      <div className="flex justify-between">
+                        <span className="text-gray-600">Consultation Fee:</span>
+                        <span className="font-semibold text-gray-900">₹{bookedAppointment.fee}</span>
+                      </div>
+                      <div className="flex justify-between">
+                        <span className="text-gray-600">Payment:</span>
+                        <Badge variant={bookedAppointment.paymentMethod === "hc" ? "secondary" : "outline"}>
+                          {bookedAppointment.paymentMethod === "hc" ? "Health Coins" : "INR"}
+                        </Badge>
+                      </div>
+                    </div>
+                  </CardContent>
+                </Card>
+                
+                {/* Action Buttons */}
+                <div className="flex gap-3">
+                  <Button 
+                    variant="outline" 
+                    onClick={() => setShowConfirmation(false)}
+                    className="flex-1"
+                  >
+                    Book Another
+                  </Button>
+                  <Button 
+                    onClick={() => {
+                      setShowConfirmation(false);
+                      navigate("/my-bookings");
+                    }}
+                    className="flex-1 bg-gradient-to-r from-blue-600 to-green-600 hover:from-blue-700 hover:to-green-700"
+                  >
+                    View My Bookings
+                  </Button>
+                </div>
+                
+                <p className="text-xs text-center text-gray-500">
+                  A confirmation has been sent to your registered email
+                </p>
+              </div>
+            )}
           </DialogContent>
         </Dialog>
       </div>
