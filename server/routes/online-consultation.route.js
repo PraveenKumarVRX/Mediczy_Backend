@@ -293,7 +293,8 @@ router.post('/book', authUser, [
   body('appointmentTime').matches(/^([0-1]?[0-9]|2[0-3]):[0-5][0-9]$/).withMessage('Valid time in HH:MM format is required'),
   body('consultationType').optional().isIn(['online', 'in-person']).withMessage('Invalid consultation type'),
   body('symptoms').optional().isString(),
-  body('reason').optional().isString()
+  body('reason').optional().isString(),
+  body('paymentMethod').optional().isIn(['hc', 'wallet', 'razorpay', 'cash']).withMessage('Invalid payment method')
 ], async (req, res) => {
   try {
     const errors = validationResult(req);
@@ -311,7 +312,8 @@ router.post('/book', authUser, [
       appointmentTime,
       consultationType = 'online',
       symptoms,
-      reason
+      reason,
+      paymentMethod
     } = req.body;
 
     // Get patient info
@@ -392,6 +394,29 @@ router.post('/book', authUser, [
       ? (Array.isArray(symptoms) ? symptoms : [symptoms])
       : [];
 
+    // Determine initial status based on payment method
+    let initialStatus = 'pending'; // Default: waiting for doctor approval
+    let initialPaymentStatus = 'pending';
+    let meetingId = null;
+    let meetingLink = null;
+    let meetingDetails = null;
+    let paymentDetails = null;
+    let hcPaymentResult = null;
+
+    // If paying with HC immediately, verify and process payment
+    if (paymentMethod === 'hc') {
+      const canPayResult = await healthCoinsService.canPayWithHC(patientId, consultationFee);
+      
+      if (!canPayResult.canPay) {
+        return res.status(400).json({
+          success: false,
+          message: `Insufficient Health Coins. You need ${canPayResult.hcRequired} HC but have ${canPayResult.currentBalance} HC`,
+          healthCoins: canPayResult,
+          consultationFee
+        });
+      }
+    }
+
     // Create appointment with 'pending' status (waiting for doctor approval)
     const appointment = await Appointment.create({
       userId: patientId,
@@ -406,24 +431,100 @@ router.post('/book', authUser, [
       appointmentTime,
       duration: 30,
       consultationType,
-      status: 'pending', // Waiting for doctor to accept
+      status: initialStatus,
       paymentAmount: consultationFee,
-      paymentStatus: 'pending',
+      paymentStatus: initialPaymentStatus,
       symptoms: symptomsArray,
       reason
     });
 
+    // Process HC payment immediately after appointment creation if requested
+    if (paymentMethod === 'hc') {
+      try {
+        // Process HC payment
+        hcPaymentResult = await healthCoinsService.payForAppointment(
+          patientId,
+          appointment.id,
+          consultationFee,
+          appointment.doctorName
+        );
+
+        // Generate meeting link
+        const meetingInfo = createMeetingInfo({ appointmentId: appointment.id });
+        meetingId = meetingInfo.meetingId;
+        meetingLink = meetingInfo.meetingLink;
+        meetingDetails = meetingInfo.meetingDetails;
+
+        // Update appointment with confirmed status and payment details
+        await appointment.update({
+          status: 'confirmed',
+          paymentStatus: 'paid',
+          paymentDetails: {
+            method: 'health_coins',
+            transactionId: `HC-${hcPaymentResult.transaction.id}`,
+            hcPaid: hcPaymentResult.hcPaid,
+            amountINR: consultationFee,
+            timestamp: new Date().toISOString()
+          },
+          meetingId,
+          meetingLink,
+          meetingDetails,
+          notes: `Paid with ${hcPaymentResult.hcPaid} Health Coins (₹${consultationFee} value). Video consultation enabled.`
+        });
+
+        paymentDetails = {
+          method: 'health_coins',
+          hcPaid: hcPaymentResult.hcPaid,
+          consultationFeeINR: consultationFee,
+          bonusPercent: hcPaymentResult.bonusPercent,
+          newBalance: hcPaymentResult.newBalance,
+          transactionId: hcPaymentResult.transaction.id
+        };
+
+        console.log(`✅ HC payment successful during booking: User ${patientId} paid ${hcPaymentResult.hcPaid} HC for appointment ${appointment.id}`);
+      } catch (hcError) {
+        // If HC payment fails, keep appointment as pending
+        console.error('HC payment failed during booking:', hcError);
+        // Don't fail the whole booking, just return with pending payment
+        return res.status(201).json({
+          success: true,
+          message: 'Appointment created but payment failed. Please try paying separately.',
+          appointment: {
+            id: appointment.id,
+            doctorName: appointment.doctorName,
+            specialization: appointment.specialization,
+            date: appointment.appointmentDate,
+            time: appointment.appointmentTime,
+            consultationType: appointment.consultationType,
+            status: appointment.status,
+            consultationFee: appointment.paymentAmount,
+            paymentStatus: appointment.paymentStatus
+          },
+          paymentError: hcError.message
+        });
+      }
+    }
+
     // Send notification to doctor about new appointment request
     try {
-      await notificationService.notifyAppointmentRequest(appointment);
+      if (paymentMethod === 'hc' && hcPaymentResult) {
+        // Appointment is confirmed and paid - send payment confirmation
+        appointment.meetingLink = meetingLink;
+        await notificationService.notifyPaymentReceived(appointment, doctor);
+      } else {
+        // Appointment is pending - send request notification
+        await notificationService.notifyAppointmentRequest(appointment);
+      }
     } catch (notifError) {
       console.error('Failed to send notification:', notifError);
       // Don't fail the booking if notification fails
     }
 
-    res.status(201).json({
+    const responseData = {
       success: true,
-      message: 'Appointment request sent to doctor. Waiting for confirmation.',
+      message: paymentMethod === 'hc' && hcPaymentResult
+        ? `Appointment booked and paid successfully! Paid ${hcPaymentResult.hcPaid} HC for ₹${consultationFee} consultation.`
+        : 'Appointment request sent to doctor. Waiting for confirmation.',
       appointment: {
         id: appointment.id,
         doctorName: appointment.doctorName,
@@ -433,9 +534,18 @@ router.post('/book', authUser, [
         consultationType: appointment.consultationType,
         status: appointment.status,
         consultationFee: appointment.paymentAmount,
-        paymentStatus: appointment.paymentStatus
+        paymentStatus: appointment.paymentStatus,
+        ...(meetingLink && { meetingLink }),
+        ...(meetingId && { meetingId })
       }
-    });
+    };
+
+    // Add payment details if HC was used
+    if (paymentDetails) {
+      responseData.payment = paymentDetails;
+    }
+
+    res.status(201).json(responseData);
   } catch (error) {
     console.error('Error booking appointment:', error);
     res.status(500).json({

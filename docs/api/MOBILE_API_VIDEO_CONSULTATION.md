@@ -364,16 +364,43 @@ Content-Type: application/json
   "appointmentTime": "10:00 AM",
   "symptoms": "Chest pain and shortness of breath",
   "urgency": "URGENT",
-  "paymentMethod": "wallet"
+  "paymentMethod": "hc"
 }
 ```
 
-**Response:**
+**Request Parameters:**
+
+| Field              | Type   | Required | Description                                                   |
+| ------------------ | ------ | -------- | ------------------------------------------------------------- |
+| `doctorId`         | number | ✅ Yes   | Doctor's ID                                                   |
+| `consultationType` | string | Optional | `online` (default) or `in-person`                             |
+| `appointmentDate`  | string | ✅ Yes   | Date in YYYY-MM-DD format                                     |
+| `appointmentTime`  | string | ✅ Yes   | Time in HH:MM format (24-hour)                                |
+| `symptoms`         | string | Optional | Patient symptoms description                                  |
+| `reason`           | string | Optional | Reason for consultation                                       |
+| `urgency`          | string | Optional | `NORMAL`, `URGENT`, or `EMERGENCY`                            |
+| `paymentMethod`    | string | Optional | `hc` (Health Coins), `wallet`, `razorpay`, or `cash` (default: pending) |
+
+**Payment Methods:**
+
+- **`hc` (Health Coins)** - Immediate payment using Health Coins
+  - ✅ Auto-deducts HC from wallet
+  - ✅ Auto-confirms appointment (status: `confirmed`)
+  - ✅ Auto-generates meeting link
+  - ✅ Creates HC transaction record
+  - ⚠️ Requires sufficient HC balance
+  
+- **`wallet`** - Pay from cash wallet balance
+- **`razorpay`** - Payment gateway integration
+- **`cash`** - Pay at clinic (for in-person only)
+- **No paymentMethod** - Appointment created with `pending` status (requires manual payment)
+
+**Response (with Health Coins payment):**
 
 ```json
 {
   "success": true,
-  "message": "Appointment booked successfully",
+  "message": "Paid 500 HC for ₹500. Appointment confirmed!",
   "appointment": {
     "id": 456,
     "appointmentId": "APT-456-2026",
@@ -385,18 +412,60 @@ Content-Type: application/json
     "appointmentDate": "2026-01-28",
     "appointmentTime": "10:00 AM",
     "status": "confirmed",
-    "roomId": "apt-456",
-    "meetingId": "apt-456-1738022400",
-    "amount": 500,
     "paymentStatus": "paid",
+    "meetingId": "apt-456-1738022400",
+    "meetingLink": "https://video.mediqzy.com/rooms/apt-456-1738022400",
+    "amount": 500,
     "createdAt": "2026-01-27T10:00:00.000Z"
   },
   "payment": {
-    "transactionId": "TXN-789",
-    "amount": 500,
-    "method": "wallet",
-    "status": "success"
+    "method": "health_coins",
+    "hcPaid": 500,
+    "consultationFeeINR": 500,
+    "bonusPercent": 0,
+    "newBalance": 1500,
+    "transactionId": 123
   }
+}
+```
+
+**Response (without payment - pending appointment):**
+
+```json
+{
+  "success": true,
+  "message": "Appointment booked successfully. Waiting for doctor confirmation.",
+  "appointment": {
+    "id": 456,
+    "appointmentId": "APT-456-2026",
+    "doctorId": 70,
+    "doctorName": "Dr. Nandita Agarwal",
+    "patientId": 123,
+    "patientName": "John Doe",
+    "consultationType": "online",
+    "appointmentDate": "2026-01-28",
+    "appointmentTime": "10:00 AM",
+    "status": "pending",
+    "paymentStatus": "pending",
+    "amount": 500,
+    "createdAt": "2026-01-27T10:00:00.000Z"
+  }
+}
+```
+
+**Error Response (Insufficient HC):**
+
+```json
+{
+  "success": false,
+  "message": "Insufficient Health Coins. You need 500 HC but have 250 HC",
+  "healthCoins": {
+    "canPay": false,
+    "hcRequired": 500,
+    "currentBalance": 250,
+    "shortfall": 250
+  },
+  "consultationFee": 500
 }
 ```
 
@@ -2004,8 +2073,8 @@ const handleJoinVideoCall = async (appointmentId) => {
 - [ ] Test video calls on different networks
 - [ ] Implement offline support for viewing past consultations
 - [x] Add push notifications for appointment reminders _(see FCM section)_
-- [ ] Register FCM token on login and token refresh
-- [ ] Handle background and foreground push notifications
+- [x] Register FCM token on login and token refresh _(see FCM section)_
+- [x] Handle background and foreground push notifications _(see FCM section)_
 - [ ] Test on both iOS and Android platforms
 
 ---
@@ -2021,6 +2090,19 @@ For API support and questions:
 ---
 
 ## 📝 Changelog
+
+### v2.5.0 (2026-02-20)
+
+- **NEW**: Health Coins (HC) payment integration in booking endpoint
+- **NEW**: `paymentMethod` parameter supports `hc`, `wallet`, `razorpay`, `cash`
+- **ENHANCED**: Immediate HC payment during appointment booking
+  - Auto-validates HC balance before booking
+  - Auto-deducts HC from user wallet
+  - Auto-confirms appointment (no doctor approval needed)
+  - Auto-generates meeting link for video calls
+  - Creates HC transaction record for audit trail
+- **IMPROVED**: One-step booking with HC payment (no separate payment call needed)
+- **DOCS**: Added comprehensive HC payment examples and error responses
 
 ### v2.3.0 (2026-02-03)
 
