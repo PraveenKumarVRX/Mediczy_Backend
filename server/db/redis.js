@@ -232,6 +232,30 @@ export const cache = {
   },
 
   /**
+   * Set value with NX (only if doesn't exist) and TTL
+   * Atomic operation at Redis server level - prevents race condition in distributed systems
+   * @param {string} key - Cache key
+   * @param {any} value - Value to cache
+   * @param {number} ttl - Time to live in seconds
+   * @returns {string|null} 'OK' if set, null if key already exists
+   */
+  async setNX(key, value, ttl = 3600) {
+    try {
+      if (!isConnected) {
+        throw new Error('Redis not connected');
+      }
+      const serialized = JSON.stringify(value);
+      // SET key value NX EX ttl - atomic at Redis level
+      // Returns 'OK' if set successfully, null if key already exists
+      const result = await redisClient.set(key, serialized, 'EX', ttl, 'NX');
+      return result; // 'OK' or null
+    } catch (error) {
+      console.error('❌ Redis: Cache setNX error:', error.message);
+      throw error;
+    }
+  },
+
+  /**
    * Clear all cache
    */
   async flush() {

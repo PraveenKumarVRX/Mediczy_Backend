@@ -739,7 +739,7 @@ class OmnichannelChatService {
         // Use atomic SET command with NX (only set if doesn't exist) and EX (set expiration)
         // This is atomic at the Redis server level - no race condition
         // Returns 'OK' if set successfully, null if key already exists
-        const setResult = await cache.set(lockKey, lockValue, 'EX', lockTTL, 'NX');
+        const setResult = await cache.setNX(lockKey, lockValue, lockTTL);
         
         if (setResult === 'OK') {
           lockAcquired = true;
@@ -749,11 +749,11 @@ class OmnichannelChatService {
           return { success: true, skipped: true, reason: 'already_processing_redis_atomic' };
         }
       } catch (atomicError) {
-        // If atomic SET NX fails, try fallback: GET then SET (non-atomic but works on older Redis)
+        // If atomic SET NX fails, try fallback: GET then SET (non-atomic but works)
         console.warn('⚠️  [sendToWhatsApp] Atomic SET NX failed, trying GET+SET fallback:', atomicError.message);
         
         try {
-          const existingLock = await cache.getAsync(lockKey);
+          const existingLock = await cache.get(lockKey);
           
           if (existingLock) {
             console.log('⏭️  [sendToWhatsApp] Message already being processed (GET+SET fallback), skipping');
@@ -761,7 +761,7 @@ class OmnichannelChatService {
           }
           
           // Set lock with TTL
-          await cache.setAsync(lockKey, lockValue, 'EX', lockTTL);
+          await cache.set(lockKey, lockValue, lockTTL);
           lockAcquired = true;
           console.log('🔒 [sendToWhatsApp] Acquired Redis processing lock (GET+SET fallback)');
         } catch (fallbackError) {
