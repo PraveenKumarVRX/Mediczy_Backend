@@ -189,17 +189,20 @@ class WhatsAppProductionService {
    * Use this for replies to user-initiated conversations
    */
   async sendSessionMessage({ to, body }) {
+    // Trim phone number to remove any spaces
+    const phoneNumber = String(to || '').trim();
+    
     const normalizedBody = String(body || '').trim();
     const lowerBody = normalizedBody.toLowerCase();
     const isGenericErrorReply = lowerBody.includes('error processing your request') || lowerBody.includes('please try again later');
     if (isGenericErrorReply || !normalizedBody) {
       console.warn('WhatsApp reply sanitized', {
-        to,
+        to: phoneNumber,
         snippet: normalizedBody.slice(0, 120)
       });
     }
     console.info('WhatsApp sendSessionMessage trace', {
-      to,
+      to: phoneNumber,
       snippet: normalizedBody.slice(0, 120),
       stack: new Error().stack?.split('\n').slice(1, 6).map(line => line.trim())
     });
@@ -214,7 +217,7 @@ class WhatsAppProductionService {
     // Add timeout to prevent hanging
     const sendPromise = this.client.messages.create({
       from: this.fromNumber,
-      to: `whatsapp:${to}`,
+      to: `whatsapp:${phoneNumber}`,
       body: safeBody
     });
 

@@ -909,8 +909,8 @@ router.post('/webhook', (req, res, next) => {
     console.log('📱 [WhatsApp Webhook] Handler called, req.skipAuth=', req.skipAuth);
     const { From, Body, MessageSid, ProfileName, MediaUrl0, MediaContentType0 } = req.body;
     
-    // Extract phone number (remove whatsapp: prefix)
-    const phoneNumber = From?.replace('whatsapp:', '') || '';
+    // Extract phone number (remove whatsapp: prefix and trim)
+    const phoneNumber = (From?.replace('whatsapp:', '') || '').trim();
     const customerName = ProfileName || phoneNumber;
     
     logger.info('📱 Incoming WhatsApp message', {
