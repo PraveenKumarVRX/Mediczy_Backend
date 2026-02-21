@@ -11,6 +11,7 @@ Complete API reference for integrating video consultation features into mobile a
 | Environment      | Base URL                      | Purpose                       |
 | ---------------- | ----------------------------- | ----------------------------- |
 | **Production**   | `https://app.mediqzy.com`     | Live users, real transactions |
+| **UAT**          | `http://16.112.137.160`       | User Acceptance Testing       |
 | **Staging**      | `https://staging.mediqzy.com` | Testing before production     |
 | **Video Server** | `wss://video.mediqzy.com`     | LiveKit video (shared)        |
 
@@ -1648,6 +1649,10 @@ const ENVIRONMENTS = {
     API_URL: "http://localhost:8000",
     VIDEO_URL: "wss://video.mediqzy.com",
   },
+  uat: {
+    API_URL: "http://16.112.137.160",
+    VIDEO_URL: "wss://video.mediqzy.com",
+  },
   staging: {
     API_URL: "https://staging.mediqzy.com",
     VIDEO_URL: "wss://video.mediqzy.com",
@@ -1738,6 +1743,10 @@ const ENVIRONMENTS = {
     API_URL: "http://localhost:8000",
     VIDEO_URL: "wss://video.mediqzy.com",
   },
+  uat: {
+    API_URL: "http://16.112.137.160",
+    VIDEO_URL: "wss://video.mediqzy.com",
+  },
   staging: {
     API_URL: "https://staging.mediqzy.com",
     VIDEO_URL: "wss://video.mediqzy.com",
@@ -1749,7 +1758,7 @@ const ENVIRONMENTS = {
 };
 
 // Set this based on your build configuration
-// For testing: 'staging', For release: 'production'
+// For testing: 'uat' or 'staging', For release: 'production'
 const CURRENT_ENV = __DEV__ ? "staging" : "production";
 const config = ENVIRONMENTS[CURRENT_ENV];
 

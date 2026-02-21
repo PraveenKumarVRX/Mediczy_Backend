@@ -481,7 +481,12 @@ console.log('   Allowed Origins:', allowedOrigins);
 // Block disallowed origins early with 403 (both preflight and actual requests)
 app.use((req, res, next) => {
   const origin = req.get('Origin');
+  const referer = req.get('Referer');
+  console.log('🔍 ORIGIN CHECK:', { origin, referer, url: req.url, method: req.method });
+  
   if (origin && !allowedOrigins.includes(origin)) {
+    console.log('🚫 CORS BLOCKED - Origin:', origin, 'URL:', req.url, 'Method:', req.method);
+    console.log('   Allowed origins:', allowedOrigins);
     if (req.method === 'OPTIONS') {
       return res.status(403).end();
     }
@@ -583,13 +588,20 @@ app.use(compression({
 // 5. Body Parsers and File Upload
 app.use(express.json({ limit: '10mb' }));
 app.use(express.urlencoded({ extended: false, limit: '10mb' }));
-app.use(fileUpload({
+const globalFileUploadMiddleware = fileUpload({
   limits: { fileSize: 10 * 1024 * 1024 }, // 10MB max file size
   abortOnLimit: true,
   responseOnLimit: 'File size limit exceeded',
   createParentPath: true,
   tempFileDir: '/tmp/'
-}));
+});
+
+app.use((req, res, next) => {
+  if (req.path.startsWith('/api/offline-scribe/transcribe')) {
+    return next();
+  }
+  return globalFileUploadMiddleware(req, res, next);
+});
 
 // Legacy mobile aliases (auth OTP + patient appointments)
 const forwardToRouter = (router, targetPath) => (req, res, next) => {

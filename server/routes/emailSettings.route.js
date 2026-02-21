@@ -1,4 +1,5 @@
 import express from 'express';
+import { Op } from 'sequelize';
 import { authUser, requireRole } from '../middleware/auth.middleware.js';
 import EmailSettings from '../models/emailSettings.model.js';
 
@@ -17,7 +18,7 @@ const router = express.Router();
  * GET /api/email-settings
  * Get all email settings for current user
  */
-router.get('/', authUser, async (req, res) => {
+router.get('/', async (req, res) => {
   try {
     const userId = req.user.id;
     
@@ -48,7 +49,7 @@ router.get('/', authUser, async (req, res) => {
  * GET /api/email-settings/:settingsId
  * Get specific email settings configuration
  */
-router.get('/:settingsId', authUser, async (req, res) => {
+router.get('/:settingsId', async (req, res) => {
   try {
     const { settingsId } = req.params;
     const userId = req.user.id;
@@ -107,18 +108,26 @@ router.get('/:settingsId', authUser, async (req, res) => {
  *   "syncFrequencyMinutes": 15
  * }
  */
-router.post('/', authUser, async (req, res) => {
+router.post('/', async (req, res) => {
   try {
     const userId = req.user.id;
     const {
       email,
+      fromEmail,
       displayName,
+      fromName,
+      name,
       provider = 'custom',
       smtpHost,
+      host,
       smtpPort,
+      port,
       smtpSecure,
+      encryption,
       smtpUsername,
+      username,
       smtpPassword,
+      password,
       imapHost,
       imapPort,
       imapSecure,
@@ -131,8 +140,18 @@ router.post('/', authUser, async (req, res) => {
       syncFrequencyMinutes = 15
     } = req.body;
 
+    const resolvedEmail = email || fromEmail;
+    const resolvedDisplayName = displayName || fromName || name;
+    const resolvedSmtpHost = smtpHost || host;
+    const resolvedSmtpPort = smtpPort || port;
+    const resolvedSmtpSecure = typeof smtpSecure === 'boolean' ? smtpSecure : encryption === 'ssl';
+    const resolvedSmtpUsername = smtpUsername || username || resolvedEmail;
+    const resolvedSmtpPassword = smtpPassword || password;
+    const resolvedImapUsername = imapUsername || resolvedSmtpUsername;
+    const resolvedImapPassword = imapPassword || resolvedSmtpPassword;
+
     // Validate required fields
-    if (!email) {
+    if (!resolvedEmail) {
       return res.status(400).json({
         success: false,
         message: 'Email address is required'
@@ -149,19 +168,19 @@ router.post('/', authUser, async (req, res) => {
 
     const settings = await EmailSettings.create({
       userId,
-      email,
-      displayName: displayName || email.split('@')[0],
+      email: resolvedEmail,
+      displayName: resolvedDisplayName || resolvedEmail.split('@')[0],
       provider,
-      smtpHost,
-      smtpPort,
-      smtpSecure,
-      smtpUsername,
-      smtpPassword,
+      smtpHost: resolvedSmtpHost,
+      smtpPort: resolvedSmtpPort,
+      smtpSecure: resolvedSmtpSecure,
+      smtpUsername: resolvedSmtpUsername,
+      smtpPassword: resolvedSmtpPassword,
       imapHost,
       imapPort,
       imapSecure,
-      imapUsername,
-      imapPassword,
+      imapUsername: resolvedImapUsername,
+      imapPassword: resolvedImapPassword,
       isDefault,
       rateLimitPerHour,
       rateLimitPerDay,
@@ -196,11 +215,43 @@ router.post('/', authUser, async (req, res) => {
  * PUT /api/email-settings/:settingsId
  * Update email settings configuration
  */
-router.put('/:settingsId', authUser, async (req, res) => {
+router.put('/:settingsId', async (req, res) => {
   try {
     const { settingsId } = req.params;
     const userId = req.user.id;
-    const updateData = req.body;
+    const {
+      email,
+      fromEmail,
+      displayName,
+      fromName,
+      name,
+      smtpHost,
+      host,
+      smtpPort,
+      port,
+      smtpSecure,
+      encryption,
+      smtpUsername,
+      username,
+      smtpPassword,
+      password,
+      imapUsername,
+      imapPassword,
+      ...rest
+    } = req.body;
+
+    const updateData = {
+      ...rest,
+      ...(email || fromEmail ? { email: email || fromEmail } : {}),
+      ...(displayName || fromName || name ? { displayName: displayName || fromName || name } : {}),
+      ...(smtpHost || host ? { smtpHost: smtpHost || host } : {}),
+      ...(smtpPort || port ? { smtpPort: smtpPort || port } : {}),
+      ...(typeof smtpSecure === 'boolean' || encryption ? { smtpSecure: typeof smtpSecure === 'boolean' ? smtpSecure : encryption === 'ssl' } : {}),
+      ...(smtpUsername || username ? { smtpUsername: smtpUsername || username } : {}),
+      ...(smtpPassword || password ? { smtpPassword: smtpPassword || password } : {}),
+      ...(imapUsername || smtpUsername || username ? { imapUsername: imapUsername || smtpUsername || username } : {}),
+      ...(imapPassword || smtpPassword || password ? { imapPassword: imapPassword || smtpPassword || password } : {})
+    };
 
     const settings = await EmailSettings.findOne({
       where: { id: settingsId, userId }
@@ -250,7 +301,7 @@ router.put('/:settingsId', authUser, async (req, res) => {
  * POST /api/email-settings/:settingsId/test
  * Test SMTP/IMAP connectivity for email settings
  */
-router.post('/:settingsId/test', authUser, async (req, res) => {
+router.post('/:settingsId/test', async (req, res) => {
   try {
     const { settingsId } = req.params;
     const userId = req.user.id;
@@ -321,7 +372,7 @@ router.post('/:settingsId/test', authUser, async (req, res) => {
  * DELETE /api/email-settings/:settingsId
  * Soft delete email settings configuration
  */
-router.delete('/:settingsId', authUser, async (req, res) => {
+router.delete('/:settingsId', async (req, res) => {
   try {
     const { settingsId } = req.params;
     const userId = req.user.id;
@@ -340,7 +391,7 @@ router.delete('/:settingsId', authUser, async (req, res) => {
     // If deleting default, find next active config and set as default
     if (settings.isDefault) {
       const nextDefault = await EmailSettings.findOne({
-        where: { userId, isActive: true, deletedAt: null, id: { [require('sequelize').Op.ne]: settingsId } },
+        where: { userId, isActive: true, deletedAt: null, id: { [Op.ne]: settingsId } },
         order: [['createdAt', 'DESC']]
       });
       if (nextDefault) {
@@ -368,7 +419,7 @@ router.delete('/:settingsId', authUser, async (req, res) => {
  * PUT /api/email-settings/:settingsId/set-default
  * Set specific email settings as default for user
  */
-router.put('/:settingsId/set-default', authUser, async (req, res) => {
+router.put('/:settingsId/set-default', async (req, res) => {
   try {
     const { settingsId } = req.params;
     const userId = req.user.id;
@@ -419,7 +470,7 @@ router.put('/:settingsId/set-default', authUser, async (req, res) => {
  * GET /api/email-settings/default
  * Get default email settings for current user
  */
-router.get('/default', authUser, async (req, res) => {
+router.get('/default', async (req, res) => {
   try {
     const userId = req.user.id;
 

@@ -207,14 +207,7 @@ const DoctorDashboard = () => {
       // Redirect to video room
       const roomId = response.data.appointment.roomId || response.data.appointment.meetingId;
       if (roomId) {
-        const LIVEKIT_BASE_URL = (import.meta.env.VITE_LIVEKIT_MEET_URL || import.meta.env.VITE_LIVEKIT_URL || 'https://video.mediqzy.com')
-          .replace(/^wss:\/\//, 'https://')
-          .replace(/^ws:\/\//, 'http://')
-          .replace(/\/+$/, '')
-          .replace(/\/rooms?$/, '');
-        const doctorName = encodeURIComponent(`Dr.${currentDoctor?.firstName || 'Doctor'}`);
-        const videoUrl = `${LIVEKIT_BASE_URL}/rooms/${roomId}?name=${doctorName}`;
-        window.open(videoUrl, '_blank', 'width=1200,height=800');
+        navigate(`/doctor/video?room=${encodeURIComponent(String(roomId))}&appointmentId=${appointmentId}`);
       }
     } catch (error: any) {
       console.error('Error accepting call:', error);

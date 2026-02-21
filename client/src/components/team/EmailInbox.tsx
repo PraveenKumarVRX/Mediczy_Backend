@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { Mail, Star, Trash2, Archive, Clock, AlertCircle, CheckCircle, Settings } from 'lucide-react';
+import { Mail, Star, Trash2, Archive, Clock, AlertCircle, CheckCircle, Settings, Send, RefreshCw, X, Reply } from 'lucide-react';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
@@ -36,15 +36,25 @@ const EmailInbox: React.FC = () => {
   const [stats, setStats] = useState<InboxStats | null>(null);
   const [selectedEmail, setSelectedEmail] = useState<Email | null>(null);
   const [loading, setLoading] = useState(false);
+  const [syncing, setSyncing] = useState(false);
   const [page, setPage] = useState(1);
   const [unreadOnly, setUnreadOnly] = useState(false);
   const [searchTerm, setSearchTerm] = useState('');
-  const [filter, setFilter] = useState('all'); // all, appointment_request, test_result, etc.
+  const [folder, setFolder] = useState('inbox');
+  const [showSendModal, setShowSendModal] = useState(false);
+  const [sendLoading, setSendLoading] = useState(false);
+  const [sendData, setSendData] = useState({
+    to: '',
+    cc: '',
+    bcc: '',
+    subject: '',
+    htmlContent: ''
+  });
 
   useEffect(() => {
     fetchInbox();
     fetchStats();
-  }, [page, unreadOnly, filter]);
+  }, [page, unreadOnly, folder]);
 
   const fetchInbox = async () => {
     try {
@@ -54,6 +64,7 @@ const EmailInbox: React.FC = () => {
           page,
           limit: 20,
           unreadOnly,
+          folder,
           search: searchTerm
         }
       });
@@ -77,6 +88,82 @@ const EmailInbox: React.FC = () => {
     } catch (error) {
       console.error('Failed to fetch stats:', error);
     }
+  };
+
+  const syncEmails = async () => {
+    try {
+      setSyncing(true);
+      console.log('📧 Starting email sync...');
+      const response = await api.post('/team/emails/sync');
+      console.log('✅ Sync response:', response.data);
+      if (response.data.success) {
+        // Refresh inbox and stats after sync
+        await fetchInbox();
+        await fetchStats();
+        alert(`✅ Email sync successful! ${response.data.data.newEmails} new emails received.`);
+      }
+    } catch (error: any) {
+      console.error('❌ Sync failed:', {
+        status: error.response?.status,
+        data: error.response?.data,
+        message: error.message
+      });
+      const message = error.response?.data?.message || error.response?.data?.error || 'Failed to sync emails';
+      alert(`❌ Sync failed: ${message}`);
+    } finally {
+      setSyncing(false);
+    }
+  };
+
+  const sendEmail = async (e: React.FormEvent) => {
+    e.preventDefault();
+    
+    if (!sendData.to.trim() || !sendData.subject.trim() || !sendData.htmlContent.trim()) {
+      alert('Please fill in all required fields');
+      return;
+    }
+
+    try {
+      setSendLoading(true);
+      const response = await api.post('/team/emails/send', {
+        to: sendData.to.trim(),
+        cc: sendData.cc.trim() || undefined,
+        bcc: sendData.bcc.trim() || undefined,
+        subject: sendData.subject.trim(),
+        htmlContent: sendData.htmlContent.trim()
+      });
+
+      if (response.data.success) {
+        setShowSendModal(false);
+        setSendData({
+          to: '',
+          cc: '',
+          bcc: '',
+          subject: '',
+          htmlContent: ''
+        });
+        alert('✅ Email sent successfully!');
+        // Optionally refresh the inbox
+        await fetchInbox();
+      }
+    } catch (error: any) {
+      console.error('Failed to send email:', error);
+      const message = error.response?.data?.message || 'Failed to send email';
+      alert(`❌ Send failed: ${message}`);
+    } finally {
+      setSendLoading(false);
+    }
+  };
+
+  const startReply = (email: Email) => {
+    setSendData({
+      to: email.from,
+      cc: '',
+      bcc: '',
+      subject: email.subject?.toLowerCase().startsWith('re:') ? email.subject : `Re: ${email.subject}`,
+      htmlContent: `\n\n<hr/>\n<p><strong>On ${new Date(email.receivedAt).toLocaleString()}, ${email.fromName || email.from} wrote:</strong></p>\n<blockquote>${(email.body || '').replace(/\n/g, '<br/>')}</blockquote>`
+    });
+    setShowSendModal(true);
   };
 
   const markAsRead = async (emailId: string) => {
@@ -141,15 +228,16 @@ const EmailInbox: React.FC = () => {
 
   const getSentimentColor = (sentiment: string) => {
     const colors: Record<string, string> = {
-      positive: 'bg-green-50 border-green-200',
-      neutral: 'bg-gray-50 border-gray-200',
-      negative: 'bg-red-50 border-red-200'
+      positive: 'bg-green-500/10 border-green-500/20',
+      neutral: 'bg-muted/40 border-border',
+      negative: 'bg-red-500/10 border-red-500/20'
     };
-    return colors[sentiment] || 'bg-gray-50 border-gray-200';
+    return colors[sentiment] || 'bg-muted/40 border-border';
   };
 
   return (
-    <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+    <>
+      <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
       {/* Left Panel - Email List */}
       <div className="lg:col-span-2">
         <Card>
@@ -159,6 +247,25 @@ const EmailInbox: React.FC = () => {
               Email Inbox
             </CardTitle>
             <div className="flex gap-2">
+              <Button
+                variant="default"
+                size="sm"
+                onClick={() => setShowSendModal(true)}
+                className="flex items-center gap-2"
+              >
+                <Send className="w-4 h-4" />
+                Send Email
+              </Button>
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={syncEmails}
+                disabled={syncing}
+                className="flex items-center gap-2"
+              >
+                <RefreshCw className={`w-4 h-4 ${syncing ? 'animate-spin' : ''}`} />
+                {syncing ? 'Syncing...' : 'Sync Emails'}
+              </Button>
               <Button
                 variant={unreadOnly ? 'default' : 'outline'}
                 size="sm"
@@ -193,25 +300,25 @@ const EmailInbox: React.FC = () => {
                   setSearchTerm(e.target.value);
                   setPage(1);
                 }}
-                className="w-full px-3 py-2 border rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+                className="w-full px-3 py-2 border border-border bg-background text-foreground rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
               />
             </div>
 
-            {/* Filter Tabs */}
+            {/* Folder Tabs */}
             <div className="flex gap-2 mb-4 overflow-x-auto pb-2">
-              {['all', 'appointment_request', 'test_result', 'patient_query', 'prescription'].map(
+              {['inbox', 'sent', 'draft', 'spam', 'notifications'].map(
                 (f) => (
                   <Button
                     key={f}
-                    variant={filter === f ? 'default' : 'outline'}
+                    variant={folder === f ? 'default' : 'outline'}
                     size="sm"
                     onClick={() => {
-                      setFilter(f);
+                      setFolder(f);
                       setPage(1);
                     }}
                     className="whitespace-nowrap"
                   >
-                    {f === 'all' ? 'All' : f.replace(/_/g, ' ').toUpperCase()}
+                    {f.toUpperCase()}
                   </Button>
                 )
               )}
@@ -219,9 +326,9 @@ const EmailInbox: React.FC = () => {
 
             {/* Email List */}
             {loading ? (
-              <div className="text-center py-8 text-gray-500">Loading emails...</div>
+              <div className="text-center py-8 text-muted-foreground">Loading emails...</div>
             ) : emails.length === 0 ? (
-              <div className="text-center py-8 text-gray-500">No emails found</div>
+              <div className="text-center py-8 text-muted-foreground">No emails found</div>
             ) : (
               <div className="space-y-2">
                 {emails.map((email) => (
@@ -230,10 +337,10 @@ const EmailInbox: React.FC = () => {
                     onClick={() => selectEmail(email)}
                     className={`p-3 border rounded-lg cursor-pointer transition-colors ${
                       selectedEmail?.id === email.id
-                        ? 'bg-blue-50 border-blue-300'
+                        ? 'bg-blue-500/10 border-blue-500/30'
                         : email.isRead
-                        ? 'bg-white hover:bg-gray-50'
-                        : 'bg-blue-50 border-blue-100 font-semibold hover:bg-blue-100'
+                        ? 'bg-card hover:bg-muted/40 border-border'
+                        : 'bg-blue-500/10 border-blue-500/20 font-semibold hover:bg-blue-500/15'
                     }`}
                   >
                     <div className="flex items-start gap-3">
@@ -246,7 +353,7 @@ const EmailInbox: React.FC = () => {
                       >
                         <Star
                           className={`w-4 h-4 ${
-                            email.isStarred ? 'fill-yellow-400 text-yellow-400' : 'text-gray-300'
+                            email.isStarred ? 'fill-yellow-400 text-yellow-400' : 'text-muted-foreground'
                           }`}
                         />
                       </button>
@@ -255,7 +362,7 @@ const EmailInbox: React.FC = () => {
                         <div className="flex items-center gap-2 mb-1">
                           <span className="font-medium text-sm truncate">{email.fromName}</span>
                           {email.aiProcessed && (
-                            <span className="text-xs bg-green-100 text-green-800 px-2 py-0.5 rounded">
+                            <span className="text-xs bg-green-500/15 text-green-700 dark:text-green-300 px-2 py-0.5 rounded">
                               {getIntentIcon(email.aiIntent)}
                             </span>
                           )}
@@ -263,13 +370,13 @@ const EmailInbox: React.FC = () => {
                             {email.priority}
                           </Badge>
                         </div>
-                        <div className="text-sm text-gray-700 truncate mb-1">{email.subject}</div>
+                        <div className="text-sm text-foreground truncate mb-1">{email.subject}</div>
                         {email.aiSummary && (
-                          <div className="text-xs text-gray-500 truncate">{email.aiSummary}</div>
+                          <div className="text-xs text-muted-foreground truncate">{email.aiSummary}</div>
                         )}
                       </div>
 
-                      <div className="text-xs text-gray-500 whitespace-nowrap">
+                      <div className="text-xs text-muted-foreground whitespace-nowrap">
                         {new Date(email.receivedAt).toLocaleDateString()}
                       </div>
                     </div>
@@ -288,7 +395,7 @@ const EmailInbox: React.FC = () => {
               >
                 Previous
               </Button>
-              <span className="text-sm text-gray-600">Page {page}</span>
+              <span className="text-sm text-muted-foreground">Page {page}</span>
               <Button
                 variant="outline"
                 size="sm"
@@ -313,21 +420,21 @@ const EmailInbox: React.FC = () => {
               <div className="grid grid-cols-2 gap-2">
                 <div className="text-center">
                   <div className="text-2xl font-bold text-blue-600">{stats.total}</div>
-                  <div className="text-xs text-gray-600">Total Emails</div>
+                  <div className="text-xs text-muted-foreground">Total Emails</div>
                 </div>
                 <div className="text-center">
                   <div className="text-2xl font-bold text-red-600">{stats.unread}</div>
-                  <div className="text-xs text-gray-600">Unread</div>
+                  <div className="text-xs text-muted-foreground">Unread</div>
                 </div>
               </div>
 
               {Object.entries(stats.bySentiment).length > 0 && (
                 <div>
-                  <div className="text-xs font-semibold text-gray-700 mb-2">Sentiment</div>
+                  <div className="text-xs font-semibold text-foreground mb-2">Sentiment</div>
                   <div className="space-y-1 text-xs">
                     {Object.entries(stats.bySentiment).map(([sentiment, count]) => (
                       <div key={sentiment} className="flex justify-between">
-                        <span className="capitalize text-gray-600">{sentiment}:</span>
+                        <span className="capitalize text-muted-foreground">{sentiment}:</span>
                         <span className="font-semibold">{count}</span>
                       </div>
                     ))}
@@ -345,10 +452,13 @@ const EmailInbox: React.FC = () => {
               <CardTitle className="text-sm flex items-center justify-between">
                 <span>Email Details</span>
                 <div className="flex gap-2">
+                  <button onClick={() => startReply(selectedEmail)} title="Reply">
+                    <Reply className="w-4 h-4 text-blue-500" />
+                  </button>
                   <button onClick={() => toggleStar(selectedEmail.id)}>
                     <Star
                       className={`w-4 h-4 ${
-                        selectedEmail.isStarred ? 'fill-yellow-400 text-yellow-400' : 'text-gray-400'
+                        selectedEmail.isStarred ? 'fill-yellow-400 text-yellow-400' : 'text-muted-foreground'
                       }`}
                     />
                   </button>
@@ -361,17 +471,17 @@ const EmailInbox: React.FC = () => {
 
             <CardContent className="space-y-3">
               <div>
-                <div className="text-xs font-semibold text-gray-600 mb-1">From</div>
+                <div className="text-xs font-semibold text-muted-foreground mb-1">From</div>
                 <div className="text-sm">{selectedEmail.from}</div>
               </div>
 
               <div>
-                <div className="text-xs font-semibold text-gray-600 mb-1">Subject</div>
+                <div className="text-xs font-semibold text-muted-foreground mb-1">Subject</div>
                 <div className="text-sm font-semibold">{selectedEmail.subject}</div>
               </div>
 
               <div>
-                <div className="text-xs font-semibold text-gray-600 mb-1">Received</div>
+                <div className="text-xs font-semibold text-muted-foreground mb-1">Received</div>
                 <div className="text-sm">
                   {new Date(selectedEmail.receivedAt).toLocaleString()}
                 </div>
@@ -381,25 +491,25 @@ const EmailInbox: React.FC = () => {
               {selectedEmail.aiProcessed && (
                 <>
                   <div className="pt-3 border-t">
-                    <div className="text-xs font-semibold text-gray-600 mb-2">🤖 AI Analysis</div>
+                    <div className="text-xs font-semibold text-muted-foreground mb-2">🤖 AI Analysis</div>
                     
                     <div className="space-y-2">
                       <div>
-                        <span className="text-xs font-semibold text-gray-600">Intent: </span>
+                        <span className="text-xs font-semibold text-muted-foreground">Intent: </span>
                         <Badge variant="outline" className="text-xs">
                           {selectedEmail.aiIntent?.replace(/_/g, ' ').toUpperCase()}
                         </Badge>
                       </div>
 
                       <div>
-                        <span className="text-xs font-semibold text-gray-600">Sentiment: </span>
+                        <span className="text-xs font-semibold text-muted-foreground">Sentiment: </span>
                         <Badge variant="outline" className="text-xs">
                           {selectedEmail.aiSentiment}
                         </Badge>
                       </div>
 
                       <div>
-                        <span className="text-xs font-semibold text-gray-600">Priority: </span>
+                        <span className="text-xs font-semibold text-muted-foreground">Priority: </span>
                         <Badge variant={getPriorityColor(selectedEmail.priority)}>
                           {selectedEmail.priority}
                         </Badge>
@@ -407,8 +517,8 @@ const EmailInbox: React.FC = () => {
 
                       {selectedEmail.aiSummary && (
                         <div>
-                          <span className="text-xs font-semibold text-gray-600 block mb-1">Summary:</span>
-                          <p className="text-xs text-gray-700 bg-white p-2 rounded">
+                          <span className="text-xs font-semibold text-muted-foreground block mb-1">Summary:</span>
+                          <p className="text-xs text-foreground bg-background border border-border p-2 rounded">
                             {selectedEmail.aiSummary}
                           </p>
                         </div>
@@ -419,12 +529,12 @@ const EmailInbox: React.FC = () => {
                   {/* Auto Updates */}
                   {selectedEmail.autoUpdatesApplied?.length > 0 && (
                     <div className="pt-3 border-t">
-                      <div className="text-xs font-semibold text-gray-600 mb-2">✨ Auto Updates</div>
+                      <div className="text-xs font-semibold text-muted-foreground mb-2">✨ Auto Updates</div>
                       <div className="space-y-1">
                         {selectedEmail.autoUpdatesApplied.map((update, idx) => (
-                          <div key={idx} className="text-xs bg-white p-2 rounded">
-                            <div className="font-semibold text-gray-700">{update.type}</div>
-                            <div className="text-gray-600">{update.action}</div>
+                          <div key={idx} className="text-xs bg-background border border-border p-2 rounded">
+                            <div className="font-semibold text-foreground">{update.type}</div>
+                            <div className="text-muted-foreground">{update.action}</div>
                           </div>
                         ))}
                       </div>
@@ -435,8 +545,8 @@ const EmailInbox: React.FC = () => {
 
               {/* Email Body Preview */}
               <div className="pt-3 border-t">
-                <div className="text-xs font-semibold text-gray-600 mb-2">Preview</div>
-                <div className="text-xs text-gray-700 bg-white p-2 rounded max-h-48 overflow-y-auto">
+                <div className="text-xs font-semibold text-muted-foreground mb-2">Preview</div>
+                <div className="text-xs text-foreground bg-background border border-border p-2 rounded max-h-48 overflow-y-auto">
                   {selectedEmail.body}
                 </div>
               </div>
@@ -445,6 +555,121 @@ const EmailInbox: React.FC = () => {
         )}
       </div>
     </div>
+
+    {/* Send Email Modal */}
+    {showSendModal && (
+      <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
+        <Card className="w-full max-w-2xl max-h-[90vh] overflow-y-auto">
+          <CardHeader className="flex flex-row items-center justify-between sticky top-0 bg-background border-b border-border">
+            <CardTitle>Send Email</CardTitle>
+            <button
+              onClick={() => setShowSendModal(false)}
+              className="text-muted-foreground hover:text-foreground"
+            >
+              <X className="w-5 h-5" />
+            </button>
+          </CardHeader>
+
+          <CardContent className="pt-6">
+            <form onSubmit={sendEmail} className="space-y-4">
+              {/* To */}
+              <div>
+                <label className="block text-sm font-medium text-foreground mb-1">
+                  To *
+                </label>
+                <input
+                  type="email"
+                  required
+                  value={sendData.to}
+                  onChange={(e) => setSendData({ ...sendData, to: e.target.value })}
+                  placeholder="recipient@example.com"
+                  className="w-full px-3 py-2 border border-border bg-background text-foreground rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+                />
+              </div>
+
+              {/* CC */}
+              <div>
+                <label className="block text-sm font-medium text-foreground mb-1">
+                  CC
+                </label>
+                <input
+                  type="email"
+                  value={sendData.cc}
+                  onChange={(e) => setSendData({ ...sendData, cc: e.target.value })}
+                  placeholder="cc@example.com"
+                  className="w-full px-3 py-2 border border-border bg-background text-foreground rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+                />
+              </div>
+
+              {/* BCC */}
+              <div>
+                <label className="block text-sm font-medium text-foreground mb-1">
+                  BCC
+                </label>
+                <input
+                  type="email"
+                  value={sendData.bcc}
+                  onChange={(e) => setSendData({ ...sendData, bcc: e.target.value })}
+                  placeholder="bcc@example.com"
+                  className="w-full px-3 py-2 border border-border bg-background text-foreground rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+                />
+              </div>
+
+              {/* Subject */}
+              <div>
+                <label className="block text-sm font-medium text-foreground mb-1">
+                  Subject *
+                </label>
+                <input
+                  type="text"
+                  required
+                  value={sendData.subject}
+                  onChange={(e) => setSendData({ ...sendData, subject: e.target.value })}
+                  placeholder="Email subject"
+                  className="w-full px-3 py-2 border border-border bg-background text-foreground rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+                />
+              </div>
+
+              {/* Message Body */}
+              <div>
+                <label className="block text-sm font-medium text-foreground mb-1">
+                  Message *
+                </label>
+                <textarea
+                  required
+                  value={sendData.htmlContent}
+                  onChange={(e) => setSendData({ ...sendData, htmlContent: e.target.value })}
+                  placeholder="Email message content"
+                  rows={10}
+                  className="w-full px-3 py-2 border border-border bg-background text-foreground rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 font-mono"
+                />
+                <p className="text-xs text-muted-foreground mt-1">You can use HTML formatting in the message</p>
+              </div>
+
+              {/* Buttons */}
+              <div className="flex gap-2 justify-end pt-4 border-t">
+                <Button
+                  type="button"
+                  variant="outline"
+                  onClick={() => setShowSendModal(false)}
+                >
+                  Cancel
+                </Button>
+                <Button
+                  type="submit"
+                  disabled={sendLoading}
+                  className="flex items-center gap-2"
+                >
+                  <Send className="w-4 h-4" />
+                  {sendLoading ? 'Sending...' : 'Send Email'}
+                </Button>
+              </div>
+            </form>
+          </CardContent>
+        </Card>
+      </div>
+    )}
+  </>
   );
 };
 

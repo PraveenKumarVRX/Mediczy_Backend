@@ -3,6 +3,7 @@
 import React, { useRef, useState, useEffect } from 'react';
 import { Button } from '@/components/ui/button';
 import { useToast } from '@/components/ui/use-toast';
+import api from '@/utils/api';
 
 interface Medication {
   name: string;
@@ -172,26 +173,14 @@ export const AIScribeConsultation: React.FC<AIScribeConsultationProps> = ({
     setIsProcessing(true);
 
     try {
-      const response = await fetch('/api/ai/scribe/generate-prescription', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'Authorization': `Bearer ${localStorage.getItem('authToken') || ''}`,
-        },
-        body: JSON.stringify({
-          consultationNotes: transcript,
-          currentData: currentFormData,
-          appointmentId,
-          saveToDatabase: false,
-        }),
+      const response = await api.post('/ai/scribe/generate-prescription', {
+        consultationNotes: transcript,
+        currentData: currentFormData,
+        appointmentId,
+        saveToDatabase: false,
       });
 
-      if (!response.ok) {
-        const errorData = await response.json().catch(() => ({}));
-        throw new Error(errorData.error || errorData.message || 'Failed to generate prescription');
-      }
-
-      const result = await response.json();
+      const result = response.data;
 
       if (!result.success || !result.prescription) {
         throw new Error(result.message || 'Prescription generation failed');

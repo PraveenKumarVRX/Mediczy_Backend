@@ -24,8 +24,6 @@ const postgresSequelize = new Sequelize(database, username, password, {
       ? { rejectUnauthorized: false } 
       : false,
     connectTimeout: 10000,
-    statement_timeout: 30000,
-    idle_in_transaction_session_timeout: 60000,
   },
   logging: process.env.NODE_ENV === 'development' ? console.log : false,
   pool: {

@@ -150,7 +150,7 @@ const AIScribePrescription: React.FC<AIScribePrescriptionProps> = ({
 
     setIsProcessing(true);
     try {
-      const response = await api.post('/ai/generate-prescription', {
+      const response = await api.post('/ai/scribe/generate-prescription', {
         consultationNotes: transcript,
         sessionNotes: sessionNotes,
         existingData: currentData

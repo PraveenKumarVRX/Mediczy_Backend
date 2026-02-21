@@ -27,6 +27,15 @@ class OmnichannelChatService {
     this.authToken = null;
     this.userId = null;
     
+    // Webhook processing lock: prevents concurrent processing of same message
+    // Key: dedup key, Value: Promise that resolves when processing completes
+    this.webhookProcessingLocks = new Map();
+    
+    // Deduplication cache: tracks recently processed webhook messages (within 30 seconds)
+    // Key: hash(messageId + tmid), Value: timestamp
+    this.recentWebhookCalls = new Map();
+    this.webhookDeduplicationWindow = 30000; // 30 seconds
+    
     // Department mapping for routing
     this.departments = {
       general: 'General Support',
@@ -619,7 +628,27 @@ class OmnichannelChatService {
    * @param {Object} webhookData - RocketChat webhook payload
    */
   async sendToWhatsApp(webhookData) {
-    const { room, message } = webhookData;
+    const { room, message, text, channel_name, tmid, message_id } = webhookData;
+    
+    console.log('📤 [sendToWhatsApp] Processing webhook:', {
+      hasRoom: !!room,
+      hasMessage: !!message,
+      hasText: !!text,
+      channelName: channel_name,
+      tmid: tmid,
+      messageId: message_id,
+      messageUser: message?.u?.username,
+      messageType: message?.u?.type,
+      messageToken: !!message?.token,
+      roomVisitor: !!room?.v
+    });
+    
+    // IMPORTANT: Only process replies in threads (messages with tmid)
+    // This ensures we only send messages to WhatsApp if they're replies to visitor messages
+    if (!tmid) {
+      console.log('⏭️ [sendToWhatsApp] Skipping non-threaded message from #general. Only thread replies (tmid) are sent to WhatsApp');
+      return { success: true, skipped: true, reason: 'not_a_thread_reply' };
+    }
     
     // Only process agent messages (not visitor messages)
     const isVisitorMessage = !!message?.token && (
@@ -630,55 +659,292 @@ class OmnichannelChatService {
       || message?.u?.name === room?.v?.name
     );
     if (isVisitorMessage) {
+      console.log('⏭️ [sendToWhatsApp] Skipping visitor message');
       return { success: true, skipped: true };
     }
     
+    // Declare lock variables early so they're accessible in finally block
+    let dedupeKey = null;
+    let lockKey = null;
+    let lockTTL = 30; // 30 seconds for Redis lock
+    let lockAcquired = false; // Track if lock was successfully acquired
+    
     try {
       // Get visitor info to find WhatsApp number
-      const visitor = room.v;
-      const rawPhone = visitor?.phone?.[0]?.phoneNumber
+      const visitor = room?.v;
+      let rawPhone = visitor?.phone?.[0]?.phoneNumber
         || visitor?.phone?.[0]?.value
         || visitor?.phoneNumber
         || visitor?.phone;
+      
+      // Use message text if available (from webhook payload)
+      const messageText = message?.msg || text || '';
+
+      console.log('📞 [sendToWhatsApp] Phone extraction:', {
+        hasVisitor: !!visitor,
+        rawPhone: rawPhone,
+        visitorPhone: visitor?.phone,
+        roomName: room?.name,
+        channelName: channel_name,
+        messageTextSnippet: messageText.substring(0, 80)
+      });
+
+      // If no direct phone and we have a thread ID (tmid), fetch parent message
+      // to extract phone from the original incoming message
+      if (!rawPhone && tmid) {
+        console.log('📝 [sendToWhatsApp] No direct phone, fetching parent message from thread:', tmid);
+        try {
+          const parentMessage = await this.getThreadParentMessage(channel_name, tmid);
+          if (parentMessage) {
+            console.log('📝 [sendToWhatsApp] Parent message text:', parentMessage.substring(0, 100));
+            const phoneMatch = parentMessage.match(/\((\+\d+)\)/);
+            if (phoneMatch && phoneMatch[1]) {
+              rawPhone = phoneMatch[1];
+              console.log('✅ [sendToWhatsApp] Extracted phone from parent message:', rawPhone);
+            }
+          }
+        } catch (error) {
+          console.error('❌ [sendToWhatsApp] Failed to fetch parent message:', error.message);
+        }
+      }
+
+      // Fallback: Extract phone from message text format
+      // Format: "📱 WhatsApp Message from Name (Patient ID: 123) (+917373007737)"
+      if (!rawPhone) {
+        console.log('📞 [sendToWhatsApp] Trying to extract phone from message...');
+        const phoneMatch = messageText.match(/\((\+\d+)\)/);
+        if (phoneMatch && phoneMatch[1]) {
+          rawPhone = phoneMatch[1];
+          console.log('✅ [sendToWhatsApp] Extracted phone from message:', rawPhone);
+        }
+      }
 
       if (!rawPhone) {
-        console.log('No WhatsApp number for visitor');
+        console.log('❌ [sendToWhatsApp] No WhatsApp number found');
         return { success: false, error: 'No WhatsApp number' };
       }
 
-      const whatsappNumber = this.normalizeWhatsAppNumber(rawPhone);
-      const messageText = message?.msg || '';
+      // Normalize phone early for use throughout function
+      const normPhone = this.normalizeWhatsAppNumber(rawPhone);
 
-      // Prefer production Twilio session messaging for live replies.
+      // DEDUPLICATION: Use Redis-based processing lock to prevent concurrent processing across cluster
+      // This prevents multiple PM2 processes from processing the same message simultaneously
+      dedupeKey = this.getWebhookDedupeKey(message_id, tmid);
+      lockKey = `webhook-lock:${dedupeKey}`;
+      const lockValue = Date.now().toString();
+      
+      // Try to acquire lock in Redis to prevent concurrent processing using ATOMIC SET NX
+      let lockAcquired = false;
       try {
-        const whatsappProductionService = (await import('./whatsapp-production.service.js')).default;
-        if (whatsappProductionService?.sendSessionMessage) {
-          await whatsappProductionService.sendSessionMessage({
-            to: whatsappNumber,
-            body: messageText
-          });
+        // Use atomic SET command with NX (only set if doesn't exist) and EX (set expiration)
+        // This is atomic at the Redis server level - no race condition
+        // Returns 'OK' if set successfully, null if key already exists
+        const setResult = await cache.set(lockKey, lockValue, 'EX', lockTTL, 'NX');
+        
+        if (setResult === 'OK') {
+          lockAcquired = true;
+          console.log('🔒 [sendToWhatsApp] Acquired Redis processing lock (atomic NX):', dedupeKey.substring(0, 8) + '...');
         } else {
-          throw new Error('WhatsApp production service unavailable');
+          console.log('⏭️  [sendToWhatsApp] Message already being processed by another cluster process (lock held), skipping:', { message_id, tmid, phone: normPhone });
+          return { success: true, skipped: true, reason: 'already_processing_redis_atomic' };
         }
-      } catch (productionError) {
-        // Fallback to the generic WhatsApp service when production is unavailable.
-        const whatsappService = (await import('./whatsapp.service.js')).default;
-        await whatsappService.sendMessage({
-          to: whatsappNumber,
-          content: messageText,
-          type: 'text'
+      } catch (atomicError) {
+        // If atomic SET NX fails, try fallback: GET then SET (non-atomic but works on older Redis)
+        console.warn('⚠️  [sendToWhatsApp] Atomic SET NX failed, trying GET+SET fallback:', atomicError.message);
+        
+        try {
+          const existingLock = await cache.getAsync(lockKey);
+          
+          if (existingLock) {
+            console.log('⏭️  [sendToWhatsApp] Message already being processed (GET+SET fallback), skipping');
+            return { success: true, skipped: true, reason: 'already_processing_fallback_get_set' };
+          }
+          
+          // Set lock with TTL
+          await cache.setAsync(lockKey, lockValue, 'EX', lockTTL);
+          lockAcquired = true;
+          console.log('🔒 [sendToWhatsApp] Acquired Redis processing lock (GET+SET fallback)');
+        } catch (fallbackError) {
+          // If Redis completely fails, use in-memory lock as last resort
+          console.warn('⚠️  [sendToWhatsApp] GET+SET fallback also failed, using in-memory lock:', fallbackError.message);
+          
+          if (this.webhookProcessingLocks.has(dedupeKey)) {
+            console.log('⏭️  [sendToWhatsApp] Message already being processed (in-memory lock), skipping');
+            return { success: true, skipped: true, reason: 'already_processing_inmemory' };
+          }
+          
+          this.webhookProcessingLocks.set(dedupeKey, true);
+          lockAcquired = true;
+        }
+      }
+      
+      // Record in recent calls cache for post-processing safeguard
+      this.recordWebhookCall(dedupeKey);
+
+      try {
+        console.log('✅ [sendToWhatsApp] Sending to WhatsApp:', {
+          to: normPhone,
+          bodyLength: messageText.length,
+          bodySnippet: messageText.substring(0, 50)
         });
+
+        // Prefer production Twilio session messaging for live replies.
+        try {
+          const whatsappProductionService = (await import('./whatsapp-production.service.js')).default;
+          if (whatsappProductionService?.sendSessionMessage) {
+            await whatsappProductionService.sendSessionMessage({
+              to: normPhone,
+              body: messageText
+            });
+          } else {
+            throw new Error('WhatsApp production service unavailable');
+          }
+        } catch (productionError) {
+          // Fallback to the generic WhatsApp service when production is unavailable.
+          const whatsappService = (await import('./whatsapp.service.js')).default;
+          await whatsappService.sendMessage({
+            to: normPhone,
+            content: messageText,
+            type: 'text'
+          });
+        }
+
+        await this.setHandoffState(normPhone, {
+          reason: 'agent_message',
+          source: 'rocketchat'
+        });
+
+        console.log('✅ [sendToWhatsApp] Message sent successfully');
+        return { success: true };
+      } catch (error) {
+        console.error('Send to WhatsApp error:', error);
+        return { success: false, error: error.message };
+      } finally {
+        // Release locks only if they were acquired
+        if (lockAcquired && lockKey) {
+          try {
+            await cache.del(lockKey);
+            console.log('🔓 [sendToWhatsApp] Released Redis processing lock');
+          } catch (redisError) {
+            console.warn('⚠️  [sendToWhatsApp] Failed to release Redis lock:', redisError.message);
+          }
+        }
+        
+        if (dedupeKey && this.webhookProcessingLocks.has(dedupeKey)) {
+          this.webhookProcessingLocks.delete(dedupeKey);
+        }
+      }
+    } catch (error) {
+      console.error('Send to WhatsApp outer error:', error);
+      return { success: false, error: error.message };
+    }
+  }
+
+  /**
+   * Fetch parent message from RocketChat thread using tmid
+   * Used to extract phone number from original incoming message
+   */
+  async getThreadParentMessage(channelName, tmid) {
+    try {
+      const ROCKETCHAT_AUTH_TOKEN = process.env.ROCKETCHAT_AUTH_TOKEN;
+      const ROCKETCHAT_USER_ID = process.env.ROCKETCHAT_USER_ID;
+      const ROCKETCHAT_URL = process.env.ROCKETCHAT_URL || 'http://localhost:3100';
+
+      if (!ROCKETCHAT_AUTH_TOKEN || !ROCKETCHAT_USER_ID) {
+        console.error('❌ [getThreadParentMessage] Missing RocketChat auth credentials');
+        return null;
       }
 
-      await this.setHandoffState(whatsappNumber, {
-        reason: 'agent_message',
-        source: 'rocketchat'
+      // Try to fetch the specific message by ID (which is the tmid - thread message ID)
+      const response = await fetch(`${ROCKETCHAT_URL}/api/v1/chat.getMessage?msgId=${tmid}`, {
+        method: 'GET',
+        headers: {
+          'X-Auth-Token': ROCKETCHAT_AUTH_TOKEN,
+          'X-User-Id': ROCKETCHAT_USER_ID,
+          'Content-Type': 'application/json'
+        }
       });
 
-      return { success: true };
+      if (!response.ok) {
+        console.error('❌ [getThreadParentMessage] chat.getMessage API response not ok:', response.status);
+        
+        // Fallback: Try to fetch channel messages and find parent
+        const messagesResponse = await fetch(`${ROCKETCHAT_URL}/api/v1/channels.messages?roomName=${channelName}&count=50&sort={"ts":-1}`, {
+          method: 'GET',
+          headers: {
+            'X-Auth-Token': ROCKETCHAT_AUTH_TOKEN,
+            'X-User-Id': ROCKETCHAT_USER_ID,
+            'Content-Type': 'application/json'
+          }
+        });
+
+        if (messagesResponse.ok) {
+          const data = await messagesResponse.json();
+          if (data.messages && data.messages.length > 0) {
+            // Find message with ID matching tmid
+            const parentMsg = data.messages.find(m => m._id === tmid);
+            if (parentMsg) {
+              console.log('📝 [getThreadParentMessage] Found parent via fallback:', parentMsg.msg?.substring?.(0, 50));
+              return parentMsg.msg;
+            }
+          }
+        }
+        return null;
+      }
+
+      const msgData = await response.json();
+      if (msgData.message) {
+        console.log('📝 [getThreadParentMessage] Found parent message:', msgData.message.msg?.substring?.(0, 50));
+        return msgData.message.msg;
+      }
+
+      console.log('⚠️  [getThreadParentMessage] No message data returned');
+      return null;
     } catch (error) {
-      console.error('Send to WhatsApp error:', error);
-      return { success: false, error: error.message };
+      console.error('❌ [getThreadParentMessage] Error:', error.message);
+      return null;
+    }
+  }
+
+  /**
+   * Get deduplication key for webhook message
+   * Hash of: message_id + tmid (unique per message)
+   */
+  getWebhookDedupeKey(messageId, tmid) {
+    const key = `${messageId}:${tmid}`;
+    return crypto.createHash('md5').update(key).digest('hex');
+  }
+
+  /**
+   * Check if webhook call was already processed recently
+   */
+  isRecentWebhookCall(dedupeKey) {
+    const now = Date.now();
+    const lastCall = this.recentWebhookCalls.get(dedupeKey);
+    
+    if (!lastCall) return false;
+    
+    const timeSinceLastCall = now - lastCall;
+    const isRecent = timeSinceLastCall < this.webhookDeduplicationWindow;
+    
+    return isRecent;
+  }
+
+  /**
+   * Record a webhook call for deduplication
+   */
+  recordWebhookCall(dedupeKey) {
+    const now = Date.now();
+    this.recentWebhookCalls.set(dedupeKey, now);
+    
+    // Cleanup old entries every 100 calls
+    if (this.recentWebhookCalls.size > 100) {
+      const oldestAllowed = now - this.webhookDeduplicationWindow;
+      for (const [key, timestamp] of this.recentWebhookCalls.entries()) {
+        if (timestamp < oldestAllowed) {
+          this.recentWebhookCalls.delete(key);
+        }
+      }
     }
   }
 

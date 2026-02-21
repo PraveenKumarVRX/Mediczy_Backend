@@ -403,7 +403,7 @@ const ConsultationRecorder: React.FC<ConsultationRecorderProps> = ({
     setProcessingStage('analyzing');
 
     try {
-      const response = await api.post('/ai/generate-prescription', {
+      const response = await api.post('/ai/scribe/generate-prescription', {
         consultationNotes: transcript,
         sessionNotes: transcript.split('. ').filter(s => s.trim()),
         existingData: {},

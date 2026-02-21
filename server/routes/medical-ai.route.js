@@ -132,6 +132,7 @@ router.post('/test', async (req, res) => {
 router.post('/consult', authUser, async (req, res) => {
   try {
     const { query, language = 'en', userContext = {}, sessionId: requestedSessionId } = req.body;
+    const isEmergencyMode = Boolean(userContext?.emergencyMode);
 
     if (!query) {
       return res.status(400).json({
@@ -144,10 +145,12 @@ router.post('/consult', authUser, async (req, res) => {
     const sessionId = requestedSessionId || userContext.sessionId || `mediczy_${req.user.id}`;
 
     let dbContext = null;
-    try {
-      dbContext = await whatsAppUserContextService.getFullUserContextByUserId(req.user.id);
-    } catch (contextError) {
-      console.warn('⚠️ Failed to load user context for Dr. iSHA:', contextError.message);
+    if (!isEmergencyMode) {
+      try {
+        dbContext = await whatsAppUserContextService.getFullUserContextByUserId(req.user.id);
+      } catch (contextError) {
+        console.warn('⚠️ Failed to load user context for Dr. iSHA:', contextError.message);
+      }
     }
 
     // Add user info to context
@@ -158,20 +161,40 @@ router.post('/consult', authUser, async (req, res) => {
       userName: req.user.firstName || 'Patient'
     };
 
-    const sibResponse = await fetch(`${SIB_URL}/chat`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        patient_id: sessionId,
-        message: query,
-        language,
-        patient_data: {
-          ...enhancedContext,
-          channel: 'web',
-          patientData: dbContext || undefined
-        }
-      })
-    });
+    const timeoutMs = isEmergencyMode ? 15000 : 30000;
+    const controller = new AbortController();
+    const timeoutHandle = setTimeout(() => controller.abort(), timeoutMs);
+
+    let sibResponse;
+    try {
+      sibResponse = await fetch(`${SIB_URL}/chat`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        signal: controller.signal,
+        body: JSON.stringify({
+          patient_id: sessionId,
+          message: query,
+          language,
+          patient_data: {
+            ...enhancedContext,
+            channel: 'web',
+            patientData: dbContext || undefined
+          }
+        })
+      });
+    } catch (fetchError) {
+      if (fetchError.name === 'AbortError') {
+        return res.status(504).json({
+          success: false,
+          error: 'Consultation timed out. Please try a shorter message.',
+          provider: 'sib-fastapi',
+          timeoutMs
+        });
+      }
+      throw fetchError;
+    } finally {
+      clearTimeout(timeoutHandle);
+    }
 
     if (!sibResponse.ok) {
       const errorText = await sibResponse.text().catch(() => '');

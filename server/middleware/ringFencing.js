@@ -182,7 +182,8 @@ const USER_TYPE_PERMISSIONS = {
       '/api/corporates',
       '/api/plans',
       '/api/activity-log',
-      '/api/chat'
+      '/api/chat',
+      '/api/email-settings'  // Team members can configure email settings
     ],
     tokenField: 'teamId'
   },

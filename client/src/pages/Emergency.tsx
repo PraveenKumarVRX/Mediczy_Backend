@@ -307,6 +307,34 @@ const Emergency = () => {
   // Socket.IO States for call notifications
   const [isSocketConnected, setIsSocketConnected] = useState(false);
   const [waitingForDoctor, setWaitingForDoctor] = useState(false);
+
+  const parseLegacyRoomIdFromUrl = (joinUrl?: string) => {
+    if (!joinUrl) return '';
+    try {
+      const parsed = new URL(joinUrl);
+      if (!parsed.pathname.startsWith('/rooms/')) return '';
+      return parsed.pathname.split('/rooms/')[1]?.split('/')[0] || '';
+    } catch {
+      return '';
+    }
+  };
+
+  const isLegacyRoomJoinUrl = (joinUrl?: string) => {
+    if (!joinUrl) return false;
+    try {
+      const parsed = new URL(joinUrl);
+      return parsed.hostname.includes('video.mediqzy.com') && parsed.pathname.startsWith('/rooms/');
+    } catch {
+      return false;
+    }
+  };
+
+  const buildInAppVideoUrl = (roomId?: string, appointmentId?: string) => {
+    const params = new URLSearchParams();
+    if (roomId) params.set('room', roomId);
+    if (appointmentId) params.set('appointmentId', String(appointmentId));
+    return `/video-consultation?${params.toString()}`;
+  };
   
   // Refs for media
   const mediaRecorderRef = useRef<MediaRecorder | null>(null);
@@ -467,6 +495,13 @@ const Emergency = () => {
 
       // Auto-join the video room
       if (videoCallInfo?.joinUrl) {
+        if (isLegacyRoomJoinUrl(videoCallInfo.joinUrl)) {
+          const fallbackRoomId = videoCallInfo.roomId || parseLegacyRoomIdFromUrl(videoCallInfo.joinUrl);
+          const inAppUrl = buildInAppVideoUrl(fallbackRoomId, videoCallInfo.appointmentId);
+          window.location.assign(inAppUrl);
+          return;
+        }
+
         setShowEmbeddedVideoCall(true);
         // Scroll to video section
         setTimeout(() => {
@@ -803,7 +838,7 @@ const Emergency = () => {
     try {
       // Build context from chat history
       const chatContext = triageChatMessages
-        .slice(-6) // Last 6 messages for context
+        .slice(-3) // Keep context short for faster emergency responses
         .map(m => `${m.role === 'user' ? 'Patient' : 'Dr. iSHA'}: ${m.content}`)
         .join('\n');
 
@@ -823,60 +858,26 @@ AUDIO AI CONTEXT:
 - Speaker: Patient/Caregiver
 ` : '';
 
-      // Advanced triage system prompt with safety constraints
-      const triageQuery = `EMERGENCY TRIAGE CONSULTATION - MULTIMODAL AI ASSESSMENT
+      const triageQuery = `EMERGENCY TRIAGE - FAST MODE
 
-=== SYSTEM CONSTRAINTS (NON-NEGOTIABLE) ===
-You are Dr. iSHA, a medical situation awareness assistant.
-You assist licensed medical professionals and patients.
-You provide preliminary assessment only - NOT final diagnosis.
-Always express uncertainty clearly.
-If data is insufficient, say so.
+    Role: Dr. iSHA, preliminary triage assistant (not final diagnosis).
 
-=== PATIENT INPUT ===
-${chatContext ? `Previous conversation:\n${chatContext}\n` : ''}
-Current message: ${content}
-${visionContext}
-${audioContext}
-${userLocation ? `Location: ${userLocation.lat.toFixed(4)}, ${userLocation.lng.toFixed(4)}` : ''}
+    Patient context:
+    ${chatContext ? `Recent chat:\n${chatContext}\n` : ''}
+    Current message: ${content}
+    ${visionContext}
+    ${audioContext}
+    ${userLocation ? `Location: ${userLocation.lat.toFixed(4)}, ${userLocation.lng.toFixed(4)}` : ''}
 
-=== SCENE SUMMARIZATION PROTOCOL ===
-Analyze the current emergency situation:
-- Patient observable status (posture, movement, breathing if visible)
-- Symptoms described and their severity
-- Environmental factors
-- Time-based changes from conversation history
-- Risk escalation indicators
+    Reply in this exact structure only:
+    1) 🔴 URGENCY ASSESSMENT: IMMEDIATE / URGENT / LESS URGENT
+    2) 📋 Scene Overview (max 3 bullets)
+    3) 🩺 Clinical Observations (max 3 bullets)
+    4) 🏥 Immediate Actions (numbered, max 5)
+    5) ⚠️ Warning Signs (max 5)
+    6) 📞 Emergency Services Recommendation: YES/NO + one-line reason
 
-=== RESPONSE FORMAT ===
-
-**🔴 URGENCY ASSESSMENT:** [IMMEDIATE / URGENT / LESS URGENT]
-
-**📋 Scene Overview:**
-[2-3 bullet points on current situation]
-
-**🩺 Clinical Observations:**
-[What symptoms/signs are reported or observed]
-
-**💊 Recommended Medications:** (if appropriate for symptoms)
-[Specific OTC medications with dosages - e.g., Paracetamol 500mg]
-
-**🏥 Immediate Actions:**
-[Clear steps patient should take NOW]
-
-**⚠️ Warning Signs - Seek Emergency Care If:**
-[Red flags that require 108/911]
-
-**📞 Emergency Services Recommendation:**
-[Clear YES/NO with reasoning]
-
-=== SAFETY FALLBACK ===
-If information is unclear or inconsistent:
-- State limitations clearly
-- Avoid conclusions
-- Recommend human/professional confirmation
-
-Respond with empathy, clarity, and clinical precision.`;
+    Keep concise, practical, and safe.`;
 
       const response = await drIshaAPI.consult(
         triageQuery,
@@ -1124,6 +1125,13 @@ Hello, I'm Dr. iSHA, your AI emergency medical assistant powered by multimodal i
   // Join video call - show embedded experience with AI features
   const joinVideoCall = () => {
     if (videoCallInfo?.joinUrl) {
+      if (isLegacyRoomJoinUrl(videoCallInfo.joinUrl)) {
+        const fallbackRoomId = videoCallInfo.roomId || parseLegacyRoomIdFromUrl(videoCallInfo.joinUrl);
+        const inAppUrl = buildInAppVideoUrl(fallbackRoomId, videoCallInfo.appointmentId);
+        window.location.assign(inAppUrl);
+        return;
+      }
+
       setShowEmbeddedVideoCall(true);
       startAIFeatures();
     }
@@ -1132,6 +1140,13 @@ Hello, I'm Dr. iSHA, your AI emergency medical assistant powered by multimodal i
   // Open video in new tab (fallback)
   const openVideoInNewTab = () => {
     if (videoCallInfo?.joinUrl) {
+      if (isLegacyRoomJoinUrl(videoCallInfo.joinUrl)) {
+        const fallbackRoomId = videoCallInfo.roomId || parseLegacyRoomIdFromUrl(videoCallInfo.joinUrl);
+        const inAppUrl = buildInAppVideoUrl(fallbackRoomId, videoCallInfo.appointmentId);
+        window.open(inAppUrl, '_blank');
+        return;
+      }
+
       window.open(videoCallInfo.joinUrl, '_blank');
     }
   };

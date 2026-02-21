@@ -1,5 +1,6 @@
 import { useState, useEffect, useMemo } from "react";
 import { useNavigate } from "react-router-dom";
+import { useQueryClient } from "@tanstack/react-query";
 import {
   Search,
   Filter,
@@ -353,6 +354,7 @@ const normalizeMasterDoctor = (doc: any): Doctor => {
 };
 
 const DoctorListBooking = () => {
+  const queryClient = useQueryClient();
   const [doctors, setDoctors] = useState<Doctor[]>([]);
   const [filteredDoctors, setFilteredDoctors] = useState<Doctor[]>([]);
   const [loading, setLoading] = useState(true);
@@ -760,9 +762,9 @@ const DoctorListBooking = () => {
     const lastInitial = doctor.lastName?.[0] ?? "";
 
     return (
-      <Card 
-        key={doctor._id} 
-        className="overflow-hidden border-0 shadow-lg hover:shadow-xl transition-all duration-300 bg-white group"
+      <Card
+        key={doctor._id}
+        className="overflow-hidden border-0 shadow-lg hover:shadow-xl transition-all duration-300 bg-white dark:bg-gray-900 group"
       >
         <div className={cn(
           "h-1.5 bg-gradient-to-r",
@@ -820,7 +822,7 @@ const DoctorListBooking = () => {
                 </div>
               </div>
 
-              <div className="flex items-center gap-2 mb-4 text-sm text-gray-500">
+              <div className="flex items-center gap-2 mb-4 text-sm text-gray-500 dark:text-gray-400">
                 <Languages className="h-4 w-4" />
                 <span>Speaks: {doctor.languages.join(", ")}</span>
               </div>
@@ -879,7 +881,12 @@ const DoctorListBooking = () => {
     try {
       setIsSubmitting(true);
 
-      const normalizedTime = toBackendTime(selectedTime);
+      // Extract start time from range if needed (e.g., "20:00 - 20:15" -> "20:00")
+      const startTimeOnly = selectedTime.includes('-') 
+        ? selectedTime.split('-')[0].trim() 
+        : selectedTime;
+      
+      const normalizedTime = toBackendTime(startTimeOnly);
       if (!normalizedTime) {
         toast({
           title: "Invalid time",
@@ -941,6 +948,9 @@ const DoctorListBooking = () => {
       // First, create the appointment
       const response = await api.post("/mobile/appointments", bookingData);
       const appointmentId = response.data?.appointment?.id;
+
+      // Invalidate appointments query to refresh the list
+      queryClient.invalidateQueries({ queryKey: ["enhancedAppointments"] });
 
       // If paying with Health Coins, process HC payment
       if (paymentMethod === "hc" && appointmentId && hcCalculation?.canPay) {
@@ -1219,7 +1229,7 @@ const DoctorListBooking = () => {
                     <div className="w-20 h-20 bg-gradient-to-br from-blue-100 to-green-100 rounded-full flex items-center justify-center mx-auto">
                       <Stethoscope className="h-10 w-10 text-blue-600" />
                     </div>
-                    <h3 className="text-xl font-bold text-gray-900">No doctors found</h3>
+                    <h3 className="text-xl font-bold text-gray-900 dark:text-gray-100">No doctors found</h3>
                     <p className="text-gray-500 max-w-sm mx-auto">
                       Try adjusting your search criteria or browse all available doctors
                     </p>
@@ -1249,16 +1259,16 @@ const DoctorListBooking = () => {
                     return (
                       <section
                         key={category.id}
-                        className="bg-white border border-gray-100 rounded-3xl shadow-lg p-6"
+                        className="bg-white dark:bg-gray-900 border border-gray-100 dark:border-gray-800 rounded-3xl shadow-lg p-6"
                       >
                         <div className="flex flex-wrap items-center justify-between gap-4">
                           <div className="flex items-center gap-3">
-                            <div className="w-12 h-12 rounded-2xl bg-gray-50 flex items-center justify-center">
+                            <div className="w-12 h-12 rounded-2xl bg-gray-50 dark:bg-gray-800 flex items-center justify-center">
                               <Icon className={cn("h-5 w-5", category.color)} />
                             </div>
                             <div>
-                              <p className="text-sm text-gray-500">Specialists</p>
-                              <h3 className="text-xl font-semibold text-gray-900">{category.label}</h3>
+                              <p className="text-sm text-gray-500 dark:text-gray-400">Specialists</p>
+                              <h3 className="text-xl font-semibold text-gray-900 dark:text-gray-100">{category.label}</h3>
                             </div>
                           </div>
                           <div className="flex items-center gap-3">
@@ -1287,15 +1297,15 @@ const DoctorListBooking = () => {
                   })}
 
                   {categorizedDoctors.uncategorized.length > 0 && (
-                    <section className="bg-white border border-gray-100 rounded-3xl shadow-lg p-6">
+                    <section className="bg-white dark:bg-gray-900 border border-gray-100 dark:border-gray-800 rounded-3xl shadow-lg p-6">
                       <div className="flex flex-wrap items-center justify-between gap-4">
                         <div className="flex items-center gap-3">
-                          <div className="w-12 h-12 rounded-2xl bg-gray-50 flex items-center justify-center">
+                          <div className="w-12 h-12 rounded-2xl bg-gray-50 dark:bg-gray-800 flex items-center justify-center">
                             <Zap className="h-5 w-5 text-blue-600" />
                           </div>
                           <div>
-                            <p className="text-sm text-gray-500">Additional Specialists</p>
-                            <h3 className="text-xl font-semibold text-gray-900">Other Categories</h3>
+                            <p className="text-sm text-gray-500 dark:text-gray-400">Additional Specialists</p>
+                            <h3 className="text-xl font-semibold text-gray-900 dark:text-gray-100">Other Categories</h3>
                           </div>
                         </div>
                         <Badge variant="secondary" className="rounded-full px-4">
@@ -1315,7 +1325,7 @@ const DoctorListBooking = () => {
                     <div className="w-20 h-20 bg-gradient-to-br from-blue-100 to-green-100 rounded-full flex items-center justify-center mx-auto">
                       <Stethoscope className="h-10 w-10 text-blue-600" />
                     </div>
-                    <h3 className="text-xl font-bold text-gray-900">No categories to show</h3>
+                    <h3 className="text-xl font-bold text-gray-900 dark:text-gray-100">No categories to show</h3>
                     <p className="text-gray-500 max-w-sm mx-auto">
                       Try adjusting your filters or search text to discover doctors in each category.
                     </p>
@@ -1339,7 +1349,7 @@ const DoctorListBooking = () => {
 
         {/* Booking Modal */}
         <Dialog open={showBookingModal} onOpenChange={setShowBookingModal}>
-          <DialogContent className="max-w-4xl max-h-[90vh] overflow-y-auto">
+          <DialogContent className="max-w-4xl max-h-[90vh] overflow-y-auto bg-white dark:bg-gray-900">
             <DialogHeader className="pb-4 border-b">
               <DialogTitle className="text-xl flex items-center gap-2">
                 <Calendar className="h-5 w-5 text-blue-600" />
@@ -1350,44 +1360,44 @@ const DoctorListBooking = () => {
               <div className="flex items-center justify-center gap-2 mt-4">
                 <div className={cn(
                   "flex items-center gap-2 px-3 py-1.5 rounded-full text-sm font-medium transition-all",
-                  consultationType ? "bg-blue-100 text-blue-700" : "bg-gray-100 text-gray-400"
+                  consultationType ? "bg-blue-100 dark:bg-blue-900/30 text-blue-700 dark:text-blue-300" : "bg-gray-100 dark:bg-gray-800 text-gray-400 dark:text-gray-500"
                 )}>
                   <div className={cn(
                     "w-6 h-6 rounded-full flex items-center justify-center text-xs font-bold",
-                    consultationType ? "bg-blue-600 text-white" : "bg-gray-300 text-gray-600"
+                    consultationType ? "bg-blue-600 text-white" : "bg-gray-300 dark:bg-gray-700 text-gray-600 dark:text-gray-300"
                   )}>1</div>
                   <span>Type</span>
                 </div>
                 <div className="h-0.5 w-8 bg-gray-200"></div>
                 <div className={cn(
                   "flex items-center gap-2 px-3 py-1.5 rounded-full text-sm font-medium transition-all",
-                  selectedDate && selectedTime ? "bg-blue-100 text-blue-700" : "bg-gray-100 text-gray-400"
+                  selectedDate && selectedTime ? "bg-blue-100 dark:bg-blue-900/30 text-blue-700 dark:text-blue-300" : "bg-gray-100 dark:bg-gray-800 text-gray-400 dark:text-gray-500"
                 )}>
                   <div className={cn(
                     "w-6 h-6 rounded-full flex items-center justify-center text-xs font-bold",
-                    selectedDate && selectedTime ? "bg-blue-600 text-white" : "bg-gray-300 text-gray-600"
+                    selectedDate && selectedTime ? "bg-blue-600 text-white" : "bg-gray-300 dark:bg-gray-700 text-gray-600 dark:text-gray-300"
                   )}>2</div>
                   <span>Date & Time</span>
                 </div>
                 <div className="h-0.5 w-8 bg-gray-200"></div>
                 <div className={cn(
                   "flex items-center gap-2 px-3 py-1.5 rounded-full text-sm font-medium transition-all",
-                  symptoms ? "bg-blue-100 text-blue-700" : "bg-gray-100 text-gray-400"
+                  symptoms ? "bg-blue-100 dark:bg-blue-900/30 text-blue-700 dark:text-blue-300" : "bg-gray-100 dark:bg-gray-800 text-gray-400 dark:text-gray-500"
                 )}>
                   <div className={cn(
                     "w-6 h-6 rounded-full flex items-center justify-center text-xs font-bold",
-                    symptoms ? "bg-blue-600 text-white" : "bg-gray-300 text-gray-600"
+                    symptoms ? "bg-blue-600 text-white" : "bg-gray-300 dark:bg-gray-700 text-gray-600 dark:text-gray-300"
                   )}>3</div>
                   <span>Details</span>
                 </div>
                 <div className="h-0.5 w-8 bg-gray-200"></div>
                 <div className={cn(
                   "flex items-center gap-2 px-3 py-1.5 rounded-full text-sm font-medium transition-all",
-                  paymentMethod ? "bg-blue-100 text-blue-700" : "bg-gray-100 text-gray-400"
+                  paymentMethod ? "bg-blue-100 dark:bg-blue-900/30 text-blue-700 dark:text-blue-300" : "bg-gray-100 dark:bg-gray-800 text-gray-400 dark:text-gray-500"
                 )}>
                   <div className={cn(
                     "w-6 h-6 rounded-full flex items-center justify-center text-xs font-bold",
-                    paymentMethod ? "bg-blue-600 text-white" : "bg-gray-300 text-gray-600"
+                    paymentMethod ? "bg-blue-600 text-white" : "bg-gray-300 dark:bg-gray-700 text-gray-600 dark:text-gray-300"
                   )}>4</div>
                   <span>Payment</span>
                 </div>
@@ -1408,16 +1418,16 @@ const DoctorListBooking = () => {
                         </AvatarFallback>
                       </Avatar>
                       <div>
-                        <h4 className="font-bold text-gray-900">
+                        <h4 className="font-bold text-gray-900 dark:text-gray-100">
                           Dr. {selectedDoctor.firstName} {selectedDoctor.lastName}
                         </h4>
-                        <p className="text-gray-600">{selectedDoctor.specialization}</p>
+                        <p className="text-gray-600 dark:text-gray-300">{selectedDoctor.specialization}</p>
                         <div className="flex items-center gap-4 mt-2">
                           <div className="flex items-center gap-1 bg-yellow-100 px-2 py-0.5 rounded-full">
                             <Star className="h-3.5 w-3.5 text-yellow-500 fill-yellow-500" />
                             <span className="text-sm font-medium">{selectedDoctor.rating}</span>
                           </div>
-                          <div className="flex items-center gap-1 text-gray-600">
+                          <div className="flex items-center gap-1 text-gray-600 dark:text-gray-300">
                             <Award className="h-3.5 w-3.5" />
                             <span className="text-sm">{selectedDoctor.experience} years</span>
                           </div>
@@ -1441,16 +1451,16 @@ const DoctorListBooking = () => {
                 >
                   <div className={cn(
                     "flex items-center space-x-3 p-4 border-2 rounded-xl cursor-pointer transition-all",
-                    consultationType === "online" ? "border-blue-500 bg-blue-50" : "border-gray-200 hover:border-gray-300"
+                    consultationType === "online" ? "border-blue-500 bg-blue-50 dark:bg-blue-900/30" : "border-gray-200 dark:border-gray-700 hover:border-gray-300 dark:hover:border-gray-600"
                   )}>
                     <RadioGroupItem value="online" id="online" />
                     <Label htmlFor="online" className="flex items-center gap-3 cursor-pointer flex-1">
-                      <div className="w-10 h-10 bg-blue-100 rounded-full flex items-center justify-center">
+                      <div className="w-10 h-10 bg-blue-100 dark:bg-blue-900/30 rounded-full flex items-center justify-center">
                         <Video className="h-5 w-5 text-blue-600" />
                       </div>
                       <div>
-                        <div className="font-semibold text-gray-900">Online Consultation</div>
-                        <div className="text-sm text-gray-500">
+                        <div className="font-semibold text-gray-900 dark:text-gray-100">Online Consultation</div>
+                        <div className="text-sm text-gray-500 dark:text-gray-400">
                           Video call with the doctor
                         </div>
                       </div>
@@ -1462,16 +1472,16 @@ const DoctorListBooking = () => {
                   
                   <div className={cn(
                     "flex items-center space-x-3 p-4 border-2 rounded-xl cursor-pointer transition-all",
-                    consultationType === "inPerson" ? "border-green-500 bg-green-50" : "border-gray-200 hover:border-gray-300"
+                    consultationType === "inPerson" ? "border-green-500 bg-green-50 dark:bg-green-900/30" : "border-gray-200 dark:border-gray-700 hover:border-gray-300 dark:hover:border-gray-600"
                   )}>
                     <RadioGroupItem value="inPerson" id="inPerson" />
                     <Label htmlFor="inPerson" className="flex items-center gap-3 cursor-pointer flex-1">
-                      <div className="w-10 h-10 bg-green-100 rounded-full flex items-center justify-center">
+                      <div className="w-10 h-10 bg-green-100 dark:bg-green-900/30 rounded-full flex items-center justify-center">
                         <User className="h-5 w-5 text-green-600" />
                       </div>
                       <div>
-                        <div className="font-semibold text-gray-900">In-Person Visit</div>
-                        <div className="text-sm text-gray-500">
+                        <div className="font-semibold text-gray-900 dark:text-gray-100">In-Person Visit</div>
+                        <div className="text-sm text-gray-500 dark:text-gray-400">
                           {doctorSlots?.slots?.inPerson?.[0]?.location?.name || selectedDoctor?.clinic.name}
                         </div>
                       </div>
@@ -1493,14 +1503,14 @@ const DoctorListBooking = () => {
                       className={cn(
                         "w-full justify-start text-left font-normal h-12 rounded-xl border-2",
                         !selectedDate && "text-muted-foreground",
-                        selectedDate && "border-blue-200 bg-blue-50"
+                        selectedDate && "border-blue-200 bg-blue-50 dark:bg-blue-900/30"
                       )}
                     >
                       <Calendar className="mr-3 h-5 w-5 text-blue-600" />
                       {selectedDate ? format(selectedDate, "EEEE, MMMM d, yyyy") : <span>Pick a date</span>}
                     </Button>
                   </PopoverTrigger>
-                  <PopoverContent className="w-auto p-0" align="start">
+                  <PopoverContent className="w-auto p-0 bg-white dark:bg-gray-900 border-gray-200 dark:border-gray-700" align="start">
                     <CalendarComponent
                       mode="single"
                       selected={selectedDate}
@@ -1525,7 +1535,7 @@ const DoctorListBooking = () => {
                       }}
                       initialFocus
                     />
-                    <div className="p-3 border-t bg-gray-50 text-xs text-gray-600">
+                    <div className="p-3 border-t bg-gray-50 dark:bg-gray-800 text-xs text-gray-600 dark:text-gray-300 dark:border-gray-700">
                       <div className="flex items-center gap-2">
                         <div className="w-2 h-2 bg-green-500 rounded-full"></div>
                         <span>Dates with available slots</span>
@@ -1542,7 +1552,7 @@ const DoctorListBooking = () => {
                 {loadingSlots ? (
                   <div className="flex items-center justify-center py-8">
                     <Loader2 className="h-6 w-6 animate-spin text-blue-600" />
-                    <span className="ml-2 text-gray-600">Loading available slots...</span>
+                    <span className="ml-2 text-gray-600 dark:text-gray-300">Loading available slots...</span>
                   </div>
                 ) : doctorSlots && !doctorSlots.isOff ? (
                   <div className="space-y-4">
@@ -1551,7 +1561,7 @@ const DoctorListBooking = () => {
                       <div>
                         <div className="flex items-center gap-2 mb-3">
                           <Video className="h-4 w-4 text-blue-600" />
-                          <span className="text-sm font-semibold text-gray-700">Online Consultation Slots</span>
+                          <span className="text-sm font-semibold text-gray-700 dark:text-gray-200">Online Consultation Slots</span>
                           <Badge variant="outline" className="text-xs">
                             {doctorSlots.slotDuration || 30} min slots
                           </Badge>
@@ -1566,7 +1576,7 @@ const DoctorListBooking = () => {
                               {morning.length > 0 && (
                                 <div>
                                   <div className="flex items-center gap-2 mb-2">
-                                    <div className="text-xs font-medium text-gray-600 bg-orange-50 px-2 py-1 rounded">
+                                    <div className="text-xs font-medium text-orange-700 dark:text-orange-300 bg-orange-50 dark:bg-orange-900/30 px-2 py-1 rounded">
                                       🌅 Morning (6 AM - 12 PM)
                                     </div>
                                   </div>
@@ -1587,8 +1597,8 @@ const DoctorListBooking = () => {
                                           className={cn(
                                             "text-xs rounded-lg relative",
                                             selectedTime === slotTime && "bg-gradient-to-r from-blue-600 to-blue-500 border-0",
-                                            isBooked && "bg-gray-100 text-gray-400 cursor-not-allowed border-gray-200",
-                                            isBlocked && "bg-red-50 text-red-400 cursor-not-allowed border-red-200"
+                                            isBooked && "bg-gray-100 dark:bg-gray-800 text-gray-400 dark:text-gray-500 cursor-not-allowed border-gray-200 dark:border-gray-700",
+                                            isBlocked && "bg-red-50 dark:bg-red-900/30 text-red-400 dark:text-red-400 cursor-not-allowed border-red-200 dark:border-red-800"
                                           )}
                                           title={isBooked ? "Already booked" : isBlocked ? "Blocked by doctor" : "Available"}
                                         >
@@ -1606,7 +1616,7 @@ const DoctorListBooking = () => {
                               {afternoon.length > 0 && (
                                 <div>
                                   <div className="flex items-center gap-2 mb-2">
-                                    <div className="text-xs font-medium text-gray-600 bg-yellow-50 px-2 py-1 rounded">
+                                    <div className="text-xs font-medium text-yellow-700 dark:text-yellow-300 bg-yellow-50 dark:bg-yellow-900/30 px-2 py-1 rounded">
                                       ☀️ Afternoon (12 PM - 5 PM)
                                     </div>
                                   </div>
@@ -1627,8 +1637,8 @@ const DoctorListBooking = () => {
                                           className={cn(
                                             "text-xs rounded-lg relative",
                                             selectedTime === slotTime && "bg-gradient-to-r from-blue-600 to-blue-500 border-0",
-                                            isBooked && "bg-gray-100 text-gray-400 cursor-not-allowed border-gray-200",
-                                            isBlocked && "bg-red-50 text-red-400 cursor-not-allowed border-red-200"
+                                            isBooked && "bg-gray-100 dark:bg-gray-800 text-gray-400 dark:text-gray-500 cursor-not-allowed border-gray-200 dark:border-gray-700",
+                                            isBlocked && "bg-red-50 dark:bg-red-900/30 text-red-400 dark:text-red-400 cursor-not-allowed border-red-200 dark:border-red-800"
                                           )}
                                           title={isBooked ? "Already booked" : isBlocked ? "Blocked by doctor" : "Available"}
                                         >
@@ -1646,7 +1656,7 @@ const DoctorListBooking = () => {
                               {evening.length > 0 && (
                                 <div>
                                   <div className="flex items-center gap-2 mb-2">
-                                    <div className="text-xs font-medium text-gray-600 bg-indigo-50 px-2 py-1 rounded">
+                                    <div className="text-xs font-medium text-indigo-700 dark:text-indigo-300 bg-indigo-50 dark:bg-indigo-900/30 px-2 py-1 rounded">
                                       🌙 Evening (5 PM onwards)
                                     </div>
                                   </div>
@@ -1667,8 +1677,8 @@ const DoctorListBooking = () => {
                                           className={cn(
                                             "text-xs rounded-lg relative",
                                             selectedTime === slotTime && "bg-gradient-to-r from-blue-600 to-blue-500 border-0",
-                                            isBooked && "bg-gray-100 text-gray-400 cursor-not-allowed border-gray-200",
-                                            isBlocked && "bg-red-50 text-red-400 cursor-not-allowed border-red-200"
+                                            isBooked && "bg-gray-100 dark:bg-gray-800 text-gray-400 dark:text-gray-500 cursor-not-allowed border-gray-200 dark:border-gray-700",
+                                            isBlocked && "bg-red-50 dark:bg-red-900/30 text-red-400 dark:text-red-400 cursor-not-allowed border-red-200 dark:border-red-800"
                                           )}
                                           title={isBooked ? "Already booked" : isBlocked ? "Blocked by doctor" : "Available"}
                                         >
@@ -1686,7 +1696,7 @@ const DoctorListBooking = () => {
                         })()}
                         
                         {doctorSlots.slots.online.filter((s: any) => s.available && !s.blocked).length === 0 && (
-                          <p className="text-sm text-amber-600 py-4 text-center bg-amber-50 rounded-lg border border-amber-200">⚠️ All online slots are booked or unavailable for this date. Please try another date.</p>
+                          <p className="text-sm text-amber-700 dark:text-amber-300 py-4 text-center bg-amber-50 dark:bg-amber-900/30 rounded-lg border border-amber-200 dark:border-amber-800">⚠️ All online slots are booked or unavailable for this date. Please try another date.</p>
                         )}
                       </div>
                     ) : null}
@@ -1696,7 +1706,7 @@ const DoctorListBooking = () => {
                       <div>
                         <div className="flex items-center gap-2 mb-2">
                           <User className="h-4 w-4 text-green-600" />
-                          <span className="text-sm font-semibold text-gray-700">In-Person Consultation Slots</span>
+                          <span className="text-sm font-semibold text-gray-700 dark:text-gray-200">In-Person Consultation Slots</span>
                           <Badge variant="outline" className="text-xs">
                             {doctorSlots.slotDuration || 30} min slots
                           </Badge>
@@ -1708,8 +1718,8 @@ const DoctorListBooking = () => {
                             <div className="flex items-start gap-2">
                               <MapPin className="h-4 w-4 text-green-600 mt-0.5" />
                               <div className="flex-1">
-                                <p className="font-semibold text-gray-900 text-sm">{doctorSlots.slots.inPerson[0].location.name}</p>
-                                <p className="text-xs text-gray-600">{doctorSlots.slots.inPerson[0].location.address}</p>
+                                <p className="font-semibold text-gray-900 dark:text-gray-100 text-sm">{doctorSlots.slots.inPerson[0].location.name}</p>
+                                <p className="text-xs text-gray-600 dark:text-gray-300">{doctorSlots.slots.inPerson[0].location.address}</p>
                                 <p className="text-xs font-semibold text-green-700 mt-1">
                                   Consultation Fee: ₹{doctorSlots.slots.inPerson[0].location.fee}
                                 </p>
@@ -1727,7 +1737,7 @@ const DoctorListBooking = () => {
                               {morning.length > 0 && (
                                 <div>
                                   <div className="flex items-center gap-2 mb-2">
-                                    <div className="text-xs font-medium text-gray-600 bg-orange-50 px-2 py-1 rounded">
+                                    <div className="text-xs font-medium text-orange-700 dark:text-orange-300 bg-orange-50 dark:bg-orange-900/30 px-2 py-1 rounded">
                                       🌅 Morning (6 AM - 12 PM)
                                     </div>
                                   </div>
@@ -1748,8 +1758,8 @@ const DoctorListBooking = () => {
                                           className={cn(
                                             "text-xs rounded-lg relative",
                                             selectedTime === slotTime && "bg-gradient-to-r from-green-600 to-green-500 border-0",
-                                            isBooked && "bg-gray-100 text-gray-400 cursor-not-allowed border-gray-200",
-                                            isBlocked && "bg-red-50 text-red-400 cursor-not-allowed border-red-200"
+                                            isBooked && "bg-gray-100 dark:bg-gray-800 text-gray-400 dark:text-gray-500 cursor-not-allowed border-gray-200 dark:border-gray-700",
+                                            isBlocked && "bg-red-50 dark:bg-red-900/30 text-red-400 dark:text-red-400 cursor-not-allowed border-red-200 dark:border-red-800"
                                           )}
                                           title={isBooked ? "Already booked" : isBlocked ? "Blocked by doctor" : "Available"}
                                         >
@@ -1767,7 +1777,7 @@ const DoctorListBooking = () => {
                               {afternoon.length > 0 && (
                                 <div>
                                   <div className="flex items-center gap-2 mb-2">
-                                    <div className="text-xs font-medium text-gray-600 bg-yellow-50 px-2 py-1 rounded">
+                                    <div className="text-xs font-medium text-yellow-700 dark:text-yellow-300 bg-yellow-50 dark:bg-yellow-900/30 px-2 py-1 rounded">
                                       ☀️ Afternoon (12 PM - 5 PM)
                                     </div>
                                   </div>
@@ -1788,8 +1798,8 @@ const DoctorListBooking = () => {
                                           className={cn(
                                             "text-xs rounded-lg relative",
                                             selectedTime === slotTime && "bg-gradient-to-r from-green-600 to-green-500 border-0",
-                                            isBooked && "bg-gray-100 text-gray-400 cursor-not-allowed border-gray-200",
-                                            isBlocked && "bg-red-50 text-red-400 cursor-not-allowed border-red-200"
+                                            isBooked && "bg-gray-100 dark:bg-gray-800 text-gray-400 dark:text-gray-500 cursor-not-allowed border-gray-200 dark:border-gray-700",
+                                            isBlocked && "bg-red-50 dark:bg-red-900/30 text-red-400 dark:text-red-400 cursor-not-allowed border-red-200 dark:border-red-800"
                                           )}
                                           title={isBooked ? "Already booked" : isBlocked ? "Blocked by doctor" : "Available"}
                                         >
@@ -1807,7 +1817,7 @@ const DoctorListBooking = () => {
                               {evening.length > 0 && (
                                 <div>
                                   <div className="flex items-center gap-2 mb-2">
-                                    <div className="text-xs font-medium text-gray-600 bg-indigo-50 px-2 py-1 rounded">
+                                    <div className="text-xs font-medium text-indigo-700 dark:text-indigo-300 bg-indigo-50 dark:bg-indigo-900/30 px-2 py-1 rounded">
                                       🌙 Evening (5 PM onwards)
                                     </div>
                                   </div>
@@ -1828,8 +1838,8 @@ const DoctorListBooking = () => {
                                           className={cn(
                                             "text-xs rounded-lg relative",
                                             selectedTime === slotTime && "bg-gradient-to-r from-green-600 to-green-500 border-0",
-                                            isBooked && "bg-gray-100 text-gray-400 cursor-not-allowed border-gray-200",
-                                            isBlocked && "bg-red-50 text-red-400 cursor-not-allowed border-red-200"
+                                            isBooked && "bg-gray-100 dark:bg-gray-800 text-gray-400 dark:text-gray-500 cursor-not-allowed border-gray-200 dark:border-gray-700",
+                                            isBlocked && "bg-red-50 dark:bg-red-900/30 text-red-400 dark:text-red-400 cursor-not-allowed border-red-200 dark:border-red-800"
                                           )}
                                           title={isBooked ? "Already booked" : isBlocked ? "Blocked by doctor" : "Available"}
                                         >
@@ -1847,30 +1857,30 @@ const DoctorListBooking = () => {
                         })()}
                         
                         {doctorSlots.slots.inPerson.filter((s: any) => s.available && !s.blocked).length === 0 && (
-                          <p className="text-sm text-amber-600 py-4 text-center bg-amber-50 rounded-lg border border-amber-200">⚠️ All in-person slots are booked or unavailable for this date. Please try another date.</p>
+                          <p className="text-sm text-amber-700 dark:text-amber-300 py-4 text-center bg-amber-50 dark:bg-amber-900/30 rounded-lg border border-amber-200 dark:border-amber-800">⚠️ All in-person slots are booked or unavailable for this date. Please try another date.</p>
                         )}
                       </div>
                     ) : null}
 
                     {/* No slots available for selected type */}
                     {consultationType === "online" && (!doctorSlots.slots?.online || doctorSlots.slots.online.length === 0) && (
-                      <p className="text-sm text-gray-500 py-4 text-center">Doctor does not have online consultation slots configured for this day</p>
+                      <p className="text-sm text-gray-500 dark:text-gray-400 py-4 text-center">Doctor does not have online consultation slots configured for this day</p>
                     )}
                     {consultationType === "inPerson" && (!doctorSlots.slots?.inPerson || doctorSlots.slots.inPerson.length === 0) && (
-                      <p className="text-sm text-gray-500 py-4 text-center">Doctor does not have in-person consultation slots configured for this day</p>
+                      <p className="text-sm text-gray-500 dark:text-gray-400 py-4 text-center">Doctor does not have in-person consultation slots configured for this day</p>
                     )}
                   </div>
                 ) : doctorSlots && doctorSlots.isOff ? (
                   <div className="py-8 text-center">
-                    <Calendar className="h-12 w-12 text-gray-300 mx-auto mb-3" />
-                    <p className="text-gray-600 font-medium">Doctor is not available on this day</p>
-                    <p className="text-sm text-gray-500 mt-1">Please select a different date</p>
+                    <Calendar className="h-12 w-12 text-gray-300 dark:text-gray-600 mx-auto mb-3" />
+                    <p className="text-gray-600 dark:text-gray-300 font-medium">Doctor is not available on this day</p>
+                    <p className="text-sm text-gray-500 dark:text-gray-400 mt-1">Please select a different date</p>
                   </div>
                 ) : selectedDate ? (
                   <div className="py-8 text-center">
-                    <Clock className="h-12 w-12 text-gray-300 mx-auto mb-3" />
-                    <p className="text-gray-600 font-medium">Unable to load slot availability</p>
-                    <p className="text-sm text-gray-500 mt-1">Please try selecting a different date or refresh the page</p>
+                    <Clock className="h-12 w-12 text-gray-300 dark:text-gray-600 mx-auto mb-3" />
+                    <p className="text-gray-600 dark:text-gray-300 font-medium">Unable to load slot availability</p>
+                    <p className="text-sm text-gray-500 dark:text-gray-400 mt-1">Please try selecting a different date or refresh the page</p>
                   </div>
                 ) : null}
                 {selectedTime && !loadingSlots ? (
@@ -1896,16 +1906,16 @@ const DoctorListBooking = () => {
               </div>
 
               {/* Booking Summary */}
-              <Card className="bg-gradient-to-r from-gray-50 to-gray-100 border-0">
+              <Card className="bg-gradient-to-r from-gray-50 to-gray-100 dark:from-gray-800 dark:to-gray-900 border-0">
                 <CardContent className="p-5">
-                  <h4 className="font-bold text-gray-900 mb-4 flex items-center gap-2">
+                  <h4 className="font-bold text-gray-900 dark:text-gray-100 mb-4 flex items-center gap-2">
                     <CheckCircle className="h-5 w-5 text-green-600" />
                     Booking Summary
                   </h4>
                   <div className="space-y-3 text-sm">
                     <div className="flex justify-between items-center">
-                      <span className="text-gray-600">Consultation Type</span>
-                      <span className="font-semibold text-gray-900 flex items-center gap-1.5">
+                      <span className="text-gray-600 dark:text-gray-300">Consultation Type</span>
+                      <span className="font-semibold text-gray-900 dark:text-gray-100 flex items-center gap-1.5">
                         {consultationType === "online" ? (
                           <>
                             <Video className="h-4 w-4 text-blue-600" />
@@ -1920,8 +1930,8 @@ const DoctorListBooking = () => {
                       </span>
                     </div>
                     <div className="flex justify-between items-center">
-                      <span className="text-gray-600">Date & Time</span>
-                      <span className="font-semibold text-gray-900">
+                      <span className="text-gray-600 dark:text-gray-300">Date & Time</span>
+                      <span className="font-semibold text-gray-900 dark:text-gray-100">
                         {selectedDate && selectedTime 
                           ? `${format(selectedDate, "MMM dd")} at ${toDisplayTime(selectedTime)}`
                           : "Not selected"
@@ -1930,7 +1940,7 @@ const DoctorListBooking = () => {
                     </div>
                     <Separator className="my-3" />
                     <div className="flex justify-between items-center text-lg">
-                      <span className="font-semibold text-gray-900">Total Fee</span>
+                      <span className="font-semibold text-gray-900 dark:text-gray-100">Total Fee</span>
                       <span className="font-bold text-green-600">
                         ₹{(() => {
                           if (!selectedDoctor) return 0;
@@ -1961,16 +1971,16 @@ const DoctorListBooking = () => {
                   {/* INR Payment Option */}
                   <div className={cn(
                     "flex items-center space-x-3 p-4 border-2 rounded-xl cursor-pointer transition-all",
-                    paymentMethod === "inr" ? "border-green-500 bg-green-50" : "border-gray-200 hover:border-gray-300"
+                    paymentMethod === "inr" ? "border-green-500 bg-green-50 dark:bg-green-900/30" : "border-gray-200 dark:border-gray-700 hover:border-gray-300 dark:hover:border-gray-600"
                   )}>
                     <RadioGroupItem value="inr" id="pay-inr" />
                     <Label htmlFor="pay-inr" className="flex items-center gap-3 cursor-pointer flex-1">
-                      <div className="w-10 h-10 bg-green-100 rounded-full flex items-center justify-center">
+                      <div className="w-10 h-10 bg-green-100 dark:bg-green-900/30 rounded-full flex items-center justify-center">
                         <DollarSign className="h-5 w-5 text-green-600" />
                       </div>
                       <div className="flex-1">
-                        <div className="font-semibold text-gray-900">Pay with INR</div>
-                        <div className="text-sm text-gray-500">
+                        <div className="font-semibold text-gray-900 dark:text-gray-100">Pay with INR</div>
+                        <div className="text-sm text-gray-500 dark:text-gray-400">
                           Pay via UPI, Card, or Net Banking
                         </div>
                       </div>
@@ -1991,7 +2001,7 @@ const DoctorListBooking = () => {
                   {/* Health Coins Payment Option */}
                   <div className={cn(
                     "flex items-center space-x-3 p-4 border-2 rounded-xl cursor-pointer transition-all",
-                    paymentMethod === "hc" ? "border-purple-500 bg-purple-50" : "border-gray-200 hover:border-gray-300",
+                    paymentMethod === "hc" ? "border-purple-500 bg-purple-50 dark:bg-purple-900/30" : "border-gray-200 dark:border-gray-700 hover:border-gray-300 dark:hover:border-gray-600",
                     hcCalculation && !hcCalculation.canPay && "opacity-60"
                   )}>
                     <RadioGroupItem 
@@ -2000,11 +2010,11 @@ const DoctorListBooking = () => {
                       disabled={!hcCalculation?.canPay}
                     />
                     <Label htmlFor="pay-hc" className="flex items-center gap-3 cursor-pointer flex-1">
-                      <div className="w-10 h-10 bg-purple-100 rounded-full flex items-center justify-center">
+                      <div className="w-10 h-10 bg-purple-100 dark:bg-purple-900/30 rounded-full flex items-center justify-center">
                         <Coins className="h-5 w-5 text-purple-600" />
                       </div>
                       <div className="flex-1">
-                        <div className="font-semibold text-gray-900 flex items-center gap-2">
+                        <div className="font-semibold text-gray-900 dark:text-gray-100 flex items-center gap-2">
                           Pay with Health Coins
                           {hcCalculation?.bonusPercent > 0 && (
                             <Badge className="bg-purple-100 text-purple-700 text-xs">
@@ -2012,7 +2022,7 @@ const DoctorListBooking = () => {
                             </Badge>
                           )}
                         </div>
-                        <div className="text-sm text-gray-500">
+                        <div className="text-sm text-gray-500 dark:text-gray-400">
                           {loadingHC ? (
                             <span className="flex items-center gap-1">
                               <Loader2 className="h-3 w-3 animate-spin" />
@@ -2048,7 +2058,7 @@ const DoctorListBooking = () => {
                 
                 {/* Low balance warning */}
                 {hcCalculation && !hcCalculation.canPay && paymentMethod === "hc" && (
-                  <div className="p-3 bg-amber-50 border border-amber-200 rounded-lg text-sm text-amber-800">
+                  <div className="p-3 bg-amber-50 dark:bg-amber-900/30 border border-amber-200 dark:border-amber-800 rounded-lg text-sm text-amber-800 dark:text-amber-300">
                     <p className="font-medium">Insufficient Health Coins</p>
                     <p>You need {hcCalculation.hcRequired} HC but have {walletBalance} HC. 
                       <Button variant="link" className="h-auto p-0 ml-1 text-amber-700 underline" onClick={() => navigate("/wallet")}>
@@ -2061,14 +2071,14 @@ const DoctorListBooking = () => {
 
               {/* Inline Validation Messages */}
               {!selectedDate && (
-                <div className="p-3 bg-blue-50 border border-blue-200 rounded-lg text-sm text-blue-800 flex items-start gap-2">
+                <div className="p-3 bg-blue-50 dark:bg-blue-900/30 border border-blue-200 dark:border-blue-800 rounded-lg text-sm text-blue-800 dark:text-blue-300 flex items-start gap-2">
                   <Calendar className="h-4 w-4 mt-0.5" />
                   <p>Please select a date for your appointment</p>
                 </div>
               )}
               
               {selectedDate && !selectedTime && !loadingSlots && (
-                <div className="p-3 bg-blue-50 border border-blue-200 rounded-lg text-sm text-blue-800 flex items-start gap-2">
+                <div className="p-3 bg-blue-50 dark:bg-blue-900/30 border border-blue-200 dark:border-blue-800 rounded-lg text-sm text-blue-800 dark:text-blue-300 flex items-start gap-2">
                   <Clock className="h-4 w-4 mt-0.5" />
                   <p>Please select a time slot for your appointment</p>
                 </div>
@@ -2076,24 +2086,24 @@ const DoctorListBooking = () => {
 
               {/* Slot Status Legend */}
               {selectedDate && doctorSlots && !loadingSlots && (
-                <div className="p-3 bg-gray-50 rounded-lg border border-gray-200">
-                  <p className="text-xs font-semibold text-gray-700 mb-2">Slot Status:</p>
+                <div className="p-3 bg-gray-50 dark:bg-gray-800 rounded-lg border border-gray-200 dark:border-gray-700">
+                  <p className="text-xs font-semibold text-gray-700 dark:text-gray-200 mb-2">Slot Status:</p>
                   <div className="flex flex-wrap gap-3 text-xs">
                     <div className="flex items-center gap-1.5">
                       <div className="w-3 h-3 border-2 border-blue-500 rounded"></div>
-                      <span className="text-gray-600">Available</span>
+                      <span className="text-gray-600 dark:text-gray-300">Available</span>
                     </div>
                     <div className="flex items-center gap-1.5">
-                      <div className="w-3 h-3 bg-gray-200 rounded relative">
+                      <div className="w-3 h-3 bg-gray-200 dark:bg-gray-700 rounded relative">
                         <span className="absolute -top-0.5 -right-0.5 h-1.5 w-1.5 bg-gray-400 rounded-full" />
                       </div>
-                      <span className="text-gray-600">Booked</span>
+                      <span className="text-gray-600 dark:text-gray-300">Booked</span>
                     </div>
                     <div className="flex items-center gap-1.5">
-                      <div className="w-3 h-3 bg-red-50 rounded relative">
+                      <div className="w-3 h-3 bg-red-50 dark:bg-red-900/30 rounded relative">
                         <span className="absolute -top-0.5 -right-0.5 h-1.5 w-1.5 bg-red-400 rounded-full" />
                       </div>
-                      <span className="text-gray-600">Blocked</span>
+                      <span className="text-gray-600 dark:text-gray-300">Blocked</span>
                     </div>
                   </div>
                 </div>
@@ -2111,7 +2121,7 @@ const DoctorListBooking = () => {
                 <Button 
                   onClick={handleBookingSubmit} 
                   disabled={isSubmitting || !selectedDate || !selectedTime || (paymentMethod === "hc" && !hcCalculation?.canPay)}
-                  className="flex-1 h-12 rounded-xl bg-gradient-to-r from-blue-600 to-green-600 hover:from-blue-700 hover:to-green-700"
+                  className="flex-1 h-12 rounded-xl bg-gradient-to-r from-blue-600 to-green-600 hover:from-blue-700 hover:to-green-700 text-white"
                 >
                   {isSubmitting ? (
                     <span className="flex items-center gap-2">
@@ -2131,7 +2141,7 @@ const DoctorListBooking = () => {
 
         {/* Booking Confirmation Dialog */}
         <Dialog open={showConfirmation} onOpenChange={setShowConfirmation}>
-          <DialogContent className="max-w-md">
+          <DialogContent className="max-w-md bg-white dark:bg-gray-900">
             <DialogHeader>
               <div className="mx-auto w-16 h-16 bg-green-100 rounded-full flex items-center justify-center mb-4">
                 <CheckCircle className="h-8 w-8 text-green-600" />
@@ -2155,10 +2165,10 @@ const DoctorListBooking = () => {
                         </AvatarFallback>
                       </Avatar>
                       <div>
-                        <h4 className="font-bold text-gray-900">
+                        <h4 className="font-bold text-gray-900 dark:text-gray-100">
                           Dr. {bookedAppointment.doctor?.firstName} {bookedAppointment.doctor?.lastName}
                         </h4>
-                        <p className="text-sm text-gray-600">{bookedAppointment.doctor?.specialization}</p>
+                        <p className="text-sm text-gray-600 dark:text-gray-300">{bookedAppointment.doctor?.specialization}</p>
                       </div>
                     </div>
                     
@@ -2167,23 +2177,23 @@ const DoctorListBooking = () => {
                     {/* Appointment Details */}
                     <div className="space-y-3 text-sm">
                       <div className="flex justify-between">
-                        <span className="text-gray-600">Date & Time:</span>
-                        <span className="font-semibold text-gray-900">
+                        <span className="text-gray-600 dark:text-gray-300">Date & Time:</span>
+                        <span className="font-semibold text-gray-900 dark:text-gray-100">
                           {format(bookedAppointment.date, "MMM d, yyyy")} at {toDisplayTime(bookedAppointment.time)}
                         </span>
                       </div>
                       <div className="flex justify-between">
-                        <span className="text-gray-600">Type:</span>
+                        <span className="text-gray-600 dark:text-gray-300">Type:</span>
                         <Badge variant={bookedAppointment.type === "online" ? "default" : "secondary"}>
                           {bookedAppointment.type === "online" ? "Online Video" : "In-Person"}
                         </Badge>
                       </div>
                       <div className="flex justify-between">
-                        <span className="text-gray-600">Consultation Fee:</span>
-                        <span className="font-semibold text-gray-900">₹{bookedAppointment.fee}</span>
+                        <span className="text-gray-600 dark:text-gray-300">Consultation Fee:</span>
+                        <span className="font-semibold text-gray-900 dark:text-gray-100">₹{bookedAppointment.fee}</span>
                       </div>
                       <div className="flex justify-between">
-                        <span className="text-gray-600">Payment:</span>
+                        <span className="text-gray-600 dark:text-gray-300">Payment:</span>
                         <Badge variant={bookedAppointment.paymentMethod === "hc" ? "secondary" : "outline"}>
                           {bookedAppointment.paymentMethod === "hc" ? "Health Coins" : "INR"}
                         </Badge>
@@ -2212,7 +2222,7 @@ const DoctorListBooking = () => {
                   </Button>
                 </div>
                 
-                <p className="text-xs text-center text-gray-500">
+                <p className="text-xs text-center text-gray-500 dark:text-gray-400">
                   A confirmation has been sent to your registered email
                 </p>
               </div>

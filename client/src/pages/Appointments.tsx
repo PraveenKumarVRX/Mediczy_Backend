@@ -164,9 +164,12 @@ const Appointments = () => {
   // Fetch enhanced appointments from backend and map into local shape
   const { data: backendAppointments = [], isLoading, error: appointmentsError } = useQuery({
     queryKey: ["enhancedAppointments"],
+    staleTime: 0, // Always consider data stale
+    refetchOnMount: true, // Refetch when component mounts
+    refetchOnWindowFocus: true, // Refetch when user returns to tab
     queryFn: async () => {
       console.log("📅 Fetching appointments...");
-      const { data } = await api.get("/enhanced-appointments/my-appointments?limit=100");
+      const { data } = await api.get("/enhanced-appointments/my-appointments?limit=500");
       console.log("📅 Appointments response:", data);
       const list = (data as any).appointments || data;
       if (!Array.isArray(list)) {
@@ -174,8 +177,25 @@ const Appointments = () => {
         return [];
       }
       console.log("📅 Found appointments:", list.length);
+      if (list.length > 0) {
+        console.log("📅 First appointment raw data:", list[0]);
+      }
 
-      return list.map((apt: any) => ({
+      return list.map((apt: any) => {
+        const rawDate = apt.appointmentDate ?? apt.date;
+        const rawTime = apt.appointmentTime ?? apt.time;
+        
+        // DEBUG: Log Feb 20 appointments
+        if (rawDate === '2026-02-20') {
+          console.log('📅 Processing Feb 20 appointment:', {
+            id: apt.id,
+            rawDate,
+            rawTime,
+            status: apt.status
+          });
+        }
+        
+        return {
         id: String(apt.id ?? apt.appointmentId ?? apt._id ?? crypto.randomUUID()),
         backendId: parseBackendId(apt.id ?? apt.appointmentId ?? apt.appointment_id),
         doctor: {
@@ -192,8 +212,8 @@ const Appointments = () => {
         meetingLink: apt.meetingLink ?? apt.meeting_link,
         roomId: apt.roomId ?? apt.videoRoomId ?? apt.meetingId ?? apt.meeting_id,
         meetingId: apt.meetingId ?? apt.meeting_id,
-        date: apt.appointmentDate ?? apt.date,
-        time: apt.appointmentTime ?? apt.time,
+        date: rawDate,
+        time: rawTime,
         consultationType:
           apt.consultationType === "walkin" || apt.consultationType === "in-person"
             ? "walkin"
@@ -223,10 +243,39 @@ const Appointments = () => {
         status: (() => {
           // Determine if this is a past appointment
           const rawDate = apt.appointmentDate || apt.date;
+          
+          // DEBUG: Extra logging for Feb 20
+          if (rawDate === '2026-02-20') {
+            console.log('🔍 Feb 20 in status calc - BEFORE date parsing:', {
+              id: apt.id,
+              rawDate,
+              rawDateType: typeof rawDate,
+              now: new Date().toISOString(),
+              nowLocal: new Date().toString()
+            });
+          }
+          
+          // Parse date and normalize to midnight local time to avoid timezone issues
           const appointmentDate = new Date(rawDate);
+          appointmentDate.setHours(0, 0, 0, 0);
           const today = new Date();
           today.setHours(0, 0, 0, 0);
           const isPast = appointmentDate < today;
+
+          // Debug logging for first few appointments
+          if (apt.id < 5 || rawDate?.includes('2026-02-20')) {
+            console.log('📅 Status calculation:', {
+              id: apt.id,
+              rawDate,
+              appointmentDate: appointmentDate.toISOString(),
+              appointmentDateValueOf: appointmentDate.valueOf(),
+              today: today.toISOString(),
+              todayValueOf: today.valueOf(),
+              isPast,
+              originalStatus: apt.status,
+              willBeUpcoming: !isPast && (apt.status === "scheduled" || apt.status === "confirmed" || apt.status === "pending")
+            });
+          }
 
           // Keep original status for display, but categorize for filtering
           const originalStatus = apt.status || 'scheduled';
@@ -253,7 +302,8 @@ const Appointments = () => {
           apt.serviceTier?.price ??
           0
         ) || 0,
-      })) as Appointment[];
+      };
+      }) as Appointment[];
     },
     retry: 1,
   });
@@ -536,8 +586,32 @@ const Appointments = () => {
       if (status === 'all') return true;
       return apt.status === status;
     });
-    console.log(`📅 filterAppointments(${status}): ${filtered.length} appointments`, filtered.slice(0, 3));
-    return filtered;
+    console.log(`📅 filterAppointments(${status}): ${filtered.length} appointments`);
+    if (status === 'upcoming' && filtered.length > 0) {
+      console.log('📅 Upcoming appointments:', filtered.map(a => ({
+        id: a.id,
+        date: a.date,
+        time: a.time,
+        status: a.status,
+        doctor: a.doctor?.name
+      })));
+    }
+    
+    // Sort appointments by date and time
+    const sorted = filtered.sort((a, b) => {
+      const dateA = new Date(`${a.date}T${a.time || '00:00'}`);
+      const dateB = new Date(`${b.date}T${b.time || '00:00'}`);
+      
+      if (status === 'upcoming') {
+        // For upcoming: nearest first (ascending order)
+        return dateA.getTime() - dateB.getTime();
+      } else {
+        // For completed/history: latest first (descending order)
+        return dateB.getTime() - dateA.getTime();
+      }
+    });
+    
+    return sorted;
   };
 
   const handleJoinCall = (appointment: Appointment) => {

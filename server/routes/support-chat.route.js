@@ -385,11 +385,22 @@ router.post('/webhook/rocketchat', async (req, res) => {
   try {
     const webhookData = req.body;
 
-    // Verify webhook secret (optional but recommended)
-    // const signature = req.headers['x-rocketchat-signature'];
+    // Debug: Log the FULL webhook payload with complete structure
+    console.log('🔔 [RC Webhook] Full payload keys:', Object.keys(webhookData));
+    console.log('🔔 [RC Webhook] Payload:', JSON.stringify(webhookData, null, 2));
+    
+    // Log individual fields for clarity
+    if (webhookData.message) {
+      console.log('🔔 [RC Webhook] Message object:', JSON.stringify(webhookData.message, null, 2).substring(0, 300));
+    }
+    if (webhookData.room) {
+      console.log('🔔 [RC Webhook] Room object:', JSON.stringify(webhookData.room, null, 2).substring(0, 300));
+    }
 
     // Forward agent message to WhatsApp if applicable
     const result = await omnichannelChatService.sendToWhatsApp(webhookData);
+    
+    console.log('🔔 [RC Webhook] Result:', result);
 
     return res.json({ success: true });
   } catch (error) {

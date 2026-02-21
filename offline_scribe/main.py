@@ -48,7 +48,7 @@ from config import (
 # Import services
 from normalizer import normalize_medical_text, NormalizationResult
 from llm import get_llm_engine
-from stt import get_stt_service, AudioProcessor
+from stt import get_stt_service, AudioProcessor, normalize_transcription_language
 from templates import get_template_engine, DocumentType
 
 # Configure logging
@@ -256,7 +256,11 @@ async def get_templates():
 async def transcribe_audio(
     file: UploadFile = File(...),
     language: str = Form("auto"),
+    dominant_language: Optional[str] = Form(None),
     translate: bool = Form(False),
+    chunk_seconds: int = Form(30),
+    vad: bool = Form(True),
+    beam_size: int = Form(1),
 ):
     """
     Transcribe audio to text using Whisper.
@@ -290,14 +294,32 @@ async def transcribe_audio(
         else:
             wav_path = tmp_path
         
+        requested_language = normalize_transcription_language(language)
+        dominant_language_hint = normalize_transcription_language(dominant_language) if dominant_language else None
+        effective_language = requested_language
+
+        # Conversation-level fallback: if UI sends mixed/auto, use dominant language hint
+        # for more stable long-session transcription without manual language switching.
+        if requested_language == "auto" and dominant_language_hint and dominant_language_hint != "auto":
+            effective_language = dominant_language_hint
+
         # Transcribe
         stt = get_stt_service()
-        result = stt.transcribe(wav_path, language=language, translate=translate)
+        result = stt.transcribe(
+            wav_path,
+            language=effective_language,
+            translate=translate,
+            chunk_seconds=chunk_seconds,
+            vad=vad,
+            beam_size=beam_size,
+        )
         
         # Audit log
         audit.log("transcription", {
             "filename": file.filename,
-            "language": language,
+            "language": requested_language,
+            "effective_language": effective_language,
+            "dominant_language_hint": dominant_language_hint,
             "detected_language": result.get("language"),
             "duration": result.get("audio_duration"),
             "success": result.get("success"),
@@ -308,11 +330,19 @@ async def transcribe_audio(
                 "success": True,
                 "text": result["text"],
                 "language": result.get("language", "unknown"),
+                "detected_languages": result.get("detected_languages", []),
+                "code_switching": result.get("code_switching", False),
                 "language_confidence": result.get("language_probability", 0),
                 "audio_duration": result.get("audio_duration", 0),
                 "transcription_time": result.get("transcription_time", 0),
                 "realtime_factor": result.get("realtime_factor", 0),
                 "backend": result.get("backend"),
+                "model_used": result.get("model_used"),
+                "chunked": result.get("chunked", False),
+                "chunks_processed": result.get("chunks_processed", 1),
+                "requested_language": requested_language,
+                "dominant_language_hint": dominant_language_hint,
+                "effective_language": effective_language,
             }
         else:
             raise HTTPException(500, result.get("error", "Transcription failed"))

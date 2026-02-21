@@ -1,0 +1,270 @@
+{
+  "results": [
+    {
+      "model": "base",
+      "threads": 2,
+      "sample": "english_jfk",
+      "language": "en",
+      "avg_latency_s": 4.97,
+      "min_latency_s": 4.849,
+      "max_latency_s": 5.091,
+      "similarity_proxy": 1.0,
+      "transcript_preview": "And so my fellow Americans ask not what your country can do for you, ask what you can do for your country."
+    },
+    {
+      "model": "base",
+      "threads": 2,
+      "sample": "hindi_fleurs",
+      "language": "hi",
+      "avg_latency_s": 6.034,
+      "min_latency_s": 5.857,
+      "max_latency_s": 6.211,
+      "similarity_proxy": 0.215,
+      "transcript_preview": "کچھ کرنڈра کوتا ہے جس کا مطلب یہاں کی ان میں تھوڑے یا بھی نہ کسی جھت کے سے ٹھٹھنے کی پڑھتی ہوتی ہے"
+    },
+    {
+      "model": "base",
+      "threads": 2,
+      "sample": "tamil_fleurs",
+      "language": "ta",
+      "avg_latency_s": 7.899,
+      "min_latency_s": 7.895,
+      "max_latency_s": 7.904,
+      "similarity_proxy": 0.75,
+      "transcript_preview": "இது வேதியில் பீகச்சேன் அலைக்கப்படியழு நீன் சூப்பு முட்டைக்கோ சாற்றைப் பயன்பட்டுக்கு ஒரு குரியாத்தையும் ஒருவாக்கலாம்."
+    },
+    {
+      "model": "base",
+      "threads": 4,
+      "sample": "english_jfk",
+      "language": "en",
+      "avg_latency_s": 4.232,
+      "min_latency_s": 3.775,
+      "max_latency_s": 4.69,
+      "similarity_proxy": 1.0,
+      "transcript_preview": "And so my fellow Americans ask not what your country can do for you, ask what you can do for your country."
+    },
+    {
+      "model": "base",
+      "threads": 4,
+      "sample": "hindi_fleurs",
+      "language": "hi",
+      "avg_latency_s": 4.846,
+      "min_latency_s": 4.645,
+      "max_latency_s": 5.048,
+      "similarity_proxy": 0.215,
+      "transcript_preview": "کچھ کرنڈра کوتا ہے جس کا مطلب یہاں کی ان میں تھوڑے یا بھی نہ کسی جھت کے سے ٹھٹھنے کی پڑھتی ہوتی ہے"
+    },
+    {
+      "model": "base",
+      "threads": 4,
+      "sample": "tamil_fleurs",
+      "language": "ta",
+      "avg_latency_s": 5.875,
+      "min_latency_s": 5.668,
+      "max_latency_s": 6.082,
+      "similarity_proxy": 0.75,
+      "transcript_preview": "இது வேதியில் பீகச்சேன் அலைக்கப்படியழு நீன் சூப்பு முட்டைக்கோ சாற்றைப் பயன்பட்டுக்கு ஒரு குரியாத்தையும் ஒருவாக்கலாம்."
+    },
+    {
+      "model": "base",
+      "threads": 8,
+      "sample": "english_jfk",
+      "language": "en",
+      "avg_latency_s": 3.668,
+      "min_latency_s": 3.577,
+      "max_latency_s": 3.758,
+      "similarity_proxy": 1.0,
+      "transcript_preview": "And so my fellow Americans ask not what your country can do for you, ask what you can do for your country."
+    },
+    {
+      "model": "base",
+      "threads": 8,
+      "sample": "hindi_fleurs",
+      "language": "hi",
+      "avg_latency_s": 6.505,
+      "min_latency_s": 5.733,
+      "max_latency_s": 7.277,
+      "similarity_proxy": 0.215,
+      "transcript_preview": "کچھ کرنڈра کوتا ہے جس کا مطلب یہاں کی ان میں تھوڑے یا بھی نہ کسی جھت کے سے ٹھٹھنے کی پڑھتی ہوتی ہے"
+    },
+    {
+      "model": "base",
+      "threads": 8,
+      "sample": "tamil_fleurs",
+      "language": "ta",
+      "avg_latency_s": 12.541,
+      "min_latency_s": 10.845,
+      "max_latency_s": 14.236,
+      "similarity_proxy": 0.75,
+      "transcript_preview": "இது வேதியில் பீகச்சேன் அலைக்கப்படியழு நீன் சூப்பு முட்டைக்கோ சாற்றைப் பயன்பட்டுக்கு ஒரு குரியாத்தையும் ஒருவாக்கலாம்."
+    },
+    {
+      "model": "small",
+      "threads": 2,
+      "sample": "english_jfk",
+      "language": "en",
+      "avg_latency_s": 15.122,
+      "min_latency_s": 14.385,
+      "max_latency_s": 15.858,
+      "similarity_proxy": 0.995,
+      "transcript_preview": "And so my fellow Americans, ask not what your country can do for you, ask what you can do for your country."
+    },
+    {
+      "model": "small",
+      "threads": 2,
+      "sample": "hindi_fleurs",
+      "language": "hi",
+      "avg_latency_s": 23.705,
+      "min_latency_s": 23.657,
+      "max_latency_s": 23.753,
+      "similarity_proxy": 0.814,
+      "transcript_preview": "कुछ आँगो में आजतर केंदरख होता है, जिस का मतलब यहाँ की उन में छोड़े या बिना किसी जटके से तुटनें की प्रवत्ती होती है."
+    },
+    {
+      "model": "small",
+      "threads": 2,
+      "sample": "tamil_fleurs",
+      "language": "ta",
+      "avg_latency_s": 22.651,
+      "min_latency_s": 22.612,
+      "max_latency_s": 22.691,
+      "similarity_proxy": 0.857,
+      "transcript_preview": "இது வேதியில் பிகைச்சனை அலைக்கப்படிக்கிறது நீங்கள் சுப்பு முட்டைக்கும் சாட்டைப் பயன்படுத்திய ஒரு குரிகாட்டியை உருவாக்கலாம"
+    },
+    {
+      "model": "small",
+      "threads": 4,
+      "sample": "english_jfk",
+      "language": "en",
+      "avg_latency_s": 10.522,
+      "min_latency_s": 10.227,
+      "max_latency_s": 10.817,
+      "similarity_proxy": 0.995,
+      "transcript_preview": "And so my fellow Americans, ask not what your country can do for you, ask what you can do for your country."
+    },
+    {
+      "model": "small",
+      "threads": 4,
+      "sample": "hindi_fleurs",
+      "language": "hi",
+      "avg_latency_s": 18.177,
+      "min_latency_s": 17.482,
+      "max_latency_s": 18.872,
+      "similarity_proxy": 0.814,
+      "transcript_preview": "कुछ आँगो में आजतर केंदरख होता है, जिस का मतलब यहाँ की उन में छोड़े या बिना किसी जटके से तुटनें की प्रवत्ती होती है."
+    },
+    {
+      "model": "small",
+      "threads": 4,
+      "sample": "tamil_fleurs",
+      "language": "ta",
+      "avg_latency_s": 18.204,
+      "min_latency_s": 17.597,
+      "max_latency_s": 18.81,
+      "similarity_proxy": 0.857,
+      "transcript_preview": "இது வேதியில் பிகைச்சனை அலைக்கப்படிக்கிறது நீங்கள் சுப்பு முட்டைக்கும் சாட்டைப் பயன்படுத்திய ஒரு குரிகாட்டியை உருவாக்கலாம"
+    },
+    {
+      "model": "small",
+      "threads": 8,
+      "sample": "english_jfk",
+      "language": "en",
+      "avg_latency_s": 11.887,
+      "min_latency_s": 11.67,
+      "max_latency_s": 12.103,
+      "similarity_proxy": 0.995,
+      "transcript_preview": "And so my fellow Americans, ask not what your country can do for you, ask what you can do for your country."
+    },
+    {
+      "model": "small",
+      "threads": 8,
+      "sample": "hindi_fleurs",
+      "language": "hi",
+      "avg_latency_s": 20.377,
+      "min_latency_s": 19.588,
+      "max_latency_s": 21.165,
+      "similarity_proxy": 0.814,
+      "transcript_preview": "कुछ आँगो में आजतर केंदरख होता है, जिस का मतलब यहाँ की उन में छोड़े या बिना किसी जटके से तुटनें की प्रवत्ती होती है."
+    },
+    {
+      "model": "small",
+      "threads": 8,
+      "sample": "tamil_fleurs",
+      "language": "ta",
+      "avg_latency_s": 19.046,
+      "min_latency_s": 17.787,
+      "max_latency_s": 20.305,
+      "similarity_proxy": 0.857,
+      "transcript_preview": "இது வேதியில் பிகைச்சனை அலைக்கப்படிக்கிறது நீங்கள் சுப்பு முட்டைக்கும் சாட்டைப் பயன்படுத்திய ஒரு குரிகாட்டியை உருவாக்கலாம"
+    }
+  ],
+  "summary": [
+    {
+      "model": "base",
+      "threads": 8,
+      "sample": "english_jfk",
+      "language": "en",
+      "avg_latency_s": 3.668,
+      "min_latency_s": 3.577,
+      "max_latency_s": 3.758,
+      "similarity_proxy": 1.0,
+      "transcript_preview": "And so my fellow Americans ask not what your country can do for you, ask what you can do for your country."
+    },
+    {
+      "model": "small",
+      "threads": 4,
+      "sample": "english_jfk",
+      "language": "en",
+      "avg_latency_s": 10.522,
+      "min_latency_s": 10.227,
+      "max_latency_s": 10.817,
+      "similarity_proxy": 0.995,
+      "transcript_preview": "And so my fellow Americans, ask not what your country can do for you, ask what you can do for your country."
+    },
+    {
+      "model": "base",
+      "threads": 4,
+      "sample": "hindi_fleurs",
+      "language": "hi",
+      "avg_latency_s": 4.846,
+      "min_latency_s": 4.645,
+      "max_latency_s": 5.048,
+      "similarity_proxy": 0.215,
+      "transcript_preview": "کچھ کرنڈра کوتا ہے جس کا مطلب یہاں کی ان میں تھوڑے یا بھی نہ کسی جھت کے سے ٹھٹھنے کی پڑھتی ہوتی ہے"
+    },
+    {
+      "model": "small",
+      "threads": 4,
+      "sample": "hindi_fleurs",
+      "language": "hi",
+      "avg_latency_s": 18.177,
+      "min_latency_s": 17.482,
+      "max_latency_s": 18.872,
+      "similarity_proxy": 0.814,
+      "transcript_preview": "कुछ आँगो में आजतर केंदरख होता है, जिस का मतलब यहाँ की उन में छोड़े या बिना किसी जटके से तुटनें की प्रवत्ती होती है."
+    },
+    {
+      "model": "base",
+      "threads": 4,
+      "sample": "tamil_fleurs",
+      "language": "ta",
+      "avg_latency_s": 5.875,
+      "min_latency_s": 5.668,
+      "max_latency_s": 6.082,
+      "similarity_proxy": 0.75,
+      "transcript_preview": "இது வேதியில் பீகச்சேன் அலைக்கப்படியழு நீன் சூப்பு முட்டைக்கோ சாற்றைப் பயன்பட்டுக்கு ஒரு குரியாத்தையும் ஒருவாக்கலாம்."
+    },
+    {
+      "model": "small",
+      "threads": 4,
+      "sample": "tamil_fleurs",
+      "language": "ta",
+      "avg_latency_s": 18.204,
+      "min_latency_s": 17.597,
+      "max_latency_s": 18.81,
+      "similarity_proxy": 0.857,
+      "transcript_preview": "இது வேதியில் பிகைச்சனை அலைக்கப்படிக்கிறது நீங்கள் சுப்பு முட்டைக்கும் சாட்டைப் பயன்படுத்திய ஒரு குரிகாட்டியை உருவாக்கலாம"
+    }
+  ]
+}

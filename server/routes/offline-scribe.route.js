@@ -18,6 +18,112 @@ const router = express.Router();
 
 // Offline scribe service URL (Python FastAPI)
 const OFFLINE_SCRIBE_URL = process.env.OFFLINE_SCRIBE_URL || 'http://localhost:8006';
+const ALLOW_REMOTE_OFFLINE_SCRIBE = process.env.ALLOW_REMOTE_OFFLINE_SCRIBE === 'true';
+
+const INDIAN_LANGUAGE_MAP = {
+    auto: 'auto',
+    en: 'en',
+    english: 'en',
+    hi: 'hi',
+    hindi: 'hi',
+    bn: 'bn',
+    bengali: 'bn',
+    as: 'as',
+    assamese: 'as',
+    gu: 'gu',
+    gujarati: 'gu',
+    kn: 'kn',
+    kannada: 'kn',
+    ml: 'ml',
+    malayalam: 'ml',
+    mr: 'mr',
+    marathi: 'mr',
+    or: 'or',
+    odia: 'or',
+    pa: 'pa',
+    punjabi: 'pa',
+    ta: 'ta',
+    tamil: 'ta',
+    te: 'te',
+    telugu: 'te',
+    ur: 'ur',
+    urdu: 'ur',
+    ks: 'ks',
+    kashmiri: 'ks',
+    sd: 'sd',
+    sindhi: 'sd',
+    kok: 'kok',
+    konkani: 'kok',
+    ne: 'ne',
+    nepali: 'ne',
+    mai: 'mai',
+    maithili: 'mai',
+    sa: 'sa',
+    sanskrit: 'sa',
+    sat: 'sat',
+    santali: 'sat',
+    doi: 'doi',
+    dogri: 'doi',
+    mni: 'mni',
+    manipuri: 'mni',
+    bho: 'bho',
+    bhojpuri: 'bho',
+    mixed: 'auto',
+    multi: 'auto',
+    multilingual: 'auto',
+    'code-switch': 'auto',
+    codeswitch: 'auto',
+    colloquial: 'auto',
+    hinglish: 'auto',
+    tanglish: 'auto'
+};
+
+const FALLBACK_SUPPORTED_LANGUAGES = {
+    auto: 'Auto Detect',
+    en: 'English',
+    hi: 'Hindi',
+    bn: 'Bengali',
+    as: 'Assamese',
+    gu: 'Gujarati',
+    kn: 'Kannada',
+    ml: 'Malayalam',
+    mr: 'Marathi',
+    or: 'Odia',
+    pa: 'Punjabi',
+    ta: 'Tamil',
+    te: 'Telugu',
+    ur: 'Urdu',
+    ks: 'Kashmiri',
+    sd: 'Sindhi',
+    kok: 'Konkani',
+    ne: 'Nepali',
+    mai: 'Maithili',
+    sa: 'Sanskrit',
+    sat: 'Santali',
+    doi: 'Dogri',
+    mni: 'Manipuri',
+    bho: 'Bhojpuri'
+};
+
+function normalizeLanguage(inputLanguage) {
+    if (!inputLanguage) return 'auto';
+    const normalized = String(inputLanguage).trim().toLowerCase();
+    return INDIAN_LANGUAGE_MAP[normalized] || (normalized.length <= 5 ? normalized : 'auto');
+}
+
+function assertLocalScribeTarget() {
+    try {
+        const url = new URL(OFFLINE_SCRIBE_URL);
+        const host = url.hostname;
+        const isLocalHost = host === 'localhost' || host === '127.0.0.1' || host === '::1';
+
+        if (!isLocalHost && !ALLOW_REMOTE_OFFLINE_SCRIBE) {
+            throw new Error(`OFFLINE_SCRIBE_URL must be local for on-prem privacy. Current host: ${host}`);
+        }
+    } catch (error) {
+        throw new Error(`Invalid OFFLINE_SCRIBE_URL configuration: ${error.message}`);
+    }
+}
 
 // Configure multer for audio file uploads
 const storage = multer.memoryStorage();
@@ -52,6 +158,7 @@ const upload = multer({
 
 // Helper function to proxy requests to offline scribe service
 async function proxyToScribe(endpoint, method = 'GET', body = null, contentType = 'application/json') {
+    assertLocalScribeTarget();
     const url = `${OFFLINE_SCRIBE_URL}${endpoint}`;
     
     const options = {
@@ -118,12 +225,30 @@ router.get('/health', async (req, res) => {
 router.get('/languages', async (req, res) => {
     try {
         const result = await proxyToScribe('/api/scribe/languages');
-        res.json(result);
+        if (result && typeof result === 'object') {
+            const merged = { ...FALLBACK_SUPPORTED_LANGUAGES, ...(result.languages || result) };
+            return res.json({
+                success: true,
+                mode: 'offline-local',
+                languages: merged,
+                total: Object.keys(merged).length
+            });
+        }
+
+        res.json({
+            success: true,
+            mode: 'offline-local',
+            languages: FALLBACK_SUPPORTED_LANGUAGES,
+            total: Object.keys(FALLBACK_SUPPORTED_LANGUAGES).length
+        });
     } catch (error) {
         logger.error('Failed to get supported languages:', { error: error.message });
-        res.status(503).json({
-            error: 'Service unavailable',
-            message: error.message
+        res.status(200).json({
+            success: true,
+            mode: 'offline-local-fallback',
+            warning: error.message,
+            languages: FALLBACK_SUPPORTED_LANGUAGES,
+            total: Object.keys(FALLBACK_SUPPORTED_LANGUAGES).length
         });
     }
 });
@@ -164,15 +289,25 @@ router.post('/transcribe', authUser, upload.single('audio'), async (req, res) =>
             });
         }
 
-        const language = req.body.language || 'auto';
+        const language = normalizeLanguage(req.body.language || 'auto');
+        const dominantLanguage = req.body.dominant_language ? normalizeLanguage(req.body.dominant_language) : null;
+        const chunkSeconds = Number(req.body.chunk_seconds || 30);
+        const vad = String(req.body.vad || 'true') === 'true';
+        const beamSize = Number(req.body.beam_size || 1);
 
         // Create FormData for multipart upload
         const formData = new FormData();
-        formData.append('audio', req.file.buffer, {
+        formData.append('file', req.file.buffer, {
             filename: req.file.originalname || 'audio.wav',
             contentType: req.file.mimetype
         });
         formData.append('language', language);
+        if (dominantLanguage && dominantLanguage !== 'auto') {
+            formData.append('dominant_language', dominantLanguage);
+        }
+        formData.append('chunk_seconds', String(chunkSeconds));
+        formData.append('vad', String(vad));
+        formData.append('beam_size', String(beamSize));
 
         const url = `${OFFLINE_SCRIBE_URL}/api/scribe/transcribe`;
         
@@ -219,7 +354,8 @@ router.post('/transcribe', authUser, upload.single('audio'), async (req, res) =>
  */
 router.post('/normalize', authUser, async (req, res) => {
     try {
-        const { text, language = 'hi' } = req.body;
+        const { text } = req.body;
+        const language = normalizeLanguage(req.body.language || 'hi');
 
         if (!text) {
             return res.status(400).json({
@@ -258,7 +394,8 @@ router.post('/normalize', authUser, async (req, res) => {
  */
 router.post('/prescription', authUser, async (req, res) => {
     try {
-        const { dictation, language = 'hi', patient_context = {} } = req.body;
+        const { dictation, patient_context = {} } = req.body;
+        const language = normalizeLanguage(req.body.language || 'hi');
 
         if (!dictation) {
             return res.status(400).json({
@@ -307,7 +444,8 @@ router.post('/prescription', authUser, async (req, res) => {
  */
 router.post('/opd-notes', authUser, async (req, res) => {
     try {
-        const { dictation, language = 'hi', patient_context = {} } = req.body;
+        const { dictation, patient_context = {} } = req.body;
+        const language = normalizeLanguage(req.body.language || 'hi');
 
         if (!dictation) {
             return res.status(400).json({
@@ -352,7 +490,8 @@ router.post('/opd-notes', authUser, async (req, res) => {
  */
 router.post('/ipd-notes', authUser, async (req, res) => {
     try {
-        const { dictation, language = 'hi', patient_context = {} } = req.body;
+        const { dictation, patient_context = {} } = req.body;
+        const language = normalizeLanguage(req.body.language || 'hi');
 
         if (!dictation) {
             return res.status(400).json({
@@ -397,7 +536,8 @@ router.post('/ipd-notes', authUser, async (req, res) => {
  */
 router.post('/discharge', authUser, async (req, res) => {
     try {
-        const { dictation, language = 'hi', patient_context = {} } = req.body;
+        const { dictation, patient_context = {} } = req.body;
+        const language = normalizeLanguage(req.body.language || 'hi');
 
         if (!dictation) {
             return res.status(400).json({
@@ -453,8 +593,11 @@ router.post('/full-pipeline', authUser, upload.single('audio'), async (req, res)
             });
         }
 
-        const language = req.body.language || 'auto';
+        const language = normalizeLanguage(req.body.language || 'auto');
         const documentType = req.body.document_type || 'prescription';
+        const chunkSeconds = Number(req.body.chunk_seconds || 30);
+        const vad = String(req.body.vad || 'true') === 'true';
+        const beamSize = Number(req.body.beam_size || 1);
         
         let patientContext = {};
         try {
@@ -473,6 +616,9 @@ router.post('/full-pipeline', authUser, upload.single('audio'), async (req, res)
         formData.append('language', language);
         formData.append('document_type', documentType);
         formData.append('patient_context', JSON.stringify(patientContext));
+        formData.append('chunk_seconds', String(chunkSeconds));
+        formData.append('vad', String(vad));
+        formData.append('beam_size', String(beamSize));
 
         const url = `${OFFLINE_SCRIBE_URL}/api/scribe/full-pipeline`;
         
@@ -519,7 +665,8 @@ router.post('/full-pipeline', authUser, upload.single('audio'), async (req, res)
  */
 router.post('/batch', authUser, async (req, res) => {
     try {
-        const { items, language = 'hi' } = req.body;
+        const { items } = req.body;
+        const language = normalizeLanguage(req.body.language || 'hi');
 
         if (!items || !Array.isArray(items) || items.length === 0) {
             return res.status(400).json({
@@ -551,7 +698,7 @@ router.post('/batch', authUser, async (req, res) => {
                 const endpoint = `/api/scribe/${item.document_type || 'prescription'}`;
                 const result = await proxyToScribe(endpoint, 'POST', {
                     dictation: item.dictation,
-                    language: item.language || language,
+                    language: normalizeLanguage(item.language || language),
                     patient_context: item.patient_context || {},
                     doctor_context
                 });
@@ -621,7 +768,10 @@ router.get('/status', authUser, async (req, res) => {
                 features: [
                     'CPU-only inference (no GPU required)',
                     'Fully offline operation',
-                    'Indian language support (Hindi, Tamil, Telugu)',
+                    'All major Indian language support via local model',
+                    'Language normalization (code/name aliases)',
+                    'Efficient chunked transcription (default 30s)',
+                    'VAD enabled by default for faster processing',
                     'OPD Prescriptions',
                     'OPD Notes',
                     'IPD Notes',

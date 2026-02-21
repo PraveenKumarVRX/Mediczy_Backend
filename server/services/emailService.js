@@ -538,6 +538,68 @@ Configuration Details:
       console.error('Error tracking email click:', error);
     }
   }
+
+  // Send outbound email from team member
+  async sendOutboundEmail(emailConfigId, emailData) {
+    try {
+      const { to, cc, bcc, subject, htmlContent, textContent } = emailData;
+
+      if (!to || !subject) {
+        throw new Error('Recipient email and subject are required');
+      }
+
+      const config = await EmailConfig.findOne({ where: { id: emailConfigId } });
+      
+      if (!config || !config.isActive) {
+        throw new Error('Email configuration not found or inactive');
+      }
+
+      const transporter = await this.getTransporter(config);
+
+      const mailOptions = {
+        from: `"${config.fromName}" <${config.fromEmail}>`,
+        to,
+        cc: cc || undefined,
+        bcc: bcc || undefined,
+        subject,
+        html: htmlContent || textContent,
+        text: textContent || undefined,
+        headers: {
+          'X-Mediqzy-System': 'true',
+          'X-Sender-Type': 'team-member'
+        }
+      };
+
+      console.log(`📧 Sending outbound email to ${to}`);
+      const result = await transporter.sendMail(mailOptions);
+
+      // Log sent email
+      const emailLog = await EmailLog.create({
+        to,
+        cc: cc || null,
+        bcc: bcc || null,
+        subject,
+        htmlContent: htmlContent || null,
+        textContent: textContent || null,
+        status: 'sent',
+        sentAt: new Date(),
+        messageId: result.messageId,
+        configId: emailConfigId
+      });
+
+      console.log(`✅ Email sent successfully to ${to}`);
+      console.log(`📧 Message ID: ${result.messageId}`);
+
+      return {
+        success: true,
+        messageId: result.messageId,
+        emailLogId: emailLog.id
+      };
+    } catch (error) {
+      console.error('Error sending outbound email:', error);
+      throw error;
+    }
+  }
 }
 
 // Create singleton instance

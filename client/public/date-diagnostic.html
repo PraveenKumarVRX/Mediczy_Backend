@@ -1,0 +1,152 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <title>Date Diagnostic</title>
+  <style>
+    body { font-family: monospace; padding: 20px; background: #1a1a1a; color: #fff; }
+    .test { margin: 10px 0; padding: 10px; background: #2a2a2a; border-radius: 4px; }
+    .pass { border-left: 4px solid #00ff00; }
+    .fail { border-left: 4px solid #ff0000; }
+    pre { margin: 5px 0; white-space: pre-wrap; }
+  </style>
+</head>
+<body>
+  <h1>🔍 Date Calculation Diagnostic</h1>
+  <div id="results"></div>
+  
+  <script>
+    const results = document.getElementById('results');
+    
+    function test(name, fn) {
+      try {
+        const result = fn();
+        const div = document.createElement('div');
+        div.className = `test ${result.pass ? 'pass' : 'fail'}`;
+        div.innerHTML = `<strong>${result.pass ? '✅' : '❌'} ${name}</strong><pre>${result.message}</pre>`;
+        results.appendChild(div);
+        return result;
+      } catch (error) {
+        const div = document.createElement('div');
+        div.className = 'test fail';
+        div.innerHTML = `<strong>❌ ${name}</strong><pre>ERROR: ${error.message}</pre>`;
+        results.appendChild(div);
+        return { pass: false, message: error.message };
+      }
+    }
+    
+    // Test 1: System date
+    test('System Date Check', () => {
+      const now = new Date();
+      const nowStr = now.toString();
+      const nowISO = now.toISOString();
+      const isToday = now.toISOString().startsWith('2026-02-19');
+      return {
+        pass: isToday,
+        message: `Browser date: ${nowStr}\nISO: ${nowISO}\nExpected: Feb 19, 2026`
+      };
+    });
+    
+    // Test 2: Date parsing
+    test('Date Parsing Test', () => {
+      const feb20 = new Date('2026-02-20');
+      const feb20Str = feb20.toString();
+      const feb20ISO = feb20.toISOString();
+      return {
+        pass: true,
+        message: `new Date('2026-02-20'):\nLocal: ${feb20Str}\nISO: ${feb20ISO}`
+      };
+    });
+    
+    // Test 3: setHours normalization
+    test('setHours Normalization', () => {
+      const feb20 = new Date('2026-02-20');
+      feb20.setHours(0, 0, 0, 0);
+      const today = new Date();
+      today.setHours(0, 0, 0, 0);
+      
+      return {
+        pass: true,
+        message: `Feb 20 normalized: ${feb20.toString()}\nFeb 20 valueOf: ${feb20.valueOf()}\nToday normalized: ${today.toString()}\nToday valueOf: ${today.valueOf()}`
+      };
+    });
+    
+    // Test 4: Date comparison
+    test('Date Comparison Logic', () => {
+      const feb20 = new Date('2026-02-20');
+      feb20.setHours(0, 0, 0, 0);
+      const today = new Date();
+      today.setHours(0, 0, 0, 0);
+      
+      const isPast = feb20 < today;
+      const pass = !isPast; // Feb 20 should NOT be past
+      
+      return {
+        pass,
+        message: `Feb 20 < Today: ${isPast}\nFeb 20 valueOf: ${feb20.valueOf()}\nToday valueOf: ${today.valueOf()}\nDifference: ${feb20.valueOf() - today.valueOf()} ms\n\n${pass ? 'CORRECT: Feb 20 is in the future' : 'ERROR: Feb 20 is being marked as past!'}`
+      };
+    });
+    
+    // Test 5: Status calculation simulation
+    test('Status Calculation (Feb 20, pending)', () => {
+      const rawDate = '2026-02-20';
+      const originalStatus = 'pending';
+      
+      const appointmentDate = new Date(rawDate);
+      appointmentDate.setHours(0, 0, 0, 0);
+      const today = new Date();
+      today.setHours(0, 0, 0, 0);
+      const isPast = appointmentDate < today;
+      
+      let calculatedStatus;
+      if (originalStatus === "cancelled") {
+        calculatedStatus = "cancelled";
+      } else if (!isPast && (originalStatus === "scheduled" || originalStatus === "confirmed" || originalStatus === "pending")) {
+        calculatedStatus = "upcoming";
+      } else {
+        calculatedStatus = "completed";
+      }
+      
+      const pass = calculatedStatus === "upcoming";
+      return {
+        pass,
+        message: `Input: date='${rawDate}', status='${originalStatus}'\nisPast: ${isPast}\nCalculated status: '${calculatedStatus}'\n\n${pass ? 'CORRECT: Should be upcoming' : 'ERROR: Should be upcoming but got ' + calculatedStatus}`
+      };
+    });
+    
+    // Test 6: Multiple test dates
+    test('Multiple Date Tests', () => {
+      const testDates = [
+        { date: '2026-02-19', expected: 'today' },
+        { date: '2026-02-20', expected: 'future' },
+        { date: '2026-02-18', expected: 'past' },
+        { date: '2026-03-01', expected: 'future' }
+      ];
+      
+      const today = new Date();
+      today.setHours(0, 0, 0, 0);
+      
+      let results = [];
+      let allPass = true;
+      
+      testDates.forEach(({ date, expected }) => {
+        const d = new Date(date);
+        d.setHours(0, 0, 0, 0);
+        const isPast = d < today;
+        const isToday = d.valueOf() === today.valueOf();
+        const isFuture = d > today;
+        
+        let actual = isPast ? 'past' : (isToday ? 'today' : 'future');
+        const pass = actual === expected;
+        if (!pass) allPass = false;
+        
+        results.push(`${date}: expected '${expected}', got '${actual}' ${pass ? '✅' : '❌'}`);
+      });
+      
+      return {
+        pass: allPass,
+        message: results.join('\n')
+      };
+    });
+  </script>
+</body>
+</html>

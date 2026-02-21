@@ -1,5 +1,4 @@
 import { useAuth } from "@/auth/AuthProvider";
-import MainLayout from "@/components/layout/MainLayout";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -308,6 +307,87 @@ const VideoConsultation = () => {
     if (appointment) {
       setCurrentAppointment(appointment);
     }
+
+    const normalizeRoomName = (value?: string) => {
+      if (!value) return '';
+      let normalized = value.trim();
+      if (!normalized) return '';
+
+      if (normalized.startsWith('http')) {
+        try {
+          const parsed = new URL(normalized);
+          if (parsed.pathname.includes('/rooms/')) {
+            normalized = parsed.pathname.split('/rooms/')[1]?.split('/')[0] || normalized;
+          } else if (parsed.pathname.includes('/room/')) {
+            normalized = parsed.pathname.split('/room/')[1]?.split('/')[0] || normalized;
+          }
+        } catch {
+          // keep original value
+        }
+      }
+
+      if (normalized.includes('/rooms/')) {
+        normalized = normalized.split('/rooms/')[1]?.split('?')[0] || normalized;
+      } else if (normalized.includes('/room/')) {
+        normalized = normalized.split('/room/')[1]?.split('?')[0] || normalized;
+      }
+
+      return normalized;
+    };
+
+    const joinWithRoomToken = async (rawRoomName: string) => {
+      const roomName = normalizeRoomName(rawRoomName);
+      if (!roomName) return false;
+
+      const participantName = currentUser?.firstName || 'Patient';
+
+      try {
+        const tokenResponse = await api.post('/mobile/video/token', { roomName });
+        const data = tokenResponse.data?.data || tokenResponse.data;
+        if (tokenResponse.data?.success && data?.token && data?.serverUrl) {
+          setLiveKitConnection({
+            serverUrl: data.serverUrl,
+            token: data.token,
+            roomName: data.roomName || roomName,
+          });
+          setIsInCall(true);
+          setConnectionStatus('connecting');
+          toast({
+            title: '🎥 Joining Video Call',
+            description: 'Connecting securely to consultation room...',
+          });
+          return true;
+        }
+      } catch (mobileTokenError) {
+        console.warn('Mobile token endpoint failed, trying legacy token endpoint:', mobileTokenError);
+      }
+
+      try {
+        const legacyResponse = await api.post('/video/livekit/token', {
+          roomName,
+          participantName,
+        });
+        const data = legacyResponse.data || {};
+        if (data?.success && data?.token && data?.serverUrl) {
+          setLiveKitConnection({
+            serverUrl: data.serverUrl,
+            token: data.token,
+            roomName: data.roomName || roomName,
+          });
+          setIsInCall(true);
+          setConnectionStatus('connecting');
+          toast({
+            title: '🎥 Joining Video Call',
+            description: 'Connecting securely to consultation room...',
+          });
+          return true;
+        }
+      } catch (legacyTokenError) {
+        console.error('Legacy token endpoint failed:', legacyTokenError);
+      }
+
+      return false;
+    };
     
     let room = customRoomId;
     let appointmentId = appointment?.id;
@@ -370,6 +450,21 @@ const VideoConsultation = () => {
         return;
       }
     }
+
+    // Direct room joins (e.g., triage_... links) must use token-based SDK mode.
+    if (!appointmentId && room) {
+      const joinedWithToken = await joinWithRoomToken(room);
+      if (joinedWithToken) {
+        return;
+      }
+
+      toast({
+        variant: "destructive",
+        title: "Cannot Join Room",
+        description: "Unable to get secure room token. Please retry from the consultation notification.",
+      });
+      return;
+    }
     
     // If we still don't have a room and no appointment ID, show error
     if (!room && !appointmentId) {
@@ -397,7 +492,7 @@ const VideoConsultation = () => {
     
     setRoomId(room);
     setShowPreCallCheck(true);
-  }, [toast]);
+  }, [currentUser, toast]);
 
   // Actually start the call after device check
   const startVideoCall = useCallback(() => {
@@ -704,7 +799,7 @@ const VideoConsultation = () => {
   }
 
   return (
-    <MainLayout>
+    <>
       <div className="container mx-auto py-8 px-4">
         <div className="max-w-6xl mx-auto space-y-8">
           {/* Header */}
@@ -1126,7 +1221,7 @@ const VideoConsultation = () => {
           </div>
         </DialogContent>
       </Dialog>
-    </MainLayout>
+    </>
   );
 };
 

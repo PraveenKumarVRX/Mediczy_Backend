@@ -1,5 +1,6 @@
 import Imap from 'imap';
-import simpleParser from 'mailparser';
+import { simpleParser } from 'mailparser';
+import { Op } from 'sequelize';
 import EmailInbox from '../models/emailInbox.model.js';
 import { aiProcessEmail } from './aiEmailProcessor.service.js';
 import { autoUpdatePortal } from './emailAutoUpdate.service.js';
@@ -15,83 +16,86 @@ class InboundEmailService {
   async connectAndFetchEmails(teamMemberId, imapConfig) {
     return new Promise((resolve, reject) => {
       const imap = new Imap({
-        user: imapConfig.email,
+        user: imapConfig.username || imapConfig.email,
         password: imapConfig.password,
         host: imapConfig.host || 'imap.gmail.com',
         port: imapConfig.port || 993,
         tls: imapConfig.tls !== undefined ? imapConfig.tls : true,
-        tlsOptions: { rejectUnauthorized: false }
+        tlsOptions: { rejectUnauthorized: false },
+        authTimeout: 15000,
+        connTimeout: 15000
       });
 
-      const openInbox = (cb) => {
-        imap.openBox('INBOX', false, cb);
-      };
-
-      imap.openBox('INBOX', false, async (err, box) => {
-        if (err) {
-          reject(new Error(`Failed to open INBOX: ${err.message}`));
-          return;
-        }
-
-        try {
-          // Fetch recent emails (unread + last 50)
-          const searchCriteria = ['UNSEEN', ['SINCE', new Date(Date.now() - 7 * 24 * 60 * 60 * 1000)]];
-          const results = await new Promise((res, rej) => {
-            imap.search(searchCriteria, (err, results) => {
-              if (err) rej(err);
-              else res(results || []);
-            });
-          });
-
-          if (results.length === 0) {
+      imap.once('ready', () => {
+        imap.openBox('INBOX', false, async (err) => {
+          if (err) {
             imap.end();
-            resolve({ success: true, newEmails: 0 });
+            reject(new Error(`Failed to open INBOX: ${err.message}`));
             return;
           }
 
-          const f = imap.fetch(results.slice(0, 50), { bodies: '' });
-          const emails = [];
+          try {
+            // Fetch recent emails (last 7 days, including already-seen messages)
+            const searchCriteria = ['ALL', ['SINCE', new Date(Date.now() - 7 * 24 * 60 * 60 * 1000)]];
+            const results = await new Promise((res, rej) => {
+              imap.search(searchCriteria, (err, results) => {
+                if (err) rej(err);
+                else res(results || []);
+              });
+            });
 
-          f.on('message', async (msg, seqno) => {
-            try {
-              const email = await this.parseEmailMessage(msg, teamMemberId);
-              emails.push(email);
-            } catch (parseError) {
-              console.error(`Error parsing email ${seqno}:`, parseError);
-            }
-          });
+            console.log(`📥 IMAP search for team ${teamMemberId}: ${results.length} messages matched`);
 
-          f.on('error', (err) => {
-            console.error('Fetch error:', err);
-          });
-
-          f.on('end', async () => {
-            try {
-              // Process all emails
-              const savedEmails = await this.processAndSaveEmails(emails, teamMemberId);
+            if (results.length === 0) {
               imap.end();
-              resolve({ success: true, newEmails: savedEmails.length, savedEmails });
-            } catch (error) {
-              reject(error);
+              resolve({ success: true, newEmails: 0 });
+              return;
             }
-          });
-        } catch (error) {
-          imap.end();
-          reject(error);
-        }
+
+            const f = imap.fetch(results.slice(0, 50), { bodies: '' });
+            const emails = [];
+            const parseTasks = [];
+
+            f.on('message', (msg, seqno) => {
+              const task = this.parseEmailMessage(msg, teamMemberId)
+                .then((email) => {
+                  emails.push(email);
+                })
+                .catch((parseError) => {
+                  console.error(`Error parsing email ${seqno}:`, parseError);
+                });
+
+              parseTasks.push(task);
+            });
+
+            f.on('error', (err) => {
+              console.error('Fetch error:', err);
+            });
+
+            f.on('end', async () => {
+              try {
+                await Promise.allSettled(parseTasks);
+                // Process all emails
+                const savedEmails = await this.processAndSaveEmails(emails, teamMemberId);
+                imap.end();
+                resolve({ success: true, newEmails: savedEmails.length, savedEmails });
+              } catch (error) {
+                imap.end();
+                reject(error);
+              }
+            });
+          } catch (error) {
+            imap.end();
+            reject(error);
+          }
+        });
       });
 
-      imap.on('error', (err) => {
+      imap.once('error', (err) => {
         reject(new Error(`IMAP error: ${err.message}`));
       });
 
-      imap.openBox('INBOX', false, (err) => {
-        if (err) {
-          reject(err);
-          return;
-        }
-        imap.end();
-      });
+      imap.connect();
     });
   }
 
@@ -100,13 +104,14 @@ class InboundEmailService {
    */
   async parseEmailMessage(msg, teamMemberId) {
     return new Promise((resolve, reject) => {
-      simpleParser(msg, {}, async (err, parsed) => {
-        if (err) {
-          reject(err);
-          return;
-        }
+      let completed = false;
+
+      msg.once('body', async (stream) => {
+        if (completed) return;
 
         try {
+          const parsed = await simpleParser(stream);
+
           const email = {
             teamMemberId,
             messageId: parsed.messageId || `${Date.now()}-${Math.random()}`,
@@ -121,7 +126,6 @@ class InboundEmailService {
             inReplyTo: parsed.inReplyTo
           };
 
-          // Extract recipients
           if (parsed.to) {
             email.to = parsed.to.value?.map(t => t.address) || [];
           }
@@ -129,10 +133,18 @@ class InboundEmailService {
             email.cc = parsed.cc.value?.map(t => t.address) || [];
           }
 
+          completed = true;
           resolve(email);
         } catch (error) {
+          completed = true;
           reject(error);
         }
+      });
+
+      msg.once('error', (error) => {
+        if (completed) return;
+        completed = true;
+        reject(error);
       });
     });
   }
@@ -256,7 +268,8 @@ class InboundEmailService {
     }
 
     if (labels) {
-      where.labels = { $contains: labels };
+      const labelList = Array.isArray(labels) ? labels : [labels];
+      where.labels = { [Op.contains]: labelList };
     }
 
     if (search) {

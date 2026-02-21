@@ -104,6 +104,8 @@ class DrIshaAPI {
   async consult(query: string, language = 'en', userContext = {}): Promise<ConsultationResult> {
     try {
       const sessionId = this.getSessionId();
+      const isEmergencyMode = Boolean((userContext as any)?.emergencyMode);
+      const requestTimeout = isEmergencyMode ? 20000 : 45000;
       
       console.log('🏥 Dr. iSHA Consult Request:', {
         query: query.substring(0, 50) + '...',
@@ -122,7 +124,7 @@ class DrIshaAPI {
         },
         {
           headers: this.getAuthHeaders(),
-          timeout: 45000, // 45 second timeout for medical consultations
+          timeout: requestTimeout,
         }
       );
 

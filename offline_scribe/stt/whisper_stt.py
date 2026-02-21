@@ -17,19 +17,21 @@ import subprocess
 import json
 import wave
 import os
+import shutil
+import re
 
 # Try multiple whisper implementations
 try:
     from faster_whisper import WhisperModel
     FASTER_WHISPER_AVAILABLE = True
-except ImportError:
+except Exception:
     FASTER_WHISPER_AVAILABLE = False
     WhisperModel = None
 
 try:
     import whisper
     OPENAI_WHISPER_AVAILABLE = True
-except ImportError:
+except Exception:
     OPENAI_WHISPER_AVAILABLE = False
     whisper = None
 
@@ -42,6 +44,135 @@ from config import (
 )
 
 logger = logging.getLogger(__name__)
+
+VALID_WHISPER_LANGUAGES = {
+    "auto", "en", "hi", "ta", "te", "kn", "ml", "mr", "bn", "gu", "pa", "ur"
+}
+
+INDIC_LANGUAGES = {"hi", "ta", "te", "kn", "ml", "mr", "bn", "gu", "pa", "ur"}
+
+LANGUAGE_ALIASES = {
+    "english": "en",
+    "hindi": "hi",
+    "tamil": "ta",
+    "telugu": "te",
+    "kannada": "kn",
+    "malayalam": "ml",
+    "marathi": "mr",
+    "bengali": "bn",
+    "gujarati": "gu",
+    "punjabi": "pa",
+    "urdu": "ur",
+    "mixed": "auto",
+    "multi": "auto",
+    "multilingual": "auto",
+    "code-switch": "auto",
+    "codeswitch": "auto",
+    "colloquial": "auto",
+    "hinglish": "auto",
+    "tanglish": "auto",
+}
+
+
+def normalize_transcription_language(language: Optional[str]) -> str:
+    if not language:
+        return "auto"
+    normalized = str(language).strip().lower()
+    normalized = LANGUAGE_ALIASES.get(normalized, normalized)
+    return normalized if normalized in VALID_WHISPER_LANGUAGES else "auto"
+
+
+def infer_detected_languages(text: str, primary_hint: Optional[str]) -> Dict[str, Any]:
+    normalized_text = (text or "").strip()
+    hint = normalize_transcription_language(primary_hint)
+
+    script_patterns = {
+        "hi": r"[\u0900-\u097F]",
+        "ta": r"[\u0B80-\u0BFF]",
+        "te": r"[\u0C00-\u0C7F]",
+        "kn": r"[\u0C80-\u0CFF]",
+        "ml": r"[\u0D00-\u0D7F]",
+        "bn": r"[\u0980-\u09FF]",
+        "gu": r"[\u0A80-\u0AFF]",
+        "pa": r"[\u0A00-\u0A7F]",
+        "ur": r"[\u0600-\u06FF]",
+    }
+
+    scores = {}
+    if normalized_text:
+        english_score = len(re.findall(r"[A-Za-z]", normalized_text))
+        if english_score > 0:
+            scores["en"] = english_score
+
+        for lang_code, pattern in script_patterns.items():
+            count = len(re.findall(pattern, normalized_text))
+            if count > 0:
+                scores[lang_code] = count
+
+    detected = [code for code, _ in sorted(scores.items(), key=lambda kv: kv[1], reverse=True)]
+
+    if hint != "auto" and hint not in detected:
+        detected.insert(0, hint)
+
+    if not detected:
+        detected = [hint if hint != "auto" else "en"]
+
+    primary_language = detected[0]
+    code_switching = len(detected) > 1
+
+    return {
+        "primary_language": primary_language,
+        "detected_languages": detected,
+        "code_switching": code_switching,
+    }
+
+
+def parse_whisper_cli_detect_output(output: str) -> Dict[str, Any]:
+    combined = output or ""
+
+    lang_match = re.search(
+        r"(?:detected\s+language|language)\s*[:=]\s*([a-z]{2})",
+        combined,
+        re.IGNORECASE,
+    )
+    confidence_match = re.search(
+        r"(?:p|prob(?:ability)?)\s*[:=]\s*([0-9]*\.?[0-9]+)",
+        combined,
+        re.IGNORECASE,
+    )
+
+    language = normalize_transcription_language(lang_match.group(1)) if lang_match else "auto"
+    confidence = float(confidence_match.group(1)) if confidence_match else 0.0
+
+    return {
+        "language": language,
+        "confidence": confidence,
+        "success": bool(lang_match),
+    }
+
+
+def select_whisper_model_path(language: str) -> Path:
+    strategy = os.getenv("STT_MODEL_STRATEGY", "smart").strip().lower()
+    if strategy not in {"smart", "default"}:
+        strategy = "smart"
+
+    default_model = WHISPER_MODEL_PATH
+    small_model = Path("/home/ubuntu/models/ggml-small.bin")
+
+    if strategy == "default":
+        return default_model
+
+    # Smart strategy:
+    # - English-only hint keeps lower-latency default model
+    # - Indic or auto/mixed hint uses small model for better multilingual quality if available
+    if language == "en":
+        return default_model
+
+    if language in INDIC_LANGUAGES or language == "auto":
+        if small_model.exists():
+            return small_model
+
+    return default_model
 
 
 class WhisperSTT:
@@ -62,6 +193,18 @@ class WhisperSTT:
     
     def _load_model(self):
         """Load Whisper model with best available backend"""
+        preferred_backend = os.getenv("STT_BACKEND", os.getenv("WHISPER_BACKEND", "auto")).strip().lower()
+        whisper_cpp_bin = self._find_whisper_cpp()
+
+        if preferred_backend in {"whisper-cpp", "whisper_cpp", "cpp"}:
+            if whisper_cpp_bin and WHISPER_MODEL_PATH.exists():
+                self.backend = "whisper-cpp"
+                logger.info(f"✅ whisper.cpp selected by STT_BACKEND (bin={whisper_cpp_bin})")
+                return
+            logger.warning(
+                f"STT_BACKEND={preferred_backend} requested but whisper.cpp is unavailable "
+                f"(bin={bool(whisper_cpp_bin)}, model={WHISPER_MODEL_PATH.exists()})"
+            )
         
         # Try faster-whisper first (best for CPU)
         if FASTER_WHISPER_AVAILABLE:
@@ -91,10 +234,9 @@ class WhisperSTT:
                 logger.warning(f"openai-whisper failed: {e}")
         
         # Check for whisper.cpp binary
-        whisper_cpp_path = Path("/usr/local/bin/whisper-cpp")
-        if whisper_cpp_path.exists() or self._find_whisper_cpp():
+        if whisper_cpp_bin and WHISPER_MODEL_PATH.exists():
             self.backend = "whisper-cpp"
-            logger.info(f"✅ whisper.cpp available (CLI)")
+            logger.info(f"✅ whisper.cpp available (CLI, bin={whisper_cpp_bin})")
             return
         
         logger.error("No Whisper backend available!")
@@ -105,22 +247,74 @@ class WhisperSTT:
     
     def _find_whisper_cpp(self) -> Optional[str]:
         """Find whisper.cpp binary"""
+        explicit = os.getenv("WHISPER_CPP_BIN")
+        if explicit and Path(explicit).exists():
+            return explicit
+
+        for binary in ["whisper-cli", "whisper", "main"]:
+            resolved = shutil.which(binary)
+            if resolved:
+                return resolved
+
         possible_paths = [
+            "/usr/local/bin/whisper-cli",
+            "/usr/bin/whisper-cli",
+            "/usr/local/bin/whisper-cpp",
             "/usr/local/bin/whisper",
             "/usr/bin/whisper",
             "./whisper",
+            "/home/ubuntu/Mediczy/whisper.cpp/build/bin/whisper-cli",
             "../whisper.cpp/main",
         ]
         for path in possible_paths:
             if Path(path).exists():
                 return path
         return None
+
+    def _detect_language_whisper_cpp(self, audio_path: str, language_hint: str) -> Dict[str, Any]:
+        whisper_bin = self._find_whisper_cpp()
+        if not whisper_bin:
+            return {"success": False, "language": language_hint, "confidence": 0.0}
+
+        model_path = select_whisper_model_path(language_hint)
+        if not model_path.exists():
+            return {"success": False, "language": language_hint, "confidence": 0.0}
+
+        timeout_seconds = 120
+        try:
+            with wave.open(audio_path, 'rb') as wf:
+                frames = wf.getnframes()
+                rate = wf.getframerate()
+                duration_seconds = frames / float(rate)
+                timeout_seconds = max(120, int(duration_seconds * 3))
+        except Exception:
+            pass
+
+        cmd = [
+            whisper_bin,
+            "-m", str(model_path),
+            "-f", audio_path,
+            "-dl",
+            "-np",
+        ]
+
+        try:
+            proc = subprocess.run(cmd, capture_output=True, text=True, timeout=timeout_seconds)
+            parsed = parse_whisper_cli_detect_output(f"{proc.stdout}\n{proc.stderr}")
+            if parsed.get("success"):
+                return parsed
+            return {"success": False, "language": language_hint, "confidence": 0.0}
+        except Exception:
+            return {"success": False, "language": language_hint, "confidence": 0.0}
     
     def transcribe(
         self,
         audio_path: str,
         language: str = "auto",
         translate: bool = False,
+        chunk_seconds: Optional[int] = None,
+        vad: Optional[bool] = None,
+        beam_size: Optional[int] = None,
     ) -> Dict[str, Any]:
         """
         Transcribe audio file to text.
@@ -139,17 +333,108 @@ class WhisperSTT:
                 "error": "No Whisper model loaded",
                 "text": "",
             }
-        
+
+        language = normalize_transcription_language(language)
         start_time = time.time()
+
+        # Best-practice for consultation recordings: chunk long audio to avoid truncation
+        # and preserve full conversation coverage.
+        try:
+            with wave.open(audio_path, 'rb') as wf:
+                frames = wf.getnframes()
+                rate = wf.getframerate()
+                duration_seconds = frames / float(rate)
+        except Exception:
+            duration_seconds = 0.0
+
+        chunking_enabled = os.getenv("STT_ENABLE_CHUNKING", "true").lower() == "true"
+        default_chunk = int(os.getenv("STT_CHUNK_DURATION", str(AUDIO_CONFIG.get("chunk_duration", 30))))
+        chunk_duration = int(chunk_seconds or default_chunk)
+
+        # Audio pre-pass language detection (authoritative) to improve mixed Indic/English handling.
+        prepass_language = language
+        prepass_confidence = 0.0
+        if self.backend == "whisper-cpp" and language == "auto":
+            detected = self._detect_language_whisper_cpp(audio_path, language)
+            if detected.get("success") and detected.get("language") in VALID_WHISPER_LANGUAGES:
+                prepass_language = detected.get("language")
+                prepass_confidence = detected.get("confidence", 0.0)
+
+        if chunking_enabled and duration_seconds > (chunk_duration + 5):
+            processor = AudioProcessor()
+            chunk_paths = processor.chunk_audio(audio_path, chunk_duration=chunk_duration)
+            chunk_texts = []
+
+            for chunk_path in chunk_paths:
+                if self.backend == "faster-whisper":
+                    chunk_result = self._transcribe_faster_whisper(
+                        chunk_path,
+                        prepass_language,
+                        translate,
+                        vad_filter=vad,
+                        beam_size=beam_size,
+                    )
+                elif self.backend == "openai-whisper":
+                    chunk_result = self._transcribe_openai_whisper(chunk_path, prepass_language, translate)
+                elif self.backend == "whisper-cpp":
+                    chunk_result = self._transcribe_whisper_cpp(
+                        chunk_path,
+                        prepass_language,
+                        translate,
+                        beam_size=beam_size,
+                    )
+                else:
+                    chunk_result = {"success": False, "error": "No transcription backend available", "text": ""}
+
+                if not chunk_result.get("success"):
+                    return chunk_result
+
+                chunk_texts.append((chunk_result.get("text") or "").strip())
+
+                if chunk_path != audio_path:
+                    try:
+                        os.unlink(chunk_path)
+                    except Exception:
+                        pass
+
+            combined_text = " ".join([t for t in chunk_texts if t]).strip()
+            language_meta = infer_detected_languages(combined_text, prepass_language)
+            transcription_time = time.time() - start_time
+            chunked = len(chunk_paths) > 1
+            return {
+                "success": True,
+                "text": combined_text,
+                "language": language_meta["primary_language"],
+                "detected_languages": language_meta["detected_languages"],
+                "code_switching": language_meta["code_switching"],
+                "chunked": chunked,
+                "chunks_processed": len(chunk_paths),
+                "backend": self.backend,
+                "language_probability": prepass_confidence,
+                "audio_duration": duration_seconds,
+                "transcription_time": transcription_time,
+                "realtime_factor": (transcription_time / duration_seconds) if duration_seconds > 0 else 0,
+            }
         
         try:
             # Route to appropriate backend
             if self.backend == "faster-whisper":
-                result = self._transcribe_faster_whisper(audio_path, language, translate)
+                result = self._transcribe_faster_whisper(
+                    audio_path,
+                    prepass_language,
+                    translate,
+                    vad_filter=vad,
+                    beam_size=beam_size,
+                )
             elif self.backend == "openai-whisper":
-                result = self._transcribe_openai_whisper(audio_path, language, translate)
+                result = self._transcribe_openai_whisper(audio_path, prepass_language, translate)
             elif self.backend == "whisper-cpp":
-                result = self._transcribe_whisper_cpp(audio_path, language, translate)
+                result = self._transcribe_whisper_cpp(
+                    audio_path,
+                    prepass_language,
+                    translate,
+                    beam_size=beam_size,
+                )
             else:
                 return {
                     "success": False,
@@ -171,6 +456,13 @@ class WhisperSTT:
                     result["realtime_factor"] = transcription_time / duration if duration > 0 else 0
             except:
                 pass
+
+            language_meta = infer_detected_languages(result.get("text", ""), result.get("language", prepass_language))
+            result["language"] = language_meta["primary_language"]
+            result["detected_languages"] = language_meta["detected_languages"]
+            result["code_switching"] = language_meta["code_switching"]
+            if result.get("language_probability", 0) == 0 and prepass_confidence > 0:
+                result["language_probability"] = prepass_confidence
             
             return result
             
@@ -187,6 +479,8 @@ class WhisperSTT:
         audio_path: str,
         language: str,
         translate: bool,
+        vad_filter: Optional[bool] = None,
+        beam_size: Optional[int] = None,
     ) -> Dict[str, Any]:
         """Transcribe using faster-whisper"""
         
@@ -197,9 +491,9 @@ class WhisperSTT:
             audio_path,
             language=lang_code,
             task="translate" if translate else "transcribe",
-            beam_size=WHISPER_CONFIG["beam_size"],
+            beam_size=beam_size if beam_size is not None else WHISPER_CONFIG["beam_size"],
             word_timestamps=WHISPER_CONFIG["word_timestamps"],
-            vad_filter=WHISPER_CONFIG["vad_filter"],
+            vad_filter=vad_filter if vad_filter is not None else WHISPER_CONFIG["vad_filter"],
         )
         
         # Collect segments
@@ -259,6 +553,7 @@ class WhisperSTT:
         audio_path: str,
         language: str,
         translate: bool,
+        beam_size: Optional[int] = None,
     ) -> Dict[str, Any]:
         """Transcribe using whisper.cpp CLI"""
         
@@ -269,14 +564,27 @@ class WhisperSTT:
                 "error": "whisper.cpp binary not found",
                 "text": "",
             }
+
+        model_path = select_whisper_model_path(language)
+
+        if not model_path.exists():
+            return {
+                "success": False,
+                "error": f"Whisper model not found at {model_path}",
+                "text": "",
+            }
+
+        output_prefix = tempfile.mktemp(prefix="whisper_cpp_")
         
         # Build command
         cmd = [
             whisper_bin,
-            "-m", str(WHISPER_MODEL_PATH),
+            "-m", str(model_path),
             "-f", audio_path,
             "-otxt",
+            "-of", output_prefix,
             "--threads", str(os.cpu_count() or 4),
+            "-bs", str(beam_size if beam_size is not None else WHISPER_CONFIG.get("beam_size", 5)),
         ]
         
         if language != "auto":
@@ -287,16 +595,26 @@ class WhisperSTT:
         
         # Run whisper.cpp
         try:
+            timeout_seconds = 300
+            try:
+                with wave.open(audio_path, 'rb') as wf:
+                    frames = wf.getnframes()
+                    rate = wf.getframerate()
+                    duration_seconds = frames / float(rate)
+                    timeout_seconds = max(300, int(duration_seconds * 6))
+            except Exception:
+                pass
+
             result = subprocess.run(
                 cmd,
                 capture_output=True,
                 text=True,
-                timeout=300,
+                timeout=timeout_seconds,
             )
             
             if result.returncode == 0:
                 # Read output text file
-                output_file = Path(audio_path).with_suffix('.txt')
+                output_file = Path(f"{output_prefix}.txt")
                 if output_file.exists():
                     text = output_file.read_text().strip()
                     output_file.unlink()  # Clean up
@@ -304,6 +622,7 @@ class WhisperSTT:
                         "success": True,
                         "text": text,
                         "language": language,
+                        "model_used": model_path.name,
                     }
             
             return {
@@ -471,8 +790,34 @@ class AudioProcessor:
             
             return chunks
         except ImportError:
-            # If pydub not available, return original
-            return [audio_path]
+            pass
+        except Exception:
+            pass
+
+        # Fallback: ffmpeg-based segmentation when pydub isn't available
+        try:
+            chunks_dir = Path(tempfile.mkdtemp(prefix="stt_chunks_"))
+            output_pattern = str(chunks_dir / "chunk_%03d.wav")
+            cmd = [
+                "ffmpeg", "-y",
+                "-i", audio_path,
+                "-f", "segment",
+                "-segment_time", str(chunk_duration),
+                "-ac", str(self.channels),
+                "-ar", str(self.sample_rate),
+                "-acodec", "pcm_s16le",
+                output_pattern,
+            ]
+
+            result = subprocess.run(cmd, capture_output=True, timeout=120)
+            if result.returncode == 0:
+                chunks = sorted([str(path) for path in chunks_dir.glob("chunk_*.wav")])
+                if chunks:
+                    return chunks
+        except Exception:
+            pass
+
+        return [audio_path]
 
 
 # =============================================================================

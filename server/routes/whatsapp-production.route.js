@@ -100,25 +100,36 @@ const detectBookingIntent = (message) => {
     /can\s*(you\s*)?book\s*(me\s*)?(an?\s*)?appointment/i,
     /yes\s*(please\s*)?(book|schedule)/i,
     /book\s*now/i,
-    /yes\s*i\s*want\s*(to\s*)?(book|see)/i
+    /yes\s*i\s*want\s*(to\s*)?(book|see)/i,
+    /health\s*checkup/i,
+    /health\s*check\s*up/i,
+    /corporate\s*health/i,
+    /full\s*body\s*check/i,
+    /diagnostic\s*(test|check)/i,
+    /lab\s*(test|checkup|check\s*up)/i
   ];
   
   const isBookingIntent = bookingPatterns.some(pattern => pattern.test(lowerMsg));
+  const isHealthCheckupIntent = /(health\s*checkup|health\s*check\s*up|corporate\s*health|full\s*body\s*check|diagnostic\s*(test|check)|lab\s*(test|checkup|check\s*up)|master\s*health)/i.test(lowerMsg);
   
   // Try to detect specialist type
   let specialistType = 'general_physician';
-  if (/gastro|stomach|digestive|abdomen/i.test(lowerMsg)) specialistType = 'gastroenterologist';
-  else if (/heart|cardio|chest\s*pain/i.test(lowerMsg)) specialistType = 'cardiologist';
-  else if (/skin|derma|rash/i.test(lowerMsg)) specialistType = 'dermatologist';
-  else if (/child|baby|infant|pediatric/i.test(lowerMsg)) specialistType = 'pediatrician';
-  else if (/bone|orthop|joint|fracture/i.test(lowerMsg)) specialistType = 'orthopedic';
-  else if (/eye|vision|ophthalm/i.test(lowerMsg)) specialistType = 'ophthalmologist';
-  else if (/ent|ear|nose|throat/i.test(lowerMsg)) specialistType = 'ent';
-  else if (/neuro|brain|headache/i.test(lowerMsg)) specialistType = 'neurologist';
-  else if (/gynec|women|pregnancy/i.test(lowerMsg)) specialistType = 'gynecologist';
-  else if (/general|physician|gp/i.test(lowerMsg)) specialistType = 'general_physician';
+  if (/\b(gastro|stomach|digestive|abdomen)\b/i.test(lowerMsg)) specialistType = 'gastroenterologist';
+  else if (/\b(heart|cardio|chest\s*pain)\b/i.test(lowerMsg)) specialistType = 'cardiologist';
+  else if (/\b(skin|derma|rash)\b/i.test(lowerMsg)) specialistType = 'dermatologist';
+  else if (/\b(child|baby|infant|pediatric)\b/i.test(lowerMsg)) specialistType = 'pediatrician';
+  else if (/\b(bone|orthop|joint|fracture)\b/i.test(lowerMsg)) specialistType = 'orthopedic';
+  else if (/\b(eye|vision|ophthalm)\b/i.test(lowerMsg)) specialistType = 'ophthalmologist';
+  else if (/\b(ent|ear|nose|throat)\b/i.test(lowerMsg)) specialistType = 'ent';
+  else if (/\b(neuro|brain|headache)\b/i.test(lowerMsg)) specialistType = 'neurologist';
+  else if (/\b(gynec|women|pregnancy)\b/i.test(lowerMsg)) specialistType = 'gynecologist';
+  else if (/\b(general|physician|gp)\b/i.test(lowerMsg)) specialistType = 'general_physician';
   
-  return { isBookingIntent, specialistType };
+  return {
+    isBookingIntent,
+    specialistType,
+    bookingType: isHealthCheckupIntent ? 'health_checkup' : 'doctor_appointment'
+  };
 };
 
 // Configuration for AI auto-reply - unified Dr. iSHA
@@ -1070,11 +1081,12 @@ router.post('/webhook', (req, res, next) => {
     }
     
     // 3. CHECK FOR APPOINTMENT BOOKING INTENT
-    const { isBookingIntent, specialistType } = detectBookingIntent(Body);
+    const { isBookingIntent, specialistType, bookingType } = detectBookingIntent(Body);
     if (isBookingIntent && userContext.isKnownUser) {
       logger.info('📅 Appointment booking intent detected via WhatsApp', {
         phoneNumber,
         specialistType,
+        bookingType,
         userId: userContext.user?.id
       });
       
@@ -1086,6 +1098,7 @@ router.post('/webhook', (req, res, next) => {
           patientPhone: phoneNumber,
           patientEmail: userContext.user?.email,
           specialistType: specialistType,
+          bookingType,
           source: 'whatsapp',
           timestamp: new Date().toISOString()
         });
@@ -1108,11 +1121,17 @@ router.post('/webhook', (req, res, next) => {
           to: phoneNumber,
           body: `📅 *Appointment Booking Request*
 
-I'm processing your request to see a ${specialistNames[specialistType] || 'Doctor'}.
+${bookingType === 'health_checkup'
+  ? "I'm processing your request for a health checkup at the nearest available lab."
+  : `I'm processing your request to see a ${specialistNames[specialistType] || 'Doctor'}.`}
 
 ${n8nResult.success 
-  ? `✅ Our team will contact you shortly to confirm your appointment slot.\n\n📱 You'll receive a confirmation message with:\n• Doctor's name\n• Date & time options\n• Consultation fee`
-  : `🔄 I'm connecting you with our booking team. They'll call you within 15 minutes to schedule your appointment.`}
+  ? (bookingType === 'health_checkup'
+    ? `✅ Our team will contact you shortly to confirm your health checkup slot.\n\n📱 You'll receive a confirmation message with:\n• Lab name & location\n• Date & time options\n• Package/fee details`
+    : `✅ Our team will contact you shortly to confirm your appointment slot.\n\n📱 You'll receive a confirmation message with:\n• Doctor's name\n• Date & time options\n• Consultation fee`)
+  : (bookingType === 'health_checkup'
+    ? `🔄 I'm connecting you with our checkup booking team. They'll call you within 15 minutes to schedule your lab visit.`
+    : `🔄 I'm connecting you with our booking team. They'll call you within 15 minutes to schedule your appointment.`)}
 
 Is there anything else I can help you with? 💙`
         });
@@ -1159,7 +1178,22 @@ Is there anything else I can help you with? 💙`
         }
 
         // Thank you / appreciation response
-        const isThanks = /^(thanks?|thank you|thanku|thnx|appreciate|grateful)$/i.test(Body.trim());
+        const isThanks = /(^|\b)(thanks?|thank\s*you|thanku|thnx|appreciate|grateful)($|\b)/i.test(Body.trim());
+        const isGoodbye = /(^|\b)(bye|goodbye|good\s*bye|see\s*you|take\s*care|gotta\s*go|gtg)($|\b)/i.test(Body.trim());
+
+        if (isThanks && isGoodbye) {
+          const combinedResponse = userContext.isKnownUser && userContext.user?.name
+            ? `You're welcome, ${userContext.user.name}. Take care and feel free to message me anytime you need help. 💙`
+            : "You're welcome. Take care and feel free to message me anytime you need help. 💙";
+          logger.info('✅ Using STATIC thanks+goodbye response', { response: combinedResponse });
+          await whatsappProductionService.sendSessionMessage({
+            to: phoneNumber,
+            body: sanitizeReply(combinedResponse)
+          });
+          responseSent = true;
+          return res.type('text/xml').status(200).send('<?xml version="1.0" encoding="UTF-8"?><Response></Response>');
+        }
+
         if (isThanks) {
           const thanksResponse = "You're welcome! Happy to help. Is there anything else I can assist you with?";
           logger.info('✅ Using STATIC thanks response', { response: thanksResponse });
@@ -1172,7 +1206,6 @@ Is there anything else I can help you with? 💙`
         }
 
         // Goodbye response
-        const isGoodbye = /^(bye|goodbye|good bye|see you|take care|gotta go|gtg)$/i.test(Body.trim());
         if (isGoodbye) {
           const goodbyeResponse = userContext.isKnownUser && userContext.user?.name
             ? `Take care, ${userContext.user.name}! Feel free to reach out anytime you need health assistance. Stay healthy! 💙`
@@ -1237,7 +1270,7 @@ Is there anything else I can help you with? 💙`
             });
             return {
               shouldReply: true,
-              response: "Hi! I'm Dr. iSHA. How can I help you today?",
+              response: "I'm here to help with appointments, health checkups, reports, and prescriptions. Tell me what you'd like to do.",
               provider: 'fallback'
             };
           }),
@@ -1251,7 +1284,7 @@ Is there anything else I can help you with? 💙`
         if (!aiResponse) {
           await whatsappProductionService.sendSessionMessage({
             to: phoneNumber,
-            body: sanitizeReply("I'm processing your request. Please share a bit more detail so I can help faster.")
+            body: sanitizeReply("I couldn't fetch a full response just now. Please retry in a few seconds, or tell me if you want help with appointment booking, health checkup, prescription, or reports.")
           });
           responseSent = true;
           return res.type('text/xml').status(200).send('<?xml version="1.0" encoding="UTF-8"?><Response></Response>');
@@ -1262,7 +1295,7 @@ Is there anything else I can help you with? 💙`
             ? (isGenericErrorReply
               ? "I'm sorry, I'm having trouble processing your request right now. Please try again in a few minutes or reply with more details."
               : compactResponseText)
-            : "Hi! I'm Dr. iSHA. How can I help you today?";
+            : "I'm here to help with appointments, health checkups, reports, and prescriptions. Tell me what you'd like to do.";
           // Send AI response via WhatsApp
           await whatsappProductionService.sendSessionMessage({
             to: phoneNumber,

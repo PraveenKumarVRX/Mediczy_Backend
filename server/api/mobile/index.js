@@ -2296,7 +2296,22 @@ router.post('/appointments', authenticate(), asyncHandler(async (req, res) => {
     });
   }
 
-  const doctorResult = await db.query(`
+  const doctorIdRaw = String(doctorId).trim();
+  const isNumericDoctorId = /^\d+$/.test(doctorIdRaw);
+  const isPublicDoctorId = /^D[A-Z0-9]{5}$/i.test(doctorIdRaw);
+
+  if (!isNumericDoctorId && !isPublicDoctorId) {
+    return res.status(400).json({
+      success: false,
+      message: 'Invalid doctorId. Use numeric ID (e.g., 70) or public ID (e.g., D2C193).',
+      error: {
+        code: 'INVALID_DOCTOR_ID',
+        message: 'Invalid doctorId. Use numeric ID (e.g., 70) or public ID (e.g., D2C193).'
+      }
+    });
+  }
+
+  const doctorLookupPromise = db.query(`
     SELECT id,
            prefix,
            "firstName" AS first_name,
@@ -2305,17 +2320,10 @@ router.post('/appointments', authenticate(), asyncHandler(async (req, res) => {
            "profileImage" AS avatar_url,
            COALESCE("consultationFees", "onlineConsultationFee", "inPersonConsultationFee") AS consultation_fee
     FROM doctors
-    WHERE id = $1
-  `, [doctorId]);
+    WHERE ${isNumericDoctorId ? 'id = $1' : 'unique_id = $1'}
+  `, [isNumericDoctorId ? parseInt(doctorIdRaw, 10) : doctorIdRaw.toUpperCase()]);
 
-  if (doctorResult.rows.length === 0) {
-    return res.status(404).json({
-      success: false,
-      error: { code: 'DOCTOR_NOT_FOUND', message: 'Doctor not found' }
-    });
-  }
-
-  const userResult = await db.query(`
+  const userLookupPromise = db.query(`
     SELECT id,
            "firstName" AS first_name,
            "lastName" AS last_name,
@@ -2325,6 +2333,31 @@ router.post('/appointments', authenticate(), asyncHandler(async (req, res) => {
     WHERE id = $1
   `, [req.userId]);
 
+  const patientConflictPromise = db.query(
+    `SELECT id, "doctorId", "appointmentDate", "appointmentTime" FROM appointments
+     WHERE "userId" = $1
+       AND "appointmentDate" = $2
+       AND "appointmentTime" = $3
+       AND status NOT IN ($4, $5, $6, $7)
+     LIMIT 1`,
+    [req.userId, appointmentDate, appointmentTime, 'cancelled', 'completed', 'rejected', 'no-show']
+  );
+
+  const [doctorResult, userResult, patientConflict] = await Promise.all([
+    doctorLookupPromise,
+    userLookupPromise,
+    patientConflictPromise
+  ]);
+
+  if (doctorResult.rows.length === 0) {
+    return res.status(404).json({
+      success: false,
+      error: { code: 'DOCTOR_NOT_FOUND', message: 'Doctor not found' }
+    });
+  }
+
+  const resolvedDoctorId = doctorResult.rows[0].id;
+
   if (userResult.rows.length === 0) {
     return res.status(404).json({
       success: false,
@@ -2332,20 +2365,39 @@ router.post('/appointments', authenticate(), asyncHandler(async (req, res) => {
     });
   }
 
-  // Check slot availability
+  if (patientConflict.rows.length > 0) {
+    return res.status(409).json({
+      success: false,
+      message: 'You already have an appointment at this time. Please choose a different slot.',
+      error: {
+        code: 'PATIENT_TIME_CONFLICT',
+        message: 'You already have an appointment at this time. Please choose a different slot.'
+      },
+      conflict: {
+        type: 'patient_busy',
+        appointmentId: patientConflict.rows[0].id
+      }
+    });
+  }
+
+  // Check doctor slot availability
   const slotCheck = await db.query(
     `SELECT id FROM appointments
      WHERE "doctorId" = $1
        AND "appointmentDate" = $2
        AND "appointmentTime" = $3
        AND status NOT IN ($4, $5, $6, $7)`,
-    [doctorId, appointmentDate, appointmentTime, 'cancelled', 'completed', 'rejected', 'no-show']
+    [resolvedDoctorId, appointmentDate, appointmentTime, 'cancelled', 'completed', 'rejected', 'no-show']
   );
   
   if (slotCheck.rows.length > 0) {
     return res.status(409).json({
       success: false,
-      error: { code: 'SLOT_UNAVAILABLE', message: 'This time slot is no longer available' }
+      message: 'This time slot is no longer available. Please select a different slot.',
+      error: { code: 'SLOT_UNAVAILABLE', message: 'This time slot is no longer available. Please select a different slot.' },
+      conflict: {
+        type: 'doctor_busy'
+      }
     });
   }
 
@@ -2398,7 +2450,7 @@ router.post('/appointments', authenticate(), asyncHandler(async (req, res) => {
     patientName,
     patient.email,
     patient.phone,
-    doctorId,
+    resolvedDoctorId,
     doctorName,
     doctor.specialization,
     appointmentDate,

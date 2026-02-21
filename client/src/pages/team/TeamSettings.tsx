@@ -81,6 +81,42 @@ interface SMTPConfig {
   testStatus?: 'pending' | 'success' | 'failed';
 }
 
+const mapApiToUiConfig = (item: any): SMTPConfig => ({
+  id: item.id,
+  name: item.displayName || item.name || item.email || 'SMTP Config',
+  host: item.smtpHost || item.imapHost || '',
+  port: item.smtpPort || item.imapPort || 587,
+  username: item.smtpUsername || item.imapUsername || item.email || '',
+  password: '',
+  encryption: item.smtpSecure ? 'ssl' : 'tls',
+  isDefault: item.isDefault === true,
+  isActive: item.isActive !== false,
+  fromName: item.displayName || '',
+  fromEmail: item.email || '',
+  provider: item.provider || 'custom'
+});
+
+const buildApiPayload = (config: Partial<SMTPConfig>) => {
+  const secure = config.encryption === 'ssl';
+  return {
+    email: config.fromEmail || config.username,
+    displayName: config.fromName || config.name,
+    provider: config.provider || 'custom',
+    smtpHost: config.host,
+    smtpPort: config.port,
+    smtpSecure: secure,
+    smtpUsername: config.username,
+    smtpPassword: config.password,
+    imapHost: config.provider === 'zoho-pro' ? 'imappro.zoho.in' : undefined,
+    imapPort: 993,
+    imapSecure: true,
+    imapUsername: config.username,
+    imapPassword: config.password,
+    isDefault: config.isDefault === true,
+    isActive: config.isActive !== false
+  };
+};
+
 const TeamSettings: React.FC = () => {
   const [smtpConfigs, setSMTPConfigs] = useState<SMTPConfig[]>([]);
   const [loading, setLoading] = useState(false);
@@ -104,13 +140,15 @@ const TeamSettings: React.FC = () => {
   const loadConfigs = async () => {
     try {
       setLoading(true);
-      const response = await api.get('/email/configs');
+      const response = await api.get('/email-settings');
       if (response.data.success) {
-        setSMTPConfigs(response.data.data);
+        const mappedConfigs = (response.data.data || []).map((item: any) => mapApiToUiConfig(item));
+        setSMTPConfigs(mappedConfigs);
       }
     } catch (error: any) {
+      console.error('❌ loadConfigs error:', error.response?.status, error.response?.data);
       if (error.response?.status !== 404) {
-        toast.error('Failed to load SMTP configurations');
+        toast.error(`Failed to load SMTP configurations: ${error.response?.data?.message || error.message}`);
       }
       setSMTPConfigs([]);
     } finally {
@@ -138,16 +176,18 @@ const TeamSettings: React.FC = () => {
 
       setLoading(true);
       
+      const payload = buildApiPayload(newConfig);
+
       if (editingConfig) {
         // Update existing
-        const response = await api.put(`/email/configs/${editingConfig.id}`, newConfig);
+        const response = await api.put(`/email-settings/${editingConfig.id}`, payload);
         if (response.data.success) {
           toast.success('SMTP configuration updated successfully');
           setEditingConfig(null);
         }
       } else {
         // Create new
-        const response = await api.post('/email/configs', newConfig);
+        const response = await api.post('/email-settings', payload);
         if (response.data.success) {
           toast.success('SMTP configuration created successfully');
         }
@@ -170,7 +210,7 @@ const TeamSettings: React.FC = () => {
       
       if (!testEmail) return;
 
-      const response = await api.post(`/email/configs/${configId}/test`, {
+      const response = await api.post(`/email-settings/${configId}/test`, {
         testEmail
       });
 
@@ -191,20 +231,28 @@ const TeamSettings: React.FC = () => {
   };
 
   const deleteConfig = async (configId: string) => {
+    if (smtpConfigs.length <= 1) {
+      toast.error('At least one SMTP configuration must remain');
+      return;
+    }
+
     if (!confirm('Are you sure you want to delete this SMTP configuration?')) return;
 
     try {
-      await api.delete(`/email/configs/${configId}`);
+      console.log('🗑️ Deleting config:', configId);
+      await api.delete(`/email-settings/${configId}`);
+      console.log('✅ Delete successful');
       toast.success('SMTP configuration deleted');
       await loadConfigs();
     } catch (error: any) {
+      console.error('❌ Delete error:', error.response?.status, error.response?.data);
       toast.error(error.response?.data?.message || 'Failed to delete configuration');
     }
   };
 
   const setDefaultConfig = async (configId: string) => {
     try {
-      await api.put(`/email/configs/${configId}/default`);
+      await api.put(`/email-settings/${configId}/set-default`);
       toast.success('Default SMTP configuration updated');
       await loadConfigs();
     } catch (error: any) {
@@ -542,7 +590,7 @@ const TeamSettings: React.FC = () => {
                                 variant="outline"
                                 size="sm"
                                 onClick={() => deleteConfig(config.id)}
-                                disabled={config.isDefault}
+                                disabled={smtpConfigs.length <= 1}
                               >
                                 <Trash2 className="h-4 w-4" />
                               </Button>
