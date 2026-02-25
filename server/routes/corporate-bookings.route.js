@@ -108,15 +108,35 @@ router.get('/employees', authUser, requireTeamOrAdmin, async (req, res) => {
 router.get('/my-corporate', authUser, requireTeamOrAdmin, async (req, res) => {
   try {
     const teamMemberId = req.user.id;
+    const { corporateId } = req.query;
 
     // Primary: corporates.assignedTo = team member id
-    const [corporate] = await postgresSequelize.query(
+    let [corporate] = await postgresSequelize.query(
       `SELECT id, "companyName", email, "phoneNumber", industry, "employeeCount", status, metadata
        FROM corporates
        WHERE "assignedTo" = :teamMemberId AND status = 'Active'
        LIMIT 1`,
       { replacements: { teamMemberId }, type: postgresSequelize.QueryTypes.SELECT }
     );
+
+    // Fallback for admin users: use ?corporateId= param or first active corporate
+    if (!corporate && req.user.role === 'admin') {
+      if (corporateId) {
+        const [adminCorp] = await postgresSequelize.query(
+          `SELECT id, "companyName", email, "phoneNumber", industry, "employeeCount", status, metadata
+           FROM corporates WHERE id = :corporateId AND status = 'Active' LIMIT 1`,
+          { replacements: { corporateId: parseInt(corporateId) }, type: postgresSequelize.QueryTypes.SELECT }
+        );
+        corporate = adminCorp || null;
+      } else {
+        const [adminCorp] = await postgresSequelize.query(
+          `SELECT id, "companyName", email, "phoneNumber", industry, "employeeCount", status, metadata
+           FROM corporates WHERE status = 'Active' ORDER BY id ASC LIMIT 1`,
+          { type: postgresSequelize.QueryTypes.SELECT }
+        );
+        corporate = adminCorp || null;
+      }
+    }
 
     if (!corporate) {
       return res.json({ success: true, corporate: null, message: 'No corporate assigned to this team member' });
