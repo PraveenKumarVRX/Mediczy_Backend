@@ -305,7 +305,7 @@ const HomecareBooking = () => {
                 {provider.rating && (
                   <div className="flex items-center gap-2 mt-3">
                     <Badge variant="secondary">
-                      ⭐ {provider.rating.toFixed(1)}
+                      ⭐ {(+provider.rating).toFixed(1)}
                     </Badge>
                   </div>
                 )}

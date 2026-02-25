@@ -939,7 +939,7 @@ const Consultation = () => {
                               <div className="flex items-center gap-3 mt-2">
                                 <div className="flex items-center gap-1">
                                   <Star className="h-5 w-5 text-yellow-500 fill-current" />
-                                  <span className="font-medium text-slate-800 dark:text-white">{doctor.averageRating.toFixed(1)}</span>
+                                  <span className="font-medium text-slate-800 dark:text-white">{(+(doctor.averageRating) || 0).toFixed(1)}</span>
                                   <span className="text-slate-600 dark:text-slate-400">({doctor.totalReviews} reviews)</span>
                                 </div>
                                 {doctor.availability.instantBooking && (
@@ -1097,7 +1097,7 @@ const Consultation = () => {
                           <p className="text-sm text-slate-600 dark:text-slate-400 mb-2">{doctor.specialization}</p>
                           <div className="flex items-center gap-1.5">
                             <Star className="h-3.5 w-3.5 text-yellow-500 fill-current" />
-                            <span className="text-sm font-medium text-slate-800 dark:text-white">{doctor.averageRating.toFixed(1)}</span>
+                            <span className="text-sm font-medium text-slate-800 dark:text-white">{(+(doctor.averageRating) || 0).toFixed(1)}</span>
                             <span className="text-sm text-slate-600 dark:text-slate-400">({doctor.totalReviews})</span>
                           </div>
                         </div>

@@ -401,7 +401,7 @@ export default function QuickAppointmentModal({
                             <div className="flex items-center gap-4 text-sm text-gray-400">
                               <div className="flex items-center gap-1">
                                 <Star className="h-3 w-3 fill-yellow-500 text-yellow-500" />
-                                <span>{doctor.averageRating?.toFixed(1) || "4.5"}</span>
+                                <span>{(doctor.averageRating != null ? +doctor.averageRating : null)?.toFixed(1) || "4.5"}</span>
                               </div>
                               <div className="flex items-center gap-1">
                                 <Clock className="h-3 w-3" />
@@ -452,7 +452,7 @@ export default function QuickAppointmentModal({
                             <div className="flex items-center gap-4 text-sm text-gray-400">
                               <div className="flex items-center gap-1">
                                 <Star className="h-3 w-3 fill-yellow-500 text-yellow-500" />
-                                <span>{nurse.rating?.toFixed(1) || "4.5"}</span>
+                                <span>{(nurse.rating != null ? +nurse.rating : null)?.toFixed(1) || "4.5"}</span>
                               </div>
                               {nurse.experience && (
                                 <div className="flex items-center gap-1">
@@ -513,7 +513,7 @@ export default function QuickAppointmentModal({
                             <div className="flex items-center gap-4 text-sm text-gray-400">
                               <div className="flex items-center gap-1">
                                 <Star className="h-3 w-3 fill-yellow-500 text-yellow-500" />
-                                <span>{lab.rating?.toFixed(1) || "4.5"}</span>
+                                <span>{(lab.rating != null ? +lab.rating : null)?.toFixed(1) || "4.5"}</span>
                               </div>
                               {lab.location && (
                                 <div className="flex items-center gap-1">
@@ -571,7 +571,7 @@ export default function QuickAppointmentModal({
                             <div className="flex items-center gap-4 text-sm text-gray-400">
                               <div className="flex items-center gap-1">
                                 <Star className="h-3 w-3 fill-yellow-500 text-yellow-500" />
-                                <span>{service.rating?.toFixed(1) || "4.5"}</span>
+                                <span>{(service.rating != null ? +service.rating : null)?.toFixed(1) || "4.5"}</span>
                               </div>
                               {service.availability && (
                                 <div className="flex items-center gap-1">

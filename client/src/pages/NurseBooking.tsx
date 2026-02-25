@@ -283,7 +283,7 @@ const NurseBooking = () => {
                 {nurse.rating && (
                   <div className="flex items-center gap-2 mt-3">
                     <Badge variant="secondary">
-                      ⭐ {nurse.rating.toFixed(1)}
+                      ⭐ {(+nurse.rating).toFixed(1)}
                     </Badge>
                   </div>
                 )}

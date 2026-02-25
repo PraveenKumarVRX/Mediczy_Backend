@@ -316,7 +316,7 @@ const LabBooking = () => {
                 {lab.rating && (
                   <div className="flex items-center gap-2 mt-3">
                     <Badge variant="secondary">
-                      ⭐ {lab.rating.toFixed(1)}
+                      ⭐ {(+lab.rating).toFixed(1)}
                     </Badge>
                     {lab.accreditation && lab.accreditation.length > 0 && (
                       <Badge variant="outline">
