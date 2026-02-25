@@ -757,6 +757,16 @@ export default function CorporateHealthBooking() {
                 </CardContent>
               </Card>
 
+              {/* Steps 2–6 are hidden until a corporate is selected */}
+              {!corporate && (
+                <div className="flex flex-col items-center gap-3 py-10 text-muted-foreground">
+                  <Building2 className="h-10 w-10 text-blue-200" />
+                  <p className="text-sm">Select a corporate above to continue</p>
+                </div>
+              )}
+
+              {corporate && <>
+
               {/* ──── Step 2: Select Employee ──── */}
               <Card>
                 <CardHeader className="pb-3">
@@ -928,42 +938,53 @@ export default function CorporateHealthBooking() {
                       <Loader2 className="h-4 w-4 animate-spin" />
                       {eligibilityLoading ? 'Checking plan eligibility for this employee…' : 'Loading packages from corporate plan…'}
                     </div>
-                  ) : (
-                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
-                      {/* When employee selected + has eligibility: show ONLY their plans with availability status.
-                          When no employee yet, or no eligibility found: show all corporate packages as fallback. */}
-                      {(selectedEmployee && employeeEligibility.length > 0
+                  ) : (() => {
+                    // Compute display list: employee eligibility > corporate packages > empty
+                    const displayList = selectedEmployee && employeeEligibility.length > 0
+                      ? [
+                          ...employeeEligibility.map(ep => ({
+                            value:           ep.packageName,
+                            label:           `🏥 ${ep.packageName}`,
+                            desc:            ep.tests.length > 0
+                              ? ep.tests.slice(0, 5).join(' · ') + (ep.tests.length > 5 ? ` +${ep.tests.length - 5} more tests` : '')
+                              : ep.description || '',
+                            isCorporatePlan: true,
+                            available:       ep.available,
+                            usedAt:          ep.usedAt,
+                            validTo:         ep.validTo,
+                          })),
+                          { value: 'Custom / Other', label: '✏️ Custom / Other', desc: 'Specify tests in notes below', isCorporatePlan: false, available: true, usedAt: null as string | null, validTo: null as string | null },
+                        ]
+                      : packages.length > 0
                         ? [
-                            ...employeeEligibility.map(ep => ({
-                              value:           ep.packageName,
-                              label:           `🏥 ${ep.packageName}`,
-                              desc:            ep.tests.length > 0
-                                ? ep.tests.slice(0, 5).join(' · ') + (ep.tests.length > 5 ? ` +${ep.tests.length - 5} more tests` : '')
-                                : ep.description || '',
+                            ...packages.map(p => ({
+                              value:           p.name,
+                              label:           `🏥 ${p.name}`,
+                              desc:            Array.isArray(p.features) && p.features.length > 0
+                                ? p.features.slice(0, 5).join(' · ') + (p.features.length > 5 ? ` +${p.features.length - 5} more` : '')
+                                : p.description || '',
                               isCorporatePlan: true,
-                              available:       ep.available,
-                              usedAt:          ep.usedAt,
-                              validTo:         ep.validTo,
+                              available:       true,
+                              usedAt:          null as string | null,
+                              validTo:         null as string | null,
                             })),
-                            { value: 'Custom / Other', label: '✏️ Custom / Other', desc: 'Specify tests in notes below', isCorporatePlan: false, available: true, usedAt: null, validTo: null },
+                            { value: 'Custom / Other', label: '✏️ Custom / Other', desc: 'Specify tests in notes below', isCorporatePlan: false, available: true, usedAt: null as string | null, validTo: null as string | null },
                           ]
-                        : packages.length > 0
-                          ? [
-                              ...packages.map(p => ({
-                                value:           p.name,
-                                label:           `🏥 ${p.name}`,
-                                desc:            Array.isArray(p.features) && p.features.length > 0
-                                  ? p.features.slice(0, 5).join(' · ') + (p.features.length > 5 ? ` +${p.features.length - 5} more` : '')
-                                  : p.description || '',
-                                isCorporatePlan: true,
-                                available:       true,
-                                usedAt:          null,
-                                validTo:         null,
-                              })),
-                              { value: 'Custom / Other', label: '✏️ Custom / Other', desc: 'Specify tests in notes below', isCorporatePlan: false, available: true, usedAt: null, validTo: null },
-                            ]
-                          : HEALTH_PACKAGES.map(p => ({ ...p, isCorporatePlan: false, available: true, usedAt: null, validTo: null }))
-                      ).map(pkg => (
+                        : [];
+
+                    if (displayList.length === 0) {
+                      return (
+                        <p className="text-sm text-muted-foreground py-3 flex items-center gap-2">
+                          <AlertCircle className="h-4 w-4 text-orange-400" />
+                          No packages configured for {corporate?.companyName || 'this corporate'}.
+                          {selectedEmployee && ' Try selecting a different employee or contact an administrator.'}
+                        </p>
+                      );
+                    }
+
+                    return (
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                      {displayList.map(pkg => (
                         <button
                           key={pkg.value}
                           type="button"
@@ -978,7 +999,7 @@ export default function CorporateHealthBooking() {
                             {pkg.isCorporatePlan && (
                               <span className="text-[10px] font-semibold text-blue-600 bg-blue-100 dark:bg-blue-900/40 px-1.5 py-0.5 rounded">Corporate Plan</span>
                             )}
-                            {'usedAt' in pkg && pkg.usedAt ? (
+                            {pkg.usedAt ? (
                               <span className="text-[10px] font-semibold text-orange-600 bg-orange-100 dark:bg-orange-900/40 px-1.5 py-0.5 rounded">⚠️ Benefit Used</span>
                             ) : pkg.isCorporatePlan ? (
                               <span className="text-[10px] font-semibold text-green-600 bg-green-100 dark:bg-green-900/40 px-1.5 py-0.5 rounded">✅ Available</span>
@@ -986,13 +1007,14 @@ export default function CorporateHealthBooking() {
                           </div>
                           <p className="text-sm font-medium">{pkg.label}</p>
                           <p className="text-xs text-muted-foreground mt-0.5">{pkg.desc}</p>
-                          {'validTo' in pkg && pkg.validTo && (
+                          {pkg.validTo && (
                             <p className="text-[10px] text-muted-foreground mt-1">Valid until {new Date(pkg.validTo).toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' })}</p>
                           )}
                         </button>
                       ))}
                     </div>
-                  )}
+                    );
+                  })()}
                 </CardContent>
               </Card>
 
@@ -1043,6 +1065,7 @@ export default function CorporateHealthBooking() {
                   </span>
                 )}
               </Button>
+              </>}
             </form>
           </div>
         )}
