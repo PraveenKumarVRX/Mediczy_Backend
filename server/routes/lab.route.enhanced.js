@@ -60,10 +60,11 @@ router.get('/', async (req, res) => {
     
     // Text search across name, services, and test categories
     if (search) {
+      const searchEscaped = search.replace(/'/g, "''");
       whereConditions[Op.or] = [
-        { name: { [Op.like]: `%${search}%` } },
-        { services: { [Op.like]: `%${search}%` } },
-        { testCategories: { [Op.like]: `%${search}%` } }
+        { name: { [Op.iLike]: `%${search}%` } },
+        Sequelize.literal(`services::text ILIKE '%${searchEscaped}%'`),
+        Sequelize.literal(`"testCatalog"::text ILIKE '%${searchEscaped}%'`)
       ];
     }
     
@@ -117,26 +118,24 @@ router.get('/', async (req, res) => {
     // Service filters
     if (services) {
       const serviceList = services.split(',');
-      // Text search for services
-      whereConditions.services = {
-        [Op.like]: `%${serviceList[0]}%` // Search for the first service
-      };
+      const svc = serviceList[0].replace(/'/g, "''");
+      whereConditions[Op.and] = whereConditions[Op.and] || [];
+      whereConditions[Op.and].push(
+        Sequelize.literal(`services::text ILIKE '%${svc}%'`)
+      );
     }
     
     if (testCategories) {
       const categoryList = testCategories.split(',');
-      // Text search for test categories
-      whereConditions.testCategories = {
-        [Op.like]: `%${categoryList[0]}%` // Search for the first category
-      };
+      const cat = categoryList[0].replace(/'/g, "''");
+      whereConditions[Op.and] = whereConditions[Op.and] || [];
+      whereConditions[Op.and].push(
+        Sequelize.literal(`"testCatalog"::text ILIKE '%${cat}%'`)
+      );
     }
     
     if (accreditation) {
-      const accreditationList = accreditation.split(',');
-      // Text search for accreditation
-      whereConditions.accreditation = {
-        [Op.like]: `%${accreditationList[0]}%` // Search for the first accreditation
-      };
+      whereConditions.accreditation = { [Op.iLike]: `%${accreditation}%` };
     }
     
     // Feature filters - facilities is JSONB array in PostgreSQL
