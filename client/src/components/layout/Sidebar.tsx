@@ -109,6 +109,7 @@ const teamSidebarItems: SidebarItem[] = [
   { icon: Users, label: "User Management", path: "/team/user-management", category: "Management" },
   { icon: Stethoscope, label: "Doctors", path: "/team/doctor-management", category: "Management" },
   { icon: Building2, label: "Corporate Management", path: "/team/corporate-management", category: "Management" },
+  { icon: FlaskConical, label: "Corporate Health Booking", path: "/team/corporate-health-booking", category: "Management" },
   { icon: Building2, label: "Hospital Management", path: "/team/hospital-management", category: "Management" },
   { icon: Building, label: "Clinic Management", path: "/team/clinic-management", category: "Management" },
   { icon: FlaskConical, label: "Lab Management", path: "/team/lab-management", category: "Management" },

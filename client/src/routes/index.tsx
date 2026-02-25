@@ -117,6 +117,7 @@ import TeamTools from '@/pages/team/TeamTools';
 import TeamPharmacyEdit from '@/pages/team/TeamPharmacyEdit';
 import WhatsAppCommunication from '@/pages/team/WhatsAppCommunication';
 import TeamCorporateManagement from '@/pages/team/TeamCorporateManagement';
+import CorporateHealthBooking from '@/pages/team/CorporateHealthBooking';
 import {
   TeamUserManagementPage,
   TeamDoctorManagementPage,
@@ -667,6 +668,7 @@ const AppRoutes = () => {
   <Route path="/team/user-management" element={<TeamUserManagementPage />} />
   <Route path="/team/doctor-management" element={<TeamDoctorManagementPage />} />
   <Route path="/team/corporate-management" element={<TeamCorporateManagement />} />
+  <Route path="/team/corporate-health-booking" element={<CorporateHealthBooking />} />
   <Route path="/team/hospital-management" element={<TeamHospitalManagementPage />} />
   <Route path="/team/clinic-management" element={<TeamClinicManagementPage />} />
   <Route path="/team/lab-management" element={<TeamLabManagementPage />} />
