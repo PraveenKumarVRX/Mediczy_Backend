@@ -2710,6 +2710,8 @@ router.post('/corporate-package-assignments', authUser, requireRole(['admin', 't
             NOW(), NOW()
           )
           ON CONFLICT ("userId", "packageId") DO UPDATE SET
+            "packageName"    = CASE WHEN EXCLUDED."packageDetails" != '{}'::jsonb THEN EXCLUDED."packageName"    ELSE user_health_packages."packageName"    END,
+            "packageDetails" = CASE WHEN EXCLUDED."packageDetails" != '{}'::jsonb THEN EXCLUDED."packageDetails" ELSE user_health_packages."packageDetails" END,
             "validTo" = EXCLUDED."validTo",
             status = 'active',
             "updatedAt" = NOW()
@@ -2786,7 +2788,9 @@ router.get('/corporate-health-packages/:corporateId', authUser, requireRole(['ad
         COUNT(uhp."userId") OVER (PARTITION BY uhp."packageId") as "employeeCount"
       FROM user_health_packages uhp
       WHERE uhp."corporateId" = :corporateId
-      ORDER BY uhp."packageId", uhp."createdAt" DESC
+      ORDER BY uhp."packageId",
+               (CASE WHEN uhp."packageDetails" != '{}'::jsonb THEN 0 ELSE 1 END) ASC,
+               uhp."createdAt" DESC
     `, {
       replacements: { corporateId },
       type: postgresSequelize.QueryTypes.SELECT
