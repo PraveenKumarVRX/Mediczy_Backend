@@ -102,6 +102,7 @@ import corporateRouter from './routes/corporate.route.js';
 import aggregatorRouter from './routes/aggregator.route.js';
 import aggregatorAuthRouter from './routes/aggregator-auth.route.js';
 import cartRouter from './routes/cart.route.js';
+import employeeNetworkRouter from './routes/employee-network.route.js';
 import hospitalRouter from './routes/hospital.route.js';
 import hospitalAuthRouter from './routes/hospital-auth.route.js';
 import hospitalAuthAliasRouter from './routes/hospital/auth.routes.js';
@@ -985,6 +986,7 @@ app.use("/api/hospital/insurance", hospitalInsuranceRouter); // IHX-like hospita
 app.use("/api/tpa", tpaRouter); // TPA (Third Party Administrator) login
 app.use("/api/appointments", appointmentRouter);
 app.use("/api/lab-tests", labTestsRouter);
+app.use("/api/employee", employeeNetworkRouter); // Corporate employee network (my-labs, my-hospitals, my-clinics)
 app.use("/api/cart", cartRouter); // Lab test cart management
 app.use("/api/prescriptions", prescriptionRouter); // Prescription CRUD and PDF generation
 app.use("/api/ehr", ehrRouter); // Electronic Health Records - admin access to patient records

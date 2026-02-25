@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { FlaskConical, Calendar, MapPin, Download, Plus, Search, Filter, Loader2, ShoppingCart, Trash2, X, Navigation } from 'lucide-react';
+import { FlaskConical, Calendar, MapPin, Download, Plus, Search, Filter, Loader2, ShoppingCart, Trash2, X, Navigation, Building2 } from 'lucide-react';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -153,6 +153,12 @@ const LabTests = () => {
   const [labSearchCity, setLabSearchCity] = useState('');
   const [collectionType, setCollectionType] = useState<'home' | 'lab' | ''>('');
   const [selectedLab, setSelectedLab] = useState<LabFromAPI | null>(null);
+
+  // Corporate network state
+  const [corpLabs, setCorpLabs] = useState<LabFromAPI[]>([]);
+  const [isCorpLoading, setIsCorpLoading] = useState(false);
+  const [isCorporateEmployee, setIsCorporateEmployee] = useState(false);
+  const [corporateName, setCorporateName] = useState('');
   
   // Cart state
   const [cart, setCart] = useState<CartItem[]>([]);
@@ -345,12 +351,38 @@ const LabTests = () => {
     }
   };
 
+  // Fetch labs assigned to this employee's corporate
+  const fetchMyCorpLabs = async () => {
+    try {
+      setIsCorpLoading(true);
+      const token = localStorage.getItem('token');
+      if (!token) return;
+      const response = await api.get('/employee/my-labs');
+      if (response.data?.success && response.data?.isCorporateEmployee) {
+        setIsCorporateEmployee(true);
+        setCorporateName(response.data.corporateName || '');
+        setCorpLabs(response.data.labs || []);
+      }
+    } catch (error) {
+      console.error('Error fetching corporate labs:', error);
+    } finally {
+      setIsCorpLoading(false);
+    }
+  };
+
   // Fetch labs when "Visit Lab" is selected
   useEffect(() => {
     if (selectedLabId === 'in_lab') {
       fetchLabs(labSearchCity);
     }
   }, [selectedLabId]);
+
+  // Fetch corporate labs once when user picks "Visit Lab"
+  useEffect(() => {
+    if (collectionType === 'lab' && corpLabs.length === 0 && !isCorpLoading) {
+      fetchMyCorpLabs();
+    }
+  }, [collectionType]);
 
   // Book a new lab test
   const handleBookLabTest = async () => {
@@ -748,6 +780,82 @@ const LabTests = () => {
                       {/* Lab Selection for Visit Lab */}
                       {collectionType === 'lab' && (
                         <div className="space-y-3">
+                          {/* Corporate Network Labs */}
+                          {isCorporateEmployee && (isCorpLoading || corpLabs.length > 0) && (
+                            <div className="space-y-2">
+                              <div className="flex items-center gap-2 py-1">
+                                <Building2 className="h-4 w-4 text-purple-600 dark:text-purple-400" />
+                                <span className="font-semibold text-sm text-purple-800 dark:text-purple-300">
+                                  {corporateName} Network
+                                </span>
+                                {!isCorpLoading && (
+                                  <Badge className="bg-purple-100 text-purple-800 dark:bg-purple-900/30 dark:text-purple-300 text-xs">
+                                    {corpLabs.length} labs
+                                  </Badge>
+                                )}
+                              </div>
+                              {isCorpLoading ? (
+                                <div className="flex items-center gap-2 py-2">
+                                  <Loader2 className="h-4 w-4 animate-spin text-purple-500" />
+                                  <span className="text-sm text-purple-700 dark:text-purple-300">Loading corporate labs...</span>
+                                </div>
+                              ) : (
+                                <div className="space-y-1.5 max-h-[28vh] overflow-y-auto pr-1">
+                                  {corpLabs.map(lab => (
+                                    <Card
+                                      key={`corp-${lab.id}`}
+                                      className={`cursor-pointer transition-all border-2 ${
+                                        selectedLab?.id === lab.id
+                                          ? 'ring-2 ring-purple-500 bg-gradient-to-r from-purple-50 to-violet-50 dark:from-slate-700 dark:to-slate-600 dark:ring-purple-400 border-purple-300 dark:border-purple-600'
+                                          : 'border-purple-200 dark:border-purple-800 bg-purple-50/50 dark:bg-slate-800 hover:bg-purple-50 dark:hover:bg-slate-700 hover:shadow-md'
+                                      }`}
+                                      onClick={() => setSelectedLab(lab)}
+                                    >
+                                      <CardContent className="py-2.5">
+                                        <div className="flex justify-between items-start">
+                                          <div className="flex-1 min-w-0">
+                                            <div className="flex items-center gap-1.5 flex-wrap">
+                                              <h4 className="font-semibold text-sm text-gray-900 dark:text-white">{lab.name}</h4>
+                                              <Badge className="bg-purple-600 text-white text-xs px-1.5 py-0 rounded shrink-0">Corp</Badge>
+                                            </div>
+                                            <p className="text-xs text-gray-600 dark:text-slate-300 flex items-start gap-1 mt-0.5">
+                                              <MapPin className="h-3 w-3 mt-0.5 flex-shrink-0" />
+                                              <span className="truncate">{lab.address?.street}, {lab.address?.city}</span>
+                                            </p>
+                                            {lab.accreditation && (
+                                              <Badge variant="outline" className="text-xs mt-1 bg-blue-50 dark:bg-blue-900/30 text-blue-700 dark:text-blue-300 border-blue-200 dark:border-blue-700">
+                                                {lab.accreditation}
+                                              </Badge>
+                                            )}
+                                          </div>
+                                          <div className="text-right ml-2 shrink-0">
+                                            {lab.rating > 0 && (
+                                              <div className="flex items-center gap-1">
+                                                <span className="text-yellow-500 text-xs">⭐</span>
+                                                <span className="text-xs font-semibold text-gray-900 dark:text-white">{lab.rating}</span>
+                                              </div>
+                                            )}
+                                            {(lab as any).corpDiscount > 0 && (
+                                              <Badge className="text-xs bg-green-100 dark:bg-green-900/30 text-green-700 dark:text-green-300 mt-0.5">
+                                                {(lab as any).corpDiscount}% off
+                                              </Badge>
+                                            )}
+                                            {selectedLab?.id === lab.id && (
+                                              <Badge className="mt-1 bg-purple-500 text-white block">Selected ✓</Badge>
+                                            )}
+                                          </div>
+                                        </div>
+                                      </CardContent>
+                                    </Card>
+                                  ))}
+                                </div>
+                              )}
+                              <div className="border-b border-gray-200 dark:border-slate-700 pb-2">
+                                <p className="text-xs text-gray-500 dark:text-slate-400">Or search all available labs below</p>
+                              </div>
+                            </div>
+                          )}
+
                           <div>
                             <Label className="text-gray-900 dark:text-white font-medium">Search by City, Area, or Pincode</Label>
                             <div className="flex gap-2 mt-1">
