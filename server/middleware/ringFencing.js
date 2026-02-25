@@ -180,6 +180,7 @@ const USER_TYPE_PERMISSIONS = {
       '/api/labs',
       '/api/pharmacies',
       '/api/corporates',
+      '/api/corporate-bookings',  // Team members book corporate health checkups
       '/api/plans',
       '/api/activity-log',
       '/api/chat',
