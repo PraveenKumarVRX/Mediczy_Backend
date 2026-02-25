@@ -15,6 +15,7 @@ import {
 } from 'lucide-react';
 import { Link } from 'react-router-dom';
 import api from '@/utils/api';
+import { getUserType } from '@/hooks/auth';
 
 // ──────────────────────────────────────────────────────────
 // Types
@@ -177,9 +178,17 @@ export default function CorporateHealthBooking() {
   const [selectedLabId, setSelectedLabId] = useState('');
   const [labsLoading, setLabsLoading] = useState(false);
 
-  // ── assigned corporate (derived from logged-in team member) ──
+  // ── user type ──
+  const userType = getUserType();
+
+  // ── corporate selector ──
   const [corporate, setCorporate] = useState<Corporate | null>(null);
   const [corporateLoading, setCorporateLoading] = useState(false);
+  const [corporateList, setCorporateList] = useState<Corporate[]>([]);
+  const [corporateListLoading, setCorporateListLoading] = useState(false);
+  const [corpInput, setCorpInput] = useState('');
+  const [corpSuggestions, setCorpSuggestions] = useState<Corporate[]>([]);
+  const [showCorpSuggestions, setShowCorpSuggestions] = useState(false);
 
   // ── corporate plan packages ──
   const [packages, setPackages] = useState<CorporatePackage[]>([]);
@@ -229,33 +238,54 @@ export default function CorporateHealthBooking() {
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   // ──────────────────────────────────────────────────────────
-  // On mount: derive the assigned corporate, then load labs +
-  // corporate-level packages for that corporate dynamically.
+  // Helper: load labs + packages once a corporate is chosen
+  // ──────────────────────────────────────────────────────────
+  const loadForCorporate = (cid: number) => {
+    setLabsLoading(true);
+    api.get(`/corporate-bookings/labs?corporateId=${cid}`)
+      .then(r => setLabs(r.data.labs || []))
+      .catch(e => console.error('Labs fetch failed:', e))
+      .finally(() => setLabsLoading(false));
+
+    setPackagesLoading(true);
+    api.get(`/corporate-bookings/packages?corporateId=${cid}`)
+      .then(r => setPackages(r.data.packages || []))
+      .catch(e => console.error('Packages fetch failed:', e))
+      .finally(() => setPackagesLoading(false));
+  };
+
+  // ──────────────────────────────────────────────────────────
+  // On mount: admin → fetch full corporate list for picker
+  //           team  → auto-detect assigned corporate
   // ──────────────────────────────────────────────────────────
   useEffect(() => {
-    setCorporateLoading(true);
-    api.get('/corporate-bookings/my-corporate')
-      .then(r => {
-        const corp: Corporate | null = r.data.corporate || null;
-        setCorporate(corp);
-        if (!corp) return;
-
-        const cid = corp.id;
-        setLabsLoading(true);
-        api.get(`/corporate-bookings/labs?corporateId=${cid}`)
-          .then(r2 => setLabs(r2.data.labs || []))
-          .catch(e => console.error('Labs fetch failed:', e))
-          .finally(() => setLabsLoading(false));
-
-        setPackagesLoading(true);
-        api.get(`/corporate-bookings/packages?corporateId=${cid}`)
-          .then(r2 => setPackages(r2.data.packages || []))
-          .catch(e => console.error('Packages fetch failed:', e))
-          .finally(() => setPackagesLoading(false));
-      })
-      .catch(e => console.error('my-corporate fetch failed:', e))
-      .finally(() => setCorporateLoading(false));
-  }, []);
+    if (userType === 'admin') {
+      setCorporateListLoading(true);
+      api.get('/admin/corporates')
+        .then(r => {
+          const raw = r.data.corporates || r.data || [];
+          const list: Corporate[] = (Array.isArray(raw) ? raw : []).map((c: Record<string, unknown>) => ({
+            id: c.id as number,
+            companyName: (c.companyName || c.company_name || '') as string,
+            employeeCount: (c.employeeCount ?? c.employee_count) as number | undefined,
+            status: c.status as string | undefined,
+          }));
+          setCorporateList(list);
+        })
+        .catch(e => console.error('Corporate list fetch failed:', e))
+        .finally(() => setCorporateListLoading(false));
+    } else {
+      setCorporateLoading(true);
+      api.get('/corporate-bookings/my-corporate')
+        .then(r => {
+          const corp: Corporate | null = r.data.corporate || null;
+          setCorporate(corp);
+          if (corp) loadForCorporate(corp.id);
+        })
+        .catch(e => console.error('my-corporate fetch failed:', e))
+        .finally(() => setCorporateLoading(false));
+    }
+  }, []);  
 
   // ──────────────────────────────────
   // Load history / reports when tab switches
@@ -423,14 +453,58 @@ export default function CorporateHealthBooking() {
       .finally(() => setEligibilityLoading(false));
   };
 
+  // ── Corporate search handler (admin only) ──
+  const handleCorpSearch = (val: string) => {
+    setCorpInput(val);
+    const q = val.trim().toLowerCase();
+    const filtered = q
+      ? corporateList.filter(c => c.companyName.toLowerCase().includes(q))
+      : corporateList.slice(0, 10);
+    setCorpSuggestions(filtered.slice(0, 10));
+    setShowCorpSuggestions(filtered.length > 0 || !q);
+  };
+
+  const handleSelectCorporate = (corp: Corporate) => {
+    setCorporate(corp);
+    setCorpInput('');
+    setShowCorpSuggestions(false);
+    // Reset downstream fields
+    setSelectedEmployee(null);
+    setEmployeeSearch('');
+    setEmployeeEligibility([]);
+    setTestPackage('');
+    setSelectedLabId('');
+    setLabs([]);
+    setPackages([]);
+    loadForCorporate(corp.id);
+  };
+
+  const handleChangeCorporate = () => {
+    setCorporate(null);
+    setCorpInput('');
+    setCorpSuggestions(corporateList.slice(0, 10));
+    setShowCorpSuggestions(false);
+    setLabs([]);
+    setPackages([]);
+    setSelectedLabId('');
+    setTestPackage('');
+    setSelectedEmployee(null);
+    setEmployeeSearch('');
+    setEmployeeEligibility([]);
+  };
+
   // ──────────────────────────────────
   // Submit booking
   // ──────────────────────────────────
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
 
+    if (!corporate) {
+      toast({ variant: 'destructive', title: 'Corporate required', description: 'Please select a corporate first.' });
+      return;
+    }
     if (!selectedEmployee) {
-      toast({ variant: 'destructive', title: 'Employee required', description: 'Please search and select an Equitas employee.' });
+      toast({ variant: 'destructive', title: 'Employee required', description: `Please search and select a ${corporate.companyName} employee.` });
       return;
     }
     if (!selectedLabId) {
@@ -586,12 +660,109 @@ export default function CorporateHealthBooking() {
             )}
 
             <form onSubmit={handleSubmit} className="space-y-5">
-              {/* ──── Step 1: Select Employee ──── */}
+              {/* ──── Step 1: Select Corporate ──── */}
               <Card>
                 <CardHeader className="pb-3">
                   <CardTitle className="text-base flex items-center gap-2">
-                    <span className="w-6 h-6 rounded-full bg-blue-600 text-white text-xs flex items-center justify-center font-bold">1</span>
-                    Select Equitas Employee
+                    <span className={`w-6 h-6 rounded-full text-white text-xs flex items-center justify-center font-bold ${corporate ? 'bg-green-500' : 'bg-blue-600'}`}>1</span>
+                    Select Corporate
+                    {(corporateLoading || corporateListLoading) && <Loader2 className="h-4 w-4 animate-spin text-muted-foreground ml-auto" />}
+                  </CardTitle>
+                </CardHeader>
+                <CardContent>
+                  {userType !== 'admin' ? (
+                    /* Team user: show auto-assigned corporate */
+                    corporateLoading ? (
+                      <div className="flex items-center gap-2 text-sm text-muted-foreground py-2">
+                        <Loader2 className="h-4 w-4 animate-spin" /> Loading assigned corporate…
+                      </div>
+                    ) : corporate ? (
+                      <div className="flex items-center gap-3 p-3 bg-green-50 dark:bg-green-950/30 rounded-lg border border-green-200">
+                        <Building2 className="h-5 w-5 text-green-600 shrink-0" />
+                        <div className="flex-1">
+                          <p className="font-semibold text-sm">{corporate.companyName}</p>
+                          {corporate.employeeCount != null && (
+                            <p className="text-xs text-muted-foreground">{corporate.employeeCount} employees</p>
+                          )}
+                        </div>
+                        <Badge className="bg-green-100 text-green-700 border-green-200 text-xs shrink-0">Assigned ✓</Badge>
+                      </div>
+                    ) : (
+                      <p className="text-sm text-muted-foreground flex items-center gap-2 py-2">
+                        <AlertCircle className="h-4 w-4 text-orange-500" />
+                        No corporate assigned to your account. Contact an administrator.
+                      </p>
+                    )
+                  ) : (
+                    /* Admin: searchable corporate picker */
+                    corporate ? (
+                      <div className="flex items-center gap-3 p-3 bg-blue-50 dark:bg-blue-950/30 rounded-lg border border-blue-200">
+                        <Building2 className="h-5 w-5 text-blue-600 shrink-0" />
+                        <div className="flex-1">
+                          <p className="font-semibold text-sm">{corporate.companyName}</p>
+                          {corporate.employeeCount != null && (
+                            <p className="text-xs text-muted-foreground">{corporate.employeeCount} employees</p>
+                          )}
+                        </div>
+                        <button
+                          type="button"
+                          onClick={handleChangeCorporate}
+                          className="text-xs text-blue-600 hover:text-blue-800 underline shrink-0"
+                        >
+                          Change
+                        </button>
+                      </div>
+                    ) : (
+                      <div className="relative">
+                        <div className="relative">
+                          <Building2 className="absolute left-3 top-2.5 h-4 w-4 text-muted-foreground" />
+                          <Input
+                            placeholder="Search corporate by name…"
+                            value={corpInput}
+                            onChange={e => handleCorpSearch(e.target.value)}
+                            onFocus={() => { if (corporateList.length > 0) { setCorpSuggestions(corporateList.slice(0, 10)); setShowCorpSuggestions(true); } }}
+                            className="pl-9"
+                            autoComplete="off"
+                          />
+                          {corporateListLoading && <Loader2 className="absolute right-3 top-2.5 h-4 w-4 text-muted-foreground animate-spin" />}
+                        </div>
+                        {showCorpSuggestions && corpSuggestions.length > 0 && (
+                          <div className="absolute z-50 w-full bg-background border rounded-lg shadow-lg mt-1 max-h-56 overflow-y-auto">
+                            {corpSuggestions.map(corp => (
+                              <button
+                                key={corp.id}
+                                type="button"
+                                onClick={() => handleSelectCorporate(corp)}
+                                className="w-full px-4 py-3 flex items-center gap-3 hover:bg-accent text-left transition-colors"
+                              >
+                                <Building2 className="h-4 w-4 text-blue-500 shrink-0" />
+                                <div className="flex-1 min-w-0">
+                                  <p className="font-medium text-sm">{corp.companyName}</p>
+                                  {corp.employeeCount != null && (
+                                    <p className="text-xs text-muted-foreground">{corp.employeeCount} employees</p>
+                                  )}
+                                </div>
+                              </button>
+                            ))}
+                          </div>
+                        )}
+                        {corpInput.length >= 1 && corpSuggestions.length === 0 && !corporateListLoading && (
+                          <p className="text-sm text-muted-foreground mt-2 flex items-center gap-2">
+                            <AlertCircle className="h-4 w-4" /> No corporates found for "{corpInput}"
+                          </p>
+                        )}
+                      </div>
+                    )
+                  )}
+                </CardContent>
+              </Card>
+
+              {/* ──── Step 2: Select Employee ──── */}
+              <Card>
+                <CardHeader className="pb-3">
+                  <CardTitle className="text-base flex items-center gap-2">
+                    <span className="w-6 h-6 rounded-full bg-blue-600 text-white text-xs flex items-center justify-center font-bold">2</span>
+                    Select {corporate?.companyName || 'Corporate'} Employee
                   </CardTitle>
                 </CardHeader>
                 <CardContent>
@@ -635,7 +806,7 @@ export default function CorporateHealthBooking() {
                     {showSuggestions && employeeSuggestions.length === 0 && !empLoading && employeeSearch.length >= 2 && (
                       <div className="absolute z-50 w-full bg-background border rounded-lg shadow mt-1 px-4 py-3">
                         <p className="text-sm text-muted-foreground flex items-center gap-2">
-                          <AlertCircle className="h-4 w-4" /> No Equitas employees found for "{employeeSearch}"
+                          <AlertCircle className="h-4 w-4" /> No employees found for "{employeeSearch}"
                         </p>
                       </div>
                     )}
@@ -666,16 +837,16 @@ export default function CorporateHealthBooking() {
               <Card>
                 <CardHeader className="pb-3">
                   <CardTitle className="text-base flex items-center gap-2">
-                    <span className="w-6 h-6 rounded-full bg-blue-600 text-white text-xs flex items-center justify-center font-bold">2</span>
+                    <span className="w-6 h-6 rounded-full bg-blue-600 text-white text-xs flex items-center justify-center font-bold">3</span>
                     Select Lab
                     {labsLoading && <Loader2 className="h-4 w-4 animate-spin text-muted-foreground ml-auto" />}
-                    {!labsLoading && <Badge variant="secondary" className="ml-auto text-xs">{labs.length} in Equitas network</Badge>}
+                    {!labsLoading && <Badge variant="secondary" className="ml-auto text-xs">{labs.length} in {corporate?.companyName || 'corporate'} network</Badge>}
                   </CardTitle>
                 </CardHeader>
                 <CardContent>
                   <Select value={selectedLabId} onValueChange={setSelectedLabId}>
                     <SelectTrigger>
-                      <SelectValue placeholder="Choose a lab from Equitas network..." />
+                      <SelectValue placeholder={`Choose a lab from ${corporate?.companyName || 'corporate'} network...`} />
                     </SelectTrigger>
                     <SelectContent className="max-h-72">
                       {labs.map(lab => (
@@ -699,7 +870,7 @@ export default function CorporateHealthBooking() {
               <Card>
                 <CardHeader className="pb-3">
                   <CardTitle className="text-base flex items-center gap-2">
-                    <span className="w-6 h-6 rounded-full bg-blue-600 text-white text-xs flex items-center justify-center font-bold">3</span>
+                    <span className="w-6 h-6 rounded-full bg-blue-600 text-white text-xs flex items-center justify-center font-bold">4</span>
                     Appointment Date &amp; Time
                   </CardTitle>
                 </CardHeader>
@@ -739,7 +910,7 @@ export default function CorporateHealthBooking() {
               <Card>
                 <CardHeader className="pb-3">
                   <CardTitle className="text-base flex items-center gap-2">
-                    <span className="w-6 h-6 rounded-full bg-blue-600 text-white text-xs flex items-center justify-center font-bold">4</span>
+                    <span className="w-6 h-6 rounded-full bg-blue-600 text-white text-xs flex items-center justify-center font-bold">5</span>
                     Health Checkup Package
                     {selectedEmployee && (
                       <span className="ml-auto text-xs font-normal text-muted-foreground">
@@ -829,7 +1000,7 @@ export default function CorporateHealthBooking() {
               <Card>
                 <CardHeader className="pb-3">
                   <CardTitle className="text-base flex items-center gap-2">
-                    <span className="w-6 h-6 rounded-full bg-gray-400 text-white text-xs flex items-center justify-center font-bold">5</span>
+                    <span className="w-6 h-6 rounded-full bg-gray-400 text-white text-xs flex items-center justify-center font-bold">6</span>
                     Additional Notes <span className="text-muted-foreground font-normal text-sm">(optional)</span>
                   </CardTitle>
                 </CardHeader>
