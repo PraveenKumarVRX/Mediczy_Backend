@@ -10,7 +10,8 @@ import MainLayout from '@/components/layout/MainLayout';
 import {
   Building2, Calendar, CheckCircle, Clock, FlaskConical,
   Mail, MessageSquare, Phone, Search, User, Users, ArrowLeft,
-  AlertCircle, Loader2, History, ChevronRight
+  AlertCircle, Loader2, History, ChevronRight,
+  Upload, FileText, Download, Share2, RefreshCw, X
 } from 'lucide-react';
 import { Link } from 'react-router-dom';
 import api from '@/utils/api';
@@ -51,6 +52,47 @@ interface BookingHistoryItem {
   phoneNumber: string;
 }
 
+interface HealthReport {
+  id: number;
+  report_name: string;
+  report_type: string;
+  report_date: string;
+  report_url: string;
+  file_size_bytes: number;
+  mime_type: string;
+  notes: string;
+  notified_email: boolean;
+  notified_whatsapp: boolean;
+  notified_at: string;
+  created_at: string;
+  employee_id: number;
+  firstName: string;
+  lastName: string;
+  email: string;
+  phoneNumber: string;
+  uploader_first?: string;
+  uploader_last?: string;
+  order_number?: string;
+}
+
+const REPORT_TYPES = [
+  { value: 'annual_health_checkup', label: '🔬 Annual Health Checkup' },
+  { value: 'lab_result', label: '🧪 Lab Result' },
+  { value: 'blood_test', label: '🩸 Blood Test' },
+  { value: 'lipid_profile', label: '💉 Lipid Profile' },
+  { value: 'diabetic_screening', label: '🍬 Diabetic Screening' },
+  { value: 'cardiac_screening', label: '❤️ Cardiac Screening' },
+  { value: 'thyroid_panel', label: '🦋 Thyroid Panel' },
+  { value: 'xray', label: '🦴 X-Ray' },
+  { value: 'ecg', label: '📊 ECG Report' },
+  { value: 'usg', label: '🔊 USG Report' },
+  { value: 'eye_checkup', label: '👁️ Eye Checkup' },
+  { value: 'dental_checkup', label: '🦷 Dental Checkup' },
+  { value: 'general_health_report', label: '📋 General Health Report' },
+  { value: 'prescription', label: '💊 Prescription' },
+  { value: 'other', label: '📁 Other' },
+];
+
 // ──────────────────────────────────────────────────────────
 // Health packages for Equitas employees
 // ──────────────────────────────────────────────────────────
@@ -89,7 +131,7 @@ export default function CorporateHealthBooking() {
   const { toast } = useToast();
 
   // ── tabs ──
-  const [activeTab, setActiveTab] = useState<'book' | 'history'>('book');
+  const [activeTab, setActiveTab] = useState<'book' | 'history' | 'reports'>('book');
 
   // ── employee search ──
   const [employeeSearch, setEmployeeSearch] = useState('');
@@ -119,6 +161,30 @@ export default function CorporateHealthBooking() {
   const [historyLoading, setHistoryLoading] = useState(false);
   const [historyTotal, setHistoryTotal] = useState(0);
 
+  // ── reports tab ──
+  const [reports, setReports] = useState<HealthReport[]>([]);
+  const [reportsLoading, setReportsLoading] = useState(false);
+  const [reportsTotal, setReportsTotal] = useState(0);
+  const [reportFilterEmployee, setReportFilterEmployee] = useState('');
+  // report upload form
+  const [rptEmployee, setRptEmployee] = useState<Employee | null>(null);
+  const [rptEmployeeSearch, setRptEmployeeSearch] = useState('');
+  const [rptEmpSuggestions, setRptEmpSuggestions] = useState<Employee[]>([]);
+  const [rptEmpLoading, setRptEmpLoading] = useState(false);
+  const [showRptSuggestions, setShowRptSuggestions] = useState(false);
+  const rptSearchTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const [rptName, setRptName] = useState('');
+  const [rptType, setRptType] = useState('annual_health_checkup');
+  const [rptDate, setRptDate] = useState('');
+  const [rptNotes, setRptNotes] = useState('');
+  const [rptFile, setRptFile] = useState<File | null>(null);
+  const [rptSendEmail, setRptSendEmail] = useState(true);
+  const [rptSendWA, setRptSendWA] = useState(true);
+  const [rptUploading, setRptUploading] = useState(false);
+  const [rptSuccess, setRptSuccess] = useState<{ reportName: string; employeeName: string; reportUrl: string } | null>(null);
+  const [sharingId, setSharingId] = useState<number | null>(null);
+  const fileInputRef = useRef<HTMLInputElement>(null);
+
   // ──────────────────────────────────
   // Load labs on mount
   // ──────────────────────────────────
@@ -131,12 +197,11 @@ export default function CorporateHealthBooking() {
   }, []);
 
   // ──────────────────────────────────
-  // Load history when tab switches
+  // Load history / reports when tab switches
   // ──────────────────────────────────
   useEffect(() => {
-    if (activeTab === 'history') {
-      fetchHistory();
-    }
+    if (activeTab === 'history') fetchHistory();
+    if (activeTab === 'reports') fetchReports();
   }, [activeTab]);
 
   const fetchHistory = async () => {
@@ -150,6 +215,107 @@ export default function CorporateHealthBooking() {
     } finally {
       setHistoryLoading(false);
     }
+  };
+
+  const fetchReports = async (empId?: string) => {
+    setReportsLoading(true);
+    try {
+      const empParam = empId ? `&employeeId=${empId}` : '';
+      const r = await api.get(`/corporate-bookings/reports?corporateId=5&limit=100${empParam}`);
+      setReports(r.data.reports || []);
+      setReportsTotal(r.data.total || 0);
+    } catch (e) {
+      console.error('Reports fetch failed:', e);
+    } finally {
+      setReportsLoading(false);
+    }
+  };
+
+  // Report employee search
+  const handleRptEmpSearch = (val: string) => {
+    setRptEmployeeSearch(val);
+    setRptEmployee(null);
+    if (rptSearchTimer.current) clearTimeout(rptSearchTimer.current);
+    if (val.trim().length < 2) { setRptEmpSuggestions([]); setShowRptSuggestions(false); return; }
+    rptSearchTimer.current = setTimeout(async () => {
+      setRptEmpLoading(true);
+      try {
+        const r = await api.get(`/corporate-bookings/employees?corporateId=5&search=${encodeURIComponent(val)}`);
+        setRptEmpSuggestions(r.data.employees || []);
+        setShowRptSuggestions(true);
+      } catch { setRptEmpSuggestions([]); } finally { setRptEmpLoading(false); }
+    }, 350);
+  };
+
+  const selectRptEmployee = (emp: Employee) => {
+    setRptEmployee(emp);
+    setRptEmployeeSearch(`${emp.firstName} ${emp.lastName} — ${emp.email}`);
+    setShowRptSuggestions(false);
+  };
+
+  // Upload report
+  const handleReportUpload = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!rptEmployee) { toast({ variant: 'destructive', title: 'Employee required' }); return; }
+    if (!rptFile) { toast({ variant: 'destructive', title: 'File required', description: 'Please select a PDF or image file.' }); return; }
+    if (!rptName || !rptDate) { toast({ variant: 'destructive', title: 'Report name & date required' }); return; }
+
+    const formData = new FormData();
+    formData.append('report', rptFile);
+    formData.append('employeeId', String(rptEmployee.id));
+    formData.append('reportName', rptName);
+    formData.append('reportType', rptType);
+    formData.append('reportDate', rptDate);
+    formData.append('notes', rptNotes);
+    formData.append('sendEmail', String(rptSendEmail));
+    formData.append('sendWhatsapp', String(rptSendWA));
+    formData.append('corporateId', '5');
+    formData.append('corporateName', 'Equitas Bank Ltd');
+
+    setRptUploading(true);
+    try {
+      const r = await api.post('/corporate-bookings/reports/upload', formData, {
+        headers: { 'Content-Type': 'multipart/form-data' }
+      });
+      const empName = `${rptEmployee.firstName} ${rptEmployee.lastName}`;
+      setRptSuccess({ reportName: rptName, employeeName: empName, reportUrl: r.data.report.reportUrl });
+      const notif = r.data.notifications as { email: string; whatsapp: string };
+      const sent = [notif.email === 'sent' && '📧 Email', notif.whatsapp === 'sent' && '📱 WhatsApp'].filter(Boolean).join(' & ');
+      toast({ title: '✅ Report Uploaded!', description: `${rptName} uploaded for ${empName}. Sent via ${sent || 'system'}.` });
+      // Reset form
+      setRptEmployee(null); setRptEmployeeSearch('');
+      setRptName(''); setRptDate(''); setRptNotes(''); setRptFile(null);
+      setRptType('annual_health_checkup');
+      if (fileInputRef.current) fileInputRef.current.value = '';
+      fetchReports();
+    } catch (err: unknown) {
+      const msg = (err as { response?: { data?: { message?: string } } })?.response?.data?.message || 'Upload failed';
+      toast({ variant: 'destructive', title: 'Upload Failed', description: msg });
+    } finally {
+      setRptUploading(false);
+    }
+  };
+
+  const handleShareReport = async (reportId: number) => {
+    setSharingId(reportId);
+    try {
+      await api.post(`/corporate-bookings/reports/${reportId}/share`, {
+        sendEmail: true, sendWhatsapp: true, corporateName: 'Equitas Bank Ltd'
+      });
+      toast({ title: '📤 Notification Sent', description: 'Email & WhatsApp resent to employee.' });
+      fetchReports();
+    } catch (err: unknown) {
+      const msg = (err as { response?: { data?: { message?: string } } })?.response?.data?.message || 'Share failed';
+      toast({ variant: 'destructive', title: 'Share Failed', description: msg });
+    } finally {
+      setSharingId(null);
+    }
+  };
+
+  const formatFileSize = (bytes: number) => {
+    if (!bytes) return '';
+    if (bytes < 1048576) return `${(bytes / 1024).toFixed(0)} KB`;
+    return `${(bytes / 1048576).toFixed(1)} MB`;
   };
 
   // ──────────────────────────────────
@@ -296,6 +462,12 @@ export default function CorporateHealthBooking() {
             onClick={() => setActiveTab('history')}
           >
             <span className="flex items-center gap-2"><History className="h-4 w-4" /> Booking History</span>
+          </button>
+          <button
+            className={`pb-3 px-4 text-sm font-medium border-b-2 transition-colors ${activeTab === 'reports' ? 'border-emerald-600 text-emerald-600' : 'border-transparent text-muted-foreground hover:text-foreground'}`}
+            onClick={() => setActiveTab('reports')}
+          >
+            <span className="flex items-center gap-2"><FileText className="h-4 w-4" /> Health Reports</span>
           </button>
         </div>
 
@@ -643,6 +815,275 @@ export default function CorporateHealthBooking() {
               )}
             </CardContent>
           </Card>
+        )}
+
+        {/* ╔════════════════════════════════╗
+            ║      HEALTH REPORTS TAB        ║
+            ╚════════════════════════════════╝ */}
+        {activeTab === 'reports' && (
+          <div className="space-y-6">
+            {/* Upload success */}
+            {rptSuccess && (
+              <Card className="border-emerald-300 bg-emerald-50 dark:bg-emerald-950/20">
+                <CardContent className="pt-5">
+                  <div className="flex gap-3">
+                    <CheckCircle className="h-6 w-6 text-emerald-600 mt-0.5 shrink-0" />
+                    <div>
+                      <p className="font-semibold text-emerald-800 dark:text-emerald-300">Report Uploaded &amp; Shared!</p>
+                      <p className="text-sm text-emerald-700 dark:text-emerald-400 mt-1">
+                        <strong>{rptSuccess.reportName}</strong> uploaded for <strong>{rptSuccess.employeeName}</strong>. Employee notified via Email &amp; WhatsApp.
+                      </p>
+                      <div className="flex gap-2 mt-3 flex-wrap">
+                        <a href={rptSuccess.reportUrl} target="_blank" rel="noreferrer"
+                          className="text-emerald-700 border border-emerald-300 bg-white rounded-md px-3 py-1.5 text-xs font-medium hover:bg-emerald-50 flex items-center gap-1">
+                          <Download className="h-3 w-3" /> View Report
+                        </a>
+                        <Button size="sm" variant="outline" className="text-emerald-700 border-emerald-300 text-xs" onClick={() => setRptSuccess(null)}>
+                          Upload Another
+                        </Button>
+                      </div>
+                    </div>
+                  </div>
+                </CardContent>
+              </Card>
+            )}
+
+            {/* ──── Upload Form ──── */}
+            <Card>
+              <CardHeader className="pb-3">
+                <CardTitle className="text-base flex items-center gap-2">
+                  <Upload className="h-4 w-4 text-emerald-600" />
+                  Upload Health Report for Employee
+                </CardTitle>
+              </CardHeader>
+              <CardContent>
+                <form onSubmit={handleReportUpload} className="space-y-4">
+                  {/* Employee search */}
+                  <div>
+                    <label className="text-sm font-medium mb-1.5 block">Employee</label>
+                    <div className="relative">
+                      <Search className="absolute left-3 top-2.5 h-4 w-4 text-muted-foreground" />
+                      <Input
+                        placeholder="Search employee by name, email or phone..."
+                        value={rptEmployeeSearch}
+                        onChange={e => handleRptEmpSearch(e.target.value)}
+                        onFocus={() => rptEmpSuggestions.length > 0 && setShowRptSuggestions(true)}
+                        className="pl-9"
+                        autoComplete="off"
+                      />
+                      {rptEmpLoading && <Loader2 className="absolute right-3 top-2.5 h-4 w-4 animate-spin text-muted-foreground" />}
+                    </div>
+                    {showRptSuggestions && rptEmpSuggestions.length > 0 && (
+                      <div className="relative z-50">
+                        <div className="absolute w-full bg-background border rounded-lg shadow-lg mt-1 max-h-48 overflow-y-auto">
+                          {rptEmpSuggestions.map(emp => (
+                            <button key={emp.id} type="button" onClick={() => selectRptEmployee(emp)}
+                              className="w-full px-4 py-2.5 flex items-center gap-3 hover:bg-accent text-left transition-colors">
+                              <User className="h-4 w-4 text-muted-foreground shrink-0" />
+                              <div className="flex-1 min-w-0">
+                                <p className="font-medium text-sm">{emp.firstName} {emp.lastName}</p>
+                                <p className="text-xs text-muted-foreground truncate">{emp.email} · {emp.phoneNumber}</p>
+                              </div>
+                            </button>
+                          ))}
+                        </div>
+                      </div>
+                    )}
+                    {rptEmployee && (
+                      <div className="mt-2 flex items-center gap-2 bg-emerald-50 dark:bg-emerald-950/30 border border-emerald-200 rounded-lg px-3 py-2">
+                        <div className="w-7 h-7 rounded-full bg-emerald-600 flex items-center justify-center text-white text-xs font-bold shrink-0">
+                          {rptEmployee.firstName[0]}
+                        </div>
+                        <div className="flex-1 text-sm">
+                          <span className="font-medium">{rptEmployee.firstName} {rptEmployee.lastName}</span>
+                          <span className="text-muted-foreground ml-2 text-xs">{rptEmployee.email}</span>
+                        </div>
+                        <button type="button" onClick={() => { setRptEmployee(null); setRptEmployeeSearch(''); }}>
+                          <X className="h-4 w-4 text-muted-foreground hover:text-foreground" />
+                        </button>
+                      </div>
+                    )}
+                  </div>
+
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                    {/* Report name */}
+                    <div>
+                      <label className="text-sm font-medium mb-1.5 block">Report Name</label>
+                      <Input placeholder="e.g. Annual Checkup — Feb 2026" value={rptName} onChange={e => setRptName(e.target.value)} />
+                    </div>
+                    {/* Report type */}
+                    <div>
+                      <label className="text-sm font-medium mb-1.5 block">Report Type</label>
+                      <Select value={rptType} onValueChange={setRptType}>
+                        <SelectTrigger><SelectValue /></SelectTrigger>
+                        <SelectContent className="max-h-60">
+                          {REPORT_TYPES.map(t => (
+                            <SelectItem key={t.value} value={t.value}>{t.label}</SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
+                    </div>
+                    {/* Report date */}
+                    <div>
+                      <label className="text-sm font-medium mb-1.5 block flex items-center gap-1.5">
+                        <Calendar className="h-3.5 w-3.5 text-muted-foreground" /> Report Date
+                      </label>
+                      <Input type="date" value={rptDate} onChange={e => setRptDate(e.target.value)} max={todayStr} />
+                    </div>
+                    {/* File picker */}
+                    <div>
+                      <label className="text-sm font-medium mb-1.5 block flex items-center gap-1.5">
+                        <FileText className="h-3.5 w-3.5 text-muted-foreground" /> File (PDF / Image)
+                      </label>
+                      <div
+                        className="border-2 border-dashed border-border rounded-lg p-3 cursor-pointer hover:border-emerald-400 transition-colors text-center"
+                        onClick={() => fileInputRef.current?.click()}
+                      >
+                        {rptFile ? (
+                          <div className="flex items-center gap-2 justify-center">
+                            <FileText className="h-4 w-4 text-emerald-600" />
+                            <span className="text-sm font-medium text-emerald-700 truncate max-w-[160px]">{rptFile.name}</span>
+                            <span className="text-xs text-muted-foreground">({formatFileSize(rptFile.size)})</span>
+                            <button type="button" onClick={e => { e.stopPropagation(); setRptFile(null); if (fileInputRef.current) fileInputRef.current.value = ''; }}>
+                              <X className="h-3.5 w-3.5 text-muted-foreground" />
+                            </button>
+                          </div>
+                        ) : (
+                          <div>
+                            <Upload className="h-6 w-6 mx-auto text-muted-foreground mb-1" />
+                            <p className="text-xs text-muted-foreground">Click to select PDF, JPG, PNG (max 25 MB)</p>
+                          </div>
+                        )}
+                        <input
+                          ref={fileInputRef}
+                          type="file"
+                          accept=".pdf,.jpg,.jpeg,.png,.webp,.doc,.docx"
+                          className="hidden"
+                          onChange={e => setRptFile(e.target.files?.[0] || null)}
+                        />
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* Notes */}
+                  <div>
+                    <label className="text-sm font-medium mb-1.5 block">Notes <span className="text-muted-foreground font-normal">(optional)</span></label>
+                    <Textarea placeholder="Any remarks about this report..." value={rptNotes} onChange={e => setRptNotes(e.target.value)} rows={2} className="resize-none" />
+                  </div>
+
+                  {/* Notification toggles */}
+                  <div className="flex gap-6 py-2">
+                    <label className="flex items-center gap-2 cursor-pointer select-none text-sm">
+                      <input type="checkbox" className="w-4 h-4 accent-emerald-600" checked={rptSendEmail} onChange={e => setRptSendEmail(e.target.checked)} />
+                      <Mail className="h-4 w-4 text-muted-foreground" /> Notify via Email
+                    </label>
+                    <label className="flex items-center gap-2 cursor-pointer select-none text-sm">
+                      <input type="checkbox" className="w-4 h-4 accent-emerald-600" checked={rptSendWA} onChange={e => setRptSendWA(e.target.checked)} />
+                      <MessageSquare className="h-4 w-4 text-muted-foreground" /> Notify via WhatsApp
+                    </label>
+                  </div>
+
+                  <Button type="submit" className="w-full bg-emerald-600 hover:bg-emerald-700 text-white font-semibold" disabled={rptUploading}>
+                    {rptUploading ? (
+                      <span className="flex items-center gap-2"><Loader2 className="h-4 w-4 animate-spin" /> Uploading &amp; Notifying...</span>
+                    ) : (
+                      <span className="flex items-center gap-2"><Upload className="h-4 w-4" /> Upload Report &amp; Notify Employee</span>
+                    )}
+                  </Button>
+                </form>
+              </CardContent>
+            </Card>
+
+            {/* ──── Reports list ──── */}
+            <Card>
+              <CardHeader className="pb-3 flex flex-row items-center justify-between flex-wrap gap-2">
+                <CardTitle className="text-base flex items-center gap-2">
+                  <FileText className="h-4 w-4 text-emerald-600" />
+                  Uploaded Reports
+                  <Badge variant="secondary">{reportsTotal} total</Badge>
+                </CardTitle>
+                <div className="flex gap-2 items-center">
+                  <Input
+                    placeholder="Filter by employee ID..."
+                    value={reportFilterEmployee}
+                    onChange={e => {
+                      setReportFilterEmployee(e.target.value);
+                      fetchReports(e.target.value || undefined);
+                    }}
+                    className="h-8 w-44 text-xs"
+                  />
+                  <Button size="sm" variant="outline" onClick={() => fetchReports()} disabled={reportsLoading}>
+                    {reportsLoading ? <Loader2 className="h-4 w-4 animate-spin" /> : <RefreshCw className="h-4 w-4" />}
+                  </Button>
+                </div>
+              </CardHeader>
+              <CardContent>
+                {reportsLoading ? (
+                  <div className="flex justify-center py-12">
+                    <Loader2 className="h-8 w-8 animate-spin text-muted-foreground" />
+                  </div>
+                ) : reports.length === 0 ? (
+                  <div className="text-center py-12 text-muted-foreground">
+                    <FileText className="h-12 w-12 mx-auto mb-3 opacity-30" />
+                    <p>No reports uploaded yet. Use the form above to upload the first one.</p>
+                  </div>
+                ) : (
+                  <div className="space-y-3">
+                    {reports.map(rpt => (
+                      <div key={rpt.id} className="flex items-start gap-3 p-4 bg-accent/30 rounded-lg border">
+                        <div className="w-9 h-9 rounded-lg bg-emerald-100 dark:bg-emerald-900 flex items-center justify-center shrink-0 mt-0.5">
+                          <FileText className="h-4 w-4 text-emerald-600" />
+                        </div>
+                        <div className="flex-1 min-w-0">
+                          <div className="flex items-center gap-2 flex-wrap">
+                            <p className="font-medium text-sm">{rpt.report_name}</p>
+                            <Badge variant="outline" className="text-xs">{REPORT_TYPES.find(t => t.value === rpt.report_type)?.label || rpt.report_type}</Badge>
+                          </div>
+                          <p className="text-xs text-muted-foreground mt-0.5">
+                            <User className="inline h-3 w-3 mr-1" />{rpt.firstName} {rpt.lastName}
+                            <span className="mx-2">·</span>
+                            <Mail className="inline h-3 w-3 mr-1" />{rpt.email}
+                          </p>
+                          <p className="text-xs text-muted-foreground mt-0.5">
+                            📅 {new Date(rpt.report_date).toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' })}
+                            {rpt.file_size_bytes && <span className="ml-2">· {formatFileSize(rpt.file_size_bytes)}</span>}
+                          </p>
+                          {/* Notification badges */}
+                          <div className="flex gap-1.5 mt-1.5 flex-wrap">
+                            <Badge className={`text-xs ${rpt.notified_email ? 'bg-blue-100 text-blue-700' : 'bg-gray-100 text-gray-500'}`}>
+                              {rpt.notified_email ? '✉️ Email Sent' : '✉️ Email Pending'}
+                            </Badge>
+                            <Badge className={`text-xs ${rpt.notified_whatsapp ? 'bg-green-100 text-green-700' : 'bg-gray-100 text-gray-500'}`}>
+                              {rpt.notified_whatsapp ? '📱 WA Sent' : '📱 WA Pending'}
+                            </Badge>
+                          </div>
+                        </div>
+                        {/* Actions */}
+                        <div className="flex flex-col gap-1.5 shrink-0">
+                          <a href={rpt.report_url} target="_blank" rel="noreferrer"
+                            className="flex items-center gap-1.5 text-xs bg-emerald-50 dark:bg-emerald-900/30 text-emerald-700 dark:text-emerald-300 border border-emerald-200 rounded-md px-2.5 py-1.5 hover:bg-emerald-100 transition-colors">
+                            <Download className="h-3.5 w-3.5" /> View
+                          </a>
+                          <Button
+                            size="sm"
+                            variant="outline"
+                            className="h-7 text-xs flex items-center gap-1.5"
+                            disabled={sharingId === rpt.id}
+                            onClick={() => handleShareReport(rpt.id)}
+                          >
+                            {sharingId === rpt.id
+                              ? <Loader2 className="h-3 w-3 animate-spin" />
+                              : <Share2 className="h-3 w-3" />}
+                            Resend
+                          </Button>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </CardContent>
+            </Card>
+          </div>
         )}
       </div>
     </MainLayout>
