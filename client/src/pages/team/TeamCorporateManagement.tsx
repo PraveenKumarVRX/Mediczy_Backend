@@ -12,6 +12,7 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger, Dialog
 import { Label } from '@/components/ui/label';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Checkbox } from '@/components/ui/checkbox';
+import { Switch } from '@/components/ui/switch';
 import { ScrollArea } from '@/components/ui/scroll-area';
 import { useToast } from '@/components/ui/use-toast';
 import { 
@@ -46,7 +47,8 @@ import {
   XCircle,
   AlertCircle,
   Key,
-  Copy
+  Copy,
+  UserCheck
 } from 'lucide-react';
 import api from '@/utils/api';
 import { useNavigate } from 'react-router-dom';
@@ -123,10 +125,38 @@ interface CorporatePlan {
   currency: string;
   billingCycle: string;
   enrolled: number;
+  description?: string;
+  planType?: string;
+  status?: string;
+  totalEmployees?: number;
+  validFrom?: string;
+  validTo?: string;
+  features?: Record<string, boolean>;
+  coverage?: Record<string, any>;
+  healthPackageIds?: string[];
 }
 
 const packageTypes = ['Basic', 'Standard', 'Premium', 'Enterprise', 'Custom'];
 const statusOptions = ['Active', 'Inactive', 'Pending', 'Suspended'];
+const planTypes = ['Basic', 'Standard', 'Premium', 'Elite', 'Group Health Insurance', 'OPD Plan', 'Wellness Plan'];
+
+const defaultBenefits = [
+  { id: 'b1', name: 'Hospitalization', category: 'IPD', description: 'Inpatient treatment coverage', isIncluded: true, coverage: '100%' },
+  { id: 'b2', name: 'Pre-Hospitalization', category: 'IPD', description: 'Pre-admission expenses', isIncluded: true, limit: '30 days' },
+  { id: 'b3', name: 'Post-Hospitalization', category: 'IPD', description: 'Post-discharge expenses', isIncluded: true, limit: '60 days' },
+  { id: 'b4', name: 'OPD Consultation', category: 'OPD', description: 'Doctor consultation fees', isIncluded: true, limit: '₹500 per visit' },
+  { id: 'b5', name: 'Diagnostic Tests', category: 'Diagnostics', description: 'Lab tests and scans', isIncluded: true, limit: '₹5000 per year' },
+  { id: 'b6', name: 'Pharmacy Benefits', category: 'Pharmacy', description: 'Medicine reimbursement', isIncluded: true, limit: '₹10000 per year' },
+  { id: 'b7', name: 'Maternity Coverage', category: 'Maternity', description: 'Pregnancy and delivery', isIncluded: false, coverage: '₹50000' },
+  { id: 'b8', name: 'Dental Care', category: 'Dental', description: 'Dental treatments', isIncluded: false, limit: '₹15000 per year' },
+  { id: 'b9', name: 'Annual Health Checkup', category: 'Wellness', description: 'Preventive health screening', isIncluded: true, limit: 'Once per year' },
+  { id: 'b10', name: 'Ambulance Services', category: 'Emergency', description: 'Emergency transportation', isIncluded: true, limit: '₹2000 per incident' },
+  { id: 'b11', name: 'Homecare Services', category: 'Homecare', description: 'At-home medical care', isIncluded: false, limit: '10 visits per year' },
+  { id: 'b12', name: 'Mental Health', category: 'Mental Health', description: 'Counseling and therapy', isIncluded: false, limit: '5 sessions per year' },
+  { id: 'b13', name: 'Ayush Treatment', category: 'Alternative', description: 'Ayurveda/Homeopathy', isIncluded: false, limit: '₹5000 per year' },
+  { id: 'b14', name: 'Physiotherapy', category: 'Therapy', description: 'Physical rehabilitation', isIncluded: false, limit: '10 sessions per year' },
+  { id: 'b15', name: 'Vision Care', category: 'Vision', description: 'Eye exams and glasses', isIncluded: false, limit: '₹5000 per year' },
+];
 const industries = [
   'Information Technology', 'Banking & Finance', 'Healthcare', 'Manufacturing',
   'Retail', 'Education', 'Consulting', 'Telecommunications', 'Real Estate', 'Other'
@@ -153,6 +183,15 @@ const TeamCorporateManagement = () => {
   const [showBulkUploadDialog, setShowBulkUploadDialog] = useState(false);
   const [showEditPackageDialog, setShowEditPackageDialog] = useState(false);
   const [showAssignPackageDialog, setShowAssignPackageDialog] = useState(false);
+  const [showAssignNetworkDialog, setShowAssignNetworkDialog] = useState(false);
+  const [assigningNetworks, setAssigningNetworks] = useState<{ id: number; name: string; type: 'lab' | 'hospital' | 'clinic'; city?: string }[]>([]);
+  const [selectedNetworkPartnerIds, setSelectedNetworkPartnerIds] = useState<number[]>([]);
+  const [labSearch, setLabSearch] = useState('');
+  const [hospitalSearch, setHospitalSearch] = useState('');
+  const [clinicSearch, setClinicSearch] = useState('');
+  const [networkAssignMode, setNetworkAssignMode] = useState<'all' | 'department' | 'custom'>('all');
+  const [networkEmployeeSearch, setNetworkEmployeeSearch] = useState('');
+  const [selectedDepartmentsForAssign, setSelectedDepartmentsForAssign] = useState<string[]>([]);
   const [editingPackage, setEditingPackage] = useState<any>(null);
   const [assigningPackage, setAssigningPackage] = useState<any>(null);
   const [selectedEmployeesForAssign, setSelectedEmployeesForAssign] = useState<string[]>([]);
@@ -214,12 +253,48 @@ const TeamCorporateManagement = () => {
   });
   
   const [showCreatePlanDialog, setShowCreatePlanDialog] = useState(false);
+  const [showEditPlanDialog, setShowEditPlanDialog] = useState(false);
+  const [showViewPlanDialog, setShowViewPlanDialog] = useState(false);
+  const [editingPlan, setEditingPlan] = useState<CorporatePlan | null>(null);
+  const [editPlanForm, setEditPlanForm] = useState({
+    planName: '', planType: 'Standard', description: '', validFrom: '', validTo: '',
+    totalEmployees: '', premiumPerEmployee: '', status: 'Active', currency: 'INR',
+    benefits: [...defaultBenefits],
+    features: { opd: true, ipd: true, maternity: false, dental: false, pharmacy: true, diagnostics: true, homecare: false, ambulance: true, wellness: true, mentalHealth: false },
+    coverage: { sumInsured: '', roomRent: 'Single Room', icuRent: '2% of Sum Insured', prePolicyMedical: '30 days', postPolicyMedical: '60 days' },
+    healthPackageIds: [] as string[],
+  });
   const [newPlan, setNewPlan] = useState({
-    name: '',
-    price: '',
-    annualPrice: '',
-    billingCycle: 'ANNUAL',
-    currency: 'INR'
+    planName: '',
+    planType: 'Standard',
+    description: '',
+    validFrom: '',
+    validTo: '',
+    totalEmployees: '',
+    premiumPerEmployee: '',
+    status: 'Active',
+    currency: 'INR',
+    benefits: [...defaultBenefits],
+    features: {
+      opd: true,
+      ipd: true,
+      maternity: false,
+      dental: false,
+      pharmacy: true,
+      diagnostics: true,
+      homecare: false,
+      ambulance: true,
+      wellness: true,
+      mentalHealth: false,
+    },
+    coverage: {
+      sumInsured: '',
+      roomRent: 'Single Room',
+      icuRent: '2% of Sum Insured',
+      prePolicyMedical: '30 days',
+      postPolicyMedical: '60 days',
+    },
+    healthPackageIds: [] as string[],
   });
   
   // Mock data for employees and network
@@ -334,23 +409,107 @@ const TeamCorporateManagement = () => {
       });
 
       if (response.data?.success && Array.isArray(response.data?.plans)) {
-        const mappedPlans = response.data.plans.map((plan: any) => ({
-          id: plan.id,
-          name: plan.name,
-          slug: plan.slug,
-          price: Number(plan.price || 0),
-          annualPrice: Number(plan.annual_price || plan.annualPrice || 0),
-          currency: plan.currency || 'INR',
-          billingCycle: plan.billing_cycle || plan.billingCycle || 'MONTHLY',
-          enrolled: Number(plan.enrolled || 0)
-        }));
-        setCorporatePlans(mappedPlans.filter(plan => plan.enrolled > 0));
+        const mappedPlans = response.data.plans.map((plan: any) => {
+          const metadata = typeof plan.metadata === 'string' ? JSON.parse(plan.metadata) : (plan.metadata || {});
+          const features = typeof plan.features === 'string' ? JSON.parse(plan.features) : (plan.features || {});
+          return {
+            id: plan.id,
+            name: plan.name,
+            slug: plan.slug,
+            price: Number(plan.price || 0),
+            annualPrice: Number(plan.annual_price || plan.annualPrice || 0),
+            currency: plan.currency || 'INR',
+            billingCycle: plan.billing_cycle || plan.billingCycle || 'MONTHLY',
+            enrolled: Number(plan.enrolled || 0),
+            description: plan.description || '',
+            planType: metadata.planType || '',
+            status: metadata.status || 'Active',
+            totalEmployees: metadata.totalEmployees || 0,
+            validFrom: metadata.validFrom || '',
+            validTo: metadata.validTo || '',
+            features,
+            coverage: metadata.coverage || {},
+            healthPackageIds: metadata.healthPackageIds || [],
+          };
+        });
+        setCorporatePlans(mappedPlans);
       } else {
         setCorporatePlans([]);
       }
     } catch (error) {
       console.error('Failed to fetch corporate plans:', error);
       setCorporatePlans([]);
+    }
+  };
+
+  const handleDeletePlan = async (planId: number, planName: string) => {
+    if (!window.confirm(`Delete plan "${planName}"? This cannot be undone.`)) return;
+    try {
+      const token = localStorage.getItem('teamToken');
+      await api.delete(`/admin/corporate-plans/${planId}`, {
+        headers: token ? { Authorization: `Bearer ${token}` } : undefined
+      });
+      if (selectedCorporate) fetchCorporatePlans(selectedCorporate.id);
+    } catch (error: any) {
+      console.error('Failed to delete plan:', error);
+      alert(error?.response?.data?.message || 'Failed to delete plan');
+    }
+  };
+
+  const handleOpenViewPlan = (plan: CorporatePlan) => {
+    setEditingPlan(plan);
+    setShowViewPlanDialog(true);
+  };
+
+  const handleOpenEditPlan = (plan: CorporatePlan) => {
+    setEditingPlan(plan);
+    setEditPlanForm({
+      planName: plan.name,
+      planType: plan.planType || 'Standard',
+      description: plan.description || '',
+      validFrom: plan.validFrom || '',
+      validTo: plan.validTo || '',
+      totalEmployees: String(plan.totalEmployees || ''),
+      premiumPerEmployee: String(plan.price || ''),
+      status: plan.status || 'Active',
+      currency: plan.currency || 'INR',
+      benefits: [...defaultBenefits],
+      features: plan.features || { opd: true, ipd: true, maternity: false, dental: false, pharmacy: true, diagnostics: true, homecare: false, ambulance: true, wellness: true, mentalHealth: false },
+      coverage: plan.coverage || { sumInsured: '', roomRent: 'Single Room', icuRent: '2% of Sum Insured', prePolicyMedical: '30 days', postPolicyMedical: '60 days' },
+      healthPackageIds: plan.healthPackageIds || [],
+    });
+    setShowEditPlanDialog(true);
+  };
+
+  const handleUpdatePlan = async () => {
+    if (!editingPlan || !editPlanForm.planName || !editPlanForm.totalEmployees || !editPlanForm.premiumPerEmployee) {
+      toast({ variant: 'destructive', title: 'Error', description: 'Plan name, total employees, and premium are required' });
+      return;
+    }
+    try {
+      const token = localStorage.getItem('teamToken');
+      await api.put(`/admin/corporate-plans/${editingPlan.id}`, {
+        planName: editPlanForm.planName,
+        planType: editPlanForm.planType,
+        description: editPlanForm.description,
+        validFrom: editPlanForm.validFrom,
+        validTo: editPlanForm.validTo,
+        totalEmployees: parseInt(editPlanForm.totalEmployees),
+        premiumPerEmployee: parseFloat(editPlanForm.premiumPerEmployee),
+        totalPremium: parseInt(editPlanForm.totalEmployees) * parseFloat(editPlanForm.premiumPerEmployee),
+        status: editPlanForm.status,
+        currency: editPlanForm.currency,
+        features: editPlanForm.features,
+        benefits: editPlanForm.benefits,
+        coverage: { ...editPlanForm.coverage, sumInsured: parseFloat(editPlanForm.coverage.sumInsured || '0') },
+        healthPackageIds: editPlanForm.healthPackageIds,
+      }, { headers: token ? { Authorization: `Bearer ${token}` } : undefined });
+      toast({ title: 'Plan Updated', description: `${editPlanForm.planName} has been updated.` });
+      setShowEditPlanDialog(false);
+      setEditingPlan(null);
+      if (selectedCorporate?.id) fetchCorporatePlans(selectedCorporate.id);
+    } catch (error: any) {
+      toast({ variant: 'destructive', title: 'Error', description: error.response?.data?.message || 'Failed to update plan' });
     }
   };
 
@@ -757,6 +916,70 @@ const TeamCorporateManagement = () => {
     setShowAssignPackageDialog(true);
   };
 
+  const handleAssignNetwork = (partner: { id: number; name: string; type: 'lab' | 'hospital' | 'clinic'; city?: string }) => {
+    setAssigningNetworks([partner]);
+    setSelectedEmployeesForAssign([]);
+    setSelectedDepartmentsForAssign([]);
+    setNetworkAssignMode('all');
+    setNetworkEmployeeSearch('');
+    setShowAssignNetworkDialog(true);
+  };
+
+  const handleBulkAssignNetworks = () => {
+    const allPartners = [
+      ...labPartners.filter(p => selectedNetworkPartnerIds.includes(p.id)).map(p => ({ id: p.id, name: p.name, type: 'lab' as const, city: p.city })),
+      ...hospitalPartners.filter(p => selectedNetworkPartnerIds.includes(p.id)).map(p => ({ id: p.id, name: p.name, type: 'hospital' as const, city: p.city })),
+      ...clinicPartners.filter(p => selectedNetworkPartnerIds.includes(p.id)).map(p => ({ id: p.id, name: p.name, type: 'clinic' as const, city: p.city })),
+    ];
+    if (allPartners.length === 0) return;
+    setAssigningNetworks(allPartners);
+    setSelectedEmployeesForAssign([]);
+    setSelectedDepartmentsForAssign([]);
+    setNetworkAssignMode('all');
+    setNetworkEmployeeSearch('');
+    setShowAssignNetworkDialog(true);
+  };
+
+  const handleConfirmNetworkAssignment = async () => {
+    if (assigningNetworks.length === 0 || !selectedCorporate) return;
+    // Resolve final employee list
+    let resolvedEmployeeIds: string[] | 'all' = 'all';
+    if (networkAssignMode === 'custom') {
+      resolvedEmployeeIds = selectedEmployeesForAssign;
+    } else if (networkAssignMode === 'department') {
+      resolvedEmployeeIds = employees
+        .filter(e => selectedDepartmentsForAssign.includes(e.department))
+        .map(e => e.id);
+    }
+    const empCount = resolvedEmployeeIds === 'all'
+      ? selectedCorporate.employeeCount || employees.length
+      : (resolvedEmployeeIds as string[]).length;
+    const token = localStorage.getItem('teamToken');
+    // Fire one POST per partner (graceful on error)
+    await Promise.allSettled(assigningNetworks.map(partner =>
+      api.post('/admin/corporate-network-assignments', {
+        corporateId: selectedCorporate.id,
+        partnerId: partner.id,
+        partnerType: partner.type,
+        employeeIds: resolvedEmployeeIds,
+      }, { headers: token ? { Authorization: `Bearer ${token}` } : undefined })
+    ));
+    const partnerCount = assigningNetworks.length;
+    toast({
+      title: partnerCount > 1 ? `${partnerCount} Network Partners Assigned` : 'Network Partner Assigned',
+      description: partnerCount > 1
+        ? `${assigningNetworks.map(p => p.name).join(', ')} have been assigned to ${empCount} employee${empCount !== 1 ? 's' : ''}`
+        : `${assigningNetworks[0].name} has been assigned to ${empCount} employee${empCount !== 1 ? 's' : ''}`,
+    });
+    setShowAssignNetworkDialog(false);
+    setAssigningNetworks([]);
+    setSelectedNetworkPartnerIds([]);
+    setSelectedEmployeesForAssign([]);
+    setSelectedDepartmentsForAssign([]);
+    setNetworkAssignMode('all');
+    setNetworkEmployeeSearch('');
+  };
+
   // Confirm Package Assignment
   const handleConfirmAssignment = async () => {
     if (!assigningPackage || !selectedCorporate) return;
@@ -824,34 +1047,68 @@ const TeamCorporateManagement = () => {
   };
 
   const handleCreatePlan = async () => {
-    if (!newPlan.name || !newPlan.price) {
+    if (!newPlan.planName || !newPlan.totalEmployees || !newPlan.premiumPerEmployee) {
       toast({
         variant: 'destructive',
         title: 'Error',
-        description: 'Plan name and price are required'
+        description: 'Plan name, total employees, and premium per employee are required'
       });
       return;
     }
 
     try {
       const token = localStorage.getItem('teamToken');
-      await api.post('/admin/corporate-plans', {
-        name: newPlan.name,
-        price: Number(newPlan.price),
-        annualPrice: newPlan.annualPrice ? Number(newPlan.annualPrice) : undefined,
-        billingCycle: newPlan.billingCycle,
-        currency: newPlan.currency
-      }, {
+      const planData = {
+        corporateId: selectedCorporate?.id,
+        planName: newPlan.planName,
+        planType: newPlan.planType,
+        description: newPlan.description,
+        validFrom: newPlan.validFrom,
+        validTo: newPlan.validTo,
+        totalEmployees: parseInt(newPlan.totalEmployees),
+        premiumPerEmployee: parseFloat(newPlan.premiumPerEmployee),
+        totalPremium: parseInt(newPlan.totalEmployees) * parseFloat(newPlan.premiumPerEmployee),
+        status: newPlan.status,
+        currency: newPlan.currency,
+        benefits: newPlan.benefits,
+        features: newPlan.features,
+        coverage: {
+          ...newPlan.coverage,
+          sumInsured: parseFloat(newPlan.coverage.sumInsured || '0'),
+        },
+        healthPackageIds: newPlan.healthPackageIds,
+      };
+      await api.post('/admin/corporate-plans', planData, {
         headers: token ? { Authorization: `Bearer ${token}` } : undefined
       });
 
       toast({
         title: 'Plan Created',
-        description: `${newPlan.name} has been created successfully`
+        description: `${newPlan.planName} has been created successfully`
       });
 
       setShowCreatePlanDialog(false);
-      setNewPlan({ name: '', price: '', annualPrice: '', billingCycle: 'ANNUAL', currency: 'INR' });
+      setNewPlan({
+        planName: '',
+        planType: 'Standard',
+        description: '',
+        validFrom: '',
+        validTo: '',
+        totalEmployees: '',
+        premiumPerEmployee: '',
+        status: 'Active',
+        currency: 'INR',
+        benefits: [...defaultBenefits],
+        features: {
+          opd: true, ipd: true, maternity: false, dental: false, pharmacy: true,
+          diagnostics: true, homecare: false, ambulance: true, wellness: true, mentalHealth: false,
+        },
+        coverage: {
+          sumInsured: '', roomRent: 'Single Room', icuRent: '2% of Sum Insured',
+          prePolicyMedical: '30 days', postPolicyMedical: '60 days',
+        },
+        healthPackageIds: [],
+      });
       if (selectedCorporate?.id) {
         fetchCorporatePlans(selectedCorporate.id);
       }
@@ -862,6 +1119,15 @@ const TeamCorporateManagement = () => {
         description: error.response?.data?.message || 'Failed to create plan'
       });
     }
+  };
+
+  const toggleBenefit = (benefitId: string) => {
+    setNewPlan({
+      ...newPlan,
+      benefits: newPlan.benefits.map(b =>
+        b.id === benefitId ? { ...b, isIncluded: !b.isIncluded } : b
+      )
+    });
   };
 
   // Filter corporates
@@ -1250,19 +1516,72 @@ const TeamCorporateManagement = () => {
                         <Card key={plan.id} className={plan.slug.includes('premium') ? 'border-2 border-primary' : undefined}>
                           <CardHeader className="pb-2">
                             <div className="flex items-center justify-between">
-                              <CardTitle className="text-lg">{plan.name}</CardTitle>
-                              <Badge>{plan.billingCycle === 'ANNUAL' ? 'Annual' : 'Active'}</Badge>
+                              <CardTitle className="text-base">{plan.name}</CardTitle>
+                              <Badge variant={plan.status === 'Active' ? 'default' : 'secondary'}>
+                                {plan.planType || plan.billingCycle}
+                              </Badge>
+                            </div>
+                            <div className="flex items-center gap-1 mt-1">
+                              <Button variant="outline" size="sm" className="h-7 text-xs" onClick={() => handleOpenViewPlan(plan)}>
+                                <Eye className="h-3 w-3 mr-1" />View
+                              </Button>
+                              <Button variant="outline" size="sm" className="h-7 text-xs" onClick={() => handleOpenEditPlan(plan)}>
+                                <Edit className="h-3 w-3 mr-1" />Edit
+                              </Button>
+                              <Button variant="ghost" size="icon" className="h-7 w-7 text-red-500 hover:bg-red-50 ml-auto" onClick={() => handleDeletePlan(plan.id, plan.name)} title="Delete plan">
+                                <Trash2 className="h-4 w-4" />
+                              </Button>
                             </div>
                           </CardHeader>
-                          <CardContent>
+                          <CardContent className="space-y-2">
                             <p className="text-2xl font-bold">
-                              ₹{(plan.annualPrice || plan.price).toLocaleString()}/{plan.annualPrice ? 'year' : 'month'}
+                              ₹{plan.price.toLocaleString()}
+                              <span className="text-sm font-normal text-muted-foreground"> / employee</span>
                             </p>
-                            <p className="text-sm text-muted-foreground mt-2">per employee</p>
-                            <p className="mt-4 text-sm text-muted-foreground">
-                              <Users className="h-4 w-4 inline mr-1" />
-                              {plan.enrolled} employees enrolled
-                            </p>
+                            {plan.totalEmployees ? (
+                              <p className="text-sm text-muted-foreground">
+                                <Users className="h-3 w-3 inline mr-1" />
+                                {plan.enrolled} / {plan.totalEmployees} enrolled
+                              </p>
+                            ) : (
+                              <p className="text-sm text-muted-foreground">
+                                <Users className="h-3 w-3 inline mr-1" />
+                                {plan.enrolled} enrolled
+                              </p>
+                            )}
+                            {plan.validFrom && plan.validTo && (
+                              <p className="text-xs text-muted-foreground">
+                                <Calendar className="h-3 w-3 inline mr-1" />
+                                {plan.validFrom} → {plan.validTo}
+                              </p>
+                            )}
+                            {plan.features && (
+                              <div className="flex flex-wrap gap-1 mt-2">
+                                {Object.entries(plan.features)
+                                  .filter(([, v]) => v)
+                                  .map(([k]) => (
+                                    <Badge key={k} variant="outline" className="text-xs capitalize">
+                                      {k.replace(/([A-Z])/g, ' $1').trim()}
+                                    </Badge>
+                                  ))}
+                              </div>
+                            )}
+                            {plan.healthPackageIds && plan.healthPackageIds.length > 0 && (
+                              <div className="mt-2 pt-2 border-t">
+                                <p className="text-xs font-medium text-muted-foreground mb-1">Health Packages</p>
+                                <div className="flex flex-wrap gap-1">
+                                  {plan.healthPackageIds.map(pkgId => {
+                                    const pkg = healthPackages.find(p => String(p.id) === String(pkgId));
+                                    return pkg ? (
+                                      <Badge key={pkgId} variant="secondary" className="text-xs">
+                                        <FlaskConical className="h-3 w-3 mr-1" />
+                                        {pkg.name}
+                                      </Badge>
+                                    ) : null;
+                                  })}
+                                </div>
+                              </div>
+                            )}
                           </CardContent>
                         </Card>
                       ))
@@ -1376,136 +1695,335 @@ const TeamCorporateManagement = () => {
                 </CardHeader>
                 <CardContent>
                   <Tabs defaultValue="labs">
-                    <TabsList>
-                      <TabsTrigger value="labs" className="flex items-center gap-2">
-                        <FlaskConical className="h-4 w-4" />
-                        Labs ({labPartners.length})
-                      </TabsTrigger>
-                      <TabsTrigger value="hospitals" className="flex items-center gap-2">
-                        <Hospital className="h-4 w-4" />
-                        Hospitals ({hospitalPartners.length})
-                      </TabsTrigger>
-                      <TabsTrigger value="clinics" className="flex items-center gap-2">
-                        <Stethoscope className="h-4 w-4" />
-                        Clinics ({clinicPartners.length})
-                      </TabsTrigger>
-                    </TabsList>
+                    <div className="flex items-center justify-between gap-3 flex-wrap">
+                      <TabsList>
+                        <TabsTrigger value="labs" className="flex items-center gap-2">
+                          <FlaskConical className="h-4 w-4" />
+                          Labs ({labPartners.length})
+                        </TabsTrigger>
+                        <TabsTrigger value="hospitals" className="flex items-center gap-2">
+                          <Hospital className="h-4 w-4" />
+                          Hospitals ({hospitalPartners.length})
+                        </TabsTrigger>
+                        <TabsTrigger value="clinics" className="flex items-center gap-2">
+                          <Stethoscope className="h-4 w-4" />
+                          Clinics ({clinicPartners.length})
+                        </TabsTrigger>
+                      </TabsList>
+                      {selectedNetworkPartnerIds.length > 0 && (
+                        <div className="flex items-center gap-2 bg-primary/10 border border-primary/30 rounded-lg px-3 py-1.5">
+                          <span className="text-sm font-medium text-primary">{selectedNetworkPartnerIds.length} partner{selectedNetworkPartnerIds.length !== 1 ? 's' : ''} selected</span>
+                          <Button size="sm" className="h-7 text-xs" onClick={handleBulkAssignNetworks}>
+                            <Users className="h-3 w-3 mr-1" />Assign to Employees
+                          </Button>
+                          <button type="button" className="text-xs text-muted-foreground hover:text-foreground" onClick={() => setSelectedNetworkPartnerIds([])}>
+                            ✕ Clear
+                          </button>
+                        </div>
+                      )}
+                    </div>
                     
                     <TabsContent value="labs" className="mt-4">
-                      <Table>
-                        <TableHeader>
-                          <TableRow>
-                            <TableHead>Lab Name</TableHead>
-                            <TableHead>City</TableHead>
-                            <TableHead>Tests Available</TableHead>
-                            <TableHead>Discount</TableHead>
-                            <TableHead>Status</TableHead>
-                            <TableHead>Actions</TableHead>
-                          </TableRow>
-                        </TableHeader>
-                        <TableBody>
-                          {labPartners.length === 0 ? (
-                            <TableRow>
-                              <TableCell colSpan={6} className="text-center py-8 text-muted-foreground">
-                                No labs found.
-                              </TableCell>
-                            </TableRow>
-                          ) : (
-                            labPartners.map((lab) => (
-                              <TableRow key={lab.id}>
-                                <TableCell className="font-medium">{lab.name}</TableCell>
-                                <TableCell>{lab.city}</TableCell>
-                                <TableCell>{lab.testsAvailable || 0}</TableCell>
-                                <TableCell>{lab.discount ? `${lab.discount}%` : '—'}</TableCell>
-                                <TableCell>{getStatusBadge(lab.status || 'Active')}</TableCell>
-                                <TableCell>
-                                  <Button variant="ghost" size="sm">
-                                    <Trash2 className="h-4 w-4 text-red-500" />
-                                  </Button>
-                                </TableCell>
-                              </TableRow>
-                            ))
-                          )}
-                        </TableBody>
-                      </Table>
+                      {/* Lab search + select-all bar */}
+                      {(() => {
+                        const filteredLabs = labPartners.filter(l =>
+                          !labSearch ||
+                          l.name?.toLowerCase().includes(labSearch.toLowerCase()) ||
+                          l.city?.toLowerCase().includes(labSearch.toLowerCase())
+                        );
+                        const allFilteredSelected = filteredLabs.length > 0 && filteredLabs.every(l => selectedNetworkPartnerIds.includes(l.id));
+                        return (
+                          <>
+                            <div className="flex items-center gap-2 mb-3">
+                              <div className="relative flex-1">
+                                <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+                                <Input
+                                  className="pl-9 h-8 text-sm"
+                                  placeholder="Search labs by name or city..."
+                                  value={labSearch}
+                                  onChange={e => setLabSearch(e.target.value)}
+                                />
+                              </div>
+                              {labSearch && (
+                                <div className="flex items-center gap-2 shrink-0">
+                                  <span className="text-xs text-muted-foreground">{filteredLabs.length} of {labPartners.length}</span>
+                                  <button
+                                    type="button"
+                                    className="text-xs text-primary hover:underline whitespace-nowrap"
+                                    onClick={() => setSelectedNetworkPartnerIds(prev => [...new Set([...prev, ...filteredLabs.map(l => l.id)])])}
+                                  >
+                                    Select all {filteredLabs.length} matching
+                                  </button>
+                                </div>
+                              )}
+                            </div>
+                            <Table>
+                              <TableHeader>
+                                <TableRow>
+                                  <TableHead className="w-8">
+                                    <Checkbox
+                                      checked={allFilteredSelected}
+                                      onCheckedChange={(v) => {
+                                        const ids = filteredLabs.map(l => l.id);
+                                        setSelectedNetworkPartnerIds(v
+                                          ? [...new Set([...selectedNetworkPartnerIds, ...ids])]
+                                          : selectedNetworkPartnerIds.filter(id => !ids.includes(id))
+                                        );
+                                      }}
+                                    />
+                                  </TableHead>
+                                  <TableHead>Lab Name</TableHead>
+                                  <TableHead>City</TableHead>
+                                  <TableHead>Tests Available</TableHead>
+                                  <TableHead>Discount</TableHead>
+                                  <TableHead>Status</TableHead>
+                                  <TableHead>Actions</TableHead>
+                                </TableRow>
+                              </TableHeader>
+                              <TableBody>
+                                {filteredLabs.length === 0 ? (
+                                  <TableRow>
+                                    <TableCell colSpan={7} className="text-center py-8 text-muted-foreground">
+                                      {labSearch ? `No labs match "${labSearch}"` : 'No labs found.'}
+                                    </TableCell>
+                                  </TableRow>
+                                ) : (
+                                  filteredLabs.map((lab) => (
+                                    <TableRow key={lab.id} className={selectedNetworkPartnerIds.includes(lab.id) ? 'bg-primary/5' : ''}>
+                                      <TableCell>
+                                        <Checkbox
+                                          checked={selectedNetworkPartnerIds.includes(lab.id)}
+                                          onCheckedChange={(v) => setSelectedNetworkPartnerIds(v
+                                            ? [...selectedNetworkPartnerIds, lab.id]
+                                            : selectedNetworkPartnerIds.filter(id => id !== lab.id)
+                                          )}
+                                        />
+                                      </TableCell>
+                                      <TableCell className="font-medium">{lab.name}</TableCell>
+                                      <TableCell>{lab.city}</TableCell>
+                                      <TableCell>{lab.testsAvailable || 0}</TableCell>
+                                      <TableCell>{lab.discount ? `${lab.discount}%` : '—'}</TableCell>
+                                      <TableCell>{getStatusBadge(lab.status || 'Active')}</TableCell>
+                                      <TableCell>
+                                        <div className="flex items-center gap-1">
+                                          <Button variant="outline" size="sm" className="h-7 text-xs" onClick={() => handleAssignNetwork({ id: lab.id, name: lab.name, type: 'lab', city: lab.city })}>
+                                            <Users className="h-3 w-3 mr-1" />Assign
+                                          </Button>
+                                          <Button variant="ghost" size="sm">
+                                            <Trash2 className="h-4 w-4 text-red-500" />
+                                          </Button>
+                                        </div>
+                                      </TableCell>
+                                    </TableRow>
+                                  ))
+                                )}
+                              </TableBody>
+                            </Table>
+                          </>
+                        );
+                      })()}
                     </TabsContent>
 
                     <TabsContent value="hospitals" className="mt-4">
-                      <Table>
-                        <TableHeader>
-                          <TableRow>
-                            <TableHead>Hospital Name</TableHead>
-                            <TableHead>City</TableHead>
-                            <TableHead>Specialities</TableHead>
-                            <TableHead>Beds</TableHead>
-                            <TableHead>Status</TableHead>
-                            <TableHead>Actions</TableHead>
-                          </TableRow>
-                        </TableHeader>
-                        <TableBody>
-                          {hospitalPartners.length === 0 ? (
-                            <TableRow>
-                              <TableCell colSpan={6} className="text-center py-8 text-muted-foreground">
-                                No hospitals found.
-                              </TableCell>
-                            </TableRow>
-                          ) : (
-                            hospitalPartners.map((hospital) => (
-                              <TableRow key={hospital.id}>
-                                <TableCell className="font-medium">{hospital.name}</TableCell>
-                                <TableCell>{hospital.city}</TableCell>
-                                <TableCell>{hospital.specialities || '—'}</TableCell>
-                                <TableCell>{hospital.beds || 0}</TableCell>
-                                <TableCell>{getStatusBadge(hospital.status || 'Active')}</TableCell>
-                                <TableCell>
-                                  <Button variant="ghost" size="sm">
-                                    <Trash2 className="h-4 w-4 text-red-500" />
-                                  </Button>
-                                </TableCell>
-                              </TableRow>
-                            ))
-                          )}
-                        </TableBody>
-                      </Table>
+                      {(() => {
+                        const filteredHospitals = hospitalPartners.filter(h =>
+                          !hospitalSearch ||
+                          h.name?.toLowerCase().includes(hospitalSearch.toLowerCase()) ||
+                          h.city?.toLowerCase().includes(hospitalSearch.toLowerCase()) ||
+                          h.specialities?.toLowerCase().includes(hospitalSearch.toLowerCase())
+                        );
+                        const allFilteredSelected = filteredHospitals.length > 0 && filteredHospitals.every(h => selectedNetworkPartnerIds.includes(h.id));
+                        return (
+                          <>
+                            <div className="flex items-center gap-2 mb-3">
+                              <div className="relative flex-1">
+                                <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+                                <Input
+                                  className="pl-9 h-8 text-sm"
+                                  placeholder="Search hospitals by name, city or speciality..."
+                                  value={hospitalSearch}
+                                  onChange={e => setHospitalSearch(e.target.value)}
+                                />
+                              </div>
+                              {hospitalSearch && (
+                                <div className="flex items-center gap-2 shrink-0">
+                                  <span className="text-xs text-muted-foreground">{filteredHospitals.length} of {hospitalPartners.length}</span>
+                                  <button
+                                    type="button"
+                                    className="text-xs text-primary hover:underline whitespace-nowrap"
+                                    onClick={() => setSelectedNetworkPartnerIds(prev => [...new Set([...prev, ...filteredHospitals.map(h => h.id)])])}
+                                  >
+                                    Select all {filteredHospitals.length} matching
+                                  </button>
+                                </div>
+                              )}
+                            </div>
+                            <Table>
+                              <TableHeader>
+                                <TableRow>
+                                  <TableHead className="w-8">
+                                    <Checkbox
+                                      checked={allFilteredSelected}
+                                      onCheckedChange={(v) => {
+                                        const ids = filteredHospitals.map(h => h.id);
+                                        setSelectedNetworkPartnerIds(v
+                                          ? [...new Set([...selectedNetworkPartnerIds, ...ids])]
+                                          : selectedNetworkPartnerIds.filter(id => !ids.includes(id))
+                                        );
+                                      }}
+                                    />
+                                  </TableHead>
+                                  <TableHead>Hospital Name</TableHead>
+                                  <TableHead>City</TableHead>
+                                  <TableHead>Specialities</TableHead>
+                                  <TableHead>Beds</TableHead>
+                                  <TableHead>Status</TableHead>
+                                  <TableHead>Actions</TableHead>
+                                </TableRow>
+                              </TableHeader>
+                              <TableBody>
+                                {filteredHospitals.length === 0 ? (
+                                  <TableRow>
+                                    <TableCell colSpan={7} className="text-center py-8 text-muted-foreground">
+                                      {hospitalSearch ? `No hospitals match "${hospitalSearch}"` : 'No hospitals found.'}
+                                    </TableCell>
+                                  </TableRow>
+                                ) : (
+                                  filteredHospitals.map((hospital) => (
+                                    <TableRow key={hospital.id} className={selectedNetworkPartnerIds.includes(hospital.id) ? 'bg-primary/5' : ''}>
+                                      <TableCell>
+                                        <Checkbox
+                                          checked={selectedNetworkPartnerIds.includes(hospital.id)}
+                                          onCheckedChange={(v) => setSelectedNetworkPartnerIds(v
+                                            ? [...selectedNetworkPartnerIds, hospital.id]
+                                            : selectedNetworkPartnerIds.filter(id => id !== hospital.id)
+                                          )}
+                                        />
+                                      </TableCell>
+                                      <TableCell className="font-medium">{hospital.name}</TableCell>
+                                      <TableCell>{hospital.city}</TableCell>
+                                      <TableCell>{hospital.specialities || '—'}</TableCell>
+                                      <TableCell>{hospital.beds || 0}</TableCell>
+                                      <TableCell>{getStatusBadge(hospital.status || 'Active')}</TableCell>
+                                      <TableCell>
+                                        <div className="flex items-center gap-1">
+                                          <Button variant="outline" size="sm" className="h-7 text-xs" onClick={() => handleAssignNetwork({ id: hospital.id, name: hospital.name, type: 'hospital', city: hospital.city })}>
+                                            <Users className="h-3 w-3 mr-1" />Assign
+                                          </Button>
+                                          <Button variant="ghost" size="sm">
+                                            <Trash2 className="h-4 w-4 text-red-500" />
+                                          </Button>
+                                        </div>
+                                      </TableCell>
+                                    </TableRow>
+                                  ))
+                                )}
+                              </TableBody>
+                            </Table>
+                          </>
+                        );
+                      })()}
                     </TabsContent>
 
                     <TabsContent value="clinics" className="mt-4">
-                      <Table>
-                        <TableHeader>
-                          <TableRow>
-                            <TableHead>Clinic Name</TableHead>
-                            <TableHead>City</TableHead>
-                            <TableHead>Type</TableHead>
-                            <TableHead>Doctors</TableHead>
-                            <TableHead>Status</TableHead>
-                            <TableHead>Actions</TableHead>
-                          </TableRow>
-                        </TableHeader>
-                        <TableBody>
-                          {clinicPartners.length === 0 ? (
-                            <TableRow>
-                              <TableCell colSpan={6} className="text-center py-8 text-muted-foreground">
-                                No clinics found.
-                              </TableCell>
-                            </TableRow>
-                          ) : (
-                            clinicPartners.map((clinic) => (
-                              <TableRow key={clinic.id}>
-                                <TableCell className="font-medium">{clinic.name}</TableCell>
-                                <TableCell>{clinic.city}</TableCell>
-                                <TableCell>{clinic.type || 'Clinic'}</TableCell>
-                                <TableCell>{clinic.doctors || 0}</TableCell>
-                                <TableCell>{getStatusBadge(clinic.status || 'Active')}</TableCell>
-                                <TableCell>
-                                  <Button variant="ghost" size="sm">
-                                    <Trash2 className="h-4 w-4 text-red-500" />
-                                  </Button>
-                                </TableCell>
-                              </TableRow>
-                            ))
-                          )}
-                        </TableBody>
-                      </Table>
+                      {(() => {
+                        const filteredClinics = clinicPartners.filter(c =>
+                          !clinicSearch ||
+                          c.name?.toLowerCase().includes(clinicSearch.toLowerCase()) ||
+                          c.city?.toLowerCase().includes(clinicSearch.toLowerCase()) ||
+                          c.type?.toLowerCase().includes(clinicSearch.toLowerCase())
+                        );
+                        const allFilteredSelected = filteredClinics.length > 0 && filteredClinics.every(c => selectedNetworkPartnerIds.includes(c.id));
+                        return (
+                          <>
+                            <div className="flex items-center gap-2 mb-3">
+                              <div className="relative flex-1">
+                                <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+                                <Input
+                                  className="pl-9 h-8 text-sm"
+                                  placeholder="Search clinics by name, city or type..."
+                                  value={clinicSearch}
+                                  onChange={e => setClinicSearch(e.target.value)}
+                                />
+                              </div>
+                              {clinicSearch && (
+                                <div className="flex items-center gap-2 shrink-0">
+                                  <span className="text-xs text-muted-foreground">{filteredClinics.length} of {clinicPartners.length}</span>
+                                  <button
+                                    type="button"
+                                    className="text-xs text-primary hover:underline whitespace-nowrap"
+                                    onClick={() => setSelectedNetworkPartnerIds(prev => [...new Set([...prev, ...filteredClinics.map(c => c.id)])])}
+                                  >
+                                    Select all {filteredClinics.length} matching
+                                  </button>
+                                </div>
+                              )}
+                            </div>
+                            <Table>
+                              <TableHeader>
+                                <TableRow>
+                                  <TableHead className="w-8">
+                                    <Checkbox
+                                      checked={allFilteredSelected}
+                                      onCheckedChange={(v) => {
+                                        const ids = filteredClinics.map(c => c.id);
+                                        setSelectedNetworkPartnerIds(v
+                                          ? [...new Set([...selectedNetworkPartnerIds, ...ids])]
+                                          : selectedNetworkPartnerIds.filter(id => !ids.includes(id))
+                                        );
+                                      }}
+                                    />
+                                  </TableHead>
+                                  <TableHead>Clinic Name</TableHead>
+                                  <TableHead>City</TableHead>
+                                  <TableHead>Type</TableHead>
+                                  <TableHead>Doctors</TableHead>
+                                  <TableHead>Status</TableHead>
+                                  <TableHead>Actions</TableHead>
+                                </TableRow>
+                              </TableHeader>
+                              <TableBody>
+                                {filteredClinics.length === 0 ? (
+                                  <TableRow>
+                                    <TableCell colSpan={7} className="text-center py-8 text-muted-foreground">
+                                      {clinicSearch ? `No clinics match "${clinicSearch}"` : 'No clinics found.'}
+                                    </TableCell>
+                                  </TableRow>
+                                ) : (
+                                  filteredClinics.map((clinic) => (
+                                    <TableRow key={clinic.id} className={selectedNetworkPartnerIds.includes(clinic.id) ? 'bg-primary/5' : ''}>
+                                      <TableCell>
+                                        <Checkbox
+                                          checked={selectedNetworkPartnerIds.includes(clinic.id)}
+                                          onCheckedChange={(v) => setSelectedNetworkPartnerIds(v
+                                            ? [...selectedNetworkPartnerIds, clinic.id]
+                                            : selectedNetworkPartnerIds.filter(id => id !== clinic.id)
+                                          )}
+                                        />
+                                      </TableCell>
+                                      <TableCell className="font-medium">{clinic.name}</TableCell>
+                                      <TableCell>{clinic.city}</TableCell>
+                                      <TableCell>{clinic.type || 'Clinic'}</TableCell>
+                                      <TableCell>{clinic.doctors || 0}</TableCell>
+                                      <TableCell>{getStatusBadge(clinic.status || 'Active')}</TableCell>
+                                      <TableCell>
+                                        <div className="flex items-center gap-1">
+                                          <Button variant="outline" size="sm" className="h-7 text-xs" onClick={() => handleAssignNetwork({ id: clinic.id, name: clinic.name, type: 'clinic', city: clinic.city })}>
+                                            <Users className="h-3 w-3 mr-1" />Assign
+                                          </Button>
+                                          <Button variant="ghost" size="sm">
+                                            <Trash2 className="h-4 w-4 text-red-500" />
+                                          </Button>
+                                        </div>
+                                      </TableCell>
+                                    </TableRow>
+                                  ))
+                                )}
+                              </TableBody>
+                            </Table>
+                          </>
+                        );
+                      })()}
                     </TabsContent>
                   </Tabs>
                 </CardContent>
@@ -1931,6 +2449,242 @@ const TeamCorporateManagement = () => {
           </DialogContent>
         </Dialog>
 
+        {/* Assign Network Partner Dialog */}
+        <Dialog open={showAssignNetworkDialog} onOpenChange={(open) => {
+          setShowAssignNetworkDialog(open);
+          if (!open) { setAssigningNetworks([]); setSelectedEmployeesForAssign([]); setSelectedDepartmentsForAssign([]); setNetworkAssignMode('all'); setNetworkEmployeeSearch(''); }
+        }}>
+          <DialogContent className="max-w-2xl max-h-[90vh] flex flex-col">
+            <DialogHeader>
+              <DialogTitle>
+                {assigningNetworks.length > 1 ? `Assign ${assigningNetworks.length} Network Partners` : 'Assign Network Partner'}
+              </DialogTitle>
+              <DialogDescription>
+                {assigningNetworks.length > 1
+                  ? `Assign ${assigningNetworks.length} selected partners to employees as a network benefit`
+                  : <>Assign <span className="font-medium text-foreground">{assigningNetworks[0]?.name}</span> to employees as a network benefit</>}
+              </DialogDescription>
+            </DialogHeader>
+
+            <div className="flex-1 overflow-y-auto space-y-4 py-2 pr-1">
+              {/* Partner summary — single card or multi chips */}
+              {assigningNetworks.length === 1 ? (
+                <div className="bg-muted/50 p-3 rounded-lg flex items-center justify-between">
+                  <div>
+                    <p className="font-medium">{assigningNetworks[0]?.name}</p>
+                    <p className="text-sm text-muted-foreground capitalize">
+                      {assigningNetworks[0]?.type}{assigningNetworks[0]?.city ? ` • ${assigningNetworks[0].city}` : ''}
+                    </p>
+                  </div>
+                  {assigningNetworks[0]?.type === 'lab' && <FlaskConical className="h-7 w-7 text-primary" />}
+                  {assigningNetworks[0]?.type === 'hospital' && <Hospital className="h-7 w-7 text-primary" />}
+                  {assigningNetworks[0]?.type === 'clinic' && <Stethoscope className="h-7 w-7 text-primary" />}
+                </div>
+              ) : (
+                <div className="border rounded-lg p-3 space-y-2">
+                  <p className="text-sm font-medium text-muted-foreground">{assigningNetworks.length} partners selected</p>
+                  <div className="flex flex-wrap gap-2 max-h-28 overflow-y-auto">
+                    {assigningNetworks.map(p => (
+                      <span key={p.id} className="inline-flex items-center gap-1.5 bg-muted rounded-full px-3 py-1 text-sm">
+                        {p.type === 'lab' && <FlaskConical className="h-3 w-3 text-primary" />}
+                        {p.type === 'hospital' && <Hospital className="h-3 w-3 text-primary" />}
+                        {p.type === 'clinic' && <Stethoscope className="h-3 w-3 text-primary" />}
+                        <span className="font-medium">{p.name}</span>
+                        {p.city && <span className="text-muted-foreground text-xs">{p.city}</span>}
+                      </span>
+                    ))}
+                  </div>
+                </div>
+              )}
+
+              {/* Assignment mode */}
+              <div className="space-y-2">
+                <Label className="font-semibold">Assign To</Label>
+                <div className="grid grid-cols-3 gap-2">
+                  {(['all', 'department', 'custom'] as const).map(mode => (
+                    <button
+                      key={mode}
+                      type="button"
+                      onClick={() => { setNetworkAssignMode(mode); setSelectedEmployeesForAssign([]); setSelectedDepartmentsForAssign([]); setNetworkEmployeeSearch(''); }}
+                      className={`p-3 rounded-lg border text-sm font-medium transition-colors ${
+                        networkAssignMode === mode ? 'border-primary bg-primary/10 text-primary' : 'hover:bg-muted/50'
+                      }`}
+                    >
+                      {mode === 'all' && <><Users className="h-4 w-4 mx-auto mb-1" />All Employees</>}
+                      {mode === 'department' && <><Building2 className="h-4 w-4 mx-auto mb-1" />By Department</>}
+                      {mode === 'custom' && <><UserCheck className="h-4 w-4 mx-auto mb-1" />Select Specific</>}
+                    </button>
+                  ))}
+                </div>
+              </div>
+
+              {/* All employees summary */}
+              {networkAssignMode === 'all' && (
+                <div className="border rounded-lg p-4 bg-green-50/50">
+                  <div className="flex items-center gap-2 text-green-700 font-medium">
+                    <CheckCircle className="h-5 w-5" />
+                    All {selectedCorporate?.employeeCount || employees.length} employees will be assigned
+                  </div>
+                  <p className="text-sm text-muted-foreground mt-1">
+                    Every employee in the corporate will get access to {assigningNetworks.length > 1 ? `these ${assigningNetworks.length} partners` : `this ${assigningNetworks[0]?.type}`}.
+                  </p>
+                </div>
+              )}
+
+              {/* By department */}
+              {networkAssignMode === 'department' && (() => {
+                const depts = Array.from(new Set(employees.map(e => e.department).filter(Boolean))).sort();
+                return (
+                  <div className="space-y-2">
+                    <div className="flex items-center justify-between">
+                      <Label className="font-medium">Select Departments</Label>
+                      <div className="flex gap-2">
+                        <button type="button" className="text-xs text-primary hover:underline"
+                          onClick={() => setSelectedDepartmentsForAssign(depts)}>Select all</button>
+                        <span className="text-muted-foreground text-xs">·</span>
+                        <button type="button" className="text-xs text-muted-foreground hover:underline"
+                          onClick={() => setSelectedDepartmentsForAssign([])}>Clear</button>
+                      </div>
+                    </div>
+                    {depts.length === 0 ? (
+                      <p className="text-sm text-muted-foreground">No departments found. Add employees first.</p>
+                    ) : (
+                      <div className="grid grid-cols-2 gap-2 max-h-52 overflow-y-auto rounded border p-2">
+                        {depts.map(dept => {
+                          const count = employees.filter(e => e.department === dept).length;
+                          const checked = selectedDepartmentsForAssign.includes(dept);
+                          return (
+                            <label key={dept} className={`flex items-center gap-3 p-2 rounded cursor-pointer hover:bg-muted/50 ${
+                              checked ? 'bg-primary/5 border border-primary/30' : 'border border-transparent'
+                            }`}>
+                              <Checkbox checked={checked} onCheckedChange={(v) => {
+                                setSelectedDepartmentsForAssign(v
+                                  ? [...selectedDepartmentsForAssign, dept]
+                                  : selectedDepartmentsForAssign.filter(d => d !== dept)
+                                );
+                              }} />
+                              <div className="flex-1 min-w-0">
+                                <div className="text-sm font-medium truncate">{dept}</div>
+                                <div className="text-xs text-muted-foreground">{count} employee{count !== 1 ? 's' : ''}</div>
+                              </div>
+                            </label>
+                          );
+                        })}
+                      </div>
+                    )}
+                    {selectedDepartmentsForAssign.length > 0 && (
+                      <p className="text-sm font-medium text-primary">
+                        ✓ {employees.filter(e => selectedDepartmentsForAssign.includes(e.department)).length} employees across {selectedDepartmentsForAssign.length} department{selectedDepartmentsForAssign.length !== 1 ? 's' : ''} selected
+                      </p>
+                    )}
+                  </div>
+                );
+              })()}
+
+              {/* Select specific employees */}
+              {networkAssignMode === 'custom' && (() => {
+                const filtered = employees.filter(e =>
+                  !networkEmployeeSearch ||
+                  e.name.toLowerCase().includes(networkEmployeeSearch.toLowerCase()) ||
+                  e.employeeId.toLowerCase().includes(networkEmployeeSearch.toLowerCase()) ||
+                  e.department.toLowerCase().includes(networkEmployeeSearch.toLowerCase()) ||
+                  e.designation.toLowerCase().includes(networkEmployeeSearch.toLowerCase())
+                );
+                return (
+                  <div className="space-y-2">
+                    <div className="flex items-center justify-between">
+                      <Label className="font-medium">Select Employees</Label>
+                      <div className="flex gap-2">
+                        <button type="button" className="text-xs text-primary hover:underline"
+                          onClick={() => setSelectedEmployeesForAssign(filtered.map(e => e.id))}>Select all</button>
+                        <span className="text-muted-foreground text-xs">·</span>
+                        <button type="button" className="text-xs text-muted-foreground hover:underline"
+                          onClick={() => setSelectedEmployeesForAssign([])}>Clear</button>
+                      </div>
+                    </div>
+                    <div className="relative">
+                      <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+                      <Input
+                        className="pl-9"
+                        placeholder="Search by name, ID, department, designation..."
+                        value={networkEmployeeSearch}
+                        onChange={e => setNetworkEmployeeSearch(e.target.value)}
+                      />
+                    </div>
+                    {employees.length === 0 ? (
+                      <p className="text-sm text-muted-foreground text-center py-4">No employees found for this corporate.</p>
+                    ) : (
+                      <div className="border rounded-lg divide-y max-h-56 overflow-y-auto">
+                        {filtered.length === 0 ? (
+                          <p className="text-sm text-muted-foreground text-center py-4">No employees match your search.</p>
+                        ) : filtered.map(emp => {
+                          const checked = selectedEmployeesForAssign.includes(emp.id);
+                          return (
+                            <label key={emp.id} className={`flex items-center gap-3 px-3 py-2.5 cursor-pointer hover:bg-muted/50 ${
+                              checked ? 'bg-primary/5' : ''
+                            }`}>
+                              <Checkbox checked={checked} onCheckedChange={(v) => {
+                                setSelectedEmployeesForAssign(v
+                                  ? [...selectedEmployeesForAssign, emp.id]
+                                  : selectedEmployeesForAssign.filter(id => id !== emp.id)
+                                );
+                              }} />
+                              <div className="flex-1 min-w-0">
+                                <div className="text-sm font-medium">{emp.name}
+                                  <span className="ml-2 text-xs text-muted-foreground font-normal">{emp.employeeId}</span>
+                                </div>
+                                <div className="text-xs text-muted-foreground">{emp.department} · {emp.designation}</div>
+                              </div>
+                            </label>
+                          );
+                        })}
+                      </div>
+                    )}
+                    {selectedEmployeesForAssign.length > 0 && (
+                      <p className="text-sm font-medium text-primary">✓ {selectedEmployeesForAssign.length} employee{selectedEmployeesForAssign.length !== 1 ? 's' : ''} selected</p>
+                    )}
+                  </div>
+                );
+              })()}
+
+              {/* Benefits */}
+              <div className="bg-blue-50 dark:bg-blue-950/30 border border-blue-200 dark:border-blue-800 rounded-lg p-3">
+                <p className="font-medium text-blue-800 dark:text-blue-300 text-sm mb-1">What employees get</p>
+                <ul className="text-sm text-blue-700 dark:text-blue-400 space-y-0.5">
+                  {assigningNetworks.some(p => p.type === 'lab') && <><li>• Preferred lab(s) for diagnostic tests</li><li>• Corporate discount on all tests</li><li>• Priority booking and home collection</li></>}
+                  {assigningNetworks.some(p => p.type === 'hospital') && <><li>• Cashless treatment at network hospital{assigningNetworks.filter(p => p.type === 'hospital').length > 1 ? 's' : ''}</li><li>• Pre-authorised admission for planned procedures</li><li>• Dedicated corporate helpdesk</li></>}
+                  {assigningNetworks.some(p => p.type === 'clinic') && <><li>• OPD consultations at network clinic{assigningNetworks.filter(p => p.type === 'clinic').length > 1 ? 's' : ''}</li><li>• Corporate discount on consultation fees</li><li>• Priority appointments</li></>}
+                </ul>
+              </div>
+            </div>
+
+            <DialogFooter className="pt-2">
+              <Button variant="outline" onClick={() => setShowAssignNetworkDialog(false)}>Cancel</Button>
+              <Button
+                onClick={handleConfirmNetworkAssignment}
+                disabled={
+                  (networkAssignMode === 'department' && selectedDepartmentsForAssign.length === 0) ||
+                  (networkAssignMode === 'custom' && selectedEmployeesForAssign.length === 0)
+                }
+              >
+                <CheckCircle className="h-4 w-4 mr-2" />
+                {assigningNetworks.length > 1 ? `Assign ${assigningNetworks.length} Partners to ` : 'Assign to '}
+                {
+                  networkAssignMode === 'all'
+                    ? `All ${selectedCorporate?.employeeCount || employees.length}`
+                    : networkAssignMode === 'department'
+                    ? `${employees.filter(e => selectedDepartmentsForAssign.includes(e.department)).length}`
+                    : `${selectedEmployeesForAssign.length}`
+                } Employee{(
+                  networkAssignMode === 'all' ? (selectedCorporate?.employeeCount || employees.length) :
+                  networkAssignMode === 'department' ? employees.filter(e => selectedDepartmentsForAssign.includes(e.department)).length :
+                  selectedEmployeesForAssign.length
+                ) !== 1 ? 's' : ''}
+              </Button>
+            </DialogFooter>
+          </DialogContent>
+        </Dialog>
+
         {/* Assign Package Dialog */}
         <Dialog open={showAssignPackageDialog} onOpenChange={setShowAssignPackageDialog}>
           <DialogContent className="max-w-2xl">
@@ -2011,77 +2765,539 @@ const TeamCorporateManagement = () => {
 
         {/* Create Plan Dialog */}
         <Dialog open={showCreatePlanDialog} onOpenChange={setShowCreatePlanDialog}>
-          <DialogContent className="max-w-lg">
+          <DialogContent className="max-w-3xl max-h-[90vh] overflow-y-auto">
             <DialogHeader>
               <DialogTitle>Create Corporate Plan</DialogTitle>
               <DialogDescription>Set up a new corporate subscription plan.</DialogDescription>
             </DialogHeader>
-            <div className="space-y-4 py-2">
-              <div className="space-y-2">
-                <Label>Plan Name</Label>
-                <Input
-                  value={newPlan.name}
-                  onChange={(e) => setNewPlan({ ...newPlan, name: e.target.value })}
-                  placeholder="Corporate Basic Plus"
-                />
+            <div className="space-y-6 py-2">
+
+              {/* Basic Information */}
+              <div className="space-y-4">
+                <Label className="text-base font-semibold">Basic Information</Label>
+                <div className="grid grid-cols-2 gap-4">
+                  <div className="space-y-2">
+                    <Label>Plan Name *</Label>
+                    <Input
+                      value={newPlan.planName}
+                      onChange={(e) => setNewPlan({ ...newPlan, planName: e.target.value })}
+                      placeholder="Corporate Basic Plus"
+                    />
+                  </div>
+                  <div className="space-y-2">
+                    <Label>Plan Type *</Label>
+                    <Select value={newPlan.planType} onValueChange={(v) => setNewPlan({ ...newPlan, planType: v })}>
+                      <SelectTrigger><SelectValue placeholder="Select type" /></SelectTrigger>
+                      <SelectContent>
+                        {planTypes.map(t => <SelectItem key={t} value={t}>{t}</SelectItem>)}
+                      </SelectContent>
+                    </Select>
+                  </div>
+                  <div className="space-y-2">
+                    <Label>Status</Label>
+                    <Select value={newPlan.status} onValueChange={(v) => setNewPlan({ ...newPlan, status: v })}>
+                      <SelectTrigger><SelectValue placeholder="Select status" /></SelectTrigger>
+                      <SelectContent>
+                        {statusOptions.map(s => <SelectItem key={s} value={s}>{s}</SelectItem>)}
+                      </SelectContent>
+                    </Select>
+                  </div>
+                  <div className="space-y-2">
+                    <Label>Currency</Label>
+                    <Select value={newPlan.currency} onValueChange={(v) => setNewPlan({ ...newPlan, currency: v })}>
+                      <SelectTrigger><SelectValue /></SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="INR">INR</SelectItem>
+                        <SelectItem value="USD">USD</SelectItem>
+                      </SelectContent>
+                    </Select>
+                  </div>
+                  <div className="col-span-2 space-y-2">
+                    <Label>Description</Label>
+                    <Textarea
+                      value={newPlan.description}
+                      onChange={(e) => setNewPlan({ ...newPlan, description: e.target.value })}
+                      placeholder="Comprehensive health plan covering..."
+                      rows={3}
+                    />
+                  </div>
+                </div>
               </div>
-              <div className="grid grid-cols-2 gap-4">
-                <div className="space-y-2">
-                  <Label>Price</Label>
-                  <Input
-                    type="number"
-                    value={newPlan.price}
-                    onChange={(e) => setNewPlan({ ...newPlan, price: e.target.value })}
-                    placeholder="6000"
-                  />
-                </div>
-                <div className="space-y-2">
-                  <Label>Annual Price</Label>
-                  <Input
-                    type="number"
-                    value={newPlan.annualPrice}
-                    onChange={(e) => setNewPlan({ ...newPlan, annualPrice: e.target.value })}
-                    placeholder="6000"
-                  />
+
+              {/* Financial Details */}
+              <div className="space-y-4">
+                <Label className="text-base font-semibold">Financial Details</Label>
+                <div className="grid grid-cols-3 gap-4">
+                  <div className="space-y-2">
+                    <Label>Total Employees *</Label>
+                    <Input
+                      type="number"
+                      value={newPlan.totalEmployees}
+                      onChange={(e) => setNewPlan({ ...newPlan, totalEmployees: e.target.value })}
+                      placeholder="250"
+                    />
+                  </div>
+                  <div className="space-y-2">
+                    <Label>Premium Per Employee (₹) *</Label>
+                    <Input
+                      type="number"
+                      value={newPlan.premiumPerEmployee}
+                      onChange={(e) => setNewPlan({ ...newPlan, premiumPerEmployee: e.target.value })}
+                      placeholder="15000"
+                    />
+                  </div>
+                  <div className="space-y-2">
+                    <Label>Sum Insured (₹)</Label>
+                    <Input
+                      type="number"
+                      value={newPlan.coverage.sumInsured}
+                      onChange={(e) => setNewPlan({ ...newPlan, coverage: { ...newPlan.coverage, sumInsured: e.target.value } })}
+                      placeholder="500000"
+                    />
+                  </div>
+                  {newPlan.totalEmployees && newPlan.premiumPerEmployee && (
+                    <div className="col-span-3 p-4 bg-blue-50 rounded-lg">
+                      <div className="text-sm text-muted-foreground">Total Premium Amount</div>
+                      <div className="text-2xl font-bold text-blue-600">
+                        ₹{(parseInt(newPlan.totalEmployees || '0') * parseFloat(newPlan.premiumPerEmployee || '0')).toLocaleString()}
+                      </div>
+                    </div>
+                  )}
                 </div>
               </div>
-              <div className="grid grid-cols-2 gap-4">
-                <div className="space-y-2">
-                  <Label>Billing Cycle</Label>
-                  <Select
-                    value={newPlan.billingCycle}
-                    onValueChange={(value) => setNewPlan({ ...newPlan, billingCycle: value })}
-                  >
-                    <SelectTrigger>
-                      <SelectValue placeholder="Select cycle" />
-                    </SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value="ANNUAL">Annual</SelectItem>
-                      <SelectItem value="MONTHLY">Monthly</SelectItem>
-                      <SelectItem value="LIFETIME">Lifetime</SelectItem>
-                    </SelectContent>
-                  </Select>
+
+              {/* Validity Period */}
+              <div className="space-y-4">
+                <Label className="text-base font-semibold">Validity Period</Label>
+                <div className="grid grid-cols-2 gap-4">
+                  <div className="space-y-2">
+                    <Label>Valid From</Label>
+                    <Input
+                      type="date"
+                      value={newPlan.validFrom}
+                      onChange={(e) => setNewPlan({ ...newPlan, validFrom: e.target.value })}
+                    />
+                  </div>
+                  <div className="space-y-2">
+                    <Label>Valid To</Label>
+                    <Input
+                      type="date"
+                      value={newPlan.validTo}
+                      onChange={(e) => setNewPlan({ ...newPlan, validTo: e.target.value })}
+                    />
+                  </div>
                 </div>
-                <div className="space-y-2">
-                  <Label>Currency</Label>
-                  <Select
-                    value={newPlan.currency}
-                    onValueChange={(value) => setNewPlan({ ...newPlan, currency: value })}
-                  >
-                    <SelectTrigger>
-                      <SelectValue placeholder="Select currency" />
-                    </SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value="INR">INR</SelectItem>
-                      <SelectItem value="USD">USD</SelectItem>
-                    </SelectContent>
-                  </Select>
+              </div>
+
+              {/* Coverage Details — only relevant for IPD plans */}
+              {newPlan.features.ipd && (
+              <div className="space-y-4">
+                <Label className="text-base font-semibold">Coverage Details <span className="text-xs font-normal text-muted-foreground">(IPD)</span></Label>
+                <div className="grid grid-cols-2 gap-4">
+                  <div className="space-y-2">
+                    <Label>Room Rent</Label>
+                    <Input
+                      value={newPlan.coverage.roomRent}
+                      onChange={(e) => setNewPlan({ ...newPlan, coverage: { ...newPlan.coverage, roomRent: e.target.value } })}
+                      placeholder="Single AC Room"
+                    />
+                  </div>
+                  <div className="space-y-2">
+                    <Label>ICU Rent</Label>
+                    <Input
+                      value={newPlan.coverage.icuRent}
+                      onChange={(e) => setNewPlan({ ...newPlan, coverage: { ...newPlan.coverage, icuRent: e.target.value } })}
+                      placeholder="2% of Sum Insured"
+                    />
+                  </div>
+                  <div className="space-y-2">
+                    <Label>Pre-Policy Medical</Label>
+                    <Input
+                      value={newPlan.coverage.prePolicyMedical}
+                      onChange={(e) => setNewPlan({ ...newPlan, coverage: { ...newPlan.coverage, prePolicyMedical: e.target.value } })}
+                      placeholder="30 days"
+                    />
+                  </div>
+                  <div className="space-y-2">
+                    <Label>Post-Policy Medical</Label>
+                    <Input
+                      value={newPlan.coverage.postPolicyMedical}
+                      onChange={(e) => setNewPlan({ ...newPlan, coverage: { ...newPlan.coverage, postPolicyMedical: e.target.value } })}
+                      placeholder="60 days"
+                    />
+                  </div>
+                </div>
+              </div>
+              )}
+
+              {/* Plan Features */}
+              <div className="space-y-4">
+                <Label className="text-base font-semibold">Plan Features</Label>
+                <div className="grid grid-cols-3 gap-3">
+                  {Object.entries(newPlan.features).map(([key, value]) => (
+                    <div key={key} className="flex items-center space-x-2 p-3 border rounded-lg">
+                      <Switch
+                        checked={value}
+                        onCheckedChange={(checked) =>
+                          setNewPlan({ ...newPlan, features: { ...newPlan.features, [key]: checked } })
+                        }
+                      />
+                      <Label className="capitalize text-sm">{key.replace(/([A-Z])/g, ' $1').trim()}</Label>
+                    </div>
+                  ))}
+                </div>
+              </div>
+
+              {/* Health Packages */}
+              <div className="space-y-4">
+                <div className="flex items-center justify-between">
+                  <Label className="text-base font-semibold">Health Packages</Label>
+                  <Button variant="outline" size="sm" type="button" onClick={() => setShowAddPackageDialog(true)}>
+                    <Plus className="h-3 w-3 mr-1" />
+                    New Package
+                  </Button>
+                </div>
+                {healthPackages.length === 0 ? (
+                  <div className="flex flex-col items-center justify-center p-6 border-2 border-dashed rounded-lg text-center gap-2">
+                    <FlaskConical className="h-8 w-8 text-muted-foreground" />
+                    <p className="text-sm text-muted-foreground">No health packages yet for this corporate</p>
+                    <Button variant="outline" size="sm" onClick={() => setShowAddPackageDialog(true)}>
+                      <Plus className="h-3 w-3 mr-1" />
+                      Create First Package
+                    </Button>
+                  </div>
+                ) : (
+                  <div className="grid grid-cols-2 gap-3">
+                    {healthPackages.map(pkg => {
+                      const selected = newPlan.healthPackageIds.includes(String(pkg.id));
+                      return (
+                        <div
+                          key={pkg.id}
+                          className={`flex items-start gap-3 p-3 border rounded-lg cursor-pointer transition-colors ${
+                            selected ? 'border-primary bg-primary/5' : 'hover:bg-muted/50'
+                          }`}
+                          onClick={() => {
+                            const ids = selected
+                              ? newPlan.healthPackageIds.filter(id => id !== String(pkg.id))
+                              : [...newPlan.healthPackageIds, String(pkg.id)];
+                            setNewPlan({ ...newPlan, healthPackageIds: ids });
+                          }}
+                        >
+                          <Checkbox checked={selected} className="mt-0.5" readOnly />
+                          <div className="flex-1 min-w-0">
+                            <div className="font-medium text-sm truncate">{pkg.name}</div>
+                            <div className="text-xs text-muted-foreground">
+                              {pkg.tests.length} tests • ₹{pkg.price.toLocaleString()}
+                            </div>
+                            <div className="flex flex-wrap gap-1 mt-1">
+                              {pkg.tests.slice(0, 3).map((t, i) => (
+                                <Badge key={i} variant="outline" className="text-xs">{t}</Badge>
+                              ))}
+                              {pkg.tests.length > 3 && (
+                                <span className="text-xs text-muted-foreground">+{pkg.tests.length - 3}</span>
+                              )}
+                            </div>
+                          </div>
+                        </div>
+                      );
+                    })}
+                  </div>
+                )}
+                {newPlan.healthPackageIds.length > 0 && (
+                  <p className="text-sm font-medium text-green-700">
+                    ✓ {newPlan.healthPackageIds.length} package{newPlan.healthPackageIds.length > 1 ? 's' : ''} included in this plan
+                  </p>
+                )}
+              </div>
+
+              {/* Plan Benefits */}
+              <div className="space-y-4">
+                <Label className="text-base font-semibold">Plan Benefits</Label>
+                <ScrollArea className="h-64 rounded-md border p-2">
+                  <div className="space-y-2">
+                    {newPlan.benefits.map((benefit) => (
+                      <div key={benefit.id} className="flex items-start gap-3 p-3 border rounded-lg hover:bg-gray-50">
+                        <Checkbox
+                          checked={benefit.isIncluded}
+                          onCheckedChange={() => toggleBenefit(benefit.id)}
+                        />
+                        <div className="flex-1">
+                          <div className="flex items-center gap-2">
+                            <span className="font-medium text-sm">{benefit.name}</span>
+                            <Badge variant="outline" className="text-xs">{benefit.category}</Badge>
+                          </div>
+                          <div className="text-xs text-muted-foreground">{benefit.description}</div>
+                          {benefit.isIncluded && (benefit.limit || benefit.coverage) && (
+                            <div className="text-xs text-blue-600 mt-1">
+                              {benefit.limit && `Limit: ${benefit.limit}`}
+                              {benefit.coverage && `Coverage: ${benefit.coverage}`}
+                            </div>
+                          )}
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                </ScrollArea>
+                <div className="p-3 bg-green-50 rounded-lg text-sm font-medium text-green-800">
+                  {newPlan.benefits.filter(b => b.isIncluded).length} of {newPlan.benefits.length} benefits included
                 </div>
               </div>
             </div>
+
             <DialogFooter>
               <Button variant="outline" onClick={() => setShowCreatePlanDialog(false)}>Cancel</Button>
-              <Button onClick={handleCreatePlan}>Create Plan</Button>
+              <Button onClick={handleCreatePlan}>
+                <Plus className="mr-2 h-4 w-4" />
+                Create Plan
+              </Button>
+            </DialogFooter>
+          </DialogContent>
+        </Dialog>
+
+        {/* View Plan Dialog */}
+        <Dialog open={showViewPlanDialog} onOpenChange={setShowViewPlanDialog}>
+          <DialogContent className="max-w-2xl max-h-[90vh] overflow-y-auto">
+            <DialogHeader>
+              <DialogTitle className="flex items-center gap-2">
+                {editingPlan?.name}
+                <Badge variant={editingPlan?.status === 'Active' ? 'default' : 'secondary'} className="ml-1">
+                  {editingPlan?.status || 'Active'}
+                </Badge>
+              </DialogTitle>
+              <DialogDescription>{editingPlan?.planType} plan for {selectedCorporate?.companyName}</DialogDescription>
+            </DialogHeader>
+            {editingPlan && (
+              <div className="space-y-5 py-2">
+                <div className="grid grid-cols-2 gap-4">
+                  <div className="p-4 bg-muted/50 rounded-lg">
+                    <div className="text-xs text-muted-foreground mb-1">Premium / Employee</div>
+                    <div className="text-2xl font-bold">₹{editingPlan.price.toLocaleString()}</div>
+                  </div>
+                  <div className="p-4 bg-muted/50 rounded-lg">
+                    <div className="text-xs text-muted-foreground mb-1">Employees</div>
+                    <div className="text-2xl font-bold">{editingPlan.enrolled} <span className="text-sm font-normal text-muted-foreground">/ {editingPlan.totalEmployees} enrolled</span></div>
+                  </div>
+                  {editingPlan.totalEmployees && editingPlan.price ? (
+                    <div className="p-4 bg-blue-50 rounded-lg">
+                      <div className="text-xs text-muted-foreground mb-1">Total Premium</div>
+                      <div className="text-xl font-bold text-blue-700">₹{(editingPlan.price * (editingPlan.totalEmployees || 0)).toLocaleString()}</div>
+                    </div>
+                  ) : null}
+                  {editingPlan.features?.ipd && editingPlan.coverage?.sumInsured ? (
+                    <div className="p-4 bg-muted/50 rounded-lg">
+                      <div className="text-xs text-muted-foreground mb-1">Sum Insured</div>
+                      <div className="text-xl font-bold">₹{Number(editingPlan.coverage.sumInsured).toLocaleString()}</div>
+                    </div>
+                  ) : null}
+                </div>
+                {(editingPlan.validFrom || editingPlan.validTo) && (
+                  <div>
+                    <div className="text-xs font-semibold text-muted-foreground uppercase mb-2">Validity</div>
+                    <div className="flex items-center gap-2 text-sm">
+                      <Calendar className="h-4 w-4" />
+                      {editingPlan.validFrom} → {editingPlan.validTo}
+                    </div>
+                  </div>
+                )}
+                {editingPlan.description && (
+                  <div>
+                    <div className="text-xs font-semibold text-muted-foreground uppercase mb-2">Description</div>
+                    <p className="text-sm">{editingPlan.description}</p>
+                  </div>
+                )}
+                {editingPlan.features && Object.values(editingPlan.features).some(Boolean) && (
+                  <div>
+                    <div className="text-xs font-semibold text-muted-foreground uppercase mb-2">Features</div>
+                    <div className="flex flex-wrap gap-2">
+                      {Object.entries(editingPlan.features).filter(([,v]) => v).map(([k]) => (
+                        <Badge key={k} variant="secondary" className="capitalize">
+                          {k.replace(/([A-Z])/g, ' $1').trim()}
+                        </Badge>
+                      ))}
+                    </div>
+                  </div>
+                )}
+                {editingPlan.features?.ipd && editingPlan.coverage && Object.keys(editingPlan.coverage).filter(k => k !== 'sumInsured' && editingPlan.coverage![k]).length > 0 && (
+                  <div>
+                    <div className="text-xs font-semibold text-muted-foreground uppercase mb-2">Coverage Details <span className="text-xs font-normal text-muted-foreground">(IPD)</span></div>
+                    <div className="grid grid-cols-2 gap-2">
+                      {Object.entries(editingPlan.coverage).filter(([k, v]) => k !== 'sumInsured' && v).map(([k, v]) => (
+                        <div key={k} className="p-2 border rounded">
+                          <div className="text-xs text-muted-foreground capitalize">{k.replace(/([A-Z])/g, ' $1').trim()}</div>
+                          <div className="text-sm font-medium">{String(v)}</div>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                )}
+                {editingPlan.healthPackageIds && editingPlan.healthPackageIds.length > 0 && (
+                  <div>
+                    <div className="text-xs font-semibold text-muted-foreground uppercase mb-2">Health Packages</div>
+                    <div className="flex flex-wrap gap-2">
+                      {editingPlan.healthPackageIds.map(pkgId => {
+                        const pkg = healthPackages.find(p => String(p.id) === String(pkgId));
+                        return pkg ? (
+                          <Badge key={pkgId} variant="outline">
+                            <FlaskConical className="h-3 w-3 mr-1" />{pkg.name} • ₹{pkg.price.toLocaleString()} • {pkg.tests.length} tests
+                          </Badge>
+                        ) : null;
+                      })}
+                    </div>
+                  </div>
+                )}
+              </div>
+            )}
+            <DialogFooter>
+              <Button variant="outline" onClick={() => setShowViewPlanDialog(false)}>Close</Button>
+              <Button onClick={() => { setShowViewPlanDialog(false); editingPlan && handleOpenEditPlan(editingPlan); }}>
+                <Edit className="h-4 w-4 mr-2" />Edit Plan
+              </Button>
+            </DialogFooter>
+          </DialogContent>
+        </Dialog>
+
+        {/* Edit Plan Dialog */}
+        <Dialog open={showEditPlanDialog} onOpenChange={setShowEditPlanDialog}>
+          <DialogContent className="max-w-3xl max-h-[90vh] overflow-y-auto">
+            <DialogHeader>
+              <DialogTitle>Edit Plan</DialogTitle>
+              <DialogDescription>Update plan details for {editingPlan?.name}</DialogDescription>
+            </DialogHeader>
+            <div className="space-y-6 py-2">
+              <div className="space-y-4">
+                <Label className="text-base font-semibold">Basic Information</Label>
+                <div className="grid grid-cols-2 gap-4">
+                  <div className="space-y-2">
+                    <Label>Plan Name *</Label>
+                    <Input value={editPlanForm.planName} onChange={(e) => setEditPlanForm({ ...editPlanForm, planName: e.target.value })} />
+                  </div>
+                  <div className="space-y-2">
+                    <Label>Plan Type</Label>
+                    <Select value={editPlanForm.planType} onValueChange={(v) => setEditPlanForm({ ...editPlanForm, planType: v })}>
+                      <SelectTrigger><SelectValue /></SelectTrigger>
+                      <SelectContent>{planTypes.map(t => <SelectItem key={t} value={t}>{t}</SelectItem>)}</SelectContent>
+                    </Select>
+                  </div>
+                  <div className="space-y-2">
+                    <Label>Status</Label>
+                    <Select value={editPlanForm.status} onValueChange={(v) => setEditPlanForm({ ...editPlanForm, status: v })}>
+                      <SelectTrigger><SelectValue /></SelectTrigger>
+                      <SelectContent>{statusOptions.map(s => <SelectItem key={s} value={s}>{s}</SelectItem>)}</SelectContent>
+                    </Select>
+                  </div>
+                  <div className="space-y-2">
+                    <Label>Currency</Label>
+                    <Select value={editPlanForm.currency} onValueChange={(v) => setEditPlanForm({ ...editPlanForm, currency: v })}>
+                      <SelectTrigger><SelectValue /></SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="INR">INR</SelectItem>
+                        <SelectItem value="USD">USD</SelectItem>
+                      </SelectContent>
+                    </Select>
+                  </div>
+                  <div className="col-span-2 space-y-2">
+                    <Label>Description</Label>
+                    <Textarea rows={3} value={editPlanForm.description} onChange={(e) => setEditPlanForm({ ...editPlanForm, description: e.target.value })} />
+                  </div>
+                </div>
+              </div>
+              <div className="space-y-4">
+                <Label className="text-base font-semibold">Financial Details</Label>
+                <div className="grid grid-cols-3 gap-4">
+                  <div className="space-y-2">
+                    <Label>Total Employees *</Label>
+                    <Input type="number" value={editPlanForm.totalEmployees} onChange={(e) => setEditPlanForm({ ...editPlanForm, totalEmployees: e.target.value })} />
+                  </div>
+                  <div className="space-y-2">
+                    <Label>Premium Per Employee (₹) *</Label>
+                    <Input type="number" value={editPlanForm.premiumPerEmployee} onChange={(e) => setEditPlanForm({ ...editPlanForm, premiumPerEmployee: e.target.value })} />
+                  </div>
+                  <div className="space-y-2">
+                    <Label>Sum Insured (₹)</Label>
+                    <Input type="number" value={editPlanForm.coverage.sumInsured} onChange={(e) => setEditPlanForm({ ...editPlanForm, coverage: { ...editPlanForm.coverage, sumInsured: e.target.value } })} />
+                  </div>
+                  {editPlanForm.totalEmployees && editPlanForm.premiumPerEmployee && (
+                    <div className="col-span-3 p-4 bg-blue-50 rounded-lg">
+                      <div className="text-sm text-muted-foreground">Total Premium</div>
+                      <div className="text-2xl font-bold text-blue-600">
+                        ₹{(parseInt(editPlanForm.totalEmployees || '0') * parseFloat(editPlanForm.premiumPerEmployee || '0')).toLocaleString()}
+                      </div>
+                    </div>
+                  )}
+                </div>
+              </div>
+              <div className="space-y-4">
+                <Label className="text-base font-semibold">Validity Period</Label>
+                <div className="grid grid-cols-2 gap-4">
+                  <div className="space-y-2">
+                    <Label>Valid From</Label>
+                    <Input type="date" value={editPlanForm.validFrom} onChange={(e) => setEditPlanForm({ ...editPlanForm, validFrom: e.target.value })} />
+                  </div>
+                  <div className="space-y-2">
+                    <Label>Valid To</Label>
+                    <Input type="date" value={editPlanForm.validTo} onChange={(e) => setEditPlanForm({ ...editPlanForm, validTo: e.target.value })} />
+                  </div>
+                </div>
+              </div>
+              {editPlanForm.features.ipd && (
+                <div className="space-y-4">
+                  <Label className="text-base font-semibold">Coverage Details <span className="text-xs font-normal text-muted-foreground">(IPD)</span></Label>
+                  <div className="grid grid-cols-2 gap-4">
+                    <div className="space-y-2"><Label>Room Rent</Label><Input value={editPlanForm.coverage.roomRent} onChange={(e) => setEditPlanForm({ ...editPlanForm, coverage: { ...editPlanForm.coverage, roomRent: e.target.value } })} /></div>
+                    <div className="space-y-2"><Label>ICU Rent</Label><Input value={editPlanForm.coverage.icuRent} onChange={(e) => setEditPlanForm({ ...editPlanForm, coverage: { ...editPlanForm.coverage, icuRent: e.target.value } })} /></div>
+                    <div className="space-y-2"><Label>Pre-Policy Medical</Label><Input value={editPlanForm.coverage.prePolicyMedical} onChange={(e) => setEditPlanForm({ ...editPlanForm, coverage: { ...editPlanForm.coverage, prePolicyMedical: e.target.value } })} /></div>
+                    <div className="space-y-2"><Label>Post-Policy Medical</Label><Input value={editPlanForm.coverage.postPolicyMedical} onChange={(e) => setEditPlanForm({ ...editPlanForm, coverage: { ...editPlanForm.coverage, postPolicyMedical: e.target.value } })} /></div>
+                  </div>
+                </div>
+              )}
+              <div className="space-y-4">
+                <Label className="text-base font-semibold">Plan Features</Label>
+                <div className="grid grid-cols-3 gap-3">
+                  {Object.entries(editPlanForm.features).map(([key, value]) => (
+                    <div key={key} className="flex items-center space-x-2 p-3 border rounded-lg">
+                      <Switch checked={value as boolean} onCheckedChange={(checked) => setEditPlanForm({ ...editPlanForm, features: { ...editPlanForm.features, [key]: checked } })} />
+                      <Label className="capitalize text-sm">{key.replace(/([A-Z])/g, ' $1').trim()}</Label>
+                    </div>
+                  ))}
+                </div>
+              </div>
+              <div className="space-y-4">
+                <div className="flex items-center justify-between">
+                  <Label className="text-base font-semibold">Health Packages</Label>
+                </div>
+                {healthPackages.length === 0 ? (
+                  <p className="text-sm text-muted-foreground">No health packages available for this corporate.</p>
+                ) : (
+                  <div className="grid grid-cols-2 gap-3">
+                    {healthPackages.map(pkg => {
+                      const selected = editPlanForm.healthPackageIds.includes(String(pkg.id));
+                      return (
+                        <div key={pkg.id}
+                          className={`flex items-start gap-3 p-3 border rounded-lg cursor-pointer transition-colors ${selected ? 'border-primary bg-primary/5' : 'hover:bg-muted/50'}`}
+                          onClick={() => {
+                            const ids = selected
+                              ? editPlanForm.healthPackageIds.filter(id => id !== String(pkg.id))
+                              : [...editPlanForm.healthPackageIds, String(pkg.id)];
+                            setEditPlanForm({ ...editPlanForm, healthPackageIds: ids });
+                          }}
+                        >
+                          <Checkbox checked={selected} className="mt-0.5" readOnly />
+                          <div className="flex-1 min-w-0">
+                            <div className="font-medium text-sm truncate">{pkg.name}</div>
+                            <div className="text-xs text-muted-foreground">{pkg.tests.length} tests • ₹{pkg.price.toLocaleString()}</div>
+                          </div>
+                        </div>
+                      );
+                    })}
+                  </div>
+                )}
+              </div>
+            </div>
+            <DialogFooter>
+              <Button variant="outline" onClick={() => setShowEditPlanDialog(false)}>Cancel</Button>
+              <Button onClick={handleUpdatePlan}>
+                <Edit className="mr-2 h-4 w-4" />Save Changes
+              </Button>
             </DialogFooter>
           </DialogContent>
         </Dialog>

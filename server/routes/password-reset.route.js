@@ -1,5 +1,5 @@
 import express from 'express';
-import { body } from 'express-validator';
+import { body, validationResult } from 'express-validator';
 import passwordResetService from '../services/password-reset.service.js';
 
 const router = express.Router();
@@ -14,6 +14,10 @@ router.post('/request', [
   body('phone').optional().matches(/^\+?[1-9]\d{1,14}$/).withMessage('Invalid phone format'),
   body('userType').optional().isIn(['user', 'doctor', 'team', 'hospital', 'nurse', 'pharmacy', 'corporate']).withMessage("User type must be one of: user, doctor, team, hospital, nurse, pharmacy, corporate")
 ], async (req, res) => {
+  const errors = validationResult(req);
+  if (!errors.isEmpty()) {
+    return res.status(400).json({ success: false, message: errors.array()[0].msg, errors: errors.array() });
+  }
   try {
     const { email, phone, userType = 'user' } = req.body;
 
@@ -54,6 +58,10 @@ router.post('/verify-otp', [
   body('code').notEmpty().isLength({ min: 6, max: 6 }).withMessage('OTP must be 6 digits'),
   body('userType').optional().isIn(['user', 'doctor', 'team', 'hospital', 'nurse', 'pharmacy', 'corporate']).withMessage("User type must be one of: user, doctor, team, hospital, nurse, pharmacy, corporate")
 ], async (req, res) => {
+  const errors = validationResult(req);
+  if (!errors.isEmpty()) {
+    return res.status(400).json({ success: false, message: errors.array()[0].msg, errors: errors.array() });
+  }
   try {
     const { email, phone, code, userType = 'user' } = req.body;
 
@@ -89,9 +97,13 @@ router.post('/verify-otp', [
  */
 router.post('/reset', [
   body('resetToken').notEmpty().withMessage('Reset token is required'),
-  body('newPassword').isLength({ min: 6 }).withMessage('Password must be at least 6 characters long'),
+  body('newPassword').notEmpty().isLength({ min: 6 }).withMessage('Password must be at least 6 characters long'),
   body('userType').optional().isIn(['user', 'doctor', 'team', 'hospital', 'nurse', 'pharmacy', 'corporate']).withMessage("User type must be one of: user, doctor, team, hospital, nurse, pharmacy, corporate")
 ], async (req, res) => {
+  const errors = validationResult(req);
+  if (!errors.isEmpty()) {
+    return res.status(400).json({ success: false, message: errors.array()[0].msg, errors: errors.array() });
+  }
   try {
     const { resetToken, newPassword, userType = 'user' } = req.body;
 

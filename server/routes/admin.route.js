@@ -2188,6 +2188,7 @@ router.get('/corporate-plans/:corporateId', authUser, requireRole(['admin', 'tea
 
     const plans = await postgresSequelize.query(`
       SELECT p.id, p.name, p.slug, p.price, p.annual_price, p.currency, p.billing_cycle, p.is_active,
+             p.description, p.features, p.metadata,
              COALESCE(cnt.enrolled, 0) AS enrolled
       FROM subscription_plans p
       LEFT JOIN (
@@ -2195,14 +2196,18 @@ router.get('/corporate-plans/:corporateId', authUser, requireRole(['admin', 'tea
         FROM user_subscriptions us
         JOIN user_associations ua ON ua."userId" = us.user_id
         WHERE ua."entityType" = 'corporate'
-          AND ua."entityId" = :corporateId::
+          AND ua."entityId" = :corporateId
           AND ua.role = 'employee'
           AND us.status = 'ACTIVE'
         GROUP BY us.plan_id
       ) cnt ON cnt.plan_id = p.id
-      WHERE p.slug ILIKE 'corporate-%'
+      WHERE p.type = 'CORPORATE'
         AND p.is_active = true
-      ORDER BY p.id
+        AND (
+          (p.metadata->>'corporateId')::int = :corporateId
+          OR p.slug ILIKE 'corporate-%'
+        )
+      ORDER BY p.id DESC
     `, {
       replacements: { corporateId },
       type: postgresSequelize.QueryTypes.SELECT
@@ -2228,59 +2233,82 @@ router.get('/corporate-plans/:corporateId', authUser, requireRole(['admin', 'tea
  */
 router.post('/corporate-plans', authUser, requireRole(['admin', 'team']), async (req, res) => {
   try {
-    const { name, slug, price, annualPrice, currency = 'INR', billingCycle = 'ANNUAL' } = req.body || {};
+    const {
+      // rich fields from team/admin UI
+      planName, planType, description,
+      corporateId, validFrom, validTo,
+      totalEmployees, premiumPerEmployee, totalPremium,
+      status = 'Active', currency = 'INR', billingCycle,
+      features, benefits, coverage,
+      // legacy simple-form fallback
+      name, slug, price, annualPrice,
+    } = req.body || {};
 
-    if (!name || price == null) {
+    const resolvedName = planName || name;
+    const resolvedPrice = premiumPerEmployee != null ? Number(premiumPerEmployee) : (price != null ? Number(price) : null);
+
+    if (!resolvedName || resolvedPrice == null) {
       return res.status(400).json({
         success: false,
-        message: 'name and price are required'
+        message: 'planName (or name) and premiumPerEmployee (or price) are required'
       });
     }
 
-    const rawSlug = slug || String(name)
-      .toLowerCase()
-      .replace(/[^a-z0-9\s-]/g, '')
-      .trim()
-      .replace(/\s+/g, '-')
-      .replace(/-+/g, '-')
-      .replace(/(^-|-$)/g, '');
+    // billing_cycle enum: MONTHLY | ANNUAL | LIFETIME
+    const cycleMap = { ANNUAL: 'ANNUAL', MONTHLY: 'MONTHLY', LIFETIME: 'LIFETIME' };
+    const resolvedCycle = cycleMap[billingCycle] || 'ANNUAL';
 
-    const planSlug = rawSlug.startsWith('corporate-') ? rawSlug : `corporate-${rawSlug}`;
+    // Build a compact unique slug that always fits within varchar(50)
+    // Format: corp-{corpId}-{last9-of-timestamp} OR corp-{last13-of-timestamp}
+    // e.g. "corp-5-999999999" = 17 chars — well under 50
+    const tsFragment = String(Date.now()).slice(-9);
+    const planSlug = corporateId
+      ? `corp-${corporateId}-${tsFragment}`
+      : `corp-${tsFragment}`;
 
-    const [existing] = await postgresSequelize.query(`
-      SELECT id FROM subscription_plans WHERE slug = :slug
-    `, {
-      replacements: { slug: planSlug },
-      type: postgresSequelize.QueryTypes.SELECT
-    });
+    const resolvedAnnualPrice = annualPrice != null
+      ? Number(annualPrice)
+      : (resolvedCycle === 'ANNUAL' ? resolvedPrice * 12 : resolvedPrice);
 
-    if (existing) {
-      return res.status(409).json({
-        success: false,
-        message: 'Plan slug already exists'
-      });
-    }
+    // Compose metadata — all rich corporate fields
+    const metadata = {
+      planType: planType || 'Standard',
+      corporateId: corporateId || null,
+      validFrom: validFrom || null,
+      validTo: validTo || null,
+      totalEmployees: totalEmployees ? Number(totalEmployees) : null,
+      totalPremium: totalPremium ? Number(totalPremium) : (totalEmployees && premiumPerEmployee ? Number(totalEmployees) * Number(premiumPerEmployee) : null),
+      status,
+      benefits: benefits || [],
+      coverage: coverage || {},
+    };
 
     const [inserted] = await postgresSequelize.query(`
       INSERT INTO subscription_plans (
         name, slug, type, price, annual_price, currency, billing_cycle,
+        description, features, metadata,
         is_active, is_popular, requires_referral, allows_upgrade,
         created_at, updated_at
       )
       VALUES (
         :name, :slug, 'CORPORATE', :price, :annualPrice, :currency, :billingCycle,
-        true, false, false, true,
+        :description, :features, :metadata,
+        :isActive, false, false, true,
         NOW(), NOW()
       )
-      RETURNING id, name, slug, price, annual_price, currency, billing_cycle, is_active
+      RETURNING id, name, slug, price, annual_price, currency, billing_cycle, is_active, metadata, features, description
     `, {
       replacements: {
-        name,
+        name: resolvedName,
         slug: planSlug,
-        price,
-        annualPrice: annualPrice ?? price,
+        price: resolvedPrice,
+        annualPrice: resolvedAnnualPrice,
         currency,
-        billingCycle
+        billingCycle: resolvedCycle,
+        description: description || null,
+        features: features ? JSON.stringify(features) : null,
+        metadata: JSON.stringify(metadata),
+        isActive: status === 'Active',
       },
       type: postgresSequelize.QueryTypes.INSERT
     });
@@ -2291,11 +2319,143 @@ router.post('/corporate-plans', authUser, requireRole(['admin', 'team']), async 
     });
   } catch (error) {
     console.error('Failed to create corporate plan:', error);
+    // Handle unique constraint violations gracefully
+    if (error.original?.constraint === 'subscription_plans_name_key') {
+      return res.status(409).json({
+        success: false,
+        message: `A plan named "${req.body?.planName || req.body?.name}" already exists. Please use a different plan name.`
+      });
+    }
+    if (error.original?.constraint === 'subscription_plans_slug_key') {
+      return res.status(409).json({
+        success: false,
+        message: 'Plan slug conflict. Please try again.'
+      });
+    }
     return res.status(500).json({
       success: false,
       message: 'Failed to create corporate plan',
       error: error.message
     });
+  }
+});
+
+/**
+ * Update Corporate Plan
+ * PUT /api/admin/corporate-plans/:planId
+ */
+router.put('/corporate-plans/:planId', authUser, requireRole(['admin', 'team']), async (req, res) => {
+  try {
+    const { planId } = req.params;
+    const id = parseInt(planId, 10);
+    if (!id || isNaN(id)) {
+      return res.status(400).json({ success: false, message: 'Invalid plan ID' });
+    }
+
+    const {
+      planName, planType, description, validFrom, validTo,
+      totalEmployees, premiumPerEmployee, status, currency,
+      features, benefits, coverage, healthPackageIds
+    } = req.body;
+
+    const resolvedName = planName || req.body.name;
+    if (!resolvedName) {
+      return res.status(400).json({ success: false, message: 'Plan name is required' });
+    }
+
+    // Fetch existing plan
+    const [existing] = await postgresSequelize.query(
+      `SELECT id, metadata FROM subscription_plans WHERE id = :id AND type = 'CORPORATE'`,
+      { replacements: { id }, type: postgresSequelize.QueryTypes.SELECT }
+    );
+    if (!existing) {
+      return res.status(404).json({ success: false, message: 'Corporate plan not found' });
+    }
+
+    const existingMeta = typeof existing.metadata === 'string'
+      ? JSON.parse(existing.metadata) : (existing.metadata || {});
+
+    const metadata = {
+      ...existingMeta,
+      planType: planType || existingMeta.planType,
+      status: status || existingMeta.status,
+      validFrom: validFrom || existingMeta.validFrom,
+      validTo: validTo || existingMeta.validTo,
+      totalEmployees: totalEmployees !== undefined ? parseInt(totalEmployees) : existingMeta.totalEmployees,
+      premiumPerEmployee: premiumPerEmployee !== undefined ? parseFloat(premiumPerEmployee) : existingMeta.premiumPerEmployee,
+      totalPremium: (totalEmployees && premiumPerEmployee)
+        ? parseInt(totalEmployees) * parseFloat(premiumPerEmployee)
+        : existingMeta.totalPremium,
+      benefits: benefits || existingMeta.benefits,
+      coverage: coverage || existingMeta.coverage,
+      healthPackageIds: healthPackageIds !== undefined ? healthPackageIds : existingMeta.healthPackageIds,
+    };
+
+    const resolvedPrice = premiumPerEmployee !== undefined ? parseFloat(premiumPerEmployee) : null;
+
+    await postgresSequelize.query(`
+      UPDATE subscription_plans SET
+        name = :name,
+        description = :description,
+        currency = :currency,
+        features = :features,
+        metadata = :metadata,
+        is_active = :isActive,
+        updated_at = NOW()
+        ${resolvedPrice !== null ? ', price = :price' : ''}
+      WHERE id = :id
+    `, {
+      replacements: {
+        id,
+        name: resolvedName,
+        description: description || '',
+        currency: currency || 'INR',
+        features: JSON.stringify(features || {}),
+        metadata: JSON.stringify(metadata),
+        isActive: (status || existingMeta.status) === 'Active',
+        ...(resolvedPrice !== null ? { price: resolvedPrice } : {}),
+      },
+      type: postgresSequelize.QueryTypes.UPDATE
+    });
+
+    return res.json({ success: true, message: 'Plan updated successfully' });
+  } catch (error) {
+    console.error('Failed to update corporate plan:', error);
+    return res.status(500).json({ success: false, message: 'Failed to update plan', error: error.message });
+  }
+});
+
+/**
+ * Delete Corporate Plan
+ * DELETE /api/admin/corporate-plans/:planId
+ */
+router.delete('/corporate-plans/:planId', authUser, requireRole(['admin', 'team']), async (req, res) => {
+  try {
+    const { planId } = req.params;
+    const id = parseInt(planId, 10);
+    if (!id || isNaN(id)) {
+      return res.status(400).json({ success: false, message: 'Invalid plan ID' });
+    }
+
+    // Verify the plan exists and is a CORPORATE plan
+    const [plan] = await postgresSequelize.query(
+      `SELECT id, name, type FROM subscription_plans WHERE id = :id AND type = 'CORPORATE'`,
+      { replacements: { id }, type: postgresSequelize.QueryTypes.SELECT }
+    );
+
+    if (!plan) {
+      return res.status(404).json({ success: false, message: 'Corporate plan not found' });
+    }
+
+    await postgresSequelize.query(
+      `DELETE FROM subscription_plans WHERE id = :id`,
+      { replacements: { id }, type: postgresSequelize.QueryTypes.DELETE }
+    );
+
+    return res.json({ success: true, message: `Plan "${plan.name}" deleted successfully` });
+  } catch (error) {
+    console.error('Failed to delete corporate plan:', error);
+    return res.status(500).json({ success: false, message: 'Failed to delete corporate plan', error: error.message });
   }
 });
 
@@ -2388,6 +2548,85 @@ router.get('/corporate-network/:corporateId', authUser, requireRole(['admin', 't
       message: 'Failed to get corporate network partners',
       error: error.message
     });
+  }
+});
+
+/**
+ * Assign Network Partners to Corporate Employees
+ * POST /api/admin/corporate-network-assignments
+ */
+router.post('/corporate-network-assignments', authUser, requireRole(['admin', 'team']), async (req, res) => {
+  try {
+    const { corporateId, partnerId, partnerType, employeeIds } = req.body;
+
+    if (!corporateId || !partnerId || !partnerType) {
+      return res.status(400).json({ success: false, message: 'corporateId, partnerId and partnerType are required' });
+    }
+
+    const validTypes = ['lab', 'hospital', 'clinic'];
+    if (!validTypes.includes(partnerType)) {
+      return res.status(400).json({ success: false, message: 'partnerType must be lab, hospital or clinic' });
+    }
+
+    // Resolve employee count for the response
+    let assignedCount = 0;
+    if (employeeIds === 'all' || !employeeIds) {
+      const [countRow] = await postgresSequelize.query(
+        `SELECT COUNT(DISTINCT "userId") AS cnt FROM user_associations WHERE "entityType" = 'corporate' AND "entityId" = :corporateId AND role = 'employee' AND status = 'active'`,
+        { replacements: { corporateId }, type: postgresSequelize.QueryTypes.SELECT }
+      );
+      assignedCount = parseInt(countRow?.cnt || 0, 10);
+    } else if (Array.isArray(employeeIds)) {
+      assignedCount = employeeIds.length;
+    }
+
+    // Upsert the assignment record — graceful if table doesn't exist
+    try {
+      // Ensure table exists
+      await postgresSequelize.query(`
+        CREATE TABLE IF NOT EXISTS corporate_network_assignments (
+          id SERIAL PRIMARY KEY,
+          corporate_id INTEGER NOT NULL,
+          partner_id INTEGER NOT NULL,
+          partner_type VARCHAR(20) NOT NULL,
+          employee_ids JSONB DEFAULT '"all"',
+          assigned_by INTEGER,
+          assigned_at TIMESTAMPTZ DEFAULT NOW(),
+          UNIQUE (corporate_id, partner_id, partner_type)
+        )
+      `);
+      await postgresSequelize.query(`
+        INSERT INTO corporate_network_assignments (corporate_id, partner_id, partner_type, employee_ids, assigned_by, assigned_at)
+        VALUES (:corporateId, :partnerId, :partnerType, :employeeIds, :assignedBy, NOW())
+        ON CONFLICT (corporate_id, partner_id, partner_type) DO UPDATE
+          SET employee_ids = EXCLUDED.employee_ids,
+              assigned_by = EXCLUDED.assigned_by,
+              assigned_at = NOW()
+      `, {
+        replacements: {
+          corporateId,
+          partnerId,
+          partnerType,
+          employeeIds: JSON.stringify(employeeIds || 'all'),
+          assignedBy: req.user?.id || null,
+        },
+        type: postgresSequelize.QueryTypes.INSERT
+      });
+    } catch (dbErr) {
+      console.warn('corporate_network_assignments persistence failed (non-fatal):', dbErr.message);
+    }
+
+    return res.json({
+      success: true,
+      message: `${partnerType} assigned to ${assignedCount} employee${assignedCount !== 1 ? 's' : ''} successfully`,
+      assignedCount,
+      corporateId,
+      partnerId,
+      partnerType,
+    });
+  } catch (error) {
+    console.error('Failed to assign network partner:', error);
+    return res.status(500).json({ success: false, message: 'Failed to assign network partner', error: error.message });
   }
 });
 

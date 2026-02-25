@@ -17,8 +17,10 @@ router.post('/login', authLimiter, [
 ], async (req, res) => {
   console.log('🔵 [Team Login] Request received');
   try {
-    const { email, password } = req.body;
+    const email = (req.body.email || '').trim();
+    const password = (req.body.password || '').trim();
     console.log('🔵 [Team Login] Email:', email);
+    console.log('🔵 [Team Login] Password length received:', password.length);
 
     // Hardcoded credentials removed for security - all team members must be in database
 
