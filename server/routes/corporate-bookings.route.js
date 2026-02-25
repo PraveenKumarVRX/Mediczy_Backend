@@ -101,6 +101,104 @@ router.get('/employees', authUser, requireTeamOrAdmin, async (req, res) => {
 });
 
 // ──────────────────────────────────────────────
+// GET /api/corporate-bookings/my-corporate
+// Returns the corporate assigned to the logged-in team member
+// Derived from corporates.assignedTo = req.user.id
+// ──────────────────────────────────────────────
+router.get('/my-corporate', authUser, requireTeamOrAdmin, async (req, res) => {
+  try {
+    const teamMemberId = req.user.id;
+
+    // Primary: corporates.assignedTo = team member id
+    const [corporate] = await postgresSequelize.query(
+      `SELECT id, "companyName", email, "phoneNumber", industry, "employeeCount", status, metadata
+       FROM corporates
+       WHERE "assignedTo" = :teamMemberId AND status = 'Active'
+       LIMIT 1`,
+      { replacements: { teamMemberId }, type: postgresSequelize.QueryTypes.SELECT }
+    );
+
+    if (!corporate) {
+      return res.json({ success: true, corporate: null, message: 'No corporate assigned to this team member' });
+    }
+
+    // Also get a quick employee count
+    const [{ count: employeeCount }] = await postgresSequelize.query(
+      `SELECT COUNT(*) AS count FROM user_associations
+       WHERE "entityType" = 'corporate' AND "entityId" = :corporateId AND role = 'employee' AND status = 'active'`,
+      { replacements: { corporateId: corporate.id }, type: postgresSequelize.QueryTypes.SELECT }
+    );
+
+    return res.json({
+      success: true,
+      corporate: { ...corporate, employeeCount: parseInt(employeeCount) || 0 }
+    });
+  } catch (err) {
+    console.error('[corporate-bookings] GET /my-corporate error:', err);
+    return res.status(500).json({ success: false, message: err.message });
+  }
+});
+
+// ──────────────────────────────────────────────
+// GET /api/corporate-bookings/employee-eligibility
+// Returns the packages assigned to a specific employee for a corporate,
+// including benefit availability (usedAt = null → available)
+// ──────────────────────────────────────────────
+router.get('/employee-eligibility', authUser, requireTeamOrAdmin, async (req, res) => {
+  try {
+    const { employeeId, corporateId } = req.query;
+
+    if (!employeeId || !corporateId) {
+      return res.status(400).json({ success: false, message: 'employeeId and corporateId are required' });
+    }
+
+    const packages = await postgresSequelize.query(
+      `SELECT
+         uhp."packageId",
+         uhp."packageName",
+         uhp."packageDetails",
+         uhp."validFrom",
+         uhp."validTo",
+         uhp.status,
+         uhp."usedAt",
+         (uhp."usedAt" IS NULL AND uhp.status = 'active' AND uhp."validTo" > NOW()) AS available
+       FROM user_health_packages uhp
+       WHERE uhp."userId"   = :employeeId
+         AND uhp."corporateId" = :corporateId
+         AND uhp.status = 'active'
+       ORDER BY uhp."packageId"`,
+      {
+        replacements: { employeeId: parseInt(employeeId), corporateId: parseInt(corporateId) },
+        type: postgresSequelize.QueryTypes.SELECT
+      }
+    );
+
+    const result = packages.map(p => {
+      const details = typeof p.packageDetails === 'string'
+        ? JSON.parse(p.packageDetails)
+        : (p.packageDetails || {});
+      return {
+        packageId:   p.packageId,
+        packageName: p.packageName,
+        tests:       details.tests || details.features || [],
+        price:       Number(details.price || details.cost || 0),
+        description: details.description || '',
+        validFrom:   p.validFrom,
+        validTo:     p.validTo,
+        status:      p.status,
+        usedAt:      p.usedAt,
+        available:   p.available,
+      };
+    });
+
+    return res.json({ success: true, eligibility: result });
+  } catch (err) {
+    console.error('[corporate-bookings] GET /employee-eligibility error:', err);
+    return res.status(500).json({ success: false, message: err.message });
+  }
+});
+
+// ──────────────────────────────────────────────
 // GET /api/corporate-bookings/labs
 // Fetch labs assigned to a corporate for the booking dropdown
 // ──────────────────────────────────────────────

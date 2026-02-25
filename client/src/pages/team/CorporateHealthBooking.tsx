@@ -62,6 +62,27 @@ interface CorporatePackage {
   price?: number;
 }
 
+interface Corporate {
+  id: number;
+  companyName: string;
+  email?: string;
+  employeeCount?: number;
+  status?: string;
+}
+
+interface EligiblePackage {
+  packageId: string;
+  packageName: string;
+  tests: string[];
+  price: number;
+  description: string;
+  validFrom: string;
+  validTo: string;
+  status: string;
+  usedAt: string | null;
+  available: boolean;
+}
+
 interface HealthReport {
   id: number;
   report_name: string;
@@ -156,9 +177,17 @@ export default function CorporateHealthBooking() {
   const [selectedLabId, setSelectedLabId] = useState('');
   const [labsLoading, setLabsLoading] = useState(false);
 
+  // ── assigned corporate (derived from logged-in team member) ──
+  const [corporate, setCorporate] = useState<Corporate | null>(null);
+  const [corporateLoading, setCorporateLoading] = useState(false);
+
   // ── corporate plan packages ──
   const [packages, setPackages] = useState<CorporatePackage[]>([]);
   const [packagesLoading, setPackagesLoading] = useState(false);
+
+  // ── per-employee plan eligibility ──
+  const [employeeEligibility, setEmployeeEligibility] = useState<EligiblePackage[]>([]);
+  const [eligibilityLoading, setEligibilityLoading] = useState(false);
 
   // ── form fields ──
   const [checkupDate, setCheckupDate] = useState('');
@@ -199,21 +228,33 @@ export default function CorporateHealthBooking() {
   const [sharingId, setSharingId] = useState<number | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
-  // ──────────────────────────────────
-  // Load labs + plan packages on mount
-  // ──────────────────────────────────
+  // ──────────────────────────────────────────────────────────
+  // On mount: derive the assigned corporate, then load labs +
+  // corporate-level packages for that corporate dynamically.
+  // ──────────────────────────────────────────────────────────
   useEffect(() => {
-    setLabsLoading(true);
-    api.get('/corporate-bookings/labs?corporateId=5')
-      .then(r => setLabs(r.data.labs || []))
-      .catch(e => console.error('Labs fetch failed:', e))
-      .finally(() => setLabsLoading(false));
+    setCorporateLoading(true);
+    api.get('/corporate-bookings/my-corporate')
+      .then(r => {
+        const corp: Corporate | null = r.data.corporate || null;
+        setCorporate(corp);
+        if (!corp) return;
 
-    setPackagesLoading(true);
-    api.get('/corporate-bookings/packages?corporateId=5')
-      .then(r => setPackages(r.data.packages || []))
-      .catch(e => console.error('Packages fetch failed:', e))
-      .finally(() => setPackagesLoading(false));
+        const cid = corp.id;
+        setLabsLoading(true);
+        api.get(`/corporate-bookings/labs?corporateId=${cid}`)
+          .then(r2 => setLabs(r2.data.labs || []))
+          .catch(e => console.error('Labs fetch failed:', e))
+          .finally(() => setLabsLoading(false));
+
+        setPackagesLoading(true);
+        api.get(`/corporate-bookings/packages?corporateId=${cid}`)
+          .then(r2 => setPackages(r2.data.packages || []))
+          .catch(e => console.error('Packages fetch failed:', e))
+          .finally(() => setPackagesLoading(false));
+      })
+      .catch(e => console.error('my-corporate fetch failed:', e))
+      .finally(() => setCorporateLoading(false));
   }, []);
 
   // ──────────────────────────────────
@@ -227,7 +268,8 @@ export default function CorporateHealthBooking() {
   const fetchHistory = async () => {
     setHistoryLoading(true);
     try {
-      const r = await api.get('/corporate-bookings/history?corporateId=5&limit=50');
+      const cid = corporate?.id || 5;
+      const r = await api.get(`/corporate-bookings/history?corporateId=${cid}&limit=50`);
       setHistory(r.data.bookings || []);
       setHistoryTotal(r.data.total || 0);
     } catch (e) {
@@ -240,8 +282,9 @@ export default function CorporateHealthBooking() {
   const fetchReports = async (empId?: string) => {
     setReportsLoading(true);
     try {
+      const cid = corporate?.id || 5;
       const empParam = empId ? `&employeeId=${empId}` : '';
-      const r = await api.get(`/corporate-bookings/reports?corporateId=5&limit=100${empParam}`);
+      const r = await api.get(`/corporate-bookings/reports?corporateId=${cid}&limit=100${empParam}`);
       setReports(r.data.reports || []);
       setReportsTotal(r.data.total || 0);
     } catch (e) {
@@ -260,7 +303,7 @@ export default function CorporateHealthBooking() {
     rptSearchTimer.current = setTimeout(async () => {
       setRptEmpLoading(true);
       try {
-        const r = await api.get(`/corporate-bookings/employees?corporateId=5&search=${encodeURIComponent(val)}`);
+        const r = await api.get(`/corporate-bookings/employees?corporateId=${corporate?.id || 5}&search=${encodeURIComponent(val)}`);
         setRptEmpSuggestions(r.data.employees || []);
         setShowRptSuggestions(true);
       } catch { setRptEmpSuggestions([]); } finally { setRptEmpLoading(false); }
@@ -320,7 +363,7 @@ export default function CorporateHealthBooking() {
     setSharingId(reportId);
     try {
       await api.post(`/corporate-bookings/reports/${reportId}/share`, {
-        sendEmail: true, sendWhatsapp: true, corporateName: 'Equitas Bank Ltd'
+        sendEmail: true, sendWhatsapp: true, corporateName: corporate?.companyName || 'Corporate'
       });
       toast({ title: '📤 Notification Sent', description: 'Email & WhatsApp resent to employee.' });
       fetchReports();
@@ -344,6 +387,7 @@ export default function CorporateHealthBooking() {
   const handleEmployeeSearch = (val: string) => {
     setEmployeeSearch(val);
     setSelectedEmployee(null);
+    setEmployeeEligibility([]);
     if (searchTimerRef.current) clearTimeout(searchTimerRef.current);
     if (val.trim().length < 2) {
       setEmployeeSuggestions([]);
@@ -353,7 +397,7 @@ export default function CorporateHealthBooking() {
     searchTimerRef.current = setTimeout(async () => {
       setEmpLoading(true);
       try {
-        const r = await api.get(`/corporate-bookings/employees?corporateId=5&search=${encodeURIComponent(val)}`);
+        const r = await api.get(`/corporate-bookings/employees?corporateId=${corporate?.id || 5}&search=${encodeURIComponent(val)}`);
         setEmployeeSuggestions(r.data.employees || []);
         setShowSuggestions(true);
       } catch {
@@ -368,6 +412,15 @@ export default function CorporateHealthBooking() {
     setSelectedEmployee(emp);
     setEmployeeSearch(`${emp.firstName} ${emp.lastName} — ${emp.email}`);
     setShowSuggestions(false);
+    setTestPackage(''); // reset package selection when employee changes
+
+    // Load this employee's plan eligibility for the assigned corporate
+    if (!corporate) return;
+    setEligibilityLoading(true);
+    api.get(`/corporate-bookings/employee-eligibility?employeeId=${emp.id}&corporateId=${corporate.id}`)
+      .then(r => setEmployeeEligibility(r.data.eligibility || []))
+      .catch(e => console.error('Eligibility fetch failed:', e))
+      .finally(() => setEligibilityLoading(false));
   };
 
   // ──────────────────────────────────
@@ -407,8 +460,8 @@ export default function CorporateHealthBooking() {
         checkupTime,
         testPackage,
         notes,
-        corporateId: 5,
-        corporateName: 'Equitas Bank Ltd'
+        corporateId: corporate?.id || 5,
+        corporateName: corporate?.companyName || 'Corporate'
       });
 
       setSuccessBooking(r.data.booking as Record<string, unknown>);
@@ -426,6 +479,7 @@ export default function CorporateHealthBooking() {
       // reset form
       setSelectedEmployee(null);
       setEmployeeSearch('');
+      setEmployeeEligibility([]);
       setSelectedLabId('');
       setCheckupDate('');
       setCheckupTime('');
@@ -459,13 +513,15 @@ export default function CorporateHealthBooking() {
               </div>
               <div>
                 <h1 className="text-2xl font-bold">Corporate Health Checkup Booking</h1>
-                <p className="text-muted-foreground text-sm">Book health checkups for Equitas Bank employees &amp; notify them instantly</p>
+                <p className="text-muted-foreground text-sm">
+                  {corporateLoading ? 'Loading…' : corporate ? `Book health checkups for ${corporate.companyName} employees` : 'Book health checkups for corporate employees'}
+                </p>
               </div>
             </div>
           </div>
           <Badge className="bg-blue-100 text-blue-800 border-blue-200 hidden sm:flex items-center gap-1">
             <Building2 className="h-3.5 w-3.5" />
-            Equitas Bank Ltd
+            {corporate?.companyName || 'Corporate'}
           </Badge>
         </div>
 
@@ -685,29 +741,57 @@ export default function CorporateHealthBooking() {
                   <CardTitle className="text-base flex items-center gap-2">
                     <span className="w-6 h-6 rounded-full bg-blue-600 text-white text-xs flex items-center justify-center font-bold">4</span>
                     Health Checkup Package
+                    {selectedEmployee && (
+                      <span className="ml-auto text-xs font-normal text-muted-foreground">
+                        {eligibilityLoading ? 'Checking eligibility…' :
+                          employeeEligibility.length > 0
+                            ? `${employeeEligibility.filter(e => e.available).length} of ${employeeEligibility.length} benefit(s) available`
+                            : 'No plans assigned — showing all packages'}
+                      </span>
+                    )}
                   </CardTitle>
                 </CardHeader>
                 <CardContent>
-                  {packagesLoading ? (
+                  {packagesLoading || eligibilityLoading ? (
                     <div className="flex items-center gap-2 text-sm text-muted-foreground py-3">
                       <Loader2 className="h-4 w-4 animate-spin" />
-                      Loading packages from corporate plan...
+                      {eligibilityLoading ? 'Checking plan eligibility for this employee…' : 'Loading packages from corporate plan…'}
                     </div>
                   ) : (
                     <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
-                      {(packages.length > 0
+                      {/* When employee selected + has eligibility: show ONLY their plans with availability status.
+                          When no employee yet, or no eligibility found: show all corporate packages as fallback. */}
+                      {(selectedEmployee && employeeEligibility.length > 0
                         ? [
-                            ...packages.map(p => ({
-                              value: p.name,
-                              label: `🏥 ${p.name}`,
-                              desc: Array.isArray(p.features) && p.features.length > 0
-                                ? p.features.slice(0, 5).join(' · ') + (p.features.length > 5 ? ` +${p.features.length - 5} more` : '')
-                                : p.description || '',
+                            ...employeeEligibility.map(ep => ({
+                              value:           ep.packageName,
+                              label:           `🏥 ${ep.packageName}`,
+                              desc:            ep.tests.length > 0
+                                ? ep.tests.slice(0, 5).join(' · ') + (ep.tests.length > 5 ? ` +${ep.tests.length - 5} more tests` : '')
+                                : ep.description || '',
                               isCorporatePlan: true,
+                              available:       ep.available,
+                              usedAt:          ep.usedAt,
+                              validTo:         ep.validTo,
                             })),
-                            ...HEALTH_PACKAGES.filter(h => h.value === 'Custom / Other'),
+                            { value: 'Custom / Other', label: '✏️ Custom / Other', desc: 'Specify tests in notes below', isCorporatePlan: false, available: true, usedAt: null, validTo: null },
                           ]
-                        : HEALTH_PACKAGES
+                        : packages.length > 0
+                          ? [
+                              ...packages.map(p => ({
+                                value:           p.name,
+                                label:           `🏥 ${p.name}`,
+                                desc:            Array.isArray(p.features) && p.features.length > 0
+                                  ? p.features.slice(0, 5).join(' · ') + (p.features.length > 5 ? ` +${p.features.length - 5} more` : '')
+                                  : p.description || '',
+                                isCorporatePlan: true,
+                                available:       true,
+                                usedAt:          null,
+                                validTo:         null,
+                              })),
+                              { value: 'Custom / Other', label: '✏️ Custom / Other', desc: 'Specify tests in notes below', isCorporatePlan: false, available: true, usedAt: null, validTo: null },
+                            ]
+                          : HEALTH_PACKAGES.map(p => ({ ...p, isCorporatePlan: false, available: true, usedAt: null, validTo: null }))
                       ).map(pkg => (
                         <button
                           key={pkg.value}
@@ -719,11 +803,21 @@ export default function CorporateHealthBooking() {
                               : 'border-border hover:border-blue-300 hover:bg-accent/50'
                           }`}
                         >
-                          {'isCorporatePlan' in pkg && pkg.isCorporatePlan && (
-                            <span className="inline-block text-[10px] font-semibold text-blue-600 bg-blue-100 dark:bg-blue-900/40 px-1.5 py-0.5 rounded mb-1">Corporate Plan</span>
-                          )}
+                          <div className="flex items-center gap-1.5 mb-1 flex-wrap">
+                            {pkg.isCorporatePlan && (
+                              <span className="text-[10px] font-semibold text-blue-600 bg-blue-100 dark:bg-blue-900/40 px-1.5 py-0.5 rounded">Corporate Plan</span>
+                            )}
+                            {'usedAt' in pkg && pkg.usedAt ? (
+                              <span className="text-[10px] font-semibold text-orange-600 bg-orange-100 dark:bg-orange-900/40 px-1.5 py-0.5 rounded">⚠️ Benefit Used</span>
+                            ) : pkg.isCorporatePlan ? (
+                              <span className="text-[10px] font-semibold text-green-600 bg-green-100 dark:bg-green-900/40 px-1.5 py-0.5 rounded">✅ Available</span>
+                            ) : null}
+                          </div>
                           <p className="text-sm font-medium">{pkg.label}</p>
                           <p className="text-xs text-muted-foreground mt-0.5">{pkg.desc}</p>
+                          {'validTo' in pkg && pkg.validTo && (
+                            <p className="text-[10px] text-muted-foreground mt-1">Valid until {new Date(pkg.validTo).toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' })}</p>
+                          )}
                         </button>
                       ))}
                     </div>
