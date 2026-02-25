@@ -140,6 +140,44 @@ router.get('/labs', authUser, requireTeamOrAdmin, async (req, res) => {
 });
 
 // ──────────────────────────────────────────────
+// GET /api/corporate-bookings/packages
+// Fetch health checkup packages/plans assigned to a corporate
+// Queries membership_plans where organizationId = corporateId
+// ──────────────────────────────────────────────
+router.get('/packages', authUser, requireTeamOrAdmin, async (req, res) => {
+  try {
+    const { corporateId = 5 } = req.query;
+
+    const packages = await postgresSequelize.query(
+      `SELECT
+         mp.id,
+         mp.name,
+         mp.description,
+         mp.features,
+         mp.benefits,
+         mp."planType",
+         mp."discountedPrice" AS price,
+         mp.metadata
+       FROM membership_plans mp
+       WHERE mp."organizationId" = :corporateId
+         AND mp."organizationType" = 'corporate'
+         AND mp."isActive" = true
+       ORDER BY mp."sortOrder" ASC NULLS LAST, mp.name ASC
+       LIMIT 50`,
+      {
+        replacements: { corporateId: parseInt(corporateId) },
+        type: postgresSequelize.QueryTypes.SELECT
+      }
+    );
+
+    return res.json({ success: true, packages });
+  } catch (err) {
+    console.error('[corporate-bookings] GET /packages error:', err);
+    return res.status(500).json({ success: false, message: err.message });
+  }
+});
+
+// ──────────────────────────────────────────────
 // POST /api/corporate-bookings/health-checkup
 // Book a health checkup for an Equitas employee
 // Sends email + WhatsApp to employee

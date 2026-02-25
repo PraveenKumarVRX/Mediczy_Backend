@@ -52,6 +52,16 @@ interface BookingHistoryItem {
   phoneNumber: string;
 }
 
+interface CorporatePackage {
+  id: number;
+  name: string;
+  description?: string;
+  features?: string[];
+  benefits?: string[];
+  planType?: string;
+  price?: number;
+}
+
 interface HealthReport {
   id: number;
   report_name: string;
@@ -146,6 +156,10 @@ export default function CorporateHealthBooking() {
   const [selectedLabId, setSelectedLabId] = useState('');
   const [labsLoading, setLabsLoading] = useState(false);
 
+  // ── corporate plan packages ──
+  const [packages, setPackages] = useState<CorporatePackage[]>([]);
+  const [packagesLoading, setPackagesLoading] = useState(false);
+
   // ── form fields ──
   const [checkupDate, setCheckupDate] = useState('');
   const [checkupTime, setCheckupTime] = useState('');
@@ -186,7 +200,7 @@ export default function CorporateHealthBooking() {
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   // ──────────────────────────────────
-  // Load labs on mount
+  // Load labs + plan packages on mount
   // ──────────────────────────────────
   useEffect(() => {
     setLabsLoading(true);
@@ -194,6 +208,12 @@ export default function CorporateHealthBooking() {
       .then(r => setLabs(r.data.labs || []))
       .catch(e => console.error('Labs fetch failed:', e))
       .finally(() => setLabsLoading(false));
+
+    setPackagesLoading(true);
+    api.get('/corporate-bookings/packages?corporateId=5')
+      .then(r => setPackages(r.data.packages || []))
+      .catch(e => console.error('Packages fetch failed:', e))
+      .finally(() => setPackagesLoading(false));
   }, []);
 
   // ──────────────────────────────────
@@ -668,23 +688,46 @@ export default function CorporateHealthBooking() {
                   </CardTitle>
                 </CardHeader>
                 <CardContent>
-                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
-                    {HEALTH_PACKAGES.map(pkg => (
-                      <button
-                        key={pkg.value}
-                        type="button"
-                        onClick={() => setTestPackage(pkg.value)}
-                        className={`text-left p-3 rounded-lg border-2 transition-colors ${
-                          testPackage === pkg.value
-                            ? 'border-blue-500 bg-blue-50 dark:bg-blue-950/40'
-                            : 'border-border hover:border-blue-300 hover:bg-accent/50'
-                        }`}
-                      >
-                        <p className="text-sm font-medium">{pkg.label}</p>
-                        <p className="text-xs text-muted-foreground mt-0.5">{pkg.desc}</p>
-                      </button>
-                    ))}
-                  </div>
+                  {packagesLoading ? (
+                    <div className="flex items-center gap-2 text-sm text-muted-foreground py-3">
+                      <Loader2 className="h-4 w-4 animate-spin" />
+                      Loading packages from corporate plan...
+                    </div>
+                  ) : (
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                      {(packages.length > 0
+                        ? [
+                            ...packages.map(p => ({
+                              value: p.name,
+                              label: `🏥 ${p.name}`,
+                              desc: Array.isArray(p.features) && p.features.length > 0
+                                ? p.features.slice(0, 5).join(' · ') + (p.features.length > 5 ? ` +${p.features.length - 5} more` : '')
+                                : p.description || '',
+                              isCorporatePlan: true,
+                            })),
+                            ...HEALTH_PACKAGES.filter(h => h.value === 'Custom / Other'),
+                          ]
+                        : HEALTH_PACKAGES
+                      ).map(pkg => (
+                        <button
+                          key={pkg.value}
+                          type="button"
+                          onClick={() => setTestPackage(pkg.value)}
+                          className={`text-left p-3 rounded-lg border-2 transition-colors ${
+                            testPackage === pkg.value
+                              ? 'border-blue-500 bg-blue-50 dark:bg-blue-950/40'
+                              : 'border-border hover:border-blue-300 hover:bg-accent/50'
+                          }`}
+                        >
+                          {'isCorporatePlan' in pkg && pkg.isCorporatePlan && (
+                            <span className="inline-block text-[10px] font-semibold text-blue-600 bg-blue-100 dark:bg-blue-900/40 px-1.5 py-0.5 rounded mb-1">Corporate Plan</span>
+                          )}
+                          <p className="text-sm font-medium">{pkg.label}</p>
+                          <p className="text-xs text-muted-foreground mt-0.5">{pkg.desc}</p>
+                        </button>
+                      ))}
+                    </div>
+                  )}
                 </CardContent>
               </Card>
 
