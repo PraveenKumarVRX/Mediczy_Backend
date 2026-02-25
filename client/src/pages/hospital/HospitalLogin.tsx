@@ -11,7 +11,6 @@ import api from '@/utils/api';
 const HospitalLogin = () => {
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
-  const [hospitalSlug, setHospitalSlug] = useState('');
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [showPassword, setShowPassword] = useState(false);
@@ -24,12 +23,6 @@ const HospitalLogin = () => {
       navigate('/hospital/dashboard');
       return;
     }
-    
-    if (import.meta.env.DEV) {
-      setEmail('hospital@mediczy.com');
-      setPassword('Hospital123');
-    }
-    
     setIsCheckingAuth(false);
   }, [navigate]);
 
@@ -37,80 +30,63 @@ const HospitalLogin = () => {
     e.preventDefault();
     setError(null);
     setLoading(true);
-    
-    console.log('Hospital login attempt:', { email, password: '***' });
-    
-    // Development mode bypass - allows login without backend (DEV only)
-    if (import.meta.env.DEV && email === 'hospital@mediczy.com' && password === 'Hospital123') {
-      console.log('🚀 Development mode: Using quick authentication bypass');
-      
-      localStorage.removeItem('token');
-      localStorage.removeItem('userType');
-      
-      localStorage.setItem('hospitalToken', 'dev-hospital-token');
-      localStorage.setItem('userType', 'hospital');
-      localStorage.setItem('hospitalData', JSON.stringify({
-        id: 'hospital_dev',
-        email: 'hospital@mediczy.com',
-        name: 'Sample Hospital',
-        type: 'Multi Specialty Hospital'
-      }));
-      
-      setLoading(false);
-      navigate('/hospital/dashboard');
-      return;
-    }
-    
+
     try {
       const controller = new AbortController();
       const timeoutId = setTimeout(() => controller.abort(), 10000);
 
-      const hostname = typeof window !== 'undefined' ? window.location.hostname : '';
+      // Derive subdomain from the browser's Host (authoritative) — never from user input
+      const hostname = window.location.hostname;
       const hostParts = hostname.split('.').filter(Boolean);
-      const hasSubdomain = hostParts.length > 2 && hostname !== 'mediqzy.com' && hostname !== 'www.mediqzy.com';
+      const hasSubdomain =
+        hostParts.length > 2 &&
+        hostname !== 'mediqzy.com' &&
+        hostname !== 'www.mediqzy.com';
       const subdomain = hasSubdomain ? hostParts[0] : undefined;
 
       let data: any;
 
       try {
-        if (subdomain || hospitalSlug) {
-          const response = await api.post(
-            '/hospital/auth/login/v2',
-            { email, password, subdomain, hospital_slug: hospitalSlug || undefined, hospitalSlug: hospitalSlug || undefined, slug: hospitalSlug || undefined },
-            { signal: controller.signal, skipAuth: true }
-          );
-          data = response.data;
-        } else {
-          const response = await api.post(
-            '/hospital/auth/login',
-            { email, password },
-            { signal: controller.signal, skipAuth: true }
-          );
-          data = response.data;
-        }
+        const endpoint = subdomain ? '/hospital/auth/login/v2' : '/hospital/auth/login';
+        const body = subdomain
+          ? { email, password, subdomain }
+          : { email, password };
+        const response = await api.post(endpoint, body, {
+          signal: controller.signal,
+          skipAuth: true,
+        } as any);
+        data = response.data;
       } catch (primaryErr: any) {
-        // Fallback to legacy endpoint if auth route fails (for older deployments)
+        // Last-resort fallback for legacy deployments
         const response = await api.post(
           '/hospital/login',
           { email, password },
-          { signal: controller.signal, skipAuth: true }
+          { signal: controller.signal, skipAuth: true } as any
         );
         data = response.data;
       }
 
       clearTimeout(timeoutId);
 
+      // Store tokens — access token + refresh token
       localStorage.setItem('hospitalToken', data.token);
+      if (data.refreshToken) {
+        localStorage.setItem('hospitalRefreshToken', data.refreshToken);
+      }
       localStorage.setItem('userType', 'hospital');
       localStorage.setItem('hospitalData', JSON.stringify(data.hospital || data.user || {}));
-      
+
       navigate('/hospital/dashboard');
     } catch (err: any) {
       console.error('Hospital login error:', err);
       if (err?.name === 'AbortError' || err?.code === 'ERR_CANCELED') {
         setError('Request timeout. Please check your connection and try again.');
       } else {
-        setError(err?.response?.data?.message || err?.message || 'Login failed. Please check your credentials.');
+        setError(
+          err?.response?.data?.message ||
+            err?.message ||
+            'Login failed. Please check your credentials.'
+        );
       }
     } finally {
       setLoading(false);
@@ -163,23 +139,8 @@ const HospitalLogin = () => {
                   </AlertDescription>
                 </Alert>
               )}
-              
-              <div className="space-y-4">
-                <div className="space-y-2">
-                  <label htmlFor="hospitalSlug" className="text-sm font-medium flex items-center gap-2">
-                    <CheckCircle2 className="h-4 w-4 text-teal-600" />
-                    Hospital Slug (optional)
-                  </label>
-                  <Input
-                    id="hospitalSlug"
-                    type="text"
-                    placeholder="apollo-hospital"
-                    value={hospitalSlug}
-                    onChange={(e) => setHospitalSlug(e.target.value.trim())}
-                    className="h-12 text-base border-2 focus:border-teal-500 transition-colors"
-                  />
-                </div>
 
+              <div className="space-y-4">
                 <div className="space-y-2">
                   <label htmlFor="email" className="text-sm font-medium flex items-center gap-2">
                     <CheckCircle2 className="h-4 w-4 text-teal-600" />
@@ -195,7 +156,7 @@ const HospitalLogin = () => {
                     className="h-12 text-base border-2 focus:border-teal-500 transition-colors"
                   />
                 </div>
-                
+
                 <div className="space-y-2">
                   <label htmlFor="password" className="text-sm font-medium flex items-center gap-2">
                     <Lock className="h-4 w-4 text-teal-600" />
@@ -221,7 +182,7 @@ const HospitalLogin = () => {
                   </div>
                 </div>
               </div>
-              
+
               <Button
                 type="submit"
                 disabled={loading}
@@ -237,7 +198,7 @@ const HospitalLogin = () => {
                 )}
               </Button>
             </form>
-            
+
             <div className="mt-6 text-center text-sm text-muted-foreground">
               Need help? Contact{' '}
               <a href="mailto:support@mediczy.com" className="text-teal-600 hover:underline font-medium">

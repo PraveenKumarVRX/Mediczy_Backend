@@ -30,94 +30,138 @@ import {
   Ambulance,
   Network,
   BarChart3,
+  Lock,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { useState } from "react";
 import { useNavigate } from "react-router-dom";
+import { useHospitalAuth } from "@/hooks/useHospitalAuth";
+import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
 
 interface SidebarItem {
   icon: React.ElementType;
   label: string;
   href: string;
   badge?: string | number;
+  /** Capability key; if provided and capabilities list omits it, item is disabled */
+  capability?: string;
+}
+
+interface HospitalSidebarProps {
+  /** Optional list of capability slugs granted to this hospital's plan.
+   *  When provided, items with a matching `capability` that is NOT in this
+   *  list are rendered in a disabled/locked state. */
+  capabilities?: string[];
 }
 
 const mainNavItems: SidebarItem[] = [
   { icon: LayoutDashboard, label: "Dashboard", href: "/hospital/dashboard" },
-  { icon: BriefcaseMedical, label: "Practice Management", href: "/hospital/practice-management" },
-  { icon: CalendarCheck, label: "Appointments", href: "/hospital/appointments" },
-  { icon: Bed, label: "Bed Management", href: "/hospital/beds" },
-  { icon: Users, label: "Patients", href: "/hospital/patients" },
-  { icon: Stethoscope, label: "Doctors", href: "/hospital/doctors" },
-  { icon: Network, label: "Branches & Clinics", href: "/hospital/branches" },
-  { icon: Ambulance, label: "Ambulance", href: "/hospital/ambulance" },
-  { icon: MessageSquare, label: "Communication Hub", href: "/hospital/communication" },
+  { icon: BriefcaseMedical, label: "Practice Management", href: "/hospital/practice-management", capability: "practice_management" },
+  { icon: CalendarCheck, label: "Appointments", href: "/hospital/appointments", capability: "appointments" },
+  { icon: Bed, label: "Bed Management", href: "/hospital/beds", capability: "bed_management" },
+  { icon: Users, label: "Patients", href: "/hospital/patients", capability: "patients" },
+  { icon: Stethoscope, label: "Doctors", href: "/hospital/doctors", capability: "doctors" },
+  { icon: Network, label: "Branches & Clinics", href: "/hospital/branches", capability: "branches" },
+  { icon: Ambulance, label: "Ambulance", href: "/hospital/ambulance", capability: "ambulance" },
+  { icon: MessageSquare, label: "Communication Hub", href: "/hospital/communication", capability: "communication" },
 ];
 
 const clinicalItems: SidebarItem[] = [
-  { icon: FileHeart, label: "EHR", href: "/hospital/ehr" },
-  { icon: FolderOpen, label: "MRD", href: "/hospital/mrd" },
-  { icon: ClipboardList, label: "OPD/IPD", href: "/hospital/opd-ipd" },
-  { icon: ClipboardCheck, label: "IP Sheets", href: "/hospital/ip-sheets" },
-  { icon: FileCheck, label: "Discharge Summary", href: "/hospital/discharge-summary" },
-  { icon: Pill, label: "Pharmacy", href: "/hospital/pharmacy" },
-  { icon: Activity, label: "Lab Reports", href: "/hospital/lab-reports" },
+  { icon: FileHeart, label: "EHR", href: "/hospital/ehr", capability: "ehr" },
+  { icon: FolderOpen, label: "MRD", href: "/hospital/mrd", capability: "mrd" },
+  { icon: ClipboardList, label: "OPD/IPD", href: "/hospital/opd-ipd", capability: "opd_ipd" },
+  { icon: ClipboardCheck, label: "IP Sheets", href: "/hospital/ip-sheets", capability: "ip_sheets" },
+  { icon: FileCheck, label: "Discharge Summary", href: "/hospital/discharge-summary", capability: "discharge_summary" },
+  { icon: Pill, label: "Pharmacy", href: "/hospital/pharmacy", capability: "pharmacy" },
+  { icon: Activity, label: "Lab Reports", href: "/hospital/lab-reports", capability: "lab_reports" },
 ];
 
 const billingItems: SidebarItem[] = [
-  { icon: Shield, label: "Insurance Management", href: "/hospital/insurance-billing" },
-  { icon: Receipt, label: "Billing & Invoicing", href: "/hospital/billing" },
+  { icon: Shield, label: "Insurance Management", href: "/hospital/insurance-billing", capability: "insurance_billing" },
+  { icon: Receipt, label: "Billing & Invoicing", href: "/hospital/billing", capability: "billing" },
 ];
 
 const systemItems: SidebarItem[] = [
-  { icon: UserCog, label: "Staff Management", href: "/hospital/staff" },
-  { icon: Bell, label: "Notifications", href: "/hospital/notifications", badge: 5 },
+  { icon: UserCog, label: "Staff Management", href: "/hospital/staff", capability: "staff_management" },
+  { icon: Bell, label: "Notifications", href: "/hospital/notifications" },
   { icon: Settings, label: "Settings", href: "/hospital/settings" },
   { icon: HelpCircle, label: "Help & Support", href: "/hospital/support" },
 ];
 
-const HospitalSidebar = () => {
+const HospitalSidebar = ({ capabilities }: HospitalSidebarProps) => {
   const location = useLocation();
-  const navigate = useNavigate();
+  const { logout } = useHospitalAuth();
   const [collapsed, setCollapsed] = useState(false);
 
-  const handleLogout = () => {
-    localStorage.removeItem("hospitalToken");
-    localStorage.removeItem("hospitalData");
-    navigate("/hospital/login");
+  const handleLogout = () => logout();
+
+  /**
+   * Returns true if the item should be accessible.
+   * - Items with no capability key are always accessible.
+   * - If no capabilities list is provided (undefined), all items are accessible (loading / open).
+   * - Otherwise the item's capability key must appear in the list.
+   */
+  const isAccessible = (item: SidebarItem): boolean => {
+    if (!item.capability) return true;
+    if (!capabilities) return true; // not yet loaded
+    return capabilities.includes(item.capability);
   };
 
   const NavItem = ({ item }: { item: SidebarItem }) => {
-    const isActive = location.pathname === item.href;
-    
-    return (
-      <Link
-        to={item.href}
+    const active = location.pathname === item.href;
+    const accessible = isAccessible(item);
+
+    const inner = (
+      <span
         className={cn(
           "group flex items-center gap-3 px-3 py-2.5 rounded-xl text-sm font-medium transition-all duration-200",
-          isActive
+          active && accessible
             ? "bg-gradient-to-r from-teal-500/20 to-teal-600/10 text-teal-400 border border-teal-500/30 shadow-sm"
-            : "text-slate-400 hover:bg-slate-800/60 hover:text-white",
+            : accessible
+            ? "text-slate-400 hover:bg-slate-800/60 hover:text-white"
+            : "text-slate-600 cursor-not-allowed opacity-50",
           collapsed && "justify-center px-2"
         )}
       >
         <item.icon className={cn(
           "w-5 h-5 flex-shrink-0 transition-colors",
-          isActive ? "text-teal-400" : "text-slate-500 group-hover:text-teal-400"
+          active && accessible ? "text-teal-400" : accessible ? "text-slate-500 group-hover:text-teal-400" : "text-slate-600"
         )} />
         {!collapsed && (
           <>
             <span className="flex-1">{item.label}</span>
-            {item.badge && (
+            {!accessible && <Lock className="w-3.5 h-3.5 text-slate-600" />}
+            {accessible && item.badge != null && (
               <span className={cn(
                 "px-2 py-0.5 text-xs font-bold rounded-full",
-                isActive ? "bg-teal-400/20 text-teal-400" : "bg-slate-700 text-slate-300"
+                active ? "bg-teal-400/20 text-teal-400" : "bg-slate-700 text-slate-300"
               )}>
                 {item.badge}
               </span>
             )}
           </>
         )}
+      </span>
+    );
+
+    if (!accessible) {
+      return (
+        <TooltipProvider delayDuration={400}>
+          <Tooltip>
+            <TooltipTrigger asChild>
+              <span>{inner}</span>
+            </TooltipTrigger>
+            <TooltipContent side="right" className="text-xs">
+              Not available on your current plan
+            </TooltipContent>
+          </Tooltip>
+        </TooltipProvider>
+      );
+    }
+
+    return (
+      <Link to={item.href}>
+        {inner}
       </Link>
     );
   };

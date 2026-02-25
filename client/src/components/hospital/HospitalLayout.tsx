@@ -1,9 +1,9 @@
-import { ReactNode, useEffect, useState } from "react";
+import { ReactNode } from "react";
 import { useNavigate } from "react-router-dom";
+import { useQuery } from "@tanstack/react-query";
 import HospitalSidebar from "./HospitalSidebar";
-import { Bell, HeartPulse, ChevronDown, Building2, Sun, Moon } from "lucide-react";
+import { Bell, HeartPulse, ChevronDown, Building2, Sun, Moon, Loader2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -13,6 +13,8 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import { useTheme } from "@/utils/theme.provider";
+import { useHospitalAuth } from "@/hooks/useHospitalAuth";
+import api from "@/utils/api";
 
 interface HospitalLayoutProps {
   children: ReactNode;
@@ -20,44 +22,63 @@ interface HospitalLayoutProps {
   subtitle?: string;
 }
 
+interface Notification {
+  id: string | number;
+  title: string;
+  time: string;
+}
+
 const HospitalLayout = ({ children, title, subtitle }: HospitalLayoutProps) => {
   const navigate = useNavigate();
-  const [hospitalData, setHospitalData] = useState<any>(null);
   const { setTheme, theme } = useTheme();
-  const notifications = [
-    { id: 1, title: "New admission request", time: "5m ago" },
-    { id: 2, title: "Lab result ready", time: "30m ago" },
-    { id: 3, title: "Two surgeries today", time: "Today" },
-  ];
+  const { hospitalData, isLoading: authLoading, logout } = useHospitalAuth();
 
-  useEffect(() => {
-    const token = localStorage.getItem("hospitalToken");
-    const data = localStorage.getItem("hospitalData");
-    
-    if (!token) {
-      navigate("/hospital/login");
-      return;
-    }
-    
-    if (data) {
-      setHospitalData(JSON.parse(data));
-    }
-  }, [navigate]);
+  // Fetch module capabilities for sidebar gating
+  const { data: capabilities } = useQuery<string[]>({
+    queryKey: ["hospital-capabilities"],
+    queryFn: async () => {
+      const res = await api.get("/admin/module-access/my-modules");
+      const modules = res.data?.modules ?? res.data ?? [];
+      // Normalize to array of capability slug strings
+      return Array.isArray(modules)
+        ? modules.map((m: any) => (typeof m === "string" ? m : m.module_key ?? m.slug ?? m.name))
+        : [];
+    },
+    staleTime: 10 * 60_000,
+    retry: false,
+  });
+  const { data: notificationsData } = useQuery<Notification[]>({
+    queryKey: ["hospital-notifications"],
+    queryFn: async () => {
+      const res = await api.get("/hospital/notifications/recent");
+      return res.data?.notifications ?? res.data ?? [];
+    },
+    staleTime: 60_000,
+    retry: false,
+    // Fallback to empty array on error — non-critical UI
+  });
 
-  const handleLogout = () => {
-    localStorage.removeItem("hospitalToken");
-    localStorage.removeItem("hospitalData");
-    navigate("/hospital/login");
-  };
+  const notifications: Notification[] = notificationsData ?? [];
+
+  const handleLogout = () => logout();
 
   const toggleTheme = () => {
     setTheme(theme === "dark" ? "light" : "dark");
   };
 
+  // While verifying, show a minimal spinner to avoid flash of login redirect
+  if (authLoading) {
+    return (
+      <div className="min-h-screen flex items-center justify-center bg-slate-50 dark:bg-slate-900">
+        <Loader2 className="h-6 w-6 animate-spin text-teal-500" />
+      </div>
+    );
+  }
+
   return (
     <div className="min-h-screen bg-slate-50 dark:bg-slate-900">
       {/* Sidebar */}
-      <HospitalSidebar />
+      <HospitalSidebar capabilities={capabilities} />
 
       {/* Main Content Area */}
       <div className="ml-64 transition-all duration-300">

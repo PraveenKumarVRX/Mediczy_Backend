@@ -1,4 +1,5 @@
 import express from 'express';
+import { randomUUID } from 'crypto';
 import { Hospital } from '../models/hospital.model.intelligent.js';
 import { Corporate } from '../models/insurance-company.model.intelligent.js';
 import Tenant from '../models/postgres/tenant.model.postgres.js';
@@ -10,10 +11,162 @@ import { Op } from 'sequelize';
 import { JWT_CONFIG } from '../config/auth.config.js';
 import { authLimiter } from '../middleware/rateLimiter.middleware.js';
 import { auditLoginAttempt } from '../middleware/audit.middleware.js';
+import sharedPool from '../db/pgPool.js';
 
 const router = express.Router();
 
 const normalizeEmail = (email) => String(email || '').toLowerCase();
+
+// ─── Minimum password length ──────────────────────────────────────────────────
+const PASSWORD_MIN_LEN = 8;
+
+// ─── Access / Refresh token lifetimes ─────────────────────────────────────────
+const ACCESS_TOKEN_TTL  = '15m';   // short-lived JWT
+const REFRESH_TOKEN_TTL = '30d';   // stored server-side, supports rotation
+const LOCKOUT_MAX_ATTEMPTS = 10;   // failed logins before 15-min lockout
+const LOCKOUT_WINDOW_MIN   = 15;
+
+// ─── Ensure hospital_refresh_tokens table exists (idempotent) ─────────────────
+(async () => {
+  try {
+    await sharedPool.query(`
+      CREATE TABLE IF NOT EXISTS hospital_refresh_tokens (
+        jti         UUID PRIMARY KEY,
+        user_id     TEXT        NOT NULL,
+        tenant_id   INTEGER,
+        issued_at   TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+        expires_at  TIMESTAMPTZ NOT NULL,
+        revoked     BOOLEAN     NOT NULL DEFAULT FALSE,
+        device_fp   TEXT
+      );
+      CREATE INDEX IF NOT EXISTS idx_hrt_user_id  ON hospital_refresh_tokens (user_id);
+      CREATE INDEX IF NOT EXISTS idx_hrt_expires  ON hospital_refresh_tokens (expires_at);
+    `);
+
+    await sharedPool.query(`
+      CREATE TABLE IF NOT EXISTS hospital_login_attempts (
+        email         TEXT        PRIMARY KEY,
+        failed_count  INTEGER     NOT NULL DEFAULT 0,
+        locked_until  TIMESTAMPTZ
+      );
+    `);
+  } catch (err) {
+    console.error('[hospital-auth] Table init warning:', err.message);
+  }
+})();
+
+// ─── Lockout helpers ──────────────────────────────────────────────────────────
+async function checkLockout(email) {
+  try {
+    const { rows } = await sharedPool.query(
+      'SELECT failed_count, locked_until FROM hospital_login_attempts WHERE email = $1',
+      [email.toLowerCase()]
+    );
+    if (!rows.length) return { locked: false };
+    const row = rows[0];
+    if (row.locked_until && new Date(row.locked_until) > new Date()) {
+      const remaining = Math.ceil((new Date(row.locked_until) - Date.now()) / 60000);
+      return { locked: true, remaining };
+    }
+    return { locked: false, failedCount: row.failed_count };
+  } catch { return { locked: false }; }
+}
+
+async function recordFailedAttempt(email) {
+  try {
+    const { rows } = await sharedPool.query(
+      `INSERT INTO hospital_login_attempts (email, failed_count)
+       VALUES ($1, 1)
+       ON CONFLICT (email) DO UPDATE
+         SET failed_count = hospital_login_attempts.failed_count + 1
+       RETURNING failed_count`,
+      [email.toLowerCase()]
+    );
+    const count = rows[0]?.failed_count || 1;
+    if (count >= LOCKOUT_MAX_ATTEMPTS) {
+      await sharedPool.query(
+        `UPDATE hospital_login_attempts SET locked_until = NOW() + INTERVAL '${LOCKOUT_WINDOW_MIN} minutes' WHERE email = $1`,
+        [email.toLowerCase()]
+      );
+    }
+  } catch { /* non-fatal */ }
+}
+
+async function clearFailedAttempts(email) {
+  try {
+    await sharedPool.query(
+      'DELETE FROM hospital_login_attempts WHERE email = $1',
+      [email.toLowerCase()]
+    );
+  } catch { /* non-fatal */ }
+}
+
+// ─── Token issuance & revocation ──────────────────────────────────────────────
+/**
+ * Issue an access token (15 m) + refresh token (30 d).
+ * The refresh token JTI is stored in hospital_refresh_tokens.
+ * @param {object} payload - JWT claims (without exp/jti)
+ * @param {{ deviceFp?: string }} opts
+ * @returns {{ accessToken, refreshToken, jti }}
+ */
+async function issueTokenPair(payload, { deviceFp } = {}) {
+  const jti = randomUUID();
+  const accessToken = jwt.sign(
+    { ...payload, jti, tokenType: 'access' },
+    JWT_CONFIG.SECRET,
+    { expiresIn: ACCESS_TOKEN_TTL }
+  );
+  const refreshToken = jwt.sign(
+    { jti, userId: payload.id || payload.hospital_id, tokenType: 'refresh' },
+    JWT_CONFIG.SECRET,
+    { expiresIn: REFRESH_TOKEN_TTL }
+  );
+
+  const expiresAt = new Date(Date.now() + 30 * 24 * 60 * 60 * 1000);
+  try {
+    await sharedPool.query(
+      `INSERT INTO hospital_refresh_tokens (jti, user_id, tenant_id, expires_at, device_fp)
+       VALUES ($1, $2, $3, $4, $5)`,
+      [jti, String(payload.id || payload.hospital_id), payload.tenant_id || null, expiresAt, deviceFp || null]
+    );
+  } catch (err) {
+    console.error('[hospital-auth] Failed to store refresh token:', err.message);
+  }
+  return { accessToken, refreshToken, jti };
+}
+
+async function revokeRefreshToken(jti) {
+  try {
+    await sharedPool.query(
+      'UPDATE hospital_refresh_tokens SET revoked = TRUE WHERE jti = $1',
+      [jti]
+    );
+  } catch { /* non-fatal */ }
+}
+
+async function revokeAllUserTokens(userId) {
+  try {
+    await sharedPool.query(
+      'UPDATE hospital_refresh_tokens SET revoked = TRUE WHERE user_id = $1 AND revoked = FALSE',
+      [String(userId)]
+    );
+  } catch { /* non-fatal */ }
+}
+
+// ─── Host-header slug extraction ─────────────────────────────────────────────
+/**
+ * Extract the subdomain from the request Host header.
+ * Returns null if the host is the root domain or an IP.
+ */
+function extractSubdomainFromHost(req) {
+  const host = (req.headers.host || '').split(':')[0]; // strip port
+  const parts = host.split('.');
+  // e.g. apollo.mediqzy.com → ['apollo','mediqzy','com']
+  if (parts.length >= 3 && !host.match(/^(www\.|mediqzy\.com|localhost)/)) {
+    return parts[0].toLowerCase();
+  }
+  return null;
+}
 
 const buildHospitalTokenPayload = ({ hospital, tenant, user }) => {
   if (tenant && user) {
@@ -147,7 +300,24 @@ export const hospitalLogin = async (req, res) => {
       });
     }
 
+    if (password.length < PASSWORD_MIN_LEN) {
+      return res.status(400).json({
+        success: false,
+        message: `Password must be at least ${PASSWORD_MIN_LEN} characters`
+      });
+    }
+
     const normalizedEmail = normalizeEmail(email);
+
+    // — Lockout check
+    const lockStatus = await checkLockout(normalizedEmail);
+    if (lockStatus.locked) {
+      return res.status(429).json({
+        success: false,
+        message: `Too many failed attempts. Try again in ${lockStatus.remaining} minute(s).`
+      });
+    }
+
     const hospital = await Hospital.findOne({
       where: { email: normalizedEmail }
     });
@@ -166,6 +336,7 @@ export const hospitalLogin = async (req, res) => {
       });
 
       if (!user) {
+        await recordFailedAttempt(normalizedEmail);
         await auditLoginAttempt(req, null, normalizedEmail, false, 'Hospital not found');
         return res.status(401).json({
           success: false,
@@ -175,6 +346,7 @@ export const hospitalLogin = async (req, res) => {
 
       const passwordMatch = await bcrypt.compare(password, user.password);
       if (!passwordMatch) {
+        await recordFailedAttempt(normalizedEmail);
         await auditLoginAttempt(req, user.id, normalizedEmail, false, 'Invalid password');
         return res.status(401).json({
           success: false,
@@ -184,6 +356,7 @@ export const hospitalLogin = async (req, res) => {
 
       const tenantId = user.tenant_id || user.organization_id;
       if (!tenantId) {
+        await recordFailedAttempt(normalizedEmail);
         await auditLoginAttempt(req, user.id, normalizedEmail, false, 'Hospital tenant missing');
         return res.status(401).json({
           success: false,
@@ -196,6 +369,7 @@ export const hospitalLogin = async (req, res) => {
       });
 
       if (!tenant) {
+        await recordFailedAttempt(normalizedEmail);
         await auditLoginAttempt(req, user.id, normalizedEmail, false, 'Hospital tenant not found');
         return res.status(401).json({
           success: false,
@@ -204,14 +378,17 @@ export const hospitalLogin = async (req, res) => {
       }
 
       const tokenPayload = buildHospitalTokenPayload({ tenant, user });
-      const token = jwt.sign(tokenPayload, JWT_CONFIG.SECRET, { expiresIn: '7d' });
+      const deviceFp = req.headers['x-device-fingerprint'] || undefined;
+      const { accessToken, refreshToken } = await issueTokenPair(tokenPayload, { deviceFp });
 
+      await clearFailedAttempts(normalizedEmail);
       await auditLoginAttempt(req, user.id, normalizedEmail, true);
 
       return res.json({
         success: true,
         message: 'Login successful',
-        token,
+        token: accessToken,
+        refreshToken,
         user: {
           id: user.id,
           email: user.email,
@@ -236,6 +413,7 @@ export const hospitalLogin = async (req, res) => {
 
     const isPasswordValid = await hospital.comparePassword(password);
     if (!isPasswordValid) {
+      await recordFailedAttempt(normalizedEmail);
       await auditLoginAttempt(req, hospital.id, normalizedEmail, false, 'Invalid password');
       return res.status(401).json({
         success: false,
@@ -252,14 +430,17 @@ export const hospitalLogin = async (req, res) => {
     }
 
     const tokenPayload = buildHospitalTokenPayload({ hospital });
-    const token = jwt.sign(tokenPayload, JWT_CONFIG.SECRET, { expiresIn: '7d' });
+    const deviceFp = req.headers['x-device-fingerprint'] || undefined;
+    const { accessToken, refreshToken } = await issueTokenPair(tokenPayload, { deviceFp });
 
+    await clearFailedAttempts(normalizedEmail);
     await auditLoginAttempt(req, hospital.id, normalizedEmail, true);
 
     res.json({
       success: true,
       message: 'Login successful',
-      token,
+      token: accessToken,
+      refreshToken,
       hospital: {
         id: hospital.id,
         hospitalName: hospital.hospitalName,
@@ -285,287 +466,318 @@ export const hospitalLogin = async (req, res) => {
 router.post('/login', authLimiter, hospitalLogin);
 
 /**
- * Hospital Login (Multitenancy-aware)
+ * Hospital Login v2 (Multitenancy-aware + tenant-scoped)
  * POST /api/hospital/auth/login/v2
- * Supports both old Hospital model and new Tenant model
+ *
+ * Security contract:
+ * 1. Subdomain is derived from the request Host header (ground truth).
+ * 2. Any slug/subdomain supplied in the body MUST match the host-derived
+ *    subdomain or be absent — mismatches are rejected (403).
+ * 3. Password must meet minimum length policy.
+ * 4. Account lockout after LOCKOUT_MAX_ATTEMPTS failures in a window.
+ * 5. Issues 15-min access token + 30-day refresh token (stored server-side).
  */
 export const hospitalLoginV2 = async (req, res) => {
   try {
-    const { email, password, subdomain } = req.body;
-    const hospitalSlug = req.body.hospital_slug || req.body.hospitalSlug || req.body.slug;
+    const rawEmail    = req.body.email;
+    const password    = req.body.password;
+    const bodySlug    = req.body.hospital_slug || req.body.hospitalSlug || req.body.slug;
+    const bodySubdomain = req.body.subdomain;
 
-    if (!email || !password) {
-      return res.status(400).json({
+    if (!rawEmail || !password) {
+      return res.status(400).json({ success: false, message: 'Email and password are required' });
+    }
+
+    if (password.length < PASSWORD_MIN_LEN) {
+      return res.status(400).json({ success: false, message: `Password must be at least ${PASSWORD_MIN_LEN} characters` });
+    }
+
+    const email = normalizeEmail(rawEmail);
+
+    // ─ Lockout check ────────────────────────────────────────────────────────
+    const lockStatus = await checkLockout(email);
+    if (lockStatus.locked) {
+      return res.status(429).json({ success: false, message: `Too many failed attempts. Try again in ${lockStatus.remaining} minute(s).` });
+    }
+
+    // ─ Derive authoritative subdomain from Host header ─────────────────────
+    const hostSubdomain = extractSubdomainFromHost(req);
+
+    // ─ Validate body slug/subdomain against Host header ────────────────────
+    // If the caller sent a slug/subdomain, it must match what the Host reports.
+    const callerIdent = bodySlug || bodySubdomain;  // what the body claims
+    if (callerIdent && hostSubdomain && callerIdent.toLowerCase() !== hostSubdomain.toLowerCase()) {
+      await auditLoginAttempt(req, null, email, false, `Slug mismatch: body="${callerIdent}" host="${hostSubdomain}"`);
+      return res.status(403).json({
         success: false,
-        message: 'Email and password are required'
+        message: 'Hospital identifier does not match the request origin'
       });
     }
 
-    // Get tenant from subdomain or email domain
-    let tenant = null;
-    let user = null;
+    // Resolved identifier: Host takes precedence, body slug as fallback
+    const resolvedIdent = hostSubdomain || callerIdent || null;
 
-    if (subdomain || hospitalSlug) {
-      // Login via subdomain (multitenancy)
-      const tenantMatchers = [];
-      if (subdomain) {
-        tenantMatchers.push({ subdomain });
-      }
-      if (hospitalSlug) {
-        tenantMatchers.push({ slug: hospitalSlug });
-      }
-
-      tenant = await Tenant.findOne({
+    if (resolvedIdent) {
+      // ── Tenant-scoped path ─────────────────────────────────────────────────
+      const tenant = await Tenant.findOne({
         where: {
           status: 'active',
           type: 'hospital',
-          ...(tenantMatchers.length ? { [Op.or]: tenantMatchers } : {})
+          [Op.or]: [{ subdomain: resolvedIdent }, { slug: resolvedIdent }]
         }
       });
 
       if (!tenant) {
-        await auditLoginAttempt(req, null, email, false, 'Hospital tenant not found');
-        return res.status(404).json({
-          success: false,
-          message: 'Hospital not found'
-        });
+        await recordFailedAttempt(email);
+        await auditLoginAttempt(req, null, email, false, `Tenant not found for ident="${resolvedIdent}"`);
+        return res.status(404).json({ success: false, message: 'Hospital not found' });
       }
 
-      // Find hospital user in tenant
-      user = await User.findOne({
+      const user = await User.findOne({
         where: {
-          email: normalizeEmail(email),
+          email,
           status: 'active',
-          [Op.or]: [
-            { tenant_id: tenant.id },
-            { organization_id: tenant.id }
-          ],
-          role: {
-            [Op.in]: [
-              'hospital_admin',
-              'doctor',
-              'staff',
-              'nurse',
-              'insurance_coordinator',
-              'billing',
-              'receptionist'
-            ]
-          }
+          [Op.or]: [{ tenant_id: tenant.id }, { organization_id: tenant.id }],
+          role: { [Op.in]: ['hospital_admin', 'doctor', 'staff', 'nurse', 'insurance_coordinator', 'billing', 'receptionist'] }
         }
       });
-    } else {
-      // Fallback: Login via email (old system)
-      const hospital = await Hospital.findOne({
-        where: { email: normalizeEmail(email) }
-      });
 
-      if (!hospital) {
-        await auditLoginAttempt(req, null, email, false, 'Hospital not found');
-        return res.status(401).json({
-          success: false,
-          message: 'Invalid email or password'
-        });
+      if (!user) {
+        await recordFailedAttempt(email);
+        await auditLoginAttempt(req, null, email, false, 'Hospital user not found');
+        return res.status(401).json({ success: false, message: 'Invalid email or password' });
       }
 
-      const isPasswordValid = await hospital.comparePassword(password);
-      if (!isPasswordValid) {
-        await auditLoginAttempt(req, hospital.id, email, false, 'Invalid password');
-        return res.status(401).json({
-          success: false,
-          message: 'Invalid email or password'
-        });
+      const passwordMatch = await bcrypt.compare(password, user.password);
+      if (!passwordMatch) {
+        await recordFailedAttempt(email);
+        await auditLoginAttempt(req, user.id, email, false, 'Invalid password');
+        return res.status(401).json({ success: false, message: 'Invalid email or password' });
       }
 
-      if (hospital.status !== 'active') {
-        await auditLoginAttempt(req, hospital.id, email, false, 'Hospital inactive');
-        return res.status(403).json({
-          success: false,
-          message: 'Hospital account is not active'
-        });
+      if (user.status !== 'active') {
+        return res.status(403).json({ success: false, message: 'User account is not active' });
       }
 
-      const tokenPayload = buildHospitalTokenPayload({ hospital });
-      const token = jwt.sign(tokenPayload, JWT_CONFIG.SECRET, { expiresIn: '7d' });
+      const payload   = buildHospitalTokenPayload({ tenant, user });
+      const deviceFp  = req.headers['x-device-fingerprint'] || undefined;
+      const { accessToken, refreshToken } = await issueTokenPair(payload, { deviceFp });
 
-      await auditLoginAttempt(req, hospital.id, email, true);
+      await clearFailedAttempts(email);
+      await auditLoginAttempt(req, user.id, email, true);
+
       return res.json({
         success: true,
         message: 'Login successful',
-        token,
+        token: accessToken,
+        refreshToken,
+        user: { id: user.id, email: user.email, firstName: user.firstName, lastName: user.lastName, role: user.role },
         hospital: {
-          id: hospital.id,
-          hospitalName: hospital.hospitalName,
-          email: hospital.email,
-          phoneNumber: hospital.phoneNumber,
-          city: hospital.city,
-          state: hospital.state,
-          status: hospital.status,
-          totalBeds: hospital.totalBeds,
-          availableBeds: hospital.availableBeds
+          id: tenant.id, name: tenant.name, slug: tenant.slug,
+          subdomain: tenant.subdomain, custom_domain: tenant.custom_domain,
+          email: tenant.email, phone: tenant.phone, type: tenant.type,
+          plan: tenant.plan, status: tenant.status
         }
       });
     }
 
-    // Handle new multitenancy system
-    if (!user) {
-      await auditLoginAttempt(req, null, email, false, 'Hospital user not found');
-      return res.status(401).json({
-        success: false,
-        message: 'Invalid email or password'
-      });
+    // ── No subdomain: legacy Hospital model fallback ───────────────────────
+    const hospital = await Hospital.findOne({ where: { email } });
+
+    if (!hospital) {
+      await recordFailedAttempt(email);
+      await auditLoginAttempt(req, null, email, false, 'Hospital not found');
+      return res.status(401).json({ success: false, message: 'Invalid email or password' });
     }
 
-    // Verify password
-    const passwordMatch = await bcrypt.compare(password, user.password);
-    if (!passwordMatch) {
-      await auditLoginAttempt(req, user.id, email, false, 'Invalid password');
-      return res.status(401).json({
-        success: false,
-        message: 'Invalid email or password'
-      });
+    const isPasswordValid = await hospital.comparePassword(password);
+    if (!isPasswordValid) {
+      await recordFailedAttempt(email);
+      await auditLoginAttempt(req, hospital.id, email, false, 'Invalid password');
+      return res.status(401).json({ success: false, message: 'Invalid email or password' });
     }
 
-    if (user.status !== 'active') {
-      await auditLoginAttempt(req, user.id, email, false, 'User inactive');
-      return res.status(403).json({
-        success: false,
-        message: 'User account is not active'
-      });
+    if (hospital.status !== 'active') {
+      await auditLoginAttempt(req, hospital.id, email, false, 'Hospital inactive');
+      return res.status(403).json({ success: false, message: 'Hospital account is not active' });
     }
 
-    // Generate JWT token with tenant context
-    const tokenPayload = buildHospitalTokenPayload({ tenant, user });
-    const token = jwt.sign(tokenPayload, JWT_CONFIG.SECRET, { expiresIn: '7d' });
+    const payload  = buildHospitalTokenPayload({ hospital });
+    const deviceFp = req.headers['x-device-fingerprint'] || undefined;
+    const { accessToken, refreshToken } = await issueTokenPair(payload, { deviceFp });
 
-    await auditLoginAttempt(req, user.id, email, true);
+    await clearFailedAttempts(email);
+    await auditLoginAttempt(req, hospital.id, email, true);
 
-    res.json({
+    return res.json({
       success: true,
       message: 'Login successful',
-      token,
-      user: {
-        id: user.id,
-        email: user.email,
-        firstName: user.firstName,
-        lastName: user.lastName,
-        role: user.role
-      },
+      token: accessToken,
+      refreshToken,
       hospital: {
-        id: tenant.id,
-        name: tenant.name,
-        slug: tenant.slug,
-        subdomain: tenant.subdomain,
-        custom_domain: tenant.custom_domain,
-        email: tenant.email,
-        phone: tenant.phone,
-        type: tenant.type,
-        plan: tenant.plan,
-        status: tenant.status
+        id: hospital.id, hospitalName: hospital.hospitalName, email: hospital.email,
+        phoneNumber: hospital.phoneNumber, city: hospital.city, state: hospital.state,
+        status: hospital.status, totalBeds: hospital.totalBeds, availableBeds: hospital.availableBeds
       }
     });
+
   } catch (error) {
     console.error('Hospital login v2 error:', error);
-    res.status(500).json({
-      success: false,
-      message: 'Login failed',
-      error: error.message
-    });
+    res.status(500).json({ success: false, message: 'Login failed', error: error.message });
   }
 };
 
 router.post('/login/v2', authLimiter, hospitalLoginV2);
 
 /**
- * Hospital Login via Subdomain (for Dhyan hospital, etc.)
+ * Hospital Login via Subdomain (for dedicated subdomain hosting)
  * POST /api/hospital/auth/login-tenant
- * Optimized for multitenancy
+ * Derives tenant exclusively from the Host header — no body slug accepted.
  */
 export const hospitalLoginTenant = async (req, res) => {
   try {
     const { email, password } = req.body;
-    const subdomain = req.get('host')?.split('.')[0]; // Extract from subdomain
 
     if (!email || !password) {
-      return res.status(400).json({
-        success: false,
-        message: 'Email and password are required'
-      });
+      return res.status(400).json({ success: false, message: 'Email and password are required' });
     }
 
-    // Get hospital tenant
+    if (password.length < PASSWORD_MIN_LEN) {
+      return res.status(400).json({ success: false, message: `Password must be at least ${PASSWORD_MIN_LEN} characters` });
+    }
+
+    const normalizedEmail = normalizeEmail(email);
+    const lockStatus = await checkLockout(normalizedEmail);
+    if (lockStatus.locked) {
+      return res.status(429).json({ success: false, message: `Too many failed attempts. Try again in ${lockStatus.remaining} minute(s).` });
+    }
+
+    // Derive subdomain ONLY from Host header — never from body
+    const subdomain = extractSubdomainFromHost(req);
+
+    if (!subdomain) {
+      return res.status(400).json({ success: false, message: 'Cannot resolve hospital from request origin' });
+    }
+
     const tenant = await Tenant.findOne({
-      where: {
-        [Tenant.sequelize.Op.or]: [
-          { subdomain },
-          { slug: subdomain }
-        ],
-        status: 'active',
-        type: 'hospital'
-      }
+      where: { [Op.or]: [{ subdomain }, { slug: subdomain }], status: 'active', type: 'hospital' }
     });
 
     if (!tenant) {
+      await recordFailedAttempt(normalizedEmail);
       await auditLoginAttempt(req, null, email, false, 'Hospital tenant not found');
-      return res.status(404).json({
-        success: false,
-        message: 'Hospital not found'
-      });
+      return res.status(404).json({ success: false, message: 'Hospital not found' });
     }
 
-    // Find staff/user in this hospital
     const user = await User.findOne({
-      where: {
-        email: normalizeEmail(email),
-        tenant_id: tenant.id,
-        status: 'active'
-      }
+      where: { email: normalizedEmail, tenant_id: tenant.id, status: 'active' }
     });
 
     if (!user) {
+      await recordFailedAttempt(normalizedEmail);
       await auditLoginAttempt(req, null, email, false, 'Hospital user not found');
-      return res.status(401).json({
-        success: false,
-        message: 'Invalid credentials'
-      });
+      return res.status(401).json({ success: false, message: 'Invalid credentials' });
     }
 
-    // Verify password
     const passwordMatch = await bcrypt.compare(password, user.password);
     if (!passwordMatch) {
+      await recordFailedAttempt(normalizedEmail);
       await auditLoginAttempt(req, user.id, email, false, 'Invalid password');
-      return res.status(401).json({
-        success: false,
-        message: 'Invalid credentials'
-      });
+      return res.status(401).json({ success: false, message: 'Invalid credentials' });
     }
 
-    // Generate JWT
-    const tokenPayload = buildHospitalTokenPayload({ tenant, user });
-    const token = jwt.sign(tokenPayload, JWT_CONFIG.SECRET, { expiresIn: '7d' });
+    const payload  = buildHospitalTokenPayload({ tenant, user });
+    const deviceFp = req.headers['x-device-fingerprint'] || undefined;
+    const { accessToken, refreshToken } = await issueTokenPair(payload, { deviceFp });
 
+    await clearFailedAttempts(normalizedEmail);
     await auditLoginAttempt(req, user.id, email, true);
 
     res.json({
       success: true,
       message: 'Login successful',
-      token,
-      hospital: {
-        id: tenant.id,
-        name: tenant.name,
-        subdomain: tenant.subdomain
-      }
+      token: accessToken,
+      refreshToken,
+      hospital: { id: tenant.id, name: tenant.name, subdomain: tenant.subdomain, slug: tenant.slug }
     });
   } catch (error) {
     console.error('Hospital tenant login error:', error);
-    res.status(500).json({
-      success: false,
-      message: 'Login failed',
-      error: error.message
-    });
+    res.status(500).json({ success: false, message: 'Login failed', error: error.message });
   }
 };
 
 router.post('/login-tenant', authLimiter, hospitalLoginTenant);
+
+/**
+ * Refresh Token Rotation
+ * POST /api/hospital/auth/refresh
+ * Body: { refreshToken }
+ * Issues a new access + refresh token pair; revokes the old refresh token.
+ */
+export const hospitalRefresh = async (req, res) => {
+  try {
+    const { refreshToken } = req.body;
+    if (!refreshToken) {
+      return res.status(400).json({ success: false, message: 'refreshToken is required' });
+    }
+
+    let decoded;
+    try {
+      decoded = jwt.verify(refreshToken, JWT_CONFIG.SECRET);
+    } catch {
+      return res.status(401).json({ success: false, message: 'Invalid or expired refresh token' });
+    }
+
+    if (decoded.tokenType !== 'refresh') {
+      return res.status(401).json({ success: false, message: 'Invalid token type' });
+    }
+
+    // Verify against server-side allowlist
+    const { rows } = await sharedPool.query(
+      'SELECT * FROM hospital_refresh_tokens WHERE jti = $1 AND revoked = FALSE AND expires_at > NOW()',
+      [decoded.jti]
+    );
+
+    if (!rows.length) {
+      return res.status(401).json({ success: false, message: 'Refresh token not found or revoked' });
+    }
+
+    const stored = rows[0];
+
+    // Revoke the old refresh token immediately (rotation)
+    await revokeRefreshToken(decoded.jti);
+
+    // Re-build payload from the stored record — look up user/hospital
+    let newPayload;
+    const tenant = stored.tenant_id
+      ? await Tenant.findByPk(stored.tenant_id)
+      : null;
+
+    const userRec = await User.findOne({
+      where: { id: stored.user_id, status: 'active' }
+    }).catch(() => null);
+
+    if (userRec) {
+      newPayload = buildHospitalTokenPayload({ tenant, user: userRec });
+    } else {
+      const hosp = await Hospital.findByPk(stored.user_id).catch(() => null);
+      if (!hosp) {
+        return res.status(401).json({ success: false, message: 'User not found' });
+      }
+      newPayload = buildHospitalTokenPayload({ hospital: hosp });
+    }
+
+    const deviceFp = stored.device_fp || req.headers['x-device-fingerprint'];
+    const { accessToken, refreshToken: newRefreshToken } = await issueTokenPair(newPayload, { deviceFp });
+
+    res.json({ success: true, token: accessToken, refreshToken: newRefreshToken });
+  } catch (error) {
+    console.error('Hospital refresh error:', error);
+    res.status(500).json({ success: false, message: 'Token refresh failed', error: error.message });
+  }
+};
+
+router.post('/refresh', hospitalRefresh);
 
 /**
  * Hospital Profile
@@ -699,44 +911,91 @@ export const hospitalListCorporates = async (req, res) => {
 router.get('/corporates', authUser, requireRole('hospital'), hospitalListCorporates);
 
 /**
- * Verify hospital token
+ * Verify hospital access token (server-side revocation-aware)
  * GET /api/hospital/auth/verify
+ *
+ * Validates:
+ * 1. Token is a valid JWT.
+ * 2. tokenType === 'access' (prevents refresh tokens being used here).
+ * 3. The JTI is NOT in the revoked tokens table.
  */
 export const hospitalVerify = async (req, res) => {
   try {
-    const token = req.headers.authorization?.split(' ')[1];
+    const token = req.headers.authorization?.replace(/^Bearer\s+/i, '');
 
     if (!token) {
-      return res.status(401).json({
-        success: false,
-        message: 'No token provided'
-      });
+      return res.status(401).json({ success: false, message: 'No token provided' });
     }
 
-    const decoded = jwt.verify(token, JWT_CONFIG.SECRET);
-    return res.status(200).json({
-      success: true,
-      hospital: decoded
-    });
+    let decoded;
+    try {
+      decoded = jwt.verify(token, JWT_CONFIG.SECRET);
+    } catch {
+      return res.status(401).json({ success: false, message: 'Invalid or expired token' });
+    }
+
+    // Only access tokens are valid for this endpoint
+    if (decoded.tokenType !== 'access') {
+      return res.status(401).json({ success: false, message: 'Invalid token type' });
+    }
+
+    // Check that the refresh-side entry for this session still exists and is not revoked.
+    // We key the access token's jti against the refresh_tokens table that tracks the session.
+    if (decoded.jti) {
+      const { rows } = await sharedPool.query(
+        'SELECT revoked FROM hospital_refresh_tokens WHERE jti = $1',
+        [decoded.jti]
+      );
+      // If the session record exists and is revoked (e.g. logout, admin revocation), reject.
+      if (rows.length && rows[0].revoked) {
+        return res.status(401).json({ success: false, message: 'Session revoked' });
+      }
+    }
+
+    return res.status(200).json({ success: true, hospital: decoded });
   } catch (error) {
-    return res.status(401).json({
-      success: false,
-      message: 'Invalid or expired token'
-    });
+    console.error('Hospital verify error:', error);
+    return res.status(401).json({ success: false, message: 'Token verification failed' });
   }
 };
 
 router.get('/verify', hospitalVerify);
 
 /**
- * Logout hospital (client-side token removal)
+ * Logout hospital — server-side session revocation
  * POST /api/hospital/auth/logout
+ * Body: { refreshToken } (optional but recommended for clean revocation)
+ *       { logoutAll: true } (optional — revokes ALL sessions for this user)
  */
 export const hospitalLogout = async (req, res) => {
-  res.status(200).json({
-    success: true,
-    message: 'Logged out successfully'
-  });
+  try {
+    const { refreshToken, logoutAll } = req.body;
+
+    if (logoutAll) {
+      // Attempt to get user id from the access token header if present
+      const accessToken = req.headers.authorization?.replace(/^Bearer\s+/i, '');
+      if (accessToken) {
+        try {
+          const decoded = jwt.decode(accessToken);
+          if (decoded?.userId || decoded?.id) {
+            await revokeAllUserTokens(decoded.userId || decoded.id);
+          }
+        } catch { /* ignore */ }
+      }
+    } else if (refreshToken) {
+      try {
+        const decoded = jwt.decode(refreshToken);
+        if (decoded?.jti) {
+          await revokeRefreshToken(decoded.jti);
+        }
+      } catch { /* ignore */ }
+    }
+
+    return res.status(200).json({ success: true, message: 'Logged out successfully' });
+  } catch (error) {
+    console.error('Hospital logout error:', error);
+    return res.status(200).json({ success: true, message: 'Logged out' });
+  }
 };
 
 router.post('/logout', hospitalLogout);
