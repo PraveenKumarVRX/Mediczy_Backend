@@ -40,7 +40,7 @@ export const authTeam = async (req, res, next) => {
     // DB status re-check — prevents revoked/suspended accounts from continuing
     const user = await userModel.findOne({
       where: { id: decoded.id },
-      attributes: ['id', 'email', 'role', 'status', 'isAdmin', 'isTeam', 'membershipType', 'department', 'designation', 'metadata', 'organizationId']
+      attributes: ['id', 'email', 'role', 'status', 'isAdmin', 'isTeam', 'membershipType', 'metadata', 'organization_id']
     });
 
     if (!user) {
@@ -76,9 +76,9 @@ export const authTeam = async (req, res, next) => {
       role: user.role || decoded.role || 'team',
       isTeam: true,
       isAdmin: user.isAdmin || decoded.isAdmin || false,
-      tenantId: metadata.tenantId || user.organizationId || decoded.tenantId || null,
-      department: user.department || metadata.department || null,
-      designation: user.designation || metadata.designation || null,
+      tenantId: metadata.tenantId || user.organization_id || decoded.tenantId || null,
+      department: metadata.department || null,
+      designation: metadata.designation || null,
       editableModules:  metadata.editableModules  || [],
       deletableModules: metadata.deletableModules || []
     };

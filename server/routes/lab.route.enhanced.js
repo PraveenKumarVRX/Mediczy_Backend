@@ -253,12 +253,12 @@ router.get('/team-bookings', authUser, async (req, res) => {
 
     const [appointments, total] = await Promise.all([
       Appointment.findAll({
-        where: { userId: req.user.id, isLab: true },
+        where: { userId: req.user.id, type: 'lab' },
         order: [['createdAt', 'DESC']],
         limit: parseInt(limit),
         offset
       }),
-      Appointment.count({ where: { userId: req.user.id, isLab: true } })
+      Appointment.count({ where: { userId: req.user.id, type: 'lab' } })
     ]);
 
     return res.json({
@@ -764,7 +764,7 @@ router.post('/book', authUser, async (req, res) => {
       clinicName: lab.name,
       clinicAddress: lab.address,
       status: 'scheduled',
-      isLab: true,
+      type: 'lab',
       meetingLink: null,
       description: `Lab appointment for ${serviceType} - ${testType}`,
       metadata: {
