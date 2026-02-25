@@ -109,6 +109,7 @@ export default function QuickAppointmentModal({
   const [selectedSpecialty, setSelectedSpecialty] = useState<string>("all");
   const [consultationType, setConsultationType] = useState<ConsultationType>("online");
   const [labServiceType, setLabServiceType] = useState<LabServiceType>("checkup");
+  const [labCity, setLabCity] = useState("");
   const [homecareServiceType, setHomecareServiceType] = useState<HomecareServiceType>("doctor");
 
   // Determine user context
@@ -150,10 +151,13 @@ export default function QuickAppointmentModal({
 
   // Fetch labs
   const { data: labs = [], isLoading: isLabsLoading } = useQuery({
-    queryKey: ["labs-list", searchTerm, labServiceType],
+    queryKey: ["labs-list", searchTerm, labCity, labServiceType],
     queryFn: async () => {
       const params = new URLSearchParams();
+      // If user typed both name and city in one box (e.g. "agilus ashok nagar"),
+      // send as search (backend now does multi-token AND query)
       if (searchTerm) params.append("search", searchTerm);
+      if (labCity) params.append("city", labCity);
       params.append("serviceType", labServiceType);
       const { data } = await api.get(`/labs?${params.toString()}`);
       return (data?.labs || data || []).slice(0, 6);
@@ -334,9 +338,9 @@ export default function QuickAppointmentModal({
                 <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-gray-400" />
                 <Input
                   placeholder={
-                    providerType === "doctors" ? "Search doctors by name..." :
+                    providerType === "doctors" ? "Search doctors by name or speciality..." :
                     providerType === "nurses" ? "Search nurses by name..." :
-                    providerType === "labs" ? "Search labs by name..." :
+                    providerType === "labs" ? "Lab name or chain (e.g. Agilus, SRL, Thyrocare)" :
                     "Search homecare services..."
                   }
                   value={searchTerm}
@@ -344,6 +348,17 @@ export default function QuickAppointmentModal({
                   className="pl-10"
                 />
               </div>
+              {providerType === "labs" && (
+                <div className="relative">
+                  <MapPin className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-gray-400" />
+                  <Input
+                    placeholder="City or area (e.g. Ashok Nagar, Bandra)"
+                    value={labCity}
+                    onChange={(e) => setLabCity(e.target.value)}
+                    className="pl-10"
+                  />
+                </div>
+              )}
               {providerType === "doctors" && (
                 <Select value={selectedSpecialty} onValueChange={setSelectedSpecialty}>
                   <SelectTrigger>
@@ -480,11 +495,25 @@ export default function QuickAppointmentModal({
               {isLabsLoading ? (
                 <div className="text-center py-8 text-gray-400">Loading labs...</div>
               ) : labs.length === 0 ? (
-                <div className="text-center py-8">
-                  <p className="text-gray-400 mb-4">No labs found</p>
-                  <Button variant="outline" onClick={handleViewAll} className="border-[#00FFF3]/30 text-[#00FFF3]">
-                    Browse All Labs
-                  </Button>
+                <div className="text-center py-8 space-y-3">
+                  <FlaskConical className="h-10 w-10 text-gray-600 mx-auto" />
+                  <p className="text-gray-300 font-medium">No labs found</p>
+                  {(searchTerm || labCity) && (
+                    <p className="text-gray-500 text-sm max-w-xs mx-auto">
+                      Try searching by <span className="text-[#00FFF3]">lab name only</span> (e.g. "Agilus", "SRL") and use the city field for location.
+                    </p>
+                  )}
+                  <div className="flex gap-2 justify-center flex-wrap">
+                    {(searchTerm || labCity) && (
+                      <Button variant="ghost" size="sm" className="text-gray-400 hover:text-white"
+                        onClick={() => { setSearchTerm(""); setLabCity(""); }}>
+                        Clear filters
+                      </Button>
+                    )}
+                    <Button variant="outline" onClick={handleViewAll} className="border-[#00FFF3]/30 text-[#00FFF3]">
+                      Browse All Labs
+                    </Button>
+                  </div>
                 </div>
               ) : (
                 <>

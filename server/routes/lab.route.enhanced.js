@@ -58,14 +58,39 @@ router.get('/', async (req, res) => {
     // Build where conditions
     let whereConditions = { status: 'active' };
     
-    // Text search across name, services, and test categories
+    // Multi-word cross-field search: split into tokens, each token must match
+    // name OR address (city/street/state) OR services OR testCatalog
     if (search) {
-      const searchEscaped = search.replace(/'/g, "''");
-      whereConditions[Op.or] = [
-        { name: { [Op.iLike]: `%${search}%` } },
-        Sequelize.literal(`services::text ILIKE '%${searchEscaped}%'`),
-        Sequelize.literal(`"testCatalog"::text ILIKE '%${searchEscaped}%'`)
-      ];
+      const tokens = search.trim().split(/\s+/).filter(w => w.length >= 2);
+      if (tokens.length === 0) {
+        // no-op
+      } else if (tokens.length === 1) {
+        // Single word — fast OR across all fields
+        const t = tokens[0].replace(/'/g, "''");
+        whereConditions[Op.or] = [
+          { name: { [Op.iLike]: `%${t}%` } },
+          Sequelize.literal(`address->>'city' ILIKE '%${t}%'`),
+          Sequelize.literal(`address->>'street' ILIKE '%${t}%'`),
+          Sequelize.literal(`address->>'state' ILIKE '%${t}%'`),
+          Sequelize.literal(`services::text ILIKE '%${t}%'`),
+          Sequelize.literal(`"testCatalog"::text ILIKE '%${t}%'`)
+        ];
+      } else {
+        // Multiple words — EACH token must match at least one field (AND of ORs)
+        // This lets "agilus ashok nagar" match labs named Agilus in Ashok Nagar
+        whereConditions[Op.and] = whereConditions[Op.and] || [];
+        for (const token of tokens) {
+          const t = token.replace(/'/g, "''");
+          whereConditions[Op.and].push(Sequelize.literal(`(
+            name ILIKE '%${t}%'
+            OR address->>'city' ILIKE '%${t}%'
+            OR address->>'street' ILIKE '%${t}%'
+            OR address->>'state' ILIKE '%${t}%'
+            OR services::text ILIKE '%${t}%'
+            OR "testCatalog"::text ILIKE '%${t}%'
+          )`));
+        }
+      }
     }
     
     // Location filters - use JSONB operators for PostgreSQL
