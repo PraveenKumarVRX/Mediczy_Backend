@@ -53,14 +53,27 @@ interface Nurse {
 }
 
 interface Lab {
-  _id: string;
+  _id?: string;
+  id?: number | string;
   name: string;
   logo?: string;
   type?: string;
-  services?: string[];
-  rating?: number;
+  services?: string[] | any;
+  rating?: number | string;
   location?: string;
-  operatingHours?: string;
+  operatingHours?: any;
+  address?: {
+    city?: string;
+    street?: string;
+    state?: string;
+    zipCode?: string;
+  };
+  phone?: string;
+  email?: string;
+  homeSampleCollection?: boolean;
+  isVerified?: boolean;
+  accreditation?: string;
+  testCatalog?: any;
 }
 
 interface HomecareService {
@@ -110,6 +123,7 @@ export default function QuickAppointmentModal({
   const [consultationType, setConsultationType] = useState<ConsultationType>("online");
   const [labServiceType, setLabServiceType] = useState<LabServiceType>("checkup");
   const [labCity, setLabCity] = useState("");
+  const [selectedLab, setSelectedLab] = useState<Lab | null>(null);
   const [homecareServiceType, setHomecareServiceType] = useState<HomecareServiceType>("doctor");
 
   // Determine user context
@@ -182,6 +196,7 @@ export default function QuickAppointmentModal({
 
   const handleProviderSelect = (providerId: string) => {
     onOpenChange(false);
+    setSelectedLab(null);
     if (providerType === "doctors") {
       navigate(`/consultation/${providerId}?type=${consultationType}`);
     } else if (providerType === "nurses") {
@@ -492,7 +507,79 @@ export default function QuickAppointmentModal({
             </TabsContent>
 
             <TabsContent value="labs" className="mt-6">
-              {isLabsLoading ? (
+              {/* ── Inline lab detail panel ── */}
+              {selectedLab ? (
+                <div className="space-y-4">
+                  <button
+                    onClick={() => setSelectedLab(null)}
+                    className="flex items-center gap-2 text-sm text-gray-400 hover:text-[#00FFF3] transition-colors"
+                  >
+                    <ArrowRight className="h-4 w-4 rotate-180" /> Back to results
+                  </button>
+                  <div className="rounded-xl border border-[#00FFF3]/20 bg-[#0d1a2d] p-5 space-y-4">
+                    {/* Header */}
+                    <div className="flex gap-4 items-start">
+                      <div className="w-16 h-16 rounded-lg bg-[#1A2333] flex-shrink-0 flex items-center justify-center">
+                        {selectedLab.logo
+                          ? <img src={selectedLab.logo} alt={selectedLab.name} className="w-12 h-12 object-contain" />
+                          : <FlaskConical className="h-8 w-8 text-[#00FFF3]" />}
+                      </div>
+                      <div className="flex-1 min-w-0">
+                        <h3 className="text-xl font-bold text-white">{selectedLab.name}</h3>
+                        <div className="flex flex-wrap gap-2 mt-1">
+                          {selectedLab.isVerified && (
+                            <Badge className="bg-teal-800/40 text-teal-300 border-teal-700 text-xs">✓ Verified</Badge>
+                          )}
+                          {selectedLab.homeSampleCollection && (
+                            <Badge className="bg-purple-800/40 text-purple-300 border-purple-700 text-xs">🏠 Home Collection</Badge>
+                          )}
+                          {selectedLab.accreditation && (
+                            <Badge variant="outline" className="text-[#00FFF3] border-[#00FFF3]/30 text-xs">{selectedLab.accreditation}</Badge>
+                          )}
+                        </div>
+                      </div>
+                      <div className="flex items-center gap-1 flex-shrink-0">
+                        <Star className="h-4 w-4 fill-yellow-500 text-yellow-500" />
+                        <span className="font-semibold text-white">{(selectedLab.rating != null ? +selectedLab.rating : null)?.toFixed(1) || '4.5'}</span>
+                      </div>
+                    </div>
+
+                    {/* Address */}
+                    {selectedLab.address && (
+                      <div className="flex gap-2 text-sm text-gray-300">
+                        <MapPin className="h-4 w-4 text-[#00FFF3] flex-shrink-0 mt-0.5" />
+                        <span>
+                          {[selectedLab.address.street, selectedLab.address.city, selectedLab.address.state, selectedLab.address.zipCode]
+                            .filter(Boolean).join(', ')}
+                        </span>
+                      </div>
+                    )}
+
+                    {/* Phone */}
+                    {selectedLab.phone && (
+                      <div className="flex gap-2 text-sm text-gray-300">
+                        <span className="text-[#00FFF3] text-xs">📞</span>
+                        <span>{selectedLab.phone}</span>
+                      </div>
+                    )}
+
+                    {/* Service type badge */}
+                    <div className="flex items-center gap-2 text-sm text-gray-400 pt-1 border-t border-white/5">
+                      {labServiceType === 'checkup'
+                        ? <><Heart className="h-4 w-4 text-pink-400" /> <span>Health Checkup</span></>
+                        : <><TestTube className="h-4 w-4 text-blue-400" /> <span>Diagnostic Test</span></>}
+                    </div>
+
+                    {/* Book button */}
+                    <Button
+                      className="w-full bg-[#00FFF3] text-[#0B1120] font-bold hover:bg-[#00FFF3]/90 mt-2"
+                      onClick={() => handleProviderSelect(String(selectedLab.id ?? selectedLab._id ?? ''))}
+                    >
+                      Book Appointment at {selectedLab.name}
+                    </Button>
+                  </div>
+                </div>
+              ) : isLabsLoading ? (
                 <div className="text-center py-8 text-gray-400">Loading labs...</div>
               ) : labs.length === 0 ? (
                 <div className="text-center py-8 space-y-3">
@@ -519,7 +606,7 @@ export default function QuickAppointmentModal({
                 <>
                   <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                     {labs.map((lab: Lab) => (
-                      <Card key={lab._id} className="p-4 hover:border-[#00FFF3]/40 transition-all cursor-pointer" onClick={() => handleProviderSelect(lab._id)}>
+                      <Card key={lab.id ?? lab._id} className="p-4 hover:border-[#00FFF3]/40 transition-all cursor-pointer" onClick={() => setSelectedLab(lab)}>
                         <div className="flex gap-4">
                           <div className="w-16 h-16 rounded-lg bg-[#1A2333] flex items-center justify-center">
                             {lab.logo ? (
@@ -544,10 +631,10 @@ export default function QuickAppointmentModal({
                                 <Star className="h-3 w-3 fill-yellow-500 text-yellow-500" />
                                 <span>{(lab.rating != null ? +lab.rating : null)?.toFixed(1) || "4.5"}</span>
                               </div>
-                              {lab.location && (
+                              {lab.address?.city && (
                                 <div className="flex items-center gap-1">
                                   <MapPin className="h-3 w-3" />
-                                  <span className="truncate text-xs">{lab.location}</span>
+                                  <span className="truncate text-xs">{lab.address.city}{lab.address.state ? `, ${lab.address.state}` : ''}</span>
                                 </div>
                               )}
                             </div>

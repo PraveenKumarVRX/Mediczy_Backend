@@ -243,10 +243,14 @@ router.get('/', async (req, res) => {
 // GET /api/labs/:id - Get detailed lab information
 router.get('/:id', async (req, res) => {
   try {
+    const labId = parseInt(req.params.id);
+    if (!labId || isNaN(labId)) {
+      return res.status(404).json({ success: false, message: 'Laboratory not found' });
+    }
     const lab = await Lab.findOne({
       where: { 
-        id: req.params.id,
-        isActive: true 
+        id: labId,
+        status: 'active' 
       }
     });
     
@@ -261,15 +265,8 @@ router.get('/:id', async (req, res) => {
     const enhancedLab = {
       ...lab.toJSON(),
       computed: {
-        totalTestsOffered: lab.testCategories ? 
-          lab.testCategories.reduce((total, category) => {
-            const categoryData = Lab.COMPREHENSIVE_TEST_CATEGORIES[category];
-            if (categoryData) {
-              return total + Object.values(categoryData.subcategories || {})
-                .reduce((subTotal, sub) => subTotal + (sub.tests?.length || 0), 0);
-            }
-            return total;
-          }, 0) : 0,
+        totalTestsOffered: lab.testCatalog ?
+          Object.keys(lab.testCatalog).length : 0,
         accreditationScore: (lab.accreditation?.length || 0) * 20,
         digitalScore: lab.digitalFeatures ? 
           Object.values(lab.digitalFeatures).filter(Boolean).length * 10 : 0,
@@ -311,25 +308,26 @@ router.get('/search/advanced', async (req, res) => {
       location
     } = req.query;
     
-    let searchConditions = { isActive: true };
+    let searchConditions = { status: 'active' };
     let recommendations = [];
     
     // Test-specific search
     if (testName) {
       const relevantCategories = findTestCategories(testName);
       if (relevantCategories.length > 0) {
-        searchConditions[Op.or] = relevantCategories.map(category => ({
-          testCategories: { [Op.like]: `%${category}%` }
-        }));
+        searchConditions[Op.or] = relevantCategories.map(category => (
+          Sequelize.literal(`"testCatalog"::text ILIKE '%${category.replace(/'/g,"''")}%'`)
+        ));
         recommendations.push(`Test "${testName}" is typically available in ${relevantCategories.join(', ')} categories`);
       }
     }
     
     // Category-based filtering
     if (testCategory) {
-      searchConditions.testCategories = {
-        [Op.like]: `%${testCategory}%`
-      };
+      searchConditions[Op.and] = searchConditions[Op.and] || [];
+      searchConditions[Op.and].push(
+        Sequelize.literal(`"testCatalog"::text ILIKE '%${testCategory.replace(/'/g,"''")}%'`)
+      );
     }
     
     // Urgent test requirements
@@ -475,26 +473,25 @@ router.get('/statistics', async (req, res) => {
       categoryStats,
       stateStats
     ] = await Promise.all([
-      Lab.count({ where: { isActive: true } }),
-      Lab.count({ where: { isActive: true, isVerified: true } }),
-      Lab.count({ where: { isActive: true, featured: true } }),
-      Lab.count({ where: { isActive: true, homeSampleCollection: true } }),
-      Lab.count({ where: { isActive: true, emergencyServices: true } }),
+      Lab.count({ where: { status: 'active' } }),
+      Lab.count({ where: { status: 'active', isVerified: true } }),
+      Lab.count({ where: { status: 'active', featured: true } }),
+      Lab.count({ where: { status: 'active', homeSampleCollection: true } }),
+      Lab.count({ where: { status: 'active', emergencyServices: true } }),
       Lab.findOne({
-        where: { isActive: true },
+        where: { status: 'active' },
         attributes: [[Lab.sequelize.fn('AVG', Lab.sequelize.col('rating')), 'avgRating']]
       }),
       Lab.findOne({
-        where: { isActive: true },
+        where: { status: 'active' },
         attributes: [[Lab.sequelize.fn('SUM', Lab.sequelize.col('totalReviews')), 'totalReviews']]
       }),
       Lab.findAll({
-        where: { isActive: true },
-        attributes: ['testCategories'],
-        group: ['testCategories']
+        where: { status: 'active' },
+        attributes: ['address']
       }),
       Lab.findAll({
-        where: { isActive: true },
+        where: { status: 'active' },
         attributes: ['address']
       })
     ]);
