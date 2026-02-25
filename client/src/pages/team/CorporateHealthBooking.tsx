@@ -332,8 +332,8 @@ export default function CorporateHealthBooking() {
     formData.append('notes', rptNotes);
     formData.append('sendEmail', String(rptSendEmail));
     formData.append('sendWhatsapp', String(rptSendWA));
-    formData.append('corporateId', '5');
-    formData.append('corporateName', 'Equitas Bank Ltd');
+    formData.append('corporateId', String(corporate?.id || ''));
+    formData.append('corporateName', corporate?.companyName || '');
 
     setRptUploading(true);
     try {
