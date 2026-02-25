@@ -3,6 +3,7 @@ import { JWT_CONFIG } from '../config/auth.config.js';
 import { DataTypes } from 'sequelize';
 import jwt from 'jsonwebtoken';
 import bcrypt from 'bcrypt';
+import crypto from 'crypto';
 
 // Define User model - NOW USING POSTGRESQL
 const User = sequelize.define('User', {
@@ -253,6 +254,7 @@ export const generateAuthTokenForUser = (userInstance) => {
     : (dbRole && dbRole !== 'user' ? dbRole : 'user');
 
   const payload = {
+    jti: crypto.randomUUID(),
     id: userInstance.id,
     userId: userInstance.id,  // Explicit userId for ring-fencing
     email: userInstance.email,

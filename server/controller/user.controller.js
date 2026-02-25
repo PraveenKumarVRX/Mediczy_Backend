@@ -239,7 +239,13 @@ export async function signInUser(req, res) {
     phoneNumber = normalized.length > 10 ? normalized.slice(-10) : normalized;
   }
 
-  console.log('[LOGIN DEBUG] Identifier:', email || phoneNumber, 'Password length:', password?.length);
+  const loginIdentifier = email || phoneNumber;
+  const maskedIdentifier = loginIdentifier
+    ? (String(loginIdentifier).includes('@')
+      ? String(loginIdentifier).replace(/(^.).*(@.*$)/, '$1***$2')
+      : String(loginIdentifier).replace(/^(\d{2})\d+(\d{2})$/, '$1******$2'))
+    : 'unknown';
+  console.log('[LOGIN DEBUG] Login attempt received for identifier:', maskedIdentifier);
 
   try {
     // Check if user exists
@@ -265,49 +271,106 @@ export async function signInUser(req, res) {
     
     if (!user) {
       // Audit failed login attempt
-      await auditLoginAttempt(req, null, email || phoneNumber, false, 'User not found');
+      await auditLoginAttempt(req, null, loginIdentifier, false, 'User not found');
       return res.status(401).json({ message: "Invalid email or password" }); // Unauthorized
+    }
+
+    // Account guard for suspended/inactive users
+    if (user.status !== 'active' || user.isActive === false) {
+      await auditLoginAttempt(req, user.id, loginIdentifier, false, 'Inactive user attempted login');
+      return res.status(403).json({
+        message: "Account is inactive. Please contact support."
+      });
+    }
+
+    // Role guard from unified user table - prevents cross-portal login by role
+    const roleLower = String(user.role || '').toLowerCase();
+    const blockedPortalRoles = new Set([
+      'admin',
+      'doctor',
+      'nurse',
+      'assistant',
+      'team',
+      'team_member',
+      'team_lead',
+      'hospital',
+      'hospital_admin',
+      'clinic_staff',
+      'pharmacy',
+      'lab',
+      'corporate',
+      'tpa',
+      'insurer',
+      'insurance_company',
+      'insurance_broker',
+      'ngo',
+      'psu',
+      'ambulance'
+    ]);
+    if (blockedPortalRoles.has(roleLower)) {
+      const portalHints = {
+        admin: 'admin',
+        doctor: 'doctor',
+        nurse: 'nurse',
+        assistant: 'assistant',
+        team: 'team',
+        team_member: 'team',
+        team_lead: 'team',
+        hospital: 'hospital',
+        hospital_admin: 'hospital',
+        clinic_staff: 'clinic',
+        pharmacy: 'pharmacy',
+        lab: 'lab',
+        corporate: 'corporate'
+      };
+      const portal = portalHints[roleLower] || 'the appropriate';
+      await auditLoginAttempt(req, user.id, loginIdentifier, false, `${roleLower} attempted user login`);
+      return res.status(403).json({
+        message: `Please use the ${portal} login portal`
+      });
     }
 
     // ROLE GUARD: Block staff from using user login endpoint
     if (user.isAdmin) {
-      await auditLoginAttempt(req, user.id, email || phoneNumber, false, 'Admin attempted user login');
+      await auditLoginAttempt(req, user.id, loginIdentifier, false, 'Admin attempted user login');
       return res.status(403).json({ 
         message: "Please use the admin login portal" 
       });
     }
 
     // Cross-role guard: prevent doctor/nurse/assistant accounts from authenticating via user login
-    const doctorRecord = await Doctor.findOne({
-      where: sequelizeWhere(fn("lower", col("email")), email),
-      attributes: ["id"]
-    });
-    if (doctorRecord) {
-      await auditLoginAttempt(req, user.id, email || phoneNumber, false, 'Doctor attempted user login');
-      return res.status(403).json({ message: "Please use the doctor login portal" });
-    }
-    const nurseRecord = await Nurse.findOne({
-      where: sequelizeWhere(fn("lower", col("email")), email),
-      attributes: ["id"]
-    });
-    if (nurseRecord) {
-      await auditLoginAttempt(req, user.id, email || phoneNumber, false, 'Nurse attempted user login');
-      return res.status(403).json({ message: "Please use the nurse login portal" });
-    }
-    const assistantRecord = await Assistant.findOne({
-      where: sequelizeWhere(fn("lower", col("email")), email),
-      attributes: ["id"]
-    });
-    if (assistantRecord) {
-      await auditLoginAttempt(req, user.id, email || phoneNumber, false, 'Assistant attempted user login');
-      return res.status(403).json({ message: "Please use the assistant login portal" });
+    if (email) {
+      const doctorRecord = await Doctor.findOne({
+        where: sequelizeWhere(fn("lower", col("email")), email),
+        attributes: ["id"]
+      });
+      if (doctorRecord) {
+        await auditLoginAttempt(req, user.id, loginIdentifier, false, 'Doctor attempted user login');
+        return res.status(403).json({ message: "Please use the doctor login portal" });
+      }
+      const nurseRecord = await Nurse.findOne({
+        where: sequelizeWhere(fn("lower", col("email")), email),
+        attributes: ["id"]
+      });
+      if (nurseRecord) {
+        await auditLoginAttempt(req, user.id, loginIdentifier, false, 'Nurse attempted user login');
+        return res.status(403).json({ message: "Please use the nurse login portal" });
+      }
+      const assistantRecord = await Assistant.findOne({
+        where: sequelizeWhere(fn("lower", col("email")), email),
+        attributes: ["id"]
+      });
+      if (assistantRecord) {
+        await auditLoginAttempt(req, user.id, loginIdentifier, false, 'Assistant attempted user login');
+        return res.status(403).json({ message: "Please use the assistant login portal" });
+      }
     }
 
     // Compare provided password with stored hashed password
     const isPasswordValid = await user.comparePassword(password);
     if (!isPasswordValid) {
       // Audit failed login attempt
-      await auditLoginAttempt(req, user.id, email || phoneNumber, false, 'Invalid password');
+      await auditLoginAttempt(req, user.id, loginIdentifier, false, 'Invalid password');
       return res.status(401).json({ message: "Invalid email or password" }); // Unauthorized
     }
 
@@ -319,7 +382,7 @@ export async function signInUser(req, res) {
     const token = generateAuthTokenForUser(user);
 
     // Audit successful login
-    await auditLoginAttempt(req, user.id, email || phoneNumber, true);
+    await auditLoginAttempt(req, user.id, loginIdentifier, true);
 
     // Respond with user data & token
     return res.status(200).json({

@@ -35,7 +35,7 @@ class VideoController {
   };
 
   // Generate video room token
-  static generateRoomToken = (req, res) => {
+  static generateRoomToken = async (req, res) => {
     try {
       const errors = validationResult(req);
       if (!errors.isEmpty()) {
@@ -45,13 +45,53 @@ class VideoController {
       const { roomId, appointmentId } = req.body;
       const userId = req.user.id;
       const userRole = req.user.role || 'user';
+      let resolvedRoomId = roomId;
+
+      if (appointmentId) {
+        const appointment = await Appointment.findByPk(appointmentId);
+        if (!appointment) {
+          return res.status(404).json({
+            success: false,
+            message: 'Appointment not found'
+          });
+        }
+
+        const isPatient = String(appointment.userId) === String(userId);
+        const isDoctor = String(appointment.doctorId) === String(userId);
+        if (!isPatient && !isDoctor) {
+          return res.status(403).json({
+            success: false,
+            message: 'Not authorized to generate token for this consultation'
+          });
+        }
+
+        const canonicalMeetingId = generateCanonicalMeetingId(appointment.id);
+        if (
+          resolvedRoomId &&
+          resolvedRoomId !== canonicalMeetingId &&
+          !verifyCanonicalMeetingId(appointment.id, resolvedRoomId)
+        ) {
+          return res.status(403).json({
+            success: false,
+            message: 'Invalid room for appointment'
+          });
+        }
+        resolvedRoomId = canonicalMeetingId;
+      }
+
+      if (!resolvedRoomId) {
+        return res.status(400).json({
+          success: false,
+          message: 'roomId or appointmentId is required'
+        });
+      }
 
       // Create a simple room token
       const roomToken = jwt.sign(
         {
           userId,
           userRole,
-          roomId,
+          roomId: resolvedRoomId,
           appointmentId,
           timestamp: Date.now()
         },
@@ -60,12 +100,12 @@ class VideoController {
       );
 
       // Generate room URL
-      const roomUrl = `${req.protocol}://${req.get('host')}/video-room/${roomId}?token=${roomToken}`;
+      const roomUrl = `${req.protocol}://${req.get('host')}/video-room/${resolvedRoomId}?token=${roomToken}`;
 
       res.json({
         success: true,
         roomToken,
-        roomId,
+        roomId: resolvedRoomId,
         roomUrl,
         expiresAt: new Date(Date.now() + 2 * 60 * 60 * 1000).toISOString(), // 2 hours
         iceServers: [
@@ -96,6 +136,14 @@ class VideoController {
         req.user.email ||
         'Mediczy User';
 
+      if (!appointmentId && ['user', 'doctor'].includes(String(userRole).toLowerCase())) {
+        return res.status(400).json({
+          success: false,
+          message: 'appointmentId is required to join consultation rooms'
+        });
+      }
+
+      let meetingId = roomId || createMeetingInfo({}).meetingId;
       if (appointmentId) {
         const appointment = await Appointment.findByPk(appointmentId);
         if (!appointment) {
@@ -106,7 +154,7 @@ class VideoController {
         }
 
         const isPatient = String(appointment.userId) === String(userId);
-        const isDoctor = String(appointment.doctorId) === String(userId) || userRole === 'doctor';
+        const isDoctor = String(appointment.doctorId) === String(userId);
         if (!isPatient && !isDoctor) {
           return res.status(403).json({
             success: false,
@@ -115,7 +163,7 @@ class VideoController {
         }
 
         const normalizedStatus = String(appointment.status || '').replace('_', '-');
-        if (!['confirmed', 'in-progress'].includes(normalizedStatus)) {
+        if (!['scheduled', 'confirmed', 'in-progress', 'rescheduled', 'accepted'].includes(normalizedStatus)) {
           return res.status(400).json({
             success: false,
             message: `Cannot join video call. Appointment status: ${appointment.status}`,
@@ -123,7 +171,14 @@ class VideoController {
           });
         }
 
-        const appointmentDateTime = new Date(`${appointment.appointmentDate}T${appointment.appointmentTime}`);
+        const normalizedTime = String(appointment.appointmentTime || '').slice(0, 5);
+        const appointmentDateTime = new Date(`${appointment.appointmentDate}T${normalizedTime}:00`);
+        if (Number.isNaN(appointmentDateTime.getTime())) {
+          return res.status(400).json({
+            success: false,
+            message: 'Appointment has an invalid schedule. Please contact support.'
+          });
+        }
         const now = new Date();
         const windowStart = new Date(appointmentDateTime.getTime() - 15 * 60 * 1000);
         const windowEnd = new Date(appointmentDateTime.getTime() + 60 * 60 * 1000);
@@ -144,15 +199,24 @@ class VideoController {
             appointmentTime: appointmentDateTime.toISOString()
           });
         }
+
+        const canonicalMeetingId = generateCanonicalMeetingId(appointment.id);
+        if (
+          roomId &&
+          roomId !== canonicalMeetingId &&
+          !verifyCanonicalMeetingId(appointment.id, roomId)
+        ) {
+          return res.status(403).json({
+            success: false,
+            message: 'Invalid room for appointment'
+          });
+        }
+        meetingId = canonicalMeetingId;
       }
 
-      // Use provided roomId or generate one from appointmentId
-      const meetingId = roomId || appointmentId || createMeetingInfo({}).meetingId;
-      
       console.log('🎥 Generating LiveKit token from query params:', {
-        roomId,
+        roomId: meetingId,
         appointmentId,
-        meetingId,
         identity: identity || `${userRole}-${userId}`
       });
 

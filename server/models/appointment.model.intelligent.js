@@ -9,8 +9,8 @@ const IntelligentAppointment = {
     return await Appointment.findByPk(id, options);
   },
 
-  create: async (appointmentData) => {
-    return await Appointment.create(appointmentData);
+  create: async (appointmentData, options = {}) => {
+    return await Appointment.create(appointmentData, options);
   },
 
   findAll: async (options = {}) => {
