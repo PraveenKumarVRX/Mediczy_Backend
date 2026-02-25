@@ -23,7 +23,7 @@ import { Badge } from "@/components/ui/badge";
 import { Alert, AlertDescription } from "@/components/ui/alert";
 import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group";
 import { Label } from "@/components/ui/label";
-import { Search, Star, Clock, ArrowRight, Info, Stethoscope, Heart, FlaskConical, MapPin, Video, Building, Home, Syringe, TestTube } from "lucide-react";
+import { Search, Star, Clock, ArrowRight, Info, Stethoscope, Heart, FlaskConical, MapPin, Video, Building, Home, Syringe, TestTube, CheckCircle, Calendar } from "lucide-react";
 import api from "@/utils/api";
 import { useAuth } from "@/auth/AuthProvider";
 import { useToast } from "@/hooks/use-toast";
@@ -114,7 +114,7 @@ export default function QuickAppointmentModal({
 }: QuickAppointmentModalProps) {
   const navigate = useNavigate();
   const location = useLocation();
-  const { userType } = useAuth();
+  const { userType, currentUser } = useAuth();
   const { toast } = useToast();
   const normalizedPath = location.pathname.toLowerCase();
   const [providerType, setProviderType] = useState<ProviderType>("doctors");
@@ -124,6 +124,15 @@ export default function QuickAppointmentModal({
   const [labServiceType, setLabServiceType] = useState<LabServiceType>("checkup");
   const [labCity, setLabCity] = useState("");
   const [selectedLab, setSelectedLab] = useState<Lab | null>(null);
+  const [showLabBookingForm, setShowLabBookingForm] = useState(false);
+  const [bookingDate, setBookingDate] = useState("");
+  const [bookingTime, setBookingTime] = useState("");
+  const [bookingPatientName, setBookingPatientName] = useState("");
+  const [bookingPhone, setBookingPhone] = useState("");
+  const [bookingNotes, setBookingNotes] = useState("");
+  const [bookingLoading, setBookingLoading] = useState(false);
+  const [bookingConfirmed, setBookingConfirmed] = useState(false);
+  const [bookingResult, setBookingResult] = useState<any>(null);
   const [homecareServiceType, setHomecareServiceType] = useState<HomecareServiceType>("doctor");
 
   // Determine user context
@@ -221,6 +230,67 @@ export default function QuickAppointmentModal({
     } else if (providerType === "homecare") {
       navigate("/homecare", { state: { search: searchTerm, type: homecareServiceType } });
     }
+  };
+
+  // Generate 30-min time slots from 9:00 AM to 6:00 PM
+  const generateTimeSlots = () => {
+    const slots: { value: string; label: string }[] = [];
+    for (let h = 9; h < 18; h++) {
+      for (const m of [0, 30]) {
+        const hour12 = h > 12 ? h - 12 : h;
+        const ampm = h < 12 ? "AM" : "PM";
+        const label = `${hour12}:${m === 0 ? "00" : "30"} ${ampm}`;
+        const value = `${String(h).padStart(2, "0")}:${m === 0 ? "00" : "30"}`;
+        slots.push({ value, label });
+      }
+    }
+    return slots;
+  };
+
+  const handleLabBooking = async () => {
+    if (!selectedLab || !bookingDate || !bookingTime) {
+      toast({ title: "Missing fields", description: "Please select a date and time.", variant: "destructive" });
+      return;
+    }
+    setBookingLoading(true);
+    try {
+      const labId = selectedLab.id ?? selectedLab._id;
+      const { data } = await api.post("/labs/book", {
+        labId,
+        appointmentDate: bookingDate,
+        appointmentTime: bookingTime,
+        serviceType: labServiceType,
+        patientName: bookingPatientName || `${currentUser?.firstName ?? ""} ${currentUser?.lastName ?? ""}`.trim() || undefined,
+        patientPhone: bookingPhone || currentUser?.phoneNumber || undefined,
+        notes: bookingNotes || undefined,
+      });
+      if (data.success) {
+        setBookingResult(data.appointment);
+        setBookingConfirmed(true);
+      } else {
+        toast({ title: "Booking failed", description: data.message || "Unknown error", variant: "destructive" });
+      }
+    } catch (err: any) {
+      toast({
+        title: "Booking failed",
+        description: err?.response?.data?.message || err.message || "Network error",
+        variant: "destructive",
+      });
+    } finally {
+      setBookingLoading(false);
+    }
+  };
+
+  const resetLabBookingState = () => {
+    setShowLabBookingForm(false);
+    setBookingDate("");
+    setBookingTime("");
+    setBookingPatientName("");
+    setBookingPhone("");
+    setBookingNotes("");
+    setBookingLoading(false);
+    setBookingConfirmed(false);
+    setBookingResult(null);
   };
 
   return (
@@ -507,11 +577,130 @@ export default function QuickAppointmentModal({
             </TabsContent>
 
             <TabsContent value="labs" className="mt-6">
-              {/* ── Inline lab detail panel ── */}
+              {/* ── Inline lab detail panel / booking form / success ── */}
               {selectedLab ? (
+                bookingConfirmed && bookingResult ? (
+                  // ── Success screen ──
+                  <div className="space-y-4">
+                    <div className="rounded-xl border border-teal-500/30 bg-teal-900/20 p-6 space-y-4 text-center">
+                      <CheckCircle className="h-12 w-12 text-teal-400 mx-auto" />
+                      <h3 className="text-xl font-bold text-white">Appointment Booked!</h3>
+                      <div className="text-sm text-gray-300 space-y-1">
+                        <p><span className="text-gray-400">Lab:</span> {bookingResult.labName}</p>
+                        <p><span className="text-gray-400">Date:</span> {bookingResult.appointmentDate}</p>
+                        <p><span className="text-gray-400">Time:</span> {bookingResult.appointmentTime}</p>
+                        <p><span className="text-gray-400">Service:</span> {labServiceType === 'checkup' ? 'Health Checkup' : 'Diagnostic Test'}</p>
+                        {bookingResult.totalFee && <p><span className="text-gray-400">Fee:</span> ₹{bookingResult.totalFee}</p>}
+                        <p><span className="text-gray-400">Reference #:</span> {bookingResult.id}</p>
+                        <p><span className="text-gray-400">Status:</span> <span className="text-teal-300 capitalize">{bookingResult.status}</span></p>
+                      </div>
+                      <div className="flex gap-2 justify-center pt-2">
+                        <Button
+                          variant="outline"
+                          className="border-teal-500/40 text-teal-300 hover:bg-teal-900/30"
+                          onClick={() => { resetLabBookingState(); setSelectedLab(null); }}
+                        >
+                          Back to Labs
+                        </Button>
+                        <Button
+                          className="bg-[#00FFF3] text-[#0B1120] font-bold hover:bg-[#00FFF3]/90"
+                          onClick={() => { resetLabBookingState(); onOpenChange(false); }}
+                        >
+                          Done
+                        </Button>
+                      </div>
+                    </div>
+                  </div>
+                ) : showLabBookingForm ? (
+                  // ── Booking form ──
+                  <div className="space-y-4">
+                    <button
+                      onClick={() => setShowLabBookingForm(false)}
+                      className="flex items-center gap-2 text-sm text-gray-400 hover:text-[#00FFF3] transition-colors"
+                    >
+                      <ArrowRight className="h-4 w-4 rotate-180" /> Back to lab details
+                    </button>
+                    <div className="rounded-xl border border-[#00FFF3]/20 bg-[#0d1a2d] p-5 space-y-4">
+                      <h3 className="text-lg font-bold text-white flex items-center gap-2">
+                        <Calendar className="h-5 w-5 text-[#00FFF3]" />
+                        Book at {selectedLab.name}
+                      </h3>
+
+                      {/* Date */}
+                      <div className="space-y-1">
+                        <Label className="text-sm text-gray-300">Appointment Date <span className="text-red-400">*</span></Label>
+                        <Input
+                          type="date"
+                          min={new Date().toISOString().split("T")[0]}
+                          value={bookingDate}
+                          onChange={(e) => setBookingDate(e.target.value)}
+                          className="bg-[#1A2333] border-white/10"
+                        />
+                      </div>
+
+                      {/* Time */}
+                      <div className="space-y-1">
+                        <Label className="text-sm text-gray-300">Appointment Time <span className="text-red-400">*</span></Label>
+                        <Select value={bookingTime} onValueChange={setBookingTime}>
+                          <SelectTrigger className="bg-[#1A2333] border-white/10">
+                            <SelectValue placeholder="Select time slot" />
+                          </SelectTrigger>
+                          <SelectContent>
+                            {generateTimeSlots().map((slot) => (
+                              <SelectItem key={slot.value} value={slot.value}>{slot.label}</SelectItem>
+                            ))}
+                          </SelectContent>
+                        </Select>
+                      </div>
+
+                      {/* Patient Name */}
+                      <div className="space-y-1">
+                        <Label className="text-sm text-gray-300">Patient Name</Label>
+                        <Input
+                          placeholder="Enter patient name"
+                          value={bookingPatientName}
+                          onChange={(e) => setBookingPatientName(e.target.value)}
+                          className="bg-[#1A2333] border-white/10"
+                        />
+                      </div>
+
+                      {/* Phone */}
+                      <div className="space-y-1">
+                        <Label className="text-sm text-gray-300">Phone Number</Label>
+                        <Input
+                          placeholder="Enter phone number"
+                          value={bookingPhone}
+                          onChange={(e) => setBookingPhone(e.target.value)}
+                          className="bg-[#1A2333] border-white/10"
+                        />
+                      </div>
+
+                      {/* Notes */}
+                      <div className="space-y-1">
+                        <Label className="text-sm text-gray-300">Notes / Tests (optional)</Label>
+                        <textarea
+                          placeholder="e.g. CBC, Lipid Panel, fasting required..."
+                          value={bookingNotes}
+                          onChange={(e) => setBookingNotes(e.target.value)}
+                          rows={3}
+                          className="w-full rounded-md bg-[#1A2333] border border-white/10 text-sm text-white px-3 py-2 placeholder:text-gray-500 focus:outline-none focus:ring-1 focus:ring-[#00FFF3]/50 resize-none"
+                        />
+                      </div>
+
+                      <Button
+                        className="w-full bg-[#00FFF3] text-[#0B1120] font-bold hover:bg-[#00FFF3]/90"
+                        disabled={bookingLoading || !bookingDate || !bookingTime}
+                        onClick={handleLabBooking}
+                      >
+                        {bookingLoading ? "Booking..." : "Confirm Booking"}
+                      </Button>
+                    </div>
+                  </div>
+                ) : (
+                  // ── Detail panel ──
                 <div className="space-y-4">
                   <button
-                    onClick={() => setSelectedLab(null)}
+                    onClick={() => { resetLabBookingState(); setSelectedLab(null); }}
                     className="flex items-center gap-2 text-sm text-gray-400 hover:text-[#00FFF3] transition-colors"
                   >
                     <ArrowRight className="h-4 w-4 rotate-180" /> Back to results
@@ -573,12 +762,17 @@ export default function QuickAppointmentModal({
                     {/* Book button */}
                     <Button
                       className="w-full bg-[#00FFF3] text-[#0B1120] font-bold hover:bg-[#00FFF3]/90 mt-2"
-                      onClick={() => handleProviderSelect(String(selectedLab.id ?? selectedLab._id ?? ''))}
+                      onClick={() => {
+                        setBookingPatientName(`${currentUser?.firstName ?? ""} ${currentUser?.lastName ?? ""}`.trim());
+                        setBookingPhone(currentUser?.phoneNumber ?? "");
+                        setShowLabBookingForm(true);
+                      }}
                     >
                       Book Appointment at {selectedLab.name}
                     </Button>
                   </div>
                 </div>
+                )
               ) : isLabsLoading ? (
                 <div className="text-center py-8 text-gray-400">Loading labs...</div>
               ) : labs.length === 0 ? (
