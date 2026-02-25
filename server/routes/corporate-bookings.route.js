@@ -113,17 +113,15 @@ router.get('/labs', authUser, requireTeamOrAdmin, async (req, res) => {
          l.id,
          l.name,
          l.address,
-         l.city,
-         l.state,
-         l."pinCode",
+         l.address->>'city'    AS city,
+         l.address->>'state'   AS state,
+         l.address->>'pinCode' AS "pinCode",
          l."phoneNumber",
-         l.accreditation,
-         cna.metadata
+         l.accreditation
        FROM corporate_network_assignments cna
        JOIN labs l ON l.id = cna.partner_id
        WHERE cna.corporate_id = :corporateId
          AND cna.partner_type = 'lab'
-         AND cna.is_active = true
        ORDER BY l.name
        LIMIT 200`,
       {
