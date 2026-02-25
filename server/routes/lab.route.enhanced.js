@@ -810,4 +810,50 @@ router.get('/:labId/tests', async (req, res) => {
   }
 });
 
+
+// ─────────────────────────────────────────────────────────────────
+// GET /api/labs/team-bookings
+// Returns lab appointments booked by the currently logged-in team/user
+// ─────────────────────────────────────────────────────────────────
+router.get('/team-bookings', authUser, async (req, res) => {
+  try {
+    const { page = 1, limit = 20 } = req.query;
+    const offset = (parseInt(page) - 1) * parseInt(limit);
+
+    const [appointments, total] = await Promise.all([
+      Appointment.findAll({
+        where: { userId: req.user.id, isLab: true },
+        order: [['createdAt', 'DESC']],
+        limit: parseInt(limit),
+        offset
+      }),
+      Appointment.count({ where: { userId: req.user.id, isLab: true } })
+    ]);
+
+    return res.json({
+      success: true,
+      total,
+      page: parseInt(page),
+      appointments: appointments.map(a => ({
+        id: a.id,
+        patientName: a.patientName,
+        patientPhone: a.patientPhone,
+        labName: a.clinicName,
+        labAddress: a.clinicAddress,
+        appointmentDate: a.appointmentDate,
+        appointmentTime: a.appointmentTime,
+        status: a.status,
+        serviceType: a.metadata?.serviceType,
+        testType: a.metadata?.testType,
+        totalFee: a.metadata?.totalFee,
+        notes: a.patientDetails?.notes,
+        bookedAt: a.createdAt
+      }))
+    });
+  } catch (err) {
+    console.error('[Labs] GET /team-bookings error:', err);
+    return res.status(500).json({ success: false, message: err.message });
+  }
+});
+
 export default router;

@@ -4,8 +4,10 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Separator } from "@/components/ui/separator";
-import { CheckCircle2 } from "lucide-react";
+import { CheckCircle2, FlaskConical, Calendar, RefreshCw, User } from "lucide-react";
 import { Link } from "react-router-dom";
+import { useQuery } from "@tanstack/react-query";
+import api from "@/utils/api";
 
 interface Metric {
   label: string;
@@ -343,7 +345,123 @@ export const TeamLabManagementPage = createModulePage("labManagement");
 export const TeamPharmacyManagementPage = createModulePage("pharmacyManagement");
 export const TeamChatAnalyticsPage = createModulePage("chatAnalytics");
 export const TeamSupportTicketsPage = createModulePage("supportTickets");
-export const TeamAppointmentsPage = createModulePage("appointments");
+export const TeamAppointmentsPage = () => {
+  const { data, isLoading, refetch, isFetching } = useQuery({
+    queryKey: ["team-lab-bookings"],
+    queryFn: async () => {
+      const { data } = await api.get("/labs/team-bookings?limit=50");
+      return data;
+    },
+  });
+
+  const appointments: any[] = data?.appointments || [];
+
+  const statusColor = (s: string) => {
+    if (s === "scheduled") return "bg-blue-900/30 text-blue-300 border-blue-700";
+    if (s === "completed") return "bg-teal-900/30 text-teal-300 border-teal-700";
+    if (s === "cancelled") return "bg-red-900/30 text-red-300 border-red-700";
+    return "bg-gray-900/30 text-gray-300 border-gray-700";
+  };
+
+  return (
+    <MainLayout>
+      <div className="max-w-6xl mx-auto space-y-6 animate-in fade-in">
+        <div className="flex items-center justify-between">
+          <div>
+            <p className="text-xs uppercase tracking-wide text-muted-foreground">Team</p>
+            <h1 className="text-3xl font-semibold mt-1">Lab Appointments</h1>
+            <p className="text-muted-foreground mt-1">Lab appointments booked by you via the quick booking flow</p>
+          </div>
+          <div className="flex items-center gap-2">
+            <Button variant="outline" size="sm" onClick={() => refetch()} disabled={isFetching}>
+              <RefreshCw className={`h-4 w-4 mr-2 ${isFetching ? "animate-spin" : ""}`} />
+              Refresh
+            </Button>
+            <Button asChild className="bg-[#00FFF3] text-[#0B1120] font-bold hover:bg-[#00FFF3]/90" size="sm">
+              <Link to="/team/corporate-health-booking">+ Corporate Booking</Link>
+            </Button>
+          </div>
+        </div>
+
+        {isLoading ? (
+          <div className="text-center py-16 text-muted-foreground">Loading appointments...</div>
+        ) : appointments.length === 0 ? (
+          <Card>
+            <CardContent className="py-16 text-center space-y-3">
+              <FlaskConical className="h-10 w-10 text-muted-foreground mx-auto" />
+              <p className="text-muted-foreground">No lab appointments booked yet.</p>
+              <p className="text-sm text-muted-foreground">Use the \"Book New Appointment\" button to book lab tests for employees.</p>
+            </CardContent>
+          </Card>
+        ) : (
+          <Card>
+            <CardHeader>
+              <CardTitle className="text-base text-muted-foreground flex items-center gap-2">
+                <Calendar className="h-4 w-4" />
+                {data?.total ?? appointments.length} appointment{appointments.length !== 1 ? "s" : ""}
+              </CardTitle>
+            </CardHeader>
+            <CardContent className="p-0">
+              <div className="overflow-x-auto">
+                <table className="w-full text-sm">
+                  <thead>
+                    <tr className="border-b border-white/5 text-muted-foreground text-xs uppercase">
+                      <th className="px-4 py-3 text-left">#</th>
+                      <th className="px-4 py-3 text-left">Patient / Employee</th>
+                      <th className="px-4 py-3 text-left">Lab</th>
+                      <th className="px-4 py-3 text-left">Date &amp; Time</th>
+                      <th className="px-4 py-3 text-left">Service / Package</th>
+                      <th className="px-4 py-3 text-left">Fee</th>
+                      <th className="px-4 py-3 text-left">Status</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {appointments.map((apt) => (
+                      <tr key={apt.id} className="border-b border-white/5 hover:bg-white/2 transition-colors">
+                        <td className="px-4 py-3 text-muted-foreground">{apt.id}</td>
+                        <td className="px-4 py-3">
+                          <div className="flex items-center gap-2">
+                            <User className="h-3 w-3 text-muted-foreground flex-shrink-0" />
+                            <div>
+                              <p className="font-medium">{apt.patientName}</p>
+                              {apt.patientPhone && <p className="text-xs text-muted-foreground">{apt.patientPhone}</p>}
+                            </div>
+                          </div>
+                        </td>
+                        <td className="px-4 py-3">
+                          <p className="font-medium">{apt.labName}</p>
+                          {apt.labAddress?.city && <p className="text-xs text-muted-foreground">{apt.labAddress.city}</p>}
+                        </td>
+                        <td className="px-4 py-3">
+                          <p>{apt.appointmentDate}</p>
+                          <p className="text-xs text-muted-foreground">{apt.appointmentTime}</p>
+                        </td>
+                        <td className="px-4 py-3">
+                          <Badge variant="outline" className="text-xs capitalize">
+                            {apt.serviceType || "checkup"}
+                          </Badge>
+                          {apt.testType && <p className="text-xs text-muted-foreground mt-1">{apt.testType}</p>}
+                        </td>
+                        <td className="px-4 py-3">
+                          {apt.totalFee ? <span>₹{apt.totalFee}</span> : <span className="text-muted-foreground">—</span>}
+                        </td>
+                        <td className="px-4 py-3">
+                          <Badge variant="outline" className={`text-xs capitalize ${statusColor(apt.status)}`}>
+                            {apt.status}
+                          </Badge>
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            </CardContent>
+          </Card>
+        )}
+      </div>
+    </MainLayout>
+  );
+};
 export const TeamChatDashboardPage = () => <AdminChatDashboard />;
 export const TeamHealthPlansPage = createModulePage("healthPlans");
 export const TeamActivityLogsPage = createModulePage("activityLogs");

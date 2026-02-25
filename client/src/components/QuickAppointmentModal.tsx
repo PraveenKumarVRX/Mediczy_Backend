@@ -133,6 +133,13 @@ export default function QuickAppointmentModal({
   const [bookingLoading, setBookingLoading] = useState(false);
   const [bookingConfirmed, setBookingConfirmed] = useState(false);
   const [bookingResult, setBookingResult] = useState<any>(null);
+  // Employee search
+  const [employeeSearch, setEmployeeSearch] = useState("");
+  const [employeeResults, setEmployeeResults] = useState<any[]>([]);
+  const [selectedEmployee, setSelectedEmployee] = useState<any | null>(null);
+  // Package selection
+  const [selectedPackageId, setSelectedPackageId] = useState("none");
+  const [availablePackages, setAvailablePackages] = useState<any[]>([]);
   const [homecareServiceType, setHomecareServiceType] = useState<HomecareServiceType>("doctor");
 
   // Determine user context
@@ -255,6 +262,10 @@ export default function QuickAppointmentModal({
     setBookingLoading(true);
     try {
       const labId = selectedLab.id ?? selectedLab._id;
+      // Resolve selected package name
+      const pkgName = selectedPackageId !== "none"
+        ? availablePackages.find(p => String(p.packageId) === selectedPackageId)?.packageName
+        : undefined;
       const { data } = await api.post("/labs/book", {
         labId,
         appointmentDate: bookingDate,
@@ -263,6 +274,7 @@ export default function QuickAppointmentModal({
         patientName: bookingPatientName || `${currentUser?.firstName ?? ""} ${currentUser?.lastName ?? ""}`.trim() || undefined,
         patientPhone: bookingPhone || currentUser?.phoneNumber || undefined,
         notes: bookingNotes || undefined,
+        testType: pkgName || undefined,
       });
       if (data.success) {
         setBookingResult(data.appointment);
@@ -281,6 +293,22 @@ export default function QuickAppointmentModal({
     }
   };
 
+  const searchEmployees = async (term: string) => {
+    if (!term.trim()) { setEmployeeResults([]); return; }
+    try {
+      const { data } = await api.get(`/corporate-bookings/employees?corporateId=5&search=${encodeURIComponent(term)}`);
+      setEmployeeResults(data.employees || []);
+    } catch (_) {}
+  };
+
+  const fetchPackages = async () => {
+    if (availablePackages.length > 0) return;
+    try {
+      const { data } = await api.get("/admin/corporate-health-packages/5");
+      setAvailablePackages(data.packages || []);
+    } catch (_) {}
+  };
+
   const resetLabBookingState = () => {
     setShowLabBookingForm(false);
     setBookingDate("");
@@ -291,6 +319,10 @@ export default function QuickAppointmentModal({
     setBookingLoading(false);
     setBookingConfirmed(false);
     setBookingResult(null);
+    setEmployeeSearch("");
+    setEmployeeResults([]);
+    setSelectedEmployee(null);
+    setSelectedPackageId("none");
   };
 
   return (
@@ -590,17 +622,25 @@ export default function QuickAppointmentModal({
                         <p><span className="text-gray-400">Date:</span> {bookingResult.appointmentDate}</p>
                         <p><span className="text-gray-400">Time:</span> {bookingResult.appointmentTime}</p>
                         <p><span className="text-gray-400">Service:</span> {labServiceType === 'checkup' ? 'Health Checkup' : 'Diagnostic Test'}</p>
+                        {bookingResult.testType && <p><span className="text-gray-400">Package:</span> {bookingResult.testType}</p>}
                         {bookingResult.totalFee && <p><span className="text-gray-400">Fee:</span> ₹{bookingResult.totalFee}</p>}
                         <p><span className="text-gray-400">Reference #:</span> {bookingResult.id}</p>
                         <p><span className="text-gray-400">Status:</span> <span className="text-teal-300 capitalize">{bookingResult.status}</span></p>
                       </div>
-                      <div className="flex gap-2 justify-center pt-2">
+                      <div className="flex gap-2 justify-center pt-2 flex-wrap">
                         <Button
                           variant="outline"
                           className="border-teal-500/40 text-teal-300 hover:bg-teal-900/30"
                           onClick={() => { resetLabBookingState(); setSelectedLab(null); }}
                         >
-                          Back to Labs
+                          Book Another
+                        </Button>
+                        <Button
+                          variant="outline"
+                          className="border-[#00FFF3]/30 text-[#00FFF3] hover:bg-[#00FFF3]/10"
+                          onClick={() => { onOpenChange(false); navigate("/team/appointments"); }}
+                        >
+                          View All Bookings
                         </Button>
                         <Button
                           className="bg-[#00FFF3] text-[#0B1120] font-bold hover:bg-[#00FFF3]/90"
@@ -652,6 +692,76 @@ export default function QuickAppointmentModal({
                           </SelectContent>
                         </Select>
                       </div>
+
+                      {/* Employee Search */}
+                      <div className="space-y-1">
+                        <Label className="text-sm text-gray-300">Book for Employee</Label>
+                        <div className="relative">
+                          <Input
+                            placeholder="Search by name, email or phone..."
+                            value={employeeSearch}
+                            onChange={(e) => {
+                              setEmployeeSearch(e.target.value);
+                              setSelectedEmployee(null);
+                              searchEmployees(e.target.value);
+                            }}
+                            className="bg-[#1A2333] border-white/10"
+                          />
+                          {employeeResults.length > 0 && !selectedEmployee && (
+                            <div className="absolute top-full left-0 right-0 z-50 mt-1 bg-[#1A2333] border border-white/10 rounded-md shadow-lg max-h-40 overflow-y-auto">
+                              {employeeResults.map((emp) => (
+                                <button
+                                  key={emp.id}
+                                  className="w-full text-left px-3 py-2 text-sm hover:bg-[#00FFF3]/10 text-gray-200 flex items-center justify-between"
+                                  onClick={() => {
+                                    setSelectedEmployee(emp);
+                                    setEmployeeSearch(`${emp.firstName} ${emp.lastName}`);
+                                    setBookingPatientName(`${emp.firstName} ${emp.lastName}`);
+                                    setBookingPhone(emp.phoneNumber || "");
+                                    setEmployeeResults([]);
+                                  }}
+                                >
+                                  <span className="font-medium">{emp.firstName} {emp.lastName}</span>
+                                  <span className="text-gray-400 text-xs">{emp.phoneNumber || emp.email}</span>
+                                </button>
+                              ))}
+                            </div>
+                          )}
+                        </div>
+                        {selectedEmployee && (
+                          <div className="flex items-center justify-between bg-teal-900/20 border border-teal-700/30 rounded px-3 py-1.5 mt-1">
+                            <span className="text-sm text-teal-300">
+                              ✓ {selectedEmployee.firstName} {selectedEmployee.lastName}
+                              {selectedEmployee.phoneNumber && <span className="text-gray-400 ml-2">{selectedEmployee.phoneNumber}</span>}
+                            </span>
+                            <button
+                              onClick={() => { setSelectedEmployee(null); setEmployeeSearch(""); setBookingPatientName(""); setBookingPhone(""); }}
+                              className="text-gray-400 hover:text-white text-xs ml-2"
+                            >✕</button>
+                          </div>
+                        )}
+                      </div>
+
+                      {/* Eligible Package - checkup only */}
+                      {labServiceType === 'checkup' && availablePackages.length > 0 && (
+                        <div className="space-y-1">
+                          <Label className="text-sm text-gray-300">Eligible Health Package</Label>
+                          <Select value={selectedPackageId} onValueChange={setSelectedPackageId}>
+                            <SelectTrigger className="bg-[#1A2333] border-white/10">
+                              <SelectValue placeholder="Select package (optional)" />
+                            </SelectTrigger>
+                            <SelectContent>
+                              <SelectItem value="none">No specific package</SelectItem>
+                              {availablePackages.map((pkg) => (
+                                <SelectItem key={pkg.packageId} value={String(pkg.packageId)}>
+                                  {pkg.packageName}
+                                  {pkg.packageDetails?.price && <span className="text-gray-400 ml-2"> — ₹{pkg.packageDetails.price}</span>}
+                                </SelectItem>
+                              ))}
+                            </SelectContent>
+                          </Select>
+                        </div>
+                      )}
 
                       {/* Patient Name */}
                       <div className="space-y-1">
@@ -765,6 +875,7 @@ export default function QuickAppointmentModal({
                       onClick={() => {
                         setBookingPatientName(`${currentUser?.firstName ?? ""} ${currentUser?.lastName ?? ""}`.trim());
                         setBookingPhone(currentUser?.phoneNumber ?? "");
+                        if (labServiceType === 'checkup') fetchPackages();
                         setShowLabBookingForm(true);
                       }}
                     >
