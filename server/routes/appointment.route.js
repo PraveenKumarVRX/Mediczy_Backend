@@ -1,6 +1,15 @@
 import express from 'express';
 import { body, param, query } from 'express-validator';
 import { Op } from 'sequelize';
+import { validateBody, validateQuery } from '../validationSchemas/validateRequest.middleware.js';
+import {
+  createAppointmentSchema,
+  rescheduleAppointmentSchema,
+  cancelAppointmentSchema,
+  completeAppointmentSchema,
+  rateAppointmentSchema,
+  listAppointmentsQuerySchema,
+} from '../validationSchemas/appointment.schema.js';
 import {
   createAppointment,
   getUserAppointments,

@@ -1,100 +1,148 @@
 import express from 'express';
+import { randomUUID } from 'crypto';
 import auth from '../middleware/auth.js';
+import { validateBody } from '../validationSchemas/validateRequest.middleware.js';
+import {
+  aiChatRequestSchema,
+  drIshaConsultSchema,
+  dietPlanSchema,
+} from '../validationSchemas/ai-health.schema.js';
+import { redactObject } from '../utils/phiRedact.js';
+import sharedPool from '../db/pgPool.js';
 
 const router = express.Router();
 
-// AI Doctor Chat endpoint
-router.post('/chat', auth, async (req, res) => {
+// ─── High-risk symptom keywords → prompt immediate booking CTA ──────────────
+const HIGH_RISK_TERMS = [
+  'chest pain','shortness of breath','difficulty breathing',
+  'stroke', 'unconscious', 'heart attack', 'severe bleeding',
+  'seizure','convulsion','paralysis','sudden vision loss',
+  'suicidal','suicide','overdose',
+];
+
+function isHighRisk(text = '') {
+  const lower = text.toLowerCase();
+  return HIGH_RISK_TERMS.some(t => lower.includes(t));
+}
+
+/**
+ * Async fire-and-forget audit log to pg.  Never throws — logging
+ * failure must never break the user-facing request.
+ */
+async function auditAiRequest({ userId, tenantId, endpoint, inputHash, highRisk, ip }) {
   try {
-    const { message, symptoms } = req.body;
-    
-    if (!message && !symptoms) {
-      return res.status(400).json({ success: false, message: 'Message or symptoms required' });
+    await sharedPool.query(
+      `INSERT INTO ai_request_audit
+         (audit_id, user_id, tenant_id, endpoint, input_hash, high_risk, ip_address, created_at)
+       VALUES ($1,$2,$3,$4,$5,$6,$7,NOW())
+       ON CONFLICT DO NOTHING`,
+      [randomUUID(), userId ?? null, tenantId ?? null, endpoint, inputHash, highRisk, ip ?? '']
+    );
+  } catch {
+    // table may not exist yet — graceful degradation
+  }
+}
+
+// ─── POST /chat ─────────────────────────────────────────────────────────────
+router.post('/chat', auth, validateBody(aiChatRequestSchema), async (req, res) => {
+  try {
+    const { message, symptoms, sessionId } = req.body;
+    const userInput = message || symptoms;
+    const highRisk  = isHighRisk(userInput);
+    const auditId   = randomUUID();
+
+    // Fire-and-forget audit (PHI-safe: we only store a hash hint, not raw text)
+    auditAiRequest({
+      userId:    req.user?.id,
+      tenantId:  req.user?.tenantId,
+      endpoint:  '/api/ai-health/chat',
+      inputHash: userInput.length,   // length only — avoids storing medical text
+      highRisk,
+      ip: req.ip,
+    });
+
+    const suggestedActions = [
+      { action: 'Book Consultation', type: 'primary', url: '/consultation-booking' },
+      { action: 'Find Nearby Pharmacy', type: 'secondary' },
+      { action: 'Track Symptoms', type: 'secondary' },
+    ];
+
+    // Inject urgent booking CTA for high-risk symptoms
+    if (highRisk) {
+      suggestedActions.unshift({
+        action: 'See a Doctor NOW',
+        type: 'urgent',
+        url: '/consultation-booking?urgency=emergency',
+        meta: { reason: 'High-risk symptom detected' },
+      });
     }
 
-    const userInput = message || symptoms;
-
-    // Mock AI response - replace with actual AI integration later
-    const aiResponse = {
+    const rawResponse = {
       success: true,
       message: `I understand you mentioned: "${userInput}". Based on this, here's my assessment:`,
       analysis: {
-        severity: 'moderate',
+        severity: highRisk ? 'high' : 'moderate',
         possibleConditions: ['Common cold', 'Viral infection', 'Flu'],
         recommendations: [
           'Stay hydrated - drink at least 8 glasses of water daily',
           'Get adequate rest - aim for 7-8 hours of sleep',
           'Monitor your symptoms - track any changes',
-          'Take over-the-counter pain relievers if needed'
+          'Take over-the-counter pain relievers if needed',
         ],
-        urgency: 'Consult a doctor if symptoms persist beyond 3 days or worsen'
+        urgency: highRisk
+          ? 'URGENT: Please seek immediate medical attention.'
+          : 'Consult a doctor if symptoms persist beyond 3 days or worsen',
       },
-      suggestedActions: [
-        { action: 'Book Consultation', type: 'primary' },
-        { action: 'Find Nearby Pharmacy', type: 'secondary' },
-        { action: 'Track Symptoms', type: 'secondary' }
-      ],
-      disclaimer: 'This is an AI-generated response and should not replace professional medical advice. Please consult a healthcare provider for accurate diagnosis and treatment.'
+      suggestedActions,
+      disclaimer: 'This is an AI-generated response and should not replace professional medical advice. Please consult a healthcare provider for accurate diagnosis and treatment.',
+      highRisk,
+      auditId,
+      ...(highRisk && {
+        bookingCta: { url: '/consultation-booking?urgency=emergency', label: 'Book Emergency Consultation' },
+      }),
     };
 
-    res.json(aiResponse);
+    // PHI redact entire outbound response before sending
+    return res.json(redactObject(rawResponse));
   } catch (error) {
     console.error('AI chat error:', error);
-    res.status(500).json({
-      success: false,
-      message: 'Failed to process AI request',
-      error: error.message
-    });
+    return res.status(500).json({ success: false, message: 'Failed to process AI request', error: error.message });
   }
 });
 
-// Health consultation with Dr. ISHA
-router.post('/dr-isha/consult', auth, async (req, res) => {
+// ─── POST /dr-isha/consult ──────────────────────────────────────────────────
+router.post('/dr-isha/consult', auth, validateBody(drIshaConsultSchema), async (req, res) => {
   try {
     const { message, symptoms, medicalHistory } = req.body;
 
     const response = {
       success: true,
       drIshaResponse: {
-        greeting: 'Hello! I\'m Dr. ISHA, your AI health assistant.',
+        greeting: "Hello! I'm Dr. ISHA, your AI health assistant.",
         analysis: `Based on your input about "${message || symptoms}", here's what I can help you with:`,
         insights: [
           'Your symptoms suggest you should monitor your condition closely',
           'Consider maintaining a symptom diary to track patterns',
           'Stay hydrated and maintain a balanced diet',
-          'Ensure you\'re getting enough rest'
+          'Ensure you\'re getting enough rest',
         ],
         recommendations: [
-          {
-            title: 'Immediate Care',
-            steps: ['Rest adequately', 'Stay hydrated', 'Monitor temperature']
-          },
-          {
-            title: 'When to See a Doctor',
-            steps: ['If symptoms worsen', 'Fever above 101°F', 'Difficulty breathing']
-          }
+          { title: 'Immediate Care',  steps: ['Rest adequately', 'Stay hydrated', 'Monitor temperature'] },
+          { title: 'When to See a Doctor', steps: ['If symptoms worsen', 'Fever above 101°F', 'Difficulty breathing'] },
         ],
-        nextSteps: [
-          'Track your symptoms daily',
-          'Book a consultation if needed',
-          'Follow up in 2-3 days'
-        ]
-      }
+        nextSteps: ['Track your symptoms daily', 'Book a consultation if needed', 'Follow up in 2-3 days'],
+      },
     };
 
-    res.json(response);
+    return res.json(redactObject(response));
   } catch (error) {
     console.error('Dr. ISHA consult error:', error);
-    res.status(500).json({
-      success: false,
-      message: 'Dr. ISHA consultation failed',
-      error: error.message
-    });
+    return res.status(500).json({ success: false, message: 'Dr. ISHA consultation failed', error: error.message });
   }
 });
 
-// Generate personalized diet plan
-router.post('/diet/generate', auth, async (req, res) => {
+// ─── POST /diet/generate ────────────────────────────────────────────────────
+router.post('/diet/generate', auth, validateBody(dietPlanSchema), async (req, res) => {
   try {
     const { age, weight, height, goal, dietaryRestrictions, activityLevel, gender } = req.body;
     

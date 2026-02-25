@@ -3,24 +3,14 @@
  * Provides common database operations and utilities
  */
 
-import pg from 'pg';
+import sharedPool from '../db/pgPool.js';
 import { ErrorTypes } from '../middleware/errorHandler.js';
-
-const { Pool } = pg;
 
 export class BaseService {
   constructor(tableName) {
     this.tableName = tableName;
-    this.pool = new Pool({
-      host: process.env.POSTGRES_HOST || 'localhost',
-      port: process.env.POSTGRES_PORT || 5432,
-      database: process.env.POSTGRES_DATABASE || 'mediczy_ai',
-      user: process.env.POSTGRES_USER || 'mediczy_helper',
-      password: process.env.POSTGRES_PASSWORD,
-      max: process.env.POSTGRES_POOL_MAX || 10,
-      idleTimeoutMillis: 30000,
-      connectionTimeoutMillis: 10000,
-    });
+    // Use the process-level singleton pool — NOT a per-instance pool.
+    this.pool = sharedPool;
   }
 
   /**
