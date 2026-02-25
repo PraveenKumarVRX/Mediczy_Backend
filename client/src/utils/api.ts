@@ -1,5 +1,5 @@
-import axios from "axios";
-import { getToken } from "../hooks/auth"; // Import function to get stored token
+import axios, { AxiosRequestConfig } from "axios";
+import { getToken, getUserType } from "../hooks/auth"; // Import function to get stored token
 
 // Resolve baseURL safely for local and remote access
 const resolveBaseURL = () => {
@@ -103,6 +103,81 @@ api.interceptors.request.use(
     return config;
   },
   (error) => Promise.reject(error)
+);
+
+// ── Team token auto-refresh on 401 ──────────────────────────────────────────
+let _isRefreshing = false;
+let _refreshQueue: Array<(token: string) => void> = [];
+
+api.interceptors.response.use(
+  (response) => response,
+  async (error) => {
+    const originalRequest = error.config as AxiosRequestConfig & { _retry?: boolean };
+
+    // Only auto-refresh for team users hitting 401, not an already-retried request
+    if (
+      error.response?.status === 401 &&
+      !originalRequest._retry &&
+      typeof window !== "undefined" &&
+      getUserType() === "team"
+    ) {
+      const refreshToken = window.localStorage.getItem("teamRefreshToken");
+      if (!refreshToken) {
+        window.location.href = "/team/login";
+        return Promise.reject(error);
+      }
+
+      originalRequest._retry = true;
+
+      // If a refresh is already in flight, queue this request until it resolves
+      if (_isRefreshing) {
+        return new Promise<string>((resolve) => {
+          _refreshQueue.push(resolve);
+        }).then((newToken) => {
+          (originalRequest as any).headers = {
+            ...(originalRequest.headers || {}),
+            Authorization: `Bearer ${newToken}`,
+          };
+          return api(originalRequest);
+        });
+      }
+
+      _isRefreshing = true;
+      try {
+        const { data } = await axios.post(
+          `${api.defaults.baseURL}/team/auth/refresh`,
+          { refreshToken },
+          { skipAuth: true } as any
+        );
+        if (data.success && data.token) {
+          window.localStorage.setItem("teamToken", data.token);
+          if (data.refreshToken) {
+            window.localStorage.setItem("teamRefreshToken", data.refreshToken);
+          }
+          // Resolve all queued requests with the new token
+          _refreshQueue.forEach((cb) => cb(data.token));
+          _refreshQueue = [];
+          (originalRequest as any).headers = {
+            ...(originalRequest.headers || {}),
+            Authorization: `Bearer ${data.token}`,
+          };
+          return api(originalRequest);
+        }
+      } catch {
+        // Refresh failed — clear team auth and redirect
+      } finally {
+        _isRefreshing = false;
+      }
+
+      // Refresh returned no success token or threw — clear and redirect
+      window.localStorage.removeItem("teamToken");
+      window.localStorage.removeItem("teamRefreshToken");
+      window.localStorage.removeItem("userType");
+      window.location.href = "/team/login";
+    }
+
+    return Promise.reject(error);
+  }
 );
 
 export default api;

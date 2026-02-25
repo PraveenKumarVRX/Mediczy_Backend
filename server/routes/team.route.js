@@ -14,7 +14,7 @@ import sharedPool from '../db/pgPool.js';
 const router = express.Router();
 
 // ─── Token constants ─────────────────────────────────────────────────────────
-const ACCESS_TOKEN_TTL  = '15m';
+const ACCESS_TOKEN_TTL  = '8h';
 const REFRESH_TOKEN_TTL = '30d';
 const REFRESH_TOKEN_TTL_MS = 30 * 24 * 60 * 60 * 1000;
 const LOCKOUT_WINDOW_MIN = 15;
