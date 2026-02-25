@@ -393,6 +393,8 @@ const PUBLIC_ENDPOINTS = [
   '/api/labs', // Public lab search and browsing (location-based)
   '/api/admin/login',
   '/api/team/login',
+  '/api/team/auth/verify',
+  '/api/team/auth/refresh',
   '/api/nurse/login',
   '/api/assistant/login',
   '/api/corporate/login',

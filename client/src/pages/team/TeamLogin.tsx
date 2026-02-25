@@ -31,24 +31,25 @@ const TeamLogin = () => {
   const [showPassword, setShowPassword] = useState(false);
   const [isCheckingAuth, setIsCheckingAuth] = useState(true);
 
-  // Check if already authenticated and setup dev credentials
+  // On mount: verify existing token before redirecting; skip straight to form if missing
   useEffect(() => {
     const token = localStorage.getItem('teamToken');
-    if (token) {
-      console.log('✅ Team already authenticated, redirecting...');
-      navigate('/team/dashboard');
+    if (!token) {
+      setIsCheckingAuth(false);
       return;
     }
-
-    // Development mode: Auto-fill test credentials
-    if (import.meta.env.DEV) {
-      setFormData({
-        email: 'team@mediczy.com',
-        password: 'TeamPass123'
+    // Verify the stored token is still valid server-side
+    api.get('/team/auth/verify', {
+      headers: { Authorization: `Bearer ${token}` }
+    })
+      .then(() => navigate('/team/dashboard'))
+      .catch(() => {
+        // Token invalid/expired — clear and show login form
+        localStorage.removeItem('teamToken');
+        localStorage.removeItem('teamRefreshToken');
+        localStorage.removeItem('teamUserData');
+        setIsCheckingAuth(false);
       });
-    }
-
-    setIsCheckingAuth(false);
   }, [navigate]);
 
   const handleChange = (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -60,10 +61,13 @@ const TeamLogin = () => {
     if (error) setError('');
   };
 
-  const establishTeamSession = (token: string, teamUser?: any) => {
+  const establishTeamSession = (token: string, refreshToken?: string, teamUser?: any) => {
     clearAuthTokens();
     localStorage.setItem('teamToken', token);
-    localStorage.setItem('token', token);
+    // Store refresh token separately — never overwrite the generic 'token' slot
+    if (refreshToken) {
+      localStorage.setItem('teamRefreshToken', refreshToken);
+    }
     localStorage.setItem('userType', 'team');
     if (teamUser) {
       localStorage.setItem('teamUserData', JSON.stringify({
@@ -86,44 +90,19 @@ const TeamLogin = () => {
     setLoading(true);
     setError('');
 
-    // Development mode: Quick bypass for test credentials
-    if (
-      import.meta.env.DEV &&
-      formData.email === 'team@mediczy.com' &&
-      formData.password === 'TeamPass123'
-    ) {
-      console.log('🚀 Team development mode: Using quick authentication bypass');
-      establishTeamSession('dev-team-token', {
-        id: 'team_dev',
-        email: 'team@mediczy.com',
-        firstName: 'Team',
-        lastName: 'Member',
-        role: 'Team Member',
-        department: 'Healthcare Operations',
-        isActive: true
-      });
-      
-      setLoading(false);
-      navigate('/team/dashboard', { replace: true });
-      return;
-    }
-
     try {
-      console.log('🔐 Attempting team login...', formData.email);
       const { data } = await api.post('/team/login', formData, { skipAuth: true });
-      
-      console.log('✅ Team login response:', data);
-      
+
       if (data.success && data.token && data.teamUser) {
-        establishTeamSession(data.token, data.teamUser);
-        console.log('✅ Team credentials stored, navigating to dashboard...');
+        establishTeamSession(data.token, data.refreshToken, data.teamUser);
         navigate('/team/dashboard', { replace: true });
       } else {
         setError('Invalid login response from server');
       }
     } catch (err: any) {
-      console.error('Team login error:', err);
-      if (err.response?.status === 401) {
+      if (err.response?.status === 429) {
+        setError(err.response.data?.message || 'Too many attempts. Try again later.');
+      } else if (err.response?.status === 401) {
         setError('Invalid email or password');
       } else if (err.response?.status === 403) {
         setError('Your account is inactive or login access is disabled');
@@ -299,28 +278,6 @@ const TeamLogin = () => {
                 )}
               </Button>
               
-              {/* Development Quick Login */}
-              {import.meta.env.DEV && (
-                <Button
-                  type="button"
-                  onClick={() => {
-                    console.log('🚀 Quick team member login');
-                    establishTeamSession('dev-team-token', {
-                      id: 'team_dev',
-                      email: 'team@mediczy.com',
-                      firstName: 'Team',
-                      lastName: 'Member',
-                      role: 'Team Member',
-                      department: 'Healthcare Operations',
-                      isActive: true
-                    });
-                    navigate('/team/dashboard', { replace: true });
-                  }}
-                  className="w-full h-10 mt-2 bg-green-600 hover:bg-green-700 text-white font-medium"
-                >
-                  🚀 Quick Team Login (Dev)
-                </Button>
-              )}
             </form>
 
             {/* Help Links */}

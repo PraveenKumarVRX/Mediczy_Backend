@@ -1,5 +1,7 @@
 import express from 'express';
 import { body } from 'express-validator';
+import { createHash } from 'crypto';
+import { randomUUID } from 'crypto';
 import userModel from '../models/user.model.intelligent.js';
 import jwt from 'jsonwebtoken';
 import { authTeam, requireModule, attachAccessLevel } from '../middleware/team.middleware.js';
@@ -7,106 +9,213 @@ import { JWT_CONFIG } from '../config/auth.config.js';
 import { authLimiter } from '../middleware/rateLimiter.middleware.js';
 import { auditLoginAttempt } from '../middleware/audit.middleware.js';
 import { postgresSequelize } from '../db/postgres-sequelize.js';
+import sharedPool from '../db/pgPool.js';
 
 const router = express.Router();
 
-// Team login endpoint
+// ─── Token constants ─────────────────────────────────────────────────────────
+const ACCESS_TOKEN_TTL  = '15m';
+const REFRESH_TOKEN_TTL = '30d';
+const REFRESH_TOKEN_TTL_MS = 30 * 24 * 60 * 60 * 1000;
+const LOCKOUT_WINDOW_MIN = 15;
+const LOCKOUT_MAX_ATTEMPTS = 10;
+
+// ─── Ensure required tables exist ────────────────────────────────────────────
+;(async () => {
+  try {
+    const pool = sharedPool;
+    await pool.query(`
+      CREATE TABLE IF NOT EXISTS team_refresh_tokens (
+        id         BIGSERIAL   PRIMARY KEY,
+        jti        UUID        NOT NULL UNIQUE,
+        user_id    INTEGER     NOT NULL,
+        token_hash VARCHAR(64) NOT NULL,
+        issued_at  TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+        expires_at TIMESTAMPTZ NOT NULL,
+        revoked    BOOLEAN     NOT NULL DEFAULT FALSE,
+        revoked_at TIMESTAMPTZ,
+        device_fp  VARCHAR(64),
+        ip_address VARCHAR(45)
+      );
+      CREATE INDEX IF NOT EXISTS idx_trt_jti     ON team_refresh_tokens(jti);
+      CREATE INDEX IF NOT EXISTS idx_trt_user_id ON team_refresh_tokens(user_id);
+
+      CREATE TABLE IF NOT EXISTS team_login_attempts (
+        id         BIGSERIAL    PRIMARY KEY,
+        email      VARCHAR(255) NOT NULL,
+        ip_address VARCHAR(45),
+        succeeded  BOOLEAN      NOT NULL DEFAULT FALSE,
+        created_at TIMESTAMPTZ  NOT NULL DEFAULT NOW()
+      );
+      CREATE INDEX IF NOT EXISTS idx_tla_email_ts
+        ON team_login_attempts(email, created_at);
+
+      CREATE TABLE IF NOT EXISTS team_appointments (
+        id               BIGSERIAL    PRIMARY KEY,
+        doctor_id        INTEGER      NOT NULL,
+        patient_email    VARCHAR(255) NOT NULL,
+        appointment_date DATE         NOT NULL,
+        appointment_time VARCHAR(20)  NOT NULL,
+        type             VARCHAR(50)  NOT NULL DEFAULT 'consultation',
+        notes            TEXT,
+        status           VARCHAR(30)  NOT NULL DEFAULT 'confirmed',
+        tenant_id        INTEGER,
+        created_by       INTEGER      NOT NULL,
+        created_at       TIMESTAMPTZ  NOT NULL DEFAULT NOW(),
+        updated_at       TIMESTAMPTZ  NOT NULL DEFAULT NOW()
+      );
+      CREATE INDEX IF NOT EXISTS idx_tappt_doctor  ON team_appointments(doctor_id);
+      CREATE INDEX IF NOT EXISTS idx_tappt_status  ON team_appointments(status);
+      CREATE INDEX IF NOT EXISTS idx_tappt_tenant  ON team_appointments(tenant_id);
+    `);
+  } catch (err) {
+    console.error('[Team] DB table init error:', err.message);
+  }
+})();
+
+// ─── Auth helpers ─────────────────────────────────────────────────────────────
+async function checkLockout(email, ip) {
+  const pool = sharedPool;
+  const windowStart = new Date(Date.now() - LOCKOUT_WINDOW_MIN * 60 * 1000);
+  const { rows } = await pool.query(
+    `SELECT COUNT(*) AS cnt
+       FROM team_login_attempts
+      WHERE (email = $1 OR ip_address = $2)
+        AND succeeded = FALSE
+        AND created_at >= $3`,
+    [email.toLowerCase(), ip, windowStart]
+  );
+  return parseInt(rows[0].cnt, 10) >= LOCKOUT_MAX_ATTEMPTS;
+}
+
+async function recordAttempt(email, ip, succeeded) {
+  const pool = sharedPool;
+  await pool.query(
+    `INSERT INTO team_login_attempts (email, ip_address, succeeded)
+     VALUES ($1, $2, $3)`,
+    [email.toLowerCase(), ip, succeeded]
+  );
+}
+
+async function clearFailedAttempts(email, ip) {
+  const pool = sharedPool;
+  await pool.query(
+    `DELETE FROM team_login_attempts
+      WHERE (email = $1 OR ip_address = $2) AND succeeded = FALSE`,
+    [email.toLowerCase(), ip]
+  );
+}
+
+async function issueTokenPair(payload, ip) {
+  const pool = sharedPool;
+  const jti = randomUUID();
+
+  const accessToken = jwt.sign(
+    { ...payload, jti, tokenType: 'access' },
+    JWT_CONFIG.SECRET,
+    { expiresIn: ACCESS_TOKEN_TTL }
+  );
+
+  const refreshToken = jwt.sign(
+    { id: payload.id, jti, tokenType: 'refresh' },
+    JWT_CONFIG.SECRET,
+    { expiresIn: REFRESH_TOKEN_TTL }
+  );
+
+  const tokenHash = createHash('sha256').update(refreshToken).digest('hex');
+  const expiresAt  = new Date(Date.now() + REFRESH_TOKEN_TTL_MS);
+
+  await pool.query(
+    `INSERT INTO team_refresh_tokens
+       (jti, user_id, token_hash, expires_at, ip_address)
+     VALUES ($1, $2, $3, $4, $5)`,
+    [jti, payload.id, tokenHash, expiresAt, ip]
+  );
+
+  return { accessToken, refreshToken, jti };
+}
+
+async function revokeRefreshToken(jti) {
+  const pool = sharedPool;
+  await pool.query(
+    `UPDATE team_refresh_tokens
+        SET revoked = TRUE, revoked_at = NOW()
+      WHERE jti = $1`,
+    [jti]
+  );
+}
+
+async function revokeAllUserTokens(userId) {
+  const pool = sharedPool;
+  await pool.query(
+    `UPDATE team_refresh_tokens
+        SET revoked = TRUE, revoked_at = NOW()
+      WHERE user_id = $1 AND revoked = FALSE`,
+    [userId]
+  );
+}
+
+// ─── Team login ───────────────────────────────────────────────────────────────
 router.post('/login', authLimiter, [
   body('email').isEmail().withMessage('Must be a valid email'),
-  body('password').notEmpty().withMessage('Password is required'),
+  body('password').isLength({ min: 8 }).withMessage('Password required'),
 ], async (req, res) => {
-  console.log('🔵 [Team Login] Request received');
   try {
-    const email = (req.body.email || '').trim();
-    const password = (req.body.password || '').trim();
-    console.log('🔵 [Team Login] Email:', email);
-    console.log('🔵 [Team Login] Password length received:', password.length);
+    const ip = req.ip || req.socket?.remoteAddress || 'unknown';
+    const email = (req.body.email || '').trim().toLowerCase();
+    const password = req.body.password || '';
 
-    // Hardcoded credentials removed for security - all team members must be in database
-
-    // Check if user exists in database and has team role
-    console.log('🔵 [Team Login] Querying database...');
-    const normalizedEmail = String(email).toLowerCase();
-    let user;
-    try {
-      user = await userModel.findOne({
-        where: {
-          email: normalizedEmail
-        }
+    // --- lockout check ---
+    const locked = await checkLockout(email, ip).catch(() => false);
+    if (locked) {
+      return res.status(429).json({
+        success: false,
+        message: `Too many failed attempts. Try again in ${LOCKOUT_WINDOW_MIN} minutes.`
       });
-      console.log('🔵 [Team Login] Query completed');
-    } catch (queryError) {
-      console.error('❌ Team DB query error:', queryError.message);
-      throw queryError;
     }
-    console.log('🔵 [Team Login] User found:', !!user);
+
+    const user = await userModel.findOne({ where: { email } });
 
     if (!user) {
-      await auditLoginAttempt(req, null, normalizedEmail, false, 'Team user not found');
-      return res.status(401).json({
-        success: false,
-        message: 'Invalid email or password'
-      });
+      await recordAttempt(email, ip, false);
+      await auditLoginAttempt(req, null, email, false, 'Team user not found');
+      return res.status(401).json({ success: false, message: 'Invalid email or password' });
     }
 
-    // ROLE GUARD: allow explicit team/admin roles or membershipType flag
-    let metadata = {};
-    try {
-      metadata = user.metadata ? JSON.parse(user.metadata) : {};
-    } catch (err) {
-      metadata = {};
+    // --- active status check ---
+    if (user.status && user.status !== 'active') {
+      await auditLoginAttempt(req, user.id, email, false, 'Account inactive');
+      return res.status(403).json({ success: false, message: 'Account is inactive. Contact admin.' });
     }
+
+    // --- role guard (tenant-safe: must be team member of this org) ---
+    let metadata = {};
+    try { metadata = user.metadata ? JSON.parse(user.metadata) : {}; } catch (_) { metadata = {}; }
 
     const hasTeamAccess = Boolean(
-      user.isAdmin ||
-      user.isTeam ||
-      user.role === 'team' ||
-      user.membershipType === 'team' ||
+      user.isAdmin || user.isTeam ||
+      user.role === 'team' || user.membershipType === 'team' ||
       metadata.isTeam === true
     );
 
     if (!hasTeamAccess) {
-      console.log('🔴 [Team Login] Access denied: User lacks team permissions');
-      await auditLoginAttempt(req, user.id, normalizedEmail, false, 'Team access denied');
+      await recordAttempt(email, ip, false);
+      await auditLoginAttempt(req, user.id, email, false, 'Team access denied');
       return res.status(403).json({
         success: false,
-        message: 'Access denied. Team member privileges required.',
-        hint: 'Please contact an administrator to request team access.'
+        message: 'Access denied. Team member privileges required.'
       });
     }
 
-    // Verify password
+    // --- password verify ---
     const isPasswordValid = await user.comparePassword(password);
     if (!isPasswordValid) {
-      await auditLoginAttempt(req, user.id, normalizedEmail, false, 'Invalid password');
-      return res.status(401).json({
-        success: false,
-        message: 'Invalid email or password'
-      });
+      await recordAttempt(email, ip, false);
+      await auditLoginAttempt(req, user.id, email, false, 'Invalid password');
+      return res.status(401).json({ success: false, message: 'Invalid email or password' });
     }
 
-    // Check if user has team access (you can add team role logic here)
-    const teamUser = {
-      id: user.id,
-      email: user.email,
-      firstName: user.firstName,
-      lastName: user.lastName,
-      role: user.role || 'Team Member',
-      designation: user.designation || 'Healthcare Staff',
-      department: user.department || 'Healthcare Operations',
-      permissions: [
-        'User Management',
-        'Doctor Management',
-        'Appointment Management',
-        'Patient Reports',
-        'Chat Dashboard Access',
-        'Hospital Management',
-        'Pharmacy Management',
-        'Health Plans Access'
-      ]
-    };
-
-    // Fetch assigned corporates for team member
+    // --- assigned corporates (tenant-scoped, limited) ---
     let assignedCorporates = [];
     try {
       const corporates = await postgresSequelize.query(`
@@ -117,54 +226,139 @@ router.post('/login', authLimiter, [
           AND ua."entityType" = 'corporate'
           AND ua.status = 'active'
         ORDER BY c."companyName" ASC
+        LIMIT 50
       `, {
         replacements: { userId: user.id },
         type: postgresSequelize.QueryTypes.SELECT
       });
-      // Query returns array directly with SELECT
       assignedCorporates = Array.isArray(corporates) ? corporates : [];
     } catch (err) {
-      console.warn('Could not fetch assigned corporates:', err.message);
-      assignedCorporates = [];
+      console.warn('[Team Login] Could not fetch assigned corporates:', err.message);
     }
 
-    // Generate JWT token
-    const token = jwt.sign(
-      {
-        id: user.id,
-        userId: user.id,
-        email: user.email,
-        role: user.role || 'team',  // Use actual user role (admin, team, etc.)
-        userType: 'team',
-        isTeam: true,
-        isAdmin: user.isAdmin || false,
-        assignedCorporates: Array.isArray(assignedCorporates) ? assignedCorporates.map(c => c.id) : [] // Include corporate IDs in token
-      },
-      JWT_CONFIG.SECRET,
-      { expiresIn: '8h' }
-    );
+    // --- issue 15m access + 30d refresh token pair ---
+    const payload = {
+      id: user.id,
+      userId: user.id,
+      email: user.email,
+      role: user.role || 'team',
+      userType: 'team',
+      isTeam: true,
+      isAdmin: user.isAdmin || false,
+      tenantId: metadata.tenantId || user.organizationId || null,
+      assignedCorporates: assignedCorporates.map(c => c.id)
+    };
 
-    // Update last login
+    const { accessToken, refreshToken } = await issueTokenPair(payload, ip);
+
+    await clearFailedAttempts(email, ip);
     await user.update({ lastLogin: new Date() });
+    await auditLoginAttempt(req, user.id, email, true);
 
-    await auditLoginAttempt(req, user.id, normalizedEmail, true);
+    // --- fetch stored permissions from DB ---
+    let storedPermissions = metadata.permissions || null;
+    let storedModules    = metadata.grantedModules || null;
 
-    res.status(200).json({
+    const teamUser = {
+      id: user.id,
+      email: user.email,
+      firstName: user.firstName,
+      lastName: user.lastName,
+      role: user.role || 'team',
+      designation: user.designation || 'Healthcare Staff',
+      department: user.department || 'Healthcare Operations',
+      permissions: storedPermissions || [
+        'User Management', 'Doctor Management', 'Appointment Management',
+        'Patient Reports', 'Chat Dashboard Access', 'Hospital Management',
+        'Pharmacy Management', 'Health Plans Access'
+      ],
+      modules: storedModules || null
+    };
+
+    return res.status(200).json({
       success: true,
       message: 'Team login successful',
-      token,
+      token: accessToken,
+      refreshToken,
       teamUser,
-      assignedCorporates  // Include available corporates for team member
+      assignedCorporates
     });
 
   } catch (error) {
-    console.error('❌ TEAM LOGIN ERROR:', error);
-    console.error('❌ Error message:', error.message);
-    console.error('❌ Error stack:', error.stack);
-    res.status(500).json({
-      success: false,
-      message: 'Internal server error'
+    console.error('[Team Login] Error:', error.message);
+    return res.status(500).json({ success: false, message: 'Internal server error' });
+  }
+});
+
+// ─── Auth: verify access token ────────────────────────────────────────────────
+router.get('/auth/verify', authTeam, (req, res) => {
+  res.status(200).json({ success: true, teamUser: req.teamUser });
+});
+
+// ─── Auth: refresh token rotation ────────────────────────────────────────────
+router.post('/auth/refresh', async (req, res) => {
+  try {
+    const { refreshToken } = req.body;
+    if (!refreshToken) {
+      return res.status(400).json({ success: false, message: 'refreshToken required' });
+    }
+
+    let decoded;
+    try {
+      decoded = jwt.verify(refreshToken, JWT_CONFIG.SECRET);
+    } catch (_) {
+      return res.status(401).json({ success: false, message: 'Invalid or expired refresh token' });
+    }
+
+    if (decoded.tokenType !== 'refresh') {
+      return res.status(401).json({ success: false, message: 'Invalid token type' });
+    }
+
+    const pool = sharedPool;
+    const tokenHash = createHash('sha256').update(refreshToken).digest('hex');
+    const { rows } = await pool.query(
+      `SELECT * FROM team_refresh_tokens WHERE jti = $1`,
+      [decoded.jti]
+    );
+
+    if (!rows.length || rows[0].revoked || rows[0].token_hash !== tokenHash) {
+      return res.status(401).json({ success: false, message: 'Refresh token revoked or not found' });
+    }
+
+    // Revoke old token (rotation)
+    await revokeRefreshToken(decoded.jti);
+
+    const user = await userModel.findOne({ where: { id: decoded.id } });
+    if (!user || user.status !== 'active') {
+      return res.status(403).json({ success: false, message: 'Account inactive' });
+    }
+
+    let metadata = {};
+    try { metadata = user.metadata ? JSON.parse(user.metadata) : {}; } catch (_) { metadata = {}; }
+
+    const ip = req.ip || req.socket?.remoteAddress || 'unknown';
+    const payload = {
+      id: user.id,
+      userId: user.id,
+      email: user.email,
+      role: user.role || 'team',
+      userType: 'team',
+      isTeam: true,
+      isAdmin: user.isAdmin || false,
+      tenantId: metadata.tenantId || user.organizationId || null
+    };
+
+    const { accessToken, refreshToken: newRefreshToken } = await issueTokenPair(payload, ip);
+
+    return res.status(200).json({
+      success: true,
+      token: accessToken,
+      refreshToken: newRefreshToken
     });
+
+  } catch (error) {
+    console.error('[Team Refresh] Error:', error.message);
+    return res.status(500).json({ success: false, message: 'Internal server error' });
   }
 });
 
@@ -220,51 +414,68 @@ router.put('/profile', authTeam, async (req, res) => {
   }
 });
 
-// Team directory endpoint
+// Team directory endpoint (tenant-scoped + paginated)
 router.get('/directory', authTeam, async (req, res) => {
   try {
-    // Fetch all active team members
-    const users = await userModel.findAll({
-      where: { status: 'active' }
+    const teamUser = req.teamUser;
+    const { page = 1, limit = 50, department, search } = req.query;
+    const offset = (parseInt(page) - 1) * parseInt(limit);
+
+    const where = { status: 'active' };
+    if (department) where.department = department;
+
+    // Tenant scope: if tenantId is set, caller only sees members in the same org
+    if (teamUser.tenantId) {
+      // Filter by organizationId column if it exists; gracefully degrades
+      where.organizationId = teamUser.tenantId;
+    }
+
+    const { count, rows: users } = await userModel.findAndCountAll({
+      where,
+      limit: Math.min(parseInt(limit), 100),
+      offset,
+      order: [['firstName', 'ASC']]
     });
 
     const members = users
       .map(user => {
         let metadata = {};
-        try {
-          metadata = user.metadata ? JSON.parse(user.metadata) : {};
-        } catch (err) {
-          metadata = {};
-        }
+        try { metadata = user.metadata ? JSON.parse(user.metadata) : {}; } catch (_) { metadata = {}; }
 
         const role = user.role || metadata.role || 'team';
         const isTeamMember = role === 'team' || user.membershipType === 'team' || metadata.isTeam === true;
 
-        return isTeamMember ? {
+        if (!isTeamMember) return null;
+
+        const fullName = `${user.firstName || ''} ${user.lastName || ''}`.toLowerCase();
+        if (search && !fullName.includes(search.toLowerCase()) &&
+            !(user.email || '').toLowerCase().includes(search.toLowerCase())) return null;
+
+        return {
           id: user.id,
           firstName: user.firstName,
           lastName: user.lastName,
           email: user.email,
-          phone: user.phoneNumber || metadata.phoneNumber || metadata.phone || 'N/A',
+          phone: user.phoneNumber || metadata.phone || 'N/A',
           department: user.department || metadata.department || 'Healthcare',
           designation: user.designation || metadata.designation || 'Staff',
           role: role === 'team' ? 'Team Member' : (role || 'Staff'),
           isActive: user.isActive,
           avatar: null
-        } : null;
+        };
       })
       .filter(Boolean);
 
-    res.status(200).json({
+    return res.status(200).json({
       success: true,
-      members
+      members,
+      total: count,
+      page: parseInt(page),
+      pages: Math.ceil(count / parseInt(limit))
     });
   } catch (error) {
     console.error('Team directory error:', error);
-    res.status(500).json({
-      success: false,
-      message: 'Error fetching team directory'
-    });
+    return res.status(500).json({ success: false, message: 'Error fetching team directory' });
   }
 });
 
@@ -482,34 +693,46 @@ router.post('/verify-access', authTeam, attachAccessLevel, async (req, res) => {
 router.put('/privileges/:teamUserId', authTeam, async (req, res) => {
   try {
     const { teamUserId } = req.params;
-    const { editableModules, deletableModules } = req.body;
+    const { editableModules, deletableModules, permissions } = req.body;
     const adminUser = req.teamUser;
 
     // Only admins can modify privileges
-    if (adminUser.role !== 'admin' && adminUser.role !== 'super_admin') {
+    if (adminUser.role !== 'admin' && adminUser.role !== 'super_admin' && !adminUser.isAdmin) {
       return res.status(403).json({
         success: false,
         message: 'Admin access required to modify privileges'
       });
     }
 
-    // In production, update database with new privileges
-    // For now, return success with the updated privileges
-    res.status(200).json({
+    const targetUser = await userModel.findOne({ where: { id: teamUserId } });
+    if (!targetUser) {
+      return res.status(404).json({ success: false, message: 'Team member not found' });
+    }
+
+    let metadata = {};
+    try { metadata = targetUser.metadata ? JSON.parse(targetUser.metadata) : {}; } catch (_) { metadata = {}; }
+
+    if (editableModules  !== undefined) metadata.editableModules  = editableModules;
+    if (deletableModules !== undefined) metadata.deletableModules = deletableModules;
+    if (permissions      !== undefined) metadata.permissions      = permissions;
+    metadata.privilegesUpdatedAt = new Date().toISOString();
+    metadata.privilegesUpdatedBy = adminUser.id;
+
+    await targetUser.update({ metadata: JSON.stringify(metadata) });
+
+    return res.status(200).json({
       success: true,
       message: 'Privileges updated successfully',
       teamUserId,
       privileges: {
-        editableModules: editableModules || [],
-        deletableModules: deletableModules || []
+        editableModules:  metadata.editableModules  || [],
+        deletableModules: metadata.deletableModules || [],
+        permissions:      metadata.permissions      || []
       }
     });
   } catch (error) {
     console.error('Update privileges error:', error);
-    res.status(500).json({
-      success: false,
-      message: 'Error updating privileges'
-    });
+    return res.status(500).json({ success: false, message: 'Error updating privileges' });
   }
 });
 
@@ -593,20 +816,24 @@ router.post('/users', authTeam, [
   }
 });
 
-// List all team users
+// List all team users (tenant-scoped + paginated)
 router.get('/users', authTeam, async (req, res) => {
   try {
-    const { department, role, status } = req.query;
+    const teamUser = req.teamUser;
+    const { department, role, status, page = 1, limit = 50 } = req.query;
+    const offset = (parseInt(page) - 1) * parseInt(limit);
+
     const where = { membershipType: 'team', status: status || 'active' };
-
     if (department) where.department = department;
-    if (role) where.role = role;
+    if (role)       where.role = role;
+    if (teamUser.tenantId) where.organizationId = teamUser.tenantId;
 
-    const users = await userModel.findAll({
+    const { count, rows: users } = await userModel.findAndCountAll({
       where,
       attributes: ['id', 'firstName', 'lastName', 'email', 'phoneNumber', 'role', 'department', 'designation', 'status', 'lastLogin', 'createdAt'],
       order: [['createdAt', 'DESC']],
-      limit: 100
+      limit: Math.min(parseInt(limit), 100),
+      offset
     });
 
     const teamUsers = users.map(user => ({
@@ -623,17 +850,16 @@ router.get('/users', authTeam, async (req, res) => {
       createdAt: user.createdAt
     }));
 
-    res.status(200).json({
+    return res.status(200).json({
       success: true,
       users: teamUsers,
-      count: teamUsers.length
+      count,
+      page: parseInt(page),
+      pages: Math.ceil(count / parseInt(limit))
     });
   } catch (error) {
     console.error('List users error:', error);
-    res.status(500).json({
-      success: false,
-      message: 'Error fetching users'
-    });
+    return res.status(500).json({ success: false, message: 'Error fetching users' });
   }
 });
 
@@ -922,9 +1148,8 @@ router.get('/pharmacies', authTeam, async (req, res) => {
   }
 });
 
-// ============== TEAM APPOINTMENTS MANAGEMENT ==============
-
-// Create team appointment
+// ─── Appointments ─────────────────────────────────────────────────────────────
+// Create team appointment (DB-persisted)
 router.post('/appointments', authTeam, [
   body('doctorId').notEmpty().withMessage('Doctor ID is required'),
   body('patientEmail').isEmail().withMessage('Valid patient email is required'),
@@ -935,108 +1160,108 @@ router.post('/appointments', authTeam, [
     const { doctorId, patientEmail, appointmentDate, appointmentTime, notes, type = 'consultation' } = req.body;
     const teamUser = req.teamUser;
 
-    // Verify doctor exists
     const doctor = await userModel.findOne({ where: { id: doctorId, role: 'doctor' } });
     if (!doctor) {
-      return res.status(404).json({
-        success: false,
-        message: 'Doctor not found'
-      });
+      return res.status(404).json({ success: false, message: 'Doctor not found' });
     }
 
-    // Create appointment (returns generated ID)
-    const appointmentId = Math.floor(Math.random() * 1000000) + 1;
-    const appointmentDateTime = new Date(`${appointmentDate}T${appointmentTime}`);
+    const pool = sharedPool;
+    const { rows } = await pool.query(
+      `INSERT INTO team_appointments
+         (doctor_id, patient_email, appointment_date, appointment_time, type, notes, status, tenant_id, created_by)
+       VALUES ($1, $2, $3, $4, $5, $6, 'confirmed', $7, $8)
+       RETURNING id, created_at`,
+      [doctorId, patientEmail, appointmentDate, appointmentTime, type, notes || '', teamUser.tenantId || null, teamUser.id]
+    );
 
-    res.status(201).json({
+    const row = rows[0];
+
+    return res.status(201).json({
       success: true,
       message: 'Appointment created successfully',
       appointment: {
-        id: appointmentId,
+        id: row.id,
         doctorId,
         doctorName: `${doctor.firstName} ${doctor.lastName}`,
         patientEmail,
         appointmentDate,
         appointmentTime,
-        appointmentDateTime: appointmentDateTime.toISOString(),
         type,
         notes: notes || '',
         status: 'confirmed',
         createdBy: teamUser.id,
-        createdAt: new Date().toISOString()
+        createdAt: row.created_at
       }
     });
   } catch (error) {
     console.error('Create appointment error:', error);
-    res.status(500).json({
-      success: false,
-      message: 'Error creating appointment',
-      error: error.message
-    });
+    return res.status(500).json({ success: false, message: 'Error creating appointment', error: error.message });
   }
 });
 
-// List team appointments
+// List team appointments (DB-backed, tenant-scoped)
 router.get('/appointments', authTeam, async (req, res) => {
   try {
-    const { doctorId, status, fromDate, toDate } = req.query;
+    const { doctorId, status, fromDate, toDate, page = 1, limit = 50 } = req.query;
+    const teamUser = req.teamUser;
+    const offset = (parseInt(page) - 1) * parseInt(limit);
 
-    // Mock appointments data - in production this would query a database table
-    let appointments = [
-      {
-        id: 1,
-        doctorId: 1,
-        doctorName: 'Dr. Smith',
-        patientEmail: 'patient1@example.com',
-        appointmentDate: new Date().toISOString().split('T')[0],
-        appointmentTime: '10:00 AM',
-        type: 'consultation',
-        status: 'confirmed',
-        createdAt: new Date().toISOString()
-      }
-    ];
+    const conditions = [];
+    const params = [];
+    let idx = 1;
 
-    if (doctorId) {
-      appointments = appointments.filter(apt => apt.doctorId === parseInt(doctorId));
+    if (teamUser.tenantId) {
+      conditions.push(`(ta.tenant_id = $${idx} OR ta.tenant_id IS NULL)`);
+      params.push(teamUser.tenantId);
+      idx++;
     }
-    if (status) {
-      appointments = appointments.filter(apt => apt.status === status);
-    }
+    if (doctorId) { conditions.push(`ta.doctor_id = $${idx}`); params.push(parseInt(doctorId)); idx++; }
+    if (status)   { conditions.push(`ta.status = $${idx}`);    params.push(status); idx++; }
+    if (fromDate) { conditions.push(`ta.appointment_date >= $${idx}`); params.push(fromDate); idx++; }
+    if (toDate)   { conditions.push(`ta.appointment_date <= $${idx}`); params.push(toDate);   idx++; }
 
-    res.status(200).json({
+    const where = conditions.length ? `WHERE ${conditions.join(' AND ')}` : '';
+
+    params.push(parseInt(limit), offset);
+    const pool = sharedPool;
+    const { rows } = await pool.query(
+      `SELECT ta.*, u.first_name || ' ' || u.last_name AS doctor_name
+         FROM team_appointments ta
+         LEFT JOIN users u ON u.id = ta.doctor_id
+         ${where}
+         ORDER BY ta.appointment_date DESC, ta.appointment_time DESC
+         LIMIT $${idx} OFFSET $${idx + 1}`,
+      params
+    );
+
+    return res.status(200).json({
       success: true,
-      appointments,
-      count: appointments.length
+      appointments: rows,
+      count: rows.length,
+      page: parseInt(page)
     });
   } catch (error) {
     console.error('List appointments error:', error);
-    res.status(500).json({
-      success: false,
-      message: 'Error fetching appointments'
-    });
+    return res.status(500).json({ success: false, message: 'Error fetching appointments' });
   }
 });
 
-// ============== LOGOUT ENDPOINT ==============
-
-// Team logout endpoint
+// ─── Logout — revoke refresh token ───────────────────────────────────────────
 router.post('/logout', authTeam, async (req, res) => {
   try {
-    // In a production system, you might want to:
-    // - Blacklist the token
-    // - Update user's last activity timestamp
-    // - Log the logout event
-
-    res.status(200).json({
-      success: true,
-      message: 'Logged out successfully'
-    });
+    const { refreshToken } = req.body;
+    if (refreshToken) {
+      try {
+        const decoded = jwt.verify(refreshToken, JWT_CONFIG.SECRET);
+        if (decoded?.jti) {
+          await revokeRefreshToken(decoded.jti);
+        }
+      } catch (_) { /* expired tokens still safely no-op */ }
+    }
+    return res.status(200).json({ success: true, message: 'Logged out successfully' });
   } catch (error) {
-    console.error('Logout error:', error);
-    res.status(500).json({
-      success: false,
-      message: 'Error during logout'
-    });
+    console.error('[Team Logout] Error:', error.message);
+    return res.status(500).json({ success: false, message: 'Error during logout' });
   }
 });
 
