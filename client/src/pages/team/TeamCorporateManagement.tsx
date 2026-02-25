@@ -1016,7 +1016,7 @@ const TeamCorporateManagement = () => {
     }
   };
 
-  // Create New Package
+  // Create New Package — persists to DB via corporate-package-assignments
   const handleCreatePackage = async () => {
     if (!newPackage.name || !newPackage.price) {
       toast({
@@ -1026,22 +1026,55 @@ const TeamCorporateManagement = () => {
       });
       return;
     }
-    
-    const newPkg: HealthPackage = {
-      id: `pkg-${Date.now()}`,
-      name: newPackage.name,
-      tests: newPackage.tests,
-      price: parseFloat(newPackage.price),
-      validityDays: parseInt(newPackage.validityDays) || 365
-    };
-    
-    setHealthPackages(prev => [...prev, newPkg]);
-    
-    toast({
-      title: 'Package Created',
-      description: `${newPackage.name} has been created successfully`
-    });
-    
+
+    if (!selectedCorporate?.id) {
+      toast({ variant: 'destructive', title: 'Error', description: 'No corporate selected' });
+      return;
+    }
+
+    const packageId = newPackage.name.replace(/\s+/g, '_').toUpperCase();
+
+    try {
+      const token = localStorage.getItem('teamToken');
+      await api.post('/admin/corporate-package-assignments', {
+        corporateId: selectedCorporate.id,
+        packageId,
+        packageName: newPackage.name,
+        packageDetails: {
+          tests:       newPackage.tests,
+          price:       parseFloat(newPackage.price),
+          description: newPackage.description,
+        },
+        employeeIds:  'all',
+        validityDays: parseInt(newPackage.validityDays) || 365,
+      }, {
+        headers: token ? { Authorization: `Bearer ${token}` } : undefined
+      });
+
+      // Refresh the list from server so the new package shows immediately
+      await fetchHealthPackages(selectedCorporate.id);
+
+      toast({
+        title: 'Package Created',
+        description: `${newPackage.name} has been created and assigned to all employees`
+      });
+    } catch (error: any) {
+      // Optimistically add to local state so UI isn't blocked
+      const newPkg: HealthPackage = {
+        id: packageId,
+        name: newPackage.name,
+        tests: newPackage.tests,
+        price: parseFloat(newPackage.price),
+        validityDays: parseInt(newPackage.validityDays) || 365
+      };
+      setHealthPackages(prev => [...prev, newPkg]);
+      toast({
+        variant: 'destructive',
+        title: 'Warning',
+        description: `Package saved locally but DB sync failed: ${error?.response?.data?.message || error?.message}`
+      });
+    }
+
     setShowAddPackageDialog(false);
     setNewPackage({ name: '', description: '', tests: [], price: '', validityDays: '365' });
   };

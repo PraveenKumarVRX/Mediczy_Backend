@@ -139,36 +139,73 @@ router.get('/labs', authUser, requireTeamOrAdmin, async (req, res) => {
 
 // ──────────────────────────────────────────────
 // GET /api/corporate-bookings/packages
-// Fetch health checkup packages/plans assigned to a corporate
-// Queries membership_plans where organizationId = corporateId
+// Fetch health checkup packages for a corporate.
+// Primary source: user_health_packages (team-created via admin UI)
+// Fallback:       membership_plans (legacy organisation plans)
 // ──────────────────────────────────────────────
 router.get('/packages', authUser, requireTeamOrAdmin, async (req, res) => {
   try {
     const { corporateId = 5 } = req.query;
+    const cid = parseInt(corporateId);
 
-    const packages = await postgresSequelize.query(
+    // 1. Team-created packages stored in user_health_packages
+    const uhpRows = await postgresSequelize.query(
+      `SELECT DISTINCT ON ("packageId")
+         "packageId"    AS id,
+         "packageName"  AS name,
+         "packageDetails"
+       FROM user_health_packages
+       WHERE "corporateId" = :corporateId
+         AND status = 'active'
+       ORDER BY "packageId", "createdAt" DESC`,
+      { replacements: { corporateId: cid }, type: postgresSequelize.QueryTypes.SELECT }
+    );
+
+    const uhpPackages = uhpRows.map(p => {
+      const details = typeof p.packageDetails === 'string'
+        ? JSON.parse(p.packageDetails)
+        : (p.packageDetails || {});
+      return {
+        id:          p.id,
+        name:        p.name,
+        description: details.description || '',
+        features:    details.tests || details.features || [],
+        price:       Number(details.price || details.cost || 0),
+        planType:    'health_checkup',
+      };
+    });
+
+    // 2. Legacy membership_plans — skip any whose name already appears above
+    const uhpNames = new Set(uhpPackages.map(p => p.name));
+    const planRows = await postgresSequelize.query(
       `SELECT
-         mp.id,
+         mp.id::text AS id,
          mp.name,
          mp.description,
          mp.features,
-         mp.benefits,
          mp."planType",
-         mp."discountedPrice" AS price,
-         mp.metadata
+         COALESCE(mp."discountedPrice", mp.price) AS price
        FROM membership_plans mp
        WHERE mp."organizationId" = :corporateId
          AND mp."organizationType" = 'corporate'
          AND mp."isActive" = true
        ORDER BY mp."sortOrder" ASC NULLS LAST, mp.name ASC
        LIMIT 50`,
-      {
-        replacements: { corporateId: parseInt(corporateId) },
-        type: postgresSequelize.QueryTypes.SELECT
-      }
+      { replacements: { corporateId: cid }, type: postgresSequelize.QueryTypes.SELECT }
     );
 
-    return res.json({ success: true, packages });
+    const planPackages = planRows
+      .filter(p => !uhpNames.has(p.name))
+      .map(p => ({
+        id:          p.id,
+        name:        p.name,
+        description: p.description || '',
+        features:    p.features || [],
+        price:       Number(p.price || 0),
+        planType:    p.planType || 'health_checkup',
+      }));
+
+    return res.json({ success: true, packages: [...uhpPackages, ...planPackages] });
   } catch (err) {
     console.error('[corporate-bookings] GET /packages error:', err);
     return res.status(500).json({ success: false, message: err.message });

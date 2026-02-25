@@ -53,7 +53,7 @@ interface BookingHistoryItem {
 }
 
 interface CorporatePackage {
-  id: number;
+  id: string | number;
   name: string;
   description?: string;
   features?: string[];
