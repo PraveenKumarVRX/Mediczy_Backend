@@ -390,8 +390,8 @@ router.get('/corporates', authUser, requireRole(['admin', 'team']), async (req, 
           type: postgresSequelize.QueryTypes.SELECT
         });
         
-        const assigned = Array.isArray(assignedResult) ? assignedResult[0] : assignedResult;
-        corporates = Array.isArray(assigned) ? assigned : [assigned].filter(Boolean);
+        const assigned = Array.isArray(assignedResult) ? assignedResult : [assignedResult].filter(Boolean);
+        corporates = assigned;
         
         console.log(`[Corporates] Team user ${req.user.email} - Found ${corporates.length} assigned corporates`);
       } catch (teamQueryError) {
@@ -407,8 +407,8 @@ router.get('/corporates', authUser, requireRole(['admin', 'team']), async (req, 
           type: postgresSequelize.QueryTypes.SELECT
         });
         
-        const all = Array.isArray(allResult) ? allResult[0] : allResult;
-        corporates = all || [];
+        const all = Array.isArray(allResult) ? allResult : [];
+        corporates = all;
         console.log(`[Corporates] Admin user ${req.user.email} - Found ${corporates.length} total corporates`);
       } catch (adminQueryError) {
         console.error('[Corporates] All corporates query error:', adminQueryError.message);

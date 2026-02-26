@@ -255,7 +255,7 @@ export default function CorporateHealthBooking() {
     setCorporateListLoading(true);
     api.get('/admin/corporates')
       .then(r => {
-        const raw = r.data.corporates || r.data || [];
+        const raw = r.data.corporates || r.data.data || r.data || [];
         const list: Corporate[] = (Array.isArray(raw) ? raw : []).map((c: Record<string, unknown>) => ({
           id: c.id as number,
           companyName: (c.companyName || c.company_name || '') as string,
