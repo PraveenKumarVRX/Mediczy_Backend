@@ -33,6 +33,7 @@ aws s3 sync "$BUILD_DIR" "$S3_BUCKET" \
   --delete \
   --cache-control "public,max-age=31536000,immutable" \
   --exclude "*.html" \
+  --exclude "serviceWorker.js" \
   --exclude "service-worker.js" \
   --exclude "firebase-messaging-sw.js"
 
@@ -41,6 +42,7 @@ aws s3 sync "$BUILD_DIR" "$S3_BUCKET" \
   --cache-control "no-cache,no-store,must-revalidate" \
   --exclude "*" \
   --include "*.html" \
+  --include "serviceWorker.js" \
   --include "*service-worker*.js"
 
 echo -e "${GREEN}✅ Files uploaded to S3${NC}"
