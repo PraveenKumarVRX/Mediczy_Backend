@@ -582,15 +582,15 @@ const TeamEmployeeManagement = () => {
                 <div className="space-y-1">
                   <Label>Health Plan</Label>
                   <Select
-                    value={editForm.packageId}
-                    onValueChange={v => setEditForm(f => ({ ...f, packageId: v }))}
+                    value={editForm.packageId || '__none__'}
+                    onValueChange={v => setEditForm(f => ({ ...f, packageId: v === '__none__' ? '' : v }))}
                     disabled={pkgLoading}
                   >
                     <SelectTrigger>
                       <SelectValue placeholder={pkgLoading ? 'Loading plans...' : corpPackages.length === 0 ? 'No plans available' : 'Select plan...'} />
                     </SelectTrigger>
                     <SelectContent>
-                      <SelectItem value="">— No plan assigned —</SelectItem>
+                      <SelectItem value="__none__">— No plan assigned —</SelectItem>
                       {corpPackages.map(p => (
                         <SelectItem key={p.packageId} value={p.packageId}>{p.packageName}</SelectItem>
                       ))}
