@@ -179,9 +179,10 @@ const TeamReports            = lazy(() => import("@/pages/team/TeamReports"));
 const TeamTools              = lazy(() => import("@/pages/team/TeamTools"));
 const TeamPharmacyEdit       = lazy(() => import("@/pages/team/TeamPharmacyEdit"));
 const WhatsAppCommunication  = lazy(() => import("@/pages/team/WhatsAppCommunication"));
-const TeamCorporateManagement = lazy(() => import("@/pages/team/TeamCorporateManagement"));
-const CorporateHealthBooking  = lazy(() => import("@/pages/team/CorporateHealthBooking"));
-const TeamSettings           = lazy(() => import("@/pages/team/TeamSettings"));
+const TeamCorporateManagement  = lazy(() => import("@/pages/team/TeamCorporateManagement"));
+const CorporateHealthBooking   = lazy(() => import("@/pages/team/CorporateHealthBooking"));
+const TeamEmployeeManagement   = lazy(() => import("@/pages/team/TeamEmployeeManagement"));
+const TeamSettings             = lazy(() => import("@/pages/team/TeamSettings"));
 
 const _TeamModulePages = () => import("@/pages/team/TeamModulePages");
 const TeamUserManagementPage     = lazyNamed(_TeamModulePages, "TeamUserManagementPage");
@@ -654,7 +655,7 @@ const AppRoutes = () => {
         <Route path="/team/reports"                  element={<TeamReports />} />
         <Route path="/team/tools"                    element={<TeamTools />} />
         <Route path="/team/pharmacy-edit"            element={<TeamPharmacyEdit />} />
-        <Route path="/team/user-management"          element={<TeamUserManagementPage />} />
+        <Route path="/team/user-management"          element={<TeamEmployeeManagement />} />
         <Route path="/team/doctor-management"        element={<TeamDoctorManagementPage />} />
         <Route path="/team/corporate-management"     element={<TeamCorporateManagement />} />
         <Route path="/team/corporate-health-booking" element={<CorporateHealthBooking />} />

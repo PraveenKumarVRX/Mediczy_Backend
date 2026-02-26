@@ -2071,6 +2071,76 @@ router.get('/corporate-employees/:corporateId', authUser, requireRole(['admin', 
 });
 
 /**
+ * Update Corporate Employee
+ * PUT /api/admin/corporate-employees/:userId
+ * Updates user fields and/or association status (active/inactive)
+ */
+router.put('/corporate-employees/:userId', authUser, requireRole(['admin', 'team', 'corporate_admin']), async (req, res) => {
+  try {
+    const { userId } = req.params;
+    const { corporateId, status, firstName, lastName, email, phoneNumber, department, designation } = req.body;
+
+    if (!corporateId) {
+      return res.status(400).json({ success: false, message: 'corporateId is required' });
+    }
+    const numericUserId = parseInt(userId, 10);
+    const numericCorporateId = parseInt(corporateId, 10);
+
+    if (isNaN(numericUserId) || isNaN(numericCorporateId)) {
+      return res.status(400).json({ success: false, message: 'Invalid userId or corporateId' });
+    }
+
+    // Team access check
+    if (!req.user.isAdmin) {
+      const [hasAccess] = await postgresSequelize.query(`
+        SELECT 1 FROM user_associations
+        WHERE "userId" = :requesterId AND "entityId" = :corpId
+          AND "entityType" = 'corporate' AND status = 'active'
+        LIMIT 1
+      `, {
+        replacements: { requesterId: req.user.id, corpId: numericCorporateId },
+        type: postgresSequelize.QueryTypes.SELECT
+      });
+      if (!hasAccess) return res.status(403).json({ success: false, message: 'Access denied.' });
+    }
+
+    // Update users table (personal info fields)
+    const userUpdates = ['"updatedAt" = NOW()'];
+    const userReplacements = { userId: numericUserId };
+    if (firstName) { userUpdates.push('"firstName" = :firstName'); userReplacements.firstName = firstName; }
+    if (lastName !== undefined) { userUpdates.push('"lastName" = :lastName'); userReplacements.lastName = lastName; }
+    if (email) { userUpdates.push('"email" = :email'); userReplacements.email = email.toLowerCase().trim(); }
+    if (phoneNumber) { userUpdates.push('"phoneNumber" = :phoneNumber'); userReplacements.phoneNumber = phoneNumber; }
+    await postgresSequelize.query(
+      `UPDATE users SET ${userUpdates.join(', ')} WHERE id = :userId`,
+      { replacements: userReplacements, type: postgresSequelize.QueryTypes.UPDATE }
+    );
+
+    // Update user_associations table (status + metadata)
+    const assocUpdates = ['"updatedAt" = NOW()'];
+    const assocReplacements = { userId: numericUserId, corpId: numericCorporateId };
+    if (status) { assocUpdates.push('status = :status'); assocReplacements.status = status; }
+    if (department !== undefined || designation !== undefined) {
+      const metaParts = [];
+      if (department !== undefined) { metaParts.push("'department', :department"); assocReplacements.department = department; }
+      if (designation !== undefined) { metaParts.push("'designation', :designation"); assocReplacements.designation = designation; }
+      assocUpdates.push(`metadata = COALESCE(metadata, '{}'::jsonb) || jsonb_build_object(${metaParts.join(', ')})`);
+    }
+    await postgresSequelize.query(
+      `UPDATE user_associations SET ${assocUpdates.join(', ')}
+       WHERE "userId" = :userId AND "entityId" = :corpId
+         AND "entityType" = 'corporate' AND role = 'employee'`,
+      { replacements: assocReplacements, type: postgresSequelize.QueryTypes.UPDATE }
+    );
+
+    return res.json({ success: true, message: 'Employee updated successfully' });
+  } catch (error) {
+    console.error('Failed to update corporate employee:', error);
+    return res.status(500).json({ success: false, message: error.message });
+  }
+});
+
+/**
  * Get Corporate Health Packages
  * GET /api/admin/corporate-health-packages/:corporateId
  */
