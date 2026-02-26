@@ -37,6 +37,7 @@ interface Lab {
   city?: string;
   state?: string;
   pinCode?: string;
+  accreditation?: string;
 }
 
 /** Extract a displayable street string from lab.address (may be string or JSON object) */
@@ -165,12 +166,13 @@ export default function CorporateHealthBooking() {
   const [showSuggestions, setShowSuggestions] = useState(false);
   const searchTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
-  // ── labs ──
-  const [labs, setLabs] = useState<Lab[]>([]);
-  const [selectedLabId, setSelectedLabId] = useState('');
+  // ── lab search (server-side, like employee search) ──
+  const [labSuggestions, setLabSuggestions] = useState<Lab[]>([]);
+  const [selectedLab, setSelectedLab] = useState<Lab | null>(null);
   const [labsLoading, setLabsLoading] = useState(false);
   const [labSearch, setLabSearch] = useState('');
   const [showLabSuggestions, setShowLabSuggestions] = useState(false);
+  const labSearchTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   // ── user type ──
   const userType = getUserType();
@@ -235,15 +237,9 @@ export default function CorporateHealthBooking() {
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   // ──────────────────────────────────────────────────────────
-  // Helper: load labs + packages once a corporate is chosen
+  // Helper: load packages once a corporate is chosen
   // ──────────────────────────────────────────────────────────
   const loadForCorporate = (cid: number) => {
-    setLabsLoading(true);
-    api.get(`/corporate-bookings/labs?corporateId=${cid}`)
-      .then(r => setLabs(r.data.labs || []))
-      .catch(e => console.error('Labs fetch failed:', e))
-      .finally(() => setLabsLoading(false));
-
     setPackagesLoading(true);
     api.get(`/corporate-bookings/packages?corporateId=${cid}`)
       .then(r => setPackages(r.data.packages || []))
@@ -446,6 +442,38 @@ export default function CorporateHealthBooking() {
       .finally(() => setEligibilityLoading(false));
   };
 
+  // ──────────────────────────────────
+  // Lab auto-search (server-side, like employee search)
+  // ──────────────────────────────────
+  const handleLabSearch = (val: string) => {
+    setLabSearch(val);
+    setSelectedLab(null);
+    if (labSearchTimerRef.current) clearTimeout(labSearchTimerRef.current);
+    if (val.trim().length < 2) {
+      setLabSuggestions([]);
+      setShowLabSuggestions(false);
+      return;
+    }
+    labSearchTimerRef.current = setTimeout(async () => {
+      setLabsLoading(true);
+      try {
+        const r = await api.get(`/corporate-bookings/labs?corporateId=${corporate?.id}&search=${encodeURIComponent(val)}`);
+        setLabSuggestions(r.data.labs || []);
+        setShowLabSuggestions(true);
+      } catch {
+        setLabSuggestions([]);
+      } finally {
+        setLabsLoading(false);
+      }
+    }, 350);
+  };
+
+  const selectLab = (lab: Lab) => {
+    setSelectedLab(lab);
+    setLabSearch(lab.name);
+    setShowLabSuggestions(false);
+  };
+
   // ── Corporate search handler (admin only) ──
   const handleCorpSearch = (val: string) => {
     setCorpInput(val);
@@ -466,10 +494,10 @@ export default function CorporateHealthBooking() {
     setEmployeeSearch('');
     setEmployeeEligibility([]);
     setTestPackage('');
-    setSelectedLabId('');
+    setSelectedLab(null);
     setLabSearch('');
     setShowLabSuggestions(false);
-    setLabs([]);
+    setLabSuggestions([]);
     setPackages([]);
     loadForCorporate(corp.id);
     setView('booking');
@@ -480,9 +508,9 @@ export default function CorporateHealthBooking() {
     setCorpInput('');
     setCorpSuggestions(corporateList.slice(0, 10));
     setShowCorpSuggestions(false);
-    setLabs([]);
+    setLabSuggestions([]);
     setPackages([]);
-    setSelectedLabId('');
+    setSelectedLab(null);
     setLabSearch('');
     setShowLabSuggestions(false);
     setTestPackage('');
@@ -506,8 +534,8 @@ export default function CorporateHealthBooking() {
       toast({ variant: 'destructive', title: 'Employee required', description: `Please search and select a ${corporate.companyName} employee.` });
       return;
     }
-    if (!selectedLabId) {
-      toast({ variant: 'destructive', title: 'Lab required', description: 'Please select a lab.' });
+    if (!selectedLab) {
+      toast({ variant: 'destructive', title: 'Lab required', description: 'Please search and select a lab.' });
       return;
     }
     if (!checkupDate) {
@@ -519,15 +547,14 @@ export default function CorporateHealthBooking() {
       return;
     }
 
-    const lab = labs.find(l => String(l.id) === String(selectedLabId));
-    const labAddress = [lab?.address, lab?.city, lab?.state, lab?.pinCode].filter(Boolean).join(', ');
+    const labAddress = [labStreet(selectedLab), selectedLab.city, selectedLab.state, selectedLab.pinCode].filter(Boolean).join(', ');
 
     setSubmitting(true);
     try {
       const r = await api.post('/corporate-bookings/health-checkup', {
         employeeId: selectedEmployee.id,
-        labId: parseInt(selectedLabId),
-        labName: lab?.name || '',
+        labId: selectedLab.id,
+        labName: selectedLab.name,
         labAddress,
         checkupDate,
         checkupTime,
@@ -553,7 +580,7 @@ export default function CorporateHealthBooking() {
       setSelectedEmployee(null);
       setEmployeeSearch('');
       setEmployeeEligibility([]);
-      setSelectedLabId('');
+      setSelectedLab(null);
       setLabSearch('');
       setShowLabSuggestions(false);
       setCheckupDate('');
@@ -840,129 +867,85 @@ export default function CorporateHealthBooking() {
               <Card>
                 <CardHeader className="pb-3">
                   <CardTitle className="text-base flex items-center gap-2">
-                    <span className={`w-6 h-6 rounded-full text-white text-xs flex items-center justify-center font-bold ${selectedLabId ? 'bg-green-500' : 'bg-blue-600'}`}>2</span>
+                    <span className={`w-6 h-6 rounded-full text-white text-xs flex items-center justify-center font-bold ${selectedLab ? 'bg-green-500' : 'bg-blue-600'}`}>2</span>
                     Select Lab
-                    {labsLoading && <Loader2 className="h-4 w-4 animate-spin text-muted-foreground ml-auto" />}
-                    {!labsLoading && labs.length > 0 && (
-                      <Badge variant="secondary" className="ml-auto text-xs">{labs.length} in {corporate?.companyName || 'corporate'} network</Badge>
-                    )}
                   </CardTitle>
                 </CardHeader>
                 <CardContent>
-                  {labsLoading ? (
-                    <div className="flex items-center gap-2 text-sm text-muted-foreground py-2">
-                      <Loader2 className="h-4 w-4 animate-spin" /> Loading labs…
-                    </div>
-                  ) : labs.length === 0 ? (
-                    <p className="text-sm text-muted-foreground flex items-center gap-2 py-2">
-                      <AlertCircle className="h-4 w-4 text-orange-400" /> No labs found in network.
-                    </p>
-                  ) : (
+                  <div className="relative">
                     <div className="relative">
-                      {/* Search input */}
-                      <div className="relative">
-                        <Search className="absolute left-3 top-2.5 h-4 w-4 text-muted-foreground" />
-                        <Input
-                          placeholder={`Search among ${labs.length} labs by name or city…`}
-                          value={labSearch}
-                          autoComplete="off"
-                          className="pl-9 pr-8"
-                          onChange={e => {
-                            const val = e.target.value;
-                            setLabSearch(val);
-                            if (val !== labs.find(l => String(l.id) === selectedLabId)?.name) {
-                              setSelectedLabId('');
-                            }
-                            setShowLabSuggestions(true);
-                          }}
-                          onFocus={() => setShowLabSuggestions(true)}
-                          onBlur={() => setTimeout(() => setShowLabSuggestions(false), 150)}
-                        />
-                        {selectedLabId && (
+                      <Search className="absolute left-3 top-2.5 h-4 w-4 text-muted-foreground" />
+                      <Input
+                        placeholder="Search lab by name, city or state..."
+                        value={labSearch}
+                        onChange={e => handleLabSearch(e.target.value)}
+                        onFocus={() => labSuggestions.length > 0 && setShowLabSuggestions(true)}
+                        className="pl-9"
+                        autoComplete="off"
+                      />
+                      {labsLoading && <Loader2 className="absolute right-3 top-2.5 h-4 w-4 text-muted-foreground animate-spin" />}
+                    </div>
+
+                    {/* Suggestions dropdown */}
+                    {showLabSuggestions && labSuggestions.length > 0 && (
+                      <div className="absolute z-50 w-full bg-background border rounded-lg shadow-lg mt-1 max-h-56 overflow-y-auto">
+                        {labSuggestions.map(lab => (
                           <button
+                            key={lab.id}
                             type="button"
-                            onClick={() => { setSelectedLabId(''); setLabSearch(''); setShowLabSuggestions(false); }}
-                            className="absolute right-2.5 top-2.5 text-muted-foreground hover:text-foreground"
+                            onClick={() => selectLab(lab)}
+                            className="w-full px-4 py-3 flex items-center gap-3 hover:bg-accent text-left transition-colors"
                           >
-                            <XCircle className="h-4 w-4" />
-                          </button>
-                        )}
-                      </div>
-
-                      {/* Suggestions dropdown */}
-                      {showLabSuggestions && (() => {
-                        const q = labSearch.toLowerCase().trim();
-                        const filtered = q
-                          ? labs.filter(l =>
-                              l.name.toLowerCase().includes(q) ||
-                              (l.city || '').toLowerCase().includes(q) ||
-                              labStreet(l).toLowerCase().includes(q) ||
-                              (l.state || '').toLowerCase().includes(q)
-                            )
-                          : labs;
-                        return filtered.length > 0 ? (
-                          <div className="absolute z-50 w-full bg-background border rounded-lg shadow-lg mt-1 max-h-64 overflow-y-auto">
-                            {filtered.map(lab => (
-                              <button
-                                key={lab.id}
-                                type="button"
-                                onMouseDown={e => e.preventDefault()}
-                                onClick={() => {
-                                  setSelectedLabId(String(lab.id));
-                                  setLabSearch(lab.name);
-                                  setShowLabSuggestions(false);
-                                }}
-                                className={`w-full px-4 py-3 flex items-center gap-3 hover:bg-accent text-left transition-colors ${
-                                  String(lab.id) === selectedLabId ? 'bg-blue-50 dark:bg-blue-950/30' : ''
-                                }`}
-                              >
-                                <div className="w-8 h-8 rounded-lg bg-purple-100 dark:bg-purple-900/40 flex items-center justify-center shrink-0">
-                                  <FlaskConical className="h-4 w-4 text-purple-600" />
-                                </div>
-                                <div className="flex-1 min-w-0">
-                                  <p className="font-medium text-sm">{lab.name}</p>
-                                  {(lab.city || labStreet(lab)) && (
-                                    <p className="text-xs text-muted-foreground truncate">
-                                      {[labStreet(lab), lab.city, lab.state].filter(Boolean).join(', ')}
-                                    </p>
-                                  )}
-                                </div>
-                                {String(lab.id) === selectedLabId && (
-                                  <CheckCircle className="h-4 w-4 text-green-500 shrink-0" />
-                                )}
-                              </button>
-                            ))}
-                          </div>
-                        ) : (
-                          <div className="absolute z-50 w-full bg-background border rounded-lg shadow mt-1 px-4 py-3">
-                            <p className="text-sm text-muted-foreground flex items-center gap-2">
-                              <AlertCircle className="h-4 w-4" /> No labs match "{labSearch}"
-                            </p>
-                          </div>
-                        );
-                      })()}
-
-                      {/* Selected lab confirmation card */}
-                      {selectedLabId && (() => {
-                        const lab = labs.find(l => String(l.id) === selectedLabId);
-                        if (!lab) return null;
-                        return (
-                          <div className="mt-3 p-3 bg-purple-50 dark:bg-purple-950/30 rounded-lg border border-purple-200 flex items-start gap-3">
-                            <div className="w-9 h-9 rounded-lg bg-purple-600 flex items-center justify-center text-white shrink-0">
-                              <FlaskConical className="h-4 w-4" />
+                            <div className="w-8 h-8 rounded-lg bg-purple-100 dark:bg-purple-900/40 flex items-center justify-center shrink-0">
+                              <FlaskConical className="h-4 w-4 text-purple-600" />
                             </div>
                             <div className="flex-1 min-w-0">
-                              <p className="font-semibold text-sm">{lab.name}</p>
+                              <p className="font-medium text-sm">{lab.name}</p>
                               {(lab.city || labStreet(lab)) && (
-                                <p className="text-xs text-muted-foreground truncate mt-0.5">
-                                  {[labStreet(lab), lab.city, lab.state, lab.pinCode].filter(Boolean).join(', ')}
+                                <p className="text-xs text-muted-foreground truncate">
+                                  {[labStreet(lab), lab.city, lab.state].filter(Boolean).join(', ')}
                                 </p>
                               )}
                             </div>
-                            <Badge className="shrink-0 bg-purple-100 text-purple-700 border-purple-200 text-xs">Selected ✓</Badge>
-                          </div>
-                        );
-                      })()}
+                            {lab.accreditation && (
+                              <span className="text-xs text-muted-foreground shrink-0">{lab.accreditation}</span>
+                            )}
+                          </button>
+                        ))}
+                      </div>
+                    )}
+
+                    {showLabSuggestions && labSuggestions.length === 0 && !labsLoading && labSearch.length >= 2 && (
+                      <div className="absolute z-50 w-full bg-background border rounded-lg shadow mt-1 px-4 py-3">
+                        <p className="text-sm text-muted-foreground flex items-center gap-2">
+                          <AlertCircle className="h-4 w-4" /> No labs found for "{labSearch}"
+                        </p>
+                      </div>
+                    )}
+                  </div>
+
+                  {/* Selected lab confirmation card */}
+                  {selectedLab && (
+                    <div className="mt-3 p-3 bg-purple-50 dark:bg-purple-950/30 rounded-lg border border-purple-200 flex items-center gap-3">
+                      <div className="w-9 h-9 rounded-lg bg-purple-600 flex items-center justify-center text-white shrink-0">
+                        <FlaskConical className="h-4 w-4" />
+                      </div>
+                      <div className="flex-1 min-w-0">
+                        <p className="font-semibold text-sm">{selectedLab.name}</p>
+                        {(selectedLab.city || labStreet(selectedLab)) && (
+                          <p className="text-xs text-muted-foreground truncate mt-0.5">
+                            {[labStreet(selectedLab), selectedLab.city, selectedLab.state, selectedLab.pinCode].filter(Boolean).join(', ')}
+                          </p>
+                        )}
+                      </div>
+                      <Badge className="shrink-0 bg-purple-100 text-purple-700 border-purple-200 text-xs">Selected ✓</Badge>
+                      <button
+                        type="button"
+                        onClick={() => { setSelectedLab(null); setLabSearch(''); }}
+                        className="text-muted-foreground hover:text-foreground shrink-0"
+                      >
+                        <XCircle className="h-4 w-4" />
+                      </button>
                     </div>
                   )}
                 </CardContent>

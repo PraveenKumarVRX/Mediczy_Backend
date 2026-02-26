@@ -225,8 +225,9 @@ router.get('/employee-eligibility', authUser, requireTeamOrAdmin, async (req, re
 // ──────────────────────────────────────────────
 router.get('/labs', authUser, requireTeamOrAdmin, async (req, res) => {
   try {
-    const { corporateId } = req.query;
+    const { corporateId, search = '' } = req.query;
     if (!corporateId) return res.status(400).json({ success: false, message: 'corporateId is required' });
+    const searchTerm = `%${search}%`;
 
     const labs = await postgresSequelize.query(
       `SELECT
@@ -242,10 +243,16 @@ router.get('/labs', authUser, requireTeamOrAdmin, async (req, res) => {
        JOIN labs l ON l.id = cna.partner_id
        WHERE cna.corporate_id = :corporateId
          AND cna.partner_type = 'lab'
+         AND (
+           LOWER(l.name) LIKE LOWER(:search)
+           OR LOWER(l.address->>'city') LIKE LOWER(:search)
+           OR LOWER(l.address->>'state') LIKE LOWER(:search)
+           OR LOWER(l.address->>'street') LIKE LOWER(:search)
+         )
        ORDER BY l.name
-       LIMIT 200`,
+       LIMIT 30`,
       {
-        replacements: { corporateId: parseInt(corporateId) },
+        replacements: { corporateId: parseInt(corporateId), search: searchTerm },
         type: postgresSequelize.QueryTypes.SELECT
       }
     );
