@@ -181,6 +181,9 @@ export default function CorporateHealthBooking() {
   // ── user type ──
   const userType = getUserType();
 
+  // ── view state: corporate picker OR booking form ──
+  const [view, setView] = useState<'pick-corporate' | 'booking'>('pick-corporate');
+
   // ── corporate selector ──
   const [corporate, setCorporate] = useState<Corporate | null>(null);
   const [corporateLoading, setCorporateLoading] = useState(false);
@@ -274,6 +277,7 @@ export default function CorporateHealthBooking() {
         if (list.length === 1) {
           setCorporate(list[0]);
           loadForCorporate(list[0].id);
+          setView('booking');
         }
       })
       .catch(e => console.error('Corporate list fetch failed:', e))
@@ -470,6 +474,7 @@ export default function CorporateHealthBooking() {
     setLabs([]);
     setPackages([]);
     loadForCorporate(corp.id);
+    setView('booking');
   };
 
   const handleChangeCorporate = () => {
@@ -484,6 +489,7 @@ export default function CorporateHealthBooking() {
     setSelectedEmployee(null);
     setEmployeeSearch('');
     setEmployeeEligibility([]);
+    setView('pick-corporate');
   };
 
   // ──────────────────────────────────
@@ -568,51 +574,149 @@ export default function CorporateHealthBooking() {
   return (
     <MainLayout>
       <div className="max-w-4xl mx-auto px-4 py-8">
-        {/* ── Header ── */}
-        <div className="flex items-center gap-4 mb-6">
-          <Link to="/team/corporate-management" className="text-muted-foreground hover:text-foreground">
-            <ArrowLeft className="h-5 w-5" />
-          </Link>
-          <div className="flex-1">
-            <div className="flex items-center gap-3">
-              <div className="p-2 bg-blue-600 rounded-lg">
-                <FlaskConical className="h-6 w-6 text-white" />
-              </div>
-              <div>
-                <h1 className="text-2xl font-bold">Corporate Health Checkup Booking</h1>
-                <p className="text-muted-foreground text-sm">
-                  {corporateListLoading ? 'Loading…' : corporate ? `Book health checkups for ${corporate.companyName} employees` : 'Book health checkups for corporate employees'}
-                </p>
+
+        {/* ══════════════════════════════════════════════════
+            VIEW 1 — CORPORATE PICKER
+            Shown until the user picks a corporate
+            ══════════════════════════════════════════════════ */}
+        {view === 'pick-corporate' && (
+          <div>
+            {/* Header */}
+            <div className="flex items-center gap-4 mb-8">
+              <Link to="/team/corporate-management" className="text-muted-foreground hover:text-foreground">
+                <ArrowLeft className="h-5 w-5" />
+              </Link>
+              <div className="flex items-center gap-3">
+                <div className="p-2 bg-blue-600 rounded-lg">
+                  <FlaskConical className="h-6 w-6 text-white" />
+                </div>
+                <div>
+                  <h1 className="text-2xl font-bold">Corporate Health Checkup Booking</h1>
+                  <p className="text-muted-foreground text-sm">Select a corporate to start booking</p>
+                </div>
               </div>
             </div>
-          </div>
-          <Badge className="bg-blue-100 text-blue-800 border-blue-200 hidden sm:flex items-center gap-1">
-            <Building2 className="h-3.5 w-3.5" />
-            {corporate?.companyName || 'Corporate'}
-          </Badge>
-        </div>
 
-        {/* ── Tabs ── */}
-        <div className="flex gap-2 mb-6 border-b">
-          <button
-            className={`pb-3 px-4 text-sm font-medium border-b-2 transition-colors ${activeTab === 'book' ? 'border-blue-600 text-blue-600' : 'border-transparent text-muted-foreground hover:text-foreground'}`}
-            onClick={() => setActiveTab('book')}
-          >
-            <span className="flex items-center gap-2"><Calendar className="h-4 w-4" /> Book Checkup</span>
-          </button>
-          <button
-            className={`pb-3 px-4 text-sm font-medium border-b-2 transition-colors ${activeTab === 'history' ? 'border-blue-600 text-blue-600' : 'border-transparent text-muted-foreground hover:text-foreground'}`}
-            onClick={() => setActiveTab('history')}
-          >
-            <span className="flex items-center gap-2"><History className="h-4 w-4" /> Booking History</span>
-          </button>
-          <button
-            className={`pb-3 px-4 text-sm font-medium border-b-2 transition-colors ${activeTab === 'reports' ? 'border-emerald-600 text-emerald-600' : 'border-transparent text-muted-foreground hover:text-foreground'}`}
-            onClick={() => setActiveTab('reports')}
-          >
-            <span className="flex items-center gap-2"><FileText className="h-4 w-4" /> Health Reports</span>
-          </button>
-        </div>
+            {corporateListLoading ? (
+              <div className="flex flex-col items-center gap-4 py-20 text-muted-foreground">
+                <Loader2 className="h-8 w-8 animate-spin text-blue-500" />
+                <p className="text-sm">Loading your corporates…</p>
+              </div>
+            ) : corporateList.length === 0 ? (
+              <div className="flex flex-col items-center gap-4 py-20 text-muted-foreground">
+                <Building2 className="h-12 w-12 text-muted-foreground/30" />
+                <p className="font-medium">No corporates assigned</p>
+                <p className="text-sm text-center max-w-xs">No corporates are linked to your account. Contact an administrator to get access.</p>
+              </div>
+            ) : (
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                {corporateList.map(corp => (
+                  <button
+                    key={corp.id}
+                    type="button"
+                    onClick={() => handleSelectCorporate(corp)}
+                    className="group text-left p-6 rounded-xl border-2 border-border hover:border-blue-400 hover:bg-blue-50 dark:hover:bg-blue-950/30 transition-all shadow-sm hover:shadow-md"
+                  >
+                    <div className="flex items-start gap-4">
+                      <div className="w-12 h-12 rounded-lg bg-blue-100 dark:bg-blue-900/50 flex items-center justify-center shrink-0 group-hover:bg-blue-200 dark:group-hover:bg-blue-800 transition-colors">
+                        <Building2 className="h-6 w-6 text-blue-600" />
+                      </div>
+                      <div className="flex-1 min-w-0">
+                        <p className="font-semibold text-base leading-tight">{corp.companyName}</p>
+                        {corp.employeeCount != null && (
+                          <p className="text-xs text-muted-foreground mt-1 flex items-center gap-1">
+                            <Users className="h-3 w-3" /> {corp.employeeCount} employees
+                          </p>
+                        )}
+                        {corp.status && (
+                          <span className={`inline-block mt-2 text-[10px] font-semibold px-2 py-0.5 rounded-full ${corp.status === 'Active' ? 'bg-green-100 text-green-700' : 'bg-gray-100 text-gray-500'}`}>
+                            {corp.status}
+                          </span>
+                        )}
+                      </div>
+                      <ChevronRight className="h-5 w-5 text-muted-foreground group-hover:text-blue-600 shrink-0 mt-1 transition-colors" />
+                    </div>
+                    <p className="text-xs text-blue-600 dark:text-blue-400 mt-4 font-medium group-hover:underline">
+                      Book health checkups →
+                    </p>
+                  </button>
+                ))}
+              </div>
+            )}
+          </div>
+        )}
+
+        {/* ══════════════════════════════════════════════════
+            VIEW 2 — BOOKING FORM
+            Shown after a corporate is selected
+            ══════════════════════════════════════════════════ */}
+        {view === 'booking' && corporate && (
+          <div>
+            {/* Header */}
+            <div className="flex items-center gap-4 mb-6">
+              {corporateList.length > 1 ? (
+                <button
+                  type="button"
+                  onClick={handleChangeCorporate}
+                  className="text-muted-foreground hover:text-foreground"
+                >
+                  <ArrowLeft className="h-5 w-5" />
+                </button>
+              ) : (
+                <Link to="/team/corporate-management" className="text-muted-foreground hover:text-foreground">
+                  <ArrowLeft className="h-5 w-5" />
+                </Link>
+              )}
+              <div className="flex-1">
+                <div className="flex items-center gap-3">
+                  <div className="p-2 bg-blue-600 rounded-lg">
+                    <FlaskConical className="h-6 w-6 text-white" />
+                  </div>
+                  <div>
+                    <h1 className="text-2xl font-bold">Corporate Health Checkup Booking</h1>
+                    <p className="text-muted-foreground text-sm flex items-center gap-1.5">
+                      <Building2 className="h-3.5 w-3.5" />
+                      {corporate.companyName}
+                      {corporateList.length > 1 && (
+                        <button
+                          type="button"
+                          onClick={handleChangeCorporate}
+                          className="ml-2 text-blue-600 hover:underline text-xs"
+                        >
+                          (change)
+                        </button>
+                      )}
+                    </p>
+                  </div>
+                </div>
+              </div>
+              <Badge className="bg-blue-100 text-blue-800 border-blue-200 hidden sm:flex items-center gap-1">
+                <Building2 className="h-3.5 w-3.5" />
+                {corporate.companyName}
+              </Badge>
+            </div>
+
+            {/* Tabs */}
+            <div className="flex gap-2 mb-6 border-b">
+              <button
+                className={`pb-3 px-4 text-sm font-medium border-b-2 transition-colors ${activeTab === 'book' ? 'border-blue-600 text-blue-600' : 'border-transparent text-muted-foreground hover:text-foreground'}`}
+                onClick={() => setActiveTab('book')}
+              >
+                <span className="flex items-center gap-2"><Calendar className="h-4 w-4" /> Book Checkup</span>
+              </button>
+              <button
+                className={`pb-3 px-4 text-sm font-medium border-b-2 transition-colors ${activeTab === 'history' ? 'border-blue-600 text-blue-600' : 'border-transparent text-muted-foreground hover:text-foreground'}`}
+                onClick={() => setActiveTab('history')}
+              >
+                <span className="flex items-center gap-2"><History className="h-4 w-4" /> Booking History</span>
+              </button>
+              <button
+                className={`pb-3 px-4 text-sm font-medium border-b-2 transition-colors ${activeTab === 'reports' ? 'border-emerald-600 text-emerald-600' : 'border-transparent text-muted-foreground hover:text-foreground'}`}
+                onClick={() => setActiveTab('reports')}
+              >
+                <span className="flex items-center gap-2"><FileText className="h-4 w-4" /> Health Reports</span>
+              </button>
+            </div>
 
         {/* ╔════════════════════════════════╗
             ║      BOOKING FORM TAB          ║
@@ -653,104 +757,12 @@ export default function CorporateHealthBooking() {
             )}
 
             <form onSubmit={handleSubmit} className="space-y-5">
-              {/* ──── Step 1: Select Corporate ──── */}
+
+              {/* ──── Step 1: Select Employee ──── */}
               <Card>
                 <CardHeader className="pb-3">
                   <CardTitle className="text-base flex items-center gap-2">
-                    <span className={`w-6 h-6 rounded-full text-white text-xs flex items-center justify-center font-bold ${corporate ? 'bg-green-500' : 'bg-blue-600'}`}>1</span>
-                    Select Corporate
-                    {corporateListLoading && <Loader2 className="h-4 w-4 animate-spin text-muted-foreground ml-auto" />}
-                  </CardTitle>
-                </CardHeader>
-                <CardContent>
-                  {corporateListLoading ? (
-                    <div className="flex items-center gap-2 text-sm text-muted-foreground py-2">
-                      <Loader2 className="h-4 w-4 animate-spin" /> Loading corporates…
-                    </div>
-                  ) : corporate ? (
-                    /* Corporate selected — show confirmed row with Change option */
-                    <div className="flex items-center gap-3 p-3 bg-blue-50 dark:bg-blue-950/30 rounded-lg border border-blue-200">
-                      <Building2 className="h-5 w-5 text-blue-600 shrink-0" />
-                      <div className="flex-1">
-                        <p className="font-semibold text-sm">{corporate.companyName}</p>
-                        {corporate.employeeCount != null && (
-                          <p className="text-xs text-muted-foreground">{corporate.employeeCount} employees</p>
-                        )}
-                      </div>
-                      {corporateList.length > 1 && (
-                        <button
-                          type="button"
-                          onClick={handleChangeCorporate}
-                          className="text-xs text-blue-600 hover:text-blue-800 underline shrink-0"
-                        >
-                          Change
-                        </button>
-                      )}
-                    </div>
-                  ) : corporateList.length === 0 ? (
-                    <p className="text-sm text-muted-foreground flex items-center gap-2 py-2">
-                      <AlertCircle className="h-4 w-4 text-orange-500" />
-                      No corporates assigned to your account. Contact an administrator.
-                    </p>
-                  ) : (
-                    /* Picker — shown when multiple corporates and none yet chosen */
-                    <div className="relative">
-                      <div className="relative">
-                        <Building2 className="absolute left-3 top-2.5 h-4 w-4 text-muted-foreground" />
-                        <Input
-                          placeholder="Search corporate by name…"
-                          value={corpInput}
-                          onChange={e => handleCorpSearch(e.target.value)}
-                          onFocus={() => { if (corporateList.length > 0) { setCorpSuggestions(corporateList.slice(0, 10)); setShowCorpSuggestions(true); } }}
-                          className="pl-9"
-                          autoComplete="off"
-                        />
-                      </div>
-                      {showCorpSuggestions && corpSuggestions.length > 0 && (
-                        <div className="absolute z-50 w-full bg-background border rounded-lg shadow-lg mt-1 max-h-56 overflow-y-auto">
-                          {corpSuggestions.map(corp => (
-                            <button
-                              key={corp.id}
-                              type="button"
-                              onClick={() => handleSelectCorporate(corp)}
-                              className="w-full px-4 py-3 flex items-center gap-3 hover:bg-accent text-left transition-colors"
-                            >
-                              <Building2 className="h-4 w-4 text-blue-500 shrink-0" />
-                              <div className="flex-1 min-w-0">
-                                <p className="font-medium text-sm">{corp.companyName}</p>
-                                {corp.employeeCount != null && (
-                                  <p className="text-xs text-muted-foreground">{corp.employeeCount} employees</p>
-                                )}
-                              </div>
-                            </button>
-                          ))}
-                        </div>
-                      )}
-                      {corpInput.length >= 1 && corpSuggestions.length === 0 && (
-                        <p className="text-sm text-muted-foreground mt-2 flex items-center gap-2">
-                          <AlertCircle className="h-4 w-4" /> No corporates found for "{corpInput}"
-                        </p>
-                      )}
-                    </div>
-                  )}
-                </CardContent>
-              </Card>
-
-              {/* Steps 2–6 are hidden until a corporate is selected */}
-              {!corporate && (
-                <div className="flex flex-col items-center gap-3 py-10 text-muted-foreground">
-                  <Building2 className="h-10 w-10 text-blue-200" />
-                  <p className="text-sm">Select a corporate above to continue</p>
-                </div>
-              )}
-
-              {corporate && <>
-
-              {/* ──── Step 2: Select Employee ──── */}
-              <Card>
-                <CardHeader className="pb-3">
-                  <CardTitle className="text-base flex items-center gap-2">
-                    <span className="w-6 h-6 rounded-full bg-blue-600 text-white text-xs flex items-center justify-center font-bold">2</span>
+                    <span className="w-6 h-6 rounded-full bg-blue-600 text-white text-xs flex items-center justify-center font-bold">1</span>
                     Select {corporate?.companyName || 'Corporate'} Employee
                   </CardTitle>
                 </CardHeader>
@@ -826,7 +838,7 @@ export default function CorporateHealthBooking() {
               <Card>
                 <CardHeader className="pb-3">
                   <CardTitle className="text-base flex items-center gap-2">
-                    <span className="w-6 h-6 rounded-full bg-blue-600 text-white text-xs flex items-center justify-center font-bold">3</span>
+                    <span className="w-6 h-6 rounded-full bg-blue-600 text-white text-xs flex items-center justify-center font-bold">2</span>
                     Select Lab
                     {labsLoading && <Loader2 className="h-4 w-4 animate-spin text-muted-foreground ml-auto" />}
                     {!labsLoading && <Badge variant="secondary" className="ml-auto text-xs">{labs.length} in {corporate?.companyName || 'corporate'} network</Badge>}
@@ -859,7 +871,7 @@ export default function CorporateHealthBooking() {
               <Card>
                 <CardHeader className="pb-3">
                   <CardTitle className="text-base flex items-center gap-2">
-                    <span className="w-6 h-6 rounded-full bg-blue-600 text-white text-xs flex items-center justify-center font-bold">4</span>
+                    <span className="w-6 h-6 rounded-full bg-blue-600 text-white text-xs flex items-center justify-center font-bold">3</span>
                     Appointment Date &amp; Time
                   </CardTitle>
                 </CardHeader>
@@ -899,7 +911,7 @@ export default function CorporateHealthBooking() {
               <Card>
                 <CardHeader className="pb-3">
                   <CardTitle className="text-base flex items-center gap-2">
-                    <span className="w-6 h-6 rounded-full bg-blue-600 text-white text-xs flex items-center justify-center font-bold">5</span>
+                    <span className="w-6 h-6 rounded-full bg-blue-600 text-white text-xs flex items-center justify-center font-bold">4</span>
                     Health Checkup Package
                     {selectedEmployee && (
                       <span className="ml-auto text-xs font-normal text-muted-foreground">
@@ -1001,7 +1013,7 @@ export default function CorporateHealthBooking() {
               <Card>
                 <CardHeader className="pb-3">
                   <CardTitle className="text-base flex items-center gap-2">
-                    <span className="w-6 h-6 rounded-full bg-gray-400 text-white text-xs flex items-center justify-center font-bold">6</span>
+                    <span className="w-6 h-6 rounded-full bg-gray-400 text-white text-xs flex items-center justify-center font-bold">5</span>
                     Additional Notes <span className="text-muted-foreground font-normal text-sm">(optional)</span>
                   </CardTitle>
                 </CardHeader>
@@ -1044,7 +1056,6 @@ export default function CorporateHealthBooking() {
                   </span>
                 )}
               </Button>
-              </>}
             </form>
           </div>
         )}
@@ -1393,6 +1404,8 @@ export default function CorporateHealthBooking() {
                 )}
               </CardContent>
             </Card>
+          </div>
+        )}
           </div>
         )}
       </div>
