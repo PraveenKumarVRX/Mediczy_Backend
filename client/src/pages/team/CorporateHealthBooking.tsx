@@ -33,11 +33,18 @@ interface Employee {
 interface Lab {
   id: number;
   name: string;
-  address?: string;
+  address?: string | { street?: string; city?: string; state?: string; country?: string };
   city?: string;
   state?: string;
   pinCode?: string;
 }
+
+/** Extract a displayable street string from lab.address (may be string or JSON object) */
+const labStreet = (lab: Lab): string => {
+  if (!lab.address) return '';
+  if (typeof lab.address === 'string') return lab.address;
+  return lab.address.street || '';
+};
 
 interface BookingHistoryItem {
   id: number;
@@ -889,7 +896,7 @@ export default function CorporateHealthBooking() {
                           ? labs.filter(l =>
                               l.name.toLowerCase().includes(q) ||
                               (l.city || '').toLowerCase().includes(q) ||
-                              (l.address || '').toLowerCase().includes(q) ||
+                              labStreet(l).toLowerCase().includes(q) ||
                               (l.state || '').toLowerCase().includes(q)
                             )
                           : labs;
@@ -914,9 +921,9 @@ export default function CorporateHealthBooking() {
                                 </div>
                                 <div className="flex-1 min-w-0">
                                   <p className="font-medium text-sm">{lab.name}</p>
-                                  {(lab.city || lab.address) && (
+                                  {(lab.city || labStreet(lab)) && (
                                     <p className="text-xs text-muted-foreground truncate">
-                                      {[lab.address, lab.city, lab.state].filter(Boolean).join(', ')}
+                                      {[labStreet(lab), lab.city, lab.state].filter(Boolean).join(', ')}
                                     </p>
                                   )}
                                 </div>
@@ -946,9 +953,9 @@ export default function CorporateHealthBooking() {
                             </div>
                             <div className="flex-1 min-w-0">
                               <p className="font-semibold text-sm">{lab.name}</p>
-                              {(lab.city || lab.address) && (
+                              {(lab.city || labStreet(lab)) && (
                                 <p className="text-xs text-muted-foreground truncate mt-0.5">
-                                  {[lab.address, lab.city, lab.state, lab.pinCode].filter(Boolean).join(', ')}
+                                  {[labStreet(lab), lab.city, lab.state, lab.pinCode].filter(Boolean).join(', ')}
                                 </p>
                               )}
                             </div>
