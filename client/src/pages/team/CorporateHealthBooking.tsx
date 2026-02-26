@@ -126,21 +126,6 @@ const REPORT_TYPES = [
 ];
 
 // ──────────────────────────────────────────────────────────
-// Health packages for Equitas employees
-// ──────────────────────────────────────────────────────────
-
-const HEALTH_PACKAGES = [
-  { value: 'Annual Health Checkup (Basic)', label: '🔬 Annual Health Checkup — Basic', desc: 'CBC, Blood Sugar, Lipid, LFT, KFT' },
-  { value: 'Annual Health Checkup (Comprehensive)', label: '🏥 Annual Health Checkup — Comprehensive', desc: 'Basic + ECG, Thyroid, Vitamin D, B12, Urine' },
-  { value: 'CBC + LFT + KFT (Basic Blood Panel)', label: '🩸 Basic Blood Panel', desc: 'CBC, Liver Function, Kidney Function' },
-  { value: 'Diabetic Screening', label: '🍬 Diabetic Screening', desc: 'HbA1c, Fasting Glucose, Post-Prandial Glucose' },
-  { value: 'Cardiac Risk Assessment', label: '❤️ Cardiac Risk Assessment', desc: 'Lipid Profile, ECG, Troponin, CRP' },
-  { value: 'Thyroid & Hormone Panel', label: '🦋 Thyroid & Hormone Panel', desc: 'TSH, T3, T4, Cortisol' },
-  { value: 'Womens Health Checkup', label: '👩 Women\'s Health Checkup', desc: 'CBC, Thyroid, Vitamin D, Iron, Hormonal panel' },
-  { value: 'Executive Health Checkup', label: '💼 Executive Health Checkup', desc: 'Full body checkup with specialist consultation' },
-  { value: 'Pre-Employment Medical', label: '📋 Pre-Employment Medical', desc: 'Standard pre-employment fitness assessment' },
-  { value: 'Custom / Other', label: '✏️ Custom / Other', desc: 'Specify tests in notes below' },
-];
 
 const TIME_SLOTS = [
   '07:00 AM', '07:30 AM', '08:00 AM', '08:30 AM', '09:00 AM',
