@@ -255,36 +255,29 @@ export default function CorporateHealthBooking() {
   };
 
   // ──────────────────────────────────────────────────────────
-  // On mount: admin → fetch full corporate list for picker
-  //           team  → auto-detect assigned corporate
+  // On mount: fetch all assigned corporates (admin gets all,
+  // team gets their assigned list).  Auto-select if only one.
   // ──────────────────────────────────────────────────────────
   useEffect(() => {
-    if (userType === 'admin') {
-      setCorporateListLoading(true);
-      api.get('/admin/corporates')
-        .then(r => {
-          const raw = r.data.corporates || r.data || [];
-          const list: Corporate[] = (Array.isArray(raw) ? raw : []).map((c: Record<string, unknown>) => ({
-            id: c.id as number,
-            companyName: (c.companyName || c.company_name || '') as string,
-            employeeCount: (c.employeeCount ?? c.employee_count) as number | undefined,
-            status: c.status as string | undefined,
-          }));
-          setCorporateList(list);
-        })
-        .catch(e => console.error('Corporate list fetch failed:', e))
-        .finally(() => setCorporateListLoading(false));
-    } else {
-      setCorporateLoading(true);
-      api.get('/corporate-bookings/my-corporate')
-        .then(r => {
-          const corp: Corporate | null = r.data.corporate || null;
-          setCorporate(corp);
-          if (corp) loadForCorporate(corp.id);
-        })
-        .catch(e => console.error('my-corporate fetch failed:', e))
-        .finally(() => setCorporateLoading(false));
-    }
+    setCorporateListLoading(true);
+    api.get('/admin/corporates')
+      .then(r => {
+        const raw = r.data.corporates || r.data || [];
+        const list: Corporate[] = (Array.isArray(raw) ? raw : []).map((c: Record<string, unknown>) => ({
+          id: c.id as number,
+          companyName: (c.companyName || c.company_name || '') as string,
+          employeeCount: (c.employeeCount ?? c.employee_count) as number | undefined,
+          status: c.status as string | undefined,
+        }));
+        setCorporateList(list);
+        // Auto-select if there's exactly one corporate assigned
+        if (list.length === 1) {
+          setCorporate(list[0]);
+          loadForCorporate(list[0].id);
+        }
+      })
+      .catch(e => console.error('Corporate list fetch failed:', e))
+      .finally(() => setCorporateListLoading(false));
   }, []);  
 
   // ──────────────────────────────────
@@ -588,7 +581,7 @@ export default function CorporateHealthBooking() {
               <div>
                 <h1 className="text-2xl font-bold">Corporate Health Checkup Booking</h1>
                 <p className="text-muted-foreground text-sm">
-                  {corporateLoading ? 'Loading…' : corporate ? `Book health checkups for ${corporate.companyName} employees` : 'Book health checkups for corporate employees'}
+                  {corporateListLoading ? 'Loading…' : corporate ? `Book health checkups for ${corporate.companyName} employees` : 'Book health checkups for corporate employees'}
                 </p>
               </div>
             </div>
@@ -666,44 +659,25 @@ export default function CorporateHealthBooking() {
                   <CardTitle className="text-base flex items-center gap-2">
                     <span className={`w-6 h-6 rounded-full text-white text-xs flex items-center justify-center font-bold ${corporate ? 'bg-green-500' : 'bg-blue-600'}`}>1</span>
                     Select Corporate
-                    {(corporateLoading || corporateListLoading) && <Loader2 className="h-4 w-4 animate-spin text-muted-foreground ml-auto" />}
+                    {corporateListLoading && <Loader2 className="h-4 w-4 animate-spin text-muted-foreground ml-auto" />}
                   </CardTitle>
                 </CardHeader>
                 <CardContent>
-                  {userType !== 'admin' ? (
-                    /* Team user: show auto-assigned corporate */
-                    corporateLoading ? (
-                      <div className="flex items-center gap-2 text-sm text-muted-foreground py-2">
-                        <Loader2 className="h-4 w-4 animate-spin" /> Loading assigned corporate…
+                  {corporateListLoading ? (
+                    <div className="flex items-center gap-2 text-sm text-muted-foreground py-2">
+                      <Loader2 className="h-4 w-4 animate-spin" /> Loading corporates…
+                    </div>
+                  ) : corporate ? (
+                    /* Corporate selected — show confirmed row with Change option */
+                    <div className="flex items-center gap-3 p-3 bg-blue-50 dark:bg-blue-950/30 rounded-lg border border-blue-200">
+                      <Building2 className="h-5 w-5 text-blue-600 shrink-0" />
+                      <div className="flex-1">
+                        <p className="font-semibold text-sm">{corporate.companyName}</p>
+                        {corporate.employeeCount != null && (
+                          <p className="text-xs text-muted-foreground">{corporate.employeeCount} employees</p>
+                        )}
                       </div>
-                    ) : corporate ? (
-                      <div className="flex items-center gap-3 p-3 bg-green-50 dark:bg-green-950/30 rounded-lg border border-green-200">
-                        <Building2 className="h-5 w-5 text-green-600 shrink-0" />
-                        <div className="flex-1">
-                          <p className="font-semibold text-sm">{corporate.companyName}</p>
-                          {corporate.employeeCount != null && (
-                            <p className="text-xs text-muted-foreground">{corporate.employeeCount} employees</p>
-                          )}
-                        </div>
-                        <Badge className="bg-green-100 text-green-700 border-green-200 text-xs shrink-0">Assigned ✓</Badge>
-                      </div>
-                    ) : (
-                      <p className="text-sm text-muted-foreground flex items-center gap-2 py-2">
-                        <AlertCircle className="h-4 w-4 text-orange-500" />
-                        No corporate assigned to your account. Contact an administrator.
-                      </p>
-                    )
-                  ) : (
-                    /* Admin: searchable corporate picker */
-                    corporate ? (
-                      <div className="flex items-center gap-3 p-3 bg-blue-50 dark:bg-blue-950/30 rounded-lg border border-blue-200">
-                        <Building2 className="h-5 w-5 text-blue-600 shrink-0" />
-                        <div className="flex-1">
-                          <p className="font-semibold text-sm">{corporate.companyName}</p>
-                          {corporate.employeeCount != null && (
-                            <p className="text-xs text-muted-foreground">{corporate.employeeCount} employees</p>
-                          )}
-                        </div>
+                      {corporateList.length > 1 && (
                         <button
                           type="button"
                           onClick={handleChangeCorporate}
@@ -711,48 +685,53 @@ export default function CorporateHealthBooking() {
                         >
                           Change
                         </button>
-                      </div>
-                    ) : (
+                      )}
+                    </div>
+                  ) : corporateList.length === 0 ? (
+                    <p className="text-sm text-muted-foreground flex items-center gap-2 py-2">
+                      <AlertCircle className="h-4 w-4 text-orange-500" />
+                      No corporates assigned to your account. Contact an administrator.
+                    </p>
+                  ) : (
+                    /* Picker — shown when multiple corporates and none yet chosen */
+                    <div className="relative">
                       <div className="relative">
-                        <div className="relative">
-                          <Building2 className="absolute left-3 top-2.5 h-4 w-4 text-muted-foreground" />
-                          <Input
-                            placeholder="Search corporate by name…"
-                            value={corpInput}
-                            onChange={e => handleCorpSearch(e.target.value)}
-                            onFocus={() => { if (corporateList.length > 0) { setCorpSuggestions(corporateList.slice(0, 10)); setShowCorpSuggestions(true); } }}
-                            className="pl-9"
-                            autoComplete="off"
-                          />
-                          {corporateListLoading && <Loader2 className="absolute right-3 top-2.5 h-4 w-4 text-muted-foreground animate-spin" />}
-                        </div>
-                        {showCorpSuggestions && corpSuggestions.length > 0 && (
-                          <div className="absolute z-50 w-full bg-background border rounded-lg shadow-lg mt-1 max-h-56 overflow-y-auto">
-                            {corpSuggestions.map(corp => (
-                              <button
-                                key={corp.id}
-                                type="button"
-                                onClick={() => handleSelectCorporate(corp)}
-                                className="w-full px-4 py-3 flex items-center gap-3 hover:bg-accent text-left transition-colors"
-                              >
-                                <Building2 className="h-4 w-4 text-blue-500 shrink-0" />
-                                <div className="flex-1 min-w-0">
-                                  <p className="font-medium text-sm">{corp.companyName}</p>
-                                  {corp.employeeCount != null && (
-                                    <p className="text-xs text-muted-foreground">{corp.employeeCount} employees</p>
-                                  )}
-                                </div>
-                              </button>
-                            ))}
-                          </div>
-                        )}
-                        {corpInput.length >= 1 && corpSuggestions.length === 0 && !corporateListLoading && (
-                          <p className="text-sm text-muted-foreground mt-2 flex items-center gap-2">
-                            <AlertCircle className="h-4 w-4" /> No corporates found for "{corpInput}"
-                          </p>
-                        )}
+                        <Building2 className="absolute left-3 top-2.5 h-4 w-4 text-muted-foreground" />
+                        <Input
+                          placeholder="Search corporate by name…"
+                          value={corpInput}
+                          onChange={e => handleCorpSearch(e.target.value)}
+                          onFocus={() => { if (corporateList.length > 0) { setCorpSuggestions(corporateList.slice(0, 10)); setShowCorpSuggestions(true); } }}
+                          className="pl-9"
+                          autoComplete="off"
+                        />
                       </div>
-                    )
+                      {showCorpSuggestions && corpSuggestions.length > 0 && (
+                        <div className="absolute z-50 w-full bg-background border rounded-lg shadow-lg mt-1 max-h-56 overflow-y-auto">
+                          {corpSuggestions.map(corp => (
+                            <button
+                              key={corp.id}
+                              type="button"
+                              onClick={() => handleSelectCorporate(corp)}
+                              className="w-full px-4 py-3 flex items-center gap-3 hover:bg-accent text-left transition-colors"
+                            >
+                              <Building2 className="h-4 w-4 text-blue-500 shrink-0" />
+                              <div className="flex-1 min-w-0">
+                                <p className="font-medium text-sm">{corp.companyName}</p>
+                                {corp.employeeCount != null && (
+                                  <p className="text-xs text-muted-foreground">{corp.employeeCount} employees</p>
+                                )}
+                              </div>
+                            </button>
+                          ))}
+                        </div>
+                      )}
+                      {corpInput.length >= 1 && corpSuggestions.length === 0 && (
+                        <p className="text-sm text-muted-foreground mt-2 flex items-center gap-2">
+                          <AlertCircle className="h-4 w-4" /> No corporates found for "{corpInput}"
+                        </p>
+                      )}
+                    </div>
                   )}
                 </CardContent>
               </Card>
