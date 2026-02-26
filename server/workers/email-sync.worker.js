@@ -7,6 +7,8 @@ import { Worker } from 'bullmq';
 import { createRedisConnection } from '../config/redis-connection.js';
 import { postgresSequelize } from '../db/postgres-sequelize.js';
 import inboundEmailService from '../services/inboundEmailService.js';
+import EmailSettings from '../models/emailSettings.model.js';
+import TeamMember from '../models/postgres/team-member.model.postgres.js';
 
 const QUEUE_NAME = 'email-inbox-sync';
 
@@ -66,6 +68,11 @@ class EmailInboxSyncWorker {
   async processEmailSync(job) {
     const { teamMemberId, imapConfig } = job.data;
 
+    // Handle periodic-sync-all job — sync every active email configuration
+    if (!teamMemberId || job.name === 'periodic-sync-all') {
+      return await this.syncAllActiveEmailSettings();
+    }
+
     try {
       console.log(`📧 Syncing emails for team member ${teamMemberId}...`);
 
@@ -97,6 +104,70 @@ class EmailInboxSyncWorker {
 
       throw error; // Retry for other errors
     }
+  }
+
+  /**
+   * Sync all active email settings (triggered by periodic-sync-all job)
+   */
+  async syncAllActiveEmailSettings() {
+    const providerImapDefaults = {
+      'zoho-pro': { host: 'imappro.zoho.in', port: 993, tls: true },
+      'zoho':     { host: 'imap.zoho.in',    port: 993, tls: true },
+      'gmail':    { host: 'imap.gmail.com',  port: 993, tls: true },
+      'outlook':  { host: 'outlook.office365.com', port: 993, tls: true },
+      'custom':   { host: 'imap.zoho.in',    port: 993, tls: true },
+    };
+
+    let totalNew = 0;
+    let synced = 0;
+    let failed = 0;
+
+    try {
+      const allSettings = await EmailSettings.findAll({
+        where: { isActive: true },
+        paranoid: true,
+      });
+
+      for (const setting of allSettings) {
+        const username = setting.imapUsername || setting.email;
+        const password = setting.imapPassword;
+        if (!username || !password) continue;
+
+        // Resolve teamMemberId from userId
+        let tmbId = null;
+        try {
+          const tm = await TeamMember.findOne({ where: { userId: setting.userId }, attributes: ['id'] });
+          tmbId = tm?.id || setting.userId;
+        } catch {
+          tmbId = setting.userId;
+        }
+
+        const defaults = providerImapDefaults[setting.provider] || providerImapDefaults.custom;
+        const imapConfig = {
+          email: setting.email,
+          username,
+          password,
+          host: setting.imapHost || defaults.host,
+          port: setting.imapPort || defaults.port,
+          tls: setting.imapSecure !== false ? true : defaults.tls,
+        };
+
+        try {
+          const result = await inboundEmailService.scheduledSync(tmbId, imapConfig, 30);
+          totalNew += result?.newEmails || 0;
+          synced++;
+          console.log(`✅ Periodic sync OK for team ${tmbId}: ${result?.newEmails || 0} new emails`);
+        } catch (err) {
+          failed++;
+          console.error(`❌ Periodic sync failed for team ${tmbId}:`, err.message);
+        }
+      }
+    } catch (err) {
+      console.error('❌ syncAllActiveEmailSettings error:', err.message);
+    }
+
+    console.log(`📧 Periodic sync complete: ${synced} accounts synced, ${totalNew} new emails, ${failed} failed`);
+    return { success: true, synced, totalNew, failed };
   }
 
   async start() {

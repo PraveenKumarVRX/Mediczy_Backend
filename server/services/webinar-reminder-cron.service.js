@@ -77,7 +77,7 @@ class WebinarReminderService {
           COUNT(wr.id) as registered_count
          FROM webinars w
          LEFT JOIN doctors d ON w.doctor_id = d.id
-         LEFT JOIN users u ON d.user_id = u.id
+         LEFT JOIN users u ON d."userId" = u.id
          LEFT JOIN webinar_registrations wr ON w.id = wr.webinar_id 
            AND wr.registration_status IN ('registered', 'approved')
          WHERE w.status = 'scheduled'
@@ -156,7 +156,7 @@ class WebinarReminderService {
         `SELECT w.*, d.name as doctor_name, u.email as doctor_email
          FROM webinars w
          LEFT JOIN doctors d ON w.doctor_id = d.id
-         LEFT JOIN users u ON d.user_id = u.id
+         LEFT JOIN users u ON d."userId" = u.id
          WHERE w.id = $1`,
         { replacements: [webinarId], type: Sequelize.QueryTypes.SELECT }
       );

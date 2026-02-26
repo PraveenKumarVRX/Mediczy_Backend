@@ -77,7 +77,7 @@ const EmailSettings = postgresSequelize.define('EmailSettings', {
   
   // Email Provider Configuration
   provider: {
-    type: DataTypes.ENUM('gmail', 'outlook', 'zoho', 'custom'),
+    type: DataTypes.ENUM('gmail', 'outlook', 'zoho', 'zoho-pro', 'custom'),
     defaultValue: 'custom',
     comment: 'Email service provider'
   },
