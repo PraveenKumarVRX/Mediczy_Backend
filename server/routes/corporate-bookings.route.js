@@ -303,28 +303,28 @@ router.get('/packages', authUser, requireTeamOrAdmin, async (req, res) => {
       };
     });
 
-    // 2. Legacy membership_plans — skip any whose name already appears above
-    const uhpNames = new Set(uhpPackages.map(p => p.name));
-    const planRows = await postgresSequelize.query(
-      `SELECT
-         mp.id::text AS id,
-         mp.name,
-         mp.description,
-         mp.features,
-         mp."planType",
-         COALESCE(mp."discountedPrice", mp.price) AS price
-       FROM membership_plans mp
-       WHERE mp."organizationId" = :corporateId
-         AND mp."organizationType" = 'corporate'
-         AND mp."isActive" = true
-       ORDER BY mp."sortOrder" ASC NULLS LAST, mp.name ASC
-       LIMIT 50`,
-      { replacements: { corporateId: cid }, type: postgresSequelize.QueryTypes.SELECT }
-    );
+    // 2. Legacy membership_plans — ONLY used as fallback when no
+    //    team-created packages exist in user_health_packages
+    let planPackages = [];
+    if (uhpPackages.length === 0) {
+      const planRows = await postgresSequelize.query(
+        `SELECT
+           mp.id::text AS id,
+           mp.name,
+           mp.description,
+           mp.features,
+           mp."planType",
+           COALESCE(mp."discountedPrice", mp.price) AS price
+         FROM membership_plans mp
+         WHERE mp."organizationId" = :corporateId
+           AND mp."organizationType" = 'corporate'
+           AND mp."isActive" = true
+         ORDER BY mp."sortOrder" ASC NULLS LAST, mp.name ASC
+         LIMIT 50`,
+        { replacements: { corporateId: cid }, type: postgresSequelize.QueryTypes.SELECT }
+      );
 
-    const planPackages = planRows
-      .filter(p => !uhpNames.has(p.name))
-      .map(p => ({
+      planPackages = planRows.map(p => ({
         id:          p.id,
         name:        p.name,
         description: p.description || '',
@@ -332,6 +332,7 @@ router.get('/packages', authUser, requireTeamOrAdmin, async (req, res) => {
         price:       Number(p.price || 0),
         planType:    p.planType || 'health_checkup',
       }));
+    }
 
     return res.json({ success: true, packages: [...uhpPackages, ...planPackages] });
   } catch (err) {
