@@ -2078,7 +2078,7 @@ router.get('/corporate-employees/:corporateId', authUser, requireRole(['admin', 
 router.put('/corporate-employees/:userId', authUser, requireRole(['admin', 'team', 'corporate_admin']), async (req, res) => {
   try {
     const { userId } = req.params;
-    const { corporateId, status, firstName, lastName, email, phoneNumber, department, designation } = req.body;
+    const { corporateId, status, firstName, lastName, email, phoneNumber, department, designation, city, pinCode } = req.body;
 
     if (!corporateId) {
       return res.status(400).json({ success: false, message: 'corporateId is required' });
@@ -2120,10 +2120,12 @@ router.put('/corporate-employees/:userId', authUser, requireRole(['admin', 'team
     const assocUpdates = ['"updatedAt" = NOW()'];
     const assocReplacements = { userId: numericUserId, corpId: numericCorporateId };
     if (status) { assocUpdates.push('status = :status'); assocReplacements.status = status; }
-    if (department !== undefined || designation !== undefined) {
+    if (department !== undefined || designation !== undefined || city !== undefined || pinCode !== undefined) {
       const metaParts = [];
       if (department !== undefined) { metaParts.push("'department', :department"); assocReplacements.department = department; }
       if (designation !== undefined) { metaParts.push("'designation', :designation"); assocReplacements.designation = designation; }
+      if (city !== undefined) { metaParts.push("'city', :city"); assocReplacements.city = city; }
+      if (pinCode !== undefined) { metaParts.push("'pinCode', :pinCode"); assocReplacements.pinCode = pinCode; }
       assocUpdates.push(`metadata = COALESCE(metadata, '{}'::jsonb) || jsonb_build_object(${metaParts.join(', ')})`);
     }
     await postgresSequelize.query(

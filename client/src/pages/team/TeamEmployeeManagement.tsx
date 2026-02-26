@@ -36,6 +36,8 @@ interface Employee {
     employeeId?: string;
     department?: string;
     designation?: string;
+    city?: string;
+    pinCode?: string;
   };
   // derived
   corporateId?: number;
@@ -80,6 +82,8 @@ const TeamEmployeeManagement = () => {
     phoneNumber: '',
     department: '',
     designation: '',
+    city: '',
+    pinCode: '',
   });
   const [editSaving, setEditSaving] = useState(false);
 
@@ -163,6 +167,8 @@ const TeamEmployeeManagement = () => {
       phoneNumber: emp.phoneNumber,
       department: emp.metadata?.department || '',
       designation: emp.metadata?.designation || '',
+      city: emp.metadata?.city || '',
+      pinCode: emp.metadata?.pinCode || '',
     });
   };
 
@@ -529,6 +535,16 @@ const TeamEmployeeManagement = () => {
                         {DESIG_OPTIONS.map(d => <SelectItem key={d} value={d}>{d}</SelectItem>)}
                       </SelectContent>
                     </Select>
+                  </div>
+                </div>
+                <div className="grid grid-cols-2 gap-3">
+                  <div className="space-y-1">
+                    <Label>City</Label>
+                    <Input placeholder="e.g. Chennai" value={editForm.city} onChange={e => setEditForm(f => ({ ...f, city: e.target.value }))} />
+                  </div>
+                  <div className="space-y-1">
+                    <Label>Pin Code</Label>
+                    <Input placeholder="e.g. 600001" maxLength={10} value={editForm.pinCode} onChange={e => setEditForm(f => ({ ...f, pinCode: e.target.value.replace(/\D/g, '') }))} />
                   </div>
                 </div>
 
