@@ -12,8 +12,29 @@ class InboundEmailService {
 
   /**
    * Connect to IMAP server and fetch emails
+   * @param {number} teamMemberId
+   * @param {object} imapConfig
+   * @param {number} [daysBack=30]  - how many days back to search (default 30)
    */
-  async connectAndFetchEmails(teamMemberId, imapConfig) {
+  async connectAndFetchEmails(teamMemberId, imapConfig, daysBack = 30) {
+    // Determine the furthest-back date we should fetch.
+    // Use: (a) daysBack ceiling, or (b) 1 day before the earliest email
+    // already stored — so we never miss a gap.
+    let sinceDate = new Date(Date.now() - daysBack * 24 * 60 * 60 * 1000);
+    try {
+      const earliest = await EmailInbox.findOne({
+        where: { teamMemberId },
+        order: [['receivedAt', 'ASC']],
+        attributes: ['receivedAt']
+      });
+      if (earliest) {
+        // fetch 1 day before our earliest stored email to catch any gaps,
+        // but no further back than daysBack
+        const oneDayBefore = new Date(earliest.receivedAt.getTime() - 24 * 60 * 60 * 1000);
+        if (oneDayBefore < sinceDate) sinceDate = oneDayBefore;
+      }
+    } catch (_) { /* non-fatal */ }
+
     return new Promise((resolve, reject) => {
       const imap = new Imap({
         user: imapConfig.username || imapConfig.email,
@@ -35,8 +56,8 @@ class InboundEmailService {
           }
 
           try {
-            // Fetch recent emails (last 7 days, including already-seen messages)
-            const searchCriteria = ['ALL', ['SINCE', new Date(Date.now() - 7 * 24 * 60 * 60 * 1000)]];
+            const searchCriteria = ['ALL', ['SINCE', sinceDate]];
+            console.log(`📥 IMAP SINCE date for team ${teamMemberId}: ${sinceDate.toISOString().slice(0, 10)}`);
             const results = await new Promise((res, rej) => {
               imap.search(searchCriteria, (err, results) => {
                 if (err) rej(err);
@@ -52,7 +73,9 @@ class InboundEmailService {
               return;
             }
 
-            const f = imap.fetch(results.slice(0, 50), { bodies: '' });
+            // Fetch up to 200 most recent messages (sort desc, take first 200)
+            const toFetch = results.slice(-200);
+            const f = imap.fetch(toFetch, { bodies: '' });
             const emails = [];
             const parseTasks = [];
 
@@ -346,9 +369,9 @@ class InboundEmailService {
   /**
    * Sync emails periodically
    */
-  async scheduledSync(teamMemberId, imapConfig) {
+  async scheduledSync(teamMemberId, imapConfig, daysBack = 30) {
     try {
-      const result = await this.connectAndFetchEmails(teamMemberId, imapConfig);
+      const result = await this.connectAndFetchEmails(teamMemberId, imapConfig, daysBack);
       console.log(`📧 Sync complete for team member ${teamMemberId}: ${result.newEmails} new emails`);
       return result;
     } catch (error) {

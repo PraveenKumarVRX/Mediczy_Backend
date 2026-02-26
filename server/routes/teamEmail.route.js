@@ -431,8 +431,9 @@ router.post('/sync', authUser, async (req, res) => {
       });
     }
 
-    // Sync emails
-    const result = await inboundEmailService.scheduledSync(teamMemberId, imapConfig);
+    // Sync emails — manual syncs default to 60 days; caller can pass daysBack
+    const daysBack = Math.min(parseInt(req.body?.daysBack || req.query?.daysBack || 60, 10), 180);
+    const result = await inboundEmailService.scheduledSync(teamMemberId, imapConfig, daysBack);
 
     console.log('✅ SYNC COMPLETE: Synced', result.newEmails, 'emails');
     res.json({
