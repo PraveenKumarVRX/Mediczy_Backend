@@ -357,7 +357,9 @@ router.post('/health-checkup', authUser, requireTeamOrAdmin, async (req, res) =>
     testPackage,         // e.g. "Annual Health Checkup", "CBC + LFT + KFT"
     notes = '',
     corporateId,
-    corporateName = ''
+    corporateName = '',
+    sendEmail = true,
+    sendWhatsapp = true
   } = req.body;
 
   if (!corporateId) {
@@ -413,37 +415,43 @@ router.post('/health-checkup', authUser, requireTeamOrAdmin, async (req, res) =>
       weekday: 'long', year: 'numeric', month: 'long', day: 'numeric'
     });
 
-    // ── 4. Send Email notification ─────────────────────────────────
+    // ── 4. Send Email notification (if enabled) ──────────────────────
     let emailResult = null;
-    try {
-      const emailHtml = buildHealthCheckupEmailHtml({
-        employeeName: employeeFullName,
-        corporateName,
-        labName,
-        labAddress,
-        testPackage,
-        checkupDate: displayDate,
-        checkupTime: checkupTime || 'As scheduled',
-        orderNumber,
-        notes
-      });
+    if (sendEmail !== false && sendEmail !== 'false') {
+      try {
+        const emailHtml = buildHealthCheckupEmailHtml({
+          employeeName: employeeFullName,
+          corporateName,
+          labName,
+          labAddress,
+          testPackage,
+          checkupDate: displayDate,
+          checkupTime: checkupTime || 'As scheduled',
+          orderNumber,
+          notes
+        });
 
-      emailResult = await emailServiceModule.sendOutboundEmail(1, {
-        to: employee.email,
-        subject: `Your ${corporateName} Health Checkup is Booked — ${displayDate}`,
-        htmlContent: emailHtml
-      });
-      console.log(`✅ [corporate-bookings] Email sent to ${employee.email}`);
-    } catch (emailErr) {
-      console.error('[corporate-bookings] Email failed:', emailErr.message);
+        emailResult = await emailServiceModule.sendOutboundEmail(1, {
+          to: employee.email,
+          subject: `Your ${corporateName} Health Checkup is Booked — ${displayDate}`,
+          htmlContent: emailHtml
+        });
+        console.log(`✅ [corporate-bookings] Email sent to ${employee.email}`);
+      } catch (emailErr) {
+        console.error('[corporate-bookings] Email failed:', emailErr.message);
+      }
+    } else {
+      console.log(`ℹ️ [corporate-bookings] Email skipped (disabled by team user)`);
     }
 
-    // ── 5. Send WhatsApp notification ──────────────────────────────
+    // ── 5. Send WhatsApp notification (if enabled) ─────────────────
     let whatsappResult = null;
     const rawPhone = (employee.phoneNumber || '').replace(/\D/g, '');
     const phoneE164 = rawPhone.startsWith('91') ? `+${rawPhone}` : `+91${rawPhone}`;
 
-    if (rawPhone.length >= 10) {
+    if (sendWhatsapp === false || sendWhatsapp === 'false') {
+      console.log(`ℹ️ [corporate-bookings] WhatsApp skipped (disabled by team user)`);
+    } else if (rawPhone.length >= 10) {
       try {
         // Try structured template first
         whatsappResult = await whatsappProductionService.sendAppointmentConfirmation({
@@ -501,8 +509,8 @@ router.post('/health-checkup', authUser, requireTeamOrAdmin, async (req, res) =>
         checkupTime: checkupTime || 'As scheduled'
       },
       notifications: {
-        email: emailResult ? 'sent' : 'failed',
-        whatsapp: whatsappResult ? 'sent' : 'failed'
+        email: (sendEmail === false || sendEmail === 'false') ? 'skipped' : (emailResult ? 'sent' : 'failed'),
+        whatsapp: (sendWhatsapp === false || sendWhatsapp === 'false') ? 'skipped' : (whatsappResult ? 'sent' : 'failed')
       }
     });
   } catch (err) {

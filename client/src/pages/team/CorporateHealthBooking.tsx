@@ -206,6 +206,8 @@ export default function CorporateHealthBooking() {
   // ── submission ──
   const [submitting, setSubmitting] = useState(false);
   const [successBooking, setSuccessBooking] = useState<Record<string, unknown> | null>(null);
+  const [sendEmail, setSendEmail] = useState(true);
+  const [sendWhatsapp, setSendWhatsapp] = useState(true);
 
   // ── history ──
   const [history, setHistory] = useState<BookingHistoryItem[]>([]);
@@ -561,7 +563,9 @@ export default function CorporateHealthBooking() {
         testPackage,
         notes,
         corporateId: corporate?.id,
-        corporateName: corporate?.companyName || 'Corporate'
+        corporateName: corporate?.companyName || 'Corporate',
+        sendEmail,
+        sendWhatsapp
       });
 
       setSuccessBooking(r.data.booking as Record<string, unknown>);
@@ -573,7 +577,9 @@ export default function CorporateHealthBooking() {
 
       toast({
         title: '✅ Booking Confirmed!',
-        description: `Health checkup booked for ${selectedEmployee.firstName}. Notified via: ${sentChannels || 'Email attempted'}.`,
+        description: sentChannels
+          ? `Health checkup booked for ${selectedEmployee.firstName}. Notified via: ${sentChannels}.`
+          : `Health checkup booked for ${selectedEmployee.firstName}. No notifications sent.`,
       });
 
       // reset form
@@ -1112,15 +1118,26 @@ export default function CorporateHealthBooking() {
                 </CardContent>
               </Card>
 
-              {/* ──── Notification info banner ──── */}
-              <div className="flex gap-3 items-start p-4 bg-indigo-50 dark:bg-indigo-950/30 border border-indigo-200 rounded-lg">
-                <div className="flex gap-2 shrink-0 mt-0.5">
-                  <Mail className="h-4 w-4 text-indigo-600" />
-                  <MessageSquare className="h-4 w-4 text-indigo-600" />
-                </div>
-                <p className="text-sm text-indigo-700 dark:text-indigo-300">
-                  On submission, the employee will <strong>automatically receive</strong> a booking confirmation via <strong>Email</strong> and <strong>WhatsApp</strong> with lab details, date, time, and instructions.
+              {/* ──── Notification toggles ──── */}
+              <div className="p-4 bg-indigo-50 dark:bg-indigo-950/30 border border-indigo-200 rounded-lg space-y-3">
+                <p className="text-sm font-medium text-indigo-700 dark:text-indigo-300 flex items-center gap-2">
+                  <Mail className="h-4 w-4" /> Employee Notifications
                 </p>
+                <div className="flex gap-6">
+                  <label className="flex items-center gap-2 cursor-pointer select-none text-sm">
+                    <input type="checkbox" className="w-4 h-4 accent-indigo-600" checked={sendEmail} onChange={e => setSendEmail(e.target.checked)} />
+                    <Mail className="h-4 w-4 text-muted-foreground" /> Send Email
+                  </label>
+                  <label className="flex items-center gap-2 cursor-pointer select-none text-sm">
+                    <input type="checkbox" className="w-4 h-4 accent-indigo-600" checked={sendWhatsapp} onChange={e => setSendWhatsapp(e.target.checked)} />
+                    <MessageSquare className="h-4 w-4 text-muted-foreground" /> Send WhatsApp
+                  </label>
+                </div>
+                {!sendEmail && !sendWhatsapp && (
+                  <p className="text-xs text-amber-600 dark:text-amber-400 flex items-center gap-1">
+                    <AlertCircle className="h-3 w-3" /> Employee will not be notified about this booking.
+                  </p>
+                )}
               </div>
 
               {/* ──── Submit ──── */}
@@ -1132,11 +1149,11 @@ export default function CorporateHealthBooking() {
               >
                 {submitting ? (
                   <span className="flex items-center gap-2">
-                    <Loader2 className="h-5 w-5 animate-spin" /> Booking &amp; Notifying Employee...
+                    <Loader2 className="h-5 w-5 animate-spin" /> {sendEmail || sendWhatsapp ? 'Booking & Notifying Employee...' : 'Booking Health Checkup...'}
                   </span>
                 ) : (
                   <span className="flex items-center gap-2">
-                    <CheckCircle className="h-5 w-5" /> Book Health Checkup &amp; Notify Employee
+                    <CheckCircle className="h-5 w-5" /> {sendEmail || sendWhatsapp ? 'Book Health Checkup & Notify Employee' : 'Book Health Checkup'}
                   </span>
                 )}
               </Button>
