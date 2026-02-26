@@ -11,7 +11,7 @@ import {
   Building2, Calendar, CheckCircle, Clock, FlaskConical,
   Mail, MessageSquare, Phone, Search, User, Users, ArrowLeft,
   AlertCircle, Loader2, History, ChevronRight,
-  Upload, FileText, Download, Share2, RefreshCw, X
+  Upload, FileText, Download, Share2, RefreshCw, X, XCircle
 } from 'lucide-react';
 import { Link } from 'react-router-dom';
 import api from '@/utils/api';
@@ -162,6 +162,8 @@ export default function CorporateHealthBooking() {
   const [labs, setLabs] = useState<Lab[]>([]);
   const [selectedLabId, setSelectedLabId] = useState('');
   const [labsLoading, setLabsLoading] = useState(false);
+  const [labSearch, setLabSearch] = useState('');
+  const [showLabSuggestions, setShowLabSuggestions] = useState(false);
 
   // ── user type ──
   const userType = getUserType();
@@ -456,6 +458,8 @@ export default function CorporateHealthBooking() {
     setEmployeeEligibility([]);
     setTestPackage('');
     setSelectedLabId('');
+    setLabSearch('');
+    setShowLabSuggestions(false);
     setLabs([]);
     setPackages([]);
     loadForCorporate(corp.id);
@@ -470,6 +474,8 @@ export default function CorporateHealthBooking() {
     setLabs([]);
     setPackages([]);
     setSelectedLabId('');
+    setLabSearch('');
+    setShowLabSuggestions(false);
     setTestPackage('');
     setSelectedEmployee(null);
     setEmployeeSearch('');
@@ -539,6 +545,8 @@ export default function CorporateHealthBooking() {
       setEmployeeSearch('');
       setEmployeeEligibility([]);
       setSelectedLabId('');
+      setLabSearch('');
+      setShowLabSuggestions(false);
       setCheckupDate('');
       setCheckupTime('');
       setTestPackage('');
@@ -823,32 +831,131 @@ export default function CorporateHealthBooking() {
               <Card>
                 <CardHeader className="pb-3">
                   <CardTitle className="text-base flex items-center gap-2">
-                    <span className="w-6 h-6 rounded-full bg-blue-600 text-white text-xs flex items-center justify-center font-bold">2</span>
+                    <span className={`w-6 h-6 rounded-full text-white text-xs flex items-center justify-center font-bold ${selectedLabId ? 'bg-green-500' : 'bg-blue-600'}`}>2</span>
                     Select Lab
                     {labsLoading && <Loader2 className="h-4 w-4 animate-spin text-muted-foreground ml-auto" />}
-                    {!labsLoading && <Badge variant="secondary" className="ml-auto text-xs">{labs.length} in {corporate?.companyName || 'corporate'} network</Badge>}
+                    {!labsLoading && labs.length > 0 && (
+                      <Badge variant="secondary" className="ml-auto text-xs">{labs.length} in {corporate?.companyName || 'corporate'} network</Badge>
+                    )}
                   </CardTitle>
                 </CardHeader>
                 <CardContent>
-                  <Select value={selectedLabId} onValueChange={setSelectedLabId}>
-                    <SelectTrigger>
-                      <SelectValue placeholder={`Choose a lab from ${corporate?.companyName || 'corporate'} network...`} />
-                    </SelectTrigger>
-                    <SelectContent className="max-h-72">
-                      {labs.map(lab => (
-                        <SelectItem key={lab.id} value={String(lab.id)}>
-                          <div className="flex flex-col">
-                            <span className="font-medium">{lab.name}</span>
-                            {(lab.city || lab.state) && (
-                              <span className="text-xs text-muted-foreground">
-                                {[lab.address, lab.city, lab.state].filter(Boolean).join(', ')}
-                              </span>
-                            )}
+                  {labsLoading ? (
+                    <div className="flex items-center gap-2 text-sm text-muted-foreground py-2">
+                      <Loader2 className="h-4 w-4 animate-spin" /> Loading labs…
+                    </div>
+                  ) : labs.length === 0 ? (
+                    <p className="text-sm text-muted-foreground flex items-center gap-2 py-2">
+                      <AlertCircle className="h-4 w-4 text-orange-400" /> No labs found in network.
+                    </p>
+                  ) : (
+                    <div className="relative">
+                      {/* Search input */}
+                      <div className="relative">
+                        <Search className="absolute left-3 top-2.5 h-4 w-4 text-muted-foreground" />
+                        <Input
+                          placeholder={`Search among ${labs.length} labs by name or city…`}
+                          value={labSearch}
+                          autoComplete="off"
+                          className="pl-9 pr-8"
+                          onChange={e => {
+                            const val = e.target.value;
+                            setLabSearch(val);
+                            if (val !== labs.find(l => String(l.id) === selectedLabId)?.name) {
+                              setSelectedLabId('');
+                            }
+                            setShowLabSuggestions(true);
+                          }}
+                          onFocus={() => setShowLabSuggestions(true)}
+                          onBlur={() => setTimeout(() => setShowLabSuggestions(false), 150)}
+                        />
+                        {selectedLabId && (
+                          <button
+                            type="button"
+                            onClick={() => { setSelectedLabId(''); setLabSearch(''); setShowLabSuggestions(false); }}
+                            className="absolute right-2.5 top-2.5 text-muted-foreground hover:text-foreground"
+                          >
+                            <XCircle className="h-4 w-4" />
+                          </button>
+                        )}
+                      </div>
+
+                      {/* Suggestions dropdown */}
+                      {showLabSuggestions && (() => {
+                        const q = labSearch.toLowerCase().trim();
+                        const filtered = q
+                          ? labs.filter(l =>
+                              l.name.toLowerCase().includes(q) ||
+                              (l.city || '').toLowerCase().includes(q) ||
+                              (l.address || '').toLowerCase().includes(q) ||
+                              (l.state || '').toLowerCase().includes(q)
+                            )
+                          : labs;
+                        return filtered.length > 0 ? (
+                          <div className="absolute z-50 w-full bg-background border rounded-lg shadow-lg mt-1 max-h-64 overflow-y-auto">
+                            {filtered.map(lab => (
+                              <button
+                                key={lab.id}
+                                type="button"
+                                onMouseDown={e => e.preventDefault()}
+                                onClick={() => {
+                                  setSelectedLabId(String(lab.id));
+                                  setLabSearch(lab.name);
+                                  setShowLabSuggestions(false);
+                                }}
+                                className={`w-full px-4 py-3 flex items-center gap-3 hover:bg-accent text-left transition-colors ${
+                                  String(lab.id) === selectedLabId ? 'bg-blue-50 dark:bg-blue-950/30' : ''
+                                }`}
+                              >
+                                <div className="w-8 h-8 rounded-lg bg-purple-100 dark:bg-purple-900/40 flex items-center justify-center shrink-0">
+                                  <FlaskConical className="h-4 w-4 text-purple-600" />
+                                </div>
+                                <div className="flex-1 min-w-0">
+                                  <p className="font-medium text-sm">{lab.name}</p>
+                                  {(lab.city || lab.address) && (
+                                    <p className="text-xs text-muted-foreground truncate">
+                                      {[lab.address, lab.city, lab.state].filter(Boolean).join(', ')}
+                                    </p>
+                                  )}
+                                </div>
+                                {String(lab.id) === selectedLabId && (
+                                  <CheckCircle className="h-4 w-4 text-green-500 shrink-0" />
+                                )}
+                              </button>
+                            ))}
                           </div>
-                        </SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
+                        ) : (
+                          <div className="absolute z-50 w-full bg-background border rounded-lg shadow mt-1 px-4 py-3">
+                            <p className="text-sm text-muted-foreground flex items-center gap-2">
+                              <AlertCircle className="h-4 w-4" /> No labs match "{labSearch}"
+                            </p>
+                          </div>
+                        );
+                      })()}
+
+                      {/* Selected lab confirmation card */}
+                      {selectedLabId && (() => {
+                        const lab = labs.find(l => String(l.id) === selectedLabId);
+                        if (!lab) return null;
+                        return (
+                          <div className="mt-3 p-3 bg-purple-50 dark:bg-purple-950/30 rounded-lg border border-purple-200 flex items-start gap-3">
+                            <div className="w-9 h-9 rounded-lg bg-purple-600 flex items-center justify-center text-white shrink-0">
+                              <FlaskConical className="h-4 w-4" />
+                            </div>
+                            <div className="flex-1 min-w-0">
+                              <p className="font-semibold text-sm">{lab.name}</p>
+                              {(lab.city || lab.address) && (
+                                <p className="text-xs text-muted-foreground truncate mt-0.5">
+                                  {[lab.address, lab.city, lab.state, lab.pinCode].filter(Boolean).join(', ')}
+                                </p>
+                              )}
+                            </div>
+                            <Badge className="shrink-0 bg-purple-100 text-purple-700 border-purple-200 text-xs">Selected ✓</Badge>
+                          </div>
+                        );
+                      })()}
+                    </div>
+                  )}
                 </CardContent>
               </Card>
 
