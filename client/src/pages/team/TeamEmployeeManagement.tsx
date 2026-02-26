@@ -39,9 +39,18 @@ interface Employee {
     city?: string;
     pinCode?: string;
   };
+  // plan
+  planId?: string;
+  planName?: string;
+  planValidTo?: string;
   // derived
   corporateId?: number;
   corporateName?: string;
+}
+
+interface CorporatePlan {
+  packageId: string;
+  packageName: string;
 }
 
 const DEPT_OPTIONS = [
@@ -84,8 +93,13 @@ const TeamEmployeeManagement = () => {
     designation: '',
     city: '',
     pinCode: '',
+    packageId: '',
   });
   const [editSaving, setEditSaving] = useState(false);
+
+  // ── Corporate packages (for plan dropdown) ─────────────────────
+  const [corpPackages, setCorpPackages] = useState<CorporatePlan[]>([]);
+  const [pkgLoading, setPkgLoading] = useState(false);
 
   // ── Toggle status ──────────────────────────────────────────────
   const [toggling, setToggling] = useState<number | null>(null);
@@ -129,6 +143,9 @@ const TeamEmployeeManagement = () => {
         status: e.status || 'active',
         startDate: e.startDate,
         metadata: e.metadata || {},
+        planId: e.currentPackageId,
+        planName: e.currentPackageName,
+        planValidTo: e.packageValidTo,
         corporateId: corp.id,
         corporateName: corp.companyName,
       })));
@@ -169,7 +186,16 @@ const TeamEmployeeManagement = () => {
       designation: emp.metadata?.designation || '',
       city: emp.metadata?.city || '',
       pinCode: emp.metadata?.pinCode || '',
+      packageId: emp.planId || '',
     });
+    // Load available packages for this corporate
+    if (selectedCorporate) {
+      setPkgLoading(true);
+      api.get(`/admin/corporate-health-packages/${selectedCorporate.id}`)
+        .then(r => setCorpPackages((r.data.packages || []).map((p: any) => ({ packageId: String(p.packageId), packageName: p.packageName }))))
+        .catch(() => setCorpPackages([]))
+        .finally(() => setPkgLoading(false));
+    }
   };
 
   const saveEdit = async () => {
@@ -179,6 +205,7 @@ const TeamEmployeeManagement = () => {
       await api.put(`/admin/corporate-employees/${editEmp.id}`, {
         corporateId: selectedCorporate.id,
         ...editForm,
+        packageId: editForm.packageId || undefined,
       });
       toast({ title: 'Saved', description: `${editForm.firstName} ${editForm.lastName} updated.` });
       setEditEmp(null);
@@ -472,6 +499,9 @@ const TeamEmployeeManagement = () => {
                   <InfoRow icon={<Building2 className="h-4 w-4" />} label="Corporate" value={viewEmp.corporateName} />
                   <InfoRow icon={<Mail className="h-4 w-4" />} label="Email" value={viewEmp.email} />
                   <InfoRow icon={<Phone className="h-4 w-4" />} label="Phone" value={viewEmp.phoneNumber} />
+                  {viewEmp.planName && (
+                    <InfoRow icon={<Briefcase className="h-4 w-4" />} label="Health Plan" value={viewEmp.planName} />
+                  )}
                   {viewEmp.startDate && (
                     <InfoRow icon={<Hash className="h-4 w-4" />} label="Joined" value={new Date(viewEmp.startDate).toLocaleDateString('en-IN')} />
                   )}
@@ -546,6 +576,26 @@ const TeamEmployeeManagement = () => {
                     <Label>Pin Code</Label>
                     <Input placeholder="e.g. 600001" maxLength={10} value={editForm.pinCode} onChange={e => setEditForm(f => ({ ...f, pinCode: e.target.value.replace(/\D/g, '') }))} />
                   </div>
+                </div>
+
+                {/* Health Plan */}
+                <div className="space-y-1">
+                  <Label>Health Plan</Label>
+                  <Select
+                    value={editForm.packageId}
+                    onValueChange={v => setEditForm(f => ({ ...f, packageId: v }))}
+                    disabled={pkgLoading}
+                  >
+                    <SelectTrigger>
+                      <SelectValue placeholder={pkgLoading ? 'Loading plans...' : corpPackages.length === 0 ? 'No plans available' : 'Select plan...'} />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="">— No plan assigned —</SelectItem>
+                      {corpPackages.map(p => (
+                        <SelectItem key={p.packageId} value={p.packageId}>{p.packageName}</SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
                 </div>
 
                 {/* Status toggle in edit dialog */}

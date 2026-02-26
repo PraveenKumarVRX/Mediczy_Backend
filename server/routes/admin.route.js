@@ -2041,9 +2041,18 @@ router.get('/corporate-employees/:corporateId', authUser, requireRole(['admin', 
     
     const employees = await postgresSequelize.query(`
       SELECT u.id, u.email, u."firstName", u."lastName", u."phoneNumber",
-             ua.metadata, ua.status, ua."startDate"
+             ua.metadata, ua.status, ua."startDate",
+             uhp."packageId" AS "currentPackageId",
+             uhp."packageName" AS "currentPackageName",
+             uhp."validTo" AS "packageValidTo"
       FROM users u
       JOIN user_associations ua ON u.id = ua."userId"
+      LEFT JOIN LATERAL (
+        SELECT "packageId", "packageName", "validTo"
+        FROM user_health_packages
+        WHERE "userId" = u.id AND "corporateId" = :corporateId AND status = 'active'
+        ORDER BY "validTo" DESC LIMIT 1
+      ) uhp ON true
       WHERE ua."entityType" = 'corporate' 
         AND ua."entityId" = :corporateId
         AND ua.role = 'employee'
@@ -2078,7 +2087,7 @@ router.get('/corporate-employees/:corporateId', authUser, requireRole(['admin', 
 router.put('/corporate-employees/:userId', authUser, requireRole(['admin', 'team', 'corporate_admin']), async (req, res) => {
   try {
     const { userId } = req.params;
-    const { corporateId, status, firstName, lastName, email, phoneNumber, department, designation, city, pinCode } = req.body;
+    const { corporateId, status, firstName, lastName, email, phoneNumber, department, designation, city, pinCode, packageId } = req.body;
 
     if (!corporateId) {
       return res.status(400).json({ success: false, message: 'corporateId is required' });
@@ -2134,6 +2143,46 @@ router.put('/corporate-employees/:userId', authUser, requireRole(['admin', 'team
          AND "entityType" = 'corporate' AND role = 'employee'`,
       { replacements: assocReplacements, type: postgresSequelize.QueryTypes.UPDATE }
     );
+
+    // Update / assign health plan if packageId provided
+    if (packageId) {
+      const [pkgRef] = await postgresSequelize.query(`
+        SELECT DISTINCT ON ("packageId") "packageId", "packageName", "packageDetails", "validTo"
+        FROM user_health_packages
+        WHERE "packageId" = :packageId AND "corporateId" = :corpId
+        ORDER BY "packageId", "validTo" DESC
+      `, {
+        replacements: { packageId, corpId: numericCorporateId },
+        type: postgresSequelize.QueryTypes.SELECT
+      });
+      if (pkgRef) {
+        const pkgDetails = typeof pkgRef.packageDetails === 'string'
+          ? pkgRef.packageDetails
+          : JSON.stringify(pkgRef.packageDetails || {});
+        await postgresSequelize.query(`
+          INSERT INTO user_health_packages
+            ("userId", "corporateId", "packageId", "packageName", "packageDetails", "validFrom", "validTo", status, "createdAt", "updatedAt")
+          VALUES
+            (:userId, :corpId, :packageId, :packageName, :packageDetails, NOW(), :validTo, 'active', NOW(), NOW())
+          ON CONFLICT ("userId", "packageId") DO UPDATE SET
+            "packageName"    = EXCLUDED."packageName",
+            "packageDetails" = EXCLUDED."packageDetails",
+            "validTo"        = EXCLUDED."validTo",
+            status           = 'active',
+            "updatedAt"      = NOW()
+        `, {
+          replacements: {
+            userId: numericUserId,
+            corpId: numericCorporateId,
+            packageId,
+            packageName: pkgRef.packageName,
+            packageDetails: pkgDetails,
+            validTo: pkgRef.validTo
+          },
+          type: postgresSequelize.QueryTypes.INSERT
+        });
+      }
+    }
 
     return res.json({ success: true, message: 'Employee updated successfully' });
   } catch (error) {
