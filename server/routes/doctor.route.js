@@ -206,7 +206,7 @@ router.get("/appointments", authDoctor, async (req, res) => {
         consultationType: apt.consultationType,
         status: apt.status,
         paymentStatus: apt.paymentStatus,
-        consultationFee: apt.consultationFee,
+        consultationFee: apt.consultationFee ?? apt.paymentAmount ?? null,
         symptoms: apt.symptoms,
         reason: apt.reason,
         notes: apt.notes,
@@ -227,7 +227,7 @@ router.get("/appointments", authDoctor, async (req, res) => {
 });
 
 // Update Doctor Status
-router.put("/status", updateDoctorStatus);
+router.put("/status", authDoctor, updateDoctorStatus);
 
 // Get Available Doctors
 router.get("/available", getAvailableDoctors);
@@ -420,7 +420,7 @@ router.get("/dashboard/stats", authDoctor, async (req, res) => {
     const totalPatients = await Appointment.count({
       where: { doctorId },
       distinct: true,
-      col: 'patientId'
+      col: 'userId'
     });
 
     // Get consultations this month
@@ -448,7 +448,7 @@ router.get("/dashboard/stats", authDoctor, async (req, res) => {
         appointmentDate: { [Op.between]: [startOfLastMonth, endOfLastMonth] }
       },
       distinct: true,
-      col: 'patientId'
+      col: 'userId'
     });
 
     const lastMonthConsultations = await Appointment.count({
@@ -1835,7 +1835,7 @@ router.get("/video-consultations/recent", authDoctor, async (req, res) => {
 
         return {
           id: c.id,
-          patientId: c.patientId,
+          patientId: c.userId ?? c.patientId,
           patient: patientName,
           type: c.consultationType,
           status: c.status,
@@ -1911,7 +1911,7 @@ router.get("/video-consultations/upcoming", authDoctor, async (req, res) => {
 
         return {
           id: c.id,
-          patientId: c.patientId,
+          patientId: c.userId ?? c.patientId,
           patient: patientName,
           type: c.consultationType,
           status: c.status,
@@ -2235,7 +2235,7 @@ router.post("/triage/cases/:caseId/respond", authDoctor, async (req, res) => {
     try {
       const notificationService = (await import('../services/notification.service.js')).default;
       await notificationService.sendNotification({
-        userId: appointment.patientId,
+        userId: appointment.userId ?? appointment.patientId,
         userType: 'user',
         type: 'triage_response',
         title: notificationTitle,
@@ -3018,7 +3018,7 @@ router.post("/appointments/:appointmentId/invoice", authDoctor, async (req, res)
       invoiceNumber,
       appointmentId,
       doctorId,
-      patientId: appointment.patientId,
+      patientId: appointment.userId ?? appointment.patientId,
       items,
       subtotal,
       discount: discountAmount,

@@ -113,24 +113,59 @@ router.get(
   requireRole('doctor'),
   async (req, res) => {
     try {
-      const doctorId = req.user.id;
+      const doctorId = req.user?.doctorId || req.user?.id;
+      if (!doctorId) {
+        return res.status(400).json({
+          success: false,
+          message: 'Doctor context missing in auth token'
+        });
+      }
       const today = new Date();
       today.setHours(0, 0, 0, 0);
       const tomorrow = new Date(today);
       tomorrow.setDate(tomorrow.getDate() + 1);
 
       const appointments = await Appointment.findAll({
-        doctorId,
-        appointmentDate: {
-          $gte: today,
-          $lt: tomorrow
-        }
+        where: {
+          doctorId,
+          appointmentDate: {
+            [Op.gte]: today,
+            [Op.lt]: tomorrow
+          }
+        },
+        include: [
+          {
+            model: User,
+            as: 'patient',
+            attributes: ['id', 'firstName', 'lastName', 'email', 'phoneNumber'],
+            required: false
+          }
+        ],
+        order: [
+          ['appointmentDate', 'ASC'],
+          ['appointmentTime', 'ASC']
+        ]
+      });
+
+      const normalizedAppointments = (appointments || []).map((apt) => {
+        const item = apt.toJSON ? apt.toJSON() : apt;
+        const patientName =
+          item.patientName ||
+          `${item.patient?.firstName || ''} ${item.patient?.lastName || ''}`.trim() ||
+          'Patient';
+
+        return {
+          ...item,
+          patientName,
+          type: item.consultationType === 'online' ? 'Video' : 'In-Person',
+        };
       });
 
       return res.json({
         success: true,
-        data: appointments || [],
-        count: appointments?.length || 0
+        appointments: normalizedAppointments,
+        data: normalizedAppointments,
+        count: normalizedAppointments.length
       });
     } catch (error) {
       console.error('Get today appointments error:', error);

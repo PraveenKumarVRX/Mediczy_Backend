@@ -1093,7 +1093,7 @@ router.get('/services', authUser, async (req, res) => {
       });
     }
 
-    const doctor = await doctorModel.findById(req.user.id);
+    const doctor = await doctorModel.findByPk(req.user.id);
 
     if (!doctor) {
       return res.status(404).json({
@@ -1162,7 +1162,6 @@ router.put('/services', authUser, [
     if (practiceLocations !== undefined) updateData.practiceLocations = practiceLocations;
 
     // File logging for debugging
-    const fs = require('fs');
     const logFile = '/tmp/doctor-service-debug.log';
     
     try {
@@ -1170,7 +1169,6 @@ router.put('/services', authUser, [
       fs.appendFileSync(logFile, `Doctor ID: ${req.user.id}\n`);
       fs.appendFileSync(logFile, `Update data: ${JSON.stringify(updateData)}\n`);
       
-      const { Doctor } = require('../models/index.js');
       const doctor = await Doctor.findByPk(req.user.id);
       
       if (!doctor) {
@@ -1336,7 +1334,7 @@ router.get('/messages', authUser, async (req, res) => {
     
     const appointments = await Appointment.findAll({
       where: { doctorId },
-      attributes: ['id', 'patientId', 'patientName', 'patientPhone', 'status', 'appointmentDate', 'appointmentTime', 'updatedAt'],
+      attributes: ['id', 'userId', 'patientName', 'patientPhone', 'status', 'appointmentDate', 'appointmentTime', 'updatedAt'],
       order: [['updatedAt', 'DESC']],
       limit: parseInt(limit),
       offset: parseInt(offset)
@@ -1344,12 +1342,12 @@ router.get('/messages', authUser, async (req, res) => {
 
     // Build conversations from appointments
     const conversations = appointments
-      .filter(apt => ['confirmed', 'in-progress', 'completed'].includes(apt.status))
+      .filter(apt => apt.userId && ['confirmed', 'in-progress', 'completed'].includes(apt.status))
       .map(apt => ({
-        id: `conv_${doctorId}_${apt.patientId}`,
+        id: `conv_${doctorId}_${apt.userId}`,
         appointmentId: apt.id,
         patient: {
-          id: apt.patientId,
+          id: apt.userId,
           name: apt.patientName,
           phone: apt.patientPhone
         },
@@ -1402,7 +1400,7 @@ router.get('/messages/:patientId', authUser, async (req, res) => {
     // Verify doctor has an appointment with this patient
     const { Appointment } = await import('../models/index.js');
     
-    const where = { doctorId, patientId };
+    const where = { doctorId, userId: patientId };
     if (appointmentId) {
       where.id = appointmentId;
     }
@@ -1421,7 +1419,7 @@ router.get('/messages/:patientId', authUser, async (req, res) => {
 
     // Get patient info
     const userModel = (await import('../models/user.model.intelligent.js')).default;
-    const patient = await userModel.findById(patientId);
+    const patient = await userModel.findByPk(patientId);
 
     res.json({
       success: true,
@@ -1430,7 +1428,7 @@ router.get('/messages/:patientId', authUser, async (req, res) => {
       patient: {
         id: patientId,
         name: patient ? `${patient.firstName} ${patient.lastName}` : appointment.patientName,
-        phone: patient?.phone || appointment.patientPhone,
+        phone: patient?.phoneNumber || patient?.phone || appointment.patientPhone,
         email: patient?.email
       },
       messages: [],
@@ -1475,7 +1473,7 @@ router.post('/messages/:patientId', authUser, async (req, res) => {
     // Verify appointment exists
     const { Appointment } = await import('../models/index.js');
     
-    const where = { doctorId, patientId };
+    const where = { doctorId, userId: patientId };
     if (appointmentId) {
       where.id = appointmentId;
     }

@@ -5,7 +5,7 @@
  * CPU-only, fully offline operation
  */
 
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect, useCallback, useMemo } from 'react';
 import { 
   Mic, 
   MicOff, 
@@ -26,7 +26,8 @@ import {
   Stethoscope,
   FileOutput,
   ClipboardList,
-  Activity
+  Activity,
+  Trash2
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
@@ -109,7 +110,6 @@ const OfflineScribePanel: React.FC<OfflineScribePanelProps> = ({
     isRecording,
     isPaused,
     recordingTime,
-    audioBlob,
     audioUrl,
     error: recordingError,
     startRecording,
@@ -129,10 +129,51 @@ const OfflineScribePanel: React.FC<OfflineScribePanelProps> = ({
     },
   });
 
+  const draftKey = useMemo(
+    () => `offlineScribeDraft:${patientContext?.patient_id || 'default'}`,
+    [patientContext?.patient_id]
+  );
+
   // Check service status on mount
   useEffect(() => {
     checkServiceStatus();
   }, []);
+
+  // Restore draft from current browser session
+  useEffect(() => {
+    try {
+      const raw = sessionStorage.getItem(draftKey);
+      if (!raw) return;
+
+      const draft = JSON.parse(raw);
+      if (draft.transcript) setTranscript(draft.transcript);
+      if (draft.normalizedText) setNormalizedText(draft.normalizedText);
+      if (draft.manualInput) setManualInput(draft.manualInput);
+      if (draft.generatedDocument) setGeneratedDocument(draft.generatedDocument);
+    } catch (error) {
+      // Ignore malformed drafts and start fresh
+    }
+  }, [draftKey]);
+
+  // Persist in-session draft so accidental navigation does not lose notes
+  useEffect(() => {
+    const payload = {
+      transcript,
+      normalizedText,
+      manualInput,
+      generatedDocument,
+    };
+
+    try {
+      if (!transcript && !normalizedText && !manualInput && !generatedDocument) {
+        sessionStorage.removeItem(draftKey);
+      } else {
+        sessionStorage.setItem(draftKey, JSON.stringify(payload));
+      }
+    } catch (error) {
+      // Storage may be unavailable in private mode; continue without persistence
+    }
+  }, [draftKey, transcript, normalizedText, manualInput, generatedDocument]);
 
   const checkServiceStatus = async () => {
     setServiceStatus('checking');
@@ -146,6 +187,15 @@ const OfflineScribePanel: React.FC<OfflineScribePanelProps> = ({
 
   // Handle recording start
   const handleStartRecording = async () => {
+    if (processingStage !== 'idle' && processingStage !== 'complete' && processingStage !== 'error') {
+      toast({
+        variant: 'destructive',
+        title: 'Please wait',
+        description: 'Current processing is still in progress.',
+      });
+      return;
+    }
+
     if (serviceStatus !== 'online') {
       toast({
         variant: 'destructive',
@@ -242,6 +292,15 @@ const OfflineScribePanel: React.FC<OfflineScribePanelProps> = ({
 
   // Process manual text input
   const processManualInput = async () => {
+    if (serviceStatus !== 'online') {
+      toast({
+        variant: 'destructive',
+        title: 'Service Offline',
+        description: 'Start the offline scribe service before processing text.',
+      });
+      return;
+    }
+
     if (!manualInput.trim()) {
       toast({
         variant: 'destructive',
@@ -293,9 +352,39 @@ const OfflineScribePanel: React.FC<OfflineScribePanelProps> = ({
   };
 
   // Copy to clipboard
-  const copyToClipboard = (text: string) => {
-    navigator.clipboard.writeText(text);
-    toast({ title: 'Copied to clipboard' });
+  const copyToClipboard = async (text: string) => {
+    try {
+      await navigator.clipboard.writeText(text);
+      toast({ title: 'Copied to clipboard' });
+    } catch (error) {
+      toast({
+        variant: 'destructive',
+        title: 'Copy failed',
+        description: 'Clipboard access was blocked by your browser.',
+      });
+    }
+  };
+
+  const clearWorkspace = () => {
+    resetRecording();
+    setTranscript('');
+    setNormalizedText('');
+    setGeneratedDocument(null);
+    setManualInput('');
+    setProgress(0);
+    setProcessingStage('idle');
+    sessionStorage.removeItem(draftKey);
+  };
+
+  const downloadGeneratedDocument = () => {
+    if (!generatedDocument?.formatted_text) return;
+    const blob = new Blob([generatedDocument.formatted_text], { type: 'text/plain;charset=utf-8' });
+    const url = URL.createObjectURL(blob);
+    const anchor = document.createElement('a');
+    anchor.href = url;
+    anchor.download = `${documentType}-${Date.now()}.txt`;
+    anchor.click();
+    URL.revokeObjectURL(url);
   };
 
   // Get status badge color
@@ -342,7 +431,7 @@ const OfflineScribePanel: React.FC<OfflineScribePanelProps> = ({
           <div className="flex items-center gap-2">
             <Badge variant="outline" className="gap-1">
               {serviceStatus === 'online' ? (
-                <><WifiOff className="h-3 w-3" /> Offline Mode</>
+                <><Wifi className="h-3 w-3" /> Local Service Online</>
               ) : serviceStatus === 'checking' ? (
                 <><Loader2 className="h-3 w-3 animate-spin" /> Checking...</>
               ) : (
@@ -350,17 +439,28 @@ const OfflineScribePanel: React.FC<OfflineScribePanelProps> = ({
               )}
             </Badge>
             <div className={`h-2 w-2 rounded-full ${getStatusColor()}`} />
-            <Button variant="ghost" size="icon" onClick={checkServiceStatus}>
+            <Button variant="ghost" size="icon" onClick={checkServiceStatus} disabled={serviceStatus === 'checking'}>
               <RefreshCw className="h-4 w-4" />
+            </Button>
+            <Button variant="ghost" size="icon" onClick={clearWorkspace} title="Clear workspace">
+              <Trash2 className="h-4 w-4" />
             </Button>
           </div>
         </div>
         <CardDescription>
-          CPU-only, fully offline medical transcription • Hindi, Tamil, Telugu, English
+          CPU-only local transcription and document generation for doctor workflow
         </CardDescription>
       </CardHeader>
 
       <CardContent className={compact ? 'p-4 pt-0' : ''}>
+        <Alert className="mb-4 border-blue-200 bg-blue-50/60 dark:border-blue-900 dark:bg-blue-950/20">
+          <AlertCircle className="h-4 w-4" />
+          <AlertTitle>Privacy mode</AlertTitle>
+          <AlertDescription>
+            Dictation is processed on local infrastructure. Review all AI output before finalizing prescriptions.
+          </AlertDescription>
+        </Alert>
+
         {/* Configuration Row */}
         <div className="grid grid-cols-2 gap-4 mb-4">
           {/* Language Selector */}
@@ -558,6 +658,9 @@ Example: Patient naam Ravi, 35 saal, male. Bukhar aur sardard teen din se. Parac
                       <Button variant="ghost" size="sm" onClick={() => copyToClipboard(generatedDocument.formatted_text)}>
                         <Copy className="h-4 w-4 mr-1" /> Copy
                       </Button>
+                      <Button variant="ghost" size="sm" onClick={downloadGeneratedDocument}>
+                        <Download className="h-4 w-4 mr-1" /> Download
+                      </Button>
                     </div>
                   </div>
                   <ScrollArea className="h-[300px] border rounded-md p-4 bg-white">
@@ -634,6 +737,15 @@ Example: Patient naam Ravi, 35 saal, male. Bukhar aur sardard teen din se. Parac
                 cd offline_scribe && python main.py
               </code>
             </AlertDescription>
+          </Alert>
+        )}
+
+        {/* Recording error warning */}
+        {recordingError && (
+          <Alert variant="destructive" className="mt-4">
+            <AlertCircle className="h-4 w-4" />
+            <AlertTitle>Recorder Error</AlertTitle>
+            <AlertDescription>{recordingError}</AlertDescription>
           </Alert>
         )}
 

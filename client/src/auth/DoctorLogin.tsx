@@ -96,10 +96,14 @@ const DoctorLogin = () => {
   };
 
   const onSubmit = (values: { email: string; password: string }) => {
+    const devAuthBypassEnabled =
+      import.meta.env.DEV &&
+      import.meta.env.VITE_ENABLE_DEV_AUTH_BYPASS === 'true';
+
     // Dev bypass for testing
     const emailLower = values.email.toLowerCase().trim();
     if (
-      import.meta.env.DEV &&
+      devAuthBypassEnabled &&
       emailLower === 'doctor@mediczy.com' &&
       values.password === 'Doctor123'
     ) {

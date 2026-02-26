@@ -456,21 +456,26 @@ export const getDoctorProfile = async (req, res) => {
 
 export const updateDoctorStatus = async (req, res) => {
   try {
-    console.log('hello from asy');
+    let doctorId = req.doctor?.id || req.doctor?._id || null;
 
-    // Extract token from headers
-    const token = req.headers.authorization?.split(" ")[1];
-
-    if (!token) {
-      return res.status(401).json({
-        success: false,
-        message: "Unauthorized. No token provided.",
-      });
+    // Backward-compatible fallback for any legacy callers not using authDoctor
+    if (!doctorId) {
+      const token = req.headers.authorization?.split(" ")[1];
+      if (!token) {
+        return res.status(401).json({
+          success: false,
+          message: "Unauthorized. No token provided.",
+        });
+      }
+      const decoded = jwt.verify(token, JWT_CONFIG.SECRET);
+      if (decoded?.role !== "doctor") {
+        return res.status(403).json({
+          success: false,
+          message: "Access denied. Doctor role required.",
+        });
+      }
+      doctorId = decoded.id || decoded._id;
     }
-
-    // Verify and decode token
-    const decoded = jwt.verify(token, JWT_CONFIG.SECRET);
-    const userId = decoded.id || decoded._id;
 
     // Extract status from request
     const { isOnline } = req.body;
@@ -482,7 +487,7 @@ export const updateDoctorStatus = async (req, res) => {
       });
     }
 
-    const doctor = await doctorModel.findByPk(userId);
+    const doctor = await doctorModel.findByPk(doctorId);
 
     if (!doctor) {
       return res.status(404).json({

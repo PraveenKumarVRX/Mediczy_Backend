@@ -151,7 +151,7 @@ const DoctorAppointments = () => {
       return { status, appointment };
     },
     onSuccess: (data) => {
-      queryClient.invalidateQueries({ queryKey: ["doctorAppointments"] });
+      queryClient.invalidateQueries({ queryKey: ["doctorEnhancedAppointments", doctorId] });
 
       // If marking as completed, notify the doctor that patient's usage will be tracked
       if (data.status === "completed") {
@@ -187,7 +187,7 @@ const DoctorAppointments = () => {
       await api.patch(`/appointments/${id}/status`, { notes });
     },
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["doctorAppointments"] });
+      queryClient.invalidateQueries({ queryKey: ["doctorEnhancedAppointments", doctorId] });
       toast({
         title: "Success",
         description: "Notes saved successfully",

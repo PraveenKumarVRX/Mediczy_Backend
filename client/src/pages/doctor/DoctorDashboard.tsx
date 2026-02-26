@@ -26,6 +26,9 @@ import {
   ArrowRight,
   CheckCircle2,
   Bell,
+  RefreshCw,
+  Wifi,
+  WifiOff,
   Pill,
   UserCheck,
   CalendarCheck,
@@ -50,6 +53,9 @@ const DoctorDashboard = () => {
   const [currentTime, setCurrentTime] = useState(new Date());
   const [incomingCall, setIncomingCall] = useState<any | null>(null);
   const [isSocketConnected, setIsSocketConnected] = useState(false);
+  const [isUsingFallbackStats, setIsUsingFallbackStats] = useState(false);
+  const [isUsingFallbackAppointments, setIsUsingFallbackAppointments] = useState(false);
+  const [isUsingFallbackAlerts, setIsUsingFallbackAlerts] = useState(false);
 
   // Ring-fencing: Redirect non-doctor users
   useEffect(() => {
@@ -114,6 +120,7 @@ const DoctorDashboard = () => {
     return () => {
       console.log('🔌 Doctor Dashboard: Disconnecting Socket.IO');
       socketService.off('triage-call-request', handleTriageCallRequest);
+      setIsSocketConnected(false);
     };
   }, [currentDoctor?.id, toast]);
 
@@ -123,14 +130,16 @@ const DoctorDashboard = () => {
   }, []);
 
   // Fetch dashboard stats from API
-  const { data: stats, isLoading } = useQuery({
+  const { data: stats, isLoading, refetch: refetchStats, isRefetching: isStatsRefetching } = useQuery({
     queryKey: ['doctor-dashboard-stats'],
     queryFn: async () => {
       try {
         const response = await api.get('/doctors/dashboard/stats');
+        setIsUsingFallbackStats(false);
         return response.data;
       } catch (err: any) {
         console.warn('Failed to fetch dashboard stats:', err.message);
+        setIsUsingFallbackStats(true);
         return {
           totalPatients: 124,
           totalConsultations: 48,
@@ -151,13 +160,15 @@ const DoctorDashboard = () => {
   });
 
   // Fetch today's appointments
-  const { data: todayAppointments } = useQuery({
+  const { data: todayAppointments, refetch: refetchTodayAppointments, isRefetching: isAppointmentsRefetching } = useQuery({
     queryKey: ['doctor-today-appointments'],
     queryFn: async () => {
       try {
         const response = await api.get('/appointments/doctor/today');
+        setIsUsingFallbackAppointments(false);
         return response.data.appointments || [];
       } catch (err) {
+        setIsUsingFallbackAppointments(true);
         return [
           { id: 1, patientName: "Rahul Sharma", time: "10:00 AM", type: "Video", status: "upcoming" },
           { id: 2, patientName: "Priya Patel", time: "11:30 AM", type: "In-Person", status: "upcoming" },
@@ -169,13 +180,15 @@ const DoctorDashboard = () => {
   });
 
   // Fetch alerts
-  const { data: alerts } = useQuery({
+  const { data: alerts, refetch: refetchAlerts, isRefetching: isAlertsRefetching } = useQuery({
     queryKey: ['doctor-alerts'],
     queryFn: async () => {
       try {
         const response = await api.get('/doctors/alerts');
+        setIsUsingFallbackAlerts(false);
         return response.data.alerts || [];
       } catch (err) {
+        setIsUsingFallbackAlerts(true);
         return [];
       }
     },
@@ -188,6 +201,13 @@ const DoctorDashboard = () => {
     if (hour < 17) return "Good Afternoon";
     return "Good Evening";
   };
+
+  const handleRefreshDashboard = async () => {
+    await Promise.all([refetchStats(), refetchTodayAppointments(), refetchAlerts()]);
+  };
+
+  const dashboardHasFallbackData =
+    isUsingFallbackStats || isUsingFallbackAppointments || isUsingFallbackAlerts;
 
   // Accept incoming emergency call
   const handleAcceptIncomingCall = async (appointmentId: number) => {
@@ -446,10 +466,33 @@ const DoctorDashboard = () => {
                     {stats?.rating || "4.8"}
                   </span>
                 </p>
+                <div className="flex flex-wrap items-center gap-2 mt-3">
+                  <Badge className={cn(
+                    "border-0",
+                    isSocketConnected ? "bg-emerald-500/20 text-emerald-200" : "bg-slate-500/25 text-slate-200"
+                  )}>
+                    {isSocketConnected ? <Wifi className="w-3 h-3 mr-1" /> : <WifiOff className="w-3 h-3 mr-1" />}
+                    {isSocketConnected ? "Live triage connected" : "Live triage disconnected"}
+                  </Badge>
+                  {dashboardHasFallbackData && (
+                    <Badge className="bg-amber-500/20 text-amber-200 border-0">
+                      Showing fallback data
+                    </Badge>
+                  )}
+                </div>
               </div>
             </div>
             
             <div className="flex gap-3">
+              <Button
+                variant="outline"
+                onClick={handleRefreshDashboard}
+                disabled={isStatsRefetching || isAppointmentsRefetching || isAlertsRefetching}
+                className="bg-white/10 hover:bg-white/20 text-white border-white/20 hover:border-white/30"
+              >
+                <RefreshCw className={cn("w-4 h-4 mr-2", (isStatsRefetching || isAppointmentsRefetching || isAlertsRefetching) && "animate-spin")} />
+                Refresh
+              </Button>
               <Link to="/doctor/appointments">
                 <Button variant="outline" className="bg-white/10 hover:bg-white/20 text-white border-white/20 hover:border-white/30">
                   <Calendar className="w-4 h-4 mr-2" />
@@ -465,6 +508,24 @@ const DoctorDashboard = () => {
             </div>
           </div>
         </div>
+
+        {dashboardHasFallbackData && (
+          <Card className="border-amber-200 bg-amber-50/60 dark:border-amber-800 dark:bg-amber-950/20">
+            <CardContent className="p-4">
+              <div className="flex items-start gap-3">
+                <AlertTriangle className="w-5 h-5 text-amber-600 dark:text-amber-400 mt-0.5" />
+                <div className="space-y-1">
+                  <p className="text-sm font-semibold text-amber-900 dark:text-amber-200">
+                    Live data partially unavailable
+                  </p>
+                  <p className="text-xs text-amber-800/90 dark:text-amber-300/90">
+                    The dashboard is showing fallback values for one or more sections. Use Refresh and check API health.
+                  </p>
+                </div>
+              </div>
+            </CardContent>
+          </Card>
+        )}
 
         {/* Stats Grid */}
         <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
@@ -594,6 +655,11 @@ const DoctorDashboard = () => {
                       )}>
                         {apt.status || "upcoming"}
                       </Badge>
+                      {isUsingFallbackAppointments && (
+                        <Badge variant="outline" className="text-[10px] bg-amber-50 text-amber-700 border-amber-200 dark:bg-amber-900/30 dark:text-amber-300 dark:border-amber-700">
+                          demo
+                        </Badge>
+                      )}
                       <Button variant="ghost" size="icon" className="opacity-0 group-hover:opacity-100 transition-opacity">
                         <ArrowRight className="w-4 h-4" />
                       </Button>

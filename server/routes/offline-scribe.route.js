@@ -11,10 +11,11 @@ import express from 'express';
 import fetch from 'node-fetch';
 import FormData from 'form-data';
 import multer from 'multer';
-import { authUser } from '../middleware/auth.middleware.js';
+import { authUser, requireRole } from '../middleware/auth.middleware.js';
 import logger from '../config/logger.js';
 
 const router = express.Router();
+const requireScribeAccess = requireRole(['doctor', 'assistant', 'nurse', 'team', 'admin', 'hospital']);
 
 // Offline scribe service URL (Python FastAPI)
 const OFFLINE_SCRIBE_URL = process.env.OFFLINE_SCRIBE_URL || 'http://localhost:8006';
@@ -109,6 +110,43 @@ function normalizeLanguage(inputLanguage) {
     if (!inputLanguage) return 'auto';
     const normalized = String(inputLanguage).trim().toLowerCase();
     return INDIAN_LANGUAGE_MAP[normalized] || (normalized.length <= 5 ? normalized : 'auto');
+}
+
+function mapDocumentTypeForBackend(inputType = 'prescription') {
+    const normalized = String(inputType || 'prescription').trim().toLowerCase().replace(/_/g, '-');
+    if (normalized === 'opd-notes') return 'opd_notes';
+    if (normalized === 'ipd-notes') return 'ipd_notes';
+    if (normalized === 'discharge' || normalized === 'discharge-summary') return 'discharge_summary';
+    return 'prescription';
+}
+
+function mapDocumentTypeForFrontend(inputType = 'prescription') {
+    const normalized = String(inputType || 'prescription').trim().toLowerCase().replace(/_/g, '-');
+    if (normalized === 'opd-notes') return 'opd-notes';
+    if (normalized === 'ipd-notes') return 'ipd-notes';
+    if (normalized === 'discharge-summary') return 'discharge';
+    return 'prescription';
+}
+
+function normalizeDocumentResponse(result = {}, fallbackType = 'prescription', fallbackLanguage = 'auto') {
+    const processingTimeMs =
+        Number(result.processing_time_ms) ||
+        Number(result.total_processing_time_ms) ||
+        (Number(result.total_time) ? Math.round(Number(result.total_time) * 1000) : 0) ||
+        (Number(result.generation_time) ? Math.round(Number(result.generation_time) * 1000) : 0) ||
+        (Number(result.total_pipeline_time) ? Math.round(Number(result.total_pipeline_time) * 1000) : 0);
+
+    return {
+        success: result.success !== false,
+        formatted_text: result.formatted_text || result.raw_output || result.text || '',
+        structured_data: result.structured_data || result.structured || {},
+        document_type: mapDocumentTypeForFrontend(result.document_type || fallbackType),
+        language: result.language || result.detected_language || fallbackLanguage,
+        processing_time_ms: processingTimeMs,
+        ai_badge: result.ai_badge,
+        disclaimer: result.disclaimer,
+        raw_output: result.raw_output
+    };
 }
 
 function assertLocalScribeTarget() {
@@ -280,8 +318,10 @@ router.get('/templates', async (req, res) => {
  * @desc    Transcribe audio file to text
  * @access  Protected (Doctor/Staff)
  */
-router.post('/transcribe', authUser, upload.single('audio'), async (req, res) => {
+router.post('/transcribe', authUser, requireScribeAccess, upload.single('audio'), async (req, res) => {
     try {
+        assertLocalScribeTarget();
+
         if (!req.file) {
             return res.status(400).json({
                 error: 'No audio file provided',
@@ -352,7 +392,7 @@ router.post('/transcribe', authUser, upload.single('audio'), async (req, res) =>
  * @desc    Normalize medical text (drug names, vitals, frequencies)
  * @access  Protected (Doctor/Staff)
  */
-router.post('/normalize', authUser, async (req, res) => {
+router.post('/normalize', authUser, requireScribeAccess, async (req, res) => {
     try {
         const { text } = req.body;
         const language = normalizeLanguage(req.body.language || 'hi');
@@ -392,7 +432,7 @@ router.post('/normalize', authUser, async (req, res) => {
  * @desc    Generate OPD prescription from dictation
  * @access  Protected (Doctor only)
  */
-router.post('/prescription', authUser, async (req, res) => {
+router.post('/prescription', authUser, requireScribeAccess, async (req, res) => {
     try {
         const { dictation, patient_context = {} } = req.body;
         const language = normalizeLanguage(req.body.language || 'hi');
@@ -426,7 +466,7 @@ router.post('/prescription', authUser, async (req, res) => {
             medicationsCount: result.structured?.medications?.length
         });
 
-        res.json(result);
+        res.json(normalizeDocumentResponse(result, 'prescription', language));
 
     } catch (error) {
         logger.error('Prescription generation failed:', { error: error.message, userId: req.user?.id });
@@ -442,7 +482,7 @@ router.post('/prescription', authUser, async (req, res) => {
  * @desc    Generate OPD notes from dictation
  * @access  Protected (Doctor only)
  */
-router.post('/opd-notes', authUser, async (req, res) => {
+router.post('/opd-notes', authUser, requireScribeAccess, async (req, res) => {
     try {
         const { dictation, patient_context = {} } = req.body;
         const language = normalizeLanguage(req.body.language || 'hi');
@@ -460,10 +500,12 @@ router.post('/opd-notes', authUser, async (req, res) => {
         };
 
         const result = await proxyToScribe('/api/scribe/opd-notes', 'POST', {
-            dictation,
-            language,
-            patient_context,
-            doctor_context
+            transcript: dictation,
+            patient_info: {
+                name: patient_context.name || patient_context.patient_name,
+                age: patient_context.age || patient_context.patient_age,
+                gender: patient_context.gender || patient_context.patient_gender
+            }
         });
 
         logger.info('OPD notes generated via offline scribe', {
@@ -472,7 +514,7 @@ router.post('/opd-notes', authUser, async (req, res) => {
             language
         });
 
-        res.json(result);
+        res.json(normalizeDocumentResponse(result, 'opd-notes', language));
 
     } catch (error) {
         logger.error('OPD notes generation failed:', { error: error.message, userId: req.user?.id });
@@ -488,7 +530,7 @@ router.post('/opd-notes', authUser, async (req, res) => {
  * @desc    Generate IPD notes from dictation
  * @access  Protected (Doctor only)
  */
-router.post('/ipd-notes', authUser, async (req, res) => {
+router.post('/ipd-notes', authUser, requireScribeAccess, async (req, res) => {
     try {
         const { dictation, patient_context = {} } = req.body;
         const language = normalizeLanguage(req.body.language || 'hi');
@@ -506,10 +548,12 @@ router.post('/ipd-notes', authUser, async (req, res) => {
         };
 
         const result = await proxyToScribe('/api/scribe/ipd-notes', 'POST', {
-            dictation,
-            language,
-            patient_context,
-            doctor_context
+            transcript: dictation,
+            patient_info: {
+                name: patient_context.name || patient_context.patient_name,
+                age: patient_context.age || patient_context.patient_age,
+                gender: patient_context.gender || patient_context.patient_gender
+            }
         });
 
         logger.info('IPD notes generated via offline scribe', {
@@ -518,7 +562,7 @@ router.post('/ipd-notes', authUser, async (req, res) => {
             language
         });
 
-        res.json(result);
+        res.json(normalizeDocumentResponse(result, 'ipd-notes', language));
 
     } catch (error) {
         logger.error('IPD notes generation failed:', { error: error.message, userId: req.user?.id });
@@ -534,7 +578,7 @@ router.post('/ipd-notes', authUser, async (req, res) => {
  * @desc    Generate discharge summary from dictation
  * @access  Protected (Doctor only)
  */
-router.post('/discharge', authUser, async (req, res) => {
+router.post('/discharge', authUser, requireScribeAccess, async (req, res) => {
     try {
         const { dictation, patient_context = {} } = req.body;
         const language = normalizeLanguage(req.body.language || 'hi');
@@ -552,10 +596,12 @@ router.post('/discharge', authUser, async (req, res) => {
         };
 
         const result = await proxyToScribe('/api/scribe/discharge', 'POST', {
-            dictation,
-            language,
-            patient_context,
-            doctor_context
+            transcript: dictation,
+            patient_info: {
+                name: patient_context.name || patient_context.patient_name,
+                age: patient_context.age || patient_context.patient_age,
+                gender: patient_context.gender || patient_context.patient_gender
+            }
         });
 
         logger.info('Discharge summary generated via offline scribe', {
@@ -564,7 +610,7 @@ router.post('/discharge', authUser, async (req, res) => {
             language
         });
 
-        res.json(result);
+        res.json(normalizeDocumentResponse(result, 'discharge', language));
 
     } catch (error) {
         logger.error('Discharge summary generation failed:', { error: error.message, userId: req.user?.id });
@@ -584,8 +630,10 @@ router.post('/discharge', authUser, async (req, res) => {
  * @desc    Full audio-to-document pipeline
  * @access  Protected (Doctor only)
  */
-router.post('/full-pipeline', authUser, upload.single('audio'), async (req, res) => {
+router.post('/full-pipeline', authUser, requireScribeAccess, upload.single('audio'), async (req, res) => {
     try {
+        assertLocalScribeTarget();
+
         if (!req.file) {
             return res.status(400).json({
                 error: 'No audio file provided',
@@ -594,7 +642,7 @@ router.post('/full-pipeline', authUser, upload.single('audio'), async (req, res)
         }
 
         const language = normalizeLanguage(req.body.language || 'auto');
-        const documentType = req.body.document_type || 'prescription';
+        const documentType = mapDocumentTypeForBackend(req.body.document_type || 'prescription');
         const chunkSeconds = Number(req.body.chunk_seconds || 30);
         const vad = String(req.body.vad || 'true') === 'true';
         const beamSize = Number(req.body.beam_size || 1);
@@ -609,13 +657,15 @@ router.post('/full-pipeline', authUser, upload.single('audio'), async (req, res)
 
         // Create FormData for multipart upload
         const formData = new FormData();
-        formData.append('audio', req.file.buffer, {
+        formData.append('file', req.file.buffer, {
             filename: req.file.originalname || 'audio.wav',
             contentType: req.file.mimetype
         });
         formData.append('language', language);
         formData.append('document_type', documentType);
-        formData.append('patient_context', JSON.stringify(patientContext));
+        formData.append('patient_name', patientContext.name || patientContext.patient_name || '');
+        formData.append('patient_age', patientContext.age || patientContext.patient_age || '');
+        formData.append('patient_gender', patientContext.gender || patientContext.patient_gender || '');
         formData.append('chunk_seconds', String(chunkSeconds));
         formData.append('vad', String(vad));
         formData.append('beam_size', String(beamSize));
@@ -640,7 +690,7 @@ router.post('/full-pipeline', authUser, upload.single('audio'), async (req, res)
             doctorId: req.user?.doctorId,
             documentType,
             language: result.language,
-            processingTime: result.total_processing_time_ms
+            processingTime: result.total_processing_time_ms || result.total_pipeline_time
         });
 
         res.json(result);
@@ -663,7 +713,7 @@ router.post('/full-pipeline', authUser, upload.single('audio'), async (req, res)
  * @desc    Process multiple dictations in batch
  * @access  Protected (Doctor only)
  */
-router.post('/batch', authUser, async (req, res) => {
+router.post('/batch', authUser, requireScribeAccess, async (req, res) => {
     try {
         const { items } = req.body;
         const language = normalizeLanguage(req.body.language || 'hi');
@@ -695,17 +745,23 @@ router.post('/batch', authUser, async (req, res) => {
         for (let i = 0; i < items.length; i++) {
             const item = items[i];
             try {
-                const endpoint = `/api/scribe/${item.document_type || 'prescription'}`;
+                const endpoint = `/api/scribe/${mapDocumentTypeForBackend(item.document_type || 'prescription')}`;
                 const result = await proxyToScribe(endpoint, 'POST', {
-                    dictation: item.dictation,
-                    language: normalizeLanguage(item.language || language),
-                    patient_context: item.patient_context || {},
-                    doctor_context
+                    transcript: item.dictation,
+                    patient_info: {
+                        name: item.patient_context?.name || item.patient_context?.patient_name,
+                        age: item.patient_context?.age || item.patient_context?.patient_age,
+                        gender: item.patient_context?.gender || item.patient_context?.patient_gender
+                    }
                 });
                 results.push({
                     index: i,
                     status: 'success',
-                    result
+                    result: normalizeDocumentResponse(
+                        result,
+                        mapDocumentTypeForFrontend(item.document_type || 'prescription'),
+                        normalizeLanguage(item.language || language)
+                    )
                 });
             } catch (error) {
                 errors.push({
@@ -749,7 +805,7 @@ router.post('/batch', authUser, async (req, res) => {
  * @desc    Get detailed service status including model info
  * @access  Protected (Admin/Doctor)
  */
-router.get('/status', authUser, async (req, res) => {
+router.get('/status', authUser, requireScribeAccess, async (req, res) => {
     try {
         const [health, languages, templates] = await Promise.all([
             proxyToScribe('/api/scribe/health').catch(e => ({ error: e.message })),

@@ -54,6 +54,8 @@ export function useAudioRecorder(options: UseAudioRecorderOptions = {}): UseAudi
   const timerRef = useRef<NodeJS.Timeout | null>(null);
   const startTimeRef = useRef<number>(0);
   const pausedTimeRef = useRef<number>(0);
+  const pauseStartedAtRef = useRef<number | null>(null);
+  const isPausedRef = useRef<boolean>(false);
 
   // Check if MediaRecorder is supported
   const isSupported = typeof MediaRecorder !== 'undefined' && navigator.mediaDevices?.getUserMedia !== undefined;
@@ -100,7 +102,7 @@ export function useAudioRecorder(options: UseAudioRecorderOptions = {}): UseAudi
 
   // Update recording time
   const updateTime = useCallback(() => {
-    if (state.isPaused) return;
+    if (isPausedRef.current) return;
     
     const elapsed = (Date.now() - startTimeRef.current - pausedTimeRef.current) / 1000;
     setState(prev => ({ ...prev, recordingTime: Math.floor(elapsed) }));
@@ -109,7 +111,7 @@ export function useAudioRecorder(options: UseAudioRecorderOptions = {}): UseAudi
     if (elapsed >= maxDuration) {
       mediaRecorderRef.current?.stop();
     }
-  }, [maxDuration, state.isPaused]);
+  }, [maxDuration]);
 
   // Start recording
   const startRecording = useCallback(async (): Promise<void> => {
@@ -124,6 +126,8 @@ export function useAudioRecorder(options: UseAudioRecorderOptions = {}): UseAudi
       // Reset state
       chunksRef.current = [];
       pausedTimeRef.current = 0;
+      pauseStartedAtRef.current = null;
+      isPausedRef.current = false;
       
       // Request microphone access
       const stream = await navigator.mediaDevices.getUserMedia({
@@ -228,6 +232,11 @@ export function useAudioRecorder(options: UseAudioRecorderOptions = {}): UseAudi
         }, 100);
       };
 
+      if (pauseStartedAtRef.current) {
+        pausedTimeRef.current += Date.now() - pauseStartedAtRef.current;
+      }
+      pauseStartedAtRef.current = null;
+      isPausedRef.current = false;
       currentRecorder.stop();
     });
   }, [state.isRecording, state.audioBlob]);
@@ -235,6 +244,8 @@ export function useAudioRecorder(options: UseAudioRecorderOptions = {}): UseAudi
   // Pause recording
   const pauseRecording = useCallback(() => {
     if (mediaRecorderRef.current && state.isRecording && !state.isPaused) {
+      pauseStartedAtRef.current = Date.now();
+      isPausedRef.current = true;
       mediaRecorderRef.current.pause();
       setState(prev => ({ ...prev, isPaused: true }));
     }
@@ -243,6 +254,11 @@ export function useAudioRecorder(options: UseAudioRecorderOptions = {}): UseAudi
   // Resume recording
   const resumeRecording = useCallback(() => {
     if (mediaRecorderRef.current && state.isRecording && state.isPaused) {
+      if (pauseStartedAtRef.current) {
+        pausedTimeRef.current += Date.now() - pauseStartedAtRef.current;
+      }
+      pauseStartedAtRef.current = null;
+      isPausedRef.current = false;
       mediaRecorderRef.current.resume();
       setState(prev => ({ ...prev, isPaused: false }));
     }
@@ -267,6 +283,8 @@ export function useAudioRecorder(options: UseAudioRecorderOptions = {}): UseAudi
     });
     
     chunksRef.current = [];
+    pauseStartedAtRef.current = null;
+    isPausedRef.current = false;
   }, [cleanup, state.audioUrl]);
 
   // Cleanup on unmount
