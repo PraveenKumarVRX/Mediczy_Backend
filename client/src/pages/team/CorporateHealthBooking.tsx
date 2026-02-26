@@ -282,7 +282,8 @@ export default function CorporateHealthBooking() {
   const fetchHistory = async () => {
     setHistoryLoading(true);
     try {
-      const cid = corporate?.id || 5;
+      const cid = corporate?.id;
+      if (!cid) return;
       const r = await api.get(`/corporate-bookings/history?corporateId=${cid}&limit=50`);
       setHistory(r.data.bookings || []);
       setHistoryTotal(r.data.total || 0);
@@ -296,7 +297,8 @@ export default function CorporateHealthBooking() {
   const fetchReports = async (empId?: string) => {
     setReportsLoading(true);
     try {
-      const cid = corporate?.id || 5;
+      const cid = corporate?.id;
+      if (!cid) return;
       const empParam = empId ? `&employeeId=${empId}` : '';
       const r = await api.get(`/corporate-bookings/reports?corporateId=${cid}&limit=100${empParam}`);
       setReports(r.data.reports || []);
@@ -317,7 +319,7 @@ export default function CorporateHealthBooking() {
     rptSearchTimer.current = setTimeout(async () => {
       setRptEmpLoading(true);
       try {
-        const r = await api.get(`/corporate-bookings/employees?corporateId=${corporate?.id || 5}&search=${encodeURIComponent(val)}`);
+        const r = await api.get(`/corporate-bookings/employees?corporateId=${corporate?.id}&search=${encodeURIComponent(val)}`);
         setRptEmpSuggestions(r.data.employees || []);
         setShowRptSuggestions(true);
       } catch { setRptEmpSuggestions([]); } finally { setRptEmpLoading(false); }
@@ -411,7 +413,7 @@ export default function CorporateHealthBooking() {
     searchTimerRef.current = setTimeout(async () => {
       setEmpLoading(true);
       try {
-        const r = await api.get(`/corporate-bookings/employees?corporateId=${corporate?.id || 5}&search=${encodeURIComponent(val)}`);
+        const r = await api.get(`/corporate-bookings/employees?corporateId=${corporate?.id}&search=${encodeURIComponent(val)}`);
         setEmployeeSuggestions(r.data.employees || []);
         setShowSuggestions(true);
       } catch {
@@ -524,7 +526,7 @@ export default function CorporateHealthBooking() {
         checkupTime,
         testPackage,
         notes,
-        corporateId: corporate?.id || 5,
+        corporateId: corporate?.id,
         corporateName: corporate?.companyName || 'Corporate'
       });
 

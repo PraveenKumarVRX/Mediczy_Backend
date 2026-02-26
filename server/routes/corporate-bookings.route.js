@@ -58,11 +58,12 @@ function requireTeamOrAdmin(req, res, next) {
 
 // ──────────────────────────────────────────────
 // GET /api/corporate-bookings/employees
-// Search Equitas employees for booking autocomplete
+// Search corporate employees for booking autocomplete
 // ──────────────────────────────────────────────
 router.get('/employees', authUser, requireTeamOrAdmin, async (req, res) => {
   try {
-    const { search = '', corporateId = 5 } = req.query;
+    const { search = '', corporateId } = req.query;
+    if (!corporateId) return res.status(400).json({ success: false, message: 'corporateId is required' });
     const searchTerm = `%${search}%`;
 
     const employees = await postgresSequelize.query(
@@ -224,7 +225,8 @@ router.get('/employee-eligibility', authUser, requireTeamOrAdmin, async (req, re
 // ──────────────────────────────────────────────
 router.get('/labs', authUser, requireTeamOrAdmin, async (req, res) => {
   try {
-    const { corporateId = 5 } = req.query;
+    const { corporateId } = req.query;
+    if (!corporateId) return res.status(400).json({ success: false, message: 'corporateId is required' });
 
     const labs = await postgresSequelize.query(
       `SELECT
@@ -263,7 +265,8 @@ router.get('/labs', authUser, requireTeamOrAdmin, async (req, res) => {
 // ──────────────────────────────────────────────
 router.get('/packages', authUser, requireTeamOrAdmin, async (req, res) => {
   try {
-    const { corporateId = 5 } = req.query;
+    const { corporateId } = req.query;
+    if (!corporateId) return res.status(400).json({ success: false, message: 'corporateId is required' });
     const cid = parseInt(corporateId);
 
     // 1. Team-created packages stored in user_health_packages
@@ -345,10 +348,13 @@ router.post('/health-checkup', authUser, requireTeamOrAdmin, async (req, res) =>
     checkupTime,         // 'HH:MM' or slot string
     testPackage,         // e.g. "Annual Health Checkup", "CBC + LFT + KFT"
     notes = '',
-    corporateId = 5,
-    corporateName = 'Equitas Bank Ltd'
+    corporateId,
+    corporateName = ''
   } = req.body;
 
+  if (!corporateId) {
+    return res.status(400).json({ success: false, message: 'corporateId is required' });
+  }
   if (!employeeId || !labId || !checkupDate || !testPackage) {
     return res.status(400).json({
       success: false,
@@ -503,7 +509,8 @@ router.post('/health-checkup', authUser, requireTeamOrAdmin, async (req, res) =>
 // ──────────────────────────────────────────────
 router.get('/history', authUser, requireTeamOrAdmin, async (req, res) => {
   try {
-    const { corporateId = 5, page = 1, limit = 50 } = req.query;
+    const { corporateId, page = 1, limit = 50 } = req.query;
+    if (!corporateId) return res.status(400).json({ success: false, message: 'corporateId is required' });
     const offset = (parseInt(page) - 1) * parseInt(limit);
 
     const bookings = await postgresSequelize.query(
@@ -580,8 +587,8 @@ router.post(
       reportDate,         // 'YYYY-MM-DD'
       labOrderId,
       notes = '',
-      corporateId = 5,
-      corporateName = 'Equitas Bank Ltd',
+      corporateId,
+      corporateName = '',
       sendEmail = 'true',
       sendWhatsapp = 'true'
     } = req.body;
@@ -591,6 +598,9 @@ router.post(
     }
     if (!employeeId || !reportName || !reportDate) {
       return res.status(400).json({ success: false, message: 'employeeId, reportName and reportDate are required' });
+    }
+    if (!corporateId) {
+      return res.status(400).json({ success: false, message: 'corporateId is required' });
     }
 
     try {
@@ -739,7 +749,8 @@ router.post(
 // ──────────────────────────────────────────────
 router.get('/reports', authUser, requireTeamOrAdmin, async (req, res) => {
   try {
-    const { corporateId = 5, employeeId, page = 1, limit = 50 } = req.query;
+    const { corporateId, employeeId, page = 1, limit = 50 } = req.query;
+    if (!corporateId) return res.status(400).json({ success: false, message: 'corporateId is required' });
     const offset = (parseInt(page) - 1) * parseInt(limit);
 
     const empFilter = employeeId ? 'AND chr.employee_id = :employeeId' : '';
@@ -812,7 +823,7 @@ router.get('/reports', authUser, requireTeamOrAdmin, async (req, res) => {
 router.post('/reports/:id/share', authUser, requireTeamOrAdmin, async (req, res) => {
   try {
     const { id } = req.params;
-    const { sendEmail = true, sendWhatsapp = true, corporateName = 'Equitas Bank Ltd' } = req.body;
+    const { sendEmail = true, sendWhatsapp = true, corporateName = '' } = req.body;
 
     const [row] = await postgresSequelize.query(
       `SELECT chr.*, u."firstName", u."lastName", u.email, u."phoneNumber"
