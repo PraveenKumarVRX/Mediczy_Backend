@@ -82,6 +82,7 @@ const UploadedDocuments     = lazy(() => import("@/pages/patient/UploadedDocumen
 const NetworkHospitals      = lazy(() => import("@/pages/patient/NetworkHospitals"));
 const NetworkClinics        = lazy(() => import("@/pages/patient/NetworkClinics"));
 const TeamClinicList        = lazy(() => import("@/pages/team/TeamClinicList"));
+const TeamTicketManager     = lazy(() => import("@/pages/team/TeamTicketManager"));
 const BuyInsurance          = lazy(() => import("@/pages/patient/BuyInsurance"));
 const ClaimsManagement      = lazy(() => import("@/pages/patient/ClaimsManagement"));
 const AIHealthAnalysis      = lazy(() => import("@/pages/patient/AIHealthAnalysis"));
@@ -668,7 +669,7 @@ const AppRoutes = () => {
         <Route path="/team/lab-management"           element={<TeamLabManagementPage />} />
         <Route path="/team/pharmacy-management"      element={<TeamPharmacyManagementPage />} />
         <Route path="/team/chat-analytics"           element={<TeamChatAnalyticsPage />} />
-        <Route path="/team/support-tickets"          element={<TeamSupportTicketsPage />} />
+        <Route path="/team/support-tickets"          element={<MainLayout><TeamTicketManager /></MainLayout>} />
         <Route path="/team/appointments"             element={<TeamAppointmentsPage />} />
         <Route path="/team/chat"                     element={<TeamChatDashboardPage />} />
         <Route path="/team/whatsapp"                 element={<WhatsAppCommunication />} />
