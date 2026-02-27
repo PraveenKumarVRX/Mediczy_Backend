@@ -205,6 +205,15 @@ router.get('/rooms/:roomId/messages', authUser, [
     const room = await chatRooms.get(roomId);
     if (!room) {
       console.log('[Chat Messages] Room not found:', roomId);
+      // For WhatsApp rooms that exist in chatbot_sessions but not in Redis,
+      // return empty messages rather than 404 so the UI doesn't break
+      if (roomId.startsWith('whatsapp')) {
+        return res.json({
+          success: true,
+          messages: [],
+          pagination: { total: 0, limit, offset, hasMore: false }
+        });
+      }
       return res.status(404).json({
         success: false,
         message: 'Chat room not found'

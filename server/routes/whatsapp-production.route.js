@@ -10,6 +10,7 @@ import { cache } from '../db/redis.js';
 import logger from '../config/logger.js';
 import { detectServiceIntent, createAutoTicket } from '../services/autoTicketService.js';
 import axios from 'axios';
+import sharedPool from '../db/pgPool.js';
 
 const router = express.Router();
 const SIB_URL = process.env.SIB_URL || 'http://localhost:8001';
@@ -440,120 +441,88 @@ router.get('/templates/status', (req, res) => {
 
 /**
  * Get WhatsApp conversations
+ * Reads from chatbot_sessions DB (Twilio API removed — credentials not available in production)
  */
 router.get('/conversations', async (req, res) => {
   try {
-    const client = await import('twilio').then(m => m.default(
-      process.env.TWILIO_ACCOUNT_SID,
-      process.env.TWILIO_AUTH_TOKEN
-    ));
-    
-    // Get recent messages
-    const messages = await client.messages.list({ limit: 100 });
-    
-    // Group by conversation (phone number)
-    const conversations = {};
-    
-    messages.forEach(msg => {
-      const phoneNumber = msg.direction === 'inbound' ? msg.from : msg.to;
-      const cleanNumber = phoneNumber.replace('whatsapp:', '');
-      
-      if (!conversations[cleanNumber]) {
-        conversations[cleanNumber] = {
-          phoneNumber: cleanNumber,
-          messages: [],
-          lastMessage: null,
-          lastActivity: null,
-          unreadCount: 0
-        };
-      }
-      
-      const messageData = {
-        sid: msg.sid,
-        body: msg.body,
-        from: msg.from,
-        to: msg.to,
-        direction: msg.direction,
-        status: msg.status,
-        timestamp: msg.dateCreated,
-        errorCode: msg.errorCode,
-        errorMessage: msg.errorMessage
+    const result = await sharedPool.query(`
+      SELECT
+        session_id,
+        message_count,
+        messages,
+        last_interaction_at,
+        created_at
+      FROM chatbot_sessions
+      WHERE session_id LIKE 'whatsapp:%'
+      ORDER BY last_interaction_at DESC NULLS LAST
+    `);
+
+    const conversations = result.rows.map(row => {
+      const phoneNumber = row.session_id.replace(/^whatsapp:/i, '').trim();
+      const msgs = Array.isArray(row.messages) ? row.messages : [];
+      const lastMsg = msgs.length > 0 ? msgs[msgs.length - 1] : null;
+      return {
+        id: phoneNumber,
+        phoneNumber,
+        customerName: phoneNumber,
+        lastMessage: lastMsg ? (lastMsg.content || lastMsg.message || '') : '',
+        lastActivity: row.last_interaction_at || row.created_at,
+        lastMessageTime: row.last_interaction_at || row.created_at,
+        messageCount: row.message_count || msgs.length,
+        unreadCount: 0,
+        status: 'active',
+        source: 'chatbot_sessions'
       };
-      
-      conversations[cleanNumber].messages.push(messageData);
-      
-      if (!conversations[cleanNumber].lastActivity || 
-          new Date(msg.dateCreated) > new Date(conversations[cleanNumber].lastActivity)) {
-        conversations[cleanNumber].lastActivity = msg.dateCreated;
-        conversations[cleanNumber].lastMessage = msg.body;
-      }
     });
-    
-    // Convert to array and sort by last activity
-    const conversationList = Object.values(conversations).sort((a, b) => 
-      new Date(b.lastActivity).getTime() - new Date(a.lastActivity).getTime()
-    );
-    
-    res.json({
-      success: true,
-      conversations: conversationList
-    });
+
+    res.json({ success: true, conversations });
   } catch (error) {
     console.error('Error fetching WhatsApp conversations:', error);
-    res.status(500).json({
-      success: false,
-      message: error.message
-    });
+    res.status(500).json({ success: false, message: error.message });
   }
 });
 
 /**
  * Get messages for a specific WhatsApp conversation
+ * Reads from chatbot_sessions DB (Twilio API removed — credentials not available in production)
  */
 router.get('/conversations/:phoneNumber/messages', async (req, res) => {
   try {
     const { phoneNumber } = req.params;
-    const client = await import('twilio').then(m => m.default(
-      process.env.TWILIO_ACCOUNT_SID,
-      process.env.TWILIO_AUTH_TOKEN
-    ));
-    
-    // Get messages for this phone number
-    const messages = await client.messages.list({ 
-      limit: 100,
-    });
-    
-    // Filter messages for this conversation
-    const conversationMessages = messages
-      .filter(msg => {
-        const msgNumber = (msg.direction === 'inbound' ? msg.from : msg.to).replace('whatsapp:', '');
-        return msgNumber === phoneNumber;
-      })
-      .map(msg => ({
-        sid: msg.sid,
-        body: msg.body,
-        from: msg.from.replace('whatsapp:', ''),
-        to: msg.to.replace('whatsapp:', ''),
-        direction: msg.direction,
-        status: msg.status,
-        timestamp: msg.dateCreated,
-        errorCode: msg.errorCode,
-        errorMessage: msg.errorMessage,
-        price: msg.price,
-        priceUnit: msg.priceUnit
-      }))
-      .sort((a, b) => new Date(a.timestamp).getTime() - new Date(b.timestamp).getTime());
-    
-    res.json({
-      success: true,
-      messages: conversationMessages
-    });
+    const cleanPhone = decodeURIComponent(phoneNumber).replace(/^whatsapp:/i, '').trim();
+    // Try both with and without leading '+'
+    const sessionIds = [
+      `whatsapp:${cleanPhone}`,
+      cleanPhone.startsWith('+') ? `whatsapp:${cleanPhone.slice(1)}` : `whatsapp:+${cleanPhone}`
+    ];
+
+    let row = null;
+    for (const sid of sessionIds) {
+      const result = await sharedPool.query(
+        `SELECT messages, session_id FROM chatbot_sessions WHERE session_id = $1`,
+        [sid]
+      );
+      if (result.rows.length > 0) { row = result.rows[0]; break; }
+    }
+
+    const rawMessages = (row && Array.isArray(row.messages)) ? row.messages : [];
+    const ourNumber = process.env.TWILIO_WHATSAPP_NUMBER || '+14155238886';
+    const dbPhone = cleanPhone.startsWith('+') ? cleanPhone : `+${cleanPhone}`;
+
+    const normalized = rawMessages.map((msg, idx) => ({
+      id: msg.id || `msg_${idx}`,
+      body: msg.content || msg.message || '',
+      from: msg.role === 'user' ? dbPhone : ourNumber,
+      to: msg.role === 'user' ? ourNumber : dbPhone,
+      direction: msg.role === 'user' ? 'inbound' : 'outbound',
+      status: 'delivered',
+      timestamp: msg.createdAt || msg.timestamp || new Date().toISOString()
+    }));
+
+    res.json({ success: true, messages: normalized });
   } catch (error) {
     console.error('Error fetching conversation messages:', error);
-    res.status(500).json({
-      success: false,
-      message: error.message
-    });
+    res.status(500).json({ success: false, message: error.message });
   }
 });
 
