@@ -122,16 +122,64 @@ const TicketSchema = sequelize.define('tickets', {
 });
 
 // MongoDB-style wrapper class
+// Chainable query builder — makes Ticket.find().sort().skip().limit().lean() work
+class TicketQuery {
+  constructor(TicketModelSchema, where) {
+    this._schema = TicketModelSchema;
+    this._where = where;
+    this._order = [['createdAt', 'DESC']];
+    this._offset = 0;
+    this._limit = null;
+  }
+
+  sort(sortObj) {
+    if (sortObj && typeof sortObj === 'object') {
+      this._order = Object.entries(sortObj).map(([field, dir]) => [field, dir === -1 ? 'DESC' : 'ASC']);
+    }
+    return this;
+  }
+
+  limit(num) {
+    if (num != null) this._limit = parseInt(num);
+    return this;
+  }
+
+  skip(num) {
+    if (num != null) this._offset = parseInt(num);
+    return this;
+  }
+
+  lean() {
+    // already returns plain objects via raw: true
+    return this;
+  }
+
+  // Makes it thenable — await TicketQuery instance works
+  then(resolve, reject) {
+    const opts = { where: this._where, order: this._order, raw: true };
+    if (this._limit != null) opts.limit = this._limit;
+    if (this._offset) opts.offset = this._offset;
+    return this._schema.findAll(opts).then(resolve, reject);
+  }
+
+  catch(reject) {
+    return this.then(null, reject);
+  }
+
+  finally(fn) {
+    return this.then(fn, fn);
+  }
+}
+
 class Ticket {
   constructor(data) {
     Object.assign(this, data);
   }
 
-  // MongoDB-compatible find method
-  static async find(filter = {}) {
+  // MongoDB-compatible find method — returns chainable TicketQuery
+  static find(filter = {}) {
     const where = this._buildWhereClause(filter);
-    const tickets = await TicketSchema.findAll({ where, raw: true });
-    return tickets;
+    return new TicketQuery(TicketSchema, where);
   }
 
   // MongoDB-compatible findOne method
@@ -154,6 +202,12 @@ class Ticket {
 
   // MongoDB-compatible create method
   static async create(data) {
+    if (!data.ticketId) {
+      const d = new Date();
+      const dateStr = d.toISOString().slice(0, 10).replace(/-/g, '');
+      const rand = Math.floor(1000 + Math.random() * 9000);
+      data.ticketId = `TKT-${dateStr}-${rand}`;
+    }
     const ticket = await TicketSchema.create(data);
     return this._wrapInstance(ticket);
   }
@@ -219,6 +273,13 @@ class Ticket {
         where: { id: this.id || this._id }
       });
     } else {
+      // Auto-generate ticketId if missing
+      if (!this.ticketId) {
+        const d = new Date();
+        const dateStr = d.toISOString().slice(0, 10).replace(/-/g, '');
+        const rand = Math.floor(1000 + Math.random() * 9000);
+        this.ticketId = `TKT-${dateStr}-${rand}`;
+      }
       // Create new
       const created = await TicketSchema.create(this);
       Object.assign(this, created.dataValues);
@@ -229,7 +290,7 @@ class Ticket {
   // Static method: getStatistics
   static async getStatistics(filter = {}) {
     const where = this._buildWhereClause(filter);
-    const tickets = await TicketSchema.findAll({ where, attributes: ['status', 'priority', 'created_at', 'resolved_at'] });
+    const tickets = await TicketSchema.findAll({ where, attributes: ['status', 'priority', 'createdAt', 'resolvedAt'] });
     
     const stats = {
       total: tickets.length,
@@ -253,8 +314,8 @@ class Ticket {
         case 'closed': stats.closed++; break;
       }
 
-      if (t.resolved_at && t.created_at) {
-        totalResolutionTime += (new Date(t.resolved_at) - new Date(t.created_at));
+      if (t.resolvedAt && t.createdAt) {
+        totalResolutionTime += (new Date(t.resolvedAt) - new Date(t.createdAt));
         resolvedCount++;
       }
     });
@@ -279,7 +340,7 @@ class Ticket {
       raw: true
     });
 
-    return tickets.map(t => ({ category: t.category, count: parseInt(t.count) }));
+    return tickets.map(t => ({ _id: t.category, count: parseInt(t.count) }));
   }
 
   // Static method: getPriorityStats
@@ -295,7 +356,30 @@ class Ticket {
       raw: true
     });
 
-    return tickets.map(t => ({ priority: t.priority, count: parseInt(t.count) }));
+    return tickets.map(t => ({ _id: t.priority, count: parseInt(t.count) }));
+  }
+
+  // MongoDB-compatible aggregate — no-op stub returning empty array (stats route handles gracefully)
+  static async aggregate(pipeline = []) {
+    // Minimal implementation: handle satisfaction avg pipeline
+    try {
+      const where = {};
+      const match = pipeline.find(s => s.$match)?.$match || {};
+      if (match['satisfaction.rating']) {
+        const rows = await TicketSchema.findAll({
+          where,
+          attributes: ['satisfaction'],
+          raw: true
+        });
+        const ratings = rows
+          .filter(r => r.satisfaction && r.satisfaction.rating != null)
+          .map(r => r.satisfaction.rating);
+        if (ratings.length === 0) return [];
+        const avg = ratings.reduce((a, b) => a + b, 0) / ratings.length;
+        return [{ _id: null, avgSatisfaction: avg }];
+      }
+    } catch (_) { /* ignore */ }
+    return [];
   }
 
   // Static method: getAgentPerformance

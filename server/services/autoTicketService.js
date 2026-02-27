@@ -142,10 +142,10 @@ let _assigneeIndex = 0;
 async function getNextTeamAssignee() {
   try {
     const [rows] = await postgresSequelize.query(`
-      SELECT id, full_name AS name, email
+      SELECT id, "firstName" || ' ' || "lastName" AS name, email
       FROM team_members
-      WHERE employment_status = 'active'
-        AND full_name IS NOT NULL
+      WHERE "employmentStatus" = 'active'
+        AND "firstName" IS NOT NULL
       ORDER BY id
       LIMIT 20
     `);
