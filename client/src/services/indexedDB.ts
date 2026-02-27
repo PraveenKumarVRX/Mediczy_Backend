@@ -54,6 +54,11 @@ export class OfflineStorage {
   private db: IDBPDatabase<HealthAppDB> | null = null;
   private initPromise: Promise<void> | null = null;
 
+  /** True only after a successful initialize() */
+  get isAvailable(): boolean {
+    return this.db !== null;
+  }
+
   async initialize(): Promise<void> {
     if (this.initPromise) {
       return this.initPromise;
@@ -108,30 +113,35 @@ export class OfflineStorage {
 
       console.log('✅ IndexedDB initialized successfully');
     } catch (error) {
-      console.error('❌ Failed to initialize IndexedDB:', error);
-
-      // "UnknownError: Internal error" means a corrupted/locked database.
-      // Delete and retry once to self-heal.
+      // "UnknownError: Internal error" = corrupted DB or quota exceeded.
+      // Attempt self-heal on first try: delete and recreate.
       if (!isRetry) {
         try {
-          console.warn('⚠️ Attempting IndexedDB recovery — deleting corrupted database...');
-          await new Promise<void>((resolve, reject) => {
+          await new Promise<void>((resolve) => {
             const req = indexedDB.deleteDatabase(DB_NAME);
             req.onsuccess = () => resolve();
-            req.onerror = () => reject(req.error);
-            req.onblocked = () => reject(new Error('deleteDatabase blocked'));
+            req.onerror = () => resolve(); // resolve anyway — best effort
+            req.onblocked = () => resolve();
           });
-          console.log('🗑️ Corrupted IndexedDB deleted — retrying init...');
           this.initPromise = null;
           this.db = null;
           await this._initialize(true);
           return;
-        } catch (deleteError) {
-          console.error('❌ IndexedDB recovery failed:', deleteError);
+        } catch (_) {
+          // fall through
         }
       }
 
-      // Don't throw - let app continue without offline storage
+      // Both open and recovery failed — browser-level IDB is broken
+      // (quota exhausted or corrupted Chrome profile).
+      // App continues without offline storage; log as warn only.
+      console.warn('⚠️ IndexedDB unavailable — offline storage disabled. If this persists, clear browser site data for this site (Settings → Privacy → Clear browsing data).');
+
+      // Dispatch a non-blocking hint event so the UI can optionally surface it
+      try {
+        window.dispatchEvent(new CustomEvent('indexeddb-unavailable'));
+      } catch (_) { /* ignore */ }
+
       this.db = null;
     }
   }
