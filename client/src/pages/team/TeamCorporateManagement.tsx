@@ -75,13 +75,7 @@ interface Employee {
   lastName: string;
   name: string;
   email: string;
-  phone: string;
-  department: string;
-  designation: string;
-  city: string;
-  pinCode: string;
-  joiningDate: string;
-  healthStatus: string;
+  secondaryEmail: string;
   insurancePlan: string;
   status: string;
   currentPackageId?: string;
@@ -191,7 +185,7 @@ const TeamCorporateManagement = () => {
   const [viewingEmployee, setViewingEmployee] = useState<Employee | null>(null);
   const [editingEmployee, setEditingEmployee] = useState<Employee | null>(null);
   const [editEmployeeForm, setEditEmployeeForm] = useState({
-    firstName: '', lastName: '', email: '', phone: '',
+    firstName: '', lastName: '', email: '', secondaryEmail: '', phone: '',
     department: '', designation: '', city: '', pinCode: '',
     status: 'active', packageId: '',
   });
@@ -372,6 +366,7 @@ const TeamCorporateManagement = () => {
             lastName,
             name: `${firstName} ${lastName}`.trim() || emp.name || 'Unknown',
             email: emp.email || '',
+            secondaryEmail: meta.secondaryEmail || '',
             phone: emp.phoneNumber || meta.phoneNumber || '',
             department: meta.department || emp.department || 'Not Assigned',
             designation: meta.designation || emp.designation || 'Not Assigned',
@@ -747,6 +742,7 @@ const TeamCorporateManagement = () => {
         firstName: editEmployeeForm.firstName,
         lastName: editEmployeeForm.lastName,
         email: editEmployeeForm.email,
+        secondaryEmail: editEmployeeForm.secondaryEmail,
         phoneNumber: editEmployeeForm.phone,
         department: editEmployeeForm.department,
         designation: editEmployeeForm.designation,
@@ -1631,6 +1627,7 @@ const TeamCorporateManagement = () => {
                                     firstName: emp.firstName,
                                     lastName: emp.lastName,
                                     email: emp.email,
+                                    secondaryEmail: emp.secondaryEmail,
                                     phone: emp.phone,
                                     department: emp.department === 'Not Assigned' ? '' : emp.department,
                                     designation: emp.designation === 'Not Assigned' ? '' : emp.designation,
@@ -2465,6 +2462,9 @@ const TeamCorporateManagement = () => {
                   <div><p className="text-xs text-muted-foreground mb-1">Last Name</p><p className="font-medium">{viewingEmployee.lastName || '—'}</p></div>
                 </div>
                 <div><p className="text-xs text-muted-foreground mb-1">Email</p><p className="font-medium">{viewingEmployee.email || '—'}</p></div>
+                {viewingEmployee.secondaryEmail && (
+                  <div><p className="text-xs text-muted-foreground mb-1">Secondary Email</p><p className="font-medium">{viewingEmployee.secondaryEmail}</p></div>
+                )}
                 <div className="grid grid-cols-2 gap-4">
                   <div><p className="text-xs text-muted-foreground mb-1">Phone</p><p className="font-medium">{viewingEmployee.phone || '—'}</p></div>
                   <div><p className="text-xs text-muted-foreground mb-1">Joining Date</p><p className="font-medium">{viewingEmployee.joiningDate ? new Date(viewingEmployee.joiningDate).toLocaleDateString() : '—'}</p></div>
@@ -2496,6 +2496,7 @@ const TeamCorporateManagement = () => {
                     firstName: viewingEmployee.firstName,
                     lastName: viewingEmployee.lastName,
                     email: viewingEmployee.email,
+                    secondaryEmail: viewingEmployee.secondaryEmail,
                     phone: viewingEmployee.phone,
                     department: viewingEmployee.department === 'Not Assigned' ? '' : viewingEmployee.department,
                     designation: viewingEmployee.designation === 'Not Assigned' ? '' : viewingEmployee.designation,
@@ -2530,8 +2531,12 @@ const TeamCorporateManagement = () => {
                 </div>
               </div>
               <div className="space-y-2">
-                <Label>Email</Label>
+                <Label>Email (Primary)</Label>
                 <Input type="email" value={editEmployeeForm.email} onChange={(e) => setEditEmployeeForm({...editEmployeeForm, email: e.target.value})} />
+              </div>
+              <div className="space-y-2">
+                <Label>Secondary Email <span className="text-xs text-muted-foreground">(optional)</span></Label>
+                <Input type="email" placeholder="personal@example.com" value={editEmployeeForm.secondaryEmail} onChange={(e) => setEditEmployeeForm({...editEmployeeForm, secondaryEmail: e.target.value})} />
               </div>
               <div className="grid grid-cols-2 gap-4">
                 <div className="space-y-2">
