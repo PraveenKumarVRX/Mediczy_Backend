@@ -71,14 +71,22 @@ interface Corporate {
 interface Employee {
   id: string;
   employeeId: string;
+  firstName: string;
+  lastName: string;
   name: string;
   email: string;
   phone: string;
   department: string;
   designation: string;
+  city: string;
+  pinCode: string;
   joiningDate: string;
   healthStatus: string;
   insurancePlan: string;
+  status: string;
+  currentPackageId?: string;
+  currentPackageName?: string;
+  packageValidTo?: string;
 }
 
 interface LabPartner {
@@ -178,6 +186,16 @@ const TeamCorporateManagement = () => {
   const [showAddCorporateDialog, setShowAddCorporateDialog] = useState(false);
   const [showAddHRDialog, setShowAddHRDialog] = useState(false);
   const [showAddEmployeeDialog, setShowAddEmployeeDialog] = useState(false);
+  const [showViewEmployeeDialog, setShowViewEmployeeDialog] = useState(false);
+  const [showEditEmployeeDialog, setShowEditEmployeeDialog] = useState(false);
+  const [viewingEmployee, setViewingEmployee] = useState<Employee | null>(null);
+  const [editingEmployee, setEditingEmployee] = useState<Employee | null>(null);
+  const [editEmployeeForm, setEditEmployeeForm] = useState({
+    firstName: '', lastName: '', email: '', phone: '',
+    department: '', designation: '', city: '', pinCode: '',
+    status: 'active', packageId: '',
+  });
+  const [updatingEmployee, setUpdatingEmployee] = useState(false);
   const [showAddPackageDialog, setShowAddPackageDialog] = useState(false);
   const [showNetworkDialog, setShowNetworkDialog] = useState(false);
   const [showBulkUploadDialog, setShowBulkUploadDialog] = useState(false);
@@ -343,18 +361,31 @@ const TeamCorporateManagement = () => {
       });
       
       if (response.data?.success && response.data?.employees) {
-        setEmployees(response.data.employees.map((emp: any) => ({
-          id: emp.id?.toString() || emp.uid,
-          employeeId: emp.employeeId || emp.unique_id || `EMP${emp.id}`,
-          name: `${emp.firstName || ''} ${emp.lastName || ''}`.trim() || emp.name || 'Unknown',
-          email: emp.email || '',
-          phone: emp.phoneNumber || '',
-          department: emp.department || 'Not Assigned',
-          designation: emp.designation || 'Not Assigned',
-          joiningDate: emp.dateOfBirth || '',
-          healthStatus: emp.healthStatus || 'Not Assessed',
-          insurancePlan: emp.insurancePlan || 'None'
-        })));
+        setEmployees(response.data.employees.map((emp: any) => {
+          const meta = emp.metadata || {};
+          const firstName = emp.firstName || meta.firstName || '';
+          const lastName = emp.lastName || meta.lastName || '';
+          return {
+            id: emp.id?.toString() || emp.uid,
+            employeeId: meta.employeeId || emp.employeeId || emp.unique_id || `EMP${emp.id}`,
+            firstName,
+            lastName,
+            name: `${firstName} ${lastName}`.trim() || emp.name || 'Unknown',
+            email: emp.email || '',
+            phone: emp.phoneNumber || meta.phoneNumber || '',
+            department: meta.department || emp.department || 'Not Assigned',
+            designation: meta.designation || emp.designation || 'Not Assigned',
+            city: meta.city || '',
+            pinCode: meta.pinCode || '',
+            joiningDate: emp.startDate || meta.joiningDate || '',
+            healthStatus: meta.healthStatus || emp.healthStatus || 'Not Assessed',
+            insurancePlan: emp.currentPackageName || meta.insurancePlan || 'None',
+            status: emp.status || 'active',
+            currentPackageId: emp.currentPackageId || undefined,
+            currentPackageName: emp.currentPackageName || undefined,
+            packageValidTo: emp.packageValidTo || undefined,
+          };
+        }));
       } else {
         setEmployees([]);
       }
@@ -702,6 +733,36 @@ const TeamCorporateManagement = () => {
       toast({ title: 'Error', description: err?.response?.data?.message || 'Failed to add partners', variant: 'destructive' });
     } finally {
       setAddingNetwork(false);
+    }
+  };
+
+  // Update Employee
+  const handleUpdateEmployee = async () => {
+    if (!selectedCorporate || !editingEmployee) return;
+    setUpdatingEmployee(true);
+    try {
+      const token = localStorage.getItem('teamToken');
+      await api.put(`/admin/corporate-employees/${editingEmployee.id}`, {
+        corporateId: selectedCorporate.id,
+        firstName: editEmployeeForm.firstName,
+        lastName: editEmployeeForm.lastName,
+        email: editEmployeeForm.email,
+        phoneNumber: editEmployeeForm.phone,
+        department: editEmployeeForm.department,
+        designation: editEmployeeForm.designation,
+        city: editEmployeeForm.city,
+        pinCode: editEmployeeForm.pinCode,
+        status: editEmployeeForm.status,
+        ...(editEmployeeForm.packageId ? { packageId: editEmployeeForm.packageId } : {}),
+      }, { headers: token ? { Authorization: `Bearer ${token}` } : undefined });
+      toast({ title: 'Employee Updated', description: 'Employee details updated successfully.' });
+      setShowEditEmployeeDialog(false);
+      setEditingEmployee(null);
+      fetchEmployees(selectedCorporate.id);
+    } catch (err: any) {
+      toast({ title: 'Error', description: err?.response?.data?.message || 'Failed to update employee', variant: 'destructive' });
+    } finally {
+      setUpdatingEmployee(false);
     }
   };
 
@@ -1558,10 +1619,28 @@ const TeamCorporateManagement = () => {
                             </TableCell>
                             <TableCell>
                               <div className="flex gap-2">
-                                <Button variant="ghost" size="sm">
+                                <Button variant="ghost" size="sm" onClick={() => {
+                                  setViewingEmployee(emp);
+                                  setShowViewEmployeeDialog(true);
+                                }}>
                                   <Eye className="h-4 w-4" />
                                 </Button>
-                                <Button variant="ghost" size="sm">
+                                <Button variant="ghost" size="sm" onClick={() => {
+                                  setEditingEmployee(emp);
+                                  setEditEmployeeForm({
+                                    firstName: emp.firstName,
+                                    lastName: emp.lastName,
+                                    email: emp.email,
+                                    phone: emp.phone,
+                                    department: emp.department === 'Not Assigned' ? '' : emp.department,
+                                    designation: emp.designation === 'Not Assigned' ? '' : emp.designation,
+                                    city: emp.city,
+                                    pinCode: emp.pinCode,
+                                    status: emp.status || 'active',
+                                    packageId: emp.currentPackageId || '',
+                                  });
+                                  setShowEditEmployeeDialog(true);
+                                }}>
                                   <Edit className="h-4 w-4" />
                                 </Button>
                               </div>
@@ -2365,6 +2444,149 @@ const TeamCorporateManagement = () => {
             <DialogFooter>
               <Button variant="outline" onClick={() => setShowAddEmployeeDialog(false)}>Cancel</Button>
               <Button onClick={handleAddEmployee}>Add Employee</Button>
+            </DialogFooter>
+          </DialogContent>
+        </Dialog>
+
+        {/* View Employee Dialog */}
+        <Dialog open={showViewEmployeeDialog} onOpenChange={setShowViewEmployeeDialog}>
+          <DialogContent className="max-w-lg">
+            <DialogHeader>
+              <DialogTitle>Employee Details</DialogTitle>
+            </DialogHeader>
+            {viewingEmployee && (
+              <div className="space-y-4 py-2">
+                <div className="grid grid-cols-2 gap-4">
+                  <div><p className="text-xs text-muted-foreground mb-1">Employee ID</p><p className="font-medium">{viewingEmployee.employeeId}</p></div>
+                  <div><p className="text-xs text-muted-foreground mb-1">Status</p><p className="font-medium capitalize">{viewingEmployee.status}</p></div>
+                </div>
+                <div className="grid grid-cols-2 gap-4">
+                  <div><p className="text-xs text-muted-foreground mb-1">First Name</p><p className="font-medium">{viewingEmployee.firstName || '—'}</p></div>
+                  <div><p className="text-xs text-muted-foreground mb-1">Last Name</p><p className="font-medium">{viewingEmployee.lastName || '—'}</p></div>
+                </div>
+                <div><p className="text-xs text-muted-foreground mb-1">Email</p><p className="font-medium">{viewingEmployee.email || '—'}</p></div>
+                <div className="grid grid-cols-2 gap-4">
+                  <div><p className="text-xs text-muted-foreground mb-1">Phone</p><p className="font-medium">{viewingEmployee.phone || '—'}</p></div>
+                  <div><p className="text-xs text-muted-foreground mb-1">Joining Date</p><p className="font-medium">{viewingEmployee.joiningDate ? new Date(viewingEmployee.joiningDate).toLocaleDateString() : '—'}</p></div>
+                </div>
+                <div className="grid grid-cols-2 gap-4">
+                  <div><p className="text-xs text-muted-foreground mb-1">Department</p><p className="font-medium">{viewingEmployee.department || '—'}</p></div>
+                  <div><p className="text-xs text-muted-foreground mb-1">Designation</p><p className="font-medium">{viewingEmployee.designation || '—'}</p></div>
+                </div>
+                <div className="grid grid-cols-2 gap-4">
+                  <div><p className="text-xs text-muted-foreground mb-1">City</p><p className="font-medium">{viewingEmployee.city || '—'}</p></div>
+                  <div><p className="text-xs text-muted-foreground mb-1">Pin Code</p><p className="font-medium">{viewingEmployee.pinCode || '—'}</p></div>
+                </div>
+                {viewingEmployee.currentPackageName && (
+                  <div className="grid grid-cols-2 gap-4">
+                    <div><p className="text-xs text-muted-foreground mb-1">Health Plan</p><p className="font-medium">{viewingEmployee.currentPackageName}</p></div>
+                    {viewingEmployee.packageValidTo && (
+                      <div><p className="text-xs text-muted-foreground mb-1">Valid Till</p><p className="font-medium">{new Date(viewingEmployee.packageValidTo).toLocaleDateString()}</p></div>
+                    )}
+                  </div>
+                )}
+              </div>
+            )}
+            <DialogFooter>
+              <Button variant="outline" onClick={() => setShowViewEmployeeDialog(false)}>Close</Button>
+              <Button onClick={() => {
+                if (viewingEmployee) {
+                  setEditingEmployee(viewingEmployee);
+                  setEditEmployeeForm({
+                    firstName: viewingEmployee.firstName,
+                    lastName: viewingEmployee.lastName,
+                    email: viewingEmployee.email,
+                    phone: viewingEmployee.phone,
+                    department: viewingEmployee.department === 'Not Assigned' ? '' : viewingEmployee.department,
+                    designation: viewingEmployee.designation === 'Not Assigned' ? '' : viewingEmployee.designation,
+                    city: viewingEmployee.city,
+                    pinCode: viewingEmployee.pinCode,
+                    status: viewingEmployee.status || 'active',
+                    packageId: viewingEmployee.currentPackageId || '',
+                  });
+                  setShowViewEmployeeDialog(false);
+                  setShowEditEmployeeDialog(true);
+                }
+              }}>Edit</Button>
+            </DialogFooter>
+          </DialogContent>
+        </Dialog>
+
+        {/* Edit Employee Dialog */}
+        <Dialog open={showEditEmployeeDialog} onOpenChange={setShowEditEmployeeDialog}>
+          <DialogContent className="max-w-lg">
+            <DialogHeader>
+              <DialogTitle>Edit Employee — {editingEmployee?.name}</DialogTitle>
+            </DialogHeader>
+            <div className="space-y-4 py-4">
+              <div className="grid grid-cols-2 gap-4">
+                <div className="space-y-2">
+                  <Label>First Name</Label>
+                  <Input value={editEmployeeForm.firstName} onChange={(e) => setEditEmployeeForm({...editEmployeeForm, firstName: e.target.value})} />
+                </div>
+                <div className="space-y-2">
+                  <Label>Last Name</Label>
+                  <Input value={editEmployeeForm.lastName} onChange={(e) => setEditEmployeeForm({...editEmployeeForm, lastName: e.target.value})} />
+                </div>
+              </div>
+              <div className="space-y-2">
+                <Label>Email</Label>
+                <Input type="email" value={editEmployeeForm.email} onChange={(e) => setEditEmployeeForm({...editEmployeeForm, email: e.target.value})} />
+              </div>
+              <div className="grid grid-cols-2 gap-4">
+                <div className="space-y-2">
+                  <Label>Phone</Label>
+                  <Input value={editEmployeeForm.phone} onChange={(e) => setEditEmployeeForm({...editEmployeeForm, phone: e.target.value})} />
+                </div>
+                <div className="space-y-2">
+                  <Label>Status</Label>
+                  <Select value={editEmployeeForm.status} onValueChange={(v) => setEditEmployeeForm({...editEmployeeForm, status: v})}>
+                    <SelectTrigger><SelectValue /></SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="active">Active</SelectItem>
+                      <SelectItem value="inactive">Inactive</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
+              </div>
+              <div className="grid grid-cols-2 gap-4">
+                <div className="space-y-2">
+                  <Label>Department</Label>
+                  <Input placeholder="Engineering" value={editEmployeeForm.department} onChange={(e) => setEditEmployeeForm({...editEmployeeForm, department: e.target.value})} />
+                </div>
+                <div className="space-y-2">
+                  <Label>Designation</Label>
+                  <Input placeholder="Senior Developer" value={editEmployeeForm.designation} onChange={(e) => setEditEmployeeForm({...editEmployeeForm, designation: e.target.value})} />
+                </div>
+              </div>
+              <div className="grid grid-cols-2 gap-4">
+                <div className="space-y-2">
+                  <Label>City</Label>
+                  <Input placeholder="Mumbai" value={editEmployeeForm.city} onChange={(e) => setEditEmployeeForm({...editEmployeeForm, city: e.target.value})} />
+                </div>
+                <div className="space-y-2">
+                  <Label>Pin Code</Label>
+                  <Input placeholder="400001" value={editEmployeeForm.pinCode} onChange={(e) => setEditEmployeeForm({...editEmployeeForm, pinCode: e.target.value})} />
+                </div>
+              </div>
+              <div className="space-y-2">
+                <Label>Health Plan</Label>
+                <Select value={editEmployeeForm.packageId || '__none__'} onValueChange={(v) => setEditEmployeeForm({...editEmployeeForm, packageId: v === '__none__' ? '' : v})}>
+                  <SelectTrigger><SelectValue placeholder="Select health plan" /></SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="__none__">No plan</SelectItem>
+                    {healthPackages.map(pkg => (
+                      <SelectItem key={pkg.id} value={pkg.id}>{pkg.name}</SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+            </div>
+            <DialogFooter>
+              <Button variant="outline" onClick={() => setShowEditEmployeeDialog(false)}>Cancel</Button>
+              <Button onClick={handleUpdateEmployee} disabled={updatingEmployee}>
+                {updatingEmployee ? 'Saving...' : 'Save Changes'}
+              </Button>
             </DialogFooter>
           </DialogContent>
         </Dialog>
