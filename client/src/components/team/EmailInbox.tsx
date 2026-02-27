@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { Mail, Star, Trash2, Archive, Clock, AlertCircle, CheckCircle, Settings, Send, RefreshCw, X, Reply, Ticket as TicketIcon } from 'lucide-react';
+import { Mail, Star, Trash2, Archive, Clock, AlertCircle, CheckCircle, Settings, Send, RefreshCw, X, Reply, Ticket as TicketIcon, Zap, FileText } from 'lucide-react';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
@@ -22,6 +22,10 @@ interface Email {
   receivedAt: string;
   aiProcessed: boolean;
   autoUpdatesApplied: any[];
+  // Auto-process tracking
+  ticketId?: string;
+  healthReportSaved?: boolean;
+  employeeEmailUpdated?: boolean;
 }
 
 interface InboxStats {
@@ -74,6 +78,27 @@ const EmailInbox: React.FC = () => {
     subject: '',
     htmlContent: ''
   });
+
+  // ── Process-All state ──────────────────────────────────────────────
+  const [processing, setProcessing] = useState(false);
+  const [processResult, setProcessResult] = useState<{ ticketsCreated: number; reportsSaved: number; emailsUpdated: number } | null>(null);
+
+  const processAllEmails = async () => {
+    setProcessing(true);
+    setProcessResult(null);
+    try {
+      const res = await api.post('/team/emails/process-all', { limit: 500 });
+      const st = res.data?.stats;
+      setProcessResult(st);
+      // Refresh inbox to show new ticket badges
+      fetchInbox();
+      fetchStats();
+    } catch (err: any) {
+      console.error('Process all failed:', err);
+    } finally {
+      setProcessing(false);
+    }
+  };
 
   // ── Create-Ticket state ────────────────────────────────────────────
   const [showTicketModal, setShowTicketModal] = useState(false);
@@ -350,6 +375,22 @@ const EmailInbox: React.FC = () => {
                 {syncing ? 'Syncing...' : 'Sync Emails'}
               </Button>
               <Button
+                variant="outline"
+                size="sm"
+                onClick={processAllEmails}
+                disabled={processing}
+                className="flex items-center gap-2 border-orange-500/50 text-orange-600 hover:bg-orange-500/10"
+                title="AI: auto-create tickets, save lab reports, update employee emails"
+              >
+                <Zap className={`w-4 h-4 ${processing ? 'animate-pulse' : ''}`} />
+                {processing ? 'Processing...' : 'AI Process All'}
+              </Button>
+              {processResult && (
+                <span className="text-xs text-muted-foreground">
+                  ✓ {processResult.ticketsCreated} tickets, {processResult.reportsSaved} reports
+                </span>
+              )}
+              <Button
                 variant={unreadOnly ? 'default' : 'outline'}
                 size="sm"
                 onClick={() => {
@@ -449,6 +490,16 @@ const EmailInbox: React.FC = () => {
                               {getIntentIcon(email.aiIntent)}
                             </span>
                           )}
+                          {email.ticketId && (
+                            <span className="text-xs bg-blue-500/15 text-blue-700 dark:text-blue-300 px-2 py-0.5 rounded flex items-center gap-1" title={`Ticket: ${email.ticketId}`}>
+                              <TicketIcon className="w-3 h-3" />{email.ticketId}
+                            </span>
+                          )}
+                          {email.healthReportSaved && (
+                            <span className="text-xs bg-purple-500/15 text-purple-700 dark:text-purple-300 px-2 py-0.5 rounded flex items-center gap-1" title="Health report saved">
+                              <FileText className="w-3 h-3" />Report
+                            </span>
+                          )}
                           <Badge variant={getPriorityColor(email.priority)} className="text-xs">
                             {email.priority}
                           </Badge>
@@ -535,14 +586,27 @@ const EmailInbox: React.FC = () => {
               <CardTitle className="text-sm flex items-center justify-between">
                 <span>Email Details</span>
                 <div className="flex gap-2">
-                  <button
-                    onClick={() => openTicketModal(selectedEmail)}
-                    title="Create Ticket from this email"
-                    className="flex items-center gap-1 px-2 py-1 text-xs bg-orange-100 hover:bg-orange-200 text-orange-700 rounded font-medium transition-colors"
-                  >
-                    <TicketIcon className="w-3.5 h-3.5" />
-                    Raise Ticket
-                  </button>
+                  {selectedEmail.ticketId ? (
+                    <span className="flex items-center gap-1 px-2 py-1 text-xs bg-blue-100 text-blue-700 rounded font-medium">
+                      <TicketIcon className="w-3.5 h-3.5" />
+                      {selectedEmail.ticketId}
+                    </span>
+                  ) : (
+                    <button
+                      onClick={() => openTicketModal(selectedEmail)}
+                      title="Create Ticket from this email"
+                      className="flex items-center gap-1 px-2 py-1 text-xs bg-orange-100 hover:bg-orange-200 text-orange-700 rounded font-medium transition-colors"
+                    >
+                      <TicketIcon className="w-3.5 h-3.5" />
+                      Raise Ticket
+                    </button>
+                  )}
+                  {selectedEmail.healthReportSaved && (
+                    <span className="flex items-center gap-1 px-2 py-1 text-xs bg-purple-100 text-purple-700 rounded font-medium">
+                      <FileText className="w-3.5 h-3.5" />
+                      Report Saved
+                    </span>
+                  )}
                   <button onClick={() => startReply(selectedEmail)} title="Reply">
                     <Reply className="w-4 h-4 text-blue-500" />
                   </button>

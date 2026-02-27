@@ -5,6 +5,7 @@ import emailService from '../services/emailService.js';
 import EmailInbox from '../models/emailInbox.model.js';
 import EmailSettings from '../models/emailSettings.model.js';
 import TeamMember from '../models/postgres/team-member.model.postgres.js';
+import { processEmailFull, batchProcessInbox } from '../services/emailAutoProcessService.js';
 
 const router = express.Router();
 
@@ -459,6 +460,56 @@ router.post('/sync', authUser, async (req, res) => {
       message: 'Failed to sync emails',
       error: error.message
     });
+  }
+});
+
+/**
+ * POST /api/team/emails/process-all
+ * Batch-process all inbox emails:
+ *   – auto-create tickets for unprocessed emails
+ *   – save health reports from lab-domain emails
+ *   – update employee real email addresses
+ */
+router.post('/process-all', authUser, async (req, res) => {
+  try {
+    const teamMemberId = await resolveTeamMemberId(req.user);
+    const { limit = 500 } = req.body;
+
+    const stats = await batchProcessInbox(teamMemberId, { limit: parseInt(limit) });
+
+    res.json({
+      success: true,
+      message: `Processed ${stats.total} emails`,
+      stats,
+    });
+  } catch (error) {
+    console.error('[process-all] error:', error.message);
+    res.status(500).json({ success: false, message: error.message });
+  }
+});
+
+/**
+ * POST /api/team/emails/:id/process
+ * Process a single email through the full pipeline.
+ */
+router.post('/:id/process', authUser, async (req, res) => {
+  try {
+    const teamMemberId = await resolveTeamMemberId(req.user);
+
+    const email = await EmailInbox.findOne({
+      where: { id: req.params.id, teamMemberId },
+    });
+
+    if (!email) {
+      return res.status(404).json({ success: false, message: 'Email not found' });
+    }
+
+    const result = await processEmailFull(email);
+
+    res.json({ success: true, result });
+  } catch (error) {
+    console.error('[/process] error:', error.message);
+    res.status(500).json({ success: false, message: error.message });
   }
 });
 

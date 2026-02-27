@@ -145,7 +145,24 @@ const EmailInbox = postgresSequelize.define('EmailInbox', {
     type: DataTypes.STRING,
     comment: 'Message ID this email replies to'
   },
-  
+
+  // ── Auto-process tracking ──────────────────────────────────────────────────
+  ticketId: {
+    type: DataTypes.STRING,
+    allowNull: true,
+    comment: 'Ticket ID created from this email (prevents duplicates)'
+  },
+  healthReportSaved: {
+    type: DataTypes.BOOLEAN,
+    defaultValue: false,
+    comment: 'Whether a health report was saved to reports table for this email'
+  },
+  employeeEmailUpdated: {
+    type: DataTypes.BOOLEAN,
+    defaultValue: false,
+    comment: 'Whether the sender employee email was updated from this email'
+  },
+
   createdAt: {
     type: DataTypes.DATE,
     defaultValue: DataTypes.NOW
