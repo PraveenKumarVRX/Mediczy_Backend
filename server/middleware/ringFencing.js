@@ -154,9 +154,12 @@ const USER_TYPE_PERMISSIONS = {
       '/api/email',
       '/api/sms',
       '/api/whatsapp',
+      '/api/whatsapp-production',  // Production WhatsApp messaging & conversations
+      '/api/sib-chatbots',  // SIB AI chatbots (health, appointment, emergency)
       '/api/video',
       '/api/voice',
       '/api/tickets',
+      '/api/chat',  // Chat dashboard for conversations & WhatsApp
       '/api/activity-log',
       '/api/health-risk',
       '/api/crm',
@@ -185,7 +188,9 @@ const USER_TYPE_PERMISSIONS = {
       '/api/activity-log',
       '/api/chat',
       '/api/email-settings',  // Team members can configure email settings
-      '/api/tickets'  // Team members can view and manage support tickets
+      '/api/tickets',  // Team members can view and manage support tickets
+      '/api/whatsapp-production',  // Team access to WhatsApp conversations
+      '/api/sib-chatbots'  // Team access to SIB AI chatbots
     ],
     tokenField: 'teamId'
   },
