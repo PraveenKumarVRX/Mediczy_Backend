@@ -184,7 +184,8 @@ const USER_TYPE_PERMISSIONS = {
       '/api/plans',
       '/api/activity-log',
       '/api/chat',
-      '/api/email-settings'  // Team members can configure email settings
+      '/api/email-settings',  // Team members can configure email settings
+      '/api/tickets'  // Team members can view and manage support tickets
     ],
     tokenField: 'teamId'
   },
