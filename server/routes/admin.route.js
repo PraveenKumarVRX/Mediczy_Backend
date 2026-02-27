@@ -1955,6 +1955,14 @@ router.post('/corporate-employees', authUser, requireRole(['admin', 'team', 'cor
           
           userId = userResult && userResult[0] ? userResult[0].id : null;
           isNewUser = true;
+
+          // Mark new employee as requiring a password change on first login
+          if (userId) {
+            await postgresSequelize.query(
+              `UPDATE users SET metadata = COALESCE(metadata, '{}'::jsonb) || '{"requirePasswordChange": true}'::jsonb WHERE id = :userId`,
+              { replacements: { userId }, type: postgresSequelize.QueryTypes.UPDATE }
+            );
+          }
         }
         
         if (!userId) {

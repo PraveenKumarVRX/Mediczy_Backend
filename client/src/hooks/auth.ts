@@ -220,6 +220,7 @@ const login = async ({ credentials, loginType }: { credentials: any; loginType: 
   // Return data in a consistent format
   return {
     token: data.token,
+    requirePasswordChange: data.requirePasswordChange === true,
     user:
       loginType === "user" ||
       loginType === "corporate" ||
@@ -237,7 +238,7 @@ export const useLogin = () => {
   const queryClient = useQueryClient();
 
   return useMutation<
-    { token: string; user?: any; doctor?: any; corporate?: any; tpa?: any; psu?: any; insurer?: any; ngo?: any },
+    { token: string; requirePasswordChange?: boolean; user?: any; doctor?: any; corporate?: any; tpa?: any; psu?: any; insurer?: any; ngo?: any },
     Error,
     {
       credentials: { email: string; password: string };

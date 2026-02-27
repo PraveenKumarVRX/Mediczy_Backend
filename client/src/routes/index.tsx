@@ -19,6 +19,7 @@ import { Routes, Route, Navigate } from "react-router-dom";
 // ─── Critical-path — always in the initial bundle ───────────────────────────
 import Index            from "@/pages/Index";
 import Login            from "@/auth/Login";
+import ChangePassword   from "@/auth/ChangePassword";
 import ForgotPassword   from "@/pages/ForgotPassword";
 import ResetPassword    from "@/pages/ResetPassword";
 import OAuthCallback    from "@/auth/OAuthCallback";
@@ -453,6 +454,7 @@ const AppRoutes = () => {
         {/* ── Home / auth ─────────────────────────────────────────────── */}
         <Route path="/"                element={<MainLayout><Index /></MainLayout>} />
         <Route path="/login"           element={<Login />} />
+        <Route path="/change-password" element={<ChangePassword />} />
         <Route path="/forgot-password" element={<ForgotPassword />} />
         <Route path="/reset-password"  element={<ResetPassword />} />
         <Route path="/oauth-callback"  element={<OAuthCallback />} />

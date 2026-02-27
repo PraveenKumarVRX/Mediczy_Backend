@@ -231,7 +231,17 @@ const Login = () => {
     loginMutation.mutate(
       { credentials: values, loginType: "user" },
       {
-        onSuccess: async () => {
+        onSuccess: async (data) => {
+          // If employee must change password on first login, redirect immediately
+          if (data.requirePasswordChange) {
+            toast({
+              title: "Password change required",
+              description: "Please set a new password before continuing.",
+            });
+            navigate("/change-password", { replace: true });
+            return;
+          }
+
           toast({
             title: "Success",
             description: "Logged in successfully. Redirecting...",

@@ -384,10 +384,18 @@ export async function signInUser(req, res) {
     // Audit successful login
     await auditLoginAttempt(req, user.id, loginIdentifier, true);
 
+    // Read metadata for requirePasswordChange flag
+    let userMeta = user.metadata;
+    if (typeof userMeta === 'string') {
+      try { userMeta = JSON.parse(userMeta); } catch (e) { userMeta = {}; }
+    }
+    const requirePasswordChange = !!(userMeta && userMeta.requirePasswordChange === true);
+
     // Respond with user data & token
     return res.status(200).json({
       message: "Login successful",
       token,
+      requirePasswordChange,
       user: {
         id: user.id,
         firstName: user.firstName,
