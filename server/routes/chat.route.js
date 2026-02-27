@@ -7,6 +7,7 @@ import { detectProfanity, getWarningResponse, logViolation, Severity } from '../
 import fs from 'fs';
 import path from 'path';
 import { chatRooms, messages } from '../utils/chatStorage.js';
+import sharedPool from '../db/pgPool.js';
 
 const router = express.Router();
 
@@ -1055,8 +1056,65 @@ router.get('/dashboard/conversations', adminMiddleware, [
       filteredRooms = filteredWithSearch;
     }
     
+    // ── WhatsApp sessions from chatbot_sessions table ──────────────────
+    try {
+      const waResult = await sharedPool.query(
+        `SELECT session_id, user_id, message_count, messages, last_interaction_at
+         FROM chatbot_sessions
+         WHERE session_id LIKE 'whatsapp:%'
+         ORDER BY last_interaction_at DESC
+         LIMIT 200`
+      );
+      for (const row of waResult.rows) {
+        const phoneNumber = row.session_id.replace('whatsapp:', '');
+        const waMessages = Array.isArray(row.messages) ? row.messages : [];
+        const lastMsg = waMessages.length > 0 ? waMessages[waMessages.length - 1] : null;
+        const fakeRoom = {
+          id: row.session_id,
+          title: `WhatsApp ${phoneNumber}`,
+          type: 'whatsapp_customer',
+          participants: row.user_id ? [row.user_id] : [],
+          createdAt: row.last_interaction_at,
+          phoneNumber,
+          messageCount: row.message_count || waMessages.length,
+          lastMessage: lastMsg ? {
+            content: lastMsg.content,
+            sender: lastMsg.role === 'user' ? phoneNumber : 'Dr. iSHA (AI)',
+            timestamp: lastMsg.createdAt || row.last_interaction_at,
+            type: lastMsg.role
+          } : null,
+          lastActivity: row.last_interaction_at,
+          source: 'chatbot_sessions'
+        };
+        // Apply type/search filters
+        if (typeFilter !== 'all' && typeFilter !== 'whatsapp_customer') continue;
+        // Apply status filter for WA sessions based on last_interaction_at
+        if (statusFilter !== 'all') {
+          const last24Hours = new Date(Date.now() - 24 * 60 * 60 * 1000);
+          const hasRecentActivity = new Date(row.last_interaction_at) > last24Hours;
+          if (statusFilter === 'active' ? !hasRecentActivity : hasRecentActivity) continue;
+        }
+        if (searchQuery) {
+          const q = searchQuery.toLowerCase();
+          const match = phoneNumber.includes(q) ||
+            waMessages.some(m => (m.content || '').toLowerCase().includes(q));
+          if (!match) continue;
+        }
+        // Avoid duplicate if already in in-memory rooms
+        if (!filteredRooms.find(r => r.id === row.session_id)) {
+          filteredRooms.push(fakeRoom);
+        }
+      }
+    } catch (waErr) {
+      console.warn('Could not fetch WhatsApp sessions for chat dashboard:', waErr.message);
+    }
+    // ─────────────────────────────────────────────────────────────────────
+
     // Sort by last activity
     const roomsWithActivity = await Promise.all(filteredRooms.map(async (room) => {
+      if (room.source === 'chatbot_sessions') {
+        return { room, lastActivity: new Date(room.lastActivity), roomMessages: [] };
+      }
       const roomMessages = await messages.get(room.id) || [];
       const lastActivity = roomMessages.length > 0 
         ? new Date(roomMessages[roomMessages.length - 1].timestamp) 
@@ -1087,17 +1145,23 @@ router.get('/dashboard/conversations', adminMiddleware, [
         };
       });
       
+      // For chatbot_sessions WhatsApp rooms, use precomputed lastMessage
+      const isWaSession = room.source === 'chatbot_sessions';
+      const resolvedLastMessage = isWaSession
+        ? room.lastMessage
+        : (lastMessage ? {
+            content: lastMessage.message,
+            sender: lastMessage.userName,
+            timestamp: lastMessage.timestamp,
+            type: lastMessage.type
+          } : null);
+
       return {
         ...room,
-        messageCount,
-        lastMessage: lastMessage ? {
-          content: lastMessage.message,
-          sender: lastMessage.userName,
-          timestamp: lastMessage.timestamp,
-          type: lastMessage.type
-        } : null,
+        messageCount: isWaSession ? room.messageCount : messageCount,
+        lastMessage: resolvedLastMessage,
         participants,
-        lastActivity: lastMessage ? lastMessage.timestamp : room.createdAt
+        lastActivity: isWaSession ? room.lastActivity : (lastMessage ? lastMessage.timestamp : room.createdAt)
       };
     });
     
@@ -1150,7 +1214,53 @@ router.get('/dashboard/conversation/:roomId', adminMiddleware, [
     const { roomId } = req.params;
     const page = parseInt(req.query.page) || 1;
     const limit = parseInt(req.query.limit) || 50;
-    
+
+    // ── WhatsApp conversation from chatbot_sessions ───────────────────────
+    if (roomId.startsWith('whatsapp:')) {
+      try {
+        const waRes = await sharedPool.query(
+          `SELECT session_id, user_id, message_count, messages, last_interaction_at
+           FROM chatbot_sessions WHERE session_id = $1 LIMIT 1`,
+          [roomId]
+        );
+        if (waRes.rows.length === 0) {
+          return res.status(404).json({ success: false, message: 'WhatsApp conversation not found' });
+        }
+        const row = waRes.rows[0];
+        const phoneNumber = row.session_id.replace('whatsapp:', '');
+        const allMsgs = Array.isArray(row.messages) ? row.messages : [];
+        const totalMessages = allMsgs.length;
+        const totalPages = Math.ceil(totalMessages / limit);
+        const startIndex = (page - 1) * limit;
+        const paginatedMessages = allMsgs.slice(startIndex, startIndex + limit).map((m, i) => ({
+          id: `${row.session_id}_${startIndex + i}`,
+          message: m.content,
+          userId: m.role === 'user' ? (row.user_id || phoneNumber) : 'ai_assistant',
+          userName: m.role === 'user' ? `Customer (${phoneNumber})` : 'Dr. iSHA (AI)',
+          role: m.role,
+          timestamp: m.createdAt || row.last_interaction_at,
+          type: 'text'
+        }));
+        return res.json({
+          success: true,
+          conversation: {
+            id: row.session_id,
+            title: `WhatsApp ${phoneNumber}`,
+            type: 'whatsapp_customer',
+            phoneNumber,
+            participants: [{ id: row.user_id || phoneNumber, name: `Customer (${phoneNumber})`, role: 'user', isOnline: false, messageCount: Math.ceil(totalMessages / 2) }],
+            totalMessages
+          },
+          messages: paginatedMessages,
+          pagination: { page, limit, totalPages, totalMessages, hasNextPage: page < totalPages, hasPrevPage: page > 1 }
+        });
+      } catch (waErr) {
+        console.error('Error fetching WhatsApp conversation:', waErr);
+        return res.status(500).json({ success: false, message: 'Failed to fetch WhatsApp conversation', error: waErr.message });
+      }
+    }
+    // ─────────────────────────────────────────────────────────────────────
+
     const room = await chatRooms.get(roomId);
     if (!room) {
       return res.status(404).json({
