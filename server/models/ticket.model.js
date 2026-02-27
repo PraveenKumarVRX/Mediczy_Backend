@@ -447,6 +447,12 @@ class Ticket {
           where[key] = filter[key];
         }
       } else {
+        // _id maps to an integer primary key — skip if the value is non-numeric
+        // (prevents "invalid input syntax for type integer" when $or includes both
+        //  { ticketId: "TKT-..." } and { _id: "TKT-..." })
+        if (key === '_id' && typeof filter[key] === 'string' && !/^\d+$/.test(filter[key])) {
+          return; // skip this condition
+        }
         where[key] = filter[key];
       }
     });
@@ -464,7 +470,13 @@ class Ticket {
     // Override save to use Sequelize instance
     wrapped.save = async function() {
       if (this._instance && typeof this._instance.save === 'function') {
-        Object.assign(this._instance, this);
+        // Use set() instead of Object.assign to avoid copying the overridden
+        // save() own-property onto the Sequelize instance (infinite recursion)
+        for (const key of Object.keys(this)) {
+          if (key !== 'save' && key !== '_instance' && typeof this[key] !== 'function') {
+            this._instance.set(key, this[key]);
+          }
+        }
         await this._instance.save();
         Object.assign(this, this._instance.dataValues);
       } else {
