@@ -2586,29 +2586,59 @@ router.delete('/corporate-plans/:planId', authUser, requireRole(['admin', 'team'
  */
 router.get('/corporate-network/:corporateId', authUser, requireRole(['admin', 'team', 'corporate_admin']), async (req, res) => {
   try {
+    const corporateId = parseInt(req.params.corporateId, 10);
+    const available = req.query.available === 'true'; // true = return UNassigned partners
+
+    const assignedFilter = available
+      ? `WHERE l.id NOT IN (
+           SELECT partner_id FROM corporate_network_assignments
+           WHERE corporate_id = :corporateId AND partner_type = 'lab'
+         )`
+      : `WHERE EXISTS (
+           SELECT 1 FROM corporate_network_assignments
+           WHERE corporate_id = :corporateId AND partner_type = 'lab' AND partner_id = l.id
+         )`;
+
+    const assignedFilterH = available
+      ? `WHERE h.id NOT IN (
+           SELECT partner_id FROM corporate_network_assignments
+           WHERE corporate_id = :corporateId AND partner_type = 'hospital'
+         )`
+      : `WHERE EXISTS (
+           SELECT 1 FROM corporate_network_assignments
+           WHERE corporate_id = :corporateId AND partner_type = 'hospital' AND partner_id = h.id
+         )`;
+
+    const assignedFilterC = available
+      ? `WHERE oc.id NOT IN (
+           SELECT partner_id FROM corporate_network_assignments
+           WHERE corporate_id = :corporateId AND partner_type = 'clinic'
+         )`
+      : `WHERE EXISTS (
+           SELECT 1 FROM corporate_network_assignments
+           WHERE corporate_id = :corporateId AND partner_type = 'clinic' AND partner_id = oc.id
+         )`;
+
     const labs = await postgresSequelize.query(`
-      SELECT id, name, address, "testCatalog", status, metadata
-      FROM labs
-      ORDER BY name ASC
-    `, {
-      type: postgresSequelize.QueryTypes.SELECT
-    });
+      SELECT l.id, l.name, l.address, l."testCatalog", l.status, l.metadata
+      FROM labs l
+      ${assignedFilter}
+      ORDER BY l.name ASC
+    `, { replacements: { corporateId }, type: postgresSequelize.QueryTypes.SELECT });
 
     const hospitals = await postgresSequelize.query(`
-      SELECT id, hospital_name, city, specializations, total_beds, status, metadata
-      FROM hospitals
-      ORDER BY hospital_name ASC
-    `, {
-      type: postgresSequelize.QueryTypes.SELECT
-    });
+      SELECT h.id, h.hospital_name, h.city, h.specializations, h.total_beds, h.status, h.metadata
+      FROM hospitals h
+      ${assignedFilterH}
+      ORDER BY h.hospital_name ASC
+    `, { replacements: { corporateId }, type: postgresSequelize.QueryTypes.SELECT });
 
     const clinics = await postgresSequelize.query(`
-      SELECT id, name, type, location, capacity, status
-      FROM outreach_clinics
-      ORDER BY name ASC
-    `, {
-      type: postgresSequelize.QueryTypes.SELECT
-    });
+      SELECT oc.id, oc.name, oc.type, oc.location, oc.capacity, oc.status
+      FROM outreach_clinics oc
+      ${assignedFilterC}
+      ORDER BY oc.name ASC
+    `, { replacements: { corporateId }, type: postgresSequelize.QueryTypes.SELECT });
 
     const normalizedLabs = labs.map((lab) => {
       const address = typeof lab.address === 'string' ? JSON.parse(lab.address) : lab.address;

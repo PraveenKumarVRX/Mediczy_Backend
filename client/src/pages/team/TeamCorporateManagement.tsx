@@ -305,6 +305,15 @@ const TeamCorporateManagement = () => {
   const [healthPackages, setHealthPackages] = useState<HealthPackage[]>([]);
   const [corporatePlans, setCorporatePlans] = useState<CorporatePlan[]>([]);
 
+  // State for "Add to Network" dialog — available (unassigned) partners
+  const [availLabs, setAvailLabs] = useState<LabPartner[]>([]);
+  const [availHospitals, setAvailHospitals] = useState<HospitalPartner[]>([]);
+  const [availClinics, setAvailClinics] = useState<ClinicPartner[]>([]);
+  const [availLoading, setAvailLoading] = useState(false);
+  const [selectedAddPartners, setSelectedAddPartners] = useState<{id: number; type: 'lab' | 'hospital' | 'clinic'}[]>([]);
+  const [addNetworkSearch, setAddNetworkSearch] = useState('');
+  const [addingNetwork, setAddingNetwork] = useState(false);
+
   // Fetch corporates
   useEffect(() => {
     fetchCorporates();
@@ -545,6 +554,29 @@ const TeamCorporateManagement = () => {
     }
   };
 
+  const fetchAvailablePartners = async (corporateId: number) => {
+    if (!corporateId) return;
+    setAvailLoading(true);
+    try {
+      const token = localStorage.getItem('teamToken');
+      const response = await api.get(`/admin/corporate-network/${corporateId}?available=true`, {
+        headers: token ? { Authorization: `Bearer ${token}` } : undefined
+      });
+      if (response.data?.success) {
+        setAvailLabs(response.data?.labs || []);
+        setAvailHospitals(response.data?.hospitals || []);
+        setAvailClinics(response.data?.clinics || []);
+      } else {
+        setAvailLabs([]); setAvailHospitals([]); setAvailClinics([]);
+      }
+    } catch (err) {
+      console.error('Failed to fetch available partners:', err);
+      setAvailLabs([]); setAvailHospitals([]); setAvailClinics([]);
+    } finally {
+      setAvailLoading(false);
+    }
+  };
+
   const fetchCorporates = async () => {
     try {
       setLoading(true);
@@ -645,6 +677,31 @@ const TeamCorporateManagement = () => {
         title: 'Error',
         description: error.response?.data?.message || 'Failed to create HR admin'
       });
+    }
+  };
+
+  // Add partners to corporate network
+  const handleAddToNetwork = async () => {
+    if (!selectedCorporate || selectedAddPartners.length === 0) return;
+    setAddingNetwork(true);
+    try {
+      const token = localStorage.getItem('teamToken');
+      for (const partner of selectedAddPartners) {
+        await api.post('/admin/corporate-network-assignments', {
+          corporateId: selectedCorporate.id,
+          partnerId: partner.id,
+          partnerType: partner.type,
+          employeeIds: []
+        }, { headers: token ? { Authorization: `Bearer ${token}` } : undefined });
+      }
+      toast({ title: 'Network Updated', description: `${selectedAddPartners.length} partner(s) added to corporate network.` });
+      setShowNetworkDialog(false);
+      setSelectedAddPartners([]);
+      fetchNetworkPartners(selectedCorporate.id);
+    } catch (err: any) {
+      toast({ title: 'Error', description: err?.response?.data?.message || 'Failed to add partners', variant: 'destructive' });
+    } finally {
+      setAddingNetwork(false);
     }
   };
 
@@ -1300,7 +1357,7 @@ const TeamCorporateManagement = () => {
                       </div>
                       <div>
                         <p className="text-sm text-muted-foreground">Active Plans</p>
-                        <p className="text-2xl font-bold">3</p>
+                        <p className="text-2xl font-bold">{corporatePlans.filter(p => p.status?.toLowerCase() === 'active').length || corporatePlans.length}</p>
                       </div>
                     </div>
                   </CardContent>
@@ -1313,7 +1370,7 @@ const TeamCorporateManagement = () => {
                       </div>
                       <div>
                         <p className="text-sm text-muted-foreground">Health Checkups</p>
-                        <p className="text-2xl font-bold">156</p>
+                        <p className="text-2xl font-bold">{healthPackages.length}</p>
                       </div>
                     </div>
                   </CardContent>
@@ -1326,7 +1383,7 @@ const TeamCorporateManagement = () => {
                       </div>
                       <div>
                         <p className="text-sm text-muted-foreground">Network Partners</p>
-                        <p className="text-2xl font-bold">24</p>
+                        <p className="text-2xl font-bold">{labPartners.length + hospitalPartners.length + clinicPartners.length}</p>
                       </div>
                     </div>
                   </CardContent>
@@ -1720,7 +1777,12 @@ const TeamCorporateManagement = () => {
                         Manage labs, hospitals, and clinics in the corporate network
                       </CardDescription>
                     </div>
-                    <Button onClick={() => setShowNetworkDialog(true)}>
+                    <Button onClick={() => {
+                      setShowNetworkDialog(true);
+                      setSelectedAddPartners([]);
+                      setAddNetworkSearch('');
+                      if (selectedCorporate?.id) fetchAvailablePartners(selectedCorporate.id);
+                    }}>
                       <Plus className="h-4 w-4 mr-2" />
                       Add to Network
                     </Button>
@@ -2315,68 +2377,148 @@ const TeamCorporateManagement = () => {
             </DialogHeader>
             <Tabs defaultValue="labs" className="py-4">
               <TabsList className="grid w-full grid-cols-3">
-                <TabsTrigger value="labs">Labs</TabsTrigger>
-                <TabsTrigger value="hospitals">Hospitals</TabsTrigger>
-                <TabsTrigger value="clinics">Clinics</TabsTrigger>
+                <TabsTrigger value="labs">Labs ({availLabs.length})</TabsTrigger>
+                <TabsTrigger value="hospitals">Hospitals ({availHospitals.length})</TabsTrigger>
+                <TabsTrigger value="clinics">Clinics ({availClinics.length})</TabsTrigger>
               </TabsList>
-              <TabsContent value="labs" className="mt-4">
-                <div className="space-y-4">
-                  <Input placeholder="Search labs..." />
-                  <ScrollArea className="h-[300px]">
-                    <div className="space-y-2">
-                      {['Apollo Diagnostics', 'Thyrocare', 'Dr Lal PathLabs', 'SRL Diagnostics', 'Metropolis'].map(lab => (
-                        <div key={lab} className="flex items-center justify-between p-3 border rounded-lg">
-                          <div className="flex items-center gap-3">
-                            <Checkbox id={lab} />
-                            <Label htmlFor={lab} className="font-medium">{lab}</Label>
-                          </div>
-                          <Badge variant="outline">250+ tests</Badge>
+
+              {availLoading ? (
+                <div className="flex items-center justify-center h-40 text-muted-foreground">Loading available partners...</div>
+              ) : (
+                <>
+                  <TabsContent value="labs" className="mt-4">
+                    <div className="space-y-4">
+                      <Input
+                        placeholder="Search labs..."
+                        value={addNetworkSearch}
+                        onChange={(e) => setAddNetworkSearch(e.target.value)}
+                      />
+                      <ScrollArea className="h-[300px]">
+                        <div className="space-y-2">
+                          {availLabs.filter(l => l.name?.toLowerCase().includes(addNetworkSearch.toLowerCase())).length === 0 ? (
+                            <p className="text-sm text-muted-foreground text-center py-8">No available labs found</p>
+                          ) : availLabs
+                              .filter(l => l.name?.toLowerCase().includes(addNetworkSearch.toLowerCase()))
+                              .map(lab => {
+                                const checked = selectedAddPartners.some(p => p.id === lab.id && p.type === 'lab');
+                                return (
+                                  <div key={lab.id} className="flex items-center justify-between p-3 border rounded-lg">
+                                    <div className="flex items-center gap-3">
+                                      <Checkbox
+                                        id={`lab-${lab.id}`}
+                                        checked={checked}
+                                        onCheckedChange={(v) => setSelectedAddPartners(prev =>
+                                          v ? [...prev, { id: lab.id, type: 'lab' }]
+                                            : prev.filter(p => !(p.id === lab.id && p.type === 'lab'))
+                                        )}
+                                      />
+                                      <Label htmlFor={`lab-${lab.id}`} className="font-medium cursor-pointer">
+                                        {lab.name}
+                                        {lab.city && lab.city !== 'N/A' && (
+                                          <span className="text-xs text-muted-foreground ml-2">{lab.city}</span>
+                                        )}
+                                      </Label>
+                                    </div>
+                                    <Badge variant="outline">{lab.testsAvailable > 0 ? `${lab.testsAvailable} tests` : 'Lab'}</Badge>
+                                  </div>
+                                );
+                              })}
                         </div>
-                      ))}
+                      </ScrollArea>
                     </div>
-                  </ScrollArea>
-                </div>
-              </TabsContent>
-              <TabsContent value="hospitals" className="mt-4">
-                <div className="space-y-4">
-                  <Input placeholder="Search hospitals..." />
-                  <ScrollArea className="h-[300px]">
-                    <div className="space-y-2">
-                      {['Apollo Hospitals', 'Fortis Healthcare', 'Max Healthcare', 'Manipal Hospitals'].map(hosp => (
-                        <div key={hosp} className="flex items-center justify-between p-3 border rounded-lg">
-                          <div className="flex items-center gap-3">
-                            <Checkbox id={hosp} />
-                            <Label htmlFor={hosp} className="font-medium">{hosp}</Label>
-                          </div>
-                          <Badge variant="outline">Multi-specialty</Badge>
+                  </TabsContent>
+
+                  <TabsContent value="hospitals" className="mt-4">
+                    <div className="space-y-4">
+                      <Input
+                        placeholder="Search hospitals..."
+                        value={addNetworkSearch}
+                        onChange={(e) => setAddNetworkSearch(e.target.value)}
+                      />
+                      <ScrollArea className="h-[300px]">
+                        <div className="space-y-2">
+                          {availHospitals.filter(h => h.name?.toLowerCase().includes(addNetworkSearch.toLowerCase())).length === 0 ? (
+                            <p className="text-sm text-muted-foreground text-center py-8">No available hospitals found</p>
+                          ) : availHospitals
+                              .filter(h => h.name?.toLowerCase().includes(addNetworkSearch.toLowerCase()))
+                              .map(hosp => {
+                                const checked = selectedAddPartners.some(p => p.id === hosp.id && p.type === 'hospital');
+                                return (
+                                  <div key={hosp.id} className="flex items-center justify-between p-3 border rounded-lg">
+                                    <div className="flex items-center gap-3">
+                                      <Checkbox
+                                        id={`hospital-${hosp.id}`}
+                                        checked={checked}
+                                        onCheckedChange={(v) => setSelectedAddPartners(prev =>
+                                          v ? [...prev, { id: hosp.id, type: 'hospital' }]
+                                            : prev.filter(p => !(p.id === hosp.id && p.type === 'hospital'))
+                                        )}
+                                      />
+                                      <Label htmlFor={`hospital-${hosp.id}`} className="font-medium cursor-pointer">
+                                        {hosp.name}
+                                        {hosp.city && hosp.city !== 'N/A' && (
+                                          <span className="text-xs text-muted-foreground ml-2">{hosp.city}</span>
+                                        )}
+                                      </Label>
+                                    </div>
+                                    <Badge variant="outline">{hosp.specialities ? 'Multi-specialty' : 'Hospital'}</Badge>
+                                  </div>
+                                );
+                              })}
                         </div>
-                      ))}
+                      </ScrollArea>
                     </div>
-                  </ScrollArea>
-                </div>
-              </TabsContent>
-              <TabsContent value="clinics" className="mt-4">
-                <div className="space-y-4">
-                  <Input placeholder="Search clinics..." />
-                  <ScrollArea className="h-[300px]">
-                    <div className="space-y-2">
-                      {['HealthFirst Clinic', 'MedPlus Clinic', 'Care24 Clinic'].map(clinic => (
-                        <div key={clinic} className="flex items-center justify-between p-3 border rounded-lg">
-                          <div className="flex items-center gap-3">
-                            <Checkbox id={clinic} />
-                            <Label htmlFor={clinic} className="font-medium">{clinic}</Label>
-                          </div>
-                          <Badge variant="outline">12 doctors</Badge>
+                  </TabsContent>
+
+                  <TabsContent value="clinics" className="mt-4">
+                    <div className="space-y-4">
+                      <Input
+                        placeholder="Search clinics..."
+                        value={addNetworkSearch}
+                        onChange={(e) => setAddNetworkSearch(e.target.value)}
+                      />
+                      <ScrollArea className="h-[300px]">
+                        <div className="space-y-2">
+                          {availClinics.filter(c => c.name?.toLowerCase().includes(addNetworkSearch.toLowerCase())).length === 0 ? (
+                            <p className="text-sm text-muted-foreground text-center py-8">No available clinics found</p>
+                          ) : availClinics
+                              .filter(c => c.name?.toLowerCase().includes(addNetworkSearch.toLowerCase()))
+                              .map(clinic => {
+                                const checked = selectedAddPartners.some(p => p.id === clinic.id && p.type === 'clinic');
+                                return (
+                                  <div key={clinic.id} className="flex items-center justify-between p-3 border rounded-lg">
+                                    <div className="flex items-center gap-3">
+                                      <Checkbox
+                                        id={`clinic-${clinic.id}`}
+                                        checked={checked}
+                                        onCheckedChange={(v) => setSelectedAddPartners(prev =>
+                                          v ? [...prev, { id: clinic.id, type: 'clinic' }]
+                                            : prev.filter(p => !(p.id === clinic.id && p.type === 'clinic'))
+                                        )}
+                                      />
+                                      <Label htmlFor={`clinic-${clinic.id}`} className="font-medium cursor-pointer">
+                                        {clinic.name}
+                                        {clinic.city && clinic.city !== 'N/A' && (
+                                          <span className="text-xs text-muted-foreground ml-2">{clinic.city}</span>
+                                        )}
+                                      </Label>
+                                    </div>
+                                    <Badge variant="outline">{clinic.type || 'Clinic'}</Badge>
+                                  </div>
+                                );
+                              })}
                         </div>
-                      ))}
+                      </ScrollArea>
                     </div>
-                  </ScrollArea>
-                </div>
-              </TabsContent>
+                  </TabsContent>
+                </>
+              )}
             </Tabs>
             <DialogFooter>
               <Button variant="outline" onClick={() => setShowNetworkDialog(false)}>Cancel</Button>
-              <Button>Add Selected</Button>
+              <Button onClick={handleAddToNetwork} disabled={selectedAddPartners.length === 0 || addingNetwork}>
+                {addingNetwork ? 'Adding...' : `Add Selected (${selectedAddPartners.length})`}
+              </Button>
             </DialogFooter>
           </DialogContent>
         </Dialog>
