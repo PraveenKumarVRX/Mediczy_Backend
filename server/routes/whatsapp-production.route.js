@@ -860,6 +860,18 @@ router.get('/team-inbox', async (req, res) => {
 });
 
 /**
+ * Helper: Build a TwiML <Message> response.
+ * Twilio delivers this back to the sender without needing outbound API credentials.
+ */
+const twimlReply = (text) => {
+  const safe = String(text || '')
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;');
+  return `<?xml version="1.0" encoding="UTF-8"?><Response><Message>${safe}</Message></Response>`;
+};
+
+/**
  * Main webhook for incoming WhatsApp messages
  * Identifies user, retrieves context, and optionally responds with AI
  * 
@@ -876,6 +888,7 @@ router.post('/webhook', (req, res, next) => {
   next();
 }, async (req, res) => {
   try {
+    let pendingTwimlReply = null; // Set when AI sendSessionMessage fails; carried to final TwiML response
     console.log('📱 [WhatsApp Webhook] Handler called, req.skipAuth=', req.skipAuth);
     const { From, Body, MessageSid, ProfileName, MediaUrl0, MediaContentType0 } = req.body;
     
@@ -1025,17 +1038,14 @@ router.post('/webhook', (req, res, next) => {
           source: 'whatsapp'
         });
         
-        await whatsappProductionService.sendSessionMessage({
-          to: phoneNumber,
-          body: `I've notified our team. ${teamMemberRequested.charAt(0).toUpperCase() + teamMemberRequested.slice(1)} or another team member will respond to you shortly. 👍`
-        });
-        
+        const teamAckMsg = `I've notified our team. ${teamMemberRequested.charAt(0).toUpperCase() + teamMemberRequested.slice(1)} or another team member will respond to you shortly. 👍`;
         logger.info('✅ Team member request forwarded to RocketChat', {
           phoneNumber,
           teamMember: teamMemberRequested
         });
-        
-        return res.type('text/xml').status(200).send('<?xml version="1.0" encoding="UTF-8"?><Response></Response>');
+        // Fire-and-forget API send; reply is also in TwiML so it reaches user even if API fails
+        whatsappProductionService.sendSessionMessage({ to: phoneNumber, body: teamAckMsg }).catch(() => {});
+        return res.type('text/xml').status(200).send(twimlReply(teamAckMsg));
       } catch (error) {
         logger.error('Error forwarding to RocketChat:', error.message);
       }
@@ -1087,26 +1097,21 @@ router.post('/webhook', (req, res, next) => {
           'gynecologist': 'Gynecologist'
         };
         
-        await whatsappProductionService.sendSessionMessage({
-          to: phoneNumber,
-          body: `📅 *Appointment Booking Request*
-
-${bookingType === 'health_checkup'
+        const apptBody = `📅 *Appointment Booking Request*\n\n${
+bookingType === 'health_checkup'
   ? "I'm processing your request for a health checkup at the nearest available lab."
-  : `I'm processing your request to see a ${specialistNames[specialistType] || 'Doctor'}.`}
-
-${n8nResult.success 
+  : `I'm processing your request to see a ${specialistNames[specialistType] || 'Doctor'}.`
+}\n\n${
+n8nResult.success
   ? (bookingType === 'health_checkup'
     ? `✅ Our team will contact you shortly to confirm your health checkup slot.\n\n📱 You'll receive a confirmation message with:\n• Lab name & location\n• Date & time options\n• Package/fee details`
     : `✅ Our team will contact you shortly to confirm your appointment slot.\n\n📱 You'll receive a confirmation message with:\n• Doctor's name\n• Date & time options\n• Consultation fee`)
   : (bookingType === 'health_checkup'
     ? `🔄 I'm connecting you with our checkup booking team. They'll call you within 15 minutes to schedule your lab visit.`
-    : `🔄 I'm connecting you with our booking team. They'll call you within 15 minutes to schedule your appointment.`)}
-
-Is there anything else I can help you with? 💙`
-        });
-        
-        return res.type('text/xml').status(200).send('<?xml version="1.0" encoding="UTF-8"?><Response></Response>');
+    : `🔄 I'm connecting you with our booking team. They'll call you within 15 minutes to schedule your appointment.`)
+}\n\nIs there anything else I can help you with? 💙`;
+        whatsappProductionService.sendSessionMessage({ to: phoneNumber, body: apptBody }).catch(() => {});
+        return res.type('text/xml').status(200).send(twimlReply(apptBody));
       } catch (error) {
         logger.error('Appointment booking error:', error.message);
         // Continue to AI processing if n8n fails
@@ -1135,13 +1140,10 @@ Is there anything else I can help you with? 💙`
             logger.info(`[autoTicket/WA] Ticket raised for ${serviceIntent.label} | ${phoneNumber}`);
           }).catch(e => logger.error('[autoTicket/WA]', e.message));
 
-          // Acknowledge customer on WhatsApp
-          await whatsappProductionService.sendSessionMessage({
-            to: phoneNumber,
-            body: `🎫 ${serviceIntent.replyHint}\n\n_A support ticket has been created. Our team will be in touch shortly._`,
-          });
-
-          return res.type('text/xml').status(200).send('<?xml version="1.0" encoding="UTF-8"?><Response></Response>');
+          // Acknowledge customer on WhatsApp (TwiML inline + background API call)
+          const ticketAckMsg = `🎫 ${serviceIntent.replyHint}\n\n_A support ticket has been created. Our team will be in touch shortly._`;
+          whatsappProductionService.sendSessionMessage({ to: phoneNumber, body: ticketAckMsg }).catch(() => {});
+          return res.type('text/xml').status(200).send(twimlReply(ticketAckMsg));
         }
       } catch (atErr) {
         logger.error('[autoTicket/WA] Error:', atErr.message);
@@ -1174,12 +1176,10 @@ Is there anything else I can help you with? 💙`
             : `${timeGreeting}! I'm Dr. iSHA. How can I help you today?`;
           
           logger.info('✅ Using STATIC greeting response', { response: greetingResponse });
-          await whatsappProductionService.sendSessionMessage({
-            to: phoneNumber,
-            body: sanitizeReply(greetingResponse)
-          });
+          const greetMsg = sanitizeReply(greetingResponse);
+          whatsappProductionService.sendSessionMessage({ to: phoneNumber, body: greetMsg }).catch(() => {});
           responseSent = true;
-          return res.type('text/xml').status(200).send('<?xml version="1.0" encoding="UTF-8"?><Response></Response>');
+          return res.type('text/xml').status(200).send(twimlReply(greetMsg));
         }
 
         // Thank you / appreciation response
@@ -1191,23 +1191,19 @@ Is there anything else I can help you with? 💙`
             ? `You're welcome, ${userContext.user.name}. Take care and feel free to message me anytime you need help. 💙`
             : "You're welcome. Take care and feel free to message me anytime you need help. 💙";
           logger.info('✅ Using STATIC thanks+goodbye response', { response: combinedResponse });
-          await whatsappProductionService.sendSessionMessage({
-            to: phoneNumber,
-            body: sanitizeReply(combinedResponse)
-          });
+          const thanksGoodbyeMsg = sanitizeReply(combinedResponse);
+          whatsappProductionService.sendSessionMessage({ to: phoneNumber, body: thanksGoodbyeMsg }).catch(() => {});
           responseSent = true;
-          return res.type('text/xml').status(200).send('<?xml version="1.0" encoding="UTF-8"?><Response></Response>');
+          return res.type('text/xml').status(200).send(twimlReply(thanksGoodbyeMsg));
         }
 
         if (isThanks) {
           const thanksResponse = "You're welcome! Happy to help. Is there anything else I can assist you with?";
           logger.info('✅ Using STATIC thanks response', { response: thanksResponse });
-          await whatsappProductionService.sendSessionMessage({
-            to: phoneNumber,
-            body: sanitizeReply(thanksResponse)
-          });
+          const thanksMsg = sanitizeReply(thanksResponse);
+          whatsappProductionService.sendSessionMessage({ to: phoneNumber, body: thanksMsg }).catch(() => {});
           responseSent = true;
-          return res.type('text/xml').status(200).send('<?xml version="1.0" encoding="UTF-8"?><Response></Response>');
+          return res.type('text/xml').status(200).send(twimlReply(thanksMsg));
         }
 
         // Goodbye response
@@ -1216,12 +1212,10 @@ Is there anything else I can help you with? 💙`
             ? `Take care, ${userContext.user.name}! Feel free to reach out anytime you need health assistance. Stay healthy! 💙`
             : "Take care! Feel free to reach out anytime you need health assistance. Stay healthy! 💙";
           logger.info('✅ Using STATIC goodbye response', { response: goodbyeResponse });
-          await whatsappProductionService.sendSessionMessage({
-            to: phoneNumber,
-            body: sanitizeReply(goodbyeResponse)
-          });
+          const goodbyeMsg = sanitizeReply(goodbyeResponse);
+          whatsappProductionService.sendSessionMessage({ to: phoneNumber, body: goodbyeMsg }).catch(() => {});
           responseSent = true;
-          return res.type('text/xml').status(200).send('<?xml version="1.0" encoding="UTF-8"?><Response></Response>');
+          return res.type('text/xml').status(200).send(twimlReply(goodbyeMsg));
         }
 
         // ALL other messages (including appointment status, medical queries, etc.)
@@ -1287,12 +1281,10 @@ Is there anything else I can help you with? 💙`
         const isGenericErrorReply = normalizedResponseText.includes('there was an error processing your request');
         
         if (!aiResponse) {
-          await whatsappProductionService.sendSessionMessage({
-            to: phoneNumber,
-            body: sanitizeReply("I couldn't fetch a full response just now. Please retry in a few seconds, or tell me if you want help with appointment booking, health checkup, prescription, or reports.")
-          });
+          const timeoutMsg = sanitizeReply("I couldn't fetch a full response just now. Please retry in a few seconds, or tell me if you want help with appointment booking, health checkup, prescription, or reports.");
+          whatsappProductionService.sendSessionMessage({ to: phoneNumber, body: timeoutMsg }).catch(() => {});
           responseSent = true;
-          return res.type('text/xml').status(200).send('<?xml version="1.0" encoding="UTF-8"?><Response></Response>');
+          return res.type('text/xml').status(200).send(twimlReply(timeoutMsg));
         }
 
         if (aiResponse.shouldReply) {
@@ -1301,11 +1293,16 @@ Is there anything else I can help you with? 💙`
               ? "I'm sorry, I'm having trouble processing your request right now. Please try again in a few minutes or reply with more details."
               : compactResponseText)
             : "I'm here to help with appointments, health checkups, reports, and prescriptions. Tell me what you'd like to do.";
-          // Send AI response via WhatsApp
-          await whatsappProductionService.sendSessionMessage({
-            to: phoneNumber,
-            body: sanitizeReply(replyText)
-          });
+          const sanitizedReply = sanitizeReply(replyText);
+          // Try sending via API; TwiML at the end of the handler also carries the reply as fallback
+          let aiReplySentViaApi = false;
+          try {
+            await whatsappProductionService.sendSessionMessage({ to: phoneNumber, body: sanitizedReply });
+            aiReplySentViaApi = true;
+          } catch (sendErr) {
+            logger.warn('⚠️ sendSessionMessage failed (will use TwiML):', sendErr.message);
+          }
+          pendingTwimlReply = aiReplySentViaApi ? null : sanitizedReply;
           responseSent = true;
           
           // Add AI response to chat room
@@ -1314,7 +1311,7 @@ Is there anything else I can help you with? 💙`
             userId: 'dr_isha_bot',
             userName: '🤖 Dr. iSHA',
             userRole: 'assistant',
-            message: sanitizeReply(replyText),
+            message: sanitizedReply,
             type: 'text',
             timestamp: new Date().toISOString(),
             source: 'ai_bot',
@@ -1332,7 +1329,7 @@ Is there anything else I can help you with? 💙`
           try {
             await rocketChatService.sendMessage(
               'GENERAL',
-              `🤖 *Dr. iSHA Response*\n📱 To: ${customerName} (+${phoneNumber})\n⏰ ${new Date().toLocaleString()}\n\n${sanitizeReply(replyText)}`
+              `🤖 *Dr. iSHA Response*\n📱 To: ${customerName} (+${phoneNumber})\n⏰ ${new Date().toLocaleString()}\n\n${sanitizedReply}`
             );
             logger.info('✅ AI response posted to RocketChat');
           } catch (rcError) {
@@ -1386,9 +1383,13 @@ Is there anything else I can help you with? 💙`
       }
     }
     
-    // Return empty TwiML response
+    // Return TwiML response — with reply text if API send failed, otherwise empty
     res.type('text/xml');
-    res.status(200).send('<?xml version="1.0" encoding="UTF-8"?><Response></Response>');
+    res.status(200).send(
+      pendingTwimlReply
+        ? twimlReply(pendingTwimlReply)
+        : '<?xml version="1.0" encoding="UTF-8"?><Response></Response>'
+    );
   } catch (error) {
     logger.error('❌ Webhook error:', { error: error.message, stack: error.stack });
     // Return empty TwiML even on error to prevent Twilio from triggering fallback
