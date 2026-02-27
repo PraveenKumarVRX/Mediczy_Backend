@@ -63,7 +63,7 @@ export class OfflineStorage {
     return this.initPromise;
   }
 
-  private async _initialize(): Promise<void> {
+  private async _initialize(isRetry = false): Promise<void> {
     try {
       // Check if IndexedDB is supported
       if (!('indexedDB' in window)) {
@@ -109,6 +109,28 @@ export class OfflineStorage {
       console.log('✅ IndexedDB initialized successfully');
     } catch (error) {
       console.error('❌ Failed to initialize IndexedDB:', error);
+
+      // "UnknownError: Internal error" means a corrupted/locked database.
+      // Delete and retry once to self-heal.
+      if (!isRetry) {
+        try {
+          console.warn('⚠️ Attempting IndexedDB recovery — deleting corrupted database...');
+          await new Promise<void>((resolve, reject) => {
+            const req = indexedDB.deleteDatabase(DB_NAME);
+            req.onsuccess = () => resolve();
+            req.onerror = () => reject(req.error);
+            req.onblocked = () => reject(new Error('deleteDatabase blocked'));
+          });
+          console.log('🗑️ Corrupted IndexedDB deleted — retrying init...');
+          this.initPromise = null;
+          this.db = null;
+          await this._initialize(true);
+          return;
+        } catch (deleteError) {
+          console.error('❌ IndexedDB recovery failed:', deleteError);
+        }
+      }
+
       // Don't throw - let app continue without offline storage
       this.db = null;
     }
