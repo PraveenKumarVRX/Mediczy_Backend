@@ -8,6 +8,7 @@ import n8nService from '../services/n8n.service.js';
 import whatsAppSIBBrain from '../services/whatsapp-sib-brain.service.js';
 import { cache } from '../db/redis.js';
 import logger from '../config/logger.js';
+import { detectServiceIntent, createAutoTicket } from '../services/autoTicketService.js';
 import axios from 'axios';
 
 const router = express.Router();
@@ -1142,8 +1143,43 @@ Is there anything else I can help you with? 💙`
         // Continue to AI processing if n8n fails
       }
     }
-    
-    // 4. OPTIONAL: AI AUTO-REPLY (only if enabled)
+
+    // 4. SERVICE REQUEST AUTO-TICKET
+    // Detects cancellation / reschedule / report / consultation etc. and raises a ticket
+    if (!isBookingIntent && Body) {
+      try {
+        const serviceIntent = detectServiceIntent(Body);
+        if (serviceIntent) {
+          createAutoTicket({
+            source: 'whatsapp',
+            requester: {
+              name: customerName || userContext.user?.name || '',
+              phone: phoneNumber,
+              email: userContext.user?.email || '',
+            },
+            intentLabel: serviceIntent.label,
+            category: serviceIntent.category,
+            priority: serviceIntent.priority,
+            description: Body,
+            tags: userContext.isKnownUser ? ['known-customer'] : ['unknown-customer'],
+          }).then(() => {
+            logger.info(`[autoTicket/WA] Ticket raised for ${serviceIntent.label} | ${phoneNumber}`);
+          }).catch(e => logger.error('[autoTicket/WA]', e.message));
+
+          // Acknowledge customer on WhatsApp
+          await whatsappProductionService.sendSessionMessage({
+            to: phoneNumber,
+            body: `🎫 ${serviceIntent.replyHint}\n\n_A support ticket has been created. Our team will be in touch shortly._`,
+          });
+
+          return res.type('text/xml').status(200).send('<?xml version="1.0" encoding="UTF-8"?><Response></Response>');
+        }
+      } catch (atErr) {
+        logger.error('[autoTicket/WA] Error:', atErr.message);
+      }
+    }
+
+    // 5. OPTIONAL: AI AUTO-REPLY (only if enabled)
     // Routes through SIB Brain for deep reasoning with user context
     if (AI_AUTO_REPLY_ENABLED && Body && !MediaUrl0) {
       let responseSent = false;

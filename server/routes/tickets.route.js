@@ -351,8 +351,15 @@ router.post('/', auth, async (req, res) => {
       }[priority] || '⚪';
 
       const categoryEmoji = {
-        'technical': '🔧',
+        'appointment-cancellation': '❌',
+        'appointment-reschedule': '📅',
+        'doctor-consultation': '👨‍⚕️',
+        'health-checkup': '🏥',
+        'prescription': '💊',
+        'health-report': '📋',
         'billing': '💳',
+        'complaint': '⚠️',
+        'technical': '🔧',
         'integration': '🔗',
         'performance': '⚡',
         'feature-request': '✨',

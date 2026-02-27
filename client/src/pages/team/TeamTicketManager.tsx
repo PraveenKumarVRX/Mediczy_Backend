@@ -107,7 +107,7 @@ function CreateTicketForm({ onCreated, onClose, defaultEmail = '', defaultName =
     title: '',
     description: '',
     priority: 'medium',
-    category: 'technical',
+    category: 'doctor-consultation',
     requester: { name: defaultName, email: defaultEmail, role: 'team' },
     tags: [],
   });
@@ -167,11 +167,14 @@ function CreateTicketForm({ onCreated, onClose, defaultEmail = '', defaultName =
               <SelectValue />
             </SelectTrigger>
             <SelectContent>
-              <SelectItem value="technical">Technical</SelectItem>
-              <SelectItem value="performance">Performance</SelectItem>
-              <SelectItem value="integration">Integration</SelectItem>
-              <SelectItem value="feature-request">Feature Request</SelectItem>
-              <SelectItem value="billing">Billing</SelectItem>
+              <SelectItem value="appointment-cancellation">Appointment Cancellation</SelectItem>
+              <SelectItem value="appointment-reschedule">Appointment Reschedule</SelectItem>
+              <SelectItem value="doctor-consultation">Doctor Consultation</SelectItem>
+              <SelectItem value="health-checkup">Health Checkup</SelectItem>
+              <SelectItem value="prescription">Prescription Request</SelectItem>
+              <SelectItem value="health-report">Health Report</SelectItem>
+              <SelectItem value="billing">Billing Enquiry</SelectItem>
+              <SelectItem value="complaint">Complaint</SelectItem>
               <SelectItem value="other">Other</SelectItem>
             </SelectContent>
           </Select>

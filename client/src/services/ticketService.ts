@@ -9,7 +9,7 @@ export interface Ticket {
   description: string;
   status: 'open' | 'in-progress' | 'pending' | 'resolved' | 'closed';
   priority: 'low' | 'medium' | 'high' | 'critical';
-  category: 'technical' | 'performance' | 'integration' | 'feature-request' | 'billing' | 'other';
+  category: 'appointment-cancellation' | 'appointment-reschedule' | 'doctor-consultation' | 'health-checkup' | 'prescription' | 'health-report' | 'billing' | 'complaint' | 'other';
   requester: {
     name: string;
     email: string;

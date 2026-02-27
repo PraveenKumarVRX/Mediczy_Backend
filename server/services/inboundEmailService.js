@@ -4,6 +4,7 @@ import { Op } from 'sequelize';
 import EmailInbox from '../models/emailInbox.model.js';
 import { aiProcessEmail } from './aiEmailProcessor.service.js';
 import { autoUpdatePortal } from './emailAutoUpdate.service.js';
+import { detectEmailIntent, createAutoTicket } from './autoTicketService.js';
 
 class InboundEmailService {
   constructor() {
@@ -263,6 +264,29 @@ class InboundEmailService {
           });
           console.log(`✨ Applied ${updates.length} auto-updates for email ${email.id}`);
         }
+      }
+
+      // Auto-create support ticket for actionable healthcare service requests
+      try {
+        const intentMeta = detectEmailIntent(aiAnalysis.intent);
+        if (intentMeta) {
+          const senderName = email.fromName || email.from?.split('<')[0]?.trim() || '';
+          const senderEmail = email.from?.match(/<(.+?)>/)?.[1] || email.from || '';
+          createAutoTicket({
+            source: 'email',
+            requester: { name: senderName, email: senderEmail },
+            intentLabel: intentMeta.label,
+            category: intentMeta.category,
+            priority: intentMeta.priority || 'medium',
+            title: `[Email] ${email.subject || intentMeta.label}`,
+            description: `From: ${email.from}\nSubject: ${email.subject}\n\n${(email.body || '').substring(0, 600)}`,
+            tags: ['email'],
+          }).then(() => {
+            console.log(`[autoTicket/Email] Ticket raised for ${intentMeta.label} | email ${email.id}`);
+          }).catch(e => console.error('[autoTicket/Email]', e.message));
+        }
+      } catch (atErr) {
+        console.error('[autoTicket] Email ticket init error:', atErr.message);
       }
 
       return email;
