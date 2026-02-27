@@ -87,6 +87,8 @@ interface LabPartner {
   id: number;
   name: string;
   city: string;
+  address?: string | null;
+  pincode?: string | null;
   testsAvailable: number;
   discount: number | null;
   status: string;
@@ -96,6 +98,8 @@ interface HospitalPartner {
   id: number;
   name: string;
   city: string;
+  address?: string | null;
+  pincode?: string | null;
   specialities: string;
   beds: number;
   status: string;
@@ -1907,7 +1911,9 @@ const TeamCorporateManagement = () => {
                         const filteredLabs = labPartners.filter(l =>
                           !labSearch ||
                           l.name?.toLowerCase().includes(labSearch.toLowerCase()) ||
-                          l.city?.toLowerCase().includes(labSearch.toLowerCase())
+                          l.city?.toLowerCase().includes(labSearch.toLowerCase()) ||
+                          l.pincode?.toLowerCase().includes(labSearch.toLowerCase()) ||
+                          l.address?.toLowerCase().includes(labSearch.toLowerCase())
                         );
                         const allFilteredSelected = filteredLabs.length > 0 && filteredLabs.every(l => selectedNetworkPartnerIds.includes(l.id));
                         return (
@@ -1917,7 +1923,7 @@ const TeamCorporateManagement = () => {
                                 <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
                                 <Input
                                   className="pl-9 h-8 text-sm"
-                                  placeholder="Search labs by name or city..."
+                                  placeholder="Search labs by name, city, address or pincode..."
                                   value={labSearch}
                                   onChange={e => setLabSearch(e.target.value)}
                                 />
@@ -1951,7 +1957,7 @@ const TeamCorporateManagement = () => {
                                     />
                                   </TableHead>
                                   <TableHead>Lab Name</TableHead>
-                                  <TableHead>City</TableHead>
+                                  <TableHead>Location</TableHead>
                                   <TableHead>Tests Available</TableHead>
                                   <TableHead>Discount</TableHead>
                                   <TableHead>Status</TableHead>
@@ -1977,8 +1983,14 @@ const TeamCorporateManagement = () => {
                                           )}
                                         />
                                       </TableCell>
-                                      <TableCell className="font-medium">{lab.name}</TableCell>
-                                      <TableCell>{lab.city}</TableCell>
+                                      <TableCell className="font-medium">
+                                        <div>{lab.name}</div>
+                                        {lab.address && <div className="text-xs text-muted-foreground mt-0.5">{lab.address}</div>}
+                                      </TableCell>
+                                      <TableCell>
+                                        <div>{lab.city}</div>
+                                        {lab.pincode && <div className="text-xs text-muted-foreground mt-0.5">{lab.pincode}</div>}
+                                      </TableCell>
                                       <TableCell>{lab.testsAvailable || 0}</TableCell>
                                       <TableCell>{lab.discount ? `${lab.discount}%` : '—'}</TableCell>
                                       <TableCell>{getStatusBadge(lab.status || 'Active')}</TableCell>
@@ -2008,6 +2020,8 @@ const TeamCorporateManagement = () => {
                           !hospitalSearch ||
                           h.name?.toLowerCase().includes(hospitalSearch.toLowerCase()) ||
                           h.city?.toLowerCase().includes(hospitalSearch.toLowerCase()) ||
+                          h.pincode?.toLowerCase().includes(hospitalSearch.toLowerCase()) ||
+                          h.address?.toLowerCase().includes(hospitalSearch.toLowerCase()) ||
                           h.specialities?.toLowerCase().includes(hospitalSearch.toLowerCase())
                         );
                         const allFilteredSelected = filteredHospitals.length > 0 && filteredHospitals.every(h => selectedNetworkPartnerIds.includes(h.id));
@@ -2018,7 +2032,7 @@ const TeamCorporateManagement = () => {
                                 <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
                                 <Input
                                   className="pl-9 h-8 text-sm"
-                                  placeholder="Search hospitals by name, city or speciality..."
+                                  placeholder="Search hospitals by name, city, address, pincode or speciality..."
                                   value={hospitalSearch}
                                   onChange={e => setHospitalSearch(e.target.value)}
                                 />
@@ -2052,7 +2066,7 @@ const TeamCorporateManagement = () => {
                                     />
                                   </TableHead>
                                   <TableHead>Hospital Name</TableHead>
-                                  <TableHead>City</TableHead>
+                                  <TableHead>Location</TableHead>
                                   <TableHead>Specialities</TableHead>
                                   <TableHead>Beds</TableHead>
                                   <TableHead>Status</TableHead>
@@ -2078,8 +2092,14 @@ const TeamCorporateManagement = () => {
                                           )}
                                         />
                                       </TableCell>
-                                      <TableCell className="font-medium">{hospital.name}</TableCell>
-                                      <TableCell>{hospital.city}</TableCell>
+                                      <TableCell className="font-medium">
+                                        <div>{hospital.name}</div>
+                                        {hospital.address && <div className="text-xs text-muted-foreground mt-0.5">{hospital.address}</div>}
+                                      </TableCell>
+                                      <TableCell>
+                                        <div>{hospital.city}</div>
+                                        {hospital.pincode && <div className="text-xs text-muted-foreground mt-0.5">{hospital.pincode}</div>}
+                                      </TableCell>
                                       <TableCell>{hospital.specialities || '—'}</TableCell>
                                       <TableCell>{hospital.beds || 0}</TableCell>
                                       <TableCell>{getStatusBadge(hospital.status || 'Active')}</TableCell>

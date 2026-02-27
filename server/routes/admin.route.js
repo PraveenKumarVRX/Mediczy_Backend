@@ -2659,7 +2659,7 @@ router.get('/corporate-network/:corporateId', authUser, requireRole(['admin', 't
     `, { replacements: { corporateId }, type: postgresSequelize.QueryTypes.SELECT });
 
     const hospitals = await postgresSequelize.query(`
-      SELECT h.id, h.hospital_name, h.city, h.specializations, h.total_beds, h.status, h.metadata
+      SELECT h.id, h.hospital_name, h.city, h.pincode, h.address, h.specializations, h.total_beds, h.status, h.metadata
       FROM hospitals h
       ${assignedFilterH}
       ORDER BY h.hospital_name ASC
@@ -2684,6 +2684,8 @@ router.get('/corporate-network/:corporateId', authUser, requireRole(['admin', 't
         id: lab.id,
         name: lab.name,
         city: address?.city || 'N/A',
+        address: address?.street || null,
+        pincode: address?.pincode || null,
         testsAvailable,
         discount: metadata?.discount || metadata?.corporateDiscount || null,
         status: lab.status || 'active'
@@ -2700,6 +2702,8 @@ router.get('/corporate-network/:corporateId', authUser, requireRole(['admin', 't
         id: hospital.id,
         name: hospital.hospital_name,
         city: hospital.city || metadata?.city || 'N/A',
+        address: hospital.address || null,
+        pincode: hospital.pincode || null,
         specialities: Array.isArray(specializations) ? specializations.join(', ') : specializations,
         beds: hospital.total_beds || metadata?.beds || 0,
         status: hospital.status || 'active'
