@@ -7,7 +7,7 @@ import { Op } from 'sequelize';
  */
 export const validateMembership = async (req, res, next) => {
   // Skip membership check for non-user roles
-  const exemptRoles = ['admin', 'super_admin', 'system_admin', 'platform_admin', 'doctor', 'nurse', 'assistant', 'corporate', 'lab'];
+  const exemptRoles = ['admin', 'super_admin', 'system_admin', 'platform_admin', 'doctor', 'nurse', 'assistant', 'corporate', 'lab', 'team'];
   
   if (exemptRoles.includes(req.userRole)) {
     return next();
@@ -161,7 +161,7 @@ export const validateMembership = async (req, res, next) => {
  */
 export const checkMembershipExpiry = async (req, res, next) => {
   // Skip for non-user roles
-  const exemptRoles = ['admin', 'super_admin', 'system_admin', 'platform_admin', 'doctor', 'nurse', 'assistant', 'corporate', 'lab'];
+  const exemptRoles = ['admin', 'super_admin', 'system_admin', 'platform_admin', 'doctor', 'nurse', 'assistant', 'corporate', 'lab', 'team'];
   
   if (exemptRoles.includes(req.userRole)) {
     return next();
@@ -241,9 +241,13 @@ export const syncUserStatusWithMembership = async (userId) => {
 export const syncAllUsersStatus = async () => {
   try {
     const userModel = await import('../models/user.model.intelligent.js');
+    // Only sync consumer users — team/doctor/corporate/admin roles manage
+    // their own access and do not require a UserPlan membership
     const allUsers = await userModel.default.findAll({
       where: {
         isAdmin: false,
+        isTeam: false,
+        role: { [Op.in]: ['user', 'patient'] },
         status: { [Op.in]: ['active', 'inactive'] }
       },
       attributes: ['id', 'email', 'status']
