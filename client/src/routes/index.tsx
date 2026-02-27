@@ -80,6 +80,7 @@ const Pharmacy              = lazy(() => import("@/pages/patient/Pharmacy"));
 const VitalReports          = lazy(() => import("@/pages/patient/VitalReports"));
 const UploadedDocuments     = lazy(() => import("@/pages/patient/UploadedDocuments"));
 const NetworkHospitals      = lazy(() => import("@/pages/patient/NetworkHospitals"));
+const NetworkClinics        = lazy(() => import("@/pages/patient/NetworkClinics"));
 const BuyInsurance          = lazy(() => import("@/pages/patient/BuyInsurance"));
 const ClaimsManagement      = lazy(() => import("@/pages/patient/ClaimsManagement"));
 const AIHealthAnalysis      = lazy(() => import("@/pages/patient/AIHealthAnalysis"));
@@ -833,6 +834,7 @@ const AppRoutes = () => {
         <Route path="/patient/vital-reports"      element={<MainLayout><VitalReports /></MainLayout>} />
         <Route path="/patient/documents"          element={<MainLayout><UploadedDocuments /></MainLayout>} />
         <Route path="/patient/network-hospitals"  element={<MainLayout><NetworkHospitals /></MainLayout>} />
+        <Route path="/patient/network-clinics"   element={<MainLayout><NetworkClinics /></MainLayout>} />
         <Route path="/patient/buy-insurance"      element={<MainLayout><BuyInsurance /></MainLayout>} />
         <Route path="/patient/claims"             element={<MainLayout><ClaimsManagement /></MainLayout>} />
         <Route path="/patient/ai-health-analysis" element={<MainLayout><AIHealthAnalysis /></MainLayout>} />

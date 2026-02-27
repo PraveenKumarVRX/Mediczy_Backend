@@ -17,6 +17,7 @@ import {
   getPatientProfile,
   updatePatientProfile
 } from '../controller/unified-patient.controller.js';
+import { postgresSequelize } from '../db/postgres-sequelize.js';
 
 const router = express.Router();
 
@@ -129,5 +130,86 @@ router.patch(
   ],
   updatePatientProfile
 );
+
+/**
+ * GET /api/patient/provider-clinics
+ * Public endpoint — search real clinic branches from provider_clinics table
+ * (Clove Dental, Apollo Clinic, etc.)
+ * Query params: search, city, type, page, limit
+ */
+router.get('/provider-clinics', async (req, res) => {
+  try {
+    const search = (req.query.search || '').trim();
+    const city   = (req.query.city   || '').trim();
+    const type   = (req.query.type   || '').trim();
+    const page   = Math.max(1, parseInt(req.query.page  || '1', 10));
+    const limit  = Math.min(100, Math.max(1, parseInt(req.query.limit || '20', 10)));
+    const offset = (page - 1) * limit;
+
+    const conditions = [`status = 'active'`];
+    const replacements = {};
+
+    if (search) {
+      conditions.push(`(name ILIKE :search OR location->>'city' ILIKE :search OR location->>'pincode' LIKE :pinSearch OR specialty ILIKE :search)`);
+      replacements.search = `%${search}%`;
+      replacements.pinSearch = `${search}%`;
+    }
+    if (city) {
+      conditions.push(`location->>'city' ILIKE :city`);
+      replacements.city = `%${city}%`;
+    }
+    if (type) {
+      conditions.push(`(type ILIKE :type OR specialty ILIKE :type)`);
+      replacements.type = `%${type}%`;
+    }
+
+    const where = conditions.join(' AND ');
+
+    const [{ total }] = await postgresSequelize.query(
+      `SELECT COUNT(*)::int AS total FROM provider_clinics WHERE ${where}`,
+      { replacements, type: postgresSequelize.QueryTypes.SELECT }
+    );
+
+    const clinics = await postgresSequelize.query(
+      `SELECT id, name, type, specialty, location, services, phone, email, latitude, longitude
+       FROM provider_clinics
+       WHERE ${where}
+       ORDER BY name ASC
+       LIMIT :limit OFFSET :offset`,
+      {
+        replacements: { ...replacements, limit, offset },
+        type: postgresSequelize.QueryTypes.SELECT
+      }
+    );
+
+    const normalized = clinics.map(c => ({
+      id: c.id,
+      name: c.name,
+      type: c.type || '',
+      specialty: c.specialty || '',
+      city: c.location?.city || '',
+      state: c.location?.state || '',
+      address: c.location?.address || '',
+      pincode: c.location?.pincode || '',
+      phone: c.phone || '',
+      email: c.email || '',
+      services: c.services || [],
+      latitude: c.latitude,
+      longitude: c.longitude,
+    }));
+
+    res.json({
+      success: true,
+      clinics: normalized,
+      total,
+      page,
+      limit,
+      pages: Math.ceil(total / limit),
+    });
+  } catch (err) {
+    console.error('Error fetching provider clinics:', err);
+    res.status(500).json({ success: false, message: 'Failed to fetch clinics' });
+  }
+});
 
 export default router;

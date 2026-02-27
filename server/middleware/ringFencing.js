@@ -507,7 +507,7 @@ const ringFencingMiddleware = (req, res, next) => {
 
   const hospitalStaffAuthPattern = /^\/api\/hospital\/staff\/[^/]+\/(login|signup)$/;
   const patientAuthPattern = /^\/api\/patient\/(login|signup)$/;
-  const patientClinicSearchPattern = /^\/api\/patient\/clinics\/search$/;
+  const patientClinicSearchPattern = /^\/api\/patient\/(clinics\/search|provider-clinics)$/;
   const clinicPatientAuthPattern = /^\/api\/clinic\/[^/]+\/patient\/(login|signup)$/;
   const clinicStaffAuthPattern = /^\/api\/clinic\/staff\/(login|doctor-login|nurse-login|assistant-login)$/;
 

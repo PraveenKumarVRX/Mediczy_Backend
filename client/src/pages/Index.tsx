@@ -34,7 +34,8 @@ import {
   Crown,
   Watch,
   Bluetooth,
-  RefreshCw
+  RefreshCw,
+  Building2
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -514,6 +515,16 @@ const Index = () => {
       iconColor: "text-warning",
       link: "/health-risk-assessment",
       highlights: ["5-minute assessment", "Risk scoring", "Personalized insights"],
+    },
+    {
+      title: "Find Clinics",
+      description: "Search 500+ clinics near you — Clove Dental, Apollo Clinic & more",
+      icon: Building2,
+      color: "primary-gradient",
+      borderColor: "border-primary/20",
+      iconColor: "text-primary",
+      link: "/patient/network-clinics",
+      highlights: ["Clove Dental", "Apollo Clinic", "Nearby clinics"],
     },
   ];
 
