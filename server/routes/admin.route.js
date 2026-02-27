@@ -1917,14 +1917,16 @@ router.post('/corporate-employees', authUser, requireRole(['admin', 'team', 'cor
         });
         
         let userId;
+        let isNewUser = false;
+        let temporaryPassword = null;
         
         if (existingUser) {
           // User exists, just create association
           userId = existingUser.id;
         } else {
-          // Create new user with default password (phone or employee id)
-          const defaultPassword = phoneNumber || employeeId || 'Welcome@123';
-          const hashedPassword = await bcrypt.hash(defaultPassword, 10);
+          // Generate a secure temporary password
+          temporaryPassword = welcomeEmailService.generateSecurePassword();
+          const hashedPassword = await bcrypt.hash(temporaryPassword, 10);
           
           const [userResult] = await postgresSequelize.query(`
             INSERT INTO users (
@@ -1952,6 +1954,7 @@ router.post('/corporate-employees', authUser, requireRole(['admin', 'team', 'cor
           });
           
           userId = userResult && userResult[0] ? userResult[0].id : null;
+          isNewUser = true;
         }
         
         if (!userId) {
@@ -1973,8 +1976,28 @@ router.post('/corporate-employees', authUser, requireRole(['admin', 'team', 'cor
             metadata: JSON.stringify({ employeeId, department })
           }
         });
+
+        // Send welcome email with credentials for newly created users (non-blocking)
+        if (isNewUser && temporaryPassword) {
+          welcomeEmailService.sendCorporateEmployeeWelcomeEmail({
+            email: normalizedEmail,
+            firstName,
+            lastName: lastName || '',
+            companyName: corporate.companyName,
+            employeeId,
+            department
+          }, temporaryPassword).catch(err => {
+            console.error(`Failed to send welcome email to employee ${normalizedEmail}:`, err.message);
+          });
+        }
         
-        results.created.push({ email: normalizedEmail, userId });
+        results.created.push({
+          email: normalizedEmail,
+          userId,
+          isNewUser,
+          temporaryPassword: isNewUser ? temporaryPassword : null,
+          emailSent: isNewUser
+        });
       } catch (empError) {
         results.failed.push({ email: emp.email, reason: empError.message });
       }

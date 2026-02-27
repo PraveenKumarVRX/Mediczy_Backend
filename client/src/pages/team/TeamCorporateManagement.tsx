@@ -180,6 +180,8 @@ const TeamCorporateManagement = () => {
   const [showAddCorporateDialog, setShowAddCorporateDialog] = useState(false);
   const [showAddHRDialog, setShowAddHRDialog] = useState(false);
   const [showAddEmployeeDialog, setShowAddEmployeeDialog] = useState(false);
+  const [showCredentialsDialog, setShowCredentialsDialog] = useState(false);
+  const [newEmployeeCredentials, setNewEmployeeCredentials] = useState<{name: string; email: string; password: string} | null>(null);
   const [showViewEmployeeDialog, setShowViewEmployeeDialog] = useState(false);
   const [showEditEmployeeDialog, setShowEditEmployeeDialog] = useState(false);
   const [viewingEmployee, setViewingEmployee] = useState<Employee | null>(null);
@@ -778,30 +780,35 @@ const TeamCorporateManagement = () => {
         department: newEmployee.department
       };
       
-      await api.post(`/admin/corporate-employees`, {
+      const response = await api.post(`/admin/corporate-employees`, {
         corporateId: selectedCorporate.id,
         employees: [employeeData]
       }, {
         headers: token ? { Authorization: `Bearer ${token}` } : undefined
       });
-      
-      toast({
-        title: 'Employee Added',
-        description: `${newEmployee.name} has been added to ${selectedCorporate.companyName}`
-      });
+
+      const created = response.data?.results?.created?.[0];
       
       setShowAddEmployeeDialog(false);
-      setNewEmployee({
-        employeeId: '',
-        name: '',
-        email: '',
-        phone: '',
-        department: '',
-        designation: '',
-        joiningDate: ''
-      });
-      // Refresh employees list
+      setNewEmployee({ employeeId: '', name: '', email: '', phone: '', department: '', designation: '', joiningDate: '' });
       fetchEmployees(selectedCorporate.id);
+
+      if (created?.isNewUser && created?.temporaryPassword) {
+        // Show credentials to team member
+        setNewEmployeeCredentials({
+          name: newEmployee.name,
+          email: newEmployee.email,
+          password: created.temporaryPassword
+        });
+        setShowCredentialsDialog(true);
+      } else {
+        toast({
+          title: 'Employee Added',
+          description: created?.isNewUser === false
+            ? `${newEmployee.name} already has an account — linked to ${selectedCorporate.companyName}.`
+            : `${newEmployee.name} has been added to ${selectedCorporate.companyName}`
+        });
+      }
     } catch (error: any) {
       toast({
         variant: 'destructive',
@@ -2441,6 +2448,65 @@ const TeamCorporateManagement = () => {
             <DialogFooter>
               <Button variant="outline" onClick={() => setShowAddEmployeeDialog(false)}>Cancel</Button>
               <Button onClick={handleAddEmployee}>Add Employee</Button>
+            </DialogFooter>
+          </DialogContent>
+        </Dialog>
+
+        {/* Employee Credentials Dialog */}
+        <Dialog open={showCredentialsDialog} onOpenChange={setShowCredentialsDialog}>
+          <DialogContent className="max-w-md">
+            <DialogHeader>
+              <DialogTitle className="flex items-center gap-2 text-green-700">
+                <CheckCircle className="h-5 w-5" /> Employee Added Successfully
+              </DialogTitle>
+              <DialogDescription>
+                Login credentials have been created. Share these with the employee or note them down — the password won't be shown again.
+              </DialogDescription>
+            </DialogHeader>
+            {newEmployeeCredentials && (
+              <div className="space-y-4 py-2">
+                <div className="rounded-lg border bg-muted/40 p-4 space-y-3">
+                  <div className="flex items-center justify-between">
+                    <div>
+                      <p className="text-xs text-muted-foreground mb-1">Employee Name</p>
+                      <p className="font-medium">{newEmployeeCredentials.name}</p>
+                    </div>
+                  </div>
+                  <div className="flex items-center justify-between">
+                    <div>
+                      <p className="text-xs text-muted-foreground mb-1">Login Email</p>
+                      <p className="font-medium">{newEmployeeCredentials.email}</p>
+                    </div>
+                    <Button variant="ghost" size="sm" onClick={() => {
+                      navigator.clipboard.writeText(newEmployeeCredentials.email);
+                      toast({ title: 'Copied', description: 'Email copied to clipboard' });
+                    }}>
+                      <Copy className="h-4 w-4" />
+                    </Button>
+                  </div>
+                  <div className="flex items-center justify-between">
+                    <div>
+                      <p className="text-xs text-muted-foreground mb-1">Temporary Password</p>
+                      <p className="font-mono font-bold text-lg tracking-widest text-primary">{newEmployeeCredentials.password}</p>
+                    </div>
+                    <Button variant="ghost" size="sm" onClick={() => {
+                      navigator.clipboard.writeText(newEmployeeCredentials.password);
+                      toast({ title: 'Copied', description: 'Password copied to clipboard' });
+                    }}>
+                      <Copy className="h-4 w-4" />
+                    </Button>
+                  </div>
+                </div>
+                <div className="flex items-start gap-2 rounded-md bg-amber-50 border border-amber-200 p-3 text-sm text-amber-800">
+                  <AlertCircle className="h-4 w-4 mt-0.5 shrink-0" />
+                  <p>A welcome email with these credentials has been sent to <strong>{newEmployeeCredentials.email}</strong>. The employee should change this password on first login.</p>
+                </div>
+              </div>
+            )}
+            <DialogFooter>
+              <Button onClick={() => { setShowCredentialsDialog(false); setNewEmployeeCredentials(null); }}>
+                Done
+              </Button>
             </DialogFooter>
           </DialogContent>
         </Dialog>

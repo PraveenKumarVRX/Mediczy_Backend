@@ -327,6 +327,80 @@ export async function sendCorporateWelcomeEmail(corporateData, temporaryPassword
   }
 }
 
+export async function sendCorporateEmployeeWelcomeEmail(employeeData, temporaryPassword) {
+  const { email, firstName, lastName, companyName, employeeId, department } = employeeData;
+
+  const msg = {
+    to: email,
+    from: {
+      email: process.env.SENDGRID_FROM_EMAIL || 'noreply@mediqzy.com',
+      name: 'Mediqzy Corporate Health'
+    },
+    subject: `Welcome to ${companyName} Employee Health Portal – Your Login Details`,
+    html: `
+      <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto; padding: 20px; background-color: #f9fafb;">
+        <div style="background-color: #0f766e; padding: 30px; text-align: center; border-radius: 10px 10px 0 0;">
+          <h1 style="color: white; margin: 0; font-size: 26px;">Welcome to Mediqzy Employee Health Portal 🏥</h1>
+        </div>
+        <div style="background-color: white; padding: 40px; border-radius: 0 0 10px 10px; box-shadow: 0 2px 10px rgba(0,0,0,0.1);">
+          <h2 style="color: #0f766e; margin-bottom: 20px;">Dear ${firstName} ${lastName},</h2>
+          <p style="font-size: 16px; line-height: 1.6; color: #374151;">
+            Your employee health account has been created by <strong>${companyName}</strong> on the Mediqzy platform. You can now access healthcare benefits, book appointments, and manage your health records.
+          </p>
+          <div style="background-color: #f0fdfa; border-left: 4px solid #0f766e; padding: 20px; margin: 25px 0; border-radius: 5px;">
+            <h3 style="color: #0f766e; margin-top: 0;">Your Account Details</h3>
+            <ul style="list-style: none; padding: 0; margin: 0;">
+              <li style="padding: 8px 0; border-bottom: 1px solid #ccfbf1;"><strong>Name:</strong> ${firstName} ${lastName}</li>
+              <li style="padding: 8px 0; border-bottom: 1px solid #ccfbf1;"><strong>Email:</strong> ${email}</li>
+              <li style="padding: 8px 0; border-bottom: 1px solid #ccfbf1;"><strong>Employee ID:</strong> ${employeeId || '—'}</li>
+              <li style="padding: 8px 0;"><strong>Department:</strong> ${department || '—'}</li>
+            </ul>
+          </div>
+          <div style="background-color: #fef3c7; border: 2px solid #fbbf24; padding: 20px; margin: 25px 0; border-radius: 8px;">
+            <h3 style="color: #92400e; margin-top: 0;">🔐 Your Login Credentials</h3>
+            <p style="margin: 10px 0; color: #78350f;">
+              <strong>Login Email:</strong> ${email}<br>
+              <strong>Temporary Password:</strong> <code style="background: #fff; padding: 5px 10px; border-radius: 4px; font-size: 14px; color: #dc2626;">${temporaryPassword}</code>
+            </p>
+            <p style="margin: 15px 0 0; color: #92400e; font-size: 14px;">
+              ⚠️ <strong>Please change this password after your first login.</strong>
+            </p>
+          </div>
+          <h3 style="color: #0f766e; margin-top: 30px;">What You Can Do</h3>
+          <ul style="font-size: 15px; line-height: 1.8; color: #374151;">
+            <li>📅 Book doctor appointments</li>
+            <li>🧪 Schedule lab tests at network labs</li>
+            <li>💊 Access pharmacy benefits</li>
+            <li>📋 View your health records</li>
+            <li>🏥 Access corporate health plan</li>
+          </ul>
+          <div style="text-align: center; margin: 35px 0;">
+            <a href="https://app.mediqzy.com/login" style="background-color: #0f766e; color: white; padding: 15px 40px; text-decoration: none; border-radius: 8px; font-size: 16px; font-weight: bold; display: inline-block;">
+              Login to Health Portal →
+            </a>
+          </div>
+          <p style="font-size: 14px; color: #6b7280; margin-top: 30px; padding-top: 20px; border-top: 1px solid #e5e7eb;">
+            Need help? Contact your HR team or reach us at:<br>
+            📧 support@mediqzy.com &nbsp;|&nbsp; 📞 +91-1234567890
+          </p>
+        </div>
+        <div style="text-align: center; padding: 20px; color: #9ca3af; font-size: 12px;">
+          <p>© 2026 Mediqzy Healthcare. All rights reserved.</p>
+        </div>
+      </div>
+    `
+  };
+
+  try {
+    await sgMail.send(msg);
+    console.log(`✅ Welcome email sent to corporate employee: ${email}`);
+    return { success: true, message: 'Welcome email sent successfully' };
+  } catch (error) {
+    console.error('❌ Error sending corporate employee welcome email:', error);
+    throw error;
+  }
+}
+
 /**
  * Send welcome email to team/staff user
  * @param {Object} userData
@@ -412,5 +486,6 @@ export default {
   sendDoctorWelcomeEmail,
   sendHospitalWelcomeEmail,
   sendCorporateWelcomeEmail,
+  sendCorporateEmployeeWelcomeEmail,
   sendTeamWelcomeEmail
 };
