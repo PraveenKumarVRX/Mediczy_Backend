@@ -327,6 +327,8 @@ const TeamCorporateManagement = () => {
   const [availLabs, setAvailLabs] = useState<LabPartner[]>([]);
   const [availHospitals, setAvailHospitals] = useState<HospitalPartner[]>([]);
   const [availClinics, setAvailClinics] = useState<ClinicPartner[]>([]);
+  const [availHospitalSearch, setAvailHospitalSearch] = useState('');
+  const [totalHospitals, setTotalHospitals] = useState(0);
   const [availLoading, setAvailLoading] = useState(false);
   const [selectedAddPartners, setSelectedAddPartners] = useState<{id: number; type: 'lab' | 'hospital' | 'clinic'}[]>([]);
   const [addNetworkSearch, setAddNetworkSearch] = useState('');
@@ -586,24 +588,28 @@ const TeamCorporateManagement = () => {
     }
   };
 
-  const fetchAvailablePartners = async (corporateId: number) => {
+  const fetchAvailablePartners = async (corporateId: number, hospitalSearch = '') => {
     if (!corporateId) return;
     setAvailLoading(true);
     try {
       const token = localStorage.getItem('teamToken');
-      const response = await api.get(`/admin/corporate-network/${corporateId}?available=true`, {
+      const url = hospitalSearch
+        ? `/admin/corporate-network/${corporateId}?available=true&search=${encodeURIComponent(hospitalSearch)}`
+        : `/admin/corporate-network/${corporateId}?available=true`;
+      const response = await api.get(url, {
         headers: token ? { Authorization: `Bearer ${token}` } : undefined
       });
       if (response.data?.success) {
         setAvailLabs(response.data?.labs || []);
         setAvailHospitals(response.data?.hospitals || []);
+        setTotalHospitals(response.data?.totalHospitals ?? (response.data?.hospitals?.length || 0));
         setAvailClinics(response.data?.clinics || []);
       } else {
-        setAvailLabs([]); setAvailHospitals([]); setAvailClinics([]);
+        setAvailLabs([]); setAvailHospitals([]); setAvailClinics([]); setTotalHospitals(0);
       }
     } catch (err) {
       console.error('Failed to fetch available partners:', err);
-      setAvailLabs([]); setAvailHospitals([]); setAvailClinics([]);
+      setAvailLabs([]); setAvailHospitals([]); setAvailClinics([]); setTotalHospitals(0);
     } finally {
       setAvailLoading(false);
     }
@@ -1868,6 +1874,8 @@ const TeamCorporateManagement = () => {
                       setShowNetworkDialog(true);
                       setSelectedAddPartners([]);
                       setAddNetworkSearch('');
+                      setAvailHospitalSearch('');
+                      setTotalHospitals(0);
                       if (selectedCorporate?.id) fetchAvailablePartners(selectedCorporate.id);
                     }}>
                       <Plus className="h-4 w-4 mr-2" />
@@ -2691,7 +2699,7 @@ const TeamCorporateManagement = () => {
             <Tabs defaultValue="labs" className="py-4">
               <TabsList className="grid w-full grid-cols-3">
                 <TabsTrigger value="labs">Labs ({availLabs.length})</TabsTrigger>
-                <TabsTrigger value="hospitals">Hospitals ({availHospitals.length})</TabsTrigger>
+                <TabsTrigger value="hospitals">Hospitals ({totalHospitals > 0 ? totalHospitals : availHospitals.length})</TabsTrigger>
                 <TabsTrigger value="clinics">Clinics ({availClinics.length})</TabsTrigger>
               </TabsList>
 
@@ -2743,17 +2751,31 @@ const TeamCorporateManagement = () => {
 
                   <TabsContent value="hospitals" className="mt-4">
                     <div className="space-y-4">
-                      <Input
-                        placeholder="Search hospitals..."
-                        value={addNetworkSearch}
-                        onChange={(e) => setAddNetworkSearch(e.target.value)}
-                      />
-                      <ScrollArea className="h-[300px]">
+                      <div className="flex gap-2">
+                        <Input
+                          placeholder="Search by name, city or pincode..."
+                          value={availHospitalSearch}
+                          onChange={(e) => setAvailHospitalSearch(e.target.value)}
+                          onKeyDown={(e) => { if (e.key === 'Enter' && selectedCorporate?.id) fetchAvailablePartners(selectedCorporate.id, availHospitalSearch); }}
+                        />
+                        <Button
+                          size="sm"
+                          variant="outline"
+                          onClick={() => selectedCorporate?.id && fetchAvailablePartners(selectedCorporate.id, availHospitalSearch)}
+                        >
+                          <Search className="h-4 w-4" />
+                        </Button>
+                      </div>
+                      {totalHospitals > availHospitals.length && (
+                        <p className="text-xs text-muted-foreground">
+                          Showing {availHospitals.length} of {totalHospitals} hospitals — search by name, city or pincode to narrow results
+                        </p>
+                      )}
+                      <ScrollArea className="h-[280px]">
                         <div className="space-y-2">
-                          {availHospitals.filter(h => h.name?.toLowerCase().includes(addNetworkSearch.toLowerCase())).length === 0 ? (
+                          {availHospitals.length === 0 ? (
                             <p className="text-sm text-muted-foreground text-center py-8">No available hospitals found</p>
                           ) : availHospitals
-                              .filter(h => h.name?.toLowerCase().includes(addNetworkSearch.toLowerCase()))
                               .map(hosp => {
                                 const checked = selectedAddPartners.some(p => p.id === hosp.id && p.type === 'hospital');
                                 return (
@@ -2769,8 +2791,8 @@ const TeamCorporateManagement = () => {
                                       />
                                       <Label htmlFor={`hospital-${hosp.id}`} className="font-medium cursor-pointer">
                                         {hosp.name}
-                                        {hosp.city && hosp.city !== 'N/A' && (
-                                          <span className="text-xs text-muted-foreground ml-2">{hosp.city}</span>
+                                        {(hosp.city && hosp.city !== 'N/A') && (
+                                          <span className="text-xs text-muted-foreground ml-2">{hosp.city}{hosp.pincode ? ` – ${hosp.pincode}` : ''}</span>
                                         )}
                                       </Label>
                                     </div>

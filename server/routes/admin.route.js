@@ -2620,6 +2620,8 @@ router.get('/corporate-network/:corporateId', authUser, requireRole(['admin', 't
   try {
     const corporateId = parseInt(req.params.corporateId, 10);
     const available = req.query.available === 'true'; // true = return UNassigned partners
+    const searchTerm = (req.query.search || '').trim(); // optional search filter
+    const HOSPITAL_LIMIT = 500; // cap for large tables
 
     const assignedFilter = available
       ? `WHERE l.id NOT IN (
@@ -2635,6 +2637,7 @@ router.get('/corporate-network/:corporateId', authUser, requireRole(['admin', 't
       ? `WHERE h.id NOT IN (
            SELECT partner_id FROM corporate_network_assignments
            WHERE corporate_id = :corporateId AND partner_type = 'hospital'
+           AND partner_id IS NOT NULL
          )`
       : `WHERE EXISTS (
            SELECT 1 FROM corporate_network_assignments
@@ -2658,12 +2661,38 @@ router.get('/corporate-network/:corporateId', authUser, requireRole(['admin', 't
       ORDER BY l.name ASC
     `, { replacements: { corporateId }, type: postgresSequelize.QueryTypes.SELECT });
 
-    const hospitals = await postgresSequelize.query(`
-      SELECT h.id, h.hospital_name, h.city, h.pincode, h.address, h.specializations, h.total_beds, h.status, h.metadata
-      FROM hospitals h
-      ${assignedFilterH}
-      ORDER BY h.hospital_name ASC
-    `, { replacements: { corporateId }, type: postgresSequelize.QueryTypes.SELECT });
+    // Build optional hospital search clause (applied after the assignedFilter WHERE)
+    const hospitalSearchClause = searchTerm
+      ? `AND (LOWER(h.hospital_name) LIKE :hSearch OR LOWER(h.city) LIKE :hSearch OR h.pincode LIKE :hPinSearch)`
+      : '';
+
+    const [hospitals, [{ total_hospitals }]] = await Promise.all([
+      postgresSequelize.query(`
+        SELECT h.id, h.hospital_name, h.city, h.pincode, h.address, h.specializations, h.total_beds, h.status
+        FROM hospitals h
+        ${assignedFilterH}
+        ${hospitalSearchClause}
+        ORDER BY h.hospital_name ASC
+        LIMIT ${HOSPITAL_LIMIT}
+      `, {
+        replacements: {
+          corporateId,
+          hSearch: `%${searchTerm.toLowerCase()}%`,
+          hPinSearch: `${searchTerm}%`
+        },
+        type: postgresSequelize.QueryTypes.SELECT
+      }),
+      postgresSequelize.query(`
+        SELECT COUNT(*) AS total_hospitals FROM hospitals h ${assignedFilterH} ${hospitalSearchClause}
+      `, {
+        replacements: {
+          corporateId,
+          hSearch: `%${searchTerm.toLowerCase()}%`,
+          hPinSearch: `${searchTerm}%`
+        },
+        type: postgresSequelize.QueryTypes.SELECT
+      })
+    ]);
 
     const clinics = await postgresSequelize.query(`
       SELECT oc.id, oc.name, oc.type, oc.location, oc.capacity, oc.status
@@ -2696,16 +2725,15 @@ router.get('/corporate-network/:corporateId', authUser, requireRole(['admin', 't
       const specializations = typeof hospital.specializations === 'string'
         ? JSON.parse(hospital.specializations)
         : hospital.specializations || [];
-      const metadata = typeof hospital.metadata === 'string' ? JSON.parse(hospital.metadata) : hospital.metadata;
 
       return {
         id: hospital.id,
         name: hospital.hospital_name,
-        city: hospital.city || metadata?.city || 'N/A',
+        city: hospital.city || 'N/A',
         address: hospital.address || null,
         pincode: hospital.pincode || null,
-        specialities: Array.isArray(specializations) ? specializations.join(', ') : specializations,
-        beds: hospital.total_beds || metadata?.beds || 0,
+        specialities: Array.isArray(specializations) ? specializations.join(', ') : (specializations || ''),
+        beds: hospital.total_beds || 0,
         status: hospital.status || 'active'
       };
     });
@@ -2726,6 +2754,8 @@ router.get('/corporate-network/:corporateId', authUser, requireRole(['admin', 't
       success: true,
       labs: normalizedLabs,
       hospitals: normalizedHospitals,
+      totalHospitals: parseInt(total_hospitals || 0, 10),
+      hospitalLimit: HOSPITAL_LIMIT,
       clinics: normalizedClinics
     });
   } catch (error) {
