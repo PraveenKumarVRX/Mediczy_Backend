@@ -115,6 +115,7 @@ const teamSidebarItems: SidebarItem[] = [
   { icon: FlaskConical, label: "Lab Management", path: "/team/lab-management", category: "Management" },
   { icon: Calendar, label: "Appointments", path: "/team/appointments", category: "Operations" },
   { icon: MessageSquare, label: "Chat Dashboard", path: "/admin/chat", category: "Support" },
+  { icon: Ticket, label: "Support Tickets", path: "/team/support-tickets", category: "Support" },
   { icon: Pill, label: "Pharmacies", path: "/team/pharmacy-management", category: "Management" },
   { icon: Heart, label: "Health Plans", path: "/team/health-plans", category: "Business" },
   { icon: Ticket, label: "Coupons", path: "/admin/coupons", category: "Finance" },
