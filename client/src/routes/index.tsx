@@ -81,6 +81,7 @@ const VitalReports          = lazy(() => import("@/pages/patient/VitalReports"))
 const UploadedDocuments     = lazy(() => import("@/pages/patient/UploadedDocuments"));
 const NetworkHospitals      = lazy(() => import("@/pages/patient/NetworkHospitals"));
 const NetworkClinics        = lazy(() => import("@/pages/patient/NetworkClinics"));
+const TeamClinicList        = lazy(() => import("@/pages/team/TeamClinicList"));
 const BuyInsurance          = lazy(() => import("@/pages/patient/BuyInsurance"));
 const ClaimsManagement      = lazy(() => import("@/pages/patient/ClaimsManagement"));
 const AIHealthAnalysis      = lazy(() => import("@/pages/patient/AIHealthAnalysis"));
@@ -663,7 +664,7 @@ const AppRoutes = () => {
         <Route path="/team/corporate-management"     element={<TeamCorporateManagement />} />
         <Route path="/team/corporate-health-booking" element={<CorporateHealthBooking />} />
         <Route path="/team/hospital-management"      element={<TeamHospitalManagementPage />} />
-        <Route path="/team/clinic-management"        element={<TeamClinicManagementPage />} />
+        <Route path="/team/clinic-management"        element={<MainLayout><TeamClinicList /></MainLayout>} />
         <Route path="/team/lab-management"           element={<TeamLabManagementPage />} />
         <Route path="/team/pharmacy-management"      element={<TeamPharmacyManagementPage />} />
         <Route path="/team/chat-analytics"           element={<TeamChatAnalyticsPage />} />
