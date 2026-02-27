@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { Mail, Star, Trash2, Archive, Clock, AlertCircle, CheckCircle, Settings, Send, RefreshCw, X, Reply } from 'lucide-react';
+import { Mail, Star, Trash2, Archive, Clock, AlertCircle, CheckCircle, Settings, Send, RefreshCw, X, Reply, Ticket as TicketIcon } from 'lucide-react';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
@@ -31,6 +31,21 @@ interface InboxStats {
   bySentiment: Record<string, number>;
 }
 
+// Map AI email intent → ticket category
+const intentToCategory = (intent: string): string => {
+  const map: Record<string, string> = {
+    appointment_request: 'doctor-consultation',
+    appointment_cancel: 'appointment-cancellation',
+    appointment_reschedule: 'appointment-reschedule',
+    test_result: 'health-report',
+    prescription: 'prescription',
+    billing: 'billing',
+    feedback: 'complaint',
+    patient_query: 'other',
+  };
+  return map[intent] || 'other';
+};
+
 const EmailInbox: React.FC = () => {
   const [emails, setEmails] = useState<Email[]>([]);
   const [stats, setStats] = useState<InboxStats | null>(null);
@@ -50,6 +65,61 @@ const EmailInbox: React.FC = () => {
     subject: '',
     htmlContent: ''
   });
+
+  // ── Create-Ticket state ────────────────────────────────────────────
+  const [showTicketModal, setShowTicketModal] = useState(false);
+  const [ticketLoading, setTicketLoading] = useState(false);
+  const [ticketSuccess, setTicketSuccess] = useState('');
+  const [ticketError, setTicketError] = useState('');
+  const [ticketForm, setTicketForm] = useState({
+    title: '',
+    description: '',
+    category: 'other',
+    priority: 'medium',
+    requesterName: '',
+    requesterEmail: '',
+  });
+
+  const openTicketModal = (email: Email) => {
+    setTicketForm({
+      title: email.subject || 'Email enquiry',
+      description: email.aiSummary || email.body?.slice(0, 500) || '',
+      category: intentToCategory(email.aiIntent),
+      priority: email.priority === 'urgent' ? 'critical' : email.priority === 'high' ? 'high' : email.priority === 'normal' ? 'medium' : 'low',
+      requesterName: email.fromName || email.from,
+      requesterEmail: email.from,
+    });
+    setTicketSuccess('');
+    setTicketError('');
+    setShowTicketModal(true);
+  };
+
+  const submitTicket = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setTicketLoading(true);
+    setTicketError('');
+    try {
+      const res = await api.post('/tickets', {
+        title: ticketForm.title,
+        description: ticketForm.description,
+        category: ticketForm.category,
+        priority: ticketForm.priority,
+        source: 'email',
+        requester: {
+          name: ticketForm.requesterName,
+          email: ticketForm.requesterEmail,
+          role: 'Customer',
+        },
+        tags: ['email', 'team-created'],
+      });
+      const t = res.data?.ticket || res.data;
+      setTicketSuccess(`Ticket ${t?.ticketId || t?.ticketNumber || ''} created successfully!`);
+    } catch (err: any) {
+      setTicketError(err?.response?.data?.message || 'Failed to create ticket');
+    } finally {
+      setTicketLoading(false);
+    }
+  };
 
   useEffect(() => {
     fetchInbox();
@@ -452,6 +522,14 @@ const EmailInbox: React.FC = () => {
               <CardTitle className="text-sm flex items-center justify-between">
                 <span>Email Details</span>
                 <div className="flex gap-2">
+                  <button
+                    onClick={() => openTicketModal(selectedEmail)}
+                    title="Create Ticket from this email"
+                    className="flex items-center gap-1 px-2 py-1 text-xs bg-orange-100 hover:bg-orange-200 text-orange-700 rounded font-medium transition-colors"
+                  >
+                    <TicketIcon className="w-3.5 h-3.5" />
+                    Raise Ticket
+                  </button>
                   <button onClick={() => startReply(selectedEmail)} title="Reply">
                     <Reply className="w-4 h-4 text-blue-500" />
                   </button>
@@ -555,6 +633,122 @@ const EmailInbox: React.FC = () => {
         )}
       </div>
     </div>
+
+    {/* Create Ticket Modal */}
+    {showTicketModal && (
+      <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
+        <div className="bg-background border border-border rounded-xl w-full max-w-lg shadow-2xl">
+          <div className="flex items-center justify-between px-5 py-4 border-b border-border">
+            <div className="flex items-center gap-2 font-semibold text-foreground">
+              <TicketIcon className="w-4 h-4 text-orange-500" />
+              Create Ticket from Email
+            </div>
+            <button onClick={() => setShowTicketModal(false)} className="text-muted-foreground hover:text-foreground">
+              <X className="w-5 h-5" />
+            </button>
+          </div>
+          {ticketSuccess ? (
+            <div className="p-6 text-center">
+              <CheckCircle className="w-12 h-12 text-green-500 mx-auto mb-3" />
+              <p className="text-green-700 font-semibold">{ticketSuccess}</p>
+              <p className="text-sm text-muted-foreground mt-1">The ticket has been assigned to the team.</p>
+              <button
+                onClick={() => setShowTicketModal(false)}
+                className="mt-4 px-4 py-2 bg-green-600 text-white rounded-lg text-sm hover:bg-green-700"
+              >
+                Close
+              </button>
+            </div>
+          ) : (
+            <form onSubmit={submitTicket} className="p-5 space-y-4">
+              <div>
+                <label className="block text-xs font-semibold text-muted-foreground mb-1">Title</label>
+                <input
+                  type="text" required value={ticketForm.title}
+                  onChange={e => setTicketForm({ ...ticketForm, title: e.target.value })}
+                  className="w-full px-3 py-2 border border-border bg-background text-foreground rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-orange-400"
+                />
+              </div>
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label className="block text-xs font-semibold text-muted-foreground mb-1">Category</label>
+                  <select
+                    value={ticketForm.category}
+                    onChange={e => setTicketForm({ ...ticketForm, category: e.target.value })}
+                    className="w-full px-3 py-2 border border-border bg-background text-foreground rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-orange-400"
+                  >
+                    <option value="appointment-cancellation">Appointment Cancellation</option>
+                    <option value="appointment-reschedule">Reschedule</option>
+                    <option value="doctor-consultation">Doctor Consultation</option>
+                    <option value="health-checkup">Health Checkup</option>
+                    <option value="prescription">Prescription</option>
+                    <option value="health-report">Health Report</option>
+                    <option value="billing">Billing</option>
+                    <option value="complaint">Complaint</option>
+                    <option value="other">Other</option>
+                  </select>
+                </div>
+                <div>
+                  <label className="block text-xs font-semibold text-muted-foreground mb-1">Priority</label>
+                  <select
+                    value={ticketForm.priority}
+                    onChange={e => setTicketForm({ ...ticketForm, priority: e.target.value })}
+                    className="w-full px-3 py-2 border border-border bg-background text-foreground rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-orange-400"
+                  >
+                    <option value="low">Low</option>
+                    <option value="medium">Medium</option>
+                    <option value="high">High</option>
+                    <option value="critical">Critical</option>
+                  </select>
+                </div>
+              </div>
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label className="block text-xs font-semibold text-muted-foreground mb-1">Requester Name</label>
+                  <input
+                    type="text" required value={ticketForm.requesterName}
+                    onChange={e => setTicketForm({ ...ticketForm, requesterName: e.target.value })}
+                    className="w-full px-3 py-2 border border-border bg-background text-foreground rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-orange-400"
+                  />
+                </div>
+                <div>
+                  <label className="block text-xs font-semibold text-muted-foreground mb-1">Requester Email</label>
+                  <input
+                    type="email" required value={ticketForm.requesterEmail}
+                    onChange={e => setTicketForm({ ...ticketForm, requesterEmail: e.target.value })}
+                    className="w-full px-3 py-2 border border-border bg-background text-foreground rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-orange-400"
+                  />
+                </div>
+              </div>
+              <div>
+                <label className="block text-xs font-semibold text-muted-foreground mb-1">Description</label>
+                <textarea
+                  rows={4} value={ticketForm.description}
+                  onChange={e => setTicketForm({ ...ticketForm, description: e.target.value })}
+                  className="w-full px-3 py-2 border border-border bg-background text-foreground rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-orange-400 resize-none"
+                />
+              </div>
+              {ticketError && (
+                <p className="text-sm text-red-600 bg-red-50 border border-red-200 rounded px-3 py-2">{ticketError}</p>
+              )}
+              <div className="flex gap-2 justify-end pt-2 border-t border-border">
+                <button type="button" onClick={() => setShowTicketModal(false)}
+                  className="px-4 py-2 text-sm border border-border rounded-lg hover:bg-muted text-foreground"
+                >
+                  Cancel
+                </button>
+                <button type="submit" disabled={ticketLoading}
+                  className="px-4 py-2 text-sm bg-orange-500 hover:bg-orange-600 text-white rounded-lg font-medium disabled:opacity-60 flex items-center gap-2"
+                >
+                  <TicketIcon className="w-3.5 h-3.5" />
+                  {ticketLoading ? 'Creating...' : 'Create Ticket'}
+                </button>
+              </div>
+            </form>
+          )}
+        </div>
+      </div>
+    )}
 
     {/* Send Email Modal */}
     {showSendModal && (
