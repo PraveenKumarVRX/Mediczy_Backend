@@ -2645,13 +2645,14 @@ router.get('/corporate-network/:corporateId', authUser, requireRole(['admin', 't
          )`;
 
     const assignedFilterC = available
-      ? `WHERE oc.id NOT IN (
+      ? `WHERE pc.id NOT IN (
            SELECT partner_id FROM corporate_network_assignments
            WHERE corporate_id = :corporateId AND partner_type = 'clinic'
+           AND partner_id IS NOT NULL
          )`
       : `WHERE EXISTS (
            SELECT 1 FROM corporate_network_assignments
-           WHERE corporate_id = :corporateId AND partner_type = 'clinic' AND partner_id = oc.id
+           WHERE corporate_id = :corporateId AND partner_type = 'clinic' AND partner_id = pc.id
          )`;
 
     const labs = await postgresSequelize.query(`
@@ -2694,12 +2695,25 @@ router.get('/corporate-network/:corporateId', authUser, requireRole(['admin', 't
       })
     ]);
 
+    // Build optional clinic search clause
+    const clinicSearchClause = searchTerm
+      ? `AND (LOWER(pc.name) LIKE :cSearch OR LOWER(pc.location->>'city') LIKE :cSearch OR pc.location->>'pincode' LIKE :cPinSearch)`
+      : '';
+
     const clinics = await postgresSequelize.query(`
-      SELECT oc.id, oc.name, oc.type, oc.location, oc.capacity, oc.status
-      FROM outreach_clinics oc
+      SELECT pc.id, pc.name, pc.type, pc.specialty, pc.location, pc.status
+      FROM provider_clinics pc
       ${assignedFilterC}
-      ORDER BY oc.name ASC
-    `, { replacements: { corporateId }, type: postgresSequelize.QueryTypes.SELECT });
+      ${clinicSearchClause}
+      ORDER BY pc.name ASC
+    `, {
+      replacements: {
+        corporateId,
+        cSearch: `%${searchTerm.toLowerCase()}%`,
+        cPinSearch: `${searchTerm}%`
+      },
+      type: postgresSequelize.QueryTypes.SELECT
+    });
 
     const normalizedLabs = labs.map((lab) => {
       const address = typeof lab.address === 'string' ? JSON.parse(lab.address) : lab.address;
@@ -2739,13 +2753,15 @@ router.get('/corporate-network/:corporateId', authUser, requireRole(['admin', 't
     });
 
     const normalizedClinics = clinics.map((clinic) => {
-      const location = typeof clinic.location === 'string' ? JSON.parse(clinic.location) : clinic.location;
+      const location = typeof clinic.location === 'string' ? JSON.parse(clinic.location) : (clinic.location || {});
       return {
         id: clinic.id,
         name: clinic.name,
-        city: location?.city || location?.town || 'N/A',
-        type: clinic.type || 'Clinic',
-        doctors: clinic.capacity || 0,
+        city: location?.city || 'N/A',
+        address: location?.address || null,
+        pincode: location?.pincode || null,
+        type: clinic.type || clinic.specialty || 'Clinic',
+        doctors: 0,
         status: clinic.status || 'active'
       };
     });

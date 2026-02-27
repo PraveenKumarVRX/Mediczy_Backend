@@ -109,6 +109,8 @@ interface ClinicPartner {
   id: number;
   name: string;
   city: string;
+  address?: string | null;
+  pincode?: string | null;
   type: string;
   doctors: number;
   status: string;
@@ -2137,6 +2139,8 @@ const TeamCorporateManagement = () => {
                           !clinicSearch ||
                           c.name?.toLowerCase().includes(clinicSearch.toLowerCase()) ||
                           c.city?.toLowerCase().includes(clinicSearch.toLowerCase()) ||
+                          c.pincode?.toLowerCase().includes(clinicSearch.toLowerCase()) ||
+                          c.address?.toLowerCase().includes(clinicSearch.toLowerCase()) ||
                           c.type?.toLowerCase().includes(clinicSearch.toLowerCase())
                         );
                         const allFilteredSelected = filteredClinics.length > 0 && filteredClinics.every(c => selectedNetworkPartnerIds.includes(c.id));
@@ -2147,7 +2151,7 @@ const TeamCorporateManagement = () => {
                                 <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
                                 <Input
                                   className="pl-9 h-8 text-sm"
-                                  placeholder="Search clinics by name, city or type..."
+                                  placeholder="Search clinics by name, city, address, pincode or type..."
                                   value={clinicSearch}
                                   onChange={e => setClinicSearch(e.target.value)}
                                 />
@@ -2181,7 +2185,7 @@ const TeamCorporateManagement = () => {
                                     />
                                   </TableHead>
                                   <TableHead>Clinic Name</TableHead>
-                                  <TableHead>City</TableHead>
+                                  <TableHead>Location</TableHead>
                                   <TableHead>Type</TableHead>
                                   <TableHead>Doctors</TableHead>
                                   <TableHead>Status</TableHead>
@@ -2207,8 +2211,14 @@ const TeamCorporateManagement = () => {
                                           )}
                                         />
                                       </TableCell>
-                                      <TableCell className="font-medium">{clinic.name}</TableCell>
-                                      <TableCell>{clinic.city}</TableCell>
+                                      <TableCell className="font-medium">
+                                        <div>{clinic.name}</div>
+                                        {clinic.address && <div className="text-xs text-muted-foreground mt-0.5">{clinic.address}</div>}
+                                      </TableCell>
+                                      <TableCell>
+                                        <div>{clinic.city}</div>
+                                        {clinic.pincode && <div className="text-xs text-muted-foreground mt-0.5">{clinic.pincode}</div>}
+                                      </TableCell>
                                       <TableCell>{clinic.type || 'Clinic'}</TableCell>
                                       <TableCell>{clinic.doctors || 0}</TableCell>
                                       <TableCell>{getStatusBadge(clinic.status || 'Active')}</TableCell>
@@ -2833,8 +2843,8 @@ const TeamCorporateManagement = () => {
                                       />
                                       <Label htmlFor={`clinic-${clinic.id}`} className="font-medium cursor-pointer">
                                         {clinic.name}
-                                        {clinic.city && clinic.city !== 'N/A' && (
-                                          <span className="text-xs text-muted-foreground ml-2">{clinic.city}</span>
+                                        {(clinic.city && clinic.city !== 'N/A') && (
+                                          <span className="text-xs text-muted-foreground ml-2">{clinic.city}{clinic.pincode ? ` – ${clinic.pincode}` : ''}</span>
                                         )}
                                       </Label>
                                     </div>
