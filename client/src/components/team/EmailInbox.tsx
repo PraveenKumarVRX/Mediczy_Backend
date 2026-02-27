@@ -12,6 +12,7 @@ interface Email {
   fromName: string;
   subject: string;
   body: string;
+  htmlBody?: string;
   isRead: boolean;
   isStarred: boolean;
   priority: 'low' | 'normal' | 'high' | 'urgent';
@@ -45,6 +46,14 @@ const intentToCategory = (intent: string): string => {
   };
   return map[intent] || 'other';
 };
+
+// Parse RFC 2822 "Name" <email@domain.com> → { name, email }
+function parseFromField(raw: string): { name: string; email: string } {
+  const match = raw.match(/^.*?"?([^"<>]+)"?\s*<([^>]+)>/);
+  if (match) return { name: match[1].trim(), email: match[2].trim() };
+  // plain email
+  return { name: raw.trim(), email: raw.trim() };
+}
 
 const EmailInbox: React.FC = () => {
   const [emails, setEmails] = useState<Email[]>([]);
@@ -81,13 +90,17 @@ const EmailInbox: React.FC = () => {
   });
 
   const openTicketModal = (email: Email) => {
+    const sender = parseFromField(email.from);
+    // Best description: aiSummary > body > htmlBody stripped > subject fallback
+    const rawBody = email.body || email.htmlBody?.replace(/<[^>]+>/g, ' ').replace(/\s+/g, ' ').trim() || '';
+    const description = email.aiSummary || rawBody.slice(0, 500) || `Email from ${sender.email} regarding: ${email.subject}`;
     setTicketForm({
       title: email.subject || 'Email enquiry',
-      description: email.aiSummary || email.body?.slice(0, 500) || '',
+      description,
       category: intentToCategory(email.aiIntent),
       priority: email.priority === 'urgent' ? 'critical' : email.priority === 'high' ? 'high' : email.priority === 'normal' ? 'medium' : 'low',
-      requesterName: email.fromName || email.from,
-      requesterEmail: email.from,
+      requesterName: email.fromName || sender.name,
+      requesterEmail: sender.email,
     });
     setTicketSuccess('');
     setTicketError('');

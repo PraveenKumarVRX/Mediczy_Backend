@@ -272,16 +272,19 @@ router.post('/', auth, async (req, res) => {
     } = req.body;
 
     // Validate required fields
-    if (!title || !description || !category || !requester) {
+    if (!title || !category || !requester) {
       return res.status(400).json({ 
-        message: 'Missing required fields: title, description, category, requester' 
+        message: 'Missing required fields: title, category, requester' 
       });
     }
+
+    // Default description to title if not provided
+    const ticketDescription = description || title;
 
     // Create ticket object
     const ticketData = {
       title,
-      description,
+      description: ticketDescription,
       priority,
       category,
       requester: {
