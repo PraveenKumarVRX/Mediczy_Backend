@@ -245,7 +245,8 @@ const USER_TYPE_PERMISSIONS = {
       '/api/hospital/dashboard',
       '/api/hospital/patients',
       '/api/hospital/appointments',
-      '/api/hospital/departments'
+      '/api/hospital/departments',
+      '/api/insurance/admin'
     ],
     tokenField: 'hospitalId'
   },
