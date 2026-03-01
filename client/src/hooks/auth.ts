@@ -112,21 +112,53 @@ export const getUserType = () => {
 
 // Function to get stored token
 export const getToken = () => {
+  const normalizeToken = (raw: string | null): string | null => {
+    if (!raw) return null;
+    const trimmed = String(raw).trim();
+    if (!trimmed) return null;
+
+    const lower = trimmed.toLowerCase();
+    if (
+      lower === 'undefined' ||
+      lower === 'null' ||
+      lower === 'nan' ||
+      lower === 'false' ||
+      lower === '[object object]'
+    ) {
+      return null;
+    }
+
+    const withoutBearer = trimmed.replace(/^bearer\s+/i, '').trim();
+    const jwtParts = withoutBearer.split('.');
+    if (jwtParts.length !== 3) return null;
+    if (jwtParts.some((part) => !part || part.length < 2)) return null;
+
+    return withoutBearer;
+  };
+
   const userType = getUserType();
   if (userType) {
     const preferredKey = ROLE_TOKEN_KEYS[userType];
     if (preferredKey) {
-      const preferredToken = localStorage.getItem(preferredKey);
+      const preferredRawToken = localStorage.getItem(preferredKey);
+      const preferredToken = normalizeToken(preferredRawToken);
       if (preferredToken) {
         return preferredToken;
+      }
+      if (preferredRawToken) {
+        localStorage.removeItem(preferredKey);
       }
     }
   }
 
   for (const key of ALL_TOKEN_KEYS) {
-    const token = localStorage.getItem(key);
+    const rawToken = localStorage.getItem(key);
+    const token = normalizeToken(rawToken);
     if (token) {
       return token;
+    }
+    if (rawToken) {
+      localStorage.removeItem(key);
     }
   }
 

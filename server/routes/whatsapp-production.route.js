@@ -445,6 +445,7 @@ router.get('/templates/status', (req, res) => {
  */
 router.get('/conversations', async (req, res) => {
   try {
+    const { messages } = await import('../utils/chatStorage.js');
     const result = await sharedPool.query(`
       SELECT
         session_id,
@@ -457,7 +458,7 @@ router.get('/conversations', async (req, res) => {
       ORDER BY last_interaction_at DESC NULLS LAST
     `);
 
-    const conversations = result.rows.map(row => {
+    const dbConversations = result.rows.map(row => {
       const phoneNumber = row.session_id.replace(/^whatsapp:/i, '').trim();
       const msgs = Array.isArray(row.messages) ? row.messages : [];
       const lastMsg = msgs.length > 0 ? msgs[msgs.length - 1] : null;
@@ -475,6 +476,53 @@ router.get('/conversations', async (req, res) => {
       };
     });
 
+    const roomMessages = await messages.get(WHATSAPP_ROOM_ID) || [];
+    const redisConversationMap = new Map();
+    for (const message of roomMessages) {
+      const phoneNumber = String(message?.phoneNumber || '').trim();
+      if (!phoneNumber) continue;
+      const current = redisConversationMap.get(phoneNumber);
+      const timestamp = message?.timestamp || new Date().toISOString();
+      if (!current) {
+        redisConversationMap.set(phoneNumber, {
+          id: phoneNumber,
+          phoneNumber,
+          customerName: String(message?.userContext?.patientName || message?.userName || phoneNumber).replace(/^📱\s*/u, ''),
+          lastMessage: message?.message || '',
+          lastActivity: timestamp,
+          lastMessageTime: timestamp,
+          messageCount: 1,
+          unreadCount: 0,
+          status: 'active',
+          source: 'redis_whatsapp_room'
+        });
+        continue;
+      }
+
+      current.messageCount += 1;
+      const currentTime = new Date(current.lastActivity || 0).getTime();
+      const newTime = new Date(timestamp).getTime();
+      if (Number.isNaN(currentTime) || newTime >= currentTime) {
+        current.lastMessage = message?.message || current.lastMessage;
+        current.lastActivity = timestamp;
+        current.lastMessageTime = timestamp;
+      }
+    }
+
+    const mergedMap = new Map();
+    for (const conv of dbConversations) mergedMap.set(conv.phoneNumber, conv);
+    for (const [phoneNumber, conv] of redisConversationMap.entries()) {
+      if (!mergedMap.has(phoneNumber)) {
+        mergedMap.set(phoneNumber, conv);
+      }
+    }
+
+    const conversations = Array.from(mergedMap.values()).sort((a, b) => {
+      const aTime = new Date(a.lastActivity || a.lastMessageTime || 0).getTime();
+      const bTime = new Date(b.lastActivity || b.lastMessageTime || 0).getTime();
+      return bTime - aTime;
+    });
+
     res.json({ success: true, conversations });
   } catch (error) {
     console.error('Error fetching WhatsApp conversations:', error);
@@ -490,6 +538,7 @@ router.get('/conversations/:phoneNumber/messages', async (req, res) => {
   try {
     const { phoneNumber } = req.params;
     const cleanPhone = decodeURIComponent(phoneNumber).replace(/^whatsapp:/i, '').trim();
+    const cleanPhoneWithPlus = cleanPhone.startsWith('+') ? cleanPhone : `+${cleanPhone}`;
     // Try both with and without leading '+'
     const sessionIds = [
       `whatsapp:${cleanPhone}`,
@@ -507,9 +556,9 @@ router.get('/conversations/:phoneNumber/messages', async (req, res) => {
 
     const rawMessages = (row && Array.isArray(row.messages)) ? row.messages : [];
     const ourNumber = process.env.TWILIO_WHATSAPP_NUMBER || '+14155238886';
-    const dbPhone = cleanPhone.startsWith('+') ? cleanPhone : `+${cleanPhone}`;
+    const dbPhone = cleanPhoneWithPlus;
 
-    const normalized = rawMessages.map((msg, idx) => ({
+    const dbNormalized = rawMessages.map((msg, idx) => ({
       id: msg.id || `msg_${idx}`,
       body: msg.content || msg.message || '',
       from: msg.role === 'user' ? dbPhone : ourNumber,
@@ -518,6 +567,31 @@ router.get('/conversations/:phoneNumber/messages', async (req, res) => {
       status: 'delivered',
       timestamp: msg.createdAt || msg.timestamp || new Date().toISOString()
     }));
+
+    const { messages } = await import('../utils/chatStorage.js');
+    const roomMessages = await messages.get(WHATSAPP_ROOM_ID) || [];
+    const redisNormalized = roomMessages
+      .filter((msg) => String(msg?.phoneNumber || '').trim() === cleanPhoneWithPlus)
+      .map((msg, idx) => ({
+        id: msg?.id || `redis_msg_${idx}`,
+        body: msg?.message || '',
+        from: dbPhone,
+        to: ourNumber,
+        direction: 'inbound',
+        status: 'delivered',
+        timestamp: msg?.timestamp || new Date().toISOString()
+      }));
+
+    const mergedById = new Map();
+    for (const msg of [...dbNormalized, ...redisNormalized]) {
+      mergedById.set(msg.id, msg);
+    }
+
+    const normalized = Array.from(mergedById.values()).sort((a, b) => {
+      const aTime = new Date(a.timestamp || 0).getTime();
+      const bTime = new Date(b.timestamp || 0).getTime();
+      return aTime - bTime;
+    });
 
     res.json({ success: true, messages: normalized });
   } catch (error) {
@@ -1043,8 +1117,6 @@ router.post('/webhook', (req, res, next) => {
           phoneNumber,
           teamMember: teamMemberRequested
         });
-        // Fire-and-forget API send; reply is also in TwiML so it reaches user even if API fails
-        whatsappProductionService.sendSessionMessage({ to: phoneNumber, body: teamAckMsg }).catch(() => {});
         return res.type('text/xml').status(200).send(twimlReply(teamAckMsg));
       } catch (error) {
         logger.error('Error forwarding to RocketChat:', error.message);
@@ -1110,7 +1182,6 @@ n8nResult.success
     ? `🔄 I'm connecting you with our checkup booking team. They'll call you within 15 minutes to schedule your lab visit.`
     : `🔄 I'm connecting you with our booking team. They'll call you within 15 minutes to schedule your appointment.`)
 }\n\nIs there anything else I can help you with? 💙`;
-        whatsappProductionService.sendSessionMessage({ to: phoneNumber, body: apptBody }).catch(() => {});
         return res.type('text/xml').status(200).send(twimlReply(apptBody));
       } catch (error) {
         logger.error('Appointment booking error:', error.message);
@@ -1140,9 +1211,8 @@ n8nResult.success
             logger.info(`[autoTicket/WA] Ticket raised for ${serviceIntent.label} | ${phoneNumber}`);
           }).catch(e => logger.error('[autoTicket/WA]', e.message));
 
-          // Acknowledge customer on WhatsApp (TwiML inline + background API call)
+          // Acknowledge customer on WhatsApp via TwiML (single reply)
           const ticketAckMsg = `🎫 ${serviceIntent.replyHint}\n\n_A support ticket has been created. Our team will be in touch shortly._`;
-          whatsappProductionService.sendSessionMessage({ to: phoneNumber, body: ticketAckMsg }).catch(() => {});
           return res.type('text/xml').status(200).send(twimlReply(ticketAckMsg));
         }
       } catch (atErr) {
@@ -1177,7 +1247,6 @@ n8nResult.success
           
           logger.info('✅ Using STATIC greeting response', { response: greetingResponse });
           const greetMsg = sanitizeReply(greetingResponse);
-          whatsappProductionService.sendSessionMessage({ to: phoneNumber, body: greetMsg }).catch(() => {});
           responseSent = true;
           return res.type('text/xml').status(200).send(twimlReply(greetMsg));
         }
@@ -1192,7 +1261,6 @@ n8nResult.success
             : "You're welcome. Take care and feel free to message me anytime you need help. 💙";
           logger.info('✅ Using STATIC thanks+goodbye response', { response: combinedResponse });
           const thanksGoodbyeMsg = sanitizeReply(combinedResponse);
-          whatsappProductionService.sendSessionMessage({ to: phoneNumber, body: thanksGoodbyeMsg }).catch(() => {});
           responseSent = true;
           return res.type('text/xml').status(200).send(twimlReply(thanksGoodbyeMsg));
         }
@@ -1201,7 +1269,6 @@ n8nResult.success
           const thanksResponse = "You're welcome! Happy to help. Is there anything else I can assist you with?";
           logger.info('✅ Using STATIC thanks response', { response: thanksResponse });
           const thanksMsg = sanitizeReply(thanksResponse);
-          whatsappProductionService.sendSessionMessage({ to: phoneNumber, body: thanksMsg }).catch(() => {});
           responseSent = true;
           return res.type('text/xml').status(200).send(twimlReply(thanksMsg));
         }
@@ -1213,7 +1280,6 @@ n8nResult.success
             : "Take care! Feel free to reach out anytime you need health assistance. Stay healthy! 💙";
           logger.info('✅ Using STATIC goodbye response', { response: goodbyeResponse });
           const goodbyeMsg = sanitizeReply(goodbyeResponse);
-          whatsappProductionService.sendSessionMessage({ to: phoneNumber, body: goodbyeMsg }).catch(() => {});
           responseSent = true;
           return res.type('text/xml').status(200).send(twimlReply(goodbyeMsg));
         }
@@ -1282,7 +1348,6 @@ n8nResult.success
         
         if (!aiResponse) {
           const timeoutMsg = sanitizeReply("I couldn't fetch a full response just now. Please retry in a few seconds, or tell me if you want help with appointment booking, health checkup, prescription, or reports.");
-          whatsappProductionService.sendSessionMessage({ to: phoneNumber, body: timeoutMsg }).catch(() => {});
           responseSent = true;
           return res.type('text/xml').status(200).send(twimlReply(timeoutMsg));
         }

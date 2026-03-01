@@ -75,6 +75,7 @@ import insuranceRouter from './routes/insurance.route.js';
 import insurancePolicyRouter from './routes/insurance-policy.route.js';
 import insuranceCompanyRouter from './routes/insurance-company.route.js';
 import insuranceBrokerRouter from './routes/insurance-broker.route.js';
+import brokerIntegrationRouter from './routes/broker-integration.route.js';
 import tpaRouter from './routes/tpa.route.js';
 import privacyRouter from './routes/privacy.route.js';
 import videoRouter from './routes/video.route.js';
@@ -984,6 +985,7 @@ app.use("/api/insurance", insuranceRouter);
 app.use("/api/insurance-policies", insurancePolicyRouter); // Comprehensive insurance policy & rule engine
 app.use("/api/insurance-company", insuranceCompanyRouter); // Insurance company & corporate login
 app.use("/api/insurance-broker", insuranceBrokerRouter); // Insurance broker/intermediary login
+app.use('/api/broker-integrations', brokerIntegrationRouter); // Broker server-to-server integration + signed webhooks
 app.use("/api/hospital/insurance", hospitalInsuranceRouter); // IHX-like hospital insurance claims dashboard
 app.use("/api/tpa", tpaRouter); // TPA (Third Party Administrator) login
 app.use("/api/appointments", appointmentRouter);

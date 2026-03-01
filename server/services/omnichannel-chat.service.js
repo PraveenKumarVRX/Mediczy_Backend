@@ -379,6 +379,35 @@ class OmnichannelChatService {
     }
   }
 
+  async sendWhatsAppDirect(phone, body) {
+    try {
+      const normPhone = this.normalizeWhatsAppNumber(phone);
+
+      try {
+        const whatsappProductionService = (await import('./whatsapp-production.service.js')).default;
+        if (whatsappProductionService?.sendSessionMessage) {
+          await whatsappProductionService.sendSessionMessage({
+            to: normPhone,
+            body
+          });
+          return { success: true };
+        }
+        throw new Error('WhatsApp production service unavailable');
+      } catch (productionError) {
+        const whatsappService = (await import('./whatsapp.service.js')).default;
+        await whatsappService.sendMessage({
+          to: normPhone,
+          content: body,
+          type: 'text'
+        });
+        return { success: true };
+      }
+    } catch (error) {
+      console.error('Send direct WhatsApp message error:', error.message);
+      return { success: false, error: error.message };
+    }
+  }
+
   /**
    * Send WhatsApp message to RocketChat #general via API (fallback)
    * This is more reliable than webhooks
@@ -498,6 +527,9 @@ class OmnichannelChatService {
       const roomId = roomResult.room._id;
       console.log(`   ✅ Room: ${roomId}`);
 
+      const customerMsg = `📱 *Customer* (${whatsappBotService.detectLanguage(body) === 'hi' ? 'Hindi' : 'English'}): ${body}`;
+      await this.sendMessage(roomId, visitorToken, customerMsg);
+
       // ========== BOT DECISION LOGIC ==========
       
       // Step 1: Detect language and department
@@ -536,10 +568,6 @@ class OmnichannelChatService {
         const formattedBotResponse = whatsappBotService.formatBotResponse(botResponse, messageLanguage);
         const safeBotResponse = botResponse.response || '';
         
-        // Send customer message first
-        const customerMsg = `📱 *Customer* (${messageLanguage === 'hi' ? 'Hindi' : 'English'}): ${body}`;
-        await this.sendMessage(roomId, visitorToken, customerMsg);
-
         // Send bot response
         await this.sendMessage(roomId, visitorToken, formattedBotResponse);
 
@@ -564,13 +592,10 @@ class OmnichannelChatService {
       else {
         console.log(`📞 Handing off to ${detectedDepartment} agent for ${from}...`);
 
-        // Send customer message to RocketChat
-        let customerMsg = `📱 *Customer* (${messageLanguage === 'hi' ? 'Hindi' : 'English'}): ${body}`;
+        // Add emergency context for support team if needed
         if (handoffDecision.reason === 'emergency_detected') {
-          customerMsg = `🚨 *EMERGENCY* - ${customerMsg}`;
+          await this.sendMessage(roomId, visitorToken, `🚨 Emergency flag applied for message from ${from}`);
         }
-        
-        await this.sendMessage(roomId, visitorToken, customerMsg);
 
         // Send bot context if available (so agent knows what bot tried)
         if (botResponse.success && botResponse.response) {
@@ -610,8 +635,16 @@ class OmnichannelChatService {
         const waitingMsg = messageLanguage === 'hi'
           ? '⏳ एक मिनट में हमारी सहायता टीम आ जाएगी। कृपया प्रतीक्षा करें...'
           : '⏳ Our support team will be with you shortly. Please wait...';
-        
+
+        const noAgentsMsg = messageLanguage === 'hi'
+          ? '📌 इस समय कोई एजेंट तुरंत उपलब्ध नहीं है। हमने आपकी रिक्वेस्ट दर्ज कर ली है और जल्दी ही टीम आपसे संपर्क करेगी।'
+          : '📌 No agent is immediately available right now. We have logged your request and our team will contact you shortly.';
+
+        await this.sendWhatsAppDirect(from, agents.agents?.length > 0 ? waitingMsg : noAgentsMsg);
         await this.sendMessage(roomId, visitorToken, waitingMsg);
+        if (!agents.agents?.length) {
+          await this.sendMessage(roomId, visitorToken, noAgentsMsg);
+        }
 
         return { success: true, handled: 'handoff', department: detectedDepartment, roomId };
       }

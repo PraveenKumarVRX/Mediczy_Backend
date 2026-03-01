@@ -59,7 +59,7 @@ const BrokerDashboard = () => {
   }
 
   return (
-    <BrokerLayout title="Dashboard" subtitle="Welcome back to your insurance broker portal">
+    <BrokerLayout title="Dashboard" subtitle="Welcome back to your InsureCorrect broker portal">
       <div className="space-y-6">
         {/* Welcome Section */}
         <div className="bg-gradient-to-r from-blue-600 to-indigo-700 rounded-lg p-6 text-white shadow-lg">

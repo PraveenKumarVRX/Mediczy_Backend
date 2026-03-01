@@ -147,10 +147,10 @@ const InsuranceBrokerLogin = () => {
             <Briefcase className="h-8 w-8 text-white" />
           </motion.div>
           <h2 className="text-3xl font-bold text-slate-900 tracking-tight">
-            Insurance Broker Portal
+            InsureCorrect Broker Portal
           </h2>
           <p className="mt-2 text-slate-500">
-            Access your insurance brokerage dashboard
+            Access your InsureCorrect operations dashboard
           </p>
         </div>
 

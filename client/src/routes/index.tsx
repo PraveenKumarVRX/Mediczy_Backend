@@ -406,6 +406,16 @@ const NGOLogin              = lazy(() => import("@/pages/ngo/NGOLogin"));
 const InsuranceBrokerLogin  = lazy(() => import("@/pages/insurance-broker/InsuranceBrokerLogin"));
 const BrokerDashboard       = lazy(() => import("@/pages/insurance-broker/BrokerDashboard"));
 const BrokerCommunication   = lazy(() => import("@/pages/insurance-broker/BrokerCommunication"));
+const _BrokerPortalPages    = () => import('@/pages/insurance-broker/BrokerPortalPages');
+const BrokerPolicies        = lazyNamed(_BrokerPortalPages, 'BrokerPolicies');
+const BrokerCorporates      = lazyNamed(_BrokerPortalPages, 'BrokerCorporates');
+const BrokerProfile         = lazyNamed(_BrokerPortalPages, 'BrokerProfile');
+const BrokerCommissions     = lazyNamed(_BrokerPortalPages, 'BrokerCommissions');
+const BrokerReports         = lazyNamed(_BrokerPortalPages, 'BrokerReports');
+const BrokerAnalytics       = lazyNamed(_BrokerPortalPages, 'BrokerAnalytics');
+const BrokerNotifications   = lazyNamed(_BrokerPortalPages, 'BrokerNotifications');
+const BrokerSettings        = lazyNamed(_BrokerPortalPages, 'BrokerSettings');
+const BrokerSupport         = lazyNamed(_BrokerPortalPages, 'BrokerSupport');
 const InsuranceCompanyLogin = lazy(() => import("@/pages/insurance-company/InsuranceCompanyLogin"));
 const InsuranceCommunication = lazy(() => import("@/pages/insurance-company/InsuranceCommunication"));
 const AggregatorLogin       = lazy(() => import("@/pages/aggregator/AggregatorLogin"));
@@ -788,6 +798,15 @@ const AppRoutes = () => {
         <Route path="/intermediary/login"              element={<InsuranceBrokerLogin />} />
         <Route path="/intermediary/communication"      element={<BrokerCommunication />} />
         <Route path="/insurance-broker/dashboard"      element={<BrokerDashboard />} />
+        <Route path="/insurance-broker/policies"       element={<BrokerPolicies />} />
+        <Route path="/insurance-broker/corporates"     element={<BrokerCorporates />} />
+        <Route path="/insurance-broker/profile"        element={<BrokerProfile />} />
+        <Route path="/insurance-broker/commissions"    element={<BrokerCommissions />} />
+        <Route path="/insurance-broker/reports"        element={<BrokerReports />} />
+        <Route path="/insurance-broker/analytics"      element={<BrokerAnalytics />} />
+        <Route path="/insurance-broker/notifications"  element={<BrokerNotifications />} />
+        <Route path="/insurance-broker/settings"       element={<BrokerSettings />} />
+        <Route path="/insurance-broker/support"        element={<BrokerSupport />} />
         <Route path="/insurer/login"                   element={<InsurerLogin />} />
         <Route path="/insurer/communication"           element={<InsuranceCommunication />} />
         <Route path="/insurance-company/communication" element={<InsuranceCommunication />} />

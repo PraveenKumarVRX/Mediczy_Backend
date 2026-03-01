@@ -193,6 +193,19 @@ router.post('/login', authLimiter, async (req, res) => {
       success: true,
       message: 'Login successful',
       token,
+      user: {
+        id: broker.id,
+        brokerName: broker.brokerName,
+        contactPersonName: broker.contactPersonName,
+        email: broker.email,
+        phoneNumber: broker.phoneNumber,
+        irdaiLicenseNumber: broker.irdaiLicenseNumber,
+        businessType: broker.businessType,
+        status: broker.status,
+        isVerified: broker.isVerified,
+        commissionPercentage: broker.commissionPercentage,
+        activePoliciesCount: broker.activePoliciesCount
+      },
       broker: {
         id: broker.id,
         brokerName: broker.brokerName,
@@ -483,6 +496,313 @@ router.get('/corporates-list', authUser, requireRole('broker'), async (req, res)
     res.status(500).json({
       success: false,
       message: 'Failed to get corporates',
+      error: error.message
+    });
+  }
+});
+
+/**
+ * List corporates (alias)
+ * GET /api/insurance-broker/corporates
+ */
+router.get('/corporates', authUser, requireRole('broker'), async (req, res) => {
+  try {
+    const { status, page = 1, limit = 20 } = req.query;
+    const whereClause = { onboardedBy: 'broker', onboardedById: req.user.id };
+    if (status) whereClause.status = status;
+
+    const offset = (page - 1) * limit;
+    const { count, rows: corporates } = await Corporate.findAndCountAll({
+      where: whereClause,
+      limit: parseInt(limit),
+      offset: parseInt(offset),
+      order: [['createdAt', 'DESC']]
+    });
+
+    res.json({
+      success: true,
+      total: count,
+      page: parseInt(page),
+      totalPages: Math.ceil(count / limit),
+      corporates
+    });
+  } catch (error) {
+    console.error('Get broker corporates error:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Failed to get corporates',
+      error: error.message
+    });
+  }
+});
+
+/**
+ * Broker notifications summary
+ * GET /api/insurance-broker/notifications
+ */
+router.get('/notifications', authUser, requireRole('broker'), async (req, res) => {
+  try {
+    const broker = await InsuranceBroker.findByPk(req.user.id);
+    if (!broker) {
+      return res.status(404).json({
+        success: false,
+        message: 'Broker not found'
+      });
+    }
+
+    const licenseDate = broker.licenseValidityDate ? new Date(broker.licenseValidityDate) : null;
+    const daysToExpiry = licenseDate
+      ? Math.ceil((licenseDate.getTime() - Date.now()) / (1000 * 60 * 60 * 24))
+      : null;
+
+    const items = [];
+    if (!broker.isVerified) {
+      items.push({
+        id: 'kyc-pending',
+        type: 'warning',
+        title: 'Verification pending',
+        message: 'Complete IRDAI verification to unlock full broker capabilities.',
+        createdAt: new Date().toISOString(),
+        read: false
+      });
+    }
+
+    if (typeof daysToExpiry === 'number' && daysToExpiry >= 0 && daysToExpiry <= 30) {
+      items.push({
+        id: 'license-expiry',
+        type: 'critical',
+        title: 'License nearing expiry',
+        message: `Your IRDAI license expires in ${daysToExpiry} day(s).`,
+        createdAt: new Date().toISOString(),
+        read: false
+      });
+    }
+
+    res.json({
+      success: true,
+      data: {
+        unreadCount: items.filter((item) => !item.read).length,
+        notifications: items
+      }
+    });
+  } catch (error) {
+    console.error('Get broker notifications error:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Failed to fetch notifications',
+      error: error.message
+    });
+  }
+});
+
+/**
+ * Broker settings
+ * GET /api/insurance-broker/settings
+ */
+router.get('/settings', authUser, requireRole('broker'), async (req, res) => {
+  try {
+    const broker = await InsuranceBroker.findByPk(req.user.id);
+    if (!broker) {
+      return res.status(404).json({ success: false, message: 'Broker not found' });
+    }
+
+    const metadata = broker.metadata || {};
+    const settings = metadata.portalSettings || {
+      emailAlerts: true,
+      smsAlerts: true,
+      weeklyReport: true,
+      language: 'en',
+      timezone: 'Asia/Kolkata'
+    };
+
+    res.json({
+      success: true,
+      settings
+    });
+  } catch (error) {
+    console.error('Get broker settings error:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Failed to fetch settings',
+      error: error.message
+    });
+  }
+});
+
+/**
+ * Update broker settings
+ * PUT /api/insurance-broker/settings
+ */
+router.put('/settings', authUser, requireRole('broker'), async (req, res) => {
+  try {
+    const broker = await InsuranceBroker.findByPk(req.user.id);
+    if (!broker) {
+      return res.status(404).json({ success: false, message: 'Broker not found' });
+    }
+
+    const currentMeta = broker.metadata || {};
+    broker.metadata = {
+      ...currentMeta,
+      portalSettings: {
+        ...(currentMeta.portalSettings || {}),
+        ...(req.body || {})
+      }
+    };
+
+    await broker.save();
+
+    res.json({
+      success: true,
+      message: 'Settings updated successfully',
+      settings: broker.metadata.portalSettings
+    });
+  } catch (error) {
+    console.error('Update broker settings error:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Failed to update settings',
+      error: error.message
+    });
+  }
+});
+
+/**
+ * Broker commissions
+ * GET /api/insurance-broker/commissions
+ */
+router.get('/commissions', authUser, requireRole('broker'), async (req, res) => {
+  try {
+    const broker = await InsuranceBroker.findByPk(req.user.id);
+    if (!broker) {
+      return res.status(404).json({ success: false, message: 'Broker not found' });
+    }
+
+    const totalPremium = Number(broker.totalPremiumFacilitated || 0);
+    const commissionRate = Number(broker.commissionPercentage || 0);
+    const totalEarned = Number(((totalPremium * commissionRate) / 100).toFixed(2));
+    const available = Number((totalEarned * 0.65).toFixed(2));
+    const paid = Number((totalEarned * 0.25).toFixed(2));
+    const inReview = Number((totalEarned - available - paid).toFixed(2));
+
+    res.json({
+      success: true,
+      commissions: {
+        totalPremium,
+        commissionRate,
+        totalEarned,
+        available,
+        paid,
+        inReview,
+        payoutCycle: 'monthly'
+      }
+    });
+  } catch (error) {
+    console.error('Get broker commissions error:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Failed to fetch commissions',
+      error: error.message
+    });
+  }
+});
+
+/**
+ * Broker analytics
+ * GET /api/insurance-broker/analytics
+ */
+router.get('/analytics', authUser, requireRole('broker'), async (req, res) => {
+  try {
+    const broker = await InsuranceBroker.findByPk(req.user.id);
+    if (!broker) {
+      return res.status(404).json({ success: false, message: 'Broker not found' });
+    }
+
+    const totalPolicies = await InsurancePolicy.count({ where: { brokerId: req.user.id } });
+    const activePolicies = await InsurancePolicy.count({ where: { brokerId: req.user.id, status: 'active' } });
+    const pendingPolicies = await InsurancePolicy.count({ where: { brokerId: req.user.id, status: 'pending' } });
+    const conversionRate = totalPolicies > 0 ? Number(((activePolicies / totalPolicies) * 100).toFixed(2)) : 0;
+
+    res.json({
+      success: true,
+      analytics: {
+        totalPolicies,
+        activePolicies,
+        pendingPolicies,
+        conversionRate,
+        premiumFacilitated: Number(broker.totalPremiumFacilitated || 0),
+        commissionPercentage: Number(broker.commissionPercentage || 0),
+        topSpecializations: broker.specializations || []
+      }
+    });
+  } catch (error) {
+    console.error('Get broker analytics error:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Failed to fetch analytics',
+      error: error.message
+    });
+  }
+});
+
+/**
+ * Broker reports summary
+ * GET /api/insurance-broker/reports
+ */
+router.get('/reports', authUser, requireRole('broker'), async (req, res) => {
+  try {
+    const broker = await InsuranceBroker.findByPk(req.user.id);
+    if (!broker) {
+      return res.status(404).json({ success: false, message: 'Broker not found' });
+    }
+
+    const totalPolicies = await InsurancePolicy.count({ where: { brokerId: req.user.id } });
+    const activePolicies = await InsurancePolicy.count({ where: { brokerId: req.user.id, status: 'active' } });
+    const pendingPolicies = await InsurancePolicy.count({ where: { brokerId: req.user.id, status: 'pending' } });
+
+    res.json({
+      success: true,
+      report: {
+        generatedAt: new Date().toISOString(),
+        kpis: {
+          totalPolicies,
+          activePolicies,
+          pendingPolicies,
+          premiumFacilitated: Number(broker.totalPremiumFacilitated || 0),
+          commissionRate: Number(broker.commissionPercentage || 0)
+        }
+      }
+    });
+  } catch (error) {
+    console.error('Get broker report error:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Failed to fetch report',
+      error: error.message
+    });
+  }
+});
+
+/**
+ * Broker support info
+ * GET /api/insurance-broker/support
+ */
+router.get('/support', authUser, requireRole('broker'), async (req, res) => {
+  try {
+    res.json({
+      success: true,
+      support: {
+        portalName: 'InsureCorrect Broker Portal',
+        email: process.env.BROKER_SUPPORT_EMAIL || 'broker-support@mediqzy.com',
+        phone: process.env.BROKER_SUPPORT_PHONE || '+91-00000-00000',
+        hours: 'Mon-Sat, 9:00 AM - 7:00 PM IST',
+        sla: 'Priority support within 4 business hours'
+      }
+    });
+  } catch (error) {
+    console.error('Get broker support error:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Failed to fetch support details',
       error: error.message
     });
   }
