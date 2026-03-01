@@ -34,7 +34,7 @@ const HospitalLayout = ({ children, title, subtitle }: HospitalLayoutProps) => {
   const { hospitalData, isLoading: authLoading, logout } = useHospitalAuth();
 
   // Fetch module capabilities for sidebar gating
-  const { data: capabilities } = useQuery<string[]>({
+  const { data: capabilities } = useQuery<string[] | undefined>({
     queryKey: ["hospital-capabilities"],
     queryFn: async () => {
       try {
@@ -44,7 +44,7 @@ const HospitalLayout = ({ children, title, subtitle }: HospitalLayoutProps) => {
           ? modules.map((m: any) => (typeof m === "string" ? m : m.module_key ?? m.slug ?? m.name))
           : [];
       } catch {
-        return [];
+        return undefined;
       }
     },
     staleTime: 10 * 60_000,
@@ -85,7 +85,7 @@ const HospitalLayout = ({ children, title, subtitle }: HospitalLayoutProps) => {
   return (
     <div className="min-h-screen bg-slate-50 dark:bg-slate-900">
       {/* Sidebar */}
-      <HospitalSidebar capabilities={capabilities} />
+      <HospitalSidebar capabilities={capabilities && capabilities.length > 0 ? capabilities : undefined} />
 
       {/* Main Content Area */}
       <div className="ml-64 transition-all duration-300">
