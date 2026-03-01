@@ -266,6 +266,7 @@ router.get('/claims/submitted', authUser, requireRole(['hospital', 'admin']), as
     try {
       result = await ClaimsModel.findAndCountAll({
         where,
+        attributes: ['id', 'claimNumber', 'claimAmount', 'status', 'submittedAt', 'createdAt'],
         limit: parseInt(limit),
         offset,
         order: [['submittedAt', 'DESC']],
@@ -285,6 +286,7 @@ router.get('/claims/submitted', authUser, requireRole(['hospital', 'admin']), as
       console.warn('Submitted claims include fallback triggered:', includeError.message);
       result = await ClaimsModel.findAndCountAll({
         where,
+        attributes: ['id', 'claimNumber', 'claimAmount', 'status', 'submittedAt', 'createdAt'],
         limit: parseInt(limit),
         offset,
         order: [['submittedAt', 'DESC']]
