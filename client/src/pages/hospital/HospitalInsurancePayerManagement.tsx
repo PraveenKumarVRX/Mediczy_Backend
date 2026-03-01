@@ -20,6 +20,18 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@
 import { useToast } from '@/hooks/use-toast';
 import api from '@/lib/api';
 
+type ScheduleCharge = {
+  id: number;
+  procedure: string;
+  department: string;
+  hospitalRate: number;
+  cghs: number;
+  nabh: number;
+  starHealth: number;
+  hdfcErgo: number;
+  custom: number;
+};
+
 const HospitalInsurancePayerManagement = () => {
   const navigate = useNavigate();
   const { toast } = useToast();
@@ -145,8 +157,8 @@ const HospitalInsurancePayerManagement = () => {
     }
   ]);
 
-  // Sample Schedule of Charges
-  const scheduleOfCharges = [
+  // Sample Schedule of Charges (fallback)
+  const defaultScheduleOfCharges: ScheduleCharge[] = [
     { 
       id: 1, 
       procedure: 'General Consultation', 
@@ -237,6 +249,9 @@ const HospitalInsurancePayerManagement = () => {
     }
   ];
 
+  const [scheduleOfCharges, setScheduleOfCharges] = useState<ScheduleCharge[]>(defaultScheduleOfCharges);
+  const [resourceVersionCount, setResourceVersionCount] = useState(0);
+
   const [formData, setFormData] = useState({
     name: '',
     type: 'insurance',
@@ -279,7 +294,13 @@ const HospitalInsurancePayerManagement = () => {
         contactPerson: formData.contactPerson,
         email: formData.email,
         phone: formData.phone,
-        address: formData.address
+        address: formData.address,
+        mouStart: formData.mouStart,
+        mouEnd: formData.mouEnd,
+        creditDays: parseInt(formData.creditDays) || 30,
+        tariffType: formData.tariffType,
+        discount: parseFloat(formData.discount) || 0,
+        packageDeals: false
       };
 
       const response = await api.post('/insurance/admin/providers', payload, {
@@ -296,16 +317,16 @@ const HospitalInsurancePayerManagement = () => {
           phone: formData.phone,
           address: formData.address,
           status: 'active',
-          mouStart: formData.mouStart,
-          mouEnd: formData.mouEnd,
-          creditDays: parseInt(formData.creditDays) || 30,
+          mouStart: response.data.provider.mouStart || formData.mouStart,
+          mouEnd: response.data.provider.mouEnd || formData.mouEnd,
+          creditDays: response.data.provider.creditDays || parseInt(formData.creditDays) || 30,
           claimSettlementRatio: 0,
           totalClaims: 0,
           pendingClaims: 0,
           settledAmount: '₹0',
-          mouDocument: '',
-          tariffType: formData.tariffType,
-          discount: parseFloat(formData.discount) || 0,
+          mouDocument: response.data.provider.mouDocument || '',
+          tariffType: response.data.provider.tariffType || formData.tariffType,
+          discount: response.data.provider.discount ?? (parseFloat(formData.discount) || 0),
           packageDeals: false
         };
         
@@ -353,23 +374,23 @@ const HospitalInsurancePayerManagement = () => {
           const mappedPayers = response.data.providers.map((provider: any) => ({
             id: provider.id,
             name: provider.name,
-            type: provider.supportedServices?.includes('TPA') ? 'tpa' : 'insurance',
+            type: provider.type === 'tpa' || provider.supportedServices?.includes('TPA') ? 'tpa' : 'insurance',
             contactPerson: provider.contactPerson || '',
             email: provider.email || '',
             phone: provider.phone || '',
-            address: provider.address || '',
+            address: typeof provider.address === 'string' ? provider.address : provider.address?.line1 || provider.address?.street || '',
             status: provider.isActive ? 'active' : 'inactive',
-            mouStart: '',
-            mouEnd: '',
-            creditDays: 30,
-            claimSettlementRatio: 0,
-            totalClaims: 0,
-            pendingClaims: 0,
-            settledAmount: '₹0',
-            mouDocument: '',
-            tariffType: 'percentage',
-            discount: 0,
-            packageDeals: false
+            mouStart: provider.mouStart || '',
+            mouEnd: provider.mouEnd || '',
+            creditDays: provider.creditDays || 30,
+            claimSettlementRatio: provider.claimSettlementRatio || 0,
+            totalClaims: provider.totalClaims || 0,
+            pendingClaims: provider.pendingClaims || 0,
+            settledAmount: provider.settledAmount || '₹0',
+            mouDocument: provider.mouDocument || '',
+            tariffType: provider.tariffType || 'percentage',
+            discount: provider.discount || 0,
+            packageDeals: !!provider.packageDeals
           }));
           if (mappedPayers.length > 0) {
             setPayers(mappedPayers);
@@ -382,6 +403,83 @@ const HospitalInsurancePayerManagement = () => {
     };
     fetchProviders();
   }, []);
+
+  const loadPayerResources = async (payer: any) => {
+    try {
+      const response = await api.get(`/insurance/admin/providers/${payer.id}/resources`, {
+        headers: hospitalHeaders()
+      });
+
+      const resources = response.data?.resources || {};
+      const mou = resources.mou || {};
+      const soc = Array.isArray(resources.soc) && resources.soc.length > 0 ? resources.soc : defaultScheduleOfCharges;
+      const versionHistory = Array.isArray(resources.versionHistory) ? resources.versionHistory : [];
+
+      const mergedPayer = {
+        ...payer,
+        mouStart: mou.startDate || payer.mouStart,
+        mouEnd: mou.endDate || payer.mouEnd,
+        creditDays: mou.creditDays || payer.creditDays,
+        tariffType: mou.tariffType || payer.tariffType,
+        discount: typeof mou.discount === 'number' ? mou.discount : payer.discount,
+        packageDeals: typeof mou.packageDeals === 'boolean' ? mou.packageDeals : payer.packageDeals,
+        mouDocument: mou.documentName || payer.mouDocument
+      };
+
+      setSelectedPayer(mergedPayer);
+      setScheduleOfCharges(soc);
+      setResourceVersionCount(versionHistory.length);
+    } catch (error) {
+      console.error('Failed to load payer resources:', error);
+      setSelectedPayer(payer);
+      setScheduleOfCharges(defaultScheduleOfCharges);
+      setResourceVersionCount(0);
+    }
+  };
+
+  const savePayerResources = async () => {
+    if (!selectedPayer) return;
+
+    try {
+      setLoading(true);
+      await api.put(
+        `/insurance/admin/providers/${selectedPayer.id}/resources`,
+        {
+          mou: {
+            startDate: selectedPayer.mouStart,
+            endDate: selectedPayer.mouEnd,
+            creditDays: selectedPayer.creditDays,
+            tariffType: selectedPayer.tariffType,
+            discount: selectedPayer.discount,
+            packageDeals: selectedPayer.packageDeals,
+            documentName: selectedPayer.mouDocument,
+            claimSettlementRatio: selectedPayer.claimSettlementRatio,
+            totalClaims: selectedPayer.totalClaims,
+            pendingClaims: selectedPayer.pendingClaims,
+            settledAmount: selectedPayer.settledAmount
+          },
+          soc: scheduleOfCharges
+        },
+        { headers: hospitalHeaders() }
+      );
+
+      setPayers((prev) =>
+        prev.map((payer) => (payer.id === selectedPayer.id ? { ...payer, ...selectedPayer } : payer))
+      );
+
+      setResourceVersionCount((prev) => prev + 1);
+      toast({ title: 'Saved', description: 'MoU and SOC resources updated successfully' });
+    } catch (error: any) {
+      console.error('Failed to save payer resources:', error);
+      toast({
+        title: 'Save failed',
+        description: error.response?.data?.message || 'Unable to save payer resources',
+        variant: 'destructive'
+      });
+    } finally {
+      setLoading(false);
+    }
+  };
 
   const getTariffLabel = (tariffType: string) => {
     const labels: Record<string, string> = {
@@ -689,7 +787,7 @@ const HospitalInsurancePayerManagement = () => {
                     size="sm" 
                     className="flex-1"
                     onClick={() => {
-                      setSelectedPayer(payer);
+                      loadPayerResources(payer);
                       setViewMoUDialog(true);
                     }}
                   >
@@ -701,7 +799,7 @@ const HospitalInsurancePayerManagement = () => {
                     size="sm" 
                     className="flex-1"
                     onClick={() => {
-                      setSelectedPayer(payer);
+                      loadPayerResources(payer);
                       setViewChargesDialog(true);
                     }}
                   >
@@ -783,7 +881,12 @@ const HospitalInsurancePayerManagement = () => {
                 </div>
               </div>
 
+              <div className="text-xs text-gray-500">Resource versions tracked: {resourceVersionCount}</div>
+
               <div className="flex justify-end gap-3 pt-4">
+                <Button onClick={savePayerResources} className="bg-blue-600 hover:bg-blue-700" disabled={loading}>
+                  {loading ? 'Saving...' : 'Save MoU & SOC'}
+                </Button>
                 <Button variant="outline" onClick={() => setViewMoUDialog(false)}>
                   Close
                 </Button>
@@ -840,9 +943,9 @@ const HospitalInsurancePayerManagement = () => {
                   <AlertCircle className="h-4 w-4" />
                   <span>Tariff Type: <strong>{selectedPayer && getTariffLabel(selectedPayer.tariffType)}</strong></span>
                 </div>
-                <Button variant="outline" size="sm">
+                <Button variant="outline" size="sm" onClick={savePayerResources} disabled={loading}>
                   <Download className="h-4 w-4 mr-1" />
-                  Export Schedule
+                  Save Schedule
                 </Button>
               </div>
 
