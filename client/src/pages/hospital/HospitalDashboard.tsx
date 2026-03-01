@@ -104,6 +104,25 @@ const HospitalDashboard = () => {
   const navigate = useNavigate();
   const { hospitalData } = useHospitalAuth();
 
+  const tryApiGet = async <T,>(
+    endpoints: string[],
+    mapResponse: (data: any) => T,
+    fallbackValue: T
+  ): Promise<T> => {
+    for (const endpoint of endpoints) {
+      try {
+        const response = await api.get(endpoint);
+        return mapResponse(response.data);
+      } catch (error: any) {
+        const status = error?.response?.status;
+        if (![404, 405].includes(status)) {
+          throw error;
+        }
+      }
+    }
+    return fallbackValue;
+  };
+
   // KPI stats
   const {
     data: rawStats,
@@ -113,7 +132,27 @@ const HospitalDashboard = () => {
     refetch: refetchStats,
   } = useQuery<DashboardStats>({
     queryKey: ['hospital-dashboard-stats'],
-    queryFn: () => api.get('/hospital/analytics/stats').then((r) => r.data?.data ?? r.data ?? {}),
+    queryFn: async () =>
+      tryApiGet<DashboardStats>(
+        ['/hospital/analytics/stats', '/hospital/summary'],
+        (data) => {
+          const normalized = data?.data ?? data ?? {};
+          if (typeof normalized.totalPatients !== 'undefined') {
+            return normalized;
+          }
+          return {
+            totalPatients: normalized.patients ?? 0,
+            todayAdmissions: normalized.ipd ?? 0,
+            activeClaims: normalized.appointments ?? 0,
+            todayRevenue: 0,
+            todayOPD: normalized.appointments ?? 0,
+            activeDoctors: normalized.staff ?? 0,
+            recordsUpdated: normalized.resources ?? 0,
+            invoicesGenerated: 0
+          };
+        },
+        {}
+      ),
     staleTime: 5 * 60_000,
     retry: 1,
   });
@@ -124,7 +163,27 @@ const HospitalDashboard = () => {
     isLoading: admissionsLoading,
   } = useQuery<Admission[]>({
     queryKey: ['hospital-recent-admissions'],
-    queryFn: () => api.get('/hospital/patients/recent-admissions').then((r) => r.data?.admissions ?? r.data ?? []),
+    queryFn: async () =>
+      tryApiGet<Admission[]>(
+        ['/hospital/patients/recent-admissions', '/hospital/patients'],
+        (data) => {
+          if (Array.isArray(data?.admissions)) {
+            return data.admissions;
+          }
+          const rows = data?.data ?? data ?? [];
+          if (!Array.isArray(rows)) return [];
+          return rows.slice(0, 6).map((patient: any) => ({
+            id: String(patient.id || patient.uhid || Math.random().toString(36).slice(2)),
+            patient: patient.name || patient.patientName || 'Unknown',
+            age: patient.age,
+            department: patient.department || 'General',
+            doctor: patient.assignedDoctor || 'Not Assigned',
+            status: patient.admissionStatus === 'IPD' ? 'Admitted' : patient.admissionStatus || 'Under Review',
+            bed: patient.bed || 'TBD'
+          }));
+        },
+        []
+      ),
     staleTime: 2 * 60_000,
     retry: 1,
   });
@@ -135,7 +194,38 @@ const HospitalDashboard = () => {
     isLoading: bedsLoading,
   } = useQuery<BedOccupancy[]>({
     queryKey: ['hospital-beds-occupancy'],
-    queryFn: () => api.get('/hospital/beds/occupancy').then((r) => r.data?.wards ?? r.data ?? []),
+    queryFn: async () =>
+      tryApiGet<BedOccupancy[]>(
+        ['/hospital/beds/occupancy', '/hospital/beds'],
+        (data) => {
+          if (Array.isArray(data?.wards)) {
+            return data.wards;
+          }
+
+          const beds = data?.data ?? data ?? [];
+          if (!Array.isArray(beds)) return [];
+
+          const grouped: Record<string, { total: number; occupied: number }> = {};
+          beds.forEach((bed: any) => {
+            const ward = bed.ward || bed.department || 'General Ward';
+            if (!grouped[ward]) {
+              grouped[ward] = { total: 0, occupied: 0 };
+            }
+            grouped[ward].total += 1;
+            if (String(bed.status).toLowerCase() === 'occupied') {
+              grouped[ward].occupied += 1;
+            }
+          });
+
+          return Object.entries(grouped).map(([department, values]) => ({
+            department,
+            total: values.total,
+            occupied: values.occupied,
+            color: 'teal'
+          }));
+        },
+        []
+      ),
     staleTime: 2 * 60_000,
     retry: 1,
   });
@@ -146,7 +236,35 @@ const HospitalDashboard = () => {
     isLoading: claimsLoading,
   } = useQuery<Claim[]>({
     queryKey: ['hospital-pending-claims'],
-    queryFn: () => api.get('/hospital/claims/pending').then((r) => r.data?.claims ?? r.data ?? []),
+    queryFn: async () =>
+      tryApiGet<Claim[]>(
+        ['/hospital/claims/pending', '/hospital/insurance/claims/submitted'],
+        (data) => {
+          if (Array.isArray(data?.claims)) {
+            return data.claims;
+          }
+
+          const rows = data?.claims ?? data?.data ?? data ?? [];
+          if (!Array.isArray(rows)) return [];
+
+          return rows
+            .filter((claim: any) => ['pending', 'submitted', 'query'].includes(String(claim.status || '').toLowerCase()))
+            .slice(0, 6)
+            .map((claim: any) => ({
+              id: claim.claimNumber || String(claim.id || '-'),
+              patient: claim.patient
+                ? `${claim.patient.firstName || ''} ${claim.patient.lastName || ''}`.trim()
+                : claim.patientName || 'Unknown',
+              amount: new Intl.NumberFormat('en-IN', { style: 'currency', currency: 'INR', maximumFractionDigits: 0 }).format(claim.claimAmount || 0),
+              insurer: claim.insuranceProvider || 'Unknown',
+              status: String(claim.status || 'Pending').replace(/^./, (c: string) => c.toUpperCase()),
+              days: claim.submittedAt
+                ? Math.max(0, Math.floor((Date.now() - new Date(claim.submittedAt).getTime()) / (1000 * 60 * 60 * 24)))
+                : 0
+            }));
+        },
+        []
+      ),
     staleTime: 3 * 60_000,
     retry: 1,
   });

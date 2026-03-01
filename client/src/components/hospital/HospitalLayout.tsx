@@ -37,12 +37,15 @@ const HospitalLayout = ({ children, title, subtitle }: HospitalLayoutProps) => {
   const { data: capabilities } = useQuery<string[]>({
     queryKey: ["hospital-capabilities"],
     queryFn: async () => {
-      const res = await api.get("/admin/module-access/my-modules");
-      const modules = res.data?.modules ?? res.data ?? [];
-      // Normalize to array of capability slug strings
-      return Array.isArray(modules)
-        ? modules.map((m: any) => (typeof m === "string" ? m : m.module_key ?? m.slug ?? m.name))
-        : [];
+      try {
+        const res = await api.get("/module-access/my-modules");
+        const modules = res.data?.modules ?? res.data ?? [];
+        return Array.isArray(modules)
+          ? modules.map((m: any) => (typeof m === "string" ? m : m.module_key ?? m.slug ?? m.name))
+          : [];
+      } catch {
+        return [];
+      }
     },
     staleTime: 10 * 60_000,
     retry: false,
@@ -50,8 +53,12 @@ const HospitalLayout = ({ children, title, subtitle }: HospitalLayoutProps) => {
   const { data: notificationsData } = useQuery<Notification[]>({
     queryKey: ["hospital-notifications"],
     queryFn: async () => {
-      const res = await api.get("/hospital/notifications/recent");
-      return res.data?.notifications ?? res.data ?? [];
+      try {
+        const res = await api.get("/hospital/notifications/recent");
+        return res.data?.notifications ?? res.data ?? [];
+      } catch {
+        return [];
+      }
     },
     staleTime: 60_000,
     retry: false,

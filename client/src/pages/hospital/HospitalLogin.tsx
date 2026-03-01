@@ -44,26 +44,39 @@ const HospitalLogin = () => {
         hostname !== 'www.mediqzy.com';
       const subdomain = hasSubdomain ? hostParts[0] : undefined;
 
-      let data: any;
+      const loginAttempts = subdomain
+        ? [
+            { endpoint: '/hospital/auth/login/v2', body: { email, password, subdomain } },
+            { endpoint: '/hospital/login/v2', body: { email, password, subdomain } },
+            { endpoint: '/hospital/auth/login', body: { email, password } },
+            { endpoint: '/hospital/login', body: { email, password } },
+          ]
+        : [
+            { endpoint: '/hospital/auth/login', body: { email, password } },
+            { endpoint: '/hospital/login', body: { email, password } },
+          ];
 
-      try {
-        const endpoint = subdomain ? '/hospital/auth/login/v2' : '/hospital/auth/login';
-        const body = subdomain
-          ? { email, password, subdomain }
-          : { email, password };
-        const response = await api.post(endpoint, body, {
-          signal: controller.signal,
-          skipAuth: true,
-        } as any);
-        data = response.data;
-      } catch (primaryErr: any) {
-        // Last-resort fallback for legacy deployments
-        const response = await api.post(
-          '/hospital/login',
-          { email, password },
-          { signal: controller.signal, skipAuth: true } as any
-        );
-        data = response.data;
+      let data: any = null;
+      let lastError: any = null;
+
+      for (const attempt of loginAttempts) {
+        try {
+          const response = await api.post(attempt.endpoint, attempt.body, {
+            signal: controller.signal,
+            skipAuth: true,
+          } as any);
+          data = response.data;
+          break;
+        } catch (err: any) {
+          lastError = err;
+          if (err?.response?.status && ![404, 405].includes(err.response.status)) {
+            throw err;
+          }
+        }
+      }
+
+      if (!data) {
+        throw lastError || new Error('Login endpoint unavailable');
       }
 
       clearTimeout(timeoutId);
