@@ -63,12 +63,7 @@ const mapProviderForHospital = (provider) => {
 router.get('/admin/providers', authUser, requireRole(['admin', 'hospital']), async (req, res) => {
   try {
     const providers = await InsuranceProvider.findAll({
-      order: [['createdAt', 'DESC']],
-      include: [{ 
-        model: InsurancePolicy, 
-        as: 'policies',
-        attributes: ['id', 'policyName', 'isActive']
-      }]
+      order: [['createdAt', 'DESC']]
     });
     res.json({ providers: providers.map(mapProviderForHospital) });
   } catch (e) {
