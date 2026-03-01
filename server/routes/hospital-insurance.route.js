@@ -1134,4 +1134,336 @@ router.get('/reports/query-rejection-trends', authUser, requireRole(['hospital',
   }
 });
 
+// ==================== 8. IHX PARITY MVP (TASKS, SLA, APPEALS) ====================
+
+const getAgeInDays = (dateValue) => {
+  if (!dateValue) return 0;
+  const ageMs = Date.now() - new Date(dateValue).getTime();
+  return Math.max(0, Math.floor(ageMs / (1000 * 60 * 60 * 24)));
+};
+
+/**
+ * GET /hospital/insurance/tasks/inbox
+ * Unified task inbox for claim coordinators (queries, missing docs, denials, SLA followups)
+ */
+router.get('/tasks/inbox', authUser, requireRole(['hospital', 'admin']), async (req, res) => {
+  try {
+    const { hospitalId, thresholdDays = 3 } = req.query;
+    const slaThreshold = parseInt(thresholdDays);
+
+    const claimWhere = {
+      [Op.or]: [
+        { status: { [Op.in]: ['query', 'rejected', 'pending'] } },
+        { documentsStatus: 'incomplete' }
+      ]
+    };
+
+    if (hospitalId) claimWhere.hospitalId = hospitalId;
+
+    const preAuthWhere = { status: 'pending' };
+    if (hospitalId) preAuthWhere.hospitalId = hospitalId;
+
+    const [claims, preAuths] = await Promise.all([
+      InsuranceClaim.findAll({
+        where: claimWhere,
+        order: [['updatedAt', 'DESC']],
+        include: [
+          {
+            model: User,
+            as: 'patient',
+            attributes: ['id', 'firstName', 'lastName']
+          }
+        ],
+        limit: 200
+      }),
+      PreAuthorization.findAll({
+        where: preAuthWhere,
+        order: [['submittedAt', 'ASC']],
+        include: [
+          {
+            model: User,
+            as: 'patient',
+            attributes: ['id', 'firstName', 'lastName']
+          }
+        ],
+        limit: 100
+      })
+    ]);
+
+    const claimTasks = [];
+
+    claims.forEach((claim) => {
+      const ageDays = getAgeInDays(claim.submittedAt || claim.createdAt);
+      const patientName = claim.patient ? `${claim.patient.firstName} ${claim.patient.lastName}` : 'Unknown';
+
+      if (claim.status === 'query') {
+        claimTasks.push({
+          taskType: 'query-response',
+          taskLabel: 'Respond to insurer query',
+          claimId: claim.id,
+          claimNumber: claim.claimNumber,
+          patientName,
+          status: claim.status,
+          ageDays,
+          priority: ageDays >= slaThreshold ? 'high' : 'normal',
+          slaFlag: ageDays >= slaThreshold ? 'breached' : 'within-sla'
+        });
+      }
+
+      if (claim.documentsStatus === 'incomplete') {
+        claimTasks.push({
+          taskType: 'missing-documents',
+          taskLabel: 'Upload required documents',
+          claimId: claim.id,
+          claimNumber: claim.claimNumber,
+          patientName,
+          status: claim.status,
+          ageDays,
+          priority: 'high',
+          slaFlag: ageDays >= slaThreshold ? 'breached' : 'within-sla'
+        });
+      }
+
+      if (claim.status === 'rejected') {
+        claimTasks.push({
+          taskType: 'denial-appeal',
+          taskLabel: 'Review rejection and file appeal',
+          claimId: claim.id,
+          claimNumber: claim.claimNumber,
+          patientName,
+          status: claim.status,
+          rejectionReason: claim.rejectionReason,
+          ageDays,
+          priority: 'high',
+          slaFlag: ageDays >= slaThreshold ? 'breached' : 'within-sla'
+        });
+      }
+
+      if (claim.status === 'pending' && ageDays >= slaThreshold) {
+        claimTasks.push({
+          taskType: 'claim-followup',
+          taskLabel: 'Follow up pending claim',
+          claimId: claim.id,
+          claimNumber: claim.claimNumber,
+          patientName,
+          status: claim.status,
+          ageDays,
+          priority: ageDays >= slaThreshold + 2 ? 'high' : 'normal',
+          slaFlag: 'breached'
+        });
+      }
+    });
+
+    const preAuthTasks = preAuths.map((preAuth) => {
+      const ageDays = getAgeInDays(preAuth.submittedAt || preAuth.createdAt);
+      const patientName = preAuth.patient ? `${preAuth.patient.firstName} ${preAuth.patient.lastName}` : 'Unknown';
+
+      return {
+        taskType: 'preauth-followup',
+        taskLabel: 'Follow up pending pre-authorization',
+        preAuthId: preAuth.id,
+        preAuthNumber: preAuth.preAuthNumber,
+        patientName,
+        status: preAuth.status,
+        ageDays,
+        priority: ageDays >= slaThreshold ? 'high' : 'normal',
+        slaFlag: ageDays >= slaThreshold ? 'breached' : 'within-sla'
+      };
+    });
+
+    const tasks = [...claimTasks, ...preAuthTasks]
+      .sort((a, b) => {
+        if (a.priority === b.priority) return b.ageDays - a.ageDays;
+        return a.priority === 'high' ? -1 : 1;
+      });
+
+    res.json({
+      success: true,
+      taskInbox: tasks,
+      summary: {
+        total: tasks.length,
+        highPriority: tasks.filter(t => t.priority === 'high').length,
+        slaBreached: tasks.filter(t => t.slaFlag === 'breached').length
+      }
+    });
+  } catch (error) {
+    console.error('Task inbox error:', error);
+    res.status(500).json({ success: false, message: error.message });
+  }
+});
+
+/**
+ * GET /hospital/insurance/claims/escalations
+ * SLA breach flags for pending/query/rejected claims
+ */
+router.get('/claims/escalations', authUser, requireRole(['hospital', 'admin']), async (req, res) => {
+  try {
+    const { hospitalId, thresholdDays = 7 } = req.query;
+    const slaThreshold = parseInt(thresholdDays);
+
+    const where = {
+      status: { [Op.in]: ['pending', 'query', 'submitted', 'rejected'] }
+    };
+
+    if (hospitalId) where.hospitalId = hospitalId;
+
+    const claims = await InsuranceClaim.findAll({
+      where,
+      order: [['submittedAt', 'ASC']],
+      include: [
+        {
+          model: User,
+          as: 'patient',
+          attributes: ['id', 'firstName', 'lastName']
+        }
+      ],
+      limit: 300
+    });
+
+    const escalations = claims
+      .map((claim) => {
+        const ageDays = getAgeInDays(claim.submittedAt || claim.createdAt);
+        const isBreached = ageDays >= slaThreshold || (claim.status === 'query' && ageDays >= 3);
+        const patientName = claim.patient ? `${claim.patient.firstName} ${claim.patient.lastName}` : 'Unknown';
+
+        return {
+          claimId: claim.id,
+          claimNumber: claim.claimNumber,
+          patientName,
+          status: claim.status,
+          ageDays,
+          slaThreshold,
+          slaFlag: isBreached ? 'breached' : 'within-sla',
+          escalationLevel: isBreached ? (ageDays >= slaThreshold + 3 ? 'critical' : 'warning') : 'normal'
+        };
+      })
+      .filter(item => item.slaFlag === 'breached')
+      .sort((a, b) => b.ageDays - a.ageDays);
+
+    res.json({
+      success: true,
+      escalations,
+      summary: {
+        totalBreached: escalations.length,
+        critical: escalations.filter(e => e.escalationLevel === 'critical').length,
+        warning: escalations.filter(e => e.escalationLevel === 'warning').length
+      }
+    });
+  } catch (error) {
+    console.error('Escalations error:', error);
+    res.status(500).json({ success: false, message: error.message });
+  }
+});
+
+/**
+ * POST /hospital/insurance/claims/:claimId/appeal
+ * Denial appeal workflow (capture reason and move back to pending)
+ */
+router.post('/claims/:claimId/appeal', authUser, requireRole(['hospital', 'admin']), [
+  param('claimId').isInt(),
+  body('appealReason').notEmpty().withMessage('Appeal reason is required'),
+  body('supportingNotes').optional().isString()
+], async (req, res) => {
+  try {
+    const claim = await InsuranceClaim.findByPk(req.params.claimId);
+    if (!claim) {
+      return res.status(404).json({ success: false, message: 'Claim not found' });
+    }
+
+    const { appealReason, supportingNotes } = req.body;
+
+    const appealEntry = {
+      type: 'appeal',
+      appealedAt: new Date(),
+      appealedBy: req.user.id,
+      appealReason,
+      supportingNotes: supportingNotes || ''
+    };
+
+    await claim.update({
+      status: 'pending',
+      queryHistory: [...(claim.queryHistory || []), appealEntry],
+      notes: `${claim.notes || ''}\n[APPEAL ${new Date().toISOString()}] ${appealReason}`.trim(),
+      updatedAt: new Date(),
+      lastModifiedBy: req.user.id
+    });
+
+    res.json({
+      success: true,
+      message: 'Appeal submitted successfully. Claim moved to pending review.',
+      claim
+    });
+  } catch (error) {
+    console.error('Appeal submission error:', error);
+    res.status(500).json({ success: false, message: error.message });
+  }
+});
+
+/**
+ * GET /hospital/insurance/claims/appeals
+ * List claims with appeal events for denial management tracking
+ */
+router.get('/claims/appeals', authUser, requireRole(['hospital', 'admin']), async (req, res) => {
+  try {
+    const { hospitalId, page = 1, limit = 30 } = req.query;
+    const where = {
+      status: { [Op.in]: ['rejected', 'pending', 'query'] }
+    };
+
+    if (hospitalId) where.hospitalId = hospitalId;
+
+    const offset = (parseInt(page) - 1) * parseInt(limit);
+
+    const { count, rows: claims } = await InsuranceClaim.findAndCountAll({
+      where,
+      order: [['updatedAt', 'DESC']],
+      include: [
+        {
+          model: User,
+          as: 'patient',
+          attributes: ['id', 'firstName', 'lastName']
+        }
+      ],
+      offset,
+      limit: parseInt(limit)
+    });
+
+    const appealedClaims = claims
+      .map((claim) => {
+        const history = Array.isArray(claim.queryHistory) ? claim.queryHistory : [];
+        const appealEvents = history.filter(item => item?.type === 'appeal');
+        const latestAppeal = appealEvents.length > 0 ? appealEvents[appealEvents.length - 1] : null;
+
+        if (!latestAppeal && claim.status !== 'rejected') {
+          return null;
+        }
+
+        return {
+          claimId: claim.id,
+          claimNumber: claim.claimNumber,
+          patientName: claim.patient ? `${claim.patient.firstName} ${claim.patient.lastName}` : 'Unknown',
+          status: claim.status,
+          rejectionReason: claim.rejectionReason,
+          appealCount: appealEvents.length,
+          latestAppeal
+        };
+      })
+      .filter(Boolean);
+
+    res.json({
+      success: true,
+      appeals: appealedClaims,
+      pagination: {
+        total: count,
+        page: parseInt(page),
+        limit: parseInt(limit),
+        totalPages: Math.ceil(count / parseInt(limit))
+      }
+    });
+  } catch (error) {
+    console.error('Appeals list error:', error);
+    res.status(500).json({ success: false, message: error.message });
+  }
+});
+
 export default router;

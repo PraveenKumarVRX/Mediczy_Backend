@@ -53,6 +53,45 @@ type ClaimTimelineItem = {
   approvedAmount?: number;
 };
 
+type TaskInboxItem = {
+  taskType: string;
+  taskLabel: string;
+  claimId?: number;
+  preAuthId?: number;
+  claimNumber?: string;
+  preAuthNumber?: string;
+  patientName?: string;
+  status: string;
+  ageDays: number;
+  priority: "high" | "normal";
+  slaFlag: "breached" | "within-sla";
+  rejectionReason?: string;
+};
+
+type EscalationItem = {
+  claimId: number;
+  claimNumber: string;
+  patientName: string;
+  status: string;
+  ageDays: number;
+  slaThreshold: number;
+  slaFlag: "breached" | "within-sla";
+  escalationLevel: "critical" | "warning" | "normal";
+};
+
+type AppealItem = {
+  claimId: number;
+  claimNumber: string;
+  patientName: string;
+  status: string;
+  rejectionReason?: string;
+  appealCount: number;
+  latestAppeal?: {
+    appealReason?: string;
+    appealedAt?: string;
+  };
+};
+
 const HospitalInsuranceClaimsDashboard = () => {
   const navigate = useNavigate();
   const { toast } = useToast();
@@ -79,6 +118,12 @@ const HospitalInsuranceClaimsDashboard = () => {
   const [historyTimeline, setHistoryTimeline] = useState<ClaimTimelineItem[]>([]);
   const [historyLoading, setHistoryLoading] = useState(false);
   const [enhancingClaimId, setEnhancingClaimId] = useState<number | null>(null);
+  const [taskInbox, setTaskInbox] = useState<TaskInboxItem[]>([]);
+  const [taskSummary, setTaskSummary] = useState<{ total: number; highPriority: number; slaBreached: number } | null>(null);
+  const [escalations, setEscalations] = useState<EscalationItem[]>([]);
+  const [escalationSummary, setEscalationSummary] = useState<{ totalBreached: number; critical: number; warning: number } | null>(null);
+  const [appeals, setAppeals] = useState<AppealItem[]>([]);
+  const [appealingClaimId, setAppealingClaimId] = useState<number | null>(null);
   const [highlightTimeline, setHighlightTimeline] = useState(false);
   const historyPanelRef = useRef<HTMLDivElement | null>(null);
 
@@ -106,14 +151,17 @@ const HospitalInsuranceClaimsDashboard = () => {
   const loadDashboard = async () => {
     try {
       const headers = { headers: hospitalHeaders() };
-      const [dashRes, claimsRes, preAuthRes, docsRes, receivablesRes, agingRes, trendsRes] = await Promise.all([
+      const [dashRes, claimsRes, preAuthRes, docsRes, receivablesRes, agingRes, trendsRes, taskRes, escalationRes, appealsRes] = await Promise.all([
         api.get("/hospital/insurance/dashboard", headers),
         api.get("/hospital/insurance/claims/submitted", { ...headers, params: { page: 1, limit: 20 } }),
         api.get("/hospital/insurance/pre-auth/pending", { ...headers, params: { page: 1, limit: 20 } }),
         api.get("/hospital/insurance/documents/missing", headers),
         api.get("/hospital/insurance/revenue/receivables", headers),
         api.get("/hospital/insurance/reports/claims-aging", headers),
-        api.get("/hospital/insurance/reports/query-rejection-trends", headers)
+        api.get("/hospital/insurance/reports/query-rejection-trends", headers),
+        api.get("/hospital/insurance/tasks/inbox", headers),
+        api.get("/hospital/insurance/claims/escalations", headers),
+        api.get("/hospital/insurance/claims/appeals", { ...headers, params: { page: 1, limit: 20 } })
       ]);
 
       setDashboard(dashRes.data.dashboard || null);
@@ -123,6 +171,11 @@ const HospitalInsuranceClaimsDashboard = () => {
       setReceivables(receivablesRes.data.receivables || null);
       setAgingReport(agingRes.data.agingReport || null);
       setTrendReport(trendsRes.data.trends || null);
+      setTaskInbox(taskRes.data.taskInbox || []);
+      setTaskSummary(taskRes.data.summary || null);
+      setEscalations(escalationRes.data.escalations || []);
+      setEscalationSummary(escalationRes.data.summary || null);
+      setAppeals(appealsRes.data.appeals || []);
     } catch (error) {
       console.error("Hospital insurance dashboard load failed", error);
       toast({
@@ -325,6 +378,39 @@ const HospitalInsuranceClaimsDashboard = () => {
     }
   };
 
+  const handleSubmitAppeal = async (claimId: number) => {
+    const appealReason = window.prompt("Enter appeal reason for this denied claim:");
+    if (!appealReason || !appealReason.trim()) return;
+
+    const supportingNotes = window.prompt("Optional supporting notes (can be left blank):") || "";
+
+    try {
+      setAppealingClaimId(claimId);
+      await api.post(
+        `/hospital/insurance/claims/${claimId}/appeal`,
+        { appealReason: appealReason.trim(), supportingNotes: supportingNotes.trim() },
+        { headers: hospitalHeaders() }
+      );
+
+      toast({
+        title: "Appeal submitted",
+        description: "Denial appeal filed and moved to pending review."
+      });
+
+      await loadDashboard();
+      await handleOpenClaimHistory(claimId);
+    } catch (error) {
+      console.error("Appeal submission failed", error);
+      toast({
+        title: "Appeal failed",
+        description: "Unable to submit denial appeal.",
+        variant: "destructive"
+      });
+    } finally {
+      setAppealingClaimId(null);
+    }
+  };
+
   const statCards = useMemo(() => {
     const stats = dashboard?.stats;
     const alerts = dashboard?.alerts;
@@ -374,11 +460,136 @@ const HospitalInsuranceClaimsDashboard = () => {
       <Tabs defaultValue="claims" className="space-y-4">
         <TabsList className="flex flex-wrap h-auto">
           <TabsTrigger value="claims">Claims Queue</TabsTrigger>
+          <TabsTrigger value="tasks">Task Inbox</TabsTrigger>
+          <TabsTrigger value="escalations">SLA Escalations</TabsTrigger>
+          <TabsTrigger value="appeals">Denials & Appeals</TabsTrigger>
           <TabsTrigger value="preauth">Pre-Auth</TabsTrigger>
           <TabsTrigger value="documents">Document Alerts</TabsTrigger>
           <TabsTrigger value="search">Quick Search</TabsTrigger>
           <TabsTrigger value="analytics">Analytics</TabsTrigger>
         </TabsList>
+
+        <TabsContent value="tasks">
+          <Card>
+            <CardHeader>
+              <CardTitle>Task Inbox</CardTitle>
+            </CardHeader>
+            <CardContent className="space-y-3">
+              {taskSummary && (
+                <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
+                  <div className="border rounded-md p-2 text-sm">Total Tasks: <span className="font-semibold">{taskSummary.total}</span></div>
+                  <div className="border rounded-md p-2 text-sm">High Priority: <span className="font-semibold">{taskSummary.highPriority}</span></div>
+                  <div className="border rounded-md p-2 text-sm">SLA Breached: <span className="font-semibold">{taskSummary.slaBreached}</span></div>
+                </div>
+              )}
+
+              {taskInbox.length === 0 ? (
+                <p className="text-sm text-slate-500">No pending operational tasks.</p>
+              ) : (
+                taskInbox.map((task, index) => (
+                  <div key={`${task.taskType}-${task.claimId || task.preAuthId || index}`} className="border rounded-lg p-3 flex flex-col md:flex-row md:items-center md:justify-between gap-3">
+                    <div>
+                      <p className="font-semibold text-slate-900 dark:text-white">{task.taskLabel}</p>
+                      <p className="text-sm text-slate-500">
+                        {task.claimNumber ? `Claim: ${task.claimNumber}` : `Pre-Auth: ${task.preAuthNumber}`} • {task.patientName || "Unknown"}
+                      </p>
+                      <p className="text-xs text-slate-500 mt-1">Age: {task.ageDays} days</p>
+                    </div>
+
+                    <div className="flex items-center gap-2 flex-wrap">
+                      <Badge className={task.priority === "high" ? "bg-red-500/10 text-red-600" : "bg-blue-500/10 text-blue-600"}>
+                        {task.priority}
+                      </Badge>
+                      <Badge className={task.slaFlag === "breached" ? "bg-red-500/10 text-red-600" : "bg-green-500/10 text-green-600"}>
+                        {task.slaFlag}
+                      </Badge>
+                      {!!task.claimId && (
+                        <>
+                          <Button size="sm" variant="outline" onClick={() => handleOpenClaimHistory(task.claimId!)}>History</Button>
+                          <Button size="sm" onClick={() => handleEnhanceClaim(task.claimId!)}>Act</Button>
+                        </>
+                      )}
+                    </div>
+                  </div>
+                ))
+              )}
+            </CardContent>
+          </Card>
+        </TabsContent>
+
+        <TabsContent value="escalations">
+          <Card>
+            <CardHeader>
+              <CardTitle>SLA Escalations</CardTitle>
+            </CardHeader>
+            <CardContent className="space-y-3">
+              {escalationSummary && (
+                <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
+                  <div className="border rounded-md p-2 text-sm">Breached: <span className="font-semibold">{escalationSummary.totalBreached}</span></div>
+                  <div className="border rounded-md p-2 text-sm">Critical: <span className="font-semibold">{escalationSummary.critical}</span></div>
+                  <div className="border rounded-md p-2 text-sm">Warning: <span className="font-semibold">{escalationSummary.warning}</span></div>
+                </div>
+              )}
+
+              {escalations.length === 0 ? (
+                <p className="text-sm text-slate-500">No SLA escalations right now.</p>
+              ) : (
+                escalations.map((item) => (
+                  <div key={item.claimId} className="border rounded-lg p-3 flex flex-col md:flex-row md:items-center md:justify-between gap-3">
+                    <div>
+                      <p className="font-semibold text-slate-900 dark:text-white">{item.claimNumber}</p>
+                      <p className="text-sm text-slate-500">{item.patientName} • {item.ageDays} days old</p>
+                    </div>
+                    <div className="flex items-center gap-2 flex-wrap">
+                      <Badge className={statusClass(item.status)}>{item.status}</Badge>
+                      <Badge className={item.escalationLevel === "critical" ? "bg-red-500/10 text-red-600" : "bg-amber-500/10 text-amber-600"}>
+                        {item.escalationLevel}
+                      </Badge>
+                      <Button size="sm" variant="outline" onClick={() => handleOpenClaimHistory(item.claimId)}>History</Button>
+                      <Button size="sm" onClick={() => handleEnhanceClaim(item.claimId)}>Follow Up</Button>
+                    </div>
+                  </div>
+                ))
+              )}
+            </CardContent>
+          </Card>
+        </TabsContent>
+
+        <TabsContent value="appeals">
+          <Card>
+            <CardHeader>
+              <CardTitle>Denials & Appeals</CardTitle>
+            </CardHeader>
+            <CardContent className="space-y-3">
+              {appeals.length === 0 ? (
+                <p className="text-sm text-slate-500">No denial/appeal records available.</p>
+              ) : (
+                appeals.map((item) => (
+                  <div key={item.claimId} className="border rounded-lg p-3 flex flex-col md:flex-row md:items-center md:justify-between gap-3">
+                    <div>
+                      <p className="font-semibold text-slate-900 dark:text-white">{item.claimNumber}</p>
+                      <p className="text-sm text-slate-500">{item.patientName}</p>
+                      <p className="text-xs text-slate-500 mt-1">Reason: {item.rejectionReason || "N/A"}</p>
+                      <p className="text-xs text-slate-500">Appeals filed: {item.appealCount}</p>
+                    </div>
+
+                    <div className="flex items-center gap-2 flex-wrap">
+                      <Badge className={statusClass(item.status)}>{item.status}</Badge>
+                      <Button size="sm" variant="outline" onClick={() => handleOpenClaimHistory(item.claimId)}>History</Button>
+                      <Button
+                        size="sm"
+                        onClick={() => handleSubmitAppeal(item.claimId)}
+                        disabled={appealingClaimId === item.claimId}
+                      >
+                        {appealingClaimId === item.claimId ? "Submitting..." : "Submit Appeal"}
+                      </Button>
+                    </div>
+                  </div>
+                ))
+              )}
+            </CardContent>
+          </Card>
+        </TabsContent>
 
         <TabsContent value="claims">
           <Card>
