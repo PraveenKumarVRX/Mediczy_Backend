@@ -257,19 +257,33 @@ router.get('/claims/submitted', authUser, requireRole(['hospital', 'admin']), as
 
     const offset = (page - 1) * limit;
 
-    const { count, rows: claims } = await InsuranceClaim.findAndCountAll({
-      where,
-      limit: parseInt(limit),
-      offset,
-      order: [['submittedAt', 'DESC']],
-      include: [
-        { 
-          model: User, 
-          as: 'patient',
-          attributes: ['id', 'firstName', 'lastName', 'email', 'phoneNumber'] 
-        }
-      ]
-    });
+    let result;
+
+    try {
+      result = await InsuranceClaim.findAndCountAll({
+        where,
+        limit: parseInt(limit),
+        offset,
+        order: [['submittedAt', 'DESC']],
+        include: [
+          {
+            model: User,
+            as: 'patient',
+            attributes: ['id', 'firstName', 'lastName', 'email', 'phoneNumber']
+          }
+        ]
+      });
+    } catch (includeError) {
+      console.warn('Submitted claims include fallback triggered:', includeError.message);
+      result = await InsuranceClaim.findAndCountAll({
+        where,
+        limit: parseInt(limit),
+        offset,
+        order: [['submittedAt', 'DESC']]
+      });
+    }
+
+    const { count, rows: claims } = result;
 
     res.json({
       success: true,
