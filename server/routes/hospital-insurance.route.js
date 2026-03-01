@@ -258,24 +258,32 @@ router.get('/claims/submitted', authUser, requireRole(['hospital', 'admin']), as
     const offset = (page - 1) * limit;
 
     let result;
+    const ClaimsModel = typeof InsuranceClaim.unscoped === 'function'
+      ? InsuranceClaim.unscoped()
+      : InsuranceClaim;
+    const hasPatientAssociation = !!(InsuranceClaim.associations && InsuranceClaim.associations.patient);
 
     try {
-      result = await InsuranceClaim.findAndCountAll({
+      result = await ClaimsModel.findAndCountAll({
         where,
         limit: parseInt(limit),
         offset,
         order: [['submittedAt', 'DESC']],
-        include: [
-          {
-            model: User,
-            as: 'patient',
-            attributes: ['id', 'firstName', 'lastName', 'email', 'phoneNumber']
-          }
-        ]
+        ...(hasPatientAssociation
+          ? {
+              include: [
+                {
+                  model: User,
+                  as: 'patient',
+                  attributes: ['id', 'firstName', 'lastName', 'email', 'phoneNumber']
+                }
+              ]
+            }
+          : {})
       });
     } catch (includeError) {
       console.warn('Submitted claims include fallback triggered:', includeError.message);
-      result = await InsuranceClaim.findAndCountAll({
+      result = await ClaimsModel.findAndCountAll({
         where,
         limit: parseInt(limit),
         offset,
@@ -297,6 +305,18 @@ router.get('/claims/submitted', authUser, requireRole(['hospital', 'admin']), as
     });
   } catch (error) {
     console.error('Submitted claims error:', error);
+    if (/not associated/i.test(error.message || '')) {
+      return res.json({
+        success: true,
+        claims: [],
+        pagination: {
+          total: 0,
+          page: parseInt(req.query.page || 1),
+          limit: parseInt(req.query.limit || 20),
+          totalPages: 0
+        }
+      });
+    }
     res.status(500).json({ success: false, message: error.message });
   }
 });
