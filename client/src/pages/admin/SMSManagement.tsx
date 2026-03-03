@@ -371,7 +371,7 @@ const SMSManagement = () => {
               </div>
 
               {/* Quick Actions */}
-              <Card className="shadow-lg border-0 bg-white/80 backdrop-blur-xl">
+              <Card className="shadow-lg border-border/60 bg-card/95 backdrop-blur-xl">
                 <CardHeader>
                   <CardTitle className="flex items-center gap-2">
                     <Send className="h-5 w-5 text-blue-600" />
@@ -409,7 +409,7 @@ const SMSManagement = () => {
               </Card>
 
               {/* Recent Logs */}
-              <Card className="shadow-lg border-0 bg-white/80 backdrop-blur-xl">
+              <Card className="shadow-lg border-border/60 bg-card/95 backdrop-blur-xl">
                 <CardHeader>
                   <CardTitle className="flex items-center gap-2">
                     <FileText className="h-5 w-5 text-purple-600" />
@@ -420,7 +420,7 @@ const SMSManagement = () => {
                   {logs.length > 0 ? (
                     <div className="space-y-3">
                       {logs.slice(0, 5).map((log, index) => (
-                        <div key={index} className="flex items-center justify-between p-3 bg-gray-50 rounded-lg">
+                        <div key={index} className="flex items-center justify-between p-3 bg-muted/40 rounded-lg">
                           <div className="flex items-center gap-3">
                             {log.result?.success || log.successCount > 0 ? (
                               <CheckCircle className="h-5 w-5 text-green-600" />
@@ -431,7 +431,7 @@ const SMSManagement = () => {
                               <p className="text-sm font-medium">
                                 {log.type === 'bulk' ? `Bulk SMS (${log.recipients} recipients)` : `To: ${log.to?.[0]}`}
                               </p>
-                              <p className="text-xs text-gray-600">{new Date(log.timestamp).toLocaleString()}</p>
+                              <p className="text-xs text-muted-foreground">{new Date(log.timestamp).toLocaleString()}</p>
                             </div>
                           </div>
                           <Badge variant={log.result?.success || log.successCount > 0 ? "default" : "destructive"}>
@@ -444,7 +444,7 @@ const SMSManagement = () => {
                       ))}
                     </div>
                   ) : (
-                    <p className="text-gray-500 text-center py-4">No SMS logs found</p>
+                    <p className="text-muted-foreground text-center py-4">No SMS logs found</p>
                   )}
                 </CardContent>
               </Card>
@@ -452,7 +452,7 @@ const SMSManagement = () => {
 
             {/* Send SMS Tab */}
             <TabsContent value="send" className="space-y-6">
-              <Card className="shadow-lg border-0 bg-white/80 backdrop-blur-xl">
+              <Card className="shadow-lg border-border/60 bg-card/95 backdrop-blur-xl">
                 <CardHeader>
                   <CardTitle className="flex items-center gap-2">
                     <Send className="h-5 w-5 text-blue-600" />
@@ -491,7 +491,7 @@ const SMSManagement = () => {
                       onChange={(e) => setSmsForm({ ...smsForm, message: e.target.value })}
                       rows={4}
                     />
-                    <p className="text-xs text-gray-500 mt-1">
+                    <p className="text-xs text-muted-foreground mt-1">
                       Character count: {smsForm.message.length}/160
                     </p>
                   </div>
@@ -510,7 +510,7 @@ const SMSManagement = () => {
 
             {/* Bulk SMS Tab */}
             <TabsContent value="bulk" className="space-y-6">
-              <Card className="shadow-lg border-0 bg-white/80 backdrop-blur-xl">
+              <Card className="shadow-lg border-border/60 bg-card/95 backdrop-blur-xl">
                 <CardHeader>
                   <CardTitle className="flex items-center gap-2">
                     <Users className="h-5 w-5 text-green-600" />
@@ -526,7 +526,7 @@ const SMSManagement = () => {
                       onChange={(e) => setBulkSMS({ ...bulkSMS, recipients: e.target.value })}
                       rows={6}
                     />
-                    <p className="text-xs text-gray-500 mt-1">
+                    <p className="text-xs text-muted-foreground mt-1">
                       Format: phone,name (one per line). Recipients: {bulkSMS.recipients.split('\n').filter(line => line.trim()).length}
                     </p>
                   </div>
@@ -571,7 +571,7 @@ const SMSManagement = () => {
             <TabsContent value="templates" className="space-y-6">
               <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
                 {/* Add Template */}
-                <Card className="shadow-lg border-0 bg-white/80 backdrop-blur-xl">
+                <Card className="shadow-lg border-border/60 bg-card/95 backdrop-blur-xl">
                   <CardHeader>
                     <CardTitle className="flex items-center gap-2">
                       <Plus className="h-5 w-5 text-green-600" />
@@ -596,7 +596,7 @@ const SMSManagement = () => {
                         onChange={(e) => setTemplateForm({ ...templateForm, template: e.target.value })}
                         rows={4}
                       />
-                      <p className="text-xs text-gray-500 mt-1">
+                      <p className="text-xs text-muted-foreground mt-1">
                         Use {'{variable}'} for dynamic content
                       </p>
                     </div>
@@ -613,7 +613,7 @@ const SMSManagement = () => {
                 </Card>
 
                 {/* Existing Templates */}
-                <Card className="shadow-lg border-0 bg-white/80 backdrop-blur-xl">
+                <Card className="shadow-lg border-border/60 bg-card/95 backdrop-blur-xl">
                   <CardHeader>
                     <CardTitle className="flex items-center gap-2">
                       <FileText className="h-5 w-5 text-blue-600" />
@@ -624,9 +624,9 @@ const SMSManagement = () => {
                     {Object.keys(templates).length > 0 ? (
                       <div className="space-y-3 max-h-96 overflow-y-auto">
                         {Object.entries(templates).map(([id, template]) => (
-                          <div key={id} className="p-3 bg-gray-50 rounded-lg">
+                          <div key={id} className="p-3 bg-muted/40 rounded-lg">
                             <h4 className="font-semibold text-sm text-blue-600">{id}</h4>
-                            <p className="text-xs text-gray-600 mt-1">{template}</p>
+                            <p className="text-xs text-muted-foreground mt-1">{template}</p>
                             <Button
                               size="sm"
                               variant="outline"
@@ -639,7 +639,7 @@ const SMSManagement = () => {
                         ))}
                       </div>
                     ) : (
-                      <p className="text-gray-500 text-center py-4">No templates found</p>
+                      <p className="text-muted-foreground text-center py-4">No templates found</p>
                     )}
                   </CardContent>
                 </Card>
@@ -648,7 +648,7 @@ const SMSManagement = () => {
 
             {/* Logs Tab */}
             <TabsContent value="logs" className="space-y-6">
-              <Card className="shadow-lg border-0 bg-white/80 backdrop-blur-xl">
+              <Card className="shadow-lg border-border/60 bg-card/95 backdrop-blur-xl">
                 <CardHeader>
                   <CardTitle className="flex items-center gap-2">
                     <FileText className="h-5 w-5 text-purple-600" />
@@ -668,7 +668,7 @@ const SMSManagement = () => {
                   {logs.length > 0 ? (
                     <div className="space-y-3">
                       {logs.map((log, index) => (
-                        <div key={index} className="flex items-start justify-between p-4 bg-gray-50 rounded-lg">
+                        <div key={index} className="flex items-start justify-between p-4 bg-muted/40 rounded-lg">
                           <div className="flex items-start gap-3">
                             {log.result?.success || log.successCount > 0 ? (
                               <CheckCircle className="h-5 w-5 text-green-600 mt-0.5" />
@@ -684,8 +684,8 @@ const SMSManagement = () => {
                                   <Badge variant="secondary" className="text-xs">Test</Badge>
                                 )}
                               </div>
-                              <p className="text-sm text-gray-600 mb-2">{log.message}</p>
-                              <div className="flex items-center gap-4 text-xs text-gray-500">
+                              <p className="text-sm text-muted-foreground mb-2">{log.message}</p>
+                              <div className="flex items-center gap-4 text-xs text-muted-foreground">
                                 <span>By: {log.sentBy}</span>
                                 <span>{new Date(log.timestamp).toLocaleString()}</span>
                                 {log.templateId && <span>Template: {log.templateId}</span>}
@@ -700,14 +700,14 @@ const SMSManagement = () => {
                               }
                             </Badge>
                             {log.result?.messageId && (
-                              <p className="text-xs text-gray-500 mt-1">ID: {log.result.messageId.slice(0, 8)}...</p>
+                              <p className="text-xs text-muted-foreground mt-1">ID: {log.result.messageId.slice(0, 8)}...</p>
                             )}
                           </div>
                         </div>
                       ))}
                     </div>
                   ) : (
-                    <p className="text-gray-500 text-center py-8">No SMS logs found</p>
+                    <p className="text-muted-foreground text-center py-8">No SMS logs found</p>
                   )}
                 </CardContent>
               </Card>
@@ -715,10 +715,10 @@ const SMSManagement = () => {
 
             {/* Configuration Tab */}
             <TabsContent value="config" className="space-y-6">
-              <Card className="shadow-lg border-0 bg-white/80 backdrop-blur-xl">
+              <Card className="shadow-lg border-border/60 bg-card/95 backdrop-blur-xl">
                 <CardHeader>
                   <CardTitle className="flex items-center gap-2">
-                    <Settings className="h-5 w-5 text-gray-600" />
+                    <Settings className="h-5 w-5 text-muted-foreground" />
                     SMS Gateway Configuration
                   </CardTitle>
                 </CardHeader>

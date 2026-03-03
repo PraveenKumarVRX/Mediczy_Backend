@@ -1,5 +1,85 @@
 /* Enhanced Admin Dashboard Global Styles */
 
+/* -------------------------------------------------------------------------- */
+/* Admin shell + theme-safe legacy overrides                                  */
+/* -------------------------------------------------------------------------- */
+.admin-dashboard-shell {
+  position: relative;
+  isolation: isolate;
+  background:
+    radial-gradient(circle at 8% 0%, rgba(20, 184, 166, 0.08), transparent 30%),
+    radial-gradient(circle at 92% 14%, rgba(59, 130, 246, 0.08), transparent 34%),
+    linear-gradient(180deg, rgba(148, 163, 184, 0.06) 0%, rgba(148, 163, 184, 0.02) 46%, rgba(148, 163, 184, 0) 100%);
+}
+
+.dark .admin-dashboard-shell {
+  background:
+    radial-gradient(circle at 10% 0%, rgba(20, 184, 166, 0.16), transparent 36%),
+    radial-gradient(circle at 90% 18%, rgba(59, 130, 246, 0.18), transparent 40%),
+    linear-gradient(180deg, rgba(15, 23, 42, 0.76) 0%, rgba(2, 6, 23, 0.92) 100%);
+}
+
+.admin-sidebar-shell {
+  backdrop-filter: blur(12px);
+  background: hsl(var(--background) / 0.88);
+}
+
+.admin-header-shell {
+  backdrop-filter: blur(16px);
+  background: hsl(var(--background) / 0.82);
+}
+
+.admin-main-scroll {
+  position: relative;
+}
+
+.admin-page-content {
+  position: relative;
+  z-index: 1;
+}
+
+.admin-theme-scope {
+  color: hsl(var(--foreground));
+}
+
+.admin-theme-scope .bg-white,
+.admin-theme-scope .bg-white\/80,
+.admin-theme-scope .bg-white\/90 {
+  background-color: hsl(var(--card));
+  color: hsl(var(--card-foreground));
+}
+
+.dark .admin-theme-scope .bg-white,
+.dark .admin-theme-scope .bg-white\/80,
+.dark .admin-theme-scope .bg-white\/90 {
+  background-color: hsl(var(--card)) !important;
+  border-color: hsl(var(--border));
+}
+
+.dark .admin-theme-scope .bg-slate-50,
+.dark .admin-theme-scope .bg-gray-50 {
+  background-color: hsl(var(--muted));
+}
+
+.dark .admin-theme-scope .text-gray-400,
+.dark .admin-theme-scope .text-gray-500,
+.dark .admin-theme-scope .text-slate-400,
+.dark .admin-theme-scope .text-slate-500 {
+  color: hsl(var(--muted-foreground));
+}
+
+.dark .admin-theme-scope .border-gray-100,
+.dark .admin-theme-scope .border-gray-200,
+.dark .admin-theme-scope .border-slate-100,
+.dark .admin-theme-scope .border-slate-200 {
+  border-color: hsl(var(--border));
+}
+
+.dark .admin-theme-scope .divide-gray-200 > :not([hidden]) ~ :not([hidden]),
+.dark .admin-theme-scope .divide-slate-200 > :not([hidden]) ~ :not([hidden]) {
+  border-color: hsl(var(--border));
+}
+
 /* Custom scrollbar for consistent design */
 .custom-scrollbar {
   scrollbar-width: thin;

@@ -214,8 +214,8 @@ const VideoManagement = () => {
       <div className="p-6">
         <div className="flex items-center justify-between mb-6">
           <div>
-            <h1 className="text-2xl font-bold text-gray-900 dark:text-white">Video Call Management</h1>
-            <p className="text-gray-600 dark:text-gray-400">Configure and manage video calling system</p>
+            <h1 className="text-2xl font-bold text-foreground">Video Call Management</h1>
+            <p className="text-muted-foreground">Configure and manage video calling system</p>
           </div>
           <div className="flex items-center space-x-2">
             <Video className="h-5 w-5 text-blue-600" />
@@ -257,9 +257,9 @@ const VideoManagement = () => {
           <TabsContent value="dashboard" className="space-y-6">
             {stats && (
               <div className="grid grid-cols-1 md:grid-cols-4 gap-6">
-                <Card>
+                <Card className="border-border/60 bg-card/95">
                   <CardHeader className="pb-2">
-                    <CardTitle className="text-sm font-medium text-gray-600">Total Sessions</CardTitle>
+                    <CardTitle className="text-sm font-medium text-muted-foreground">Total Sessions</CardTitle>
                   </CardHeader>
                   <CardContent>
                     <div className="flex items-center space-x-2">
@@ -269,9 +269,9 @@ const VideoManagement = () => {
                   </CardContent>
                 </Card>
                 
-                <Card>
+                <Card className="border-border/60 bg-card/95">
                   <CardHeader className="pb-2">
-                    <CardTitle className="text-sm font-medium text-gray-600">Active Sessions</CardTitle>
+                    <CardTitle className="text-sm font-medium text-muted-foreground">Active Sessions</CardTitle>
                   </CardHeader>
                   <CardContent>
                     <div className="flex items-center space-x-2">
@@ -281,9 +281,9 @@ const VideoManagement = () => {
                   </CardContent>
                 </Card>
                 
-                <Card>
+                <Card className="border-border/60 bg-card/95">
                   <CardHeader className="pb-2">
-                    <CardTitle className="text-sm font-medium text-gray-600">Avg Duration</CardTitle>
+                    <CardTitle className="text-sm font-medium text-muted-foreground">Avg Duration</CardTitle>
                   </CardHeader>
                   <CardContent>
                     <div className="flex items-center space-x-2">
@@ -293,9 +293,9 @@ const VideoManagement = () => {
                   </CardContent>
                 </Card>
                 
-                <Card>
+                <Card className="border-border/60 bg-card/95">
                   <CardHeader className="pb-2">
-                    <CardTitle className="text-sm font-medium text-gray-600">Current Provider</CardTitle>
+                    <CardTitle className="text-sm font-medium text-muted-foreground">Current Provider</CardTitle>
                   </CardHeader>
                   <CardContent>
                     <div className="flex items-center space-x-2">
@@ -307,7 +307,7 @@ const VideoManagement = () => {
               </div>
             )}
 
-            <Card>
+            <Card className="border-border/60 bg-card/95">
               <CardHeader>
                 <CardTitle>Quick Actions</CardTitle>
               </CardHeader>
@@ -349,10 +349,10 @@ const VideoManagement = () => {
             </Card>
 
             {config && (
-              <Card>
+              <Card className="border-border/60 bg-card/95">
                 <CardHeader>
                   <CardTitle>LiveKit Health Check</CardTitle>
-                  <p className="text-sm text-gray-600">Verify LiveKit config and open a test room</p>
+                  <p className="text-sm text-muted-foreground">Verify LiveKit config and open a test room</p>
                 </CardHeader>
                 <CardContent className="space-y-4">
                   <div className="flex flex-wrap items-center gap-3">
@@ -391,31 +391,31 @@ const VideoManagement = () => {
 
           {/* Active Sessions Tab */}
           <TabsContent value="sessions" className="space-y-6">
-            <Card>
+            <Card className="border-border/60 bg-card/95">
               <CardHeader>
                 <CardTitle>Active Video Sessions</CardTitle>
-                <p className="text-sm text-gray-600">Manage currently running video calls</p>
+                <p className="text-sm text-muted-foreground">Manage currently running video calls</p>
               </CardHeader>
               <CardContent>
                 {activeSessions.length === 0 ? (
                   <div className="text-center py-8">
-                    <Video className="h-12 w-12 text-gray-400 mx-auto mb-4" />
-                    <p className="text-gray-600">No active video sessions</p>
+                    <Video className="h-12 w-12 text-muted-foreground mx-auto mb-4" />
+                    <p className="text-muted-foreground">No active video sessions</p>
                   </div>
                 ) : (
                   <div className="space-y-4">
                     {activeSessions.map(session => (
-                      <div key={session.id} className="border rounded-lg p-4">
+                      <div key={session.id} className="border border-border/70 rounded-lg p-4 bg-card/80">
                         <div className="flex items-center justify-between">
                           <div className="space-y-1">
                             <div className="flex items-center space-x-2">
                               <Badge variant="default">{session.provider.toUpperCase()}</Badge>
                               <span className="font-medium">Room: {session.roomId}</span>
                             </div>
-                            <p className="text-sm text-gray-600">
+                            <p className="text-sm text-muted-foreground">
                               Participants: {session.participants.length}/{session.settings.maxParticipants}
                             </p>
-                            <p className="text-sm text-gray-500">
+                            <p className="text-sm text-muted-foreground">
                               Started: {new Date(session.createdAt).toLocaleString()}
                             </p>
                           </div>
@@ -442,10 +442,10 @@ const VideoManagement = () => {
 
           {/* Providers Tab */}
           <TabsContent value="providers" className="space-y-6">
-            <Card>
+            <Card className="border-border/60 bg-card/95">
               <CardHeader>
                 <CardTitle>Video Call Providers</CardTitle>
-                <p className="text-sm text-gray-600">Configure different video calling services</p>
+                <p className="text-sm text-muted-foreground">Configure different video calling services</p>
               </CardHeader>
               <CardContent className="space-y-6">
                 {config.providers.map(provider => (
@@ -473,27 +473,27 @@ const VideoManagement = () => {
 
           {/* Logs Tab */}
           <TabsContent value="logs" className="space-y-6">
-            <Card>
+            <Card className="border-border/60 bg-card/95">
               <CardHeader>
                 <CardTitle>Video Session Logs</CardTitle>
-                <p className="text-sm text-gray-600">Recent video calling activity</p>
+                <p className="text-sm text-muted-foreground">Recent video calling activity</p>
               </CardHeader>
               <CardContent>
                 {logs.length === 0 ? (
                   <div className="text-center py-8">
-                    <Activity className="h-12 w-12 text-gray-400 mx-auto mb-4" />
-                    <p className="text-gray-600">No video session logs</p>
+                    <Activity className="h-12 w-12 text-muted-foreground mx-auto mb-4" />
+                    <p className="text-muted-foreground">No video session logs</p>
                   </div>
                 ) : (
                   <div className="space-y-2">
                     {logs.map((log, index) => (
-                      <div key={index} className="flex items-center justify-between p-3 border rounded">
+                      <div key={index} className="flex items-center justify-between p-3 border border-border/70 rounded bg-card/80">
                         <div className="flex items-center space-x-3">
                           <Badge variant="outline">{log.provider}</Badge>
                           <span className="font-medium">{log.action}</span>
-                          <span className="text-sm text-gray-600">Session: {log.sessionId}</span>
+                          <span className="text-sm text-muted-foreground">Session: {log.sessionId}</span>
                         </div>
-                        <div className="text-sm text-gray-500">
+                        <div className="text-sm text-muted-foreground">
                           {new Date(log.timestamp).toLocaleString()}
                         </div>
                       </div>
@@ -535,7 +535,7 @@ const ProviderCard = ({ provider, isActive, testResult, onConfigure, onTest, onS
   };
 
   return (
-    <Card className={`border-2 ${isActive ? 'border-blue-500' : 'border-gray-200'}`}>
+    <Card className={`border-2 ${isActive ? 'border-blue-500' : 'border-border/70'} bg-card/95`}>
       <CardHeader>
         <div className="flex items-center justify-between">
           <div className="flex items-center space-x-3">
@@ -755,7 +755,7 @@ const ProviderCard = ({ provider, isActive, testResult, onConfigure, onTest, onS
         )}
 
         {testResult && (
-          <Alert className={testResult.success ? 'border-green-200 bg-green-50' : 'border-red-200 bg-red-50'}>
+          <Alert className={testResult.success ? 'border-green-300/60 bg-green-500/10' : 'border-red-300/60 bg-red-500/10'}>
             <AlertDescription className="flex items-center space-x-2">
               {testResult.success ? (
                 <CheckCircle2 className="h-4 w-4 text-green-600" />
@@ -784,10 +784,10 @@ const SettingsCard = ({ config, onUpdate }) => {
   };
 
   return (
-    <Card>
+    <Card className="border-border/60 bg-card/95">
       <CardHeader>
         <CardTitle>General Settings</CardTitle>
-        <p className="text-sm text-gray-600">Configure global video call settings</p>
+        <p className="text-sm text-muted-foreground">Configure global video call settings</p>
       </CardHeader>
       <CardContent className="space-y-6">
         <div className="grid grid-cols-2 gap-6">
@@ -885,7 +885,7 @@ const SettingsCard = ({ config, onUpdate }) => {
 
 // Help Card Component
 const HelpCard = () => (
-  <Card>
+  <Card className="border-border/60 bg-card/95">
     <CardHeader>
       <CardTitle>Video Call Configuration Guide</CardTitle>
     </CardHeader>
@@ -894,51 +894,51 @@ const HelpCard = () => (
         <div>
           <h3 className="font-semibold text-lg mb-2">Supported Providers</h3>
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-            <div className="border rounded-lg p-4">
+            <div className="border border-border/70 rounded-lg p-4 bg-card/80">
               <div className="flex items-center space-x-2 mb-2">
                 <Video className="h-5 w-5 text-indigo-600" />
                 <span className="font-medium">LiveKit</span>
               </div>
-              <p className="text-sm text-gray-600">Modern WebRTC SFU with web and mobile SDKs. <strong>Recommended</strong></p>
+              <p className="text-sm text-muted-foreground">Modern WebRTC SFU with web and mobile SDKs. <strong>Recommended</strong></p>
             </div>
 
-            <div className="border rounded-lg p-4">
+            <div className="border border-border/70 rounded-lg p-4 bg-card/80">
               <div className="flex items-center space-x-2 mb-2">
                 <Video className="h-5 w-5 text-blue-600" />
                 <span className="font-medium">WebRTC P2P</span>
               </div>
-              <p className="text-sm text-gray-600">Direct peer-to-peer video calling. No external service required.</p>
+              <p className="text-sm text-muted-foreground">Direct peer-to-peer video calling. No external service required.</p>
             </div>
 
-            <div className="border rounded-lg p-4">
+            <div className="border border-border/70 rounded-lg p-4 bg-card/80">
               <div className="flex items-center space-x-2 mb-2">
                 <Users className="h-5 w-5 text-purple-600" />
                 <span className="font-medium">Jitsi Meet</span>
               </div>
-              <p className="text-sm text-gray-600">Open source video conferencing platform.</p>
+              <p className="text-sm text-muted-foreground">Open source video conferencing platform.</p>
             </div>
 
-            <div className="border rounded-lg p-4">
+            <div className="border border-border/70 rounded-lg p-4 bg-card/80">
               <div className="flex items-center space-x-2 mb-2">
                 <Phone className="h-5 w-5 text-orange-600" />
                 <span className="font-medium">Zoom SDK</span>
               </div>
-              <p className="text-sm text-gray-600">Enterprise video calling with Zoom SDK integration.</p>
+              <p className="text-sm text-muted-foreground">Enterprise video calling with Zoom SDK integration.</p>
             </div>
 
-            <div className="border rounded-lg p-4">
+            <div className="border border-border/70 rounded-lg p-4 bg-card/80">
               <div className="flex items-center space-x-2 mb-2">
                 <Video className="h-5 w-5 text-red-600" />
                 <span className="font-medium">Agora.io</span>
               </div>
-              <p className="text-sm text-gray-600">Real-time video communication with excellent quality and scalability.</p>
+              <p className="text-sm text-muted-foreground">Real-time video communication with excellent quality and scalability.</p>
             </div>
           </div>
         </div>
 
         <div>
           <h3 className="font-semibold text-lg mb-2">Configuration Tips</h3>
-          <ul className="list-disc list-inside space-y-1 text-sm text-gray-600">
+          <ul className="list-disc list-inside space-y-1 text-sm text-muted-foreground">
             <li>Use LiveKit for the best experience (recommended)</li>
             <li>Configure TURN servers for better connectivity</li>
             <li>Test each provider after configuration</li>
@@ -948,7 +948,7 @@ const HelpCard = () => (
 
         <div>
           <h3 className="font-semibold text-lg mb-2">Environment Variables</h3>
-          <div className="bg-gray-50 dark:bg-gray-800 rounded-lg p-4 text-sm font-mono">
+          <div className="bg-muted/40 rounded-lg p-4 text-sm font-mono text-foreground">
             <div>LIVEKIT_URL=wss://livekit.your-domain.com</div>
             <div>LIVEKIT_API_KEY=your_livekit_key</div>
             <div>LIVEKIT_API_SECRET=your_livekit_secret</div>

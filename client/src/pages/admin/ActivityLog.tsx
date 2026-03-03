@@ -228,7 +228,7 @@ const ActivityLog = () => {
       case 'failure': return <XCircle className="h-4 w-4 text-red-600" />;
       case 'warning': return <AlertCircle className="h-4 w-4 text-yellow-600" />;
       case 'info': return <Clock className="h-4 w-4 text-blue-600" />;
-      default: return <Clock className="h-4 w-4 text-gray-400" />;
+      default: return <Clock className="h-4 w-4 text-muted-foreground" />;
     }
   };
 
@@ -238,7 +238,7 @@ const ActivityLog = () => {
       case 'failure': return 'bg-red-100 text-red-800 border-red-200';
       case 'warning': return 'bg-yellow-100 text-yellow-800 border-yellow-200';
       case 'info': return 'bg-blue-100 text-blue-800 border-blue-200';
-      default: return 'bg-gray-100 text-gray-800 border-gray-200';
+      default: return 'bg-slate-100 text-slate-800 border-slate-200 dark:bg-slate-500/15 dark:text-slate-200 dark:border-slate-500/30';
     }
   };
 
@@ -247,8 +247,8 @@ const ActivityLog = () => {
       case 'admin': return <Shield className="h-4 w-4 text-purple-600" />;
       case 'doctor': return <User className="h-4 w-4 text-blue-600" />;
       case 'user': return <User className="h-4 w-4 text-green-600" />;
-      case 'system': return <Database className="h-4 w-4 text-gray-600" />;
-      default: return <User className="h-4 w-4 text-gray-400" />;
+      case 'system': return <Database className="h-4 w-4 text-muted-foreground" />;
+      default: return <User className="h-4 w-4 text-muted-foreground" />;
     }
   };
 
@@ -362,7 +362,7 @@ const ActivityLog = () => {
               <h1 className="text-3xl font-bold bg-gradient-to-r from-teal-600 to-slate-700 bg-clip-text text-transparent">
                 Activity Log
               </h1>
-              <p className="text-gray-600 mt-1">
+              <p className="text-muted-foreground mt-1">
                 Comprehensive system activity tracking and monitoring
               </p>
             </div>
@@ -382,7 +382,7 @@ const ActivityLog = () => {
           <ActivityStats onRefresh={fetchActivityLogs} />
 
           {/* Filters */}
-          <Card className="shadow-lg border-0 bg-white/80 backdrop-blur-xl">
+          <Card className="shadow-lg border-border/60 bg-card/95 backdrop-blur-xl">
             <CardHeader>
               <CardTitle className="flex items-center gap-2">
                 <Filter className="h-5 w-5 text-teal-600" />
@@ -392,7 +392,7 @@ const ActivityLog = () => {
             <CardContent>
               <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 xl:grid-cols-6 gap-4">
                 <div className="relative">
-                  <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400 h-4 w-4" />
+                  <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 text-muted-foreground h-4 w-4" />
                   <Input
                     placeholder="Search activities..."
                     value={searchTerm}
@@ -460,7 +460,7 @@ const ActivityLog = () => {
               </div>
 
               <div className="flex items-center justify-between mt-4">
-                <div className="text-sm text-gray-600">
+                <div className="text-sm text-muted-foreground">
                   Showing {currentActivities.length} of {filteredActivities.length} activities
                   {filteredActivities.length !== activities.length && (
                     <span> (filtered from {activities.length} total)</span>
@@ -474,7 +474,7 @@ const ActivityLog = () => {
           </Card>
 
           {/* Activity Log Table */}
-          <Card className="shadow-lg border-0 bg-white/80 backdrop-blur-xl">
+          <Card className="shadow-lg border-border/60 bg-card/95 backdrop-blur-xl">
             <CardHeader>
               <CardTitle className="flex items-center gap-2">
                 <Activity className="h-5 w-5 text-green-600" />
@@ -484,29 +484,29 @@ const ActivityLog = () => {
             <CardContent className="p-0">
               <div className="overflow-x-auto">
                 <table className="w-full">
-                  <thead className="bg-gray-50 border-b">
+                  <thead className="bg-muted/40 border-b border-border/70">
                     <tr>
-                      <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                      <th className="px-6 py-3 text-left text-xs font-medium text-muted-foreground uppercase tracking-wider">
                         Timestamp
                       </th>
-                      <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                      <th className="px-6 py-3 text-left text-xs font-medium text-muted-foreground uppercase tracking-wider">
                         User
                       </th>
-                      <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                      <th className="px-6 py-3 text-left text-xs font-medium text-muted-foreground uppercase tracking-wider">
                         Activity
                       </th>
-                      <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                      <th className="px-6 py-3 text-left text-xs font-medium text-muted-foreground uppercase tracking-wider">
                         Result
                       </th>
-                      <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                      <th className="px-6 py-3 text-left text-xs font-medium text-muted-foreground uppercase tracking-wider">
                         IP Address
                       </th>
-                      <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                      <th className="px-6 py-3 text-left text-xs font-medium text-muted-foreground uppercase tracking-wider">
                         Actions
                       </th>
                     </tr>
                   </thead>
-                  <tbody className="bg-white divide-y divide-gray-200">
+                  <tbody className="bg-card divide-y divide-border/70">
                     {loading ? (
                       <tr>
                         <td colSpan={6} className="px-6 py-12 text-center">
@@ -518,7 +518,7 @@ const ActivityLog = () => {
                       </tr>
                     ) : currentActivities.length === 0 ? (
                       <tr>
-                        <td colSpan={6} className="px-6 py-12 text-center text-gray-500">
+                        <td colSpan={6} className="px-6 py-12 text-center text-muted-foreground">
                           No activities found matching your filters
                         </td>
                       </tr>
@@ -529,13 +529,13 @@ const ActivityLog = () => {
                         
                         return (
                           <React.Fragment key={activity.id}>
-                            <tr className="hover:bg-gray-50">
+                            <tr className="hover:bg-muted/40">
                               <td className="px-6 py-4 whitespace-nowrap">
                                 <div className="flex flex-col">
-                                  <div className="text-sm font-medium text-gray-900">
+                                  <div className="text-sm font-medium text-foreground">
                                     {timestamp.time}
                                   </div>
-                                  <div className="text-xs text-gray-500">
+                                  <div className="text-xs text-muted-foreground">
                                     {timestamp.date}
                                   </div>
                                   <div className="text-xs text-teal-600">
@@ -547,11 +547,11 @@ const ActivityLog = () => {
                                 <div className="flex items-center">
                                   {getUserTypeIcon(activity.userType)}
                                   <div className="ml-2">
-                                    <div className="text-sm font-medium text-gray-900">
+                                    <div className="text-sm font-medium text-foreground">
                                       {activity.userType}
                                     </div>
                                     {activity.userId && (
-                                      <div className="text-xs text-gray-500">
+                                      <div className="text-xs text-muted-foreground">
                                         {activity.userId}
                                       </div>
                                     )}
@@ -562,10 +562,10 @@ const ActivityLog = () => {
                                 <div className="flex items-center">
                                   {getActionIcon(activity.action)}
                                   <div className="ml-2">
-                                    <div className="text-sm font-medium text-gray-900">
+                                    <div className="text-sm font-medium text-foreground">
                                       {activity.activity}
                                     </div>
-                                    <div className="text-xs text-gray-500 max-w-xs truncate">
+                                    <div className="text-xs text-muted-foreground max-w-xs truncate">
                                       {activity.details}
                                     </div>
                                   </div>
@@ -579,7 +579,7 @@ const ActivityLog = () => {
                                   </Badge>
                                 </div>
                               </td>
-                              <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
+                              <td className="px-6 py-4 whitespace-nowrap text-sm text-muted-foreground">
                                 {activity.ipAddress || 'N/A'}
                               </td>
                               <td className="px-6 py-4 whitespace-nowrap text-sm font-medium">
@@ -595,10 +595,10 @@ const ActivityLog = () => {
                             
                             {isExpanded && (
                               <tr>
-                                <td colSpan={6} className="px-6 py-4 bg-gray-50">
+                                <td colSpan={6} className="px-6 py-4 bg-muted/40">
                                   <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
                                     <div>
-                                      <h4 className="font-semibold text-gray-700 mb-2">Activity Details</h4>
+                                      <h4 className="font-semibold text-foreground mb-2">Activity Details</h4>
                                       <div className="space-y-1 text-sm">
                                         <p><strong>Resource:</strong> {activity.resource}</p>
                                         <p><strong>Resource ID:</strong> {activity.resourceId || 'N/A'}</p>
@@ -608,7 +608,7 @@ const ActivityLog = () => {
                                     </div>
                                     
                                     <div>
-                                      <h4 className="font-semibold text-gray-700 mb-2">Session Info</h4>
+                                      <h4 className="font-semibold text-foreground mb-2">Session Info</h4>
                                       <div className="space-y-1 text-sm">
                                         <p><strong>IP Address:</strong> {activity.ipAddress || 'N/A'}</p>
                                         <p><strong>User Agent:</strong> {activity.userAgent ? activity.userAgent.substring(0, 50) + '...' : 'N/A'}</p>
@@ -622,8 +622,8 @@ const ActivityLog = () => {
                                     </div>
                                     
                                     <div>
-                                      <h4 className="font-semibold text-gray-700 mb-2">Metadata</h4>
-                                      <div className="bg-gray-100 p-2 rounded text-xs font-mono">
+                                      <h4 className="font-semibold text-foreground mb-2">Metadata</h4>
+                                      <div className="bg-muted/40 p-2 rounded text-xs font-mono text-foreground">
                                         <pre>{JSON.stringify(activity.metadata || {}, null, 2)}</pre>
                                       </div>
                                     </div>
@@ -641,8 +641,8 @@ const ActivityLog = () => {
 
               {/* Pagination */}
               {totalPages > 1 && (
-                <div className="px-6 py-4 border-t bg-gray-50 flex items-center justify-between">
-                  <div className="text-sm text-gray-600">
+                <div className="px-6 py-4 border-t border-border/70 bg-muted/30 flex items-center justify-between">
+                  <div className="text-sm text-muted-foreground">
                     Page {currentPage} of {totalPages}
                   </div>
                   <div className="flex gap-2">

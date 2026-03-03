@@ -632,12 +632,12 @@ const AdminLayout = ({ children }: AdminLayoutProps) => {
   );
 
   return (
-    <div className="flex min-h-screen w-full bg-background">
+    <div className="admin-dashboard-shell flex min-h-screen w-full bg-background">
       {/* Desktop Sidebar */}
       {!isTeamMember && (
         <aside
           className={cn(
-            "hidden lg:flex flex-col border-r border-border/50 transition-all duration-300",
+            "admin-sidebar-shell hidden lg:flex flex-col border-r border-border/50 transition-all duration-300",
             isCollapsed ? "w-16" : "w-64"
           )}
         >
@@ -657,7 +657,7 @@ const AdminLayout = ({ children }: AdminLayoutProps) => {
       {/* Main Content */}
       <div className="flex flex-1 flex-col min-w-0">
         {/* Header */}
-        <header className="sticky top-0 z-30 flex h-16 items-center gap-4 border-b border-border/50 bg-background/80 backdrop-blur-xl px-4 lg:px-6">
+        <header className="admin-header-shell sticky top-0 z-30 flex h-16 items-center gap-4 border-b border-border/50 bg-background/80 backdrop-blur-xl px-4 lg:px-6">
           {/* Mobile menu toggle */}
           {!isTeamMember && (
             <Button
@@ -857,8 +857,8 @@ const AdminLayout = ({ children }: AdminLayoutProps) => {
         </header>
 
         {/* Content Area */}
-        <main className="flex-1 overflow-y-auto">
-          <div className="container mx-auto p-4 lg:p-6 pb-20 lg:pb-6">
+        <main className="admin-main-scroll flex-1 overflow-y-auto">
+          <div className="admin-theme-scope admin-page-content container mx-auto p-4 lg:p-6 pb-20 lg:pb-6">
             {children}
           </div>
         </main>

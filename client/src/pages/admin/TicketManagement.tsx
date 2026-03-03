@@ -106,7 +106,15 @@ export default function TicketManagement() {
     categories: {},
     priorities: {}
   });
-  const [agents, setAgents] = useState([]);
+  const [agents, setAgents] = useState<any[]>([]);
+
+  const normalizeTicketList = (response: any): Ticket[] => {
+    if (!response) return [];
+    if (Array.isArray(response)) return response as Ticket[];
+    if (Array.isArray(response.tickets)) return response.tickets as Ticket[];
+    if (Array.isArray(response.data)) return response.data as Ticket[];
+    return [];
+  };
 
   // Load tickets and stats from API
   useEffect(() => {
@@ -120,9 +128,9 @@ export default function TicketManagement() {
           ticketService.getAgents()
         ]);
 
-        setTickets(ticketsResponse.tickets || []);
+        setTickets(normalizeTicketList(ticketsResponse));
         setStats(statsResponse || stats);
-        setAgents(agentsResponse || []);
+        setAgents(Array.isArray(agentsResponse) ? agentsResponse : []);
       } catch (error) {
         console.error('Error loading ticket data:', error);
         toast({
@@ -156,7 +164,7 @@ export default function TicketManagement() {
         if (filterPriority !== 'all') filters.priority = filterPriority;
 
         const response = await ticketService.getTickets(filters);
-        setTickets(response.tickets || []);
+        setTickets(normalizeTicketList(response));
       } catch (error) {
         console.error('Error filtering tickets:', error);
       }
@@ -168,21 +176,21 @@ export default function TicketManagement() {
 
   const getStatusColor = (status: string) => {
     switch (status) {
-      case 'open': return 'bg-red-100 text-red-700 border-red-200';
-      case 'in-progress': return 'bg-blue-100 text-blue-700 border-blue-200';
-      case 'pending': return 'bg-yellow-100 text-yellow-700 border-yellow-200';
-      case 'resolved': return 'bg-green-100 text-green-700 border-green-200';
-      default: return 'bg-gray-100 text-gray-700 border-gray-200';
+      case 'open': return 'bg-red-100 text-red-700 border-red-200 dark:bg-red-500/15 dark:text-red-300 dark:border-red-500/30';
+      case 'in-progress': return 'bg-blue-100 text-blue-700 border-blue-200 dark:bg-blue-500/15 dark:text-blue-300 dark:border-blue-500/30';
+      case 'pending': return 'bg-amber-100 text-amber-700 border-amber-200 dark:bg-amber-500/15 dark:text-amber-300 dark:border-amber-500/30';
+      case 'resolved': return 'bg-emerald-100 text-emerald-700 border-emerald-200 dark:bg-emerald-500/15 dark:text-emerald-300 dark:border-emerald-500/30';
+      default: return 'bg-slate-100 text-slate-700 border-slate-200 dark:bg-slate-500/20 dark:text-slate-300 dark:border-slate-500/30';
     }
   };
 
-  const getPriorityColor = (priority) => {
+  const getPriorityColor = (priority: string) => {
     switch (priority) {
-      case 'critical': return 'bg-red-500';
-      case 'high': return 'bg-orange-500';
-      case 'medium': return 'bg-yellow-500';
-      case 'low': return 'bg-green-500';
-      default: return 'bg-gray-500';
+      case 'critical': return 'bg-red-500 ring-2 ring-red-500/20';
+      case 'high': return 'bg-orange-500 ring-2 ring-orange-500/20';
+      case 'medium': return 'bg-amber-500 ring-2 ring-amber-500/20';
+      case 'low': return 'bg-emerald-500 ring-2 ring-emerald-500/20';
+      default: return 'bg-slate-500 ring-2 ring-slate-500/20';
     }
   };
 
@@ -255,7 +263,7 @@ export default function TicketManagement() {
   const handleSendMessage = async (ticketId: string) => {
     if (newMessage.trim()) {
       try {
-        const updatedTicket = await ticketService.addMessage(ticketId, newMessage.trim());
+        const updatedTicket = await ticketService.addMessage(ticketId, newMessage.trim()) as Ticket;
         
         // Update local state
         setTickets(prev => prev.map(ticket => 
@@ -293,7 +301,7 @@ export default function TicketManagement() {
     return (
       <AdminLayout>
         <div className="flex items-center justify-center min-h-[400px]">
-          <RefreshCw className="h-8 w-8 animate-spin text-blue-600" />
+          <RefreshCw className="h-8 w-8 animate-spin text-primary" />
         </div>
       </AdminLayout>
     );
@@ -303,55 +311,59 @@ export default function TicketManagement() {
     <AdminLayout>
       <div className="space-y-6">
         {/* Header */}
-        <div className="flex items-center justify-between">
-          <div>
-            <h1 className="text-3xl font-bold tracking-tight">Service Ticket Management</h1>
-            <p className="text-muted-foreground">
-              Comprehensive customer support and service ticket management
-            </p>
-          </div>
-          <div className="flex items-center space-x-2">
-            <Button variant="outline" size="sm">
-              <Download className="mr-2 h-4 w-4" />
-              Export
-            </Button>
-            <Dialog open={showTicketModal} onOpenChange={setShowTicketModal}>
-              <DialogTrigger asChild>
-                <Button size="sm">
-                  <Plus className="mr-2 h-4 w-4" />
-                  New Ticket
-                </Button>
-              </DialogTrigger>
-              <DialogContent className="max-w-2xl">
-                <DialogHeader>
-                  <DialogTitle>Create New Ticket</DialogTitle>
-                  <DialogDescription>
-                    Create a new support ticket for tracking customer issues
-                  </DialogDescription>
-                </DialogHeader>
-                <CreateTicketForm onSubmit={(data) => {
-                  const newTicket = {
-                    id: `TKT-${String(tickets.length + 1).padStart(3, '0')}`,
-                    ...data,
-                    createdAt: new Date().toISOString(),
-                    updatedAt: new Date().toISOString(),
-                    messages: [],
-                    attachments: [],
-                    satisfaction: null,
-                    resolution: null
-                  };
-                  setTickets(prev => [newTicket, ...prev]);
-                  setShowTicketModal(false);
-                  toast({ title: 'Ticket Created', description: `New ticket ${newTicket.ticketId} has been created` });
-                }} />
-              </DialogContent>
-            </Dialog>
+        <div className="relative overflow-hidden rounded-2xl border border-border/60 bg-gradient-to-r from-cyan-500/10 via-background to-emerald-500/10 p-6 shadow-sm">
+          <div className="absolute -right-16 -top-16 h-40 w-40 rounded-full bg-cyan-500/10 blur-3xl" />
+          <div className="absolute -bottom-16 right-20 h-40 w-40 rounded-full bg-emerald-500/10 blur-3xl" />
+          <div className="relative flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
+            <div>
+              <h1 className="text-3xl font-bold tracking-tight text-foreground">Service Ticket Management</h1>
+              <p className="text-muted-foreground">
+                Comprehensive customer support and service ticket management
+              </p>
+            </div>
+            <div className="flex items-center space-x-2">
+              <Button variant="outline" size="sm" className="bg-background/80 backdrop-blur-sm">
+                <Download className="mr-2 h-4 w-4" />
+                Export
+              </Button>
+              <Dialog open={showTicketModal} onOpenChange={setShowTicketModal}>
+                <DialogTrigger asChild>
+                  <Button size="sm" className="bg-gradient-to-r from-cyan-600 to-teal-600 text-white hover:from-cyan-700 hover:to-teal-700">
+                    <Plus className="mr-2 h-4 w-4" />
+                    New Ticket
+                  </Button>
+                </DialogTrigger>
+                <DialogContent className="max-w-2xl">
+                  <DialogHeader>
+                    <DialogTitle>Create New Ticket</DialogTitle>
+                    <DialogDescription>
+                      Create a new support ticket for tracking customer issues
+                    </DialogDescription>
+                  </DialogHeader>
+                  <CreateTicketForm onSubmit={(data) => {
+                    const newTicket = {
+                      ticketId: `TKT-${String(tickets.length + 1).padStart(3, '0')}`,
+                      ...data,
+                      createdAt: new Date().toISOString(),
+                      updatedAt: new Date().toISOString(),
+                      messages: [],
+                      attachments: [],
+                      satisfaction: null,
+                      resolution: null
+                    };
+                    setTickets(prev => [newTicket as Ticket, ...prev]);
+                    setShowTicketModal(false);
+                    toast({ title: 'Ticket Created', description: `New ticket ${newTicket.ticketId} has been created` });
+                  }} />
+                </DialogContent>
+              </Dialog>
+            </div>
           </div>
         </div>
 
         {/* Stats Cards */}
         <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-4">
-          <Card>
+          <Card className="border-border/60 bg-card/95 shadow-sm">
             <CardContent className="pt-6">
               <div className="flex items-center justify-between space-y-0 pb-2">
                 <h3 className="tracking-tight text-sm font-medium">Total Tickets</h3>
@@ -366,7 +378,7 @@ export default function TicketManagement() {
               </div>
             </CardContent>
           </Card>
-          <Card>
+          <Card className="border-border/60 bg-card/95 shadow-sm">
             <CardContent className="pt-6">
               <div className="flex items-center justify-between space-y-0 pb-2">
                 <h3 className="tracking-tight text-sm font-medium">Open Tickets</h3>
@@ -378,7 +390,7 @@ export default function TicketManagement() {
               </div>
             </CardContent>
           </Card>
-          <Card>
+          <Card className="border-border/60 bg-card/95 shadow-sm">
             <CardContent className="pt-6">
               <div className="flex items-center justify-between space-y-0 pb-2">
                 <h3 className="tracking-tight text-sm font-medium">Avg Resolution</h3>
@@ -390,7 +402,7 @@ export default function TicketManagement() {
               </div>
             </CardContent>
           </Card>
-          <Card>
+          <Card className="border-border/60 bg-card/95 shadow-sm">
             <CardContent className="pt-6">
               <div className="flex items-center justify-between space-y-0 pb-2">
                 <h3 className="tracking-tight text-sm font-medium">Satisfaction</h3>
@@ -405,7 +417,7 @@ export default function TicketManagement() {
         </div>
 
         <Tabs value={activeTab} onValueChange={setActiveTab} className="space-y-6">
-          <TabsList className="grid w-full grid-cols-4">
+          <TabsList className="grid w-full grid-cols-4 rounded-xl border border-border/60 bg-muted/50 p-1">
             <TabsTrigger value="tickets" className="flex items-center space-x-2">
               <TicketIcon className="h-4 w-4" />
               <span>Tickets</span>
@@ -441,7 +453,7 @@ export default function TicketManagement() {
                     />
                   </div>
                   <Select value={filterStatus} onValueChange={setFilterStatus}>
-                    <SelectTrigger className="w-[180px]">
+                    <SelectTrigger className="w-[180px] bg-card">
                       <SelectValue />
                     </SelectTrigger>
                     <SelectContent>
@@ -453,7 +465,7 @@ export default function TicketManagement() {
                     </SelectContent>
                   </Select>
                   <Select value={filterPriority} onValueChange={setFilterPriority}>
-                    <SelectTrigger className="w-[180px]">
+                    <SelectTrigger className="w-[180px] bg-card">
                       <SelectValue />
                     </SelectTrigger>
                     <SelectContent>
@@ -471,8 +483,8 @@ export default function TicketManagement() {
                   {filteredTickets.map((ticket) => (
                     <Card 
                       key={ticket.ticketId} 
-                      className={`cursor-pointer hover:shadow-md transition-shadow ${
-                        selectedTicket?.ticketId === ticket.ticketId ? 'ring-2 ring-blue-500' : ''
+                      className={`cursor-pointer border-border/60 bg-card/95 shadow-sm hover:shadow-md transition-all ${
+                        selectedTicket?.ticketId === ticket.ticketId ? 'ring-2 ring-cyan-500/70' : ''
                       }`}
                       onClick={() => setSelectedTicket(ticket)}
                     >
@@ -558,7 +570,7 @@ export default function TicketManagement() {
               {/* Ticket Detail Panel */}
               {selectedTicket && (
                 <div className="lg:w-96">
-                  <Card className="h-[calc(100vh-300px)]">
+                  <Card className="h-[calc(100vh-300px)] border-border/60 bg-card/95 shadow-sm">
                     <CardHeader className="pb-4">
                       <div className="flex items-start justify-between">
                         <div>
@@ -601,12 +613,12 @@ export default function TicketManagement() {
                               handleAssignTicket(selectedTicket.ticketId, agent?._id);
                             }}
                           >
-                            <SelectTrigger className="w-[200px] h-8">
+                            <SelectTrigger className="w-[200px] h-8 bg-card">
                               <SelectValue placeholder="Assign to..." />
                             </SelectTrigger>
                             <SelectContent>
                               {agents.map((agent) => (
-                                <SelectItem key={agent.id} value={agent.email}>
+                                <SelectItem key={agent._id || agent.id || agent.email} value={agent.email}>
                                   {agent.name}
                                 </SelectItem>
                               ))}
@@ -723,7 +735,7 @@ export default function TicketManagement() {
           <TabsContent value="agents" className="space-y-6">
             <div className="grid gap-6 md:grid-cols-2 lg:grid-cols-3">
               {agents.map((agent) => (
-                <Card key={agent.id}>
+                <Card key={agent._id || agent.id || agent.email} className="border-border/60 bg-card/95 shadow-sm">
                   <CardHeader className="pb-4">
                     <div className="flex items-center space-x-3">
                       <Avatar className="h-10 w-10">
@@ -779,7 +791,7 @@ export default function TicketManagement() {
           <TabsContent value="analytics" className="space-y-6">
             <div className="grid gap-6">
               <div className="grid gap-4 md:grid-cols-2">
-                <Card>
+                <Card className="border-border/60 bg-card/95 shadow-sm">
                   <CardHeader>
                     <CardTitle>Tickets by Category</CardTitle>
                   </CardHeader>
@@ -789,7 +801,7 @@ export default function TicketManagement() {
                         <div key={category} className="flex items-center justify-between">
                           <span className="text-sm capitalize">{category.replace(/([A-Z])/g, ' $1')}</span>
                           <div className="flex items-center space-x-2">
-                            <div className="w-24 bg-gray-200 rounded-full h-2">
+                            <div className="w-24 bg-muted rounded-full h-2">
                               <div 
                                 className="bg-blue-600 h-2 rounded-full" 
                                 style={{ width: `${((count as number) / Math.max(...Object.values(stats.categories || {}).map(v => v as number))) * 100}%` }}
@@ -803,7 +815,7 @@ export default function TicketManagement() {
                   </CardContent>
                 </Card>
 
-                <Card>
+                <Card className="border-border/60 bg-card/95 shadow-sm">
                   <CardHeader>
                     <CardTitle>Priority Distribution</CardTitle>
                   </CardHeader>
@@ -823,7 +835,7 @@ export default function TicketManagement() {
                 </Card>
               </div>
 
-              <Card>
+              <Card className="border-border/60 bg-card/95 shadow-sm">
                 <CardHeader>
                   <CardTitle>Performance Metrics</CardTitle>
                 </CardHeader>
@@ -850,7 +862,7 @@ export default function TicketManagement() {
           {/* Settings Tab */}
           <TabsContent value="settings" className="space-y-6">
             <div className="grid gap-6 lg:grid-cols-2">
-              <Card>
+              <Card className="border-border/60 bg-card/95 shadow-sm">
                 <CardHeader>
                   <CardTitle>Ticket Settings</CardTitle>
                 </CardHeader>
@@ -886,7 +898,7 @@ export default function TicketManagement() {
                 </CardContent>
               </Card>
 
-              <Card>
+              <Card className="border-border/60 bg-card/95 shadow-sm">
                 <CardHeader>
                   <CardTitle>SLA Settings</CardTitle>
                 </CardHeader>
@@ -947,7 +959,7 @@ export default function TicketManagement() {
 }
 
 // Create Ticket Form Component
-function CreateTicketForm({ onSubmit }) {
+function CreateTicketForm({ onSubmit }: { onSubmit: (data: any) => void }) {
   const [formData, setFormData] = useState({
     title: '',
     description: '',
@@ -964,7 +976,7 @@ function CreateTicketForm({ onSubmit }) {
     status: 'open'
   });
 
-  const handleSubmit = (e) => {
+  const handleSubmit = (e: React.FormEvent<HTMLFormElement>) => {
     e.preventDefault();
     onSubmit(formData);
   };
