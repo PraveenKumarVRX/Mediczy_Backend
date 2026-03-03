@@ -80,4 +80,14 @@ const InsurancePolicy = createWrapper(InsurancePolicyModel);
 const UserInsurance = createWrapper(UserInsuranceModel);
 const InsuranceClaim = createWrapper(InsuranceClaimModel);
 
-export { InsuranceProvider, InsurancePolicy, UserInsurance, InsuranceClaim };
+// Raw Sequelize models (needed for Sequelize include/association queries)
+export {
+  InsuranceProvider,
+  InsurancePolicy,
+  UserInsurance,
+  InsuranceClaim,
+  InsuranceProviderModel,
+  InsurancePolicyModel,
+  UserInsuranceModel,
+  InsuranceClaimModel,
+};

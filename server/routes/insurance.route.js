@@ -1,7 +1,7 @@
 import express from 'express';
 import { body, param } from 'express-validator';
 import { authUser, requireRole } from '../middleware/auth.middleware.js';
-import { InsuranceProvider, InsurancePolicy, UserInsurance, InsuranceClaim } from '../models/insurance.model.intelligent.js';
+import { InsuranceProvider, InsurancePolicy, UserInsurance, InsuranceClaim, InsuranceProviderModel, InsurancePolicyModel } from '../models/insurance.model.intelligent.js';
 
 // Intelligent Database query operators (replaces Sequelize Op)
 const Op = {
@@ -324,16 +324,22 @@ router.get('/admin/policies', authUser, requireRole(['admin', 'hospital']), asyn
     const { providerId } = req.query;
     const where = providerId ? { providerId: Number(providerId) } : {};
     
-    const policies = await InsurancePolicy.findAll({
+    const policies = await InsurancePolicyModel.findAll({
       where,
-      order: [['createdAt', 'DESC']],
-      include: [{ 
-        model: InsuranceProvider, 
-        as: 'provider',
-        attributes: ['id', 'name', 'logo']
-      }]
+      order: [['createdAt', 'DESC']]
     });
-    res.json({ policies });
+    // Attach provider name without a Sequelize association include
+    const providerIds = [...new Set(policies.map(p => p.providerId).filter(Boolean))];
+    let providerMap = {};
+    if (providerIds.length > 0) {
+      const providers = await InsuranceProviderModel.findAll({ where: { id: providerIds } });
+      providers.forEach(p => { providerMap[p.id] = { id: p.id, name: p.name, logoUrl: p.logoUrl }; });
+    }
+    const policiesWithProvider = policies.map(p => ({
+      ...p.toJSON(),
+      provider: providerMap[p.providerId] || null
+    }));
+    res.json({ policies: policiesWithProvider });
   } catch (e) {
     console.error(e);
     res.status(500).json({ message: 'Failed to fetch policies', error: e.message });
