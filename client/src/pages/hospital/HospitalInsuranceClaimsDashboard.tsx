@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from "react";
-import { useNavigate, useSearchParams } from "react-router-dom";
+import { useLocation, useNavigate, useSearchParams } from "react-router-dom";
 import HospitalLayout from "@/components/hospital/HospitalLayout";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -104,8 +104,9 @@ const ALLOWED_TABS = new Set([
 ]);
 
 const HospitalInsuranceClaimsDashboard = () => {
+  const location = useLocation();
   const navigate = useNavigate();
-  const [searchParams, setSearchParams] = useSearchParams();
+  const [searchParams] = useSearchParams();
   const { toast } = useToast();
 
   const rawTab = searchParams.get("tab");
@@ -113,11 +114,11 @@ const HospitalInsuranceClaimsDashboard = () => {
 
   useEffect(() => {
     if (rawTab && !ALLOWED_TABS.has(rawTab)) {
-      const next = new URLSearchParams(searchParams);
+      const next = new URLSearchParams(location.search);
       next.set("tab", "claims");
-      setSearchParams(next, { replace: true });
+      navigate(`${location.pathname}?${next.toString()}`, { replace: true });
     }
-  }, [rawTab, searchParams, setSearchParams]);
+  }, [rawTab, location.pathname, location.search, navigate]);
 
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
