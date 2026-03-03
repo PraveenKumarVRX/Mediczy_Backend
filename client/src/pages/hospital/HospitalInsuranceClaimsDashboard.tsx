@@ -449,7 +449,7 @@ const HospitalInsuranceClaimsDashboard = () => {
   return (
     <HospitalLayout
       title="Insurance Operations Dashboard"
-      subtitle="IHX-style hospital insurance workflows for claims, pre-auth, documents, and receivables"
+      subtitle="Hospital insurance workflows for claims, pre-auth, documents, and receivables"
     >
       <div className="flex flex-wrap gap-3 mb-6">
         <Button onClick={() => navigate('/hospital/insurance-billing')}>
