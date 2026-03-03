@@ -92,23 +92,32 @@ type AppealItem = {
   };
 };
 
+const ALLOWED_TABS = new Set([
+  "claims",
+  "tasks",
+  "escalations",
+  "appeals",
+  "preauth",
+  "documents",
+  "search",
+  "analytics"
+]);
+
 const HospitalInsuranceClaimsDashboard = () => {
   const navigate = useNavigate();
-  const [searchParams] = useSearchParams();
+  const [searchParams, setSearchParams] = useSearchParams();
   const { toast } = useToast();
 
-  const allowedTabs = new Set([
-    "claims",
-    "tasks",
-    "escalations",
-    "appeals",
-    "preauth",
-    "documents",
-    "search",
-    "analytics"
-  ]);
-  const initialTab = searchParams.get("tab") || "claims";
-  const defaultTab = allowedTabs.has(initialTab) ? initialTab : "claims";
+  const rawTab = searchParams.get("tab");
+  const defaultTab = rawTab && ALLOWED_TABS.has(rawTab) ? rawTab : "claims";
+
+  useEffect(() => {
+    if (rawTab && !ALLOWED_TABS.has(rawTab)) {
+      const next = new URLSearchParams(searchParams);
+      next.set("tab", "claims");
+      setSearchParams(next, { replace: true });
+    }
+  }, [rawTab, searchParams, setSearchParams]);
 
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
