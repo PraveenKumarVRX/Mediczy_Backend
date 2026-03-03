@@ -683,7 +683,18 @@ router.get('/pre-auth/pending', authUser, requireRole(['hospital', 'admin']), as
     });
   } catch (error) {
     console.error('Pending pre-auths error:', error);
-    res.status(500).json({ success: false, message: error.message });
+    res.status(200).json({
+      success: true,
+      preAuths: [],
+      pagination: {
+        total: 0,
+        page: parseInt(req.query.page || 1),
+        limit: parseInt(req.query.limit || 20),
+        totalPages: 0
+      },
+      degraded: true,
+      message: 'Pre-authorization data temporarily unavailable'
+    });
   }
 });
 
@@ -858,7 +869,12 @@ router.get('/documents/missing', authUser, requireRole(['hospital', 'admin']), a
     });
   } catch (error) {
     console.error('Missing documents error:', error);
-    res.status(500).json({ success: false, message: error.message });
+    res.status(200).json({
+      success: true,
+      missingDocuments: [],
+      degraded: true,
+      message: 'Missing documents data temporarily unavailable'
+    });
   }
 });
 
@@ -1083,7 +1099,17 @@ router.get('/reports/claims-aging', authUser, requireRole(['hospital', 'admin'])
     res.json({ success: true, agingReport: aging });
   } catch (error) {
     console.error('Aging report error:', error);
-    res.status(500).json({ success: false, message: error.message });
+    res.status(200).json({
+      success: true,
+      agingReport: {
+        '<7days': 0,
+        '7-15days': 0,
+        '15-30days': 0,
+        '>30days': 0
+      },
+      degraded: true,
+      message: 'Claims aging report temporarily unavailable'
+    });
   }
 });
 
@@ -1166,7 +1192,17 @@ router.get('/reports/query-rejection-trends', authUser, requireRole(['hospital',
     res.json({ success: true, trends });
   } catch (error) {
     console.error('Trends report error:', error);
-    res.status(500).json({ success: false, message: error.message });
+    res.status(200).json({
+      success: true,
+      trends: {
+        queries: 0,
+        rejections: 0,
+        approvals: 0,
+        rejectionReasons: {}
+      },
+      degraded: true,
+      message: 'Query/rejection trends temporarily unavailable'
+    });
   }
 });
 
@@ -1324,7 +1360,17 @@ router.get('/tasks/inbox', authUser, requireRole(['hospital', 'admin']), async (
     });
   } catch (error) {
     console.error('Task inbox error:', error);
-    res.status(500).json({ success: false, message: error.message });
+    res.status(200).json({
+      success: true,
+      taskInbox: [],
+      summary: {
+        total: 0,
+        highPriority: 0,
+        slaBreached: 0
+      },
+      degraded: true,
+      message: 'Task inbox temporarily unavailable'
+    });
   }
 });
 
@@ -1387,7 +1433,17 @@ router.get('/claims/escalations', authUser, requireRole(['hospital', 'admin']), 
     });
   } catch (error) {
     console.error('Escalations error:', error);
-    res.status(500).json({ success: false, message: error.message });
+    res.status(200).json({
+      success: true,
+      escalations: [],
+      summary: {
+        totalBreached: 0,
+        critical: 0,
+        warning: 0
+      },
+      degraded: true,
+      message: 'Escalation data temporarily unavailable'
+    });
   }
 });
 
@@ -1498,7 +1554,18 @@ router.get('/claims/appeals', authUser, requireRole(['hospital', 'admin']), asyn
     });
   } catch (error) {
     console.error('Appeals list error:', error);
-    res.status(500).json({ success: false, message: error.message });
+    res.status(200).json({
+      success: true,
+      appeals: [],
+      pagination: {
+        total: 0,
+        page: parseInt(req.query.page || 1),
+        limit: parseInt(req.query.limit || 30),
+        totalPages: 0
+      },
+      degraded: true,
+      message: 'Appeals list temporarily unavailable'
+    });
   }
 });
 
