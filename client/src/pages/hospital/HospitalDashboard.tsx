@@ -474,7 +474,7 @@ const HospitalDashboard = () => {
             <CardTitle className="text-slate-800 dark:text-white">Pending Insurance Claims</CardTitle>
             <CardDescription className="text-slate-500 dark:text-slate-400">Claims requiring attention</CardDescription>
           </div>
-          <Button onClick={() => navigate('/hospital/insurance-billing')} className="gap-2 bg-gradient-to-r from-teal-500 to-teal-600 hover:from-teal-600 hover:to-teal-700 text-white shadow-lg shadow-teal-500/30 border-0">
+          <Button onClick={() => navigate('/hospital/insurance-claims?tab=claims')} className="gap-2 bg-gradient-to-r from-teal-500 to-teal-600 hover:from-teal-600 hover:to-teal-700 text-white shadow-lg shadow-teal-500/30 border-0">
             <Shield className="h-4 w-4" /> View All Claims
           </Button>
         </CardHeader>
