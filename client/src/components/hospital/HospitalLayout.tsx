@@ -36,30 +36,13 @@ const HospitalLayout = ({ children, title, subtitle }: HospitalLayoutProps) => {
   // Fetch module capabilities for sidebar gating
   const { data: capabilities } = useQuery<string[] | undefined>({
     queryKey: ["hospital-capabilities"],
-    queryFn: async () => {
-      try {
-        const res = await api.get("/module-access/my-modules");
-        const modules = res.data?.modules ?? res.data ?? [];
-        return Array.isArray(modules)
-          ? modules.map((m: any) => (typeof m === "string" ? m : m.module_key ?? m.slug ?? m.name))
-          : [];
-      } catch {
-        return undefined;
-      }
-    },
+    queryFn: async () => undefined,
     staleTime: 10 * 60_000,
     retry: false,
   });
   const { data: notificationsData } = useQuery<Notification[]>({
     queryKey: ["hospital-notifications"],
-    queryFn: async () => {
-      try {
-        const res = await api.get("/hospital/notifications/recent");
-        return res.data?.notifications ?? res.data ?? [];
-      } catch {
-        return [];
-      }
-    },
+    queryFn: async () => [],
     staleTime: 60_000,
     retry: false,
     // Fallback to empty array on error — non-critical UI

@@ -83,6 +83,19 @@ const quickModules = [
   { title: 'Team Chat', description: 'Internal messaging for staff & partners (RocketChat)', icon: MessageSquare, color: 'from-purple-500 to-purple-600', route: '/hospital/team-chat' },
 ];
 
+const ihxInsuranceFunctions = [
+  { title: 'Claims Queue', description: 'Track submitted, pending, approved, rejected claims', icon: Shield, route: '/hospital/insurance-claims?tab=claims', color: 'from-teal-500 to-teal-600' },
+  { title: 'Task Inbox', description: 'Unified queue for queries, docs, follow-ups and denials', icon: ClipboardList, route: '/hospital/insurance-claims?tab=tasks', color: 'from-blue-500 to-blue-600' },
+  { title: 'SLA Escalations', description: 'Monitor breached TAT and critical escalation cases', icon: AlertCircle, route: '/hospital/insurance-claims?tab=escalations', color: 'from-amber-500 to-amber-600' },
+  { title: 'Denials & Appeals', description: 'Manage rejections and submit structured appeals', icon: FileCheck, route: '/hospital/insurance-claims?tab=appeals', color: 'from-rose-500 to-rose-600' },
+  { title: 'Pre-Authorization', description: 'Work pending/approved/rejected pre-auth requests', icon: CheckCircle, route: '/hospital/insurance-claims?tab=preauth', color: 'from-emerald-500 to-emerald-600' },
+  { title: 'Document Alerts', description: 'Resolve missing documentation before payer queries', icon: FolderOpen, route: '/hospital/insurance-claims?tab=documents', color: 'from-purple-500 to-purple-600' },
+  { title: 'Quick Search', description: 'Search claims and check patient policy eligibility', icon: Users, route: '/hospital/insurance-claims?tab=search', color: 'from-cyan-500 to-cyan-600' },
+  { title: 'Analytics & Receivables', description: 'Claims aging, trends, receivables and settlements', icon: BarChart3, route: '/hospital/insurance-claims?tab=analytics', color: 'from-indigo-500 to-indigo-600' },
+  { title: 'Payer Setup', description: 'Manage insurers/TPAs and payer configuration', icon: Building, route: '/hospital/insurance-payer-management', color: 'from-slate-500 to-slate-600' },
+  { title: 'Insurance Billing Desk', description: 'Detailed claims workstation and processing console', icon: CreditCard, route: '/hospital/insurance-billing', color: 'from-orange-500 to-orange-600' },
+];
+
 // ─── Skeleton helpers ─────────────────────────────────────────────────────────
 const StatSkeleton = () => (
   <Card className="bg-white dark:bg-slate-800/50 border-slate-200/80 dark:border-slate-700/50">
@@ -134,7 +147,7 @@ const HospitalDashboard = () => {
     queryKey: ['hospital-dashboard-stats'],
     queryFn: async () =>
       tryApiGet<DashboardStats>(
-        ['/hospital/analytics/stats', '/hospital/summary'],
+        ['/hospital/summary', '/hospital/analytics/stats'],
         (data) => {
           const normalized = data?.data ?? data ?? {};
           if (typeof normalized.totalPatients !== 'undefined') {
@@ -165,7 +178,7 @@ const HospitalDashboard = () => {
     queryKey: ['hospital-recent-admissions'],
     queryFn: async () =>
       tryApiGet<Admission[]>(
-        ['/hospital/patients/recent-admissions', '/hospital/patients'],
+        ['/hospital/patients', '/hospital/patients/recent-admissions'],
         (data) => {
           if (Array.isArray(data?.admissions)) {
             return data.admissions;
@@ -196,7 +209,7 @@ const HospitalDashboard = () => {
     queryKey: ['hospital-beds-occupancy'],
     queryFn: async () =>
       tryApiGet<BedOccupancy[]>(
-        ['/hospital/beds/occupancy', '/hospital/beds'],
+        ['/hospital/beds', '/hospital/beds/occupancy'],
         (data) => {
           if (Array.isArray(data?.wards)) {
             return data.wards;
@@ -238,7 +251,7 @@ const HospitalDashboard = () => {
     queryKey: ['hospital-pending-claims'],
     queryFn: async () =>
       tryApiGet<Claim[]>(
-        ['/hospital/claims/pending', '/hospital/insurance/claims/submitted'],
+        ['/hospital/insurance/claims/submitted', '/hospital/claims/pending'],
         (data) => {
           if (Array.isArray(data?.claims)) {
             return data.claims;
@@ -342,6 +355,34 @@ const HospitalDashboard = () => {
               <Button variant="ghost" className="p-0 h-auto gap-2 text-teal-600 dark:text-teal-400 hover:text-teal-700 dark:hover:text-teal-300">
                 Open Module <ArrowRight className="h-4 w-4" />
               </Button>
+            </CardContent>
+          </Card>
+        ))}
+      </div>
+
+      {/* IHX Insurance Functions */}
+      <div className="mb-6 flex items-end justify-between">
+        <div>
+          <h3 className="text-xl font-bold text-slate-800 dark:text-white">IHX Insurance Functions</h3>
+          <p className="text-sm text-slate-500 dark:text-slate-400">One-click access to insurance workflow modules from dashboard</p>
+        </div>
+      </div>
+
+      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-5 gap-4 mb-8">
+        {ihxInsuranceFunctions.map((item, index) => (
+          <Card
+            key={index}
+            className="cursor-pointer bg-white dark:bg-slate-800/50 border-slate-200/80 dark:border-slate-700/50 hover:border-teal-200 dark:hover:border-teal-500/50 hover:shadow-lg hover:shadow-teal-500/10 transition-all transform hover:-translate-y-1 group"
+            onClick={() => navigate(item.route)}
+          >
+            <CardContent className="pt-5">
+              <div className={`bg-gradient-to-br ${item.color} p-3 rounded-lg w-fit mb-3 shadow-md transition-transform duration-300 group-hover:scale-105`}>
+                <item.icon className="h-5 w-5 text-white" />
+              </div>
+              <h4 className="text-sm font-semibold text-slate-800 dark:text-white mb-1 group-hover:text-teal-600 dark:group-hover:text-teal-400 transition-colors">
+                {item.title}
+              </h4>
+              <p className="text-xs text-slate-500 dark:text-slate-400 leading-relaxed">{item.description}</p>
             </CardContent>
           </Card>
         ))}

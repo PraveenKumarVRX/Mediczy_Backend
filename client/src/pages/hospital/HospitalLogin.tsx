@@ -46,10 +46,10 @@ const HospitalLogin = () => {
 
       const loginAttempts = subdomain
         ? [
-            { endpoint: '/hospital/auth/login/v2', body: { email, password, subdomain } },
-            { endpoint: '/hospital/login/v2', body: { email, password, subdomain } },
             { endpoint: '/hospital/auth/login', body: { email, password } },
             { endpoint: '/hospital/login', body: { email, password } },
+            { endpoint: '/hospital/auth/login/v2', body: { email, password, subdomain } },
+            { endpoint: '/hospital/login/v2', body: { email, password, subdomain } },
           ]
         : [
             { endpoint: '/hospital/auth/login', body: { email, password } },
