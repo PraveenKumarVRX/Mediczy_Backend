@@ -133,6 +133,36 @@ router.get('/summary', verifyHospitalToken, async (req, res) => {
   });
 });
 
+// Backward-compatible alias for older dashboard clients
+router.get('/analytics/stats', verifyHospitalToken, async (req, res) => {
+  try {
+    const state = await readState();
+    const practice = getPractice(state, req.hospitalId, req.hospitalName);
+    const pendingClaims = await InsuranceClaim.count({
+      where: {
+        status: { [Op.in]: ['pending', 'submitted', 'query'] }
+      }
+    }).catch(() => 0);
+
+    return res.json({
+      success: true,
+      data: {
+        totalPatients: practice.patients.length,
+        todayAdmissions: practice.patients.filter((p) => p.admissionStatus === 'IPD').length,
+        activeClaims: pendingClaims,
+        todayRevenue: 0,
+        patients: practice.patients.length,
+        ipd: practice.patients.filter((p) => p.admissionStatus === 'IPD').length,
+        appointments: practice.appointments.length,
+        staff: practice.staff.length,
+        resources: practice.resources.length
+      }
+    });
+  } catch (error) {
+    return res.status(500).json({ success: false, message: 'Failed to fetch analytics stats', error: error.message });
+  }
+});
+
 router.get('/appointments', verifyHospitalToken, async (req, res) => {
   try {
     const { date, status, department, upcoming, priority, type, doctorId } = req.query;
@@ -429,6 +459,22 @@ router.get('/patients', verifyHospitalToken, async (req, res) => {
     );
   });
   res.json({ success: true, data: filtered, total: filtered.length });
+});
+
+// Backward-compatible alias for older dashboard clients
+router.get('/patients/recent-admissions', verifyHospitalToken, async (req, res) => {
+  try {
+    const state = await readState();
+    const practice = getPractice(state, req.hospitalId, req.hospitalName);
+    const admissions = practice.patients
+      .filter((p) => ['ipd', 'admitted', 'under review'].includes(String(p.admissionStatus || '').toLowerCase()))
+      .sort((a, b) => new Date(b.admissionDate || b.createdAt || 0).getTime() - new Date(a.admissionDate || a.createdAt || 0).getTime())
+      .slice(0, 10);
+
+    return res.json({ success: true, admissions, data: admissions, total: admissions.length });
+  } catch (error) {
+    return res.status(500).json({ success: false, message: 'Failed to fetch recent admissions', error: error.message });
+  }
 });
 
 router.post('/patients', verifyHospitalToken, async (req, res) => {
@@ -1592,6 +1638,56 @@ router.get('/beds', verifyHospitalToken, async (req, res) => {
     console.error('Error fetching beds:', error);
     res.status(500).json({ success: false, message: 'Failed to fetch beds', error: error.message });
   }
+});
+
+// Backward-compatible alias for older dashboard clients
+router.get('/beds/occupancy', verifyHospitalToken, async (req, res) => {
+  try {
+    const organizationId = req.hospitalId;
+    if (!organizationId) {
+      return res.status(400).json({ success: false, message: 'Organization ID required' });
+    }
+
+    const beds = await Bed.findAll({ where: { organizationId } });
+    const wardMap = {};
+
+    beds.forEach((bed) => {
+      const ward = bed.ward || 'General Ward';
+      if (!wardMap[ward]) {
+        wardMap[ward] = { department: ward, total: 0, occupied: 0, color: 'teal' };
+      }
+      wardMap[ward].total += 1;
+      if (String(bed.status || '').toLowerCase() === 'occupied') {
+        wardMap[ward].occupied += 1;
+      }
+    });
+
+    const wards = Object.values(wardMap);
+    return res.json({ success: true, wards, data: wards });
+  } catch (error) {
+    return res.status(500).json({ success: false, message: 'Failed to fetch bed occupancy', error: error.message });
+  }
+});
+
+// Backward-compatible alias for older dashboard clients
+router.get('/claims/pending', verifyHospitalToken, async (req, res) => {
+  try {
+    const claims = await InsuranceClaim.findAll({
+      where: { status: { [Op.in]: ['pending', 'submitted', 'query'] } },
+      attributes: ['id', 'claimNumber', 'claimAmount', 'status', 'submittedAt', 'createdAt'],
+      order: [['submittedAt', 'DESC']],
+      limit: 20
+    });
+
+    return res.json({ success: true, claims, data: claims, total: claims.length });
+  } catch (error) {
+    return res.status(500).json({ success: false, message: 'Failed to fetch pending claims', error: error.message });
+  }
+});
+
+// Backward-compatible alias for older dashboard clients
+router.get('/notifications/recent', verifyHospitalToken, async (req, res) => {
+  return res.json({ success: true, notifications: [] });
 });
 
 /**
