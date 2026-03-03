@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from "react";
-import { useNavigate } from "react-router-dom";
+import { useNavigate, useSearchParams } from "react-router-dom";
 import HospitalLayout from "@/components/hospital/HospitalLayout";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -94,7 +94,21 @@ type AppealItem = {
 
 const HospitalInsuranceClaimsDashboard = () => {
   const navigate = useNavigate();
+  const [searchParams] = useSearchParams();
   const { toast } = useToast();
+
+  const allowedTabs = new Set([
+    "claims",
+    "tasks",
+    "escalations",
+    "appeals",
+    "preauth",
+    "documents",
+    "search",
+    "analytics"
+  ]);
+  const initialTab = searchParams.get("tab") || "claims";
+  const defaultTab = allowedTabs.has(initialTab) ? initialTab : "claims";
 
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
@@ -457,7 +471,7 @@ const HospitalInsuranceClaimsDashboard = () => {
         })}
       </div>
 
-      <Tabs defaultValue="claims" className="space-y-4">
+      <Tabs defaultValue={defaultTab} className="space-y-4">
         <TabsList className="flex flex-wrap h-auto">
           <TabsTrigger value="claims">Claims Queue</TabsTrigger>
           <TabsTrigger value="tasks">Task Inbox</TabsTrigger>
