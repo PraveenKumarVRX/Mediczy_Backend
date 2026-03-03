@@ -71,7 +71,7 @@ const quickModules = [
   { title: 'Practice Management', description: 'Appointments, OPD/IPD, Staff scheduling', icon: BriefcaseMedical, color: 'from-blue-500 to-blue-600', route: '/hospital/practice-management' },
   { title: 'Corporate Management', description: 'Manage corporate tie-ups and employee benefits', icon: Building, color: 'from-teal-500 to-teal-600', route: '/hospital/corporate-management' },
   { title: 'Insurance Payer Management', description: 'TPA, Insurance companies, MoU, Schedule of charges', icon: Shield, color: 'from-blue-500 to-blue-600', route: '/hospital/insurance-payer-management' },
-  { title: 'Insurance Billing', description: 'Claims, pre-auth, settlements', icon: CreditCard, color: 'from-amber-500 to-amber-600', route: '/hospital/insurance-billing' },
+  { title: 'Insurance Billing', description: 'Claims, pre-auth, settlements', icon: CreditCard, color: 'from-amber-500 to-amber-600', route: '/hospital/insurance-claims?tab=claims' },
   { title: 'Medical Records (MRD)', description: 'File management, retrieval, audit', icon: FolderOpen, color: 'from-purple-500 to-purple-600', route: '/hospital/mrd' },
   { title: 'Electronic Health Records', description: 'Patient charts, clinical docs', icon: FileHeart, color: 'from-emerald-500 to-emerald-600', route: '/hospital/ehr' },
   { title: 'Discharge Summary', description: 'Generate and manage discharge summaries', icon: FileText, color: 'from-rose-500 to-rose-600', route: '/hospital/discharge-summary' },
@@ -93,7 +93,7 @@ const ihxInsuranceFunctions = [
   { title: 'Quick Search', description: 'Search claims and check patient policy eligibility', icon: Users, route: '/hospital/insurance-claims?tab=search', color: 'from-cyan-500 to-cyan-600' },
   { title: 'Analytics & Receivables', description: 'Claims aging, trends, receivables and settlements', icon: BarChart3, route: '/hospital/insurance-claims?tab=analytics', color: 'from-indigo-500 to-indigo-600' },
   { title: 'Payer Setup', description: 'Manage insurers/TPAs and payer configuration', icon: Building, route: '/hospital/insurance-payer-management', color: 'from-slate-500 to-slate-600' },
-  { title: 'Insurance Billing Desk', description: 'Detailed claims workstation and processing console', icon: CreditCard, route: '/hospital/insurance-billing', color: 'from-orange-500 to-orange-600' },
+  { title: 'Insurance Billing Desk', description: 'Detailed claims workstation and processing console', icon: CreditCard, route: '/hospital/insurance-claims?tab=claims', color: 'from-orange-500 to-orange-600' },
 ];
 
 // ─── Skeleton helpers ─────────────────────────────────────────────────────────

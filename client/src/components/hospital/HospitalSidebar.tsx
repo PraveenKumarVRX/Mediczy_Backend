@@ -79,7 +79,7 @@ const clinicalItems: SidebarItem[] = [
 const billingItems: SidebarItem[] = [
   { icon: Shield, label: "Insurance Claims Cockpit", href: "/hospital/insurance-claims", capability: "insurance_billing" },
   { icon: FileText, label: "Insurance Payer Setup", href: "/hospital/insurance-payer-management", capability: "insurance_billing" },
-  { icon: Shield, label: "Insurance Management", href: "/hospital/insurance-billing", capability: "insurance_billing" },
+  { icon: Shield, label: "Insurance Management", href: "/hospital/insurance-claims?tab=claims", capability: "insurance_billing" },
   { icon: Receipt, label: "Billing & Invoicing", href: "/hospital/billing", capability: "billing" },
 ];
 

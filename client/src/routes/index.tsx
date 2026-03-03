@@ -509,7 +509,7 @@ const AppRoutes = () => {
         <Route path="/hospital/practice-management"        element={<HospitalPracticeManagement />} />
         <Route path="/hospital/corporate-management"       element={<HospitalCorporateManagement />} />
         <Route path="/hospital/insurance-payer-management" element={<HospitalInsurancePayerManagement />} />
-        <Route path="/hospital/insurance-billing"          element={<HospitalInsuranceBilling />} />
+        <Route path="/hospital/insurance-billing"          element={<Navigate to="/hospital/insurance-claims?tab=claims" replace />} />
         <Route path="/hospital/insurance-claims"           element={<HospitalInsuranceClaimsDashboard />} />
         <Route path="/hospital/mrd"                        element={<HospitalMRD />} />
         <Route path="/hospital/ehr"                        element={<HospitalEHR />} />
