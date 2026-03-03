@@ -13,7 +13,7 @@ import {
   Stethoscope, ClipboardList, Shield, FileHeart, FolderOpen,
   AlertCircle, CheckCircle, ArrowRight, BriefcaseMedical,
   HeartPulse, Receipt, CreditCard, UserCog, Building, FlaskConical, Scan,
-  MessageSquare, RefreshCw
+  MessageSquare, RefreshCw, FileCheck
 } from 'lucide-react';
 import HospitalLayout from '@/components/hospital/HospitalLayout';
 import { useHospitalAuth } from '@/hooks/useHospitalAuth';
