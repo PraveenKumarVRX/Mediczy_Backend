@@ -4,7 +4,6 @@ import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/com
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { useToast } from '@/hooks/use-toast';
-import { loadHospitalStore, saveHospitalStore } from '@/utils/hospitalStorage';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Badge } from '@/components/ui/badge';
 import { Label } from '@/components/ui/label';
@@ -18,6 +17,16 @@ import { Checkbox } from '@/components/ui/checkbox';
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
 import { Separator } from '@/components/ui/separator';
 import HospitalLayout from '@/components/hospital/HospitalLayout';
+import {
+  patientService,
+  ehrService,
+  vitalSignsService,
+  medicalRecordService,
+  labOrderService,
+  imagingOrderService,
+  prescriptionService,
+  procedureService,
+} from '@/services/hospital.service';
 import { 
   FileHeart, Activity, Bell, Plus, Search, ArrowLeft, Edit, 
   Trash2, Eye, CheckCircle, XCircle, AlertCircle, RefreshCw,
@@ -371,14 +380,63 @@ const HospitalEHR = () => {
     () => loadHospitalStore('ehr-patients', initialPatients)
   );
 
-  // Auth check
+  // Auth check + initial patient load from API
   useEffect(() => {
     const token = localStorage.getItem('hospitalToken');
     if (!token) {
       navigate('/hospital/login');
       return;
     }
-    setLoading(false);
+    // Try to load real patients from API; fall back to sample data on error
+    patientService.getAll()
+      .then((res: any) => {
+        const apiPatients: any[] = Array.isArray(res) ? res : (res?.data ?? res?.patients ?? []);
+        if (apiPatients.length > 0) {
+          const mapped: PatientEHR[] = apiPatients.map((p: any) => ({
+            id: String(p.id),
+            uhid: p.uhid || `UHID-${p.id}`,
+            name: p.name || p.patientName || 'Unknown',
+            age: p.age ?? (p.dateOfBirth ? Math.floor((Date.now() - new Date(p.dateOfBirth).getTime()) / (365.25 * 24 * 3600 * 1000)) : 0),
+            gender: p.gender || 'Unknown',
+            dateOfBirth: p.dateOfBirth || '',
+            phone: p.phone || p.contactNumber || '',
+            email: p.email || '',
+            bloodGroup: p.bloodGroup || p.bloodType || 'Unknown',
+            address: p.address || '',
+            chronicConditions: Array.isArray(p.chronicConditions) ? p.chronicConditions : (Array.isArray(p.chronicDiseases) ? p.chronicDiseases : []),
+            allergies: Array.isArray(p.allergies) ? p.allergies : [],
+            currentMedications: Array.isArray(p.currentMedications) ? p.currentMedications : (Array.isArray(p.medications) ? p.medications : []),
+            vitals: [],
+            encounters: [],
+            labResults: [],
+            imagingStudies: [],
+            prescriptions: [],
+            procedures: [],
+            immunizations: [],
+            familyHistory: [],
+            socialHistory: {
+              occupation: p.occupation || '',
+              smokingStatus: 'Never' as const,
+              alcoholUse: 'None' as const,
+              exerciseFrequency: '',
+              diet: '',
+              stressLevel: 'Low' as const,
+              sleepHours: 8,
+            },
+            notes: [],
+            createdAt: p.createdAt || new Date().toISOString(),
+            updatedAt: p.updatedAt || new Date().toISOString(),
+          }));
+          setPatients(mapped);
+          saveHospitalStore('ehr-patients', mapped);
+        }
+      })
+      .catch(() => {
+        // Keep sample / localStorage data on API error
+      })
+      .finally(() => {
+        setLoading(false);
+      });
   }, [navigate]);
 
   // Auto-select first patient
@@ -405,10 +463,10 @@ const HospitalEHR = () => {
 
   const getLabFlagColor = (flag?: string) => {
     switch (flag) {
-      case 'Critical': return 'bg-red-600 text-white';
-      case 'High': return 'bg-orange-100 text-orange-800';
-      case 'Low': return 'bg-teal-100 text-teal-800';
-      default: return 'bg-green-100 text-green-800';
+      case 'Critical': return 'bg-red-600 text-white dark:bg-red-500';
+      case 'High': return 'bg-orange-100 text-orange-800 dark:bg-orange-900/40 dark:text-orange-200';
+      case 'Low': return 'bg-teal-100 text-teal-800 dark:bg-teal-900/40 dark:text-teal-200';
+      default: return 'bg-green-100 text-green-800 dark:bg-green-900/40 dark:text-green-200';
     }
   };
 
@@ -468,7 +526,7 @@ const HospitalEHR = () => {
       {patient && (
         <div className="space-y-6">
           {/* Patient Banner */}
-          <Card className="bg-gradient-to-r from-orange-50 to-amber-50 border-orange-200">
+          <Card className="bg-gradient-to-r from-orange-50 to-amber-50 border-orange-200 dark:from-slate-900 dark:to-slate-800 dark:border-slate-700">
             <CardContent className="p-6">
               <div className="flex items-center justify-between">
                 <div className="flex items-center gap-6">
@@ -496,9 +554,9 @@ const HospitalEHR = () => {
                 </div>
                 <div className="flex flex-col items-end gap-2">
                   {patient.allergies.length > 0 && (
-                    <div className="flex items-center gap-2 p-2 bg-red-100 rounded-lg">
+                    <div className="flex items-center gap-2 p-2 bg-red-100 dark:bg-red-950/40 rounded-lg">
                       <AlertTriangle className="h-4 w-4 text-red-600" />
-                      <span className="text-sm font-medium text-red-800">
+                      <span className="text-sm font-medium text-red-800 dark:text-red-200">
                         Allergies: {patient.allergies.join(', ')}
                       </span>
                     </div>
@@ -522,32 +580,32 @@ const HospitalEHR = () => {
               </div>
               {/* Quick Stats */}
               <div className="grid grid-cols-6 gap-4 mt-6">
-                <div className="text-center p-3 bg-white rounded-lg shadow-sm">
+                <div className="text-center p-3 bg-card border border-border rounded-lg shadow-sm">
                   <HeartPulse className="h-5 w-5 mx-auto mb-1 text-red-500" />
                   <p className="text-lg font-bold">{patient.vitals[0]?.bloodPressure.systolic}/{patient.vitals[0]?.bloodPressure.diastolic}</p>
                   <p className="text-xs text-muted-foreground">BP</p>
                 </div>
-                <div className="text-center p-3 bg-white rounded-lg shadow-sm">
+                <div className="text-center p-3 bg-card border border-border rounded-lg shadow-sm">
                   <Heart className="h-5 w-5 mx-auto mb-1 text-pink-500" />
                   <p className="text-lg font-bold">{patient.vitals[0]?.heartRate}</p>
                   <p className="text-xs text-muted-foreground">Pulse</p>
                 </div>
-                <div className="text-center p-3 bg-white rounded-lg shadow-sm">
+                <div className="text-center p-3 bg-card border border-border rounded-lg shadow-sm">
                   <Thermometer className="h-5 w-5 mx-auto mb-1 text-orange-500" />
                   <p className="text-lg font-bold">{patient.vitals[0]?.temperature}°F</p>
                   <p className="text-xs text-muted-foreground">Temp</p>
                 </div>
-                <div className="text-center p-3 bg-white rounded-lg shadow-sm">
+                <div className="text-center p-3 bg-card border border-border rounded-lg shadow-sm">
                   <Zap className="h-5 w-5 mx-auto mb-1 text-teal-500" />
                   <p className="text-lg font-bold">{patient.vitals[0]?.oxygenSaturation}%</p>
                   <p className="text-xs text-muted-foreground">SpO2</p>
                 </div>
-                <div className="text-center p-3 bg-white rounded-lg shadow-sm">
+                <div className="text-center p-3 bg-card border border-border rounded-lg shadow-sm">
                   <Scale className="h-5 w-5 mx-auto mb-1 text-green-500" />
                   <p className="text-lg font-bold">{patient.vitals[0]?.weight} kg</p>
                   <p className="text-xs text-muted-foreground">Weight</p>
                 </div>
-                <div className="text-center p-3 bg-white rounded-lg shadow-sm">
+                <div className="text-center p-3 bg-card border border-border rounded-lg shadow-sm">
                   <BarChart3 className="h-5 w-5 mx-auto mb-1 text-purple-500" />
                   <p className="text-lg font-bold">{patient.vitals[0]?.bmi}</p>
                   <p className="text-xs text-muted-foreground">BMI</p>
@@ -599,7 +657,7 @@ const HospitalEHR = () => {
                   <CardContent>
                     <div className="space-y-2">
                       {patient.chronicConditions.map((condition, idx) => (
-                        <div key={idx} className="flex items-center justify-between p-2 bg-red-50 rounded">
+                        <div key={idx} className="flex items-center justify-between p-2 bg-red-50 dark:bg-red-950/30 rounded">
                           <span>{condition}</span>
                           <Badge variant="outline">Active</Badge>
                         </div>
@@ -619,7 +677,7 @@ const HospitalEHR = () => {
                   <CardContent>
                     <div className="space-y-2">
                       {patient.currentMedications.slice(0, 5).map((med, idx) => (
-                        <div key={idx} className="p-2 bg-teal-50 rounded">
+                        <div key={idx} className="p-2 bg-teal-50 dark:bg-teal-950/30 rounded">
                           <p className="font-medium">{med.name} {med.dosage}</p>
                           <p className="text-sm text-muted-foreground">{med.frequency}</p>
                         </div>
@@ -642,7 +700,7 @@ const HospitalEHR = () => {
                   <CardContent>
                     <div className="space-y-2">
                       {patient.allergies.map((allergy, idx) => (
-                        <div key={idx} className="flex items-center gap-2 p-2 bg-orange-50 rounded">
+                        <div key={idx} className="flex items-center gap-2 p-2 bg-orange-50 dark:bg-orange-950/30 rounded">
                           <AlertTriangle className="h-4 w-4 text-orange-500" />
                           <span>{allergy}</span>
                         </div>
@@ -672,7 +730,7 @@ const HospitalEHR = () => {
                           </div>
                           <div className="flex items-center gap-2">
                             <span className="text-sm text-muted-foreground">{encounter.date}</span>
-                            <Badge className={encounter.status === 'Completed' ? 'bg-green-100 text-green-800' : 'bg-yellow-100 text-yellow-800'}>
+                            <Badge className={encounter.status === 'Completed' ? 'bg-green-100 text-green-800 dark:bg-green-900/40 dark:text-green-200' : 'bg-yellow-100 text-yellow-800 dark:bg-yellow-900/40 dark:text-yellow-200'}>
                               {encounter.status}
                             </Badge>
                           </div>
@@ -700,7 +758,7 @@ const HospitalEHR = () => {
                       <div key={lab.id} className="p-4 border rounded-lg">
                         <div className="flex items-center justify-between mb-2">
                           <h4 className="font-semibold">{lab.testName}</h4>
-                          <Badge className={lab.status === 'Completed' ? 'bg-green-100 text-green-800' : 'bg-yellow-100 text-yellow-800'}>
+                          <Badge className={lab.status === 'Completed' ? 'bg-green-100 text-green-800 dark:bg-green-900/40 dark:text-green-200' : 'bg-yellow-100 text-yellow-800 dark:bg-yellow-900/40 dark:text-yellow-200'}>
                             {lab.status}
                           </Badge>
                         </div>
@@ -842,31 +900,44 @@ const HospitalEHR = () => {
                         className="bg-gradient-to-r from-orange-600 to-amber-600"
                         onClick={() => {
                           if (!selectedPatient) return;
-                          updateSelectedPatient((patient) => {
-                            const systolic = parseInt(vitalsForm.systolic || '0', 10);
-                            const diastolic = parseInt(vitalsForm.diastolic || '0', 10);
-                            const vital: VitalSigns = {
-                              id: `V-${Date.now()}`,
-                              recordedAt: new Date().toISOString().replace('T', ' ').slice(0, 16),
-                              recordedBy: 'Nurse Station',
-                              bloodPressure: { systolic, diastolic },
-                              heartRate: parseInt(vitalsForm.heartRate || '0', 10),
-                              temperature: parseFloat(vitalsForm.temperature || '0'),
-                              respiratoryRate: parseInt(vitalsForm.respiratoryRate || '0', 10),
-                              oxygenSaturation: parseInt(vitalsForm.oxygenSaturation || '0', 10),
-                              weight: parseFloat(vitalsForm.weight || '0'),
-                              height: parseFloat(vitalsForm.height || '0'),
-                              bmi: 0,
-                              painLevel: vitalsForm.painLevel ? parseInt(vitalsForm.painLevel, 10) : undefined,
-                              notes: vitalsForm.notes || undefined
-                            };
-                            const bmi =
-                              vital.height && vital.weight
-                                ? Math.round((vital.weight / Math.pow(vital.height / 100, 2)) * 10) / 10
-                                : 0;
-                            vital.bmi = bmi;
-                            return { ...patient, vitals: [vital, ...patient.vitals] };
-                          });
+                          const systolic = parseInt(vitalsForm.systolic || '0', 10);
+                          const diastolic = parseInt(vitalsForm.diastolic || '0', 10);
+                          const hr = parseInt(vitalsForm.heartRate || '0', 10);
+                          const temp = parseFloat(vitalsForm.temperature || '0');
+                          const rr = parseInt(vitalsForm.respiratoryRate || '0', 10);
+                          const spo2 = parseInt(vitalsForm.oxygenSaturation || '0', 10);
+                          const wt = parseFloat(vitalsForm.weight || '0');
+                          const ht = parseFloat(vitalsForm.height || '0');
+                          const bmiVal = ht && wt ? Math.round((wt / Math.pow(ht / 100, 2)) * 10) / 10 : 0;
+                          const vital: VitalSigns = {
+                            id: `V-${Date.now()}`,
+                            recordedAt: new Date().toISOString().replace('T', ' ').slice(0, 16),
+                            recordedBy: 'Nurse Station',
+                            bloodPressure: { systolic, diastolic },
+                            heartRate: hr,
+                            temperature: temp,
+                            respiratoryRate: rr,
+                            oxygenSaturation: spo2,
+                            weight: wt,
+                            height: ht,
+                            bmi: bmiVal,
+                            painLevel: vitalsForm.painLevel ? parseInt(vitalsForm.painLevel, 10) : undefined,
+                            notes: vitalsForm.notes || undefined
+                          };
+                          updateSelectedPatient((patient) => ({ ...patient, vitals: [vital, ...patient.vitals] }));
+                          // Fire API call alongside local state update
+                          vitalSignsService.create({
+                            patientId: selectedPatient.id,
+                            systolic,
+                            diastolic,
+                            heartRate: hr,
+                            temperature: temp,
+                            respiratoryRate: rr,
+                            oxygenSaturation: spo2,
+                            weight: wt,
+                            height: ht,
+                            notes: vitalsForm.notes || undefined,
+                          }).catch((e: unknown) => console.error('Vitals API error', e));
                           setVitalsForm({
                             systolic: '',
                             diastolic: '',
@@ -940,7 +1011,7 @@ const HospitalEHR = () => {
                                   ))}
                                 </div>
                               ) : (
-                                <Badge className="bg-green-100 text-green-800">Normal</Badge>
+                                <Badge className="bg-green-100 text-green-800 dark:bg-green-900/40 dark:text-green-200">Normal</Badge>
                               )}
                             </TableCell>
                           </TableRow>
@@ -1133,7 +1204,7 @@ const HospitalEHR = () => {
                             {encounter.department} • {encounter.doctor} • {encounter.date}
                           </CardDescription>
                         </div>
-                        <Badge className={encounter.status === 'Completed' ? 'bg-green-100 text-green-800' : 'bg-teal-100 text-teal-800'}>
+                        <Badge className={encounter.status === 'Completed' ? 'bg-green-100 text-green-800 dark:bg-green-900/40 dark:text-green-200' : 'bg-teal-100 text-teal-800 dark:bg-teal-900/40 dark:text-teal-200'}>
                           {encounter.status}
                         </Badge>
                       </div>
@@ -1196,7 +1267,7 @@ const HospitalEHR = () => {
                           <CardTitle className="text-lg">{lab.testName}</CardTitle>
                           <CardDescription>{lab.category} • Ordered by {lab.orderedBy} • {lab.resultDate}</CardDescription>
                         </div>
-                        <Badge className={lab.status === 'Completed' ? 'bg-green-100 text-green-800' : 'bg-yellow-100 text-yellow-800'}>
+                        <Badge className={lab.status === 'Completed' ? 'bg-green-100 text-green-800 dark:bg-green-900/40 dark:text-green-200' : 'bg-yellow-100 text-yellow-800 dark:bg-yellow-900/40 dark:text-yellow-200'}>
                           {lab.status}
                         </Badge>
                       </div>
@@ -1257,7 +1328,7 @@ const HospitalEHR = () => {
                           <CardTitle>{study.studyType} - {study.bodyPart}</CardTitle>
                           <CardDescription>Ordered by {study.orderedBy} • {study.performedDate || study.orderedDate}</CardDescription>
                         </div>
-                        <Badge className={study.status === 'Completed' ? 'bg-green-100 text-green-800' : 'bg-yellow-100 text-yellow-800'}>
+                        <Badge className={study.status === 'Completed' ? 'bg-green-100 text-green-800 dark:bg-green-900/40 dark:text-green-200' : 'bg-yellow-100 text-yellow-800 dark:bg-yellow-900/40 dark:text-yellow-200'}>
                           {study.status}
                         </Badge>
                       </div>
@@ -1270,7 +1341,7 @@ const HospitalEHR = () => {
                         </div>
                       )}
                       {study.impression && (
-                        <div className="p-3 bg-gray-50 rounded-lg">
+                        <div className="p-3 bg-muted/60 rounded-lg">
                           <p className="text-sm font-medium text-muted-foreground">Impression:</p>
                           <p className="font-medium">{study.impression}</p>
                         </div>
@@ -1313,7 +1384,7 @@ const HospitalEHR = () => {
                         <CardDescription>{rx.prescribedBy} • {rx.diagnosis}</CardDescription>
                       </div>
                       <div className="flex items-center gap-2">
-                        <Badge className={rx.status === 'Active' ? 'bg-green-100 text-green-800' : 'bg-gray-100 text-gray-800'}>
+                        <Badge className={rx.status === 'Active' ? 'bg-green-100 text-green-800 dark:bg-green-900/40 dark:text-green-200' : 'bg-gray-100 text-gray-800 dark:bg-slate-800 dark:text-slate-200'}>
                           {rx.status}
                         </Badge>
                         <Button variant="outline" size="sm" className="gap-2">
@@ -1348,7 +1419,7 @@ const HospitalEHR = () => {
                       </TableBody>
                     </Table>
                     {rx.instructions && (
-                      <div className="mt-4 p-3 bg-yellow-50 rounded-lg">
+                      <div className="mt-4 p-3 bg-yellow-50 dark:bg-yellow-950/30 rounded-lg">
                         <p className="text-sm font-medium">Instructions:</p>
                         <p className="text-sm">{rx.instructions}</p>
                       </div>
@@ -1379,7 +1450,7 @@ const HospitalEHR = () => {
                           <CardTitle>{proc.name}</CardTitle>
                           <CardDescription>{proc.type} • {proc.date} • {proc.performedBy}</CardDescription>
                         </div>
-                        <Badge className={proc.outcome === 'Successful' ? 'bg-green-100 text-green-800' : 'bg-yellow-100 text-yellow-800'}>
+                        <Badge className={proc.outcome === 'Successful' ? 'bg-green-100 text-green-800 dark:bg-green-900/40 dark:text-green-200' : 'bg-yellow-100 text-yellow-800 dark:bg-yellow-900/40 dark:text-yellow-200'}>
                           {proc.outcome}
                         </Badge>
                       </div>
@@ -1416,7 +1487,7 @@ const HospitalEHR = () => {
                   <CardContent>
                     <div className="space-y-3">
                       {patient.familyHistory.map((fh, idx) => (
-                        <div key={idx} className="p-3 bg-gray-50 rounded-lg">
+                        <div key={idx} className="p-3 bg-muted/60 rounded-lg">
                           <div className="flex items-center justify-between mb-1">
                             <span className="font-medium">{fh.relation}</span>
                             <Badge variant="outline">{fh.status}</Badge>
@@ -1463,7 +1534,7 @@ const HospitalEHR = () => {
                       </div>
                       <div className="flex justify-between">
                         <span className="text-muted-foreground">Stress Level</span>
-                        <Badge className={patient.socialHistory.stressLevel === 'High' ? 'bg-red-100 text-red-800' : 'bg-green-100 text-green-800'}>
+                        <Badge className={patient.socialHistory.stressLevel === 'High' ? 'bg-red-100 text-red-800 dark:bg-red-900/40 dark:text-red-200' : 'bg-green-100 text-green-800 dark:bg-green-900/40 dark:text-green-200'}>
                           {patient.socialHistory.stressLevel}
                         </Badge>
                       </div>
@@ -1514,71 +1585,6 @@ const HospitalEHR = () => {
               </div>
             </TabsContent>
 
-            {/* Encounters Tab */}
-            <TabsContent value="encounters" className="space-y-6">
-              <div className="flex items-center justify-between">
-                <h2 className="text-xl font-bold">Clinical Encounters</h2>
-                <Button 
-                  className="gap-2 bg-gradient-to-r from-orange-600 to-amber-600"
-                  onClick={() => setShowNewEncounterDialog(true)}
-                >
-                  <Plus className="h-4 w-4" /> New Encounter
-                </Button>
-              </div>
-
-              <div className="space-y-4">
-                {patient.encounters.map((encounter) => (
-                  <Card key={encounter.id}>
-                    <CardHeader>
-                      <div className="flex items-center justify-between">
-                        <div className="flex items-center gap-3">
-                          <Badge>{encounter.type}</Badge>
-                          <span className="font-semibold text-lg">{encounter.department}</span>
-                          <span className="text-muted-foreground">• {encounter.doctor}</span>
-                        </div>
-                        <div className="flex items-center gap-2">
-                          <span className="text-muted-foreground">{encounter.date}</span>
-                          <Badge className={encounter.status === 'Completed' ? 'bg-green-100 text-green-800' : 'bg-yellow-100 text-yellow-800'}>
-                            {encounter.status}
-                          </Badge>
-                        </div>
-                      </div>
-                    </CardHeader>
-                    <CardContent className="space-y-4">
-                      <div>
-                        <p className="text-sm font-medium text-muted-foreground">Chief Complaint</p>
-                        <p className="font-medium">{encounter.chiefComplaint}</p>
-                      </div>
-                      <div>
-                        <p className="text-sm font-medium text-muted-foreground">History of Present Illness</p>
-                        <p>{encounter.presentIllness}</p>
-                      </div>
-                      <div>
-                        <p className="text-sm font-medium text-muted-foreground">Examination</p>
-                        <p>{encounter.examination}</p>
-                      </div>
-                      <div>
-                        <p className="text-sm font-medium text-muted-foreground">Diagnosis</p>
-                        <div className="flex flex-wrap gap-2 mt-1">
-                          {encounter.diagnosis.map((dx, idx) => (
-                            <Badge key={idx} variant="outline">{dx}</Badge>
-                          ))}
-                        </div>
-                      </div>
-                      <div>
-                        <p className="text-sm font-medium text-muted-foreground">Treatment Plan</p>
-                        <p>{encounter.treatmentPlan}</p>
-                      </div>
-                      {encounter.followUp && (
-                        <div className="p-3 bg-teal-50 rounded-lg">
-                          <p className="text-sm font-medium">Follow-up: {encounter.followUp}</p>
-                        </div>
-                      )}
-                    </CardContent>
-                  </Card>
-                ))}
-              </div>
-            </TabsContent>
           </Tabs>
         </div>
       )}
@@ -1893,19 +1899,24 @@ const HospitalEHR = () => {
             <Button variant="outline" onClick={() => setShowLabTestDialog(false)}>Cancel</Button>
             <Button onClick={() => {
               if (!selectedPatient) return;
-              updateSelectedPatient((patient) => {
-                const lab: LabResult = {
-                  id: `L-${Date.now()}`,
-                  testName: labForm.testName || 'Lab Test',
-                  category: labForm.category,
-                  orderedBy: 'Dr. On Call',
-                  orderedDate: new Date().toISOString().split('T')[0],
-                  results: [],
-                  status: 'Ordered',
-                  notes: labForm.indication || undefined
-                };
-                return { ...patient, labResults: [lab, ...patient.labResults] };
-              });
+              const lab: LabResult = {
+                id: `L-${Date.now()}`,
+                testName: labForm.testName || 'Lab Test',
+                category: labForm.category,
+                orderedBy: 'Dr. On Call',
+                orderedDate: new Date().toISOString().split('T')[0],
+                results: [],
+                status: 'Ordered',
+                notes: labForm.indication || undefined
+              };
+              updateSelectedPatient((patient) => ({ ...patient, labResults: [lab, ...patient.labResults] }));
+              // Fire API call alongside local state update
+              labOrderService.create({
+                patientId: selectedPatient.id,
+                testName: labForm.testName || 'Lab Test',
+                priority: labForm.priority,
+                notes: labForm.indication || undefined,
+              }).catch((e: unknown) => console.error('Lab order API error', e));
               setLabForm({
                 category: 'blood',
                 priority: 'routine',
@@ -2005,26 +2016,33 @@ const HospitalEHR = () => {
             <Button variant="outline" onClick={() => setShowImagingDialog(false)}>Cancel</Button>
             <Button onClick={() => {
               if (!selectedPatient) return;
-              updateSelectedPatient((patient) => {
-                const studyTypeMap: Record<string, ImagingStudy['studyType']> = {
-                  xray: 'X-Ray',
-                  ct: 'CT Scan',
-                  mri: 'MRI',
-                  ultrasound: 'Ultrasound',
-                  pet: 'PET Scan'
-                };
-                const studyType = studyTypeMap[imagingForm.type] || 'X-Ray';
-                const imaging: ImagingStudy = {
-                  id: `I-${Date.now()}`,
-                  studyType,
-                  bodyPart: imagingForm.bodyPart || 'General',
-                  orderedBy: 'Dr. On Call',
-                  orderedDate: new Date().toISOString().split('T')[0],
-                  status: 'Ordered',
-                  findings: imagingForm.notes || undefined
-                };
-                return { ...patient, imagingStudies: [imaging, ...patient.imagingStudies] };
-              });
+              const studyTypeMap: Record<string, ImagingStudy['studyType']> = {
+                xray: 'X-Ray',
+                ct: 'CT Scan',
+                mri: 'MRI',
+                ultrasound: 'Ultrasound',
+                pet: 'PET Scan'
+              };
+              const studyType = studyTypeMap[imagingForm.type] || 'X-Ray';
+              const imaging: ImagingStudy = {
+                id: `I-${Date.now()}`,
+                studyType,
+                bodyPart: imagingForm.bodyPart || 'General',
+                orderedBy: 'Dr. On Call',
+                orderedDate: new Date().toISOString().split('T')[0],
+                status: 'Ordered',
+                findings: imagingForm.notes || undefined
+              };
+              updateSelectedPatient((patient) => ({ ...patient, imagingStudies: [imaging, ...patient.imagingStudies] }));
+              // Fire API call alongside local state update
+              imagingOrderService.create({
+                patientId: selectedPatient.id,
+                imagingType: studyType,
+                bodyPart: imagingForm.bodyPart || 'General',
+                priority: imagingForm.priority,
+                contrast: imagingForm.contrast,
+                clinicalIndication: imagingForm.notes || undefined,
+              }).catch((e: unknown) => console.error('Imaging order API error', e));
               setImagingForm({
                 type: 'xray',
                 priority: 'routine',
@@ -2126,31 +2144,36 @@ const HospitalEHR = () => {
             <Button variant="outline" onClick={() => setShowPrescriptionDialog(false)}>Cancel</Button>
             <Button onClick={() => {
               if (!selectedPatient) return;
-              updateSelectedPatient((patient) => {
-                const med: Medication = {
-                  name: prescriptionForm.medication || 'Medication',
-                  dosage: prescriptionForm.dosage || '',
-                  frequency: prescriptionForm.frequency,
-                  duration: prescriptionForm.duration || '',
-                  route: prescriptionForm.route,
-                  instructions: prescriptionForm.instructions || undefined
-                };
-                const rx: Prescription = {
-                  id: `RX-${Date.now()}`,
-                  prescribedDate: new Date().toISOString().split('T')[0],
-                  prescribedBy: 'Dr. On Call',
-                  diagnosis: 'General',
-                  medications: [med],
-                  instructions: prescriptionForm.instructions || '',
-                  validity: '30 days',
-                  status: 'Active'
-                };
-                return {
-                  ...patient,
-                  prescriptions: [rx, ...patient.prescriptions],
-                  currentMedications: [med, ...patient.currentMedications]
-                };
-              });
+              const med: Medication = {
+                name: prescriptionForm.medication || 'Medication',
+                dosage: prescriptionForm.dosage || '',
+                frequency: prescriptionForm.frequency,
+                duration: prescriptionForm.duration || '',
+                route: prescriptionForm.route,
+                instructions: prescriptionForm.instructions || undefined
+              };
+              const rx: Prescription = {
+                id: `RX-${Date.now()}`,
+                prescribedDate: new Date().toISOString().split('T')[0],
+                prescribedBy: 'Dr. On Call',
+                diagnosis: 'General',
+                medications: [med],
+                instructions: prescriptionForm.instructions || '',
+                validity: '30 days',
+                status: 'Active'
+              };
+              updateSelectedPatient((patient) => ({
+                ...patient,
+                prescriptions: [rx, ...patient.prescriptions],
+                currentMedications: [med, ...patient.currentMedications]
+              }));
+              // Fire API call alongside local state update
+              prescriptionService.create({
+                patientId: selectedPatient.id,
+                medications: [med],
+                diagnosis: 'General',
+                notes: prescriptionForm.instructions || undefined,
+              }).catch((e: unknown) => console.error('Prescription API error', e));
               setPrescriptionForm({
                 medication: '',
                 dosage: '',
@@ -2288,21 +2311,29 @@ const HospitalEHR = () => {
             <Button variant="outline" onClick={() => setShowProcedureDialog(false)}>Cancel</Button>
             <Button onClick={() => {
               if (!selectedPatient) return;
-              updateSelectedPatient((patient) => {
-                const procedure: Procedure = {
-                  id: `P-${Date.now()}`,
-                  name: procedureForm.name || 'Procedure',
-                  type: procedureForm.type === 'diagnostic' ? 'Diagnostic' : procedureForm.type === 'therapeutic' ? 'Non-Surgical' : 'Surgical',
-                  date: procedureForm.dateTime || new Date().toISOString(),
-                  performedBy: procedureForm.performedBy || 'On Call',
-                  anesthesia: procedureForm.anesthesia || undefined,
-                  findings: procedureForm.findings || undefined,
-                  complications: procedureForm.complications || undefined,
-                  outcome: procedureForm.outcome,
-                  notes: procedureForm.notes || undefined
-                };
-                return { ...patient, procedures: [procedure, ...patient.procedures] };
-              });
+              const procedure: Procedure = {
+                id: `P-${Date.now()}`,
+                name: procedureForm.name || 'Procedure',
+                type: procedureForm.type === 'diagnostic' ? 'Diagnostic' : procedureForm.type === 'therapeutic' ? 'Non-Surgical' : 'Surgical',
+                date: procedureForm.dateTime || new Date().toISOString(),
+                performedBy: procedureForm.performedBy || 'On Call',
+                anesthesia: procedureForm.anesthesia || undefined,
+                findings: procedureForm.findings || undefined,
+                complications: procedureForm.complications || undefined,
+                outcome: procedureForm.outcome,
+                notes: procedureForm.notes || undefined
+              };
+              updateSelectedPatient((patient) => ({ ...patient, procedures: [procedure, ...patient.procedures] }));
+              // Fire API call alongside local state update
+              const [schedDate, schedTime] = (procedureForm.dateTime || new Date().toISOString()).split('T');
+              procedureService.schedule({
+                patientId: selectedPatient.id,
+                procedureName: procedureForm.name || 'Procedure',
+                scheduledDate: schedDate || new Date().toISOString().split('T')[0],
+                scheduledTime: schedTime?.slice(0, 5) || '09:00',
+                anesthesiaType: procedureForm.anesthesia || undefined,
+                notes: procedureForm.notes || undefined,
+              }).catch((e: unknown) => console.error('Procedure API error', e));
               setProcedureForm({
                 type: 'surgical',
                 name: '',
