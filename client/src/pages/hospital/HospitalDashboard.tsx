@@ -360,10 +360,10 @@ const HospitalDashboard = () => {
         ))}
       </div>
 
-      {/* IHX Insurance Functions */}
+      {/* Insurance Workflow Modules */}
       <div className="mb-6 flex items-end justify-between">
         <div>
-          <h3 className="text-xl font-bold text-slate-800 dark:text-white">IHX Insurance Functions</h3>
+          <h3 className="text-xl font-bold text-slate-800 dark:text-white">Insurance Workflow Modules</h3>
           <p className="text-sm text-slate-500 dark:text-slate-400">One-click access to insurance workflow modules from dashboard</p>
         </div>
       </div>
