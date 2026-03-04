@@ -221,27 +221,28 @@ async function testGeneratePrescription(token, doctorId) {
 
     if (res.status === 200 && res.body?.success) {
       const rx = res.body.prescription || res.body.data || res.body;
-      // Validate key fields
-      const hasComplaints  = !!rx.chiefComplaints || !!rx.symptoms;
-      const hasDiagnosis   = !!rx.diagnosis;
+      const usingFallback  = res.body.usingFallback === true;
+      // Medications are the primary prescription integrity indicator
       const hasMedications = Array.isArray(rx.medications) && rx.medications.length > 0;
+      const hasDiagnosis   = !!rx.diagnosis;
 
-      if (hasComplaints && hasDiagnosis && hasMedications) {
+      if (hasMedications) {
         return record('POST /generate-prescription (full pipeline)', 'PASSED', {
           status: res.status,
+          usingFallback,
           diagnosis: rx.diagnosis?.slice(0, 80),
-          medicationCount: rx.medications?.length,
-          sampleMed: rx.medications?.[0]?.name,
-          usesFallback: res.body.usesFallback || false
+          medicationCount: rx.medications.length,
+          sampleMed: rx.medications[0]?.name,
+          note: usingFallback ? 'AI offline — fallback extraction used' : (hasDiagnosis ? 'Full AI pipeline' : 'AI ran; chiefComplaints/diagnosis may be sparse')
         });
       }
 
-      // Some fields missing but status 200
-      return record('POST /generate-prescription (full pipeline)', 'PASSED', {
+      // No medications at all — fail
+      return record('POST /generate-prescription (full pipeline)', 'FAILED', {
         status: res.status,
-        note: 'Response 200 but some prescription fields empty — may be fallback extraction',
-        diagnosis: rx.diagnosis?.slice(0, 80),
-        medicationCount: rx.medications?.length
+        usingFallback,
+        error: 'Prescription returned 200 but medications array is empty',
+        diagnosis: rx.diagnosis?.slice(0, 80)
       });
     }
 
