@@ -3,7 +3,7 @@ import axios from 'axios';
 import FormData from 'form-data';
 import multer from 'multer';
 import fs from 'fs';
-import { authDoctor } from '../middleware/auth.middleware.js';
+import { authDoctor, authUser } from '../middleware/auth.middleware.js';
 
 const router = express.Router();
 
@@ -23,7 +23,42 @@ router.get('/health', async (req, res) => {
   }
 });
 
-// Require doctor authentication for all other scribe endpoints
+/**
+ * GET /api/hospital/scribe/specialties
+ * Get list of available medical specialties
+ * Accepts both hospital and doctor JWTs (read-only data)
+ */
+router.get('/specialties', authUser, async (req, res) => {
+  try {
+    const response = await axios.get(`${SCRIBE_API_URL}/api/scribe/specialties`);
+    res.json(response.data);
+  } catch (error) {
+    console.error('Specialties error:', error.message);
+    res.status(500).json({ error: error.message });
+  }
+});
+
+/**
+ * GET /api/hospital/scribe/template/:specialty
+ * Get discharge summary template for a specialty
+ * Accepts both hospital and doctor JWTs (read-only data)
+ */
+router.get('/template/:specialty', authUser, async (req, res) => {
+  try {
+    const { specialty } = req.params;
+    const response = await axios.get(
+      `${SCRIBE_API_URL}/api/scribe/template/${specialty}`
+    );
+    res.json(response.data);
+  } catch (error) {
+    console.error('Template error:', error.message);
+    res.status(error.response?.status || 500).json({ 
+      error: error.response?.data?.detail || error.message 
+    });
+  }
+});
+
+// Require doctor authentication for all other scribe endpoints (transcribe, process, generate)
 router.use(authDoctor);
 
 // Multer for audio upload
@@ -122,39 +157,6 @@ router.post('/process', async (req, res) => {
   } catch (error) {
     console.error('Processing error:', error.message);
     res.status(500).json({ error: error.message });
-  }
-});
-
-/**
- * GET /api/hospital/scribe/specialties
- * Get list of available medical specialties
- */
-router.get('/specialties', async (req, res) => {
-  try {
-    const response = await axios.get(`${SCRIBE_API_URL}/api/scribe/specialties`);
-    res.json(response.data);
-  } catch (error) {
-    console.error('Specialties error:', error.message);
-    res.status(500).json({ error: error.message });
-  }
-});
-
-/**
- * GET /api/hospital/scribe/template/:specialty
- * Get discharge summary template for a specialty
- */
-router.get('/template/:specialty', async (req, res) => {
-  try {
-    const { specialty } = req.params;
-    const response = await axios.get(
-      `${SCRIBE_API_URL}/api/scribe/template/${specialty}`
-    );
-    res.json(response.data);
-  } catch (error) {
-    console.error('Template error:', error.message);
-    res.status(error.response?.status || 500).json({ 
-      error: error.response?.data?.detail || error.message 
-    });
   }
 });
 

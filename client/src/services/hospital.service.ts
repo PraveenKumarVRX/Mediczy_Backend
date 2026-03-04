@@ -77,7 +77,7 @@ export const medicalRecordService = {
   /**
    * Get all medical records
    */
-  getAll: async (params?: { patientId?: number; doctorId?: number; recordType?: string }) => {
+  getAll: async (params?: { patientId?: number | string; doctorId?: number | string; recordType?: string }) => {
     const response = await api.get(`${BASE_URL}/medical-records`, {
       params,
       headers: getHospitalHeaders()
@@ -125,7 +125,7 @@ export const ehrService = {
   /**
    * Get EHR for patient
    */
-  getByPatient: async (patientId: number) => {
+  getByPatient: async (patientId: number | string) => {
     const response = await api.get(`${BASE_URL}/ehr/${patientId}`, {
       headers: getHospitalHeaders()
     });
@@ -136,12 +136,31 @@ export const ehrService = {
    * Create EHR record
    */
   create: async (data: {
-    patientId: number;
-    recordType: string;
-    content: any;
+    patientId: number | string;
+    height?: number;
+    weight?: number;
+    bloodType?: string;
+    allergies?: any;
+    chronicDiseases?: any;
+    medications?: any;
+    emergencyContact?: any;
+    insuranceDetails?: any;
+    recordType?: string;
+    content?: any;
     metadata?: any;
   }) => {
-    const response = await api.post(`${BASE_URL}/ehr`, data, {
+    const payload = {
+      patientId: data.patientId,
+      height: data.height ?? data.content?.height,
+      weight: data.weight ?? data.content?.weight,
+      bloodType: data.bloodType ?? data.content?.bloodType,
+      allergies: data.allergies ?? data.content?.allergies,
+      chronicDiseases: data.chronicDiseases ?? data.content?.chronicDiseases,
+      medications: data.medications ?? data.content?.medications,
+      emergencyContact: data.emergencyContact ?? data.content?.emergencyContact,
+      insuranceDetails: data.insuranceDetails ?? data.content?.insuranceDetails,
+    };
+    const response = await api.post(`${BASE_URL}/ehr`, payload, {
       headers: getHospitalHeaders()
     });
     return response.data;
@@ -150,7 +169,7 @@ export const ehrService = {
   /**
    * Update EHR record
    */
-  update: async (patientId: number, data: any) => {
+  update: async (patientId: number | string, data: any) => {
     const response = await api.patch(`${BASE_URL}/ehr/${patientId}`, data, {
       headers: getHospitalHeaders()
     });
@@ -166,9 +185,15 @@ export const vitalSignsService = {
   /**
    * Get vital signs
    */
-  getAll: async (params?: { patientId?: number; from?: string; to?: string }) => {
+  getAll: async (params?: { patientId?: number | string; from?: string; to?: string; fromDate?: string; toDate?: string; latest?: boolean }) => {
+    const queryParams = {
+      patientId: params?.patientId,
+      fromDate: params?.fromDate ?? params?.from,
+      toDate: params?.toDate ?? params?.to,
+      latest: params?.latest,
+    };
     const response = await api.get(`${BASE_URL}/vitals`, {
-      params,
+      params: queryParams,
       headers: getHospitalHeaders()
     });
     return response.data;
@@ -178,7 +203,9 @@ export const vitalSignsService = {
    * Create vital signs record
    */
   create: async (data: {
-    patientId: number;
+    patientId: number | string;
+    systolic?: number;
+    diastolic?: number;
     temperature?: number;
     bloodPressure?: string;
     heartRate?: number;
@@ -188,9 +215,30 @@ export const vitalSignsService = {
     height?: number;
     bmi?: number;
     recordedAt?: string;
-    recordedBy?: string;
+    recordedBy?: string | number;
+    notes?: string;
   }) => {
-    const response = await api.post(`${BASE_URL}/vitals`, data, {
+    let systolic = data.systolic;
+    let diastolic = data.diastolic;
+    if ((systolic === undefined || diastolic === undefined) && data.bloodPressure) {
+      const [sys, dia] = String(data.bloodPressure).split('/').map((v) => parseInt(v.trim(), 10));
+      if (!Number.isNaN(sys)) systolic = sys;
+      if (!Number.isNaN(dia)) diastolic = dia;
+    }
+    const payload = {
+      patientId: data.patientId,
+      systolic,
+      diastolic,
+      temperature: data.temperature,
+      heartRate: data.heartRate,
+      respiratoryRate: data.respiratoryRate,
+      oxygenSaturation: data.oxygenSaturation,
+      weight: data.weight,
+      height: data.height,
+      notes: data.notes,
+      recordedBy: data.recordedBy,
+    };
+    const response = await api.post(`${BASE_URL}/vitals`, payload, {
       headers: getHospitalHeaders()
     });
     return response.data;
@@ -310,7 +358,7 @@ export const labOrderService = {
   /**
    * Get lab orders
    */
-  getAll: async (params?: { status?: string; patientId?: number }) => {
+  getAll: async (params?: { status?: string; patientId?: number | string; fromDate?: string; toDate?: string }) => {
     const response = await api.get(`${BASE_URL}/labs`, {
       params,
       headers: getHospitalHeaders()
@@ -322,16 +370,36 @@ export const labOrderService = {
    * Create lab order
    */
   create: async (data: {
-    patientId: number;
-    doctorId: number;
-    testType: string;
-    testName: string;
+    patientId: number | string;
+    doctorId?: number | string;
+    testType?: string;
+    testName?: string;
+    tests?: any[];
     priority?: string;
+    notes?: string;
     instructions?: string;
+    totalAmount?: number;
   }) => {
-    const response = await api.post(`${BASE_URL}/lab-orders`, data, {
-      headers: getHospitalHeaders()
-    });
+    const headers = { headers: getHospitalHeaders() };
+    if (Array.isArray(data.tests) && data.tests.length > 0) {
+      const response = await api.post(`${BASE_URL}/lab-orders`, {
+        patientId: data.patientId,
+        tests: data.tests,
+        priority: data.priority,
+        notes: data.notes ?? data.instructions,
+        totalAmount: data.totalAmount,
+      }, headers);
+      return response.data;
+    }
+
+    const response = await api.post(`${BASE_URL}/labs`, {
+      patientId: data.patientId,
+      doctorId: data.doctorId ?? 'unassigned',
+      testType: data.testType ?? data.testName ?? 'Lab Test',
+      testCategory: 'general',
+      priority: data.priority ?? 'normal',
+      notes: data.notes ?? data.instructions,
+    }, headers);
     return response.data;
   }
 };
@@ -345,14 +413,33 @@ export const imagingOrderService = {
    * Create imaging order
    */
   create: async (data: {
-    patientId: number;
-    doctorId: number;
-    imagingType: string;
-    bodyPart: string;
+    patientId: number | string;
+    doctorId?: number | string;
+    imagingType?: string;
+    bodyPart?: string;
+    tests?: any[];
     priority?: string;
+    contrast?: string;
     clinicalIndication?: string;
+    notes?: string;
+    totalAmount?: number;
   }) => {
-    const response = await api.post(`${BASE_URL}/imaging-orders`, data, {
+    const tests = Array.isArray(data.tests) && data.tests.length > 0
+      ? data.tests
+      : [{
+          type: data.imagingType ?? 'X-Ray',
+          bodyPart: data.bodyPart ?? 'General',
+          contrast: data.contrast ?? 'no',
+          indication: data.clinicalIndication ?? data.notes ?? '',
+        }];
+
+    const response = await api.post(`${BASE_URL}/imaging-orders`, {
+      patientId: data.patientId,
+      tests,
+      priority: data.priority,
+      notes: data.notes ?? data.clinicalIndication,
+      totalAmount: data.totalAmount,
+    }, {
       headers: getHospitalHeaders()
     });
     return response.data;
@@ -368,13 +455,21 @@ export const prescriptionService = {
    * Create prescription
    */
   create: async (data: {
-    patientId: number;
-    doctorId: number;
+    patientId: number | string;
+    doctorId?: number | string;
     medications: any[];
     diagnosis?: string;
     instructions?: string;
+    notes?: string;
   }) => {
-    const response = await api.post(`${BASE_URL}/prescriptions`, data, {
+    const payload = {
+      patientId: data.patientId,
+      doctorId: data.doctorId ?? 'unassigned',
+      medications: data.medications,
+      diagnosis: data.diagnosis,
+      notes: data.notes ?? data.instructions,
+    };
+    const response = await api.post(`${BASE_URL}/prescriptions`, payload, {
       headers: getHospitalHeaders()
     });
     return response.data;
@@ -390,15 +485,31 @@ export const procedureService = {
    * Schedule procedure
    */
   schedule: async (data: {
-    patientId: number;
-    doctorId: number;
-    procedureName: string;
+    patientId: number | string;
+    doctorId?: number | string;
+    procedureId?: string | number;
+    procedureName?: string;
     scheduledDate: string;
     scheduledTime: string;
+    priority?: string;
+    anesthesiaType?: string;
+    room?: string;
+    notes?: string;
     duration?: number;
     specialInstructions?: string;
   }) => {
-    const response = await api.post(`${BASE_URL}/procedures/schedule`, data, {
+    const payload = {
+      procedureId: data.procedureId ?? data.procedureName ?? 'custom-procedure',
+      patientId: data.patientId,
+      scheduledDate: data.scheduledDate,
+      scheduledTime: data.scheduledTime,
+      priority: data.priority,
+      anesthesiaType: data.anesthesiaType,
+      room: data.room,
+      notes: data.notes ?? data.specialInstructions,
+      estimatedDuration: data.duration,
+    };
+    const response = await api.post(`${BASE_URL}/procedures/schedule`, payload, {
       headers: getHospitalHeaders()
     });
     return response.data;
@@ -414,7 +525,7 @@ export const ipSheetService = {
    * Create IP sheet
    */
   create: async (data: {
-    patientId: number;
+    patientId: number | string;
     bedId: number;
     admissionDate: string;
     wardType: string;
