@@ -1,8 +1,16 @@
 import { validationResult } from 'express-validator';
 import { JWT_CONFIG } from '../config/auth.config.js';
 import jwt from 'jsonwebtoken';
+import crypto from 'crypto';
 import { Appointment, Prescription, Doctor, User } from '../models/index.js';
 import { buildLiveKitJoinData, createMeetingInfo, generateCanonicalMeetingId, verifyCanonicalMeetingId } from '../utils/videoProvider.js';
+
+const INVITE_TTL_SECONDS = 4 * 60 * 60; // 4 hours
+const INVITE_SECRET = process.env.VIDEO_INVITE_SECRET || JWT_CONFIG.SECRET + ':video-invite';
+const FRONTEND_BASE = (process.env.FRONTEND_URL || 'https://mediqzy.com').replace(/\/+$/, '');
+
+// In-memory invite usage counter (rate-limit guests per room = 20)
+const inviteUsageMap = new Map(); // inviteCode -> count
 
 // Simple WebRTC video calling controller
 class VideoController {
@@ -586,6 +594,123 @@ class VideoController {
         message: 'Failed to leave video room',
         error: error.message
       });
+    }
+  };
+
+  /**
+   * POST /api/video/room/:roomId/invite
+   * Creates a time-limited shareable invite link for family/friends to join the call.
+   * Requires valid auth (doctor or user with active membership).
+   * Guests open the link in any browser — no login required.
+   */
+  static createInviteLink = async (req, res) => {
+    try {
+      const { roomId } = req.params;
+      const { label = 'Guest', maxUses = 10 } = req.body;
+
+      if (!roomId) {
+        return res.status(400).json({ success: false, message: 'roomId is required' });
+      }
+
+      const inviteCode = crypto.randomBytes(16).toString('hex');
+      const payload = {
+        type: 'video-invite',
+        roomId,
+        label,
+        maxUses: Math.min(parseInt(maxUses, 10) || 10, 20),
+        iat: Math.floor(Date.now() / 1000)
+      };
+
+      const token = jwt.sign(payload, INVITE_SECRET, { expiresIn: INVITE_TTL_SECONDS });
+
+      // Store usage counter
+      inviteUsageMap.set(inviteCode, { uses: 0, max: payload.maxUses, token, roomId });
+
+      // Clean up expired entries periodically
+      if (inviteUsageMap.size > 200) {
+        for (const [k, v] of inviteUsageMap) {
+          try { jwt.verify(v.token, INVITE_SECRET); } catch { inviteUsageMap.delete(k); }
+        }
+      }
+
+      const shareableUrl = `${FRONTEND_BASE}/video-consultation?room=${encodeURIComponent(roomId)}&invite=${inviteCode}`;
+
+      return res.json({
+        success: true,
+        invite: {
+          code: inviteCode,
+          roomId,
+          label,
+          shareableUrl,
+          expiresIn: '4 hours',
+          expiresAt: new Date(Date.now() + INVITE_TTL_SECONDS * 1000).toISOString(),
+          maxUses: payload.maxUses,
+          instructions: 'Share this link — recipients can join directly in a browser without logging in.'
+        }
+      });
+    } catch (error) {
+      console.error('Failed to create invite link:', error);
+      return res.status(500).json({ success: false, message: 'Failed to create invite link', error: error.message });
+    }
+  };
+
+  /**
+   * GET /api/video/join/:inviteCode?name=FamilyMember
+   * Public endpoint — no auth or membership required.
+   * Exchanges a valid invite code for a LiveKit token so guests can join.
+   */
+  static joinViaInvite = async (req, res) => {
+    try {
+      const { inviteCode } = req.params;
+      const guestName = (req.query.name || 'Guest').slice(0, 40).replace(/[^\w\s-]/g, '');
+
+      if (!inviteCode) {
+        return res.status(400).json({ success: false, message: 'Invite code is required' });
+      }
+
+      const entry = inviteUsageMap.get(inviteCode);
+      if (!entry) {
+        return res.status(404).json({ success: false, message: 'Invite link not found or has expired. Please request a new link from the host.' });
+      }
+
+      // Verify the JWT inside the entry
+      let payload;
+      try {
+        payload = jwt.verify(entry.token, INVITE_SECRET);
+      } catch (err) {
+        inviteUsageMap.delete(inviteCode);
+        return res.status(410).json({ success: false, message: 'This invite link has expired. Please request a new link from the host.' });
+      }
+
+      // Check usage limit
+      if (entry.uses >= entry.max) {
+        return res.status(429).json({ success: false, message: 'This invite link has reached its maximum number of uses.' });
+      }
+
+      // Increment usage
+      entry.uses++;
+
+      const identity = `guest-${guestName.replace(/\s+/g, '-').toLowerCase()}-${Date.now()}`;
+      const livekitData = await buildLiveKitJoinData({
+        meetingId: payload.roomId,
+        identity,
+        name: guestName,
+        ttl: Math.max(0, payload.exp - Math.floor(Date.now() / 1000)), // remaining TTL
+        canPublish: true,
+        canSubscribe: true
+      });
+
+      return res.json({
+        success: true,
+        guest: true,
+        roomId: payload.roomId,
+        displayName: guestName,
+        livekit: livekitData,
+        expiresAt: new Date(payload.exp * 1000).toISOString()
+      });
+    } catch (error) {
+      console.error('Failed to process guest invite:', error);
+      return res.status(500).json({ success: false, message: 'Failed to join via invite', error: error.message });
     }
   };
 

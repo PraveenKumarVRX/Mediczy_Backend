@@ -94,4 +94,35 @@ router.get(
   VideoController.getRoomStatus
 );
 
+/**
+ * @route   POST /api/video/room/:roomId/invite
+ * @desc    Create a shareable invite link for family/friends to join the video call
+ * @access  Private (Doctor or authenticated user)
+ * @body    { label?: string, maxUses?: number }
+ * @returns { invite: { shareableUrl, code, expiresAt, maxUses } }
+ */
+router.post(
+  '/room/:roomId/invite',
+  authUser,
+  [
+    param('roomId').notEmpty().withMessage('Room ID is required')
+  ],
+  VideoController.createInviteLink
+);
+
+/**
+ * @route   GET /api/video/join/:inviteCode
+ * @desc    Public endpoint — guest joins via invite link (no login required)
+ * @access  Public (invite code acts as the credential)
+ * @query   name — guest display name (optional)
+ * @returns { livekit: { token, serverUrl, roomName } }
+ */
+router.get(
+  '/join/:inviteCode',
+  [
+    param('inviteCode').notEmpty().withMessage('Invite code is required')
+  ],
+  VideoController.joinViaInvite
+);
+
 export default router;
