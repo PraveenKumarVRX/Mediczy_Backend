@@ -223,6 +223,7 @@ const TeamCorporateManagement = () => {
     failed: any[];
   } | null>(null);
   const [isUploading, setIsUploading] = useState(false);
+  const [showUploadReport, setShowUploadReport] = useState(false);
   
   // Corporate form
   const [newCorporate, setNewCorporate] = useState({
@@ -947,27 +948,17 @@ const TeamCorporateManagement = () => {
         headers: token ? { Authorization: `Bearer ${token}` } : undefined
       });
       
-      setBulkUploadResults({
-        created: data.results?.created || [],
-        failed: data.results?.failed || []
-      });
+      const created = data.results?.created || [];
+      const failed = data.results?.failed || [];
+      setBulkUploadResults({ created, failed });
       
-      const successCount = data.results?.created?.length || 0;
-      const failedCount = data.results?.failed?.length || 0;
+      // Close the upload dialog and show the report popup
+      setShowBulkUploadDialog(false);
+      setBulkUploadFile(null);
+      setShowUploadReport(true);
       
-      if (successCount > 0) {
-        toast({
-          title: 'Upload completed',
-          description: `${successCount} employees added successfully${failedCount > 0 ? `, ${failedCount} failed` : ''}`
-        });
-        // Refresh employees list
+      if (created.length > 0) {
         fetchEmployees(selectedCorporate.id);
-      } else if (failedCount > 0) {
-        toast({
-          variant: 'destructive',
-          title: 'Upload failed',
-          description: `All ${failedCount} employees failed to upload. Check the results below.`
-        });
       }
     } catch (error: any) {
       toast({
@@ -3947,6 +3938,107 @@ const TeamCorporateManagement = () => {
           </DialogContent>
         </Dialog>
 
+        {/* Upload Report Dialog */}
+        <Dialog open={showUploadReport} onOpenChange={setShowUploadReport}>
+          <DialogContent className="max-w-lg">
+            <DialogHeader>
+              <DialogTitle className="flex items-center gap-2">
+                <FileSpreadsheet className="h-5 w-5" />
+                Upload Report
+              </DialogTitle>
+              <DialogDescription>
+                Bulk upload results for {selectedCorporate?.companyName}
+              </DialogDescription>
+            </DialogHeader>
+            {bulkUploadResults && (() => {
+              const total = bulkUploadResults.created.length + bulkUploadResults.failed.length;
+              const successPct = total > 0 ? Math.round((bulkUploadResults.created.length / total) * 100) : 0;
+              const newUsers = bulkUploadResults.created.filter((e: any) => e.isNewUser).length;
+              const linked = bulkUploadResults.created.filter((e: any) => !e.isNewUser).length;
+              return (
+                <div className="space-y-4 py-2">
+                  {/* Summary Cards */}
+                  <div className="grid grid-cols-3 gap-3">
+                    <div className="bg-blue-50 dark:bg-blue-950/30 border border-blue-200 dark:border-blue-800 rounded-lg p-3 text-center">
+                      <p className="text-2xl font-bold text-blue-700 dark:text-blue-300">{total}</p>
+                      <p className="text-xs text-blue-600 dark:text-blue-400">Total</p>
+                    </div>
+                    <div className="bg-green-50 dark:bg-green-950/30 border border-green-200 dark:border-green-800 rounded-lg p-3 text-center">
+                      <p className="text-2xl font-bold text-green-700 dark:text-green-300">{bulkUploadResults.created.length}</p>
+                      <p className="text-xs text-green-600 dark:text-green-400">Successful</p>
+                    </div>
+                    <div className={`${bulkUploadResults.failed.length > 0 ? 'bg-red-50 dark:bg-red-950/30 border-red-200 dark:border-red-800' : 'bg-gray-50 dark:bg-gray-950/30 border-gray-200 dark:border-gray-800'} border rounded-lg p-3 text-center`}>
+                      <p className={`text-2xl font-bold ${bulkUploadResults.failed.length > 0 ? 'text-red-700 dark:text-red-300' : 'text-gray-500'}`}>{bulkUploadResults.failed.length}</p>
+                      <p className={`text-xs ${bulkUploadResults.failed.length > 0 ? 'text-red-600 dark:text-red-400' : 'text-gray-500'}`}>Failed</p>
+                    </div>
+                  </div>
+
+                  {/* Progress Bar */}
+                  <div>
+                    <div className="flex justify-between text-xs text-muted-foreground mb-1">
+                      <span>Success Rate</span>
+                      <span>{successPct}%</span>
+                    </div>
+                    <div className="w-full bg-gray-200 dark:bg-gray-700 rounded-full h-2">
+                      <div
+                        className={`h-2 rounded-full transition-all ${successPct === 100 ? 'bg-green-500' : successPct > 50 ? 'bg-yellow-500' : 'bg-red-500'}`}
+                        style={{ width: `${successPct}%` }}
+                      />
+                    </div>
+                  </div>
+
+                  {/* Breakdown */}
+                  {bulkUploadResults.created.length > 0 && (
+                    <div className="bg-green-50 dark:bg-green-950/20 border border-green-200 dark:border-green-800 rounded-lg p-3">
+                      <p className="text-sm font-medium text-green-800 dark:text-green-300 mb-1 flex items-center gap-1.5">
+                        <CheckCircle className="h-4 w-4" /> Successful Entries
+                      </p>
+                      <div className="text-sm text-green-700 dark:text-green-400 space-y-0.5">
+                        {newUsers > 0 && <p>• {newUsers} new user account{newUsers > 1 ? 's' : ''} created</p>}
+                        {linked > 0 && <p>• {linked} existing user{linked > 1 ? 's' : ''} linked to corporate</p>}
+                      </div>
+                    </div>
+                  )}
+
+                  {/* Failed Entries */}
+                  {bulkUploadResults.failed.length > 0 && (
+                    <div className="bg-red-50 dark:bg-red-950/20 border border-red-200 dark:border-red-800 rounded-lg p-3">
+                      <p className="text-sm font-medium text-red-800 dark:text-red-300 mb-2 flex items-center gap-1.5">
+                        <XCircle className="h-4 w-4" /> Failed Entries
+                      </p>
+                      <div className="max-h-32 overflow-y-auto">
+                        <table className="w-full text-xs">
+                          <thead>
+                            <tr className="text-red-700 dark:text-red-400 border-b border-red-200 dark:border-red-700">
+                              <th className="text-left py-1 pr-2">#</th>
+                              <th className="text-left py-1 pr-2">Employee</th>
+                              <th className="text-left py-1">Reason</th>
+                            </tr>
+                          </thead>
+                          <tbody>
+                            {bulkUploadResults.failed.map((fail: any, idx: number) => (
+                              <tr key={idx} className="text-red-600 dark:text-red-400 border-b border-red-100 dark:border-red-900 last:border-0">
+                                <td className="py-1 pr-2">{idx + 1}</td>
+                                <td className="py-1 pr-2 truncate max-w-[120px]">{fail.email || fail.name || `Row ${idx + 1}`}</td>
+                                <td className="py-1">{fail.reason}</td>
+                              </tr>
+                            ))}
+                          </tbody>
+                        </table>
+                      </div>
+                    </div>
+                  )}
+                </div>
+              );
+            })()}
+            <DialogFooter>
+              <Button onClick={() => { setShowUploadReport(false); setBulkUploadResults(null); }}>
+                Close
+              </Button>
+            </DialogFooter>
+          </DialogContent>
+        </Dialog>
+
         {/* Bulk Upload Dialog */}
         <Dialog open={showBulkUploadDialog} onOpenChange={(open) => {
           setShowBulkUploadDialog(open);
@@ -4001,33 +4093,6 @@ const TeamCorporateManagement = () => {
                 </label>
               </div>
 
-              {bulkUploadResults && (
-                <div className="space-y-3">
-                  <div className="flex gap-4">
-                    <div className="flex items-center gap-2 text-green-600">
-                      <CheckCircle className="h-5 w-5" />
-                      <span>{bulkUploadResults.created.length} added successfully</span>
-                    </div>
-                    {bulkUploadResults.failed.length > 0 && (
-                      <div className="flex items-center gap-2 text-red-600">
-                        <AlertCircle className="h-5 w-5" />
-                        <span>{bulkUploadResults.failed.length} failed</span>
-                      </div>
-                    )}
-                  </div>
-                  
-                  {bulkUploadResults.failed.length > 0 && (
-                    <div className="bg-red-50 dark:bg-red-950/30 border border-red-200 dark:border-red-800 rounded-lg p-3 max-h-40 overflow-y-auto">
-                      <p className="text-sm font-medium text-red-800 dark:text-red-300 mb-2">Failed entries:</p>
-                      <ul className="text-sm text-red-700 dark:text-red-400 space-y-1">
-                        {bulkUploadResults.failed.map((fail, idx) => (
-                          <li key={idx}>• {fail.email || fail.name || `Row ${idx + 1}`}: {fail.reason}</li>
-                        ))}
-                      </ul>
-                    </div>
-                  )}
-                </div>
-              )}
             </div>
             <DialogFooter>
               <Button variant="outline" onClick={() => {
