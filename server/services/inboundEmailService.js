@@ -196,13 +196,13 @@ class InboundEmailService {
 
     for (const emailData of emails) {
       try {
-        // Check if email already exists
+        // Check if email already exists for THIS team member
         const existing = await EmailInbox.findOne({
-          where: { messageId: emailData.messageId }
+          where: { messageId: emailData.messageId, teamMemberId }
         });
 
         if (existing) {
-          console.log(`Email ${emailData.messageId} already processed`);
+          // Silently skip — only log at debug level to reduce noise
           continue;
         }
 
@@ -218,7 +218,7 @@ class InboundEmailService {
 
         savedEmails.push(email);
       } catch (error) {
-        console.error('Error saving email:', error);
+        console.error(`Error saving email (teamMember=${teamMemberId}, msgId=${emailData?.messageId?.substring(0,40)}):`, error?.message || error);
       }
     }
 
