@@ -980,10 +980,14 @@ const TeamCorporateManagement = () => {
     }
   };
 
-  // Download CSV Template
+  // Download CSV Template (v2 — includes email column)
   const downloadTemplate = () => {
-    // Fields: name, email, phoneNumber, employeeId, department, designation. Email will be auto-generated if missing.
-    const template = 'name,email,phoneNumber,employeeId,department,designation\nRajesh Kumar,rajesh.kumar@company.com,9876543210,E00001,Engineering,Developer\nPriya Sharma,priya.sharma@company.com,9876543211,E00002,HR,Manager';
+    const csvHeaders = ['Name', 'Email', 'Phone Number', 'Employee ID', 'Department', 'Designation'];
+    const csvRows = [
+      ['Rajesh Kumar', 'rajesh.kumar@company.com', '9876543210', 'E00001', 'Engineering', 'Developer'],
+      ['Priya Sharma', 'priya.sharma@company.com', '9876543211', 'E00002', 'HR', 'Manager']
+    ];
+    const template = [csvHeaders.join(','), ...csvRows.map(r => r.join(','))].join('\n');
     const blob = new Blob([template], { type: 'text/csv' });
     const url = window.URL.createObjectURL(blob);
     const a = document.createElement('a');
