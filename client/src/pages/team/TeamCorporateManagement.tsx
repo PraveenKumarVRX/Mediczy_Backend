@@ -851,6 +851,9 @@ const TeamCorporateManagement = () => {
           'lastname': 'lastName',
           'name': 'name',
           'email': 'email',
+          'email id': 'email',
+          'emailid': 'email',
+          'email address': 'email',
           'phone': 'phoneNumber',
           'phonenumber': 'phoneNumber',
           'phone number': 'phoneNumber',
@@ -979,8 +982,8 @@ const TeamCorporateManagement = () => {
 
   // Download CSV Template
   const downloadTemplate = () => {
-    // Minimal fields: name (or first/last), phoneNumber, employeeId. Email will be auto-generated if missing.
-    const template = 'name,phoneNumber,employeeId,department,designation\nRajesh Kumar,9876543210,E00001,Engineering,Developer\nPriya Sharma,9876543211,E00002,HR,Manager';
+    // Fields: name, email, phoneNumber, employeeId, department, designation. Email will be auto-generated if missing.
+    const template = 'name,email,phoneNumber,employeeId,department,designation\nRajesh Kumar,rajesh.kumar@company.com,9876543210,E00001,Engineering,Developer\nPriya Sharma,priya.sharma@company.com,9876543211,E00002,HR,Manager';
     const blob = new Blob([template], { type: 'text/csv' });
     const url = window.URL.createObjectURL(blob);
     const a = document.createElement('a');
