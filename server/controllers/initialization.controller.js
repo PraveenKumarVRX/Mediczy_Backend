@@ -156,8 +156,14 @@ class InitializationController {
     // 3. Initialize Kafka
     await this.initializeKafka();
 
-    // 4. Initialize cron jobs
-    await this.initializeCronJobs();
+    // 4. Initialize cron jobs (only on cluster instance 0 to prevent duplicates)
+    const instanceId = process.env.NODE_APP_INSTANCE;
+    const isPrimary = instanceId === undefined || instanceId === '0';
+    if (isPrimary) {
+      await this.initializeCronJobs();
+    } else {
+      console.log(`⏭️  Skipping cron jobs on cluster instance ${instanceId} (handled by instance 0)`);
+    }
 
     this.initialized = true;
     console.log('✅ All services initialized successfully');
