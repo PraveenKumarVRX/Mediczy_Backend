@@ -22,6 +22,7 @@ import fs from 'fs/promises';
 import path from 'path';
 import pool from '../db/pgPool.js';
 import orchestrator from '../services/ai-brain/orchestrator.js';
+import llmProvider from '../services/ai-brain/llm-provider.js';
 import ragPipeline from '../services/ai-brain/rag-pipeline.js';
 import { listTools } from '../services/ai-brain/tools/loader.js';
 
@@ -302,16 +303,8 @@ router.get('/health', async (req, res) => {
     const db = pool;
     const tools = listTools();
 
-    // Check Groq API
-    let groqStatus = 'unknown';
-    try {
-      const Groq = (await import('groq-sdk')).default;
-      const groq = new Groq({ apiKey: process.env.GROQ_API_KEY });
-      const models = await groq.models.list();
-      groqStatus = `online (${models.data?.length || 0} models)`;
-    } catch (e) {
-      groqStatus = `error: ${e.message}`;
-    }
+    // Check all LLM providers
+    const providers = llmProvider.listProviders();
 
     // Check SIB embedding
     let sibStatus = 'unknown';
@@ -333,9 +326,8 @@ router.get('/health', async (req, res) => {
       brain: {
         toolCount: tools.length,
         toolCategories: [...new Set(tools.map(t => t.category))],
-        llmProvider: 'groq',
-        llmModel: 'llama-3.3-70b-versatile',
-        groqStatus,
+        llmProviders: providers,
+        cascade: providers.map(p => `${p.name} (${p.model})`).join(' → '),
         sibEmbeddingStatus: sibStatus,
         aiTables: parseInt(tableCount.cnt),
         maxIterations: 8
@@ -343,6 +335,21 @@ router.get('/health', async (req, res) => {
     });
   } catch (err) {
     res.status(500).json({ status: 'error', error: err.message });
+  }
+});
+
+// ─── GET /providers — List LLM providers ──────────────────
+
+router.get('/providers', async (req, res) => {
+  try {
+    const providers = llmProvider.listProviders();
+    const db = pool;
+    const { rows: dbConfigs } = await db.query(
+      'SELECT id, name, provider, model_name, api_base_url, is_active, config FROM ai_model_configs ORDER BY id'
+    );
+    res.json({ providers, dbConfigs });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
   }
 });
 

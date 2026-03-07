@@ -219,6 +219,9 @@ async function think({ message, userId, userType = 'patient', conversationId = n
   let finalResponse = null;
 
   const seenToolCalls = new Set();
+  let lastProvider = null;
+  let lastModel = null;
+  let lastCascade = [];
 
   for (let i = 0; i < MAX_ITERATIONS; i++) {
     iterations++;
@@ -231,6 +234,9 @@ async function think({ message, userId, userType = 'patient', conversationId = n
     });
 
     totalTokens += llmResult.usage.totalTokens;
+    lastProvider = llmResult.provider;
+    lastModel = llmResult.model;
+    lastCascade = llmResult.cascade || [];
 
     // If no tool calls → final answer
     if (!llmResult.toolCalls || llmResult.toolCalls.length === 0) {
@@ -368,8 +374,9 @@ async function think({ message, userId, userType = 'patient', conversationId = n
     iterations,
     tokensUsed: totalTokens,
     latencyMs,
-    model: 'llama-3.3-70b-versatile',
-    provider: 'groq'
+    model: lastModel || 'unknown',
+    provider: lastProvider || 'unknown',
+    cascade: lastCascade
   };
 }
 
