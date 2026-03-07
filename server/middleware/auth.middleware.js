@@ -195,21 +195,8 @@ export const authUser = async (req, res, next) => {
     const decoded = jwt.verify(token, JWT_CONFIG.SECRET);
     console.log("🔹 Token verification SUCCESS");
 
-    // Admins bypass tenant restrictions (but mismatch is logged)
-    if (decoded.isAdmin || decoded.isTeam || TENANT_BYPASS_ROLES.has(decoded.role)) {
-      req.user = {
-        id: decoded.id,
-        email: decoded.email,
-        role: decoded.role || (decoded.isAdmin ? "admin" : (decoded.isTeam ? "team" : "user")),
-        firstName: decoded.firstName || "System",
-        lastName: decoded.lastName || "User",
-        isAdmin: decoded.isAdmin || false,
-        isTeam: decoded.isTeam || false,
-      };
-      req.userRole = decoded.isTeam ? "team" : (decoded.isAdmin ? "admin" : decoded.role);
-      return next();
-    }
-
+    // Doctor role: fetch full profile from DB BEFORE tenant bypass
+    // (ensures firstName/lastName are populated for video call display names)
     if (decoded.role === "doctor") {
       const doctor = await safeFindByPk(
         DoctorPostgres,
@@ -231,6 +218,22 @@ export const authUser = async (req, res, next) => {
       if (!tenantBinding.ok) {
         return res.status(tenantBinding.status).json(tenantBinding.body);
       }
+      return next();
+    }
+
+    // Admins/team bypass tenant restrictions (but mismatch is logged)
+    // Note: doctors are handled above to ensure full DB profile is loaded
+    if (decoded.isAdmin || decoded.isTeam || TENANT_BYPASS_ROLES.has(decoded.role)) {
+      req.user = {
+        id: decoded.id,
+        email: decoded.email,
+        role: decoded.role || (decoded.isAdmin ? "admin" : (decoded.isTeam ? "team" : "user")),
+        firstName: decoded.firstName || "System",
+        lastName: decoded.lastName || "User",
+        isAdmin: decoded.isAdmin || false,
+        isTeam: decoded.isTeam || false,
+      };
+      req.userRole = decoded.isTeam ? "team" : (decoded.isAdmin ? "admin" : decoded.role);
       return next();
     }
 
