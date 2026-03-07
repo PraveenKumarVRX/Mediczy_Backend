@@ -53,7 +53,7 @@ function requireAuth(req, res, next) {
 
 router.post('/think', requireAuth, async (req, res) => {
   try {
-    const { message, conversationId } = req.body;
+    const { message, conversationId, stream } = req.body;
 
     if (!message || typeof message !== 'string' || message.trim().length === 0) {
       return res.status(400).json({ error: 'Message is required' });
@@ -66,6 +66,50 @@ router.post('/think', requireAuth, async (req, res) => {
     const userId = req.user.id;
     const userType = req.user.role || req.userRole || 'patient';
 
+    // SSE streaming mode
+    if (stream) {
+      res.setHeader('Content-Type', 'text/event-stream');
+      res.setHeader('Cache-Control', 'no-cache');
+      res.setHeader('Connection', 'keep-alive');
+      res.flushHeaders();
+
+      // Send thinking indicator
+      res.write(`data: ${JSON.stringify({ type: 'thinking', message: 'Analyzing your question...' })}\n\n`);
+
+      const result = await orchestrator.think({
+        message: message.trim(),
+        userId,
+        userType,
+        conversationId: conversationId ? parseInt(conversationId) : null,
+        onToolCall: (toolName, toolArgs) => {
+          res.write(`data: ${JSON.stringify({ type: 'tool_call', tool: toolName, args: toolArgs })}\n\n`);
+        },
+        onToolResult: (toolName, summary) => {
+          res.write(`data: ${JSON.stringify({ type: 'tool_result', tool: toolName, summary })}\n\n`);
+        },
+        onIteration: (iteration) => {
+          res.write(`data: ${JSON.stringify({ type: 'iteration', iteration })}\n\n`);
+        }
+      });
+
+      // Send final response
+      res.write(`data: ${JSON.stringify({
+        type: 'response',
+        success: true,
+        response: result.response,
+        conversationId: result.conversationId,
+        toolsUsed: result.toolsUsed,
+        iterations: result.iterations,
+        latencyMs: result.latencyMs,
+        model: result.model,
+        provider: result.provider
+      })}\n\n`);
+
+      res.write('data: [DONE]\n\n');
+      return res.end();
+    }
+
+    // Standard JSON mode
     const result = await orchestrator.think({
       message: message.trim(),
       userId,

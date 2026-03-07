@@ -173,7 +173,7 @@ async function getConversationMessages(conversationId, limit = MAX_CONVERSATION_
  * @param {number} [params.conversationId] - Existing conversation to continue
  * @returns {Object} { response, conversationId, toolsUsed, tokensUsed, iterations, latencyMs }
  */
-async function think({ message, userId, userType = 'patient', conversationId = null }) {
+async function think({ message, userId, userType = 'patient', conversationId = null, onToolCall = null, onToolResult = null, onIteration = null }) {
   const startTime = Date.now();
   const db = pool;
 
@@ -225,6 +225,11 @@ async function think({ message, userId, userType = 'patient', conversationId = n
 
   for (let i = 0; i < MAX_ITERATIONS; i++) {
     iterations++;
+
+    // Stream: notify iteration start
+    if (onIteration) {
+      try { onIteration(iterations); } catch (cbErr) { console.error('[Brain] onIteration callback error:', cbErr.message); }
+    }
 
     const llmResult = await llmProvider.chat({
       messages,
@@ -281,14 +286,26 @@ async function think({ message, userId, userType = 'patient', conversationId = n
         toolArgs = {};
       }
 
+      // Stream: notify tool call start
+      if (onToolCall) {
+        try { onToolCall(toolName, toolArgs); } catch (cbErr) { console.error('[Brain] onToolCall callback error:', cbErr.message); }
+      }
+
       const context = { userId, userType, conversationId: convId };
       const toolResult = await executeTool(toolName, toolArgs, context);
+
+      const toolOutputSummary = typeof toolResult === 'string' ? toolResult.substring(0, 500) : JSON.stringify(toolResult).substring(0, 500);
 
       toolsUsed.push({
         name: toolName,
         input: toolArgs,
-        output: typeof toolResult === 'string' ? toolResult : JSON.stringify(toolResult).substring(0, 500)
+        output: toolOutputSummary
       });
+
+      // Stream: notify tool result
+      if (onToolResult) {
+        try { onToolResult(toolName, toolOutputSummary); } catch (cbErr) { console.error('[Brain] onToolResult callback error:', cbErr.message); }
+      }
 
       // Save tool call + result messages
       await saveMessage(convId, 'tool_call', null, {

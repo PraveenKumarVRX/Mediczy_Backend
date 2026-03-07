@@ -160,6 +160,7 @@ import publicWebinarRouter from './routes/webinar.routes.js';
 
 // AI Brain intelligence layer
 import aiBrainRouter from './routes/ai-brain.route.js';
+import aiIntelligenceRouter from './routes/ai-intelligence.route.js';
 
 // Admin API routes (API credentials, aggregators, etc.)
 import adminApiRouter from './api/admin/index.js';
@@ -1014,6 +1015,7 @@ app.use("/api/ai", aiRouter);
 app.use("/api/medical-ai", medicalAIRouter);
 app.use("/api/ai-health", aiHealthRouter); // AI health assistant, diet plans, Dr. ISHA
 app.use("/api/v3/ai-brain", authUser, aiBrainRouter); // AI Brain intelligence layer (agentic LLM + RAG + 15 tools)
+app.use("/api/v3/ai-intelligence", authUser, aiIntelligenceRouter); // Drug interactions, insurance, triage, risk scores, insights
 app.use("/api/diet", dietRouter); // Diet plan shortcut (alias for /api/ai-health/diet)
 app.use("/api/ayushman", ayushmanRouter);
 app.use('/api/places', placesRouter);

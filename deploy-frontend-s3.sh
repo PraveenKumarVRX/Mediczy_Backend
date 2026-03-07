@@ -28,9 +28,11 @@ echo -e "${GREEN}✅ Build verified${NC}"
 echo ""
 
 # Step 2: Sync to S3
+# NOTE: Do NOT use --delete — CloudFront may still cache old index.html referencing
+# old asset hashes. Removing old assets causes white screen until cache expires.
+# Old assets are cleaned up by a separate cleanup step after cache invalidation confirms.
 echo -e "${YELLOW}☁️  Step 2/4: Uploading to S3...${NC}"
 aws s3 sync "$BUILD_DIR" "$S3_BUCKET" \
-  --delete \
   --cache-control "public,max-age=31536000,immutable" \
   --exclude "*.html" \
   --exclude "serviceWorker.js" \
@@ -48,15 +50,20 @@ aws s3 sync "$BUILD_DIR" "$S3_BUCKET" \
 echo -e "${GREEN}✅ Files uploaded to S3${NC}"
 echo ""
 
-# Step 3: Try to invalidate CloudFront (optional)
+# Step 3: Try to invalidate CloudFront
 echo -e "${YELLOW}🔄 Step 3/4: Attempting CloudFront cache invalidation...${NC}"
 if aws cloudfront create-invalidation \
     --distribution-id "$CLOUDFRONT_ID" \
-    --paths "/*" > /dev/null 2>&1; then
+    --paths "/index.html" "/" "/*" > /dev/null 2>&1; then
   echo -e "${GREEN}✅ CloudFront cache invalidated${NC}"
+  # Safe to clean up old assets now that cache is invalidated
+  echo -e "${YELLOW}🧹 Cleaning up old S3 assets (post-invalidation)...${NC}"
+  aws s3 sync "$BUILD_DIR" "$S3_BUCKET" --delete --cache-control "public,max-age=31536000,immutable" --exclude "*.html" --exclude "serviceWorker.js" --exclude "service-worker.js" > /dev/null 2>&1
+  echo -e "${GREEN}✅ Old assets cleaned up${NC}"
 else
-  echo -e "${YELLOW}⚠️  CloudFront invalidation skipped (may require additional permissions)${NC}"
-  echo -e "${YELLOW}   Cache will clear automatically within 24 hours${NC}"
+  echo -e "${YELLOW}⚠️  CloudFront invalidation skipped (no permissions)${NC}"
+  echo -e "${YELLOW}   Old assets kept in S3 to avoid white screen during cache TTL${NC}"
+  echo -e "${YELLOW}   To fix: invalidate CloudFront distribution ${CLOUDFRONT_ID} manually${NC}"
 fi
 echo ""
 

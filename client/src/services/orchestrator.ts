@@ -3,6 +3,7 @@ import axios from 'axios';
 // Base URL already includes /api, so we add /ai for AI routes
 const API_BASE_URL = import.meta.env.VITE_API_URL || '/api';
 const AI_API_URL = `${API_BASE_URL}/ai`;
+const BRAIN_API_URL = `${API_BASE_URL}/v3/ai-brain`;
 
 interface OrchestratorResponse {
   success: boolean;
@@ -131,7 +132,8 @@ class OrchestratorAPI {
   }
 
   /**
-   * Consult with Dr. iSHA using the orchestrator system
+   * Consult with Dr. iSHA using the AI Brain orchestrator (agentic loop with 16 tools)
+   * Falls back to old /working-medical-consult if Brain is unavailable.
    * @param {string} query - User's medical question
    * @param {string} language - Response language (default: 'en')
    * @param {Object} userContext - Additional user context
@@ -141,12 +143,179 @@ class OrchestratorAPI {
     try {
       const sessionId = this.getSessionId();
       
-      console.log('🏥 Dr. iSHA Consult Request:', {
+      console.log('🧠 Dr. iSHA Brain Consult:', {
         query: query.substring(0, 50) + '...',
         language,
         sessionId,
-        baseURL: this.baseURL
       });
+
+      // Prepend language instruction if not English
+      const langInstruction = language !== 'en'
+        ? `[Respond in ${language === 'hi' ? 'Hindi' : language === 'es' ? 'Spanish' : language === 'ar' ? 'Arabic' : language === 'zh' ? 'Chinese' : 'English'}]\n`
+        : '';
+      
+      // Use the AI Brain /think endpoint (agentic orchestrator with 16 tools)
+      const response = await axios.post(
+        `${BRAIN_API_URL}/think`,
+        {
+          message: langInstruction + query,
+          conversationId: (userContext as any)?.conversationId || null,
+        },
+        {
+          headers: this.getAuthHeaders(),
+          timeout: 60000, // 60s timeout for agentic loops (may use multiple tools)
+        }
+      );
+
+      console.log('✅ Brain Response:', {
+        success: response.data?.success,
+        provider: response.data?.provider,
+        model: response.data?.model,
+        toolsUsed: response.data?.toolsUsed?.length || 0,
+        iterations: response.data?.iterations,
+        latencyMs: response.data?.latencyMs,
+      });
+
+      if (response.data?.success && response.data?.response) {
+        const transformedData = {
+          success: true,
+          primary_response: response.data.response,
+          response: response.data.response,
+          provider: response.data.provider,
+          model: response.data.model,
+          toolsUsed: response.data.toolsUsed,
+          iterations: response.data.iterations,
+          latencyMs: response.data.latencyMs,
+          conversationId: response.data.conversationId,
+        };
+
+        return {
+          success: true,
+          data: transformedData,
+          sessionId: sessionId,
+        };
+      }
+
+      throw new Error(response.data?.error || 'Empty response from Brain');
+    } catch (error) {
+      // If Brain fails, fall back to old medical consult endpoint
+      console.warn('⚠️ Brain failed, falling back to legacy consult:', error.message);
+      return this.legacyConsult(query, language, userContext);
+    }
+  }
+
+  /**
+   * Streaming consult with Dr. iSHA using SSE.
+   * Provides real-time tool call visibility and incremental response.
+   * @param query - User's medical question
+   * @param callbacks - Event callbacks for streaming updates
+   * @param language - Response language
+   * @param userContext - Additional context (conversationId etc.)
+   */
+  async consultStream(
+    query: string,
+    callbacks: {
+      onThinking?: (msg: string) => void;
+      onToolCall?: (tool: string, args: any) => void;
+      onToolResult?: (tool: string, summary: string) => void;
+      onIteration?: (iteration: number) => void;
+      onResponse?: (result: ConsultationResult) => void;
+      onError?: (error: any) => void;
+    },
+    language = 'en',
+    userContext: any = {}
+  ): Promise<void> {
+    const token = localStorage.getItem('token');
+    const langInstruction = language !== 'en'
+      ? `[Respond in ${language === 'hi' ? 'Hindi' : language === 'es' ? 'Spanish' : language === 'ar' ? 'Arabic' : language === 'zh' ? 'Chinese' : 'English'}]\n`
+      : '';
+
+    try {
+      const response = await fetch(`${BRAIN_API_URL}/think`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': token ? `Bearer ${token}` : '',
+        },
+        body: JSON.stringify({
+          message: langInstruction + query,
+          conversationId: userContext?.conversationId || null,
+          stream: true,
+        }),
+      });
+
+      if (!response.ok) {
+        throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+      }
+
+      const reader = response.body?.getReader();
+      if (!reader) throw new Error('No readable stream');
+
+      const decoder = new TextDecoder();
+      let buffer = '';
+
+      while (true) {
+        const { done, value } = await reader.read();
+        if (done) break;
+
+        buffer += decoder.decode(value, { stream: true });
+        const lines = buffer.split('\n');
+        buffer = lines.pop() || '';
+
+        for (const line of lines) {
+          if (!line.startsWith('data: ')) continue;
+          const raw = line.slice(6).trim();
+          if (raw === '[DONE]') return;
+
+          try {
+            const evt = JSON.parse(raw);
+            switch (evt.type) {
+              case 'thinking':
+                callbacks.onThinking?.(evt.message);
+                break;
+              case 'tool_call':
+                callbacks.onToolCall?.(evt.tool, evt.args);
+                break;
+              case 'tool_result':
+                callbacks.onToolResult?.(evt.tool, evt.summary);
+                break;
+              case 'iteration':
+                callbacks.onIteration?.(evt.iteration);
+                break;
+              case 'response':
+                callbacks.onResponse?.({
+                  success: evt.success,
+                  data: {
+                    ...evt,
+                    primary_response: evt.response,
+                  },
+                  sessionId: this.getSessionId(),
+                });
+                break;
+              case 'error':
+                callbacks.onError?.(evt);
+                break;
+            }
+          } catch {
+            // skip malformed SSE lines
+          }
+        }
+      }
+    } catch (error: any) {
+      console.warn('⚠️ Stream failed, falling back to non-streaming consult');
+      callbacks.onError?.(error);
+      // Fallback to regular consult
+      const result = await this.consult(query, language, userContext);
+      callbacks.onResponse?.(result);
+    }
+  }
+
+  /**
+   * Legacy fallback: old /working-medical-consult endpoint (SIB-backed)
+   */
+  private async legacyConsult(query: string, language = 'en', userContext = {}): Promise<ConsultationResult> {
+    try {
+      const sessionId = this.getSessionId();
       
       const response = await axios.post(
         `${this.baseURL}/working-medical-consult`,
@@ -158,36 +327,16 @@ class OrchestratorAPI {
         },
         {
           headers: this.getAuthHeaders(),
-          timeout: 45000, // 45 second timeout for medical consultations
+          timeout: 45000,
         }
       );
 
-      console.log('✅ Dr. iSHA Response Success:', {
-        status: response.status,
-        hasData: !!response.data,
-        success: response.data?.status === 'success',
-        urgency: response.data?.urgency_score
-      });
-
-      // Transform the working medical consultation response to match expected format
-      // Debug the actual response
-      console.log('🔍 Backend Response Data:', {
-        status: response.data?.status,
-        hasResponse: !!response.data?.response,
-        hasPrimaryResponse: !!response.data?.primary_response,
-        responseType: typeof response.data?.response,
-        primaryResponseType: typeof response.data?.primary_response,
-        allKeys: Object.keys(response.data || {})
-      });
-
-      // Handle different response structures from backend
       const primaryResponse = response.data?.primary_response || 
                              response.data?.response || 
                              response.data?.message ||
                              null;
 
       if (!primaryResponse) {
-        console.error('❌ No response content found in backend response:', response.data);
         return {
           success: false,
           error: {

@@ -46,7 +46,8 @@ const USER_TYPE_PERMISSIONS = {
       '/api/family-members',  // Family member management
       '/api/notifications',  // User notifications
       '/api/mobile',  // Mobile API gateway
-      '/api/v3/ai-brain'  // AI Brain intelligence layer
+      '/api/v3/ai-brain',  // AI Brain intelligence layer
+      '/api/v3/ai-intelligence'  // Drug interactions, triage, risk scores, insights
     ],
     tokenField: 'userId'
   },
@@ -92,7 +93,8 @@ const USER_TYPE_PERMISSIONS = {
       '/api/family-members',  // Family member management
       '/api/notifications',  // User notifications
       '/api/mobile',  // Mobile API gateway
-      '/api/v3/ai-brain'  // AI Brain intelligence layer
+      '/api/v3/ai-brain',  // AI Brain intelligence layer
+      '/api/v3/ai-intelligence'  // Drug interactions, triage, risk scores, insights
     ],
     tokenField: 'userId'
   },
@@ -122,7 +124,8 @@ const USER_TYPE_PERMISSIONS = {
       '/api/notifications',  // Doctor notifications
       '/api/v2/doctors',  // Enterprise API v2 doctor endpoints
       '/api/mobile',  // Mobile API gateway for doctor app
-      '/api/v3/ai-brain'  // AI Brain intelligence layer
+      '/api/v3/ai-brain',  // AI Brain intelligence layer
+      '/api/v3/ai-intelligence'  // Drug interactions, triage, risk scores, insights
     ],
     tokenField: 'doctorId'
   },
@@ -171,7 +174,8 @@ const USER_TYPE_PERMISSIONS = {
       '/api/masterdata',
       '/api/recordings',  // Admin access to consultation recordings
       '/api/consultation-recordings',  // Admin access to consultation recordings
-      '/api/v3/ai-brain'  // AI Brain intelligence layer
+      '/api/v3/ai-brain',  // AI Brain intelligence layer
+      '/api/v3/ai-intelligence'  // Drug interactions, triage, risk scores, insights
     ],
     tokenField: 'adminId'
   },

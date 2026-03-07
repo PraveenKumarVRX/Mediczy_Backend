@@ -131,6 +131,26 @@ class InitializationController {
       const { default: systemHealthService } = await import('../services/system-health.service.js');
       systemHealthService.startPeriodicHealthCheck(60000); // Check every minute
       
+      // AI Intelligence: Health Risk Score computation (every 6 hours)
+      console.log('🏥 Starting AI health risk score cron...');
+      const { default: healthRiskCron } = await import('../services/ai-health-risk-cron.service.js');
+      healthRiskCron.start();
+
+      // AI Intelligence: Smart Notifications (every 2 hours)
+      console.log('🔔 Starting AI smart notifications cron...');
+      const { default: smartNotifCron } = await import('../services/ai-smart-notifications-cron.service.js');
+      smartNotifCron.start();
+
+      // AI Intelligence: Clinical Insights (every 8 hours)
+      console.log('🔬 Starting AI clinical insights cron...');
+      const { default: clinicalInsightsCron } = await import('../services/ai-clinical-insights-cron.service.js');
+      clinicalInsightsCron.start();
+
+      // AI Intelligence: Self-Learning Pipeline (every 4 hours)
+      console.log('🧠 Starting AI self-learning pipeline...');
+      const { default: selfLearningPipeline } = await import('../services/ai-self-learning-pipeline.service.js');
+      selfLearningPipeline.start();
+
       console.log('✅ All cron jobs and automation services initialized successfully');
     } catch (error) {
       console.error('❌ Cron jobs initialization failed:', error.message);

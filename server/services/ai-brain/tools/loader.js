@@ -8,5 +8,6 @@ import './lab-tools.js';
 import './wellness-tools.js';
 import './memory-tools.js';
 import './rag-tools.js';
+import './intelligence-tools.js';
 
 export { getToolDefinitions, listTools, execute } from './index.js';
