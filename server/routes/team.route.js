@@ -830,25 +830,29 @@ router.get('/users', authTeam, async (req, res) => {
 
     const { count, rows: users } = await userModel.findAndCountAll({
       where,
-      attributes: ['id', 'firstName', 'lastName', 'email', 'phoneNumber', 'role', 'department', 'designation', 'status', 'lastLogin', 'createdAt'],
+      attributes: ['id', 'firstName', 'lastName', 'email', 'phoneNumber', 'role', 'status', 'lastLoginAt', 'metadata', 'createdAt'],
       order: [['createdAt', 'DESC']],
       limit: Math.min(parseInt(limit), 100),
       offset
     });
 
-    const teamUsers = users.map(user => ({
-      id: user.id,
-      firstName: user.firstName,
-      lastName: user.lastName,
-      email: user.email,
-      phone: user.phoneNumber,
-      role: user.role,
-      department: user.department,
-      designation: user.designation,
-      isActive: user.status === 'active',
-      lastLogin: user.lastLogin,
-      createdAt: user.createdAt
-    }));
+    const teamUsers = users.map(user => {
+      let meta = {};
+      try { meta = user.metadata && typeof user.metadata === 'object' ? user.metadata : JSON.parse(user.metadata || '{}'); } catch (_) { meta = {}; }
+      return {
+        id: user.id,
+        firstName: user.firstName,
+        lastName: user.lastName,
+        email: user.email,
+        phone: user.phoneNumber,
+        role: user.role,
+        department: meta.department || 'Healthcare',
+        designation: meta.designation || 'Staff',
+        isActive: user.status === 'active',
+        lastLogin: user.lastLoginAt,
+        createdAt: user.createdAt
+      };
+    });
 
     return res.status(200).json({
       success: true,
