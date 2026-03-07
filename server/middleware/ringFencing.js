@@ -45,7 +45,8 @@ const USER_TYPE_PERMISSIONS = {
       '/api/cart',  // Lab test cart management
       '/api/family-members',  // Family member management
       '/api/notifications',  // User notifications
-      '/api/mobile'  // Mobile API gateway
+      '/api/mobile',  // Mobile API gateway
+      '/api/v3/ai-brain'  // AI Brain intelligence layer
     ],
     tokenField: 'userId'
   },
@@ -90,7 +91,8 @@ const USER_TYPE_PERMISSIONS = {
       '/api/cart',  // Lab test cart management
       '/api/family-members',  // Family member management
       '/api/notifications',  // User notifications
-      '/api/mobile'  // Mobile API gateway
+      '/api/mobile',  // Mobile API gateway
+      '/api/v3/ai-brain'  // AI Brain intelligence layer
     ],
     tokenField: 'userId'
   },
@@ -119,7 +121,8 @@ const USER_TYPE_PERMISSIONS = {
       '/api/billing',  // Billing and invoices
       '/api/notifications',  // Doctor notifications
       '/api/v2/doctors',  // Enterprise API v2 doctor endpoints
-      '/api/mobile'  // Mobile API gateway for doctor app
+      '/api/mobile',  // Mobile API gateway for doctor app
+      '/api/v3/ai-brain'  // AI Brain intelligence layer
     ],
     tokenField: 'doctorId'
   },
@@ -167,7 +170,8 @@ const USER_TYPE_PERMISSIONS = {
       '/api/settings',
       '/api/masterdata',
       '/api/recordings',  // Admin access to consultation recordings
-      '/api/consultation-recordings'  // Admin access to consultation recordings
+      '/api/consultation-recordings',  // Admin access to consultation recordings
+      '/api/v3/ai-brain'  // AI Brain intelligence layer
     ],
     tokenField: 'adminId'
   },
