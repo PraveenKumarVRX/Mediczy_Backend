@@ -2665,12 +2665,26 @@ router.post("/triage/accept-call", authDoctor, async (req, res) => {
     // Update appointment status
     await appointment.update({ status: 'in-progress' });
 
+    // Generate LiveKit token for doctor so they join the SAME room the patient is in
+    const { buildLiveKitJoinData } = await import('../utils/videoProvider.js');
+    const roomId = appointment.meetingId;
+    let livekitData = null;
+    try {
+      livekitData = await buildLiveKitJoinData({
+        meetingId: roomId,
+        identity: `doctor-${doctorId}`,
+        name: `Dr. ${req.doctor.firstName} ${req.doctor.lastName}`.trim()
+      });
+    } catch (lkErr) {
+      console.warn('LiveKit token generation for accept-call failed:', lkErr.message);
+    }
+
     // Notify patient via hybrid notification (Socket.IO + FCM)
     const { emitCallAccepted } = await import('../chat/chathandler.controller.js');
     const acceptData = {
       appointmentId: appointment.id,
       doctorName: `Dr. ${req.doctor.firstName} ${req.doctor.lastName}`,
-      roomId: appointment.meetingId,
+      roomId: roomId,
       timestamp: new Date().toISOString()
     };
 
@@ -2682,8 +2696,13 @@ router.post("/triage/accept-call", authDoctor, async (req, res) => {
       appointment: {
         id: appointment.id,
         status: appointment.status,
-        roomId: appointment.meetingId
+        roomId: roomId
       },
+      livekit: livekitData ? {
+        serverUrl: livekitData.serverUrl,
+        token: livekitData.token,
+        roomName: livekitData.roomName
+      } : null,
       notification: notificationResult
     });
   } catch (error) {

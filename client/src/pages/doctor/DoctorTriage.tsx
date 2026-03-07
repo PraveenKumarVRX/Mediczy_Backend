@@ -460,41 +460,51 @@ const DoctorTriage = () => {
       // Close incoming call notification
       setIncomingCall(null);
 
-      // Get video room ID
+      // Get video room ID and pre-generated LiveKit token
       const roomId = response.data.appointment.roomId;
       const doctorName = `Dr.${currentDoctor?.firstName || 'Doctor'}`;
       
-      try {
-        // Fetch token from API
-        const tokenResponse = await api.get('/video/livekit/token', {
-          params: {
-            roomId: roomId,
-            identity: `doctor-${currentDoctor?.id}`
-          }
-        });
-        
-        const token = tokenResponse.data?.token;
-        const serverUrl = tokenResponse.data?.serverUrl || import.meta.env.VITE_LIVEKIT_URL || 'wss://video.mediqzy.com';
-        const joinUrl = tokenResponse.data?.video?.joinUrl || `${LIVEKIT_BASE_URL}/rooms/${roomId}?access_token=${encodeURIComponent(token)}&name=${encodeURIComponent(doctorName)}`;
-
-        setCurrentVideoToken(token || '');
-        setCurrentVideoServerUrl(serverUrl);
-        setCurrentVideoJoinUrl(joinUrl);
+      // Use pre-generated token from accept-call response (same room as patient)
+      if (response.data.livekit?.token && response.data.livekit?.serverUrl) {
+        setCurrentVideoToken(response.data.livekit.token);
+        setCurrentVideoServerUrl(response.data.livekit.serverUrl);
         setIsInVideoCall(true);
         setConnectionStatus('connecting');
-        
-        // Start AI features
         startAIFeatures();
-        
         setTimeout(() => setConnectionStatus('connected'), 3000);
-      } catch (tokenError) {
-        console.error('Failed to get video token:', tokenError);
-        toast({
-          title: "Error",
-          description: "Failed to get secure video token",
-          variant: "destructive",
-        });
-        return;
+      } else {
+        // Fallback: fetch token from API (may not work for triage rooms)
+        try {
+          const tokenResponse = await api.get('/video/livekit/token', {
+            params: {
+              roomId: roomId,
+              identity: `doctor-${currentDoctor?.id}`
+            }
+          });
+          
+          const token = tokenResponse.data?.token;
+          const serverUrl = tokenResponse.data?.serverUrl || import.meta.env.VITE_LIVEKIT_URL || 'wss://video.mediqzy.com';
+          const joinUrl = tokenResponse.data?.video?.joinUrl || `${LIVEKIT_BASE_URL}/rooms/${roomId}?access_token=${encodeURIComponent(token)}&name=${encodeURIComponent(doctorName)}`;
+
+          setCurrentVideoToken(token || '');
+          setCurrentVideoServerUrl(serverUrl);
+          setCurrentVideoJoinUrl(joinUrl);
+          setIsInVideoCall(true);
+          setConnectionStatus('connecting');
+          
+          // Start AI features
+          startAIFeatures();
+          
+          setTimeout(() => setConnectionStatus('connected'), 3000);
+        } catch (tokenError) {
+          console.error('Failed to get video token:', tokenError);
+          toast({
+            title: "Error",
+            description: "Failed to get secure video token",
+            variant: "destructive",
+          });
+          return;
+        }
       }
     } catch (error: any) {
       console.error('Failed to accept call:', error);

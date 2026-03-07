@@ -20,6 +20,7 @@ import { ScrollArea } from "@/components/ui/scroll-area";
 import { analyzeVideoFrame, initializeVisionAI, cleanupVisionAI, getTriageSummary, type VisionAnalysisResult } from '@/services/visionAI';
 import socketService from '@/services/socket.service';
 import { PurchaseCoinsDialog } from '@/components/wallet/PurchaseCoinsDialog';
+import { SimpleLiveKitRoom } from '@/components/video/LiveKitRoom';
 
 // Fix Leaflet icon issue
 delete (L.Icon.Default.prototype as any)._getIconUrl;
@@ -253,7 +254,7 @@ const Emergency = () => {
   const [isLoadingDoctors, setIsLoadingDoctors] = useState(false);
   const [showDoctorList, setShowDoctorList] = useState(false);
   const [connectingToDoctor, setConnectingToDoctor] = useState(false);
-  const [videoCallInfo, setVideoCallInfo] = useState<{roomId: string, joinUrl: string, doctor: any, appointmentId?: string} | null>(null);
+  const [videoCallInfo, setVideoCallInfo] = useState<{roomId: string, joinUrl: string, doctor: any, appointmentId?: string, livekitToken?: string, livekitServerUrl?: string} | null>(null);
   
   // AI-Powered Video Call States
   const [showEmbeddedVideoCall, setShowEmbeddedVideoCall] = useState(false);
@@ -493,17 +494,22 @@ const Emergency = () => {
         duration: 5000,
       });
 
-      // Auto-join the video room
-      if (videoCallInfo?.joinUrl) {
+      // Auto-join the video room using LiveKit SDK (same room as doctor)
+      if (videoCallInfo?.livekitToken && videoCallInfo?.livekitServerUrl) {
+        // Preferred path: use LiveKit SDK component with pre-generated token
+        setShowEmbeddedVideoCall(true);
+        setTimeout(() => {
+          document.getElementById('video-call-section')?.scrollIntoView({ behavior: 'smooth' });
+        }, 100);
+      } else if (videoCallInfo?.joinUrl) {
+        // Fallback: iframe or redirect (legacy)
         if (isLegacyRoomJoinUrl(videoCallInfo.joinUrl)) {
           const fallbackRoomId = videoCallInfo.roomId || parseLegacyRoomIdFromUrl(videoCallInfo.joinUrl);
           const inAppUrl = buildInAppVideoUrl(fallbackRoomId, videoCallInfo.appointmentId);
           window.location.assign(inAppUrl);
           return;
         }
-
         setShowEmbeddedVideoCall(true);
-        // Scroll to video section
         setTimeout(() => {
           document.getElementById('video-call-section')?.scrollIntoView({ behavior: 'smooth' });
         }, 100);
@@ -1067,11 +1073,14 @@ Hello, I'm Dr. iSHA, your AI emergency medical assistant powered by multimodal i
       });
       
       if (response.data.success) {
+        const lk = response.data.videoCall?.livekit?.patient;
         setVideoCallInfo({
           roomId: response.data.videoCall.roomId,
           joinUrl: response.data.videoCall.patientJoinUrl,
           doctor: response.data.doctor,
-          appointmentId: response.data.videoCall.appointmentId
+          appointmentId: response.data.videoCall.appointmentId || response.data.appointment?.id,
+          livekitToken: lk?.token,
+          livekitServerUrl: lk?.serverUrl || 'wss://video.mediqzy.com'
         });
         
         // Set waiting state - doctor will get notification
@@ -1124,6 +1133,12 @@ Hello, I'm Dr. iSHA, your AI emergency medical assistant powered by multimodal i
 
   // Join video call - show embedded experience with AI features
   const joinVideoCall = () => {
+    if (videoCallInfo?.livekitToken && videoCallInfo?.livekitServerUrl) {
+      // Use LiveKit SDK component (same room as doctor)
+      setShowEmbeddedVideoCall(true);
+      startAIFeatures();
+      return;
+    }
     if (videoCallInfo?.joinUrl) {
       if (isLegacyRoomJoinUrl(videoCallInfo.joinUrl)) {
         const fallbackRoomId = videoCallInfo.roomId || parseLegacyRoomIdFromUrl(videoCallInfo.joinUrl);
@@ -3753,13 +3768,25 @@ This is for emergency medical guidance. Please prioritize safety and immediate c
             <div className="flex-1 flex flex-col bg-slate-900 min-h-[400px]">
               {/* Video Frame */}
               <div className="relative flex-1 min-h-[350px]">
-                <iframe
-                  src={videoCallInfo.joinUrl}
-                  className="w-full h-full border-0 min-h-[350px]"
-                  allow="camera *; microphone *; display-capture *; fullscreen *; autoplay *; encrypted-media *; picture-in-picture *; clipboard-write *"
-                  allowFullScreen
-                  title="Video Consultation"
-                />
+                {videoCallInfo.livekitToken && videoCallInfo.livekitServerUrl ? (
+                  <SimpleLiveKitRoom
+                    serverUrl={videoCallInfo.livekitServerUrl}
+                    token={videoCallInfo.livekitToken}
+                    onDisconnect={() => {
+                      setShowEmbeddedVideoCall(false);
+                      setVideoCallInfo(null);
+                      toast({ title: "Call Ended", description: "Video consultation has ended" });
+                    }}
+                  />
+                ) : (
+                  <iframe
+                    src={videoCallInfo.joinUrl}
+                    className="w-full h-full border-0 min-h-[350px]"
+                    allow="camera *; microphone *; display-capture *; fullscreen *; autoplay *; encrypted-media *; picture-in-picture *; clipboard-write *"
+                    allowFullScreen
+                    title="Video Consultation"
+                  />
+                )}
                 
                 {/* AI Status Overlay */}
                 <div className="absolute top-2 left-2 flex gap-2">
