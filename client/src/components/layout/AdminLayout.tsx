@@ -51,7 +51,8 @@ import {
   Moon,
   Sun,
   RefreshCw,
-  Key
+  Key,
+  BrainCircuit
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Sheet, SheetContent, SheetTrigger } from '@/components/ui/sheet';
@@ -351,6 +352,15 @@ const AdminLayout = ({ children }: AdminLayoutProps) => {
         { icon: MessageSquare, label: 'WhatsApp', path: '/admin/whatsapp', color: 'text-green-600', bg: 'bg-green-600/10', badge: 'New' },
         { icon: Video, label: 'Video', path: '/admin/video', color: 'text-blue-500', bg: 'bg-blue-500/10' },
         { icon: Phone, label: 'Voice', path: '/admin/voice', color: 'text-teal-500', bg: 'bg-teal-500/10' },
+      ]
+    },
+    {
+      id: 'ai',
+      label: 'AI Intelligence',
+      icon: BrainCircuit,
+      color: 'text-violet-500',
+      items: [
+        { icon: BrainCircuit, label: 'AI Analytics', path: '/admin/ai-analytics', color: 'text-violet-500', bg: 'bg-violet-500/10', highlight: true },
       ]
     },
     {

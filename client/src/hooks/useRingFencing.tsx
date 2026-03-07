@@ -179,6 +179,7 @@ const USER_TYPES: Record<string, PortalConfig> = {
       '/admin/health-risk',
       '/admin/reports',
       '/admin/crm',
+      '/admin/ai-analytics',
       '/admin/settings',
       '/admin/manage-assistants',
       '/admin/register-patient',

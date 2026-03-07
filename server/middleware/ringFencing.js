@@ -175,7 +175,8 @@ const USER_TYPE_PERMISSIONS = {
       '/api/recordings',  // Admin access to consultation recordings
       '/api/consultation-recordings',  // Admin access to consultation recordings
       '/api/v3/ai-brain',  // AI Brain intelligence layer
-      '/api/v3/ai-intelligence'  // Drug interactions, triage, risk scores, insights
+      '/api/v3/ai-intelligence',  // Drug interactions, triage, risk scores, insights
+      '/api/v3/ai-analytics'  // AI analytics dashboard (admin only)
     ],
     tokenField: 'adminId'
   },

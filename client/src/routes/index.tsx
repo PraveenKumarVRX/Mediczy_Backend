@@ -173,6 +173,7 @@ const ReportsPage              = lazyNamed(() => import("@/pages/admin/AdminPlac
 const SettingsPage             = lazy(() => import("@/pages/admin/SettingsPage"));
 const CRMPage                  = lazy(() => import("@/pages/admin/CRMPage"));
 const CRMLeadDetail            = lazy(() => import("@/pages/admin/CRMLeadDetail"));
+const AIAnalyticsDashboard     = lazy(() => import("@/pages/admin/AIAnalyticsDashboard"));
 
 // ─── Team ────────────────────────────────────────────────────────────────────
 const TeamLogin              = lazy(() => import("@/pages/team/TeamLogin"));
@@ -740,6 +741,7 @@ const AppRoutes = () => {
         <Route path="/admin/reports"             element={<ReportsPage />} />
         <Route path="/admin/crm"                 element={<CRMPage />} />
         <Route path="/admin/crm/lead/:id"        element={<CRMLeadDetail />} />
+        <Route path="/admin/ai-analytics"        element={<AIAnalyticsDashboard />} />
         <Route path="/admin/settings"            element={<SettingsPage />} />
         <Route path="/admin/dashboard"           element={<AdminDashboardHome />} />
         <Route path="/admin"                     element={<AdminDashboardHome />} />
