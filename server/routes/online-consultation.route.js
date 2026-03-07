@@ -88,12 +88,12 @@ router.get('/doctors', async (req, res) => {
         'id', 'prefix', 'firstName', 'lastName', 'email', 'phoneNumber',
         'profileImage', 'specialization', 'qualifications', 'experience',
         'registrationNumber', 'consultationFees', 'onlineConsultationFee',
-        'inPersonConsultationFee', 'averageRating', 'totalReviews', 'about',
-        'languages', 'isOnline', 'isAvailable'
+        'inPersonConsultationFee', 'rating', 'totalReviews',
+        'languages', 'isOnline'
       ],
       order: sortBy === 'fee' 
         ? [['onlineConsultationFee', 'ASC']]
-        : [['averageRating', 'DESC']],
+        : [['rating', 'DESC']],
       limit: parseInt(limit),
       offset: (parseInt(page) - 1) * parseInt(limit)
     });
@@ -107,7 +107,7 @@ router.get('/doctors', async (req, res) => {
     }
     if (minRating) {
       filteredDoctors = filteredDoctors.filter(d => 
-        (d.averageRating || 0) >= parseFloat(minRating)
+        (d.rating || 0) >= parseFloat(minRating)
       );
     }
 
@@ -125,12 +125,12 @@ router.get('/doctors', async (req, res) => {
         experience: doc.experience,
         registrationNumber: doc.registrationNumber,
         consultationFee: doc.onlineConsultationFee || doc.consultationFees || 500,
-        rating: doc.averageRating || 4.5,
+        rating: doc.rating || 4.5,
         totalReviews: doc.totalReviews || 0,
-        bio: doc.about,
+        bio: doc.metadata?.about || null,
         languages: doc.languages,
         isOnline: doc.isOnline,
-        isAvailable: doc.isAvailable !== false
+        isAvailable: doc.isOnline !== false
       }))
     });
   } catch (error) {
@@ -175,13 +175,13 @@ router.get('/doctors/:id', async (req, res) => {
         registrationNumber: doctor.registrationNumber,
         consultationFee: doctor.onlineConsultationFee || doctor.consultationFees || 500,
         inPersonFee: doctor.inPersonConsultationFee || 700,
-        rating: doctor.averageRating || 4.5,
+        rating: doctor.rating || 4.5,
         totalReviews: doctor.totalReviews || 0,
-        bio: doctor.about,
+        bio: doctor.metadata?.about || null,
         languages: doctor.languages,
         clinicAddress: doctor.clinicAddress,
         isOnline: doctor.isOnline,
-        isAvailable: doctor.isAvailable !== false
+        isAvailable: doctor.isOnline !== false
       }
     });
   } catch (error) {
