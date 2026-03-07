@@ -303,8 +303,11 @@ const queryAICDSS = async (query: string, category: string, specialty: string, t
     
     if (response.data.success) {
       console.log(`[CDSS] Response from ${response.data.provider} (${response.data.model}) in ${response.data.latencyMs}ms`);
+      // Normalize summary: may come as array from LLM
+      let summary = response.data.summary || `AI-powered analysis for "${query}"`;
+      if (Array.isArray(summary)) summary = summary.join(' ');
       return {
-        summary: response.data.summary || `AI-powered analysis for "${query}"`,
+        summary,
         clinicalGuidelines: response.data.clinicalGuidelines || [],
         drugInfo: response.data.drugInfo || [],
         differentialDiagnosis: response.data.differentialDiagnosis || [],
@@ -333,12 +336,17 @@ const generateCDSSResponse = async (query: string, category: string, specialty: 
   // Generate local response first (instant)
   const localResponse = generateLocalCDSSResponse(query, category, specialty);
   
-  // Try AI enhancement in background with timeout
+  // Try AI enhancement with enough timeout for LLM
   try {
-    const aiResponse = await queryAICDSS(query, category, specialty, 6000);
-    if (aiResponse && (aiResponse.clinicalGuidelines.length > 0 || aiResponse.drugInfo.length > 0 || aiResponse.differentialDiagnosis.length > 0)) {
+    const aiResponse = await queryAICDSS(query, category, specialty, 12000);
+    if (aiResponse && (aiResponse.clinicalGuidelines.length > 0 || aiResponse.drugInfo.length > 0 || aiResponse.differentialDiagnosis.length > 0 || aiResponse.labTests.length > 0)) {
+      // Merge AI refs with local refs for completeness
+      const mergedRefs = [...(aiResponse.references || []), ...(localResponse.references || [])]
+        .filter((r, i, a) => a.findIndex(x => x.title === r.title) === i)
+        .slice(0, 8);
       return {
         ...aiResponse,
+        references: mergedRefs,
         summary: `🤖 AI Analysis\n\n${aiResponse.summary}`
       };
     }

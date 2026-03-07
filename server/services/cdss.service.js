@@ -23,6 +23,134 @@ class CDSSService {
   }
 
   /**
+   * Robust JSON extraction from LLM responses
+   * Handles: markdown fences, truncated JSON, array-type summary
+   */
+  extractJSON(text) {
+    if (!text || typeof text !== 'string') return null;
+
+    // 1. Strip markdown code fences: ```json ... ``` or ``` ... ```
+    let cleaned = text.replace(/^\s*```(?:json)?\s*\n?/i, '').replace(/\n?\s*```\s*$/i, '');
+
+    // 2. Extract the outermost JSON object
+    const firstBrace = cleaned.indexOf('{');
+    if (firstBrace === -1) return null;
+    cleaned = cleaned.substring(firstBrace);
+
+    // 3. Try parsing as-is first
+    try {
+      const parsed = JSON.parse(cleaned);
+      return this.normalizeCDSSResponse(parsed);
+    } catch (e) {
+      // JSON is likely truncated
+    }
+
+    // 4. Repair truncated JSON by closing open brackets/braces
+    let repaired = cleaned;
+    // Remove trailing incomplete key-value (e.g., '"recommendation": "Monitor ris')
+    repaired = repaired.replace(/,?\s*"[^"]*"\s*:\s*"[^"]*$/s, '');
+    // Also handle truncated inside an array element
+    repaired = repaired.replace(/,?\s*\{[^}]*$/s, '');
+
+    // Count open/close brackets and braces
+    let openBraces = 0, openBrackets = 0;
+    let inString = false, escape = false;
+    for (const ch of repaired) {
+      if (escape) { escape = false; continue; }
+      if (ch === '\\') { escape = true; continue; }
+      if (ch === '"') { inString = !inString; continue; }
+      if (inString) continue;
+      if (ch === '{') openBraces++;
+      if (ch === '}') openBraces--;
+      if (ch === '[') openBrackets++;
+      if (ch === ']') openBrackets--;
+    }
+
+    // Close any open brackets then braces
+    while (openBrackets > 0) { repaired += ']'; openBrackets--; }
+    while (openBraces > 0) { repaired += '}'; openBraces--; }
+
+    try {
+      const parsed = JSON.parse(repaired);
+      console.log('[CDSS] Repaired truncated JSON successfully');
+      return this.normalizeCDSSResponse(parsed);
+    } catch (e2) {
+      console.warn('[CDSS] JSON repair failed, extracting fields manually');
+    }
+
+    // 5. Last resort: extract individual fields via regex
+    return this.extractFieldsManually(cleaned);
+  }
+
+  /**
+   * Normalize CDSS response: convert array summary to string, ensure all fields exist
+   */
+  normalizeCDSSResponse(parsed) {
+    // Convert summary from array to string if needed
+    if (Array.isArray(parsed.summary)) {
+      parsed.summary = parsed.summary.join(' ');
+    }
+    // Ensure all expected fields exist
+    const defaults = {
+      summary: '', clinicalGuidelines: [], drugInfo: [], medicationAlternatives: [],
+      differentialDiagnosis: [], labTests: [], drugInteractions: [],
+      warnings: [], icd10Codes: [], references: []
+    };
+    return { ...defaults, ...parsed };
+  }
+
+  /**
+   * Extract individual JSON fields from partially valid JSON text
+   */
+  extractFieldsManually(text) {
+    const result = {
+      summary: '', clinicalGuidelines: [], drugInfo: [], medicationAlternatives: [],
+      differentialDiagnosis: [], labTests: [], drugInteractions: [],
+      warnings: [], icd10Codes: [], references: []
+    };
+
+    // Try to extract each array field
+    for (const field of Object.keys(result)) {
+      if (field === 'summary') {
+        // Extract summary string or array
+        const sumMatch = text.match(/"summary"\s*:\s*(\[[^\]]*\]|"[^"]*")/s);
+        if (sumMatch) {
+          try {
+            const val = JSON.parse(sumMatch[1]);
+            result.summary = Array.isArray(val) ? val.join(' ') : val;
+          } catch (e) { /* skip */ }
+        }
+        continue;
+      }
+      // Extract array fields
+      const regex = new RegExp(`"${field}"\\s*:\\s*\\[`, 's');
+      const match = regex.exec(text);
+      if (match) {
+        const startIdx = match.index + match[0].length - 1;
+        let depth = 0;
+        let endIdx = startIdx;
+        let inStr = false, esc = false;
+        for (let i = startIdx; i < text.length; i++) {
+          const c = text[i];
+          if (esc) { esc = false; continue; }
+          if (c === '\\') { esc = true; continue; }
+          if (c === '"') { inStr = !inStr; continue; }
+          if (inStr) continue;
+          if (c === '[') depth++;
+          if (c === ']') { depth--; if (depth === 0) { endIdx = i + 1; break; } }
+        }
+        if (endIdx > startIdx) {
+          try {
+            result[field] = JSON.parse(text.substring(startIdx, endIdx));
+          } catch (e) { /* skip */ }
+        }
+      }
+    }
+
+    return result;
+  }
+
+  /**
    * Check SIB health
    */
   async checkSibHealth() {
@@ -202,20 +330,10 @@ class CDSSService {
    * Build CDSS system prompt for clinical decision support (optimized for speed)
    */
   buildCDSSPrompt(category, specialty) {
-    return `You are a CDSS assistant for doctors in India. Specialty: ${specialty || 'General Medicine'}. Task: ${category || 'diagnosis'}.
-
-Return JSON with these arrays (use empty [] if not applicable):
-- summary: 2-3 sentence clinical summary
-- clinicalGuidelines: [{title, source, recommendation, evidenceLevel}]
-- drugInfo: [{name, genericName, drugClass, dosage, contraindications, sideEffects, cimsAvailable (boolean)}]
-- medicationAlternatives: [{brandName, manufacturer, strength, schedule, mrp, source}]
-- differentialDiagnosis: [{condition, probability (High/Moderate/Low), keyFeatures}]
-- labTests: [{name, purpose, normalRange}]
-- drugInteractions: [{drug1, drug2, severity, description, recommendation}]
-- warnings: [{type (critical/warning/info), message}]
-- icd10Codes: [{code, description}]
-
-Be concise. Cite NICE/WHO/AHA/GOLD guidelines. Include Indian context, CIMS medicine availability, and pricing when relevant. Output ONLY valid JSON.`;
+    return `CDSS for Indian doctors. Specialty: ${specialty || 'General'}. Task: ${category || 'diagnosis'}.
+Return ONLY raw JSON (no markdown, no \`\`\`, no explanation). Keep values short.
+{"summary":"2-3 sentences","clinicalGuidelines":[{"title":"","source":"NICE/WHO/AHA","recommendation":"","evidenceLevel":""}],"drugInfo":[{"name":"","genericName":"","drugClass":"","dosage":"","contraindications":"","sideEffects":""}],"differentialDiagnosis":[{"condition":"","probability":"High/Moderate/Low","keyFeatures":""}],"labTests":[{"name":"","purpose":"","normalRange":""}],"warnings":[{"type":"critical/warning/info","message":""}],"icd10Codes":[{"code":"","description":""}]}
+Be concise. Max 2 guidelines, 3 drugs, 3 DDx, 3 labs, 3 ICD-10. Indian context. Output ONLY the JSON object.`;
   }
 
   /**
@@ -263,25 +381,21 @@ Be concise. Cite NICE/WHO/AHA/GOLD guidelines. Include Indian context, CIMS medi
       const data = await response.json();
       const responseText = data.answer || data.chat_answer || data.response || data.message || '';
       
-      // Try to parse JSON from response
-      try {
-        const jsonMatch = responseText.match(/\{[\s\S]*\}/);
-        if (jsonMatch) {
-          const parsed = JSON.parse(jsonMatch[0]);
-          return {
-            success: true,
-            data: parsed,
-            provider: 'sib-llama',
-            model: 'Llama-3.1-8B-Instruct'
-          };
-        }
-      } catch (parseError) {
-        console.warn('[CDSS] Failed to parse SIB JSON response, returning raw');
+      // Try to parse JSON from response (handles markdown fences + truncation)
+      const parsed = this.extractJSON(responseText);
+      if (parsed && (parsed.summary || parsed.clinicalGuidelines?.length > 0 || parsed.drugInfo?.length > 0)) {
+        return {
+          success: true,
+          data: parsed,
+          provider: 'sib-llama',
+          model: 'Llama-3.1-8B-Instruct'
+        };
       }
 
+      console.warn('[CDSS] Could not extract structured data from SIB response');
       return {
         success: true,
-        data: { summary: responseText, clinicalGuidelines: [], drugInfo: [], differentialDiagnosis: [], labTests: [], warnings: [], icd10Codes: [], references: [] },
+        data: { summary: responseText.replace(/```json\n?|```\n?/g, '').trim(), clinicalGuidelines: [], drugInfo: [], differentialDiagnosis: [], labTests: [], warnings: [], icd10Codes: [], references: [] },
         provider: 'sib-llama',
         model: 'Llama-3.1-8B-Instruct',
         raw: true
