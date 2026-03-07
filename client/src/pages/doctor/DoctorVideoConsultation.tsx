@@ -86,7 +86,9 @@ const DoctorVideoConsultation = () => {
   const [searchParams] = useSearchParams();
   
   // Room and meeting state
-  const [roomId, setRoomId] = useState(searchParams.get('room') || "");
+  const roomFromUrl = searchParams.get('room') || "";
+  const appointmentIdFromUrl = searchParams.get('appointmentId') || "";
+  const [roomId, setRoomId] = useState(roomFromUrl);
   const [activeTab, setActiveTab] = useState("upcoming");
   const [copiedLink, setCopiedLink] = useState(false);
   
@@ -496,6 +498,16 @@ const DoctorVideoConsultation = () => {
     refetchRecent();
   };
 
+  // Auto-join video call when appointmentId is passed in URL (from DoctorAppointments)
+  useEffect(() => {
+    if (appointmentIdFromUrl && currentDoctor && !isInCall && !liveKitConnection) {
+      const timer = setTimeout(() => {
+        initiateVideoCall({ id: appointmentIdFromUrl, patient: '', time: '', duration: '', type: 'video', status: 'in-progress' } as Consultation);
+      }, 500);
+      return () => clearTimeout(timer);
+    }
+  }, [appointmentIdFromUrl, currentDoctor]);
+
   // Cleanup on unmount
   useEffect(() => {
     return () => {
@@ -543,109 +555,45 @@ const DoctorVideoConsultation = () => {
     );
   }
 
-  // Legacy iframe-based video call UI (fallback)
+  // Fallback UI when LiveKit SDK connection failed
   if (isInCall && currentMeetingUrl) {
     return (
       <div 
         ref={containerRef}
-        className={`${isFullscreen ? 'fixed inset-0 z-50' : 'min-h-screen'} bg-slate-900 flex flex-col`}
+        className="min-h-screen bg-slate-900 flex flex-col items-center justify-center"
       >
-        {/* Video Call Header */}
-        <div className="flex items-center justify-between px-4 py-3 bg-slate-800/80 backdrop-blur-sm border-b border-slate-700">
-          <div className="flex items-center gap-3">
-            <div className={`w-3 h-3 rounded-full ${
-              connectionStatus === 'connected' ? 'bg-green-500 animate-pulse' : 
-              connectionStatus === 'connecting' ? 'bg-yellow-500 animate-pulse' : 'bg-red-500'
-            }`} />
-            <div>
-              <h2 className="text-white font-semibold">
-                {currentConsultation ? `Patient: ${currentConsultation.patient}` : 'Video Consultation'}
-              </h2>
-              <p className="text-slate-400 text-sm">
-                {connectionStatus === 'connected' ? 'Connected' : 
-                 connectionStatus === 'connecting' ? 'Connecting...' : 'Disconnected'}
-              </p>
-            </div>
-          </div>
-          
-          <div className="flex items-center gap-2">
-            <Badge variant="outline" className="text-teal-400 border-teal-400">
-              <Shield className="w-3 h-3 mr-1" />
-              HIPAA Compliant
-            </Badge>
-            {(currentMeetingUrl.includes('/rooms/') || currentMeetingUrl.includes('/room/')) && (
-              <div className="flex items-center gap-2 rounded-full border border-slate-700 px-3 py-1 text-slate-300">
-                <span className="text-xs">Embed</span>
-                <Switch
-                  checked={preferEmbeddedJoin}
-                  onCheckedChange={(checked) => {
-                    setPreferEmbeddedJoin(checked);
-                    if (!checked) {
-                      moveLiveKitToWindow();
-                    }
-                  }}
-                />
-              </div>
-            )}
-            <Button 
-              variant="ghost" 
-              size="icon" 
-              onClick={() => handleCopyLink()}
-              className="text-slate-400 hover:text-white"
-              title="Share meeting link"
+        <div className="text-center max-w-md mx-auto p-8">
+          <AlertCircle className="w-16 h-16 text-yellow-500 mx-auto mb-4" />
+          <h2 className="text-white text-xl font-semibold mb-2">Video Connection Issue</h2>
+          <p className="text-slate-400 mb-6">
+            Unable to establish a direct video connection. This may be due to a temporary network issue.
+          </p>
+          <div className="flex gap-3 justify-center">
+            <Button
+              onClick={() => {
+                setIsInCall(false);
+                setCurrentMeetingUrl("");
+                setConnectionStatus('disconnected');
+                // Re-initiate with SDK
+                if (appointmentIdFromUrl || currentConsultation?.id) {
+                  const aptId = appointmentIdFromUrl || currentConsultation?.id || '';
+                  initiateVideoCall({ id: aptId, patient: '', time: '', duration: '', type: 'video', status: 'in-progress' } as Consultation);
+                }
+              }}
+              className="bg-teal-600 hover:bg-teal-700 text-white px-6"
             >
-              <Share2 className="w-4 h-4" />
+              <RefreshCw className="w-4 h-4 mr-2" />
+              Retry Connection
             </Button>
-            <Button 
-              variant="ghost" 
-              size="icon" 
-              onClick={openInNewWindow}
-              className="text-slate-400 hover:text-white"
-              title="Open in new window"
+            <Button
+              onClick={endVideoCall}
+              variant="destructive"
+              className="px-6"
             >
-              <ExternalLink className="w-4 h-4" />
-            </Button>
-            <Button 
-              variant="ghost" 
-              size="icon" 
-              onClick={toggleFullscreen}
-              className="text-slate-400 hover:text-white"
-            >
-              {isFullscreen ? <Minimize2 className="w-4 h-4" /> : <Maximize2 className="w-4 h-4" />}
+              <PhoneOff className="w-4 h-4 mr-2" />
+              End Call
             </Button>
           </div>
-        </div>
-        
-        {/* Video Consultation Iframe */}
-        <div className="flex-1 relative">
-          <iframe
-            ref={iframeRef}
-            src={currentMeetingUrl}
-            className="absolute inset-0 w-full h-full border-0"
-            allow="camera; microphone; display-capture; autoplay; clipboard-write; fullscreen"
-            allowFullScreen
-          />
-          
-          {connectionStatus === 'connecting' && (
-            <div className="absolute inset-0 flex items-center justify-center bg-slate-900/80">
-              <div className="text-center">
-                <Loader2 className="w-12 h-12 animate-spin text-teal-500 mx-auto mb-4" />
-                <p className="text-white text-lg">Connecting to video consultation...</p>
-                <p className="text-slate-400 text-sm mt-2">Please allow camera and microphone access when prompted</p>
-              </div>
-            </div>
-          )}
-        </div>
-        
-        {/* Bottom Control Bar */}
-        <div className="flex items-center justify-center gap-4 px-4 py-4 bg-slate-800/80 backdrop-blur-sm border-t border-slate-700">
-          <Button
-            onClick={endVideoCall}
-            className="bg-red-600 hover:bg-red-700 text-white px-8 py-6 rounded-full"
-          >
-            <PhoneOff className="w-6 h-6 mr-2" />
-            End Call
-          </Button>
         </div>
       </div>
     );

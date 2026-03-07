@@ -678,121 +678,54 @@ const VideoConsultation = () => {
     );
   }
 
-  // Legacy iframe-based video call UI (fallback)
+  // Fallback UI when LiveKit SDK connection failed
   if (isInCall && currentMeetingUrl) {
     return (
       <div 
         ref={containerRef}
-        className={`${isFullscreen ? 'fixed inset-0 z-50' : 'min-h-[100svh]'} bg-slate-900 flex flex-col`}
+        className="min-h-[100svh] bg-slate-900 flex flex-col items-center justify-center"
       >
-        {/* Video Call Header */}
-        <div className="flex items-center justify-between px-4 py-3 bg-slate-800/80 backdrop-blur-sm border-b border-slate-700">
-          <div className="flex items-center gap-3">
-            <div className={`w-3 h-3 rounded-full ${
-              connectionStatus === 'connected' ? 'bg-green-500 animate-pulse' : 
-              connectionStatus === 'connecting' ? 'bg-yellow-500 animate-pulse' : 'bg-red-500'
-            }`} />
-            <div>
-              <h2 className="text-white font-semibold">
-                {currentAppointment ? `Dr. ${currentAppointment.doctorName}` : 'Video Consultation'}
-              </h2>
-              <p className="text-slate-400 text-sm">
-                {connectionStatus === 'connected' ? 'Connected' : 
-                 connectionStatus === 'connecting' ? 'Connecting...' : 'Disconnected'}
-              </p>
-            </div>
-          </div>
-          
-          <div className="flex items-center gap-2">
-            <Badge variant="outline" className="text-teal-400 border-teal-400">
-              <Shield className="w-3 h-3 mr-1" />
-              Secure
-            </Badge>
-            {(currentMeetingUrl.includes('/rooms/') || currentMeetingUrl.includes('/room/')) && (
-              <div className="flex items-center gap-2 rounded-full border border-slate-700 px-3 py-1 text-slate-300">
-                <span className="text-xs">Embed</span>
-                <Switch
-                  checked={preferEmbeddedJoin}
-                  onCheckedChange={(checked) => {
-                    setPreferEmbeddedJoin(checked);
-                    if (!checked) {
-                      moveLiveKitToWindow();
-                    }
-                  }}
-                />
-              </div>
-            )}
-            <Button 
-              variant="ghost" 
-              size="icon" 
-              onClick={openInNewWindow}
-              className="text-slate-400 hover:text-white"
-              title="Open in new window"
+        <div className="text-center max-w-md mx-auto p-8">
+          <AlertCircle className="w-16 h-16 text-yellow-500 mx-auto mb-4" />
+          <h2 className="text-white text-xl font-semibold mb-2">Video Connection Issue</h2>
+          <p className="text-slate-400 mb-6">
+            Unable to establish a direct video connection. This may be due to a temporary network issue.
+          </p>
+          <div className="flex gap-3 justify-center">
+            <Button
+              onClick={() => {
+                setIsInCall(false);
+                setCurrentMeetingUrl("");
+                setConnectionStatus('disconnected');
+                // Re-initiate with SDK
+                if (appointmentIdFromUrl) {
+                  const appointmentFromUrl: Appointment = {
+                    id: appointmentIdFromUrl,
+                    doctorId: '',
+                    doctorName: '',
+                    specialization: '',
+                    date: '',
+                    time: '',
+                    consultationType: 'video',
+                    status: 'in-progress',
+                  };
+                  initiateVideoCall(appointmentFromUrl);
+                }
+              }}
+              className="bg-teal-600 hover:bg-teal-700 text-white px-6"
             >
-              <ExternalLink className="w-4 h-4" />
+              <RefreshCw className="w-4 h-4 mr-2" />
+              Retry Connection
             </Button>
-            <Button 
-              variant="ghost" 
-              size="icon" 
-              onClick={toggleFullscreen}
-              className="text-slate-400 hover:text-white"
+            <Button
+              onClick={endVideoCall}
+              variant="destructive"
+              className="px-6"
             >
-              {isFullscreen ? <Minimize2 className="w-4 h-4" /> : <Maximize2 className="w-4 h-4" />}
-            </Button>
-            <Button 
-              variant="ghost" 
-              size="icon" 
-              onClick={() => handleCopyLink()}
-              className="text-slate-400 hover:text-white"
-            >
-              {copiedLink ? <CheckCircle className="w-4 h-4 text-green-500" /> : <Copy className="w-4 h-4" />}
+              <PhoneOff className="w-4 h-4 mr-2" />
+              End Call
             </Button>
           </div>
-        </div>
-        
-        {/* Video Consultation Iframe */}
-        <div className="flex-1 relative">
-          <iframe
-            ref={iframeRef}
-            src={currentMeetingUrl}
-            className="absolute inset-0 w-full h-full border-0"
-            allow="camera; microphone; display-capture; autoplay; clipboard-write; fullscreen"
-            allowFullScreen
-          />
-          
-          {connectionStatus === 'connecting' && (
-            <div className="absolute inset-0 flex items-center justify-center bg-slate-900/80">
-              <div className="text-center">
-                <Loader2 className="w-12 h-12 animate-spin text-teal-500 mx-auto mb-4" />
-                <p className="text-white text-lg">Connecting to video consultation...</p>
-                <p className="text-slate-400 text-sm mt-2">Please allow camera and microphone access when prompted</p>
-              </div>
-            </div>
-          )}
-
-          {roomId && (String(roomId).includes('/rooms/') || String(roomId).includes('/room/') || String(roomId).includes('access_token=')) && (
-            <div className="flex items-center justify-between rounded-lg border border-slate-200 dark:border-slate-800 p-3">
-              <div>
-                <p className="text-sm font-medium text-slate-800 dark:text-slate-200">LiveKit join mode</p>
-                <p className="text-xs text-slate-500">Embed in app or open in a new window</p>
-              </div>
-              <Switch
-                checked={preferEmbeddedJoin}
-                onCheckedChange={setPreferEmbeddedJoin}
-              />
-            </div>
-          )}
-        </div>
-        
-        {/* Bottom Control Bar */}
-        <div className="flex items-center justify-center gap-4 px-4 py-4 bg-slate-800/80 backdrop-blur-sm border-t border-slate-700">
-          <Button
-            onClick={endVideoCall}
-            className="bg-red-600 hover:bg-red-700 text-white px-8 py-6 rounded-full"
-          >
-            <PhoneOff className="w-6 h-6 mr-2" />
-            End Call
-          </Button>
         </div>
       </div>
     );
