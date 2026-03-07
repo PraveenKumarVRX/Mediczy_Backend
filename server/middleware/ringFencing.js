@@ -398,6 +398,7 @@ const PUBLIC_ENDPOINTS = [
   '/api/doctors/register',
   '/api/doctors/search', // Public doctor search
   '/api/doctors/available', // Public available doctors list
+  '/api/consultation/doctors', // Public consultation doctor listing (browse/book)
   '/api/labs', // Public lab search and browsing (location-based)
   '/api/admin/login',
   '/api/team/login',
