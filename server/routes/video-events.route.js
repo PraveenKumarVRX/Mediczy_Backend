@@ -4,9 +4,13 @@
  */
 
 import express from 'express';
+import { authUser } from '../middleware/auth.middleware.js';
 import videoStreamingEvents from '../services/videoStreamingEvents.js';
 
 const router = express.Router();
+
+// All video event routes require authentication
+router.use(authUser);
 
 /**
  * POST /api/video-events/stream/start

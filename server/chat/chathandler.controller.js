@@ -1,10 +1,11 @@
 import { Server } from "socket.io";
 import { Conversation, Message } from "../models/chat.model.intelligent.js";
 import { sendMessageNotification, sendVideoCallNotification } from "../utils/firebase-admin.js";
+import { FCMToken } from "../services/notification.service.js";
 
 // Track online users and their FCM tokens
 const onlineUsers = new Map();
-const userFCMTokens = new Map(); // userId -> fcmToken
+const userFCMTokens = new Map(); // userId -> fcmToken (in-memory cache, backed by DB)
 
 let io; // Store io instance for external use
 
@@ -37,9 +38,17 @@ export function setupSocketIO(server) {
           isOnline: true,
         });
 
-        // Store FCM token if provided
+        // Store FCM token if provided — persist to DB + cache in memory
         if (fcmToken) {
           userFCMTokens.set(userId, fcmToken);
+          // Persist to fcm_tokens table asynchronously (don't block connection)
+          FCMToken.upsert({
+            userId: parseInt(userId, 10),
+            userType: userType === 'doctor' ? 'doctor' : 'patient',
+            token: fcmToken,
+            deviceType: 'web',
+            isActive: true,
+          }).catch(err => console.error(`Failed to persist FCM token for user ${userId}:`, err.message));
         }
 
         // Join user-specific room for targeted notifications
@@ -271,10 +280,19 @@ export function setupSocketIO(server) {
       }
     });
 
-    // Handle FCM token update
-    socket.on("update-fcm-token", ({ userId, fcmToken }) => {
+    // Handle FCM token update — persist to DB + cache in memory
+    socket.on("update-fcm-token", ({ userId, fcmToken, userType, deviceType }) => {
       if (userId && fcmToken) {
         userFCMTokens.set(userId, fcmToken);
+        // Persist to fcm_tokens table
+        const resolvedUserType = userType || (onlineUsers.get(userId)?.userType === 'doctor' ? 'doctor' : 'patient');
+        FCMToken.upsert({
+          userId: parseInt(userId, 10),
+          userType: resolvedUserType,
+          token: fcmToken,
+          deviceType: deviceType || 'web',
+          isActive: true,
+        }).catch(err => console.error(`Failed to persist FCM token for user ${userId}:`, err.message));
         console.log(`FCM token updated for user ${userId}`);
       }
     });

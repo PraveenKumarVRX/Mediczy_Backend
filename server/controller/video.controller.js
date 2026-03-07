@@ -4,13 +4,15 @@ import jwt from 'jsonwebtoken';
 import crypto from 'crypto';
 import { Appointment, Prescription, Doctor, User } from '../models/index.js';
 import { buildLiveKitJoinData, createMeetingInfo, generateCanonicalMeetingId, verifyCanonicalMeetingId } from '../utils/videoProvider.js';
+import { RoomServiceClient } from 'livekit-server-sdk';
+import { redisClient } from '../config/redis.js';
 
 const INVITE_TTL_SECONDS = 4 * 60 * 60; // 4 hours
 const INVITE_SECRET = process.env.VIDEO_INVITE_SECRET || JWT_CONFIG.SECRET + ':video-invite';
 const FRONTEND_BASE = (process.env.FRONTEND_URL || 'https://mediqzy.com').replace(/\/+$/, '');
 
-// In-memory invite usage counter (rate-limit guests per room = 20)
-const inviteUsageMap = new Map(); // inviteCode -> count
+// Redis key prefix for invite codes (cluster-safe, persists across restarts)
+const INVITE_REDIS_PREFIX = 'video:invite:';
 
 // Simple WebRTC video calling controller
 class VideoController {
@@ -18,11 +20,14 @@ class VideoController {
   // Test endpoint for video calling system
   static testVideoSystem = (req, res) => {
     try {
+      const livekitDomain = (process.env.LIVEKIT_URL || 'wss://video.mediqzy.com').replace(/^wss?:\/\//, '');
       const serverConfig = {
-        turnServer: process.env.TURN_SERVER_URL || 'stun:stun.l.google.com:19302',
+        turnServer: `turns:${livekitDomain}:5349`,
         iceServers: [
           { urls: 'stun:stun.l.google.com:19302' },
-          { urls: 'stun:stun1.l.google.com:19302' }
+          { urls: 'stun:stun1.l.google.com:19302' },
+          { urls: `turns:${livekitDomain}:5349?transport=tcp`, username: 'livekit', credential: 'livekit' },
+          { urls: `turn:${livekitDomain}:3478?transport=udp`, username: 'livekit', credential: 'livekit' }
         ]
       };
 
@@ -118,7 +123,9 @@ class VideoController {
         expiresAt: new Date(Date.now() + 2 * 60 * 60 * 1000).toISOString(), // 2 hours
         iceServers: [
           { urls: 'stun:stun.l.google.com:19302' },
-          { urls: 'stun:stun1.l.google.com:19302' }
+          { urls: 'stun:stun1.l.google.com:19302' },
+          { urls: `turns:${(process.env.LIVEKIT_URL || 'wss://video.mediqzy.com').replace(/^wss?:\/\//, '')}:5349?transport=tcp`, username: 'livekit', credential: 'livekit' },
+          { urls: `turn:${(process.env.LIVEKIT_URL || 'wss://video.mediqzy.com').replace(/^wss?:\/\//, '')}:3478?transport=udp`, username: 'livekit', credential: 'livekit' }
         ]
       });
 
@@ -444,7 +451,9 @@ class VideoController {
         },
         iceServers: [
           { urls: 'stun:stun.l.google.com:19302' },
-          { urls: 'stun:stun1.l.google.com:19302' }
+          { urls: 'stun:stun1.l.google.com:19302' },
+          { urls: `turns:${(process.env.LIVEKIT_URL || 'wss://video.mediqzy.com').replace(/^wss?:\/\//, '')}:5349?transport=tcp`, username: 'livekit', credential: 'livekit' },
+          { urls: `turn:${(process.env.LIVEKIT_URL || 'wss://video.mediqzy.com').replace(/^wss?:\/\//, '')}:3478?transport=udp`, username: 'livekit', credential: 'livekit' }
         ]
       };
 
@@ -623,15 +632,9 @@ class VideoController {
 
       const token = jwt.sign(payload, INVITE_SECRET, { expiresIn: INVITE_TTL_SECONDS });
 
-      // Store usage counter
-      inviteUsageMap.set(inviteCode, { uses: 0, max: payload.maxUses, token, roomId });
-
-      // Clean up expired entries periodically
-      if (inviteUsageMap.size > 200) {
-        for (const [k, v] of inviteUsageMap) {
-          try { jwt.verify(v.token, INVITE_SECRET); } catch { inviteUsageMap.delete(k); }
-        }
-      }
+      // Store in Redis with TTL (cluster-safe, survives restarts)
+      const redisKey = `${INVITE_REDIS_PREFIX}${inviteCode}`;
+      await redisClient.set(redisKey, JSON.stringify({ uses: 0, max: payload.maxUses, token, roomId }), 'EX', INVITE_TTL_SECONDS);
 
       const shareableUrl = `${FRONTEND_BASE}/video-consultation?room=${encodeURIComponent(roomId)}&invite=${inviteCode}`;
 
@@ -668,17 +671,20 @@ class VideoController {
         return res.status(400).json({ success: false, message: 'Invite code is required' });
       }
 
-      const entry = inviteUsageMap.get(inviteCode);
-      if (!entry) {
+      const redisKey = `${INVITE_REDIS_PREFIX}${inviteCode}`;
+      const entryJson = await redisClient.get(redisKey);
+      if (!entryJson) {
         return res.status(404).json({ success: false, message: 'Invite link not found or has expired. Please request a new link from the host.' });
       }
+
+      const entry = JSON.parse(entryJson);
 
       // Verify the JWT inside the entry
       let payload;
       try {
         payload = jwt.verify(entry.token, INVITE_SECRET);
       } catch (err) {
-        inviteUsageMap.delete(inviteCode);
+        await redisClient.del(redisKey);
         return res.status(410).json({ success: false, message: 'This invite link has expired. Please request a new link from the host.' });
       }
 
@@ -687,8 +693,10 @@ class VideoController {
         return res.status(429).json({ success: false, message: 'This invite link has reached its maximum number of uses.' });
       }
 
-      // Increment usage
+      // Increment usage atomically in Redis
       entry.uses++;
+      const remainingTtl = await redisClient.ttl(redisKey);
+      await redisClient.set(redisKey, JSON.stringify(entry), 'EX', remainingTtl > 0 ? remainingTtl : INVITE_TTL_SECONDS);
 
       const identity = `guest-${guestName.replace(/\s+/g, '-').toLowerCase()}-${Date.now()}`;
       const livekitData = await buildLiveKitJoinData({
@@ -714,30 +722,54 @@ class VideoController {
     }
   };
 
-  // Get room status
-  static getRoomStatus = (req, res) => {
+  // Get room status — queries LiveKit for live participant data
+  static getRoomStatus = async (req, res) => {
     try {
       const { roomId } = req.params;
 
-      // Determine room capacity based on room type (supports Zoom-like multi-participant video)
       const isAppointmentRoom = roomId.startsWith('apt-');
       const maxParticipants = isAppointmentRoom ? 2 : 100;
       const roomType = isAppointmentRoom ? 'appointment' : 'generic';
 
-      // In a real implementation, you'd query active room participants
+      // Query LiveKit for real participant data
+      let participants = [];
+      let roomActive = false;
+      try {
+        const serverUrl = process.env.LIVEKIT_URL;
+        const apiKey = process.env.LIVEKIT_API_KEY;
+        const apiSecret = process.env.LIVEKIT_API_SECRET;
+        if (serverUrl && apiKey && apiSecret) {
+          const svc = new RoomServiceClient(serverUrl, apiKey, apiSecret);
+          const lkParticipants = await svc.listParticipants(roomId);
+          roomActive = lkParticipants.length > 0;
+          participants = lkParticipants.map(p => ({
+            identity: p.identity,
+            name: p.name,
+            joinedAt: p.joinedAt ? new Date(Number(p.joinedAt) * 1000).toISOString() : null,
+            tracks: p.tracks?.length || 0,
+            isSpeaking: p.isSpeaking || false,
+          }));
+        }
+      } catch (lkErr) {
+        // Room may not exist yet in LiveKit — that's OK
+        if (!lkErr.message?.includes('not found')) {
+          console.warn('LiveKit room status query failed:', lkErr.message);
+        }
+      }
+
       const roomStatus = {
         roomId,
-        status: 'active',
-        roomType: roomType,
+        status: roomActive ? 'active' : 'waiting',
+        roomType,
         capacity: {
           max: maxParticipants,
           type: roomType,
-          description: isAppointmentRoom ? '1-on-1 video call' : 'Multi-participant video conference (Zoom-like)'
+          description: isAppointmentRoom ? '1-on-1 video call' : 'Multi-participant video conference'
         },
-        participants: [],
+        participants,
+        participantCount: participants.length,
         createdAt: new Date().toISOString(),
-        maxParticipants: maxParticipants,
-        duration: '00:00:00',
+        maxParticipants,
         features: {
           screenShare: true,
           recording: true,
@@ -747,18 +779,10 @@ class VideoController {
         }
       };
 
-      res.json({
-        success: true,
-        roomStatus
-      });
-
+      res.json({ success: true, roomStatus });
     } catch (error) {
       console.error('Failed to get room status:', error);
-      res.status(500).json({
-        success: false,
-        message: 'Failed to get room status',
-        error: error.message
-      });
+      res.status(500).json({ success: false, message: 'Failed to get room status', error: error.message });
     }
   };
 

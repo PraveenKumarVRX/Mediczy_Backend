@@ -1,27 +1,42 @@
 // Firebase Admin SDK configuration for sending push notifications
 import admin from 'firebase-admin';
+import { readFileSync, existsSync } from 'fs';
+import { resolve, dirname } from 'path';
+import { fileURLToPath } from 'url';
+
+const __dirname = dirname(fileURLToPath(import.meta.url));
 
 // Initialize Firebase Admin SDK only if credentials are properly configured
 let messaging = null;
 let isFirebaseInitialized = false;
 
+// Locate service account JSON file
+const findServiceAccountFile = () => {
+  const candidates = [
+    process.env.GOOGLE_APPLICATION_CREDENTIALS,
+    resolve(__dirname, '../../config/firebase-service-account.json'),
+    resolve(__dirname, '../config/firebase-service-account.json'),
+  ].filter(Boolean);
+  for (const p of candidates) {
+    if (existsSync(p)) return p;
+  }
+  return null;
+};
+
 // Check if Firebase should be initialized
 const shouldInitializeFirebase = () => {
-  // Check for environment variables first
   const hasEnvCredentials = process.env.FIREBASE_PROJECT_ID && 
                            process.env.FIREBASE_PRIVATE_KEY && 
                            process.env.FIREBASE_CLIENT_EMAIL;
-  
-  const hasCredentialFile = process.env.GOOGLE_APPLICATION_CREDENTIALS;
-  
+  const hasCredentialFile = !!findServiceAccountFile();
   return hasEnvCredentials || hasCredentialFile;
 };
 
 // Initialize Firebase if credentials are available
 if (shouldInitializeFirebase()) {
   try {
-    // Try environment variables first
-    if (process.env.FIREBASE_PROJECT_ID && process.env.FIREBASE_PRIVATE_KEY) {
+    // Try environment variables first (FIREBASE_PROJECT_ID + FIREBASE_PRIVATE_KEY + FIREBASE_CLIENT_EMAIL)
+    if (process.env.FIREBASE_PROJECT_ID && process.env.FIREBASE_PRIVATE_KEY && process.env.FIREBASE_CLIENT_EMAIL) {
       const serviceAccount = {
         type: "service_account",
         project_id: process.env.FIREBASE_PROJECT_ID,
@@ -34,10 +49,21 @@ if (shouldInitializeFirebase()) {
         projectId: process.env.FIREBASE_PROJECT_ID,
       });
     } else {
-      // Use default credentials (from GOOGLE_APPLICATION_CREDENTIALS)
-      admin.initializeApp({
-        projectId: process.env.FIREBASE_PROJECT_ID || 'mediczy-notifications',
-      });
+      // Try service account JSON file
+      const saFile = findServiceAccountFile();
+      if (saFile) {
+        const serviceAccount = JSON.parse(readFileSync(saFile, 'utf8'));
+        admin.initializeApp({
+          credential: admin.credential.cert(serviceAccount),
+          projectId: serviceAccount.project_id,
+        });
+        console.log(`Firebase initialized from service account file: ${saFile}`);
+      } else {
+        // Last resort: default credentials
+        admin.initializeApp({
+          projectId: process.env.FIREBASE_PROJECT_ID || 'mediczy-notifications',
+        });
+      }
     }
 
     messaging = admin.messaging();
