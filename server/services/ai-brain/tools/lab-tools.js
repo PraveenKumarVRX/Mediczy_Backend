@@ -13,16 +13,16 @@ register({
   parameters: {
     type: 'object',
     properties: {
-      patient_id: { type: 'number', description: 'Patient ID' },
+      patient_id: { type: 'string', description: 'Patient ID (number)' },
       test_type: { type: 'string', description: 'Filter by test type (e.g., "CBC", "lipid panel", "thyroid")' },
-      limit: { type: 'number', description: 'Max results (default 10)' }
+      limit: { type: 'string', description: 'Max results as a number (default 10)' }
     },
     required: []
   },
   async execute(params, ctx) {
     const db = pool;
-    const patientId = params.patient_id || ctx.userId;
-    const limit = params.limit || 10;
+    const patientId = Number(params.patient_id) || ctx.userId;
+    const limit = Number(params.limit) || 10;
 
     // Try lab_orders first
     const { rows } = await db.query(

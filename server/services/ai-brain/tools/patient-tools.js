@@ -15,13 +15,13 @@ register({
   parameters: {
     type: 'object',
     properties: {
-      patient_id: { type: 'number', description: 'Patient ID (uses authenticated user if not provided)' }
+      patient_id: { type: 'string', description: 'Patient ID as number (uses authenticated user if not provided)' }
     },
     required: []
   },
   async execute(params, ctx) {
     const db = pool;
-    const userId = params.patient_id || ctx.userId;
+    const userId = Number(params.patient_id) || ctx.userId;
 
     const { rows } = await db.query(
       `SELECT u.id, u."firstName", u."lastName", u.email, u."phoneNumber", u.gender,
@@ -68,15 +68,15 @@ register({
   parameters: {
     type: 'object',
     properties: {
-      patient_id: { type: 'number', description: 'Patient ID' },
-      limit: { type: 'number', description: 'Number of recent readings (default 10)' }
+      patient_id: { type: 'string', description: 'Patient ID (number)' },
+      limit: { type: 'string', description: 'Number of recent readings (default 10)' }
     },
     required: []
   },
   async execute(params, ctx) {
     const db = pool;
-    const patientId = params.patient_id || ctx.userId;
-    const limit = params.limit || 10;
+    const patientId = Number(params.patient_id) || ctx.userId;
+    const limit = Number(params.limit) || 10;
 
     const { rows } = await db.query(
       `SELECT id, "readingType" AS type, value, unit, notes, "recordedAt", source
@@ -113,16 +113,16 @@ register({
   parameters: {
     type: 'object',
     properties: {
-      patient_id: { type: 'number', description: 'Patient ID' },
+      patient_id: { type: 'string', description: 'Patient ID (number)' },
       active_only: { type: 'boolean', description: 'Only show active prescriptions (default true)' },
-      limit: { type: 'number', description: 'Max prescriptions to return (default 10)' }
+      limit: { type: 'string', description: 'Max prescriptions as a number (default 10)' }
     },
     required: []
   },
   async execute(params, ctx) {
     const db = pool;
-    const patientId = params.patient_id || ctx.userId;
-    const limit = params.limit || 10;
+    const patientId = Number(params.patient_id) || ctx.userId;
+    const limit = Number(params.limit) || 10;
 
     const { rows } = await db.query(
       `SELECT p.id, p.diagnosis, p.notes, p.status, p."createdAt",
@@ -167,16 +167,16 @@ register({
   parameters: {
     type: 'object',
     properties: {
-      patient_id: { type: 'number', description: 'Patient ID' },
+      patient_id: { type: 'string', description: 'Patient ID (number)' },
       record_type: { type: 'string', description: 'Filter by type: lab_report, prescription, discharge_summary, imaging, all (default all)' },
-      limit: { type: 'number', description: 'Max records (default 10)' }
+      limit: { type: 'string', description: 'Max records as a number (default 10)' }
     },
     required: []
   },
   async execute(params, ctx) {
     const db = pool;
-    const patientId = params.patient_id || ctx.userId;
-    const limit = params.limit || 10;
+    const patientId = Number(params.patient_id) || ctx.userId;
+    const limit = Number(params.limit) || 10;
     const recordType = params.record_type || 'all';
 
     let whereClause = 'WHERE "patientId" = $1';

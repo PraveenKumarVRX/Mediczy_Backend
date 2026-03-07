@@ -15,16 +15,16 @@ register({
   parameters: {
     type: 'object',
     properties: {
-      patient_id: { type: 'number', description: 'Patient ID' },
+      patient_id: { type: 'string', description: 'Patient ID (number)' },
       status: { type: 'string', description: 'Filter: upcoming, completed, cancelled, all (default upcoming)' },
-      limit: { type: 'number', description: 'Max results (default 10)' }
+      limit: { type: 'string', description: 'Max results as a number (default 10)' }
     },
     required: []
   },
   async execute(params, ctx) {
     const db = pool;
-    const patientId = params.patient_id || ctx.userId;
-    const limit = params.limit || 10;
+    const patientId = Number(params.patient_id) || ctx.userId;
+    const limit = Number(params.limit) || 10;
     const status = params.status || 'upcoming';
 
     let statusFilter = '';
@@ -75,13 +75,13 @@ register({
       specialization: { type: 'string', description: 'Medical specialization (e.g., "general physician", "cardiologist", "dermatologist")' },
       name: { type: 'string', description: 'Doctor name to search' },
       available_today: { type: 'boolean', description: 'Only show doctors available today' },
-      limit: { type: 'number', description: 'Max results (default 5)' }
+      limit: { type: 'string', description: 'Max results as a number (default 5)' }
     },
     required: []
   },
   async execute(params) {
     const db = pool;
-    const limit = params.limit || 5;
+    const limit = Number(params.limit) || 5;
     const conditions = [`d.status = 'active'`];
     const qParams = [];
 
@@ -136,7 +136,7 @@ register({
   parameters: {
     type: 'object',
     properties: {
-      doctor_id: { type: 'number', description: 'Doctor ID to book with' },
+      doctor_id: { type: 'string', description: 'Doctor ID (number)' },
       appointment_date: { type: 'string', description: 'Appointment date in YYYY-MM-DD format' },
       appointment_time: { type: 'string', description: 'Appointment time in HH:MM format (24hr)' },
       consultation_type: { type: 'string', description: 'Type: video, in_person (default video)' },
@@ -147,13 +147,15 @@ register({
   async execute(params, ctx) {
     const db = pool;
     const patientId = ctx.userId;
+    const doctorId = Number(params.doctor_id);
 
     if (!patientId) return { error: 'Authentication required to book appointments' };
+    if (!doctorId) return { error: 'Invalid doctor_id' };
 
     // Verify doctor exists
     const { rows: doctors } = await db.query(
       `SELECT id, "firstName", "lastName", specialization, "consultationFee" FROM doctors WHERE id = $1 AND status = 'active'`,
-      [params.doctor_id]
+      [doctorId]
     );
     if (doctors.length === 0) return { error: 'Doctor not found or not active' };
 
@@ -162,7 +164,7 @@ register({
       `SELECT id FROM appointments
        WHERE "doctorId" = $1 AND "appointmentDate" = $2 AND "appointmentTime" = $3
        AND status NOT IN ('cancelled')`,
-      [params.doctor_id, params.appointment_date, params.appointment_time]
+      [doctorId, params.appointment_date, params.appointment_time]
     );
     if (conflicts.length > 0) return { error: 'This time slot is already booked. Please choose another time.' };
 
@@ -174,7 +176,7 @@ register({
        RETURNING id, "appointmentDate", "appointmentTime", status`,
       [
         patientId,
-        params.doctor_id,
+        doctorId,
         params.appointment_date,
         params.appointment_time,
         params.consultation_type || 'video',

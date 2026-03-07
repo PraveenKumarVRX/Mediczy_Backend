@@ -15,13 +15,13 @@ register({
   parameters: {
     type: 'object',
     properties: {
-      patient_id: { type: 'number', description: 'Patient ID' }
+      patient_id: { type: 'string', description: 'Patient ID (number)' }
     },
     required: []
   },
   async execute(params, ctx) {
     const db = pool;
-    const patientId = params.patient_id || ctx.userId;
+    const patientId = Number(params.patient_id) || ctx.userId;
 
     const { rows } = await db.query(
       `SELECT * FROM ai_health_risk_scores WHERE patient_id = $1 ORDER BY created_at DESC LIMIT 1`,
@@ -58,14 +58,14 @@ register({
   parameters: {
     type: 'object',
     properties: {
-      patient_id: { type: 'number', description: 'Patient ID' },
+      patient_id: { type: 'string', description: 'Patient ID (number)' },
       include_completed: { type: 'boolean', description: 'Include completed goals (default false)' }
     },
     required: []
   },
   async execute(params, ctx) {
     const db = pool;
-    const patientId = params.patient_id || ctx.userId;
+    const patientId = Number(params.patient_id) || ctx.userId;
     const includeCompleted = params.include_completed || false;
 
     const statusFilter = includeCompleted ? '' : `AND status = 'active'`;
@@ -120,7 +120,7 @@ register({
     type: 'object',
     properties: {
       metric_type: { type: 'string', description: 'Type: steps, sleep_hours, water_ml, exercise_min, weight_kg, blood_pressure, blood_sugar, heart_rate' },
-      value: { type: 'number', description: 'Numeric value' },
+      value: { type: 'string', description: 'Numeric value (as a number)' },
       unit: { type: 'string', description: 'Unit of measurement' },
       notes: { type: 'string', description: 'Optional notes' },
       date: { type: 'string', description: 'Date (YYYY-MM-DD), defaults to today' }
@@ -133,6 +133,8 @@ register({
     if (!patientId) return { error: 'Authentication required' };
 
     const logDate = params.date || new Date().toISOString().split('T')[0];
+    const numericValue = Number(params.value);
+    if (isNaN(numericValue)) return { error: 'Invalid numeric value' };
 
     // Find matching goal
     const { rows: goals } = await db.query(
@@ -151,7 +153,7 @@ register({
         goals[0]?.id || null,
         logDate,
         params.metric_type,
-        params.value,
+        numericValue,
         params.unit || null,
         params.notes || null
       ]
@@ -161,7 +163,7 @@ register({
     if (goals[0]) {
       await db.query(
         `UPDATE ai_wellness_goals SET current_value = current_value + $1, updated_at = NOW() WHERE id = $2`,
-        [params.value, goals[0].id]
+        [numericValue, goals[0].id]
       );
     }
 
@@ -171,7 +173,7 @@ register({
       metric: log.metric_type,
       value: log.value,
       date: log.log_date,
-      message: `Logged ${params.value} ${params.unit || params.metric_type} for ${logDate}`
+      message: `Logged ${numericValue} ${params.unit || params.metric_type} for ${logDate}`
     };
   }
 });
