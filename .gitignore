@@ -94,3 +94,4 @@ backup_*
 .venv/
 dump.rdb
 tmp_*
+ql*

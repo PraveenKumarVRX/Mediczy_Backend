@@ -16,7 +16,7 @@ export function Navigation() {
   const location = useLocation();
   const isMobile = useIsMobile();
   useEffect(() => {
-    console.log("hello");
+    // Navigation mounted
   }, []);
   if (!isMobile) return null;
 

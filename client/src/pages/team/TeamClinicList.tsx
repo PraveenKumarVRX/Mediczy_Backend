@@ -64,7 +64,7 @@ const TeamClinicList: React.FC = () => {
       if (search) params.set('search', search);
       if (selectedType) params.set('type', selectedType);
 
-      const res = await fetch(`${API_BASE}/api/patient/provider-clinics?${params}`);
+      const res = await fetch(`${API_BASE}/patient/provider-clinics?${params}`);
       const data = await res.json();
 
       if (data.success) {
