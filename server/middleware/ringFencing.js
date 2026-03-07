@@ -446,6 +446,8 @@ const PUBLIC_ENDPOINTS = [
   '/api/membership/plans', // Public membership plans listing
   '/api/membership-plans', // Public membership plans (alternative route)
   '/api/video/join/',        // Guest video join via invite link (no login required)
+  '/api/video/health',       // Video subsystem health check (public monitoring)
+  '/api/video/test',         // Video system test endpoint (public)
   '/api/whatsapp-production/webhook', // WhatsApp incoming message webhook (Twilio)
   '/api/whatsapp-production/status-callback', // WhatsApp message status callback (Twilio)
   '/api/whatsapp-production/fallback', // WhatsApp fallback webhook (Twilio)

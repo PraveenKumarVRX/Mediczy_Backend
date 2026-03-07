@@ -1576,6 +1576,56 @@ router.get('/corporate/dashboard', authenticate(), asyncHandler(async (req, res)
   });
 }));
 
+// ============== Dashboard ==============
+
+/**
+ * GET /api/mobile/dashboard
+ * General user dashboard — upcoming appointments, quick actions, services
+ */
+router.get('/dashboard', authenticate(), asyncHandler(async (req, res) => {
+  // Get upcoming appointments
+  const appointmentsResult = await db.query(`
+    SELECT a.id,
+           a."appointmentDate" AS appointment_date,
+           a."appointmentTime" AS appointment_time,
+           a."consultationType" AS type,
+           a.status,
+           COALESCE(a."doctorName", CONCAT_WS(' ', d.prefix, d."firstName", d."lastName")) AS doctor_name,
+           COALESCE(a.specialization, d.specialization) AS doctor_specialty
+    FROM appointments a
+    LEFT JOIN doctors d ON a."doctorId" = d.id
+    WHERE a."userId" = $1 AND a."appointmentDate" >= CURRENT_DATE
+    ORDER BY a."appointmentDate" ASC
+    LIMIT 5
+  `, [req.userId]);
+
+  // Get unread notifications count
+  const notifResult = await db.query(
+    `SELECT count(*) AS cnt FROM notifications WHERE "userId" = $1 AND "isRead" = false`,
+    [req.userId]
+  );
+
+  res.json({
+    success: true,
+    data: {
+      upcoming_appointments: appointmentsResult.rows,
+      unread_notifications: parseInt(notifResult.rows[0]?.cnt || '0', 10),
+      quick_actions: [
+        { title: 'Book Appointment', icon: 'calendar', action: '/doctors' },
+        { title: 'My Prescriptions', icon: 'file-text', action: '/prescriptions' },
+        { title: 'Lab Tests', icon: 'beaker', action: '/lab' },
+        { title: 'Video Consult', icon: 'video', action: '/video' }
+      ],
+      available_services: [
+        { id: 'doctors', name: 'Doctor Consultations', icon: 'stethoscope' },
+        { id: 'video_consultation', name: 'Video Consultation', icon: 'video' },
+        { id: 'lab_services', name: 'Lab Services', icon: 'microscope' },
+        { id: 'pharmacy_services', name: 'Pharmacy Services', icon: 'pill-bottle' }
+      ]
+    }
+  });
+}));
+
 // ============== User Profile ==============
 
 router.get('/user/profile', authenticate(), asyncHandler(async (req, res) => {

@@ -6,6 +6,20 @@ import { authUser } from '../middleware/auth.middleware.js';
 const router = express.Router();
 
 /**
+ * @route   GET /api/video/health
+ * @desc    Health check for video calling subsystem
+ * @access  Public
+ */
+router.get('/health', (req, res) => {
+  res.json({
+    success: true,
+    status: 'healthy',
+    service: 'video',
+    timestamp: new Date().toISOString()
+  });
+});
+
+/**
  * @route   GET /api/video/test
  * @desc    Test video calling system
  * @access  Public
