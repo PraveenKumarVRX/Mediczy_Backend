@@ -1,6 +1,7 @@
 import express from 'express';
 import whatsAppUserContextService from '../services/whatsapp-user-context.service.js';
-import { authUser } from '../middleware/auth.middleware.js';
+import { authUser, authUserOptional } from '../middleware/auth.middleware.js';
+import { createRateLimiter } from '../middleware/rateLimiter.middleware.js';
 import handleIntentEscalation, { getDoctorSuggestions } from '../services/intentEscalation.service.js';
 import { Appointment } from '../models/appointment.model.intelligent.js';
 import doctorModel from '../models/doctor.model.intelligent.js';
@@ -10,6 +11,15 @@ import { buildLiveKitJoinData } from '../utils/videoProvider.js';
 const router = express.Router();
 const SIB_URL = process.env.SIB_URL || 'http://localhost:8001';
 const SIB_DOCTOR_NAME = 'Dr. iSHA';
+
+// Rate limiter for emergency triage calls — strict to prevent abuse
+// 3 calls per 15 min per IP (unauthenticated) or per user (authenticated)
+const emergencyTriageLimiter = createRateLimiter('api', {
+  windowMs: 15 * 60 * 1000,  // 15 minutes
+  max: 3,
+  message: 'Emergency call rate limit reached. Please wait before trying again.',
+  skipSuccessfulRequests: false
+});
 
 const extractSibResponse = (sibData) => (
   sibData?.response
@@ -715,11 +725,12 @@ router.get('/triage-doctors', authUser, async (req, res) => {
 /**
  * @route   POST /api/medical-ai/instant-triage-call
  * @desc    Create instant video call room with triage doctor
- *          EMERGENCY ENDPOINT - Accessible without authentication
+ *          EMERGENCY ENDPOINT - Optional auth (authenticated users get identity)
+ *          Rate-limited: 3 calls per 15 minutes per IP/user
  *          Uses CREDIT SYSTEM - 1 free emergency consultation per user (pay later)
- * @access  Public (emergency - no auth required)
+ * @access  Public (emergency - auth optional, rate-limited)
  */
-router.post('/instant-triage-call', async (req, res) => {
+router.post('/instant-triage-call', authUserOptional, emergencyTriageLimiter, async (req, res) => {
   try {
     const { doctorId, symptoms, urgencyLevel, triageId, paymentMethod, guestEmail, guestPhone, guestName } = req.body;
     const { Doctor, Appointment } = await import('../models/index.js');
@@ -796,8 +807,29 @@ router.post('/instant-triage-call', async (req, res) => {
         });
       }
     } else {
-      // Guest users (unauthenticated) get emergency access for free
-      console.log('🆓 Allowing emergency access for guest user');
+      // Guest users (unauthenticated) — allow but track by IP to prevent abuse
+      const guestIp = req.ip || req.headers['x-forwarded-for']?.split(',')[0]?.trim() || 'unknown';
+      console.log(`⚠️ Emergency access for guest user from IP: ${guestIp}`);
+      
+      // Check how many guest emergency appointments were created from this IP in last 24h
+      const oneDayAgo = new Date(Date.now() - 24 * 60 * 60 * 1000);
+      const guestCallsFromIp = await Appointment.count({
+        where: {
+          userId: null,
+          sourceChannel: 'emergency_triage',
+          createdAt: { [Symbol.for('gte')]: oneDayAgo }
+        }
+      });
+      
+      // Hard limit: max 5 anonymous emergency calls per day total (prevents mass abuse)
+      if (guestCallsFromIp > 5) {
+        return res.status(429).json({
+          success: false,
+          error: 'Guest emergency limit reached',
+          message: 'Too many anonymous emergency requests. Please create an account or sign in to continue.',
+          loginRequired: true
+        });
+      }
     }
     
     // Find only doctors who are online AND have opted for emergency consultations

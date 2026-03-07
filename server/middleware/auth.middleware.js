@@ -483,6 +483,49 @@ export const authUser = async (req, res, next) => {
   }
 };
 
+/**
+ * Optional auth middleware — parses token if present, but does NOT reject
+ * unauthenticated requests. Sets req.user if valid token found, otherwise
+ * continues with req.user = undefined.  Used for endpoints that support
+ * both authenticated and guest access (e.g. emergency triage).
+ */
+export const authUserOptional = async (req, _res, next) => {
+  const token = req.headers.authorization?.split(' ')[1];
+  if (!token) return next();                       // no token → continue as guest
+
+  try {
+    const decoded = jwt.verify(token, JWT_CONFIG.SECRET);
+
+    // Minimal user resolution — just enough to populate req.user.id
+    if (decoded.role === 'doctor') {
+      const doctor = await safeFindByPk(DoctorPostgres, doctorModel, decoded.id, {
+        attributes: { exclude: ['password'] }
+      });
+      if (doctor) {
+        req.user = { ...doctor, id: doctor.id || decoded.id, role: 'doctor' };
+        req.userRole = 'doctor';
+      }
+    } else {
+      // Regular user / admin / team
+      const user = await safeFindByPk(UserPostgres, userModel, decoded.id, {
+        attributes: { exclude: ['password'] }
+      });
+      if (user) {
+        req.user = {
+          ...user,
+          id: user.id || user._id || user.dataValues?.id || decoded.id,
+          role: decoded.role || 'user'
+        };
+        req.userRole = decoded.role || 'user';
+      }
+    }
+  } catch (_err) {
+    // Invalid / expired token → treat as guest (no rejection)
+    console.log('[authUserOptional] Token invalid, proceeding as guest:', _err.message);
+  }
+  return next();
+};
+
 export const requireRole = (role) => {
   return (req, res, next) => {
     console.log('🔑 [requireRole] Called with role:', role, 'req.userRole:', req.userRole, 'path:', req.path);
