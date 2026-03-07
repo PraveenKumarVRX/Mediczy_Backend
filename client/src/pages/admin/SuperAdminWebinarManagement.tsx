@@ -85,7 +85,7 @@ const SuperAdminWebinarManagement: React.FC = () => {
         params.status = filterStatus;
       }
       
-      const response = await api.get('/api/admin/webinars', { params });
+      const response = await api.get('/admin/webinars', { params });
       setWebinars(response.data.webinars);
     } catch (error) {
       toast({
@@ -100,7 +100,7 @@ const SuperAdminWebinarManagement: React.FC = () => {
 
   const fetchDoctors = async () => {
     try {
-      const response = await api.get('/api/consultation/doctors', { 
+      const response = await api.get('/consultation/doctors', { 
         params: { limit: 100 } 
       });
       setDoctors(response.data.doctors || []);
@@ -111,7 +111,7 @@ const SuperAdminWebinarManagement: React.FC = () => {
 
   const handleCreateWebinar = async () => {
     try {
-      const response = await api.post('/api/admin/webinars', formData);
+      const response = await api.post('/admin/webinars', formData);
       toast({
         title: 'Success',
         description: 'Webinar created successfully'
@@ -132,7 +132,7 @@ const SuperAdminWebinarManagement: React.FC = () => {
     if (!selectedWebinar) return;
     
     try {
-      await api.put(`/api/admin/webinars/${selectedWebinar.id}`, formData);
+      await api.put(`/admin/webinars/${selectedWebinar.id}`, formData);
       toast({
         title: 'Success',
         description: 'Webinar updated successfully'
@@ -153,7 +153,7 @@ const SuperAdminWebinarManagement: React.FC = () => {
     if (!confirm('Are you sure you want to delete this webinar?')) return;
     
     try {
-      await api.delete(`/api/admin/webinars/${id}`);
+      await api.delete(`/admin/webinars/${id}`);
       toast({
         title: 'Success',
         description: 'Webinar deleted successfully'
@@ -170,7 +170,7 @@ const SuperAdminWebinarManagement: React.FC = () => {
 
   const handleViewDetails = async (webinar: Webinar) => {
     try {
-      const response = await api.get(`/api/admin/webinars/${webinar.id}`);
+      const response = await api.get(`/admin/webinars/${webinar.id}`);
       setSelectedWebinar(response.data.webinar);
       setDetailsDialogOpen(true);
     } catch (error: any) {

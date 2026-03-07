@@ -107,7 +107,7 @@ const BrokerManagement = () => {
     try {
       setLoading(true);
       const offset = (currentPage - 1) * itemsPerPage;
-      const { data } = await api.get(`/api/admin/aggregators?limit=${itemsPerPage}&offset=${offset}`, {
+      const { data } = await api.get(`/admin/aggregators?limit=${itemsPerPage}&offset=${offset}`, {
         headers: { Authorization: `Bearer ${token}` },
       });
       setBrokers(data.data || []);
@@ -197,7 +197,7 @@ const BrokerManagement = () => {
       };
 
       if (editingBroker) {
-        await api.put(`/api/admin/aggregators/${editingBroker.id}`, payload, {
+        await api.put(`/admin/aggregators/${editingBroker.id}`, payload, {
           headers: { Authorization: `Bearer ${token}` },
         });
         toast({
@@ -205,7 +205,7 @@ const BrokerManagement = () => {
           description: `${brokerForm.broker_name} has been updated successfully.`
         });
       } else {
-        await api.post(`/api/admin/aggregators`, payload, {
+        await api.post(`/admin/aggregators`, payload, {
           headers: { Authorization: `Bearer ${token}` },
         });
         toast({
@@ -233,7 +233,7 @@ const BrokerManagement = () => {
 
     try {
       setLoading(true);
-      await api.delete(`/api/admin/aggregators/${broker.id}`, {
+      await api.delete(`/admin/aggregators/${broker.id}`, {
         headers: { Authorization: `Bearer ${token}` },
       });
       toast({

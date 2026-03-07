@@ -73,14 +73,14 @@ export function FamilyMemberDialog({ open, onOpenChange, member, onSuccess }: Fa
     try {
       if (member?.id) {
         // Update existing member
-        await api.put(`/api/family-members/${member.id}`, formData);
+        await api.put(`/family-members/${member.id}`, formData);
         toast({
           title: "Success",
           description: "Family member updated successfully",
         });
       } else {
         // Add new member
-        await api.post("/api/family-members", formData);
+        await api.post("/family-members", formData);
         toast({
           title: "Success",
           description: "Family member added successfully",

@@ -26,7 +26,7 @@ import Appointment from '../models/appointment.model.intelligent.js';
 import intelligentDb from '../utils/intelligentDbClient.js';
 import { generateICalFile, generateDoctorICalFile, generateICalFilename } from '../utils/icalGenerator.js';
 import Doctor from '../models/doctor.model.intelligent.js';
-import User from '../models/user.model.intelligent.js';
+import { User } from '../models/user.model.intelligent.js';
 
 const router = express.Router();
 

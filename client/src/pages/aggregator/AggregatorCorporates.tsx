@@ -28,7 +28,7 @@ const AggregatorCorporates = () => {
   const loadCorporates = async () => {
     setLoading(true);
     try {
-      const response = await api.get("/api/aggregators/corporates");
+      const response = await api.get("/aggregators/corporates");
       if (response.data?.data) {
         setCorporates(Array.isArray(response.data.data) ? response.data.data : []);
       }

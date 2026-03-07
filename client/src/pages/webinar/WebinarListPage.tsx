@@ -77,7 +77,7 @@ const WebinarListPage: React.FC = () => {
         params.search = searchTerm;
       }
 
-      const response = await api.get('/api/webinars', { params });
+      const response = await api.get('/webinars', { params });
       setWebinars(response.data.webinars);
     } catch (error) {
       toast({
@@ -92,7 +92,7 @@ const WebinarListPage: React.FC = () => {
 
   const handleRegister = async (webinarId: number) => {
     try {
-      const response = await api.post(`/api/webinars/${webinarId}/register`);
+      const response = await api.post(`/webinars/${webinarId}/register`);
       toast({
         title: 'Success',
         description: response.data.message,
@@ -111,7 +111,7 @@ const WebinarListPage: React.FC = () => {
     if (!confirm('Are you sure you want to cancel your registration?')) return;
     
     try {
-      await api.delete(`/api/webinars/${webinarId}/register`);
+      await api.delete(`/webinars/${webinarId}/register`);
       toast({
         title: 'Success',
         description: 'Registration cancelled successfully'
@@ -132,7 +132,7 @@ const WebinarListPage: React.FC = () => {
 
   const handleViewDetails = async (webinarId: number) => {
     try {
-      const response = await api.get(`/api/webinars/${webinarId}`);
+      const response = await api.get(`/webinars/${webinarId}`);
       setSelectedWebinar(response.data.webinar);
       setDetailsDialogOpen(true);
     } catch (error) {

@@ -42,7 +42,7 @@ export default function TPAProvidersPage() {
   const fetchProviders = async () => {
     try {
       setLoading(true);
-      const response = await api.get("/api/tpa/providers");
+      const response = await api.get("/tpa/providers");
       setProviders(response.data.providers || []);
     } catch (error: any) {
       toast({

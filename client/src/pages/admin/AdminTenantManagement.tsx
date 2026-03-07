@@ -219,7 +219,7 @@ const AdminTenantManagement = () => {
     setLoading(true);
     setError(null);
     try {
-      const response = await api.get('/api/superadmin/tenants/tenants', {
+      const response = await api.get('/superadmin/tenants/tenants', {
         headers: { Authorization: `Bearer ${token}` },
         params: { page: 1, limit: 100 },
       });
@@ -227,7 +227,7 @@ const AdminTenantManagement = () => {
     } catch (err: any) {
       // Fallback to old endpoint if new one not available
       try {
-        const fallbackResponse = await api.get('/api/platform/tenants', {
+        const fallbackResponse = await api.get('/platform/tenants', {
           headers: { Authorization: `Bearer ${token}` },
           params: { page: 1, limit: 100 },
         });
@@ -242,7 +242,7 @@ const AdminTenantManagement = () => {
 
   const fetchStats = async () => {
     try {
-      const response = await api.get('/api/superadmin/tenants/stats', {
+      const response = await api.get('/superadmin/tenants/stats', {
         headers: { Authorization: `Bearer ${token}` },
       });
       setStats(response.data.stats);
@@ -269,7 +269,7 @@ const AdminTenantManagement = () => {
 
     try {
       const response = await api.post(
-        '/api/superadmin/tenants/tenants',
+        '/superadmin/tenants/tenants',
         formData,
         { headers: { Authorization: `Bearer ${token}` } }
       );
@@ -300,7 +300,7 @@ const AdminTenantManagement = () => {
   const handleSuspend = async (tenantId: number) => {
     try {
       await api.post(
-        `/api/superadmin/tenants/tenants/${tenantId}/suspend`,
+        `/superadmin/tenants/tenants/${tenantId}/suspend`,
         { reason: 'Suspended by super admin' },
         { headers: { Authorization: `Bearer ${token}` } }
       );
@@ -317,7 +317,7 @@ const AdminTenantManagement = () => {
   const handleReactivate = async (tenantId: number) => {
     try {
       await api.post(
-        `/api/superadmin/tenants/tenants/${tenantId}/reactivate`,
+        `/superadmin/tenants/tenants/${tenantId}/reactivate`,
         {},
         { headers: { Authorization: `Bearer ${token}` } }
       );
@@ -334,7 +334,7 @@ const AdminTenantManagement = () => {
   const handleUpgrade = async (tenantId: number, newPlan: string) => {
     try {
       await api.post(
-        `/api/superadmin/tenants/tenants/${tenantId}/upgrade`,
+        `/superadmin/tenants/tenants/${tenantId}/upgrade`,
         { plan: newPlan },
         { headers: { Authorization: `Bearer ${token}` } }
       );
@@ -360,7 +360,7 @@ const AdminTenantManagement = () => {
 
   const fetchServerStatus = async (tenantId: number) => {
     try {
-      const response = await api.get(`/api/superadmin/tenants/tenants/${tenantId}/server`, {
+      const response = await api.get(`/superadmin/tenants/tenants/${tenantId}/server`, {
         headers: { Authorization: `Bearer ${token}` },
       });
       return response.data;
@@ -374,7 +374,7 @@ const AdminTenantManagement = () => {
     try {
       setIsSubmitting(true);
       await api.post(
-        `/api/superadmin/tenants/tenants/${tenant.id}/server/start`,
+        `/superadmin/tenants/tenants/${tenant.id}/server/start`,
         {},
         { headers: { Authorization: `Bearer ${token}` } }
       );
@@ -397,7 +397,7 @@ const AdminTenantManagement = () => {
     try {
       setIsSubmitting(true);
       await api.post(
-        `/api/superadmin/tenants/tenants/${tenant.id}/server/stop`,
+        `/superadmin/tenants/tenants/${tenant.id}/server/stop`,
         {},
         { headers: { Authorization: `Bearer ${token}` } }
       );
@@ -417,7 +417,7 @@ const AdminTenantManagement = () => {
     try {
       setIsSubmitting(true);
       await api.post(
-        `/api/superadmin/tenants/tenants/${tenant.id}/server/restart`,
+        `/superadmin/tenants/tenants/${tenant.id}/server/restart`,
         {},
         { headers: { Authorization: `Bearer ${token}` } }
       );
@@ -436,7 +436,7 @@ const AdminTenantManagement = () => {
   const handleViewServerLogs = async (tenant: Tenant) => {
     try {
       const response = await api.get(
-        `/api/superadmin/tenants/tenants/${tenant.id}/server/logs?lines=100`,
+        `/superadmin/tenants/tenants/${tenant.id}/server/logs?lines=100`,
         { headers: { Authorization: `Bearer ${token}` } }
       );
       // Show logs in a dialog or alert

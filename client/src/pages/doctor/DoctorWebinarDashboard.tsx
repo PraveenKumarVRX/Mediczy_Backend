@@ -102,7 +102,7 @@ const DoctorWebinarDashboard: React.FC = () => {
         params.status = 'completed';
       }
 
-      const response = await api.get('/api/doctor/webinars/my-webinars', { params });
+      const response = await api.get('/doctor/webinars/my-webinars', { params });
       setWebinars(response.data.webinars);
     } catch (error) {
       toast({
@@ -123,7 +123,7 @@ const DoctorWebinarDashboard: React.FC = () => {
     if (!confirm('Are you sure you want to end this webinar?')) return;
 
     try {
-      await api.post(`/api/doctor/webinars/${webinarId}/end`);
+      await api.post(`/doctor/webinars/${webinarId}/end`);
       toast({
         title: 'Success',
         description: 'Webinar ended successfully'
@@ -140,7 +140,7 @@ const DoctorWebinarDashboard: React.FC = () => {
 
   const handleViewDetails = async (webinarId: number) => {
     try {
-      const response = await api.get(`/api/doctor/webinars/${webinarId}`);
+      const response = await api.get(`/doctor/webinars/${webinarId}`);
       setSelectedWebinar(response.data.webinar);
       setDetailsDialogOpen(true);
     } catch (error) {
@@ -154,7 +154,7 @@ const DoctorWebinarDashboard: React.FC = () => {
 
   const handleViewAttendees = async (webinarId: number) => {
     try {
-      const response = await api.get(`/api/doctor/webinars/${webinarId}/attendees`);
+      const response = await api.get(`/doctor/webinars/${webinarId}/attendees`);
       setAttendees(response.data.attendees);
       setAttendeesDialogOpen(true);
     } catch (error) {
@@ -168,7 +168,7 @@ const DoctorWebinarDashboard: React.FC = () => {
 
   const handleViewQuestions = async (webinarId: number) => {
     try {
-      const response = await api.get(`/api/doctor/webinars/${webinarId}/questions`);
+      const response = await api.get(`/doctor/webinars/${webinarId}/questions`);
       setQuestions(response.data.questions);
       setQuestionsDialogOpen(true);
     } catch (error) {

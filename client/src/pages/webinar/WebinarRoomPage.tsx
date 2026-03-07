@@ -62,7 +62,7 @@ const WebinarRoomPage: React.FC<WebinarRoomProps> = ({ isHost = false }) => {
 
   const startWebinar = async () => {
     try {
-      const response = await api.post(`/api/doctor/webinars/${webinarId}/start`);
+      const response = await api.post(`/doctor/webinars/${webinarId}/start`);
       setToken(response.data.livekit.token);
       setServerUrl(response.data.livekit.serverUrl);
       setWebinarInfo(response.data.webinar);
@@ -85,7 +85,7 @@ const WebinarRoomPage: React.FC<WebinarRoomProps> = ({ isHost = false }) => {
 
   const joinWebinar = async () => {
     try {
-      const response = await api.post(`/api/webinars/${webinarId}/join`);
+      const response = await api.post(`/webinars/${webinarId}/join`);
       setToken(response.data.livekit.token);
       setServerUrl(response.data.livekit.serverUrl);
       setWebinarInfo(response.data.webinar);
@@ -105,7 +105,7 @@ const WebinarRoomPage: React.FC<WebinarRoomProps> = ({ isHost = false }) => {
     try {
       if (isHost) {
         if (confirm('Are you sure you want to end this webinar for everyone?')) {
-          await api.post(`/api/doctor/webinars/${webinarId}/end`);
+          await api.post(`/doctor/webinars/${webinarId}/end`);
           toast({
             title: 'Webinar Ended',
             description: 'The webinar has been ended successfully'
@@ -113,7 +113,7 @@ const WebinarRoomPage: React.FC<WebinarRoomProps> = ({ isHost = false }) => {
           navigate('/doctor/webinars');
         }
       } else {
-        await api.post(`/api/webinars/${webinarId}/leave`);
+        await api.post(`/webinars/${webinarId}/leave`);
         navigate('/webinars');
       }
     } catch (error) {
@@ -320,14 +320,14 @@ const WebinarControlBar: React.FC<WebinarControlBarProps> = ({
   const toggleRecording = async () => {
     try {
       if (!isRecording) {
-        await api.post(`/api/doctor/webinars/${webinarId}/start-recording`);
+        await api.post(`/doctor/webinars/${webinarId}/start-recording`);
         setIsRecording(true);
         toast({
           title: 'Recording Started',
           description: 'This webinar is now being recorded',
         });
       } else {
-        await api.post(`/api/doctor/webinars/${webinarId}/stop-recording`);
+        await api.post(`/doctor/webinars/${webinarId}/stop-recording`);
         setIsRecording(false);
         toast({
           title: 'Recording Stopped',

@@ -27,7 +27,7 @@ const AggregatorPartners = () => {
   const loadPartners = async () => {
     setLoading(true);
     try {
-      const response = await api.get("/api/aggregators/wellness-partners");
+      const response = await api.get("/aggregators/wellness-partners");
       if (response.data?.data) {
         setPartners(Array.isArray(response.data.data) ? response.data.data : []);
       }

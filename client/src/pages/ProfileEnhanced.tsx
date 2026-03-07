@@ -82,7 +82,7 @@ const ProfileEnhanced = () => {
   const fetchFamilyMembers = async () => {
     setLoadingFamily(true);
     try {
-      const response = await api.get("/api/family-members");
+      const response = await api.get("/family-members");
       setFamilyMembers(response.data.data || []);
     } catch (error: any) {
       console.error("Error fetching family members:", error);
@@ -195,7 +195,7 @@ const ProfileEnhanced = () => {
     if (!confirm("Are you sure you want to remove this family member?")) return;
 
     try {
-      await api.delete(`/api/family-members/${id}`);
+      await api.delete(`/family-members/${id}`);
       toast({
         title: "Success",
         description: "Family member removed successfully",
