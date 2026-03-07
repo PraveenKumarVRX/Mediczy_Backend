@@ -1294,9 +1294,8 @@ n8nResult.success
         
         const startTime = Date.now();
         
-        // Call SIB FastAPI directly with 5-second timeout
-        const aiResponse = await Promise.race([
-          axios.post(`${SIB_URL}/chat`, {
+        // Call SIB FastAPI directly with 15-second timeout (medical LLM queries via Groq typically take 6-12s)
+        const aiResponse = await axios.post(`${SIB_URL}/chat`, {
             message: Body,
             phone_number: phoneNumber,
             session_id: `whatsapp:${phoneNumber}`,
@@ -1311,7 +1310,7 @@ n8nResult.success
               prescriptions: userContext.prescriptions
             }
           }, {
-            timeout: 5000,
+            timeout: 15000,
             headers: { 'Content-Type': 'application/json' }
           }).then(response => {
             const duration = Date.now() - startTime;
@@ -1327,7 +1326,8 @@ n8nResult.success
               isEmergency: response.data.is_emergency || false
             };
           }).catch(error => {
-            logger.error('SIB FastAPI error:', {
+            const duration = Date.now() - startTime;
+            logger.error(`SIB FastAPI error after ${duration}ms:`, {
               message: error.message,
               status: error.response?.status,
               data: error.response?.data,
@@ -1338,19 +1338,11 @@ n8nResult.success
               response: "I'm here to help with appointments, health checkups, reports, and prescriptions. Tell me what you'd like to do.",
               provider: 'fallback'
             };
-          }),
-          new Promise(resolve => setTimeout(() => resolve(null), 5000)) // Match axios timeout
-        ]);
+          });
         const rawResponseText = String(aiResponse?.response || '').trim();
         const compactResponseText = compactWhatsAppReply(rawResponseText);
         const normalizedResponseText = rawResponseText.toLowerCase();
         const isGenericErrorReply = normalizedResponseText.includes('there was an error processing your request');
-        
-        if (!aiResponse) {
-          const timeoutMsg = sanitizeReply("I couldn't fetch a full response just now. Please retry in a few seconds, or tell me if you want help with appointment booking, health checkup, prescription, or reports.");
-          responseSent = true;
-          return res.type('text/xml').status(200).send(twimlReply(timeoutMsg));
-        }
 
         if (aiResponse.shouldReply) {
           const replyText = compactResponseText
