@@ -11,6 +11,7 @@
 import express from 'express';
 import multer from 'multer';
 import crypto from 'crypto';
+import nodemailer from 'nodemailer';
 import { S3Client, PutObjectCommand } from '@aws-sdk/client-s3';
 import { authUser } from '../middleware/auth.middleware.js';
 import { postgresSequelize } from '../db/postgres-sequelize.js';
@@ -54,6 +55,52 @@ function requireTeamOrAdmin(req, res, next) {
     return res.status(403).json({ success: false, message: 'Team or admin access required' });
   }
   return next();
+}
+
+// ──────────────────────────────────────────────
+// Helper: Send email using team user's SMTP config from email_settings
+// Falls back to global email_configs (id=1) if no team config found
+// ──────────────────────────────────────────────
+async function sendCorporateEmail(teamUserId, { to, subject, html }) {
+  // Try team user's email_settings first (e.g. care@mysmarthealth.in)
+  const [cfg] = await postgresSequelize.query(
+    `SELECT email, display_name, smtp_host, smtp_port, smtp_secure, smtp_username, smtp_password
+     FROM email_settings
+     WHERE user_id = :userId AND is_active = true AND deleted_at IS NULL
+     ORDER BY is_default DESC LIMIT 1`,
+    { replacements: { userId: teamUserId }, type: postgresSequelize.QueryTypes.SELECT }
+  );
+
+  if (cfg && cfg.smtp_host && cfg.smtp_password) {
+    const transporter = nodemailer.createTransport({
+      host: cfg.smtp_host,
+      port: cfg.smtp_port || 465,
+      secure: cfg.smtp_port === 465 || cfg.smtp_secure === true,
+      auth: {
+        user: cfg.smtp_username || cfg.email,
+        pass: cfg.smtp_password
+      },
+      connectionTimeout: 10000,
+      greetingTimeout: 5000,
+      socketTimeout: 15000,
+      tls: { rejectUnauthorized: false, minVersion: 'TLSv1.2' }
+    });
+
+    const fromAddr = `"${cfg.display_name || 'Mediqzy Care'}" <${cfg.email}>`;
+    const result = await transporter.sendMail({
+      from: fromAddr,
+      to,
+      subject,
+      html,
+      headers: { 'X-Mediqzy-System': 'true', 'X-Sender-Type': 'corporate-booking' }
+    });
+    console.log(`✅ [corporate-email] Sent to ${to} via ${cfg.email} (messageId: ${result.messageId})`);
+    return result;
+  }
+
+  // Fallback: global email_configs
+  console.log(`⚠️ [corporate-email] No team email_settings for user ${teamUserId}, using global config`);
+  return await emailServiceModule.sendOutboundEmail(1, { to, subject, htmlContent: html });
 }
 
 // ──────────────────────────────────────────────
@@ -416,6 +463,7 @@ router.post('/health-checkup', authUser, requireTeamOrAdmin, async (req, res) =>
     });
 
     // ── 4. Send Email notification (if enabled) ──────────────────────
+    // Uses the team user's configured SMTP from email_settings table
     let emailResult = null;
     if (sendEmail !== false && sendEmail !== 'false') {
       try {
@@ -431,12 +479,11 @@ router.post('/health-checkup', authUser, requireTeamOrAdmin, async (req, res) =>
           notes
         });
 
-        emailResult = await emailServiceModule.sendOutboundEmail(1, {
+        emailResult = await sendCorporateEmail(req.user.id, {
           to: employee.email,
           subject: `Your ${corporateName} Health Checkup is Booked — ${displayDate}`,
-          htmlContent: emailHtml
+          html: emailHtml
         });
-        console.log(`✅ [corporate-bookings] Email sent to ${employee.email}`);
       } catch (emailErr) {
         console.error('[corporate-bookings] Email failed:', emailErr.message);
       }
@@ -695,10 +742,10 @@ router.post(
             notes,
             mimeType: req.file.mimetype
           });
-          await emailServiceModule.sendOutboundEmail(1, {
+          await sendCorporateEmail(req.user.id, {
             to: employee.email,
             subject: `Your ${reportLabel} Report is Ready — ${corporateName}`,
-            htmlContent: html
+            html: html
           });
           emailStatus = 'sent';
           // Mark notified
@@ -872,10 +919,10 @@ router.post('/reports/:id/share', authUser, requireTeamOrAdmin, async (req, res)
           notes: row.notes,
           mimeType: row.mime_type
         });
-        await emailServiceModule.sendOutboundEmail(1, {
+        await sendCorporateEmail(req.user.id, {
           to: row.email,
           subject: `Your ${reportLabel} Report — ${corporateName}`,
-          htmlContent: html
+          html: html
         });
         emailStatus = 'sent';
       } catch (e) {
