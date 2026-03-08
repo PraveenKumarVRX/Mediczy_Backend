@@ -1,4 +1,6 @@
 import { Server } from "socket.io";
+import { createAdapter } from "@socket.io/redis-adapter";
+import Redis from "ioredis";
 import { Conversation, Message } from "../models/chat.model.intelligent.js";
 import { sendMessageNotification, sendVideoCallNotification } from "../utils/firebase-admin.js";
 import { FCMToken } from "../services/notification.service.js";
@@ -22,6 +24,25 @@ export function setupSocketIO(server) {
     pingInterval: 25000,
     pingTimeout: 20000,
   });
+
+  // Setup Redis adapter for PM2 cluster mode
+  // This ensures Socket.IO events are propagated across all worker processes
+  try {
+    const redisUrl = process.env.REDIS_URL || 'redis://127.0.0.1:6379';
+    const pubClient = new Redis(redisUrl, { lazyConnect: true, maxRetriesPerRequest: 3 });
+    const subClient = pubClient.duplicate();
+
+    Promise.all([pubClient.connect(), subClient.connect()])
+      .then(() => {
+        io.adapter(createAdapter(pubClient, subClient));
+        console.log('✅ Socket.IO Redis adapter connected — cluster-safe event propagation enabled');
+      })
+      .catch((err) => {
+        console.warn('⚠️ Socket.IO Redis adapter failed — falling back to in-memory (events will NOT propagate across cluster workers):', err.message);
+      });
+  } catch (err) {
+    console.warn('⚠️ Socket.IO Redis adapter init error:', err.message);
+  }
 
   io.on("connection", (socket) => {
     console.log("User connected:", socket.id);

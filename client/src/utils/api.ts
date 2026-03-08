@@ -71,7 +71,7 @@ const resolveTenantId = (): string | undefined => {
 // Create an Axios instance
 const api = axios.create({
   baseURL: resolveBaseURL(),
-  timeout: 10000, // 10 second timeout
+  timeout: 30000, // 30 second timeout (video call initiation needs time for LiveKit + notifications)
   withCredentials: false, // Disable credentials for CORS
 });
 

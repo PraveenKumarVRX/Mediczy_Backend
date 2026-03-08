@@ -1750,7 +1750,7 @@ router.get("/video-consultations/stats", authDoctor, async (req, res) => {
     today.setHours(0, 0, 0, 0);
 
     const videoFilter = {
-      consultationType: 'online'
+      consultationType: { [Op.in]: ['online', 'video'] }
     };
 
     const [totalConsultations, todayConsultations, completedConsultations] = await Promise.all([
@@ -1809,7 +1809,7 @@ router.get("/video-consultations/recent", authDoctor, async (req, res) => {
     const consultations = await Appointment.findAll({
       where: {
         doctorId,
-        consultationType: 'online'
+        consultationType: { [Op.in]: ['online', 'video'] }
       },
       include: [
         {
@@ -1883,10 +1883,10 @@ router.get("/video-consultations/upcoming", authDoctor, async (req, res) => {
     const consultations = await Appointment.findAll({
       where: {
         doctorId,
-        consultationType: 'online',
-        status: { [Op.in]: ['pending', 'confirmed', 'scheduled'] },
+        consultationType: { [Op.in]: ['online', 'video'] },
+        status: { [Op.in]: ['pending', 'confirmed', 'scheduled', 'accepted'] },
         [Op.or]: [
-          { appointmentDate: { [Op.gte]: now } },
+          { appointmentDate: { [Op.gte]: new Date(now.toDateString()) } },
           { appointmentDate: null }
         ]
       },
