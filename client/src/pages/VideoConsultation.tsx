@@ -638,6 +638,49 @@ const VideoConsultation = () => {
     }
   }, [appointmentIdFromUrl, currentUser]);
 
+  // Stable callbacks for LiveKit room to prevent re-render thrashing
+  const handleLiveKitDisconnect = useCallback(() => {
+    setIsInCall(false);
+    setLiveKitConnection(null);
+    setConnectionStatus('disconnected');
+    toast({
+      title: "Call Ended",
+      description: "Your video consultation has ended.",
+    });
+  }, [toast]);
+
+  const handleLiveKitError = useCallback((error: Error) => {
+    console.error('LiveKit error:', error);
+    // Auto-retry on signal connection errors (abort/timeout)
+    const isSignalError = error.message?.includes('Abort handler') ||
+      error.message?.includes('signal connection') ||
+      error.message?.includes('timed out');
+    if (isSignalError && liveKitConnection) {
+      console.log('🔄 Signal connection error detected, retrying...');
+      toast({
+        title: "Reconnecting...",
+        description: "Video connection interrupted. Retrying automatically...",
+      });
+      const aptId = appointmentIdFromUrl || currentAppointment?.id;
+      if (aptId) {
+        setIsInCall(false);
+        setLiveKitConnection(null);
+        setTimeout(() => {
+          initiateVideoCall({
+            id: aptId, doctorId: '', doctorName: '', specialization: '',
+            date: '', time: '', consultationType: 'video', status: 'in-progress'
+          } as Appointment);
+        }, 1000);
+        return;
+      }
+    }
+    toast({
+      variant: "destructive",
+      title: "Video Call Error",
+      description: error.message,
+    });
+  }, [toast, liveKitConnection, appointmentIdFromUrl, currentAppointment, initiateVideoCall]);
+
   // Active video call UI - Native LiveKit
   if (isInCall && liveKitConnection) {
     return (
@@ -655,23 +698,8 @@ const VideoConsultation = () => {
             token={liveKitConnection.token}
             roomName={liveKitConnection.roomName}
             participantName={currentUser?.firstName || 'Patient'}
-            onDisconnect={() => {
-              setIsInCall(false);
-              setLiveKitConnection(null);
-              setConnectionStatus('disconnected');
-              toast({
-                title: "Call Ended",
-                description: "Your video consultation has ended.",
-              });
-            }}
-            onError={(error) => {
-              console.error('LiveKit error:', error);
-              toast({
-                variant: "destructive",
-                title: "Video Call Error",
-                description: error.message,
-              });
-            }}
+            onDisconnect={handleLiveKitDisconnect}
+            onError={handleLiveKitError}
           />
         </Suspense>
       </div>

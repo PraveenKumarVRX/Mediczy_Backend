@@ -71,6 +71,8 @@ export default function LiveKitRoom({
   onError,
 }: LiveKitRoomProps) {
   const [error, setError] = useState<string | null>(null);
+  const [retryCount, setRetryCount] = useState(0);
+  const MAX_RETRIES = 2;
 
   const handleDisconnect = useCallback(() => {
     onDisconnect?.();
@@ -78,13 +80,26 @@ export default function LiveKitRoom({
 
   const handleError = useCallback((err: Error) => {
     console.error('LiveKit error:', err);
+    const isSignalError = err.message?.includes('Abort handler') ||
+      err.message?.includes('signal connection') ||
+      err.message?.includes('timed out');
+    
+    // Auto-retry signal errors up to MAX_RETRIES times
+    if (isSignalError && retryCount < MAX_RETRIES) {
+      console.log(`🔄 LiveKit auto-retry ${retryCount + 1}/${MAX_RETRIES}...`);
+      setRetryCount(prev => prev + 1);
+      setError(null); // Clear error to re-render LKRoom
+      return;
+    }
+    
     setError(err.message);
     onError?.(err);
-  }, [onError]);
+  }, [onError, retryCount]);
 
   const handleConnected = useCallback(() => {
     console.log('✅ Connected to LiveKit room:', roomName);
     setError(null);
+    setRetryCount(0);
   }, [roomName]);
 
   if (error) {
