@@ -4,7 +4,7 @@
  * Channels: Push (FCM), Email, SMS, WhatsApp, In-App, Kafka Events
  */
 
-import { sendAppointmentNotification, sendSystemNotification, isFirebaseInitialized } from '../utils/firebase-admin.js';
+import { sendAppointmentNotification, sendSystemNotification, sendDoctorCallingNotification, isFirebaseInitialized } from '../utils/firebase-admin.js';
 import emailService from './emailService.js';
 import { SMSService } from './sms.service.js';
 import { publishEvent, KAFKA_TOPICS } from '../config/kafka.js';
@@ -76,7 +76,7 @@ class NotificationService {
         channels: ['push', 'email', 'whatsapp', 'in-app'],
         priority: 'high'
       },
-      
+
       // Patient receives appointment booking confirmation
       appointment_booked: {
         title: 'Appointment Booked Successfully! ✅',
@@ -84,7 +84,7 @@ class NotificationService {
         channels: ['push', 'email', 'whatsapp', 'in-app'],
         priority: 'high'
       },
-      
+
       // Patient receives appointment acceptance
       appointment_accepted: {
         title: 'Appointment Confirmed! 🎉',
@@ -92,7 +92,7 @@ class NotificationService {
         channels: ['push', 'email', 'in-app'],
         priority: 'high'
       },
-      
+
       // Patient receives appointment rejection
       appointment_rejected: {
         title: 'Appointment Not Available',
@@ -100,7 +100,7 @@ class NotificationService {
         channels: ['push', 'email', 'in-app'],
         priority: 'normal'
       },
-      
+
       // Payment reminder
       payment_pending: {
         title: 'Payment Pending',
@@ -108,7 +108,7 @@ class NotificationService {
         channels: ['push', 'in-app'],
         priority: 'high'
       },
-      
+
       // Payment received - to both patient and doctor
       payment_received: {
         title: 'Payment Successful ✅',
@@ -116,7 +116,7 @@ class NotificationService {
         channels: ['push', 'email', 'sms', 'in-app'],
         priority: 'high'
       },
-      
+
       // Payment failed
       payment_failed: {
         title: 'Payment Failed',
@@ -124,7 +124,7 @@ class NotificationService {
         channels: ['push', 'in-app'],
         priority: 'high'
       },
-      
+
       // Consultation reminder (1 hour before)
       consultation_reminder: {
         title: 'Consultation in 1 Hour',
@@ -132,7 +132,7 @@ class NotificationService {
         channels: ['push', 'sms', 'in-app'],
         priority: 'high'
       },
-      
+
       // Consultation starting (15 mins before)
       consultation_starting: {
         title: 'Consultation Starting Soon! 🔔',
@@ -148,7 +148,7 @@ class NotificationService {
         channels: ['push', 'in-app'],
         priority: 'urgent'
       },
-      
+
       // Video call ready
       video_ready: {
         title: 'Video Call Ready',
@@ -156,7 +156,7 @@ class NotificationService {
         channels: ['push', 'in-app'],
         priority: 'urgent'
       },
-      
+
       // Consultation completed
       consultation_completed: {
         title: 'Consultation Completed',
@@ -164,7 +164,7 @@ class NotificationService {
         channels: ['push', 'email', 'in-app'],
         priority: 'normal'
       },
-      
+
       // Prescription issued
       prescription_issued: {
         title: 'Prescription Ready 💊',
@@ -339,10 +339,27 @@ class NotificationService {
         stringData.click_action = actionUrl;
       }
 
-      const result = await sendSystemNotification(
-        tokenRecord.token,
-        { title, message, category: 'appointment', clickAction: actionUrl }
-      );
+      // Use dedicated call notification for video call types (includes appointmentId, meetingLink, etc.)
+      const isCallNotification = data.action === 'join_call' || data.appointmentId;
+      let result;
+
+      if (isCallNotification && data.appointmentId) {
+        result = await sendDoctorCallingNotification(
+          tokenRecord.token,
+          {
+            doctorName: stringData.doctorName || title.replace('📞 ', '').replace(' is calling', ''),
+            appointmentId: stringData.appointmentId,
+            meetingLink: stringData.meetingLink || actionUrl || '',
+            doctorId: stringData.doctorId || '',
+            callInitiatedAt: stringData.callInitiatedAt || new Date().toISOString()
+          }
+        );
+      } else {
+        result = await sendSystemNotification(
+          tokenRecord.token,
+          { title, message, category: 'appointment', clickAction: actionUrl, extraData: stringData }
+        );
+      }
 
       return { success: true, result };
     } catch (error) {
@@ -388,17 +405,17 @@ class NotificationService {
           const icalContent = userType === 'doctor'
             ? generateDoctorICalFile(appointmentData)
             : generateICalFile(appointmentData);
-          
+
           // Generate filename
           const filename = generateICalFilename(appointmentData, userType);
-          
+
           // Add attachment
           emailOptions.attachments = [{
             filename: filename,
             content: icalContent,
             contentType: 'text/calendar; charset=utf-8'
           }];
-          
+
           console.log(`📅 Attached calendar file: ${filename}`);
         } catch (icalError) {
           console.error('Error generating iCal attachment:', icalError);
@@ -499,7 +516,7 @@ class NotificationService {
    */
   buildEmailHTML(title, message, type, variables) {
     const actionButton = this.getEmailActionButton(type, variables);
-    
+
     return `
       <!DOCTYPE html>
       <html>

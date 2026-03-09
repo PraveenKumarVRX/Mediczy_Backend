@@ -441,7 +441,9 @@ const sendSystemNotification = async (recipientToken, systemData) => {
   const data = {
     type: FCM_NOTIFICATION_TYPES.SYSTEM,
     category: systemData.category || 'general',
-    clickAction: systemData.clickAction || 'open_app'
+    clickAction: systemData.clickAction || 'open_app',
+    // Merge any extra data (appointmentId, meetingLink, etc.) from the caller
+    ...(systemData.extraData || {})
   };
 
   return sendPushNotification(recipientToken, notification, data);
