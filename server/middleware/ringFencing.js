@@ -353,6 +353,14 @@ const USER_TYPE_PERMISSIONS = {
       '/api/ngo/reports'
     ],
     tokenField: 'ngoId'
+  },
+  hospital_insurance: {
+    allowedPaths: [
+      '/api/hospital-insurance',
+      '/api/hospital/insurance',
+      '/api/hospital-insurance/auth'
+    ],
+    tokenField: 'hospitalId'
   }
 };
 
@@ -374,7 +382,8 @@ const USER_TYPE_ALIASES = {
   homecare_admin: 'homecare',
   ambulance_admin: 'ambulance',
   doctor_assistant: 'assistant',
-  insurance_broker: 'broker'
+  insurance_broker: 'broker',
+  insurance_portal: 'hospital_insurance'
 };
 
 const resolveUserType = (decoded) => {
@@ -436,6 +445,9 @@ const PUBLIC_ENDPOINTS = [
   '/api/insurance-company/login',
   '/api/insurance-company/corporate/login',
   '/api/insurance-broker/login',
+  '/api/hospital-insurance/auth/login',
+  '/api/hospital-insurance/auth/verify',
+  '/api/hospital-insurance/auth/logout',
   '/api/broker-integrations/health',
   '/api/broker-integrations/claims/submit',
   '/api/broker-integrations/webhooks',
