@@ -702,6 +702,114 @@ router.post('/verify-payment', authUser, async (req, res) => {
 });
 
 /**
+ * POST /api/wallet/redeem-free-coupon
+ * Redeem a FREE_HC coupon (no Razorpay payment required)
+ */
+router.post('/redeem-free-coupon', authUser, async (req, res) => {
+  try {
+    const { packageId, couponCode } = req.body;
+
+    if (packageId === undefined || !couponCode) {
+      return res.status(400).json({
+        success: false,
+        message: 'Package ID and coupon code are required'
+      });
+    }
+
+    // Get package details
+    const pkg = HEALTH_COINS_PRICING.packages[packageId];
+    if (!pkg) {
+      return res.status(400).json({ success: false, message: 'Invalid package' });
+    }
+
+    // Validate coupon
+    const coupon = await Coupon.findOne({
+      where: {
+        code: couponCode.toUpperCase(),
+        isActive: true,
+        validFrom: { [Op.lte]: new Date() },
+        validUntil: { [Op.gte]: new Date() }
+      }
+    });
+
+    if (!coupon) {
+      return res.status(400).json({ success: false, message: 'Invalid or expired coupon' });
+    }
+
+    // Only FREE_HC coupons can be redeemed for free
+    if (coupon.type !== 'FREE_HC') {
+      return res.status(400).json({ success: false, message: 'This coupon requires payment' });
+    }
+
+    // Check usage limits
+    if (coupon.usageCount >= coupon.maxUsage) {
+      return res.status(400).json({ success: false, message: 'Coupon usage limit reached' });
+    }
+
+    const userUsage = await CouponUsage.count({
+      where: { couponId: coupon.id, userId: req.user.id }
+    });
+
+    if (userUsage >= coupon.maxUsagePerUser) {
+      return res.status(400).json({ success: false, message: 'You have already used this coupon' });
+    }
+
+    const bonusHC = coupon.value;
+    const totalHC = pkg.coins + bonusHC;
+
+    // Record coupon usage
+    await CouponUsage.create({
+      couponId: coupon.id,
+      couponCode: coupon.code,
+      userId: req.user.id,
+      hcPurchased: pkg.coins,
+      hcBonus: bonusHC,
+      discountAmount: pkg.price,
+      amountPaid: 0,
+      paymentId: `FREE_${Date.now()}`
+    });
+
+    // Increment coupon usage count
+    await coupon.update({ usageCount: coupon.usageCount + 1 });
+
+    // Credit coins
+    const result = await healthCoinsService.addCoins(
+      req.user.id,
+      totalHC,
+      'PURCHASE',
+      'PURCHASE',
+      `Free HC via coupon ${coupon.code}: ${pkg.coins} HC + ${bonusHC} bonus`,
+      {
+        packageId,
+        paymentMethod: 'free_coupon',
+        couponCode: coupon.code,
+        baseCoins: pkg.coins,
+        bonusCoins: bonusHC,
+        amountPaid: 0
+      }
+    );
+
+    console.log(`✅ Free coupon ${coupon.code} redeemed by user ${req.user.id}: ${totalHC} HC`);
+
+    res.json({
+      success: true,
+      message: `${totalHC} health coins added to your wallet via coupon ${coupon.code}`,
+      totalCoins: totalHC,
+      baseCoins: pkg.coins,
+      bonusCoins: bonusHC,
+      newBalance: result.newBalance
+    });
+  } catch (error) {
+    console.error('Redeem free coupon error:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Failed to redeem coupon',
+      error: error.message
+    });
+  }
+});
+
+/**
  * POST /api/wallet/purchase
  * Purchase health coins with real money
  * @deprecated Use /create-order and /verify-payment instead

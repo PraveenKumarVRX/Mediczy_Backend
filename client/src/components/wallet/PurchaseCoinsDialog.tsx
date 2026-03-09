@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import {
   Dialog,
   DialogContent,
@@ -11,7 +11,7 @@ import { Badge } from "@/components/ui/badge";
 import { Input } from "@/components/ui/input";
 import { useToast } from "@/hooks/use-toast";
 import api from "@/utils/api";
-import { Coins, Check, Sparkles } from "lucide-react";
+import { Coins, Check, Sparkles, Loader2 } from "lucide-react";
 
 // Declare Razorpay type
 declare global {
@@ -20,51 +20,79 @@ declare global {
   }
 }
 
+interface Package {
+  coins: number;
+  price: number;
+  discount: number;
+  popular: boolean;
+}
+
 interface PurchaseCoinsDialogProps {
   open: boolean;
   onOpenChange: (open: boolean) => void;
   onSuccess: () => void;
 }
 
-const PACKAGES = [
-  { coins: 100, price: 100, discount: 0, popular: false },
-  { coins: 200, price: 190, discount: 5, popular: false },
-  { coins: 500, price: 450, discount: 10, popular: true },
-  { coins: 1000, price: 850, discount: 15, popular: false },
-  { coins: 2000, price: 1600, discount: 20, popular: false }
+// Fallback packages matching server's health-coins.config.js
+const FALLBACK_PACKAGES: Package[] = [
+  { coins: 100, price: 99, discount: 0, popular: false },
+  { coins: 250, price: 199, discount: 20, popular: true },
+  { coins: 500, price: 349, discount: 30, popular: false },
+  { coins: 1000, price: 599, discount: 40, popular: false },
+  { coins: 2500, price: 1299, discount: 48, popular: false }
 ];
 
 export function PurchaseCoinsDialog({ open, onOpenChange, onSuccess }: PurchaseCoinsDialogProps) {
   const { toast } = useToast();
+  const [packages, setPackages] = useState<Package[]>(FALLBACK_PACKAGES);
+  const [loadingPackages, setLoadingPackages] = useState(false);
   const [selectedPackage, setSelectedPackage] = useState<number | null>(null);
   const [processing, setProcessing] = useState(false);
   const [couponCode, setCouponCode] = useState('');
   const [appliedCoupon, setAppliedCoupon] = useState<any>(null);
   const [validatingCoupon, setValidatingCoupon] = useState(false);
-  
+
+  // Fetch packages from server when dialog opens
+  useEffect(() => {
+    if (open) {
+      fetchPackages();
+    } else {
+      setSelectedPackage(null);
+      setCouponCode('');
+      setAppliedCoupon(null);
+    }
+  }, [open]);
+
+  const fetchPackages = async () => {
+    setLoadingPackages(true);
+    try {
+      const response = await api.get('/wallet/rewards');
+      if (response.data?.success && response.data?.data?.pricing?.packages) {
+        setPackages(response.data.data.pricing.packages);
+      }
+    } catch (error) {
+      console.error('Failed to fetch packages, using fallback:', error);
+    } finally {
+      setLoadingPackages(false);
+    }
+  };
+
   const validateCoupon = async () => {
     if (!couponCode.trim()) {
-      toast({
-        title: "Error",
-        description: "Please enter a coupon code",
-        variant: "destructive",
-      });
+      toast({ title: "Error", description: "Please enter a coupon code", variant: "destructive" });
       return;
     }
-    
+
     setValidatingCoupon(true);
     try {
       const response = await api.post('/wallet/validate-coupon', {
         code: couponCode,
         packageId: selectedPackage
       });
-      
+
       if (response.data.success) {
         setAppliedCoupon(response.data.coupon);
-        toast({
-          title: "✅ Coupon Applied!",
-          description: response.data.message,
-        });
+        toast({ title: "✅ Coupon Applied!", description: response.data.message });
       }
     } catch (error: any) {
       setAppliedCoupon(null);
@@ -80,20 +108,16 @@ export function PurchaseCoinsDialog({ open, onOpenChange, onSuccess }: PurchaseC
 
   const handlePurchase = async () => {
     if (selectedPackage === null) {
-      toast({
-        title: "Error",
-        description: "Please select a package",
-        variant: "destructive",
-      });
+      toast({ title: "Error", description: "Please select a package", variant: "destructive" });
       return;
     }
 
     setProcessing(true);
-    
+
     try {
-      const pkg = PACKAGES[selectedPackage];
-      
-      // Step 1: Create Razorpay order
+      const pkg = packages[selectedPackage];
+
+      // Step 1: Create order on backend
       const orderResponse = await api.post('/wallet/create-order', {
         packageId: selectedPackage,
         couponCode: appliedCoupon ? couponCode : undefined
@@ -103,7 +127,40 @@ export function PurchaseCoinsDialog({ open, onOpenChange, onSuccess }: PurchaseC
         throw new Error(orderResponse.data.message || 'Failed to create order');
       }
 
-      const { order } = orderResponse.data;
+      const { order, coupon: couponResult } = orderResponse.data;
+
+      // Handle free coupon (no payment required)
+      if (!order && couponResult?.finalAmount === 0) {
+        try {
+          const verifyResponse = await api.post('/wallet/redeem-free-coupon', {
+            packageId: selectedPackage,
+            couponCode: couponCode
+          });
+
+          if (verifyResponse.data.success) {
+            toast({
+              title: "🎉 Free Health Coins!",
+              description: verifyResponse.data.message || `${pkg.coins} health coins added to your wallet`,
+            });
+            onSuccess();
+            onOpenChange(false);
+          } else {
+            throw new Error(verifyResponse.data.message || 'Failed to redeem coupon');
+          }
+        } catch (error: any) {
+          toast({
+            title: "Error",
+            description: error.response?.data?.message || error.message || "Failed to redeem free coupon",
+            variant: "destructive",
+          });
+        }
+        setProcessing(false);
+        return;
+      }
+
+      if (!order) {
+        throw new Error('No payment order created');
+      }
 
       // Step 2: Load Razorpay script if not already loaded
       if (!window.Razorpay) {
@@ -111,7 +168,7 @@ export function PurchaseCoinsDialog({ open, onOpenChange, onSuccess }: PurchaseC
         script.src = 'https://checkout.razorpay.com/v1/checkout.js';
         script.async = true;
         document.body.appendChild(script);
-        
+
         await new Promise((resolve, reject) => {
           script.onload = resolve;
           script.onerror = reject;
@@ -121,7 +178,6 @@ export function PurchaseCoinsDialog({ open, onOpenChange, onSuccess }: PurchaseC
       // Step 3: Open Razorpay checkout
       const options = {
         key: order.key,
-        // Razorpay will use amount from the order when order_id is provided
         currency: order.currency,
         name: 'Mediqzy Healthcare',
         description: `Purchase ${pkg.coins} Health Coins`,
@@ -129,7 +185,6 @@ export function PurchaseCoinsDialog({ open, onOpenChange, onSuccess }: PurchaseC
         image: 'https://mediqzy.com/logo/Mediqzy_logo.jpeg',
         handler: async function (response: any) {
           try {
-            // Step 4: Verify payment on backend
             const verifyResponse = await api.post('/wallet/verify-payment', {
               razorpay_order_id: response.razorpay_order_id,
               razorpay_payment_id: response.razorpay_payment_id,
@@ -140,10 +195,9 @@ export function PurchaseCoinsDialog({ open, onOpenChange, onSuccess }: PurchaseC
 
             if (verifyResponse.data.success) {
               toast({
-                title: "Success!",
-                description: `${pkg.coins} health coins added to your wallet`,
+                title: "🎉 Purchase Successful!",
+                description: `${verifyResponse.data.totalCoins || pkg.coins} health coins added to your wallet`,
               });
-
               onSuccess();
               onOpenChange(false);
             } else {
@@ -159,29 +213,19 @@ export function PurchaseCoinsDialog({ open, onOpenChange, onSuccess }: PurchaseC
             setProcessing(false);
           }
         },
-        prefill: {
-          name: '',
-          email: '',
-          contact: ''
-        },
-        theme: {
-          color: '#14b8a6' // Teal color
-        },
+        prefill: { name: '', email: '', contact: '' },
+        theme: { color: '#14b8a6' },
         modal: {
-          ondismiss: function() {
+          ondismiss: function () {
             setProcessing(false);
-            toast({
-              title: "Payment Cancelled",
-              description: "You cancelled the payment",
-              variant: "default",
-            });
+            toast({ title: "Payment Cancelled", description: "You cancelled the payment", variant: "default" });
           }
         }
       };
 
       const razorpay = new window.Razorpay(options);
       razorpay.open();
-      
+
     } catch (error: any) {
       setProcessing(false);
       toast({
@@ -192,9 +236,17 @@ export function PurchaseCoinsDialog({ open, onOpenChange, onSuccess }: PurchaseC
     }
   };
 
+  const getDisplayPrice = () => {
+    if (selectedPackage === null) return null;
+    const pkg = packages[selectedPackage];
+    if (appliedCoupon?.finalPrice !== undefined && appliedCoupon.finalPrice === 0) return 'Free';
+    if (appliedCoupon?.discount > 0) return `₹${(pkg.price - appliedCoupon.discount).toFixed(0)}`;
+    return `₹${pkg.price}`;
+  };
+
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="max-w-3xl">
+      <DialogContent className="max-w-2xl max-h-[90vh] overflow-y-auto">
         <DialogHeader>
           <DialogTitle className="flex items-center gap-2 text-2xl">
             <Coins className="h-6 w-6 text-primary" />
@@ -205,99 +257,116 @@ export function PurchaseCoinsDialog({ open, onOpenChange, onSuccess }: PurchaseC
           </DialogDescription>
         </DialogHeader>
 
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mt-4">
-          {PACKAGES.map((pkg, index) => (
-            <div
-              key={index}
-              onClick={() => setSelectedPackage(index)}
-              className={`relative cursor-pointer rounded-lg border-2 p-4 transition-all ${
-                selectedPackage === index
-                  ? 'border-primary bg-primary/5 shadow-lg'
-                  : 'border-gray-200 hover:border-primary/50'
-              } ${pkg.popular ? 'ring-2 ring-primary ring-offset-2' : ''}`}
-            >
-              {pkg.popular && (
-                <Badge className="absolute -top-2 -right-2 bg-primary flex items-center gap-1">
-                  <Sparkles className="h-3 w-3" />
-                  Popular
-                </Badge>
-              )}
-              
-              <div className="text-center space-y-3">
-                <div className="flex items-center justify-center gap-2">
-                  <Coins className="h-8 w-8 text-primary" />
-                  <span className="text-3xl font-bold">{pkg.coins}</span>
-                </div>
-                
-                <div>
-                  <p className="text-2xl font-bold text-primary">₹{pkg.price}</p>
-                  {pkg.discount > 0 && (
-                    <p className="text-xs text-green-600 font-medium mt-1">
-                      Save {pkg.discount}%
-                    </p>
+        {loadingPackages ? (
+          <div className="flex items-center justify-center py-8">
+            <Loader2 className="h-6 w-6 animate-spin text-primary" />
+            <span className="ml-2 text-muted-foreground">Loading packages...</span>
+          </div>
+        ) : (
+          <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-3 mt-4">
+            {packages.map((pkg, index) => (
+              <div
+                key={index}
+                onClick={() => {
+                  setSelectedPackage(index);
+                  setAppliedCoupon(null);
+                }}
+                className={`relative cursor-pointer rounded-xl border-2 p-3 transition-all ${
+                  selectedPackage === index
+                    ? 'border-primary bg-primary/5 shadow-lg scale-[1.02]'
+                    : 'border-gray-200 dark:border-gray-700 hover:border-primary/50 hover:shadow-md'
+                } ${pkg.popular ? 'ring-2 ring-primary ring-offset-2' : ''}`}
+              >
+                {pkg.popular && (
+                  <Badge className="absolute -top-2 left-1/2 -translate-x-1/2 bg-primary flex items-center gap-1 text-[10px] px-2 py-0.5">
+                    <Sparkles className="h-2.5 w-2.5" />
+                    Best Value
+                  </Badge>
+                )}
+
+                <div className="text-center space-y-2 pt-1">
+                  <div className="flex items-center justify-center gap-1">
+                    <Coins className="h-5 w-5 text-primary" />
+                    <span className="text-2xl font-bold">{pkg.coins}</span>
+                  </div>
+                  <p className="text-xs text-muted-foreground">Health Coins</p>
+
+                  <div>
+                    <p className="text-lg font-bold text-primary">₹{pkg.price}</p>
+                    {pkg.discount > 0 && (
+                      <p className="text-[10px] text-green-600 font-medium">
+                        Save {pkg.discount}%
+                      </p>
+                    )}
+                  </div>
+
+                  {selectedPackage === index && (
+                    <div className="flex items-center justify-center text-primary">
+                      <Check className="h-4 w-4" />
+                    </div>
                   )}
                 </div>
-
-                {selectedPackage === index && (
-                  <div className="flex items-center justify-center text-primary">
-                    <Check className="h-5 w-5" />
-                  </div>
-                )}
               </div>
-            </div>
-          ))}
-        </div>
+            ))}
+          </div>
+        )}
 
         {/* Coupon Code Section */}
-        <div className="mt-6 p-4 border rounded-lg bg-gradient-to-r from-purple-50 to-blue-50 dark:from-purple-950/20 dark:to-blue-950/20">
-          <h4 className="font-semibold mb-3 flex items-center gap-2">
-            <Sparkles className="h-4 w-4 text-purple-600" />
-            Have a Coupon Code?
-          </h4>
-          <div className="flex gap-2">
-            <Input
-              placeholder="Enter coupon code"
-              value={couponCode}
-              onChange={(e) => setCouponCode(e.target.value.toUpperCase())}
-              className="flex-1"
-              disabled={processing}
-            />
-            <Button
-              type="button"
-              variant="outline"
-              onClick={validateCoupon}
-              disabled={!couponCode.trim() || validatingCoupon || !selectedPackage}
-            >
-              {validatingCoupon ? 'Validating...' : 'Apply'}
-            </Button>
-          </div>
-          
-          {appliedCoupon && (
-            <div className="mt-3 p-3 bg-green-50 dark:bg-green-950/20 border border-green-200 dark:border-green-800 rounded">
-              <p className="text-sm text-green-800 dark:text-green-200 font-medium">
-                ✅ Coupon Applied: {appliedCoupon.code}
-              </p>
-              {appliedCoupon.bonusHC > 0 && (
-                <p className="text-xs text-green-700 dark:text-green-300 mt-1">
-                  +{appliedCoupon.bonusHC} Bonus HC
-                </p>
-              )}
-              {appliedCoupon.discount > 0 && (
-                <p className="text-xs text-green-700 dark:text-green-300 mt-1">
-                  ₹{appliedCoupon.discount.toFixed(2)} Discount
-                </p>
-              )}
-              {appliedCoupon.finalPrice === 0 && (
-                <p className="text-xs text-green-700 dark:text-green-300 mt-1 font-bold">
-                  🎉 Free HC! No payment required
-                </p>
-              )}
+        {selectedPackage !== null && (
+          <div className="mt-4 p-4 border rounded-lg bg-gradient-to-r from-purple-50 to-blue-50 dark:from-purple-950/20 dark:to-blue-950/20">
+            <h4 className="font-semibold mb-3 flex items-center gap-2 text-sm">
+              <Sparkles className="h-4 w-4 text-purple-600" />
+              Have a Coupon Code?
+            </h4>
+            <div className="flex gap-2">
+              <Input
+                placeholder="Enter coupon code"
+                value={couponCode}
+                onChange={(e) => {
+                  setCouponCode(e.target.value.toUpperCase());
+                  if (appliedCoupon) setAppliedCoupon(null);
+                }}
+                className="flex-1"
+                disabled={processing}
+              />
+              <Button
+                type="button"
+                variant="outline"
+                size="sm"
+                onClick={validateCoupon}
+                disabled={!couponCode.trim() || validatingCoupon}
+              >
+                {validatingCoupon ? 'Validating...' : 'Apply'}
+              </Button>
             </div>
-          )}
-        </div>
 
-        <div className="mt-6 bg-muted/50 p-4 rounded-lg">
-          <h4 className="font-semibold mb-2">What you can do with Health Coins:</h4>
+            {appliedCoupon && (
+              <div className="mt-3 p-3 bg-green-50 dark:bg-green-950/20 border border-green-200 dark:border-green-800 rounded">
+                <p className="text-sm text-green-800 dark:text-green-200 font-medium">
+                  ✅ Coupon Applied: {appliedCoupon.code}
+                </p>
+                {appliedCoupon.bonusHC > 0 && (
+                  <p className="text-xs text-green-700 dark:text-green-300 mt-1">
+                    +{appliedCoupon.bonusHC} Bonus HC
+                  </p>
+                )}
+                {appliedCoupon.discount > 0 && (
+                  <p className="text-xs text-green-700 dark:text-green-300 mt-1">
+                    ₹{appliedCoupon.discount.toFixed(2)} Discount
+                  </p>
+                )}
+                {appliedCoupon.finalPrice === 0 && (
+                  <p className="text-xs text-green-700 dark:text-green-300 mt-1 font-bold">
+                    🎉 Free HC! No payment required
+                  </p>
+                )}
+              </div>
+            )}
+          </div>
+        )}
+
+        <div className="mt-4 bg-muted/50 p-4 rounded-lg">
+          <h4 className="font-semibold mb-2 text-sm">What you can do with Health Coins:</h4>
           <ul className="text-sm space-y-1 text-muted-foreground">
             <li>✓ Get discounts on consultations</li>
             <li>✓ Save on lab tests and diagnostics</li>
@@ -306,7 +375,7 @@ export function PurchaseCoinsDialog({ open, onOpenChange, onSuccess }: PurchaseC
           </ul>
         </div>
 
-        <div className="flex gap-3 mt-6">
+        <div className="flex gap-3 mt-4">
           <Button
             variant="outline"
             onClick={() => onOpenChange(false)}
@@ -318,9 +387,20 @@ export function PurchaseCoinsDialog({ open, onOpenChange, onSuccess }: PurchaseC
           <Button
             onClick={handlePurchase}
             className="flex-1"
-            disabled={selectedPackage === null || processing}
+            disabled={selectedPackage === null || processing || loadingPackages}
           >
-            {processing ? 'Processing...' : selectedPackage !== null ? `Buy ${PACKAGES[selectedPackage].coins} HC for ₹${PACKAGES[selectedPackage].price}` : 'Select a Package'}
+            {processing ? (
+              <>
+                <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+                Processing...
+              </>
+            ) : selectedPackage !== null ? (
+              appliedCoupon?.finalPrice === 0
+                ? `Get ${packages[selectedPackage].coins} HC Free`
+                : `Buy ${packages[selectedPackage].coins} HC for ${getDisplayPrice()}`
+            ) : (
+              'Select a Package'
+            )}
           </Button>
         </div>
       </DialogContent>

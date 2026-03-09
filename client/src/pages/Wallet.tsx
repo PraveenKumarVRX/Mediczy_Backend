@@ -158,17 +158,17 @@ export default function Wallet() {
   return (
     <div className="container mx-auto p-6 space-y-6">
       {/* Header */}
-      <div className="flex justify-between items-center">
+      <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-3">
         <div>
-          <h1 className="text-3xl font-bold flex items-center gap-2">
-            <WalletIcon className="h-8 w-8" />
+          <h1 className="text-2xl sm:text-3xl font-bold flex items-center gap-2">
+            <WalletIcon className="h-7 w-7 sm:h-8 sm:w-8" />
             Health Coins Wallet
           </h1>
-          <p className="text-muted-foreground mt-1">
+          <p className="text-muted-foreground mt-1 text-sm sm:text-base">
             Earn and spend health coins for rewards and services
           </p>
         </div>
-        <Button onClick={() => setShowPurchaseDialog(true)} size="lg">
+        <Button onClick={() => setShowPurchaseDialog(true)} size="lg" className="w-full sm:w-auto">
           <Plus className="h-4 w-4 mr-2" />
           Buy Coins
         </Button>
@@ -177,12 +177,12 @@ export default function Wallet() {
       {/* Balance Card */}
       <Card className="bg-gradient-to-br from-primary/10 to-primary/5 border-primary/20">
         <CardHeader>
-          <CardTitle className="flex items-center justify-between">
+          <CardTitle className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-2">
             <span className="flex items-center gap-2">
               <Coins className="h-6 w-6 text-primary" />
               Current Balance
             </span>
-            <Button onClick={claimDailyReward} disabled={claiming} variant="secondary">
+            <Button onClick={claimDailyReward} disabled={claiming} variant="secondary" size="sm" className="w-full sm:w-auto">
               <Award className="h-4 w-4 mr-2" />
               {claiming ? "Claiming..." : "Claim Daily Reward"}
             </Button>
@@ -198,7 +198,7 @@ export default function Wallet() {
               <p className="text-sm text-muted-foreground mt-2">Health Coins</p>
             </div>
 
-            <div className="md:col-span-3 grid grid-cols-3 gap-4">
+            <div className="md:col-span-3 grid grid-cols-1 sm:grid-cols-3 gap-4">
               <div className="bg-white/50 dark:bg-gray-800/50 p-4 rounded-lg">
                 <div className="flex items-center gap-2 text-green-600 mb-2">
                   <TrendingUp className="h-4 w-4" />
@@ -264,7 +264,7 @@ export default function Wallet() {
             <CardDescription>Track your daily progress</CardDescription>
           </CardHeader>
           <CardContent>
-            <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+            <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
               <div className="flex items-center gap-3">
                 <div className={`w-10 h-10 rounded-full flex items-center justify-center ${wallet.todayActivity.dailyLoginRewarded ? 'bg-green-100 dark:bg-green-900' : 'bg-gray-100 dark:bg-gray-800'}`}>
                   <Calendar className={`h-5 w-5 ${wallet.todayActivity.dailyLoginRewarded ? 'text-green-600' : 'text-gray-400'}`} />
