@@ -194,6 +194,15 @@ const TeamDashboard = () => {
       pattern: "radial-gradient(circle at 50% 0%, rgba(16, 185, 129, 0.05) 0%, transparent 50%)",
     },
     {
+      title: "WhatsApp Templates",
+      description: "Create & manage message templates",
+      icon: FileText,
+      color: "bg-gradient-to-br from-green-500/10 to-teal-500/10 border-green-500/20",
+      iconColor: "text-green-600",
+      link: "/team/whatsapp-templates",
+      pattern: "radial-gradient(circle at 50% 50%, rgba(34, 197, 94, 0.05) 0%, transparent 50%)",
+    },
+    {
       title: "Reports & Analytics",
       description: "View performance data",
       icon: BarChart3,

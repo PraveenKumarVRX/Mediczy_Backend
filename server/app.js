@@ -86,6 +86,7 @@ import whatsappConfigRouter from './routes/whatsapp.config.route.js';
 import whatsappBusinessRouter from './routes/whatsapp.business.route.js';
 import whatsappProductionRouter from './routes/whatsapp-production.route.js';
 import whatsappNumbersRouter from './routes/whatsapp-numbers.route.js';
+import whatsappRouter from './routes/whatsapp.route.js';
 import rocketChatRouter from './routes/rocketchat.routes.js';
 import chatRouter from './routes/chat.route.js';
 import supportChatRouter from './routes/support-chat.route.js';
@@ -1072,6 +1073,7 @@ app.get('/metrics', authUser, requireRole('admin'), prometheus.metricsEndpoint);
 app.use('/api/sms', smsRouter); // SMS gateway management
 app.use('/api/video-config', videoConfigRouter); // Video configuration management
 app.use('/api/voice-config', voiceConfigRouter); // Voice call configuration management
+app.use('/api/whatsapp', whatsappRouter); // WhatsApp templates, campaigns & messaging
 app.use('/api/whatsapp-config', whatsappConfigRouter); // WhatsApp provider configuration management
 app.use('/api/whatsapp-numbers', whatsappNumbersRouter); // WhatsApp multiple numbers management
 app.use('/api/payments', paymentRouter); // Payment gateway management

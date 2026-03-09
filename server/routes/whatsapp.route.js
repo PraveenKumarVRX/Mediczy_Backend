@@ -18,22 +18,22 @@ import {
 
 const router = express.Router();
 
-// WhatsApp Business API endpoints (Admin only)
-router.get('/stats', authUser, requireRole('admin'), getWhatsAppStats);
-router.get('/templates', authUser, requireRole('admin'), getWhatsAppTemplates);
+// WhatsApp Business API endpoints (Admin + Team)
+router.get('/stats', authUser, requireRole(['admin', 'team']), getWhatsAppStats);
+router.get('/templates', authUser, requireRole(['admin', 'team']), getWhatsAppTemplates);
 router.post('/templates', [
   body('name').notEmpty().withMessage('Template name is required'),
   body('category').isIn(['MARKETING', 'UTILITY', 'AUTHENTICATION']).withMessage('Invalid category'),
   body('language').notEmpty().withMessage('Language is required'),
   body('body').notEmpty().withMessage('Template body is required')
-], authUser, requireRole('admin'), createWhatsAppTemplate);
+], authUser, requireRole(['admin', 'team']), createWhatsAppTemplate);
 router.put('/templates/:id', [
   body('name').optional().notEmpty(),
   body('category').optional().isIn(['MARKETING', 'UTILITY', 'AUTHENTICATION']),
   body('language').optional().notEmpty(),
   body('body').optional().notEmpty()
-], authUser, requireRole('admin'), updateWhatsAppTemplate);
-router.delete('/templates/:id', authUser, requireRole('admin'), deleteWhatsAppTemplate);
+], authUser, requireRole(['admin', 'team']), updateWhatsAppTemplate);
+router.delete('/templates/:id', authUser, requireRole(['admin', 'team']), deleteWhatsAppTemplate);
 
 router.get('/campaigns', authUser, requireRole('admin'), getWhatsAppCampaigns);
 router.post('/campaigns', [
