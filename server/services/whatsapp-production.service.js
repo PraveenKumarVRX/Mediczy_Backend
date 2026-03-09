@@ -48,23 +48,22 @@ class WhatsAppProductionService {
     if (!this.twilioConfigured) {
       throw new Error('Twilio WhatsApp is not configured');
     }
-    
-    if (!this.templates.appointmentConfirmation) {
-      throw new Error('Appointment confirmation template not configured');
-    }
 
-    return await this.client.messages.create({
+    const messageParams = {
       from: this.fromNumber,
       to: `whatsapp:${to}`,
-      contentSid: this.templates.appointmentConfirmation,
-      contentVariables: JSON.stringify({
-        '1': patientName,
-        '2': doctorName,
-        '3': date,
-        '4': time,
-        '5': location
-      })
-    });
+    };
+
+    if (this.templates.appointmentConfirmation) {
+      messageParams.contentSid = this.templates.appointmentConfirmation;
+      messageParams.contentVariables = JSON.stringify({
+        '1': patientName, '2': doctorName, '3': date, '4': time, '5': location
+      });
+    } else {
+      messageParams.body = `*Health Checkup Appointment Update*\n\nDear ${patientName},\n\nYour health checkup appointment has been confirmed!\n\n📍 Lab: ${doctorName}\n📌 Address: ${location}\n📅 Date: ${date}\n🕐 Time: ${time}\n\nPlease arrive 15 minutes early with a valid ID. Fasting may be required for certain tests — kindly check email for more details.\n\nFor rescheduling or queries, contact us via this chat.\n\n_SmartHealth_`;
+    }
+
+    return await this.client.messages.create(messageParams);
   }
 
   /**
@@ -74,22 +73,19 @@ class WhatsAppProductionService {
     if (!this.twilioConfigured) {
       throw new Error('Twilio WhatsApp is not configured');
     }
-    
-    if (!this.templates.appointmentReminder) {
-      throw new Error('Appointment reminder template not configured');
+
+    const messageParams = { from: this.fromNumber, to: `whatsapp:${to}` };
+
+    if (this.templates.appointmentReminder) {
+      messageParams.contentSid = this.templates.appointmentReminder;
+      messageParams.contentVariables = JSON.stringify({
+        '1': patientName, '2': doctorName, '3': time, '4': location
+      });
+    } else {
+      messageParams.body = `*Appointment Reminder* 🩺\n\nHello ${patientName}, this is a reminder for your appointment with ${doctorName} at ${time}.\n\n📍 Location: ${location}\n\nPlease arrive 15 minutes early. Reply YES to confirm or NO to reschedule.\n\n_SmartHealth_`;
     }
 
-    return await this.client.messages.create({
-      from: this.fromNumber,
-      to: `whatsapp:${to}`,
-      contentSid: this.templates.appointmentReminder,
-      contentVariables: JSON.stringify({
-        '1': patientName,
-        '2': doctorName,
-        '3': time,
-        '4': location
-      })
-    });
+    return await this.client.messages.create(messageParams);
   }
 
   /**
@@ -99,19 +95,17 @@ class WhatsAppProductionService {
     if (!this.twilioConfigured) {
       throw new Error('Twilio WhatsApp is not configured');
     }
-    
-    if (!this.templates.healthReport) {
-      throw new Error('Health report template not configured');
+
+    const messageParams = { from: this.fromNumber, to: `whatsapp:${to}` };
+
+    if (this.templates.healthReport) {
+      messageParams.contentSid = this.templates.healthReport;
+      messageParams.contentVariables = JSON.stringify({ '1': patientName });
+    } else {
+      messageParams.body = `*Health Report Ready* 📋\n\nDear ${patientName}, your health report is now available. Please log in to your SmartHealth account or visit the lab to collect it.\n\n_SmartHealth_`;
     }
 
-    return await this.client.messages.create({
-      from: this.fromNumber,
-      to: `whatsapp:${to}`,
-      contentSid: this.templates.healthReport,
-      contentVariables: JSON.stringify({
-        '1': patientName
-      })
-    });
+    return await this.client.messages.create(messageParams);
   }
 
   /**
@@ -121,23 +115,19 @@ class WhatsAppProductionService {
     if (!this.twilioConfigured) {
       throw new Error('Twilio WhatsApp is not configured');
     }
-    
-    if (!this.templates.prescription) {
-      throw new Error('Prescription template not configured');
+
+    const messageParams = { from: this.fromNumber, to: `whatsapp:${to}` };
+
+    if (this.templates.prescription) {
+      messageParams.contentSid = this.templates.prescription;
+      messageParams.contentVariables = JSON.stringify({
+        '1': patientName, '2': doctorName, '3': prescriptionUrl, '4': medications, '5': followUpDate
+      });
+    } else {
+      messageParams.body = `*Prescription Ready* 💊\n\nHi ${patientName}, your prescription from ${doctorName} is ready.\n\n💊 Medications: ${medications}\n📅 Follow-up: ${followUpDate}\n🔗 Download: ${prescriptionUrl}\n\n_SmartHealth_`;
     }
 
-    return await this.client.messages.create({
-      from: this.fromNumber,
-      to: `whatsapp:${to}`,
-      contentSid: this.templates.prescription,
-      contentVariables: JSON.stringify({
-        '1': patientName,
-        '2': doctorName,
-        '3': prescriptionUrl,
-        '4': medications,
-        '5': followUpDate
-      })
-    });
+    return await this.client.messages.create(messageParams);
   }
 
   /**
@@ -147,19 +137,17 @@ class WhatsAppProductionService {
     if (!this.twilioConfigured) {
       throw new Error('Twilio WhatsApp is not configured');
     }
-    
-    if (!this.templates.otp) {
-      throw new Error('OTP template not configured');
+
+    const messageParams = { from: this.fromNumber, to: `whatsapp:${to}` };
+
+    if (this.templates.otp) {
+      messageParams.contentSid = this.templates.otp;
+      messageParams.contentVariables = JSON.stringify({ '1': otp });
+    } else {
+      messageParams.body = `Your SmartHealth verification code is *${otp}*. This code expires in 10 minutes. Do not share this code with anyone.`;
     }
 
-    return await this.client.messages.create({
-      from: this.fromNumber,
-      to: `whatsapp:${to}`,
-      contentSid: this.templates.otp,
-      contentVariables: JSON.stringify({
-        '1': otp
-      })
-    });
+    return await this.client.messages.create(messageParams);
   }
 
   /**
@@ -169,19 +157,17 @@ class WhatsAppProductionService {
     if (!this.twilioConfigured) {
       throw new Error('Twilio WhatsApp is not configured');
     }
-    
-    if (!this.templates.checkupReminder) {
-      throw new Error('Checkup reminder template not configured');
+
+    const messageParams = { from: this.fromNumber, to: `whatsapp:${to}` };
+
+    if (this.templates.checkupReminder) {
+      messageParams.contentSid = this.templates.checkupReminder;
+      messageParams.contentVariables = JSON.stringify({ '1': patientName });
+    } else {
+      messageParams.body = `*Health Checkup Reminder* 🏥\n\nDear ${patientName}, it's time for your routine health checkup. Regular checkups help detect health issues early.\n\nBook your appointment today!\n\n_SmartHealth_`;
     }
 
-    return await this.client.messages.create({
-      from: this.fromNumber,
-      to: `whatsapp:${to}`,
-      contentSid: this.templates.checkupReminder,
-      contentVariables: JSON.stringify({
-        '1': patientName
-      })
-    });
+    return await this.client.messages.create(messageParams);
   }
 
   /**
