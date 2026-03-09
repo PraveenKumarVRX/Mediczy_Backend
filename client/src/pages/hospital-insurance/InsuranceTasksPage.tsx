@@ -8,6 +8,7 @@ import { Textarea } from '@/components/ui/textarea';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { useToast } from '@/hooks/use-toast';
+import api from '@/utils/api';
 import { Inbox, CheckCircle2, AlertTriangle, Clock, Send, Eye, MessageSquare, ArrowUpRight, Filter } from 'lucide-react';
 
 interface Task {
@@ -30,22 +31,58 @@ const InsuranceTasksPage = () => {
   const [filter, setFilter] = useState('all');
   const [selectedTask, setSelectedTask] = useState<Task | null>(null);
   const [reply, setReply] = useState('');
+  const [loading, setLoading] = useState(true);
 
-  const [tasks] = useState<Task[]>([
-    { id: 'T001', type: 'query_response', title: 'Query on Room Rent Charges', patient: 'Rajesh Kumar', insurer: 'Star Health', claimNo: 'CLM-2025-0042', priority: 'high', dueDate: '2025-06-20', status: 'pending', assignedTo: 'Dr. Sharma', description: 'Insurer queries about room rent exceeding policy limit. Need to provide cost justification with supporting documents.' },
-    { id: 'T002', type: 'document_pending', title: 'Upload Discharge Summary', patient: 'Priya Singh', insurer: 'ICICI Lombard', claimNo: 'CLM-2025-0041', priority: 'high', dueDate: '2025-06-19', status: 'pending', assignedTo: 'Nurse Patel', description: 'Discharge summary required for claim processing. Upload signed copy.' },
-    { id: 'T003', type: 'pre_auth_review', title: 'Pre-Auth Enhancement Request', patient: 'Amit Verma', insurer: 'HDFC Ergo', claimNo: 'PA-2025-0089', priority: 'medium', dueDate: '2025-06-21', status: 'in_progress', assignedTo: 'Dr. Gupta', description: 'Enhancement from ₹1,50,000 to ₹2,20,000 due to complications. Provide updated treatment plan.' },
-    { id: 'T004', type: 'escalation', title: 'Settlement Delayed > 30 Days', patient: 'Meera Devi', insurer: 'Bajaj Allianz', claimNo: 'CLM-2025-0028', priority: 'high', dueDate: '2025-06-18', status: 'pending', assignedTo: 'Finance Team', description: 'Claim approved but settlement pending for 35 days. Escalate to insurer regional office.' },
-    { id: 'T005', type: 'appeal', title: 'Appeal Against Rejection', patient: 'Suresh Patel', insurer: 'New India', claimNo: 'CLM-2025-0035', priority: 'medium', dueDate: '2025-06-25', status: 'pending', assignedTo: 'Claims Exec', description: 'Claim rejected due to pre-existing condition exclusion. Patient has continuous coverage > 4 years. File appeal with documentation.' },
-  ]);
+  const [tasks, setTasks] = useState<Task[]>([]);
 
-  const filteredTasks = tasks.filter(t => {
-    if (activeTab === 'inbox') return t.status !== 'completed';
-    if (activeTab === 'escalations') return t.type === 'escalation';
-    if (activeTab === 'appeals') return t.type === 'appeal';
-    if (activeTab === 'completed') return t.status === 'completed';
-    return true;
-  }).filter(t => filter === 'all' || t.priority === filter);
+  useEffect(() => {
+    fetchTasks();
+  }, [activeTab]);
+
+  const fetchTasks = async () => {
+    setLoading(true);
+    try {
+      let endpoint = '/hospital/insurance/tasks/inbox';
+      if (activeTab === 'escalations') endpoint = '/hospital/insurance/claims/escalations';
+      else if (activeTab === 'appeals') endpoint = '/hospital/insurance/claims/appeals';
+
+      const { data } = await api.get(endpoint);
+      if (data.success) {
+        if (activeTab === 'escalations') {
+          setTasks((data.escalations || []).map((e: any) => ({
+            id: e.claimId || e.id, type: 'escalation', title: `SLA Breach — ${e.claimNumber}`,
+            patient: e.patientName || 'Unknown', insurer: '', claimNo: e.claimNumber || '',
+            priority: e.escalationLevel === 'critical' ? 'high' : 'medium',
+            dueDate: '', status: e.status === 'completed' ? 'completed' : 'pending',
+            assignedTo: '', description: `Pending ${e.ageDays} days (SLA: ${e.slaThreshold} days)`
+          })));
+        } else if (activeTab === 'appeals') {
+          setTasks((data.appeals || []).map((a: any) => ({
+            id: a.claimId || a.id, type: 'appeal', title: `Appeal — ${a.claimNumber}`,
+            patient: a.patientName || 'Unknown', insurer: '', claimNo: a.claimNumber || '',
+            priority: 'medium', dueDate: '', status: a.status === 'completed' ? 'completed' : 'pending',
+            assignedTo: '', description: a.rejectionReason || `Appeal #${a.appealCount || 0}`
+          })));
+        } else {
+          setTasks((data.taskInbox || []).map((t: any) => ({
+            id: t.claimId || t.preAuthId || t.id, type: t.taskType?.replace('-', '_') || 'query_response',
+            title: t.taskLabel || t.title || 'Task', patient: t.patientName || 'Unknown',
+            insurer: '', claimNo: t.claimNumber || t.preAuthNumber || '',
+            priority: t.priority === 'high' ? 'high' : 'medium',
+            dueDate: '', status: t.status === 'completed' ? 'completed' : 'pending',
+            assignedTo: '', description: `${t.taskLabel} • Age: ${t.ageDays || 0} days • SLA: ${t.slaFlag || '—'}`
+          })));
+        }
+      }
+    } catch (err) {
+      console.warn('Tasks fetch error, using empty list:', err);
+      setTasks([]);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const filteredTasks = tasks.filter(t => filter === 'all' || t.priority === filter);
 
   const priorityColor = (p: string) => {
     switch (p) {

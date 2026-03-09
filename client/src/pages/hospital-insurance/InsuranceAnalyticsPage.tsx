@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import InsurancePortalLayout from '@/components/hospital-insurance/InsurancePortalLayout';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
@@ -7,37 +7,59 @@ import { Input } from '@/components/ui/input';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { useToast } from '@/hooks/use-toast';
-import { BarChart3, TrendingUp, Download, PieChart, ArrowUpRight, ArrowDownRight } from 'lucide-react';
+import api from '@/utils/api';
+import { BarChart3, TrendingUp, Download, PieChart, ArrowUpRight, ArrowDownRight, Loader2 } from 'lucide-react';
 
 const InsuranceAnalyticsPage = () => {
   const { toast } = useToast();
   const [activeTab, setActiveTab] = useState('overview');
   const [dateRange, setDateRange] = useState('30d');
+  const [loading, setLoading] = useState(true);
+  const [agingData, setAgingData] = useState<any[]>([]);
+  const [tatData, setTatData] = useState<any[]>([]);
+  const [trendData, setTrendData] = useState<any[]>([]);
+  const [dashStats, setDashStats] = useState<any>(null);
+
+  useEffect(() => {
+    fetchAnalytics();
+  }, [dateRange]);
+
+  const fetchAnalytics = async () => {
+    setLoading(true);
+    try {
+      const [dashRes, agingRes, tatRes, trendRes] = await Promise.allSettled([
+        api.get('/hospital/insurance/dashboard'),
+        api.get('/hospital/insurance/reports/claims-aging'),
+        api.get('/hospital/insurance/reports/tat'),
+        api.get('/hospital/insurance/reports/query-rejection-trends'),
+      ]);
+
+      if (dashRes.status === 'fulfilled' && dashRes.value.data.success) {
+        setDashStats(dashRes.value.data.dashboard?.stats);
+      }
+      if (agingRes.status === 'fulfilled' && agingRes.value.data.success) {
+        setAgingData(agingRes.value.data.agingBuckets || agingRes.value.data.aging || []);
+      }
+      if (tatRes.status === 'fulfilled' && tatRes.value.data.success) {
+        setTatData(tatRes.value.data.report || []);
+      }
+      if (trendRes.status === 'fulfilled' && trendRes.value.data.success) {
+        setTrendData(trendRes.value.data.trends || []);
+      }
+    } catch (err) {
+      console.warn('Analytics fetch error:', err);
+    } finally {
+      setLoading(false);
+    }
+  };
 
   const overviewStats = [
-    { label: 'Total Claims Value', value: '₹45,62,000', change: '+12%', up: true },
-    { label: 'Avg Settlement Time', value: '8.2 days', change: '-15%', up: false },
-    { label: 'Approval Rate', value: '78%', change: '+3%', up: true },
-    { label: 'Avg Deduction %', value: '6.4%', change: '-2%', up: false },
-    { label: 'Pending Claims', value: '23', change: '+5', up: true },
-    { label: 'Query Response TAT', value: '2.1 hrs', change: '-0.5h', up: false },
-  ];
-
-  const agingData = [
-    { range: '0-7 days', count: 12, value: '₹8,40,000' },
-    { range: '8-15 days', count: 8, value: '₹5,60,000' },
-    { range: '16-30 days', count: 5, value: '₹3,20,000' },
-    { range: '31-60 days', count: 3, value: '₹2,10,000' },
-    { range: '60+ days', count: 2, value: '₹1,80,000' },
-  ];
-
-  const insurerWise = [
-    { name: 'Star Health', claims: 45, approved: 38, rejected: 3, pending: 4, value: '₹12,50,000', settlementRate: '84%' },
-    { name: 'ICICI Lombard', claims: 32, approved: 25, rejected: 4, pending: 3, value: '₹9,80,000', settlementRate: '78%' },
-    { name: 'HDFC Ergo', claims: 28, approved: 22, rejected: 2, pending: 4, value: '₹8,40,000', settlementRate: '79%' },
-    { name: 'Bajaj Allianz', claims: 18, approved: 14, rejected: 2, pending: 2, value: '₹5,60,000', settlementRate: '78%' },
-    { name: 'New India Assurance', claims: 15, approved: 11, rejected: 1, pending: 3, value: '₹4,20,000', settlementRate: '73%' },
-    { name: 'Max Bupa', claims: 12, approved: 10, rejected: 1, pending: 1, value: '₹3,80,000', settlementRate: '83%' },
+    { label: 'Total Claims', value: dashStats?.total?.toString() || '0', change: '', up: true },
+    { label: 'Approved', value: dashStats?.approved?.toString() || '0', change: '', up: true },
+    { label: 'Rejected', value: dashStats?.rejected?.toString() || '0', change: '', up: false },
+    { label: 'Pending', value: dashStats?.pending?.toString() || '0', change: '', up: true },
+    { label: 'Query', value: dashStats?.query?.toString() || '0', change: '', up: true },
+    { label: 'Approval Rate', value: dashStats?.total ? `${Math.round((dashStats.approved / dashStats.total) * 100)}%` : '—', change: '', up: true },
   ];
 
   const quickReports = [
@@ -138,6 +160,11 @@ const InsuranceAnalyticsPage = () => {
             <Card>
               <CardHeader><CardTitle className="flex items-center gap-2"><TrendingUp className="h-5 w-5" /> Claims Aging Analysis</CardTitle></CardHeader>
               <CardContent>
+                {loading ? (
+                  <div className="py-8 text-center"><Loader2 className="h-6 w-6 mx-auto animate-spin text-indigo-500" /></div>
+                ) : agingData.length === 0 ? (
+                  <div className="py-8 text-center text-muted-foreground">No aging data available. Claims data will appear once claims are created.</div>
+                ) : (
                 <table className="w-full text-sm">
                   <thead className="bg-slate-50 dark:bg-slate-800">
                     <tr>
@@ -148,64 +175,57 @@ const InsuranceAnalyticsPage = () => {
                     </tr>
                   </thead>
                   <tbody>
-                    {agingData.map((row, idx) => (
+                    {agingData.map((row: any, idx: number) => {
+                      const totalCount = agingData.reduce((s: number, r: any) => s + (r.count || 0), 0);
+                      return (
                       <tr key={idx} className="border-b">
-                        <td className="py-2 px-3 font-medium">{row.range}</td>
-                        <td className="py-2 px-3 text-center">{row.count}</td>
-                        <td className="py-2 px-3 text-right">{row.value}</td>
-                        <td className="py-2 px-3 text-right">{Math.round(row.count / 30 * 100)}%</td>
+                        <td className="py-2 px-3 font-medium">{row.range || row.bucket}</td>
+                        <td className="py-2 px-3 text-center">{row.count || 0}</td>
+                        <td className="py-2 px-3 text-right">₹{(row.value || row.totalAmount || 0).toLocaleString('en-IN')}</td>
+                        <td className="py-2 px-3 text-right">{totalCount > 0 ? Math.round(((row.count || 0) / totalCount) * 100) : 0}%</td>
                       </tr>
-                    ))}
+                    )})}
                   </tbody>
-                  <tfoot className="bg-slate-50 dark:bg-slate-800 font-medium">
-                    <tr>
-                      <td className="py-2 px-3">Total</td>
-                      <td className="py-2 px-3 text-center">{agingData.reduce((s, r) => s + r.count, 0)}</td>
-                      <td className="py-2 px-3 text-right">₹21,10,000</td>
-                      <td className="py-2 px-3 text-right">100%</td>
-                    </tr>
-                  </tfoot>
                 </table>
+                )}
               </CardContent>
             </Card>
           </TabsContent>
 
           <TabsContent value="insurer" className="space-y-4">
             <Card>
-              <CardHeader><CardTitle className="flex items-center gap-2"><BarChart3 className="h-5 w-5" /> Insurer-wise Performance</CardTitle></CardHeader>
+              <CardHeader><CardTitle className="flex items-center gap-2"><BarChart3 className="h-5 w-5" /> TAT & Rejection Analysis</CardTitle></CardHeader>
               <CardContent>
+                {loading ? (
+                  <div className="py-8 text-center"><Loader2 className="h-6 w-6 mx-auto animate-spin text-indigo-500" /></div>
+                ) : tatData.length === 0 && trendData.length === 0 ? (
+                  <div className="py-8 text-center text-muted-foreground">No data yet. Analytics will populate as claims are processed.</div>
+                ) : (
                 <div className="overflow-x-auto">
                   <table className="w-full text-sm">
                     <thead className="bg-slate-50 dark:bg-slate-800">
                       <tr>
-                        <th className="py-2 px-3 text-left font-medium">Insurer</th>
-                        <th className="py-2 px-3 text-center font-medium">Total Claims</th>
-                        <th className="py-2 px-3 text-center font-medium">Approved</th>
-                        <th className="py-2 px-3 text-center font-medium">Rejected</th>
-                        <th className="py-2 px-3 text-center font-medium">Pending</th>
-                        <th className="py-2 px-3 text-right font-medium">Total Value</th>
-                        <th className="py-2 px-3 text-right font-medium">Settlement %</th>
+                        <th className="py-2 px-3 text-left font-medium">Metric</th>
+                        <th className="py-2 px-3 text-right font-medium">Value</th>
                       </tr>
                     </thead>
                     <tbody>
-                      {insurerWise.map((row, idx) => (
-                        <tr key={idx} className="border-b hover:bg-slate-50 dark:hover:bg-slate-800/50">
-                          <td className="py-2 px-3 font-medium">{row.name}</td>
-                          <td className="py-2 px-3 text-center">{row.claims}</td>
-                          <td className="py-2 px-3 text-center text-green-600">{row.approved}</td>
-                          <td className="py-2 px-3 text-center text-red-600">{row.rejected}</td>
-                          <td className="py-2 px-3 text-center text-amber-600">{row.pending}</td>
-                          <td className="py-2 px-3 text-right">{row.value}</td>
-                          <td className="py-2 px-3 text-right">
-                            <Badge className={parseInt(row.settlementRate) >= 80 ? 'bg-green-100 text-green-700' : 'bg-amber-100 text-amber-700'}>
-                              {row.settlementRate}
-                            </Badge>
-                          </td>
+                      {tatData.map((row: any, idx: number) => (
+                        <tr key={`tat-${idx}`} className="border-b">
+                          <td className="py-2 px-3 font-medium">{row.payer || row.metric || `Payer ${idx + 1}`}</td>
+                          <td className="py-2 px-3 text-right">{row.preAuthTat || row.avgTat || '—'}</td>
+                        </tr>
+                      ))}
+                      {trendData.map((row: any, idx: number) => (
+                        <tr key={`trend-${idx}`} className="border-b">
+                          <td className="py-2 px-3 font-medium">{row.reason || row.type || `Trend ${idx + 1}`}</td>
+                          <td className="py-2 px-3 text-right">{row.count || row.percentage || '—'}</td>
                         </tr>
                       ))}
                     </tbody>
                   </table>
                 </div>
+                )}
               </CardContent>
             </Card>
           </TabsContent>

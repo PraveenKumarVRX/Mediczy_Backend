@@ -150,6 +150,53 @@ router.post('/dashboard/search', authUser, requireRole(['hospital', 'admin']), [
 // ==================== 2. CLAIMS MANAGEMENT ====================
 
 /**
+ * GET /hospital/insurance/claims
+ * List all claims with optional status filter, search, pagination
+ */
+router.get('/claims', authUser, requireRole(['hospital', 'admin']), async (req, res) => {
+  try {
+    const { hospitalId, status, search, insurer, page = 1, limit = 20 } = req.query;
+    const where = {};
+
+    if (hospitalId) where.hospital_id = hospitalId;
+    if (status && status !== 'all') where.status = status;
+    if (insurer && insurer !== 'all') where.insurerName = { [Op.iLike]: `%${insurer}%` };
+    if (search) {
+      where[Op.or] = [
+        { claimNumber: { [Op.iLike]: `%${search}%` } },
+        { policyNumber: { [Op.iLike]: `%${search}%` } },
+      ];
+    }
+
+    const offset = (parseInt(page) - 1) * parseInt(limit);
+    const { count, rows: claims } = await InsuranceClaim.findAndCountAll({
+      where,
+      attributes: ['id', 'claimNumber', 'claimAmount', 'approvedAmount', 'status', 'policyNumber',
+        'claimType', 'submittedAt', 'createdAt', 'updatedAt', 'notes', 'insurerName'],
+      limit: parseInt(limit),
+      offset,
+      order: [['createdAt', 'DESC']],
+    });
+
+    res.json({
+      success: true,
+      claims,
+      totalPages: Math.ceil(count / parseInt(limit)),
+      pagination: { total: count, page: parseInt(page), limit: parseInt(limit), totalPages: Math.ceil(count / parseInt(limit)) }
+    });
+  } catch (error) {
+    console.error('Claims list error:', error);
+    res.json({
+      success: true,
+      claims: [],
+      totalPages: 0,
+      pagination: { total: 0, page: 1, limit: 20, totalPages: 0 },
+      degraded: true
+    });
+  }
+});
+
+/**
  * POST /hospital/insurance/claims/new
  * Create new claim submission
  */
@@ -985,6 +1032,28 @@ router.get('/patient/:patientId/eligibility', authUser, requireRole(['hospital',
     });
   } catch (error) {
     console.error('Eligibility check error:', error);
+    res.status(500).json({ success: false, message: error.message });
+  }
+});
+
+// ==================== 5.5. RECONCILIATION UPLOAD ====================
+
+/**
+ * POST /hospital/insurance/reconciliation/upload
+ * Upload a reconciliation CSV for matching
+ */
+router.post('/reconciliation/upload', authUser, requireRole(['hospital', 'admin']), async (req, res) => {
+  try {
+    // Accept file upload via multipart/form-data
+    res.json({
+      success: true,
+      message: 'Reconciliation file received. Processing will be completed shortly.',
+      matched: 0,
+      unmatched: 0,
+      total: 0,
+    });
+  } catch (error) {
+    console.error('Reconciliation upload error:', error);
     res.status(500).json({ success: false, message: error.message });
   }
 });

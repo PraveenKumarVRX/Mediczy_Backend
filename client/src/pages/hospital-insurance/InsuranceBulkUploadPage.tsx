@@ -5,6 +5,7 @@ import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { useToast } from '@/hooks/use-toast';
+import api from '@/utils/api';
 import { Upload, Download, FileText, CheckCircle2, AlertTriangle, Loader2 } from 'lucide-react';
 
 const InsuranceBulkUploadPage = () => {
@@ -42,20 +43,27 @@ const InsuranceBulkUploadPage = () => {
       return;
     }
     setUploading(true);
-    // Simulate upload
-    await new Promise(r => setTimeout(r, 2000));
-    setResults({
-      total: 45,
-      success: 42,
-      failed: 3,
-      errors: [
-        { row: 12, field: 'PolicyNo', error: 'Invalid policy number format' },
-        { row: 28, field: 'Amount', error: 'Amount exceeds maximum limit' },
-        { row: 34, field: 'DOB', error: 'Invalid date format (expected DD/MM/YYYY)' },
-      ]
-    });
-    setUploading(false);
-    toast({ title: 'Upload Complete', description: '42 of 45 records processed successfully.' });
+    try {
+      const formData = new FormData();
+      formData.append('file', file);
+      formData.append('type', uploadType);
+      const { data } = await api.post('/hospital/insurance/claims/bulk-upload', formData, {
+        headers: { 'Content-Type': 'multipart/form-data' }
+      });
+      if (data.success) {
+        setResults({
+          total: data.totalProcessed || 0,
+          success: data.successful || 0,
+          failed: data.failed || 0,
+          errors: data.errors || [],
+        });
+        toast({ title: 'Upload Complete', description: `${data.successful || 0} of ${data.totalProcessed || 0} records processed.` });
+      }
+    } catch (err: any) {
+      toast({ title: 'Upload Failed', description: err?.response?.data?.message || 'Failed to upload file', variant: 'destructive' });
+    } finally {
+      setUploading(false);
+    }
   };
 
   const handleDownloadTemplate = () => {

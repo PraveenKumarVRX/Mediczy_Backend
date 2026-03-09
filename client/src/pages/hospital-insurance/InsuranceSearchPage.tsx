@@ -1,40 +1,50 @@
 import { useState } from 'react';
 import InsurancePortalLayout from '@/components/hospital-insurance/InsurancePortalLayout';
-import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
+import { Card, CardContent } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { useToast } from '@/hooks/use-toast';
-import { Search, FileText, User, CreditCard, Clock, ExternalLink } from 'lucide-react';
+import { useNavigate } from 'react-router-dom';
+import api from '@/utils/api';
+import { Search, FileText, User, CreditCard, Clock, ExternalLink, Loader2 } from 'lucide-react';
 
 const InsuranceSearchPage = () => {
   const { toast } = useToast();
+  const navigate = useNavigate();
   const [query, setQuery] = useState('');
   const [searchType, setSearchType] = useState('all');
   const [results, setResults] = useState<any[]>([]);
   const [searched, setSearched] = useState(false);
+  const [loading, setLoading] = useState(false);
 
-  const demoResults = [
-    { type: 'claim', id: 'CLM-2025-0042', title: 'Rajesh Kumar - Star Health', status: 'PA Approved', amount: '₹1,50,000', date: '2025-06-15', link: '/hospital-insurance/claims' },
-    { type: 'preauth', id: 'PA-2025-0089', title: 'Amit Verma - HDFC Ergo', status: 'Pending', amount: '₹2,20,000', date: '2025-06-18', link: '/hospital-insurance/pre-auth' },
-    { type: 'patient', id: 'PAT-10042', title: 'Priya Singh', status: 'Active', amount: 'Policy: IC-2025-8899', date: '2025-06-12', link: '/hospital-insurance/claims' },
-    { type: 'document', id: 'DOC-0523', title: 'Discharge Summary - Rajesh Kumar', status: 'Uploaded', amount: 'CLM-2025-0042', date: '2025-06-16', link: '/hospital-insurance/documents' },
-  ];
-
-  const handleSearch = () => {
+  const handleSearch = async () => {
     if (!query.trim()) {
       toast({ title: 'Enter search term', variant: 'destructive' });
       return;
     }
-    const filtered = searchType === 'all' ? demoResults : demoResults.filter(r => r.type === searchType);
-    const textFiltered = filtered.filter(r =>
-      r.id.toLowerCase().includes(query.toLowerCase()) ||
-      r.title.toLowerCase().includes(query.toLowerCase()) ||
-      r.amount.toLowerCase().includes(query.toLowerCase())
-    );
-    setResults(textFiltered.length > 0 ? textFiltered : filtered);
+    setLoading(true);
     setSearched(true);
+    try {
+      const { data } = await api.post('/hospital/insurance/dashboard/search', { searchTerm: query.trim() });
+      if (data.success) {
+        setResults((data.results || []).map((r: any) => ({
+          type: 'claim',
+          id: r.claimNumber || r.id,
+          title: r.patient ? `${r.patient.firstName} ${r.patient.lastName}` : `Claim ${r.claimNumber}`,
+          status: r.status || 'unknown',
+          amount: `₹${(r.claimAmount || 0).toLocaleString('en-IN')}`,
+          date: r.createdAt ? new Date(r.createdAt).toLocaleDateString('en-IN') : '—',
+          link: '/hospital-insurance/claims',
+        })));
+      }
+    } catch (err) {
+      console.warn('Search error:', err);
+      setResults([]);
+    } finally {
+      setLoading(false);
+    }
   };
 
   const typeIcon = (type: string) => {
@@ -73,8 +83,8 @@ const InsuranceSearchPage = () => {
                   <SelectItem value="document">Documents</SelectItem>
                 </SelectContent>
               </Select>
-              <Button className="h-12 px-6 bg-indigo-600 hover:bg-indigo-700" onClick={handleSearch}>
-                <Search className="h-4 w-4 mr-1" /> Search
+              <Button className="h-12 px-6 bg-indigo-600 hover:bg-indigo-700" onClick={handleSearch} disabled={loading}>
+                {loading ? <Loader2 className="h-4 w-4 mr-1 animate-spin" /> : <Search className="h-4 w-4 mr-1" />} Search
               </Button>
             </div>
           </CardContent>
@@ -82,9 +92,11 @@ const InsuranceSearchPage = () => {
 
         {searched && (
           <div className="space-y-3">
-            <p className="text-sm text-muted-foreground">{results.length} result{results.length !== 1 ? 's' : ''} found</p>
+            <p className="text-sm text-muted-foreground">
+              {loading ? 'Searching...' : `${results.length} result${results.length !== 1 ? 's' : ''} found`}
+            </p>
             {results.map((result, idx) => (
-              <Card key={idx} className="hover:shadow-md transition-shadow cursor-pointer">
+              <Card key={idx} className="hover:shadow-md transition-shadow cursor-pointer" onClick={() => navigate(result.link)}>
                 <CardContent className="p-4 flex items-center justify-between">
                   <div className="flex items-center gap-3">
                     {typeIcon(result.type)}
@@ -97,7 +109,7 @@ const InsuranceSearchPage = () => {
                     </div>
                   </div>
                   <div className="flex items-center gap-2">
-                    <Badge className={result.status === 'Active' || result.status === 'PA Approved' || result.status === 'Uploaded' ? 'bg-green-100 text-green-700' : 'bg-amber-100 text-amber-700'}>
+                    <Badge className={['approved','active','uploaded','settled'].includes(result.status) ? 'bg-green-100 text-green-700' : ['rejected','denied'].includes(result.status) ? 'bg-red-100 text-red-700' : 'bg-amber-100 text-amber-700'}>
                       {result.status}
                     </Badge>
                     <Button variant="ghost" size="sm"><ExternalLink className="h-3 w-3" /></Button>

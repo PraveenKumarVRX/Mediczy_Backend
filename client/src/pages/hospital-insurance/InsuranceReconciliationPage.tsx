@@ -10,7 +10,7 @@ import api from '@/utils/api';
 import { useToast } from '@/hooks/use-toast';
 import {
   Receipt, Download, Upload, CreditCard, Clock,
-  TrendingUp, RefreshCw, FileText
+  TrendingUp, RefreshCw, FileText, Filter, CalendarDays
 } from 'lucide-react';
 
 const InsuranceReconciliationPage = () => {
@@ -194,7 +194,7 @@ const InsuranceReconciliationPage = () => {
                 <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-6">
                   {[
                     { label: 'Avg. Pre-Auth TAT', value: '4.2 hrs', icon: Clock },
-                    { label: 'Avg. Claim TAT', value: '12.5 days', icon: Calendar },
+                    { label: 'Avg. Claim TAT', value: '12.5 days', icon: CalendarDays },
                     { label: 'Payer Response Time', value: '6.8 hrs', icon: TrendingUp },
                     { label: 'Document Submission TAT', value: '2.1 days', icon: FileText },
                   ].map((item) => {
@@ -228,11 +228,11 @@ const InsuranceReconciliationPage = () => {
                   </thead>
                   <tbody>
                     {(tatData.length > 0 ? tatData : [
-                      { payer: 'Star Health', preAuthTat: '3.5 hrs', claimTat: '10 days', responseTime: '5 hrs', totalClaims: 45, remarks: 'Good' },
-                      { payer: 'HDFC ERGO', preAuthTat: '5.0 hrs', claimTat: '14 days', responseTime: '8 hrs', totalClaims: 32, remarks: 'Delayed' },
-                      { payer: 'ICICI Lombard', preAuthTat: '4.2 hrs', claimTat: '11 days', responseTime: '6 hrs', totalClaims: 28, remarks: 'Average' },
-                      { payer: 'Medi Assist', preAuthTat: '2.8 hrs', claimTat: '8 days', responseTime: '4 hrs', totalClaims: 52, remarks: 'Excellent' },
-                      { payer: 'Care Health', preAuthTat: '6.1 hrs', claimTat: '16 days', responseTime: '10 hrs', totalClaims: 18, remarks: 'Slow' },
+                      { payer: 'Star Health (sample)', preAuthTat: '3.5 hrs', claimTat: '10 days', responseTime: '5 hrs', totalClaims: 0, remarks: '—' },
+                      { payer: 'HDFC ERGO (sample)', preAuthTat: '5.0 hrs', claimTat: '14 days', responseTime: '8 hrs', totalClaims: 0, remarks: '—' },
+                      { payer: 'ICICI Lombard (sample)', preAuthTat: '4.2 hrs', claimTat: '11 days', responseTime: '6 hrs', totalClaims: 0, remarks: '—' },
+                      { payer: 'Medi Assist (sample)', preAuthTat: '2.8 hrs', claimTat: '8 days', responseTime: '4 hrs', totalClaims: 0, remarks: '—' },
+                      { payer: 'Care Health (sample)', preAuthTat: '6.1 hrs', claimTat: '16 days', responseTime: '10 hrs', totalClaims: 0, remarks: '—' },
                     ]).map((row: any, i: number) => (
                       <tr key={i} className="border-b">
                         <td className="py-2 px-4 font-medium">{row.payer}</td>
