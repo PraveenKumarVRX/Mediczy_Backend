@@ -25,6 +25,7 @@ const ROLE_TOKEN_KEYS: Record<string, string> = {
   psu: "psuToken",
   insurer: "insurerToken",
   ngo: "ngoToken",
+  hospitalInsurance: "hospitalInsuranceToken",
 };
 
 const ALL_TOKEN_KEYS = Array.from(

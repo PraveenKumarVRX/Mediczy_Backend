@@ -322,6 +322,27 @@ const PharmacyAnalyticsPage      = lazyNamed(_PharmacyModulePages, "PharmacyAnal
 const PharmacySettingsPage       = lazyNamed(_PharmacyModulePages, "PharmacySettingsPage");
 const PharmacySupportPage        = lazyNamed(_PharmacyModulePages, "PharmacySupportPage");
 
+// ─── Hospital Insurance Portal ───────────────────────────────────────────────
+const InsurancePortalLogin       = lazy(() => import("@/pages/hospital-insurance/InsurancePortalLogin"));
+const InsurancePortalDashboard   = lazy(() => import("@/pages/hospital-insurance/InsurancePortalDashboard"));
+const InsuranceClaimsPage        = lazy(() => import("@/pages/hospital-insurance/InsuranceClaimsPage"));
+const InsurancePreAuthPage       = lazy(() => import("@/pages/hospital-insurance/InsurancePreAuthPage"));
+const InsuranceReconciliationPage = lazy(() => import("@/pages/hospital-insurance/InsuranceReconciliationPage"));
+const InsuranceDocumentsPage     = lazy(() => import("@/pages/hospital-insurance/InsuranceDocumentsPage"));
+const InsuranceHospitalProfilePage = lazy(() => import("@/pages/hospital-insurance/InsuranceHospitalProfilePage"));
+const InsuranceAnalyticsPage     = lazy(() => import("@/pages/hospital-insurance/InsuranceAnalyticsPage"));
+const InsuranceTasksPage         = lazy(() => import("@/pages/hospital-insurance/InsuranceTasksPage"));
+const InsurancePayerManagementPage = lazy(() => import("@/pages/hospital-insurance/InsurancePayerManagementPage"));
+const InsuranceCourierTrackingPage = lazy(() => import("@/pages/hospital-insurance/InsuranceCourierTrackingPage"));
+const InsuranceNHCXPage          = lazy(() => import("@/pages/hospital-insurance/InsuranceNHCXPage"));
+const InsuranceABDMPage          = lazy(() => import("@/pages/hospital-insurance/InsuranceABDMPage"));
+const InsuranceCalendarPage      = lazy(() => import("@/pages/hospital-insurance/InsuranceCalendarPage"));
+const InsuranceInventoryPage     = lazy(() => import("@/pages/hospital-insurance/InsuranceInventoryPage"));
+const InsuranceBulkUploadPage    = lazy(() => import("@/pages/hospital-insurance/InsuranceBulkUploadPage"));
+const InsuranceSearchPage        = lazy(() => import("@/pages/hospital-insurance/InsuranceSearchPage"));
+const InsuranceSettingsPage      = lazy(() => import("@/pages/hospital-insurance/InsuranceSettingsPage"));
+const InsuranceNotificationsPage = lazy(() => import("@/pages/hospital-insurance/InsuranceNotificationsPage"));
+
 // ─── Ambulance ───────────────────────────────────────────────────────────────
 const AmbulanceLogin     = lazy(() => import("@/pages/ambulance/AmbulanceLogin"));
 const AmbulanceDashboard = lazy(() => import("@/pages/ambulance/AmbulanceDashboard"));
@@ -795,6 +816,28 @@ const AppRoutes = () => {
         <Route path="/aggregator/notifications" element={<div>Notifications</div>} />
         <Route path="/aggregator/settings"      element={<div>Settings</div>} />
         <Route path="/aggregator/support"       element={<div>Support</div>} />
+
+        {/* ── Hospital Insurance Portal ─────────────────────────────── */}
+        <Route path="/hospital-insurance/login"           element={<InsurancePortalLogin />} />
+        <Route path="/hospital-insurance/dashboard"       element={<InsurancePortalDashboard />} />
+        <Route path="/hospital-insurance/claims"          element={<InsuranceClaimsPage />} />
+        <Route path="/hospital-insurance/pre-auth"        element={<InsurancePreAuthPage />} />
+        <Route path="/hospital-insurance/pre-auth/*"      element={<InsurancePreAuthPage />} />
+        <Route path="/hospital-insurance/reconciliation"  element={<InsuranceReconciliationPage />} />
+        <Route path="/hospital-insurance/documents"       element={<InsuranceDocumentsPage />} />
+        <Route path="/hospital-insurance/hospital-profile" element={<InsuranceHospitalProfilePage />} />
+        <Route path="/hospital-insurance/analytics"       element={<InsuranceAnalyticsPage />} />
+        <Route path="/hospital-insurance/tasks"           element={<InsuranceTasksPage />} />
+        <Route path="/hospital-insurance/payer-management" element={<InsurancePayerManagementPage />} />
+        <Route path="/hospital-insurance/courier"         element={<InsuranceCourierTrackingPage />} />
+        <Route path="/hospital-insurance/nhcx"            element={<InsuranceNHCXPage />} />
+        <Route path="/hospital-insurance/abdm"            element={<InsuranceABDMPage />} />
+        <Route path="/hospital-insurance/calendar"        element={<InsuranceCalendarPage />} />
+        <Route path="/hospital-insurance/inventory"       element={<InsuranceInventoryPage />} />
+        <Route path="/hospital-insurance/bulk-upload"     element={<InsuranceBulkUploadPage />} />
+        <Route path="/hospital-insurance/search"          element={<InsuranceSearchPage />} />
+        <Route path="/hospital-insurance/settings"        element={<InsuranceSettingsPage />} />
+        <Route path="/hospital-insurance/notifications"   element={<InsuranceNotificationsPage />} />
 
         {/* ── Insurance / Broker ──────────────────────────────────────── */}
         <Route path="/intermediary/login"              element={<InsuranceBrokerLogin />} />

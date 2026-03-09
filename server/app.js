@@ -110,6 +110,7 @@ import hospitalRouter from './routes/hospital.route.js';
 import hospitalAuthRouter from './routes/hospital-auth.route.js';
 import hospitalAuthAliasRouter from './routes/hospital/auth.routes.js';
 import hospitalInsuranceRouter from './routes/hospital-insurance.route.js';
+import hospitalInsuranceAuthRouter from './routes/hospital-insurance/auth.routes.js';
 import clinicRouter from './routes/clinic.route.js';
 import pharmacyRouter from './routes/pharmacy.route.js';
 import ambulanceRouter from './routes/ambulance.route.js';
@@ -992,6 +993,7 @@ app.use("/api/insurance-company", insuranceCompanyRouter); // Insurance company 
 app.use("/api/insurance-broker", insuranceBrokerRouter); // Insurance broker/intermediary login
 app.use('/api/broker-integrations', brokerIntegrationRouter); // Broker server-to-server integration + signed webhooks
 app.use("/api/hospital/insurance", hospitalInsuranceRouter); // IHX-like hospital insurance claims dashboard
+app.use("/api/hospital-insurance/auth", hospitalInsuranceAuthRouter); // Separate insurance portal login
 app.use("/api/tpa", tpaRouter); // TPA (Third Party Administrator) login
 app.use("/api/appointments", appointmentRouter);
 app.use("/api/lab-tests", labTestsRouter);
