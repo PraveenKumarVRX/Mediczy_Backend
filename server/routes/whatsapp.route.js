@@ -6,6 +6,7 @@ import {
   getWhatsAppTemplates,
   createWhatsAppTemplate,
   updateWhatsAppTemplate,
+  approveWhatsAppTemplate,
   deleteWhatsAppTemplate,
   getWhatsAppCampaigns,
   createWhatsAppCampaign,
@@ -33,6 +34,7 @@ router.put('/templates/:id', [
   body('language').optional().notEmpty(),
   body('body').optional().notEmpty()
 ], authUser, requireRole(['admin', 'team']), updateWhatsAppTemplate);
+router.patch('/templates/:id/approve', authUser, requireRole(['admin', 'team']), approveWhatsAppTemplate);
 router.delete('/templates/:id', authUser, requireRole(['admin', 'team']), deleteWhatsAppTemplate);
 
 router.get('/campaigns', authUser, requireRole('admin'), getWhatsAppCampaigns);

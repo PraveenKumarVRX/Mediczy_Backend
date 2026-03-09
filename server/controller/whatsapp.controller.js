@@ -90,6 +90,19 @@ let whatsappData = {
       createdAt: new Date().toISOString(),
       lastUsed: new Date().toISOString(),
       usageCount: 18
+    },
+    {
+      id: '4',
+      name: 'health_checkup_confirmation',
+      status: 'APPROVED',
+      category: 'UTILITY',
+      language: 'en_US',
+      header: 'Health Checkup Appointment Update',
+      body: 'Dear {{1}},\n\nYour health checkup appointment has been confirmed!\n\n📍 Lab: {{2}}\n📌 Address: {{3}}\n📅 Date: {{4}}\n🕐 Time: {{5}}\n\nPlease arrive 15 minutes early with a valid ID. Fasting may be required for certain tests — kindly check email for more details.\n\nFor rescheduling or queries, contact us via this chat.',
+      footer: 'SmartHealth',
+      createdAt: new Date().toISOString(),
+      lastUsed: null,
+      usageCount: 0
     }
   ],
   campaigns: [
@@ -307,6 +320,38 @@ export const updateWhatsAppTemplate = async (req, res) => {
       success: false,
       message: 'Failed to update message template'
     });
+  }
+};
+
+// Approve/reject WhatsApp message template
+export const approveWhatsAppTemplate = async (req, res) => {
+  try {
+    const { id } = req.params;
+    const { status } = req.body; // 'APPROVED' or 'REJECTED'
+    
+    const validStatuses = ['APPROVED', 'REJECTED'];
+    if (!validStatuses.includes(status)) {
+      return res.status(400).json({ success: false, message: 'Status must be APPROVED or REJECTED' });
+    }
+    
+    const template = whatsappData.templates.find(t => t.id === id);
+    if (!template) {
+      return res.status(404).json({ success: false, message: 'Template not found' });
+    }
+    
+    template.status = status;
+    template.updatedAt = new Date().toISOString();
+    
+    console.log(`✅ WhatsApp template "${template.name}" ${status.toLowerCase()}`);
+    
+    res.json({
+      success: true,
+      message: `Template ${status.toLowerCase()} successfully`,
+      data: template
+    });
+  } catch (error) {
+    console.error('Error approving WhatsApp template:', error);
+    res.status(500).json({ success: false, message: 'Failed to update template status' });
   }
 };
 
