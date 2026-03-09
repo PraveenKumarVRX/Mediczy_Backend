@@ -506,22 +506,8 @@ const PUBLIC_ENDPOINTS = [
  * Ensures users can only access endpoints relevant to their role
  */
 const ringFencingMiddleware = (req, res, next) => {
-  // FIXED: Removed the early return that was bypassing all ring-fencing security
-  // The previous line `return next();` was causing ALL requests to bypass JWT role scoping
-  console.log('🔒 RING-FENCING MIDDLEWARE EXECUTED - URL:', req.originalUrl, 'skipAuth:', req.skipAuth);
-  
   const requestPath = req.originalUrl.split('?')[0]; // Use originalUrl and strip query params
   const requestMethod = req.method;
-
-  // DEBUG: Log ALL requests to see what paths we're getting
-  console.log('🔍 RING-FENCING CHECK:', { 
-    path: req.path, 
-    originalUrl: req.originalUrl, 
-    baseUrl: req.baseUrl, 
-    url: req.url, 
-    method: requestMethod,
-    skipAuth: req.skipAuth
-  });
 
   // ⚠️ CRITICAL: Bypass ring-fencing for Twilio WhatsApp webhooks
   // Twilio cannot send JWT auth headers; these endpoints must accept unauthenticated requests
@@ -532,14 +518,8 @@ const ringFencingMiddleware = (req, res, next) => {
     return next();
   }
 
-  // Debug logging for webhook
-  if (requestPath.includes('whatsapp')) {
-    console.log('🔍 WhatsApp request (not bypassed):', { path: requestPath, method: requestMethod });
-  }
-
   // Allow public endpoints
   if (PUBLIC_ENDPOINTS.some(endpoint => requestPath.startsWith(endpoint))) {
-    console.log('✅ Public endpoint allowed:', requestPath);
     return next();
   }
 
@@ -554,7 +534,6 @@ const ringFencingMiddleware = (req, res, next) => {
       patientClinicSearchPattern.test(requestPath) ||
       clinicPatientAuthPattern.test(requestPath) ||
       clinicStaffAuthPattern.test(requestPath)) {
-    console.log('✅ Public auth endpoint allowed:', requestPath);
     return next();
   }
 
@@ -610,9 +589,6 @@ const ringFencingMiddleware = (req, res, next) => {
 
     // Get user permissions
     const permissions = USER_TYPE_PERMISSIONS[userType];
-
-    console.error(`[RING-FENCE DEBUG] User type: ${userType}, Has /api/reports: ${permissions?.allowedPaths?.includes('/api/reports')}`);
-    console.error(`[RING-FENCE DEBUG] Allowed paths:`, permissions?.allowedPaths);
 
     if (!permissions) {
       console.log(`🚫 Ring-fencing: Unknown user type: ${userType}`);
