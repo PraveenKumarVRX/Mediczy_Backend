@@ -136,7 +136,8 @@ export const AuthProvider = ({ children }) => {
     const isAssistantRoute = location.pathname.startsWith('/assistant');
     
     // Check for portal-specific routes that have their own auth
-    const isHospitalRoute = location.pathname.startsWith('/hospital');
+    const isHospitalInsuranceRoute = location.pathname.startsWith('/hospital-insurance');
+    const isHospitalRoute = location.pathname.startsWith('/hospital') && !isHospitalInsuranceRoute;
     const isClinicRoute = location.pathname.startsWith('/clinic');
     const isLabRoute = location.pathname.startsWith('/lab');
     const isPharmacyRoute = location.pathname.startsWith('/pharmacy');
@@ -201,6 +202,18 @@ export const AuthProvider = ({ children }) => {
       if (!assistantToken && location.pathname !== '/assistant/login') {
         setAuthState(prev => ({ ...prev, hasCheckedAuth: true }));
         navigate("/assistant/login", { replace: true });
+        return;
+      }
+      setAuthState(prev => ({ ...prev, hasCheckedAuth: true }));
+      return;
+    }
+    
+    // Check hospital insurance portal routes - require hospitalInsuranceToken
+    if (isHospitalInsuranceRoute) {
+      const insuranceToken = localStorage.getItem('hospitalInsuranceToken');
+      if (!insuranceToken && location.pathname !== '/hospital-insurance/login') {
+        setAuthState(prev => ({ ...prev, hasCheckedAuth: true }));
+        navigate("/hospital-insurance/login", { replace: true });
         return;
       }
       setAuthState(prev => ({ ...prev, hasCheckedAuth: true }));

@@ -404,6 +404,33 @@ const USER_TYPES: Record<string, PortalConfig> = {
     tokenKey: 'homecareToken',
     loginPath: '/homecare/login',
     userType: 'homecare'
+  },
+  hospital_insurance: {
+    allowedPaths: [
+      '/hospital-insurance',
+      '/hospital-insurance/login',
+      '/hospital-insurance/dashboard',
+      '/hospital-insurance/claims',
+      '/hospital-insurance/pre-auth',
+      '/hospital-insurance/reconciliation',
+      '/hospital-insurance/documents',
+      '/hospital-insurance/hospital-profile',
+      '/hospital-insurance/analytics',
+      '/hospital-insurance/tasks',
+      '/hospital-insurance/payer-management',
+      '/hospital-insurance/courier',
+      '/hospital-insurance/nhcx',
+      '/hospital-insurance/abdm',
+      '/hospital-insurance/calendar',
+      '/hospital-insurance/inventory',
+      '/hospital-insurance/bulk-upload',
+      '/hospital-insurance/search',
+      '/hospital-insurance/settings',
+      '/hospital-insurance/notifications'
+    ],
+    tokenKey: 'hospitalInsuranceToken',
+    loginPath: '/hospital-insurance/login',
+    userType: 'hospital_insurance'
   }
 };
 
