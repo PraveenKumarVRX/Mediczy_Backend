@@ -10,6 +10,7 @@ import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Input } from "@/components/ui/input";
 import { useToast } from "@/hooks/use-toast";
+import { useAuth } from "@/auth/AuthProvider";
 import api from "@/utils/api";
 import { Coins, Check, Sparkles, Loader2 } from "lucide-react";
 
@@ -44,6 +45,7 @@ const FALLBACK_PACKAGES: Package[] = [
 
 export function PurchaseCoinsDialog({ open, onOpenChange, onSuccess }: PurchaseCoinsDialogProps) {
   const { toast } = useToast();
+  const { currentUser } = useAuth();
   const [packages, setPackages] = useState<Package[]>(FALLBACK_PACKAGES);
   const [loadingPackages, setLoadingPackages] = useState(false);
   const [selectedPackage, setSelectedPackage] = useState<number | null>(null);
@@ -176,14 +178,18 @@ export function PurchaseCoinsDialog({ open, onOpenChange, onSuccess }: PurchaseC
       }
 
       // Step 3: Open Razorpay checkout
-      const options = {
+      // Build prefill from user context / localStorage
+      const prefillName = currentUser ? `${currentUser.firstName || ''} ${currentUser.lastName || ''}`.trim() : (localStorage.getItem('userName') || '');
+      const prefillEmail = currentUser?.email || localStorage.getItem('userEmail') || '';
+      const prefillContact = currentUser?.phoneNumber || localStorage.getItem('userPhone') || '';
+
+      const options: Record<string, any> = {
         key: order.key,
         amount: order.amount * 100, // Razorpay expects amount in paise
-        currency: order.currency,
+        currency: order.currency || 'INR',
         name: 'Mediqzy Healthcare',
         description: `Purchase ${pkg.coins} Health Coins`,
         order_id: order.orderId,
-        image: 'https://mediqzy.com/logo/Mediqzy_logo.jpeg',
         handler: async function (response: any) {
           try {
             const verifyResponse = await api.post('/wallet/verify-payment', {
@@ -214,7 +220,11 @@ export function PurchaseCoinsDialog({ open, onOpenChange, onSuccess }: PurchaseC
             setProcessing(false);
           }
         },
-        prefill: { name: '', email: '', contact: '' },
+        prefill: {
+          ...(prefillName ? { name: prefillName } : {}),
+          ...(prefillEmail ? { email: prefillEmail } : {}),
+          ...(prefillContact ? { contact: prefillContact } : {}),
+        },
         theme: { color: '#14b8a6' },
         modal: {
           ondismiss: function () {
@@ -224,7 +234,24 @@ export function PurchaseCoinsDialog({ open, onOpenChange, onSuccess }: PurchaseC
         }
       };
 
+      console.log('🔑 Razorpay checkout options:', {
+        key: options.key,
+        amount: options.amount,
+        currency: options.currency,
+        order_id: options.order_id,
+        prefill: options.prefill,
+      });
+
       const razorpay = new window.Razorpay(options);
+      razorpay.on('payment.failed', function (response: any) {
+        console.error('❌ Razorpay payment failed:', response.error);
+        setProcessing(false);
+        toast({
+          title: "Payment Failed",
+          description: response.error?.description || response.error?.reason || "Payment could not be processed",
+          variant: "destructive",
+        });
+      });
       razorpay.open();
 
     } catch (error: any) {
