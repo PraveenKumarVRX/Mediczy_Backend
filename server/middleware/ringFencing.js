@@ -199,6 +199,7 @@ const USER_TYPE_PERMISSIONS = {
       '/api/email-settings',  // Team members can configure email settings
       '/api/tickets',  // Team members can view and manage support tickets
       '/api/whatsapp-production',  // Team access to WhatsApp conversations
+      '/api/whatsapp',  // Team access to WhatsApp templates & messaging
       '/api/sib-chatbots'  // Team access to SIB AI chatbots
     ],
     tokenField: 'teamId'
