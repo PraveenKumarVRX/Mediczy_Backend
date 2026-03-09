@@ -119,9 +119,12 @@ router.get('/', async (req, res) => {
     const { pharmacyId, limit = 50, offset = 0 } = req.query;
 
     const query = `
-      SELECT p.*, pt.name as patient_name, d.name as doctor_name
+      SELECT p.*, 
+        CONCAT(pu."firstName", ' ', pu."lastName") as patient_name, 
+        CONCAT(d."firstName", ' ', d."lastName") as doctor_name
       FROM pharmacy_prescriptions p
       LEFT JOIN patients pt ON p.patient_id = pt.id
+      LEFT JOIN users pu ON pt."userId" = pu.id
       LEFT JOIN doctors d ON p.doctor_id = d.id
       WHERE p.pharmacy_id = $1
       ORDER BY p.created_at DESC

@@ -248,10 +248,10 @@ router.post('/webinar-modules/test-notification', verifySuperAdmin, async (req, 
     let webinarData = null;
     if (webinarId) {
       const [webinars] = await sequelize.query(`
-        SELECT w.*, d.name as doctor_name, u.email as doctor_email
+        SELECT w.*, CONCAT(d."firstName", ' ', d."lastName") as doctor_name, u.email as doctor_email
         FROM webinars w
         LEFT JOIN doctors d ON d.id = w.doctor_id
-        LEFT JOIN users u ON d.user_id = u.id
+        LEFT JOIN users u ON d."userId" = u.id
         WHERE w.id = $1
       `, {
         bind: [webinarId]

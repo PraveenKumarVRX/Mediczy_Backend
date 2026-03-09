@@ -61,9 +61,9 @@ router.get('/', async (req, res) => {
         w.tags,
         w.registration_required,
         d.id as doctor_id,
-        d.name as doctor_name,
+        CONCAT(d."firstName", ' ', d."lastName") as doctor_name,
         d.specialization as doctor_specialization,
-        d.profile_image as doctor_image,
+        d."profileImage" as doctor_image,
         COUNT(DISTINCT wr.id) as total_registrations,
         COUNT(DISTINCT CASE WHEN wr.registration_status = 'approved' THEN wr.id END) as approved_count
       FROM webinars w
@@ -97,7 +97,7 @@ router.get('/', async (req, res) => {
       paramCount++;
     }
 
-    query += ` GROUP BY w.id, d.id, d.name, d.specialization, d.profile_image`;
+    query += ` GROUP BY w.id, d.id, d."firstName", d."lastName", d.specialization, d."profileImage"`;
     query += ` ORDER BY w.scheduled_at ASC`;
     
     const offset = (page - 1) * limit;
@@ -158,20 +158,20 @@ router.get('/:id', async (req, res) => {
       `SELECT 
         w.*,
         d.id as doctor_id,
-        d.name as doctor_name,
+        CONCAT(d."firstName", ' ', d."lastName") as doctor_name,
         u.email as doctor_email,
         d.specialization as doctor_specialization,
-        d.profile_image as doctor_image,
+        d."profileImage" as doctor_image,
         d.qualifications as doctor_qualifications,
         d.experience as doctor_experience,
         COUNT(DISTINCT wr.id) as total_registrations,
         COUNT(DISTINCT CASE WHEN wr.registration_status = 'approved' THEN wr.id END) as approved_count
       FROM webinars w
       LEFT JOIN doctors d ON w.doctor_id = d.id
-      LEFT JOIN users u ON d.user_id = u.id
+      LEFT JOIN users u ON d."userId" = u.id
       LEFT JOIN webinar_registrations wr ON w.id = wr.webinar_id
       WHERE w.id = $1
-      GROUP BY w.id, d.id, u.email`,
+      GROUP BY w.id, d.id, d."firstName", d."lastName", u.email`,
       [id]
     );
 
@@ -328,17 +328,17 @@ router.post('/:id/register', verifyAuth, async (req, res) => {
     // Send registration confirmation email with calendar invite
     try {
       const userResult = await sequelize.query(
-        `SELECT id, name, email FROM users WHERE id = $1`,
+        `SELECT id, CONCAT("firstName", ' ', "lastName") as name, email FROM users WHERE id = $1`,
         { replacements: [userId], type: Sequelize.QueryTypes.SELECT }
       );
       
       if (userResult.length > 0 && registrationStatus === 'approved') {
         // Get complete webinar data with doctor info
         const webinarWithDoctor = await sequelize.query(
-          `SELECT w.*, d.name as doctor_name, u.email as doctor_email
+          `SELECT w.*, CONCAT(d."firstName", ' ', d."lastName") as doctor_name, u.email as doctor_email
            FROM webinars w
            LEFT JOIN doctors d ON w.doctor_id = d.id
-           LEFT JOIN users u ON d.user_id = u.id
+           LEFT JOIN users u ON d."userId" = u.id
            WHERE w.id = $1`,
           { replacements: [id], type: Sequelize.QueryTypes.SELECT }
         );
@@ -664,7 +664,7 @@ router.get('/user/my-registrations', verifyAuth, async (req, res) => {
         w.duration,
         w.status as webinar_status,
         w.thumbnail_url,
-        d.name as doctor_name,
+        CONCAT(d."firstName", ' ', d."lastName") as doctor_name,
         d.specialization as doctor_specialization
       FROM webinar_registrations wr
       JOIN webinars w ON wr.webinar_id = w.id

@@ -141,9 +141,9 @@ router.get('/webinars/:id', verifyDoctor, async (req, res) => {
     const registrations = await sequelize.query(
       `SELECT 
         wr.*,
-        u.name as user_name,
+        CONCAT(u."firstName", ' ', u."lastName") as user_name,
         u.email as user_email,
-        u.phone as user_phone
+        u."phoneNumber" as user_phone
       FROM webinar_registrations wr
       JOIN users u ON wr.user_id = u.id
       WHERE wr.webinar_id = $1 AND wr.registration_status = 'approved'
@@ -517,9 +517,9 @@ router.get('/webinars/:id/attendees', verifyDoctor, async (req, res) => {
     const result = await sequelize.query(
       `SELECT 
         wr.*,
-        u.name as user_name,
+        CONCAT(u."firstName", ' ', u."lastName") as user_name,
         u.email as user_email,
-        u.phone as user_phone
+        u."phoneNumber" as user_phone
       FROM webinar_registrations wr
       JOIN users u ON wr.user_id = u.id
       WHERE wr.webinar_id = $1
@@ -585,7 +585,7 @@ router.get('/webinars/:id/questions', verifyDoctor, async (req, res) => {
     let query = `
       SELECT 
         wcm.*,
-        u.name as user_name
+        CONCAT(u."firstName", ' ', u."lastName") as user_name
       FROM webinar_chat_messages wcm
       JOIN users u ON wcm.user_id = u.id
       WHERE wcm.webinar_id = $1 AND wcm.message_type = 'question'

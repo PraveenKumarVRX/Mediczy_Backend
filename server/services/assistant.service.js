@@ -33,7 +33,7 @@ class AssistantService {
   async authenticate(email, password, tenantId = 'default') {
     // Find assistant by email
     const result = await db.query(
-      `SELECT a.*, d.name as doctor_name, d.id as doctor_id
+      `SELECT a.*, CONCAT(d."firstName", ' ', d."lastName") as doctor_name, d.id as doctor_id
        FROM assistants a
        LEFT JOIN doctors d ON a.linked_doctor_id = d.id
        WHERE a.email = $1 AND (a.tenant_id = $2 OR a.tenant_id IS NULL)`,
@@ -80,7 +80,7 @@ class AssistantService {
     const result = await db.query(
       `SELECT a.id, a.name, a.email, a.phone, a.role, a.permissions, 
               a.linked_doctor_id, a.status, a.avatar_url, a.created_at,
-              d.name as doctor_name, d.specialty as doctor_specialty
+              CONCAT(d."firstName", ' ', d."lastName") as doctor_name, d.specialization as doctor_specialty
        FROM assistants a
        LEFT JOIN doctors d ON a.linked_doctor_id = d.id
        WHERE a.id = $1 AND (a.tenant_id = $2 OR a.tenant_id IS NULL)`,
@@ -578,7 +578,7 @@ class AssistantService {
    */
   async getLinkedDoctors(assistantId, tenantId) {
     const result = await db.query(
-      `SELECT d.id, d.name, d.email, d.specialty, d.phone, d.avatar_url
+      `SELECT d.id, CONCAT(d."firstName", ' ', d."lastName") as name, d.email, d.specialization as specialty, d."phoneNumber" as phone, d."profileImage" as avatar_url
        FROM doctors d
        INNER JOIN assistant_doctor_links adl ON d.id = adl.doctor_id
        WHERE adl.assistant_id = $1 AND adl.status = 'active'`,

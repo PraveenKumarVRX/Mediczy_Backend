@@ -160,9 +160,9 @@ router.get('/webinars', verifySuperAdmin, async (req, res) => {
     let query = `
       SELECT 
         w.*,
-        d.name as doctor_name,
+        CONCAT(d."firstName", ' ', d."lastName") as doctor_name,
         d.specialization as doctor_specialization,
-        u.name as created_by_name,
+        CONCAT(u."firstName", ' ', u."lastName") as created_by_name,
         COUNT(DISTINCT wr.id) as total_registrations,
         COUNT(DISTINCT CASE WHEN wr.attendance_status = 'attended' THEN wr.id END) as total_attendees
       FROM webinars w
@@ -187,7 +187,7 @@ router.get('/webinars', verifySuperAdmin, async (req, res) => {
       paramCount++;
     }
 
-    query += ` GROUP BY w.id, d.name, d.specialization, u.name`;
+    query += ` GROUP BY w.id, d."firstName", d."lastName", d.specialization, u."firstName", u."lastName"`;
     query += ` ORDER BY w.${sortBy} ${sortOrder}`;
     
     const offset = (page - 1) * limit;
@@ -265,10 +265,10 @@ router.get('/webinars/:id', verifySuperAdmin, async (req, res) => {
     const result = await sequelize.query(
       `SELECT 
         w.*,
-        d.name as doctor_name,
+        CONCAT(d."firstName", ' ', d."lastName") as doctor_name,
         du.email as doctor_email,
         d.specialization as doctor_specialization,
-        u.name as created_by_name,
+        CONCAT(u."firstName", ' ', u."lastName") as created_by_name,
         a.total_registrations,
         a.total_attendees,
         a.peak_concurrent_users,
@@ -278,7 +278,7 @@ router.get('/webinars/:id', verifySuperAdmin, async (req, res) => {
         a.engagement_score
       FROM webinars w
       LEFT JOIN doctors d ON w.doctor_id = d.id
-      LEFT JOIN users du ON d.user_id = du.id
+      LEFT JOIN users du ON d."userId" = du.id
       LEFT JOIN users u ON w.created_by = u.id
       LEFT JOIN webinar_analytics a ON w.id = a.webinar_id
       WHERE w.id = $1`,
@@ -298,7 +298,7 @@ router.get('/webinars/:id', verifySuperAdmin, async (req, res) => {
     const registrations = await sequelize.query(
       `SELECT 
         wr.*,
-        u.name as user_name,
+        CONCAT(u."firstName", ' ', u."lastName") as user_name,
         u.email as user_email
       FROM webinar_registrations wr
       JOIN users u ON wr.user_id = u.id
