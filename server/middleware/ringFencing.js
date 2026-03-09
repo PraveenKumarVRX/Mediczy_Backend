@@ -157,6 +157,7 @@ const USER_TYPE_PERMISSIONS = {
       '/api/billing',
       '/api/accounting',
       '/api/payments',
+      '/api/coupons',  // Corporate HC coupon management
       '/api/email',
       '/api/sms',
       '/api/whatsapp',
@@ -194,6 +195,7 @@ const USER_TYPE_PERMISSIONS = {
       '/api/corporates',
       '/api/corporate-bookings',  // Team members book corporate health checkups
       '/api/plans',
+      '/api/coupons',  // Team members can manage coupons
       '/api/activity-log',
       '/api/chat',
       '/api/email-settings',  // Team members can configure email settings

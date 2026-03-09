@@ -33,6 +33,7 @@ import {
   Banknote,
   Calculator,
   Wallet,
+  Ticket,
   Mail,
   Send,
   Video,
@@ -338,6 +339,7 @@ const AdminLayout = ({ children }: AdminLayoutProps) => {
         { icon: Banknote, label: 'Billing', path: '/admin/billing', color: 'text-emerald-500', bg: 'bg-emerald-500/10' },
         { icon: Calculator, label: 'Accounting', path: '/admin/accounting', color: 'text-blue-600', bg: 'bg-blue-600/10' },
         { icon: Wallet, label: 'Payments', path: '/admin/payments', color: 'text-green-600', bg: 'bg-green-600/10' },
+        { icon: Ticket, label: 'Coupons', path: '/admin/coupons', color: 'text-amber-500', bg: 'bg-amber-500/10' },
       ]
     },
     {
