@@ -178,6 +178,7 @@ export function PurchaseCoinsDialog({ open, onOpenChange, onSuccess }: PurchaseC
       // Step 3: Open Razorpay checkout
       const options = {
         key: order.key,
+        amount: order.amount * 100, // Razorpay expects amount in paise
         currency: order.currency,
         name: 'Mediqzy Healthcare',
         description: `Purchase ${pkg.coins} Health Coins`,
