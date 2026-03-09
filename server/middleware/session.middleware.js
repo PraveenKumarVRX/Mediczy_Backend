@@ -18,10 +18,8 @@ const MAX_SESSION_LIFETIME = 24 * 60 * 60 * 1000; // 24 hours maximum
  */
 export const sessionTimeout = async (req, res, next) => {
   try {
-    // Skip session timeout for webhooks and skipped auth
-    console.log('[sessionTimeout] Path:', req.path, 'skipAuth:', req.skipAuth, 'userRole:', req.userRole, 'user.id:', req.user?.id);
-    if (req.skipAuth || req.userRole === 'webhook') {
-      console.log('[sessionTimeout] Skipping webhook');
+    // Skip session timeout for webhooks, health checks, and skipped auth
+    if (req.skipAuth || req.userRole === 'webhook' || req.path === '/api/health' || req.path === '/metrics/internal') {
       return next();
     }
     

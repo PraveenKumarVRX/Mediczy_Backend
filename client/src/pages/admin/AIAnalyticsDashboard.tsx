@@ -200,8 +200,8 @@ export default function AIAnalyticsDashboard() {
                       <PieChart>
                         <Pie
                           data={Object.entries(overview.healthRisk.distribution)
-                            .filter(([, v]) => v > 0)
-                            .map(([k, v]) => ({ name: k, value: v }))}
+                            .filter(([, v]) => (v as number) > 0)
+                            .map(([k, v]) => ({ name: k, value: v as number }))}
                           cx="50%" cy="50%" outerRadius={100}
                           label={({ name, value }) => `${name}: ${value}`}
                           dataKey="value"

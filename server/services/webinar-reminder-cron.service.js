@@ -72,7 +72,7 @@ class WebinarReminderService {
       // Get upcoming webinars (scheduled status)
       const upcomingWebinars = await sequelize.query(
         `SELECT w.*, 
-          d.name as doctor_name, 
+          CONCAT(d."firstName", ' ', d."lastName") as doctor_name, 
           u.email as doctor_email,
           COUNT(wr.id) as registered_count
          FROM webinars w
@@ -82,7 +82,7 @@ class WebinarReminderService {
            AND wr.registration_status IN ('registered', 'approved')
          WHERE w.status = 'scheduled'
            AND w.scheduled_at > $1
-         GROUP BY w.id, d.name, u.email
+         GROUP BY w.id, d."firstName", d."lastName", u.email
          ORDER BY w.scheduled_at ASC`,
         { 
           replacements: [now.toISOString()], 
@@ -153,7 +153,7 @@ class WebinarReminderService {
   async sendTestReminder(webinarId, reminderType = '24h') {
     try {
       const webinar = await sequelize.query(
-        `SELECT w.*, d.name as doctor_name, u.email as doctor_email
+        `SELECT w.*, CONCAT(d."firstName", ' ', d."lastName") as doctor_name, u.email as doctor_email
          FROM webinars w
          LEFT JOIN doctors d ON w.doctor_id = d.id
          LEFT JOIN users u ON d."userId" = u.id

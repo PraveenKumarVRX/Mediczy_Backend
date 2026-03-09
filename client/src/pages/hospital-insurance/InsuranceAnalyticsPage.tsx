@@ -8,7 +8,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { useToast } from '@/hooks/use-toast';
 import api from '@/utils/api';
-import { BarChart3, TrendingUp, Download, PieChart, ArrowUpRight, ArrowDownRight, Loader2 } from 'lucide-react';
+import { BarChart3, TrendingUp, Download, PieChart, ArrowUpRight, ArrowDownRight, Loader2, FileText } from 'lucide-react';
 
 const InsuranceAnalyticsPage = () => {
   const { toast } = useToast();
