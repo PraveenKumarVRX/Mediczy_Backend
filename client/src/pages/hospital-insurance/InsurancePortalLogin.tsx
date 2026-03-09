@@ -32,6 +32,7 @@ const InsurancePortalLogin = () => {
     };
     localStorage.setItem('hospitalInsuranceToken', `demo-insurance-token-${Date.now()}`);
     localStorage.setItem('hospitalInsuranceData', JSON.stringify(demoData));
+    localStorage.setItem('userType', 'hospitalInsurance');
     toast({ title: 'Offline demo login', description: 'Loaded insurance portal demo session locally.' });
     navigate('/hospital-insurance/dashboard');
   };
@@ -78,7 +79,7 @@ const InsurancePortalLogin = () => {
       localStorage.setItem('hospitalInsuranceToken', data.token);
       localStorage.setItem('hospitalInsuranceData', JSON.stringify(data.user || data.hospital));
       localStorage.setItem('token', data.token);
-      localStorage.setItem('userType', 'hospital');
+      localStorage.setItem('userType', 'hospitalInsurance');
 
       navigate('/hospital-insurance/dashboard');
     } catch (err: any) {

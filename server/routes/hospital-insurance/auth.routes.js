@@ -24,6 +24,45 @@ router.post('/login', async (req, res) => {
       return res.status(400).json({ success: false, message: 'Email and password are required' });
     }
 
+    // Demo/showcase credentials — works in all environments (including production)
+    // This is a presentation-ready demo login that does not require a DB record
+    const DEMO_EMAILS = ['insurance@mediczy.com', 'demo@mediczy.com'];
+    const DEMO_PASSWORDS = ['Insurance123', 'Hospital123', 'Demo123'];
+
+    if (DEMO_EMAILS.includes(email.toLowerCase().trim()) && DEMO_PASSWORDS.includes(password)) {
+      const demoPayload = {
+        id: 'demo-insurance-001',
+        email: email.toLowerCase().trim(),
+        role: 'hospital',
+        userType: 'hospital',
+        portal: 'insurance',
+        hospitalId: 'demo-hospital-001',
+        hospital_id: 'demo-hospital-001',
+        hospitalName: 'Mediczy Demo Hospital',
+      };
+
+      const token = jwt.sign(demoPayload, JWT_CONFIG.SECRET || process.env.JWT_SECRET || 'mediczy-secret', {
+        expiresIn: '24h',
+      });
+
+      return res.json({
+        success: true,
+        token,
+        user: {
+          id: demoPayload.id,
+          email: demoPayload.email,
+          name: demoPayload.hospitalName,
+          hospitalName: demoPayload.hospitalName,
+          role: 'insurance_desk',
+          portal: 'insurance',
+          city: 'Delhi',
+          state: 'Delhi',
+          phone: '+91 99999 99999',
+        },
+        demo: true,
+      });
+    }
+
     // Try PostgreSQL hospital model first
     let hospital = null;
     try {
@@ -90,7 +129,7 @@ router.post('/login', async (req, res) => {
       hospitalName: plain.name || plain.hospitalName,
     };
 
-    const token = jwt.sign(tokenPayload, JWT_CONFIG.secret || process.env.JWT_SECRET || 'mediczy-secret', {
+    const token = jwt.sign(tokenPayload, JWT_CONFIG.SECRET || process.env.JWT_SECRET || 'mediczy-secret', {
       expiresIn: '24h',
     });
 
@@ -127,7 +166,7 @@ router.get('/verify', async (req, res) => {
     }
 
     const token = authHeader.replace(/^Bearer\s+/i, '').trim();
-    const decoded = jwt.verify(token, JWT_CONFIG.secret || process.env.JWT_SECRET || 'mediczy-secret');
+    const decoded = jwt.verify(token, JWT_CONFIG.SECRET || process.env.JWT_SECRET || 'mediczy-secret');
 
     res.json({
       success: true,
