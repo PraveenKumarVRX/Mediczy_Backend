@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import AdminLayout from '@/components/layout/AdminLayout';
 import MainLayout from '@/components/layout/MainLayout';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
@@ -2200,6 +2200,7 @@ function WhatsAppMessaging() {
   const [activeTemplate, setActiveTemplate] = useState('otp');
   const [phoneNumber, setPhoneNumber] = useState('');
   const [loading, setLoading] = useState(false);
+  const sendingRef = useRef(false);
   const [messageSid, setMessageSid] = useState('');
   const [messageStatus, setMessageStatus] = useState<any>(null);
   
@@ -2229,7 +2230,7 @@ function WhatsAppMessaging() {
       name: 'Appointment Confirmation',
       description: 'Confirm patient appointment',
       endpoint: '/whatsapp-production/send/appointment-confirmation',
-      fields: ['phoneNumber', 'patientName', 'doctorName', 'date', 'time', 'location']
+      fields: ['phoneNumber', 'patientName', 'doctorOrLabName', 'date', 'time', 'location']
     },
     appointment_reminder: {
       name: 'Appointment Reminder',
@@ -2258,6 +2259,7 @@ function WhatsAppMessaging() {
   };
 
   const handleSendWhatsApp = async () => {
+    if (sendingRef.current) return;
     if (!phoneNumber) {
       toast({
         title: 'Error',
@@ -2267,6 +2269,7 @@ function WhatsAppMessaging() {
       return;
     }
 
+    sendingRef.current = true;
     const template = templates[activeTemplate];
     const payload: Record<string, unknown> = { to: phoneNumber };
 
@@ -2335,6 +2338,7 @@ function WhatsAppMessaging() {
       });
     } finally {
       setLoading(false);
+      sendingRef.current = false;
     }
   };
 
@@ -2428,9 +2432,9 @@ function WhatsAppMessaging() {
                     />
                   </div>
                   <div>
-                    <Label>Doctor Name</Label>
+                    <Label>Doctor / Lab Name</Label>
                     <Input
-                      placeholder="Dr. Smith"
+                      placeholder="Dr. Smith or Medall Diagnostics"
                       value={doctorName}
                       onChange={(e) => setDoctorName(e.target.value)}
                     />

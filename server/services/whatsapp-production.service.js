@@ -60,7 +60,7 @@ class WhatsAppProductionService {
         '1': patientName, '2': doctorName, '3': date, '4': time, '5': location
       });
     } else {
-      messageParams.body = `*Health Checkup Appointment Update*\n\nDear ${patientName},\n\nYour health checkup appointment has been confirmed!\n\n📍 Lab: ${doctorName}\n📌 Address: ${location}\n📅 Date: ${date}\n🕐 Time: ${time}\n\nPlease arrive 15 minutes early with a valid ID. Fasting may be required for certain tests — kindly check email for more details.\n\nFor rescheduling or queries, contact us via this chat.\n\n_SmartHealth_`;
+      messageParams.body = `*Appointment Confirmation* ✅\n\nDear ${patientName},\n\nYour appointment has been confirmed!\n\n👨‍⚕️ ${doctorName}\n📍 ${location}\n📅 Date: ${date}\n🕐 Time: ${time}\n\nPlease arrive 15 minutes early. For rescheduling or queries, contact us via this chat.\n\n_SmartHealth_`;
     }
 
     return await this.client.messages.create(messageParams);
