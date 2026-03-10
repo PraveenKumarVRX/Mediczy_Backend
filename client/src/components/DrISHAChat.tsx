@@ -432,6 +432,35 @@ export const DrISHAChat: React.FC<DrISHAChatProps> = ({
             </motion.div>
           ))}
         </AnimatePresence>
+
+        {/* Suggested Follow-up Chips */}
+        {messages.length > 1 && !isLoading && messages[messages.length - 1]?.role === "assistant" && (
+          <motion.div
+            initial={{ opacity: 0, y: 10 }}
+            animate={{ opacity: 1, y: 0 }}
+            transition={{ delay: 0.5, duration: 0.3 }}
+            className="flex flex-wrap gap-2 mt-2 mb-4 px-1"
+          >
+            {[
+              "Tell me more",
+              "What should I do?",
+              "Is this serious?",
+              "Home remedies?",
+              "When to see a doctor?",
+            ].map((suggestion) => (
+              <button
+                key={suggestion}
+                onClick={() => {
+                  setInput(suggestion);
+                  handleSubmit(new Event('submit') as any);
+                }}
+                className="text-xs px-3 py-1.5 rounded-full border border-primary/30 bg-primary/5 hover:bg-primary/15 text-primary transition-colors duration-200 hover:border-primary/50"
+              >
+                {suggestion}
+              </button>
+            ))}
+          </motion.div>
+        )}
       </ScrollArea>
 
       {/* Input Form */}

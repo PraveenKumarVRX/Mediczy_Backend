@@ -31,6 +31,9 @@ import { BRAND, getShortRoleLabel } from "@/config/brand";
 import VideoCallNotification from "@/components/notifications/VideoCallNotification";
 import { useSocketConnection } from "@/hooks/useSocketConnection";
 import ChatApplet from "@/components/chat/ChatApplet";
+import { PageTransition } from "@/components/PageTransition";
+import FloatingDrISHA from "@/components/FloatingDrISHA";
+import GlobalSearch from "@/components/GlobalSearch";
 
 interface Notification {
   id: number;
@@ -253,6 +256,7 @@ const MainLayout = ({ children }: MainLayoutProps) => {
               </span>
             </div>
             <div className="ml-auto flex items-center gap-2">
+              <GlobalSearch />
               <TooltipProvider>
                 <Tooltip>
                   <TooltipTrigger asChild>
@@ -407,13 +411,20 @@ const MainLayout = ({ children }: MainLayoutProps) => {
             </div>
           </div>
         </header>
-        <div className="p-6 pb-20 md:pb-6">{children}</div>
+        <div className="p-6 pb-20 md:pb-6">
+          <PageTransition key={location.pathname}>
+            {children}
+          </PageTransition>
+        </div>
       </main>
       <Navigation />
       <OfflineIndicator />
       
       {/* Video Call Notification System */}
       <VideoCallNotification />
+      
+      {/* Floating AI Doctor Assistant */}
+      <FloatingDrISHA />
       
       {/* Team Chat Communication Module */}
       {isTeamUser && <ChatApplet />}

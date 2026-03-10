@@ -56,6 +56,8 @@ import api from "@/utils/api";
 import { getToken } from "@/hooks/auth";
 import { VeepooService, VEEPOO_SERVICE_UUID, VEEPOO_WRITE_UUID, VEEPOO_NOTIFY_UUID } from "@/services/ble/VeepooService";
 import { healthSyncScheduler } from "@/services/health/HealthSyncScheduler";
+import { LottieIcon, LOTTIE_URLS } from "@/components/LottieAnimations";
+import { motion } from "framer-motion";
 
 const Index = () => {
   const navigate = useNavigate();
@@ -125,6 +127,37 @@ const Index = () => {
   const [upcomingAppointments, setUpcomingAppointments] = useState<any[]>([]);
   const [recentActivities, setRecentActivities] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
+
+  // Health Tip of the Day
+  const healthTips = [
+    { emoji: "💧", tip: "Drink a glass of water first thing in the morning to kickstart your metabolism.", category: "Hydration" },
+    { emoji: "🧘", tip: "Take 5 deep breaths every hour to reduce stress and improve focus.", category: "Mindfulness" },
+    { emoji: "🥗", tip: "Aim for 5 servings of fruits and vegetables every day for optimal nutrition.", category: "Nutrition" },
+    { emoji: "🚶", tip: "A 30-minute walk after meals can improve digestion and lower blood sugar.", category: "Activity" },
+    { emoji: "😴", tip: "Avoid screens 1 hour before bed for better sleep quality.", category: "Sleep" },
+    { emoji: "🫀", tip: "Regular cardio exercise strengthens your heart and reduces disease risk.", category: "Heart Health" },
+    { emoji: "🧠", tip: "Learning something new every day keeps your brain sharp and healthy.", category: "Mental Health" },
+    { emoji: "☀️", tip: "15 minutes of morning sunlight boosts vitamin D and regulates sleep.", category: "Wellness" },
+    { emoji: "🦷", tip: "Brushing for 2 minutes twice daily prevents 90% of dental issues.", category: "Dental" },
+    { emoji: "🫁", tip: "Practice 4-7-8 breathing: inhale 4s, hold 7s, exhale 8s for instant calm.", category: "Breathing" },
+  ];
+  const todayTipIndex = new Date().getDate() % healthTips.length;
+  const todayTip = healthTips[todayTipIndex];
+
+  // Gamification / Streak Data
+  const [streakData] = useState(() => {
+    const stored = JSON.parse(localStorage.getItem('healthStreak') || '{}');
+    return {
+      currentStreak: stored.currentStreak || 0,
+      longestStreak: stored.longestStreak || 0,
+      healthCoins: stored.healthCoins || 0,
+      level: stored.level || 1,
+      xp: stored.xp || 0,
+      nextLevelXp: stored.nextLevelXp || 500,
+      todayCheckedIn: stored.todayCheckedIn || false,
+      badges: stored.badges || [],
+    };
+  });
   
   // Bluetooth Pairing State
   const [showPairingModal, setShowPairingModal] = useState(false);
@@ -1308,6 +1341,91 @@ const Index = () => {
           ))}
         </div>
 
+        {/* Health Tip of the Day + Streak Widget */}
+        <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
+          {/* Health Tip of the Day */}
+          <motion.div
+            initial={{ opacity: 0, x: -20 }}
+            animate={{ opacity: 1, x: 0 }}
+            transition={{ delay: 0.3, duration: 0.5 }}
+            className="lg:col-span-2"
+          >
+            <Card className="bg-gradient-to-r from-teal-50 via-emerald-50 to-cyan-50 dark:from-teal-950/30 dark:via-emerald-950/30 dark:to-cyan-950/30 border-teal-200/60 dark:border-teal-800/40 overflow-hidden relative">
+              <div className="absolute right-0 top-0 w-32 h-32 bg-gradient-to-bl from-teal-200/30 dark:from-teal-500/10 to-transparent rounded-full blur-2xl" />
+              <CardContent className="p-5 relative">
+                <div className="flex items-start gap-4">
+                  <div className="text-4xl shrink-0">{todayTip.emoji}</div>
+                  <div className="flex-1">
+                    <div className="flex items-center gap-2 mb-2">
+                      <Sparkles className="w-4 h-4 text-teal-600 dark:text-teal-400" />
+                      <h3 className="text-sm font-semibold text-teal-800 dark:text-teal-300">Health Tip of the Day</h3>
+                      <Badge className="text-[10px] bg-teal-100 dark:bg-teal-900/50 text-teal-700 dark:text-teal-400 border-0">
+                        {todayTip.category}
+                      </Badge>
+                    </div>
+                    <p className="text-sm text-slate-700 dark:text-slate-300 leading-relaxed">
+                      {todayTip.tip}
+                    </p>
+                    <div className="flex mt-3 gap-2">
+                      <Link to="/ai-doctor">
+                        <Button size="sm" variant="outline" className="text-xs border-teal-300 dark:border-teal-700 text-teal-700 dark:text-teal-400 hover:bg-teal-100 dark:hover:bg-teal-900/30 h-7">
+                          <Bot className="w-3 h-3 mr-1.5" />
+                          Ask Dr. iSHA more
+                        </Button>
+                      </Link>
+                    </div>
+                  </div>
+                </div>
+              </CardContent>
+            </Card>
+          </motion.div>
+
+          {/* Streak / Gamification Widget */}
+          <motion.div
+            initial={{ opacity: 0, x: 20 }}
+            animate={{ opacity: 1, x: 0 }}
+            transition={{ delay: 0.4, duration: 0.5 }}
+          >
+            <Link to="/wallet" className="block h-full">
+              <Card className="h-full bg-gradient-to-br from-amber-50 via-orange-50 to-yellow-50 dark:from-amber-950/30 dark:via-orange-950/20 dark:to-yellow-950/20 border-amber-200/60 dark:border-amber-800/40 hover:shadow-lg hover:shadow-amber-500/10 transition-all hover:-translate-y-0.5 overflow-hidden relative group">
+                <div className="absolute right-0 bottom-0 w-24 h-24 bg-gradient-to-tl from-amber-200/40 dark:from-amber-500/10 to-transparent rounded-full blur-xl" />
+                <CardContent className="p-5 relative flex flex-col justify-between h-full">
+                  <div>
+                    <div className="flex items-center justify-between mb-3">
+                      <div className="flex items-center gap-2">
+                        <span className="text-2xl">🔥</span>
+                        <h3 className="text-sm font-semibold text-amber-800 dark:text-amber-300">Streak</h3>
+                      </div>
+                      <Badge className="text-[10px] bg-amber-100 dark:bg-amber-900/50 text-amber-700 dark:text-amber-400 border-0">
+                        Lv. {streakData.level}
+                      </Badge>
+                    </div>
+                    <div className="flex items-baseline gap-1 mb-1">
+                      <span className="text-3xl font-bold text-amber-700 dark:text-amber-300">{streakData.currentStreak}</span>
+                      <span className="text-sm text-amber-600/70 dark:text-amber-400/70">days</span>
+                    </div>
+                    <p className="text-xs text-amber-600/80 dark:text-amber-400/60">
+                      Best: {streakData.longestStreak} days
+                    </p>
+                  </div>
+                  <div className="mt-3">
+                    <div className="flex items-center justify-between text-xs text-amber-700 dark:text-amber-400 mb-1">
+                      <span className="flex items-center gap-1">🪙 {streakData.healthCoins} HC</span>
+                      <span>{streakData.xp}/{streakData.nextLevelXp} XP</span>
+                    </div>
+                    <div className="h-1.5 bg-amber-200/50 dark:bg-amber-900/30 rounded-full overflow-hidden">
+                      <div
+                        className="h-full bg-gradient-to-r from-amber-400 to-orange-400 rounded-full transition-all duration-500"
+                        style={{ width: `${Math.min((streakData.xp / streakData.nextLevelXp) * 100, 100)}%` }}
+                      />
+                    </div>
+                  </div>
+                </CardContent>
+              </Card>
+            </Link>
+          </motion.div>
+        </div>
+
         {/* Healthiness Score Card */}
         <Card className="bg-white dark:bg-slate-800/50 border-slate-200/80 dark:border-slate-700/50 overflow-hidden">
           <CardContent className="p-6">
@@ -2009,9 +2127,7 @@ const Index = () => {
                 </div>
               ) : (
                 <div className="text-center py-8">
-                  <div className="w-16 h-16 mx-auto mb-4 rounded-2xl bg-slate-100 dark:bg-slate-700/50 flex items-center justify-center">
-                    <Calendar className="w-8 h-8 text-slate-400" />
-                  </div>
+                  <LottieIcon src={LOTTIE_URLS.emptyCalendar} size={120} />
                   <p className="text-slate-500 dark:text-slate-400 mb-4">No upcoming appointments</p>
                   <Link to="/doctors">
                     <Button size="sm" className="bg-gradient-to-r from-teal-500 to-teal-600 hover:from-teal-600 hover:to-teal-700 text-white shadow-sm">Book Now</Button>
