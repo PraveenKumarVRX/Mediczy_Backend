@@ -117,7 +117,7 @@ async function ensureSchema(client) {
   }
   
   if (COLUMNAR_ENABLED) {
-    extensionStatements.push('CREATE EXTENSION IF NOT EXISTS columnar;');
+    extensionStatements.push('CREATE EXTENSION IF NOT EXISTS citus_columnar;');
   }
   
   // Always enable these useful extensions
@@ -311,12 +311,13 @@ async function registerCitusWorkers(client) {
 }
 
 async function distributeTables(client) {
-  if (!CITUS_ENABLED) {
+  if (!CITUS_ENABLED || !CITUS_WORKERS.length) {
+    // Skip distribution on single-node setups (no workers configured)
     return;
   }
 
   try {
-    const { rows } = await client.query('SELECT table_name FROM citus_distributed_tables');
+    const { rows } = await client.query("SELECT table_name FROM citus_tables");
     const distributed = new Set(rows.map(row => row.table_name));
 
     for (const { table, distributionColumn } of CITUS_TABLES) {
@@ -328,7 +329,7 @@ async function distributeTables(client) {
         await client.query('SELECT create_distributed_table($1, $2)', [table, distributionColumn]);
         console.log(`✅ Citus: Distributed table ${table} using ${distributionColumn}`);
       } catch (error) {
-        if (!error.message.includes('already distributed')) {
+        if (!error.message.includes('already distributed') && !error.message.includes('cannot create constraint')) {
           console.warn(`⚠️  Citus distribution skipped for ${table}:`, error.message);
         }
       }
