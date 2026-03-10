@@ -91,10 +91,10 @@ class HealthReminderService {
       // Check for active prescriptions
       const prescriptions = await Prescription.findAll({
         where: { 
-          user_id: userId,
+          patientId: userId,
           status: 'active'
         },
-        order: [['created_at', 'DESC']],
+        order: [['createdAt', 'DESC']],
         limit: 10
       });
 
