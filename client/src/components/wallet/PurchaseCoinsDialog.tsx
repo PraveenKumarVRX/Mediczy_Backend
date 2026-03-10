@@ -185,7 +185,7 @@ export function PurchaseCoinsDialog({ open, onOpenChange, onSuccess }: PurchaseC
 
       const options: Record<string, any> = {
         key: order.key,
-        amount: order.amount * 100, // Razorpay expects amount in paise
+        amount: order.amountInPaise || (order.amount * 100), // Razorpay expects amount in paise
         currency: order.currency || 'INR',
         name: 'Mediqzy Healthcare',
         description: `Purchase ${pkg.coins} Health Coins`,

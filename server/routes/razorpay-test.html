@@ -1,0 +1,104 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <title>Razorpay Checkout Test</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <script src="https://checkout.razorpay.com/v1/checkout.js"></script>
+  <style>
+    body { font-family: sans-serif; max-width: 600px; margin: 40px auto; padding: 0 20px; }
+    button { padding: 12px 24px; font-size: 16px; cursor: pointer; background: #14b8a6; color: #fff; border: none; border-radius: 6px; }
+    pre { background: #f4f4f4; padding: 12px; border-radius: 6px; overflow-x: auto; font-size: 13px; max-height: 300px; }
+    .status { margin: 12px 0; padding: 8px 12px; border-radius: 4px; }
+    .ok  { background: #d1fae5; color: #065f46; }
+    .err { background: #fee2e2; color: #991b1b; }
+    .info { background: #dbeafe; color: #1e40af; }
+  </style>
+</head>
+<body>
+  <h2>Razorpay Checkout Diagnostic</h2>
+  <p>This creates a ₹1 test order and opens Razorpay checkout to verify integration.</p>
+  <button id="testBtn" onclick="runTest()">Create Order &amp; Open Checkout</button>
+  <div id="log"></div>
+
+  <script>
+    const API = location.origin + '/api';
+    // Get auth token from localStorage (same as app uses)
+    const token = localStorage.getItem('token') || prompt('Enter your auth token (Bearer)');
+
+    function log(msg, cls = 'info') {
+      const d = document.getElementById('log');
+      d.innerHTML += `<div class="status ${cls}">${new Date().toLocaleTimeString()} — ${msg}</div>`;
+    }
+
+    async function runTest() {
+      document.getElementById('testBtn').disabled = true;
+      log('Step 1: Creating Razorpay order via /api/wallet/create-order (package 0 = ₹99)...');
+
+      try {
+        const res = await fetch(API + '/wallet/create-order', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'Authorization': `Bearer ${token}`
+          },
+          body: JSON.stringify({ packageId: 0 })
+        });
+        const data = await res.json();
+
+        if (!data.success || !data.order) {
+          log('Order creation failed: ' + JSON.stringify(data), 'err');
+          document.getElementById('testBtn').disabled = false;
+          return;
+        }
+
+        const order = data.order;
+        log(`Order created: ${order.orderId}, amount=${order.amount} (₹), amountInPaise=${order.amountInPaise}`, 'ok');
+        log('<pre>' + JSON.stringify(data, null, 2) + '</pre>');
+
+        // Step 2: Open Razorpay checkout
+        log('Step 2: Opening Razorpay checkout...');
+
+        const options = {
+          key: order.key,
+          amount: order.amountInPaise || (order.amount * 100),
+          currency: order.currency || 'INR',
+          name: 'Mediqzy Healthcare',
+          description: 'Test Purchase - Health Coins',
+          order_id: order.orderId,
+          handler: function(response) {
+            log('Payment Success! ' + JSON.stringify(response), 'ok');
+          },
+          prefill: { name: 'Test User', email: 'test@mediqzy.com', contact: '9999999999' },
+          theme: { color: '#14b8a6' },
+          modal: {
+            ondismiss: function() {
+              log('Checkout dismissed by user', 'info');
+              document.getElementById('testBtn').disabled = false;
+            }
+          }
+        };
+
+        log('Checkout options: <pre>' + JSON.stringify({
+          key: options.key,
+          amount: options.amount,
+          currency: options.currency,
+          order_id: options.order_id,
+          prefill: options.prefill
+        }, null, 2) + '</pre>');
+
+        const rzp = new Razorpay(options);
+        rzp.on('payment.failed', function(response) {
+          log('Payment Failed: ' + JSON.stringify(response.error), 'err');
+          document.getElementById('testBtn').disabled = false;
+        });
+        rzp.open();
+        log('Razorpay.open() called — checkout should appear', 'ok');
+
+      } catch (err) {
+        log('Error: ' + err.message, 'err');
+        document.getElementById('testBtn').disabled = false;
+      }
+    }
+  </script>
+</body>
+</html>

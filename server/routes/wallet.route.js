@@ -524,18 +524,26 @@ router.post('/create-order', authUser, async (req, res) => {
     // Create Razorpay order only if payment required
     let razorpayOrder = null;
     if (finalAmount > 0) {
+      // Razorpay notes MUST be string key-value pairs (no nulls, no numbers)
+      const rawNotes = {
+        userId: req.user.id,
+        packageId,
+        coins: pkg.coins,
+        bonusHC,
+        type: 'health_coins_purchase'
+      };
+      if (couponCode) rawNotes.couponCode = couponCode;
+      // Stringify all note values — Razorpay requires string values
+      const notes = {};
+      for (const [k, v] of Object.entries(rawNotes)) {
+        if (v !== null && v !== undefined) notes[k] = String(v);
+      }
+
       const orderData = {
         amount: finalAmount,
         currency: 'INR',
         receipt: `HC_${req.user.id}_${Date.now()}`,
-        notes: {
-          userId: req.user.id,
-          packageId,
-          coins: pkg.coins,
-          couponCode: couponCode || null,
-          bonusHC,
-          type: 'health_coins_purchase'
-        }
+        notes
       };
 
       console.log('📝 Creating Razorpay order with:', JSON.stringify(orderData, null, 2));
@@ -551,6 +559,7 @@ router.post('/create-order', authUser, async (req, res) => {
       order: razorpayOrder ? {
         orderId: razorpayOrder.orderId,
         amount: razorpayOrder.amount,
+        amountInPaise: razorpayOrder.amountInPaise,
         currency: razorpayOrder.currency,
         key: process.env.RAZORPAY_KEY_ID
       } : null,

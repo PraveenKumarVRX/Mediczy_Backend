@@ -82,11 +82,19 @@ class PaymentGatewayService {
     // Ensure amount is in paise (multiply by 100 for decimal prices)
     const amountInPaise = Math.round(orderData.amount * 100);
     
+    // Sanitize notes: Razorpay requires string values, no nulls
+    const sanitizedNotes = {};
+    if (orderData.notes) {
+      for (const [k, v] of Object.entries(orderData.notes)) {
+        if (v !== null && v !== undefined) sanitizedNotes[k] = String(v);
+      }
+    }
+    
     const options = {
       amount: amountInPaise,
       currency: orderData.currency || 'INR',
       receipt: orderData.receipt || `order_${Date.now()}`,
-      notes: orderData.notes || {},
+      notes: sanitizedNotes,
       payment_capture: 1 // Auto-capture payment
     };
 
@@ -99,6 +107,7 @@ class PaymentGatewayService {
         gateway: 'razorpay',
         orderId: order.id,
         amount: order.amount / 100,
+        amountInPaise: order.amount,
         currency: order.currency,
         receipt: order.receipt,
         status: order.status

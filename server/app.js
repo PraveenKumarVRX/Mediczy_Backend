@@ -676,6 +676,11 @@ app.use((req, res, next) => {
   next();
 });
 
+// Razorpay checkout diagnostic page (for testing payment integration)
+app.get('/razorpay-test', (req, res) => {
+  res.sendFile(new URL('./routes/razorpay-test.html', import.meta.url).pathname);
+});
+
 // 9. Session Timeout (HIPAA 15-minute idle timeout)
 app.use(sessionTimeout);
 // 10. Ring-Fencing Middleware (Prevent cross-user privilege escalation)
