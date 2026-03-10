@@ -117,10 +117,13 @@ const MyBookings = () => {
     if (activeTab === "upcoming") {
       // Show appointments that are either:
       // 1. In the future (after now)
-      // 2. OR currently in-progress (status = "in-progress")
+      // 2. OR currently in-progress AND appointment date is today or later
       // AND not cancelled or no-show
+      const todayStart = new Date();
+      todayStart.setHours(0, 0, 0, 0);
+      const isInProgressAndRecent = booking.status === "in-progress" && appointmentDateTime >= todayStart;
       return (
-        (appointmentDateTime > now || booking.status === "in-progress") &&
+        (appointmentDateTime > now || isInProgressAndRecent) &&
         !["cancelled", "no-show", "completed"].includes(booking.status)
       );
     } else if (activeTab === "history") {
@@ -352,6 +355,18 @@ const MyBookings = () => {
     return hoursDifference > 2 && ["scheduled", "confirmed"].includes(booking.status);
   };
 
+  const canJoinCall = (booking: Booking) => {
+    // Allow join for scheduled/confirmed/in-progress within the valid window
+    // Window: 15 min before → 60 min after appointment time
+    if (!["scheduled", "confirmed", "in-progress"].includes(booking.status)) return false;
+    const appointmentDateTime = new Date(`${booking.appointmentDate} ${booking.appointmentTime}`);
+    if (isNaN(appointmentDateTime.getTime())) return false;
+    const now = new Date();
+    const windowStart = new Date(appointmentDateTime.getTime() - 15 * 60 * 1000);
+    const windowEnd = new Date(appointmentDateTime.getTime() + 60 * 60 * 1000);
+    return now >= windowStart && now <= windowEnd;
+  };
+
   const canRate = (booking: Booking) => {
     return booking.status === "completed" && !booking.rating;
   };
@@ -488,7 +503,7 @@ const MyBookings = () => {
                 )}
 
                 <div className="mt-6 flex items-center gap-4 flex-wrap">
-                  {["scheduled", "confirmed"].includes(booking.status) && (
+                  {canJoinCall(booking) && (
                     <>
                       {booking.consultationType === 'online' ? (
                         <Button
@@ -509,6 +524,10 @@ const MyBookings = () => {
                           <span className="ml-2">Join Consultation</span>
                         </Button>
                       )}
+                    </>
+                  )}
+                  {["scheduled", "confirmed"].includes(booking.status) && (
+                    <>
                       <Button
                         variant="outline"
                         onClick={() => handleDownloadCalendar(booking)}

@@ -85,6 +85,72 @@ const cancelExpiredAppointments = async () => {
 };
 
 /**
+ * Auto-complete stale in-progress appointments
+ * Appointments stuck in 'in-progress' from past dates are auto-completed
+ * (Doctor never ended the consultation — system cleans up)
+ */
+const completeStaleInProgressAppointments = async () => {
+  try {
+    const now = new Date();
+    const todayStr = now.toISOString().split('T')[0];
+
+    console.log(`🔍 Checking for stale in-progress appointments before ${todayStr}...`);
+
+    const staleAppointments = await Appointment.findAll({
+      where: {
+        appointmentDate: {
+          [Op.lt]: todayStr // Before today
+        },
+        status: 'in-progress'
+      }
+    });
+
+    if (staleAppointments.length === 0) {
+      console.log('✅ No stale in-progress appointments found');
+      return { processed: 0, completed: 0 };
+    }
+
+    console.log(`📋 Found ${staleAppointments.length} stale in-progress appointment(s)`);
+
+    let completedCount = 0;
+    const completedIds = [];
+
+    for (const appointment of staleAppointments) {
+      try {
+        await appointment.update({
+          status: 'completed',
+          metadata: {
+            ...appointment.metadata,
+            autoCompletedAt: new Date().toISOString(),
+            completedByRole: 'system',
+            previousStatus: 'in-progress',
+            autoCompleteReason: 'Consultation session expired — doctor did not end call'
+          }
+        });
+
+        completedIds.push(appointment.id);
+        completedCount++;
+
+        console.log(`   ✅ Appointment #${appointment.id} (${appointment.appointmentDate} ${appointment.appointmentTime}) -> completed (auto)`);
+      } catch (updateError) {
+        console.error(`   ⚠️ Failed to auto-complete appointment #${appointment.id}:`, updateError.message);
+      }
+    }
+
+    console.log(`✅ Auto-completed ${completedCount}/${staleAppointments.length} stale in-progress appointments`);
+
+    return {
+      processed: staleAppointments.length,
+      completed: completedCount,
+      appointmentIds: completedIds
+    };
+  } catch (error) {
+    console.error('❌ Error in completeStaleInProgressAppointments:', error);
+    throw error;
+  }
+};
+
+/**
  * Schedule the appointment auto-cancel cron job
  * Runs at 00:00 (midnight) every day
  */
@@ -97,6 +163,9 @@ const scheduleAppointmentAutoCancel = () => {
     try {
       const result = await cancelExpiredAppointments();
       console.log(`📊 Auto-cancel summary: ${result.cancelled} appointments marked as no-show`);
+
+      const staleResult = await completeStaleInProgressAppointments();
+      console.log(`📊 Auto-complete summary: ${staleResult.completed} stale in-progress appointments completed`);
     } catch (error) {
       console.error('❌ Appointment auto-cancel job failed:', error);
     }
@@ -112,6 +181,11 @@ const scheduleAppointmentAutoCancel = () => {
       if (result.cancelled > 0) {
         console.log(`📊 Morning cleanup: ${result.cancelled} additional appointments marked as no-show`);
       }
+
+      const staleResult = await completeStaleInProgressAppointments();
+      if (staleResult.completed > 0) {
+        console.log(`📊 Morning cleanup: ${staleResult.completed} additional stale in-progress appointments completed`);
+      }
     } catch (error) {
       console.error('❌ Morning cleanup job failed:', error);
     }
@@ -120,9 +194,9 @@ const scheduleAppointmentAutoCancel = () => {
   });
 
   console.log('✅ Appointment auto-cancel cron jobs scheduled:');
-  console.log('   - Midnight auto-cancel: Daily at 00:00 IST');
+  console.log('   - Midnight auto-cancel + stale auto-complete: Daily at 00:00 IST');
   console.log('   - Morning cleanup: Daily at 06:00 IST');
 };
 
-export { cancelExpiredAppointments, scheduleAppointmentAutoCancel };
+export { cancelExpiredAppointments, completeStaleInProgressAppointments, scheduleAppointmentAutoCancel };
 export default scheduleAppointmentAutoCancel;
