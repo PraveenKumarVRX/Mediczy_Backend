@@ -212,7 +212,7 @@ router.post('/login', authLimiter, [
     }
 
     // Update last login
-    await assistant.update({ lastLogin: new Date() });
+    await assistant.update({ lastLoginAt: new Date() });
 
     // Generate JWT token
     const token = jwt.sign(

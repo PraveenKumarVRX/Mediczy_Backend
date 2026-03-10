@@ -183,7 +183,7 @@ class WhatsAppUserContextService {
         limit,
         attributes: [
           'id', 'doctorName', 'specialization', 'appointmentDate', 'appointmentTime',
-          'status', 'consultationType', 'reason', 'diagnosis', 'createdAt'
+          'status', 'consultationType', 'reason', 'notes', 'createdAt'
         ]
       });
       
@@ -206,7 +206,7 @@ class WhatsAppUserContextService {
         order: [['createdAt', 'DESC']],
         limit,
         attributes: [
-          'id', 'prescriptionNumber', 'doctorName', 'diagnosis', 'medications',
+          'id', 'prescriptionId', 'doctorName', 'diagnosis', 'medications',
           'instructions', 'followUpDate', 'status', 'createdAt'
         ]
       });

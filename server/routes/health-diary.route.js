@@ -149,7 +149,7 @@ router.get('/summary', authUser, async (req, res) => {
         })),
         recentPrescriptions: recentPrescriptions.map(p => ({
           id: p.id,
-          number: p.prescriptionNumber,
+          number: p.prescriptionId,
           diagnosis: p.diagnosis,
           doctor: p.doctorName,
           date: p.createdAt,

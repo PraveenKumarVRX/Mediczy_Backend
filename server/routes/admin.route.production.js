@@ -291,7 +291,7 @@ router.get('/users',
     query('search').optional().isLength({ max: 100 }).withMessage('Search term too long'),
     query('status').optional().isIn(['all', 'active', 'inactive']).withMessage('Invalid status filter'),
     query('role').optional().isAlpha().withMessage('Invalid role filter'),
-    query('sortBy').optional().isIn(['createdAt', 'firstName', 'lastName', 'email', 'lastLogin']).withMessage('Invalid sort field'),
+    query('sortBy').optional().isIn(['createdAt', 'firstName', 'lastName', 'email', 'lastLoginAt']).withMessage('Invalid sort field'),
     query('sortOrder').optional().isIn(['ASC', 'DESC']).withMessage('Invalid sort order')
   ],
   validateRequest,

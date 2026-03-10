@@ -941,7 +941,7 @@ router.patch('/:id/status', authDoctor, async (req, res) => {
         resourceType: 'prescription',
         resourceId: prescription.id.toString(),
         dataFields: {
-          prescriptionId: prescription.prescriptionNumber || prescription.prescriptionId,
+          prescriptionId: prescription.prescriptionId,
           patientName: prescription.patientName,
           previousStatus,
           newStatus: status
@@ -963,7 +963,7 @@ router.patch('/:id/status', authDoctor, async (req, res) => {
       try {
         // Create EHR record
         const ehrRecord = await EHRRecord.createFromPrescription(prescription);
-        console.log(`✅ EHR record created for prescription ${prescription.prescriptionNumber}`);
+        console.log(`✅ EHR record created for prescription ${prescription.prescriptionId}`);
 
         // Create health diary entries
         await HealthDiary.createFromPrescription(prescription, ehrRecord.id);
@@ -981,7 +981,7 @@ router.patch('/:id/status', authDoctor, async (req, res) => {
           : null;
 
         await n8nService.prescriptionIssued({
-          id: prescription.prescriptionId || prescription.prescriptionNumber || prescription.id,
+          id: prescription.prescriptionId || prescription.id,
           patientId: prescription.patientId,
           patientName: prescription.patientName,
           patientEmail: patient?.email,
@@ -1001,7 +1001,7 @@ router.patch('/:id/status', authDoctor, async (req, res) => {
     res.json({
       success: true,
       message: 'Prescription status updated',
-      prescriptionId: prescription.prescriptionNumber || prescription.prescriptionId,
+      prescriptionId: prescription.prescriptionId,
       status,
       ehrCreated: status === 'issued' && previousStatus !== 'issued'
     });
@@ -1051,7 +1051,7 @@ router.post('/:id/issue', authDoctor, async (req, res) => {
       try {
         // Create EHR record
         const ehrRecord = await EHRRecord.createFromPrescription(prescription);
-        console.log(`✅ EHR record created for prescription ${prescription.prescriptionNumber}`);
+        console.log(`✅ EHR record created for prescription ${prescription.prescriptionId}`);
 
         // Create health diary entries
         await HealthDiary.createFromPrescription(prescription, ehrRecord.id);
@@ -1068,7 +1068,7 @@ router.post('/:id/issue', authDoctor, async (req, res) => {
         : null;
 
       await n8nService.prescriptionIssued({
-        id: prescription.prescriptionId || prescription.prescriptionNumber || prescription.id,
+        id: prescription.prescriptionId || prescription.id,
         patientId: prescription.patientId,
         patientName: prescription.patientName,
         patientEmail: patient?.email,
@@ -1090,7 +1090,7 @@ router.post('/:id/issue', authDoctor, async (req, res) => {
       prescription: {
         id: prescription.id,
         prescriptionId: prescription.prescriptionId,
-        prescriptionNumber: prescription.prescriptionNumber,
+        prescriptionNumber: prescription.prescriptionId,
         status: 'issued',
         issuedAt: prescription.issuedAt,
         patientName: prescription.patientName,

@@ -252,7 +252,7 @@ router.post('/login', authLimiter, [
     const { accessToken, refreshToken } = await issueTokenPair(payload, ip);
 
     await clearFailedAttempts(email, ip);
-    await user.update({ lastLogin: new Date() });
+    await user.update({ lastLoginAt: new Date() });
     await auditLoginAttempt(req, user.id, email, true);
 
     // --- fetch stored permissions from DB ---

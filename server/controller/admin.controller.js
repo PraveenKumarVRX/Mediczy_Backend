@@ -138,7 +138,7 @@ export const adminLogin = async (req, res) => {
     if (isPasswordValid) {
       // Update last login
       await adminUser.update({ 
-        lastLogin: new Date()
+        lastLoginAt: new Date()
       });
       
       // Generate token with adminId and userType for ring-fencing
@@ -175,7 +175,7 @@ export const adminLogin = async (req, res) => {
           role: 'admin',
           userType: 'admin',
           isAdmin: true,
-          lastLogin: adminUser.lastLogin
+          lastLogin: adminUser.lastLoginAt
         } 
       });
     }

@@ -293,7 +293,7 @@ EHRRecord.createFromPrescription = async (prescription) => {
     title: `Prescription - ${prescription.diagnosis || 'Consultation'}`,
     summary: prescription.diagnosis,
     details: {
-      prescriptionNumber: prescription.prescriptionNumber,
+      prescriptionNumber: prescription.prescriptionId,
       medications: prescription.medications,
       instructions: prescription.instructions,
       labTests: prescription.labTests,
@@ -322,7 +322,7 @@ HealthDiary.createFromPrescription = async (prescription, ehrRecordId) => {
     title: `New Prescription from Dr. ${prescription.doctorName}`,
     description: prescription.diagnosis,
     data: {
-      prescriptionNumber: prescription.prescriptionNumber,
+      prescriptionNumber: prescription.prescriptionId,
       medications: prescription.medications,
       doctorName: prescription.doctorName,
       clinicName: prescription.clinicName

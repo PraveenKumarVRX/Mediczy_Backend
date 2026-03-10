@@ -237,8 +237,7 @@ export const adminLogin = async (req, res) => {
     if (adminUser && await bcrypt.compare(password, adminUser.password)) {
       // Successful authentication
       await adminUser.update({ 
-        lastLogin: new Date(),
-        lastLoginIP: clientIP 
+        lastLoginAt: new Date()
       });
       
       // Generate token with adminId and userType for ring-fencing
@@ -283,7 +282,7 @@ export const adminLogin = async (req, res) => {
           role: 'admin',
           userType: 'admin',
           isAdmin: true,
-          lastLogin: adminUser.lastLogin,
+          lastLogin: adminUser.lastLoginAt,
           permissions: [
             'user_management', 'doctor_management', 'nurse_management',
             'corporate_management', 'health_risk_management', 'analytics_access',

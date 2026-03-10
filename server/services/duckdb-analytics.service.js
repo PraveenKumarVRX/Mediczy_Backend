@@ -374,7 +374,7 @@ class DuckDBAnalyticsService {
                 COUNT(DISTINCT id) as unique_users,
                 COUNT(*) as total_events
             FROM users
-            WHERE "lastLogin" >= NOW() - INTERVAL '7 days'
+            WHERE "lastLoginAt" >= NOW() - INTERVAL '7 days'
         `);
 
         return results;

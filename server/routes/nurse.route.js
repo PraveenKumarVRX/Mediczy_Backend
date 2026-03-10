@@ -125,7 +125,7 @@ router.post('/login', authLimiter, [
     }
 
     // Update last login
-    if (nurse.update) await nurse.update({ lastLogin: new Date().toISOString() });
+    if (nurse.update) await nurse.update({ lastLoginAt: new Date() });
 
     // Generate JWT token
     const token = jwt.sign(

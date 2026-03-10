@@ -296,7 +296,7 @@ router.get('/users', authUser, requireRole('admin'), async (req, res) => {
     }
     
     // Validate sort parameters
-    const allowedSortFields = ['createdAt', 'firstName', 'lastName', 'email', 'lastLogin'];
+    const allowedSortFields = ['createdAt', 'firstName', 'lastName', 'email', 'lastLoginAt'];
     const sortField = allowedSortFields.includes(sortBy) ? sortBy : 'createdAt';
     const sortDirection = ['ASC', 'DESC'].includes(sortOrder.toUpperCase()) ? sortOrder.toUpperCase() : 'DESC';
     
@@ -3360,7 +3360,7 @@ router.get('/team', authUser, requireRole('admin'), async (req, res) => {
         address: metadata.address || { street: '', city: '', state: '', pincode: '' },
         emergencyContact: metadata.emergencyContact || { name: '', relationship: '', phone: '' },
         joiningDate: metadata.joiningDate || new Date().toISOString().split('T')[0],
-        lastLogin: user.lastLogin,
+        lastLogin: user.lastLoginAt,
         isActive: user.isActive !== undefined ? user.isActive : true,
         canLogin: metadata.canLogin !== undefined ? metadata.canLogin : true,
         createdAt: user.createdAt

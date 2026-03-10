@@ -518,7 +518,7 @@ router.get('/:id', authDoctor, [
         {
           model: Appointment,
           as: 'appointment',
-          attributes: ['id', 'patientName', 'appointmentDate', 'appointmentTime', 'symptoms', 'diagnosis']
+          attributes: ['id', 'patientName', 'appointmentDate', 'appointmentTime', 'symptoms', 'notes']
         }
       ]
     });
@@ -821,7 +821,7 @@ router.get('/admin/:id', authUser, [
         {
           model: Appointment,
           as: 'appointment',
-          attributes: ['id', 'patientName', 'appointmentDate', 'appointmentTime', 'symptoms', 'diagnosis', 'organizationId']
+          attributes: ['id', 'patientName', 'appointmentDate', 'appointmentTime', 'symptoms', 'notes', 'organization_id']
         }
       ]
     });

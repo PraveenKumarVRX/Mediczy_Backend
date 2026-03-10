@@ -128,7 +128,7 @@ async function checkInactiveUsers() {
     
     const inactiveUsers = await User.count({
       where: {
-        lastLogin: {
+        lastLoginAt: {
           [Op.lt]: inactivityDate
         },
         isActive: true,
