@@ -2187,6 +2187,39 @@ const Index = () => {
         {/* Main Features Grid */}
         <div>
           <h2 className="text-xl font-semibold text-slate-800 dark:text-white mb-4">Explore Services</h2>
+
+          {/* ── AI-Powered Features Banner ── */}
+          <div className="mb-6 p-4 rounded-2xl bg-gradient-to-r from-teal-600 via-blue-600 to-purple-600 text-white relative overflow-hidden">
+            <div className="absolute inset-0 bg-[url('data:image/svg+xml;base64,PHN2ZyB3aWR0aD0iNDAiIGhlaWdodD0iNDAiIHZpZXdCb3g9IjAgMCA0MCA0MCIgeG1sbnM9Imh0dHA6Ly93d3cudzMub3JnLzIwMDAvc3ZnIj48Y2lyY2xlIGN4PSIyMCIgY3k9IjIwIiByPSIxIiBmaWxsPSJyZ2JhKDI1NSwyNTUsMjU1LDAuMSkiLz48L3N2Zz4=')] opacity-50" />
+            <div className="relative">
+              <div className="flex items-center gap-2 mb-3">
+                <Brain className="h-5 w-5" />
+                <h3 className="font-bold text-lg">AI-Powered Health Tools</h3>
+                <Badge variant="outline" className="text-[10px] border-white/30 text-white bg-white/10 ml-auto">NEW</Badge>
+              </div>
+              <div className="grid grid-cols-3 gap-2">
+                <Link to="/report-scanner" className="flex flex-col items-center gap-1.5 p-3 rounded-xl bg-white/10 hover:bg-white/20 transition-all active:scale-95 backdrop-blur-sm">
+                  <div className="w-10 h-10 rounded-xl bg-white/20 flex items-center justify-center">
+                    <FileText className="h-5 w-5" />
+                  </div>
+                  <span className="text-[11px] font-semibold text-center leading-tight">Scan Report</span>
+                </Link>
+                <Link to="/symptom-checker" className="flex flex-col items-center gap-1.5 p-3 rounded-xl bg-white/10 hover:bg-white/20 transition-all active:scale-95 backdrop-blur-sm">
+                  <div className="w-10 h-10 rounded-xl bg-white/20 flex items-center justify-center">
+                    <Stethoscope className="h-5 w-5" />
+                  </div>
+                  <span className="text-[11px] font-semibold text-center leading-tight">AI Triage</span>
+                </Link>
+                <Link to="/smart-health" className="flex flex-col items-center gap-1.5 p-3 rounded-xl bg-white/10 hover:bg-white/20 transition-all active:scale-95 backdrop-blur-sm">
+                  <div className="w-10 h-10 rounded-xl bg-white/20 flex items-center justify-center">
+                    <Sparkles className="h-5 w-5" />
+                  </div>
+                  <span className="text-[11px] font-semibold text-center leading-tight">AI Health</span>
+                </Link>
+              </div>
+            </div>
+          </div>
+
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
             {features.map((feature, index) => (
               <Link 

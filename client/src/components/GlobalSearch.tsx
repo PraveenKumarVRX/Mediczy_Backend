@@ -50,6 +50,9 @@ const searchItems: SearchItem[] = [
   { label: "Video Consultation", path: "/consultation", icon: Video, keywords: ["video", "call", "telemedicine", "online"], group: "Quick Actions" },
 
   // Health
+  { label: "AI Health Dashboard", path: "/smart-health", icon: Brain, keywords: ["ai", "health", "score", "risk", "dashboard", "smart"], group: "Health" },
+  { label: "AI Report Scanner", path: "/report-scanner", icon: FileText, keywords: ["scan", "report", "upload", "lab", "xray", "analyze", "photo"], group: "Quick Actions" },
+  { label: "AI Symptom Triage", path: "/symptom-checker", icon: Stethoscope, keywords: ["symptom", "triage", "check", "pain", "esi", "emergency", "assess"], group: "Quick Actions" },
   { label: "Health Dashboard", path: "/health-dashboard", icon: HeartPulse, keywords: ["health", "dashboard", "vitals", "stats"], group: "Health" },
   { label: "Health Tracker", path: "/health-tracker", icon: Activity, keywords: ["tracker", "steps", "sleep", "heart", "vitals"], group: "Health" },
   { label: "Symptom Checker", path: "/symptoms", icon: Brain, keywords: ["symptoms", "check", "log", "track"], group: "Health" },

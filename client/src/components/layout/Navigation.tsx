@@ -1,5 +1,5 @@
 import { Link, useLocation } from "react-router-dom";
-import { Home, User, Calendar, Activity, Bot } from "lucide-react";
+import { Home, User, Calendar, Activity, Bot, Scan } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { useIsMobile } from "@/hooks/use-mobile";
 import { motion } from "framer-motion";
@@ -8,7 +8,7 @@ const navItems = [
   { icon: Home, label: "Home", path: "/" },
   { icon: Calendar, label: "Bookings", path: "/appointments" },
   { icon: Bot, label: "Dr. iSHA", path: "/ai-doctor", highlight: true },
-  { icon: Activity, label: "Health", path: "/health-tracker" },
+  { icon: Activity, label: "Health", path: "/smart-health" },
   { icon: User, label: "Profile", path: "/profile" },
 ];
 

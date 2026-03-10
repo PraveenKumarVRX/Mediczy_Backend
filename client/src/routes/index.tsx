@@ -88,6 +88,9 @@ const ClaimsManagement      = lazy(() => import("@/pages/patient/ClaimsManagemen
 const AIHealthAnalysis      = lazy(() => import("@/pages/patient/AIHealthAnalysis"));
 const EmployeeGamification  = lazy(() => import("@/pages/patient/EmployeeGamification"));
 const EmployeeWellnessCalendar = lazy(() => import("@/pages/patient/EmployeeWellnessCalendar"));
+const AIReportScanner       = lazy(() => import("@/pages/patient/AIReportScanner"));
+const AISymptomTriage       = lazy(() => import("@/pages/patient/AISymptomTriage"));
+const SmartHealthDashboard  = lazy(() => import("@/pages/patient/SmartHealthDashboard"));
 
 // ─── Billing ─────────────────────────────────────────────────────────────────
 const OrderCheckout  = lazy(() => import("@/pages/billing/OrderCheckout"));
@@ -911,6 +914,11 @@ const AppRoutes = () => {
         <Route path="/patient/wellness-calendar"  element={<EmployeeWellnessCalendar />} />
         <Route path="/wellness-calendar"          element={<EmployeeWellnessCalendar />} />
         <Route path="/health-risk-assessment"     element={<UserHealthRiskAssessment />} />
+
+        {/* ── AI-Powered Features ─────────────────────────────────────── */}
+        <Route path="/report-scanner"          element={<AIReportScanner />} />
+        <Route path="/symptom-checker"         element={<AISymptomTriage />} />
+        <Route path="/smart-health"            element={<SmartHealthDashboard />} />
 
         {/* ── Billing ─────────────────────────────────────────────────── */}
         <Route path="/billing/checkout"        element={<MainLayout><OrderCheckout /></MainLayout>} />

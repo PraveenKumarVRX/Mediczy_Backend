@@ -1,8 +1,8 @@
 import { Sidebar } from "./Sidebar";
 import { useToast } from "@/hooks/use-toast";
 import { Button } from "@/components/ui/button";
-import { Menu, Moon, Sun, X, LogOut, CalendarPlus, HeartPulse, Bell, FileText, Calendar, Pill, CheckCircle, AlertCircle, ChevronRight } from "lucide-react";
-import {  memo, useEffect, useMemo, useState } from "react";
+import { Menu, Moon, Sun, X, LogOut, CalendarPlus, HeartPulse, Bell, FileText, Calendar, Pill, CheckCircle, AlertCircle, ChevronRight, Sparkles } from "lucide-react";
+import {  memo, useCallback, useEffect, useMemo, useState } from "react";
 // import { useIsMobile } from "@/hooks/use-mobile";
 import { Link, useNavigate, useLocation } from "react-router-dom";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
@@ -34,6 +34,7 @@ import ChatApplet from "@/components/chat/ChatApplet";
 import { PageTransition } from "@/components/PageTransition";
 import FloatingDrISHA from "@/components/FloatingDrISHA";
 import GlobalSearch from "@/components/GlobalSearch";
+import aiHealthServices from "@/services/aiHealthServices";
 
 interface Notification {
   id: number;
@@ -190,35 +191,48 @@ const MainLayout = ({ children }: MainLayoutProps) => {
     currentDoctor,
   ]);
 
-  const notifications: Notification[] = [
-    { 
-      id: 1, 
-      title: "New Lab Report Ready", 
-      description: "Your blood test results are now available for review",
-      time: "2m ago",
-      type: 'report',
-      link: '/reposts',
-      read: false
-    },
-    { 
-      id: 2, 
-      title: "Appointment Confirmed", 
-      description: "Your appointment with Dr. Smith on Dec 27 at 10:00 AM is confirmed",
-      time: "1h ago",
-      type: 'appointment',
-      link: '/my-bookings',
-      read: false
-    },
-    { 
-      id: 3, 
-      title: "Prescription Shared", 
-      description: "Dr. Patel has shared a new prescription for you",
-      time: "3h ago",
-      type: 'prescription',
-      link: '/my-prescriptions',
-      read: true
-    },
-  ];
+  // ── Real-time AI notifications from backend ──
+  const [notifications, setNotifications] = useState<Notification[]>([]);
+
+  const timeAgo = useCallback((dateStr: string) => {
+    const now = Date.now();
+    const then = new Date(dateStr).getTime();
+    const diffMin = Math.round((now - then) / 60000);
+    if (diffMin < 1) return 'just now';
+    if (diffMin < 60) return `${diffMin}m ago`;
+    const diffHr = Math.round(diffMin / 60);
+    if (diffHr < 24) return `${diffHr}h ago`;
+    const diffDay = Math.round(diffHr / 24);
+    return `${diffDay}d ago`;
+  }, []);
+
+  useEffect(() => {
+    let mounted = true;
+    const fetchNotifications = async () => {
+      try {
+        const res = await aiHealthServices.getSmartNotifications({ limit: 10 });
+        if (mounted && res.success && res.notifications.length > 0) {
+          setNotifications(res.notifications.map(n => ({
+            id: n.id,
+            title: n.title,
+            description: n.message,
+            time: timeAgo(n.created_at),
+            type: (n.type === 'medication_reminder' ? 'prescription' :
+                   n.type === 'appointment_reminder' ? 'appointment' :
+                   n.type === 'lab_result' ? 'report' : 'alert') as Notification['type'],
+            link: n.action_url || '/smart-health',
+            read: n.status === 'read',
+          })));
+        }
+      } catch {
+        // Silently fail — fallback to empty
+      }
+    };
+    fetchNotifications();
+    // Refresh every 2 minutes
+    const interval = setInterval(fetchNotifications, 120000);
+    return () => { mounted = false; clearInterval(interval); };
+  }, [timeAgo]);
 
   const getNotificationIcon = (type: string) => {
     switch (type) {
@@ -231,7 +245,7 @@ const MainLayout = ({ children }: MainLayoutProps) => {
       case 'alert':
         return <AlertCircle className="h-4 w-4 text-red-500" />;
       default:
-        return <Bell className="h-4 w-4 text-slate-500" />;
+        return <Sparkles className="h-4 w-4 text-teal-500" />;
     }
   };
 

@@ -1699,4 +1699,158 @@ router.get('/my-appointments', authUser, async (req, res) => {
   }
 });
 
+// ════════════════════════════════════════════════════════════════════════════════
+//  PATIENT REPORT ANALYSIS (AI Vision for patients)
+// ════════════════════════════════════════════════════════════════════════════════
+
+/**
+ * POST /api/medical-ai/analyze-report
+ * Patient-facing medical report analysis using Claude Vision
+ * Accepts base64 image data (no file upload needed)
+ */
+router.post('/analyze-report', authUser, async (req, res) => {
+  try {
+    const { image, mimeType = 'image/jpeg', query = 'Analyze this medical report' } = req.body;
+
+    if (!image) {
+      return res.status(400).json({ success: false, error: 'Image data (base64) is required' });
+    }
+
+    // Validate image size (max ~7MB base64 = ~5MB raw)
+    if (image.length > 7 * 1024 * 1024) {
+      return res.status(400).json({ success: false, error: 'Image too large. Maximum 5MB.' });
+    }
+
+    const validTypes = ['image/jpeg', 'image/png', 'image/gif', 'image/webp'];
+    if (!validTypes.includes(mimeType)) {
+      return res.status(400).json({ success: false, error: 'Invalid image format. Use JPEG, PNG, GIF, or WebP.' });
+    }
+
+    console.log(`[Patient Report Analysis] User ${req.user.id} - ${mimeType} - ${Math.round(image.length / 1024)}KB`);
+
+    // Initialize Anthropic client
+    let Anthropic;
+    try {
+      Anthropic = (await import('@anthropic-ai/sdk')).default;
+    } catch {
+      // Fallback: use Gemini-based analysis description
+      return res.json({
+        success: true,
+        analysis: {
+          findings: 'AI Vision service is being configured. Please use the in-app camera analysis or try again shortly.',
+          assessment: 'Service temporarily limited',
+          recommendations: ['Please try again in a few minutes', 'You can also consult with a doctor for report interpretation'],
+          urgency: 'routine',
+          keyValues: {}
+        }
+      });
+    }
+
+    const client = new Anthropic();
+
+    const patientPrompt = `You are a compassionate medical AI assistant helping a patient understand their medical report.
+
+IMPORTANT GUIDELINES:
+1. Explain findings in SIMPLE, patient-friendly language
+2. Do NOT make definitive diagnoses
+3. Highlight abnormal values clearly
+4. Always recommend consulting a doctor for proper interpretation
+5. Be reassuring but honest
+
+Analyze this medical image/report and provide:
+
+Return ONLY valid JSON (no markdown, no code blocks):
+{
+  "findings": "Clear, simple description of what the report shows",
+  "assessment": "What this might mean in simple terms",
+  "recommendations": ["actionable recommendation 1", "recommendation 2"],
+  "urgency": "routine|soon|urgent|emergency",
+  "keyValues": {
+    "parameter name": {
+      "value": "the value found",
+      "status": "normal|borderline|abnormal|critical",
+      "reference": "normal reference range"
+    }
+  },
+  "summary": "One-paragraph plain-language summary for the patient"
+}
+
+Patient's question: ${query}`;
+
+    const response = await client.messages.create({
+      model: 'claude-3-5-sonnet-20241022',
+      max_tokens: 2000,
+      messages: [
+        {
+          role: 'user',
+          content: [
+            {
+              type: 'image',
+              source: {
+                type: 'base64',
+                media_type: mimeType,
+                data: image
+              }
+            },
+            {
+              type: 'text',
+              text: patientPrompt
+            }
+          ]
+        }
+      ]
+    });
+
+    let analysis = null;
+    try {
+      const responseText = response.content[0].type === 'text' ? response.content[0].text : '';
+      let cleanedText = responseText
+        .replace(/```json\n?/g, '')
+        .replace(/```\n?/g, '')
+        .trim();
+
+      const jsonMatch = cleanedText.match(/\{[\s\S]*\}/);
+      if (jsonMatch) {
+        analysis = JSON.parse(jsonMatch[0]);
+      } else {
+        throw new Error('Could not parse JSON');
+      }
+    } catch (parseError) {
+      const responseText = response.content[0].type === 'text' ? response.content[0].text : '';
+      analysis = {
+        findings: responseText,
+        assessment: 'See findings above for complete analysis',
+        recommendations: ['Please consult with your doctor to discuss these findings'],
+        urgency: 'routine',
+        keyValues: {},
+        summary: responseText.substring(0, 200)
+      };
+    }
+
+    console.log(`[Patient Report Analysis] ✅ Complete for user ${req.user.id}`);
+
+    res.json({
+      success: true,
+      analysis: {
+        findings: analysis.findings || '',
+        assessment: analysis.assessment || '',
+        recommendations: Array.isArray(analysis.recommendations) ? analysis.recommendations : [],
+        urgency: analysis.urgency || 'routine',
+        keyValues: analysis.keyValues || {},
+        summary: analysis.summary || '',
+        analyzedAt: new Date().toISOString(),
+        model: 'claude-3.5-sonnet',
+        disclaimer: 'This AI analysis is for informational purposes only. Always consult a qualified healthcare professional for medical advice.'
+      }
+    });
+
+  } catch (error) {
+    console.error('[Patient Report Analysis] ❌ Error:', error);
+    res.status(500).json({
+      success: false,
+      error: 'Report analysis failed. Please try again.'
+    });
+  }
+});
+
 export default router;
