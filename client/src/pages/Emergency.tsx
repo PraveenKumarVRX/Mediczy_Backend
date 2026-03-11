@@ -3592,6 +3592,7 @@ This is for emergency medical guidance. Please prioritize safety and immediate c
         }
       }}>
         <DialogContent className={`${showEmbeddedVideoCall ? 'sm:max-w-[900px] h-[90vh]' : 'sm:max-w-[600px] h-[85vh]'} max-h-[900px] p-0 bg-white dark:bg-slate-800 border-slate-200 dark:border-slate-700 flex flex-col`}>
+          <DialogTitle className="sr-only">Dr. iSHA Emergency Triage</DialogTitle>
           {/* Header */}
           <div className="flex items-center justify-between p-4 border-b border-slate-200 dark:border-slate-700 bg-gradient-to-r from-teal-600 to-teal-500">
             <div className="flex items-center gap-3">

@@ -810,6 +810,7 @@ const HealthDashboard = () => {
             {/* Trend Analytics Dialog */}
             <Dialog open={showTrendDialog} onOpenChange={setShowTrendDialog}>
               <DialogContent className="max-w-2xl">
+                <DialogTitle className="sr-only">Health Trend Analytics</DialogTitle>
                 {selectedMetric && healthMetricConfigs[selectedMetric as keyof typeof healthMetricConfigs] && (
                   <HealthTrendCard
                     dataType={selectedMetric}

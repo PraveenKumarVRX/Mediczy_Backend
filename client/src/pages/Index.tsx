@@ -56,7 +56,6 @@ import api from "@/utils/api";
 import { getToken } from "@/hooks/auth";
 import { VeepooService, VEEPOO_SERVICE_UUID, VEEPOO_WRITE_UUID, VEEPOO_NOTIFY_UUID } from "@/services/ble/VeepooService";
 import { healthSyncScheduler } from "@/services/health/HealthSyncScheduler";
-import { LottieIcon, LOTTIE_URLS } from "@/components/LottieAnimations";
 import { motion } from "framer-motion";
 
 const Index = () => {
@@ -2127,7 +2126,11 @@ const Index = () => {
                 </div>
               ) : (
                 <div className="text-center py-8">
-                  <LottieIcon src={LOTTIE_URLS.emptyCalendar} size={120} />
+                  <div className="flex items-center justify-center mb-2">
+                    <div className="p-4 rounded-full bg-slate-100 dark:bg-slate-700/50">
+                      <Calendar className="w-12 h-12 text-slate-300 dark:text-slate-500" />
+                    </div>
+                  </div>
                   <p className="text-slate-500 dark:text-slate-400 mb-4">No upcoming appointments</p>
                   <Link to="/doctors">
                     <Button size="sm" className="bg-gradient-to-r from-teal-500 to-teal-600 hover:from-teal-600 hover:to-teal-700 text-white shadow-sm">Book Now</Button>

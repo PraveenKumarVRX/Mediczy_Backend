@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { Dialog, DialogContent } from "@/components/ui/dialog";
+import { Dialog, DialogContent, DialogTitle } from "@/components/ui/dialog";
 import { cn } from "@/lib/utils";
 
 interface VideoPlayerProps {
@@ -48,6 +48,7 @@ export function VideoPlayer({
     <>
       <Dialog open={isFullscreen} onOpenChange={setIsFullscreen}>
         <DialogContent className="sm:max-w-[90vw] max-h-[90vh] p-0">
+          <DialogTitle className="sr-only">Video Player</DialogTitle>
           <div className="aspect-video w-full">
             <iframe
               src={embedUrl}

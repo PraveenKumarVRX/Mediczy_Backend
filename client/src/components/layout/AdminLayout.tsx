@@ -56,7 +56,7 @@ import {
   BrainCircuit
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
-import { Sheet, SheetContent, SheetTrigger } from '@/components/ui/sheet';
+import { Sheet, SheetContent, SheetTitle, SheetTrigger } from '@/components/ui/sheet';
 import { useTheme } from '@/utils/theme.provider';
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
 import { ScrollArea } from '@/components/ui/scroll-area';
@@ -661,6 +661,7 @@ const AdminLayout = ({ children }: AdminLayoutProps) => {
       {!isTeamMember && (
         <Sheet open={sidebarOpen} onOpenChange={setSidebarOpen}>
           <SheetContent side="left" className="w-72 p-0">
+            <SheetTitle className="sr-only">Navigation Menu</SheetTitle>
             <SidebarContent />
           </SheetContent>
         </Sheet>
