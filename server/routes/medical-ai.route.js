@@ -466,7 +466,28 @@ router.post('/emergency-sos', authUser, async (req, res) => {
     // Import required services
     const { default: notificationService } = await import('../services/notification.service.js');
     const { Appointment } = await import('../models/index.js');
-    const { default: emailService } = await import('../services/emailService.js');
+    const nodemailer = await import('nodemailer');
+    
+    // Helper to send simple emergency emails via SMTP
+    const sendSosEmail = async (to, subject, body) => {
+      const smtpPort = parseInt(process.env.SMTP_PORT || '587');
+      const transporter = nodemailer.createTransport({
+        host: process.env.SMTP_HOST || 'smtp.gmail.com',
+        port: smtpPort,
+        secure: smtpPort === 465,
+        auth: {
+          user: process.env.SMTP_USER,
+          pass: process.env.SMTP_PASS || process.env.SMTP_PASSWORD
+        }
+      });
+      await transporter.sendMail({
+        from: `"Mediczy Emergency" <${process.env.SMTP_USER || 'noreply@mediqzy.com'}>`,
+        to,
+        subject,
+        text: body,
+        html: `<div style="font-family:sans-serif;padding:20px"><h2 style="color:#dc2626">🚨 ${subject}</h2><pre style="white-space:pre-wrap">${body}</pre></div>`
+      });
+    };
     
     console.log(`🚨 EMERGENCY SOS from user ${userId}:`, {
       reason,
@@ -510,7 +531,7 @@ This is an automated emergency alert from Mediczy.
         include: [{
           model: (await import('../models/index.js')).Doctor,
           as: 'doctor',
-          attributes: ['id', 'firstName', 'lastName', 'email', 'phone']
+          attributes: ['id', 'firstName', 'lastName', 'email', 'phoneNumber']
         }]
       });
 
@@ -544,7 +565,7 @@ This is an automated emergency alert from Mediczy.
         // Send email to doctor
         try {
           if (doctor.email) {
-            await emailService.sendEmail(
+            await sendSosEmail(
               doctor.email,
               sosTitle,
               sosBody
@@ -564,39 +585,37 @@ This is an automated emergency alert from Mediczy.
     try {
       const { User } = await import('../models/index.js');
       const user = await User.findByPk(userId, {
-        attributes: ['organizationId', 'hrEmail', 'hrPhone']
+        attributes: ['id', 'organization_id', 'email']
       });
 
-      if (user?.organizationId) {
-        // Get organization/hospital admin email
-        const { Organization } = await import('../models/index.js');
-        const org = await Organization.findByPk(user.organizationId, {
-          attributes: ['id', 'name', 'adminEmail', 'emergencyContact']
-        });
+      if (user?.organization_id) {
+        // Organization table may not exist yet - skip if unavailable
+        try {
+          const { Organization } = await import('../models/index.js');
+          if (Organization) {
+            const org = await Organization.findByPk(user.organization_id, {
+              attributes: ['id', 'name', 'adminEmail', 'emergencyContact']
+            });
 
-        if (org?.emergencyContact || org?.adminEmail) {
-          const hospitalEmail = org.emergencyContact || org.adminEmail;
-          try {
-            await emailService.sendEmail(
-              hospitalEmail,
-              sosTitle,
-              sosBody
-            );
-            notifiedContacts.push({ type: 'hospital', name: org.name, method: 'email' });
-          } catch (hospError) {
-            console.error('Hospital notification error:', hospError.message);
+            if (org?.emergencyContact || org?.adminEmail) {
+              const hospitalEmail = org.emergencyContact || org.adminEmail;
+              await sendSosEmail(
+                hospitalEmail,
+                sosTitle,
+                sosBody
+              );
+              notifiedContacts.push({ type: 'hospital', name: org.name, method: 'email' });
+            }
           }
+        } catch (orgError) {
+          console.error('Organization lookup skipped:', orgError.message);
         }
       }
 
-      // 3. Notify HR (if user has HR contact)
-      if (user?.hrEmail) {
+      // 3. Notify HR (if user has HR contact via organization - future feature)
+      if (false) {
         try {
-          await emailService.sendEmail(
-            user.hrEmail,
-            sosTitle,
-            sosBody
-          );
+          // Placeholder for HR notification when organization HR contacts are implemented
           notifiedContacts.push({ type: 'hr', name: 'HR Department', method: 'email' });
         } catch (hrError) {
           console.error('HR notification error:', hrError.message);
@@ -611,7 +630,7 @@ This is an automated emergency alert from Mediczy.
     for (const contact of contacts) {
       if (contact.email) {
         try {
-          await emailService.sendEmail(
+          await sendSosEmail(
             contact.email,
             sosTitle,
             sosBody
