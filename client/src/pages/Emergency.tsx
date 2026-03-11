@@ -576,9 +576,10 @@ const Emergency = () => {
       const controller = new AbortController();
       const timeoutId = setTimeout(() => controller.abort(), 25000); // 25s timeout for browser
       
+      const ttsBaseUrl = import.meta.env.VITE_API_URL || '/api';
       let response;
       try {
-        response = await fetch('/api/tts/speak', {
+        response = await fetch(`${ttsBaseUrl}/tts/speak`, {
           method: 'POST',
           headers: {
             'Content-Type': 'application/json',

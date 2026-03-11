@@ -58,7 +58,8 @@ const TPAProviderSelection: React.FC<TPAProviderSelectionProps> = ({
   const fetchProviders = async () => {
     try {
       setLoading(true);
-      const response = await fetch('/api/tpa/providers', {
+      const apiBase = import.meta.env.VITE_API_URL || '/api';
+      const response = await fetch(`${apiBase}/tpa/providers`, {
         headers: {
           'Authorization': `Bearer ${localStorage.getItem('token')}`
         }

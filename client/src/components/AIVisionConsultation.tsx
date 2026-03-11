@@ -144,7 +144,8 @@ export const AIVisionConsultation: React.FC<AIVisionConsultationProps> = ({
           formData.append('sessionId', sessionId);
         }
 
-        const response = await fetch('/api/ai/vision/analyze', {
+        const apiBase = import.meta.env.VITE_API_URL || '/api';
+        const response = await fetch(`${apiBase}/ai/vision/analyze`, {
           method: 'POST',
           body: formData,
           headers: {

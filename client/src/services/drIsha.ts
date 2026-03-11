@@ -325,11 +325,8 @@ class DrIshaAPI {
         return { success: true, message: 'No active session to clear' };
       }
 
-      const response = await axios.post(
-        `${this.baseURL}/clear-session`,
-        {
-          sessionId: this.currentSessionId,
-        },
+      const response = await axios.delete(
+        `${this.baseURL}/session/${this.currentSessionId}`,
         {
           headers: this.getAuthHeaders(),
           timeout: 10000,
@@ -368,7 +365,7 @@ class DrIshaAPI {
       }
 
       const response = await axios.get(
-        `${this.baseURL}/session-history/${this.currentSessionId}`,
+        `${this.baseURL}/session/${this.currentSessionId}`,
         {
           headers: this.getAuthHeaders(),
           timeout: 10000,
