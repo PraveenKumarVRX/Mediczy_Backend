@@ -47,7 +47,36 @@ const USER_TYPE_PERMISSIONS = {
       '/api/notifications',  // User notifications
       '/api/mobile',  // Mobile API gateway
       '/api/v3/ai-brain',  // AI Brain intelligence layer
-      '/api/v3/ai-intelligence'  // Drug interactions, triage, risk scores, insights
+      '/api/v3/ai-intelligence',  // Drug interactions, triage, risk scores, insights
+      '/api/v3/ai-analytics',  // AI usage analytics
+      '/api/ai-health',  // AI health chat & Dr. iSHA
+      '/api/users',  // User profile management
+      '/api/addresses',  // Address management
+      '/api/billing',  // Orders, invoices, payments
+      '/api/payments',  // Razorpay payment processing
+      '/api/insurance',  // Insurance policies & claims
+      '/api/corporate',  // Corporate benefits & health checkups
+      '/api/employee',  // Employee corporate network
+      '/api/tts',  // Text-to-speech
+      '/api/fcm',  // FCM push notification tokens
+      '/api/privacy',  // Consent & data export (GDPR)
+      '/api/support',  // Support chat
+      '/api/tickets',  // Support tickets
+      '/api/wearables',  // Wearable device management
+      '/api/devices',  // Device management
+      '/api/health-camps',  // Health camp discovery
+      '/api/leaderboard',  // Health goals, challenges & leaderboard
+      '/api/masterdata',  // Specialties, hospitals, labs directory
+      '/api/places',  // Nearby places search
+      '/api/module-access',  // Module access check
+      '/api/roles',  // Role-based module access
+      '/api/otp',  // OTP send/verify
+      '/api/password-reset',  // Password reset
+      '/api/omnichannel',  // Omnichannel messaging
+      '/api/hospitals',  // Hospital directory
+      '/api/clinics',  // Clinic directory
+      '/api/poc-devices',  // POC device management
+      '/api/firebase'  // Firebase status & test
     ],
     tokenField: 'userId'
   },
@@ -94,7 +123,36 @@ const USER_TYPE_PERMISSIONS = {
       '/api/notifications',  // User notifications
       '/api/mobile',  // Mobile API gateway
       '/api/v3/ai-brain',  // AI Brain intelligence layer
-      '/api/v3/ai-intelligence'  // Drug interactions, triage, risk scores, insights
+      '/api/v3/ai-intelligence',  // Drug interactions, triage, risk scores, insights
+      '/api/v3/ai-analytics',  // AI usage analytics
+      '/api/ai-health',  // AI health chat & Dr. iSHA
+      '/api/users',  // User profile management
+      '/api/addresses',  // Address management
+      '/api/billing',  // Orders, invoices, payments
+      '/api/payments',  // Razorpay payment processing
+      '/api/insurance',  // Insurance policies & claims
+      '/api/corporate',  // Corporate benefits & health checkups
+      '/api/employee',  // Employee corporate network
+      '/api/tts',  // Text-to-speech
+      '/api/fcm',  // FCM push notification tokens
+      '/api/privacy',  // Consent & data export (GDPR)
+      '/api/support',  // Support chat
+      '/api/tickets',  // Support tickets
+      '/api/wearables',  // Wearable device management
+      '/api/devices',  // Device management
+      '/api/health-camps',  // Health camp discovery
+      '/api/leaderboard',  // Health goals, challenges & leaderboard
+      '/api/masterdata',  // Specialties, hospitals, labs directory
+      '/api/places',  // Nearby places search
+      '/api/module-access',  // Module access check
+      '/api/roles',  // Role-based module access
+      '/api/otp',  // OTP send/verify
+      '/api/password-reset',  // Password reset
+      '/api/omnichannel',  // Omnichannel messaging
+      '/api/hospitals',  // Hospital directory
+      '/api/clinics',  // Clinic directory
+      '/api/poc-devices',  // POC device management
+      '/api/firebase'  // Firebase status & test
     ],
     tokenField: 'userId'
   },
