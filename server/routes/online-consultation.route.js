@@ -1398,8 +1398,12 @@ router.get('/video/join/:appointmentId', authUser, async (req, res) => {
     }
 
     // Check if within appointment window (15 mins before to 1 hour after)
-    // Skip timing check for emergency triage appointments (immediate access)
-    if (!isEmergencyTriage) {
+    // Skip timing check for:
+    //   - Emergency triage appointments (immediate access)
+    //   - Doctor-initiated calls (doctor already validated timing on their side)
+    const isDoctorInitiated = appointment.callInitiatedBy === 'doctor' && appointment.callInitiatedAt;
+
+    if (!isEmergencyTriage && !isDoctorInitiated) {
       const appointmentDateTime = new Date(`${appointment.appointmentDate}T${appointment.appointmentTime}`);
       const now = new Date();
       const windowStart = new Date(appointmentDateTime.getTime() - 15 * 60 * 1000);
@@ -1421,8 +1425,10 @@ router.get('/video/join/:appointmentId', authUser, async (req, res) => {
           appointmentTime: appointmentDateTime.toISOString()
         });
       }
-    } else {
+    } else if (isEmergencyTriage) {
       console.log('⚡ Emergency triage appointment - bypassing timing window check');
+    } else if (isDoctorInitiated) {
+      console.log('📞 Doctor-initiated call - bypassing timing window check for patient join');
     }
 
     // Generate or get meeting link

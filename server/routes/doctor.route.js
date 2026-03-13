@@ -2511,6 +2511,35 @@ router.post('/appointments/:appointmentId/initiate-call', authDoctor, async (req
       }
     }
 
+    // Check if within appointment window (15 mins before to 1 hour after)
+    // Skip for emergency triage appointments
+    const isEmergencyTriage = appointment.sourceChannel === 'emergency_triage' ||
+      (appointment.notes_json && appointment.notes_json.type === 'emergency_triage');
+
+    if (!isEmergencyTriage) {
+      const appointmentDateTime = new Date(`${appointment.appointmentDate}T${appointment.appointmentTime}`);
+      const now = new Date();
+      const windowStart = new Date(appointmentDateTime.getTime() - 15 * 60 * 1000);
+      const windowEnd = new Date(appointmentDateTime.getTime() + 60 * 60 * 1000);
+
+      if (now < windowStart) {
+        return res.status(400).json({
+          success: false,
+          message: 'You can initiate the call 15 minutes before the appointment time',
+          appointmentTime: appointmentDateTime.toISOString(),
+          canInitiateAt: windowStart.toISOString()
+        });
+      }
+
+      if (now > windowEnd) {
+        return res.status(400).json({
+          success: false,
+          message: 'Appointment time has passed. Please reschedule.',
+          appointmentTime: appointmentDateTime.toISOString()
+        });
+      }
+    }
+
     // Generate or get meeting link
     const meetingInfo = ensureMeetingInfo(appointment);
     let { meetingId, meetingLink, meetingDetails, provider } = meetingInfo;
