@@ -1,9 +1,9 @@
 # Mediczy Patient Mobile App — Complete API Integration Guide
 
-> **Base URL:** `https://app.mediqzy.com/api`  
+> **Base URL:** `https://mediqzy.com/api`  
 > **Auth:** JWT Bearer Token in `Authorization` header  
 > **Content-Type:** `application/json`  
-> **Socket.IO:** `wss://app.mediqzy.com` (path: `/socket.io`)  
+> **Socket.IO:** `wss://mediqzy.com` (path: `/socket.io`)  
 > **Rate Limits:** Global 300/15min, Auth 10/15min, AI 60/15min
 
 ---
@@ -1013,7 +1013,7 @@ POST /api/ayushman/download              (Public)  Download ABHA card
 ```javascript
 import { io } from "socket.io-client";
 
-const socket = io("https://app.mediqzy.com", {
+const socket = io("https://mediqzy.com", {
   auth: { token: "Bearer <jwt-token>" },
   transports: ["websocket"],
   path: "/socket.io"
