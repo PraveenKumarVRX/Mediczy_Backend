@@ -173,6 +173,11 @@ const User = sequelize.define('User', {
     type: DataTypes.INTEGER,
     allowNull: true,
     comment: 'Reference to tenant this user belongs to'
+  },
+  profileImage: {
+    type: DataTypes.STRING,
+    allowNull: true,
+    comment: 'URL to user profile image (MinIO)'
   }
 }, {
   tableName: 'users',

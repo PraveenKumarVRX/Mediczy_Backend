@@ -4,6 +4,7 @@ import crypto from 'crypto';
 import fs from 'fs';
 import path from 'path';
 import FormData from 'form-data';
+import { scanOnly } from '../services/minio-upload.service.js';
 
 // Facebook WhatsApp Business Manager API Configuration
 const FACEBOOK_APP_ID = process.env.FACEBOOK_APP_ID;
@@ -401,6 +402,16 @@ export const uploadMedia = async (req, res) => {
       return res.status(400).json({
         success: false,
         error: 'No file provided'
+      });
+    }
+
+    // AV scan before uploading to WhatsApp API
+    const avResult = await scanOnly(req.file.path);
+    if (!avResult.clean) {
+      fs.unlinkSync(req.file.path);
+      return res.status(400).json({
+        success: false,
+        error: 'File rejected: malware detected'
       });
     }
 

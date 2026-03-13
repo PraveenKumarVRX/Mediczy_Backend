@@ -4,6 +4,7 @@ import FormData from 'form-data';
 import multer from 'multer';
 import fs from 'fs';
 import { authDoctor, authUser } from '../middleware/auth.middleware.js';
+import { scanOnly } from '../services/minio-upload.service.js';
 
 const router = express.Router();
 
@@ -82,6 +83,13 @@ router.post('/transcribe', upload.single('audio'), async (req, res) => {
   try {
     if (!req.file) {
       return res.status(400).json({ error: 'No audio file provided' });
+    }
+
+    // AV scan before processing
+    const avResult = await scanOnly(req.file.path);
+    if (!avResult.clean) {
+      fs.unlinkSync(req.file.path);
+      return res.status(400).json({ error: 'File rejected: malware detected' });
     }
 
     const { field_name } = req.body;

@@ -8,8 +8,20 @@ const s3Bucket = process.env.S3_UPLOADS_BUCKET;
 const s3RecordingsBucket = process.env.S3_RECORDINGS_BUCKET || s3Bucket;
 const s3PublicBaseUrl = process.env.S3_PUBLIC_BASE_URL;
 const presignExpiresIn = Number(process.env.S3_PRESIGN_EXPIRES || 300);
+const minioEndpoint = process.env.MINIO_ENDPOINT;
 
-const s3Client = new S3Client({ region: s3Region });
+// Build S3Client config — adds MinIO endpoint + path-style if MINIO_ENDPOINT is set
+const s3Config = { region: s3Region };
+if (minioEndpoint) {
+  s3Config.endpoint = minioEndpoint;
+  s3Config.forcePathStyle = true;
+  s3Config.credentials = {
+    accessKeyId: process.env.MINIO_ACCESS_KEY || 'minioadmin',
+    secretAccessKey: process.env.MINIO_SECRET_KEY || 'minioadmin',
+  };
+}
+
+const s3Client = new S3Client(s3Config);
 
 const sanitizeFileName = (fileName) => {
   const baseName = path.basename(fileName || 'file');
@@ -26,6 +38,9 @@ const buildTenantSegment = (tenantId) => {
 const buildPublicUrl = (bucket, region, key, publicBaseUrl) => {
   if (publicBaseUrl) {
     return `${publicBaseUrl.replace(/\/$/, '')}/${key}`;
+  }
+  if (minioEndpoint) {
+    return `${minioEndpoint.replace(/\/$/, '')}/${bucket}/${key}`;
   }
   return `https://${bucket}.s3.${region}.amazonaws.com/${key}`;
 };
@@ -63,6 +78,8 @@ export const buildRecordingKeyPrefix = (tenantId, doctorId, recordingId = 'sessi
 };
 
 export const getUploadsBucket = () => s3Bucket;
+
+export const getS3Client = () => s3Client;
 
 export const getRecordingsBucket = () => s3RecordingsBucket;
 

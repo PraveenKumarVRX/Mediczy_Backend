@@ -4,17 +4,12 @@ import fs from 'fs';
 import { fileURLToPath } from 'url';
 import { authUser } from '../middleware/auth.middleware.js';
 import MedicalReport from '../models/medical-report.model.js';
+import { uploadToMinio } from '../services/minio-upload.service.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
 const router = express.Router();
-
-// Ensure upload directory exists
-const uploadDir = path.join(__dirname, '../../uploads/reports');
-if (!fs.existsSync(uploadDir)) {
-  fs.mkdirSync(uploadDir, { recursive: true });
-}
 
 // Allowed file types
 const ALLOWED_MIME_TYPES = [
@@ -92,18 +87,14 @@ router.post('/upload', authUser, async (req, res) => {
       });
     }
 
-    // Generate unique filename
-    const timestamp = Date.now();
-    const randomString = Math.random().toString(36).substring(2, 8);
-    const sanitizedOriginalName = uploadedFile.name
-      .replace(/[^a-zA-Z0-9.-]/g, '_')
-      .replace(/\s+/g, '_');
-    const fileName = `${timestamp}_${randomString}_${sanitizedOriginalName}`;
-    const filePath = path.join(uploadDir, fileName);
-
-    // Save file to disk
-    await uploadedFile.mv(filePath);
-    console.log(`📄 File uploaded successfully: ${fileName}`);
+    // Upload to MinIO with AV scan
+    const { url: minioUrl, key: s3Key } = await uploadToMinio({
+      buffer: uploadedFile.data,
+      originalName: uploadedFile.name,
+      mimeType: uploadedFile.mimetype,
+      keyPrefix: `uploads/reports/${req.user.id}`,
+    });
+    console.log(`📄 File uploaded to MinIO: ${s3Key}`);
 
     // Create database record for the report
     let medicalReport = null;
@@ -111,7 +102,7 @@ router.post('/upload', authUser, async (req, res) => {
       medicalReport = await MedicalReport.create({
         userId: req.user.id,
         fileName: uploadedFile.name,
-        filePath: `/uploads/reports/${fileName}`,
+        filePath: s3Key,
         fileType: fileExtension.substring(1),
         fileSize: uploadedFile.size,
         mimeType: uploadedFile.mimetype,
@@ -124,16 +115,15 @@ router.post('/upload', authUser, async (req, res) => {
       });
     } catch (dbErr) {
       console.warn('⚠️ Database record creation failed, but file saved:', dbErr.message);
-      // Continue without database record - file is still saved
     }
 
     // Return success response
     res.status(201).json({
       success: true,
       message: 'Report uploaded successfully',
-      reportId: medicalReport?.id || timestamp,
+      reportId: medicalReport?.id || Date.now(),
       fileName: uploadedFile.name,
-      fileUrl: `/uploads/reports/${fileName}`,
+      fileUrl: minioUrl,
       reportType: reportType,
       uploadedAt: new Date(),
       fileSize: `${(uploadedFile.size / 1024).toFixed(2)} KB`
@@ -141,17 +131,12 @@ router.post('/upload', authUser, async (req, res) => {
 
   } catch (error) {
     console.error('File upload error:', error);
-    
-    // Clean up partially uploaded file if exists
-    if (req.files?.file && error.code !== 'LIMIT_FILE_SIZE') {
-      try {
-        const tempPath = path.join(uploadDir, req.files.file.name);
-        if (fs.existsSync(tempPath)) {
-          fs.unlinkSync(tempPath);
-        }
-      } catch (cleanupErr) {
-        console.warn('Cleanup error:', cleanupErr.message);
-      }
+
+    if (error.code === 'MALWARE_DETECTED') {
+      return res.status(400).json({
+        success: false,
+        message: 'File rejected: malware detected in uploaded file'
+      });
     }
 
     res.status(500).json({

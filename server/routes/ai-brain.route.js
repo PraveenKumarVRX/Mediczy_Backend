@@ -25,6 +25,7 @@ import orchestrator from '../services/ai-brain/orchestrator.js';
 import llmProvider from '../services/ai-brain/llm-provider.js';
 import ragPipeline from '../services/ai-brain/rag-pipeline.js';
 import { listTools } from '../services/ai-brain/tools/loader.js';
+import { scanOnly } from '../services/minio-upload.service.js';
 
 const router = Router();
 
@@ -245,6 +246,13 @@ router.post('/documents', requireAuth, upload.single('file'), async (req, res) =
     let fileSize = 0;
 
     if (file) {
+      // AV scan before processing
+      const avResult = await scanOnly(file.path);
+      if (!avResult.clean) {
+        await fs.unlink(file.path).catch(() => {});
+        return res.status(400).json({ error: 'File rejected: malware detected' });
+      }
+
       fileType = path.extname(file.originalname).replace('.', '') || 'txt';
       filePath = file.path;
       fileSize = file.size;

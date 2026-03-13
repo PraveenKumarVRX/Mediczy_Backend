@@ -608,7 +608,27 @@ const globalFileUploadMiddleware = fileUpload({
 });
 
 app.use((req, res, next) => {
-  if (req.path.startsWith('/api/offline-scribe/transcribe')) {
+  // Skip express-fileupload for routes that use multer (memoryStorage/diskStorage)
+  // These routes handle their own multipart parsing via multer
+  const multerPaths = [
+    '/api/offline-scribe/transcribe',
+    '/api/offline-scribe/full-pipeline',
+    '/api/recordings/upload',
+    '/api/ai/vision/analyze',
+    '/api/scribe/transcribe',
+    '/api/v3/ai-brain/documents',
+    '/api/cdss/knowledge/upload',
+    '/api/corporate-bookings/reports/upload',
+  ];
+  if (multerPaths.some(p => req.path === p || req.path.startsWith(p + '/'))) {
+    return next();
+  }
+  // POST /api/reports (root) uses multer, but /api/reports/upload uses express-fileupload
+  if (req.method === 'POST' && req.path === '/api/reports') {
+    return next();
+  }
+  // Doctor media upload uses multer
+  if (req.path.match(/^\/api\/doctors\/upload\/[^/]+$/) && req.method === 'POST') {
     return next();
   }
   return globalFileUploadMiddleware(req, res, next);

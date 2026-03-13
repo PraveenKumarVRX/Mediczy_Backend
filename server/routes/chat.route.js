@@ -8,8 +8,20 @@ import fs from 'fs';
 import path from 'path';
 import { chatRooms, messages } from '../utils/chatStorage.js';
 import sharedPool from '../db/pgPool.js';
+import { uploadToMinio } from '../services/minio-upload.service.js';
 
 const router = express.Router();
+
+// Allowed MIME types for chat file uploads
+const CHAT_ALLOWED_MIMES = [
+  'image/jpeg', 'image/png', 'image/gif', 'image/webp',
+  'application/pdf',
+  'application/msword',
+  'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+  'text/plain',
+  'audio/mpeg', 'audio/ogg', 'audio/wav',
+  'video/mp4', 'video/webm',
+];
 
 // Health check endpoint
 router.get('/health', (req, res) => {
@@ -542,6 +554,14 @@ router.post('/upload', authUser, async (req, res) => {
     const file = req.files.file;
     const roomId = req.body.roomId;
 
+    // Validate file type
+    if (!CHAT_ALLOWED_MIMES.includes(file.mimetype)) {
+      return res.status(400).json({
+        success: false,
+        message: `File type not allowed: ${file.mimetype}. Allowed: images, PDF, documents, audio, video.`
+      });
+    }
+
     // Validate file size (max 10MB)
     if (file.size > 10 * 1024 * 1024) {
       return res.status(400).json({
@@ -550,34 +570,28 @@ router.post('/upload', authUser, async (req, res) => {
       });
     }
 
-    // Generate unique filename
-    const timestamp = Date.now();
-    const randomString = Math.random().toString(36).substring(2, 15);
-    const fileExtension = file.name.split('.').pop();
-    const fileName = `${timestamp}_${randomString}.${fileExtension}`;
-    
-    // Create upload directory if it doesn't exist
-    const uploadDir = './uploads/chat';
-    if (!fs.existsSync(uploadDir)) {
-      fs.mkdirSync(uploadDir, { recursive: true });
-    }
+    // Upload to MinIO with AV scan
+    const { url: minioUrl } = await uploadToMinio({
+      buffer: file.data,
+      originalName: file.name,
+      mimeType: file.mimetype,
+      keyPrefix: `uploads/chat/${userId}`,
+    });
 
-    const filePath = `${uploadDir}/${fileName}`;
-    
-    // Save file
-    await file.mv(filePath);
-
-    // Return file URL
-    const fileUrl = `/api/chat/files/${fileName}`;
-    
     res.json({
       success: true,
-      fileUrl,
+      fileUrl: minioUrl,
       fileName: file.name,
       fileSize: file.size,
       fileMimeType: file.mimetype
     });
   } catch (error) {
+    if (error.code === 'MALWARE_DETECTED') {
+      return res.status(400).json({
+        success: false,
+        message: 'File rejected: malware detected'
+      });
+    }
     console.error('Error uploading file:', error);
     res.status(500).json({
       success: false,
@@ -589,7 +603,7 @@ router.post('/upload', authUser, async (req, res) => {
 
 /**
  * @route   GET /api/chat/files/:fileName
- * @desc    Serve uploaded files
+ * @desc    Legacy file serve — redirects to MinIO for new uploads, serves from disk for old ones
  * @access  Private
  */
 router.get('/files/:fileName', authUser, async (req, res) => {

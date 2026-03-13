@@ -8,38 +8,21 @@ import express from 'express';
 import { authUser } from '../middleware/auth.middleware.js';
 import multer from 'multer';
 import path from 'path';
-import fs from 'fs/promises';
+import fs from 'fs';
+import fsPromises from 'fs/promises';
 import { fileURLToPath } from 'url';
 import { Report } from '../models/index.js';
 import { validationResult } from 'express-validator';
 import { body } from 'express-validator';
 import n8nService from '../services/n8n.service.js';
+import { uploadToMinio } from '../services/minio-upload.service.js';
 
 const router = express.Router();
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
-// Configure multer for file upload
-const uploadDir = path.join(__dirname, '../../uploads/reports');
-
-const storage = multer.diskStorage({
-  destination: async (req, file, cb) => {
-    try {
-      await fs.mkdir(uploadDir, { recursive: true });
-      cb(null, uploadDir);
-    } catch (err) {
-      cb(err);
-    }
-  },
-  filename: (req, file, cb) => {
-    const uniqueSuffix = Date.now() + '-' + Math.round(Math.random() * 1E9);
-    const ext = path.extname(file.originalname);
-    const baseName = path.basename(file.originalname, ext);
-    cb(null, `${baseName}-${uniqueSuffix}${ext}`);
-  }
-});
-
+// Configure multer for file upload — memory storage (file goes to MinIO)
 const upload = multer({
-  storage,
+  storage: multer.memoryStorage(),
   limits: { fileSize: 50 * 1024 * 1024 }, // 50MB limit
   fileFilter: (req, file, cb) => {
     // Allow PDFs and images
@@ -85,13 +68,6 @@ router.post('/', authUser, upload.single('file'), async (req, res) => {
     // Validate report type
     const validTypes = ['lab', 'imaging', 'prescription', 'general'];
     if (!validTypes.includes(reportType)) {
-      // Clean up uploaded file
-      try {
-        await fs.unlink(req.file.path);
-      } catch (unlinkErr) {
-        console.error('Error deleting uploaded file:', unlinkErr);
-      }
-      
       return res.status(400).json({
         success: false,
         message: `Invalid report type: ${reportType}. Allowed: ${validTypes.join(', ')}`
@@ -99,14 +75,21 @@ router.post('/', authUser, upload.single('file'), async (req, res) => {
     }
 
     // Save to database
+    const { url: minioUrl, key: s3Key, size: fileSize } = await uploadToMinio({
+      buffer: req.file.buffer,
+      originalName: req.file.originalname,
+      mimeType: req.file.mimetype,
+      keyPrefix: `uploads/reports/${userId}`,
+    });
+
     const savedReport = await Report.create({
       userId,
       organization_id: organizationId,
       fileName: req.file.originalname,
       fileSize: req.file.size,
       mimeType: req.file.mimetype,
-      filePath: req.file.path,
-      fileUrl: `/api/reports/download/${req.file.filename}`,
+      filePath: s3Key,
+      fileUrl: minioUrl,
       reportType,
       description: description || null,
       testName: testName || null,
@@ -152,14 +135,13 @@ router.post('/', authUser, upload.single('file'), async (req, res) => {
     });
   } catch (error) {
     console.error('❌ Report upload error:', error);
-    
-    // Clean up uploaded file if there was an error
-    if (req.file) {
-      try {
-        await fs.unlink(req.file.path);
-      } catch (unlinkErr) {
-        console.error('Error deleting uploaded file:', unlinkErr);
-      }
+
+    // Return specific message for malware detection
+    if (error.code === 'MALWARE_DETECTED') {
+      return res.status(400).json({
+        success: false,
+        message: 'File rejected: malware detected in uploaded file'
+      });
     }
 
     return res.status(500).json({
@@ -290,7 +272,7 @@ router.delete('/:id', authUser, async (req, res) => {
       // Hard delete - remove file and database record
       try {
         if (report.filePath && fs.existsSync(report.filePath)) {
-          await fs.unlink(report.filePath);
+          await fsPromises.unlink(report.filePath);
         }
       } catch (err) {
         console.error('Error deleting file:', err);
@@ -323,40 +305,46 @@ router.delete('/:id', authUser, async (req, res) => {
 
 /**
  * GET /api/reports/download/:filename
- * Download a report file
+ * Download a report file — redirects to MinIO URL
  */
 router.get('/download/:filename', authUser, async (req, res) => {
   try {
     const { filename } = req.params;
-    const filePath = path.join(uploadDir, filename);
+    const userId = req.user.id;
 
-    // Security: Ensure file is within upload directory
-    const resolvedPath = path.resolve(filePath);
-    const resolvedUploadDir = path.resolve(uploadDir);
-
-    if (!resolvedPath.startsWith(resolvedUploadDir)) {
-      return res.status(403).json({
-        success: false,
-        message: 'Access denied'
-      });
-    }
-
-    // Check if user owns the report
+    // Look up report by filename or S3 key pattern
     const report = await Report.findOne({
       where: {
-        filePath: resolvedPath,
-        userId: req.user.id
+        userId,
+        [Report.sequelize.Sequelize.Op.or]: [
+          { filePath: { [Report.sequelize.Sequelize.Op.like]: `%${filename}%` } },
+          { fileUrl: { [Report.sequelize.Sequelize.Op.like]: `%${filename}%` } }
+        ]
       }
     });
 
     if (!report) {
-      return res.status(403).json({
+      return res.status(404).json({
         success: false,
-        message: 'Access denied or file not found'
+        message: 'Report not found'
       });
     }
 
-    // Send file
+    // If fileUrl is a full MinIO URL, redirect to it
+    if (report.fileUrl && report.fileUrl.startsWith('http')) {
+      return res.redirect(report.fileUrl);
+    }
+
+    // Legacy: serve from disk if fileUrl is a local path
+    const uploadDir = path.join(__dirname, '../../uploads/reports');
+    const filePath = path.join(uploadDir, filename);
+    const resolvedPath = path.resolve(filePath);
+    const resolvedUploadDir = path.resolve(uploadDir);
+
+    if (!resolvedPath.startsWith(resolvedUploadDir)) {
+      return res.status(403).json({ success: false, message: 'Access denied' });
+    }
+
     res.download(resolvedPath, report.fileName);
   } catch (error) {
     console.error('❌ Download error:', error);

@@ -30,6 +30,7 @@ import {
   createPresignedUpload,
   getUploadsBucket
 } from "../services/s3-presign.service.js";
+import { uploadToMinio } from "../services/minio-upload.service.js";
 
 const router = express.Router();
 
@@ -1134,17 +1135,17 @@ router.post("/profile-picture", authUser, async (req, res) => {
       });
     }
     
-    // Generate unique filename
-    const fileExtension = profilePicture.name.split('.').pop();
-    const fileName = `profile_${req.user.id}_${Date.now()}.${fileExtension}`;
-    const uploadPath = `./uploads/profiles/${fileName}`;
+    // Upload to MinIO with AV scan
+    const { url: minioUrl } = await uploadToMinio({
+      buffer: profilePicture.data,
+      originalName: profilePicture.name,
+      mimeType: profilePicture.mimetype,
+      keyPrefix: `uploads/profiles/${req.user.id}`,
+    });
     
-    // Move file to uploads directory
-    await profilePicture.mv(uploadPath);
-    
-    // Update user profile with image path
+    // Update user profile with MinIO URL
     const user = await userModel.findByPk(req.user.id);
-    user.profileImage = `/uploads/profiles/${fileName}`;
+    user.profileImage = minioUrl;
     await user.save();
     
     res.json({
@@ -1153,6 +1154,12 @@ router.post("/profile-picture", authUser, async (req, res) => {
       profileImage: user.profileImage
     });
   } catch (error) {
+    if (error.code === 'MALWARE_DETECTED') {
+      return res.status(400).json({
+        success: false,
+        message: "File rejected: malware detected"
+      });
+    }
     console.error('Profile picture upload error:', error);
     res.status(500).json({
       success: false,

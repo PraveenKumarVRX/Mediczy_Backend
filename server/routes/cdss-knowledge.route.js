@@ -15,6 +15,7 @@ import path from 'path';
 import fs from 'fs';
 import pdfKnowledgeService from '../services/pdfKnowledge.service.js';
 import cdssService from '../services/cdss.service.js';
+import { scanOnly } from '../services/minio-upload.service.js';
 
 const router = Router();
 
@@ -200,6 +201,13 @@ router.post('/upload', upload.single('file'), async (req, res) => {
   try {
     if (!req.file) {
       return res.status(400).json({ error: 'No PDF file uploaded' });
+    }
+
+    // AV scan before processing
+    const avResult = await scanOnly(req.file.path);
+    if (!avResult.clean) {
+      fs.unlink(req.file.path, () => {});
+      return res.status(400).json({ error: 'File rejected: malware detected' });
     }
 
     const { source = 'uploaded_pdf', category = 'medical', title } = req.body;

@@ -10,22 +10,17 @@
 
 import express from 'express';
 import multer from 'multer';
-import crypto from 'crypto';
 import nodemailer from 'nodemailer';
-import { S3Client, PutObjectCommand } from '@aws-sdk/client-s3';
 import { authUser } from '../middleware/auth.middleware.js';
 import { postgresSequelize } from '../db/postgres-sequelize.js';
 import emailServiceModule from '../services/emailService.js';
 import whatsappProductionService from '../services/whatsapp-production.service.js';
+import { uploadToMinio } from '../services/minio-upload.service.js';
 
 // ──────────────────────────────────────────────
-// S3 setup — reuses the same bucket as the frontend
-// Reports are stored under: health-reports/corp-{corpId}/emp-{empId}/
+// Reports are stored in MinIO via uploadToMinio service
+// under: health-reports/corp-{corpId}/emp-{empId}/
 // ──────────────────────────────────────────────
-const REPORTS_BUCKET = 'app.mediqzy.com';
-const REPORTS_PUBLIC_BASE = 'https://app.mediqzy.com';
-const S3_REGION = process.env.S3_REGION || process.env.AWS_REGION || 'ap-south-1';
-const s3 = new S3Client({ region: S3_REGION });
 
 // ──────────────────────────────────────────────
 // Multer — memory storage (file goes straight to S3)
@@ -675,23 +670,13 @@ router.post(
       );
       if (!employee) return res.status(404).json({ success: false, message: 'Employee not found' });
 
-      // ── 2. Upload to S3 ────────────────────────────────────
-      const ext = req.file.originalname.split('.').pop().toLowerCase();
-      const safeName = req.file.originalname.replace(/[^a-zA-Z0-9._-]/g, '_').slice(0, 80);
-      const randomSuffix = crypto.randomBytes(6).toString('hex');
-      const s3Key = `health-reports/corp-${corporateId}/emp-${employeeId}/${Date.now()}_${randomSuffix}_${safeName}`;
-
-      await s3.send(new PutObjectCommand({
-        Bucket: REPORTS_BUCKET,
-        Key: s3Key,
-        Body: req.file.buffer,
-        ContentType: req.file.mimetype,
-        ContentDisposition: `inline; filename="${safeName}"`,
-        // Public read — same as frontend bundle
-        ACL: 'public-read'
-      }));
-
-      const reportUrl = `${REPORTS_PUBLIC_BASE}/${s3Key}`;
+      // ── 2. Upload to MinIO with AV scan ─────────────────────
+      const { url: reportUrl, key: s3Key } = await uploadToMinio({
+        buffer: req.file.buffer,
+        originalName: req.file.originalname,
+        mimeType: req.file.mimetype,
+        keyPrefix: `health-reports/corp-${corporateId}/emp-${employeeId}`,
+      });
 
       // ── 3. Insert into corporate_health_reports ────────────
       const [dbRow] = await postgresSequelize.query(

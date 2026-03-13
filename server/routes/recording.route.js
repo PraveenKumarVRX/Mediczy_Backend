@@ -6,6 +6,7 @@ import { authDoctor, authUser } from '../middleware/auth.middleware.js';
 import ConsultationRecording from '../models/consultationRecording.model.intelligent.js';
 import Appointment from '../models/appointment.model.intelligent.js';
 import { Op } from 'sequelize';
+import { uploadToMinio } from '../services/minio-upload.service.js';
 
 const router = express.Router();
 
@@ -160,10 +161,22 @@ router.post('/upload', authDoctor, upload.single('recording'), async (req, res) 
       });
     }
 
-    // Update recording with file info
+    // Upload to MinIO with AV scan (streams from disk — handles large files)
+    const { url: minioUrl, key: s3Key } = await uploadToMinio({
+      filePath: req.file.path,
+      originalName: req.file.filename,
+      mimeType: req.file.mimetype || 'video/webm',
+      keyPrefix: `recordings/${recording.doctorId}`,
+    });
+
+    // Delete local temp file after successful MinIO upload
+    await fs.unlink(req.file.path).catch(() => {});
+
+    // Update recording with MinIO file info
     await recording.update({
       fileName: req.file.filename,
-      filePath: req.file.path,
+      filePath: s3Key,
+      fileUrl: minioUrl,
       fileSize: req.file.size,
       duration: duration ? parseInt(duration) : null,
       endTime: new Date(),
@@ -189,6 +202,13 @@ router.post('/upload', authDoctor, upload.single('recording'), async (req, res) 
     // Clean up file on error
     if (req.file) {
       await fs.unlink(req.file.path).catch(console.error);
+    }
+
+    if (error.code === 'MALWARE_DETECTED') {
+      return res.status(400).json({
+        success: false,
+        message: 'Recording rejected: malware detected'
+      });
     }
 
     res.status(500).json({
@@ -333,7 +353,12 @@ router.get('/download/:recordingId', async (req, res) => {
       req.ip || req.connection?.remoteAddress
     );
 
-    // Check if file exists
+    // Check if file is on MinIO (URL starts with http)
+    if (recording.fileUrl && recording.fileUrl.startsWith('http')) {
+      return res.redirect(recording.fileUrl);
+    }
+
+    // Legacy: Check if file exists on local disk
     try {
       await fs.access(recording.filePath);
     } catch (error) {
@@ -408,6 +433,12 @@ router.get('/stream/:recordingId', async (req, res) => {
       });
     }
 
+    // If file is on MinIO, redirect for streaming
+    if (recording.fileUrl && recording.fileUrl.startsWith('http')) {
+      return res.redirect(recording.fileUrl);
+    }
+
+    // Legacy: local disk streaming
     // Get file stats
     const stat = await fs.stat(recording.filePath);
     const fileSize = stat.size;

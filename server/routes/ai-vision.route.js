@@ -12,6 +12,7 @@ import fs from 'fs/promises';
 import path from 'path';
 import Anthropic from '@anthropic-ai/sdk';
 import { authDoctor } from '../middleware/auth.middleware.js';
+import { scanOnly } from '../services/minio-upload.service.js';
 
 const router = express.Router();
 
@@ -58,6 +59,13 @@ router.post('/analyze', authDoctor, upload.single('image'), async (req, res) => 
 
     imagePath = req.file.path;
     const { sourceType, appointmentId, sessionId } = req.body;
+
+    // AV scan before processing
+    const avResult = await scanOnly(imagePath);
+    if (!avResult.clean) {
+      await fs.unlink(imagePath).catch(() => {});
+      return res.status(400).json({ success: false, message: 'File rejected: malware detected' });
+    }
 
     // Read image file and convert to base64
     const imageBuffer = await fs.readFile(imagePath);

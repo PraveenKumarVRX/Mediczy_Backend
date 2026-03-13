@@ -19,27 +19,13 @@ import {
   createPresignedUpload,
   getUploadsBucket
 } from '../services/s3-presign.service.js';
+import { uploadToMinio } from '../services/minio-upload.service.js';
 
 const router = express.Router();
 
-// Configure multer for file uploads
-const storage = multer.diskStorage({
-  destination: (req, file, cb) => {
-    const uploadPath = `./uploads/doctors/${req.params.doctorId || 'temp'}`;
-    if (!fs.existsSync(uploadPath)) {
-      fs.mkdirSync(uploadPath, { recursive: true });
-    }
-    cb(null, uploadPath);
-  },
-  filename: (req, file, cb) => {
-    const ext = path.extname(file.originalname);
-    const filename = `${file.fieldname}_${Date.now()}${ext}`;
-    cb(null, filename);
-  }
-});
-
+// Configure multer for file uploads — memory storage (file goes to MinIO)
 const upload = multer({
-  storage,
+  storage: multer.memoryStorage(),
   limits: { fileSize: 10 * 1024 * 1024 }, // 10MB limit
   fileFilter: (req, file, cb) => {
     const allowedTypes = /jpeg|jpg|png|pdf|doc|docx/;
@@ -724,17 +710,29 @@ router.post('/upload/:mediaType', authUser, upload.single('file'), async (req, r
       });
     }
 
-    const mediaUrl = `/uploads/doctors/${req.user.id}/${req.file.filename}`;
+    // Upload to MinIO with AV scan
+    const { url: minioUrl } = await uploadToMinio({
+      buffer: req.file.buffer,
+      originalName: req.file.originalname,
+      mimeType: req.file.mimetype,
+      keyPrefix: `uploads/doctors/${req.user.id}/${mediaType}`,
+    });
 
-    await doctorModel.updateMedia(req.user.id, mediaType, mediaUrl);
+    await doctorModel.updateMedia(req.user.id, mediaType, minioUrl);
 
     res.json({
       success: true,
       message: 'Media uploaded successfully',
       mediaType,
-      url: mediaUrl
+      url: minioUrl
     });
   } catch (error) {
+    if (error.code === 'MALWARE_DETECTED') {
+      return res.status(400).json({
+        success: false,
+        message: 'File rejected: malware detected'
+      });
+    }
     console.error('Upload media error:', error);
     res.status(500).json({
       success: false,
