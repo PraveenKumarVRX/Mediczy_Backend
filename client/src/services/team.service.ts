@@ -3,7 +3,7 @@
  * Centralized service for all team portal API calls
  */
 
-import api from '@/lib/api';
+import api from '@/utils/api';
 
 const BASE_URL = '/api/team';
 

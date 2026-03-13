@@ -107,6 +107,10 @@ const User = sequelize.define('User', {
     defaultValue: 'individual',
     field: 'membership_type'
   },
+  isTeam: {
+    type: DataTypes.BOOLEAN,
+    defaultValue: false,
+  },
   // Primary Doctor (Family Doctor concept)
   primaryDoctorId: {
     type: DataTypes.INTEGER,

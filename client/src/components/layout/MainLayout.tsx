@@ -209,6 +209,10 @@ const MainLayout = ({ children }: MainLayoutProps) => {
   useEffect(() => {
     let mounted = true;
     const fetchNotifications = async () => {
+      // Skip AI notifications for non-patient portals (team, admin, nurse, etc.)
+      // They use separate dashboards and these calls use the wrong token context
+      const currentUserType = localStorage.getItem('userType');
+      if (currentUserType && currentUserType !== 'user') return;
       try {
         const res = await aiHealthServices.getSmartNotifications({ limit: 10 });
         if (mounted && res.success && res.notifications.length > 0) {
