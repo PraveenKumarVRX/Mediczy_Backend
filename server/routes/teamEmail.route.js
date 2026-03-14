@@ -311,7 +311,7 @@ router.post('/send', authUser, async (req, res) => {
       });
     }
 
-    // Send the email
+    // Send the email using the user's SMTP settings directly
     const result = await emailService.sendOutboundEmail(emailSettings.id, {
       to,
       cc,
@@ -319,6 +319,15 @@ router.post('/send', authUser, async (req, res) => {
       subject,
       htmlContent,
       textContent
+    }, {
+      host: emailSettings.smtpHost,
+      port: emailSettings.smtpPort,
+      secure: emailSettings.smtpSecure,
+      username: emailSettings.smtpUsername,
+      password: emailSettings.smtpPassword,
+      fromEmail: emailSettings.email,
+      fromName: emailSettings.displayName || emailSettings.email,
+      isActive: emailSettings.isActive
     });
 
     // Save to sent folder for team inbox view

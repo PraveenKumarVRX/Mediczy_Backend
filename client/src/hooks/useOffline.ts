@@ -67,12 +67,12 @@ export const useOffline = () => {
     try {
       setIsSyncing(true);
       const pendingActions = await offlineStorage.getPendingOfflineActions();
-      console.log('🔄 Syncing offline actions:', pendingActions.length);
 
       if (pendingActions.length === 0) {
-        console.log('✅ No offline actions to sync');
         return;
       }
+
+      console.log('🔄 Syncing offline actions:', pendingActions.length);
 
       for (const action of pendingActions) {
         try {

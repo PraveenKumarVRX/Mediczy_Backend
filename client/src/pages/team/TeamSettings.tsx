@@ -9,7 +9,7 @@ import { Badge } from '@/components/ui/badge';
 import { Alert, AlertDescription } from '@/components/ui/alert';
 import { Switch } from '@/components/ui/switch';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
-import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter, DialogTrigger } from '@/components/ui/dialog';
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter, DialogTrigger } from '@/components/ui/dialog';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { 
   Settings, 
@@ -332,6 +332,7 @@ const TeamSettings: React.FC = () => {
                         <DialogTitle>
                           {editingConfig ? 'Edit SMTP Configuration' : 'Add New SMTP Configuration'}
                         </DialogTitle>
+                        <DialogDescription className="sr-only">SMTP configuration form</DialogDescription>
                       </DialogHeader>
                       
                       <div className="space-y-4 py-4">

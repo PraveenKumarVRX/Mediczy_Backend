@@ -540,7 +540,7 @@ Configuration Details:
   }
 
   // Send outbound email from team member
-  async sendOutboundEmail(emailConfigId, emailData) {
+  async sendOutboundEmail(emailConfigId, emailData, smtpConfig) {
     try {
       const { to, cc, bcc, subject, htmlContent, textContent } = emailData;
 
@@ -548,7 +548,13 @@ Configuration Details:
         throw new Error('Recipient email and subject are required');
       }
 
-      const config = await EmailConfig.findOne({ where: { id: emailConfigId } });
+      // Use provided SMTP config (from EmailSettings) or fall back to EmailConfig lookup
+      let config;
+      if (smtpConfig && smtpConfig.host && smtpConfig.username) {
+        config = { id: emailConfigId, ...smtpConfig };
+      } else {
+        config = await EmailConfig.findOne({ where: { id: emailConfigId } });
+      }
       
       if (!config || !config.isActive) {
         throw new Error('Email configuration not found or inactive');

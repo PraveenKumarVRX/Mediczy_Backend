@@ -3,7 +3,7 @@ import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/com
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Badge } from '@/components/ui/badge';
-import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from '@/components/ui/dialog';
 import { useToast } from '@/hooks/use-toast';
 import {
   MapPin, Phone, Search, Stethoscope,
@@ -274,6 +274,7 @@ const TeamClinicList: React.FC = () => {
         <DialogContent className="max-w-lg">
           <DialogHeader>
             <DialogTitle>{selectedClinic?.name}</DialogTitle>
+            <DialogDescription className="sr-only">Clinic details</DialogDescription>
           </DialogHeader>
           {selectedClinic && (
             <div className="space-y-4 text-sm">

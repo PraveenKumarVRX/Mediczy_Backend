@@ -2251,6 +2251,7 @@ const TeamCorporateManagement = () => {
           <DialogContent className="max-w-2xl">
             <DialogHeader>
               <DialogTitle>Onboard New Corporate</DialogTitle>
+              <DialogDescription className="sr-only">Onboard a new corporate client</DialogDescription>
             </DialogHeader>
             <div className="grid grid-cols-2 gap-4 py-4">
               <div className="space-y-2">
@@ -2348,6 +2349,7 @@ const TeamCorporateManagement = () => {
           <DialogContent>
             <DialogHeader>
               <DialogTitle>Create HR Admin Login</DialogTitle>
+              <DialogDescription className="sr-only">Create HR admin credentials</DialogDescription>
             </DialogHeader>
             <div className="space-y-4 py-4">
               <div className="grid grid-cols-2 gap-4">
@@ -2415,6 +2417,7 @@ const TeamCorporateManagement = () => {
           <DialogContent>
             <DialogHeader>
               <DialogTitle>Add Employee</DialogTitle>
+              <DialogDescription className="sr-only">Add a new employee</DialogDescription>
             </DialogHeader>
             <div className="space-y-4 py-4">
               <div className="grid grid-cols-2 gap-4">
@@ -2552,6 +2555,7 @@ const TeamCorporateManagement = () => {
           <DialogContent className="max-w-lg">
             <DialogHeader>
               <DialogTitle>Employee Details</DialogTitle>
+              <DialogDescription className="sr-only">View employee information</DialogDescription>
             </DialogHeader>
             {viewingEmployee && (
               <div className="space-y-4 py-2">
@@ -2620,6 +2624,7 @@ const TeamCorporateManagement = () => {
           <DialogContent className="max-w-lg">
             <DialogHeader>
               <DialogTitle>Edit Employee — {editingEmployee?.name}</DialogTitle>
+              <DialogDescription className="sr-only">Edit employee details</DialogDescription>
             </DialogHeader>
             <div className="space-y-4 py-4">
               <div className="grid grid-cols-2 gap-4">
@@ -2871,6 +2876,7 @@ const TeamCorporateManagement = () => {
           <DialogContent className="max-w-2xl">
             <DialogHeader>
               <DialogTitle>Edit Health Package</DialogTitle>
+              <DialogDescription className="sr-only">Edit package details</DialogDescription>
             </DialogHeader>
             <div className="space-y-4 py-4">
               <div className="space-y-2">
@@ -3208,6 +3214,7 @@ const TeamCorporateManagement = () => {
           <DialogContent className="max-w-2xl">
             <DialogHeader>
               <DialogTitle>Assign Package: {assigningPackage?.name}</DialogTitle>
+              <DialogDescription className="sr-only">Assign package to employees</DialogDescription>
             </DialogHeader>
             <div className="space-y-4 py-4">
               <div className="bg-muted/50 p-4 rounded-lg">
@@ -3825,6 +3832,7 @@ const TeamCorporateManagement = () => {
           <DialogContent className="max-w-2xl">
             <DialogHeader>
               <DialogTitle>Create Health Package</DialogTitle>
+              <DialogDescription className="sr-only">Create a new health package</DialogDescription>
             </DialogHeader>
             <div className="space-y-4 py-4">
               <div className="space-y-2">
