@@ -107,7 +107,7 @@ async function findUserByEmail(email) {
  * Look up a user by full name (case-insensitive).
  * Supports "JITUL SHETH" → firstName=JITUL lastName=SHETH
  */
-async function findUserByName(fullName) {
+async function findUserByName(fullName, corporateId = null) {
   if (!fullName || fullName.length < 3) return null;
   const parts = fullName.trim().split(/\s+/);
   if (parts.length < 2) return null;
@@ -116,23 +116,38 @@ async function findUserByName(fullName) {
   const lastName  = parts.slice(1).join(' ');
 
   try {
+    // Always scope to corporate employees — prevents matching random users
+    let corpFilter = `
+      AND u.id IN (
+        SELECT ua."userId" FROM user_associations ua
+        WHERE ua."entityType" = 'corporate' AND ua.role = 'employee'`;
+    const replacements = { firstName, lastName };
+    if (corporateId) {
+      corpFilter += ` AND ua."entityId" = :corporateId`;
+      replacements.corporateId = corporateId;
+    }
+    corpFilter += `)`;
+
     const [rows] = await postgresSequelize.query(
-      `SELECT id, "firstName", "lastName", email, "phoneNumber", organization_id
-       FROM users
-       WHERE LOWER("firstName") = LOWER(:firstName)
-         AND LOWER("lastName")  = LOWER(:lastName)
+      `SELECT u.id, u."firstName", u."lastName", u.email, u."phoneNumber", u.organization_id
+       FROM users u
+       WHERE LOWER(u."firstName") = LOWER(:firstName)
+         AND LOWER(u."lastName")  = LOWER(:lastName)
+         ${corpFilter}
        LIMIT 1`,
-      { replacements: { firstName, lastName } }
+      { replacements }
     );
     if (rows[0]) return rows[0];
 
     // Second try: full concatenated match (e.g., "Kanagaraj Palanisamy")
+    replacements.full = fullName.trim();
     const [rows2] = await postgresSequelize.query(
-      `SELECT id, "firstName", "lastName", email, "phoneNumber", organization_id
-       FROM users
-       WHERE LOWER("firstName" || ' ' || COALESCE("lastName",'')) = LOWER(:full)
+      `SELECT u.id, u."firstName", u."lastName", u.email, u."phoneNumber", u.organization_id
+       FROM users u
+       WHERE LOWER(u."firstName" || ' ' || COALESCE(u."lastName",'')) = LOWER(:full)
+         ${corpFilter}
        LIMIT 1`,
-      { replacements: { full: fullName.trim() } }
+      { replacements }
     );
     return rows2[0] || null;
   } catch (e) {
@@ -261,26 +276,41 @@ async function findEmployeeValidated({ empId, name, email, phone, corporateId, s
   const validationChecks = [];
 
   // ── Level 1: Identity Match ──────────────────────────────────────
+  // Employee ID + Corporate is ALWAYS the primary identity.
+  // Name/email lookups are fallbacks ONLY when empId is unavailable.
 
-  // Priority 1: employeeId (strongest — unique per corporate)
+  // Priority 1: employeeId + corporate (authoritative — unique per corporate)
   if (empId) {
-    user = await findUserByEmployeeId(empId, corporateId);
-    if (user) matchMethod = 'employeeId';
+    // First try with corporate scope (strongest)
+    if (corporateId) {
+      user = await findUserByEmployeeId(empId, corporateId);
+      if (user) matchMethod = 'employeeId+corporate';
+    }
+    // If no corporateId was provided, or scoped lookup found nothing, try unscoped
+    if (!user) {
+      user = await findUserByEmployeeId(empId);
+      if (user) matchMethod = 'employeeId';
+    }
   }
 
-  // Priority 2: corporate email
-  if (!user && email) {
+  // Priority 2: corporate email (only if empId was not available)
+  if (!user && !empId && email) {
     user = await findUserByEmail(email);
     if (user) matchMethod = 'email';
   }
 
-  // Priority 3: name match (weakest)
-  if (!user && name) {
-    user = await findUserByName(name);
+  // Priority 3: name match scoped to corporate employees (only if empId was not available)
+  if (!user && !empId && name) {
+    user = await findUserByName(name, corporateId);
     if (user) matchMethod = 'name';
   }
 
-  if (!user) return null;
+  if (!user) {
+    if (empId) {
+      logger.debug(`[emailAutoProcess] IDENTITY MISS: empId ${empId} not found in corporate ${corporateId || 'any'} (source: ${source})`);
+    }
+    return null;
+  }
 
   // ── Level 2: Cross-Validation ────────────────────────────────────
   // Every match MUST pass at least one cross-validation check.
@@ -310,15 +340,15 @@ async function findEmployeeValidated({ empId, name, email, phone, corporateId, s
       const empIdMatch = corpMeta.employeeId.toUpperCase() === empId.toUpperCase();
       validationChecks.push({ check: 'employeeIdMatch', expected: empId, actual: corpMeta.employeeId, result: empIdMatch ? 'pass' : 'FAIL' });
       if (empIdMatch) crossValidated = true;
-      if (!empIdMatch && matchMethod !== 'employeeId') {
+      if (!empIdMatch && !matchMethod.startsWith('employeeId')) {
         // Name/email matched a user but their empId is different — REJECT
         logger.warn(`[emailAutoProcess] VALIDATION FAIL: ${matchMethod} matched user ${user.id} but empId mismatch: expected ${empId}, got ${corpMeta.employeeId} (source: ${source})`);
         return null;
       }
     }
 
-    // If we matched by empId, corporate scoping is auto-validated
-    if (matchMethod === 'employeeId') crossValidated = true;
+    // If we matched by empId (+corporate), corporate scoping is auto-validated
+    if (matchMethod.startsWith('employeeId')) crossValidated = true;
 
     // Verify corporate scope if provided
     if (corporateId && corpMeta.corporateId !== corporateId) {
@@ -354,8 +384,8 @@ async function findEmployeeValidated({ empId, name, email, phone, corporateId, s
   // Determine overall confidence
   let confidence = 'low';
   const passedChecks = validationChecks.filter(c => c.result === 'pass' || c.result === 'exact' || c.result === 'strong');
-  if (matchMethod === 'employeeId' && passedChecks.length >= 2) confidence = 'high';
-  else if (matchMethod === 'employeeId' || passedChecks.length >= 2) confidence = 'high';
+  if (matchMethod.startsWith('employeeId') && passedChecks.length >= 2) confidence = 'high';
+  else if (matchMethod.startsWith('employeeId') || passedChecks.length >= 2) confidence = 'high';
   else if (passedChecks.length >= 1) confidence = 'medium';
 
   return {
@@ -564,8 +594,7 @@ export function detectLabReport(email) {
  * Save health-report PDFs from lab emails to the `reports` table.
  * Uses 2-level validation to match each PDF to the correct employee.
  *
- * Level 1: Match employee by name from filename → empId from HTML table → email
- * Level 2: Cross-validate name match + verify corporate employee status
+ * Identity priority: empId + corporate (primary) → name scoped to corporate (fallback)
  *
  * @param {object} email  EmailInbox model instance
  * @returns {boolean} true if at least one report saved
@@ -577,6 +606,8 @@ export async function saveHealthReportFromEmail(email) {
   if (!meta.isReport) return false;
 
   try {
+    // Resolve corporate context from the email (subject, sender domain, CC)
+    const corporateId = resolveCorporateFromEmail(email);
     const reportDate = email.receivedAt || email.createdAt || new Date();
 
     // Avoid duplicate report entries for the same email
@@ -631,6 +662,7 @@ export async function saveHealthReportFromEmail(email) {
             name: nameFromFile,
             email: bestTableRow.email,
             phone: bestTableRow.phone,
+            corporateId,
             source: `report-filename:${att.filename}`,
           });
         }
@@ -640,6 +672,7 @@ export async function saveHealthReportFromEmail(email) {
       if (!matchResult && nameFromFile) {
         matchResult = await findEmployeeValidated({
           name: nameFromFile,
+          corporateId,
           source: `report-filename-direct:${att.filename}`,
         });
       }
@@ -648,6 +681,7 @@ export async function saveHealthReportFromEmail(email) {
       if (!matchResult && meta.patientName && meta.pdfAttachments.length === 1) {
         matchResult = await findEmployeeValidated({
           name: meta.patientName,
+          corporateId,
           source: `report-subject:${meta.patientName}`,
         });
       }
@@ -729,11 +763,44 @@ const CORPORATE_DOMAINS = new Set([
 ]);
 
 /**
+ * Mapping of keywords (lowercased) found in email subjects / from fields → corporateId.
+ * Used by resolveCorporateFromEmail() to determine which corporate the email belongs to.
+ */
+const CORPORATE_SUBJECT_KEYWORDS = [
+  { keywords: ['equitas'], corporateId: 5 },
+  { keywords: ['tcs', 'tata consultancy'], corporateId: 1 },
+  // Add new corporate keyword → ID mappings here
+];
+
+/**
+ * Resolve the corporateId from the email's subject line and sender domain.
+ * Returns the corporateId (number) or null.
+ */
+function resolveCorporateFromEmail(email) {
+  // Strategy 1: Match subject keywords
+  const subject = (email.subject || '').toLowerCase();
+  for (const entry of CORPORATE_SUBJECT_KEYWORDS) {
+    if (entry.keywords.some(kw => subject.includes(kw))) return entry.corporateId;
+  }
+
+  // Strategy 2: Match sender domain → corporate
+  const sender = parseSender(email.from || '');
+  const domain = emailDomain(sender.email);
+  if (domain === 'equitasbank.com' || domain === 'equitas.in') return 5;
+
+  // Strategy 3: Check CC/BCC for corporate domain
+  const allAddresses = [email.to, email.cc, email.bcc].filter(Boolean).join(' ').toLowerCase();
+  if (allAddresses.includes('equitasbank.com') || allAddresses.includes('equitas.in')) return 5;
+
+  return null;
+}
+
+/**
  * Extract employee info from the email (HTML booking tables or sender domain)
  * and update their user profile: email and phone number.
  *
  * 2-Level Validation:
- *   Level 1: Match by employeeId → email → name
+ *   Level 1: Match by employeeId + corporate (primary) → email → name (scoped to corporate)
  *   Level 2: Cross-validate name + verify corporate employee status + phone check
  *
  * @param {object} email  EmailInbox model instance
@@ -746,6 +813,9 @@ export async function updateEmployeeEmailFromInbox(email) {
     let updatedCount = 0;
     let processedRows = 0;
 
+    // Resolve corporate context from the email
+    const corporateId = resolveCorporateFromEmail(email);
+
     // ── Strategy 1: Parse HTML table for employee data ──────────────
     const htmlBody = email.htmlBody || email.body || '';
     const employeeRows = parseEmployeeTableFromHtml(htmlBody);
@@ -755,12 +825,13 @@ export async function updateEmployeeEmailFromInbox(email) {
         if (!row.name) continue;
         processedRows++;
 
-        // 2-Level validated lookup — requires empId + name cross-match
+        // 2-Level validated lookup — empId + corporate is the primary identity
         const matchResult = await findEmployeeValidated({
           empId: row.empId,
           name: row.name,
           email: row.email,
           phone: row.phone,
+          corporateId,
           source: 'profile-update',
         });
 
@@ -831,6 +902,7 @@ export async function updateEmployeeEmailFromInbox(email) {
           const matchResult = await findEmployeeValidated({
             email: sender.email,
             name: email.fromName || sender.name,
+            corporateId,
             source: 'profile-update-legacy',
           });
 
