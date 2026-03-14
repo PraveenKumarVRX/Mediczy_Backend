@@ -1016,14 +1016,14 @@ router.post('/corporates', authUser, requireRole(['admin', 'team']), async (req,
     }
     
     // Check if corporate with this email already exists
-    const [existing] = await postgresSequelize.query(`
-      SELECT id FROM corporates WHERE email = :email
+    const existingRows = await postgresSequelize.query(`
+      SELECT id FROM corporates WHERE email = :email LIMIT 1
     `, {
       replacements: { email: email.toLowerCase() },
       type: postgresSequelize.QueryTypes.SELECT
     });
     
-    if (existing && existing.length > 0) {
+    if (existingRows && existingRows.length > 0) {
       return res.status(409).json({
         success: false,
         message: 'Corporate with this email already exists'
@@ -1080,7 +1080,7 @@ router.post('/corporates', authUser, requireRole(['admin', 'team']), async (req,
     if (parsedAssignedTeamMemberId && newCorporate.id) {
       await postgresSequelize.query(`
         INSERT INTO user_associations ("userId", "entityType", "entityId", role, "isPrimary", status, "startDate", "createdAt", "updatedAt")
-        VALUES (:userId, 'corporate', :corporateId, 'manager', true, 'active', NOW(), NOW(), NOW())
+        VALUES (:userId, 'corporate', :corporateId, 'team_member', true, 'active', NOW(), NOW(), NOW())
         ON CONFLICT DO NOTHING
       `, {
         replacements: { userId: parsedAssignedTeamMemberId, corporateId: newCorporate.id }
@@ -1089,7 +1089,7 @@ router.post('/corporates', authUser, requireRole(['admin', 'team']), async (req,
       // Fallback: assign to current user if team member
       await postgresSequelize.query(`
         INSERT INTO user_associations ("userId", "entityType", "entityId", role, "isPrimary", status, "startDate", "createdAt", "updatedAt")
-        VALUES (:userId, 'corporate', :corporateId, 'manager', true, 'active', NOW(), NOW(), NOW())
+        VALUES (:userId, 'corporate', :corporateId, 'team_member', true, 'active', NOW(), NOW(), NOW())
         ON CONFLICT DO NOTHING
       `, {
         replacements: { userId: req.user.id, corporateId: newCorporate.id }
@@ -1124,7 +1124,7 @@ router.post('/corporates', authUser, requireRole(['admin', 'team']), async (req,
         // Also create user association for each team member
         await postgresSequelize.query(`
           INSERT INTO user_associations ("userId", "entityType", "entityId", role, "isPrimary", status, "startDate", "createdAt", "updatedAt")
-          VALUES (:userId, 'corporate', :corporateId, 'manager', :isPrimary, 'active', NOW(), NOW(), NOW())
+          VALUES (:userId, 'corporate', :corporateId, 'team_member', :isPrimary, 'active', NOW(), NOW(), NOW())
           ON CONFLICT DO NOTHING
         `, {
           replacements: { 
@@ -1377,7 +1377,7 @@ router.put('/corporates/:id', authUser, requireRole(['admin', 'team']), async (r
       if (parsedTeamMemberId) {
         await postgresSequelize.query(`
           INSERT INTO user_associations ("userId", "entityType", "entityId", role, "isPrimary", status, "startDate", "createdAt", "updatedAt")
-          VALUES (:userId, 'corporate', :corporateId, 'manager', true, 'active', NOW(), NOW(), NOW())
+          VALUES (:userId, 'corporate', :corporateId, 'team_member', true, 'active', NOW(), NOW(), NOW())
           ON CONFLICT DO NOTHING
         `, {
           replacements: { userId: parsedTeamMemberId, corporateId }
@@ -1573,7 +1573,7 @@ router.put('/corporates/:id', authUser, requireRole(['admin', 'team']), async (r
         // Also update user association
         await postgresSequelize.query(`
           INSERT INTO user_associations ("userId", "entityType", "entityId", role, "isPrimary", status, "startDate", "createdAt", "updatedAt")
-          VALUES (:userId, 'corporate', :corporateId, 'manager', :isPrimary, 'active', NOW(), NOW(), NOW())
+          VALUES (:userId, 'corporate', :corporateId, 'team_member', :isPrimary, 'active', NOW(), NOW(), NOW())
           ON CONFLICT DO NOTHING
         `, {
           replacements: { 
