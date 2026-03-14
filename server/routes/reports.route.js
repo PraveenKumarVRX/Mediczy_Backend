@@ -16,6 +16,8 @@ import { validationResult } from 'express-validator';
 import { body } from 'express-validator';
 import n8nService from '../services/n8n.service.js';
 import { uploadEncryptedReport, downloadDecryptedReport } from '../services/minio-upload.service.js';
+import healthDiaryService from '../services/health-diary.service.js';
+import { analyzeReport } from '../services/report-analysis.service.js';
 
 const router = express.Router();
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
@@ -136,6 +138,46 @@ router.post('/', authUser, upload.single('file'), async (req, res) => {
     } catch (n8nError) {
       console.error('Failed to trigger n8n report workflow:', n8nError);
     }
+
+    // Log to Health Diary as event (non-blocking)
+    const diaryEntryType = reportType === 'imaging' ? 'imaging' : 'lab_result';
+    setImmediate(async () => {
+      try {
+        await healthDiaryService.logHealthEvent({
+          userId,
+          entryType: diaryEntryType,
+          title: `Report uploaded: ${testName || req.file.originalname}`,
+          description: description || `${reportType} report uploaded${labName ? ' from ' + labName : ''}`,
+          data: {
+            reportId: savedReport.id,
+            reportType,
+            fileName: req.file.originalname,
+            fileSize: req.file.size,
+            testName: testName || null,
+            labName: labName || null,
+            reportDate: reportDate || null,
+            source: 'report_upload'
+          },
+          linkedRecordId: savedReport.id,
+          linkedRecordType: 'report',
+          timestamp: reportDate ? new Date(reportDate) : new Date()
+        });
+        console.log(`📝 Health diary: logged report ${savedReport.id} for user ${userId}`);
+      } catch (diaryErr) {
+        console.error('Health diary logging failed (non-blocking):', diaryErr.message);
+      }
+    });
+
+    // Auto-trigger AI analysis + HRA update (async, non-blocking)
+    setImmediate(async () => {
+      try {
+        console.log(`🤖 Auto-analyzing report ${savedReport.id} for HRA integration...`);
+        const result = await analyzeReport(savedReport.id, userId, { force: false });
+        console.log(`✅ Report ${savedReport.id} auto-analyzed: ${result.analysis?.reportCategory || 'done'}`);
+      } catch (analysisErr) {
+        console.error(`Auto-analysis failed for report ${savedReport.id} (non-blocking):`, analysisErr.message);
+      }
+    });
 
     return res.status(201).json({
       success: true,

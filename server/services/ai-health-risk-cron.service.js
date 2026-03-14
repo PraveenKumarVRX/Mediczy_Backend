@@ -181,14 +181,29 @@ class HealthRiskScoreCron {
       dataSources.labs = rows.length;
     } catch { dataSources.labs = 0; }
 
+    // 4. AI-extracted report lab values
+    let reportLabValues = [];
+    try {
+      const { rows } = await db.query(`
+        SELECT parameter_name, value, unit, status, reference_range, report_date
+        FROM ai_report_lab_values
+        WHERE patient_id = $1
+          AND extracted_at > NOW() - INTERVAL '6 months'
+        ORDER BY extracted_at DESC
+        LIMIT 50
+      `, [patient.patient_id]);
+      reportLabValues = rows;
+      dataSources.report_lab_values = rows.length;
+    } catch { dataSources.report_lab_values = 0; }
+
     // --- Bayesian Scoring ---
     const subscores = {};
 
     // a. Cardiovascular Risk (0-10, 10 = highest risk)
-    subscores.cardiovascular = this.calcCardiovascularRisk(patient, latestVitals);
+    subscores.cardiovascular = this.calcCardiovascularRisk(patient, latestVitals, reportLabValues);
 
     // b. Diabetes Risk
-    subscores.diabetes = this.calcDiabetesRisk(patient, latestVitals, labResults);
+    subscores.diabetes = this.calcDiabetesRisk(patient, latestVitals, labResults, reportLabValues);
 
     // c. Hypertension Risk
     subscores.hypertension = this.calcHypertensionRisk(latestVitals);
@@ -272,7 +287,7 @@ class HealthRiskScoreCron {
   /**
    * Cardiovascular risk scoring
    */
-  calcCardiovascularRisk(patient, vitals) {
+  calcCardiovascularRisk(patient, vitals, reportLabValues = []) {
     let score = 3.0; // baseline
 
     // Age factor
@@ -307,13 +322,28 @@ class HealthRiskScoreCron {
     if (conditions.some(c => /heart|cardiac|coronary/i.test(c))) score += 2.0;
     if (conditions.some(c => /cholesterol|lipid/i.test(c))) score += 1.0;
 
+    // Report lab values — cholesterol, triglycerides, LDL
+    for (const lv of reportLabValues) {
+      const name = (lv.parameter_name || '').toLowerCase();
+      const val = parseFloat(lv.value);
+      if (isNaN(val)) continue;
+
+      if (/total\s*cholesterol/i.test(name) && val > 240) score += 1.5;
+      else if (/ldl/i.test(name) && val > 160) score += 1.5;
+      else if (/triglyceride/i.test(name) && val > 200) score += 1.0;
+      else if (/hdl/i.test(name) && val < 40) score += 1.0;
+      if (lv.status === 'high' || lv.status === 'critical') {
+        if (/cholesterol|ldl|triglyceride|crp|homocysteine/i.test(name)) score += 0.5;
+      }
+    }
+
     return Math.min(10, Math.max(0, score));
   }
 
   /**
    * Diabetes risk scoring
    */
-  calcDiabetesRisk(patient, vitals, labs) {
+  calcDiabetesRisk(patient, vitals, labs, reportLabValues = []) {
     let score = 2.0;
 
     const conditions = patient.chronicConditions || [];
@@ -331,6 +361,27 @@ class HealthRiskScoreCron {
       ? Math.floor((Date.now() - new Date(patient.dateOfBirth).getTime()) / (365.25 * 24 * 60 * 60 * 1000))
       : 30;
     if (age > 45) score += 1.0;
+
+    // Report lab values — glucose, HbA1c, insulin
+    for (const lv of reportLabValues) {
+      const name = (lv.parameter_name || '').toLowerCase();
+      const val = parseFloat(lv.value);
+      if (isNaN(val)) continue;
+
+      if (/hba1c|glycated\s*h/i.test(name)) {
+        if (val > 6.5) score += 3.0;
+        else if (val > 5.7) score += 1.5;
+      } else if (/fasting.*glucose|glucose.*fasting|fbs/i.test(name)) {
+        if (val > 126) score += 2.5;
+        else if (val > 100) score += 1.0;
+      } else if (/random.*glucose|glucose|blood\s*sugar|rbs/i.test(name)) {
+        if (val > 200) score += 2.5;
+        else if (val > 140) score += 1.0;
+      }
+      if (lv.status === 'high' || lv.status === 'critical') {
+        if (/glucose|sugar|hba1c|insulin/i.test(name)) score += 0.5;
+      }
+    }
 
     return Math.min(10, Math.max(0, score));
   }
