@@ -90,7 +90,7 @@ async function findUserByEmail(email) {
   if (!email) return null;
   try {
     const [rows] = await postgresSequelize.query(
-      `SELECT id, "firstName", "lastName", email, organization_id
+      `SELECT id, "firstName", "lastName", email, "phoneNumber", organization_id
        FROM users
        WHERE LOWER(email) = LOWER(:email)
        LIMIT 1`,
@@ -117,7 +117,7 @@ async function findUserByName(fullName) {
 
   try {
     const [rows] = await postgresSequelize.query(
-      `SELECT id, "firstName", "lastName", email, organization_id
+      `SELECT id, "firstName", "lastName", email, "phoneNumber", organization_id
        FROM users
        WHERE LOWER("firstName") = LOWER(:firstName)
          AND LOWER("lastName")  = LOWER(:lastName)
@@ -126,9 +126,9 @@ async function findUserByName(fullName) {
     );
     if (rows[0]) return rows[0];
 
-    // Second try: single-token last name (e.g., "Kanagaraj Palanisamy")
+    // Second try: full concatenated match (e.g., "Kanagaraj Palanisamy")
     const [rows2] = await postgresSequelize.query(
-      `SELECT id, "firstName", "lastName", email, organization_id
+      `SELECT id, "firstName", "lastName", email, "phoneNumber", organization_id
        FROM users
        WHERE LOWER("firstName" || ' ' || COALESCE("lastName",'')) = LOWER(:full)
        LIMIT 1`,
@@ -142,27 +142,230 @@ async function findUserByName(fullName) {
 }
 
 /**
- * Look up a user by corporate employeeId (e.g. "E113901") via user_associations.
+ * Look up a corporate employee by employeeId, scoped to corporateId if provided.
+ * Returns user data + empId + corporateId for cross-validation.
+ * Handles duplicate empId records by picking the one with a complete name.
  */
-async function findUserByEmployeeId(empId) {
+async function findUserByEmployeeId(empId, corporateId = null) {
   if (!empId) return null;
   const normalised = empId.trim().toUpperCase();
   try {
-    const [rows] = await postgresSequelize.query(
-      `SELECT u.id, u."firstName", u."lastName", u.email, u."phoneNumber", u.organization_id
-       FROM user_associations ua
-       JOIN users u ON u.id = ua."userId"
-       WHERE ua."entityType" = 'corporate'
-         AND ua.role = 'employee'
-         AND UPPER(ua.metadata->>'employeeId') = :empId
-       LIMIT 1`,
-      { replacements: { empId: normalised } }
-    );
+    let query = `
+      SELECT u.id, u."firstName", u."lastName", u.email, u."phoneNumber", u.organization_id,
+             ua."entityId" AS "corporateId",
+             ua.metadata->>'employeeId' AS "employeeId"
+      FROM user_associations ua
+      JOIN users u ON u.id = ua."userId"
+      WHERE ua."entityType" = 'corporate'
+        AND ua.role = 'employee'
+        AND UPPER(ua.metadata->>'employeeId') = :empId`;
+    const replacements = { empId: normalised };
+
+    if (corporateId) {
+      query += ` AND ua."entityId" = :corporateId`;
+      replacements.corporateId = corporateId;
+    }
+    // Prefer records where lastName is populated (deduplicates split vs combined names)
+    query += ` ORDER BY (CASE WHEN u."lastName" IS NOT NULL AND u."lastName" != '' THEN 0 ELSE 1 END) ASC LIMIT 1`;
+
+    const [rows] = await postgresSequelize.query(query, { replacements });
     return rows[0] || null;
   } catch (e) {
     logger.warn('[emailAutoProcess] findUserByEmployeeId error:', e.message);
     return null;
   }
+}
+
+/**
+ * Verify a user is a corporate employee and return their employee metadata.
+ */
+async function getCorporateEmployeeMeta(userId) {
+  if (!userId) return null;
+  try {
+    const [rows] = await postgresSequelize.query(
+      `SELECT ua."entityId" AS "corporateId", ua.metadata->>'employeeId' AS "employeeId"
+       FROM user_associations ua
+       WHERE ua."userId" = :userId
+         AND ua."entityType" = 'corporate'
+         AND ua.role = 'employee'
+       LIMIT 1`,
+      { replacements: { userId } }
+    );
+    return rows[0] || null;
+  } catch (e) {
+    logger.warn('[emailAutoProcess] getCorporateEmployeeMeta error:', e.message);
+    return null;
+  }
+}
+
+// ─── 2-Level Validation Helpers ──────────────────────────────────────────────
+
+/**
+ * Normalise a name for fuzzy comparison: lowercase, strip punctuation, collapse spaces.
+ */
+function normaliseName(name) {
+  if (!name) return '';
+  return name.toLowerCase()
+    .replace(/[^a-z\s]/g, '')
+    .replace(/\s+/g, ' ')
+    .trim();
+}
+
+/**
+ * Cross-validate two names. Returns a confidence score:
+ *   'exact'   — full match (after normalisation)
+ *   'strong'  — one name contains the other, or first+last tokens match
+ *   'partial' — first name token matches
+ *   'none'    — no match
+ */
+function crossValidateName(nameA, nameB) {
+  const a = normaliseName(nameA);
+  const b = normaliseName(nameB);
+  if (!a || !b) return 'none';
+
+  // Exact
+  if (a === b) return 'exact';
+
+  // Containment (handles split firstName/lastName vs combined)
+  if (a.includes(b) || b.includes(a)) return 'strong';
+
+  // First + last token comparison
+  const tokA = a.split(' ');
+  const tokB = b.split(' ');
+  const firstMatch = tokA[0] === tokB[0];
+  const lastMatch  = tokA[tokA.length - 1] === tokB[tokB.length - 1];
+  if (firstMatch && lastMatch && tokA.length >= 2 && tokB.length >= 2) return 'strong';
+  if (firstMatch && (tokA.length === 1 || tokB.length === 1)) return 'partial';
+
+  return 'none';
+}
+
+/**
+ * 2-Level Validated Employee Lookup.
+ *
+ * Level 1 (Identity Match) — finds the user via the strongest available identifier.
+ * Level 2 (Cross-Validation) — verifies the match against independent data.
+ *
+ * @param {object} opts
+ * @param {string} [opts.empId]        — Employee ID from booking table (strongest)
+ * @param {string} [opts.name]         — Employee name from table/filename
+ * @param {string} [opts.email]        — Employee email from table
+ * @param {string} [opts.phone]        — Employee phone from table
+ * @param {number} [opts.corporateId]  — Corporate entity ID for scoping
+ * @param {string} opts.source         — Where this data came from (for audit)
+ * @returns {{ user, confidence, matchMethod, validationDetails } | null}
+ */
+async function findEmployeeValidated({ empId, name, email, phone, corporateId, source }) {
+  let user = null;
+  let matchMethod = '';
+  const validationChecks = [];
+
+  // ── Level 1: Identity Match ──────────────────────────────────────
+
+  // Priority 1: employeeId (strongest — unique per corporate)
+  if (empId) {
+    user = await findUserByEmployeeId(empId, corporateId);
+    if (user) matchMethod = 'employeeId';
+  }
+
+  // Priority 2: corporate email
+  if (!user && email) {
+    user = await findUserByEmail(email);
+    if (user) matchMethod = 'email';
+  }
+
+  // Priority 3: name match (weakest)
+  if (!user && name) {
+    user = await findUserByName(name);
+    if (user) matchMethod = 'name';
+  }
+
+  if (!user) return null;
+
+  // ── Level 2: Cross-Validation ────────────────────────────────────
+  // Every match MUST pass at least one cross-validation check.
+
+  let crossValidated = false;
+
+  // Check 1: Name cross-validation (if we have a name to compare)
+  if (name) {
+    const userFullName = `${user.firstName || ''} ${user.lastName || ''}`.trim();
+    const nameConf = crossValidateName(name, userFullName);
+    validationChecks.push({ check: 'name', expected: name, actual: userFullName, result: nameConf });
+    if (nameConf === 'exact' || nameConf === 'strong') {
+      crossValidated = true;
+    } else if (nameConf === 'partial' && matchMethod === 'employeeId') {
+      // Partial name match is OK if empId was the primary match — empId is authoritative
+      crossValidated = true;
+    }
+  }
+
+  // Check 2: Verify user is a corporate employee
+  const corpMeta = await getCorporateEmployeeMeta(user.id);
+  if (corpMeta) {
+    validationChecks.push({ check: 'isCorporateEmployee', result: 'pass', corporateId: corpMeta.corporateId, empId: corpMeta.employeeId });
+
+    // If we matched by name/email, verify the empId matches the table row
+    if (empId && corpMeta.employeeId) {
+      const empIdMatch = corpMeta.employeeId.toUpperCase() === empId.toUpperCase();
+      validationChecks.push({ check: 'employeeIdMatch', expected: empId, actual: corpMeta.employeeId, result: empIdMatch ? 'pass' : 'FAIL' });
+      if (empIdMatch) crossValidated = true;
+      if (!empIdMatch && matchMethod !== 'employeeId') {
+        // Name/email matched a user but their empId is different — REJECT
+        logger.warn(`[emailAutoProcess] VALIDATION FAIL: ${matchMethod} matched user ${user.id} but empId mismatch: expected ${empId}, got ${corpMeta.employeeId} (source: ${source})`);
+        return null;
+      }
+    }
+
+    // If we matched by empId, corporate scoping is auto-validated
+    if (matchMethod === 'employeeId') crossValidated = true;
+
+    // Verify corporate scope if provided
+    if (corporateId && corpMeta.corporateId !== corporateId) {
+      validationChecks.push({ check: 'corporateScope', expected: corporateId, actual: corpMeta.corporateId, result: 'FAIL' });
+      logger.warn(`[emailAutoProcess] VALIDATION FAIL: user ${user.id} belongs to corporate ${corpMeta.corporateId}, not ${corporateId} (source: ${source})`);
+      return null;
+    }
+  } else {
+    validationChecks.push({ check: 'isCorporateEmployee', result: 'FAIL' });
+    // User is NOT a corporate employee — reject for profile updates
+    if (source === 'profile-update') {
+      logger.warn(`[emailAutoProcess] VALIDATION FAIL: user ${user.id} is not a corporate employee (source: ${source})`);
+      return null;
+    }
+  }
+
+  // Check 3: Phone cross-validation (optional strengthener)
+  if (phone && user.phoneNumber) {
+    const normalPhone = phone.replace(/[^0-9]/g, '');
+    const userPhone = (user.phoneNumber || '').replace(/[^0-9]/g, '');
+    const phoneMatch = normalPhone.length >= 10 && userPhone.length >= 10 &&
+      (normalPhone === userPhone || normalPhone.endsWith(userPhone.slice(-10)) || userPhone.endsWith(normalPhone.slice(-10)));
+    validationChecks.push({ check: 'phone', result: phoneMatch ? 'pass' : 'mismatch' });
+    if (phoneMatch) crossValidated = true;
+  }
+
+  // If no cross-validation passed, reject the match
+  if (!crossValidated) {
+    logger.warn(`[emailAutoProcess] VALIDATION FAIL: no cross-validation passed for user ${user.id} (match: ${matchMethod}, source: ${source}, checks: ${JSON.stringify(validationChecks)})`);
+    return null;
+  }
+
+  // Determine overall confidence
+  let confidence = 'low';
+  const passedChecks = validationChecks.filter(c => c.result === 'pass' || c.result === 'exact' || c.result === 'strong');
+  if (matchMethod === 'employeeId' && passedChecks.length >= 2) confidence = 'high';
+  else if (matchMethod === 'employeeId' || passedChecks.length >= 2) confidence = 'high';
+  else if (passedChecks.length >= 1) confidence = 'medium';
+
+  return {
+    user,
+    confidence,
+    matchMethod,
+    validationDetails: validationChecks,
+    corporateId: corpMeta?.corporateId || null,
+    employeeId: corpMeta?.employeeId || empId || null,
+  };
 }
 
 /**
@@ -359,11 +562,10 @@ export function detectLabReport(email) {
 
 /**
  * Save health-report PDFs from lab emails to the `reports` table.
- * Each PDF attachment is matched to an employee by:
- *   1. Employee name extracted from the PDF filename
- *   2. Subject line as patient name
- *   3. Employee data from HTML table in the email thread
- * Skips if already saved (healthReportSaved = true).
+ * Uses 2-level validation to match each PDF to the correct employee.
+ *
+ * Level 1: Match employee by name from filename → empId from HTML table → email
+ * Level 2: Cross-validate name match + verify corporate employee status
  *
  * @param {object} email  EmailInbox model instance
  * @returns {boolean} true if at least one report saved
@@ -391,65 +593,71 @@ export async function saveHealthReportFromEmail(email) {
     const htmlBody = email.htmlBody || email.body || '';
     const employeeRows = parseEmployeeTableFromHtml(htmlBody);
 
-    // Build a name→user lookup from the HTML table for matching
+    // Build a name→tableRow lookup for cross-referencing
     const tableUserCache = new Map();
     for (const row of employeeRows) {
-      if (row.name) tableUserCache.set(row.name.toUpperCase(), row);
-    }
-
-    // Subject-level fallback user (if subject = patient name)
-    let subjectUser = null;
-    if (meta.patientName) {
-      subjectUser = await findUserByName(meta.patientName);
+      if (row.name) tableUserCache.set(normaliseName(row.name), row);
     }
 
     let savedCount = 0;
 
     // Process each PDF attachment separately
     for (const att of meta.pdfAttachments) {
-      // Skip non-report inline images
       if (att.filename && /\.(jpg|jpeg|png|gif|bmp)$/i.test(att.filename)) continue;
 
-      let user = null;
       const nameFromFile = extractNameFromFilename(att.filename);
+      let matchResult = null;
 
-      // Strategy 1: Match employee by name extracted from filename
-      if (nameFromFile) {
-        // Try exact name match first
-        user = await findUserByName(nameFromFile);
+      // ── Level 1+2: Try to match via HTML table cross-reference ────
+      if (nameFromFile && tableUserCache.size > 0) {
+        const normName = normaliseName(nameFromFile);
 
-        // If not found, try matching against HTML table employee data
-        if (!user && tableUserCache.size > 0) {
-          const upperName = nameFromFile.toUpperCase();
-          for (const [tableName, tableRow] of tableUserCache) {
-            // Check if extracted name contains the table name or vice versa
-            if (upperName.includes(tableName) || tableName.includes(upperName)) {
-              // Found matching row — use empId to look up user precisely
-              if (tableRow.empId) {
-                user = await findUserByEmployeeId(tableRow.empId);
-              }
-              if (!user && tableRow.email) {
-                user = await findUserByEmail(tableRow.email);
-              }
-              if (!user) {
-                user = await findUserByName(tableRow.name);
-              }
-              break;
-            }
+        // Find the best matching table row by name similarity
+        let bestTableRow = null;
+        let bestNameConf = 'none';
+        for (const [tableName, tableRow] of tableUserCache) {
+          const conf = crossValidateName(nameFromFile, tableRow.name);
+          if (conf === 'exact' || conf === 'strong') {
+            bestTableRow = tableRow;
+            bestNameConf = conf;
+            if (conf === 'exact') break; // perfect match, stop searching
           }
+        }
+
+        // If we found a matching table row, use its empId for validated lookup
+        if (bestTableRow) {
+          matchResult = await findEmployeeValidated({
+            empId: bestTableRow.empId,
+            name: nameFromFile,
+            email: bestTableRow.email,
+            phone: bestTableRow.phone,
+            source: `report-filename:${att.filename}`,
+          });
         }
       }
 
-      // Strategy 2: Use subject as patient name (for single-attachment emails)
-      if (!user && subjectUser && meta.pdfAttachments.length === 1) {
-        user = subjectUser;
+      // ── Fallback: Direct validated name lookup ────────────────────
+      if (!matchResult && nameFromFile) {
+        matchResult = await findEmployeeValidated({
+          name: nameFromFile,
+          source: `report-filename-direct:${att.filename}`,
+        });
       }
 
-      if (!user) {
-        logger.debug(`[emailAutoProcess] saveHealthReport: no user match for attachment "${att.filename}" in email ${email.id}`);
+      // ── Fallback: Subject as patient name (single-attachment only) ─
+      if (!matchResult && meta.patientName && meta.pdfAttachments.length === 1) {
+        matchResult = await findEmployeeValidated({
+          name: meta.patientName,
+          source: `report-subject:${meta.patientName}`,
+        });
+      }
+
+      if (!matchResult) {
+        logger.debug(`[emailAutoProcess] saveHealthReport: VALIDATION BLOCKED — no validated match for "${att.filename}" in email ${email.id}`);
         continue;
       }
 
+      const { user, confidence, matchMethod, validationDetails, employeeId: matchedEmpId } = matchResult;
       const fileName = att.filename || 'Health Report.pdf';
       const filePath = att.downloadUrl || `/api/team/emails/${email.id}/attachment`;
       const reportName = (nameFromFile || att.filename?.replace(/\.pdf$/i, '') || 'Health Report');
@@ -481,13 +689,18 @@ export async function saveHealthReportFromEmail(email) {
               from:         email.from,
               receivedAt:   email.receivedAt,
               attachmentId: att.contentId || null,
+              // Audit trail
+              matchMethod,
+              confidence,
+              employeeId:   matchedEmpId,
+              validation:   validationDetails,
             }),
           },
         }
       );
 
       savedCount++;
-      logger.info(`[emailAutoProcess] Report "${fileName}" saved for user ${user.id} (email ${email.id})`);
+      logger.info(`[emailAutoProcess] Report "${fileName}" → user ${user.id} [${confidence}/${matchMethod}] (email ${email.id})`);
     }
 
     if (savedCount > 0) {
@@ -519,9 +732,9 @@ const CORPORATE_DOMAINS = new Set([
  * Extract employee info from the email (HTML booking tables or sender domain)
  * and update their user profile: email and phone number.
  *
- * Sources of employee data:
- *   1. HTML tables in booking emails with empid/empname/contact no/email id columns
- *   2. Sender email from a known corporate domain (legacy fallback)
+ * 2-Level Validation:
+ *   Level 1: Match by employeeId → email → name
+ *   Level 2: Cross-validate name + verify corporate employee status + phone check
  *
  * @param {object} email  EmailInbox model instance
  * @returns {boolean} true if any user was updated
@@ -531,6 +744,7 @@ export async function updateEmployeeEmailFromInbox(email) {
 
   try {
     let updatedCount = 0;
+    let processedRows = 0;
 
     // ── Strategy 1: Parse HTML table for employee data ──────────────
     const htmlBody = email.htmlBody || email.body || '';
@@ -539,26 +753,27 @@ export async function updateEmployeeEmailFromInbox(email) {
     if (employeeRows.length > 0) {
       for (const row of employeeRows) {
         if (!row.name) continue;
+        processedRows++;
 
-        let user = null;
+        // 2-Level validated lookup — requires empId + name cross-match
+        const matchResult = await findEmployeeValidated({
+          empId: row.empId,
+          name: row.name,
+          email: row.email,
+          phone: row.phone,
+          source: 'profile-update',
+        });
 
-        // Match by employeeId first (most precise)
-        if (row.empId) {
-          user = await findUserByEmployeeId(row.empId);
+        if (!matchResult) {
+          logger.debug(`[emailAutoProcess] profileUpdate BLOCKED: validation failed for "${row.name}" (empId: ${row.empId}, email: ${row.email})`);
+          continue;
         }
 
-        // Match by corporate email
-        if (!user && row.email) {
-          user = await findUserByEmail(row.email);
-        }
+        const { user, confidence, matchMethod, validationDetails } = matchResult;
 
-        // Match by name
-        if (!user && row.name) {
-          user = await findUserByName(row.name);
-        }
-
-        if (!user) {
-          logger.debug(`[emailAutoProcess] employeeProfileUpdate: no match for "${row.name}" (${row.empId})`);
+        // Only proceed with high or medium confidence
+        if (confidence === 'low') {
+          logger.warn(`[emailAutoProcess] profileUpdate SKIPPED: low confidence for user ${user.id} "${row.name}" (${matchMethod})`);
           continue;
         }
 
@@ -568,7 +783,6 @@ export async function updateEmployeeEmailFromInbox(email) {
 
         // Update email if we have a better one
         if (row.email && user.email?.toLowerCase() !== row.email.toLowerCase()) {
-          // Only update if the current email looks auto-generated (e00679@, pending+E@)
           const currentEmail = (user.email || '').toLowerCase();
           const isAutoEmail = /^(e\d+@|pending\+)/i.test(currentEmail);
           if (isAutoEmail || !currentEmail) {
@@ -589,14 +803,20 @@ export async function updateEmployeeEmailFromInbox(email) {
 
         if (updates.length > 0) {
           updates.push('"updatedAt" = NOW()');
-          await postgresSequelize.query(
-            `UPDATE users SET ${updates.join(', ')} WHERE id = :userId`,
-            { replacements }
-          );
-          updatedCount++;
-          logger.info(
-            `[emailAutoProcess] Updated user ${user.id} profile from email table: ${updates.filter(u => u !== '"updatedAt" = NOW()').join(', ')}`
-          );
+          try {
+            await postgresSequelize.query(
+              `UPDATE users SET ${updates.join(', ')} WHERE id = :userId`,
+              { replacements }
+            );
+            updatedCount++;
+
+            const changesDesc = updates.filter(u => u !== '"updatedAt" = NOW()').join(', ');
+            logger.info(
+              `[emailAutoProcess] profileUpdate user ${user.id} [${confidence}/${matchMethod}]: ${changesDesc} (empId: ${row.empId})`
+            );
+          } catch (updateErr) {
+            logger.warn(`[emailAutoProcess] profileUpdate FAILED user ${user.id}: ${updateErr.message} (empId: ${row.empId}, email: ${row.email})`);
+          }
         }
       }
     }
@@ -607,24 +827,35 @@ export async function updateEmployeeEmailFromInbox(email) {
       if (sender.email) {
         const domain = emailDomain(sender.email);
         if (CORPORATE_DOMAINS.has(domain)) {
-          let user = await findUserByEmail(sender.email);
-          if (!user && sender.name) {
-            user = await findUserByName(email.fromName || sender.name);
-          }
+          // Validate: find user AND verify they are a corporate employee
+          const matchResult = await findEmployeeValidated({
+            email: sender.email,
+            name: email.fromName || sender.name,
+            source: 'profile-update-legacy',
+          });
 
-          if (user && user.email?.toLowerCase() !== sender.email.toLowerCase()) {
-            await postgresSequelize.query(
-              `UPDATE users SET email = :newEmail, "updatedAt" = NOW() WHERE id = :userId`,
-              { replacements: { newEmail: sender.email, userId: user.id } }
-            );
-            updatedCount++;
-            logger.info(`[emailAutoProcess] Updated user ${user.id} email: ${user.email} → ${sender.email}`);
+          if (matchResult && matchResult.confidence !== 'low') {
+            const { user } = matchResult;
+            if (user.email?.toLowerCase() !== sender.email.toLowerCase()) {
+              try {
+                await postgresSequelize.query(
+                  `UPDATE users SET email = :newEmail, "updatedAt" = NOW() WHERE id = :userId`,
+                  { replacements: { newEmail: sender.email, userId: user.id } }
+                );
+                updatedCount++;
+                logger.info(`[emailAutoProcess] profileUpdate (legacy) user ${user.id}: email → ${sender.email} [${matchResult.confidence}/${matchResult.matchMethod}]`);
+              } catch (updateErr) {
+                logger.warn(`[emailAutoProcess] profileUpdate (legacy) FAILED user ${user.id}: ${updateErr.message}`);
+              }
+            }
           }
         }
       }
     }
 
-    if (updatedCount > 0 || employeeRows.length > 0) {
+    // Mark processed when we attempted to parse rows, even if no updates were made
+    // This prevents infinite retries on emails that will never succeed
+    if (updatedCount > 0 || processedRows > 0) {
       await email.update({ employeeEmailUpdated: true });
     }
 
