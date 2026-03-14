@@ -238,7 +238,8 @@ const USER_TYPE_PERMISSIONS = {
       '/api/consultation-recordings',  // Admin access to consultation recordings
       '/api/v3/ai-brain',  // AI Brain intelligence layer
       '/api/v3/ai-intelligence',  // Drug interactions, triage, risk scores, insights
-      '/api/v3/ai-analytics'  // AI analytics dashboard (admin only)
+      '/api/v3/ai-analytics',  // AI analytics dashboard (admin only)
+      '/api/ehr'  // Electronic Health Records
     ],
     tokenField: 'adminId'
   },
@@ -263,7 +264,8 @@ const USER_TYPE_PERMISSIONS = {
       '/api/tickets',  // Team members can view and manage support tickets
       '/api/whatsapp-production',  // Team access to WhatsApp conversations
       '/api/whatsapp',  // Team access to WhatsApp templates & messaging
-      '/api/sib-chatbots'  // Team access to SIB AI chatbots
+      '/api/sib-chatbots',  // Team access to SIB AI chatbots
+      '/api/ehr'  // Electronic Health Records
     ],
     tokenField: 'teamId'
   },
