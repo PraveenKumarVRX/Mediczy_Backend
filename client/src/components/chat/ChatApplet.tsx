@@ -27,6 +27,7 @@ import {
 } from 'lucide-react';
 import { toast } from 'sonner';
 import api from '@/utils/api';
+import { MalwareWarningDialog, parseMalwareError } from '@/components/MalwareWarningDialog';
 
 interface Message {
   id: string;
@@ -104,6 +105,7 @@ const ChatAppletContent = () => {
   const [teamMembers, setTeamMembers] = useState<TeamMember[]>([]);
   const [uploading, setUploading] = useState(false);
   const [selectedMember, setSelectedMember] = useState<TeamMember | null>(null);
+  const [malwareWarning, setMalwareWarning] = useState<{ open: boolean; threat?: string; fileName?: string }>({ open: false });
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
   
@@ -339,7 +341,12 @@ const ChatAppletContent = () => {
       }
     } catch (error) {
       console.error('Error uploading file:', error);
-      toast.error('Failed to upload file');
+      const malware = parseMalwareError(error);
+      if (malware.isMalware) {
+        setMalwareWarning({ open: true, threat: malware.threat, fileName: file.name });
+      } else {
+        toast.error('Failed to upload file');
+      }
     } finally {
       setUploading(false);
       if (fileInputRef.current) {
@@ -819,6 +826,12 @@ const ChatAppletContent = () => {
           )}
         </Card>
       )}
+      <MalwareWarningDialog
+        open={malwareWarning.open}
+        onClose={() => setMalwareWarning({ open: false })}
+        threat={malwareWarning.threat}
+        fileName={malwareWarning.fileName}
+      />
     </div>
   );
 };

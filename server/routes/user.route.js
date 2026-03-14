@@ -1155,9 +1155,13 @@ router.post("/profile-picture", authUser, async (req, res) => {
     });
   } catch (error) {
     if (error.code === 'MALWARE_DETECTED') {
+      const detail = error.avResult?.detail || '';
+      const threat = detail.replace(/^.*:\s*/, '').replace(/\s*FOUND\s*$/, '').trim() || 'Unknown threat';
       return res.status(400).json({
         success: false,
-        message: "File rejected: malware detected"
+        code: 'MALWARE_DETECTED',
+        message: 'File rejected: malware detected in uploaded file',
+        threat
       });
     }
     console.error('Profile picture upload error:', error);

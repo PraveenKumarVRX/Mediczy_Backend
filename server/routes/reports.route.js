@@ -147,9 +147,13 @@ router.post('/', authUser, upload.single('file'), async (req, res) => {
 
     // Return specific message for malware detection
     if (error.code === 'MALWARE_DETECTED') {
+      const detail = error.avResult?.detail || '';
+      const threat = detail.replace(/^.*:\s*/, '').replace(/\s*FOUND\s*$/, '').trim() || 'Unknown threat';
       return res.status(400).json({
         success: false,
-        message: 'File rejected: malware detected in uploaded file'
+        code: 'MALWARE_DETECTED',
+        message: 'File rejected: malware detected in uploaded file',
+        threat
       });
     }
 

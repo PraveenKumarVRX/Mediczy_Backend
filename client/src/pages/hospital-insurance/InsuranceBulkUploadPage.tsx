@@ -6,10 +6,12 @@ import { Button } from '@/components/ui/button';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { useToast } from '@/hooks/use-toast';
 import api from '@/utils/api';
+import { MalwareWarningDialog, parseMalwareError } from '@/components/MalwareWarningDialog';
 import { Upload, Download, FileText, CheckCircle2, AlertTriangle, Loader2 } from 'lucide-react';
 
 const InsuranceBulkUploadPage = () => {
   const { toast } = useToast();
+  const [malwareWarning, setMalwareWarning] = useState<{ open: boolean; threat?: string; fileName?: string }>({ open: false });
   const fileRef = useRef<HTMLInputElement>(null);
   const [uploadType, setUploadType] = useState('claims');
   const [file, setFile] = useState<File | null>(null);
@@ -60,7 +62,12 @@ const InsuranceBulkUploadPage = () => {
         toast({ title: 'Upload Complete', description: `${data.successful || 0} of ${data.totalProcessed || 0} records processed.` });
       }
     } catch (err: any) {
-      toast({ title: 'Upload Failed', description: err?.response?.data?.message || 'Failed to upload file', variant: 'destructive' });
+      const malware = parseMalwareError(err);
+      if (malware.isMalware) {
+        setMalwareWarning({ open: true, threat: malware.threat, fileName: file?.name });
+      } else {
+        toast({ title: 'Upload Failed', description: err?.response?.data?.message || 'Failed to upload file', variant: 'destructive' });
+      }
     } finally {
       setUploading(false);
     }
@@ -71,6 +78,7 @@ const InsuranceBulkUploadPage = () => {
   };
 
   return (
+    <>
     <InsurancePortalLayout title="Bulk Upload" subtitle="Upload bulk data via CSV/Excel templates">
       <div className="space-y-4">
         <div className="grid grid-cols-3 gap-4">
@@ -202,6 +210,13 @@ const InsuranceBulkUploadPage = () => {
         </div>
       </div>
     </InsurancePortalLayout>
+    <MalwareWarningDialog
+      open={malwareWarning.open}
+      onClose={() => setMalwareWarning({ open: false })}
+      threat={malwareWarning.threat}
+      fileName={malwareWarning.fileName}
+    />
+    </>
   );
 };
 

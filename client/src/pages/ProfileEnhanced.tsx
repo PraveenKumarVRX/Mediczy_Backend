@@ -14,6 +14,7 @@ import { useAuth } from "@/auth/AuthProvider";
 import MainLayout from "@/components/layout/MainLayout";
 import { Camera, Plus, Edit, Trash2, Users } from "lucide-react";
 import api from "@/utils/api";
+import { MalwareWarningDialog, parseMalwareError } from '@/components/MalwareWarningDialog';
 import { useQueryClient } from "@tanstack/react-query";
 import { FamilyMemberDialog } from "@/components/profile/FamilyMemberDialog";
 import {
@@ -45,6 +46,7 @@ const ProfileEnhanced = () => {
   
   const [profileImage, setProfileImage] = useState<string | null>(null);
   const [uploadingImage, setUploadingImage] = useState(false);
+  const [malwareWarning, setMalwareWarning] = useState<{ open: boolean; threat?: string; fileName?: string }>({ open: false });
   const [profileData, setProfileData] = useState({
     firstName: "",
     lastName: "",
@@ -132,11 +134,16 @@ const ProfileEnhanced = () => {
         description: "Profile picture updated successfully",
       });
     } catch (error: any) {
-      toast({
-        title: "Upload failed",
-        description: error.response?.data?.message || "Failed to upload profile picture",
-        variant: "destructive",
-      });
+      const malware = parseMalwareError(error);
+      if (malware.isMalware) {
+        setMalwareWarning({ open: true, threat: malware.threat, fileName: file.name });
+      } else {
+        toast({
+          title: "Upload failed",
+          description: error.response?.data?.message || "Failed to upload profile picture",
+          variant: "destructive",
+        });
+      }
     } finally {
       setUploadingImage(false);
     }
@@ -467,6 +474,12 @@ const ProfileEnhanced = () => {
         onOpenChange={setFamilyDialogOpen}
         member={editingMember}
         onSuccess={handleDialogSuccess}
+      />
+      <MalwareWarningDialog
+        open={malwareWarning.open}
+        onClose={() => setMalwareWarning({ open: false })}
+        threat={malwareWarning.threat}
+        fileName={malwareWarning.fileName}
       />
     </>
   );

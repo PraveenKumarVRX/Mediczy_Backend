@@ -250,7 +250,13 @@ router.post('/documents', requireAuth, upload.single('file'), async (req, res) =
       const avResult = await scanOnly(file.path);
       if (!avResult.clean) {
         await fs.unlink(file.path).catch(() => {});
-        return res.status(400).json({ error: 'File rejected: malware detected' });
+        const threat = (avResult.detail || '').replace(/^.*:\s*/, '').replace(/\s*FOUND\s*$/, '').trim() || 'Unknown threat';
+        return res.status(400).json({
+          success: false,
+          code: 'MALWARE_DETECTED',
+          message: 'File rejected: malware detected in uploaded file',
+          threat
+        });
       }
 
       fileType = path.extname(file.originalname).replace('.', '') || 'txt';

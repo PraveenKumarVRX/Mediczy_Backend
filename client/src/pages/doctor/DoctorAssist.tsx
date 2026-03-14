@@ -101,6 +101,7 @@ import {
 import { useToast } from "@/hooks/use-toast";
 import { cn } from "@/lib/utils";
 import api from "@/utils/api";
+import { MalwareWarningDialog, parseMalwareError } from '@/components/MalwareWarningDialog';
 
 // ==========================================
 // TYPE DEFINITIONS
@@ -1211,6 +1212,7 @@ const DoctorAssist = () => {
   const [isHealthLoading, setIsHealthLoading] = useState(false);
   const [showKnowledgeUpload, setShowKnowledgeUpload] = useState(false);
   const [isUploading, setIsUploading] = useState(false);
+  const [malwareWarning, setMalwareWarning] = useState<{ open: boolean; threat?: string; fileName?: string }>({ open: false });
   
   // Refs
   const inputRef = useRef<HTMLTextAreaElement>(null);
@@ -1268,11 +1270,16 @@ const DoctorAssist = () => {
       setKnowledgeStats(stats);
       setShowKnowledgeUpload(false);
     } catch (error: any) {
-      toast({
-        title: "Upload Failed",
-        description: error?.response?.data?.error || "Failed to process PDF",
-        variant: "destructive"
-      });
+      const malware = parseMalwareError(error);
+      if (malware.isMalware) {
+        setMalwareWarning({ open: true, threat: malware.threat, fileName: file.name });
+      } else {
+        toast({
+          title: "Upload Failed",
+          description: error?.response?.data?.error || "Failed to process PDF",
+          variant: "destructive"
+        });
+      }
     } finally {
       setIsUploading(false);
     }
@@ -1357,6 +1364,7 @@ const DoctorAssist = () => {
     : null;
   
   return (
+    <>
     <MainLayout>
       <div className="space-y-6">
         {/* Header */}
@@ -1959,6 +1967,13 @@ const DoctorAssist = () => {
         </Card>
       </div>
     </MainLayout>
+    <MalwareWarningDialog
+      open={malwareWarning.open}
+      onClose={() => setMalwareWarning({ open: false })}
+      threat={malwareWarning.threat}
+      fileName={malwareWarning.fileName}
+    />
+    </>
   );
 };
 

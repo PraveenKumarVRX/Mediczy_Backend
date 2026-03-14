@@ -8,6 +8,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import api from '@/utils/api';
 import { useToast } from '@/hooks/use-toast';
+import { MalwareWarningDialog, parseMalwareError } from '@/components/MalwareWarningDialog';
 import {
   Receipt, Download, Upload, CreditCard, Clock,
   TrendingUp, RefreshCw, FileText, Filter, CalendarDays
@@ -15,6 +16,7 @@ import {
 
 const InsuranceReconciliationPage = () => {
   const { toast } = useToast();
+  const [malwareWarning, setMalwareWarning] = useState<{ open: boolean; threat?: string; fileName?: string }>({ open: false });
   const [activeTab, setActiveTab] = useState('reconciliation');
   const [loading, setLoading] = useState(false);
   const [reconciliationData, setReconciliationData] = useState<any[]>([]);
@@ -58,8 +60,13 @@ const InsuranceReconciliationPage = () => {
       headers: { 'Content-Type': 'multipart/form-data' }
     }).then(({ data }) => {
       if (data.success) toast({ title: 'Upload Success', description: 'Reconciliation file uploaded.' });
-    }).catch(() => {
-      toast({ title: 'Upload Failed', description: 'Failed to upload file', variant: 'destructive' });
+    }).catch((err: any) => {
+      const malware = parseMalwareError(err);
+      if (malware.isMalware) {
+        setMalwareWarning({ open: true, threat: malware.threat, fileName: file?.name });
+      } else {
+        toast({ title: 'Upload Failed', description: 'Failed to upload file', variant: 'destructive' });
+      }
     });
   };
 
@@ -73,6 +80,7 @@ const InsuranceReconciliationPage = () => {
   };
 
   return (
+    <>
     <InsurancePortalLayout title="Reconciliation" subtitle="Claims reconciliation, TAT & settlement">
       <div className="space-y-4">
         <Tabs value={activeTab} onValueChange={setActiveTab}>
@@ -315,6 +323,13 @@ const InsuranceReconciliationPage = () => {
         </Tabs>
       </div>
     </InsurancePortalLayout>
+    <MalwareWarningDialog
+      open={malwareWarning.open}
+      onClose={() => setMalwareWarning({ open: false })}
+      threat={malwareWarning.threat}
+      fileName={malwareWarning.fileName}
+    />
+    </>
   );
 };
 

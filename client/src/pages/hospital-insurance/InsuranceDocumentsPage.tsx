@@ -9,6 +9,7 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from '
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import api from '@/utils/api';
 import { useToast } from '@/hooks/use-toast';
+import { MalwareWarningDialog, parseMalwareError } from '@/components/MalwareWarningDialog';
 import {
   Upload, Download, FileText, CheckCircle2, Trash2,
   File, FilePlus, X
@@ -34,6 +35,7 @@ const ACCREDITATION_TYPES = [
 
 const InsuranceDocumentsPage = () => {
   const { toast } = useToast();
+  const [malwareWarning, setMalwareWarning] = useState<{ open: boolean; threat?: string; fileName?: string }>({ open: false });
   const [activeTab, setActiveTab] = useState('missing');
   const [missingDocs, setMissingDocs] = useState<any[]>([]);
   const [uploadedDocs, setUploadedDocs] = useState<any[]>([]);
@@ -91,7 +93,12 @@ const InsuranceDocumentsPage = () => {
         fetchDocuments();
       }
     } catch (err: any) {
-      toast({ title: 'Upload Failed', description: err?.response?.data?.message || 'Upload error', variant: 'destructive' });
+      const malware = parseMalwareError(err);
+      if (malware.isMalware) {
+        setMalwareWarning({ open: true, threat: malware.threat });
+      } else {
+        toast({ title: 'Upload Failed', description: err?.response?.data?.message || 'Upload error', variant: 'destructive' });
+      }
     }
   };
 
@@ -108,12 +115,18 @@ const InsuranceDocumentsPage = () => {
         setAccreditationDocs(prev => ({ ...prev, [key]: { uploaded: true, fileName: file.name } }));
         toast({ title: 'Uploaded', description: `${key.toUpperCase()} certificate uploaded.` });
       }
-    } catch {
-      toast({ title: 'Failed', description: `Failed to upload ${key} certificate`, variant: 'destructive' });
+    } catch (err: any) {
+      const malware = parseMalwareError(err);
+      if (malware.isMalware) {
+        setMalwareWarning({ open: true, threat: malware.threat, fileName: file.name });
+      } else {
+        toast({ title: 'Failed', description: `Failed to upload ${key} certificate`, variant: 'destructive' });
+      }
     }
   };
 
   return (
+    <>
     <InsurancePortalLayout title="Document Center" subtitle="Manage claim documents & accreditations">
       <div className="space-y-4">
         <div className="flex items-center justify-between">
@@ -321,6 +334,13 @@ const InsuranceDocumentsPage = () => {
         </Dialog>
       </div>
     </InsurancePortalLayout>
+    <MalwareWarningDialog
+      open={malwareWarning.open}
+      onClose={() => setMalwareWarning({ open: false })}
+      threat={malwareWarning.threat}
+      fileName={malwareWarning.fileName}
+    />
+    </>
   );
 };
 

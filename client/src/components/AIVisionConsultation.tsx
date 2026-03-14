@@ -3,6 +3,7 @@
 import React, { useRef, useState, useCallback } from 'react';
 import { Button } from '@/components/ui/button';
 import { useToast } from '@/components/ui/use-toast';
+import { MalwareWarningDialog } from '@/components/MalwareWarningDialog';
 
 interface DrugSuggestion {
   name: string;
@@ -47,6 +48,7 @@ export const AIVisionConsultation: React.FC<AIVisionConsultationProps> = ({
   const [isAnalyzing, setIsAnalyzing] = useState(false);
   const [analysisResult, setAnalysisResult] = useState<VisionAnalysis | null>(null);
   const [lastImageData, setLastImageData] = useState<string | null>(null);
+  const [malwareWarning, setMalwareWarning] = useState<{ open: boolean; threat?: string; fileName?: string }>({ open: false });
 
   const { toast } = useToast();
 
@@ -155,6 +157,10 @@ export const AIVisionConsultation: React.FC<AIVisionConsultationProps> = ({
 
         if (!response.ok) {
           const errorData = await response.json().catch(() => ({}));
+          if (errorData.code === 'MALWARE_DETECTED' || (errorData.message && errorData.message.toLowerCase().includes('malware detected'))) {
+            setMalwareWarning({ open: true, threat: errorData.threat, fileName: imageFile instanceof File ? imageFile.name : undefined });
+            return;
+          }
           throw new Error(
             errorData.error || errorData.message || 'Vision analysis failed'
           );
@@ -199,6 +205,7 @@ export const AIVisionConsultation: React.FC<AIVisionConsultationProps> = ({
   }, [analysisResult, onAnalysisComplete, toast]);
 
   return (
+    <>
     <div className="space-y-4 p-4 bg-gradient-to-br from-purple-50 to-blue-50 rounded-lg border-2 border-purple-200 shadow-sm">
       {/* Header */}
       <div className="flex items-center justify-between">
@@ -348,6 +355,13 @@ export const AIVisionConsultation: React.FC<AIVisionConsultationProps> = ({
         </ul>
       </div>
     </div>
+    <MalwareWarningDialog
+      open={malwareWarning.open}
+      onClose={() => setMalwareWarning({ open: false })}
+      threat={malwareWarning.threat}
+      fileName={malwareWarning.fileName}
+    />
+    </>
   );
 };
 
