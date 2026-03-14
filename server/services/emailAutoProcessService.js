@@ -27,6 +27,9 @@ const LAB_DOMAINS = new Set([
 const REPORT_SUBJECT_RE = /\b(health\s*report|lab\s*report|mhc|master\s*health|test\s*result|diagnostic\s*report|blood\s*report|checkup\s*report|medical\s*report|jitul|health\s*check)\b/i;
 const REPORT_FILE_RE    = /^(Rpt_|Report|HReport|Lab|Result|MHC|health|Diag)/i;
 
+/** Suffixes stripped from lab report PDF filenames to extract employee name */
+const LAB_FILENAME_NOISE_RE = /\s*(MAYDEN|MER|ECG|USG|REPORT|REPORTS|BLOOD\s*REPORTS?|AND\s+ECG|LAB|MEDICAL\s*FITNESS)\s*/gi;
+
 /** Map aiEmailProcessor intent → ticket category */
 const INTENT_TO_CATEGORY = {
   appointment_request:    'health-checkup',
@@ -138,6 +141,120 @@ async function findUserByName(fullName) {
   }
 }
 
+/**
+ * Look up a user by corporate employeeId (e.g. "E113901") via user_associations.
+ */
+async function findUserByEmployeeId(empId) {
+  if (!empId) return null;
+  const normalised = empId.trim().toUpperCase();
+  try {
+    const [rows] = await postgresSequelize.query(
+      `SELECT u.id, u."firstName", u."lastName", u.email, u."phoneNumber", u.organization_id
+       FROM user_associations ua
+       JOIN users u ON u.id = ua."userId"
+       WHERE ua."entityType" = 'corporate'
+         AND ua.role = 'employee'
+         AND UPPER(ua.metadata->>'employeeId') = :empId
+       LIMIT 1`,
+      { replacements: { empId: normalised } }
+    );
+    return rows[0] || null;
+  } catch (e) {
+    logger.warn('[emailAutoProcess] findUserByEmployeeId error:', e.message);
+    return null;
+  }
+}
+
+/**
+ * Extract employee name from a lab-report PDF filename.
+ * Strips common suffixes: MAYDEN, MER, ECG, REPORT, etc.
+ * Returns cleaned name or null.
+ *
+ * Examples:
+ *   "UMA KANNAN MAYDEN MER.pdf"  → "UMA KANNAN"
+ *   "SHANKAR MAYDEN.pdf"         → "SHANKAR"
+ *   "GAURAV SINGH BHADOURIA.pdf" → "GAURAV SINGH BHADOURIA"
+ *   "Rpt_2602202619240952.PDF"   → null (no extractable name)
+ */
+function extractNameFromFilename(filename) {
+  if (!filename) return null;
+  let name = filename.replace(/\.pdf$/i, '').trim();
+  // Skip filenames that are just report codes (Rpt_xxxx, 0278ZB001633_...)
+  if (/^(Rpt_|[0-9])/i.test(name)) return null;
+  // Strip leading "MR." / "MR " / "MRS." / "MS."
+  name = name.replace(/^(MR\.?\s*|MRS\.?\s*|MS\.?\s*)/i, '');
+  // Strip lab-related suffixes
+  name = name.replace(LAB_FILENAME_NOISE_RE, ' ').trim();
+  // Clean up  multiple spaces
+  name = name.replace(/\s+/g, ' ').trim();
+  // Need at least 2 characters of a real name
+  if (name.length < 2) return null;
+  // Must contain letters
+  if (!/[A-Za-z]/.test(name)) return null;
+  return name;
+}
+
+/**
+ * Parse HTML tables from email bodies that contain employee data columns.
+ * Looks for tables with headers: empid, empname, contact no, email id
+ *
+ * Returns array of { empId, name, phone, email } objects.
+ */
+function parseEmployeeTableFromHtml(html) {
+  if (!html) return [];
+  const results = [];
+
+  // Simple HTML table parser — extract all <tr> rows
+  const tableMatch = html.match(/<table[^>]*>[\s\S]*?<\/table>/gi);
+  if (!tableMatch) return [];
+
+  for (const tableHtml of tableMatch) {
+    const rows = tableHtml.match(/<tr[^>]*>[\s\S]*?<\/tr>/gi);
+    if (!rows || rows.length < 2) continue;
+
+    // Parse header row to find column indices
+    const headerCells = (rows[0].match(/<t[dh][^>]*>[\s\S]*?<\/t[dh]>/gi) || [])
+      .map(cell => {
+        let text = cell.replace(/<[^>]+>/g, '').replace(/&nbsp;/gi, ' ').trim().toLowerCase();
+        // normalise: "contact no" → "contact no", "email id" → "email id"
+        return text;
+      });
+
+    const idxEmpId   = headerCells.findIndex(h => /emp\s*id/i.test(h));
+    const idxEmpName = headerCells.findIndex(h => /emp\s*name/i.test(h));
+    const idxPhone   = headerCells.findIndex(h => /contact/i.test(h));
+    const idxEmail   = headerCells.findIndex(h => /email/i.test(h));
+
+    // Must have at least name column to be useful
+    if (idxEmpName < 0) continue;
+
+    // Parse data rows (skip header)
+    for (let r = 1; r < rows.length; r++) {
+      const dataCells = (rows[r].match(/<t[dh][^>]*>[\s\S]*?<\/t[dh]>/gi) || [])
+        .map(cell => cell.replace(/<[^>]+>/g, '').replace(/&nbsp;/gi, ' ').replace(/\s+/g, ' ').trim());
+
+      const empName = idxEmpName >= 0 ? (dataCells[idxEmpName] || '').trim() : '';
+      if (!empName) continue;
+
+      const empId  = idxEmpId >= 0 ? (dataCells[idxEmpId] || '').trim() : '';
+      const phone  = idxPhone >= 0 ? (dataCells[idxPhone] || '').replace(/[^0-9+]/g, '').trim() : '';
+      const rawEmail = idxEmail >= 0 ? (dataCells[idxEmail] || '').trim() : '';
+
+      // email field may have "work@example.com / personal@gmail.com" — take the corporate one
+      let email = '';
+      if (rawEmail) {
+        const emailParts = rawEmail.split(/[\/,;|]/).map(e => e.trim().toLowerCase()).filter(e => e.includes('@'));
+        // Prefer corporate domain emails
+        email = emailParts.find(e => CORPORATE_DOMAINS.has(emailDomain(e))) || emailParts[0] || '';
+      }
+
+      results.push({ empId, name: empName, phone, email });
+    }
+  }
+
+  return results;
+}
+
 // ─── 1. Ticket Creation ───────────────────────────────────────────────────────
 
 /**
@@ -194,60 +311,62 @@ export async function createTicketFromEmail(email) {
 
 /**
  * Detect whether an email represents a health / lab report.
- * Returns { isReport, reportName, labName, attachment } or { isReport: false }
+ * Returns { isReport, labName, pdfAttachments, subjectIsPatientName, patientName }
+ * or { isReport: false }
  */
 export function detectLabReport(email) {
   const sender   = parseSender(email.from || '');
   const domain   = emailDomain(sender.email);
   const fromLab  = LAB_DOMAINS.has(domain);
 
-  // Check for PDF attachments whose names look like reports
+  // Collect ALL PDF attachments (not just those matching REPORT_FILE_RE)
   const attachments = Array.isArray(email.attachments) ? email.attachments : [];
-  const pdfAttachment = attachments.find(a =>
-    (a.mimeType === 'application/pdf' || a.filename?.toLowerCase().endsWith('.pdf')) &&
-    REPORT_FILE_RE.test(a.filename || '')
+  const pdfAttachments = attachments.filter(a =>
+    (a.mimeType === 'application/pdf' || a.filename?.toLowerCase().endsWith('.pdf'))
   );
 
-  const subjectLooksLikeReport = REPORT_SUBJECT_RE.test(email.subject || '');
+  // Also check for legacy-named report files even from non-lab senders
+  const legacyReportAtt = pdfAttachments.find(a => REPORT_FILE_RE.test(a.filename || ''));
 
-  // Require either: (a) email from a known lab domain, or (b) a PDF attachment with report filename
-  // Subject alone is too noisy to trigger report saving.
-  if (!fromLab && !pdfAttachment) {
+  // Require either: (a) email from a known lab domain with PDFs, or (b) a legacy report-named PDF
+  if (!fromLab && !legacyReportAtt) {
+    return { isReport: false };
+  }
+
+  // If from lab but no PDFs, not a report
+  if (fromLab && pdfAttachments.length === 0) {
     return { isReport: false };
   }
 
   // Determine lab name
   const labName = email.fromName || sender.name || domain || 'Unknown Lab';
 
-  // Report name: use subject or attachment filename
-  const reportName = pdfAttachment?.filename
-    ? pdfAttachment.filename.replace(/\.pdf$/i, '')
-    : (email.subject || 'Health Report');
-
   // Sometimes the subject IS the patient name (e.g. "JITUL SHETH" pattern from labs)
   const trimmedSubject = (email.subject || '').trim();
   const subjectWords   = trimmedSubject.split(/\s+/);
-  // Subject is a patient name when: 2-4 pure-letter words, no digits/punctuation
   const subjectIsPatientName =
     subjectWords.length >= 2 && subjectWords.length <= 4 &&
-    subjectWords.every(w => /^[A-Za-z]{2,}$/.test(w));
+    subjectWords.every(w => /^[A-Za-z.]{2,}$/.test(w));
 
   return {
     isReport: true,
-    reportName,
     labName,
-    attachment: pdfAttachment || null,
+    pdfAttachments: fromLab ? pdfAttachments : (legacyReportAtt ? [legacyReportAtt] : []),
     subjectIsPatientName,
     patientName: subjectIsPatientName ? trimmedSubject : null,
   };
 }
 
 /**
- * Save a health-report email to the `reports` table for the matched user.
+ * Save health-report PDFs from lab emails to the `reports` table.
+ * Each PDF attachment is matched to an employee by:
+ *   1. Employee name extracted from the PDF filename
+ *   2. Subject line as patient name
+ *   3. Employee data from HTML table in the email thread
  * Skips if already saved (healthReportSaved = true).
  *
  * @param {object} email  EmailInbox model instance
- * @returns {boolean} true if saved
+ * @returns {boolean} true if at least one report saved
  */
 export async function saveHealthReportFromEmail(email) {
   if (email.healthReportSaved) return false;
@@ -256,43 +375,6 @@ export async function saveHealthReportFromEmail(email) {
   if (!meta.isReport) return false;
 
   try {
-    const sender = parseSender(email.from || '');
-
-    // Resolve which user this report belongs to —
-    // Priority: subject = patient name → match by name
-    //           FROM email is a corporate user → match by email
-    //           TO recipients → find first matching user
-    let user = null;
-
-    if (meta.patientName) {
-      user = await findUserByName(meta.patientName);
-    }
-
-    if (!user && sender.email) {
-      user = await findUserByEmail(sender.email);
-    }
-
-    // Try TO recipients
-    if (!user && Array.isArray(email.to)) {
-      for (const addr of email.to) {
-        user = await findUserByEmail(typeof addr === 'string' ? addr : addr.address);
-        if (user) break;
-      }
-    }
-
-    if (!user) {
-      logger.warn(`[emailAutoProcess] saveHealthReport: no user matched for email ${email.id}`);
-      // Mark email so we don't retry forever
-      await email.update({ healthReportSaved: false }); // Leave false, we couldn't match
-      return false;
-    }
-
-    // Prepare insert data for reports table
-    const att = meta.attachment;
-    const fileName = att?.filename || `${meta.reportName}.pdf`;
-    const filePath = att?.downloadUrl || `/api/team/emails/${email.id}/attachment`;
-    const fileSize = att?.size || 0;
-    const mimeType = att?.mimeType || 'application/pdf';
     const reportDate = email.receivedAt || email.createdAt || new Date();
 
     // Avoid duplicate report entries for the same email
@@ -302,43 +384,118 @@ export async function saveHealthReportFromEmail(email) {
     );
     if (existingRows.length > 0) {
       await email.update({ healthReportSaved: true });
-      return false; // already exists
+      return false;
     }
 
-    await postgresSequelize.query(
-      `INSERT INTO reports
-         ("userId", "fileName", "filePath", "fileUrl", "fileSize", "mimeType",
-          "reportType", "testName", "labName", "reportDate", status,
-          "organization_id", metadata, "uploadedAt", "createdAt", "updatedAt")
-       VALUES
-         (:userId, :fileName, :filePath, :fileUrl, :fileSize, :mimeType,
-          'lab', :testName, :labName, :reportDate, 'active',
-          :orgId, :metadata::jsonb, NOW(), NOW(), NOW())`,
-      {
-        replacements: {
-          userId:   user.id,
-          fileName,
-          filePath,
-          fileUrl:  att?.downloadUrl || filePath,
-          fileSize,
-          mimeType,
-          testName: meta.reportName,
-          labName:  meta.labName,
-          reportDate,
-          orgId:    user.organization_id || null,
-          metadata: JSON.stringify({
-            emailId:    email.id,
-            subject:    email.subject,
-            from:       email.from,
-            receivedAt: email.receivedAt,
-          }),
-        },
-      }
-    );
+    // Parse employee table from HTML body (ours or quoted in lab reply)
+    const htmlBody = email.htmlBody || email.body || '';
+    const employeeRows = parseEmployeeTableFromHtml(htmlBody);
 
-    await email.update({ healthReportSaved: true });
-    logger.info(`[emailAutoProcess] Health report saved for user ${user.id} from email ${email.id}`);
-    return true;
+    // Build a name→user lookup from the HTML table for matching
+    const tableUserCache = new Map();
+    for (const row of employeeRows) {
+      if (row.name) tableUserCache.set(row.name.toUpperCase(), row);
+    }
+
+    // Subject-level fallback user (if subject = patient name)
+    let subjectUser = null;
+    if (meta.patientName) {
+      subjectUser = await findUserByName(meta.patientName);
+    }
+
+    let savedCount = 0;
+
+    // Process each PDF attachment separately
+    for (const att of meta.pdfAttachments) {
+      // Skip non-report inline images
+      if (att.filename && /\.(jpg|jpeg|png|gif|bmp)$/i.test(att.filename)) continue;
+
+      let user = null;
+      const nameFromFile = extractNameFromFilename(att.filename);
+
+      // Strategy 1: Match employee by name extracted from filename
+      if (nameFromFile) {
+        // Try exact name match first
+        user = await findUserByName(nameFromFile);
+
+        // If not found, try matching against HTML table employee data
+        if (!user && tableUserCache.size > 0) {
+          const upperName = nameFromFile.toUpperCase();
+          for (const [tableName, tableRow] of tableUserCache) {
+            // Check if extracted name contains the table name or vice versa
+            if (upperName.includes(tableName) || tableName.includes(upperName)) {
+              // Found matching row — use empId to look up user precisely
+              if (tableRow.empId) {
+                user = await findUserByEmployeeId(tableRow.empId);
+              }
+              if (!user && tableRow.email) {
+                user = await findUserByEmail(tableRow.email);
+              }
+              if (!user) {
+                user = await findUserByName(tableRow.name);
+              }
+              break;
+            }
+          }
+        }
+      }
+
+      // Strategy 2: Use subject as patient name (for single-attachment emails)
+      if (!user && subjectUser && meta.pdfAttachments.length === 1) {
+        user = subjectUser;
+      }
+
+      if (!user) {
+        logger.debug(`[emailAutoProcess] saveHealthReport: no user match for attachment "${att.filename}" in email ${email.id}`);
+        continue;
+      }
+
+      const fileName = att.filename || 'Health Report.pdf';
+      const filePath = att.downloadUrl || `/api/team/emails/${email.id}/attachment`;
+      const reportName = (nameFromFile || att.filename?.replace(/\.pdf$/i, '') || 'Health Report');
+
+      await postgresSequelize.query(
+        `INSERT INTO reports
+           ("userId", "fileName", "filePath", "fileUrl", "fileSize", "mimeType",
+            "reportType", "testName", "labName", "reportDate", status,
+            "organization_id", metadata, "uploadedAt", "createdAt", "updatedAt")
+         VALUES
+           (:userId, :fileName, :filePath, :fileUrl, :fileSize, :mimeType,
+            'lab', :testName, :labName, :reportDate, 'active',
+            :orgId, :metadata::jsonb, NOW(), NOW(), NOW())`,
+        {
+          replacements: {
+            userId:   user.id,
+            fileName,
+            filePath,
+            fileUrl:  att.downloadUrl || filePath,
+            fileSize: att.size || 0,
+            mimeType: att.mimeType || 'application/pdf',
+            testName: reportName,
+            labName:  meta.labName,
+            reportDate,
+            orgId:    user.organization_id || null,
+            metadata: JSON.stringify({
+              emailId:      email.id,
+              subject:      email.subject,
+              from:         email.from,
+              receivedAt:   email.receivedAt,
+              attachmentId: att.contentId || null,
+            }),
+          },
+        }
+      );
+
+      savedCount++;
+      logger.info(`[emailAutoProcess] Report "${fileName}" saved for user ${user.id} (email ${email.id})`);
+    }
+
+    if (savedCount > 0) {
+      await email.update({ healthReportSaved: true });
+      logger.info(`[emailAutoProcess] ${savedCount} report(s) saved from email ${email.id}`);
+    }
+
+    return savedCount > 0;
   } catch (err) {
     logger.error(`[emailAutoProcess] saveHealthReportFromEmail error for ${email.id}: ${err.message}`);
     return false;
@@ -359,57 +516,119 @@ const CORPORATE_DOMAINS = new Set([
 ]);
 
 /**
- * If the sender of the email is a corporate employee with a work email
- * (e.g., kanagaraj.palanisamy@equitasbank.com) we try to find their user record
- * by name and update it with their real email address.
+ * Extract employee info from the email (HTML booking tables or sender domain)
+ * and update their user profile: email and phone number.
+ *
+ * Sources of employee data:
+ *   1. HTML tables in booking emails with empid/empname/contact no/email id columns
+ *   2. Sender email from a known corporate domain (legacy fallback)
  *
  * @param {object} email  EmailInbox model instance
- * @returns {boolean} true if email was updated
+ * @returns {boolean} true if any user was updated
  */
 export async function updateEmployeeEmailFromInbox(email) {
   if (email.employeeEmailUpdated) return false;
 
   try {
-    const sender = parseSender(email.from || '');
-    if (!sender.email) return false;
+    let updatedCount = 0;
 
-    const domain = emailDomain(sender.email);
+    // ── Strategy 1: Parse HTML table for employee data ──────────────
+    const htmlBody = email.htmlBody || email.body || '';
+    const employeeRows = parseEmployeeTableFromHtml(htmlBody);
 
-    // Only act on known corporate domains
-    if (!CORPORATE_DOMAINS.has(domain)) return false;
+    if (employeeRows.length > 0) {
+      for (const row of employeeRows) {
+        if (!row.name) continue;
 
-    // Try to find user by the sender's current email first
-    let user = await findUserByEmail(sender.email);
+        let user = null;
 
-    // If not found, try matching by full name
-    if (!user && sender.name) {
-      const nameFromField = email.fromName || sender.name;
-      user = await findUserByName(nameFromField);
+        // Match by employeeId first (most precise)
+        if (row.empId) {
+          user = await findUserByEmployeeId(row.empId);
+        }
+
+        // Match by corporate email
+        if (!user && row.email) {
+          user = await findUserByEmail(row.email);
+        }
+
+        // Match by name
+        if (!user && row.name) {
+          user = await findUserByName(row.name);
+        }
+
+        if (!user) {
+          logger.debug(`[emailAutoProcess] employeeProfileUpdate: no match for "${row.name}" (${row.empId})`);
+          continue;
+        }
+
+        // Build update fields
+        const updates = [];
+        const replacements = { userId: user.id };
+
+        // Update email if we have a better one
+        if (row.email && user.email?.toLowerCase() !== row.email.toLowerCase()) {
+          // Only update if the current email looks auto-generated (e00679@, pending+E@)
+          const currentEmail = (user.email || '').toLowerCase();
+          const isAutoEmail = /^(e\d+@|pending\+)/i.test(currentEmail);
+          if (isAutoEmail || !currentEmail) {
+            updates.push('email = :newEmail');
+            replacements.newEmail = row.email;
+          }
+        }
+
+        // Update phone if we have one and it differs
+        if (row.phone && row.phone.length >= 10) {
+          const currentPhone = (user.phoneNumber || '').replace(/[^0-9]/g, '');
+          const newPhone = row.phone.replace(/[^0-9]/g, '');
+          if (currentPhone !== newPhone) {
+            updates.push('"phoneNumber" = :newPhone');
+            replacements.newPhone = row.phone;
+          }
+        }
+
+        if (updates.length > 0) {
+          updates.push('"updatedAt" = NOW()');
+          await postgresSequelize.query(
+            `UPDATE users SET ${updates.join(', ')} WHERE id = :userId`,
+            { replacements }
+          );
+          updatedCount++;
+          logger.info(
+            `[emailAutoProcess] Updated user ${user.id} profile from email table: ${updates.filter(u => u !== '"updatedAt" = NOW()').join(', ')}`
+          );
+        }
+      }
     }
 
-    if (!user) {
-      logger.debug(`[emailAutoProcess] employeeEmailUpdate: no match for ${sender.email}`);
-      return false;
+    // ── Strategy 2: Legacy — sender from corporate domain ───────────
+    if (updatedCount === 0 && employeeRows.length === 0) {
+      const sender = parseSender(email.from || '');
+      if (sender.email) {
+        const domain = emailDomain(sender.email);
+        if (CORPORATE_DOMAINS.has(domain)) {
+          let user = await findUserByEmail(sender.email);
+          if (!user && sender.name) {
+            user = await findUserByName(email.fromName || sender.name);
+          }
+
+          if (user && user.email?.toLowerCase() !== sender.email.toLowerCase()) {
+            await postgresSequelize.query(
+              `UPDATE users SET email = :newEmail, "updatedAt" = NOW() WHERE id = :userId`,
+              { replacements: { newEmail: sender.email, userId: user.id } }
+            );
+            updatedCount++;
+            logger.info(`[emailAutoProcess] Updated user ${user.id} email: ${user.email} → ${sender.email}`);
+          }
+        }
+      }
     }
 
-    // If the portal email is different (e.g. e00679@equitasbank.com vs kanagaraj@equitasbank.com)
-    if (user.email?.toLowerCase() === sender.email.toLowerCase()) {
-      await email.update({ employeeEmailUpdated: true }); // already up to date
-      return false;
+    if (updatedCount > 0 || employeeRows.length > 0) {
+      await email.update({ employeeEmailUpdated: true });
     }
 
-    // Update the user's email to the real work email
-    await postgresSequelize.query(
-      `UPDATE users SET email = :newEmail, "updatedAt" = NOW()
-       WHERE id = :userId`,
-      { replacements: { newEmail: sender.email, userId: user.id } }
-    );
-
-    await email.update({ employeeEmailUpdated: true });
-    logger.info(
-      `[emailAutoProcess] Updated user ${user.id} email: ${user.email} → ${sender.email}`
-    );
-    return true;
+    return updatedCount > 0;
   } catch (err) {
     logger.error(`[emailAutoProcess] updateEmployeeEmailFromInbox error for ${email.id}: ${err.message}`);
     return false;
