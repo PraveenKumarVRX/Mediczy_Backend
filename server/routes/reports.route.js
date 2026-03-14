@@ -15,7 +15,7 @@ import { Report } from '../models/index.js';
 import { validationResult } from 'express-validator';
 import { body } from 'express-validator';
 import n8nService from '../services/n8n.service.js';
-import { uploadToMinio } from '../services/minio-upload.service.js';
+import { uploadEncryptedReport, downloadDecryptedReport } from '../services/minio-upload.service.js';
 
 const router = express.Router();
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
@@ -74,8 +74,8 @@ router.post('/', authUser, upload.single('file'), async (req, res) => {
       });
     }
 
-    // Save to database
-    const { url: minioUrl, key: s3Key, size: fileSize } = await uploadToMinio({
+    // Compress + encrypt + upload to MinIO
+    const result = await uploadEncryptedReport({
       buffer: req.file.buffer,
       originalName: req.file.originalname,
       mimeType: req.file.mimetype,
@@ -88,8 +88,8 @@ router.post('/', authUser, upload.single('file'), async (req, res) => {
       fileName: req.file.originalname,
       fileSize: req.file.size,
       mimeType: req.file.mimetype,
-      filePath: s3Key,
-      fileUrl: minioUrl,
+      filePath: result.key,
+      fileUrl: result.url,
       reportType,
       description: description || null,
       testName: testName || null,
@@ -97,7 +97,16 @@ router.post('/', authUser, upload.single('file'), async (req, res) => {
       reportDate: reportDate || null,
       status: 'active',
       uploadedAt: new Date(),
-      analysisStatus: 'pending'
+      analysisStatus: 'pending',
+      metadata: {
+        encryption: result.encryption,
+        compressionMethod: result.compressionMethod,
+        storedMimeType: result.storedMimeType,
+        originalSize: result.originalSize,
+        compressedSize: result.compressedSize,
+        encryptedSize: result.size,
+        bucket: result.bucket,
+      }
     });
 
     console.log('✅ Report uploaded and saved to database:', {
@@ -304,23 +313,16 @@ router.delete('/:id', authUser, async (req, res) => {
 });
 
 /**
- * GET /api/reports/download/:filename
- * Download a report file — redirects to MinIO URL
+ * GET /api/reports/download/:id
+ * Download a report file — decrypts encrypted reports on the fly
  */
-router.get('/download/:filename', authUser, async (req, res) => {
+router.get('/download/:id', authUser, async (req, res) => {
   try {
-    const { filename } = req.params;
+    const { id } = req.params;
     const userId = req.user.id;
 
-    // Look up report by filename or S3 key pattern
     const report = await Report.findOne({
-      where: {
-        userId,
-        [Report.sequelize.Sequelize.Op.or]: [
-          { filePath: { [Report.sequelize.Sequelize.Op.like]: `%${filename}%` } },
-          { fileUrl: { [Report.sequelize.Sequelize.Op.like]: `%${filename}%` } }
-        ]
-      }
+      where: { id, userId }
     });
 
     if (!report) {
@@ -330,14 +332,33 @@ router.get('/download/:filename', authUser, async (req, res) => {
       });
     }
 
-    // If fileUrl is a full MinIO URL, redirect to it
+    const meta = report.metadata || {};
+
+    // Encrypted report — decrypt and stream
+    if (meta.encryption && meta.encryption.iv) {
+      const { buffer, mimeType } = await downloadDecryptedReport({
+        key: report.filePath,
+        bucket: meta.bucket,
+        iv: meta.encryption.iv,
+        authTag: meta.encryption.authTag,
+        compressionMethod: meta.compressionMethod,
+        mimeType: meta.storedMimeType || report.mimeType,
+      });
+
+      res.setHeader('Content-Type', mimeType);
+      res.setHeader('Content-Disposition', `inline; filename="${report.fileName}"`);
+      res.setHeader('Content-Length', buffer.length);
+      return res.send(buffer);
+    }
+
+    // Unencrypted MinIO URL — redirect
     if (report.fileUrl && report.fileUrl.startsWith('http')) {
       return res.redirect(report.fileUrl);
     }
 
-    // Legacy: serve from disk if fileUrl is a local path
+    // Legacy: serve from disk
     const uploadDir = path.join(__dirname, '../../uploads/reports');
-    const filePath = path.join(uploadDir, filename);
+    const filePath = path.join(uploadDir, path.basename(report.filePath));
     const resolvedPath = path.resolve(filePath);
     const resolvedUploadDir = path.resolve(uploadDir);
 

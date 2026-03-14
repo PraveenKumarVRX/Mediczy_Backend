@@ -4,7 +4,7 @@ import fs from 'fs';
 import { fileURLToPath } from 'url';
 import { authUser } from '../middleware/auth.middleware.js';
 import MedicalReport from '../models/medical-report.model.js';
-import { uploadToMinio } from '../services/minio-upload.service.js';
+import { uploadEncryptedReport } from '../services/minio-upload.service.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -87,14 +87,14 @@ router.post('/upload', authUser, async (req, res) => {
       });
     }
 
-    // Upload to MinIO with AV scan
-    const { url: minioUrl, key: s3Key } = await uploadToMinio({
+    // Compress + encrypt + upload to MinIO
+    const result = await uploadEncryptedReport({
       buffer: uploadedFile.data,
       originalName: uploadedFile.name,
       mimeType: uploadedFile.mimetype,
       keyPrefix: `uploads/reports/${req.user.id}`,
     });
-    console.log(`📄 File uploaded to MinIO: ${s3Key}`);
+    console.log(`📄 File uploaded (encrypted) to MinIO: ${result.key} [${result.compressionMethod}, ${result.originalSize}→${result.size} bytes]`);
 
     // Create database record for the report
     let medicalReport = null;
@@ -102,7 +102,7 @@ router.post('/upload', authUser, async (req, res) => {
       medicalReport = await MedicalReport.create({
         userId: req.user.id,
         fileName: uploadedFile.name,
-        filePath: s3Key,
+        filePath: result.key,
         fileType: fileExtension.substring(1),
         fileSize: uploadedFile.size,
         mimeType: uploadedFile.mimetype,
@@ -123,10 +123,16 @@ router.post('/upload', authUser, async (req, res) => {
       message: 'Report uploaded successfully',
       reportId: medicalReport?.id || Date.now(),
       fileName: uploadedFile.name,
-      fileUrl: minioUrl,
+      fileUrl: result.url,
       reportType: reportType,
       uploadedAt: new Date(),
-      fileSize: `${(uploadedFile.size / 1024).toFixed(2)} KB`
+      fileSize: `${(uploadedFile.size / 1024).toFixed(2)} KB`,
+      compression: {
+        method: result.compressionMethod,
+        originalSize: result.originalSize,
+        storedSize: result.size,
+        savings: `${(((result.originalSize - result.size) / result.originalSize) * 100).toFixed(1)}%`
+      }
     });
 
   } catch (error) {

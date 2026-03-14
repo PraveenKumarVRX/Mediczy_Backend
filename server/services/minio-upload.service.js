@@ -4,6 +4,8 @@
  * Centralised file upload: scan → upload to MinIO → return public URL.
  * Works with both multer (req.file.buffer / req.file.path) and
  * express-fileupload (req.files.file.data / .tempFilePath).
+ *
+ * Optional AES-256-GCM encryption and image/doc compression for reports.
  */
 
 import crypto from 'crypto';
@@ -11,7 +13,8 @@ import path from 'path';
 import fs from 'fs/promises';
 import { execFile } from 'child_process';
 import { promisify } from 'util';
-import { PutObjectCommand } from '@aws-sdk/client-s3';
+import zlib from 'zlib';
+import { PutObjectCommand, GetObjectCommand } from '@aws-sdk/client-s3';
 import { getS3Client, getUploadsBucket, buildPublicFileUrl } from './s3-presign.service.js';
 
 const execFileAsync = promisify(execFile);
@@ -138,4 +141,191 @@ export async function scanOnly(bufferOrPath) {
   return scanFile(bufferOrPath);
 }
 
-export default { uploadToMinio, scanOnly };
+// ─────────────────────────────────────────────────────────────────
+// Report Encryption (AES-256-GCM) + Compression (gzip / sharp)
+// ─────────────────────────────────────────────────────────────────
+
+const ENCRYPTION_KEY_HEX = process.env.ENCRYPTION_KEY;
+
+function getEncryptionKey() {
+  if (!ENCRYPTION_KEY_HEX) throw new Error('ENCRYPTION_KEY not set in environment');
+  // server/.env has a 64-char hex key → 32 bytes
+  if (/^[0-9a-fA-F]{64}$/.test(ENCRYPTION_KEY_HEX)) {
+    return Buffer.from(ENCRYPTION_KEY_HEX, 'hex');
+  }
+  // Fallback: derive 32 bytes via SHA-256 if not hex
+  return crypto.createHash('sha256').update(ENCRYPTION_KEY_HEX).digest();
+}
+
+const IMAGE_MIMES = new Set([
+  'image/jpeg', 'image/png', 'image/webp', 'image/tiff', 'image/gif'
+]);
+
+/**
+ * Compress a file buffer based on its MIME type.
+ * - Images: resize to max 1920px (longest side) + JPEG/WebP quality 80
+ * - Other files (PDF, DOCX, etc.): gzip
+ * Returns { buffer, mimeType, compressedSize, originalSize, method }
+ */
+export async function compressFile(buffer, mimeType) {
+  const originalSize = buffer.length;
+
+  if (IMAGE_MIMES.has(mimeType)) {
+    try {
+      const sharp = (await import('sharp')).default;
+      const compressed = await sharp(buffer)
+        .resize({ width: 1920, height: 1920, fit: 'inside', withoutEnlargement: true })
+        .jpeg({ quality: 80, mozjpeg: true })
+        .toBuffer();
+      // Only use compressed version if it's actually smaller
+      if (compressed.length < originalSize) {
+        return {
+          buffer: compressed,
+          mimeType: 'image/jpeg',
+          compressedSize: compressed.length,
+          originalSize,
+          method: 'sharp-jpeg'
+        };
+      }
+    } catch (err) {
+      console.warn('⚠️ Image compression failed, using original:', err.message);
+    }
+    return { buffer, mimeType, compressedSize: originalSize, originalSize, method: 'none' };
+  }
+
+  // Non-image: gzip
+  const gzipAsync = promisify(zlib.gzip);
+  const compressed = await gzipAsync(buffer, { level: 6 });
+  if (compressed.length < originalSize) {
+    return {
+      buffer: compressed,
+      mimeType,      // keep original mime; we track compression via metadata
+      compressedSize: compressed.length,
+      originalSize,
+      method: 'gzip'
+    };
+  }
+  return { buffer, mimeType, compressedSize: originalSize, originalSize, method: 'none' };
+}
+
+/**
+ * Encrypt a buffer with AES-256-GCM.
+ * Returns { encrypted: Buffer, iv: string (hex), authTag: string (hex) }
+ */
+export function encryptBuffer(buffer) {
+  const key = getEncryptionKey();
+  const iv = crypto.randomBytes(12); // 96-bit IV for GCM
+  const cipher = crypto.createCipheriv('aes-256-gcm', key, iv);
+  const encrypted = Buffer.concat([cipher.update(buffer), cipher.final()]);
+  const authTag = cipher.getAuthTag();
+  return {
+    encrypted,
+    iv: iv.toString('hex'),
+    authTag: authTag.toString('hex')
+  };
+}
+
+/**
+ * Decrypt a buffer with AES-256-GCM.
+ */
+export function decryptBuffer(encryptedBuffer, ivHex, authTagHex) {
+  const key = getEncryptionKey();
+  const iv = Buffer.from(ivHex, 'hex');
+  const authTag = Buffer.from(authTagHex, 'hex');
+  const decipher = crypto.createDecipheriv('aes-256-gcm', key, iv);
+  decipher.setAuthTag(authTag);
+  return Buffer.concat([decipher.update(encryptedBuffer), decipher.final()]);
+}
+
+/**
+ * Upload a report with compression + encryption.
+ * Flow: AV scan → compress → encrypt → upload to MinIO
+ *
+ * Returns { url, key, bucket, size, originalSize, compressedSize, encryption: { iv, authTag }, compressionMethod, avResult }
+ */
+export async function uploadEncryptedReport({ buffer, originalName, mimeType, keyPrefix, bucket }) {
+  if (!buffer) throw new Error('Buffer required for encrypted report upload');
+
+  // 1. AV scan
+  const avResult = await scanFile(buffer);
+  if (!avResult.clean) {
+    throw Object.assign(
+      new Error(`File rejected: malware detected — ${avResult.detail}`),
+      { code: 'MALWARE_DETECTED', avResult }
+    );
+  }
+
+  // 2. Compress
+  const compressed = await compressFile(buffer, mimeType);
+
+  // 3. Encrypt
+  const { encrypted, iv, authTag } = encryptBuffer(compressed.buffer);
+
+  // 4. Build S3 key — add .enc suffix to signal encrypted
+  const safeName = (originalName || 'file').replace(/[^a-zA-Z0-9._-]/g, '_').slice(0, 100);
+  const randomSuffix = crypto.randomBytes(6).toString('hex');
+  const s3Key = `${keyPrefix.replace(/\/$/, '')}/${Date.now()}_${randomSuffix}_${safeName}.enc`;
+
+  // 5. Upload encrypted blob to MinIO
+  const resolvedBucket = bucket || getUploadsBucket() || 'web-uploads';
+  const s3 = getS3Client();
+
+  await s3.send(new PutObjectCommand({
+    Bucket: resolvedBucket,
+    Key: s3Key,
+    Body: encrypted,
+    ContentType: 'application/octet-stream', // encrypted blob, not the original MIME
+    ContentLength: encrypted.length,
+  }));
+
+  const publicUrl = buildPublicFileUrl(s3Key, resolvedBucket);
+
+  return {
+    success: true,
+    url: publicUrl,
+    key: s3Key,
+    bucket: resolvedBucket,
+    size: encrypted.length,
+    originalSize: compressed.originalSize,
+    compressedSize: compressed.compressedSize,
+    storedMimeType: compressed.mimeType,
+    encryption: { iv, authTag },
+    compressionMethod: compressed.method,
+    avResult,
+  };
+}
+
+/**
+ * Download and decrypt an encrypted report from MinIO.
+ * Returns { buffer, mimeType }
+ */
+export async function downloadDecryptedReport({ key, bucket, iv, authTag, compressionMethod, mimeType }) {
+  const resolvedBucket = bucket || getUploadsBucket() || 'web-uploads';
+  const s3 = getS3Client();
+
+  const resp = await s3.send(new GetObjectCommand({
+    Bucket: resolvedBucket,
+    Key: key,
+  }));
+
+  // Collect stream into buffer
+  const chunks = [];
+  for await (const chunk of resp.Body) {
+    chunks.push(chunk);
+  }
+  const encryptedBuffer = Buffer.concat(chunks);
+
+  // Decrypt
+  const decrypted = decryptBuffer(encryptedBuffer, iv, authTag);
+
+  // Decompress if needed
+  let finalBuffer = decrypted;
+  if (compressionMethod === 'gzip') {
+    const gunzipAsync = promisify(zlib.gunzip);
+    finalBuffer = await gunzipAsync(decrypted);
+  }
+
+  return { buffer: finalBuffer, mimeType };
+}
+
+export default { uploadToMinio, scanOnly, uploadEncryptedReport, downloadDecryptedReport, compressFile, encryptBuffer, decryptBuffer };
