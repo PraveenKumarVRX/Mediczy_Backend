@@ -255,11 +255,18 @@ async function analyzeWithLLM(reportText) {
 // ─── Claude Vision image analysis ──────────────────────────
 
 async function analyzeWithVision(base64Image, mimeType) {
-  let Anthropic;
   try {
-    Anthropic = (await import('@anthropic-ai/sdk')).default;
-  } catch {
-    // Fallback to LLM cascade with a note
+    const visionResult = await llmProvider.vision({
+      base64Image,
+      mimeType,
+      prompt: VISION_ANALYSIS_PROMPT,
+      maxTokens: 3000
+    });
+
+    return parseAnalysisResponse(visionResult.content, visionResult.provider);
+  } catch (visionError) {
+    console.warn('[Report-Analysis] Vision failed:', visionError.message);
+    // Fallback gracefully
     return {
       findings: 'Image analysis is temporarily unavailable. Please upload a PDF version of this report for text-based analysis.',
       assessment: 'Vision service not configured',
@@ -272,35 +279,6 @@ async function analyzeWithVision(base64Image, mimeType) {
       disclaimer: 'Vision analysis unavailable'
     };
   }
-
-  const client = new Anthropic();
-
-  const response = await client.messages.create({
-    model: 'claude-3-5-sonnet-20241022',
-    max_tokens: 3000,
-    messages: [
-      {
-        role: 'user',
-        content: [
-          {
-            type: 'image',
-            source: {
-              type: 'base64',
-              media_type: mimeType,
-              data: base64Image
-            }
-          },
-          {
-            type: 'text',
-            text: VISION_ANALYSIS_PROMPT
-          }
-        ]
-      }
-    ]
-  });
-
-  const responseText = response.content[0]?.type === 'text' ? response.content[0].text : '';
-  return parseAnalysisResponse(responseText, 'claude-vision');
 }
 
 // ─── Response parsing ──────────────────────────────────────

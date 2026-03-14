@@ -1,13 +1,14 @@
 /**
- * LLM Provider Service
- * ====================
- * 3-provider cascade: isha.buzz (primary) → Groq (secondary) → OpenAI (final).
- * All providers use OpenAI-compatible API format with function/tool calling.
+ * LLM Provider Service — Single Source of Truth for ALL AI
+ * ========================================================
+ * Centralises every AI capability behind a unified cascade:
  *
- * Cascade logic:
- * - Try primary (isha.buzz / bimedix) first
- * - On failure → try Groq / Llama-3.3-70b
- * - On failure → try OpenAI / gpt-4o-mini (always available)
+ *  Text   → iSHA (primary) → Groq → OpenAI
+ *  Vision → Anthropic Claude (only provider with vision)
+ *  STT    → Groq Whisper → OpenAI Whisper
+ *  TTS    → ElevenLabs (handled elsewhere)
+ *
+ * NO other file should instantiate OpenAI / Groq / Anthropic directly.
  */
 
 import OpenAI from 'openai';
@@ -281,4 +282,140 @@ function listProviders() {
   });
 }
 
-export default { chat, getModelConfig, listProviders, PROVIDERS };
+// ─── Anthropic Vision ──────────────────────────────────────
+
+let _anthropicClient = null;
+
+function getAnthropicClient() {
+  if (!_anthropicClient) {
+    try {
+      // Dynamic import is handled at call-site since this is sync
+      const apiKey = process.env.ANTHROPIC_API_KEY;
+      if (!apiKey) throw new Error('ANTHROPIC_API_KEY not configured');
+    } catch { /* checked at call time */ }
+  }
+  return _anthropicClient;
+}
+
+/**
+ * Analyse an image using Anthropic Claude Vision.
+ * This is the ONLY vision-capable path in the whole app.
+ *
+ * @param {Object} options
+ * @param {string} options.base64Image - Base64-encoded image data
+ * @param {string} options.mimeType    - image/jpeg, image/png, etc.
+ * @param {string} options.prompt      - Analysis prompt
+ * @param {number} [options.maxTokens] - Max response tokens (default 2000)
+ * @returns {{ content: string, provider: string, model: string, usage: Object }}
+ */
+async function vision({ base64Image, mimeType, prompt, maxTokens = 2000 }) {
+  const start = Date.now();
+
+  // Lazy-import Anthropic SDK (ESM)
+  let Anthropic;
+  try {
+    Anthropic = (await import('@anthropic-ai/sdk')).default;
+  } catch {
+    throw new Error('Anthropic SDK not installed — run: npm i @anthropic-ai/sdk');
+  }
+
+  if (!_anthropicClient) {
+    _anthropicClient = new Anthropic();   // uses ANTHROPIC_API_KEY from env
+  }
+
+  const response = await _anthropicClient.messages.create({
+    model: process.env.ANTHROPIC_VISION_MODEL || 'claude-3-5-sonnet-20241022',
+    max_tokens: maxTokens,
+    messages: [
+      {
+        role: 'user',
+        content: [
+          { type: 'image', source: { type: 'base64', media_type: mimeType, data: base64Image } },
+          { type: 'text', text: prompt }
+        ]
+      }
+    ]
+  });
+
+  const content = response.content[0]?.type === 'text' ? response.content[0].text : '';
+  const latencyMs = Date.now() - start;
+
+  // Log to ai_request_logs
+  try {
+    await pool.query(
+      `INSERT INTO ai_request_logs
+        (provider, model_name, input_messages, output_text,
+         input_tokens, output_tokens, total_tokens, latency_ms, status, metadata)
+       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10)`,
+      [
+        'anthropic-vision',
+        response.model || 'claude-3-5-sonnet',
+        JSON.stringify([{ role: 'user', content: '(image + prompt)' }]),
+        content.substring(0, 2000),
+        response.usage?.input_tokens || 0,
+        response.usage?.output_tokens || 0,
+        (response.usage?.input_tokens || 0) + (response.usage?.output_tokens || 0),
+        latencyMs,
+        'success',
+        JSON.stringify({ type: 'vision', mimeType })
+      ]
+    );
+  } catch (logErr) {
+    console.error('[LLM-Vision] Failed to log:', logErr.message);
+  }
+
+  return { content, provider: 'anthropic-vision', model: response.model || 'claude-3-5-sonnet', latencyMs, usage: response.usage };
+}
+
+// ─── Speech-to-Text (Whisper) ──────────────────────────────
+
+/**
+ * Transcribe audio using Groq Whisper (primary) → OpenAI Whisper (fallback).
+ *
+ * @param {import('fs').ReadStream|Buffer} fileInput - Audio file stream or buffer
+ * @param {Object} [options]
+ * @param {string} [options.language] - ISO language code (default 'en')
+ * @param {string} [options.responseFormat] - 'verbose_json' | 'text' | 'json'
+ * @returns {{ text: string, provider: string, duration?: number, language?: string }}
+ */
+async function transcribe(fileInput, { language = 'en', responseFormat = 'verbose_json' } = {}) {
+  const errors = [];
+
+  // 1. Try Groq Whisper (faster + free)
+  try {
+    const groqClient = getGroqClient();
+    console.log('[STT] Trying Groq Whisper...');
+    const result = await groqClient.audio.transcriptions.create({
+      file: fileInput,
+      model: 'whisper-large-v3',
+      language,
+      response_format: responseFormat
+    });
+    console.log('[STT] ✅ Groq Whisper succeeded');
+    return { success: true, text: result.text, provider: 'groq-whisper', duration: result.duration, language: result.language };
+  } catch (e) {
+    console.warn('[STT] Groq Whisper failed:', e.message);
+    errors.push(`groq: ${e.message}`);
+  }
+
+  // 2. Fallback to OpenAI Whisper
+  try {
+    const oaiClient = getOpenAIClient();
+    console.log('[STT] Trying OpenAI Whisper...');
+    const result = await oaiClient.audio.transcriptions.create({
+      file: fileInput,
+      model: 'whisper-1',
+      language,
+      response_format: responseFormat
+    });
+    console.log('[STT] ✅ OpenAI Whisper succeeded');
+    return { success: true, text: result.text, provider: 'openai-whisper', duration: result.duration, language: result.language };
+  } catch (e) {
+    console.warn('[STT] OpenAI Whisper failed:', e.message);
+    errors.push(`openai: ${e.message}`);
+  }
+
+  return { success: false, text: '', provider: 'none', error: `All STT providers failed: ${errors.join(' | ')}` };
+}
+
+export default { chat, vision, transcribe, getModelConfig, listProviders, PROVIDERS };

@@ -11,9 +11,9 @@
 
 import pdfKnowledgeService from './pdfKnowledge.service.js';
 import cimsService from './cims-medicine.service.js';
+import llmProvider from './ai-brain/llm-provider.js';
 
 const SIB_BASE_URL = process.env.SIB_URL || 'http://localhost:8001';
-const GROQ_API_KEY = process.env.GROQ_API_KEY;
 
 class CDSSService {
   constructor() {
@@ -410,15 +410,7 @@ Be concise. Max 2 guidelines, 3 drugs, 3 DDx, 3 labs, 3 ICD-10. Indian context. 
    * Query CDSS using Groq (Fallback)
    */
   async queryWithGroq(query, category, specialty, knowledgeContext = '') {
-    if (!GROQ_API_KEY) {
-      console.warn('[CDSS] GROQ_API_KEY not set; Groq fallback disabled');
-      throw new Error('Groq API key not configured');
-    }
-
     try {
-      const Groq = (await import('groq-sdk')).default;
-      const groq = new Groq({ apiKey: GROQ_API_KEY });
-
       const systemPrompt = this.buildCDSSPrompt(category, specialty);
       
       let fullQuery = query;
@@ -426,50 +418,37 @@ Be concise. Max 2 guidelines, 3 drugs, 3 DDx, 3 labs, 3 ICD-10. Indian context. 
         fullQuery = `${query}\n\n=== KNOWLEDGE BASE CONTEXT ===\n${knowledgeContext}`;
       }
 
-      const response = await groq.chat.completions.create({
-        model: 'llama-3.3-70b-versatile',
+      const result = await llmProvider.chat({
         messages: [
           { role: 'system', content: systemPrompt },
           { role: 'user', content: fullQuery }
         ],
-        max_tokens: 1500, // Reduced for faster response
         temperature: 0.3,
-        response_format: { type: 'json_object' }
+        maxTokens: 1500,
+        responseFormat: { type: 'json_object' }
       });
 
-      const responseText = response.choices[0]?.message?.content || '';
+      const responseText = result.content || '';
       
       try {
         const parsed = JSON.parse(responseText);
         return {
           success: true,
           data: parsed,
-          provider: 'groq',
-          model: 'llama-3.3-70b-versatile'
+          provider: result.provider,
+          model: result.model
         };
       } catch (parseError) {
         return {
           success: true,
           data: { summary: responseText, clinicalGuidelines: [], drugInfo: [], differentialDiagnosis: [], labTests: [], warnings: [], icd10Codes: [], references: [] },
-          provider: 'groq',
-          model: 'llama-3.3-70b-versatile',
+          provider: result.provider,
+          model: result.model,
           raw: true
         };
       }
     } catch (error) {
-      // Provide detailed error information for debugging
-      if (error.status === 401 || error.code === 'invalid_request_error') {
-        console.error('[CDSS] Groq authentication failed - API key may be invalid or expired');
-        console.error('[CDSS] Groq error details:', {
-          status: error.status,
-          message: error.message,
-          code: error.code,
-          hasKey: !!GROQ_API_KEY,
-          keyFormat: GROQ_API_KEY ? GROQ_API_KEY.substring(0, 4) + '...' : 'none'
-        });
-      } else {
-        console.error('[CDSS] Groq error:', error.message);
-      }
+      console.error('[CDSS] LLM cascade error:', error.message);
       throw error;
     }
   }

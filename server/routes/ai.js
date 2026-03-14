@@ -3,6 +3,7 @@ import auth from '../middleware/auth.js';
 import dotenv from 'dotenv';
 import healthDiaryService from '../services/health-diary.service.js';
 import rateLimit from 'express-rate-limit';
+import llmProvider from '../services/ai-brain/llm-provider.js';
 
 // Load environment variables
 dotenv.config();
@@ -1182,25 +1183,22 @@ router.post('/translate', auth, async (req, res) => {
       ? `You are a medical translator. Translate the following medical text to ${targetLanguage} while preserving medical terminology, emojis, and markdown formatting. Keep the translation accurate and easy to understand for patients.\n\nText to translate:\n${text}`
       : `Translate the following text to ${targetLanguage} while preserving emojis and formatting.\n\nText to translate:\n${text}`;
 
-    assertGroqConfigured();
-
-    const chatCompletion = await groq.chat.completions.create({
+    const result = await llmProvider.chat({
       messages: [
         {
-          role: "system",
-          content: "You are a professional translator specializing in medical and healthcare communications."
+          role: 'system',
+          content: 'You are a professional translator specializing in medical and healthcare communications.'
         },
         {
-          role: "user",
+          role: 'user',
           content: translationPrompt
         }
       ],
-      model: "llama-3.3-70b-versatile", // Updated from deprecated llama3-8b-8192
       temperature: 0.3,
-      max_tokens: 2000,
+      maxTokens: 2000
     });
 
-    const translatedText = chatCompletion.choices[0]?.message?.content || text;
+    const translatedText = result.content || text;
 
     res.json({
       status: 'success',

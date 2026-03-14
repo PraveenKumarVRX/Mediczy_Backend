@@ -7,6 +7,7 @@ import { Appointment } from '../models/appointment.model.intelligent.js';
 import doctorModel from '../models/doctor.model.intelligent.js';
 import { User } from '../models/user.model.intelligent.js';
 import { buildLiveKitJoinData } from '../utils/videoProvider.js';
+import llmProvider from '../services/ai-brain/llm-provider.js';
 
 const router = express.Router();
 const SIB_URL = process.env.SIB_URL || 'http://localhost:8001';
@@ -1747,26 +1748,6 @@ router.post('/analyze-report', authUser, async (req, res) => {
 
     console.log(`[Patient Report Analysis] User ${req.user.id} - ${mimeType} - ${Math.round(image.length / 1024)}KB`);
 
-    // Initialize Anthropic client
-    let Anthropic;
-    try {
-      Anthropic = (await import('@anthropic-ai/sdk')).default;
-    } catch {
-      // Fallback: use Gemini-based analysis description
-      return res.json({
-        success: true,
-        analysis: {
-          findings: 'AI Vision service is being configured. Please use the in-app camera analysis or try again shortly.',
-          assessment: 'Service temporarily limited',
-          recommendations: ['Please try again in a few minutes', 'You can also consult with a doctor for report interpretation'],
-          urgency: 'routine',
-          keyValues: {}
-        }
-      });
-    }
-
-    const client = new Anthropic();
-
     const patientPrompt = `You are a compassionate medical AI assistant helping a patient understand their medical report.
 
 IMPORTANT GUIDELINES:
@@ -1796,33 +1777,31 @@ Return ONLY valid JSON (no markdown, no code blocks):
 
 Patient's question: ${query}`;
 
-    const response = await client.messages.create({
-      model: 'claude-3-5-sonnet-20241022',
-      max_tokens: 2000,
-      messages: [
-        {
-          role: 'user',
-          content: [
-            {
-              type: 'image',
-              source: {
-                type: 'base64',
-                media_type: mimeType,
-                data: image
-              }
-            },
-            {
-              type: 'text',
-              text: patientPrompt
-            }
-          ]
+    let visionResult;
+    try {
+      visionResult = await llmProvider.vision({
+        base64Image: image,
+        mimeType,
+        prompt: patientPrompt,
+        maxTokens: 2000
+      });
+    } catch (visionError) {
+      // Graceful fallback if vision provider is unavailable
+      return res.json({
+        success: true,
+        analysis: {
+          findings: 'AI Vision service is being configured. Please use the in-app camera analysis or try again shortly.',
+          assessment: 'Service temporarily limited',
+          recommendations: ['Please try again in a few minutes', 'You can also consult with a doctor for report interpretation'],
+          urgency: 'routine',
+          keyValues: {}
         }
-      ]
-    });
+      });
+    }
 
     let analysis = null;
     try {
-      const responseText = response.content[0].type === 'text' ? response.content[0].text : '';
+      const responseText = visionResult.content || '';
       let cleanedText = responseText
         .replace(/```json\n?/g, '')
         .replace(/```\n?/g, '')
@@ -1835,7 +1814,7 @@ Patient's question: ${query}`;
         throw new Error('Could not parse JSON');
       }
     } catch (parseError) {
-      const responseText = response.content[0].type === 'text' ? response.content[0].text : '';
+      const responseText = visionResult.content || '';
       analysis = {
         findings: responseText,
         assessment: 'See findings above for complete analysis',
@@ -1858,7 +1837,7 @@ Patient's question: ${query}`;
         keyValues: analysis.keyValues || {},
         summary: analysis.summary || '',
         analyzedAt: new Date().toISOString(),
-        model: 'claude-3.5-sonnet',
+        model: visionResult.model || 'claude-3.5-sonnet',
         disclaimer: 'This AI analysis is for informational purposes only. Always consult a qualified healthcare professional for medical advice.'
       }
     });

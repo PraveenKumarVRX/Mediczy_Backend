@@ -7,9 +7,8 @@ import fs from 'fs';
 import path from 'path';
 import { fileURLToPath } from 'url';
 import axios from 'axios';
-import OpenAI from 'openai';
-import Groq from 'groq-sdk';
 import FormData from 'form-data';
+import llmProvider from '../services/ai-brain/llm-provider.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -18,15 +17,6 @@ const router = express.Router();
 
 const LIVEKIT_RECORDINGS_DIR = process.env.LIVEKIT_RECORDINGS_DIR || '/mnt/recordings';
 const RECORDINGS_BASE_URL = process.env.RECORDINGS_BASE_URL || '/api/recordings';
-
-// Initialize AI clients for transcription
-const openai = process.env.OPENAI_API_KEY && process.env.OPENAI_API_KEY !== '' 
-  ? new OpenAI({ apiKey: process.env.OPENAI_API_KEY })
-  : null;
-
-const groq = process.env.GROQ_API_KEY && process.env.GROQ_API_KEY !== ''
-  ? new Groq({ apiKey: process.env.GROQ_API_KEY })
-  : null;
 
 /**
  * @route   POST /api/consultation-recordings/start
@@ -242,64 +232,9 @@ async function transcribeRecording(filePath) {
       };
     }
 
-    // Try Groq Whisper first (faster and free)
-    if (groq) {
-      try {
-        console.log('🚀 Using Groq Whisper for transcription...');
-        const fileStream = fs.createReadStream(filePath);
-        
-        const transcription = await groq.audio.transcriptions.create({
-          file: fileStream,
-          model: 'whisper-large-v3',
-          language: 'en',
-          response_format: 'verbose_json'
-        });
-
-        console.log('✅ Groq transcription completed');
-        return {
-          success: true,
-          text: transcription.text,
-          provider: 'groq-whisper',
-          duration: transcription.duration,
-          language: transcription.language
-        };
-      } catch (groqError) {
-        console.error('Groq transcription failed:', groqError.message);
-        // Fall through to OpenAI
-      }
-    }
-
-    // Fallback to OpenAI Whisper
-    if (openai) {
-      try {
-        console.log('🔄 Falling back to OpenAI Whisper...');
-        const fileStream = fs.createReadStream(filePath);
-        
-        const transcription = await openai.audio.transcriptions.create({
-          file: fileStream,
-          model: 'whisper-1',
-          language: 'en',
-          response_format: 'verbose_json'
-        });
-
-        console.log('✅ OpenAI transcription completed');
-        return {
-          success: true,
-          text: transcription.text,
-          provider: 'openai-whisper',
-          duration: transcription.duration,
-          language: transcription.language
-        };
-      } catch (openaiError) {
-        console.error('OpenAI transcription failed:', openaiError.message);
-        throw openaiError;
-      }
-    }
-
-    return {
-      success: false,
-      error: 'No transcription API available. Please configure OPENAI_API_KEY or GROQ_API_KEY.'
-    };
+    const fileStream = fs.createReadStream(filePath);
+    const result = await llmProvider.transcribe(fileStream, { language: 'en', responseFormat: 'verbose_json' });
+    return result;
   } catch (error) {
     console.error('Transcription error:', error);
     return {
@@ -340,71 +275,22 @@ Provide the response in JSON format with these exact keys:
 
     const userPrompt = `Analyze this medical consultation transcript:\n\n${transcriptText}\n\nProvide structured medical information extraction.`;
 
-    let analysisResult = null;
+    const result = await llmProvider.chat({
+      messages: [
+        { role: 'system', content: systemPrompt },
+        { role: 'user', content: userPrompt }
+      ],
+      temperature: 0.3,
+      maxTokens: 2000,
+      responseFormat: { type: 'json_object' }
+    });
 
-    // Try Groq first (faster)
-    if (groq) {
-      try {
-        console.log('🧠 Using Groq AI for transcript analysis...');
-        const completion = await groq.chat.completions.create({
-          messages: [
-            { role: 'system', content: systemPrompt },
-            { role: 'user', content: userPrompt }
-          ],
-          model: 'llama-3.3-70b-versatile',
-          temperature: 0.3,
-          max_tokens: 2000,
-          response_format: { type: 'json_object' }
-        });
-
-        analysisResult = JSON.parse(completion.choices[0].message.content);
-        console.log('✅ Groq analysis completed');
-        
-        return {
-          success: true,
-          summary: analysisResult.summary || 'Consultation analyzed successfully.',
-          prescription: analysisResult,
-          model: 'llama-3.3-70b'
-        };
-      } catch (groqError) {
-        console.error('Groq analysis failed:', groqError.message);
-        // Fall through to OpenAI
-      }
-    }
-
-    // Fallback to OpenAI
-    if (openai) {
-      try {
-        console.log('🔄 Falling back to OpenAI for analysis...');
-        const completion = await openai.chat.completions.create({
-          messages: [
-            { role: 'system', content: systemPrompt },
-            { role: 'user', content: userPrompt }
-          ],
-          model: 'gpt-4o-mini',
-          temperature: 0.3,
-          max_tokens: 2000,
-          response_format: { type: 'json_object' }
-        });
-
-        analysisResult = JSON.parse(completion.choices[0].message.content);
-        console.log('✅ OpenAI analysis completed');
-        
-        return {
-          success: true,
-          summary: analysisResult.summary || 'Consultation analyzed successfully.',
-          prescription: analysisResult,
-          model: 'gpt-4o-mini'
-        };
-      } catch (openaiError) {
-        console.error('OpenAI analysis failed:', openaiError.message);
-        throw openaiError;
-      }
-    }
-
+    const analysisResult = JSON.parse(result.content);
     return {
-      success: false,
-      error: 'No AI API available for analysis.'
+      success: true,
+      summary: analysisResult.summary || 'Consultation analyzed successfully.',
+      prescription: analysisResult,
+      model: result.model
     };
   } catch (error) {
     console.error('Transcript analysis error:', error);

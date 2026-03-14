@@ -6,10 +6,9 @@
 import express from 'express';
 import { authDoctor } from '../middleware/doctor.middleware.js';
 import ClinicalNote from '../models/clinical-note.model.js';
-import { OpenAI } from 'openai';
+import llmProvider from '../services/ai-brain/llm-provider.js';
 
 const router = express.Router();
-const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
 
 // Create/Update Clinical Note
 router.post('/notes', authDoctor, async (req, res) => {
@@ -80,17 +79,16 @@ Plan: ${note.plan || 'Not documented'}
 
 Provide a 2-3 sentence professional summary suitable for handoff or quick review.`;
 
-    const completion = await openai.chat.completions.create({
-      model: "gpt-4",
+    const result = await llmProvider.chat({
       messages: [
-        { role: "system", content: "You are a medical documentation assistant. Create concise, professional clinical summaries." },
-        { role: "user", content: prompt }
+        { role: 'system', content: 'You are a medical documentation assistant. Create concise, professional clinical summaries.' },
+        { role: 'user', content: prompt }
       ],
       temperature: 0.3,
-      max_tokens: 200
+      maxTokens: 200
     });
 
-    const encounterSummary = completion.choices[0].message.content;
+    const encounterSummary = result.content;
 
     await note.update({
       encounterSummary,

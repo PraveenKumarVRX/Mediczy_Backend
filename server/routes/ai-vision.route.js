@@ -10,7 +10,7 @@ import express from 'express';
 import multer from 'multer';
 import fs from 'fs/promises';
 import path from 'path';
-import Anthropic from '@anthropic-ai/sdk';
+import llmProvider from '../services/ai-brain/llm-provider.js';
 import { authDoctor } from '../middleware/auth.middleware.js';
 import { scanOnly } from '../services/minio-upload.service.js';
 
@@ -40,9 +40,6 @@ const upload = multer({
     }
   }
 });
-
-// Initialize Anthropic client
-const client = new Anthropic();
 
 /**
  * @route   POST /api/ai/vision/analyze
@@ -125,35 +122,18 @@ Return ONLY valid JSON (no markdown, no code blocks):
   ]
 }`;
 
-    // Call Claude Vision API
-    const response = await client.messages.create({
-      model: 'claude-3-5-sonnet-20241022',
-      max_tokens: 2000,
-      messages: [
-        {
-          role: 'user',
-          content: [
-            {
-              type: 'image',
-              source: {
-                type: 'base64',
-                media_type: mediaType,
-                data: base64Image
-              }
-            },
-            {
-              type: 'text',
-              text: visionPrompt
-            }
-          ]
-        }
-      ]
+    // Call centralized Vision API via llmProvider
+    const visionResult = await llmProvider.vision({
+      base64Image,
+      mimeType: mediaType,
+      prompt: visionPrompt,
+      maxTokens: 2000
     });
 
     // Extract and parse response
     let analysis = null;
     try {
-      const responseText = response.content[0].type === 'text' ? response.content[0].text : '';
+      const responseText = visionResult.content || '';
       
       // Remove markdown code blocks if present
       let cleanedText = responseText
@@ -169,7 +149,7 @@ Return ONLY valid JSON (no markdown, no code blocks):
       }
     } catch (parseError) {
       console.warn('[AI Vision] Failed to parse JSON response, creating fallback structure');
-      const responseText = response.content[0].type === 'text' ? response.content[0].text : '';
+      const responseText = visionResult.content || '';
       analysis = {
         findings: responseText,
         assessment: 'See findings for complete analysis',
@@ -192,7 +172,7 @@ Return ONLY valid JSON (no markdown, no code blocks):
         icd10Codes: Array.isArray(analysis.icd10Codes) ? analysis.icd10Codes : [],
         sourceType: sourceType || 'uploaded_image',
         analyzedAt: new Date().toISOString(),
-        model: 'claude-3-5-sonnet'
+        model: visionResult.model || 'claude-3-5-sonnet'
       },
       metadata: {
         fileSize: req.file.size,
