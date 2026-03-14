@@ -43,6 +43,21 @@ const reportUpload = multer({
 
 const router = express.Router();
 
+// ──────────────────────────────────────────────
+// Helper: Detect auto-generated placeholder emails that aren't real mailboxes
+// These are created during bulk employee import and will bounce if sent to.
+// Patterns: e12345@equitasbank.com, pending+E12345@..., whatsapp.91xxx@mediczy.whatsapp
+// ──────────────────────────────────────────────
+function isPlaceholderEmail(email) {
+  if (!email) return true;
+  const lower = email.toLowerCase().trim();
+  if (/^[a-z]{1,3}\d{3,}@/.test(lower)) return true;           // e68851@equitasbank.com
+  if (lower.startsWith('pending+')) return true;                // pending+E68851@...
+  if (lower.endsWith('@mediczy.whatsapp')) return true;         // whatsapp.91xxx@mediczy.whatsapp
+  if (lower.includes('noemail') || lower.includes('no-email')) return true;
+  return false;
+}
+
 // Require team or admin role
 function requireTeamOrAdmin(req, res, next) {
   const role = req.user?.role;
@@ -461,26 +476,30 @@ router.post('/health-checkup', authUser, requireTeamOrAdmin, async (req, res) =>
     // Uses the team user's configured SMTP from email_settings table
     let emailResult = null;
     if (sendEmail !== false && sendEmail !== 'false') {
-      try {
-        const emailHtml = buildHealthCheckupEmailHtml({
-          employeeName: employeeFullName,
-          corporateName,
-          labName,
-          labAddress,
-          testPackage,
-          checkupDate: displayDate,
-          checkupTime: checkupTime || 'As scheduled',
-          orderNumber,
-          notes
-        });
+      if (isPlaceholderEmail(employee.email)) {
+        console.log(`ℹ️ [corporate-bookings] Email skipped — placeholder address: ${employee.email}`);
+      } else {
+        try {
+          const emailHtml = buildHealthCheckupEmailHtml({
+            employeeName: employeeFullName,
+            corporateName,
+            labName,
+            labAddress,
+            testPackage,
+            checkupDate: displayDate,
+            checkupTime: checkupTime || 'As scheduled',
+            orderNumber,
+            notes
+          });
 
-        emailResult = await sendCorporateEmail(req.user.id, {
-          to: employee.email,
-          subject: `Your ${corporateName} Health Checkup is Booked — ${displayDate}`,
-          html: emailHtml
-        });
-      } catch (emailErr) {
-        console.error('[corporate-bookings] Email failed:', emailErr.message);
+          emailResult = await sendCorporateEmail(req.user.id, {
+            to: employee.email,
+            subject: `Your ${corporateName} Health Checkup is Booked — ${displayDate}`,
+            html: emailHtml
+          });
+        } catch (emailErr) {
+          console.error('[corporate-bookings] Email failed:', emailErr.message);
+        }
       }
     } else {
       console.log(`ℹ️ [corporate-bookings] Email skipped (disabled by team user)`);
@@ -716,6 +735,10 @@ router.post(
       // ── 4. Send Email ──────────────────────────────────────
       let emailStatus = 'skipped';
       if (sendEmail !== 'false') {
+        if (isPlaceholderEmail(employee.email)) {
+          console.log(`ℹ️ [corp-reports] Email skipped — placeholder address: ${employee.email}`);
+          emailStatus = 'skipped_placeholder';
+        } else {
         try {
           const html = buildReportEmailHtml({
             employeeName: employeeFullName,
@@ -742,6 +765,7 @@ router.post(
         } catch (e) {
           console.error('[corp-reports] Email failed:', e.message);
           emailStatus = 'failed';
+        }
         }
       }
 
@@ -893,26 +917,31 @@ router.post('/reports/:id/share', authUser, requireTeamOrAdmin, async (req, res)
     let waStatus = 'skipped';
 
     if (sendEmail) {
-      try {
-        const html = buildReportEmailHtml({
-          employeeName: employeeFullName,
-          corporateName,
-          reportName: row.report_name,
-          reportLabel,
-          reportDate: displayDate,
-          reportUrl: row.report_url,
-          notes: row.notes,
-          mimeType: row.mime_type
-        });
-        await sendCorporateEmail(req.user.id, {
-          to: row.email,
-          subject: `Your ${reportLabel} Report — ${corporateName}`,
-          html: html
-        });
-        emailStatus = 'sent';
-      } catch (e) {
-        emailStatus = 'failed';
-        console.error('[corp-reports] share email failed:', e.message);
+      if (isPlaceholderEmail(row.email)) {
+        console.log(`ℹ️ [corp-reports] Share email skipped — placeholder address: ${row.email}`);
+        emailStatus = 'skipped_placeholder';
+      } else {
+        try {
+          const html = buildReportEmailHtml({
+            employeeName: employeeFullName,
+            corporateName,
+            reportName: row.report_name,
+            reportLabel,
+            reportDate: displayDate,
+            reportUrl: row.report_url,
+            notes: row.notes,
+            mimeType: row.mime_type
+          });
+          await sendCorporateEmail(req.user.id, {
+            to: row.email,
+            subject: `Your ${reportLabel} Report — ${corporateName}`,
+            html: html
+          });
+          emailStatus = 'sent';
+        } catch (e) {
+          emailStatus = 'failed';
+          console.error('[corp-reports] share email failed:', e.message);
+        }
       }
     }
 
