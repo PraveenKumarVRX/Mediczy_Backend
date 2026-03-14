@@ -202,6 +202,20 @@ async function chat({
     try {
       console.log(`[LLM] Trying ${provider.label} (model: ${params.model})...`);
       response = await callProvider(provider, params);
+
+      // If JSON mode requested, validate the response is actually valid JSON
+      if (responseFormat && responseFormat.type === 'json_object') {
+        const content = response.choices[0]?.message?.content || '';
+        try {
+          JSON.parse(content);
+        } catch {
+          console.warn(`[LLM] ${provider.label} returned invalid JSON, cascading...`);
+          cascade.push({ provider: provider.name, status: 'error', error: 'Invalid JSON response' });
+          errorMessage = (errorMessage ? errorMessage + ' | ' : '') + `${provider.name}: Invalid JSON response`;
+          continue; // Try next provider
+        }
+      }
+
       winningProvider = provider;
       cascade.push({ provider: provider.name, status: 'success' });
       break; // Success — stop cascade
@@ -282,65 +296,107 @@ function listProviders() {
   });
 }
 
-// ─── Anthropic Vision ──────────────────────────────────────
+// ─── Vision (Anthropic Claude → Groq Llama 4 Scout) ───────
 
 let _anthropicClient = null;
 
-function getAnthropicClient() {
-  if (!_anthropicClient) {
-    try {
-      // Dynamic import is handled at call-site since this is sync
-      const apiKey = process.env.ANTHROPIC_API_KEY;
-      if (!apiKey) throw new Error('ANTHROPIC_API_KEY not configured');
-    } catch { /* checked at call time */ }
-  }
-  return _anthropicClient;
-}
-
 /**
- * Analyse an image using Anthropic Claude Vision.
- * This is the ONLY vision-capable path in the whole app.
+ * Analyse an image using cascading vision providers.
+ * Cascade: Anthropic Claude 3.5 Sonnet → Groq Llama 4 Scout
  *
  * @param {Object} options
  * @param {string} options.base64Image - Base64-encoded image data
  * @param {string} options.mimeType    - image/jpeg, image/png, etc.
  * @param {string} options.prompt      - Analysis prompt
  * @param {number} [options.maxTokens] - Max response tokens (default 2000)
- * @returns {{ content: string, provider: string, model: string, usage: Object }}
+ * @param {string} [options.forceProvider] - Force 'anthropic' or 'groq'
+ * @returns {{ content: string, provider: string, model: string, usage: Object, latencyMs: number, cascade: Array }}
  */
-async function vision({ base64Image, mimeType, prompt, maxTokens = 2000 }) {
+async function vision({ base64Image, mimeType, prompt, maxTokens = 2000, forceProvider = null }) {
   const start = Date.now();
+  const cascade = [];
+  const errors = [];
 
-  // Lazy-import Anthropic SDK (ESM)
-  let Anthropic;
-  try {
-    Anthropic = (await import('@anthropic-ai/sdk')).default;
-  } catch {
-    throw new Error('Anthropic SDK not installed — run: npm i @anthropic-ai/sdk');
-  }
+  const providers = forceProvider
+    ? [forceProvider]
+    : ['anthropic', 'groq'];
 
-  if (!_anthropicClient) {
-    _anthropicClient = new Anthropic();   // uses ANTHROPIC_API_KEY from env
-  }
+  for (const prov of providers) {
+    try {
+      if (prov === 'anthropic') {
+        // ── Anthropic Claude Vision ──
+        if (!process.env.ANTHROPIC_API_KEY) {
+          throw new Error('ANTHROPIC_API_KEY not configured');
+        }
 
-  const response = await _anthropicClient.messages.create({
-    model: process.env.ANTHROPIC_VISION_MODEL || 'claude-3-5-sonnet-20241022',
-    max_tokens: maxTokens,
-    messages: [
-      {
-        role: 'user',
-        content: [
-          { type: 'image', source: { type: 'base64', media_type: mimeType, data: base64Image } },
-          { type: 'text', text: prompt }
-        ]
+        let Anthropic;
+        try {
+          Anthropic = (await import('@anthropic-ai/sdk')).default;
+        } catch {
+          throw new Error('Anthropic SDK not installed — run: npm i @anthropic-ai/sdk');
+        }
+
+        if (!_anthropicClient) {
+          _anthropicClient = new Anthropic();
+        }
+
+        const response = await _anthropicClient.messages.create({
+          model: process.env.ANTHROPIC_VISION_MODEL || 'claude-3-5-sonnet-20241022',
+          max_tokens: maxTokens,
+          messages: [{
+            role: 'user',
+            content: [
+              { type: 'image', source: { type: 'base64', media_type: mimeType, data: base64Image } },
+              { type: 'text', text: prompt }
+            ]
+          }]
+        });
+
+        const content = response.content[0]?.type === 'text' ? response.content[0].text : '';
+        const latencyMs = Date.now() - start;
+        cascade.push({ provider: 'anthropic-vision', status: 'success' });
+
+        await logVisionRequest('anthropic-vision', response.model || 'claude-3-5-sonnet', content, latencyMs, mimeType, response.usage, cascade);
+        return { content, provider: 'anthropic-vision', model: response.model || 'claude-3-5-sonnet', latencyMs, usage: response.usage, cascade };
+
+      } else if (prov === 'groq') {
+        // ── Groq Llama 4 Scout Vision ──
+        const groqClient = getGroqClient();
+        const model = 'meta-llama/llama-4-scout-17b-16e-instruct';
+
+        const imageUrl = `data:${mimeType};base64,${base64Image}`;
+        const response = await groqClient.chat.completions.create({
+          model,
+          max_tokens: maxTokens,
+          messages: [{
+            role: 'user',
+            content: [
+              { type: 'image_url', image_url: { url: imageUrl } },
+              { type: 'text', text: prompt }
+            ]
+          }]
+        });
+
+        const content = response.choices[0]?.message?.content || '';
+        const latencyMs = Date.now() - start;
+        cascade.push({ provider: 'groq-vision', status: 'success' });
+
+        const usage = { input_tokens: response.usage?.prompt_tokens || 0, output_tokens: response.usage?.completion_tokens || 0 };
+        await logVisionRequest('groq-vision', model, content, latencyMs, mimeType, usage, cascade);
+        return { content, provider: 'groq-vision', model, latencyMs, usage, cascade };
       }
-    ]
-  });
+    } catch (err) {
+      const msg = err.message || String(err);
+      console.warn(`[Vision] ${prov} failed: ${msg}`);
+      cascade.push({ provider: `${prov}-vision`, status: 'error', error: msg });
+      errors.push(`${prov}: ${msg}`);
+    }
+  }
 
-  const content = response.content[0]?.type === 'text' ? response.content[0].text : '';
-  const latencyMs = Date.now() - start;
+  throw new Error(`All vision providers failed: ${errors.join(' | ')}`);
+}
 
-  // Log to ai_request_logs
+async function logVisionRequest(provider, model, content, latencyMs, mimeType, usage, cascade) {
   try {
     await pool.query(
       `INSERT INTO ai_request_logs
@@ -348,23 +404,21 @@ async function vision({ base64Image, mimeType, prompt, maxTokens = 2000 }) {
          input_tokens, output_tokens, total_tokens, latency_ms, status, metadata)
        VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10)`,
       [
-        'anthropic-vision',
-        response.model || 'claude-3-5-sonnet',
+        provider,
+        model,
         JSON.stringify([{ role: 'user', content: '(image + prompt)' }]),
-        content.substring(0, 2000),
-        response.usage?.input_tokens || 0,
-        response.usage?.output_tokens || 0,
-        (response.usage?.input_tokens || 0) + (response.usage?.output_tokens || 0),
+        (content || '').substring(0, 2000),
+        usage?.input_tokens || 0,
+        usage?.output_tokens || 0,
+        (usage?.input_tokens || 0) + (usage?.output_tokens || 0),
         latencyMs,
-        'success',
-        JSON.stringify({ type: 'vision', mimeType })
+        cascade.length > 1 ? 'fallback' : 'success',
+        JSON.stringify({ type: 'vision', mimeType, cascade })
       ]
     );
   } catch (logErr) {
     console.error('[LLM-Vision] Failed to log:', logErr.message);
   }
-
-  return { content, provider: 'anthropic-vision', model: response.model || 'claude-3-5-sonnet', latencyMs, usage: response.usage };
 }
 
 // ─── Speech-to-Text (Whisper) ──────────────────────────────
