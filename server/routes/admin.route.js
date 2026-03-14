@@ -1029,6 +1029,21 @@ router.post('/corporates', authUser, requireRole(['admin', 'team']), async (req,
         message: 'Corporate with this email already exists'
       });
     }
+
+    // Check if corporate with this company name already exists
+    const existingNameRows = await postgresSequelize.query(`
+      SELECT id FROM corporates WHERE LOWER(TRIM("companyName")) = LOWER(TRIM(:companyName)) LIMIT 1
+    `, {
+      replacements: { companyName },
+      type: postgresSequelize.QueryTypes.SELECT
+    });
+
+    if (existingNameRows && existingNameRows.length > 0) {
+      return res.status(409).json({
+        success: false,
+        message: 'Corporate with this company name already exists'
+      });
+    }
     
     // Build metadata
     const metadata = {
