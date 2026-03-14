@@ -115,6 +115,24 @@ interface Appointment {
   doctorName: string;
 }
 
+interface PatientReport {
+  id: number;
+  fileName: string;
+  fileSize: number;
+  mimeType: string;
+  reportType: string;
+  description: string | null;
+  testName: string | null;
+  labName: string | null;
+  reportDate: string | null;
+  analysisStatus: string;
+  aiSummary: string | null;
+  aiCategory: string | null;
+  keyFindings: string[];
+  uploadedAt: string;
+  createdAt: string;
+}
+
 export default function PatientEMR() {
   const { toast } = useToast();
   const [searchParams] = useSearchParams();
@@ -147,6 +165,10 @@ export default function PatientEMR() {
   const [selectedAppointment, setSelectedAppointment] = useState<Appointment | null>(null);
   const [isAppointmentDialogOpen, setIsAppointmentDialogOpen] = useState(false);
 
+  // Patient Reports State
+  const [patientReports, setPatientReports] = useState<PatientReport[]>([]);
+  const [loadingReports, setLoadingReports] = useState(false);
+
   // Fetch patients
   const { data: patientsData, isLoading: loadingPatients, refetch: refetchPatients } = useQuery({
     queryKey: ['doctor-patients-emr'],
@@ -168,6 +190,27 @@ export default function PatientEMR() {
       p.phoneNumber?.includes(searchQuery)
     );
   });
+
+  // Fetch patient reports when patient is selected
+  useEffect(() => {
+    if (!selectedPatient) {
+      setPatientReports([]);
+      return;
+    }
+    const fetchReports = async () => {
+      setLoadingReports(true);
+      try {
+        const response = await api.get(`/ehr/reports/${selectedPatient.id}`);
+        setPatientReports(response.data?.reports || []);
+      } catch (err) {
+        console.error('Failed to fetch patient reports:', err);
+        setPatientReports([]);
+      } finally {
+        setLoadingReports(false);
+      }
+    };
+    fetchReports();
+  }, [selectedPatient]);
 
   // Mock data for selected patient's records
   const mockVitals: VitalSign[] = selectedPatient ? [
@@ -472,7 +515,7 @@ export default function PatientEMR() {
 
                 {/* Tabs for different record sections */}
                 <Tabs value={activeTab} onValueChange={setActiveTab}>
-                  <TabsList className="grid grid-cols-2 md:grid-cols-5 w-full">
+                  <TabsList className="grid grid-cols-3 md:grid-cols-6 w-full">
                     <TabsTrigger value="overview" className="gap-1">
                       <ClipboardList className="w-4 h-4" />
                       <span className="hidden md:inline">Overview</span>
@@ -489,6 +532,10 @@ export default function PatientEMR() {
                       <FlaskConical className="w-4 h-4" />
                       <span className="hidden md:inline">Lab Reports</span>
                     </TabsTrigger>
+                    <TabsTrigger value="reports" className="gap-1">
+                      <FileImage className="w-4 h-4" />
+                      <span className="hidden md:inline">Reports</span>
+                    </TabsTrigger>
                     <TabsTrigger value="history" className="gap-1">
                       <Calendar className="w-4 h-4" />
                       <span className="hidden md:inline">History</span>
@@ -498,7 +545,7 @@ export default function PatientEMR() {
                   {/* Overview Tab */}
                   <TabsContent value="overview" className="mt-4 space-y-4">
                     {/* Quick Stats */}
-                    <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+                    <div className="grid grid-cols-2 md:grid-cols-5 gap-4">
                       <Card className="p-4">
                         <div className="flex items-center gap-3">
                           <div className="p-2 bg-blue-100 dark:bg-blue-900/30 rounded-lg">
@@ -529,6 +576,17 @@ export default function PatientEMR() {
                           <div>
                             <p className="text-2xl font-bold">{mockLabReports.length}</p>
                             <p className="text-xs text-gray-500">Lab Reports</p>
+                          </div>
+                        </div>
+                      </Card>
+                      <Card className="p-4">
+                        <div className="flex items-center gap-3">
+                          <div className="p-2 bg-orange-100 dark:bg-orange-900/30 rounded-lg">
+                            <FileImage className="w-5 h-5 text-orange-600" />
+                          </div>
+                          <div>
+                            <p className="text-2xl font-bold">{patientReports.length}</p>
+                            <p className="text-xs text-gray-500">Reports</p>
                           </div>
                         </div>
                       </Card>
@@ -717,6 +775,97 @@ export default function PatientEMR() {
                             </tbody>
                           </table>
                         </div>
+                      </CardContent>
+                    </Card>
+                  </TabsContent>
+
+                  {/* Patient Reports Tab */}
+                  <TabsContent value="reports" className="mt-4">
+                    <Card>
+                      <CardHeader>
+                        <div className="flex items-center justify-between">
+                          <CardTitle>Patient Reports</CardTitle>
+                          <Badge variant="outline">{patientReports.length} reports</Badge>
+                        </div>
+                      </CardHeader>
+                      <CardContent>
+                        {loadingReports ? (
+                          <div className="flex items-center justify-center py-8">
+                            <Loader2 className="w-6 h-6 animate-spin mr-2" />
+                            <span className="text-gray-500">Loading reports...</span>
+                          </div>
+                        ) : patientReports.length === 0 ? (
+                          <div className="text-center py-8">
+                            <FileImage className="w-12 h-12 mx-auto mb-3 text-gray-300" />
+                            <p className="text-gray-500">No reports uploaded yet</p>
+                          </div>
+                        ) : (
+                          <div className="space-y-3">
+                            {patientReports.map((report) => (
+                              <div key={report.id} className="flex items-start gap-4 p-4 border rounded-lg hover:bg-gray-50 dark:hover:bg-gray-800">
+                                <div className={`p-3 rounded-lg ${
+                                  report.reportType === 'lab' ? 'bg-blue-100 dark:bg-blue-900/30' :
+                                  report.reportType === 'imaging' ? 'bg-purple-100 dark:bg-purple-900/30' :
+                                  report.reportType === 'prescription' ? 'bg-green-100 dark:bg-green-900/30' :
+                                  'bg-gray-100 dark:bg-gray-800'
+                                }`}>
+                                  <FileImage className={`w-5 h-5 ${
+                                    report.reportType === 'lab' ? 'text-blue-600' :
+                                    report.reportType === 'imaging' ? 'text-purple-600' :
+                                    report.reportType === 'prescription' ? 'text-green-600' :
+                                    'text-gray-600'
+                                  }`} />
+                                </div>
+                                <div className="flex-1 min-w-0">
+                                  <div className="flex items-center gap-2 flex-wrap">
+                                    <p className="font-medium truncate">{report.testName || report.fileName}</p>
+                                    <Badge variant="outline" className="capitalize text-xs">{report.reportType}</Badge>
+                                    {report.analysisStatus === 'completed' && (
+                                      <Badge variant="secondary" className="text-xs">AI Analyzed</Badge>
+                                    )}
+                                    {report.analysisStatus === 'pending' && (
+                                      <Badge variant="outline" className="text-xs text-yellow-600">Pending Analysis</Badge>
+                                    )}
+                                  </div>
+                                  {report.labName && (
+                                    <p className="text-sm text-gray-500 mt-0.5">Lab: {report.labName}</p>
+                                  )}
+                                  {report.description && (
+                                    <p className="text-sm text-gray-600 dark:text-gray-400 mt-1 line-clamp-2">{report.description}</p>
+                                  )}
+                                  {report.aiSummary && (
+                                    <div className="mt-2 p-2 bg-blue-50 dark:bg-blue-900/20 rounded text-sm">
+                                      <p className="font-medium text-blue-700 dark:text-blue-300 text-xs mb-1">AI Analysis Summary</p>
+                                      <p className="text-gray-700 dark:text-gray-300 line-clamp-3">{report.aiSummary}</p>
+                                      {report.keyFindings && report.keyFindings.length > 0 && (
+                                        <div className="mt-1 flex flex-wrap gap-1">
+                                          {report.keyFindings.slice(0, 3).map((finding, i) => (
+                                            <Badge key={i} variant="secondary" className="text-xs">{finding}</Badge>
+                                          ))}
+                                        </div>
+                                      )}
+                                    </div>
+                                  )}
+                                  <div className="flex items-center gap-3 mt-2 text-xs text-gray-400">
+                                    <span>{report.reportDate ? format(new Date(report.reportDate), 'dd MMM yyyy') : format(new Date(report.uploadedAt), 'dd MMM yyyy')}</span>
+                                    <span>{(report.fileSize / 1024).toFixed(0)} KB</span>
+                                    <span className="capitalize">{report.mimeType?.split('/')[1] || 'file'}</span>
+                                  </div>
+                                </div>
+                                <Button
+                                  variant="ghost"
+                                  size="sm"
+                                  onClick={() => {
+                                    window.open(`/api/reports/${report.id}/download`, '_blank');
+                                  }}
+                                  title="Download Report"
+                                >
+                                  <Download className="w-4 h-4" />
+                                </Button>
+                              </div>
+                            ))}
+                          </div>
+                        )}
                       </CardContent>
                     </Card>
                   </TabsContent>

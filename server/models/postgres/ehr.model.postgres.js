@@ -29,7 +29,7 @@ const EHRRecord = sequelize.define('EHRRecord', {
     index: true
   },
   recordType: {
-    type: DataTypes.ENUM('prescription', 'lab_result', 'diagnosis', 'vitals', 'procedure', 'note', 'vaccination', 'allergy', 'medication'),
+    type: DataTypes.ENUM('prescription', 'lab_result', 'diagnosis', 'vitals', 'procedure', 'note', 'vaccination', 'allergy', 'medication', 'report'),
     allowNull: false,
     index: true
   },

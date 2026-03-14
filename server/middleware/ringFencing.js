@@ -76,7 +76,8 @@ const USER_TYPE_PERMISSIONS = {
       '/api/hospitals',  // Hospital directory
       '/api/clinics',  // Clinic directory
       '/api/poc-devices',  // POC device management
-      '/api/firebase'  // Firebase status & test
+      '/api/firebase',  // Firebase status & test
+      '/api/ehr'  // Electronic Health Records
     ],
     tokenField: 'userId'
   },
@@ -152,7 +153,8 @@ const USER_TYPE_PERMISSIONS = {
       '/api/hospitals',  // Hospital directory
       '/api/clinics',  // Clinic directory
       '/api/poc-devices',  // POC device management
-      '/api/firebase'  // Firebase status & test
+      '/api/firebase',  // Firebase status & test
+      '/api/ehr'  // Electronic Health Records
     ],
     tokenField: 'userId'
   },
@@ -183,7 +185,8 @@ const USER_TYPE_PERMISSIONS = {
       '/api/v2/doctors',  // Enterprise API v2 doctor endpoints
       '/api/mobile',  // Mobile API gateway for doctor app
       '/api/v3/ai-brain',  // AI Brain intelligence layer
-      '/api/v3/ai-intelligence'  // Drug interactions, triage, risk scores, insights
+      '/api/v3/ai-intelligence',  // Drug interactions, triage, risk scores, insights
+      '/api/ehr'  // Electronic Health Records - patient records access
     ],
     tokenField: 'doctorId'
   },
@@ -316,7 +319,8 @@ const USER_TYPE_PERMISSIONS = {
       '/api/hospital/patients',
       '/api/hospital/appointments',
       '/api/hospital/departments',
-      '/api/insurance/admin'
+      '/api/insurance/admin',
+      '/api/ehr'  // Electronic Health Records
     ],
     tokenField: 'hospitalId'
   },

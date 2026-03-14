@@ -17,6 +17,7 @@ import { Checkbox } from '@/components/ui/checkbox';
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
 import { Separator } from '@/components/ui/separator';
 import HospitalLayout from '@/components/hospital/HospitalLayout';
+import api from '@/utils/api';
 import {
   patientService,
   ehrService,
@@ -36,7 +37,8 @@ import {
   AlertTriangle, ClipboardList, FilePlus, FileCheck, Send,
   Image, Paperclip, MessageSquare, Share2, MoreVertical,
   ChevronRight, ChevronDown, BarChart3, LineChart, TrendingUp,
-  TrendingDown, Zap, Shield, UserCog, HeartPulse, Bone, Baby
+  TrendingDown, Zap, Shield, UserCog, HeartPulse, Bone, Baby,
+  FileImage, Loader2
 } from 'lucide-react';
 
 // Types
@@ -211,6 +213,24 @@ interface ClinicalNote {
   signedAt?: string;
 }
 
+interface PatientReport {
+  id: number;
+  fileName: string;
+  fileSize: number;
+  mimeType: string;
+  reportType: string;
+  description: string | null;
+  testName: string | null;
+  labName: string | null;
+  reportDate: string | null;
+  analysisStatus: string;
+  aiSummary: string | null;
+  aiCategory: string | null;
+  keyFindings: string[];
+  uploadedAt: string;
+  createdAt: string;
+}
+
 const HospitalEHR = () => {
   const navigate = useNavigate();
   const [loading, setLoading] = useState(true);
@@ -225,6 +245,8 @@ const HospitalEHR = () => {
   const [showPrescriptionDialog, setShowPrescriptionDialog] = useState(false);
   const [showProcedureDialog, setShowProcedureDialog] = useState(false);
   const [expandedSections, setExpandedSections] = useState<string[]>(['vitals', 'encounters', 'medications']);
+  const [patientReports, setPatientReports] = useState<PatientReport[]>([]);
+  const [loadingReports, setLoadingReports] = useState(false);
   const { toast } = useToast();
   const [noteForm, setNoteForm] = useState({
     type: 'Progress Note' as ClinicalNote['type'],
@@ -446,6 +468,27 @@ const HospitalEHR = () => {
     }
   }, [patients, selectedPatient]);
 
+  // Fetch patient reports when patient is selected
+  useEffect(() => {
+    if (!selectedPatient) {
+      setPatientReports([]);
+      return;
+    }
+    const fetchReports = async () => {
+      setLoadingReports(true);
+      try {
+        const response = await api.get(`/ehr/reports/${selectedPatient.id}`);
+        setPatientReports(response.data?.reports || []);
+      } catch (err) {
+        console.error('Failed to fetch patient reports:', err);
+        setPatientReports([]);
+      } finally {
+        setLoadingReports(false);
+      }
+    };
+    fetchReports();
+  }, [selectedPatient]);
+
   const toggleSection = (section: string) => {
     setExpandedSections(prev => 
       prev.includes(section) ? prev.filter(s => s !== section) : [...prev, section]
@@ -616,7 +659,7 @@ const HospitalEHR = () => {
 
           {/* Main Content Tabs */}
           <Tabs value={activeTab} onValueChange={setActiveTab} className="space-y-6">
-            <TabsList className="grid grid-cols-8 w-auto">
+            <TabsList className="grid grid-cols-9 w-auto">
               <TabsTrigger value="summary" className="gap-1 text-xs">
                 <ClipboardList className="h-4 w-4" /> Summary
               </TabsTrigger>
@@ -631,6 +674,9 @@ const HospitalEHR = () => {
               </TabsTrigger>
               <TabsTrigger value="imaging" className="gap-1 text-xs">
                 <Image className="h-4 w-4" /> Imaging
+              </TabsTrigger>
+              <TabsTrigger value="reports" className="gap-1 text-xs">
+                <FileImage className="h-4 w-4" /> Reports
               </TabsTrigger>
               <TabsTrigger value="medications" className="gap-1 text-xs">
                 <Pill className="h-4 w-4" /> Medications
@@ -1361,6 +1407,98 @@ const HospitalEHR = () => {
                   </Card>
                 ))}
               </div>
+            </TabsContent>
+
+            {/* Patient Reports Tab */}
+            <TabsContent value="reports" className="space-y-6">
+              <div className="flex items-center justify-between">
+                <h2 className="text-xl font-bold">Patient Reports</h2>
+                <Badge variant="outline">{patientReports.length} reports</Badge>
+              </div>
+              {loadingReports ? (
+                <div className="flex items-center justify-center py-12">
+                  <Loader2 className="w-6 h-6 animate-spin mr-2" />
+                  <span className="text-muted-foreground">Loading reports...</span>
+                </div>
+              ) : patientReports.length === 0 ? (
+                <Card>
+                  <CardContent className="flex flex-col items-center justify-center py-12">
+                    <FileImage className="w-12 h-12 mb-3 text-muted-foreground/40" />
+                    <p className="text-muted-foreground">No reports uploaded by this patient</p>
+                  </CardContent>
+                </Card>
+              ) : (
+                <div className="space-y-4">
+                  {patientReports.map((report) => (
+                    <Card key={report.id}>
+                      <CardHeader className="pb-3">
+                        <div className="flex items-start justify-between">
+                          <div className="flex items-start gap-3">
+                            <div className={`p-2 rounded-lg ${
+                              report.reportType === 'lab' ? 'bg-blue-100 dark:bg-blue-900/30' :
+                              report.reportType === 'imaging' ? 'bg-purple-100 dark:bg-purple-900/30' :
+                              report.reportType === 'prescription' ? 'bg-green-100 dark:bg-green-900/30' :
+                              'bg-gray-100 dark:bg-gray-800'
+                            }`}>
+                              <FileImage className={`h-5 w-5 ${
+                                report.reportType === 'lab' ? 'text-blue-600' :
+                                report.reportType === 'imaging' ? 'text-purple-600' :
+                                report.reportType === 'prescription' ? 'text-green-600' :
+                                'text-gray-600'
+                              }`} />
+                            </div>
+                            <div>
+                              <CardTitle className="text-base">{report.testName || report.fileName}</CardTitle>
+                              <CardDescription>
+                                {report.labName && `${report.labName} • `}
+                                {report.reportDate || new Date(report.uploadedAt).toLocaleDateString()}
+                                {' • '}{(report.fileSize / 1024).toFixed(0)} KB
+                              </CardDescription>
+                            </div>
+                          </div>
+                          <div className="flex items-center gap-2">
+                            <Badge variant="outline" className="capitalize">{report.reportType}</Badge>
+                            {report.analysisStatus === 'completed' && (
+                              <Badge className="bg-green-100 text-green-800 dark:bg-green-900/40 dark:text-green-200">AI Analyzed</Badge>
+                            )}
+                            {report.analysisStatus === 'pending' && (
+                              <Badge className="bg-yellow-100 text-yellow-800 dark:bg-yellow-900/40 dark:text-yellow-200">Pending</Badge>
+                            )}
+                          </div>
+                        </div>
+                      </CardHeader>
+                      <CardContent>
+                        {report.description && (
+                          <p className="text-sm text-muted-foreground mb-3">{report.description}</p>
+                        )}
+                        {report.aiSummary && (
+                          <div className="p-3 bg-blue-50 dark:bg-blue-900/20 rounded-lg mb-3">
+                            <p className="text-sm font-medium text-blue-700 dark:text-blue-300 mb-1">AI Analysis Summary</p>
+                            <p className="text-sm">{report.aiSummary}</p>
+                            {report.keyFindings && report.keyFindings.length > 0 && (
+                              <div className="mt-2 flex flex-wrap gap-1">
+                                {report.keyFindings.map((finding, i) => (
+                                  <Badge key={i} variant="secondary" className="text-xs">{finding}</Badge>
+                                ))}
+                              </div>
+                            )}
+                          </div>
+                        )}
+                        <div className="flex gap-2">
+                          <Button
+                            variant="outline"
+                            size="sm"
+                            className="gap-2"
+                            onClick={() => window.open(`/api/reports/${report.id}/download`, '_blank')}
+                          >
+                            <Download className="h-4 w-4" /> Download
+                          </Button>
+                        </div>
+                      </CardContent>
+                    </Card>
+                  ))}
+                </div>
+              )}
             </TabsContent>
 
             {/* Medications Tab */}

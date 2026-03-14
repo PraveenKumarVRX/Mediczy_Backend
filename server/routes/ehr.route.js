@@ -5,7 +5,7 @@
 
 import express from 'express';
 import { EHRRecord, HealthDiary } from '../models/postgres/ehr.model.postgres.js';
-import { Prescription } from '../models/index.js';
+import { Prescription, Report } from '../models/index.js';
 import { authUser } from '../middleware/auth.middleware.js';
 import { Op } from 'sequelize';
 
@@ -318,6 +318,70 @@ router.get('/admin/stats', authUser, async (req, res) => {
     res.status(500).json({
       success: false,
       message: 'Failed to fetch stats',
+      error: error.message
+    });
+  }
+});
+
+/**
+ * @route   GET /api/ehr/reports/:patientId
+ * @desc    Get all medical reports for a patient (for EHR dashboard)
+ * @access  Private (Admin/Doctor or the patient themselves)
+ */
+router.get('/reports/:patientId', authUser, async (req, res) => {
+  try {
+    const { patientId } = req.params;
+    const { type, status = 'active' } = req.query;
+
+    // Authorization check
+    const userRole = req.user?.role || req.userRole;
+    const userId = req.user?.id || req.user?.dataValues?.id || req.user?._id;
+
+    if (userRole !== 'admin' && userRole !== 'doctor' && parseInt(patientId) !== parseInt(userId)) {
+      return res.status(403).json({ success: false, message: 'Access denied' });
+    }
+
+    const where = { userId: parseInt(patientId), status: status || 'active' };
+    if (type && ['lab', 'imaging', 'prescription', 'general'].includes(type)) {
+      where.reportType = type;
+    }
+
+    const reports = await Report.findAll({
+      where,
+      order: [['uploadedAt', 'DESC']],
+      attributes: [
+        'id', 'fileName', 'fileSize', 'mimeType', 'reportType',
+        'description', 'testName', 'labName', 'reportDate',
+        'analysisStatus', 'aiAnalysis', 'status', 'uploadedAt', 'createdAt'
+      ]
+    });
+
+    res.json({
+      success: true,
+      count: reports.length,
+      reports: reports.map(r => ({
+        id: r.id,
+        fileName: r.fileName,
+        fileSize: r.fileSize,
+        mimeType: r.mimeType,
+        reportType: r.reportType,
+        description: r.description,
+        testName: r.testName,
+        labName: r.labName,
+        reportDate: r.reportDate,
+        analysisStatus: r.analysisStatus,
+        aiSummary: r.aiAnalysis?.summary || null,
+        aiCategory: r.aiAnalysis?.reportCategory || null,
+        keyFindings: r.aiAnalysis?.keyFindings || [],
+        uploadedAt: r.uploadedAt,
+        createdAt: r.createdAt
+      }))
+    });
+  } catch (error) {
+    console.error('Get EHR reports error:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Failed to fetch reports',
       error: error.message
     });
   }
