@@ -5,6 +5,8 @@
  */
 
 import AggregatorService from '../services/aggregator.service.js';
+import { sequelize } from '../models/index.js';
+import InsuranceBroker from '../models/insurance-broker.model.intelligent.js';
 
 class AggregatorController {
   /**
@@ -376,7 +378,6 @@ class AggregatorController {
       }`;
       params.push(parseInt(limit), parseInt(offset));
 
-      const { sequelize } = require('../models/index.js');
       const logs = await sequelize.query(query, {
         bind: params,
         type: sequelize.QueryTypes.SELECT,
@@ -436,7 +437,6 @@ class AggregatorController {
       }
 
       // Check if broker already exists
-      const { InsuranceBroker } = require('../models/index.js');
       const existingBroker = await InsuranceBroker.findOne({
         where: { email },
       });
@@ -488,8 +488,6 @@ class AggregatorController {
   static getAggregators = async (req, res) => {
     try {
       const { limit = 25, offset = 0, status = null, verified = null } = req.query;
-      const { InsuranceBroker, sequelize } = require('../models/index.js');
-
       let where = {};
       if (status) where.status = status;
       if (verified !== null) where.is_verified = verified === 'true';
@@ -555,8 +553,6 @@ class AggregatorController {
   static getAggregator = async (req, res) => {
     try {
       const { id } = req.params;
-      const { InsuranceBroker, sequelize } = require('../models/index.js');
-
       const broker = await InsuranceBroker.findByPk(id);
 
       if (!broker) {
@@ -625,7 +621,6 @@ class AggregatorController {
         pincode,
       } = req.body;
 
-      const { InsuranceBroker } = require('../models/index.js');
       const broker = await InsuranceBroker.findByPk(id);
 
       if (!broker) {
@@ -690,8 +685,6 @@ class AggregatorController {
   static deleteAggregator = async (req, res) => {
     try {
       const { id } = req.params;
-      const { InsuranceBroker } = require('../models/index.js');
-
       const broker = await InsuranceBroker.findByPk(id);
 
       if (!broker) {
