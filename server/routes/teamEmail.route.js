@@ -2,6 +2,7 @@ import express from 'express';
 import { authUser, requireRole } from '../middleware/auth.middleware.js';
 import inboundEmailService from '../services/inboundEmailService.js';
 import emailService from '../services/emailService.js';
+import { Op } from 'sequelize';
 import EmailInbox from '../models/emailInbox.model.js';
 import EmailSettings from '../models/emailSettings.model.js';
 import TeamMember from '../models/postgres/team-member.model.postgres.js';
@@ -295,19 +296,38 @@ router.post('/send', authUser, async (req, res) => {
       });
     }
 
-    // Get user's active email settings
-    const emailSettings = await EmailSettings.findOne({
+    // Get user's active email settings — prefer one with SMTP credentials configured
+    let emailSettings = await EmailSettings.findOne({
       where: {
         userId: authUserId,
         isActive: true,
-        isDefault: true
+        isDefault: true,
+        smtpUsername: { [Op.and]: [{ [Op.ne]: null }, { [Op.ne]: '' }] }
       }
     });
+
+    // Fall back to any active default if none with credentials
+    if (!emailSettings) {
+      emailSettings = await EmailSettings.findOne({
+        where: {
+          userId: authUserId,
+          isActive: true,
+          isDefault: true
+        }
+      });
+    }
 
     if (!emailSettings) {
       return res.status(400).json({
         success: false,
         message: 'No active email configuration found. Please configure SMTP settings first.'
+      });
+    }
+
+    if (!emailSettings.smtpUsername || !emailSettings.smtpPassword) {
+      return res.status(400).json({
+        success: false,
+        message: 'SMTP credentials not configured. Please update your email settings with username and password.'
       });
     }
 

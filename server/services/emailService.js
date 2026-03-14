@@ -20,38 +20,36 @@ class EmailService {
   }
 
   // Create and cache SMTP transporter
-  async getTransporter(config) {
+  async getTransporter(config, forceNew = false) {
     const configKey = config.id.toString();
     
-    if (this.transporters.has(configKey)) {
+    if (!forceNew && this.transporters.has(configKey)) {
       return this.transporters.get(configKey);
     }
+
+    // Auto-detect secure for port 465
+    const isSecure = config.secure === true || config.port === 465 || config.port === '465';
 
     const transportConfig = {
       host: config.host,
       port: config.port,
-      secure: config.secure,
+      secure: isSecure,
       auth: {
         user: config.username,
         pass: config.password
       },
-      connectionTimeout: 10000, // 10 seconds connection timeout
-      greetingTimeout: 5000, // 5 seconds greeting timeout
-      socketTimeout: 15000, // 15 seconds socket timeout
-      pool: true, // Use connection pooling
-      maxConnections: 5, // Maximum number of simultaneous connections
-      maxMessages: 100, // Maximum number of messages per connection
-      rateDelta: 1000, // Time frame for rate limiting
-      rateLimit: 5, // Number of messages allowed in timeframe
+      connectionTimeout: 10000,
+      greetingTimeout: 5000,
+      socketTimeout: 15000,
+      pool: true,
+      maxConnections: 5,
+      maxMessages: 100,
+      rateDelta: 1000,
+      rateLimit: 5,
       tls: {
-        rejectUnauthorized: false, // For development - set to true in production
-        minVersion: 'TLSv1.2', // Ensure modern TLS version
-        ciphers: 'SSLv3' // Allow legacy ciphers for compatibility
-      },
-      // Additional auth options for problematic providers
-      authMethod: 'PLAIN',
-      debug: true, // Enable debug logging
-      logger: true // Enable detailed logging
+        rejectUnauthorized: false,
+        minVersion: 'TLSv1.2'
+      }
     };
 
     const transporter = nodemailer.createTransport(transportConfig);
@@ -550,8 +548,10 @@ Configuration Details:
 
       // Use provided SMTP config (from EmailSettings) or fall back to EmailConfig lookup
       let config;
+      let forceNewTransporter = false;
       if (smtpConfig && smtpConfig.host && smtpConfig.username) {
         config = { id: emailConfigId, ...smtpConfig };
+        forceNewTransporter = true; // Don't use stale cached transporter
       } else {
         config = await EmailConfig.findOne({ where: { id: emailConfigId } });
       }
@@ -560,7 +560,7 @@ Configuration Details:
         throw new Error('Email configuration not found or inactive');
       }
 
-      const transporter = await this.getTransporter(config);
+      const transporter = await this.getTransporter(config, forceNewTransporter);
 
       const mailOptions = {
         from: `"${config.fromName}" <${config.fromEmail}>`,
