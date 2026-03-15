@@ -33,7 +33,7 @@ import { publishEvent, KAFKA_TOPICS } from '../config/kafka.js';
 import SIBDecision from '../models/sib-decision.model.js';
 import * as sibMetrics from '../config/prometheus-sib.js';
 
-// Decision types SIB can make
+// Decision types SIB can make (operational)
 export const DECISION_TYPES = {
   SEND_NOTIFICATION: 'send_notification',
   SCHEDULE_APPOINTMENT: 'schedule_appointment',
@@ -43,6 +43,18 @@ export const DECISION_TYPES = {
   ESCALATE_EMERGENCY: 'escalate_emergency',
   ANALYZE_HEALTH_TREND: 'analyze_health_trend',
   OPTIMIZE_WORKFLOW: 'optimize_workflow'
+};
+
+// AI-specific decision types (guarded by sib-ai-guard middleware)
+export const AI_DECISION_TYPES = {
+  AI_QUERY: 'ai_query',               // General LLM query (CDSS, chat, consult)
+  AI_PRESCRIPTION: 'ai_prescription', // Prescription generation/review
+  AI_DIAGNOSIS: 'ai_diagnosis',       // Differential diagnosis, symptom analysis
+  AI_TRANSCRIPTION: 'ai_transcription', // Audio transcription (STT)
+  AI_VISION: 'ai_vision',             // Medical image analysis
+  AI_REPORT: 'ai_report',             // Report analysis/generation
+  AI_EMERGENCY: 'ai_emergency',       // Emergency triage
+  AI_NOTIFICATION: 'ai_notification'  // AI-triggered notifications
 };
 
 // Safety policy rules
@@ -57,6 +69,18 @@ const SAFETY_POLICIES = {
     [DECISION_TYPES.UPDATE_RECOMMENDATION]: 500,
     [DECISION_TYPES.ANALYZE_HEALTH_TREND]: 1000,
     [DECISION_TYPES.OPTIMIZE_WORKFLOW]: 10
+  },
+  
+  // AI-specific rate limits (per tenant per hour)
+  AI_RATE_LIMITS: {
+    [AI_DECISION_TYPES.AI_QUERY]: 500,
+    [AI_DECISION_TYPES.AI_PRESCRIPTION]: 200,
+    [AI_DECISION_TYPES.AI_DIAGNOSIS]: 300,
+    [AI_DECISION_TYPES.AI_TRANSCRIPTION]: 100,
+    [AI_DECISION_TYPES.AI_VISION]: 100,
+    [AI_DECISION_TYPES.AI_REPORT]: 100,
+    [AI_DECISION_TYPES.AI_EMERGENCY]: 50,
+    [AI_DECISION_TYPES.AI_NOTIFICATION]: 200
   },
   
   // Decisions requiring human approval
@@ -86,6 +110,8 @@ class SIBControlLayer extends EventEmitter {
     this.rateLimitCounters = {};
     this.humanOverrides = new Map();
     this.circuitBreakers = new Map();
+    this.aiRateLimitCounters = {};  // Per-tenant AI rate limits
+    this.aiRequestLog = [];         // AI request audit log
     
     // Initialize rate limit counters
     Object.keys(DECISION_TYPES).forEach(type => {
@@ -635,8 +661,106 @@ class SIBControlLayer extends EventEmitter {
       killSwitchActive: this.killSwitchActive,
       decisionCount: this.decisionLog.length,
       rateLimits: this.rateLimitCounters,
+      aiRateLimits: this.aiRateLimitCounters,
       circuitBreakers: Array.from(this.circuitBreakers.entries()),
-      pendingApprovals: Array.from(this.humanOverrides.entries()).filter(([, v]) => v.status === 'pending').length
+      pendingApprovals: Array.from(this.humanOverrides.entries()).filter(([, v]) => v.status === 'pending').length,
+      aiRequestLog: {
+        total: this.aiRequestLog.length,
+        recent: this.aiRequestLog.slice(-5)
+      }
+    };
+  }
+
+  // ─── AI Guard Methods (used by sib-ai-guard.middleware.js) ───
+
+  /**
+   * Check AI-specific rate limits (per tenant per hour)
+   */
+  checkAIRateLimit(aiDecisionType, tenantId = 'default') {
+    const key = `${tenantId}::${aiDecisionType}`;
+    if (!this.aiRateLimitCounters[key]) {
+      this.aiRateLimitCounters[key] = { count: 0, resetTime: Date.now() + 3600000 };
+    }
+    
+    const counter = this.aiRateLimitCounters[key];
+    
+    // Reset if window expired
+    if (Date.now() > counter.resetTime) {
+      counter.count = 0;
+      counter.resetTime = Date.now() + 3600000;
+    }
+    
+    const limit = SAFETY_POLICIES.AI_RATE_LIMITS[aiDecisionType] || 500;
+    
+    if (counter.count >= limit) {
+      return false;
+    }
+    
+    counter.count++;
+    return true;
+  }
+
+  /**
+   * Log an AI request for audit (lightweight, synchronous)
+   */
+  logAIRequest(decision) {
+    this.aiRequestLog.push({
+      type: decision.type,
+      userId: decision.context?.userId,
+      tenantId: decision.context?.tenantId,
+      path: decision.context?.path,
+      timestamp: new Date().toISOString()
+    });
+    
+    // Keep last 2000 entries
+    if (this.aiRequestLog.length > 2000) {
+      this.aiRequestLog = this.aiRequestLog.slice(-1000);
+    }
+  }
+
+  /**
+   * Record AI outcome after LLM responds (for metrics/circuit breaker)
+   */
+  recordAIOutcome(outcome) {
+    // Track per-type success/failure for circuit breaker
+    if (!outcome.success) {
+      this.recordFailure(outcome.type);
+    }
+    
+    // Emit for Prometheus
+    this.emit('aiOutcome', outcome);
+  }
+
+  /**
+   * Get AI dashboard data for super admin
+   */
+  getAIDashboard() {
+    // Aggregate AI request counts by type
+    const typeCounts = {};
+    const tenantCounts = {};
+    const recentWindow = Date.now() - 3600000; // last hour
+    
+    for (const entry of this.aiRequestLog) {
+      if (new Date(entry.timestamp).getTime() > recentWindow) {
+        typeCounts[entry.type] = (typeCounts[entry.type] || 0) + 1;
+        tenantCounts[entry.tenantId] = (tenantCounts[entry.tenantId] || 0) + 1;
+      }
+    }
+    
+    return {
+      killSwitchActive: this.killSwitchActive,
+      aiRequestsLastHour: typeCounts,
+      aiRequestsByTenant: tenantCounts,
+      rateLimits: Object.entries(this.aiRateLimitCounters).map(([key, val]) => ({
+        key,
+        count: val.count,
+        limit: SAFETY_POLICIES.AI_RATE_LIMITS[key.split('::')[1]] || 500,
+        resetsAt: new Date(val.resetTime).toISOString()
+      })),
+      circuitBreakers: Object.fromEntries(this.circuitBreakers),
+      pendingApprovals: Array.from(this.humanOverrides.entries())
+        .filter(([, v]) => v.status === 'pending').length,
+      totalAIRequests: this.aiRequestLog.length
     };
   }
 }

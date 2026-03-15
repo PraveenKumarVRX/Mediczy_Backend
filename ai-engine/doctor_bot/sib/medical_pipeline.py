@@ -64,15 +64,9 @@ class MedicalPipeline:
         self._groq_client = None
         self._intent_router = None
         
-        # API keys
-        self.groq_api_key = os.environ.get(
-            "GROQ_API_KEY",
-            "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"
-        )
-        self.gemini_api_key = os.environ.get(
-            "GEMINI_API_KEY", 
-            "AIzaSyCVa8eKHpCzWvyFrd4jKKxkomxHI8iAp48"
-        )
+        # API keys (loaded from environment — no hardcoded fallbacks)
+        self.groq_api_key = os.environ.get("GROQ_API_KEY", "")
+        self.gemini_api_key = os.environ.get("GEMINI_API_KEY", "")
         
         logger.info("🏥 Medical Pipeline initialized")
     

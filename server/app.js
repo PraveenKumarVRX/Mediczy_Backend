@@ -165,6 +165,9 @@ import aiBrainRouter from './routes/ai-brain.route.js';
 import aiIntelligenceRouter from './routes/ai-intelligence.route.js';
 import aiAnalyticsRouter from './routes/ai-analytics.route.js';
 
+// SIB AI Guard — universal safety middleware for all AI routes
+import { sibAIGuard, attachAIReporter } from './middleware/sib-ai-guard.middleware.js';
+
 // Admin API routes (API credentials, aggregators, etc.)
 import adminApiRouter from './api/admin/index.js';
 import authApiRouter from './api/auth/index.js';
@@ -581,6 +584,18 @@ app.use('/api/ai', aiLimiter);
 app.use('/api/medical-ai', aiLimiter);
 app.use('/api/ai/working-medical-consult', aiLimiter);
 app.use('/api/ai/analyze-image', aiImageLimiter);
+
+// SIB AI Guard — universal safety layer for ALL AI routes
+// Kill switch, rate limits, circuit breakers, audit logging
+app.use('/api/cdss', sibAIGuard, attachAIReporter);
+app.use('/api/v3/ai-brain', sibAIGuard, attachAIReporter);
+app.use('/api/ai', sibAIGuard, attachAIReporter);
+app.use('/api/medical-ai', sibAIGuard, attachAIReporter);
+app.use('/api/consultation-recordings', sibAIGuard, attachAIReporter);
+app.use('/api/v3/ai-intelligence', sibAIGuard, attachAIReporter);
+app.use('/api/sib-chatbots', sibAIGuard, attachAIReporter);
+app.use('/api/doctor/clinical-workflow', sibAIGuard, attachAIReporter);
+app.use('/api/reports', sibAIGuard, attachAIReporter);
 
 // Prometheus metrics middleware
 app.use(metricsMiddleware);

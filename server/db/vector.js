@@ -15,7 +15,7 @@ dotenv.config();
 
 const VECTOR_STORE_TYPE = (process.env.VECTOR_STORE_TYPE || 'pgvector').toLowerCase();
 const VECTOR_DIMENSION = parseInt(
-  process.env.PGVECTOR_DIMENSION || process.env.VECTOR_DIMENSION || '1536',
+  process.env.PGVECTOR_DIMENSION || process.env.VECTOR_DIMENSION || '768',
   10
 );
 const VECTOR_DISTANCE = (process.env.PGVECTOR_DISTANCE || process.env.VECTOR_DISTANCE || 'cosine').toLowerCase();

@@ -26,7 +26,7 @@ let vectorIndexCreated = false;
 // PostgreSQL Extension Configuration
 const PGVECTOR_ENABLED = process.env.PGVECTOR_ENABLED !== 'false';
 const PGVECTOR_DIMENSION = parseInt(
-  process.env.PGVECTOR_DIMENSION || process.env.VECTOR_DIMENSION || '1536',
+  process.env.PGVECTOR_DIMENSION || process.env.VECTOR_DIMENSION || '768',
   10
 );
 const PGVECTOR_DISTANCE = (process.env.PGVECTOR_DISTANCE || 'cosine').toLowerCase();

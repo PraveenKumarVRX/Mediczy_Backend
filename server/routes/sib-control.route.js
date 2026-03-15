@@ -10,7 +10,7 @@
  */
 
 import express from 'express';
-import sibControlLayer, { DECISION_TYPES } from '../services/sib-control-layer.service.js';
+import sibControlLayer, { DECISION_TYPES, AI_DECISION_TYPES } from '../services/sib-control-layer.service.js';
 import { authUser, requireRole } from '../middleware/auth.middleware.js';
 
 const router = express.Router();
@@ -279,6 +279,26 @@ router.get('/metrics', authAdmin, (req, res) => {
       lastDecision: log[log.length - 1]
     }
   });
+});
+
+/**
+ * GET /api/sib/ai-dashboard
+ * AI operations dashboard — shows all AI activity across tenants
+ */
+router.get('/ai-dashboard', authAdmin, (req, res) => {
+  try {
+    const dashboard = sibControlLayer.getAIDashboard();
+    res.json({
+      success: true,
+      data: {
+        ...dashboard,
+        decisionTypes: DECISION_TYPES,
+        aiDecisionTypes: AI_DECISION_TYPES
+      }
+    });
+  } catch (error) {
+    res.status(500).json({ success: false, error: error.message });
+  }
 });
 
 export default router;
