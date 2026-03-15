@@ -550,6 +550,36 @@ const ICUReportsPage     = lazyNamed(_ICUModulePages, "ICUReportsPage");
 const ICUSettingsPage    = lazyNamed(_ICUModulePages, "ICUSettingsPage");
 const ICUSupportPage     = lazyNamed(_ICUModulePages, "ICUSupportPage");
 
+const QualityLogin     = lazy(() => import("@/pages/quality/QualityLogin"));
+const QualityDashboard = lazy(() => import("@/pages/quality/QualityDashboard"));
+const _QualityModulePages = () => import("@/pages/quality/QualityModulePages");
+const QualityNABHStandardsPage = lazyNamed(_QualityModulePages, "QualityNABHStandardsPage");
+const QualityAssessmentsPage   = lazyNamed(_QualityModulePages, "QualityAssessmentsPage");
+const QualityAuditReportsPage  = lazyNamed(_QualityModulePages, "QualityAuditReportsPage");
+const QualityAccreditationPage = lazyNamed(_QualityModulePages, "QualityAccreditationPage");
+const QualityIncidentsPage     = lazyNamed(_QualityModulePages, "QualityIncidentsPage");
+const QualityKPIsPage          = lazyNamed(_QualityModulePages, "QualityKPIsPage");
+const QualitySOPsPage          = lazyNamed(_QualityModulePages, "QualitySOPsPage");
+const QualityFeedbackPage      = lazyNamed(_QualityModulePages, "QualityFeedbackPage");
+const QualityReportsPage       = lazyNamed(_QualityModulePages, "QualityReportsPage");
+const QualitySettingsPage      = lazyNamed(_QualityModulePages, "QualitySettingsPage");
+const QualitySupportPage       = lazyNamed(_QualityModulePages, "QualitySupportPage");
+
+const SecurityLogin     = lazy(() => import("@/pages/security/SecurityLogin"));
+const SecurityDashboard = lazy(() => import("@/pages/security/SecurityDashboard"));
+const _SecurityModulePages = () => import("@/pages/security/SecurityModulePages");
+const SecurityCCTVPage         = lazyNamed(_SecurityModulePages, "SecurityCCTVPage");
+const SecurityAccessPointsPage = lazyNamed(_SecurityModulePages, "SecurityAccessPointsPage");
+const SecurityAccessLogsPage   = lazyNamed(_SecurityModulePages, "SecurityAccessLogsPage");
+const SecurityIncidentsPage    = lazyNamed(_SecurityModulePages, "SecurityIncidentsPage");
+const SecurityAlertsPage       = lazyNamed(_SecurityModulePages, "SecurityAlertsPage");
+const SecurityGuardDutyPage    = lazyNamed(_SecurityModulePages, "SecurityGuardDutyPage");
+const SecurityVisitorsPage     = lazyNamed(_SecurityModulePages, "SecurityVisitorsPage");
+const SecurityStaffLogPage     = lazyNamed(_SecurityModulePages, "SecurityStaffLogPage");
+const SecurityReportsPage      = lazyNamed(_SecurityModulePages, "SecurityReportsPage");
+const SecuritySettingsPage     = lazyNamed(_SecurityModulePages, "SecuritySettingsPage");
+const SecuritySupportPage      = lazyNamed(_SecurityModulePages, "SecuritySupportPage");
+
 // ─── PageLoader — Suspense fallback ──────────────────────────────────────────
 const PageLoader = () => (
   <div className="flex items-center justify-center h-screen w-full bg-white">
@@ -1044,6 +1074,36 @@ const AppRoutes = () => {
         <Route path="/icu/reports"     element={<ICUReportsPage />} />
         <Route path="/icu/settings"    element={<ICUSettingsPage />} />
         <Route path="/icu/support"     element={<ICUSupportPage />} />
+
+        {/* ── Quality & NABH ──────────────────────────────────────────── */}
+        <Route path="/quality/login"          element={<QualityLogin />} />
+        <Route path="/quality/dashboard"      element={<QualityDashboard />} />
+        <Route path="/quality/nabh-standards" element={<QualityNABHStandardsPage />} />
+        <Route path="/quality/assessments"    element={<QualityAssessmentsPage />} />
+        <Route path="/quality/audit-reports"  element={<QualityAuditReportsPage />} />
+        <Route path="/quality/accreditation"  element={<QualityAccreditationPage />} />
+        <Route path="/quality/incidents"      element={<QualityIncidentsPage />} />
+        <Route path="/quality/kpis"           element={<QualityKPIsPage />} />
+        <Route path="/quality/sops"           element={<QualitySOPsPage />} />
+        <Route path="/quality/feedback"       element={<QualityFeedbackPage />} />
+        <Route path="/quality/reports"        element={<QualityReportsPage />} />
+        <Route path="/quality/settings"       element={<QualitySettingsPage />} />
+        <Route path="/quality/support"        element={<QualitySupportPage />} />
+
+        {/* ── Security ────────────────────────────────────────────────── */}
+        <Route path="/security/login"         element={<SecurityLogin />} />
+        <Route path="/security/dashboard"     element={<SecurityDashboard />} />
+        <Route path="/security/cctv"          element={<SecurityCCTVPage />} />
+        <Route path="/security/access-points" element={<SecurityAccessPointsPage />} />
+        <Route path="/security/access-logs"   element={<SecurityAccessLogsPage />} />
+        <Route path="/security/incidents"     element={<SecurityIncidentsPage />} />
+        <Route path="/security/alerts"        element={<SecurityAlertsPage />} />
+        <Route path="/security/guard-duty"    element={<SecurityGuardDutyPage />} />
+        <Route path="/security/visitors"      element={<SecurityVisitorsPage />} />
+        <Route path="/security/staff-log"     element={<SecurityStaffLogPage />} />
+        <Route path="/security/reports"       element={<SecurityReportsPage />} />
+        <Route path="/security/settings"      element={<SecuritySettingsPage />} />
+        <Route path="/security/support"       element={<SecuritySupportPage />} />
 
         {/* ── Insurance / Broker ──────────────────────────────────────── */}
         <Route path="/intermediary/login"              element={<InsuranceBrokerLogin />} />
