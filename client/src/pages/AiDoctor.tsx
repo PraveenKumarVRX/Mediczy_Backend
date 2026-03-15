@@ -644,7 +644,7 @@ const AiDoctor = () => {
 
         {/* Chat Area - Fills remaining space */}
         <div className="flex-1 overflow-hidden flex flex-col">
-          <ScrollArea className="flex-1 px-4 py-2" ref={scrollAreaRef}>
+          <ScrollArea className="flex-1 h-0 px-4 py-2" ref={scrollAreaRef}>
             {/* Welcome Message */}
             {messages.length === 0 && (
               <div className="min-h-full flex flex-col items-center justify-center py-6 px-2">

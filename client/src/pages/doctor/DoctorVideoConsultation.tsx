@@ -88,6 +88,8 @@ const DoctorVideoConsultation = () => {
   // Room and meeting state
   const roomFromUrl = searchParams.get('room') || "";
   const appointmentIdFromUrl = searchParams.get('appointmentId') || "";
+  const lkTokenFromUrl = searchParams.get('lkToken') || "";
+  const lkServerFromUrl = searchParams.get('lkServer') || "";
   const [roomId, setRoomId] = useState(roomFromUrl);
   const [activeTab, setActiveTab] = useState("upcoming");
   const [copiedLink, setCopiedLink] = useState(false);
@@ -498,9 +500,21 @@ const DoctorVideoConsultation = () => {
     refetchRecent();
   };
 
-  // Auto-join video call when appointmentId is passed in URL (from DoctorAppointments)
+  // Auto-join video call when appointmentId is passed in URL (from DoctorAppointments or emergency accept)
   useEffect(() => {
     if (appointmentIdFromUrl && currentDoctor && !isInCall && !liveKitConnection) {
+      // If LiveKit token was passed directly (e.g., from emergency accept), use it immediately
+      if (lkTokenFromUrl && lkServerFromUrl) {
+        setLiveKitConnection({
+          serverUrl: lkServerFromUrl,
+          token: lkTokenFromUrl,
+          roomName: roomFromUrl || `apt-${appointmentIdFromUrl}`,
+        });
+        setIsInCall(true);
+        setConnectionStatus('connecting');
+        setTimeout(() => setConnectionStatus('connected'), 3000);
+        return;
+      }
       const timer = setTimeout(() => {
         initiateVideoCall({ id: appointmentIdFromUrl, patient: '', time: '', duration: '', type: 'video', status: 'in-progress' } as Consultation);
       }, 500);

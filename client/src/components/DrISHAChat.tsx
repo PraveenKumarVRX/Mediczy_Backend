@@ -70,9 +70,12 @@ export const DrISHAChat: React.FC<DrISHAChatProps> = ({
   }, [welcomeMessage, showWelcomeCard]);
 
   useEffect(() => {
-    // Auto-scroll to bottom
+    // Auto-scroll to bottom - target the Radix viewport, not the Root
     if (scrollAreaRef.current) {
-      scrollAreaRef.current.scrollTop = scrollAreaRef.current.scrollHeight;
+      const viewport = scrollAreaRef.current.querySelector('[data-radix-scroll-area-viewport]');
+      if (viewport) {
+        viewport.scrollTop = viewport.scrollHeight;
+      }
     }
   }, [messages]);
 
@@ -313,7 +316,7 @@ export const DrISHAChat: React.FC<DrISHAChatProps> = ({
   return (
     <Card className={cn("flex flex-col bg-background/50 backdrop-blur-sm border-primary/20", className)}>
       <ScrollArea 
-        className="flex-1 p-4 space-y-4" 
+        className="flex-1 h-0 p-4 space-y-4" 
         style={{ maxHeight }}
         ref={scrollAreaRef}
       >

@@ -482,6 +482,9 @@ const Emergency = () => {
     socketService.connect(userId, 'user');
     setIsSocketConnected(true);
 
+    // Flag to prevent global VideoCallNotification from duplicating triage events
+    (window as any).__emergencyTriageActive = true;
+
     // Listen for call accepted event
     const handleCallAccepted = (data: any) => {
       console.log('✅ Doctor accepted call:', data);
@@ -538,6 +541,7 @@ const Emergency = () => {
     // Cleanup on unmount
     return () => {
       console.log('🔌 Disconnecting Socket.IO');
+      (window as any).__emergencyTriageActive = false;
       socketService.off('triage-call-accepted', handleCallAccepted);
       socketService.off('triage-call-rejected', handleCallRejected);
       socketService.disconnect();

@@ -154,6 +154,7 @@ export default function VideoCallNotification() {
     };
 
     // Handle triage-call-accepted (for patients when doctor accepts)
+    // Skip if Emergency.tsx is actively handling the triage flow to avoid duplicate notifications
     const handleTriageCallAccepted = (data: {
       appointmentId: number;
       doctorName?: string;
@@ -161,6 +162,10 @@ export default function VideoCallNotification() {
       joinUrl?: string;
       timestamp?: string;
     }) => {
+      if ((window as any).__emergencyTriageActive) {
+        console.log('✅ Triage call accepted (handled by Emergency page, skipping global notification)');
+        return;
+      }
       console.log('✅ Triage call accepted:', data);
       const callNotification: CallNotification = {
         type: 'incoming_call',

@@ -1,14 +1,14 @@
 import { useEffect, useState, useCallback } from 'react';
 import {
   LiveKitRoom as LKRoom,
-  VideoConference,
   RoomAudioRenderer,
   useRoomContext,
   useParticipants,
   useTracks,
   ParticipantTile,
-  TrackRefContext,
   ControlBar,
+  GridLayout,
+  type ControlBarControls,
 } from '@livekit/components-react';
 import { Track, RoomEvent, ConnectionState } from 'livekit-client';
 // Import LiveKit component styles - order matters!
@@ -23,6 +23,41 @@ interface LiveKitRoomProps {
   participantName: string;
   onDisconnect?: () => void;
   onError?: (error: Error) => void;
+  /** Override which controls are shown. Defaults to { screenShare: false } for medical calls */
+  controls?: ControlBarControls;
+}
+
+/**
+ * Medical video layout — same as VideoConference but without screen share by default.
+ * Uses GridLayout for multiple participants, with ControlBar controls prop.
+ */
+function MedicalVideoLayout({ controls }: { controls?: ControlBarControls }) {
+  const tracks = useTracks(
+    [
+      { source: Track.Source.Camera, withPlaceholder: true },
+      { source: Track.Source.ScreenShare, withPlaceholder: false },
+    ],
+    { onlySubscribed: false }
+  );
+
+  const mergedControls: ControlBarControls = {
+    screenShare: false,
+    chat: true,
+    ...controls,
+  };
+
+  return (
+    <div className="lk-video-conference" style={{ height: '100%' }}>
+      <div className="lk-video-conference-inner" style={{ flex: 1 }}>
+        <div className="lk-grid-layout-wrapper" style={{ height: '100%' }}>
+          <GridLayout tracks={tracks}>
+            <ParticipantTile />
+          </GridLayout>
+        </div>
+      </div>
+      <ControlBar controls={mergedControls} variation="verbose" />
+    </div>
+  );
 }
 
 // Connection status indicator
@@ -69,6 +104,7 @@ export default function LiveKitRoom({
   participantName,
   onDisconnect,
   onError,
+  controls,
 }: LiveKitRoomProps) {
   const [error, setError] = useState<string | null>(null);
   const [retryCount, setRetryCount] = useState(0);
@@ -162,8 +198,8 @@ export default function LiveKitRoom({
           </Button>
         </div>
 
-        {/* Main video conference area */}
-        <VideoConference />
+        {/* Main video conference area — no screen share */}
+        <MedicalVideoLayout controls={controls} />
         
         {/* Audio renderer */}
         <RoomAudioRenderer />
@@ -172,15 +208,18 @@ export default function LiveKitRoom({
   );
 }
 
-// Simplified room component for embedding
+// Simplified room component for embedding (medical calls — no screen share)
 export function SimpleLiveKitRoom({
   serverUrl,
   token,
   onDisconnect,
+  controls,
 }: {
   serverUrl: string;
   token: string;
   onDisconnect?: () => void;
+  /** Override which controls are shown. Defaults to { screenShare: false } */
+  controls?: ControlBarControls;
 }) {
   return (
     <div className="h-full w-full" data-lk-theme="default">
@@ -193,7 +232,7 @@ export function SimpleLiveKitRoom({
         style={{ height: '100%', width: '100%' }}
         onDisconnected={onDisconnect}
       >
-        <VideoConference />
+        <MedicalVideoLayout controls={controls} />
         <RoomAudioRenderer />
       </LKRoom>
     </div>

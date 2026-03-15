@@ -224,9 +224,14 @@ const DoctorDashboard = () => {
       // Close incoming call notification
       setIncomingCall(null);
 
-      // Redirect to video room
-      const roomId = response.data.appointment.roomId || response.data.appointment.meetingId;
-      if (roomId) {
+      // Navigate to video room with LiveKit token from accept response
+      const roomId = response.data.appointment?.roomId || response.data.appointment?.meetingId;
+      const livekit = response.data.livekit;
+      
+      if (livekit?.token && livekit?.serverUrl) {
+        // Pass token via URL params so DoctorVideoConsultation can use it directly
+        navigate(`/doctor/video?room=${encodeURIComponent(String(roomId))}&appointmentId=${appointmentId}&lkToken=${encodeURIComponent(livekit.token)}&lkServer=${encodeURIComponent(livekit.serverUrl)}`);
+      } else if (roomId) {
         navigate(`/doctor/video?room=${encodeURIComponent(String(roomId))}&appointmentId=${appointmentId}`);
       }
     } catch (error: any) {
