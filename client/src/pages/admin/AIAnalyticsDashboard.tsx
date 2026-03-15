@@ -1,6 +1,7 @@
 import { useState, useEffect, useCallback } from "react";
 import { useQuery } from "@tanstack/react-query";
 import api from "@/utils/api";
+import AdminLayout from "@/components/layout/AdminLayout";
 import {
   Card, CardContent, CardDescription, CardHeader, CardTitle,
 } from "@/components/ui/card";
@@ -115,7 +116,8 @@ export default function AIAnalyticsDashboard() {
   });
 
   return (
-    <div className="min-h-screen bg-background p-4 md:p-6 space-y-6">
+    <AdminLayout>
+    <div className="space-y-6">
       {/* Header */}
       <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
         <div>
@@ -850,6 +852,7 @@ export default function AIAnalyticsDashboard() {
         </TabsContent>
       </Tabs>
     </div>
+    </AdminLayout>
   );
 }
 
