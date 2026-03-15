@@ -168,6 +168,13 @@ import aiAnalyticsRouter from './routes/ai-analytics.route.js';
 // SIB AI Guard — universal safety middleware for all AI routes
 import { sibAIGuard, attachAIReporter } from './middleware/sib-ai-guard.middleware.js';
 
+// Phase 4: FHIR R4 Interoperability
+import fhirRouter from './routes/fhir.route.js';
+
+// Phase 5: Tenant infrastructure services (AWS-model)
+import tenantRegistry from './services/tenant-registry.service.js';
+import tenantMeteringMiddleware from './middleware/tenant-metering.middleware.js';
+
 // Admin API routes (API credentials, aggregators, etc.)
 import adminApiRouter from './api/admin/index.js';
 import authApiRouter from './api/auth/index.js';
@@ -1226,6 +1233,9 @@ app.use('/api/hospital/staff', unifiedHospitalStaffRouter); // Doctor, nurse, as
 app.use('/api/superadmin/clinics', superadminClinicRouter); // Super admin clinic management (create, list, update, delete)
 app.use('/api/superadmin/tenants', superAdminTenantRouter); // Super admin tenant/organization management (multi-tenancy control)
 
+// Phase 4: FHIR R4 API — Interoperability endpoints (metadata is public per FHIR spec)
+app.use('/api/fhir/r4', fhirRouter);
+
 // Ambulance Service Routes
 import ambulanceAuthRouter from './routes/ambulance/auth.routes.js';
 
@@ -1308,5 +1318,9 @@ app.use('/api/platform', platformApiRouter);
 // Resolve tenant from domain/headers for multi-tenant routing
 import { domainResolver } from './middleware/domainResolver.middleware.js';
 app.use(domainResolver);
+
+// ============== PHASE 3: Proactive Alerts Cron ==============
+import proactiveAlertsCron from './services/ai-proactive-alerts-cron.service.js';
+proactiveAlertsCron.start();
 
 export default app;

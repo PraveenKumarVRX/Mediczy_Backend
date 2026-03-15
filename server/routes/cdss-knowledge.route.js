@@ -16,6 +16,7 @@ import fs from 'fs';
 import pdfKnowledgeService from '../services/pdfKnowledge.service.js';
 import cdssService from '../services/cdss.service.js';
 import { scanOnly } from '../services/minio-upload.service.js';
+import cdssFeedbackService from '../services/cdss-feedback.service.js';
 
 const router = Router();
 
@@ -432,6 +433,43 @@ router.post('/ingest-gale', async (req, res) => {
     });
   } catch (error) {
     console.error('[CDSS Knowledge] Gale ingest error:', error);
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// ── CDSS Feedback (Phase 2 Learning Loop) ──────────────────────
+router.post('/feedback', async (req, res) => {
+  try {
+    const { queryId, action, feedbackType, originalResponse, modification, reason, codesKept, codesRemoved, codesAdded, queryText } = req.body;
+    if (!queryId || !action) return res.status(400).json({ error: 'queryId and action required' });
+    if (!['accepted', 'modified', 'rejected'].includes(action)) return res.status(400).json({ error: 'action must be accepted, modified, or rejected' });
+    const result = await cdssFeedbackService.recordFeedback({
+      queryId, userId: req.user?.id, action, feedbackType, originalResponse, modification, reason,
+      codesKept, codesRemoved, codesAdded, queryText, tenantId: req.tenant?.id || 'default'
+    });
+    res.json({ success: true, data: result });
+  } catch (error) {
+    console.error('[CDSS Feedback] Error:', error);
+    res.status(500).json({ error: error.message });
+  }
+});
+
+router.get('/feedback/stats', async (req, res) => {
+  try {
+    const days = parseInt(req.query.days) || 30;
+    const stats = await cdssFeedbackService.getFeedbackStats(days);
+    res.json({ success: true, data: stats });
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
+router.get('/feedback/recent', async (req, res) => {
+  try {
+    const limit = Math.min(parseInt(req.query.limit) || 50, 200);
+    const data = await cdssFeedbackService.getRecentFeedback(limit);
+    res.json({ success: true, data });
+  } catch (error) {
     res.status(500).json({ error: error.message });
   }
 });

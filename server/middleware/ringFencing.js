@@ -186,7 +186,8 @@ const USER_TYPE_PERMISSIONS = {
       '/api/mobile',  // Mobile API gateway for doctor app
       '/api/v3/ai-brain',  // AI Brain intelligence layer
       '/api/v3/ai-intelligence',  // Drug interactions, triage, risk scores, insights
-      '/api/ehr'  // Electronic Health Records - patient records access
+      '/api/ehr',  // Electronic Health Records - patient records access
+      '/api/fhir'  // FHIR R4 interoperability endpoints
     ],
     tokenField: 'doctorId'
   },
@@ -239,7 +240,8 @@ const USER_TYPE_PERMISSIONS = {
       '/api/v3/ai-brain',  // AI Brain intelligence layer
       '/api/v3/ai-intelligence',  // Drug interactions, triage, risk scores, insights
       '/api/v3/ai-analytics',  // AI analytics dashboard (admin only)
-      '/api/ehr'  // Electronic Health Records
+      '/api/ehr',  // Electronic Health Records
+      '/api/fhir'  // FHIR R4 interoperability endpoints
     ],
     tokenField: 'adminId'
   },
@@ -468,6 +470,7 @@ const PUBLIC_ENDPOINTS = [
   '/api/status',
   '/metrics',
   '/api/sib/health', // SIB Control Layer health check (public monitoring)
+  '/api/fhir/r4/metadata', // FHIR CapabilityStatement (public per FHIR spec)
   '/api/offline-scribe/health', // Offline AI Scribe health check (public for frontend status)
   '/api/offline-scribe/languages', // Offline AI Scribe supported languages (public)
   '/api/offline-scribe/templates', // Offline AI Scribe document templates (public)
