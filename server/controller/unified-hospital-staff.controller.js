@@ -1267,7 +1267,7 @@ const makeDeptHandlers = (roleKey, displayName) => {
       });
 
       const token = jwt.sign(
-        { id: staff.id, email: staff.email, role: staff.role, userType: 'hospital', organization_id: staff.organization_id, hospital_id: hospital.id, hospitalId: hospital.id, hospital_name: hospital.name, hospital_slug: hospital.slug },
+        { id: staff.id, email: staff.email, role: staff.role, userType: 'hospital', tokenType: 'access', organization_id: staff.organization_id, hospital_id: hospital.id, hospitalId: hospital.id, hospital_name: hospital.name, hospital_slug: hospital.slug },
         JWT_SECRET,
         { expiresIn: '7d' }
       );
@@ -1330,7 +1330,7 @@ const makeDeptHandlers = (roleKey, displayName) => {
       const hospital = await Tenant.findByPk(staff.organization_id);
 
       const token = jwt.sign(
-        { id: staff.id, email: staff.email, role: staff.role, userType: 'hospital', organization_id: staff.organization_id, hospital_id: staff.organization_id, hospitalId: staff.organization_id, hospital_name: hospital?.name, hospital_slug: hospital?.slug },
+        { id: staff.id, email: staff.email, role: staff.role, userType: 'hospital', tokenType: 'access', organization_id: staff.organization_id, hospital_id: staff.organization_id, hospitalId: staff.organization_id, hospital_name: hospital?.name, hospital_slug: hospital?.slug },
         JWT_SECRET,
         { expiresIn: '7d' }
       );
