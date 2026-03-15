@@ -345,6 +345,34 @@ export const AuthProvider = ({ children }) => {
       return;
     }
 
+    // Hospital department portal prefix guards (accounts, mrd, hr, etc.)
+    const deptPortalPrefixes = [
+      '/accounts/', '/mrd/', '/insurance-desk/', '/hr/',
+      '/it-edp/', '/ot/', '/icu/', '/quality/', '/security/'
+    ];
+    const deptLoginPaths = [
+      '/accounts/login', '/mrd/login', '/insurance-desk/login', '/hr/login',
+      '/it-edp/login', '/ot/login', '/icu/login', '/quality/login', '/security/login'
+    ];
+    const isDeptPortalRoute = deptPortalPrefixes.some(p => location.pathname.startsWith(p));
+    if (isDeptPortalRoute) {
+      // Allow login pages through; for all other dept pages require deptKey token
+      const loginPath = deptPortalPrefixes
+        .filter(p => location.pathname.startsWith(p))
+        .map(p => `${p.slice(0, -1)}/login`)[0];
+      if (!deptLoginPaths.includes(location.pathname)) {
+        const deptKey = loginPath?.replace('/', '').replace('/login', '');
+        const deptToken = deptKey ? localStorage.getItem(`${deptKey}Token`) : null;
+        if (!deptToken) {
+          setAuthState(prev => ({ ...prev, hasCheckedAuth: true }));
+          navigate(loginPath || '/login', { replace: true });
+          return;
+        }
+      }
+      setAuthState(prev => ({ ...prev, hasCheckedAuth: true }));
+      return;
+    }
+
     const isPublicRoute = [
       "/login", 
       "/register", 
@@ -369,7 +397,17 @@ export const AuthProvider = ({ children }) => {
       "/ngo/login",
       "/intermediary/login",
       "/insurance-broker/login",
-      "/aggregator/login"
+      "/aggregator/login",
+      // Hospital department login pages
+      "/accounts/login",
+      "/mrd/login",
+      "/insurance-desk/login",
+      "/hr/login",
+      "/it-edp/login",
+      "/ot/login",
+      "/icu/login",
+      "/quality/login",
+      "/security/login"
     ].includes(location.pathname);
     
     if (!authState.token && !isPublicRoute) {
