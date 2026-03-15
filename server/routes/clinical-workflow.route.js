@@ -7,6 +7,7 @@ import express from 'express';
 import { authDoctor } from '../middleware/doctor.middleware.js';
 import ClinicalNote from '../models/clinical-note.model.js';
 import llmProvider from '../services/ai-brain/llm-provider.js';
+import { connectPostgres } from '../db/postgres.js';
 
 const router = express.Router();
 
@@ -172,31 +173,81 @@ router.post('/notes/:id/sign', authDoctor, async (req, res) => {
   }
 });
 
-// ICD-10 Code Search
+// ICD-10 Code Search (real database - 72,750 codes from HuggingFace)
 router.get('/icd10/search', authDoctor, async (req, res) => {
   try {
     const { q } = req.query;
-    
-    // Mock ICD-10 data - in production, integrate with actual ICD-10 API
-    const mockResults = [
-      { code: 'J06.9', description: 'Acute upper respiratory infection, unspecified' },
-      { code: 'I10', description: 'Essential (primary) hypertension' },
-      { code: 'E11.9', description: 'Type 2 diabetes mellitus without complications' },
-      { code: 'M79.3', description: 'Panniculitis, unspecified' }
-    ].filter(item => 
-      item.code.toLowerCase().includes(q?.toLowerCase() || '') ||
-      item.description.toLowerCase().includes(q?.toLowerCase() || '')
-    );
+    if (!q || q.trim().length < 2) {
+      return res.json({ success: true, data: [] });
+    }
+
+    const pool = await connectPostgres();
+    const searchTerm = q.trim();
+
+    // Use full-text search with fallback to ILIKE
+    const result = await pool.query(`
+      SELECT code, description, category
+      FROM icd10_codes
+      WHERE search_vector @@ plainto_tsquery('english', $1)
+         OR code ILIKE $2
+         OR description ILIKE $3
+      ORDER BY
+        CASE WHEN code ILIKE $2 THEN 0 ELSE 1 END,
+        ts_rank(search_vector, plainto_tsquery('english', $1)) DESC
+      LIMIT 20
+    `, [searchTerm, `${searchTerm}%`, `%${searchTerm}%`]);
 
     res.json({
       success: true,
-      data: mockResults
+      data: result.rows
     });
   } catch (error) {
-    res.status(500).json({
-      success: false,
-      message: 'Search failed'
+    console.error('[ICD-10 Search]', error.message);
+    res.status(500).json({ success: false, message: 'Search failed' });
+  }
+});
+
+// SNOMED CT Code Search (real database - 321,864 codes from HuggingFace)
+router.get('/snomed/search', authDoctor, async (req, res) => {
+  try {
+    const { q, valueSet } = req.query;
+    if (!q || q.trim().length < 2) {
+      return res.json({ success: true, data: [] });
+    }
+
+    const pool = await connectPostgres();
+    const searchTerm = q.trim();
+
+    let query = `
+      SELECT code, description, value_set_name, clinical_focus, code_system
+      FROM snomed_codes
+      WHERE (search_vector @@ plainto_tsquery('english', $1)
+         OR code ILIKE $2
+         OR description ILIKE $3)
+    `;
+    const params = [searchTerm, `${searchTerm}%`, `%${searchTerm}%`];
+
+    if (valueSet) {
+      query += ` AND value_set_name ILIKE $4`;
+      params.push(`%${valueSet}%`);
+    }
+
+    query += `
+      ORDER BY
+        CASE WHEN code ILIKE $2 THEN 0 ELSE 1 END,
+        ts_rank(search_vector, plainto_tsquery('english', $1)) DESC
+      LIMIT 20
+    `;
+
+    const result = await pool.query(query, params);
+
+    res.json({
+      success: true,
+      data: result.rows
     });
+  } catch (error) {
+    console.error('[SNOMED Search]', error.message);
+    res.status(500).json({ success: false, message: 'Search failed' });
   }
 });
 
@@ -205,26 +256,59 @@ router.get('/cpt/search', authDoctor, async (req, res) => {
   try {
     const { q } = req.query;
     
-    // Mock CPT data - in production, integrate with actual CPT API
-    const mockResults = [
+    // Static CPT codes (no HF dataset available - standard codes)
+    const cptCodes = [
+      { code: '99201', description: 'Office visit, new patient, 10 minutes' },
+      { code: '99202', description: 'Office visit, new patient, 15-29 minutes' },
+      { code: '99203', description: 'Office visit, new patient, 30-44 minutes' },
+      { code: '99204', description: 'Office visit, new patient, 45-59 minutes' },
+      { code: '99205', description: 'Office visit, new patient, 60-74 minutes' },
+      { code: '99211', description: 'Office visit, established patient, 5 minutes' },
+      { code: '99212', description: 'Office visit, established patient, 10-19 minutes' },
       { code: '99213', description: 'Office visit, established patient, 20-29 minutes' },
       { code: '99214', description: 'Office visit, established patient, 30-39 minutes' },
+      { code: '99215', description: 'Office visit, established patient, 40-54 minutes' },
+      { code: '99241', description: 'Consultation, 15 minutes' },
+      { code: '99242', description: 'Consultation, 30 minutes' },
+      { code: '99243', description: 'Consultation, 40 minutes' },
+      { code: '99244', description: 'Consultation, 60 minutes' },
+      { code: '99245', description: 'Consultation, 80 minutes' },
+      { code: '80048', description: 'Basic metabolic panel (calcium, ionized)' },
+      { code: '80050', description: 'General health panel' },
       { code: '80053', description: 'Comprehensive metabolic panel' },
-      { code: '85025', description: 'Complete blood count (CBC) with differential' }
+      { code: '80061', description: 'Lipid panel' },
+      { code: '80076', description: 'Hepatic function panel' },
+      { code: '85025', description: 'Complete blood count (CBC) with differential' },
+      { code: '85027', description: 'Complete blood count (CBC), automated' },
+      { code: '36415', description: 'Venipuncture for blood collection' },
+      { code: '81001', description: 'Urinalysis with microscopy' },
+      { code: '87880', description: 'Strep test, rapid' },
+      { code: '71046', description: 'Chest X-ray, 2 views' },
+      { code: '93000', description: 'Electrocardiogram (ECG), 12-lead' },
+      { code: '90658', description: 'Influenza vaccine, intramuscular' },
+      { code: '90471', description: 'Immunization administration, injection' },
+      { code: '29125', description: 'Short arm splint application' },
+      { code: '11102', description: 'Tangential biopsy of skin' },
+      { code: '10060', description: 'Incision and drainage of abscess' },
+      { code: '12001', description: 'Simple wound repair, 2.5 cm or less' },
+      { code: '17000', description: 'Destruction of premalignant lesion, first' },
+      { code: '99381', description: 'Preventive visit, new patient, infant' },
+      { code: '99391', description: 'Preventive visit, established patient, infant' },
+      { code: '99395', description: 'Preventive visit, established patient, 18-39 years' },
+      { code: '99396', description: 'Preventive visit, established patient, 40-64 years' },
+      { code: '96127', description: 'Depression screening' },
+      { code: '99497', description: 'Advance care planning, 16-30 minutes' }
     ].filter(item => 
-      item.code.includes(q || '') ||
+      !q || item.code.includes(q) ||
       item.description.toLowerCase().includes(q?.toLowerCase() || '')
     );
 
     res.json({
       success: true,
-      data: mockResults
+      data: cptCodes.slice(0, 20)
     });
   } catch (error) {
-    res.status(500).json({
-      success: false,
-      message: 'Search failed'
-    });
+    res.status(500).json({ success: false, message: 'Search failed' });
   }
 });
 

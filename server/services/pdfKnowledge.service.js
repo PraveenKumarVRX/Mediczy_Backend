@@ -30,6 +30,7 @@ class PDFKnowledgeService {
     this.modelLoaded = false;
     this.modelPath = 'Xenova/LaBSE';
     this.pool = null;
+    this._initPromise = null;
   }
 
   /**
@@ -37,17 +38,23 @@ class PDFKnowledgeService {
    */
   async initialize() {
     if (this.modelLoaded) return;
+    if (this._initPromise) return this._initPromise;
 
-    try {
-      console.log('[PDFKnowledge] Initializing embedding model...');
-      this.embeddingModel = await pipeline('feature-extraction', this.modelPath);
-      this.modelLoaded = true;
-      this.pool = await connectPostgres();
-      console.log('[PDFKnowledge] Service initialized successfully');
-    } catch (error) {
-      console.error('[PDFKnowledge] Initialization error:', error.message);
-      throw error;
-    }
+    this._initPromise = (async () => {
+      try {
+        console.log('[PDFKnowledge] Initializing embedding model...');
+        this.embeddingModel = await pipeline('feature-extraction', this.modelPath);
+        this.modelLoaded = true;
+        this.pool = await connectPostgres();
+        console.log('[PDFKnowledge] Service initialized successfully');
+      } catch (error) {
+        this._initPromise = null;
+        console.error('[PDFKnowledge] Initialization error:', error.message);
+        throw error;
+      }
+    })();
+
+    return this._initPromise;
   }
 
   /**

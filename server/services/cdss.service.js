@@ -12,6 +12,7 @@
 import pdfKnowledgeService from './pdfKnowledge.service.js';
 import cimsService from './cims-medicine.service.js';
 import llmProvider from './ai-brain/llm-provider.js';
+import { connectPostgres } from '../db/postgres.js';
 
 const SIB_BASE_URL = process.env.SIB_URL || 'http://localhost:8001';
 
@@ -541,6 +542,11 @@ Be concise. Max 2 guidelines, 3 drugs, 3 DDx, 3 labs, 3 ICD-10. Indian context. 
       if (knowledgeResults.length > 0 && sibResult.data) {
         sibResult.data.knowledgeBaseResults = knowledgeResults;
       }
+
+      // Enrich with validated ICD-10 and SNOMED codes
+      if (sibResult.data) {
+        sibResult.data = await this.enrichWithMedicalCodes(sibResult.data, query);
+      }
       
       return sibResult;
     } catch (sibError) {
@@ -585,6 +591,11 @@ Be concise. Max 2 guidelines, 3 drugs, 3 DDx, 3 labs, 3 ICD-10. Indian context. 
       if (knowledgeResults.length > 0 && groqResult.data) {
         groqResult.data.knowledgeBaseResults = knowledgeResults;
       }
+
+      // Enrich with validated ICD-10 and SNOMED codes
+      if (groqResult.data) {
+        groqResult.data = await this.enrichWithMedicalCodes(groqResult.data, query);
+      }
       
       return groqResult;
     } catch (groqError) {
@@ -620,6 +631,88 @@ Be concise. Max 2 guidelines, 3 drugs, 3 DDx, 3 labs, 3 ICD-10. Indian context. 
 
     // Step 5: All failed
     throw new Error('All CDSS providers unavailable');
+  }
+
+  /**
+   * Validate and enrich ICD-10 codes from LLM with real database codes,
+   * and add matching SNOMED CT codes
+   */
+  async enrichWithMedicalCodes(data, queryText) {
+    try {
+      const pool = await connectPostgres();
+      
+      // Validate AI-generated ICD-10 codes against real DB
+      if (data.icd10Codes && data.icd10Codes.length > 0) {
+        const validatedCodes = [];
+        for (const aiCode of data.icd10Codes) {
+          const code = (aiCode.code || '').replace(/\./g, '');
+          if (!code) continue;
+          const found = await pool.query(
+            'SELECT code, description, category FROM icd10_codes WHERE code = $1 LIMIT 1',
+            [code]
+          );
+          if (found.rows.length > 0) {
+            validatedCodes.push({ ...found.rows[0], validated: true });
+          } else {
+            // Try fuzzy match by description
+            const fuzzy = await pool.query(
+              `SELECT code, description, category FROM icd10_codes
+               WHERE description ILIKE $1 LIMIT 3`,
+              [`%${aiCode.description || ''}%`]
+            );
+            if (fuzzy.rows.length > 0) {
+              validatedCodes.push({ ...fuzzy.rows[0], validated: true, aiSuggested: aiCode.code });
+            } else {
+              validatedCodes.push({ ...aiCode, validated: false });
+            }
+          }
+        }
+        data.icd10Codes = validatedCodes;
+      }
+
+      // Search for relevant ICD-10 codes based on the query
+      if (!data.icd10Codes || data.icd10Codes.length === 0) {
+        const searchTerms = queryText.substring(0, 100);
+        const icdResults = await pool.query(
+          `SELECT code, description, category FROM icd10_codes
+           WHERE search_vector @@ plainto_tsquery('english', $1)
+           ORDER BY ts_rank(search_vector, plainto_tsquery('english', $1)) DESC
+           LIMIT 5`,
+          [searchTerms]
+        );
+        if (icdResults.rows.length > 0) {
+          data.icd10Codes = icdResults.rows.map(r => ({ ...r, validated: true }));
+        }
+      }
+
+      // Add matching SNOMED CT codes based on diagnoses
+      const snomedCodes = [];
+      const searchTerms = [
+        queryText.substring(0, 60),
+        ...(data.differentialDiagnosis || []).slice(0, 3).map(d => d.condition || '')
+      ].filter(Boolean);
+
+      for (const term of searchTerms) {
+        const snomed = await pool.query(
+          `SELECT code, description, value_set_name, clinical_focus FROM snomed_codes
+           WHERE search_vector @@ plainto_tsquery('english', $1)
+           ORDER BY ts_rank(search_vector, plainto_tsquery('english', $1)) DESC
+           LIMIT 3`,
+          [term]
+        );
+        for (const row of snomed.rows) {
+          if (!snomedCodes.find(s => s.code === row.code)) {
+            snomedCodes.push(row);
+          }
+        }
+      }
+      if (snomedCodes.length > 0) {
+        data.snomedCodes = snomedCodes.slice(0, 10);
+      }
+    } catch (error) {
+      console.warn('[CDSS] Medical code enrichment failed:', error.message);
+    }
+    return data;
   }
 
   /**
