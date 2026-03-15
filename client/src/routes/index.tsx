@@ -450,6 +450,106 @@ const AggregatorDashboard   = lazy(() => import("@/pages/aggregator/AggregatorDa
 const AggregatorCorporates  = lazy(() => import("@/pages/aggregator/AggregatorCorporates"));
 const AggregatorPartners    = lazy(() => import("@/pages/aggregator/AggregatorPartners"));
 
+// ─── Hospital Department Portals ─────────────────────────────────────────────
+const AccountsLogin     = lazy(() => import("@/pages/accounts/AccountsLogin"));
+const AccountsDashboard = lazy(() => import("@/pages/accounts/AccountsDashboard"));
+const _AccountsModulePages = () => import("@/pages/accounts/AccountsModulePages");
+const AccountsBillsPage            = lazyNamed(_AccountsModulePages, "AccountsBillsPage");
+const AccountsPaymentsPage         = lazyNamed(_AccountsModulePages, "AccountsPaymentsPage");
+const AccountsPatientAcctsPage     = lazyNamed(_AccountsModulePages, "AccountsPatientAcctsPage");
+const AccountsInsuranceBillingPage = lazyNamed(_AccountsModulePages, "AccountsInsuranceBillingPage");
+const AccountsExpensesPage         = lazyNamed(_AccountsModulePages, "AccountsExpensesPage");
+const AccountsPayrollPage          = lazyNamed(_AccountsModulePages, "AccountsPayrollPage");
+const AccountsLedgerPage           = lazyNamed(_AccountsModulePages, "AccountsLedgerPage");
+const AccountsReportsPage          = lazyNamed(_AccountsModulePages, "AccountsReportsPage");
+const AccountsAnalyticsPage        = lazyNamed(_AccountsModulePages, "AccountsAnalyticsPage");
+const AccountsSettingsPage         = lazyNamed(_AccountsModulePages, "AccountsSettingsPage");
+const AccountsSupportPage          = lazyNamed(_AccountsModulePages, "AccountsSupportPage");
+
+const MRDLogin     = lazy(() => import("@/pages/mrd/MRDLogin"));
+const MRDDashboard = lazy(() => import("@/pages/mrd/MRDDashboard"));
+const _MRDModulePages = () => import("@/pages/mrd/MRDModulePages");
+const MRDRecordsPage      = lazyNamed(_MRDModulePages, "MRDRecordsPage");
+const MRDAdmissionsPage   = lazyNamed(_MRDModulePages, "MRDAdmissionsPage");
+const MRDDischargePage    = lazyNamed(_MRDModulePages, "MRDDischargePage");
+const MRDRequestsPage     = lazyNamed(_MRDModulePages, "MRDRequestsPage");
+const MRDICDCodingPage    = lazyNamed(_MRDModulePages, "MRDICDCodingPage");
+const MRDMedicoLegalPage  = lazyNamed(_MRDModulePages, "MRDMedicoLegalPage");
+const MRDFileTrackingPage = lazyNamed(_MRDModulePages, "MRDFileTrackingPage");
+const MRDStatisticsPage   = lazyNamed(_MRDModulePages, "MRDStatisticsPage");
+const MRDSettingsPage     = lazyNamed(_MRDModulePages, "MRDSettingsPage");
+const MRDSupportPage      = lazyNamed(_MRDModulePages, "MRDSupportPage");
+
+const InsuranceDeskLogin     = lazy(() => import("@/pages/insurance-desk/InsuranceDeskLogin"));
+const InsuranceDeskDashboard = lazy(() => import("@/pages/insurance-desk/InsuranceDeskDashboard"));
+const _InsuranceDeskModulePages = () => import("@/pages/insurance-desk/InsuranceDeskModulePages");
+const InsuranceDeskPreAuthPage         = lazyNamed(_InsuranceDeskModulePages, "InsuranceDeskPreAuthPage");
+const InsuranceDeskClaimsPage          = lazyNamed(_InsuranceDeskModulePages, "InsuranceDeskClaimsPage");
+const InsuranceDeskDocumentsPage       = lazyNamed(_InsuranceDeskModulePages, "InsuranceDeskDocumentsPage");
+const InsuranceDeskTPAPage             = lazyNamed(_InsuranceDeskModulePages, "InsuranceDeskTPAPage");
+const InsuranceDeskPatientInsurancePage= lazyNamed(_InsuranceDeskModulePages, "InsuranceDeskPatientInsurancePage");
+const InsuranceDeskSearchPage          = lazyNamed(_InsuranceDeskModulePages, "InsuranceDeskSearchPage");
+const InsuranceDeskAnalyticsPage       = lazyNamed(_InsuranceDeskModulePages, "InsuranceDeskAnalyticsPage");
+const InsuranceDeskSettingsPage        = lazyNamed(_InsuranceDeskModulePages, "InsuranceDeskSettingsPage");
+const InsuranceDeskSupportPage         = lazyNamed(_InsuranceDeskModulePages, "InsuranceDeskSupportPage");
+
+const HRLogin     = lazy(() => import("@/pages/hr/HRLogin"));
+const HRDashboard = lazy(() => import("@/pages/hr/HRDashboard"));
+const _HRModulePages = () => import("@/pages/hr/HRModulePages");
+const HRStaffPage       = lazyNamed(_HRModulePages, "HRStaffPage");
+const HRAttendancePage  = lazyNamed(_HRModulePages, "HRAttendancePage");
+const HRLeavesPage      = lazyNamed(_HRModulePages, "HRLeavesPage");
+const HRPayrollPage     = lazyNamed(_HRModulePages, "HRPayrollPage");
+const HRRecruitmentPage = lazyNamed(_HRModulePages, "HRRecruitmentPage");
+const HRTrainingPage    = lazyNamed(_HRModulePages, "HRTrainingPage");
+const HRPerformancePage = lazyNamed(_HRModulePages, "HRPerformancePage");
+const HRReportsPage     = lazyNamed(_HRModulePages, "HRReportsPage");
+const HRSettingsPage    = lazyNamed(_HRModulePages, "HRSettingsPage");
+const HRSupportPage     = lazyNamed(_HRModulePages, "HRSupportPage");
+
+const ITEDPLogin     = lazy(() => import("@/pages/it-edp/ITEDPLogin"));
+const ITEDPDashboard = lazy(() => import("@/pages/it-edp/ITEDPDashboard"));
+const _ITEDPModulePages = () => import("@/pages/it-edp/ITEDPModulePages");
+const ITEDPTicketsPage  = lazyNamed(_ITEDPModulePages, "ITEDPTicketsPage");
+const ITEDPUsersPage    = lazyNamed(_ITEDPModulePages, "ITEDPUsersPage");
+const ITEDPAssetsPage   = lazyNamed(_ITEDPModulePages, "ITEDPAssetsPage");
+const ITEDPSystemsPage  = lazyNamed(_ITEDPModulePages, "ITEDPSystemsPage");
+const ITEDPNetworkPage  = lazyNamed(_ITEDPModulePages, "ITEDPNetworkPage");
+const ITEDPBackupPage   = lazyNamed(_ITEDPModulePages, "ITEDPBackupPage");
+const ITEDPSecurityPage = lazyNamed(_ITEDPModulePages, "ITEDPSecurityPage");
+const ITEDPAccessPage   = lazyNamed(_ITEDPModulePages, "ITEDPAccessPage");
+const ITEDPReportsPage  = lazyNamed(_ITEDPModulePages, "ITEDPReportsPage");
+const ITEDPSettingsPage = lazyNamed(_ITEDPModulePages, "ITEDPSettingsPage");
+const ITEDPSupportPage  = lazyNamed(_ITEDPModulePages, "ITEDPSupportPage");
+
+const OTLogin     = lazy(() => import("@/pages/ot/OTLogin"));
+const OTDashboard = lazy(() => import("@/pages/ot/OTDashboard"));
+const _OTModulePages = () => import("@/pages/ot/OTModulePages");
+const OTSchedulePage      = lazyNamed(_OTModulePages, "OTSchedulePage");
+const OTTeamsPage         = lazyNamed(_OTModulePages, "OTTeamsPage");
+const OTEquipmentPage     = lazyNamed(_OTModulePages, "OTEquipmentPage");
+const OTSterilizationPage = lazyNamed(_OTModulePages, "OTSterilizationPage");
+const OTAnesthesiaPage    = lazyNamed(_OTModulePages, "OTAnesthesiaPage");
+const OTPostOpPage        = lazyNamed(_OTModulePages, "OTPostOpPage");
+const OTRecordsPage       = lazyNamed(_OTModulePages, "OTRecordsPage");
+const OTReportsPage       = lazyNamed(_OTModulePages, "OTReportsPage");
+const OTSettingsPage      = lazyNamed(_OTModulePages, "OTSettingsPage");
+const OTSupportPage       = lazyNamed(_OTModulePages, "OTSupportPage");
+
+const ICULogin     = lazy(() => import("@/pages/icu/ICULogin"));
+const ICUDashboard = lazy(() => import("@/pages/icu/ICUDashboard"));
+const _ICUModulePages = () => import("@/pages/icu/ICUModulePages");
+const ICUPatientsPage    = lazyNamed(_ICUModulePages, "ICUPatientsPage");
+const ICUBedsPage        = lazyNamed(_ICUModulePages, "ICUBedsPage");
+const ICUMedicationsPage = lazyNamed(_ICUModulePages, "ICUMedicationsPage");
+const ICUVitalsPage      = lazyNamed(_ICUModulePages, "ICUVitalsPage");
+const ICUEquipmentPage   = lazyNamed(_ICUModulePages, "ICUEquipmentPage");
+const ICUTeamPage        = lazyNamed(_ICUModulePages, "ICUTeamPage");
+const ICUAlertsPage      = lazyNamed(_ICUModulePages, "ICUAlertsPage");
+const ICUReportsPage     = lazyNamed(_ICUModulePages, "ICUReportsPage");
+const ICUSettingsPage    = lazyNamed(_ICUModulePages, "ICUSettingsPage");
+const ICUSupportPage     = lazyNamed(_ICUModulePages, "ICUSupportPage");
+
 // ─── PageLoader — Suspense fallback ──────────────────────────────────────────
 const PageLoader = () => (
   <div className="flex items-center justify-center h-screen w-full bg-white">
@@ -845,6 +945,105 @@ const AppRoutes = () => {
         <Route path="/hospital-insurance/search"          element={<InsuranceSearchPage />} />
         <Route path="/hospital-insurance/settings"        element={<InsuranceSettingsPage />} />
         <Route path="/hospital-insurance/notifications"   element={<InsuranceNotificationsPage />} />
+
+        {/* ── Accounts Dept ───────────────────────────────────────────── */}
+        <Route path="/accounts/login"            element={<AccountsLogin />} />
+        <Route path="/accounts/dashboard"        element={<AccountsDashboard />} />
+        <Route path="/accounts/bills"            element={<AccountsBillsPage />} />
+        <Route path="/accounts/payments"         element={<AccountsPaymentsPage />} />
+        <Route path="/accounts/patient-accounts" element={<AccountsPatientAcctsPage />} />
+        <Route path="/accounts/insurance-billing" element={<AccountsInsuranceBillingPage />} />
+        <Route path="/accounts/expenses"         element={<AccountsExpensesPage />} />
+        <Route path="/accounts/payroll"          element={<AccountsPayrollPage />} />
+        <Route path="/accounts/ledger"           element={<AccountsLedgerPage />} />
+        <Route path="/accounts/reports"          element={<AccountsReportsPage />} />
+        <Route path="/accounts/analytics"        element={<AccountsAnalyticsPage />} />
+        <Route path="/accounts/settings"         element={<AccountsSettingsPage />} />
+        <Route path="/accounts/support"          element={<AccountsSupportPage />} />
+
+        {/* ── MRD ─────────────────────────────────────────────────────── */}
+        <Route path="/mrd/login"          element={<MRDLogin />} />
+        <Route path="/mrd/dashboard"      element={<MRDDashboard />} />
+        <Route path="/mrd/records"        element={<MRDRecordsPage />} />
+        <Route path="/mrd/admissions"     element={<MRDAdmissionsPage />} />
+        <Route path="/mrd/discharge"      element={<MRDDischargePage />} />
+        <Route path="/mrd/requests"       element={<MRDRequestsPage />} />
+        <Route path="/mrd/icd-coding"     element={<MRDICDCodingPage />} />
+        <Route path="/mrd/medico-legal"   element={<MRDMedicoLegalPage />} />
+        <Route path="/mrd/file-tracking"  element={<MRDFileTrackingPage />} />
+        <Route path="/mrd/statistics"     element={<MRDStatisticsPage />} />
+        <Route path="/mrd/settings"       element={<MRDSettingsPage />} />
+        <Route path="/mrd/support"        element={<MRDSupportPage />} />
+
+        {/* ── Insurance Desk ──────────────────────────────────────────── */}
+        <Route path="/insurance-desk/login"             element={<InsuranceDeskLogin />} />
+        <Route path="/insurance-desk/dashboard"         element={<InsuranceDeskDashboard />} />
+        <Route path="/insurance-desk/pre-auth"          element={<InsuranceDeskPreAuthPage />} />
+        <Route path="/insurance-desk/claims"            element={<InsuranceDeskClaimsPage />} />
+        <Route path="/insurance-desk/documents"         element={<InsuranceDeskDocumentsPage />} />
+        <Route path="/insurance-desk/tpa"               element={<InsuranceDeskTPAPage />} />
+        <Route path="/insurance-desk/patient-insurance" element={<InsuranceDeskPatientInsurancePage />} />
+        <Route path="/insurance-desk/search"            element={<InsuranceDeskSearchPage />} />
+        <Route path="/insurance-desk/analytics"         element={<InsuranceDeskAnalyticsPage />} />
+        <Route path="/insurance-desk/settings"          element={<InsuranceDeskSettingsPage />} />
+        <Route path="/insurance-desk/support"           element={<InsuranceDeskSupportPage />} />
+
+        {/* ── HR ──────────────────────────────────────────────────────── */}
+        <Route path="/hr/login"       element={<HRLogin />} />
+        <Route path="/hr/dashboard"   element={<HRDashboard />} />
+        <Route path="/hr/staff"       element={<HRStaffPage />} />
+        <Route path="/hr/attendance"  element={<HRAttendancePage />} />
+        <Route path="/hr/leaves"      element={<HRLeavesPage />} />
+        <Route path="/hr/payroll"     element={<HRPayrollPage />} />
+        <Route path="/hr/recruitment" element={<HRRecruitmentPage />} />
+        <Route path="/hr/training"    element={<HRTrainingPage />} />
+        <Route path="/hr/performance" element={<HRPerformancePage />} />
+        <Route path="/hr/reports"     element={<HRReportsPage />} />
+        <Route path="/hr/settings"    element={<HRSettingsPage />} />
+        <Route path="/hr/support"     element={<HRSupportPage />} />
+
+        {/* ── IT/EDP ──────────────────────────────────────────────────── */}
+        <Route path="/it-edp/login"     element={<ITEDPLogin />} />
+        <Route path="/it-edp/dashboard" element={<ITEDPDashboard />} />
+        <Route path="/it-edp/tickets"   element={<ITEDPTicketsPage />} />
+        <Route path="/it-edp/users"     element={<ITEDPUsersPage />} />
+        <Route path="/it-edp/assets"    element={<ITEDPAssetsPage />} />
+        <Route path="/it-edp/systems"   element={<ITEDPSystemsPage />} />
+        <Route path="/it-edp/network"   element={<ITEDPNetworkPage />} />
+        <Route path="/it-edp/backup"    element={<ITEDPBackupPage />} />
+        <Route path="/it-edp/security"  element={<ITEDPSecurityPage />} />
+        <Route path="/it-edp/access"    element={<ITEDPAccessPage />} />
+        <Route path="/it-edp/reports"   element={<ITEDPReportsPage />} />
+        <Route path="/it-edp/settings"  element={<ITEDPSettingsPage />} />
+        <Route path="/it-edp/support"   element={<ITEDPSupportPage />} />
+
+        {/* ── OT ──────────────────────────────────────────────────────── */}
+        <Route path="/ot/login"          element={<OTLogin />} />
+        <Route path="/ot/dashboard"      element={<OTDashboard />} />
+        <Route path="/ot/schedule"       element={<OTSchedulePage />} />
+        <Route path="/ot/teams"          element={<OTTeamsPage />} />
+        <Route path="/ot/equipment"      element={<OTEquipmentPage />} />
+        <Route path="/ot/sterilization"  element={<OTSterilizationPage />} />
+        <Route path="/ot/anesthesia"     element={<OTAnesthesiaPage />} />
+        <Route path="/ot/post-op"        element={<OTPostOpPage />} />
+        <Route path="/ot/records"        element={<OTRecordsPage />} />
+        <Route path="/ot/reports"        element={<OTReportsPage />} />
+        <Route path="/ot/settings"       element={<OTSettingsPage />} />
+        <Route path="/ot/support"        element={<OTSupportPage />} />
+
+        {/* ── ICU ─────────────────────────────────────────────────────── */}
+        <Route path="/icu/login"       element={<ICULogin />} />
+        <Route path="/icu/dashboard"   element={<ICUDashboard />} />
+        <Route path="/icu/patients"    element={<ICUPatientsPage />} />
+        <Route path="/icu/beds"        element={<ICUBedsPage />} />
+        <Route path="/icu/medications" element={<ICUMedicationsPage />} />
+        <Route path="/icu/vitals"      element={<ICUVitalsPage />} />
+        <Route path="/icu/equipment"   element={<ICUEquipmentPage />} />
+        <Route path="/icu/team"        element={<ICUTeamPage />} />
+        <Route path="/icu/alerts"      element={<ICUAlertsPage />} />
+        <Route path="/icu/reports"     element={<ICUReportsPage />} />
+        <Route path="/icu/settings"    element={<ICUSettingsPage />} />
+        <Route path="/icu/support"     element={<ICUSupportPage />} />
 
         {/* ── Insurance / Broker ──────────────────────────────────────── */}
         <Route path="/intermediary/login"              element={<InsuranceBrokerLogin />} />
