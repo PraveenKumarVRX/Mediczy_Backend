@@ -104,6 +104,51 @@ const getRolePermissions = (role) => {
       read: ['patients', 'insurance_claims', 'insurance_policies', 'billing'],
       write: ['insurance_claims', 'insurance_verifications', 'billing_codes'],
       delete: []
+    },
+    accounts_staff: {
+      read: ['billing', 'invoices', 'payments', 'financial_reports', 'ledgers'],
+      write: ['invoices', 'payments', 'billing_entries', 'receipts'],
+      delete: []
+    },
+    mrd_staff: {
+      read: ['medical_records', 'patient_history', 'discharge_summaries', 'icd_codes'],
+      write: ['medical_records', 'coding_entries', 'discharge_summaries'],
+      delete: []
+    },
+    insurance_desk_staff: {
+      read: ['insurance_claims', 'pre_authorizations', 'billing', 'tpa_records'],
+      write: ['insurance_claims', 'pre_authorizations', 'tpa_submissions'],
+      delete: []
+    },
+    hr_staff: {
+      read: ['staff_records', 'payroll', 'attendance', 'leave_requests', 'recruitment'],
+      write: ['staff_records', 'attendance', 'leave_approvals', 'payroll_entries'],
+      delete: []
+    },
+    it_edp_staff: {
+      read: ['system_logs', 'user_accounts', 'hardware_inventory', 'network_config'],
+      write: ['user_accounts', 'system_config', 'hardware_inventory', 'tickets'],
+      delete: []
+    },
+    ot_staff: {
+      read: ['operation_schedules', 'patient_records', 'surgical_notes', 'ot_checklists'],
+      write: ['operation_schedules', 'surgical_notes', 'ot_checklists', 'instrument_logs'],
+      delete: []
+    },
+    icu_staff: {
+      read: ['icu_patients', 'vital_signs', 'critical_care_notes', 'ventilator_logs'],
+      write: ['vital_signs', 'critical_care_notes', 'medication_orders', 'nursing_notes'],
+      delete: []
+    },
+    quality_staff: {
+      read: ['audit_reports', 'nabh_compliance', 'incidents', 'quality_metrics', 'policies'],
+      write: ['audit_reports', 'incidents', 'corrective_actions', 'nabh_checklists'],
+      delete: []
+    },
+    security_staff: {
+      read: ['access_logs', 'visitor_records', 'incident_reports', 'cctv_logs'],
+      write: ['visitor_records', 'incident_reports', 'patrol_logs', 'access_requests'],
+      delete: []
     }
   };
 
@@ -1179,6 +1224,170 @@ export const insuranceCoordinatorLogin = async (req, res) => {
   }
 };
 
+// ==================== DEPARTMENT STAFF HANDLERS (factory) ====================
+
+/**
+ * Factory: creates signup + login handlers for any department staff role.
+ * If no hospital identifier is supplied in the request, the lookup falls back
+ * to email+role across all hospitals (suitable for single-tenant deployments).
+ */
+const makeDeptHandlers = (roleKey, displayName) => {
+  const signup = async (req, res) => {
+    try {
+      const errors = validationResult(req);
+      if (!errors.isEmpty()) {
+        return res.status(400).json({ success: false, message: 'Validation error', errors: errors.array() });
+      }
+
+      const { hospital_id, hospital_slug, hospital_domain, email, password, first_name, last_name, phone, department } = req.body;
+      const hospitalIdentifier = hospital_id || hospital_slug || hospital_domain;
+
+      const hospital = await findHospitalByIdentifier(hospitalIdentifier);
+      if (!hospital) {
+        return res.status(404).json({ success: false, message: 'Hospital not found. Please provide a valid hospital_id, hospital_slug, or hospital_domain.' });
+      }
+
+      const existing = await User.findOne({ where: { email, organization_id: hospital.id, role: roleKey } });
+      if (existing) {
+        return res.status(409).json({ success: false, message: 'An account with this email already exists.' });
+      }
+
+      const staff = await User.create({
+        email,
+        password,
+        firstName: first_name,
+        lastName: last_name,
+        phoneNumber: phone || null,
+        role: roleKey,
+        organization_id: hospital.id,
+        permissions: getRolePermissions(roleKey),
+        scope: 'organization',
+        status: 'active',
+        metadata: { department: department || displayName, created_via: 'web_portal' }
+      });
+
+      const token = jwt.sign(
+        { id: staff.id, email: staff.email, role: staff.role, userType: 'hospital', organization_id: staff.organization_id, hospital_id: hospital.id, hospitalId: hospital.id, hospital_name: hospital.name, hospital_slug: hospital.slug },
+        JWT_SECRET,
+        { expiresIn: '7d' }
+      );
+
+      console.log(`✅ ${displayName} signup successful:`, staff.id);
+      res.status(201).json({
+        success: true,
+        message: `${displayName} account created successfully`,
+        data: {
+          token,
+          staff: { id: staff.id, email: staff.email, first_name: staff.firstName, last_name: staff.lastName, role: staff.role,
+            hospital: { id: hospital.id, name: hospital.name, slug: hospital.slug } }
+        }
+      });
+    } catch (error) {
+      console.error(`❌ ${displayName} signup error:`, error);
+      res.status(500).json({ success: false, message: 'Error during signup', error: error.message });
+    }
+  };
+
+  const login = async (req, res) => {
+    try {
+      const errors = validationResult(req);
+      if (!errors.isEmpty()) {
+        return res.status(400).json({ success: false, message: 'Validation error', errors: errors.array() });
+      }
+
+      const { hospital_id, hospital_slug, hospital_domain, email, password } = req.body;
+
+      if (!checkRateLimit(email)) {
+        return res.status(429).json({ success: false, message: 'Too many login attempts. Please try again in 15 minutes.' });
+      }
+
+      const hospitalIdentifier = hospital_id || hospital_slug || hospital_domain;
+
+      let staff;
+      if (hospitalIdentifier) {
+        // Multi-tenant: look up within specific hospital
+        const hospital = await findHospitalByIdentifier(hospitalIdentifier);
+        if (!hospital) {
+          return res.status(404).json({ success: false, message: 'Hospital not found.' });
+        }
+        staff = await User.findOne({ where: { email, organization_id: hospital.id, role: roleKey, status: 'active' } });
+      } else {
+        // Single-tenant fallback: find by email + role only
+        staff = await User.findOne({ where: { email, role: roleKey, status: 'active' } });
+      }
+
+      if (!staff) {
+        await auditLoginAttempt(req, null, email, false, `${displayName} not found`);
+        return res.status(401).json({ success: false, message: 'Invalid email or password' });
+      }
+
+      const isPasswordValid = await staff.verifyPassword(password);
+      if (!isPasswordValid) {
+        await auditLoginAttempt(req, staff.id, email, false, 'Invalid password');
+        return res.status(401).json({ success: false, message: 'Invalid email or password' });
+      }
+
+      const hospital = await Tenant.findByPk(staff.organization_id);
+
+      const token = jwt.sign(
+        { id: staff.id, email: staff.email, role: staff.role, userType: 'hospital', organization_id: staff.organization_id, hospital_id: staff.organization_id, hospitalId: staff.organization_id, hospital_name: hospital?.name, hospital_slug: hospital?.slug },
+        JWT_SECRET,
+        { expiresIn: '7d' }
+      );
+
+      await staff.update({ metadata: { ...staff.metadata, last_login: new Date().toISOString(), login_source: 'web_portal' } });
+
+      console.log(`✅ ${displayName} login successful:`, staff.id);
+      await auditLoginAttempt(req, staff.id, email, true);
+
+      res.status(200).json({
+        success: true,
+        message: 'Login successful',
+        data: {
+          token,
+          staff: { id: staff.id, email: staff.email, first_name: staff.firstName, last_name: staff.lastName, phone: staff.phoneNumber, role: staff.role, department: staff.metadata?.department,
+            hospital: hospital ? { id: hospital.id, name: hospital.name, slug: hospital.slug, logo: hospital.logo, type: hospital.type, address: hospital.address, phone: hospital.phone, email: hospital.email } : null }
+        }
+      });
+    } catch (error) {
+      console.error(`❌ ${displayName} login error:`, error);
+      res.status(500).json({ success: false, message: 'Error during login', error: error.message });
+    }
+  };
+
+  return { signup, login };
+};
+
+// Instantiate department handlers
+const _accounts   = makeDeptHandlers('accounts_staff',       'Accounts Staff');
+const _mrd        = makeDeptHandlers('mrd_staff',            'MRD Staff');
+const _insDeskH   = makeDeptHandlers('insurance_desk_staff', 'Insurance Desk Staff');
+const _hr         = makeDeptHandlers('hr_staff',             'HR Staff');
+const _itEdp      = makeDeptHandlers('it_edp_staff',         'IT/EDP Staff');
+const _ot         = makeDeptHandlers('ot_staff',             'OT Staff');
+const _icu        = makeDeptHandlers('icu_staff',            'ICU Staff');
+const _quality    = makeDeptHandlers('quality_staff',        'Quality Staff');
+const _security   = makeDeptHandlers('security_staff',       'Security Staff');
+
+export const accountsStaffSignup    = _accounts.signup;
+export const accountsStaffLogin     = _accounts.login;
+export const mrdStaffSignup         = _mrd.signup;
+export const mrdStaffLogin          = _mrd.login;
+export const insuranceDeskSignup    = _insDeskH.signup;
+export const insuranceDeskLogin     = _insDeskH.login;
+export const hrStaffSignup          = _hr.signup;
+export const hrStaffLogin           = _hr.login;
+export const itEdpStaffSignup       = _itEdp.signup;
+export const itEdpStaffLogin        = _itEdp.login;
+export const otStaffSignup          = _ot.signup;
+export const otStaffLogin           = _ot.login;
+export const icuStaffSignup         = _icu.signup;
+export const icuStaffLogin          = _icu.login;
+export const qualityStaffSignup     = _quality.signup;
+export const qualityStaffLogin      = _quality.login;
+export const securityStaffSignup    = _security.signup;
+export const securityStaffLogin     = _security.login;
+
 /**
  * Search Hospitals
  * Mobile app endpoint - allows staff to search for hospitals to join
@@ -1263,10 +1472,14 @@ export const getStaffProfile = async (req, res) => {
   try {
     const staffId = req.user.id;
 
+    const ALL_STAFF_ROLES = ['doctor', 'nurse', 'doctor_assistant', 'insurance_coordinator',
+      'accounts_staff', 'mrd_staff', 'insurance_desk_staff', 'hr_staff',
+      'it_edp_staff', 'ot_staff', 'icu_staff', 'quality_staff', 'security_staff'];
+
     const staff = await User.findOne({
       where: {
         id: staffId,
-        role: { [Op.in]: ['doctor', 'nurse', 'doctor_assistant', 'insurance_coordinator'] },
+        role: { [Op.in]: ALL_STAFF_ROLES },
         status: 'active'
       },
       attributes: { exclude: ['password'] }
@@ -1349,10 +1562,14 @@ export const updateStaffProfile = async (req, res) => {
       certification
     } = req.body;
 
+    const ALL_STAFF_ROLES = ['doctor', 'nurse', 'doctor_assistant', 'insurance_coordinator',
+      'accounts_staff', 'mrd_staff', 'insurance_desk_staff', 'hr_staff',
+      'it_edp_staff', 'ot_staff', 'icu_staff', 'quality_staff', 'security_staff'];
+
     const staff = await User.findOne({
       where: {
         id: staffId,
-        role: { [Op.in]: ['doctor', 'nurse', 'doctor_assistant', 'insurance_coordinator'] },
+        role: { [Op.in]: ALL_STAFF_ROLES },
         status: 'active'
       }
     });

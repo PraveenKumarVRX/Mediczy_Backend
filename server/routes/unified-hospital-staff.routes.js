@@ -19,6 +19,24 @@ import {
   assistantLogin,
   insuranceCoordinatorSignup,
   insuranceCoordinatorLogin,
+  accountsStaffSignup,
+  accountsStaffLogin,
+  mrdStaffSignup,
+  mrdStaffLogin,
+  insuranceDeskSignup,
+  insuranceDeskLogin,
+  hrStaffSignup,
+  hrStaffLogin,
+  itEdpStaffSignup,
+  itEdpStaffLogin,
+  otStaffSignup,
+  otStaffLogin,
+  icuStaffSignup,
+  icuStaffLogin,
+  qualityStaffSignup,
+  qualityStaffLogin,
+  securityStaffSignup,
+  securityStaffLogin,
   searchHospitals,
   getStaffProfile,
   updateStaffProfile
@@ -30,7 +48,9 @@ const router = express.Router();
  * Middleware to ensure user is hospital staff
  */
 const requireHospitalStaff = (req, res, next) => {
-  const validRoles = ['doctor', 'nurse', 'doctor_assistant', 'insurance_coordinator'];
+  const validRoles = ['doctor', 'nurse', 'doctor_assistant', 'insurance_coordinator',
+    'accounts_staff', 'mrd_staff', 'insurance_desk_staff', 'hr_staff',
+    'it_edp_staff', 'ot_staff', 'icu_staff', 'quality_staff', 'security_staff'];
   
   if (!req.user || !validRoles.includes(req.user.role)) {
     return res.status(403).json({
@@ -204,6 +224,64 @@ router.post(
   ],
   insuranceCoordinatorLogin
 );
+
+// ==================== DEPARTMENT STAFF ENDPOINTS ====================
+
+const deptBodyValidation = [
+  body('hospital_id').optional().trim(),
+  body('hospital_slug').optional().trim(),
+  body('hospital_domain').optional().trim(),
+  body('email').isEmail().withMessage('Invalid email'),
+  body('password').isLength({ min: 8 }).withMessage('Password must be at least 8 characters'),
+  body('first_name').trim().notEmpty().withMessage('First name is required'),
+  body('last_name').trim().notEmpty().withMessage('Last name is required'),
+  body('phone').optional().trim(),
+  body('department').optional().trim()
+];
+
+const deptLoginValidation = [
+  body('hospital_id').optional().trim(),
+  body('hospital_slug').optional().trim(),
+  body('hospital_domain').optional().trim(),
+  body('email').isEmail().withMessage('Invalid email'),
+  body('password').notEmpty().withMessage('Password is required')
+];
+
+// Accounts
+router.post('/accounts/signup', deptBodyValidation, accountsStaffSignup);
+router.post('/accounts/login', authLimiter, deptLoginValidation, accountsStaffLogin);
+
+// MRD
+router.post('/mrd/signup', deptBodyValidation, mrdStaffSignup);
+router.post('/mrd/login', authLimiter, deptLoginValidation, mrdStaffLogin);
+
+// Insurance Desk
+router.post('/insurance-desk/signup', deptBodyValidation, insuranceDeskSignup);
+router.post('/insurance-desk/login', authLimiter, deptLoginValidation, insuranceDeskLogin);
+
+// HR
+router.post('/hr/signup', deptBodyValidation, hrStaffSignup);
+router.post('/hr/login', authLimiter, deptLoginValidation, hrStaffLogin);
+
+// IT/EDP
+router.post('/it-edp/signup', deptBodyValidation, itEdpStaffSignup);
+router.post('/it-edp/login', authLimiter, deptLoginValidation, itEdpStaffLogin);
+
+// OT
+router.post('/ot/signup', deptBodyValidation, otStaffSignup);
+router.post('/ot/login', authLimiter, deptLoginValidation, otStaffLogin);
+
+// ICU
+router.post('/icu/signup', deptBodyValidation, icuStaffSignup);
+router.post('/icu/login', authLimiter, deptLoginValidation, icuStaffLogin);
+
+// Quality / NABH
+router.post('/quality/signup', deptBodyValidation, qualityStaffSignup);
+router.post('/quality/login', authLimiter, deptLoginValidation, qualityStaffLogin);
+
+// Security
+router.post('/security/signup', deptBodyValidation, securityStaffSignup);
+router.post('/security/login', authLimiter, deptLoginValidation, securityStaffLogin);
 
 // ==================== COMMON ENDPOINTS ====================
 

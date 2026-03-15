@@ -52,11 +52,12 @@ const DeptLoginTemplate = ({
       const controller = new AbortController();
       const timeoutId  = setTimeout(() => controller.abort(), 10000);
 
-      // Try department-specific endpoint first, then fall back to hospital auth
+      // Try department-specific staff endpoint first, then fall back to legacy hospital auth
       const attempts = [
-        { endpoint: `/hospital/dept/${deptKey}/login`, body: { email, password } },
-        { endpoint: '/hospital/auth/login',            body: { email, password } },
-        { endpoint: '/hospital/login',                 body: { email, password } },
+        { endpoint: `/hospital/staff/${deptKey}/login`,  body: { email, password } },
+        { endpoint: `/hospital/dept/${deptKey}/login`,   body: { email, password } },
+        { endpoint: '/hospital/auth/login',              body: { email, password } },
+        { endpoint: '/hospital/login',                   body: { email, password } },
       ];
 
       let data: unknown = null;
@@ -84,10 +85,11 @@ const DeptLoginTemplate = ({
 
       // Store token under department-specific key
       const d = data as any;
-      localStorage.setItem(tokenKey, d.token);
+      const token = d.token ?? d.data?.token;
+      localStorage.setItem(tokenKey, token);
       if (d.refreshToken) localStorage.setItem(`${deptKey}RefreshToken`, d.refreshToken);
       localStorage.setItem('userType', deptKey);
-      localStorage.setItem(`${deptKey}Data`, JSON.stringify(d.hospital ?? d.user ?? {}));
+      localStorage.setItem(`${deptKey}Data`, JSON.stringify(d.data?.staff ?? d.hospital ?? d.user ?? {}));
 
       navigate(dashboardPath);
     } catch (err: any) {
