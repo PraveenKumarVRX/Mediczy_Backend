@@ -29,9 +29,9 @@ module.exports = {
       name: 'mediczy-server',
       script: './start-wrapper.cjs',
       cwd: SERVER_DIR,
-      instances: 2,  // Cluster mode for 400+ concurrent users
+      instances: 1,  // Single instance to save memory (LaBSE model needs ~1.5GB)
       exec_mode: 'cluster',
-      node_args: '--max-old-space-size=512',  // Limit heap to 512MB per instance
+      node_args: '--max-old-space-size=1536',  // Limit heap to 1.5GB (LaBSE embeddings need headroom)
       env: {
         NODE_ENV: 'production',
         PORT: 8888,
@@ -43,7 +43,7 @@ module.exports = {
       out_file: path.join(LOGS_DIR, 'server-out.log'),
       log_date_format: 'YYYY-MM-DD HH:mm:ss Z',
       merge_logs: true,
-      max_memory_restart: '768M',  // Restart if RSS exceeds 768MB
+      max_memory_restart: '2G',  // Restart if RSS exceeds 2GB (LaBSE model loads into memory)
       watch: false,
       ignore_watch: ['node_modules', 'logs', '.git'],
       max_restarts: 15,
