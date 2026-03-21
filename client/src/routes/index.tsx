@@ -538,13 +538,18 @@ const OTLogin     = lazy(() => import("@/pages/ot/OTLogin"));
 const OTDashboard = lazy(() => import("@/pages/ot/OTDashboard"));
 const _OTModulePages = () => import("@/pages/ot/OTModulePages");
 const OTSchedulePage      = lazyNamed(_OTModulePages, "OTSchedulePage");
+const OTPreOpPage         = lazyNamed(_OTModulePages, "OTPreOpPage");
+const OTConsentPage       = lazyNamed(_OTModulePages, "OTConsentPage");
 const OTTeamsPage         = lazyNamed(_OTModulePages, "OTTeamsPage");
 const OTEquipmentPage     = lazyNamed(_OTModulePages, "OTEquipmentPage");
 const OTSterilizationPage = lazyNamed(_OTModulePages, "OTSterilizationPage");
+const OTImplantsPage      = lazyNamed(_OTModulePages, "OTImplantsPage");
 const OTAnesthesiaPage    = lazyNamed(_OTModulePages, "OTAnesthesiaPage");
+const OTSafetyPage        = lazyNamed(_OTModulePages, "OTSafetyPage");
 const OTPostOpPage        = lazyNamed(_OTModulePages, "OTPostOpPage");
 const OTRecordsPage       = lazyNamed(_OTModulePages, "OTRecordsPage");
 const OTReportsPage       = lazyNamed(_OTModulePages, "OTReportsPage");
+const OTAnalyticsPage     = lazyNamed(_OTModulePages, "OTAnalyticsPage");
 const OTSettingsPage      = lazyNamed(_OTModulePages, "OTSettingsPage");
 const OTSupportPage       = lazyNamed(_OTModulePages, "OTSupportPage");
 
@@ -1075,13 +1080,18 @@ const AppRoutes = () => {
         <Route path="/ot/login"          element={<OTLogin />} />
         <Route path="/ot/dashboard"      element={<OTDashboard />} />
         <Route path="/ot/schedule"       element={<OTSchedulePage />} />
+        <Route path="/ot/pre-op"         element={<OTPreOpPage />} />
+        <Route path="/ot/consent"        element={<OTConsentPage />} />
         <Route path="/ot/teams"          element={<OTTeamsPage />} />
         <Route path="/ot/equipment"      element={<OTEquipmentPage />} />
         <Route path="/ot/sterilization"  element={<OTSterilizationPage />} />
+        <Route path="/ot/implants"       element={<OTImplantsPage />} />
         <Route path="/ot/anesthesia"     element={<OTAnesthesiaPage />} />
+        <Route path="/ot/safety"         element={<OTSafetyPage />} />
         <Route path="/ot/post-op"        element={<OTPostOpPage />} />
         <Route path="/ot/records"        element={<OTRecordsPage />} />
         <Route path="/ot/reports"        element={<OTReportsPage />} />
+        <Route path="/ot/analytics"      element={<OTAnalyticsPage />} />
         <Route path="/ot/settings"       element={<OTSettingsPage />} />
         <Route path="/ot/support"        element={<OTSupportPage />} />
 
