@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import HospDeptLayout, { DeptNavSection } from '@/components/hosp-dept/HospDeptLayout';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
@@ -10,13 +10,17 @@ import {
   Search, Eye, Edit2, CheckCircle2, AlertCircle, FileText, Package,
   ShieldCheck, TrendingUp, Activity, Clock, ClipboardCheck, Wrench,
   FlaskConical, RefreshCw, LayoutDashboard,
+  Wifi, Thermometer, Wind, Gauge, Signal, LayoutGrid,
 } from 'lucide-react';
 
 // ─── Shared nav (imported by OTDashboard) ─────────────────────────────────────
 export const otNavSections: DeptNavSection[] = [
   {
     title: 'Overview',
-    items: [{ icon: LayoutDashboard, label: 'Dashboard', href: '/ot/dashboard' }],
+    items: [
+      { icon: LayoutDashboard, label: 'Dashboard',    href: '/ot/dashboard'      },
+      { icon: LayoutGrid,      label: 'Theatre View', href: '/ot/theatre-view'   },
+    ],
   },
   {
     title: 'Scheduling',
@@ -1175,3 +1179,335 @@ export const OTSupportPage = () => (
     </div>
   </Wrap>
 );
+
+// ─── Theatre View — Real-Time IoT Board ──────────────────────────────────────
+const jitter = (base: number, amp: number, seed: number, t: number) =>
+  Math.round((base + Math.sin(t * 1.3 + seed) * amp) * 10) / 10;
+
+const theatres = [
+  {
+    id: 'OT-1', floor: 'Floor 3', specialty: 'Cardiothoracic',
+    borderCls: 'border-l-blue-500', badgeCls: 'bg-blue-100 text-blue-700',
+    status: 'Active Surgery',
+    patient: 'Arun Krishnan', procedure: 'Craniotomy', surgeon: 'Dr. Rao',
+    elapsedMin: 386,
+    vitals: { hr: 68, spo2: 98, sbp: 118, dbp: 74, etco2: 35, temp: 36.6 },
+    hvac: { roomTemp: 20.1, rh: 49, diffPa: 2.5, ach: 25 },
+    gases: { o2: 60, n2o: 55, air: 58, vac: 48 },
+    next: { patient: 'Nikhil Desai', procedure: 'Appendectomy', time: '14:00' },
+    iot: { online: 6, total: 6 },
+  },
+  {
+    id: 'OT-2', floor: 'Floor 3', specialty: 'Orthopaedic',
+    borderCls: 'border-l-emerald-500', badgeCls: 'bg-emerald-100 text-emerald-700',
+    status: 'Active Surgery',
+    patient: 'Sangita Rao', procedure: 'Hip Replacement', surgeon: 'Dr. Sharma',
+    elapsedMin: 263,
+    vitals: { hr: 72, spo2: 99, sbp: 124, dbp: 78, etco2: 36, temp: 36.4 },
+    hvac: { roomTemp: 20.4, rh: 51, diffPa: 2.3, ach: 22 },
+    gases: { o2: 58, n2o: 0, air: 60, vac: 47 },
+    next: { patient: 'Priya Nair', procedure: 'Knee Replacement', time: '15:00' },
+    iot: { online: 6, total: 6 },
+  },
+  {
+    id: 'OT-3', floor: 'Floor 3', specialty: 'General Surgery',
+    borderCls: 'border-l-violet-500', badgeCls: 'bg-violet-100 text-violet-700',
+    status: 'Active Surgery',
+    patient: 'Ramesh Tiwari', procedure: 'Inguinal Hernia', surgeon: 'Dr. Joshi',
+    elapsedMin: 83,
+    vitals: { hr: 80, spo2: 99, sbp: 132, dbp: 82, etco2: 37, temp: 36.8 },
+    hvac: { roomTemp: 19.8, rh: 48, diffPa: 2.6, ach: 24 },
+    gases: { o2: 62, n2o: 0, air: 61, vac: 49 },
+    next: { patient: '', procedure: 'No further cases', time: '' },
+    iot: { online: 5, total: 6 },
+  },
+  {
+    id: 'OT-4', floor: 'Floor 4', specialty: 'Neuro / Ophthal',
+    borderCls: 'border-l-slate-400', badgeCls: 'bg-slate-100 text-slate-600',
+    status: 'Ready',
+    patient: '', procedure: '', surgeon: '',
+    elapsedMin: 0,
+    vitals: null as null | { hr: number; spo2: number; sbp: number; dbp: number; etco2: number; temp: number },
+    hvac: { roomTemp: 21.0, rh: 52, diffPa: 2.4, ach: 21 },
+    gases: { o2: 61, n2o: 53, air: 59, vac: 48 },
+    next: { patient: 'Suman Patel', procedure: 'Cataract (L)', time: '16:00' },
+    iot: { online: 4, total: 6 },
+  },
+];
+
+const VitalChip = ({ label, value, unit, warn = false }: { label: string; value: string; unit: string; warn?: boolean }) => (
+  <div className={`rounded-lg p-2 ${warn ? 'bg-red-50 dark:bg-red-950/40' : 'bg-slate-50 dark:bg-slate-800'}`}>
+    <div className="text-xs text-muted-foreground leading-none">{label}</div>
+    <div className={`text-base font-bold tabular-nums mt-0.5 ${warn ? 'text-red-600' : ''}`}>
+      {value}<span className="text-xs font-normal ml-0.5 text-muted-foreground">{unit}</span>
+    </div>
+  </div>
+);
+
+const GasBar = ({ label, val, max, warn }: { label: string; val: number; max: number; warn: number }) => (
+  <div className="flex items-center gap-2">
+    <span className="text-xs text-muted-foreground w-14 flex-shrink-0">{label}</span>
+    <div className="flex-1 h-1.5 bg-slate-200 dark:bg-slate-700 rounded-full overflow-hidden">
+      <div
+        className={`h-full rounded-full transition-all duration-700 ${val < warn ? 'bg-red-500' : val < warn * 1.4 ? 'bg-amber-500' : 'bg-teal-500'}`}
+        style={{ width: `${Math.min(100, (val / max) * 100)}%` }}
+      />
+    </div>
+    <span className={`text-xs font-medium w-6 text-right tabular-nums ${val < warn ? 'text-red-600' : ''}`}>{val}</span>
+  </div>
+);
+
+export const OTTheatreViewPage = () => {
+  const [tick, setTick] = useState(0);
+  const [lastUpdated, setLastUpdated] = useState(new Date());
+  useEffect(() => {
+    const id = setInterval(() => { setTick(t => t + 1); setLastUpdated(new Date()); }, 3000);
+    return () => clearInterval(id);
+  }, []);
+  const ts = lastUpdated.toLocaleTimeString('en-IN', { hour12: false });
+
+  return (
+    <HospDeptLayout deptKey="ot" deptName="Operation Theatre" badgeLabel="OT"
+      loginPath="/ot/login" DeptIcon={Scissors} navSections={otNavSections}
+      title="Theatre View" subtitle="Real-time IoT board — all operating theatres live">
+      <div className="space-y-5">
+        {/* Status bar */}
+        <div className="flex items-center justify-between flex-wrap gap-3">
+          <div className="flex items-center gap-3">
+            <div className="flex items-center gap-1.5 px-3 py-1.5 rounded-full bg-red-50 dark:bg-red-950/40 border border-red-200 dark:border-red-800">
+              <span className="relative flex h-2.5 w-2.5">
+                <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-red-400 opacity-75" />
+                <span className="relative inline-flex rounded-full h-2.5 w-2.5 bg-red-500" />
+              </span>
+              <span className="text-xs font-bold text-red-600 tracking-widest uppercase">Live</span>
+            </div>
+            <span className="text-sm text-muted-foreground">Updated {ts}</span>
+          </div>
+          <div className="flex items-center gap-3">
+            <div className="flex items-center gap-1.5 text-sm">
+              <Wifi className="h-4 w-4 text-emerald-500" />
+              <span className="text-emerald-600 font-medium">IoT Hub Connected</span>
+              <Badge className="bg-emerald-100 text-emerald-700 border-0">21/24 online</Badge>
+            </div>
+            <Button variant="outline" size="sm" className="gap-1.5" onClick={() => setTick(t => t + 1)}>
+              <RefreshCw className="h-3.5 w-3.5" />Refresh
+            </Button>
+          </div>
+        </div>
+
+        {/* Theatre Kanban */}
+        <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-4 gap-4">
+          {theatres.map((ot, idx) => {
+            const v = ot.vitals;
+            const s = idx * 10;
+            const hr    = v ? Math.round(jitter(v.hr,   3,   s+1, tick)) : 0;
+            const spo2  = v ? Math.round(jitter(v.spo2, 0.5, s+2, tick)) : 0;
+            const sbp   = v ? Math.round(jitter(v.sbp,  5,   s+3, tick)) : 0;
+            const dbp   = v ? Math.round(jitter(v.dbp,  3,   s+4, tick)) : 0;
+            const etco2 = v ? Math.round(jitter(v.etco2,1.5, s+5, tick)) : 0;
+            const temp  = v ? jitter(v.temp, 0.1, s+6, tick) : 0;
+            const roomTemp = jitter(ot.hvac.roomTemp, 0.15, s+7, tick);
+            const rh    = Math.round(jitter(ot.hvac.rh, 1.5, s+8, tick));
+            const o2    = Math.max(0, Math.round(jitter(ot.gases.o2, 1, s+9, tick)));
+            const elapsedTotal = ot.elapsedMin + Math.floor(tick * 3 / 60);
+            const elapsedStr = ot.elapsedMin > 0
+              ? `${Math.floor(elapsedTotal / 60)}h ${elapsedTotal % 60}m`
+              : '—';
+            return (
+              <Card key={ot.id} className={`border-l-4 ${ot.borderCls} hover:shadow-lg transition-shadow`}>
+                <CardHeader className="pb-2 pt-4 px-4">
+                  <div className="flex items-center justify-between">
+                    <div>
+                      <div className="flex items-center gap-2 mb-0.5">
+                        <span className="font-bold text-lg">{ot.id}</span>
+                        <Badge className={`${ot.badgeCls} border-0 text-xs`}>{ot.status}</Badge>
+                      </div>
+                      <p className="text-xs text-muted-foreground">{ot.specialty} · {ot.floor}</p>
+                    </div>
+                    <div className="text-right">
+                      <div className={`flex items-center gap-1 justify-end ${ot.iot.online === ot.iot.total ? 'text-emerald-600' : 'text-amber-500'}`}>
+                        <Wifi className="h-3.5 w-3.5" />
+                        <span className="text-xs font-semibold">{ot.iot.online}/{ot.iot.total}</span>
+                      </div>
+                      <p className="text-xs text-muted-foreground">devices</p>
+                    </div>
+                  </div>
+                </CardHeader>
+                <CardContent className="px-4 pb-4 space-y-3">
+                  {/* Current Case */}
+                  <div className={`p-2.5 rounded-xl ${v ? 'bg-slate-50 dark:bg-slate-800' : 'bg-slate-50/50 dark:bg-slate-800/50 border border-dashed'}`}>
+                    {v ? (
+                      <>
+                        <div className="flex items-center justify-between mb-1">
+                          <span className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">Current Case</span>
+                          <span className="text-xs text-teal-600 font-medium flex items-center gap-1">
+                            <Clock className="h-3 w-3" />{elapsedStr}
+                          </span>
+                        </div>
+                        <p className="font-semibold text-sm leading-tight">{ot.patient}</p>
+                        <p className="text-xs text-muted-foreground">{ot.procedure}</p>
+                        <p className="text-xs text-muted-foreground">{ot.surgeon}</p>
+                      </>
+                    ) : (
+                      <p className="text-xs text-muted-foreground text-center py-2">No active case · Theatre ready</p>
+                    )}
+                  </div>
+
+                  {/* Patient Vitals (IoT) */}
+                  {v && (
+                    <div>
+                      <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground flex items-center gap-1 mb-1.5">
+                        <Activity className="h-3 w-3 text-rose-500" />Patient Vitals
+                        <span className="ml-auto text-emerald-500 text-xs normal-case font-normal">● live</span>
+                      </p>
+                      <div className="grid grid-cols-3 gap-1">
+                        <VitalChip label="HR" value={String(hr)} unit="bpm" warn={hr > 100 || hr < 50} />
+                        <VitalChip label="SpO₂" value={String(spo2)} unit="%" warn={spo2 < 95} />
+                        <VitalChip label="EtCO₂" value={String(etco2)} unit="mmHg" warn={etco2 > 45 || etco2 < 30} />
+                        <div className="col-span-2">
+                          <VitalChip label="BP" value={`${sbp}/${dbp}`} unit="mmHg" warn={sbp > 160 || sbp < 90} />
+                        </div>
+                        <VitalChip label="Temp" value={temp.toFixed(1)} unit="°C" warn={temp > 38 || temp < 35.5} />
+                      </div>
+                    </div>
+                  )}
+
+                  {/* Room Environment (HVAC IoT) */}
+                  <div>
+                    <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground flex items-center gap-1 mb-1.5">
+                      <Wind className="h-3 w-3 text-cyan-500" />Room Environment
+                    </p>
+                    <div className="grid grid-cols-2 gap-1">
+                      <div className="flex items-center gap-1.5 p-2 rounded-lg bg-slate-50 dark:bg-slate-800">
+                        <Thermometer className="h-3.5 w-3.5 text-orange-400 flex-shrink-0" />
+                        <div>
+                          <div className="text-xs text-muted-foreground">Temp</div>
+                          <div className={`text-sm font-bold tabular-nums ${roomTemp > 22 || roomTemp < 18 ? 'text-amber-600' : ''}`}>{roomTemp.toFixed(1)}°C</div>
+                        </div>
+                      </div>
+                      <div className="flex items-center gap-1.5 p-2 rounded-lg bg-slate-50 dark:bg-slate-800">
+                        <Gauge className="h-3.5 w-3.5 text-blue-400 flex-shrink-0" />
+                        <div>
+                          <div className="text-xs text-muted-foreground">Humidity</div>
+                          <div className={`text-sm font-bold tabular-nums ${rh > 60 || rh < 40 ? 'text-amber-600' : ''}`}>{rh}% RH</div>
+                        </div>
+                      </div>
+                      <div className="flex items-center gap-1.5 p-2 rounded-lg bg-slate-50 dark:bg-slate-800">
+                        <Wind className="h-3.5 w-3.5 text-cyan-400 flex-shrink-0" />
+                        <div>
+                          <div className="text-xs text-muted-foreground">Diff. Pressure</div>
+                          <div className="text-sm font-bold">+{ot.hvac.diffPa} Pa</div>
+                        </div>
+                      </div>
+                      <div className="flex items-center gap-1.5 p-2 rounded-lg bg-slate-50 dark:bg-slate-800">
+                        <Signal className="h-3.5 w-3.5 text-teal-400 flex-shrink-0" />
+                        <div>
+                          <div className="text-xs text-muted-foreground">Air Changes</div>
+                          <div className="text-sm font-bold">{ot.hvac.ach} ACH</div>
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* Gas Supply */}
+                  <div>
+                    <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground flex items-center gap-1 mb-1.5">
+                      <Gauge className="h-3 w-3 text-violet-500" />Gas Supply (PSI / Hg)
+                    </p>
+                    <div className="space-y-1.5 p-2.5 rounded-xl bg-slate-50 dark:bg-slate-800">
+                      <GasBar label="O₂" val={o2} max={80} warn={40} />
+                      <GasBar label="N₂O" val={ot.gases.n2o} max={80} warn={30} />
+                      <GasBar label="Med Air" val={ot.gases.air} max={80} warn={40} />
+                      <GasBar label="Vacuum" val={ot.gases.vac} max={60} warn={30} />
+                    </div>
+                  </div>
+
+                  {/* Next Case */}
+                  <div className="p-2.5 rounded-xl border border-dashed">
+                    <p className="text-xs font-medium text-muted-foreground">Next Case</p>
+                    {ot.next.time ? (
+                      <>
+                        <p className="text-sm font-semibold mt-0.5">{ot.next.time} · {ot.next.patient}</p>
+                        <p className="text-xs text-muted-foreground">{ot.next.procedure}</p>
+                      </>
+                    ) : (
+                      <p className="text-xs text-muted-foreground mt-0.5">No further cases today</p>
+                    )}
+                  </div>
+                </CardContent>
+              </Card>
+            );
+          })}
+        </div>
+
+        {/* IoT Device Registry */}
+        <Card>
+          <CardHeader className="pb-3">
+            <CardTitle className="text-base flex items-center gap-2">
+              <Wifi className="h-4 w-4 text-teal-500" />
+              IoT Device Registry
+              <Badge className="bg-emerald-100 text-emerald-700 border-0 ml-1">21 Online</Badge>
+              <Badge className="bg-red-100 text-red-700 border-0">3 Offline</Badge>
+            </CardTitle>
+          </CardHeader>
+          <CardContent>
+            <div className="grid grid-cols-2 md:grid-cols-4 xl:grid-cols-6 gap-3">
+              {(([
+                { device: 'Patient Monitor',  ot: 'OT-1', type: 'Vital Signs',    status: 'Online',  signal: 98 },
+                { device: 'Anaesthesia Unit', ot: 'OT-1', type: 'Anaesthesia',    status: 'Online',  signal: 95 },
+                { device: 'HVAC Sensor',      ot: 'OT-1', type: 'Environment',    status: 'Online',  signal: 99 },
+                { device: 'Gas Monitor',      ot: 'OT-1', type: 'Gas Supply',     status: 'Online',  signal: 97 },
+                { device: 'Patient Monitor',  ot: 'OT-2', type: 'Vital Signs',    status: 'Online',  signal: 93 },
+                { device: 'HVAC Sensor',      ot: 'OT-2', type: 'Environment',    status: 'Online',  signal: 96 },
+                { device: 'Gas Monitor',      ot: 'OT-2', type: 'Gas Supply',     status: 'Online',  signal: 91 },
+                { device: 'Anaesthesia Unit', ot: 'OT-2', type: 'Anaesthesia',    status: 'Online',  signal: 88 },
+                { device: 'Patient Monitor',  ot: 'OT-3', type: 'Vital Signs',    status: 'Online',  signal: 89 },
+                { device: 'HVAC Sensor',      ot: 'OT-3', type: 'Environment',    status: 'Online',  signal: 94 },
+                { device: 'Gas Monitor',      ot: 'OT-3', type: 'Gas Supply',     status: 'Offline', signal: 0  },
+                { device: 'Anaesthesia Unit', ot: 'OT-3', type: 'Anaesthesia',    status: 'Online',  signal: 86 },
+                { device: 'HVAC Sensor',      ot: 'OT-4', type: 'Environment',    status: 'Offline', signal: 0  },
+                { device: 'Patient Monitor',  ot: 'OT-4', type: 'Vital Signs',    status: 'Online',  signal: 82 },
+                { device: 'Gas Monitor',      ot: 'OT-4', type: 'Gas Supply',     status: 'Online',  signal: 84 },
+                { device: 'Sterilizer IoT',   ot: 'CSSD', type: 'Sterilization',  status: 'Online',  signal: 92 },
+                { device: 'Temp Logger',      ot: 'CSSD', type: 'Environment',    status: 'Online',  signal: 90 },
+                { device: 'PACU Monitor A',   ot: 'PACU', type: 'Vital Signs',    status: 'Online',  signal: 96 },
+                { device: 'PACU Monitor B',   ot: 'PACU', type: 'Vital Signs',    status: 'Offline', signal: 0  },
+                { device: 'OT Camera 1',      ot: 'OT-1', type: 'Surveillance',   status: 'Online',  signal: 99 },
+                { device: 'OT Camera 2',      ot: 'OT-2', type: 'Surveillance',   status: 'Online',  signal: 98 },
+                { device: 'Access Control',   ot: 'Entry',type: 'Security',       status: 'Online',  signal: 99 },
+                { device: 'Fire Detector',    ot: 'All',  type: 'Safety',         status: 'Online',  signal: 99 },
+                { device: 'UPS Monitor',      ot: 'Elec', type: 'Power',          status: 'Online',  signal: 98 },
+              ]) as { device: string; ot: string; type: string; status: string; signal: number }[]).map((d, i) => (
+                <div key={i} className={`p-3 rounded-xl border transition-colors ${
+                  d.status === 'Online'
+                    ? 'border-emerald-200 bg-emerald-50 dark:bg-emerald-950/20 dark:border-emerald-800'
+                    : 'border-red-200 bg-red-50 dark:bg-red-950/20 dark:border-red-800'
+                }`}>
+                  <div className="flex items-center justify-between mb-1.5">
+                    <div className="relative flex h-2 w-2">
+                      {d.status === 'Online' && <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-60" />}
+                      <span className={`relative inline-flex h-2 w-2 rounded-full ${d.status === 'Online' ? 'bg-emerald-500' : 'bg-red-400'}`} />
+                    </div>
+                    <span className="text-xs font-medium text-muted-foreground">{d.ot}</span>
+                  </div>
+                  <p className="text-xs font-semibold leading-snug">{d.device}</p>
+                  <p className="text-xs text-muted-foreground mt-0.5">{d.type}</p>
+                  {d.status === 'Online' ? (
+                    <div className="mt-2">
+                      <div className="h-1 bg-slate-200 dark:bg-slate-700 rounded-full overflow-hidden">
+                        <div className="h-full bg-emerald-500 rounded-full" style={{ width: `${d.signal}%` }} />
+                      </div>
+                      <p className="text-xs text-muted-foreground mt-0.5">{d.signal}% signal</p>
+                    </div>
+                  ) : (
+                    <p className="text-xs text-red-500 font-medium mt-1">Offline</p>
+                  )}
+                </div>
+              ))}
+            </div>
+          </CardContent>
+        </Card>
+      </div>
+    </HospDeptLayout>
+  );
+};

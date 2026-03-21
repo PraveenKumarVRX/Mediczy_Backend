@@ -6,7 +6,7 @@ import {
   Scissors, CalendarCheck, Users, Wrench,
   FlaskConical, Stethoscope, ClipboardList, BarChart3,
   PlusCircle, Clock, CheckCircle2, AlertCircle,
-  XCircle, Activity, FileText, Package, ShieldCheck, ClipboardCheck,
+  XCircle, Activity, FileText, Package, ShieldCheck, ClipboardCheck, LayoutGrid,
 } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
 import { otNavSections } from './OTModulePages';
@@ -151,15 +151,15 @@ const OTDashboard = () => {
             <CardHeader className="pb-3"><CardTitle className="text-base">Quick Actions</CardTitle></CardHeader>
             <CardContent className="grid grid-cols-3 gap-2">
               {[
-                { label: 'Schedule OT',   icon: CalendarCheck,  path: '/ot/schedule',      color: 'bg-teal-50 text-teal-700 hover:bg-teal-100' },
-                { label: 'Pre-Op',        icon: ClipboardCheck, path: '/ot/pre-op',        color: 'bg-blue-50 text-blue-700 hover:bg-blue-100' },
-                { label: 'Consents',      icon: FileText,       path: '/ot/consent',       color: 'bg-indigo-50 text-indigo-700 hover:bg-indigo-100' },
-                { label: 'Teams',         icon: Users,          path: '/ot/teams',         color: 'bg-emerald-50 text-emerald-700 hover:bg-emerald-100' },
-                { label: 'Equipment',     icon: Wrench,         path: '/ot/equipment',     color: 'bg-violet-50 text-violet-700 hover:bg-violet-100' },
-                { label: 'Implants',      icon: Package,        path: '/ot/implants',      color: 'bg-cyan-50 text-cyan-700 hover:bg-cyan-100' },
-                { label: 'Anesthesia',    icon: Stethoscope,    path: '/ot/anesthesia',    color: 'bg-amber-50 text-amber-700 hover:bg-amber-100' },
-                { label: 'Safety',        icon: ShieldCheck,    path: '/ot/safety',        color: 'bg-rose-50 text-rose-700 hover:bg-rose-100' },
-                { label: 'OT Records',    icon: ClipboardList,  path: '/ot/records',       color: 'bg-pink-50 text-pink-700 hover:bg-pink-100' },
+                { label: 'Theatre View', icon: LayoutGrid,    path: '/ot/theatre-view',  color: 'bg-rose-50 text-rose-700 hover:bg-rose-100' },
+                { label: 'Schedule OT', icon: CalendarCheck,  path: '/ot/schedule',      color: 'bg-teal-50 text-teal-700 hover:bg-teal-100' },
+                { label: 'Pre-Op',      icon: ClipboardCheck, path: '/ot/pre-op',        color: 'bg-blue-50 text-blue-700 hover:bg-blue-100' },
+                { label: 'Consents',    icon: FileText,       path: '/ot/consent',       color: 'bg-indigo-50 text-indigo-700 hover:bg-indigo-100' },
+                { label: 'Teams',       icon: Users,          path: '/ot/teams',         color: 'bg-emerald-50 text-emerald-700 hover:bg-emerald-100' },
+                { label: 'Equipment',   icon: Wrench,         path: '/ot/equipment',     color: 'bg-violet-50 text-violet-700 hover:bg-violet-100' },
+                { label: 'Anesthesia',  icon: Stethoscope,    path: '/ot/anesthesia',    color: 'bg-amber-50 text-amber-700 hover:bg-amber-100' },
+                { label: 'Safety',      icon: ShieldCheck,    path: '/ot/safety',        color: 'bg-cyan-50 text-cyan-700 hover:bg-cyan-100' },
+                { label: 'OT Records',  icon: ClipboardList,  path: '/ot/records',       color: 'bg-pink-50 text-pink-700 hover:bg-pink-100' },
               ].map((a) => (
                 <button key={a.label} onClick={() => navigate(a.path)}
                   className={`flex flex-col items-center gap-1.5 p-3 rounded-xl text-xs font-medium transition-colors ${a.color}`}>

@@ -552,6 +552,7 @@ const OTReportsPage       = lazyNamed(_OTModulePages, "OTReportsPage");
 const OTAnalyticsPage     = lazyNamed(_OTModulePages, "OTAnalyticsPage");
 const OTSettingsPage      = lazyNamed(_OTModulePages, "OTSettingsPage");
 const OTSupportPage       = lazyNamed(_OTModulePages, "OTSupportPage");
+const OTTheatreViewPage   = lazyNamed(_OTModulePages, "OTTheatreViewPage");
 
 const ICULogin     = lazy(() => import("@/pages/icu/ICULogin"));
 const ICUDashboard = lazy(() => import("@/pages/icu/ICUDashboard"));
@@ -1079,6 +1080,7 @@ const AppRoutes = () => {
         {/* ── OT ──────────────────────────────────────────────────────── */}
         <Route path="/ot/login"          element={<OTLogin />} />
         <Route path="/ot/dashboard"      element={<OTDashboard />} />
+        <Route path="/ot/theatre-view"   element={<OTTheatreViewPage />} />
         <Route path="/ot/schedule"       element={<OTSchedulePage />} />
         <Route path="/ot/pre-op"         element={<OTPreOpPage />} />
         <Route path="/ot/consent"        element={<OTConsentPage />} />
