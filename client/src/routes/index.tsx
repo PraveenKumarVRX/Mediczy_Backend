@@ -458,13 +458,18 @@ const AccountsBillsPage            = lazyNamed(_AccountsModulePages, "AccountsBi
 const AccountsPaymentsPage         = lazyNamed(_AccountsModulePages, "AccountsPaymentsPage");
 const AccountsPatientAcctsPage     = lazyNamed(_AccountsModulePages, "AccountsPatientAcctsPage");
 const AccountsInsuranceBillingPage = lazyNamed(_AccountsModulePages, "AccountsInsuranceBillingPage");
-const AccountsExpensesPage         = lazyNamed(_AccountsModulePages, "AccountsExpensesPage");
-const AccountsPayrollPage          = lazyNamed(_AccountsModulePages, "AccountsPayrollPage");
-const AccountsLedgerPage           = lazyNamed(_AccountsModulePages, "AccountsLedgerPage");
-const AccountsReportsPage          = lazyNamed(_AccountsModulePages, "AccountsReportsPage");
-const AccountsAnalyticsPage        = lazyNamed(_AccountsModulePages, "AccountsAnalyticsPage");
-const AccountsSettingsPage         = lazyNamed(_AccountsModulePages, "AccountsSettingsPage");
-const AccountsSupportPage          = lazyNamed(_AccountsModulePages, "AccountsSupportPage");
+const AccountsExpensesPage           = lazyNamed(_AccountsModulePages, "AccountsExpensesPage");
+const AccountsVendorsPage            = lazyNamed(_AccountsModulePages, "AccountsVendorsPage");
+const AccountsPayrollPage            = lazyNamed(_AccountsModulePages, "AccountsPayrollPage");
+const AccountsBudgetPage             = lazyNamed(_AccountsModulePages, "AccountsBudgetPage");
+const AccountsLedgerPage             = lazyNamed(_AccountsModulePages, "AccountsLedgerPage");
+const AccountsJournalEntriesPage     = lazyNamed(_AccountsModulePages, "AccountsJournalEntriesPage");
+const AccountsChartOfAccountsPage    = lazyNamed(_AccountsModulePages, "AccountsChartOfAccountsPage");
+const AccountsReportsPage            = lazyNamed(_AccountsModulePages, "AccountsReportsPage");
+const AccountsTaxCompliancePage      = lazyNamed(_AccountsModulePages, "AccountsTaxCompliancePage");
+const AccountsAnalyticsPage          = lazyNamed(_AccountsModulePages, "AccountsAnalyticsPage");
+const AccountsSettingsPage           = lazyNamed(_AccountsModulePages, "AccountsSettingsPage");
+const AccountsSupportPage            = lazyNamed(_AccountsModulePages, "AccountsSupportPage");
 
 const MRDLogin     = lazy(() => import("@/pages/mrd/MRDLogin"));
 const MRDDashboard = lazy(() => import("@/pages/mrd/MRDDashboard"));
@@ -983,13 +988,18 @@ const AppRoutes = () => {
         <Route path="/accounts/payments"         element={<AccountsPaymentsPage />} />
         <Route path="/accounts/patient-accounts" element={<AccountsPatientAcctsPage />} />
         <Route path="/accounts/insurance-billing" element={<AccountsInsuranceBillingPage />} />
-        <Route path="/accounts/expenses"         element={<AccountsExpensesPage />} />
-        <Route path="/accounts/payroll"          element={<AccountsPayrollPage />} />
-        <Route path="/accounts/ledger"           element={<AccountsLedgerPage />} />
-        <Route path="/accounts/reports"          element={<AccountsReportsPage />} />
-        <Route path="/accounts/analytics"        element={<AccountsAnalyticsPage />} />
-        <Route path="/accounts/settings"         element={<AccountsSettingsPage />} />
-        <Route path="/accounts/support"          element={<AccountsSupportPage />} />
+        <Route path="/accounts/expenses"            element={<AccountsExpensesPage />} />
+        <Route path="/accounts/vendors"             element={<AccountsVendorsPage />} />
+        <Route path="/accounts/payroll"             element={<AccountsPayrollPage />} />
+        <Route path="/accounts/budget"              element={<AccountsBudgetPage />} />
+        <Route path="/accounts/ledger"              element={<AccountsLedgerPage />} />
+        <Route path="/accounts/journal-entries"     element={<AccountsJournalEntriesPage />} />
+        <Route path="/accounts/chart-of-accounts"   element={<AccountsChartOfAccountsPage />} />
+        <Route path="/accounts/reports"             element={<AccountsReportsPage />} />
+        <Route path="/accounts/tax-compliance"      element={<AccountsTaxCompliancePage />} />
+        <Route path="/accounts/analytics"           element={<AccountsAnalyticsPage />} />
+        <Route path="/accounts/settings"            element={<AccountsSettingsPage />} />
+        <Route path="/accounts/support"             element={<AccountsSupportPage />} />
 
         {/* ── MRD ─────────────────────────────────────────────────────── */}
         <Route path="/mrd/login"          element={<MRDLogin />} />

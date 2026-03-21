@@ -1,49 +1,18 @@
-import HospDeptLayout, { DeptNavSection } from '@/components/hosp-dept/HospDeptLayout';
+import HospDeptLayout from '@/components/hosp-dept/HospDeptLayout';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import {
-  DollarSign, LayoutDashboard, Receipt, CreditCard, FileText,
-  TrendingUp, Users, BarChart3, Settings, HelpCircle, PlusCircle,
+  DollarSign, Receipt, CreditCard, FileText,
+  TrendingUp, Users, BarChart3, PlusCircle,
   ArrowUpRight, ArrowDownRight, Clock, CheckCircle2, AlertCircle,
   Banknote, Wallet, ShieldCheck, ClipboardList, Download,
+  Building2, Target, BookOpen, FileCheck,
 } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
+import { accountsNavSections } from './AccountsModulePages';
 
-const navSections: DeptNavSection[] = [
-  {
-    title: 'Overview',
-    items: [
-      { icon: LayoutDashboard, label: 'Dashboard',      href: '/accounts/dashboard' },
-    ],
-  },
-  {
-    title: 'Billing & Payments',
-    items: [
-      { icon: Receipt,         label: 'Bill Generation',     href: '/accounts/bills' },
-      { icon: CreditCard,      label: 'Patient Accounts',    href: '/accounts/patient-accounts' },
-      { icon: Banknote,        label: 'Payments Received',   href: '/accounts/payments' },
-      { icon: ShieldCheck,     label: 'Insurance Billing',   href: '/accounts/insurance-billing' },
-    ],
-  },
-  {
-    title: 'Finance',
-    items: [
-      { icon: Wallet,          label: 'Expense Management',  href: '/accounts/expenses' },
-      { icon: Users,           label: 'Payroll',             href: '/accounts/payroll' },
-      { icon: ClipboardList,   label: 'Ledger',              href: '/accounts/ledger' },
-      { icon: TrendingUp,      label: 'Financial Reports',   href: '/accounts/reports' },
-    ],
-  },
-  {
-    title: 'System',
-    items: [
-      { icon: BarChart3,      label: 'Analytics',   href: '/accounts/analytics' },
-      { icon: Settings,       label: 'Settings',    href: '/accounts/settings' },
-      { icon: HelpCircle,     label: 'Support',     href: '/accounts/support' },
-    ],
-  },
-];
+const navSections = accountsNavSections;
 
 const kpis = [
   { label: "Today's Collection", value: '₹1,24,500', sub: '+8.2% vs yesterday', icon: DollarSign, up: true, color: 'text-emerald-600' },
@@ -161,14 +130,17 @@ const AccountsDashboard = () => {
           {/* Quick Actions */}
           <Card>
             <CardHeader className="pb-3"><CardTitle className="text-base">Quick Actions</CardTitle></CardHeader>
-            <CardContent className="grid grid-cols-2 gap-2">
+            <CardContent className="grid grid-cols-3 gap-2">
               {[
-                { label: 'New Bill',      icon: PlusCircle,  path: '/accounts/bills',     color: 'bg-teal-50 text-teal-700 hover:bg-teal-100' },
-                { label: 'Payment In',   icon: Banknote,    path: '/accounts/payments',  color: 'bg-emerald-50 text-emerald-700 hover:bg-emerald-100' },
-                { label: 'Day Report',   icon: FileText,    path: '/accounts/reports',   color: 'bg-blue-50 text-blue-700 hover:bg-blue-100' },
-                { label: 'Ledger',       icon: ClipboardList,path:'/accounts/ledger',    color: 'bg-violet-50 text-violet-700 hover:bg-violet-100' },
+                { label: 'New Bill',      icon: PlusCircle,   path: '/accounts/bills',             color: 'bg-teal-50 text-teal-700 hover:bg-teal-100' },
+                { label: 'Payment In',   icon: Banknote,     path: '/accounts/payments',          color: 'bg-emerald-50 text-emerald-700 hover:bg-emerald-100' },
+                { label: 'Day Report',   icon: FileText,     path: '/accounts/reports',           color: 'bg-blue-50 text-blue-700 hover:bg-blue-100' },
+                { label: 'Ledger',       icon: BookOpen,     path: '/accounts/ledger',            color: 'bg-violet-50 text-violet-700 hover:bg-violet-100' },
                 { label: 'Insurance',    icon: ShieldCheck,  path: '/accounts/insurance-billing', color: 'bg-amber-50 text-amber-700 hover:bg-amber-100' },
-                { label: 'Payroll',      icon: Users,        path: '/accounts/payroll',  color: 'bg-pink-50 text-pink-700 hover:bg-pink-100' },
+                { label: 'Payroll',      icon: Users,        path: '/accounts/payroll',           color: 'bg-pink-50 text-pink-700 hover:bg-pink-100' },
+                { label: 'Vendors',      icon: Building2,    path: '/accounts/vendors',           color: 'bg-orange-50 text-orange-700 hover:bg-orange-100' },
+                { label: 'Tax',          icon: FileCheck,    path: '/accounts/tax-compliance',    color: 'bg-lime-50 text-lime-700 hover:bg-lime-100' },
+                { label: 'Budget',       icon: Target,       path: '/accounts/budget',            color: 'bg-cyan-50 text-cyan-700 hover:bg-cyan-100' },
               ].map((a) => (
                 <button
                   key={a.label}
