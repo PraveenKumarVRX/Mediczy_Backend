@@ -501,16 +501,23 @@ const InsuranceDeskSupportPage         = lazyNamed(_InsuranceDeskModulePages, "I
 const HRLogin     = lazy(() => import("@/pages/hr/HRLogin"));
 const HRDashboard = lazy(() => import("@/pages/hr/HRDashboard"));
 const _HRModulePages = () => import("@/pages/hr/HRModulePages");
-const HRStaffPage       = lazyNamed(_HRModulePages, "HRStaffPage");
-const HRAttendancePage  = lazyNamed(_HRModulePages, "HRAttendancePage");
-const HRLeavesPage      = lazyNamed(_HRModulePages, "HRLeavesPage");
-const HRPayrollPage     = lazyNamed(_HRModulePages, "HRPayrollPage");
-const HRRecruitmentPage = lazyNamed(_HRModulePages, "HRRecruitmentPage");
-const HRTrainingPage    = lazyNamed(_HRModulePages, "HRTrainingPage");
-const HRPerformancePage = lazyNamed(_HRModulePages, "HRPerformancePage");
-const HRReportsPage     = lazyNamed(_HRModulePages, "HRReportsPage");
-const HRSettingsPage    = lazyNamed(_HRModulePages, "HRSettingsPage");
-const HRSupportPage     = lazyNamed(_HRModulePages, "HRSupportPage");
+const HRStaffPage         = lazyNamed(_HRModulePages, "HRStaffPage");
+const HRAttendancePage    = lazyNamed(_HRModulePages, "HRAttendancePage");
+const HRLeavesPage        = lazyNamed(_HRModulePages, "HRLeavesPage");
+const HRShiftsPage        = lazyNamed(_HRModulePages, "HRShiftsPage");
+const HROnboardingPage    = lazyNamed(_HRModulePages, "HROnboardingPage");
+const HRPayrollPage       = lazyNamed(_HRModulePages, "HRPayrollPage");
+const HRPfEsiPage         = lazyNamed(_HRModulePages, "HRPfEsiPage");
+const HRBenefitsPage      = lazyNamed(_HRModulePages, "HRBenefitsPage");
+const HRRecruitmentPage   = lazyNamed(_HRModulePages, "HRRecruitmentPage");
+const HRTrainingPage      = lazyNamed(_HRModulePages, "HRTrainingPage");
+const HRPerformancePage   = lazyNamed(_HRModulePages, "HRPerformancePage");
+const HRAppraisalsPage    = lazyNamed(_HRModulePages, "HRAppraisalsPage");
+const HRReportsPage       = lazyNamed(_HRModulePages, "HRReportsPage");
+const HRAnalyticsPage     = lazyNamed(_HRModulePages, "HRAnalyticsPage");
+const HRCompliancePage    = lazyNamed(_HRModulePages, "HRCompliancePage");
+const HRSettingsPage      = lazyNamed(_HRModulePages, "HRSettingsPage");
+const HRSupportPage       = lazyNamed(_HRModulePages, "HRSupportPage");
 
 const ITEDPLogin     = lazy(() => import("@/pages/it-edp/ITEDPLogin"));
 const ITEDPDashboard = lazy(() => import("@/pages/it-edp/ITEDPDashboard"));
@@ -1029,18 +1036,25 @@ const AppRoutes = () => {
         <Route path="/insurance-desk/support"           element={<InsuranceDeskSupportPage />} />
 
         {/* ── HR ──────────────────────────────────────────────────────── */}
-        <Route path="/hr/login"       element={<HRLogin />} />
-        <Route path="/hr/dashboard"   element={<HRDashboard />} />
-        <Route path="/hr/staff"       element={<HRStaffPage />} />
-        <Route path="/hr/attendance"  element={<HRAttendancePage />} />
-        <Route path="/hr/leaves"      element={<HRLeavesPage />} />
-        <Route path="/hr/payroll"     element={<HRPayrollPage />} />
-        <Route path="/hr/recruitment" element={<HRRecruitmentPage />} />
-        <Route path="/hr/training"    element={<HRTrainingPage />} />
-        <Route path="/hr/performance" element={<HRPerformancePage />} />
-        <Route path="/hr/reports"     element={<HRReportsPage />} />
-        <Route path="/hr/settings"    element={<HRSettingsPage />} />
-        <Route path="/hr/support"     element={<HRSupportPage />} />
+        <Route path="/hr/login"        element={<HRLogin />} />
+        <Route path="/hr/dashboard"    element={<HRDashboard />} />
+        <Route path="/hr/staff"        element={<HRStaffPage />} />
+        <Route path="/hr/attendance"   element={<HRAttendancePage />} />
+        <Route path="/hr/leaves"       element={<HRLeavesPage />} />
+        <Route path="/hr/shifts"       element={<HRShiftsPage />} />
+        <Route path="/hr/onboarding"   element={<HROnboardingPage />} />
+        <Route path="/hr/payroll"      element={<HRPayrollPage />} />
+        <Route path="/hr/pf-esi"       element={<HRPfEsiPage />} />
+        <Route path="/hr/benefits"     element={<HRBenefitsPage />} />
+        <Route path="/hr/recruitment"  element={<HRRecruitmentPage />} />
+        <Route path="/hr/training"     element={<HRTrainingPage />} />
+        <Route path="/hr/performance"  element={<HRPerformancePage />} />
+        <Route path="/hr/appraisals"   element={<HRAppraisalsPage />} />
+        <Route path="/hr/reports"      element={<HRReportsPage />} />
+        <Route path="/hr/analytics"    element={<HRAnalyticsPage />} />
+        <Route path="/hr/compliance"   element={<HRCompliancePage />} />
+        <Route path="/hr/settings"     element={<HRSettingsPage />} />
+        <Route path="/hr/support"      element={<HRSupportPage />} />
 
         {/* ── IT/EDP ──────────────────────────────────────────────────── */}
         <Route path="/it-edp/login"     element={<ITEDPLogin />} />

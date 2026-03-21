@@ -1,4 +1,4 @@
-import HospDeptLayout, { DeptNavSection } from '@/components/hosp-dept/HospDeptLayout';
+import HospDeptLayout from '@/components/hosp-dept/HospDeptLayout';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
@@ -6,43 +6,12 @@ import {
   Users, LayoutDashboard, CalendarCheck, DollarSign, UserPlus,
   GraduationCap, BarChart3, Settings, HelpCircle, PlusCircle,
   Clock, CheckCircle2, AlertCircle, UserCheck, BriefcaseBusiness,
-  Star, Download,
+  Star, Download, ShieldCheck, TrendingUp, ClipboardCheck,
 } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
+import { hrNavSections } from './HRModulePages';
 
-const navSections: DeptNavSection[] = [
-  {
-    title: 'Overview',
-    items: [
-      { icon: LayoutDashboard, label: 'Dashboard',       href: '/hr/dashboard' },
-    ],
-  },
-  {
-    title: 'Workforce',
-    items: [
-      { icon: Users,           label: 'Staff Directory', href: '/hr/staff' },
-      { icon: CalendarCheck,   label: 'Attendance',      href: '/hr/attendance' },
-      { icon: Clock,           label: 'Leave Management',href: '/hr/leaves' },
-      { icon: DollarSign,      label: 'Payroll',         href: '/hr/payroll' },
-    ],
-  },
-  {
-    title: 'Talent',
-    items: [
-      { icon: UserPlus,        label: 'Recruitment',     href: '/hr/recruitment' },
-      { icon: GraduationCap,   label: 'Training',        href: '/hr/training' },
-      { icon: Star,            label: 'Performance',     href: '/hr/performance' },
-    ],
-  },
-  {
-    title: 'System',
-    items: [
-      { icon: BarChart3,       label: 'HR Reports',   href: '/hr/reports' },
-      { icon: Settings,        label: 'Settings',     href: '/hr/settings' },
-      { icon: HelpCircle,      label: 'Support',      href: '/hr/support' },
-    ],
-  },
-];
+const navSections = hrNavSections;
 
 const kpis = [
   { label: 'Total Staff',          value: '482',  sub: 'Across all depts',    icon: Users,       color: 'text-teal-600' },
@@ -210,7 +179,7 @@ const HRDashboard = () => {
         <div className="space-y-5">
           <Card>
             <CardHeader className="pb-3"><CardTitle className="text-base">Quick Actions</CardTitle></CardHeader>
-            <CardContent className="grid grid-cols-2 gap-2">
+            <CardContent className="grid grid-cols-3 gap-2">
               {[
                 { label: 'Attendance',   icon: CalendarCheck,    path: '/hr/attendance',  color: 'bg-teal-50 text-teal-700 hover:bg-teal-100' },
                 { label: 'Leave Mgmt',   icon: Clock,            path: '/hr/leaves',      color: 'bg-amber-50 text-amber-700 hover:bg-amber-100' },
@@ -218,6 +187,9 @@ const HRDashboard = () => {
                 { label: 'Staff Dir.',   icon: Users,            path: '/hr/staff',       color: 'bg-blue-50 text-blue-700 hover:bg-blue-100' },
                 { label: 'Recruitment',  icon: UserPlus,         path: '/hr/recruitment', color: 'bg-violet-50 text-violet-700 hover:bg-violet-100' },
                 { label: 'Training',     icon: GraduationCap,    path: '/hr/training',    color: 'bg-pink-50 text-pink-700 hover:bg-pink-100' },
+                { label: 'Shifts',       icon: ClipboardCheck,   path: '/hr/shifts',      color: 'bg-cyan-50 text-cyan-700 hover:bg-cyan-100' },
+                { label: 'PF & ESI',     icon: ShieldCheck,      path: '/hr/pf-esi',      color: 'bg-indigo-50 text-indigo-700 hover:bg-indigo-100' },
+                { label: 'Appraisals',   icon: TrendingUp,       path: '/hr/appraisals',  color: 'bg-orange-50 text-orange-700 hover:bg-orange-100' },
               ].map((a) => (
                 <button key={a.label} onClick={() => navigate(a.path)}
                   className={`flex flex-col items-center gap-1.5 p-3 rounded-xl text-xs font-medium transition-colors ${a.color}`}>
