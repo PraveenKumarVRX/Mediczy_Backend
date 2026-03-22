@@ -206,6 +206,7 @@ export default function CorporateHealthBooking() {
   // ── submission ──
   const [submitting, setSubmitting] = useState(false);
   const [successBooking, setSuccessBooking] = useState<Record<string, unknown> | null>(null);
+  const [successNotifs, setSuccessNotifs] = useState<{ email?: string; whatsapp?: string } | null>(null);
   const [sendEmail, setSendEmail] = useState(true);
   const [sendWhatsapp, setSendWhatsapp] = useState(true);
 
@@ -571,6 +572,7 @@ export default function CorporateHealthBooking() {
 
       setSuccessBooking(r.data.booking as Record<string, unknown>);
       const notifications = r.data.notifications as { email?: string; whatsapp?: string };
+      setSuccessNotifs(notifications);
       const sentChannels = [
         notifications?.email === 'sent' && '📧 Email',
         notifications?.whatsapp === 'sent' && '📱 WhatsApp',
@@ -776,13 +778,18 @@ export default function CorporateHealthBooking() {
                         Ref: {successBooking.orderNumber as string}
                       </p>
                       <p className="text-xs text-green-600 dark:text-green-500 mt-1">
-                        Employee notified via Email &amp; WhatsApp ✉️📱
+                        {successNotifs
+                          ? [
+                              successNotifs.email === 'sent' && '📧 Email',
+                              successNotifs.whatsapp === 'sent' && '📱 WhatsApp',
+                            ].filter(Boolean).join(' & ') || 'No notifications sent'
+                          : 'Notifying employee…'}
                       </p>
                       <Button
                         size="sm"
                         variant="outline"
                         className="mt-3 text-green-700 border-green-300"
-                        onClick={() => setSuccessBooking(null)}
+                        onClick={() => { setSuccessBooking(null); setSuccessNotifs(null); }}
                       >
                         Book Another
                       </Button>

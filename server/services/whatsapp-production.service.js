@@ -54,13 +54,27 @@ class WhatsAppProductionService {
       to: `whatsapp:${to}`,
     };
 
-    if (this.templates.appointmentConfirmation) {
+    // Health checkups don't have a doctor. The appointment template requires variable {{2}}
+    // (doctorName) — passing undefined silently drops it from contentVariables JSON, causing
+    // Twilio to accept the API call but fail silent delivery. Skip the template for health
+    // checkups and always use a plain body message instead.
+    if (this.templates.appointmentConfirmation && !isHealthCheckup) {
       messageParams.contentSid = this.templates.appointmentConfirmation;
       messageParams.contentVariables = JSON.stringify({
-        '1': patientName, '2': doctorName, '3': date, '4': time, '5': location
+        '1': patientName, '2': doctorName || '', '3': date, '4': time, '5': location
       });
+    } else if (isHealthCheckup) {
+      messageParams.body =
+        `🏥 *Health Checkup Confirmed* ✅\n\n` +
+        `Dear ${patientName},\n\n` +
+        `Your corporate health checkup has been scheduled!\n\n` +
+        `📍 *Venue:* ${location}\n` +
+        `📅 *Date:* ${date}\n` +
+        `🕐 *Time:* ${time}\n\n` +
+        `Please carry a valid photo ID and arrive 10 minutes early.\n\n` +
+        `_Mediqzy Wellness Team_`;
     } else {
-      const doctorLine = (!isHealthCheckup && doctorName) ? `\n👨‍⚕️ ${doctorName}` : '';
+      const doctorLine = doctorName ? `\n👨‍⚕️ ${doctorName}` : '';
       messageParams.body = `*Appointment Confirmation* ✅\n\nDear ${patientName},\n\nYour appointment has been confirmed!${doctorLine}\n📍 ${location}\n📅 Date: ${date}\n🕐 Time: ${time}\n\nPlease arrive 15 minutes early. For rescheduling or queries, contact us via this chat.\n\n_Team SmartHealth_`;
     }
 

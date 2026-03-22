@@ -523,7 +523,7 @@ router.post('/health-checkup', authUser, requireTeamOrAdmin, async (req, res) =>
           location: labAddress || labName,
           isHealthCheckup: true
         });
-        console.log(`✅ [corporate-bookings] WhatsApp sent to ${phoneE164}`);
+        console.log(`✅ [corporate-bookings] WhatsApp sent to ${phoneE164} | SID: ${whatsappResult?.sid} | Status: ${whatsappResult?.status}`);
       } catch (waErr) {
         console.warn('[corporate-bookings] WhatsApp template failed, trying text fallback:', waErr.message);
         try {
