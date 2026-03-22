@@ -642,6 +642,7 @@ app.use((req, res, next) => {
     '/api/v3/ai-brain/documents',
     '/api/cdss/knowledge/upload',
     '/api/corporate-bookings/reports/upload',
+    '/api/team/emails/send',
   ];
   if (multerPaths.some(p => req.path === p || req.path.startsWith(p + '/'))) {
     return next();
