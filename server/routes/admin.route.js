@@ -518,7 +518,7 @@ router.get('/corporates', authUser, requireRole(['admin', 'team']), async (req, 
           type: postgresSequelize.QueryTypes.SELECT
         });
         
-        const teamAssignments = Array.isArray(teamAssignmentsResult) ? teamAssignmentsResult[0] : teamAssignmentsResult;
+        const teamAssignments = Array.isArray(teamAssignmentsResult) ? teamAssignmentsResult : [];
         
         // Group team assignments by corporate_id
         (teamAssignments || []).forEach(ta => {
