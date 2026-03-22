@@ -4,7 +4,7 @@ import {
   FileText, Inbox, ChevronLeft, ChevronRight, Loader2, Paperclip,
   Bold, Italic, Underline, Strikethrough, Link2, Quote, PenLine,
   RotateCcw, Maximize2, Minimize2, Plus, Bell, ShieldAlert, Search,
-  CheckCircle, Settings,
+  CheckCircle, Settings, Bot, LayoutTemplate, Wand2, Pencil, Trash, Save,
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { useToast } from '@/hooks/use-toast';
@@ -39,6 +39,15 @@ interface InboxStats {
   bySentiment: Record<string, number>;
 }
 interface Attachment { file: File; id: string; }
+interface EmailTemplate {
+  id: string;
+  name: string;
+  subject: string;
+  body: string;
+  category: string;
+  isShared: boolean;
+  createdAt: string;
+}
 
 // ── Helpers ────────────────────────────────────────────────────────
 function parseFromField(raw: string): { name: string; email: string } {
@@ -171,6 +180,21 @@ const EmailInbox: React.FC = () => {
   // AI state
   const [processing, setProcessing]       = useState(false);
   const [processResult, setProcessResult] = useState<{ ticketsCreated: number; reportsSaved: number } | null>(null);
+
+  // Template state
+  const [showTemplateModal, setShowTemplateModal]     = useState(false);
+  const [templates, setTemplates]                     = useState<EmailTemplate[]>([]);
+  const [templateLoading, setTemplateLoading]         = useState(false);
+  const [editingTemplate, setEditingTemplate]         = useState<EmailTemplate | null>(null);
+  const [showTemplatePicker, setShowTemplatePicker]   = useState(false);
+  const [tmplForm, setTmplForm]                       = useState({ name: '', subject: '', body: '', category: 'general' });
+  const [tmplSaveLoading, setTmplSaveLoading]         = useState(false);
+
+  // Bot reply state
+  const [botReplyLoading, setBotReplyLoading]         = useState(false);
+
+  // AI ticket state
+  const [aiTicketLoading, setAiTicketLoading]         = useState(false);
 
   // ── Fetch ────────────────────────────────────────────────────────
   const fetchInbox = useCallback(async () => {
@@ -345,6 +369,114 @@ const EmailInbox: React.FC = () => {
 
   const saveSignature = (val: string) => { setSignature(val); localStorage.setItem(SIG_KEY, val); };
 
+  // ── Templates ────────────────────────────────────────────────────
+  const fetchTemplates = async () => {
+    setTemplateLoading(true);
+    try {
+      const res = await api.get('/team/emails/templates');
+      if (res.data.success) setTemplates(res.data.data);
+    } catch (err) { console.error('fetchTemplates:', err); }
+    finally { setTemplateLoading(false); }
+  };
+
+  const openTemplateModal = () => {
+    setEditingTemplate(null);
+    setTmplForm({ name: '', subject: '', body: '', category: 'general' });
+    fetchTemplates();
+    setShowTemplateModal(true);
+  };
+
+  const editTemplate = (t: EmailTemplate) => {
+    setEditingTemplate(t);
+    setTmplForm({ name: t.name, subject: t.subject || '', body: t.body || '', category: t.category || 'general' });
+  };
+
+  const saveTemplate = async () => {
+    if (!tmplForm.name.trim()) {
+      toast({ variant: 'destructive', title: 'Name required', description: 'Please enter a template name.' });
+      return;
+    }
+    setTmplSaveLoading(true);
+    try {
+      if (editingTemplate) {
+        const res = await api.put(`/team/emails/templates/${editingTemplate.id}`, tmplForm);
+        if (res.data.success) {
+          setTemplates(prev => prev.map(t => t.id === editingTemplate.id ? res.data.data : t));
+          toast({ title: 'Template updated' });
+        }
+      } else {
+        const res = await api.post('/team/emails/templates', tmplForm);
+        if (res.data.success) {
+          setTemplates(prev => [res.data.data, ...prev]);
+          toast({ title: 'Template created' });
+        }
+      }
+      setEditingTemplate(null);
+      setTmplForm({ name: '', subject: '', body: '', category: 'general' });
+    } catch (err: any) {
+      toast({ variant: 'destructive', title: 'Save failed', description: err?.response?.data?.message || 'Unable to save template.' });
+    } finally { setTmplSaveLoading(false); }
+  };
+
+  const deleteTemplate = async (id: string) => {
+    try {
+      await api.delete(`/team/emails/templates/${id}`);
+      setTemplates(prev => prev.filter(t => t.id !== id));
+      if (editingTemplate?.id === id) { setEditingTemplate(null); setTmplForm({ name: '', subject: '', body: '', category: 'general' }); }
+      toast({ title: 'Template deleted' });
+    } catch (err: any) {
+      toast({ variant: 'destructive', title: 'Delete failed', description: err?.response?.data?.message || 'Unable to delete.' });
+    }
+  };
+
+  const applyTemplate = (t: EmailTemplate) => {
+    if (t.subject) setComposerSubject(t.subject);
+    if (t.body) setTimeout(() => { setBodyContent(t.body.replace(/\n/g, '<br/>')); }, 30);
+    setShowTemplatePicker(false);
+    toast({ title: `Template "${t.name}" applied` });
+  };
+
+  // ── Bot Reply ────────────────────────────────────────────────────
+  const generateBotReply = async () => {
+    if (!selectedEmail) return;
+    setBotReplyLoading(true);
+    try {
+      const res = await api.post(`/team/emails/${selectedEmail.id}/bot-reply`);
+      if (res.data.success && res.data.data.suggestedReply) {
+        const current = bodyRef.current?.innerHTML || '';
+        const quoteBlock = current.includes('style="border-left') ? '' : '';
+        const suggestion = res.data.data.suggestedReply.replace(/\n/g, '<br/>');
+        setBodyContent(`<p>${suggestion}</p>${current ? current : '<p><br/></p>'}`);
+        toast({ title: '🤖 AI Reply generated', description: 'Review and edit before sending.' });
+      }
+    } catch (err: any) {
+      toast({ variant: 'destructive', title: 'Bot reply failed', description: err?.response?.data?.message || 'Unable to generate reply.' });
+    } finally { setBotReplyLoading(false); }
+  };
+
+  // ── AI Ticket Suggest ────────────────────────────────────────────
+  const generateAITicket = async () => {
+    if (!selectedEmail) return;
+    setAiTicketLoading(true);
+    try {
+      const res = await api.post(`/team/emails/${selectedEmail.id}/ai-ticket`);
+      if (res.data.success && res.data.data) {
+        const d = res.data.data;
+        const s = parseFromField(selectedEmail.from);
+        setTicketForm(prev => ({
+          ...prev,
+          title:        d.title       || prev.title,
+          description:  d.description || prev.description,
+          category:     d.category    || prev.category,
+          priority:     d.priority    || prev.priority,
+        }));
+        toast({ title: '✨ AI filled ticket fields', description: 'Review before submitting.' });
+      }
+    } catch (err: any) {
+      toast({ variant: 'destructive', title: 'AI fill failed', description: err?.response?.data?.message || 'Unable to generate suggestion.' });
+    } finally { setAiTicketLoading(false); }
+  };
+
   // ── Ticket ───────────────────────────────────────────────────────
   const openTicketModal = (email: Email) => {
     const s = parseFromField(email.from);
@@ -447,6 +579,63 @@ const EmailInbox: React.FC = () => {
         >
           <PenLine className={compact ? 'w-3.5 h-3.5' : 'w-4 h-4'} />
         </button>
+        {/* Template picker */}
+        <div className="relative">
+          <button
+            type="button"
+            title="Use email template"
+            onClick={() => { if (!showTemplatePicker) fetchTemplates(); setShowTemplatePicker(v => !v); }}
+            className={`p-1.5 rounded hover:bg-muted transition-colors ${showTemplatePicker ? 'text-purple-500' : 'text-muted-foreground'}`}
+          >
+            <LayoutTemplate className={compact ? 'w-3.5 h-3.5' : 'w-4 h-4'} />
+          </button>
+          {showTemplatePicker && (
+            <div className="absolute bottom-full mb-2 left-0 w-64 bg-background border border-border rounded-xl shadow-xl z-50 overflow-hidden">
+              <div className="flex items-center justify-between px-3 py-2 border-b border-border bg-muted/20">
+                <span className="text-xs font-semibold text-foreground">Email Templates</span>
+                <button onClick={() => setShowTemplatePicker(false)}><X className="w-3.5 h-3.5 text-muted-foreground" /></button>
+              </div>
+              {templateLoading ? (
+                <div className="flex justify-center py-6"><Loader2 className="w-4 h-4 animate-spin text-muted-foreground" /></div>
+              ) : templates.length === 0 ? (
+                <div className="py-6 text-center">
+                  <p className="text-xs text-muted-foreground">No templates yet</p>
+                  <button onClick={() => { setShowTemplatePicker(false); openTemplateModal(); }}
+                    className="mt-2 text-xs text-blue-600 hover:underline">Create one</button>
+                </div>
+              ) : (
+                <div className="max-h-48 overflow-y-auto">
+                  {templates.map(t => (
+                    <button
+                      key={t.id}
+                      onClick={() => applyTemplate(t)}
+                      className="w-full text-left px-3 py-2.5 hover:bg-muted/60 border-b border-border/50 last:border-0 transition-colors"
+                    >
+                      <p className="text-xs font-semibold text-foreground truncate">{t.name}</p>
+                      {t.subject && <p className="text-[10px] text-muted-foreground truncate mt-0.5">Sub: {t.subject}</p>}
+                    </button>
+                  ))}
+                </div>
+              )}
+              <div className="px-3 py-2 border-t border-border bg-muted/10">
+                <button onClick={() => { setShowTemplatePicker(false); openTemplateModal(); }}
+                  className="text-xs text-purple-600 hover:underline font-medium">+ Manage Templates</button>
+              </div>
+            </div>
+          )}
+        </div>
+        {/* AI Bot Reply – only in reply mode */}
+        {(compact || composerMode === 'reply') && (
+          <button
+            type="button"
+            title="Generate AI reply suggestion"
+            onClick={generateBotReply}
+            disabled={botReplyLoading}
+            className="p-1.5 rounded hover:bg-muted transition-colors text-muted-foreground hover:text-emerald-600 disabled:opacity-50"
+          >
+            {botReplyLoading ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Bot className={compact ? 'w-3.5 h-3.5' : 'w-4 h-4'} />}
+          </button>
+        )}
         <div className="flex-1" />
         <button
           type="button"
@@ -511,6 +700,12 @@ const EmailInbox: React.FC = () => {
             >
               <Settings className="w-4 h-4 shrink-0" /> SMTP Settings
             </RouterLink>
+            <button
+              onClick={openTemplateModal}
+              className="w-full flex items-center gap-2.5 px-3 py-2 text-sm font-medium text-muted-foreground hover:bg-muted hover:text-foreground rounded-lg mx-1 transition-colors"
+            >
+              <LayoutTemplate className="w-4 h-4 shrink-0" /> Email Templates
+            </button>
           </nav>
 
           {/* Stats + AI actions */}
@@ -956,9 +1151,22 @@ const EmailInbox: React.FC = () => {
                 <TicketIcon className="w-4 h-4 text-orange-500" />
                 Create Ticket from Email
               </div>
-              <button onClick={() => setShowTicketModal(false)} className="text-muted-foreground hover:text-foreground transition-colors">
-                <X className="w-5 h-5" />
-              </button>
+              <div className="flex items-center gap-2">
+                {selectedEmail && !ticketSuccess && (
+                  <button
+                    type="button"
+                    onClick={generateAITicket}
+                    disabled={aiTicketLoading}
+                    className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium rounded-lg bg-purple-500/10 hover:bg-purple-500/20 text-purple-600 border border-purple-400/20 transition-colors disabled:opacity-50"
+                  >
+                    {aiTicketLoading ? <Loader2 className="w-3 h-3 animate-spin" /> : <Wand2 className="w-3 h-3" />}
+                    {aiTicketLoading ? 'Analyzing…' : '✨ AI Fill'}
+                  </button>
+                )}
+                <button onClick={() => setShowTicketModal(false)} className="text-muted-foreground hover:text-foreground transition-colors">
+                  <X className="w-5 h-5" />
+                </button>
+              </div>
             </div>
             {ticketSuccess ? (
               <div className="p-8 text-center">
@@ -1033,6 +1241,144 @@ const EmailInbox: React.FC = () => {
                 </div>
               </form>
             )}
+          </div>
+        </div>
+      )}
+      {/* ─── Template Management Modal ─── */}
+      {showTemplateModal && (
+        <div className="fixed inset-0 bg-black/50 backdrop-blur-sm flex items-center justify-center z-50 p-4">
+          <div className="bg-background border border-border rounded-xl w-full max-w-4xl shadow-2xl flex flex-col" style={{ height: '85vh' }}>
+            {/* Header */}
+            <div className="flex items-center justify-between px-6 py-4 border-b border-border shrink-0">
+              <div className="flex items-center gap-2 font-semibold">
+                <LayoutTemplate className="w-5 h-5 text-purple-500" />
+                Email Templates
+              </div>
+              <button onClick={() => setShowTemplateModal(false)} className="text-muted-foreground hover:text-foreground transition-colors">
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            <div className="flex flex-1 min-h-0">
+              {/* Left — template list */}
+              <div className="w-64 shrink-0 border-r border-border flex flex-col">
+                <div className="p-3 border-b border-border shrink-0">
+                  <button
+                    onClick={() => { setEditingTemplate(null); setTmplForm({ name: '', subject: '', body: '', category: 'general' }); }}
+                    className="w-full flex items-center justify-center gap-2 py-2 rounded-lg bg-purple-600 hover:bg-purple-700 text-white text-sm font-semibold transition-colors"
+                  >
+                    <Plus className="w-4 h-4" /> New Template
+                  </button>
+                </div>
+                <div className="flex-1 overflow-y-auto">
+                  {templateLoading ? (
+                    <div className="flex justify-center py-8"><Loader2 className="w-5 h-5 animate-spin text-muted-foreground" /></div>
+                  ) : templates.length === 0 ? (
+                    <div className="py-10 text-center text-muted-foreground">
+                      <LayoutTemplate className="w-8 h-8 opacity-20 mx-auto mb-2" />
+                      <p className="text-sm">No templates yet</p>
+                    </div>
+                  ) : (
+                    templates.map(t => (
+                      <div
+                        key={t.id}
+                        className={`group px-3 py-3 border-b border-border cursor-pointer transition-colors ${
+                          editingTemplate?.id === t.id ? 'bg-purple-500/10 border-l-2 border-l-purple-500' : 'hover:bg-muted/50'
+                        }`}
+                        onClick={() => editTemplate(t)}
+                      >
+                        <div className="flex items-start justify-between gap-1">
+                          <p className="text-sm font-medium text-foreground truncate flex-1">{t.name}</p>
+                          <button
+                            onClick={e => { e.stopPropagation(); deleteTemplate(t.id); }}
+                            className="shrink-0 opacity-0 group-hover:opacity-100 p-0.5 hover:text-red-500 text-muted-foreground transition-all"
+                          >
+                            <Trash className="w-3.5 h-3.5" />
+                          </button>
+                        </div>
+                        {t.subject && <p className="text-[11px] text-muted-foreground truncate mt-0.5">Sub: {t.subject}</p>}
+                        <span className="text-[10px] px-1.5 py-0.5 rounded bg-muted text-muted-foreground mt-1 inline-block">{t.category}</span>
+                      </div>
+                    ))
+                  )}
+                </div>
+              </div>
+
+              {/* Right — template editor */}
+              <div className="flex-1 flex flex-col min-w-0 p-5 gap-4 overflow-y-auto">
+                <h3 className="font-semibold text-sm text-foreground">
+                  {editingTemplate ? `Edit — ${editingTemplate.name}` : 'Create New Template'}
+                </h3>
+
+                <div>
+                  <label className="block text-xs font-semibold text-muted-foreground mb-1">Template Name *</label>
+                  <input
+                    type="text"
+                    value={tmplForm.name}
+                    onChange={e => setTmplForm(p => ({ ...p, name: e.target.value }))}
+                    placeholder="e.g. Appointment Reminder"
+                    className="w-full px-3 py-2 border border-border bg-background text-foreground rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-purple-400/50"
+                  />
+                </div>
+
+                <div className="grid grid-cols-2 gap-3">
+                  <div>
+                    <label className="block text-xs font-semibold text-muted-foreground mb-1">Subject Line</label>
+                    <input
+                      type="text"
+                      value={tmplForm.subject}
+                      onChange={e => setTmplForm(p => ({ ...p, subject: e.target.value }))}
+                      placeholder="Subject (optional)"
+                      className="w-full px-3 py-2 border border-border bg-background text-foreground rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-purple-400/50"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-xs font-semibold text-muted-foreground mb-1">Category</label>
+                    <select
+                      value={tmplForm.category}
+                      onChange={e => setTmplForm(p => ({ ...p, category: e.target.value }))}
+                      className="w-full px-3 py-2 border border-border bg-background text-foreground rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-purple-400/50"
+                    >
+                      {[['general','General'],['appointment','Appointment'],['billing','Billing'],
+                        ['health-report','Health Report'],['prescription','Prescription'],
+                        ['follow-up','Follow-up'],['support','Support'],['other','Other']
+                      ].map(([v,l]) => <option key={v} value={v}>{l}</option>)}
+                    </select>
+                  </div>
+                </div>
+
+                <div className="flex-1">
+                  <label className="block text-xs font-semibold text-muted-foreground mb-1">Body</label>
+                  <textarea
+                    rows={12}
+                    value={tmplForm.body}
+                    onChange={e => setTmplForm(p => ({ ...p, body: e.target.value }))}
+                    placeholder="Write your template body here… You can use plain text. When applied, it will be inserted into the email composer."
+                    className="w-full px-3 py-2 border border-border bg-background text-foreground rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-purple-400/50 resize-none font-mono"
+                  />
+                </div>
+
+                <div className="flex items-center gap-2 justify-end pt-2 border-t border-border">
+                  {editingTemplate && (
+                    <button
+                      type="button"
+                      onClick={() => { setEditingTemplate(null); setTmplForm({ name: '', subject: '', body: '', category: 'general' }); }}
+                      className="px-4 py-2 text-sm border border-border rounded-lg hover:bg-muted text-foreground transition-colors"
+                    >
+                      Cancel
+                    </button>
+                  )}
+                  <button
+                    onClick={saveTemplate}
+                    disabled={tmplSaveLoading}
+                    className="flex items-center gap-2 px-4 py-2 text-sm bg-purple-600 hover:bg-purple-700 text-white rounded-lg font-medium disabled:opacity-60 transition-colors"
+                  >
+                    {tmplSaveLoading ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Save className="w-3.5 h-3.5" />}
+                    {editingTemplate ? 'Update Template' : 'Save Template'}
+                  </button>
+                </div>
+              </div>
+            </div>
           </div>
         </div>
       )}

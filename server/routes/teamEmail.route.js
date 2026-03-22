@@ -12,7 +12,30 @@ const attachUpload = multer({
 import EmailInbox from '../models/emailInbox.model.js';
 import EmailSettings from '../models/emailSettings.model.js';
 import TeamMember from '../models/postgres/team-member.model.postgres.js';
+import TeamEmailTemplate from '../models/teamEmailTemplate.model.js';
 import { processEmailFull, batchProcessInbox } from '../services/emailAutoProcessService.js';
+
+const GROQ_API_URL = 'https://api.groq.com/openai/v1/chat/completions';
+const GROQ_MODEL   = 'llama-3.3-70b-versatile';
+
+async function callGroq(prompt, maxTokens = 400, temperature = 0.7) {
+  const res = await fetch(GROQ_API_URL, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      Authorization: `Bearer ${process.env.GROQ_API_KEY}`,
+    },
+    body: JSON.stringify({
+      model: GROQ_MODEL,
+      messages: [{ role: 'user', content: prompt }],
+      max_tokens: maxTokens,
+      temperature,
+    }),
+  });
+  const data = await res.json();
+  if (!res.ok) throw new Error(data?.error?.message || 'Groq API error');
+  return data.choices?.[0]?.message?.content?.trim() || '';
+}
 
 const router = express.Router();
 
@@ -551,6 +574,129 @@ router.post('/:id/process', authUser, async (req, res) => {
   } catch (error) {
     console.error('[/process] error:', error.message);
     res.status(500).json({ success: false, message: error.message });
+  }
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
+// EMAIL TEMPLATES
+// ─────────────────────────────────────────────────────────────────────────────
+
+/** GET /api/team/emails/templates – list all templates for the current user */
+router.get('/templates', authUser, async (req, res) => {
+  try {
+    const teamMemberId = await resolveTeamMemberId(req.user);
+    const templates = await TeamEmailTemplate.findAll({
+      where: { teamMemberId },
+      order: [['createdAt', 'DESC']],
+    });
+    res.json({ success: true, data: templates });
+  } catch (err) {
+    res.status(500).json({ success: false, message: err.message });
+  }
+});
+
+/** POST /api/team/emails/templates – create a new template */
+router.post('/templates', authUser, async (req, res) => {
+  try {
+    const teamMemberId = await resolveTeamMemberId(req.user);
+    const { name, subject, body, category = 'general', isShared = false } = req.body;
+    if (!name) return res.status(400).json({ success: false, message: 'Template name is required' });
+    const template = await TeamEmailTemplate.create({ teamMemberId, name, subject, body, category, isShared });
+    res.status(201).json({ success: true, data: template });
+  } catch (err) {
+    res.status(500).json({ success: false, message: err.message });
+  }
+});
+
+/** PUT /api/team/emails/templates/:id – update a template */
+router.put('/templates/:id', authUser, async (req, res) => {
+  try {
+    const teamMemberId = await resolveTeamMemberId(req.user);
+    const template = await TeamEmailTemplate.findOne({ where: { id: req.params.id, teamMemberId } });
+    if (!template) return res.status(404).json({ success: false, message: 'Template not found' });
+    const { name, subject, body, category, isShared } = req.body;
+    await template.update({ name, subject, body, category, isShared });
+    res.json({ success: true, data: template });
+  } catch (err) {
+    res.status(500).json({ success: false, message: err.message });
+  }
+});
+
+/** DELETE /api/team/emails/templates/:id – delete a template */
+router.delete('/templates/:id', authUser, async (req, res) => {
+  try {
+    const teamMemberId = await resolveTeamMemberId(req.user);
+    const template = await TeamEmailTemplate.findOne({ where: { id: req.params.id, teamMemberId } });
+    if (!template) return res.status(404).json({ success: false, message: 'Template not found' });
+    await template.destroy();
+    res.json({ success: true, message: 'Template deleted' });
+  } catch (err) {
+    res.status(500).json({ success: false, message: err.message });
+  }
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
+// BOT AUTO-REPLY
+// ─────────────────────────────────────────────────────────────────────────────
+
+/**
+ * POST /api/team/emails/:id/bot-reply
+ * Generate an AI-suggested reply for an email using Groq.
+ */
+router.post('/:id/bot-reply', authUser, async (req, res) => {
+  try {
+    const teamMemberId = await resolveTeamMemberId(req.user);
+    const email = await EmailInbox.findOne({ where: { id: req.params.id, teamMemberId } });
+    if (!email) return res.status(404).json({ success: false, message: 'Email not found' });
+
+    const rawBody = email.body || (email.htmlBody?.replace(/<[^>]+>/g, ' ').replace(/\s+/g, ' ').trim() || '');
+    const intent  = email.aiIntent ? `\nDetected intent: ${email.aiIntent.replace(/_/g, ' ')}` : '';
+    const prompt  =
+      `You are a professional healthcare team member at Mediqzy. Write a helpful, empathetic, concise reply (3–5 sentences) to the following email. ` +
+      `Sound warm and professional. End with "Best regards,\\nMediqzy Team".${intent}\n\n` +
+      `From: ${email.fromName || email.from}\nSubject: ${email.subject}\n\n${rawBody.slice(0, 2000)}`;
+
+    const suggestedReply = await callGroq(prompt, 450, 0.7);
+    res.json({ success: true, data: { suggestedReply } });
+  } catch (err) {
+    console.error('[bot-reply]', err.message);
+    res.status(500).json({ success: false, message: 'Failed to generate reply', error: err.message });
+  }
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
+// AI TICKET SUGGESTION
+// ─────────────────────────────────────────────────────────────────────────────
+
+/**
+ * POST /api/team/emails/:id/ai-ticket
+ * Use AI to suggest ticket fields from an email.
+ */
+router.post('/:id/ai-ticket', authUser, async (req, res) => {
+  try {
+    const teamMemberId = await resolveTeamMemberId(req.user);
+    const email = await EmailInbox.findOne({ where: { id: req.params.id, teamMemberId } });
+    if (!email) return res.status(404).json({ success: false, message: 'Email not found' });
+
+    const rawBody = email.body || (email.htmlBody?.replace(/<[^>]+>/g, ' ').replace(/\s+/g, ' ').trim() || '');
+    const prompt =
+      `Analyze this healthcare email and return ONLY a JSON object (no markdown, no explanation) with exactly these fields:\n` +
+      `{\n` +
+      `  "title": "short descriptive ticket title max 80 chars",\n` +
+      `  "description": "2-3 sentence description for the support team",\n` +
+      `  "category": "one of: appointment-cancellation, appointment-reschedule, doctor-consultation, health-checkup, prescription, health-report, billing, complaint, other",\n` +
+      `  "priority": "one of: low, medium, high, critical"\n` +
+      `}\n\n` +
+      `Email from: ${email.fromName || email.from}\nSubject: ${email.subject}\n\n${rawBody.slice(0, 1500)}`;
+
+    const raw        = await callGroq(prompt, 350, 0.3);
+    const jsonMatch  = raw.match(/\{[\s\S]*\}/);
+    const suggestion = jsonMatch ? JSON.parse(jsonMatch[0]) : {};
+
+    res.json({ success: true, data: suggestion });
+  } catch (err) {
+    console.error('[ai-ticket]', err.message);
+    res.status(500).json({ success: false, message: 'Failed to generate ticket suggestion', error: err.message });
   }
 });
 
