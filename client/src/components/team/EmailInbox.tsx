@@ -356,7 +356,7 @@ const EmailInbox: React.FC = () => {
       fd.append('subject', composerSubject.trim());
       fd.append('htmlContent', fullHtml);
       attachments.forEach(a => fd.append('attachments', a.file));
-      const res = await api.post('/team/emails/send', fd, { headers: { 'Content-Type': 'multipart/form-data' } });
+      const res = await api.post('/team/emails/send', fd);
       if (res.data.success) {
         setComposerOpen(false); setAttachments([]);
         toast({ title: '✓ Email sent', description: 'Your message was delivered.' });
