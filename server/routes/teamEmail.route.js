@@ -1,5 +1,6 @@
 import express from 'express';
 import multer from 'multer';
+import { Readable } from 'stream';
 import { authUser, requireRole } from '../middleware/auth.middleware.js';
 import inboundEmailService from '../services/inboundEmailService.js';
 import emailService from '../services/emailService.js';
@@ -9,6 +10,65 @@ const attachUpload = multer({
   storage: multer.memoryStorage(),
   limits: { fileSize: 10 * 1024 * 1024, files: 10 },
 });
+
+// Graceful multer wrapper:
+//  • Normal multipart with boundary → multer parses files + fields as usual.
+//  • Multipart WITHOUT boundary (old cached frontend) → buffer body, auto-detect
+//    boundary from first line, repair Content-Type header, then re-pipe to multer
+//    so req.body fields AND req.files are both populated correctly.
+//  • Non-multipart (JSON etc.) → skip multer, proceed with express-parsed body.
+function optionalAttachUpload(req, res, next) {
+  const ct = req.headers['content-type'] || '';
+
+  if (!ct.includes('multipart/form-data')) {
+    // JSON or urlencoded — express already parsed req.body, no files
+    req.files = [];
+    return next();
+  }
+
+  if (ct.includes('boundary=')) {
+    // Normal multipart — let multer handle everything
+    return attachUpload.array('attachments', 10)(req, res, (err) => {
+      if (err) {
+        console.warn('[send] multer warning:', err.message);
+        req.files = [];
+      }
+      next();
+    });
+  }
+
+  // Multipart without boundary (browser stripped it via explicit Content-Type override):
+  // Buffer the raw body, extract the real boundary from the first line, fix the
+  // header, then override req.pipe so multer's internal req.pipe(busboy) call
+  // reads from our buffered Readable instead of the already-drained stream.
+  const chunks = [];
+  req.on('error', () => { req.files = []; next(); });
+  req.on('data', chunk => chunks.push(chunk));
+  req.on('end', () => {
+    const rawBody = Buffer.concat(chunks);
+
+    // First line of a multipart body is "--<boundary>\r\n"
+    const crlfIdx = rawBody.indexOf('\r\n');
+    const firstLine = rawBody.slice(0, crlfIdx > 2 ? crlfIdx : 256).toString('latin1');
+    if (firstLine.startsWith('--') && firstLine.length > 2) {
+      const boundary = firstLine.slice(2).replace(/\s+$/, '');
+      req.headers['content-type'] = `multipart/form-data; boundary=${boundary}`;
+    }
+
+    // Multer calls req.pipe(busboy) — override it to pipe our buffered data
+    const savedPipe = req.pipe.bind(req);
+    req.pipe = (dest, opts) => Readable.from([rawBody]).pipe(dest, opts);
+
+    attachUpload.array('attachments', 10)(req, res, (err) => {
+      req.pipe = savedPipe; // restore
+      if (err) {
+        console.warn('[send] multer boundary-patch warning:', err.message);
+        req.files = [];
+      }
+      next();
+    });
+  });
+}
 import EmailInbox from '../models/emailInbox.model.js';
 import EmailSettings from '../models/emailSettings.model.js';
 import TeamMember from '../models/postgres/team-member.model.postgres.js';
@@ -434,7 +494,7 @@ router.get('/priority/:level', authUser, async (req, res) => {
  * POST /api/team/emails/send
  * Send email using user's configured SMTP settings
  */
-router.post('/send', authUser, attachUpload.array('attachments', 10), async (req, res) => {
+router.post('/send', authUser, optionalAttachUpload, async (req, res) => {
   try {
     const { to, cc, bcc, subject, htmlContent, textContent } = req.body;
     const authUserId = req.user.id;
