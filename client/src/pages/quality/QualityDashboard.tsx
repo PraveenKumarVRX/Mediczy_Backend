@@ -1,62 +1,32 @@
-import HospDeptLayout, { DeptNavSection } from '@/components/hosp-dept/HospDeptLayout';
+import React from 'react';
+import HospDeptLayout from '@/components/hosp-dept/HospDeptLayout';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Progress } from '@/components/ui/progress';
 import {
   ShieldCheck, ClipboardList, AlertTriangle, TrendingUp,
-  CheckCircle2, XCircle, Clock, FileText, Star,
-  ChevronRight, Download, PlusCircle,
+  CheckCircle2, Clock, FileText, Star,
+  Download, PlusCircle, BellRing, BookOpen, Target, MessageSquare, Loader2,
 } from 'lucide-react';
+import { useNavigate } from 'react-router-dom';
+import { qualityNavSections } from './QualityModulePages';
+import { useQualityPortalData } from './useQualityPortalData';
 
-const navSections: DeptNavSection[] = [
-  { title: 'Overview', items: [{ icon: ShieldCheck, label: 'Dashboard', href: '/quality/dashboard' }] },
-  { title: 'NABH', items: [
-    { icon: Star,          label: 'NABH Standards',    href: '/quality/nabh-standards' },
-    { icon: ClipboardList, label: 'Assessments',       href: '/quality/assessments' },
-    { icon: FileText,      label: 'Audit Reports',     href: '/quality/audit-reports' },
-    { icon: CheckCircle2,  label: 'Accreditation',     href: '/quality/accreditation' },
-  ]},
-  { title: 'Quality', items: [
-    { icon: AlertTriangle, label: 'Incident Reports',  href: '/quality/incidents' },
-    { icon: TrendingUp,    label: 'KPIs & Indicators', href: '/quality/kpis' },
-    { icon: FileText,      label: 'SOPs & Policies',   href: '/quality/sops' },
-    { icon: ClipboardList, label: 'Patient Feedback',  href: '/quality/feedback' },
-  ]},
-  { title: 'System', items: [
-    { icon: TrendingUp,  label: 'Reports',   href: '/quality/reports' },
-    { icon: ShieldCheck, label: 'Settings',  href: '/quality/settings' },
-    { icon: FileText,    label: 'Support',   href: '/quality/support' },
-  ]},
-];
-
-const kpis = [
-  { label: 'NABH Score', value: '87%',  sub: '+2% this quarter',    icon: Star,          color: 'bg-amber-50 dark:bg-amber-950',  iconColor: 'text-amber-600' },
-  { label: 'Open NCRs',  value: '14',   sub: '4 critical',          icon: AlertTriangle, color: 'bg-red-50 dark:bg-red-950',      iconColor: 'text-red-600' },
-  { label: 'Closed NCRs',value: '38',   sub: 'This month',          icon: CheckCircle2,  color: 'bg-teal-50 dark:bg-teal-950',    iconColor: 'text-teal-600' },
-  { label: 'Audits Due', value: '6',    sub: 'Next 30 days',        icon: Clock,         color: 'bg-violet-50 dark:bg-violet-950',iconColor: 'text-violet-600' },
-];
-
-const nabh_chapters = [
-  { chapter: 'Patient Care', code: 'PCC', compliance: 91, status: 'Compliant' },
-  { chapter: 'Medication Management', code: 'MMU', compliance: 84, status: 'Partial' },
-  { chapter: 'Infection Control', code: 'IPSG', compliance: 96, status: 'Compliant' },
-  { chapter: 'HR Management', code: 'HRM', compliance: 78, status: 'Partial' },
-  { chapter: 'Facility Management', code: 'FMS', compliance: 88, status: 'Compliant' },
-  { chapter: 'Information Management', code: 'MIS', compliance: 72, status: 'Partial' },
-];
-
-const incidents = [
-  { id: 'INC-2401', type: 'Near Miss',    dept: 'Pharmacy',   date: '14 Mar',  severity: 'Low',    status: 'Under Review' },
-  { id: 'INC-2400', type: 'Adverse Event',dept: 'ICU',        date: '13 Mar',  severity: 'High',   status: 'RCA Pending' },
-  { id: 'INC-2399', type: 'Complaint',    dept: 'OPD',        date: '12 Mar',  severity: 'Medium', status: 'Closed' },
-  { id: 'INC-2398', type: 'Near Miss',    dept: 'OT',         date: '11 Mar',  severity: 'Medium', status: 'Closed' },
-  { id: 'INC-2397', type: 'Adverse Event',dept: 'Lab',        date: '10 Mar',  severity: 'High',   status: 'RCA Pending' },
-];
+const kpiDecorators: Record<string, { icon: typeof Star; color: string; iconColor: string }> = {
+  'NABH Score': { icon: Star, color: 'bg-amber-50 dark:bg-amber-950', iconColor: 'text-amber-600' },
+  'Open NCRs': { icon: AlertTriangle, color: 'bg-red-50 dark:bg-red-950', iconColor: 'text-red-600' },
+  'Closed NCRs': { icon: CheckCircle2, color: 'bg-teal-50 dark:bg-teal-950', iconColor: 'text-teal-600' },
+  'Patient Experience': { icon: TrendingUp, color: 'bg-blue-50 dark:bg-blue-950', iconColor: 'text-blue-600' },
+};
 
 const severityBadge = (s: string) => {
-  const m: Record<string, string> = { High:'destructive', Medium:'warning', Low:'secondary' };
-  return <Badge variant={(m[s] as any) ?? 'secondary'} className="text-xs">{s}</Badge>;
+  const m: Record<string, string> = {
+    High: 'bg-red-100 text-red-700',
+    Medium: 'bg-amber-100 text-amber-700',
+    Low: 'bg-slate-100 text-slate-700',
+  };
+  return <Badge className={`${m[s] ?? 'bg-slate-100 text-slate-700'} border-0 text-xs`}>{s}</Badge>;
 };
 const statusBadge = (s: string) => {
   const m: Record<string, string> = { Closed:'bg-teal-100 text-teal-700', 'Under Review':'bg-blue-100 text-blue-700', 'RCA Pending':'bg-amber-100 text-amber-700' };
@@ -64,13 +34,36 @@ const statusBadge = (s: string) => {
 };
 const complianceBadge = (s: string) => s === 'Compliant'
   ? <span className="flex items-center gap-1 text-teal-600 text-xs font-medium"><CheckCircle2 className="h-3 w-3" />Compliant</span>
-  : <span className="flex items-center gap-1 text-amber-600 text-xs font-medium"><XCircle className="h-3 w-3" />Partial</span>;
+  : <span className="flex items-center gap-1 text-amber-600 text-xs font-medium"><AlertTriangle className="h-3 w-3" />Partial</span>;
 
 export default function QualityDashboard() {
+  const navigate = useNavigate();
+  const { data, loading, error, refresh } = useQualityPortalData();
+  const kpis = data?.kpis ?? [];
+  const workQueues = data?.workQueues ?? [];
+  const nabhChapters = data?.chapters ?? [];
+  const incidents = data?.incidents ?? [];
+  const audits = data?.audits ?? [];
+  const leadership = data?.leadership ?? [];
+
   return (
     <HospDeptLayout deptKey="quality" deptName="Quality & NABH" badgeLabel="Quality"
-      loginPath="/quality/login" DeptIcon={ShieldCheck} navSections={navSections}
+      loginPath="/quality/login" DeptIcon={ShieldCheck} navSections={qualityNavSections}
       title="Quality Dashboard" subtitle="NABH compliance, audits & incident management">
+
+      {(loading || error) && (
+        <Card className="mb-4 border-dashed">
+          <CardContent className="flex items-center justify-between gap-3 p-4 text-sm">
+            <div className="flex items-center gap-2 text-muted-foreground">
+              {loading ? <Loader2 className="h-4 w-4 animate-spin" /> : <AlertTriangle className="h-4 w-4 text-amber-600" />}
+              <span>{loading ? 'Loading live quality portal data...' : error}</span>
+            </div>
+            {!loading && (
+              <Button variant="outline" size="sm" onClick={refresh}>Retry</Button>
+            )}
+          </CardContent>
+        </Card>
+      )}
 
       {/* KPI Cards */}
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
@@ -82,8 +75,10 @@ export default function QualityDashboard() {
                 <p className="text-2xl font-bold mt-1">{k.value}</p>
                 <p className="text-xs text-muted-foreground mt-1">{k.sub}</p>
               </div>
-              <div className={`p-2 rounded-xl ${k.color}`}>
-                <k.icon className={`h-5 w-5 ${k.iconColor}`} />
+              <div className={`p-2 rounded-xl ${kpiDecorators[k.label]?.color ?? 'bg-slate-100 dark:bg-slate-900'}`}>
+                {React.createElement(kpiDecorators[k.label]?.icon ?? FileText, {
+                  className: `h-5 w-5 ${kpiDecorators[k.label]?.iconColor ?? 'text-slate-600'}`,
+                })}
               </div>
             </CardContent>
           </Card>
@@ -91,26 +86,26 @@ export default function QualityDashboard() {
       </div>
 
       {/* NABH Chapter Compliance + Incidents */}
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 mt-4">
         {/* NABH Chapters */}
         <Card>
           <CardHeader className="flex flex-row items-center justify-between pb-3">
             <CardTitle className="text-sm font-semibold flex items-center gap-2">
               <Star className="h-4 w-4 text-amber-500" />NABH Chapter Compliance
             </CardTitle>
-            <Button variant="ghost" size="sm" className="gap-1 text-xs">View All<ChevronRight className="h-3 w-3" /></Button>
+            <Button variant="ghost" size="sm" className="gap-1 text-xs" onClick={() => navigate('/quality/nabh-standards')}>View Matrix</Button>
           </CardHeader>
           <CardContent className="space-y-4">
-            {nabh_chapters.map(c => (
-              <div key={c.code} className="space-y-1">
+            {nabhChapters.map(c => (
+              <div key={c.chapter} className="space-y-1">
                 <div className="flex items-center justify-between text-xs">
-                  <span className="font-medium">{c.chapter} <span className="text-muted-foreground">({c.code})</span></span>
+                  <span className="font-medium">{c.chapter} <span className="text-muted-foreground">{c.title}</span></span>
                   <div className="flex items-center gap-3">
                     {complianceBadge(c.status)}
-                    <span className="font-semibold text-teal-700">{c.compliance}%</span>
+                    <span className="font-semibold text-teal-700">{c.score}%</span>
                   </div>
                 </div>
-                <Progress value={c.compliance} className="h-1.5" />
+                <Progress value={c.score} className="h-1.5" />
               </div>
             ))}
           </CardContent>
@@ -122,7 +117,7 @@ export default function QualityDashboard() {
             <CardTitle className="text-sm font-semibold flex items-center gap-2">
               <AlertTriangle className="h-4 w-4 text-red-500" />Incident Reports
             </CardTitle>
-            <Button size="sm" className="gap-1 text-xs bg-teal-600 hover:bg-teal-700">
+            <Button size="sm" className="gap-1 text-xs bg-teal-600 hover:bg-teal-700" onClick={() => navigate('/quality/incidents')}>
               <PlusCircle className="h-3 w-3" />Report Incident
             </Button>
           </CardHeader>
@@ -131,8 +126,8 @@ export default function QualityDashboard() {
               {incidents.map(i => (
                 <div key={i.id} className="flex items-center justify-between p-2 rounded-lg bg-muted/40 hover:bg-muted/70 transition-colors">
                   <div>
-                    <p className="text-xs font-medium">{i.id} — {i.type}</p>
-                    <p className="text-xs text-muted-foreground">{i.dept} · {i.date}</p>
+                    <p className="text-xs font-medium">{i.id} — {i.category}</p>
+                    <p className="text-xs text-muted-foreground">{i.location} · {i.aging}</p>
                   </div>
                   <div className="flex items-center gap-2">
                     {severityBadge(i.severity)}
@@ -145,18 +140,34 @@ export default function QualityDashboard() {
         </Card>
       </div>
 
+      <div className="grid grid-cols-1 lg:grid-cols-4 gap-4 mt-4">
+        {workQueues.map((queue) => (
+          <Card key={queue.label}>
+            <CardContent className="p-4">
+              <p className="text-xs text-muted-foreground">{queue.label}</p>
+              <p className={`mt-1 text-2xl font-bold ${queue.tone}`}>{queue.value}</p>
+              <p className="mt-1 text-xs text-muted-foreground">{queue.detail}</p>
+            </CardContent>
+          </Card>
+        ))}
+      </div>
+
       {/* Quick Actions + Upcoming Audits */}
-      <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
+      <div className="grid grid-cols-1 lg:grid-cols-3 gap-4 mt-4">
         <Card>
           <CardHeader className="pb-2"><CardTitle className="text-sm font-semibold">Quick Actions</CardTitle></CardHeader>
           <CardContent className="grid grid-cols-2 gap-2">
             {[
-              { label: 'Report Incident',   icon: AlertTriangle },
-              { label: 'Schedule Audit',    icon: ClipboardList },
-              { label: 'Update SOP',        icon: FileText },
-              { label: 'Export NABH Report',icon: Download },
+              { label: 'Report Incident', icon: AlertTriangle, path: '/quality/incidents' },
+              { label: 'Schedule Audit', icon: ClipboardList, path: '/quality/assessments' },
+              { label: 'Update SOP', icon: BookOpen, path: '/quality/sops' },
+              { label: 'NABH Matrix', icon: Star, path: '/quality/nabh-standards' },
+              { label: 'Patient Feedback', icon: MessageSquare, path: '/quality/feedback' },
+              { label: 'Leadership Reports', icon: Download, path: '/quality/reports' },
+              { label: 'Gap Closure', icon: Target, path: '/quality/accreditation' },
+              { label: 'Escalations', icon: BellRing, path: '/quality/support' },
             ].map(a => (
-              <Button key={a.label} variant="outline" className="flex-col h-16 gap-1 text-xs">
+              <Button key={a.label} variant="outline" className="flex-col h-16 gap-1 text-xs" onClick={() => navigate(a.path)}>
                 <a.icon className="h-4 w-4 text-teal-600" />
                 {a.label}
               </Button>
@@ -170,18 +181,44 @@ export default function QualityDashboard() {
             <table className="w-full text-xs">
               <thead><tr className="text-muted-foreground border-b">{['Audit','Department','Date','Auditor','Status'].map(h => <th key={h} className="text-left py-1.5 pr-3 font-medium">{h}</th>)}</tr></thead>
               <tbody>
-                {[
-                  ['Internal Audit', 'ICU',       '18 Mar', 'Dr. Mehta',  'Scheduled'],
-                  ['NABH Mock',      'Pharmacy',  '22 Mar', 'QA Team',    'Scheduled'],
-                  ['Infection Control','OT',      '25 Mar', 'Dr. Verma',  'Confirmed'],
-                  ['Fire Safety',    'All Depts', '30 Mar', 'Safety Ofcr','Pending'],
-                ].map((r, i) => (
+                {audits.map((r, i) => (
                   <tr key={i} className="border-b last:border-0 hover:bg-muted/30">
                     {r.map((c, j) => <td key={j} className="py-2 pr-3">{j === 4 ? <span className="px-2 py-0.5 rounded-full bg-blue-100 text-blue-700 text-xs">{c}</span> : c}</td>)}
                   </tr>
                 ))}
               </tbody>
             </table>
+          </CardContent>
+        </Card>
+      </div>
+
+      <div className="grid grid-cols-1 lg:grid-cols-3 gap-4 mt-4">
+        <Card className="lg:col-span-2">
+          <CardHeader className="pb-2"><CardTitle className="text-sm font-semibold">Leadership Snapshot</CardTitle></CardHeader>
+          <CardContent className="grid grid-cols-2 gap-4 text-sm">
+            {leadership.map(([label, value]) => (
+              <div key={label} className="rounded-xl border p-4">
+                <p className="text-xs text-muted-foreground">{label}</p>
+                <p className="mt-1 font-semibold">{value}</p>
+              </div>
+            ))}
+          </CardContent>
+        </Card>
+
+        <Card>
+          <CardHeader className="pb-2"><CardTitle className="text-sm font-semibold">Escalation Queue</CardTitle></CardHeader>
+          <CardContent className="space-y-3 text-sm">
+            {[
+              ['ICU adverse event RCA', 'Due in 12 hours'],
+              ['Medication variance review', 'Awaiting CAPA owner'],
+              ['OT consent deviation', 'Committee review tomorrow'],
+              ['Fire drill closure memo', 'Pending sign-off'],
+            ].map(([label, value]) => (
+              <div key={label} className="rounded-lg bg-muted/40 p-3">
+                <p className="font-medium">{label}</p>
+                <p className="mt-1 text-xs text-muted-foreground">{value}</p>
+              </div>
+            ))}
           </CardContent>
         </Card>
       </div>

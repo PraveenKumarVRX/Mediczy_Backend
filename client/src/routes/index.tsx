@@ -14,6 +14,7 @@
  */
 
 import { lazy, Suspense, useEffect, useState } from "react";
+import type { ComponentType } from "react";
 import { Routes, Route, Navigate } from "react-router-dom";
 
 // ─── Critical-path — always in the initial bundle ───────────────────────────
@@ -30,11 +31,15 @@ import NotFound         from "@/pages/NotFound";
 import MainLayout       from "@/components/layout/MainLayout";
 
 // ─── Lazy helpers ────────────────────────────────────────────────────────────
-function lazyNamed<T extends Record<string, React.ComponentType<unknown>>>(
-  factory: () => Promise<T>,
-  name: keyof T
+function lazyNamed<TModule extends Record<string, unknown>, TName extends keyof TModule>(
+  factory: () => Promise<TModule>,
+  name: TName
 ) {
-  return lazy(() => factory().then(m => ({ default: m[name] as React.ComponentType<unknown> })));
+  return lazy(() =>
+    factory().then((moduleExports) => ({
+      default: moduleExports[name] as ComponentType<unknown>,
+    }))
+  );
 }
 
 // ─── Core patient pages ──────────────────────────────────────────────────────
@@ -557,14 +562,20 @@ const OTTheatreViewPage   = lazyNamed(_OTModulePages, "OTTheatreViewPage");
 const ICULogin     = lazy(() => import("@/pages/icu/ICULogin"));
 const ICUDashboard = lazy(() => import("@/pages/icu/ICUDashboard"));
 const _ICUModulePages = () => import("@/pages/icu/ICUModulePages");
+const ICULiveMonitorPage = lazyNamed(_ICUModulePages, "ICULiveMonitorPage");
 const ICUPatientsPage    = lazyNamed(_ICUModulePages, "ICUPatientsPage");
 const ICUBedsPage        = lazyNamed(_ICUModulePages, "ICUBedsPage");
 const ICUMedicationsPage = lazyNamed(_ICUModulePages, "ICUMedicationsPage");
 const ICUVitalsPage      = lazyNamed(_ICUModulePages, "ICUVitalsPage");
+const ICUFluidBalancePage = lazyNamed(_ICUModulePages, "ICUFluidBalancePage");
+const ICUVentilatorsPage  = lazyNamed(_ICUModulePages, "ICUVentilatorsPage");
 const ICUEquipmentPage   = lazyNamed(_ICUModulePages, "ICUEquipmentPage");
+const ICUInfectionsPage  = lazyNamed(_ICUModulePages, "ICUInfectionsPage");
 const ICUTeamPage        = lazyNamed(_ICUModulePages, "ICUTeamPage");
+const ICUProtocolsPage   = lazyNamed(_ICUModulePages, "ICUProtocolsPage");
 const ICUAlertsPage      = lazyNamed(_ICUModulePages, "ICUAlertsPage");
 const ICUReportsPage     = lazyNamed(_ICUModulePages, "ICUReportsPage");
+const ICUAnalyticsPage   = lazyNamed(_ICUModulePages, "ICUAnalyticsPage");
 const ICUSettingsPage    = lazyNamed(_ICUModulePages, "ICUSettingsPage");
 const ICUSupportPage     = lazyNamed(_ICUModulePages, "ICUSupportPage");
 
@@ -1100,14 +1111,20 @@ const AppRoutes = () => {
         {/* ── ICU ─────────────────────────────────────────────────────── */}
         <Route path="/icu/login"       element={<ICULogin />} />
         <Route path="/icu/dashboard"   element={<ICUDashboard />} />
+        <Route path="/icu/live-monitor" element={<ICULiveMonitorPage />} />
         <Route path="/icu/patients"    element={<ICUPatientsPage />} />
         <Route path="/icu/beds"        element={<ICUBedsPage />} />
         <Route path="/icu/medications" element={<ICUMedicationsPage />} />
         <Route path="/icu/vitals"      element={<ICUVitalsPage />} />
+        <Route path="/icu/fluid-balance" element={<ICUFluidBalancePage />} />
+        <Route path="/icu/ventilators" element={<ICUVentilatorsPage />} />
         <Route path="/icu/equipment"   element={<ICUEquipmentPage />} />
+        <Route path="/icu/infections"  element={<ICUInfectionsPage />} />
         <Route path="/icu/team"        element={<ICUTeamPage />} />
+        <Route path="/icu/protocols"   element={<ICUProtocolsPage />} />
         <Route path="/icu/alerts"      element={<ICUAlertsPage />} />
         <Route path="/icu/reports"     element={<ICUReportsPage />} />
+        <Route path="/icu/analytics"   element={<ICUAnalyticsPage />} />
         <Route path="/icu/settings"    element={<ICUSettingsPage />} />
         <Route path="/icu/support"     element={<ICUSupportPage />} />
 

@@ -230,7 +230,7 @@ export default function CorporateHealthBooking() {
   const [rptType, setRptType] = useState('annual_health_checkup');
   const [rptDate, setRptDate] = useState('');
   const [rptNotes, setRptNotes] = useState('');
-  const [rptFile, setRptFile] = useState<File | null>(null);
+  const [rptFiles, setRptFiles] = useState<File[]>([]);
   const [rptSendEmail, setRptSendEmail] = useState(true);
   const [rptSendWA, setRptSendWA] = useState(true);
   const [rptUploading, setRptUploading] = useState(false);
@@ -337,15 +337,15 @@ export default function CorporateHealthBooking() {
     setShowRptSuggestions(false);
   };
 
-  // Upload report
+  // Upload report(s)
   const handleReportUpload = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!rptEmployee) { toast({ variant: 'destructive', title: 'Employee required' }); return; }
-    if (!rptFile) { toast({ variant: 'destructive', title: 'File required', description: 'Please select a PDF or image file.' }); return; }
+    if (rptFiles.length === 0) { toast({ variant: 'destructive', title: 'File required', description: 'Please select at least one PDF or image file.' }); return; }
     if (!rptName || !rptDate) { toast({ variant: 'destructive', title: 'Report name & date required' }); return; }
 
     const formData = new FormData();
-    formData.append('report', rptFile);
+    rptFiles.forEach(f => formData.append('reports', f));
     formData.append('employeeId', String(rptEmployee.id));
     formData.append('reportName', rptName);
     formData.append('reportType', rptType);
@@ -362,13 +362,14 @@ export default function CorporateHealthBooking() {
         headers: { 'Content-Type': 'multipart/form-data' }
       });
       const empName = `${rptEmployee.firstName} ${rptEmployee.lastName}`;
+      const uploadedCount = (r.data.reports as { reportUrl: string }[])?.length ?? 1;
       setRptSuccess({ reportName: rptName, employeeName: empName, reportUrl: r.data.report.reportUrl });
       const notif = r.data.notifications as { email: string; whatsapp: string };
       const sent = [notif.email === 'sent' && '📧 Email', notif.whatsapp === 'sent' && '📱 WhatsApp'].filter(Boolean).join(' & ');
-      toast({ title: '✅ Report Uploaded!', description: `${rptName} uploaded for ${empName}. Sent via ${sent || 'system'}.` });
+      toast({ title: `✅ ${uploadedCount} Report${uploadedCount > 1 ? 's' : ''} Uploaded!`, description: `Sent to ${empName} via ${sent || 'system'}.` });
       // Reset form
       setRptEmployee(null); setRptEmployeeSearch('');
-      setRptName(''); setRptDate(''); setRptNotes(''); setRptFile(null);
+      setRptName(''); setRptDate(''); setRptNotes(''); setRptFiles([]);
       setRptType('annual_health_checkup');
       if (fileInputRef.current) fileInputRef.current.value = '';
       fetchReports();
@@ -1352,38 +1353,58 @@ export default function CorporateHealthBooking() {
                       </label>
                       <Input type="date" value={rptDate} onChange={e => setRptDate(e.target.value)} max={todayStr} />
                     </div>
-                    {/* File picker */}
-                    <div>
+                    {/* File picker — multiple */}
+                    <div className="sm:col-span-2">
                       <label className="text-sm font-medium mb-1.5 block flex items-center gap-1.5">
-                        <FileText className="h-3.5 w-3.5 text-muted-foreground" /> File (PDF / Image)
+                        <FileText className="h-3.5 w-3.5 text-muted-foreground" /> Files (PDF / Image)
                       </label>
+                      {/* Drop zone */}
                       <div
                         className="border-2 border-dashed border-border rounded-lg p-3 cursor-pointer hover:border-emerald-400 transition-colors text-center"
                         onClick={() => fileInputRef.current?.click()}
                       >
-                        {rptFile ? (
-                          <div className="flex items-center gap-2 justify-center">
-                            <FileText className="h-4 w-4 text-emerald-600" />
-                            <span className="text-sm font-medium text-emerald-700 truncate max-w-[160px]">{rptFile.name}</span>
-                            <span className="text-xs text-muted-foreground">({formatFileSize(rptFile.size)})</span>
-                            <button type="button" onClick={e => { e.stopPropagation(); setRptFile(null); if (fileInputRef.current) fileInputRef.current.value = ''; }}>
-                              <X className="h-3.5 w-3.5 text-muted-foreground" />
-                            </button>
-                          </div>
-                        ) : (
-                          <div>
-                            <Upload className="h-6 w-6 mx-auto text-muted-foreground mb-1" />
-                            <p className="text-xs text-muted-foreground">Click to select PDF, JPG, PNG (max 25 MB)</p>
-                          </div>
-                        )}
+                        <Upload className="h-6 w-6 mx-auto text-muted-foreground mb-1" />
+                        <p className="text-xs text-muted-foreground">
+                          Click to select files — PDF, JPG, PNG (max 25 MB each, up to 10 files)
+                        </p>
                         <input
                           ref={fileInputRef}
                           type="file"
                           accept=".pdf,.jpg,.jpeg,.png,.webp,.doc,.docx"
                           className="hidden"
-                          onChange={e => setRptFile(e.target.files?.[0] || null)}
+                          multiple
+                          onChange={e => {
+                            const picked = Array.from(e.target.files || []);
+                            setRptFiles(prev => {
+                              const existing = new Set(prev.map(f => f.name + f.size));
+                              const fresh = picked.filter(f => !existing.has(f.name + f.size));
+                              return [...prev, ...fresh].slice(0, 10);
+                            });
+                            // reset input so the same file can be re-added after removal
+                            e.target.value = '';
+                          }}
                         />
                       </div>
+                      {/* Selected files list */}
+                      {rptFiles.length > 0 && (
+                        <div className="mt-2 space-y-1.5">
+                          {rptFiles.map((f, i) => (
+                            <div key={i} className="flex items-center gap-2 bg-emerald-50 dark:bg-emerald-950/30 border border-emerald-200 rounded-lg px-3 py-1.5">
+                              <FileText className="h-3.5 w-3.5 text-emerald-600 shrink-0" />
+                              <span className="text-sm font-medium text-emerald-700 flex-1 truncate">{f.name}</span>
+                              <span className="text-xs text-muted-foreground shrink-0">({formatFileSize(f.size)})</span>
+                              <button
+                                type="button"
+                                onClick={() => setRptFiles(prev => prev.filter((_, idx) => idx !== i))}
+                                className="shrink-0"
+                              >
+                                <X className="h-3.5 w-3.5 text-muted-foreground hover:text-destructive" />
+                              </button>
+                            </div>
+                          ))}
+                          <p className="text-xs text-muted-foreground pl-1">{rptFiles.length} file{rptFiles.length > 1 ? 's' : ''} selected — click the drop zone to add more</p>
+                        </div>
+                      )}
                     </div>
                   </div>
 
@@ -1409,7 +1430,10 @@ export default function CorporateHealthBooking() {
                     {rptUploading ? (
                       <span className="flex items-center gap-2"><Loader2 className="h-4 w-4 animate-spin" /> Uploading &amp; Notifying...</span>
                     ) : (
-                      <span className="flex items-center gap-2"><Upload className="h-4 w-4" /> Upload Report &amp; Notify Employee</span>
+                      <span className="flex items-center gap-2">
+                        <Upload className="h-4 w-4" />
+                        Upload {rptFiles.length > 1 ? `${rptFiles.length} Reports` : 'Report'} &amp; Notify Employee
+                      </span>
                     )}
                   </Button>
                 </form>

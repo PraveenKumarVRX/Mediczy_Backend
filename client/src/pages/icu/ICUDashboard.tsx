@@ -1,48 +1,16 @@
-import HospDeptLayout, { DeptNavSection } from '@/components/hosp-dept/HospDeptLayout';
+import HospDeptLayout from '@/components/hosp-dept/HospDeptLayout';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import {
-  HeartPulse, LayoutDashboard, Bed, Activity, Pill, Wrench,
-  Users, AlertTriangle, BarChart3, Settings, HelpCircle,
+  HeartPulse, Bed, Activity, Pill, Wrench,
+  Users, AlertTriangle,
   PlusCircle, Clock, AlertCircle, CheckCircle2, Thermometer,
-  Droplets, Wind,
+  Droplets, Wind, LayoutGrid, ClipboardCheck, ShieldCheck, TrendingUp,
 } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
-
-const navSections: DeptNavSection[] = [
-  {
-    title: 'Overview',
-    items: [
-      { icon: LayoutDashboard, label: 'Dashboard',        href: '/icu/dashboard' },
-    ],
-  },
-  {
-    title: 'Patient Care',
-    items: [
-      { icon: Activity,       label: 'Patient Monitor',   href: '/icu/patients' },
-      { icon: Bed,            label: 'Bed Management',    href: '/icu/beds' },
-      { icon: Pill,           label: 'Medications',       href: '/icu/medications' },
-      { icon: Thermometer,    label: 'Vitals',            href: '/icu/vitals' },
-    ],
-  },
-  {
-    title: 'Operations',
-    items: [
-      { icon: Wrench,         label: 'Equipment',         href: '/icu/equipment' },
-      { icon: Users,          label: 'Critical Team',     href: '/icu/team' },
-      { icon: AlertTriangle,  label: 'Critical Alerts',   href: '/icu/alerts' },
-    ],
-  },
-  {
-    title: 'System',
-    items: [
-      { icon: BarChart3,      label: 'Reports',     href: '/icu/reports' },
-      { icon: Settings,       label: 'Settings',    href: '/icu/settings' },
-      { icon: HelpCircle,     label: 'Support',     href: '/icu/support' },
-    ],
-  },
-];
+import { icuNavSections } from './ICUModulePages';
+import { useICUPortalData } from './useICUPortalData';
 
 const kpis = [
   { label: 'Total ICU Beds',   value: '20',  sub: '16 occupied, 4 free',  icon: Bed,       color: 'text-teal-600' },
@@ -86,6 +54,38 @@ const alertColor: Record<string, string> = {
 
 const ICUDashboard = () => {
   const navigate = useNavigate();
+  const { data } = useICUPortalData(30000);
+
+  const dashboardKpis = data
+    ? [
+        { label: 'Total ICU Beds', value: `${data.summary.totalBeds}`, sub: `${data.summary.occupiedBeds} occupied, ${data.summary.availableBeds} free`, icon: Bed, color: 'text-teal-600' },
+        { label: 'Critical Patients', value: `${data.summary.criticalPatients}`, sub: 'Immediate attention', icon: AlertCircle, color: 'text-red-600' },
+        { label: 'Stable Patients', value: `${data.summary.stablePatients}`, sub: `${data.summary.monitoredBeds} monitored beds`, icon: CheckCircle2, color: 'text-emerald-600' },
+        { label: 'Open Alerts', value: `${data.summary.openAlerts}`, sub: `${data.summary.reservedBeds} reserved beds`, icon: HeartPulse, color: 'text-blue-600' },
+      ]
+    : kpis;
+
+  const dashboardBeds = data?.patients?.length
+    ? data.patients.slice(0, 10).map((patient) => ({
+        bed: patient.bed,
+        patient: patient.patient,
+        age: patient.age ?? 0,
+        diagnosis: patient.diagnosis,
+        status: patient.status,
+        vent: patient.vent.toLowerCase() !== 'not charted',
+        hrs: patient.hrs,
+      }))
+    : bedStatus;
+
+  const dashboardAlerts = data?.alerts?.length
+    ? data.alerts.slice(0, 5).map((alert) => ({
+        bed: alert.source,
+        alert: alert.alert,
+        severity: alert.severity,
+        time: alert.time ? new Date(alert.time).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : '--:--'
+      }))
+    : alerts;
+
   return (
     <HospDeptLayout
       deptKey="icu"
@@ -93,13 +93,13 @@ const ICUDashboard = () => {
       badgeLabel="ICU"
       loginPath="/icu/login"
       DeptIcon={HeartPulse}
-      navSections={navSections}
+      navSections={icuNavSections}
       title="ICU Dashboard"
       subtitle="Intensive care unit — live patient monitoring"
     >
       {/* KPI Cards */}
       <div className="grid grid-cols-2 xl:grid-cols-4 gap-5 mb-6">
-        {kpis.map((k) => (
+        {dashboardKpis.map((k) => (
           <Card key={k.label} className="hover:shadow-md transition-shadow">
             <CardContent className="p-5">
               <div className="flex items-start justify-between">
@@ -123,11 +123,11 @@ const ICUDashboard = () => {
           <Card>
             <CardHeader className="flex flex-row items-center justify-between pb-3">
               <CardTitle className="text-base">ICU Bed Status</CardTitle>
-              <Button variant="outline" size="sm" onClick={() => navigate('/icu/beds')}>Bed Management</Button>
+              <Button variant="outline" size="sm" onClick={() => navigate('/icu/live-monitor')}>Live Monitor</Button>
             </CardHeader>
             <CardContent>
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
-                {bedStatus.map((b) => (
+                {dashboardBeds.map((b) => (
                   <div key={b.bed}
                     onClick={() => navigate('/icu/patients')}
                     className={`p-3 rounded-xl border cursor-pointer hover:shadow-sm transition-shadow ${
@@ -139,7 +139,7 @@ const ICUDashboard = () => {
                     <div className="flex items-center justify-between mb-1">
                       <span className="text-xs font-bold text-teal-700 dark:text-teal-400">{b.bed}</span>
                       <div className="flex items-center gap-1">
-                        {b.vent && <Wind className="h-3 w-3 text-blue-500" title="On ventilator" />}
+                        {b.vent && <Wind className="h-3 w-3 text-blue-500" />}
                         <Badge className={`${statusColor[b.status]} border-0 text-[10px] h-4 px-1`}>{b.status}</Badge>
                       </div>
                     </div>
@@ -155,8 +155,8 @@ const ICUDashboard = () => {
                   </div>
                 ))}
               </div>
-              <Button variant="ghost" size="sm" className="mt-3 w-full text-teal-600" onClick={() => navigate('/icu/patients')}>
-                Full patient monitor →
+              <Button variant="ghost" size="sm" className="mt-3 w-full text-red-600" onClick={() => navigate('/icu/live-monitor')}>
+                Open ICU command view →
               </Button>
             </CardContent>
           </Card>
@@ -167,14 +167,17 @@ const ICUDashboard = () => {
           {/* Quick Actions */}
           <Card>
             <CardHeader className="pb-3"><CardTitle className="text-base">Quick Actions</CardTitle></CardHeader>
-            <CardContent className="grid grid-cols-2 gap-2">
+            <CardContent className="grid grid-cols-3 gap-2">
               {[
-                { label: 'Admit Patient',  icon: PlusCircle,    path: '/icu/beds',       color: 'bg-teal-50 text-teal-700 hover:bg-teal-100' },
-                { label: 'Vitals Entry',   icon: Thermometer,   path: '/icu/vitals',     color: 'bg-blue-50 text-blue-700 hover:bg-blue-100' },
-                { label: 'Drug Chart',     icon: Pill,          path: '/icu/medications',color: 'bg-emerald-50 text-emerald-700 hover:bg-emerald-100' },
-                { label: 'Monitor',        icon: Activity,      path: '/icu/patients',   color: 'bg-violet-50 text-violet-700 hover:bg-violet-100' },
-                { label: 'Equipment',      icon: Wrench,        path: '/icu/equipment',  color: 'bg-amber-50 text-amber-700 hover:bg-amber-100' },
-                { label: 'Critical Team',  icon: Users,         path: '/icu/team',       color: 'bg-red-50 text-red-700 hover:bg-red-100' },
+                { label: 'Admit',          icon: PlusCircle,     path: '/icu/patients',      color: 'bg-red-50 text-red-700 hover:bg-red-100' },
+                { label: 'Live',           icon: LayoutGrid,     path: '/icu/live-monitor',  color: 'bg-rose-50 text-rose-700 hover:bg-rose-100' },
+                { label: 'Vitals',         icon: Thermometer,    path: '/icu/vitals',        color: 'bg-blue-50 text-blue-700 hover:bg-blue-100' },
+                { label: 'Fluids',         icon: Droplets,       path: '/icu/fluid-balance', color: 'bg-cyan-50 text-cyan-700 hover:bg-cyan-100' },
+                { label: 'Drips',          icon: Pill,           path: '/icu/medications',   color: 'bg-emerald-50 text-emerald-700 hover:bg-emerald-100' },
+                { label: 'Vent',           icon: Wind,           path: '/icu/ventilators',   color: 'bg-indigo-50 text-indigo-700 hover:bg-indigo-100' },
+                { label: 'Infection',      icon: ShieldCheck,    path: '/icu/infections',    color: 'bg-amber-50 text-amber-700 hover:bg-amber-100' },
+                { label: 'Protocols',      icon: ClipboardCheck, path: '/icu/protocols',     color: 'bg-slate-100 text-slate-700 hover:bg-slate-200' },
+                { label: 'Analytics',      icon: TrendingUp,     path: '/icu/analytics',     color: 'bg-fuchsia-50 text-fuchsia-700 hover:bg-fuchsia-100' },
               ].map((a) => (
                 <button key={a.label} onClick={() => navigate(a.path)}
                   className={`flex flex-col items-center gap-1.5 p-3 rounded-xl text-xs font-medium transition-colors ${a.color}`}>
@@ -191,7 +194,7 @@ const ICUDashboard = () => {
               <AlertCircle className="h-4 w-4 text-red-500 animate-pulse" /> Live Alerts
             </CardTitle></CardHeader>
             <CardContent className="space-y-2">
-              {alerts.map((a, i) => (
+              {dashboardAlerts.map((a, i) => (
                 <div key={i} className={`p-2 rounded-lg text-sm ${alertColor[a.severity]}`}>
                   <div className="flex items-center justify-between">
                     <span className="font-semibold">{a.bed}</span>
@@ -213,12 +216,12 @@ const ICUDashboard = () => {
             </CardTitle></CardHeader>
             <CardContent className="space-y-2 text-sm">
               {[
-                { label: 'Occupied Beds',        value: '16', color: '' },
-                { label: 'On Ventilator',        value: '5',  color: 'text-blue-600 font-bold' },
-                { label: 'Critical Patients',    value: '5',  color: 'text-red-600 font-bold' },
-                { label: 'Medications Due',      value: '12', color: 'text-amber-600' },
-                { label: 'ICU Admissions Today', value: '3',  color: '' },
-                { label: 'Discharges Today',     value: '1',  color: 'text-emerald-600' },
+                { label: 'Occupied Beds',        value: `${data?.summary.occupiedBeds ?? 16}`, color: '' },
+                { label: 'Monitored Beds',       value: `${data?.summary.monitoredBeds ?? 5}`, color: 'text-blue-600 font-bold' },
+                { label: 'Critical Patients',    value: `${data?.summary.criticalPatients ?? 5}`, color: 'text-red-600 font-bold' },
+                { label: 'Available Beds',       value: `${data?.summary.availableBeds ?? 3}`, color: 'text-cyan-700 font-semibold' },
+                { label: 'Open Alerts',          value: `${data?.summary.openAlerts ?? 6}`, color: 'text-amber-600' },
+                { label: 'Reserved Beds',        value: `${data?.summary.reservedBeds ?? 4}`, color: 'text-slate-700' },
               ].map((s) => (
                 <div key={s.label} className="flex justify-between">
                   <span className="text-muted-foreground">{s.label}</span>

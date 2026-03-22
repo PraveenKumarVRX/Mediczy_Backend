@@ -19,6 +19,7 @@ import {
   Calendar, Printer, AlertTriangle, XCircle, RefreshCw, IndianRupee,
   Landmark, Filter, ChevronRight, Mail, Phone,
 } from 'lucide-react';
+import type { LucideIcon } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
 
 // ── Shared Navigation (6 sections, 17 modules) ─────────────────────────────
@@ -87,7 +88,7 @@ const Wrap = ({ title, subtitle, children }: {
 
 const KPICard = ({ label, value, sub, icon: Icon, color, up }: {
   label: string; value: string; sub: string;
-  icon: React.ElementType; color: string; up?: boolean;
+  icon: LucideIcon; color: string; up?: boolean;
 }) => (
   <Card className="hover:shadow-md transition-shadow">
     <CardContent className="p-4">

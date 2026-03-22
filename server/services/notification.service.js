@@ -12,6 +12,7 @@ import { Notification } from '../models/index.js';
 import { DataTypes } from 'sequelize';
 import { postgresSequelize } from '../db/postgres-sequelize.js';
 import whatsappService from './whatsapp.service.js';
+import whatsappProductionService from './whatsapp-production.service.js';
 import { generateICalFile, generateDoctorICalFile, generateICalFilename } from '../utils/icalGenerator.js';
 
 // Initialize SMS service
@@ -492,16 +493,11 @@ class NotificationService {
         formattedPhone = '+91' + formattedPhone; // India country code
       }
 
-      // Send WhatsApp message
-      const result = await whatsappService.sendMessage({
+      // Send WhatsApp message via production service (real Twilio API)
+      const waBody = `*${title}*\n\n${message}\n\n_Mediczy Healthcare Platform_`;
+      const result = await whatsappProductionService.sendSessionMessage({
         to: formattedPhone,
-        type: 'text',
-        content: {
-          text: `*${title}*\n\n${message}\n\n_Mediczy Healthcare Platform_`
-        },
-        patientId: userType === 'patient' ? userId : data.patientId,
-        doctorId: userType === 'doctor' ? userId : data.doctorId,
-        appointmentId: data.appointmentId
+        body: waBody
       });
 
       return { success: true, phone: formattedPhone, result };

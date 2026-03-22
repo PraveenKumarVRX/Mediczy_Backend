@@ -11,6 +11,7 @@ import { Switch } from '@/components/ui/switch';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter, DialogTrigger } from '@/components/ui/dialog';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
+import { Textarea } from '@/components/ui/textarea';
 import { 
   Settings, 
   Mail, 
@@ -26,7 +27,10 @@ import {
   Eye,
   EyeOff,
   Save,
-  RefreshCw
+  RefreshCw,
+  FileText,
+  RotateCcw,
+  Send
 } from 'lucide-react';
 import { toast } from 'sonner';
 import api from '@/utils/api';
@@ -81,6 +85,30 @@ interface SMTPConfig {
   testStatus?: 'pending' | 'success' | 'failed';
 }
 
+// ── Email Template Library types ─────────────────────────────────────────────
+interface EmailTemplate {
+  id: number;
+  name: string;
+  subject: string;
+  htmlContent: string;
+  updatedAt: string;
+}
+
+interface EventTypeMeta {
+  eventType: string;
+  name: string;
+  description: string;
+  defaultSubject: string;
+  color: string;
+  variables: string[];
+}
+
+interface EventAssignment {
+  templateId: number | null;
+  templateName: string | null;
+}
+// ─────────────────────────────────────────────────────────────────────────────
+
 const mapApiToUiConfig = (item: any): SMTPConfig => ({
   id: item.id,
   name: item.displayName || item.name || item.email || 'SMTP Config',
@@ -124,6 +152,22 @@ const TeamSettings: React.FC = () => {
   const [showPassword, setShowPassword] = useState<Record<string, boolean>>({});
   const [editingConfig, setEditingConfig] = useState<SMTPConfig | null>(null);
   const [isDialogOpen, setIsDialogOpen] = useState(false);
+
+  // Email Templates state
+  const [emailTemplates, setEmailTemplates] = useState<EmailTemplate[]>([]);
+  const [eventTypes, setEventTypes] = useState<EventTypeMeta[]>([]);
+  const [assignments, setAssignments] = useState<Record<string, EventAssignment>>({});
+  const [templatesLoading, setTemplatesLoading] = useState(false);
+  // template editor dialog
+  const [editingTemplate, setEditingTemplate] = useState<EmailTemplate | null>(null);
+  const [isTemplateDialogOpen, setIsTemplateDialogOpen] = useState(false);
+  const [isCreateMode, setIsCreateMode] = useState(false);
+  const [templateForm, setTemplateForm] = useState({ name: '', subject: '', htmlContent: '' });
+  const [templateSaving, setTemplateSaving] = useState(false);
+  const [previewMode, setPreviewMode] = useState(false);
+  // test email
+  const [testEmailAddr, setTestEmailAddr] = useState('');
+  const [sendingTest, setSendingTest] = useState(false);
   
   const [newConfig, setNewConfig] = useState<Partial<SMTPConfig>>({
     provider: 'zoho-pro',
@@ -135,7 +179,105 @@ const TeamSettings: React.FC = () => {
 
   useEffect(() => {
     loadConfigs();
+    loadEmailTemplates();
   }, []);
+
+  const loadEmailTemplates = async () => {
+    try {
+      setTemplatesLoading(true);
+      const response = await api.get('/team/welcome-email-templates');
+      if (response.data.success) {
+        const { templates, assignments: asgn, eventTypes: evts } = response.data.data;
+        setEmailTemplates(templates || []);
+        setAssignments(asgn || {});
+        setEventTypes(evts || []);
+      }
+    } catch (error: any) {
+      if (error.response?.status !== 404) console.error('Failed to load email templates:', error);
+    } finally {
+      setTemplatesLoading(false);
+    }
+  };
+
+  const openCreateTemplate = () => {
+    setIsCreateMode(true);
+    setEditingTemplate(null);
+    setTemplateForm({ name: '', subject: '', htmlContent: '' });
+    setPreviewMode(false);
+    setIsTemplateDialogOpen(true);
+  };
+
+  const openEditTemplate = (tpl: EmailTemplate) => {
+    setIsCreateMode(false);
+    setEditingTemplate(tpl);
+    setTemplateForm({ name: tpl.name, subject: tpl.subject, htmlContent: tpl.htmlContent });
+    setPreviewMode(false);
+    setIsTemplateDialogOpen(true);
+  };
+
+  const saveTemplate = async () => {
+    if (!templateForm.name || !templateForm.subject || !templateForm.htmlContent) {
+      toast.error('Name, subject and HTML content are required');
+      return;
+    }
+    try {
+      setTemplateSaving(true);
+      if (isCreateMode) {
+        await api.post('/team/welcome-email-templates', templateForm);
+        toast.success('Template created');
+      } else if (editingTemplate) {
+        await api.put(`/team/welcome-email-templates/${editingTemplate.id}`, templateForm);
+        toast.success('Template updated');
+      }
+      setIsTemplateDialogOpen(false);
+      await loadEmailTemplates();
+    } catch (error: any) {
+      toast.error(error.response?.data?.message || 'Failed to save template');
+    } finally {
+      setTemplateSaving(false);
+    }
+  };
+
+  const deleteTemplate = async (id: number) => {
+    if (!confirm('Delete this template? Any event using it will fall back to the built-in default.')) return;
+    try {
+      await api.delete(`/team/welcome-email-templates/${id}`);
+      toast.success('Template deleted');
+      await loadEmailTemplates();
+    } catch (error: any) {
+      toast.error(error.response?.data?.message || 'Failed to delete template');
+    }
+  };
+
+  const assignTemplate = async (eventType: string, templateId: number | null) => {
+    try {
+      await api.put('/team/welcome-email-templates/assign', { eventType, templateId });
+      toast.success(templateId ? 'Template assigned to event' : 'Reset to built-in default');
+      await loadEmailTemplates();
+    } catch (error: any) {
+      toast.error(error.response?.data?.message || 'Failed to update assignment');
+    }
+  };
+
+  const sendTestEmail = async () => {
+    if (!editingTemplate && !isCreateMode) return;
+    if (!testEmailAddr) { toast.error('Please enter a test email address'); return; }
+    if (!templateForm.subject || !templateForm.htmlContent) { toast.error('Fill in subject and HTML content first'); return; }
+    try {
+      setSendingTest(true);
+      const id = editingTemplate?.id ?? 0;
+      await api.post(`/team/welcome-email-templates/${id}/test`, {
+        testEmail: testEmailAddr,
+        subject: templateForm.subject,
+        htmlContent: templateForm.htmlContent
+      });
+      toast.success(`Test email sent to ${testEmailAddr}`);
+    } catch (error: any) {
+      toast.error(error.response?.data?.message || 'Failed to send test email');
+    } finally {
+      setSendingTest(false);
+    }
+  };
 
   const loadConfigs = async () => {
     try {
@@ -297,6 +439,10 @@ const TeamSettings: React.FC = () => {
             <TabsTrigger value="smtp" className="gap-2">
               <Mail className="h-4 w-4" />
               Email & SMTP
+            </TabsTrigger>
+            <TabsTrigger value="email-templates" className="gap-2">
+              <FileText className="h-4 w-4" />
+              Email Templates
             </TabsTrigger>
             <TabsTrigger value="notifications">
               Notifications
@@ -604,6 +750,267 @@ const TeamSettings: React.FC = () => {
                 )}
               </CardContent>
             </Card>
+          </TabsContent>
+
+          <TabsContent value="email-templates" className="space-y-6">
+
+            {/* ── Template Library ─────────────────────────────────────────── */}
+            <Card>
+              <CardHeader>
+                <div className="flex items-center justify-between">
+                  <div>
+                    <CardTitle className="flex items-center gap-2">
+                      <FileText className="h-5 w-5" />
+                      Template Library
+                    </CardTitle>
+                    <CardDescription>
+                      Create and manage reusable HTML email templates. Assign them to events below.
+                    </CardDescription>
+                  </div>
+                  <Button onClick={openCreateTemplate}>
+                    <Plus className="h-4 w-4 mr-2" />
+                    New Template
+                  </Button>
+                </div>
+              </CardHeader>
+              <CardContent>
+                {templatesLoading ? (
+                  <div className="flex justify-center py-8">
+                    <Loader2 className="h-8 w-8 animate-spin text-muted-foreground" />
+                  </div>
+                ) : emailTemplates.length === 0 ? (
+                  <div className="text-center py-12 text-muted-foreground">
+                    <FileText className="h-10 w-10 mx-auto mb-3 opacity-30" />
+                    <p className="font-medium">No templates yet</p>
+                    <p className="text-sm mt-1">Click "New Template" to create your first email template.</p>
+                  </div>
+                ) : (
+                  <Table>
+                    <TableHeader>
+                      <TableRow>
+                        <TableHead>Name</TableHead>
+                        <TableHead>Subject</TableHead>
+                        <TableHead>Last Modified</TableHead>
+                        <TableHead className="w-[140px] text-right">Actions</TableHead>
+                      </TableRow>
+                    </TableHeader>
+                    <TableBody>
+                      {emailTemplates.map((tpl) => (
+                        <TableRow key={tpl.id}>
+                          <TableCell className="font-medium">{tpl.name}</TableCell>
+                          <TableCell className="text-sm text-muted-foreground max-w-[280px] truncate">{tpl.subject}</TableCell>
+                          <TableCell className="text-sm text-muted-foreground">
+                            {new Date(tpl.updatedAt).toLocaleDateString()}
+                          </TableCell>
+                          <TableCell className="text-right">
+                            <div className="flex justify-end gap-2">
+                              <Button variant="outline" size="sm" onClick={() => openEditTemplate(tpl)}>
+                                <Edit className="h-4 w-4" />
+                              </Button>
+                              <Button variant="outline" size="sm" onClick={() => deleteTemplate(tpl.id)}>
+                                <Trash2 className="h-4 w-4" />
+                              </Button>
+                            </div>
+                          </TableCell>
+                        </TableRow>
+                      ))}
+                    </TableBody>
+                  </Table>
+                )}
+              </CardContent>
+            </Card>
+
+            {/* ── Event Configuration ──────────────────────────────────────── */}
+            <Card>
+              <CardHeader>
+                <CardTitle className="flex items-center gap-2">
+                  <Mail className="h-5 w-5" />
+                  Event Configuration
+                </CardTitle>
+                <CardDescription>
+                  Choose which template fires for each automatic email event. Select "Built-in default" to use the system template.
+                </CardDescription>
+              </CardHeader>
+              <CardContent>
+                {eventTypes.length === 0 && !templatesLoading ? (
+                  <p className="text-sm text-muted-foreground py-4">Loading event types…</p>
+                ) : (
+                  <div className="space-y-0 divide-y">
+                    {eventTypes.map((et) => {
+                      const current = assignments[et.eventType];
+                      return (
+                        <div key={et.eventType} className="flex items-center gap-4 py-4">
+                          <div
+                            className="w-2 h-10 rounded-full flex-shrink-0"
+                            style={{ backgroundColor: et.color }}
+                          />
+                          <div className="flex-1 min-w-0">
+                            <p className="font-medium text-sm">{et.name}</p>
+                            <p className="text-xs text-muted-foreground mt-0.5">{et.description}</p>
+                          </div>
+                          <div className="flex items-center gap-2 flex-shrink-0">
+                            {current?.templateId && (
+                              <Badge variant="default" className="text-xs hidden sm:flex">Active</Badge>
+                            )}
+                            <Select
+                              value={current?.templateId?.toString() ?? 'default'}
+                              onValueChange={(val) =>
+                                assignTemplate(et.eventType, val === 'default' ? null : parseInt(val))
+                              }
+                            >
+                              <SelectTrigger className="w-[200px]">
+                                <SelectValue placeholder="Select template…" />
+                              </SelectTrigger>
+                              <SelectContent>
+                                <SelectItem value="default">
+                                  <span className="flex items-center gap-1.5">
+                                    <RotateCcw className="h-3 w-3 text-muted-foreground" />
+                                    Built-in default
+                                  </span>
+                                </SelectItem>
+                                {emailTemplates.map((tpl) => (
+                                  <SelectItem key={tpl.id} value={tpl.id.toString()}>
+                                    {tpl.name}
+                                  </SelectItem>
+                                ))}
+                              </SelectContent>
+                            </Select>
+                          </div>
+                        </div>
+                      );
+                    })}
+                  </div>
+                )}
+              </CardContent>
+            </Card>
+
+            {/* ── Template Editor / Creator Dialog ─────────────────────────── */}
+            <Dialog open={isTemplateDialogOpen} onOpenChange={setIsTemplateDialogOpen}>
+              <DialogContent className="max-w-4xl max-h-[92vh] overflow-y-auto">
+                <DialogHeader>
+                  <DialogTitle className="flex items-center gap-2">
+                    <FileText className="h-5 w-5" />
+                    {isCreateMode ? 'Create New Template' : `Edit: ${editingTemplate?.name}`}
+                  </DialogTitle>
+                  <DialogDescription>
+                    Write the full HTML body. Use{' '}
+                    <code className="text-xs bg-muted px-1 rounded">{'{{variableName}}'}</code>{' '}
+                    placeholders — click any variable chip to insert it at the cursor.
+                  </DialogDescription>
+                </DialogHeader>
+
+                <div className="space-y-4 py-2">
+                  {/* Name */}
+                  <div className="space-y-1">
+                    <Label>Template Name *</Label>
+                    <Input
+                      placeholder="e.g. Blue Doctor Welcome"
+                      value={templateForm.name}
+                      onChange={(e) => setTemplateForm({ ...templateForm, name: e.target.value })}
+                    />
+                  </div>
+
+                  {/* Subject */}
+                  <div className="space-y-1">
+                    <Label>Email Subject *</Label>
+                    <Input
+                      placeholder="e.g. Welcome to Mediqzy — Your login details"
+                      value={templateForm.subject}
+                      onChange={(e) => setTemplateForm({ ...templateForm, subject: e.target.value })}
+                    />
+                  </div>
+
+                  {/* Variable chips */}
+                  <div className="space-y-1">
+                    <Label className="text-xs text-muted-foreground">All available variables (click to insert)</Label>
+                    <div className="flex flex-wrap gap-1">
+                      {['{{firstName}}','{{lastName}}','{{email}}','{{role}}','{{department}}','{{temporaryPassword}}','{{specialization}}','{{hospitalName}}','{{companyName}}','{{contactPerson}}','{{employeeId}}'].map((v) => (
+                        <code
+                          key={v}
+                          className="text-xs bg-muted px-2 py-1 rounded cursor-pointer select-none hover:bg-primary hover:text-primary-foreground transition-colors"
+                          onClick={() => {
+                            const el = document.getElementById('tpl-html-editor') as HTMLTextAreaElement;
+                            if (el) {
+                              const s = el.selectionStart, e2 = el.selectionEnd;
+                              const val = templateForm.htmlContent.substring(0, s) + v + templateForm.htmlContent.substring(e2);
+                              setTemplateForm(f => ({ ...f, htmlContent: val }));
+                              setTimeout(() => { el.selectionStart = el.selectionEnd = s + v.length; el.focus(); }, 0);
+                            }
+                          }}
+                        >
+                          {v}
+                        </code>
+                      ))}
+                    </div>
+                  </div>
+
+                  {/* Edit / Preview toggle */}
+                  <div className="flex items-center gap-2 border-b pb-2">
+                    <Button variant={previewMode ? 'outline' : 'default'} size="sm" onClick={() => setPreviewMode(false)}>
+                      <Edit className="h-4 w-4 mr-1" /> Edit HTML
+                    </Button>
+                    <Button variant={previewMode ? 'default' : 'outline'} size="sm" onClick={() => setPreviewMode(true)} disabled={!templateForm.htmlContent}>
+                      <Eye className="h-4 w-4 mr-1" /> Preview
+                    </Button>
+                  </div>
+
+                  {/* Editor or Preview */}
+                  {!previewMode ? (
+                    <div className="space-y-1">
+                      <Label>HTML Content *</Label>
+                      <Textarea
+                        id="tpl-html-editor"
+                        value={templateForm.htmlContent}
+                        onChange={(e) => setTemplateForm({ ...templateForm, htmlContent: e.target.value })}
+                        placeholder="Paste your full HTML email here. Use {{variableName}} for dynamic content."
+                        rows={20}
+                        className="font-mono text-xs"
+                      />
+                    </div>
+                  ) : (
+                    <div className="border rounded-lg overflow-hidden">
+                      <iframe
+                        srcDoc={templateForm.htmlContent}
+                        title="Email Preview"
+                        className="w-full"
+                        style={{ height: '480px', border: 'none' }}
+                        sandbox="allow-same-origin"
+                      />
+                    </div>
+                  )}
+
+                  {/* Test Email */}
+                  <div className="border rounded-lg p-4 space-y-2 bg-muted/20">
+                    <Label className="text-sm font-medium">Send Test Email</Label>
+                    <div className="flex gap-2">
+                      <Input
+                        type="email"
+                        placeholder="test@example.com"
+                        value={testEmailAddr}
+                        onChange={(e) => setTestEmailAddr(e.target.value)}
+                        className="flex-1"
+                      />
+                      <Button variant="outline" onClick={sendTestEmail} disabled={sendingTest || !testEmailAddr}>
+                        {sendingTest ? <Loader2 className="h-4 w-4 animate-spin mr-1" /> : <Send className="h-4 w-4 mr-1" />}
+                        Send Test
+                      </Button>
+                    </div>
+                    <p className="text-xs text-muted-foreground">
+                      Sends using the current editor content with sample values substituted for all variables.
+                    </p>
+                  </div>
+                </div>
+
+                <DialogFooter>
+                  <Button variant="outline" onClick={() => setIsTemplateDialogOpen(false)}>Cancel</Button>
+                  <Button onClick={saveTemplate} disabled={templateSaving}>
+                    {templateSaving && <Loader2 className="h-4 w-4 mr-2 animate-spin" />}
+                    <Save className="h-4 w-4 mr-2" />
+                    {isCreateMode ? 'Create Template' : 'Save Changes'}
+                  </Button>
+                </DialogFooter>
+              </DialogContent>
+            </Dialog>
           </TabsContent>
 
           <TabsContent value="notifications" className="space-y-6">

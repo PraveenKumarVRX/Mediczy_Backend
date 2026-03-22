@@ -1133,8 +1133,11 @@ router.post('/webhook', (req, res, next) => {
     }
     
     // 3. CHECK FOR APPOINTMENT BOOKING INTENT
+    // NOTE: When AI auto-reply is enabled, the SIB FastAPI handles appointment booking
+    // conversationally (can search for specific doctors, confirm names, etc.).
+    // The canned n8n flow here is only used as a fallback when AI is disabled.
     const { isBookingIntent, specialistType, bookingType } = detectBookingIntent(Body);
-    if (isBookingIntent && userContext.isKnownUser) {
+    if (isBookingIntent && userContext.isKnownUser && !AI_AUTO_REPLY_ENABLED) {
       logger.info('📅 Appointment booking intent detected via WhatsApp', {
         phoneNumber,
         specialistType,
@@ -1191,7 +1194,8 @@ n8nResult.success
 
     // 4. SERVICE REQUEST AUTO-TICKET
     // Detects cancellation / reschedule / report / consultation etc. and raises a ticket
-    if (!isBookingIntent && Body) {
+    // Skip when AI is enabled - let the AI handle these conversationally
+    if (!isBookingIntent && Body && !AI_AUTO_REPLY_ENABLED) {
       try {
         const serviceIntent = detectServiceIntent(Body);
         if (serviceIntent) {

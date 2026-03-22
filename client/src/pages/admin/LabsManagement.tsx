@@ -11,7 +11,7 @@ import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle } from '
 import { Label } from '@/components/ui/label';
 import {
   FlaskConical, Search, Eye, Download, MapPin, CheckCircle2, AlertCircle,
-  ChevronLeft, ChevronRight, BarChart3, Square, LayoutGrid, List,
+  ChevronLeft, ChevronRight, BarChart3, Square, LayoutGrid, List, Plus,
 } from 'lucide-react';
 import axios from 'axios';
 import { exportProviders } from '@/utils/exportToExcel';
@@ -69,6 +69,14 @@ const LabsManagement = () => {
   // Active tab
   const [activeTab, setActiveTab] = useState('list');
 
+  // Create lab
+  const [showCreateModal, setShowCreateModal] = useState(false);
+  const [creating, setCreating] = useState(false);
+  const [createForm, setCreateForm] = useState({
+    name: '', email: '', phone: '', type: '',
+    street: '', city: '', state: '', area: '', locality: '', pincode: '', website: '',
+  });
+
   const token = localStorage.getItem('adminToken');
 
   // Helper to format complete address
@@ -107,7 +115,8 @@ const LabsManagement = () => {
       if (selectedState) params.state = selectedState;
       if (selectedArea) params.area = selectedArea;
       
-      const { data } = await api.get(`/masterdata/labs`, { params });
+      const headers = token ? { Authorization: `Bearer ${token}` } : {};
+      const { data } = await api.get(`/admin/labs`, { params, headers });
       
       if (data.success) {
         setLabs(data.data);
@@ -211,6 +220,45 @@ const LabsManagement = () => {
     }
   };
 
+  const handleCreateLab = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!createForm.name) return;
+    try {
+      setCreating(true);
+      setError(null);
+      const headers = token ? { Authorization: `Bearer ${token}` } : {};
+      const { data } = await axios.post(`${API_BASE_URL}/admin/labs`, {
+        lab: {
+          name: createForm.name,
+          email: createForm.email,
+          phoneNumber: createForm.phone,
+          type: createForm.type || 'diagnostic_lab',
+          website: createForm.website,
+          address: {
+            street: createForm.street,
+            city: createForm.city,
+            state: createForm.state,
+            area: createForm.area,
+            locality: createForm.locality,
+            pincode: createForm.pincode,
+          },
+        },
+      }, { headers });
+      if (data?.success) {
+        setResult({ message: 'Lab created successfully' });
+        setShowCreateModal(false);
+        setCreateForm({ name: '', email: '', phone: '', type: '', street: '', city: '', state: '', area: '', locality: '', pincode: '', website: '' });
+        fetchLabs();
+      } else {
+        setError(data?.message || 'Failed to create lab');
+      }
+    } catch (err: any) {
+      setError(err?.response?.data?.message || 'Failed to create lab');
+    } finally {
+      setCreating(false);
+    }
+  };
+
   // Stats calculations
   const mappedLabs = labs.filter(l => l.pincode_mapped).length;
   const mappedPercent = labs.length > 0 ? ((mappedLabs / labs.length) * 100).toFixed(1) : '0';
@@ -228,6 +276,10 @@ const LabsManagement = () => {
             </h2>
             <p className="text-muted-foreground">Manage laboratory network and partnerships</p>
           </div>
+          <Button onClick={() => setShowCreateModal(true)}>
+            <Plus className="h-4 w-4 mr-2" />
+            Add New Lab
+          </Button>
         </div>
 
         {/* Stats Cards */}
@@ -659,6 +711,76 @@ const LabsManagement = () => {
           onClose={() => setShowDetailModal(false)}
           type="lab"
         />
+        {/* Create Lab Dialog */}
+        <Dialog open={showCreateModal} onOpenChange={setShowCreateModal}>
+          <DialogContent className="max-w-2xl">
+            <DialogHeader>
+              <DialogTitle>Add New Lab</DialogTitle>
+            </DialogHeader>
+            <form onSubmit={handleCreateLab} className="space-y-4">
+              <div className="grid md:grid-cols-2 gap-3">
+                <div className="md:col-span-2">
+                  <Label>Lab Name <span className="text-red-500">*</span></Label>
+                  <Input placeholder="e.g. City Diagnostics" value={createForm.name} onChange={(e) => setCreateForm({...createForm, name: e.target.value})} required />
+                </div>
+                <div>
+                  <Label>Email</Label>
+                  <Input type="email" placeholder="lab@example.com" value={createForm.email} onChange={(e) => setCreateForm({...createForm, email: e.target.value})} />
+                </div>
+                <div>
+                  <Label>Phone</Label>
+                  <Input placeholder="+91 9999999999" value={createForm.phone} onChange={(e) => setCreateForm({...createForm, phone: e.target.value})} />
+                </div>
+                <div>
+                  <Label>Type</Label>
+                  <Select value={createForm.type || 'diagnostic_lab'} onValueChange={(v) => setCreateForm({...createForm, type: v})}>
+                    <SelectTrigger><SelectValue placeholder="Lab type" /></SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="diagnostic_lab">Diagnostic Lab</SelectItem>
+                      <SelectItem value="pathology">Pathology</SelectItem>
+                      <SelectItem value="radiology">Radiology</SelectItem>
+                      <SelectItem value="clinical_lab">Clinical Lab</SelectItem>
+                      <SelectItem value="collection_center">Collection Centre</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
+                <div>
+                  <Label>Website</Label>
+                  <Input placeholder="https://" value={createForm.website} onChange={(e) => setCreateForm({...createForm, website: e.target.value})} />
+                </div>
+                <div className="md:col-span-2">
+                  <Label>Street Address</Label>
+                  <Input placeholder="Street / Building" value={createForm.street} onChange={(e) => setCreateForm({...createForm, street: e.target.value})} />
+                </div>
+                <div>
+                  <Label>City</Label>
+                  <Input placeholder="City" value={createForm.city} onChange={(e) => setCreateForm({...createForm, city: e.target.value})} />
+                </div>
+                <div>
+                  <Label>State</Label>
+                  <Input placeholder="State" value={createForm.state} onChange={(e) => setCreateForm({...createForm, state: e.target.value})} />
+                </div>
+                <div>
+                  <Label>Area</Label>
+                  <Input placeholder="Area" value={createForm.area} onChange={(e) => setCreateForm({...createForm, area: e.target.value})} />
+                </div>
+                <div>
+                  <Label>Locality</Label>
+                  <Input placeholder="Locality" value={createForm.locality} onChange={(e) => setCreateForm({...createForm, locality: e.target.value})} />
+                </div>
+                <div>
+                  <Label>Pincode</Label>
+                  <Input placeholder="400001" value={createForm.pincode} onChange={(e) => setCreateForm({...createForm, pincode: e.target.value})} />
+                </div>
+              </div>
+              <DialogFooter>
+                <Button variant="outline" type="button" onClick={() => setShowCreateModal(false)}>Cancel</Button>
+                <Button type="submit" disabled={creating}>{creating ? 'Creating...' : 'Create Lab'}</Button>
+              </DialogFooter>
+            </form>
+          </DialogContent>
+        </Dialog>
+
         <Dialog open={editModalOpen} onOpenChange={setEditModalOpen}>
           <DialogContent className="max-w-2xl">
             <DialogHeader>

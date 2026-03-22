@@ -1,4 +1,5 @@
-import HospDeptLayout, { DeptNavSection } from '@/components/hosp-dept/HospDeptLayout';
+import React from 'react';
+import HospDeptLayout from '@/components/hosp-dept/HospDeptLayout';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
@@ -6,72 +7,11 @@ import {
   Monitor, LayoutDashboard, TicketCheck, Server, Users as UsersIcon,
   Wifi, Shield, HardDrive, Package, BarChart3, Settings, HelpCircle,
   PlusCircle, AlertCircle, CheckCircle2, Clock, Activity,
-  Cpu, Database, Lock,
+  Cpu, Database, Lock, BadgeCheck, KeyRound, Loader2,
 } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
-
-const navSections: DeptNavSection[] = [
-  {
-    title: 'Overview',
-    items: [
-      { icon: LayoutDashboard, label: 'Dashboard',        href: '/it-edp/dashboard' },
-    ],
-  },
-  {
-    title: 'Support',
-    items: [
-      { icon: TicketCheck,   label: 'Help Desk Tickets',  href: '/it-edp/tickets' },
-      { icon: UsersIcon,     label: 'User Accounts',      href: '/it-edp/users' },
-      { icon: Package,       label: 'Asset Management',   href: '/it-edp/assets' },
-    ],
-  },
-  {
-    title: 'Infrastructure',
-    items: [
-      { icon: Server,        label: 'System Monitor',     href: '/it-edp/systems' },
-      { icon: Wifi,          label: 'Network Status',     href: '/it-edp/network' },
-      { icon: HardDrive,     label: 'Backup & Recovery',  href: '/it-edp/backup' },
-    ],
-  },
-  {
-    title: 'Security',
-    items: [
-      { icon: Shield,        label: 'Security Logs',      href: '/it-edp/security' },
-      { icon: Lock,          label: 'Access Control',     href: '/it-edp/access' },
-    ],
-  },
-  {
-    title: 'System',
-    items: [
-      { icon: BarChart3,     label: 'Reports',     href: '/it-edp/reports' },
-      { icon: Settings,      label: 'Settings',    href: '/it-edp/settings' },
-      { icon: HelpCircle,    label: 'Support',     href: '/it-edp/support' },
-    ],
-  },
-];
-
-const kpis = [
-  { label: 'System Uptime',    value: '99.8%',  sub: 'Last 30 days',       icon: Activity,   color: 'text-emerald-600' },
-  { label: 'Open Tickets',     value: '18',     sub: '5 high priority',    icon: TicketCheck, color: 'text-amber-600' },
-  { label: 'Resolved Today',   value: '12',     sub: 'Avg time: 2.4h',    icon: CheckCircle2, color: 'text-teal-600' },
-  { label: 'Active Users',     value: '347',    sub: 'Current sessions',   icon: UsersIcon,  color: 'text-blue-600' },
-];
-
-const openTickets = [
-  { id: 'IT-1204', user: 'Dr. Rajan',        dept: 'Cardiology',  issue: 'EMR not loading',         priority: 'High',   status: 'Open',       age: '4h' },
-  { id: 'IT-1203', user: 'Billing Team',      dept: 'Accounts',    issue: 'Printer offline — Ward 3', priority: 'Medium', status: 'In Progress',age: '6h' },
-  { id: 'IT-1202', user: 'Nurse Kaveri',      dept: 'ICU',         issue: 'Monitor sync issue',       priority: 'High',   status: 'Open',       age: '8h' },
-  { id: 'IT-1201', user: 'Reception',         dept: 'OPD',         issue: 'HIS login failure',        priority: 'High',   status: 'In Progress',age: '1d' },
-  { id: 'IT-1200', user: 'Lab Team',          dept: 'Pathology',   issue: 'LIS integration error',    priority: 'Medium', status: 'Open',       age: '1d' },
-];
-
-const systemStatus = [
-  { name: 'HIS / EMR Server',    status: 'Operational', uptime: '99.9%', cpu: 24, ram: 62 },
-  { name: 'Database Server',     status: 'Operational', uptime: '99.8%', cpu: 41, ram: 78 },
-  { name: 'PACS / Radiology',    status: 'Degraded',    uptime: '97.2%', cpu: 88, ram: 91 },
-  { name: 'Billing Application', status: 'Operational', uptime: '100%',  cpu: 15, ram: 45 },
-  { name: 'Network Firewall',    status: 'Operational', uptime: '100%',  cpu: 8,  ram: 32 },
-];
+import { itEdpNavSections } from './ITEDPModulePages';
+import { useITEDPPortalData } from './useITEDPPortalData';
 
 const priorityColor: Record<string, string> = {
   High:   'bg-red-100 text-red-700',
@@ -87,10 +27,21 @@ const ticketStatusColor: Record<string, string> = {
   Open:         'bg-red-100 text-red-700',
   'In Progress':'bg-amber-100 text-amber-700',
   Resolved:     'bg-emerald-100 text-emerald-700',
+  Escalated:    'bg-violet-100 text-violet-700',
 };
 
 const ITEDPDashboard = () => {
   const navigate = useNavigate();
+  const { data, loading, error, refresh } = useITEDPPortalData();
+  const kpis = data?.kpis ?? [];
+  const openTickets = data?.tickets ?? [];
+  const systemStatus = data?.systems ?? [];
+  const workQueues = data?.workQueues ?? [];
+  const heatmap = data?.serviceHeatmap ?? [];
+  const accessQueues = data?.access ?? [];
+  const backupQueue = data?.backups ?? [];
+  const securityQueue = data?.security ?? [];
+
   return (
     <HospDeptLayout
       deptKey="it-edp"
@@ -98,10 +49,22 @@ const ITEDPDashboard = () => {
       badgeLabel="IT / EDP"
       loginPath="/it-edp/login"
       DeptIcon={Monitor}
-      navSections={navSections}
+      navSections={itEdpNavSections}
       title="IT / EDP Dashboard"
-      subtitle="Systems, helpdesk & infrastructure"
+      subtitle="Hospital digital operations, clinical systems, service desk, and resilience command"
     >
+      {(loading || error) && (
+        <Card className="mb-6 border-dashed">
+          <CardContent className="flex items-center justify-between gap-3 p-4 text-sm">
+            <div className="flex items-center gap-2 text-muted-foreground">
+              {loading ? <Loader2 className="h-4 w-4 animate-spin" /> : <AlertCircle className="h-4 w-4 text-amber-600" />}
+              <span>{loading ? 'Loading live IT/EDP operations data...' : error}</span>
+            </div>
+            {!loading && <Button variant="outline" size="sm" onClick={refresh}>Retry</Button>}
+          </CardContent>
+        </Card>
+      )}
+
       {/* KPI Cards */}
       <div className="grid grid-cols-2 xl:grid-cols-4 gap-5 mb-6">
         {kpis.map((k) => (
@@ -114,7 +77,10 @@ const ITEDPDashboard = () => {
                   <p className="text-xs text-muted-foreground mt-1">{k.sub}</p>
                 </div>
                 <div className="p-2.5 rounded-xl bg-slate-50 dark:bg-slate-800">
-                  <k.icon className={`h-5 w-5 ${k.color}`} />
+                  {React.createElement(
+                    [Activity, TicketCheck, CheckCircle2, Package][kpis.indexOf(k)] ?? Activity,
+                    { className: `h-5 w-5 ${['text-emerald-600', 'text-amber-600', 'text-teal-600', 'text-blue-600'][kpis.indexOf(k)] ?? 'text-teal-600'}` }
+                  )}
                 </div>
               </div>
             </CardContent>
@@ -149,8 +115,8 @@ const ITEDPDashboard = () => {
                     <tr key={t.id} className="hover:bg-slate-50 dark:hover:bg-slate-800/50 cursor-pointer"
                         onClick={() => navigate('/it-edp/tickets')}>
                       <td className="py-2.5 font-medium text-teal-700">{t.id}</td>
-                      <td className="py-2.5">{t.issue}<br/><span className="text-xs text-muted-foreground">{t.user} · {t.age}</span></td>
-                      <td className="py-2.5 text-muted-foreground hidden md:table-cell">{t.dept}</td>
+                      <td className="py-2.5">{t.title}<br/><span className="text-xs text-muted-foreground">{t.owner} · {t.aging}</span></td>
+                      <td className="py-2.5 text-muted-foreground hidden md:table-cell">{t.department}</td>
                       <td className="py-2.5 text-center">
                         <Badge className={`${priorityColor[t.priority]} border-0 text-xs`}>{t.priority}</Badge>
                       </td>
@@ -187,12 +153,12 @@ const ITEDPDashboard = () => {
                     </div>
                   </div>
                   <div className="flex gap-3 text-xs text-muted-foreground">
-                    <span className="flex items-center gap-1"><Cpu className="h-3 w-3" />CPU: {s.cpu}%</span>
-                    <span className="flex items-center gap-1"><Database className="h-3 w-3" />RAM: {s.ram}%</span>
+                    <span className="flex items-center gap-1"><Cpu className="h-3 w-3" />CPU: {s.cpu}</span>
+                    <span className="flex items-center gap-1"><Database className="h-3 w-3" />RAM: {s.memory}</span>
                     <div className="flex-1 flex items-center gap-1">
                       <div className="h-1.5 flex-1 bg-slate-100 rounded-full overflow-hidden">
-                        <div className={`h-full rounded-full ${s.ram > 85 ? 'bg-red-500' : s.ram > 70 ? 'bg-amber-500' : 'bg-emerald-500'}`}
-                             style={{ width: `${s.ram}%` }} />
+                        <div className={`h-full rounded-full ${Number.parseInt(s.memory, 10) > 85 ? 'bg-red-500' : Number.parseInt(s.memory, 10) > 70 ? 'bg-amber-500' : 'bg-emerald-500'}`}
+                             style={{ width: s.memory }} />
                       </div>
                     </div>
                   </div>
@@ -226,19 +192,13 @@ const ITEDPDashboard = () => {
 
           <Card>
             <CardHeader className="pb-3"><CardTitle className="text-base flex items-center gap-2">
-              <Clock className="h-4 w-4 text-teal-500" /> Ticket Summary
+              <Clock className="h-4 w-4 text-teal-500" /> Command Queues
             </CardTitle></CardHeader>
             <CardContent className="space-y-2 text-sm">
-              {[
-                { label: 'Open',            value: '18', color: 'text-red-600' },
-                { label: 'In Progress',     value: '7',  color: 'text-amber-600' },
-                { label: 'Resolved Today',  value: '12', color: 'text-emerald-600' },
-                { label: 'Avg Resolution',  value: '2.4h', color: 'text-teal-600' },
-                { label: 'SLA Breach',      value: '2',  color: 'text-red-600' },
-              ].map((s) => (
+              {workQueues.map((s) => (
                 <div key={s.label} className="flex justify-between">
                   <span className="text-muted-foreground">{s.label}</span>
-                  <span className={`font-bold ${s.color}`}>{s.value}</span>
+                  <span className={`font-bold ${s.tone}`}>{s.value}</span>
                 </div>
               ))}
             </CardContent>
@@ -246,19 +206,27 @@ const ITEDPDashboard = () => {
 
           <Card>
             <CardHeader className="pb-3"><CardTitle className="text-base flex items-center gap-2">
-              <AlertCircle className="h-4 w-4 text-amber-500" /> Alerts
+              <AlertCircle className="h-4 w-4 text-amber-500" /> Service Watchlist
             </CardTitle></CardHeader>
             <CardContent className="space-y-2 text-sm">
-              {[
-                { text: 'PACS CPU at 88% — needs attention', urgent: true },
-                { text: 'Backup failed last night — DR-03',  urgent: true },
-                { text: '3 SSL certs expire in 14 days',     urgent: false },
-                { text: 'Windows update pending: 12 systems',urgent: false },
-              ].map((a, i) => (
+              {[...backupQueue.slice(0, 2).map((row) => ({ text: `${row.workload}: ${row.result}`, urgent: row.result !== 'Successful' })), ...securityQueue.slice(0, 2).map((row) => ({ text: `${row.control}: ${row.note}`, urgent: row.state !== 'Healthy' }))].map((a, i) => (
                 <div key={i} className={`text-xs font-medium p-2 rounded-lg ${a.urgent ? 'bg-red-50 text-red-700' : 'bg-amber-50 text-amber-700'}`}>
                   {a.text}
                 </div>
               ))}
+            </CardContent>
+          </Card>
+
+          <Card>
+            <CardHeader className="pb-3"><CardTitle className="text-base flex items-center gap-2"><KeyRound className="h-4 w-4 text-blue-500" /> Service Heatmap</CardTitle></CardHeader>
+            <CardContent className="space-y-2">
+              {heatmap.map(([zone, state]) => (
+                <div key={zone} className="flex items-center justify-between rounded-lg bg-slate-50 px-3 py-2 text-sm dark:bg-slate-800/60">
+                  <span>{zone}</span>
+                  <Badge className={`${statusColor2[state] ?? 'bg-slate-100 text-slate-700'} border-0 text-xs`}>{state}</Badge>
+                </div>
+              ))}
+              <div className="pt-1 text-xs text-muted-foreground">Access queue: {accessQueues.length} workflows pending governance review.</div>
             </CardContent>
           </Card>
         </div>

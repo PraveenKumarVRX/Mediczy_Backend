@@ -540,7 +540,7 @@ Configuration Details:
   // Send outbound email from team member
   async sendOutboundEmail(emailConfigId, emailData, smtpConfig) {
     try {
-      const { to, cc, bcc, subject, htmlContent, textContent } = emailData;
+      const { to, cc, bcc, subject, htmlContent, textContent, attachments } = emailData;
 
       if (!to || !subject) {
         throw new Error('Recipient email and subject are required');
@@ -570,6 +570,7 @@ Configuration Details:
         subject,
         html: htmlContent || textContent,
         text: textContent || undefined,
+        attachments: attachments?.length ? attachments : undefined,
         headers: {
           'X-Mediqzy-System': 'true',
           'X-Sender-Type': 'team-member'

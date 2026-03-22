@@ -79,7 +79,22 @@ const verifyHospitalToken = (req, res, next) => {
     const role = decoded.role || decoded.userType;
 
     // Support both old system (role: hospital) and new multitenancy (role: hospital_admin, etc.)
-    const validRoles = ['hospital', 'hospital_admin', 'doctor', 'staff', 'nurse'];
+    const validRoles = [
+      'hospital',
+      'hospital_admin',
+      'doctor',
+      'staff',
+      'nurse',
+      'accounts_staff',
+      'mrd_staff',
+      'insurance_desk_staff',
+      'hr_staff',
+      'it_edp_staff',
+      'ot_staff',
+      'icu_staff',
+      'quality_staff',
+      'security_staff'
+    ];
     if (!validRoles.includes(role)) {
       return res.status(403).json({ success: false, message: 'Hospital role required' });
     }
@@ -110,6 +125,239 @@ const getPractice = (state, hospitalId, hospitalName) => {
   }
   return state.tenants[hospitalId];
 };
+
+const formatUserName = (user) => {
+  if (!user) return 'Unknown Patient';
+  const parts = [user.firstName, user.lastName].filter(Boolean);
+  return parts.length ? parts.join(' ') : user.email || `User ${user.id}`;
+};
+
+const mapSeverity = (vital) => {
+  if (!vital) return 'Stable';
+
+  const systolic = vital.systolic ?? null;
+  const heartRate = vital.heartRate ?? null;
+  const respiratoryRate = vital.respiratoryRate ?? null;
+  const oxygenSaturation = vital.oxygenSaturation ?? null;
+  const temperature = vital.temperature ?? null;
+
+  if (
+    (oxygenSaturation !== null && Number(oxygenSaturation) < 92) ||
+    (systolic !== null && Number(systolic) < 90) ||
+    (heartRate !== null && Number(heartRate) >= 120)
+  ) {
+    return 'Critical';
+  }
+
+  if (
+    (oxygenSaturation !== null && Number(oxygenSaturation) < 95) ||
+    (respiratoryRate !== null && Number(respiratoryRate) >= 24) ||
+    (temperature !== null && Number(temperature) >= 38)
+  ) {
+    return 'Improving';
+  }
+
+  return 'Stable';
+};
+
+router.get('/icu/portal-data', verifyHospitalToken, async (req, res) => {
+  try {
+    const organizationId = req.hospitalId;
+    if (!organizationId) {
+      return res.status(400).json({ success: false, message: 'Organization ID required' });
+    }
+
+    const allBeds = await Bed.findAll({
+      where: { organizationId },
+      order: [['ward', 'ASC'], ['bedNumber', 'ASC']]
+    });
+
+    const scopedBeds = allBeds.filter((bed) => {
+      const ward = String(bed.ward || '').toLowerCase();
+      const bedType = String(bed.bedType || '').toLowerCase();
+      return ward.includes('icu') || bedType.includes('icu');
+    });
+
+    const activeBeds = scopedBeds.length ? scopedBeds : allBeds;
+
+    const vitals = await VitalSign.findAll({
+      where: { organizationId },
+      order: [['recordedAt', 'DESC']]
+    });
+
+    const latestVitalsByPatient = new Map();
+    vitals.forEach((vital) => {
+      if (!latestVitalsByPatient.has(vital.patientId)) {
+        latestVitalsByPatient.set(vital.patientId, vital);
+      }
+    });
+
+    const patientIds = Array.from(new Set(activeBeds.map((bed) => bed.patientId).filter(Boolean)));
+    const records = patientIds.length
+      ? await MedicalRecord.findAll({
+          where: {
+            organizationId,
+            patientId: { [Op.in]: patientIds }
+          },
+          order: [['createdAt', 'DESC']]
+        })
+      : [];
+
+    const latestRecordByPatient = new Map();
+    records.forEach((record) => {
+      if (!latestRecordByPatient.has(record.patientId)) {
+        latestRecordByPatient.set(record.patientId, record);
+      }
+    });
+
+    const doctorIds = Array.from(new Set(records.map((record) => record.doctorId).filter(Boolean)));
+    const userIds = Array.from(new Set([...patientIds, ...doctorIds]));
+    const users = userIds.length
+      ? await sequelize.query(
+          'SELECT id, "firstName", "lastName", email, "phoneNumber" FROM users WHERE id IN (:userIds)',
+          {
+            replacements: { userIds },
+            type: QueryTypes.SELECT
+          }
+        )
+      : [];
+
+    const userMap = new Map(users.map((user) => [user.id, user]));
+
+    const patients = activeBeds
+      .filter((bed) => bed.patientId)
+      .map((bed) => {
+        const patientUser = userMap.get(bed.patientId);
+        const latestVital = latestVitalsByPatient.get(bed.patientId) || null;
+        const latestRecord = latestRecordByPatient.get(bed.patientId) || null;
+        const doctorUser = latestRecord?.doctorId ? userMap.get(latestRecord.doctorId) : null;
+        const systolic = latestVital?.systolic ?? null;
+        const diastolic = latestVital?.diastolic ?? null;
+        const map = systolic !== null && diastolic !== null
+          ? Math.round((Number(systolic) + 2 * Number(diastolic)) / 3)
+          : null;
+        const risk = mapSeverity(latestVital);
+
+        return {
+          patientId: bed.patientId,
+          bedId: bed.id,
+          bed: bed.bedNumber,
+          zone: bed.ward || 'ICU',
+          type: bed.bedType || 'ICU',
+          nurseRatio: risk === 'Critical' ? '1:1' : '1:2',
+          turnaround: String(bed.status || '').toLowerCase() === 'available' ? 'Ready' : 'In use',
+          patient: formatUserName(patientUser),
+          age: null,
+          diagnosis: latestRecord?.diagnosis || 'Diagnosis pending',
+          consultant: formatUserName(doctorUser).replace('Unknown Patient', 'Assigned clinician'),
+          vent: bed.bedType || 'Not charted',
+          status: risk,
+          score: latestRecord?.recordType || 'Review pending',
+          hrs: bed.assignedAt ? Math.max(1, Math.round((Date.now() - new Date(bed.assignedAt).getTime()) / 3600000)) : 0,
+          latestVitals: latestVital
+            ? {
+                hr: latestVital.heartRate ?? null,
+                spo2: latestVital.oxygenSaturation ?? null,
+                systolic,
+                diastolic,
+                map,
+                rr: latestVital.respiratoryRate ?? null,
+                temp: latestVital.temperature ?? null,
+                recordedAt: latestVital.recordedAt
+              }
+            : null
+        };
+      });
+
+    const alerts = patients.flatMap((patient) => {
+      const vital = patient.latestVitals;
+      if (!vital) return [];
+
+      const nextAlerts = [];
+      if (vital.hr !== null && Number(vital.hr) >= 120) {
+        nextAlerts.push({ source: patient.bed, alert: `Heart rate elevated at ${vital.hr} bpm`, severity: 'Critical' });
+      }
+      if (vital.spo2 !== null && Number(vital.spo2) < 92) {
+        nextAlerts.push({ source: patient.bed, alert: `SpO2 dropped to ${vital.spo2}%`, severity: 'Critical' });
+      }
+      if (vital.map !== null && Number(vital.map) < 65) {
+        nextAlerts.push({ source: patient.bed, alert: `MAP below target at ${vital.map}`, severity: 'High' });
+      }
+      if (vital.temp !== null && Number(vital.temp) >= 38) {
+        nextAlerts.push({ source: patient.bed, alert: `Temperature elevated at ${vital.temp} C`, severity: 'High' });
+      }
+
+      return nextAlerts.map((entry) => ({
+        ...entry,
+        owner: patient.consultant,
+        time: patient.latestVitals?.recordedAt || null
+      }));
+    }).slice(0, 10);
+
+    const vitalsRows = patients
+      .filter((patient) => patient.latestVitals)
+      .map((patient) => ({
+        patient: patient.patient,
+        bed: patient.bed,
+        hr: patient.latestVitals.hr,
+        spo2: patient.latestVitals.spo2,
+        map: patient.latestVitals.map,
+        rr: patient.latestVitals.rr,
+        temp: patient.latestVitals.temp,
+        status: patient.status,
+        recordedAt: patient.latestVitals.recordedAt
+      }));
+
+    return res.json({
+      success: true,
+      data: {
+        summary: {
+          totalBeds: activeBeds.length,
+          occupiedBeds: activeBeds.filter((bed) => String(bed.status || '').toLowerCase() === 'occupied').length,
+          availableBeds: activeBeds.filter((bed) => String(bed.status || '').toLowerCase() === 'available').length,
+          reservedBeds: activeBeds.filter((bed) => String(bed.status || '').toLowerCase() === 'reserved').length,
+          monitoredBeds: patients.length,
+          criticalPatients: patients.filter((patient) => patient.status === 'Critical').length,
+          stablePatients: patients.filter((patient) => patient.status !== 'Critical').length,
+          openAlerts: alerts.length
+        },
+        patients,
+        livePatients: patients.slice(0, 6).map((patient) => ({
+          bed: patient.bed,
+          patient: patient.patient,
+          mode: patient.vent,
+          infusions: patient.diagnosis,
+          hr: patient.latestVitals?.hr ?? 0,
+          spo2: patient.latestVitals?.spo2 ?? 0,
+          map: patient.latestVitals?.map ?? 0,
+          rr: patient.latestVitals?.rr ?? 0,
+          temp: patient.latestVitals?.temp ?? 0,
+          score: patient.score,
+          risk: patient.status
+        })),
+        beds: activeBeds.map((bed) => {
+          const patient = patients.find((row) => row.bedId === bed.id);
+          return {
+            bed: bed.bedNumber,
+            zone: bed.ward || 'ICU',
+            type: bed.bedType || 'ICU',
+            nurseRatio: patient?.nurseRatio || '1:2',
+            status: String(bed.status || 'available').replace(/^./, (value) => value.toUpperCase()),
+            turnaround: patient ? `${patient.hrs}h occupied` : 'Ready',
+            patient: patient?.patient || null,
+            diagnosis: patient?.diagnosis || null
+          };
+        }),
+        vitals: vitalsRows,
+        alerts,
+        updatedAt: new Date().toISOString()
+      }
+    });
+  } catch (error) {
+    console.error('Error fetching ICU portal data:', error);
+    return res.status(500).json({ success: false, message: 'Failed to fetch ICU portal data', error: error.message });
+  }
+});
 
 router.get('/', verifyHospitalToken, async (req, res) => {
   const state = await readState();

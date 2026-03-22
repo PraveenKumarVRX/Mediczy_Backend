@@ -12,6 +12,7 @@ import {
   FlaskConical, RefreshCw, LayoutDashboard,
   Wifi, Thermometer, Wind, Gauge, Signal, LayoutGrid,
 } from 'lucide-react';
+import type { LucideIcon } from 'lucide-react';
 
 // ─── Shared nav (imported by OTDashboard) ─────────────────────────────────────
 export const otNavSections: DeptNavSection[] = [
@@ -79,7 +80,7 @@ const Wrap = ({ title, subtitle, children, actions }: {
 );
 
 const KPI = ({ label, value, sub, icon: Icon, color }: {
-  label: string; value: string; sub: string; icon: React.ElementType; color: string;
+  label: string; value: string; sub: string; icon: LucideIcon; color: string;
 }) => (
   <Card className="hover:shadow-md transition-shadow">
     <CardContent className="p-5">
@@ -90,7 +91,7 @@ const KPI = ({ label, value, sub, icon: Icon, color }: {
           <p className="text-xs text-muted-foreground mt-1">{sub}</p>
         </div>
         <div className="p-2.5 rounded-xl bg-slate-50 dark:bg-slate-800">
-          <Icon className={`h-5 w-5 ${color}`} />
+          {React.createElement(Icon, { className: `h-5 w-5 ${color}` })}
         </div>
       </div>
     </CardContent>

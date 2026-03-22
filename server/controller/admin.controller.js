@@ -357,15 +357,83 @@ export const bulkUploadCorporates = async (req, res) => {
 
 
 export const listLabs = async (req, res) => {
-  // TODO: Migrate Lab model to PostgreSQL
-  return res.status(503).json({ 
-    success: false, 
-    message: 'Lab management temporarily unavailable during database migration',
-    total: 0,
-    data: [],
-    page: 1,
-    limit: 20
-  });
+  try {
+    const { page = 1, limit = 20, search = '', city = '', state = '', area = '' } = req.query;
+    const offset = (parseInt(page) - 1) * parseInt(limit);
+
+    const conditions = [];
+    const replacements = {};
+
+    if (search) {
+      conditions.push(`(LOWER(name) LIKE :search OR LOWER(address->>'city') LIKE :search OR LOWER(address->>'area') LIKE :search)`);
+      replacements.search = `%${search.toLowerCase()}%`;
+    }
+    if (city) {
+      conditions.push(`LOWER(address->>'city') LIKE :city`);
+      replacements.city = `%${city.toLowerCase()}%`;
+    }
+    if (state) {
+      conditions.push(`LOWER(address->>'state') LIKE :state`);
+      replacements.state = `%${state.toLowerCase()}%`;
+    }
+    if (area) {
+      conditions.push(`LOWER(address->>'area') LIKE :area`);
+      replacements.area = `%${area.toLowerCase()}%`;
+    }
+
+    const where = conditions.length ? `WHERE ${conditions.join(' AND ')}` : '';
+
+    const [countRows] = await sequelize.query(
+      `SELECT COUNT(*) AS cnt FROM labs ${where}`,
+      { replacements, type: sequelize.QueryTypes.SELECT }
+    );
+    const total = parseInt(countRows.cnt || 0, 10);
+
+    const rows = await sequelize.query(
+      `SELECT id, name, email, "phoneNumber" AS phone, address, status, "isVerified",
+              accreditation, rating, "createdAt"
+       FROM labs ${where}
+       ORDER BY name ASC
+       LIMIT :limit OFFSET :offset`,
+      { replacements: { ...replacements, limit: parseInt(limit), offset }, type: sequelize.QueryTypes.SELECT }
+    );
+
+    const data = rows.map(l => {
+      const addr = typeof l.address === 'string' ? JSON.parse(l.address) : (l.address || {});
+      return {
+        id: l.id,
+        name: l.name,
+        email: l.email,
+        phone: l.phone,
+        address: addr.street || addr.address || null,
+        area: addr.area || null,
+        locality: addr.locality || null,
+        city: addr.city || null,
+        state: addr.state || null,
+        pincode: addr.pincode || null,
+        pincode_mapped: !!(addr.pincode),
+        status: l.status,
+        isVerified: l.isVerified,
+        accreditation: l.accreditation,
+        rating: l.rating,
+        coordinates: addr.coordinates || null,
+      };
+    });
+
+    return res.json({
+      success: true,
+      data,
+      pagination: {
+        total,
+        page: parseInt(page),
+        limit: parseInt(limit),
+        pages: Math.ceil(total / parseInt(limit)),
+      },
+    });
+  } catch (err) {
+    console.error('listLabs error:', err);
+    return res.status(500).json({ success: false, message: 'Failed to fetch labs', error: err.message });
+  }
 };
 
 export const listPharmacies = async (req, res) => {

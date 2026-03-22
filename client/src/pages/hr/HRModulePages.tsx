@@ -12,6 +12,7 @@ import {
   Building2, Phone, Mail, MapPin, CheckCircle2, AlertCircle,
   XCircle, MoreHorizontal, Edit, Eye, CalendarCheck,
 } from 'lucide-react';
+import type { LucideIcon } from 'lucide-react';
 
 // ─── Shared Nav (exported for Dashboard) ───────────────────────────────────
 export const hrNavSections: DeptNavSection[] = [
@@ -73,7 +74,7 @@ const Wrap = ({ title, subtitle, children }: { title: string; subtitle: string; 
 );
 
 const KPI = ({ label, value, sub, color = 'text-teal-600', icon: Icon }:
-  { label: string; value: string; sub: string; color?: string; icon: React.ElementType }) => (
+  { label: string; value: string; sub: string; color?: string; icon: LucideIcon }) => (
   <Card className="hover:shadow-md transition-shadow">
     <CardContent className="p-5">
       <div className="flex items-start justify-between">

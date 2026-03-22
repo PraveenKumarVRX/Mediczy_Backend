@@ -1,8 +1,14 @@
 import express from 'express';
+import multer from 'multer';
 import { authUser, requireRole } from '../middleware/auth.middleware.js';
 import inboundEmailService from '../services/inboundEmailService.js';
 import emailService from '../services/emailService.js';
 import { Op } from 'sequelize';
+
+const attachUpload = multer({
+  storage: multer.memoryStorage(),
+  limits: { fileSize: 10 * 1024 * 1024, files: 10 },
+});
 import EmailInbox from '../models/emailInbox.model.js';
 import EmailSettings from '../models/emailSettings.model.js';
 import TeamMember from '../models/postgres/team-member.model.postgres.js';
@@ -282,11 +288,16 @@ router.get('/priority/:level', authUser, async (req, res) => {
  * POST /api/team/emails/send
  * Send email using user's configured SMTP settings
  */
-router.post('/send', authUser, async (req, res) => {
+router.post('/send', authUser, attachUpload.array('attachments', 10), async (req, res) => {
   try {
     const { to, cc, bcc, subject, htmlContent, textContent } = req.body;
     const authUserId = req.user.id;
     const teamMemberId = await resolveTeamMemberId(req.user);
+    const emailAttachments = (req.files || []).map(f => ({
+      filename: f.originalname,
+      content: f.buffer,
+      contentType: f.mimetype,
+    }));
 
     // Validate input
     if (!to || !subject || (!htmlContent && !textContent)) {
@@ -338,7 +349,8 @@ router.post('/send', authUser, async (req, res) => {
       bcc,
       subject,
       htmlContent,
-      textContent
+      textContent,
+      attachments: emailAttachments,
     }, {
       host: emailSettings.smtpHost,
       port: emailSettings.smtpPort,

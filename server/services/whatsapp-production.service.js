@@ -44,7 +44,7 @@ class WhatsAppProductionService {
   /**
    * Send appointment confirmation
    */
-  async sendAppointmentConfirmation({ to, patientName, doctorName, date, time, location }) {
+  async sendAppointmentConfirmation({ to, patientName, doctorName, date, time, location, isHealthCheckup = false }) {
     if (!this.twilioConfigured) {
       throw new Error('Twilio WhatsApp is not configured');
     }
@@ -60,7 +60,8 @@ class WhatsAppProductionService {
         '1': patientName, '2': doctorName, '3': date, '4': time, '5': location
       });
     } else {
-      messageParams.body = `*Appointment Confirmation* ✅\n\nDear ${patientName},\n\nYour appointment has been confirmed!\n\n👨‍⚕️ ${doctorName}\n📍 ${location}\n📅 Date: ${date}\n🕐 Time: ${time}\n\nPlease arrive 15 minutes early. For rescheduling or queries, contact us via this chat.\n\n_SmartHealth_`;
+      const doctorLine = (!isHealthCheckup && doctorName) ? `\n👨‍⚕️ ${doctorName}` : '';
+      messageParams.body = `*Appointment Confirmation* ✅\n\nDear ${patientName},\n\nYour appointment has been confirmed!${doctorLine}\n📍 ${location}\n📅 Date: ${date}\n🕐 Time: ${time}\n\nPlease arrive 15 minutes early. For rescheduling or queries, contact us via this chat.\n\n_Team SmartHealth_`;
     }
 
     return await this.client.messages.create(messageParams);

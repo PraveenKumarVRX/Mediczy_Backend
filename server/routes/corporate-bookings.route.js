@@ -518,10 +518,10 @@ router.post('/health-checkup', authUser, requireTeamOrAdmin, async (req, res) =>
         whatsappResult = await whatsappProductionService.sendAppointmentConfirmation({
           to: phoneE164,
           patientName: employeeFullName,
-          doctorName: `${labName} (Health Checkup)`,
           date: displayDate,
-          time: checkupTime || 'As scheduled',
-          location: labAddress || labName
+          time: checkupTime || '8:00 AM',
+          location: labAddress || labName,
+          isHealthCheckup: true
         });
         console.log(`✅ [corporate-bookings] WhatsApp sent to ${phoneE164}`);
       } catch (waErr) {
@@ -655,13 +655,13 @@ router.post(
   '/reports/upload',
   authUser,
   requireTeamOrAdmin,
-  reportUpload.single('report'),
+  reportUpload.array('reports', 10),        // up to 10 files per request
   async (req, res) => {
     const {
       employeeId,
       reportName,
       reportType = 'annual_health_checkup',
-      reportDate,         // 'YYYY-MM-DD'
+      reportDate,
       labOrderId,
       notes = '',
       corporateId,
@@ -670,8 +670,9 @@ router.post(
       sendWhatsapp = 'true'
     } = req.body;
 
-    if (!req.file) {
-      return res.status(400).json({ success: false, message: 'Report file is required' });
+    const files = req.files;
+    if (!files || files.length === 0) {
+      return res.status(400).json({ success: false, message: 'At least one report file is required' });
     }
     if (!employeeId || !reportName || !reportDate) {
       return res.status(400).json({ success: false, message: 'employeeId, reportName and reportDate are required' });
@@ -689,111 +690,128 @@ router.post(
       );
       if (!employee) return res.status(404).json({ success: false, message: 'Employee not found' });
 
-      // ── 2. Upload to MinIO with AV scan ─────────────────────
-      const { url: reportUrl, key: s3Key } = await uploadToMinio({
-        buffer: req.file.buffer,
-        originalName: req.file.originalname,
-        mimeType: req.file.mimetype,
-        keyPrefix: `health-reports/corp-${corporateId}/emp-${employeeId}`,
-      });
-
-      // ── 3. Insert into corporate_health_reports ────────────
-      const [dbRow] = await postgresSequelize.query(
-        `INSERT INTO corporate_health_reports
-           (corporate_id, employee_id, lab_order_id, report_name, report_type, report_date,
-            s3_key, report_url, file_size_bytes, mime_type, notes, uploaded_by, created_at, updated_at)
-         VALUES
-           (:corporateId, :employeeId, :labOrderId, :reportName, :reportType, :reportDate,
-            :s3Key, :reportUrl, :fileSize, :mimeType, :notes, :uploadedBy, NOW(), NOW())
-         RETURNING id`,
-        {
-          replacements: {
-            corporateId: parseInt(corporateId),
-            employeeId: parseInt(employeeId),
-            labOrderId: labOrderId ? parseInt(labOrderId) : null,
-            reportName,
-            reportType,
-            reportDate,
-            s3Key,
-            reportUrl,
-            fileSize: req.file.size,
-            mimeType: req.file.mimetype,
-            notes,
-            uploadedBy: req.user.id
-          },
-          type: postgresSequelize.QueryTypes.INSERT
-        }
-      );
-      const reportId = dbRow?.[0]?.id || dbRow?.id;
-
       const employeeFullName = `${employee.firstName} ${employee.lastName}`.trim();
       const displayDate = new Date(reportDate).toLocaleDateString('en-IN', {
         day: 'numeric', month: 'long', year: 'numeric'
       });
       const reportLabel = REPORT_TYPE_LABELS[reportType] || reportType;
 
-      // ── 4. Send Email ──────────────────────────────────────
+      // ── 2. Upload each file to MinIO and insert DB row ─────
+      const uploadedReports = [];
+      for (let i = 0; i < files.length; i++) {
+        const file = files[i];
+        // Use filename-based name when multiple files are uploaded
+        const fileBaseName = file.originalname.replace(/\.[^.]+$/, '').replace(/[_-]+/g, ' ');
+        const perFileReportName = files.length === 1
+          ? reportName
+          : `${reportName} — ${fileBaseName}`;
+
+        const { url: reportUrl, key: s3Key } = await uploadToMinio({
+          buffer: file.buffer,
+          originalName: file.originalname,
+          mimeType: file.mimetype,
+          keyPrefix: `health-reports/corp-${corporateId}/emp-${employeeId}`,
+        });
+
+        const [dbRow] = await postgresSequelize.query(
+          `INSERT INTO corporate_health_reports
+             (corporate_id, employee_id, lab_order_id, report_name, report_type, report_date,
+              s3_key, report_url, file_size_bytes, mime_type, notes, uploaded_by, created_at, updated_at)
+           VALUES
+             (:corporateId, :employeeId, :labOrderId, :reportName, :reportType, :reportDate,
+              :s3Key, :reportUrl, :fileSize, :mimeType, :notes, :uploadedBy, NOW(), NOW())
+           RETURNING id`,
+          {
+            replacements: {
+              corporateId: parseInt(corporateId),
+              employeeId: parseInt(employeeId),
+              labOrderId: labOrderId ? parseInt(labOrderId) : null,
+              reportName: perFileReportName,
+              reportType,
+              reportDate,
+              s3Key,
+              reportUrl,
+              fileSize: file.size,
+              mimeType: file.mimetype,
+              notes,
+              uploadedBy: req.user.id
+            },
+            type: postgresSequelize.QueryTypes.INSERT
+          }
+        );
+        const reportId = dbRow?.[0]?.id || dbRow?.id;
+        uploadedReports.push({ id: reportId, reportName: perFileReportName, reportUrl, mimeType: file.mimetype });
+      }
+
+      // ── 3. Send one consolidated Email ────────────────────
       let emailStatus = 'skipped';
       if (sendEmail !== 'false') {
         if (isPlaceholderEmail(employee.email)) {
-          console.log(`ℹ️ [corp-reports] Email skipped — placeholder address: ${employee.email}`);
           emailStatus = 'skipped_placeholder';
         } else {
-        try {
-          const html = buildReportEmailHtml({
-            employeeName: employeeFullName,
-            corporateName,
-            reportName,
-            reportLabel,
-            reportDate: displayDate,
-            reportUrl,
-            notes,
-            mimeType: req.file.mimetype
-          });
-          await sendCorporateEmail(req.user.id, {
-            to: employee.email,
-            subject: `Your ${reportLabel} Report is Ready — ${corporateName}`,
-            html: html
-          });
-          emailStatus = 'sent';
-          // Mark notified
-          await postgresSequelize.query(
-            `UPDATE corporate_health_reports SET notified_email=TRUE, notified_at=NOW() WHERE id=:id`,
-            { replacements: { id: reportId }, type: postgresSequelize.QueryTypes.UPDATE }
-          );
-          console.log(`✅ [corp-reports] Email sent to ${employee.email}`);
-        } catch (e) {
-          console.error('[corp-reports] Email failed:', e.message);
-          emailStatus = 'failed';
-        }
+          try {
+            const subject = uploadedReports.length === 1
+              ? `Your ${reportLabel} Report is Ready — ${corporateName}`
+              : `Your ${uploadedReports.length} Health Reports are Ready — ${corporateName}`;
+            const html = buildReportEmailHtml({
+              employeeName: employeeFullName,
+              corporateName,
+              reportLabel,
+              reportDate: displayDate,
+              notes,
+              reports: uploadedReports
+            });
+            await sendCorporateEmail(req.user.id, { to: employee.email, subject, html });
+            emailStatus = 'sent';
+            const ids = uploadedReports.map(r => r.id);
+            await postgresSequelize.query(
+              `UPDATE corporate_health_reports SET notified_email=TRUE, notified_at=NOW() WHERE id = ANY(:ids)`,
+              { replacements: { ids }, type: postgresSequelize.QueryTypes.UPDATE }
+            );
+          } catch (e) {
+            console.error('[corp-reports] Email failed:', e.message);
+            emailStatus = 'failed';
+          }
         }
       }
 
-      // ── 5. Send WhatsApp ───────────────────────────────────
+      // ── 4. Send one consolidated WhatsApp ─────────────────
       let waStatus = 'skipped';
       if (sendWhatsapp !== 'false') {
         const rawPhone = (employee.phoneNumber || '').replace(/\D/g, '');
         const phoneE164 = rawPhone.startsWith('91') ? `+${rawPhone}` : `+91${rawPhone}`;
         if (rawPhone.length >= 10) {
           try {
-            const waText =
-              `📋 *Health Report Ready*\n\n` +
-              `Dear ${employeeFullName},\n\n` +
-              `Your *${reportLabel}* report from *${corporateName}* is now available.\n\n` +
-              `📄 *Report:* ${reportName}\n` +
-              `📅 *Date:* ${displayDate}\n` +
-              `${notes ? `📝 *Note:* ${notes}\n\n` : '\n'}` +
-              `🔗 *Download / View:*\n${reportUrl}\n\n` +
-              `Please keep this document for your records.\n\n` +
-              `— Mediqzy | ${corporateName} Wellness Team`;
-
+            let waText;
+            if (uploadedReports.length === 1) {
+              waText =
+                `📋 *Health Report Ready*\n\n` +
+                `Dear ${employeeFullName},\n\n` +
+                `Your *${reportLabel}* report from *${corporateName}* is now available.\n\n` +
+                `📄 *Report:* ${uploadedReports[0].reportName}\n` +
+                `📅 *Date:* ${displayDate}\n` +
+                `${notes ? `📝 *Note:* ${notes}\n\n` : '\n'}` +
+                `🔗 *Download:*\n${uploadedReports[0].reportUrl}\n\n` +
+                `— Mediqzy | ${corporateName} Wellness Team`;
+            } else {
+              const fileLinks = uploadedReports.map((r, i) =>
+                `${i + 1}. ${r.reportName}\n   🔗 ${r.reportUrl}`
+              ).join('\n\n');
+              waText =
+                `📋 *${uploadedReports.length} Health Reports Ready*\n\n` +
+                `Dear ${employeeFullName},\n\n` +
+                `Your *${reportLabel}* reports from *${corporateName}* (${displayDate}) are now available:\n\n` +
+                `${fileLinks}\n\n` +
+                `${notes ? `📝 *Note:* ${notes}\n\n` : ''}` +
+                `— Mediqzy | ${corporateName} Wellness Team`;
+            }
             await whatsappProductionService.sendSessionMessage({ to: phoneE164, body: waText });
             waStatus = 'sent';
+            const ids = uploadedReports.map(r => r.id);
             await postgresSequelize.query(
-              `UPDATE corporate_health_reports SET notified_whatsapp=TRUE, notified_at=NOW() WHERE id=:id`,
-              { replacements: { id: reportId }, type: postgresSequelize.QueryTypes.UPDATE }
+              `UPDATE corporate_health_reports SET notified_whatsapp=TRUE, notified_at=NOW() WHERE id = ANY(:ids)`,
+              { replacements: { ids }, type: postgresSequelize.QueryTypes.UPDATE }
             );
-            console.log(`✅ [corp-reports] WhatsApp sent to ${phoneE164}`);
           } catch (e) {
             console.error('[corp-reports] WhatsApp failed:', e.message);
             waStatus = 'failed';
@@ -803,8 +821,10 @@ router.post(
 
       return res.status(201).json({
         success: true,
-        message: 'Report uploaded and employee notified',
-        report: { id: reportId, reportName, reportType, reportUrl, reportDate },
+        message: `${uploadedReports.length} report(s) uploaded and employee notified`,
+        reports: uploadedReports,
+        // keep backward-compat single-report field
+        report: { ...uploadedReports[0], reportType, reportDate },
         employee: { id: employee.id, name: employeeFullName, email: employee.email },
         notifications: { email: emailStatus, whatsapp: waStatus }
       });
@@ -1107,17 +1127,38 @@ function buildHealthCheckupEmailHtml({ employeeName, corporateName, labName, lab
 // ──────────────────────────────────────────────
 // Helper: Build health report delivery email HTML
 // ──────────────────────────────────────────────
-function buildReportEmailHtml({ employeeName, corporateName, reportName, reportLabel, reportDate, reportUrl, notes, mimeType }) {
-  const isPdf = mimeType === 'application/pdf';
-  const previewNote = isPdf
-    ? 'Click the button below to view or download your report (PDF).'
-    : 'Click the button below to view your report.';
+// reports: [{ reportName, reportUrl, mimeType }]
+function buildReportEmailHtml({ employeeName, corporateName, reportLabel, reportDate, notes, reports }) {
+  const single = reports.length === 1;
+  const title = single ? '📋 Health Report Ready' : `📋 ${reports.length} Health Reports Ready`;
+  const intro = single
+    ? `Your <strong>${reportLabel}</strong> report is ready. Click the button below to view or download it.`
+    : `Your <strong>${reportLabel}</strong> reports (${reportDate}) are ready. Use the buttons below to access each file.`;
+
+  const reportButtons = reports.map((r, i) => {
+    const label = single ? '📥 View / Download Report' : `📥 ${i + 1}. ${r.reportName}`;
+    return `
+      <div style="margin-bottom:${single ? 0 : 12}px; text-align:center;">
+        <a href="${r.reportUrl}" target="_blank"
+           style="display:inline-block; background: linear-gradient(135deg, #059669 0%, #0891b2 100%); color:#fff; text-decoration:none; padding:12px 32px; border-radius:8px; font-size:${single ? 16 : 14}px; font-weight:700; letter-spacing:0.3px; min-width:280px;">
+          ${label}
+        </a>
+        ${!single ? `<p style="font-size:10px; color:#9ca3af; margin:4px 0 0; word-break:break-all;"><a href="${r.reportUrl}" style="color:#6366f1;">${r.reportUrl}</a></p>` : ''}
+      </div>`;
+  }).join('');
+
+  const singleLink = single
+    ? `<p style="font-size:11px; color:#9ca3af; margin:10px 0 0;">
+        If the button doesn't work, copy this link:<br/>
+        <a href="${reports[0].reportUrl}" style="color:#6366f1; word-break:break-all;">${reports[0].reportUrl}</a>
+       </p>`
+    : '';
 
   return `<!DOCTYPE html>
 <html>
 <head>
   <meta charset="utf-8" />
-  <title>Your Health Report is Ready</title>
+  <title>Your Health Report${single ? '' : 's'} are Ready</title>
 </head>
 <body style="font-family: Arial, sans-serif; background: #f5f5f5; margin:0; padding:0;">
   <table width="100%" cellpadding="0" cellspacing="0" style="background:#f5f5f5; padding:30px 0;">
@@ -1126,7 +1167,7 @@ function buildReportEmailHtml({ employeeName, corporateName, reportName, reportL
         <!-- Header -->
         <tr>
           <td style="background: linear-gradient(135deg, #059669 0%, #0891b2 100%); padding:32px 40px; text-align:center;">
-            <h1 style="color:#fff; margin:0; font-size:24px; font-weight:700;">📋 Health Report Ready</h1>
+            <h1 style="color:#fff; margin:0; font-size:24px; font-weight:700;">${title}</h1>
             <p style="color:rgba(255,255,255,0.85); margin:8px 0 0; font-size:14px;">${corporateName} Employee Wellness Programme</p>
           </td>
         </tr>
@@ -1134,43 +1175,33 @@ function buildReportEmailHtml({ employeeName, corporateName, reportName, reportL
         <tr>
           <td style="padding:32px 40px 16px;">
             <p style="font-size:16px; color:#374151; margin:0 0 8px;">Dear <strong>${employeeName}</strong>,</p>
-            <p style="font-size:15px; color:#6b7280; margin:0;">Your <strong>${reportLabel}</strong> report is ready. ${previewNote}</p>
+            <p style="font-size:15px; color:#6b7280; margin:0;">${intro}</p>
           </td>
         </tr>
-        <!-- Report details -->
+        <!-- Summary row -->
         <tr>
-          <td style="padding:8px 40px 24px;">
+          <td style="padding:0 40px 16px;">
             <table width="100%" cellpadding="0" cellspacing="0" style="background:#f9fafb; border:1px solid #e5e7eb; border-radius:10px;">
               <tr><td colspan="2" style="background:#f0fdf4; padding:12px 20px; border-bottom:1px solid #e5e7eb; border-radius:10px 10px 0 0;">
                 <strong style="color:#065f46; font-size:13px; text-transform:uppercase; letter-spacing:0.5px;">📄 Report Details</strong>
               </td></tr>
               <tr>
-                <td style="padding:14px 20px 0; color:#374151; font-weight:600; font-size:14px; width:40%;">Report</td>
-                <td style="padding:14px 20px 0; color:#111827; font-size:14px;">${reportName}</td>
+                <td style="padding:14px 20px 0; color:#374151; font-weight:600; font-size:14px; width:40%;">Type</td>
+                <td style="padding:14px 20px 0; color:#111827; font-size:14px;">${reportLabel}</td>
               </tr>
               <tr>
-                <td style="padding:12px 20px 0; color:#374151; font-weight:600; font-size:14px;">Type</td>
-                <td style="padding:12px 20px 0; color:#111827; font-size:14px;">${reportLabel}</td>
+                <td style="padding:12px 20px ${notes ? 0 : 20}px; color:#374151; font-weight:600; font-size:14px;">Date</td>
+                <td style="padding:12px 20px ${notes ? 0 : 20}px; color:#111827; font-size:14px;">${reportDate}</td>
               </tr>
-              <tr>
-                <td style="padding:12px 20px 20px; color:#374151; font-weight:600; font-size:14px;">Date</td>
-                <td style="padding:12px 20px 20px; color:#111827; font-size:14px;">${reportDate}</td>
-              </tr>
-              ${notes ? `<tr><td style="padding:0 20px 16px; color:#374151; font-weight:600; font-size:14px; vertical-align:top;">Notes</td><td style="padding:0 20px 16px; color:#6b7280; font-size:14px;">${notes}</td></tr>` : ''}
+              ${notes ? `<tr><td style="padding:12px 20px 16px; color:#374151; font-weight:600; font-size:14px; vertical-align:top;">Notes</td><td style="padding:12px 20px 16px; color:#6b7280; font-size:14px;">${notes}</td></tr>` : ''}
             </table>
           </td>
         </tr>
-        <!-- CTA Button -->
+        <!-- CTA Buttons -->
         <tr>
-          <td style="padding:0 40px 32px; text-align:center;">
-            <a href="${reportUrl}" target="_blank"
-               style="display:inline-block; background: linear-gradient(135deg, #059669 0%, #0891b2 100%); color:#fff; text-decoration:none; padding:14px 36px; border-radius:8px; font-size:16px; font-weight:700; letter-spacing:0.3px;">
-              📥 View / Download Report
-            </a>
-            <p style="font-size:11px; color:#9ca3af; margin:10px 0 0;">
-              If the button doesn't work, copy this link:<br/>
-              <a href="${reportUrl}" style="color:#6366f1; word-break:break-all;">${reportUrl}</a>
-            </p>
+          <td style="padding:8px 40px 32px; text-align:center;">
+            ${reportButtons}
+            ${singleLink}
           </td>
         </tr>
         <!-- Notice -->

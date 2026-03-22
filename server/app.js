@@ -66,6 +66,7 @@ import membershipRouter from './routes/membership.route.js';
 import orgMembershipPlansRouter from './routes/org-membership-plans.route.js';
 import teamRouter from './routes/team.route.js';
 import teamEmailRouter from './routes/teamEmail.route.js';
+import welcomeEmailTemplatesRouter from './routes/welcomeEmailTemplates.route.js';
 import emailSettingsRouter from './routes/emailSettings.route.js';
 import nurseRouter from './routes/nurse.route.js';
 import assistantRouter from './routes/assistant.route.js';
@@ -1083,6 +1084,7 @@ app.use('/api/admin/roles', roleRouter); // Role management with CRUD + module a
 app.use('/api/roles', roleRouter); // User-facing role endpoints (check own roles/modules)
 app.use('/api/team', teamRouter);
 app.use('/api/team/emails', teamEmailRouter); // Team email inbox with AI processing
+app.use('/api/team/welcome-email-templates', welcomeEmailTemplatesRouter); // Welcome email template customization
 app.use('/api/email-settings', authUser, emailSettingsRouter); // User SMTP/IMAP configuration settings
 app.use('/api/admin/email-settings', authUser, requireRole('admin'), emailSettingsRouter); // Admin email settings management
 app.use('/api/doctor/webinars', authUser, doctorWebinarRouter); // Doctor webinar hosting

@@ -1,13 +1,78 @@
 import crypto from 'crypto';
 import bcrypt from 'bcrypt';
-import sgMail from '@sendgrid/mail';
+import nodemailer from 'nodemailer';
 import dotenv from 'dotenv';
+import { postgresSequelize } from '../db/postgres-sequelize.js';
 
 dotenv.config();
 
-// Initialize SendGrid
-if (process.env.SENDGRID_API_KEY) {
-  sgMail.setApiKey(process.env.SENDGRID_API_KEY);
+// Zoho SMTP transporter (uses existing SMTP_* env vars)
+const transporter = nodemailer.createTransport({
+  host: process.env.SMTP_HOST || 'smtppro.zoho.in',
+  port: parseInt(process.env.SMTP_PORT || '465'),
+  secure: true,
+  auth: {
+    user: process.env.SMTP_USER,
+    pass: process.env.SMTP_PASSWORD,
+  },
+});
+
+// Normalize SendGrid-style msg object → nodemailer format and send
+async function sendMail(msg) {
+  const from = typeof msg.from === 'object'
+    ? `"${msg.from.name}" <${process.env.SMTP_USER}>`
+    : (process.env.SMTP_USER || msg.from);
+  return transporter.sendMail({
+    from,
+    to: msg.to,
+    subject: msg.subject,
+    html: msg.html,
+  });
+}
+
+/**
+ * Look up a custom email template from the DB for the given event type.
+ * Uses email_event_assignments to find the assigned template_id, then fetches its content.
+ * Returns { subject, html_content } if found, otherwise null (use default).
+ */
+async function getCustomTemplate(eventType) {
+  try {
+    const rows = await postgresSequelize.query(
+      `SELECT wet.subject, wet.html_content
+       FROM email_event_assignments eea
+       JOIN welcome_email_templates wet ON wet.id = eea.template_id
+       WHERE eea.event_type = :eventType
+       ORDER BY eea.updated_at DESC LIMIT 1`,
+      { replacements: { eventType }, type: postgresSequelize.QueryTypes.SELECT }
+    );
+    return Array.isArray(rows) && rows.length > 0 ? rows[0] : null;
+  } catch {
+    return null; // Fall through to hardcoded default
+  }
+}
+
+/**
+ * Render template variables in subject/html using a values map.
+ */
+function renderTemplate(template, values) {
+  let result = template;
+  for (const [key, val] of Object.entries(values)) {
+    const escaped = key.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+    result = result.replace(new RegExp(escaped, 'g'), val ?? '');
+  }
+  return result;
+}
+
+/**
+ * Export for test-send from the API route
+ */
+export async function sendTestEmail({ to, subject, html }) {
+  return transporter.sendMail({
+    from: `"Mediqzy Team" <${process.env.SMTP_USER}>`,
+    to,
+    subject,
+    html
+  });
 }
 
 /**
@@ -138,8 +203,16 @@ export async function sendDoctorWelcomeEmail(doctorData, temporaryPassword) {
     `
   };
 
+  // Apply custom template override if configured
+  const customTplDoctor = await getCustomTemplate('doctor_welcome');
+  if (customTplDoctor) {
+    const vars = { '{{firstName}}': firstName, '{{lastName}}': lastName, '{{email}}': email, '{{specialization}}': specialization || 'General Medicine', '{{temporaryPassword}}': temporaryPassword };
+    msg.subject = renderTemplate(customTplDoctor.subject, vars);
+    msg.html = renderTemplate(customTplDoctor.html_content, vars);
+  }
+
   try {
-    await sgMail.send(msg);
+    await sendMail(msg);
     console.log(`✅ Welcome email sent to doctor: ${email}`);
     return { success: true, message: 'Welcome email sent successfully' };
   } catch (error) {
@@ -227,8 +300,16 @@ export async function sendHospitalWelcomeEmail(hospitalData, temporaryPassword) 
     `
   };
 
+  // Apply custom template override if configured
+  const customTplHospital = await getCustomTemplate('hospital_welcome');
+  if (customTplHospital) {
+    const vars = { '{{hospitalName}}': hospital_name, '{{email}}': email, '{{contactPerson}}': hospital_name, '{{temporaryPassword}}': temporaryPassword };
+    msg.subject = renderTemplate(customTplHospital.subject, vars);
+    msg.html = renderTemplate(customTplHospital.html_content, vars);
+  }
+
   try {
-    await sgMail.send(msg);
+    await sendMail(msg);
     console.log(`✅ Welcome email sent to hospital: ${email}`);
     return { success: true, message: 'Welcome email sent successfully' };
   } catch (error) {
@@ -317,8 +398,16 @@ export async function sendCorporateWelcomeEmail(corporateData, temporaryPassword
     `
   };
 
+  // Apply custom template override if configured
+  const customTplCorp = await getCustomTemplate('corporate_welcome');
+  if (customTplCorp) {
+    const vars = { '{{companyName}}': companyName, '{{email}}': email, '{{contactPerson}}': companyName, '{{temporaryPassword}}': temporaryPassword };
+    msg.subject = renderTemplate(customTplCorp.subject, vars);
+    msg.html = renderTemplate(customTplCorp.html_content, vars);
+  }
+
   try {
-    await sgMail.send(msg);
+    await sendMail(msg);
     console.log(`✅ Welcome email sent to corporate: ${email}`);
     return { success: true, message: 'Welcome email sent successfully' };
   } catch (error) {
@@ -391,8 +480,16 @@ export async function sendCorporateEmployeeWelcomeEmail(employeeData, temporaryP
     `
   };
 
+  // Apply custom template override if configured
+  const customTplEmp = await getCustomTemplate('corporate_employee_welcome');
+  if (customTplEmp) {
+    const vars = { '{{firstName}}': firstName, '{{lastName}}': lastName, '{{email}}': email, '{{companyName}}': companyName, '{{temporaryPassword}}': temporaryPassword };
+    msg.subject = renderTemplate(customTplEmp.subject, vars);
+    msg.html = renderTemplate(customTplEmp.html_content, vars);
+  }
+
   try {
-    await sgMail.send(msg);
+    await sendMail(msg);
     console.log(`✅ Welcome email sent to corporate employee: ${email}`);
     return { success: true, message: 'Welcome email sent successfully' };
   } catch (error) {
@@ -470,8 +567,16 @@ export async function sendTeamWelcomeEmail(userData, temporaryPassword) {
     `
   };
 
+  // Apply custom template override if configured
+  const customTplTeam = await getCustomTemplate('team_welcome');
+  if (customTplTeam) {
+    const vars = { '{{firstName}}': firstName, '{{lastName}}': lastName, '{{email}}': email, '{{role}}': role || 'Team Member', '{{department}}': department || 'General', '{{temporaryPassword}}': temporaryPassword };
+    msg.subject = renderTemplate(customTplTeam.subject, vars);
+    msg.html = renderTemplate(customTplTeam.html_content, vars);
+  }
+
   try {
-    await sgMail.send(msg);
+    await sendMail(msg);
     console.log(`✅ Welcome email sent to team member: ${email}`);
     return { success: true, message: 'Welcome email sent successfully' };
   } catch (error) {
