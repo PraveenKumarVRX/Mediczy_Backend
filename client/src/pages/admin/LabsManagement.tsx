@@ -9,6 +9,8 @@ import { Checkbox } from '@/components/ui/checkbox';
 import { Badge } from '@/components/ui/badge';
 import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { Label } from '@/components/ui/label';
+import L from 'leaflet';
+import 'leaflet/dist/leaflet.css';
 import {
   FlaskConical, Search, Eye, Download, MapPin, CheckCircle2, AlertCircle,
   ChevronLeft, ChevronRight, BarChart3, Square, LayoutGrid, List, Plus,
@@ -22,6 +24,104 @@ import api from '@/utils/api';
 
 // Get API base URL from environment
 const API_BASE_URL = import.meta.env.VITE_API_URL || '/api';
+
+// Fix Leaflet default icon paths (broken in Webpack/Vite builds)
+delete (L.Icon.Default.prototype as any)._getIconUrl;
+L.Icon.Default.mergeOptions({
+  iconRetinaUrl: 'https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/images/marker-icon-2x.png',
+  iconUrl: 'https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/images/marker-icon.png',
+  shadowUrl: 'https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/images/marker-shadow.png',
+});
+
+// ── Inline map component ──────────────────────────────────────────────
+const LabsMapView = ({ labs }: { labs: any[] }) => {
+  const mapRef = React.useRef<HTMLDivElement>(null);
+  const mapInstanceRef = React.useRef<L.Map | null>(null);
+
+  const labsWithCoords = labs.filter(l =>
+    l.coordinates && l.coordinates.lat && l.coordinates.lng
+  );
+
+  React.useEffect(() => {
+    if (!mapRef.current) return;
+    if (mapInstanceRef.current) {
+      mapInstanceRef.current.remove();
+      mapInstanceRef.current = null;
+    }
+
+    const map = L.map(mapRef.current, { scrollWheelZoom: true });
+    mapInstanceRef.current = map;
+
+    L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+      attribution: '© <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a>',
+      maxZoom: 18,
+    }).addTo(map);
+
+    const greenIcon = L.icon({
+      iconUrl: 'https://raw.githubusercontent.com/pointhi/leaflet-color-markers/master/img/marker-icon-2x-green.png',
+      shadowUrl: 'https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/images/marker-shadow.png',
+      iconSize: [25, 41], iconAnchor: [12, 41], popupAnchor: [1, -34], shadowSize: [41, 41],
+    });
+
+    if (labsWithCoords.length === 0) {
+      map.setView([20.5937, 78.9629], 5);
+      return;
+    }
+
+    const bounds: [number, number][] = [];
+    labsWithCoords.forEach(lab => {
+      const lat = parseFloat(lab.coordinates.lat);
+      const lng = parseFloat(lab.coordinates.lng);
+      if (isNaN(lat) || isNaN(lng)) return;
+      bounds.push([lat, lng]);
+
+      const popupHtml = `
+        <div style="min-width:200px;max-width:280px">
+          <div style="font-weight:700;font-size:14px;margin-bottom:4px">${lab.name}</div>
+          ${lab.formatted ? `<div style="font-size:12px;color:#555;margin-bottom:6px">${lab.formatted}</div>` :
+            `<div style="font-size:12px;color:#555;margin-bottom:6px">${[lab.address, lab.city, lab.state, lab.pincode].filter(Boolean).join(', ')}</div>`}
+          ${lab.phone ? `<div style="font-size:12px">📞 ${lab.phone}</div>` : ''}
+          <a href="https://www.google.com/maps/search/?api=1&query=${lat},${lng}" 
+             target="_blank" rel="noopener noreferrer"
+             style="display:inline-block;margin-top:6px;font-size:11px;color:#2563eb">
+            🗺 Open in Google Maps
+          </a>
+        </div>`;
+      L.marker([lat, lng], { icon: greenIcon })
+        .addTo(map)
+        .bindPopup(popupHtml);
+    });
+
+    if (bounds.length === 1) {
+      map.setView(bounds[0], 15);
+    } else if (bounds.length > 1) {
+      map.fitBounds(bounds as L.LatLngBoundsExpression, { padding: [40, 40] });
+    }
+
+    return () => {
+      map.remove();
+      mapInstanceRef.current = null;
+    };
+  }, [labs]);
+
+  return (
+    <Card>
+      <CardContent className="p-0 overflow-hidden rounded-lg">
+        <div className="flex items-center justify-between px-4 py-3 border-b">
+          <div className="flex items-center gap-2 text-sm font-medium">
+            <MapPin className="h-4 w-4 text-green-500" />
+            {labsWithCoords.length} of {labs.length} labs have GPS coordinates
+          </div>
+          {labsWithCoords.length === 0 && (
+            <span className="text-sm text-muted-foreground">Load labs from the List tab first</span>
+          )}
+        </div>
+        <div ref={mapRef} style={{ height: '520px', width: '100%' }} />
+      </CardContent>
+    </Card>
+  );
+};
+// ─────────────────────────────────────────────────────────────────────
 
 const LabsManagement = () => {
   // State management
@@ -767,18 +867,7 @@ const LabsManagement = () => {
           </TabsContent>
           
           <TabsContent value="map" className="space-y-4">
-            <Card>
-              <CardContent className="p-8 text-center">
-                <MapPin className="h-16 w-16 mx-auto mb-4 text-muted-foreground opacity-20" />
-                <h3 className="text-lg font-semibold mb-2">Interactive Map Coming Soon</h3>
-                <p className="text-muted-foreground">
-                  View all labs on an interactive map with clustering and filtering capabilities.
-                </p>
-                <p className="text-sm text-muted-foreground mt-2">
-                  {withCoordinates} labs have GPS coordinates ready for mapping.
-                </p>
-              </CardContent>
-            </Card>
+            <LabsMapView labs={labs} />
           </TabsContent>
         </Tabs>
         

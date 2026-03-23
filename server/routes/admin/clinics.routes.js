@@ -3,6 +3,7 @@ import fs from 'fs/promises';
 import path from 'path';
 import { fileURLToPath } from 'url';
 import crypto from 'crypto';
+import pool from '../../db/pgPool.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -109,55 +110,105 @@ router.post('/', async (req, res) => {
 
 router.patch('/:id/details', async (req, res) => {
     try {
-        await ensureDirectory();
         const { id } = req.params;
         const { updates = {} } = req.body || {};
-        const filePath = path.join(CLINICS_BASE, `${id}.json`);
 
-        const exists = await fs.stat(filePath).then(() => true).catch(() => false);
-        if (!exists) {
+        // Look up in provider_clinics by unique_id or numeric id
+        const isNumeric = /^\d+$/.test(id);
+        const findResult = await pool.query(
+            isNumeric
+                ? 'SELECT * FROM provider_clinics WHERE id = $1'
+                : 'SELECT * FROM provider_clinics WHERE unique_id = $1',
+            [isNumeric ? parseInt(id) : id]
+        );
+
+        if (findResult.rows.length === 0) {
             return res.status(404).json({ success: false, message: 'Clinic not found' });
         }
 
-        const profile = JSON.parse(await fs.readFile(filePath, 'utf-8'));
+        const clinic = findResult.rows[0];
 
-        profile.basic_info = {
-            ...profile.basic_info,
-            name: updates.name ?? profile.basic_info?.name,
-            city: updates.city ?? profile.basic_info?.city,
-            state: updates.state ?? profile.basic_info?.state,
-            address: updates.address || profile.basic_info?.address,
-            pincode: updates.pincode ?? profile.basic_info?.pincode,
-            area: updates.area ?? profile.basic_info?.area,
-            contact: {
-                ...profile.basic_info?.contact,
-                phone: updates.phone ?? profile.basic_info?.contact?.phone,
-                email: updates.email ?? profile.basic_info?.contact?.email,
-            },
+        // Build SET clauses for columns we allow updating
+        const setClauses = [];
+        const params = [];
+
+        if (updates.name !== undefined) {
+            params.push(updates.name);
+            setClauses.push(`name = $${params.length}`);
+        }
+        if (updates.phone !== undefined) {
+            params.push(updates.phone);
+            setClauses.push(`phone = $${params.length}`);
+        }
+        if (updates.email !== undefined) {
+            params.push(updates.email);
+            setClauses.push(`email = $${params.length}`);
+        }
+        if (updates.type !== undefined) {
+            params.push(updates.type);
+            setClauses.push(`type = $${params.length}`);
+        }
+        if (updates.specialization !== undefined) {
+            params.push(updates.specialization);
+            setClauses.push(`specialty = $${params.length}`);
+        }
+        if (updates.isActive !== undefined) {
+            params.push(updates.isActive ? 'active' : 'inactive');
+            setClauses.push(`status = $${params.length}`);
+        }
+
+        // Merge location JSONB fields
+        const currentLoc = clinic.location || {};
+        const newLoc = {
+            ...currentLoc,
+            ...(updates.address !== undefined && { address: updates.address }),
+            ...(updates.city !== undefined    && { city: updates.city }),
+            ...(updates.state !== undefined   && { state: updates.state }),
+            ...(updates.pincode !== undefined && { pincode: updates.pincode }),
+            ...(updates.area !== undefined    && { area: updates.area }),
         };
+        params.push(JSON.stringify(newLoc));
+        setClauses.push(`location = $${params.length}`);
 
-        profile.classification = {
-            ...profile.classification,
-            type: 'clinic',
-            sub_type: updates.type ?? updates.specialization ?? profile.classification?.sub_type,
-        };
+        // Merge services array
+        if (updates.specialization !== undefined) {
+            const svc = Array.isArray(updates.specialization)
+                ? updates.specialization
+                : [updates.specialization];
+            params.push(JSON.stringify(svc));
+            setClauses.push(`services = $${params.length}`);
+        }
 
-        profile.services = updates.specialization
-            ? Array.isArray(updates.specialization) ? updates.specialization : [updates.specialization]
-            : profile.services;
+        params.push(new Date().toISOString());
+        setClauses.push(`updated_at = $${params.length}`);
 
-        profile.metadata = {
-            ...profile.metadata,
-            doctor_name: updates.doctorName ?? profile.metadata?.doctor_name,
-            consultation_fee: updates.consultationFee ?? profile.metadata?.consultation_fee,
-            website: updates.website ?? profile.metadata?.website,
-            active: updates.isActive !== undefined ? !!updates.isActive : profile.metadata?.active,
-        };
+        // Push the record id last for the WHERE clause
+        params.push(clinic.id);
+        const updateResult = await pool.query(
+            `UPDATE provider_clinics SET ${setClauses.join(', ')} WHERE id = $${params.length} RETURNING *`,
+            params
+        );
 
-        await fs.writeFile(filePath, JSON.stringify(profile, null, 2));
-
-        const formatted = formatClinicProfile(profile);
-        res.json({ success: true, message: 'Clinic updated successfully', data: formatted });
+        const updated = updateResult.rows[0];
+        res.json({
+            success: true,
+            message: 'Clinic updated successfully',
+            data: {
+                id: updated.unique_id || updated.id,
+                name: updated.name,
+                phone: updated.phone,
+                email: updated.email,
+                type: updated.type,
+                specialty: updated.specialty,
+                status: updated.status,
+                city: updated.location?.city,
+                state: updated.location?.state,
+                address: updated.location?.address,
+                pincode: updated.location?.pincode,
+                area: updated.location?.area,
+                services: updated.services,
+            }
+        });
     } catch (error) {
         console.error('Error updating clinic:', error);
         res.status(500).json({ success: false, message: 'Failed to update clinic', error: error.message });

@@ -474,6 +474,7 @@ export const listLabs = async (req, res) => {
         accreditation: l.accreditation,
         rating: l.rating,
         coordinates: addr.coordinates || null,
+        formatted: addr.formatted || null,
       };
     });
 

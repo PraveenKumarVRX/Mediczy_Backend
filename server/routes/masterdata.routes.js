@@ -4,6 +4,7 @@ import path from 'path';
 import { fileURLToPath } from 'url';
 import XLSX from 'xlsx';
 import { authUser } from '../middleware/auth.middleware.js';
+import pool from '../db/pgPool.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -210,77 +211,80 @@ router.get('/labs', async (req, res) => {
 
 /**
  * Get all clinics with pagination and filtering
+ * Source: provider_clinics table in PostgreSQL
  */
 router.get('/clinics', async (req, res) => {
     try {
-        const { page = 1, limit = 50, search = '', city = '', type = '' } = req.query;
-        
-        await ensureDirectory(CLINICS_BASE);
-        const files = await fs.readdir(CLINICS_BASE);
-        
-        // Load clinic profiles
-        let clinics = files.length > 0
-            ? await Promise.all(
-                files.map(async (file) => {
-                    const content = await fs.readFile(path.join(CLINICS_BASE, file), 'utf-8');
-                    return JSON.parse(content);
-                })
-            )
-            : [];
-        
-        // Filter clinics
+        const { page = 1, limit = 50, search = '', city = '', state = '', type = '' } = req.query;
+        const offset = (parseInt(page) - 1) * parseInt(limit);
+
+        // Build WHERE clauses dynamically
+        const conditions = [];
+        const params = [];
+
         if (search) {
-            const searchLower = search.toLowerCase();
-            clinics = clinics.filter(c => 
-                c.basic_info.name.toLowerCase().includes(searchLower) ||
-                (c.basic_info.address || '').toLowerCase().includes(searchLower)
-            );
+            params.push(`%${search}%`);
+            conditions.push(`(name ILIKE $${params.length} OR location->>'address' ILIKE $${params.length})`);
         }
-        
         if (city) {
-            clinics = clinics.filter(c => 
-                (c.basic_info.city || '').toLowerCase().includes(city.toLowerCase())
-            );
+            params.push(`%${city}%`);
+            conditions.push(`location->>'city' ILIKE $${params.length}`);
         }
-        
+        if (state) {
+            params.push(`%${state}%`);
+            conditions.push(`location->>'state' ILIKE $${params.length}`);
+        }
         if (type) {
-            clinics = clinics.filter(c => 
-                (c.classification?.sub_type || '').toLowerCase().includes(type.toLowerCase())
-            );
+            params.push(`%${type}%`);
+            conditions.push(`type ILIKE $${params.length}`);
         }
-        
-        // Pagination
-        const startIndex = (page - 1) * limit;
-        const endIndex = startIndex + parseInt(limit);
-        const paginatedClinics = clinics.slice(startIndex, endIndex);
-        
-        // Transform to admin format
-        const transformed = paginatedClinics.map(c => ({
-            id: c.id,
-            name: c.basic_info.name,
-            address: c.basic_info.address,
-            area: c.basic_info.area,
-            city: c.basic_info.city,
-            state: c.basic_info.state,
-            pincode: c.basic_info.pincode,
-            latitude: c.basic_info.coordinates?.latitude,
-            longitude: c.basic_info.coordinates?.longitude,
-            services: c.services || [],
-            classification: c.classification?.type,
-            sub_type: c.classification?.sub_type,
-            quality_score: c.quality_indicators?.completeness || 0.7,
-            contact: c.basic_info.contact,
-            timestamp: c.timestamp
+
+        const where = conditions.length ? `WHERE ${conditions.join(' AND ')}` : '';
+
+        // Count total matching rows
+        const countResult = await pool.query(
+            `SELECT COUNT(*) FROM provider_clinics ${where}`,
+            params
+        );
+        const total = parseInt(countResult.rows[0].count);
+
+        // Fetch paginated rows
+        const dataResult = await pool.query(
+            `SELECT id, unique_id, name, type, specialty, location, services,
+                    phone, email, status, latitude, longitude, created_at
+             FROM provider_clinics ${where}
+             ORDER BY name ASC
+             LIMIT $${params.length + 1} OFFSET $${params.length + 2}`,
+            [...params, parseInt(limit), offset]
+        );
+
+        const transformed = dataResult.rows.map(c => ({
+            id: c.unique_id || c.id,
+            name: c.name,
+            address: c.location?.address || '',
+            area: c.location?.area || null,
+            city: c.location?.city || null,
+            state: c.location?.state || null,
+            pincode: c.location?.pincode || null,
+            latitude: c.latitude ? parseFloat(c.latitude) : null,
+            longitude: c.longitude ? parseFloat(c.longitude) : null,
+            services: Array.isArray(c.services) ? c.services : [],
+            classification: c.type || 'clinic',
+            sub_type: c.specialty || c.type,
+            quality_score: 0.7,
+            contact: { phone: c.phone || '', email: c.email || '' },
+            status: c.status,
+            timestamp: c.created_at
         }));
-        
+
         res.json({
             success: true,
             data: transformed,
             pagination: {
-                total: clinics.length,
+                total,
                 page: parseInt(page),
                 limit: parseInt(limit),
-                pages: Math.ceil(clinics.length / limit)
+                pages: Math.ceil(total / parseInt(limit))
             }
         });
     } catch (error) {
@@ -642,22 +646,14 @@ router.get('/stats', async (req, res) => {
  */
 router.get('/cities', async (req, res) => {
     try {
-        const labsDir = LABS_BASE;
-        const files = await fs.readdir(labsDir);
-        
-        const labs = await Promise.all(
-            files.map(async (file) => {
-                const content = await fs.readFile(path.join(labsDir, file), 'utf-8');
-                return JSON.parse(content);
-            })
+        const result = await pool.query(
+            `SELECT DISTINCT location->>'city' AS city
+             FROM provider_clinics
+             WHERE location->>'city' IS NOT NULL
+             ORDER BY city ASC`
         );
-        
-        const cities = [...new Set(labs.map(l => l.basic_info.city).filter(Boolean))].sort();
-        
-        res.json({
-            success: true,
-            data: cities
-        });
+        const cities = result.rows.map(r => r.city).filter(Boolean);
+        res.json({ success: true, data: cities });
     } catch (error) {
         res.status(500).json({ success: false, error: error.message });
     }
@@ -668,22 +664,14 @@ router.get('/cities', async (req, res) => {
  */
 router.get('/states', async (req, res) => {
     try {
-        const labsDir = LABS_BASE;
-        const files = await fs.readdir(labsDir);
-        
-        const labs = await Promise.all(
-            files.map(async (file) => {
-                const content = await fs.readFile(path.join(labsDir, file), 'utf-8');
-                return JSON.parse(content);
-            })
+        const result = await pool.query(
+            `SELECT DISTINCT location->>'state' AS state
+             FROM provider_clinics
+             WHERE location->>'state' IS NOT NULL
+             ORDER BY state ASC`
         );
-        
-        const states = [...new Set(labs.map(l => l.basic_info.state).filter(Boolean))].sort();
-        
-        res.json({
-            success: true,
-            data: states
-        });
+        const states = result.rows.map(r => r.state).filter(Boolean);
+        res.json({ success: true, data: states });
     } catch (error) {
         res.status(500).json({ success: false, error: error.message });
     }
