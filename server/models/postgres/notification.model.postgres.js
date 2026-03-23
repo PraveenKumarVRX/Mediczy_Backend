@@ -38,12 +38,13 @@ const Notification = postgresSequelize.define('Notification', {
       isIn: [[
         'appointment', 'appointment_request', 'appointment_booked', 
         'appointment_accepted', 'appointment_rejected', 'appointment_cancelled',
-        'prescription', 'payment', 'payment_received', 'reminder',
+        'prescription', 'prescription_issued', 'prescription_ready', 'payment', 'payment_received', 'reminder',
         'message', 'alert', 'promotion', 'system', 'verification',
         'booking_confirmed', 'booking_cancelled', 'doctor_message',
         'lab_report', 'medicine_reminder', 'health_tip',
-        'consultation_started', 'consultation_ended', 'prescription_ready',
-        'call_incoming', 'video_call', 'call_missed', 'call_ended'
+        'consultation_started', 'consultation_starting', 'consultation_reminder',
+        'consultation_ended', 'consultation_completed',
+        'call_incoming', 'video_call', 'video_ready', 'call_missed', 'call_ended'
       ]]
     }
   },
