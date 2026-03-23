@@ -233,6 +233,79 @@ router.post('/from-whatsapp', async (req, res) => {
   }
 });
 
+// ─── Routes that MUST come before /:id to avoid Express param capture ─────────
+
+// Get agents for assignment
+router.get('/agents', auth, async (req, res) => {
+  try {
+    const agents = await User.find({
+      role: { $in: ['admin', 'agent', 'support', 'team'] }
+    }).select('name email role isOnline lastActivity');
+    res.json(agents);
+  } catch (error) {
+    console.error('Error fetching agents:', error);
+    res.status(500).json({ message: 'Error fetching agents', error: error.message });
+  }
+});
+
+// Export tickets
+router.get('/export/:format', auth, async (req, res) => {
+  try {
+    const { format } = req.params;
+    const { status, priority, category, startDate, endDate } = req.query;
+
+    const filter = {};
+    if (status) filter.status = status;
+    if (priority) filter.priority = priority;
+    if (category) filter.category = category;
+    if (startDate || endDate) {
+      filter.createdAt = {};
+      if (startDate) filter.createdAt.$gte = new Date(startDate);
+      if (endDate) filter.createdAt.$lte = new Date(endDate);
+    }
+
+    const tickets = await Ticket.find(filter).lean();
+
+    if (format === 'json') {
+      res.setHeader('Content-Type', 'application/json');
+      res.setHeader('Content-Disposition', 'attachment; filename=tickets.json');
+      return res.json(tickets);
+    }
+
+    if (format === 'csv') {
+      const csvHeaders = [
+        'Ticket ID', 'Title', 'Status', 'Priority', 'Category',
+        'Requester Name', 'Requester Email', 'Assignee',
+        'Created At', 'Resolved At', 'Resolution Time (hours)'
+      ];
+      const csvData = tickets.map(t => [
+        t.ticketId || t.id,
+        `"${(t.title || '').replace(/"/g, '""')}"`,
+        t.status,
+        t.priority,
+        t.category,
+        t.requester?.name || '',
+        t.requester?.email || '',
+        t.assignee?.name || '',
+        t.createdAt,
+        t.resolution?.resolvedAt || '',
+        t.resolution?.resolutionTime ? (t.resolution.resolutionTime / 60).toFixed(2) : ''
+      ]);
+      const csv = [csvHeaders, ...csvData].map(row => row.join(',')).join('\n');
+      res.setHeader('Content-Type', 'text/csv');
+      res.setHeader('Content-Disposition', 'attachment; filename=tickets.csv');
+      return res.send(csv);
+    }
+
+    res.status(400).json({ message: 'Unsupported export format. Use json or csv.' });
+  } catch (error) {
+    console.error('Error exporting tickets:', error);
+    res.status(500).json({ message: 'Error exporting tickets', error: error.message });
+  }
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
+
 // Get single ticket by ID
 router.get('/:id', auth, async (req, res) => {
   try {
@@ -755,83 +828,5 @@ router.post('/bulk', auth, async (req, res) => {
   }
 });
 
-// Get agents for assignment
-router.get('/agents', auth, async (req, res) => {
-  try {
-    const agents = await User.find({ 
-      role: { $in: ['admin', 'agent', 'support'] } 
-    }).select('name email role isOnline lastActivity');
-
-    res.json(agents);
-  } catch (error) {
-    console.error('Error fetching agents:', error);
-    res.status(500).json({ message: 'Error fetching agents', error: error.message });
-  }
-});
-
-// Export tickets
-router.get('/export/:format', auth, async (req, res) => {
-  try {
-    const { format } = req.params;
-    const {
-      status,
-      priority,
-      category,
-      startDate,
-      endDate
-    } = req.query;
-
-    // Build filter
-    const filter = {};
-    if (status) filter.status = status;
-    if (priority) filter.priority = priority;
-    if (category) filter.category = category;
-    if (startDate || endDate) {
-      filter.createdAt = {};
-      if (startDate) filter.createdAt.$gte = new Date(startDate);
-      if (endDate) filter.createdAt.$lte = new Date(endDate);
-    }
-
-    const tickets = await Ticket.find(filter).lean();
-
-    if (format === 'json') {
-      res.setHeader('Content-Type', 'application/json');
-      res.setHeader('Content-Disposition', 'attachment; filename=tickets.json');
-      res.json(tickets);
-    } else if (format === 'csv') {
-      // Convert to CSV format
-      const csvHeaders = [
-        'Ticket ID', 'Title', 'Status', 'Priority', 'Category',
-        'Requester Name', 'Requester Email', 'Assignee',
-        'Created At', 'Resolved At', 'Resolution Time (hours)'
-      ];
-      
-      const csvData = tickets.map(ticket => [
-        ticket.ticketId,
-        `"${ticket.title}"`,
-        ticket.status,
-        ticket.priority,
-        ticket.category,
-        ticket.requester.name,
-        ticket.requester.email,
-        ticket.assignee ? ticket.assignee.name : '',
-        ticket.createdAt,
-        ticket.resolution.resolvedAt || '',
-        ticket.resolution.resolutionTime ? (ticket.resolution.resolutionTime / 60).toFixed(2) : ''
-      ]);
-
-      const csv = [csvHeaders, ...csvData].map(row => row.join(',')).join('\n');
-      
-      res.setHeader('Content-Type', 'text/csv');
-      res.setHeader('Content-Disposition', 'attachment; filename=tickets.csv');
-      res.send(csv);
-    } else {
-      res.status(400).json({ message: 'Unsupported export format' });
-    }
-  } catch (error) {
-    console.error('Error exporting tickets:', error);
-    res.status(500).json({ message: 'Error exporting tickets', error: error.message });
-  }
-});
 
 export default router;
