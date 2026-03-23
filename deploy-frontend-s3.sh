@@ -10,7 +10,7 @@ RED='\033[0;31m'
 NC='\033[0m'
 
 S3_BUCKET="s3://app.mediqzy.com"
-CLOUDFRONT_ID="E2HLJC0N634ZOM"
+CLOUDFRONT_ID="E1UX9F7HUS472M"
 BUILD_DIR="/home/ubuntu/Mediczy/client/dist"
 
 echo -e "${BLUE}╔════════════════════════════════════════╗${NC}"
