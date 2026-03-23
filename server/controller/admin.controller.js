@@ -293,11 +293,68 @@ export const bulkUploadDoctors = async (req, res) => {
 };
 
 export const bulkUploadLabs = async (req, res) => {
-  // TODO: Migrate Lab model to PostgreSQL
-  return res.status(503).json({ 
-    success: false, 
-    message: 'Lab management temporarily unavailable during database migration' 
-  });
+  try {
+    const records = ensureArray(req.body.labs || []);
+    if (!records.length) return res.status(400).json({ success: false, message: 'No lab records provided' });
+
+    let inserted = 0, skipped = 0;
+    const errors = [];
+    const created = [];
+
+    for (const lab of records) {
+      if (!lab.name) {
+        skipped++;
+        errors.push({ lab: 'unnamed', reason: 'Name is required' });
+        continue;
+      }
+      try {
+        const email = lab.email || `lab_${Date.now()}_${Math.random().toString(36).slice(-4)}@mediczy-import.com`;
+        const plainPassword = lab.password || Math.random().toString(36).slice(-10) + 'A1!';
+        const hashedPassword = await bcrypt.hash(plainPassword, 10);
+        const phoneNumber = lab.phone || lab.phoneNumber || '';
+        const uniqueId = Math.random().toString(36).substring(2, 8).toUpperCase();
+        const address = JSON.stringify({
+          street: lab.street || '',
+          city: lab.city || '',
+          state: lab.state || '',
+          area: lab.area || '',
+          locality: lab.locality || '',
+          pincode: lab.pincode || '',
+        });
+
+        const rows = await sequelize.query(`
+          INSERT INTO labs (name, email, password, "phoneNumber", address, status, "isVerified", unique_id, "createdAt", "updatedAt")
+          VALUES (:name, :email, :password, :phoneNumber, :address::jsonb, 'active', false, :uniqueId, NOW(), NOW())
+          ON CONFLICT (email) DO NOTHING
+          RETURNING id, name, email
+        `, {
+          replacements: { name: lab.name, email, password: hashedPassword, phoneNumber, address, uniqueId },
+          type: QueryTypes.SELECT,
+        });
+
+        if (rows && rows.length > 0) {
+          inserted++;
+          created.push({ id: rows[0].id, name: rows[0].name });
+        } else {
+          skipped++;
+          errors.push({ lab: lab.name, reason: 'Email already exists (skipped)' });
+        }
+      } catch (e) {
+        skipped++;
+        errors.push({ lab: lab.name, reason: e.message.substring(0, 120) });
+      }
+    }
+
+    return res.json({
+      success: true,
+      message: `Bulk upload complete: ${inserted} inserted, ${skipped} skipped`,
+      inserted,
+      skipped,
+      errors: errors.slice(0, 50),
+    });
+  } catch (e) {
+    return res.status(500).json({ success: false, message: e.message });
+  }
 };
 
 export const bulkUploadPharmacies = async (req, res) => {

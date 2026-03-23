@@ -12,6 +12,7 @@ import { Label } from '@/components/ui/label';
 import {
   FlaskConical, Search, Eye, Download, MapPin, CheckCircle2, AlertCircle,
   ChevronLeft, ChevronRight, BarChart3, Square, LayoutGrid, List, Plus,
+  Upload, FileText, X,
 } from 'lucide-react';
 import axios from 'axios';
 import { exportProviders } from '@/utils/exportToExcel';
@@ -69,13 +70,18 @@ const LabsManagement = () => {
   // Active tab
   const [activeTab, setActiveTab] = useState('list');
 
-  // Create lab
   const [showCreateModal, setShowCreateModal] = useState(false);
   const [creating, setCreating] = useState(false);
   const [createForm, setCreateForm] = useState({
     name: '', email: '', phone: '', type: '',
     street: '', city: '', state: '', area: '', locality: '', pincode: '', website: '',
   });
+
+  // Bulk upload
+  const [showBulkModal, setShowBulkModal] = useState(false);
+  const [parsedRows, setParsedRows] = useState<any[]>([]);
+  const [bulkResult, setBulkResult] = useState<{ success: boolean; message: string; inserted?: number; skipped?: number; errors?: { lab: string; reason: string }[] } | null>(null);
+  const [bulkUploading, setBulkUploading] = useState(false);
 
   const token = localStorage.getItem('adminToken');
 
@@ -259,6 +265,74 @@ const LabsManagement = () => {
     }
   };
 
+  // ── Bulk upload helpers ──────────────────────────────────────
+  const parseCSV = (text: string): any[] => {
+    const lines = text.trim().split(/\r?\n/);
+    if (lines.length < 2) return [];
+    const parseRow = (line: string): string[] => {
+      const result: string[] = [];
+      let current = '';
+      let inQuotes = false;
+      for (const char of line) {
+        if (char === '"') inQuotes = !inQuotes;
+        else if (char === ',' && !inQuotes) { result.push(current.trim()); current = ''; }
+        else current += char;
+      }
+      result.push(current.trim());
+      return result;
+    };
+    const headers = parseRow(lines[0]).map(h => h.toLowerCase().replace(/\s+/g, ''));
+    return lines.slice(1).filter(l => l.trim()).map(line => {
+      const values = parseRow(line);
+      const row: any = {};
+      headers.forEach((h, i) => { row[h] = values[i] || ''; });
+      return row;
+    });
+  };
+
+  const downloadTemplate = () => {
+    const csv = [
+      'name,email,phone,type,street,city,state,area,locality,pincode,website',
+      'City Diagnostics,lab@example.com,9999999999,diagnostic_lab,123 Main Street,Mumbai,Maharashtra,Andheri,Versova,400058,https://example.com',
+    ].join('\n');
+    const blob = new Blob([csv], { type: 'text/csv' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = 'labs_bulk_upload_template.csv';
+    a.click();
+    URL.revokeObjectURL(url);
+  };
+
+  const handleBulkFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    const reader = new FileReader();
+    reader.onload = (ev) => {
+      const text = ev.target?.result as string;
+      setParsedRows(parseCSV(text));
+      setBulkResult(null);
+    };
+    reader.readAsText(file);
+  };
+
+  const handleBulkUpload = async () => {
+    if (!parsedRows.length) return;
+    try {
+      setBulkUploading(true);
+      setBulkResult(null);
+      const headers = token ? { Authorization: `Bearer ${token}` } : {};
+      const { data } = await axios.post(`${API_BASE_URL}/admin/masters/labs`, { labs: parsedRows }, { headers });
+      setBulkResult(data);
+      if (data.inserted > 0) fetchLabs();
+    } catch (err: any) {
+      setBulkResult({ success: false, message: err?.response?.data?.message || 'Upload failed' });
+    } finally {
+      setBulkUploading(false);
+    }
+  };
+  // ────────────────────────────────────────────────────────────
+
   // Stats calculations
   const mappedLabs = labs.filter(l => l.pincode_mapped).length;
   const mappedPercent = labs.length > 0 ? ((mappedLabs / labs.length) * 100).toFixed(1) : '0';
@@ -279,6 +353,10 @@ const LabsManagement = () => {
           <Button onClick={() => setShowCreateModal(true)}>
             <Plus className="h-4 w-4 mr-2" />
             Add New Lab
+          </Button>
+          <Button variant="outline" onClick={() => { setShowBulkModal(true); setParsedRows([]); setBulkResult(null); }}>
+            <Upload className="h-4 w-4 mr-2" />
+            Bulk Upload
           </Button>
         </div>
 
@@ -781,6 +859,118 @@ const LabsManagement = () => {
           </DialogContent>
         </Dialog>
 
+        {/* Bulk Upload Dialog */}
+        <Dialog open={showBulkModal} onOpenChange={(open) => { setShowBulkModal(open); if (!open) { setParsedRows([]); setBulkResult(null); } }}>
+          <DialogContent className="max-w-3xl max-h-[85vh] overflow-y-auto">
+            <DialogHeader>
+              <DialogTitle className="flex items-center gap-2">
+                <Upload className="h-5 w-5" />
+                Bulk Upload Labs
+              </DialogTitle>
+            </DialogHeader>
+
+            <div className="space-y-4">
+              {/* Step 1: Download template */}
+              <div className="rounded-lg border p-4 bg-muted/30">
+                <p className="text-sm font-medium mb-2">Step 1 — Download the CSV template</p>
+                <Button variant="outline" size="sm" onClick={downloadTemplate}>
+                  <FileText className="h-4 w-4 mr-2" />
+                  Download Template CSV
+                </Button>
+                <p className="text-xs text-muted-foreground mt-2">
+                  Required columns: <code>name</code>. Optional: email, phone, type, street, city, state, area, locality, pincode, website.
+                </p>
+              </div>
+
+              {/* Step 2: Choose file */}
+              <div className="rounded-lg border p-4 bg-muted/30">
+                <p className="text-sm font-medium mb-2">Step 2 — Select your CSV file</p>
+                <input
+                  type="file"
+                  accept=".csv,text/csv"
+                  onChange={handleBulkFileChange}
+                  className="block text-sm text-muted-foreground file:mr-4 file:py-2 file:px-4 file:rounded file:border-0 file:text-sm file:font-medium file:bg-primary file:text-primary-foreground hover:file:cursor-pointer"
+                />
+              </div>
+
+              {/* Preview */}
+              {parsedRows.length > 0 && !bulkResult && (
+                <div className="rounded-lg border p-4">
+                  <p className="text-sm font-medium mb-2">Preview — {parsedRows.length} rows parsed</p>
+                  <div className="overflow-x-auto max-h-48 overflow-y-auto">
+                    <table className="w-full text-xs border-collapse">
+                      <thead>
+                        <tr className="bg-muted">
+                          {Object.keys(parsedRows[0]).map(h => (
+                            <th key={h} className="p-2 text-left font-semibold border">{h}</th>
+                          ))}
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {parsedRows.slice(0, 10).map((row, i) => (
+                          <tr key={i} className="border-b hover:bg-muted/30">
+                            {Object.values(row).map((v: any, j) => (
+                              <td key={j} className="p-2 border truncate max-w-[120px]">{v}</td>
+                            ))}
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                    {parsedRows.length > 10 && (
+                      <p className="text-xs text-muted-foreground mt-1">...and {parsedRows.length - 10} more rows</p>
+                    )}
+                  </div>
+                </div>
+              )}
+
+              {/* Result */}
+              {bulkResult && (
+                <div className={`rounded-lg border p-4 ${bulkResult.success ? 'bg-green-50 border-green-200 text-green-800' : 'bg-red-50 border-red-200 text-red-800'}`}>
+                  <div className="flex items-center gap-2 font-medium mb-1">
+                    {bulkResult.success ? <CheckCircle2 className="h-4 w-4" /> : <AlertCircle className="h-4 w-4" />}
+                    {bulkResult.message}
+                  </div>
+                  {bulkResult.success && (
+                    <div className="text-sm mt-2 space-y-1">
+                      <p>✓ Inserted: <strong>{bulkResult.inserted}</strong></p>
+                      <p>⊘ Skipped: <strong>{bulkResult.skipped}</strong></p>
+                      {bulkResult.errors && bulkResult.errors.length > 0 && (
+                        <div className="mt-2">
+                          <p className="font-medium">Skipped details:</p>
+                          <ul className="mt-1 space-y-0.5 max-h-32 overflow-y-auto">
+                            {bulkResult.errors.map((e, i) => (
+                              <li key={i} className="text-xs">• <strong>{e.lab}</strong>: {e.reason}</li>
+                            ))}
+                          </ul>
+                        </div>
+                      )}
+                    </div>
+                  )}
+                </div>
+              )}
+            </div>
+
+            <DialogFooter className="gap-2">
+              <Button variant="outline" onClick={() => { setShowBulkModal(false); setParsedRows([]); setBulkResult(null); }}>
+                <X className="h-4 w-4 mr-2" />
+                Close
+              </Button>
+              {parsedRows.length > 0 && !bulkResult && (
+                <Button onClick={handleBulkUpload} disabled={bulkUploading}>
+                  <Upload className="h-4 w-4 mr-2" />
+                  {bulkUploading ? `Uploading ${parsedRows.length} labs...` : `Upload ${parsedRows.length} Labs`}
+                </Button>
+              )}
+              {bulkResult?.success && bulkResult.inserted && bulkResult.inserted > 0 && (
+                <Button variant="outline" onClick={() => { setParsedRows([]); setBulkResult(null); }}>
+                  Upload Another File
+                </Button>
+              )}
+            </DialogFooter>
+          </DialogContent>
+        </Dialog>
+
+        {/* Edit Lab Dialog */}
         <Dialog open={editModalOpen} onOpenChange={setEditModalOpen}>
           <DialogContent className="max-w-2xl">
             <DialogHeader>
