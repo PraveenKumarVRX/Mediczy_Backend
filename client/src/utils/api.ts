@@ -176,6 +176,22 @@ api.interceptors.response.use(
       window.location.href = "/team/login";
     }
 
+    // Admin 401 — clear session and redirect to admin login
+    if (
+      error.response?.status === 401 &&
+      typeof window !== "undefined" &&
+      getUserType() === "admin"
+    ) {
+      window.localStorage.removeItem("adminToken");
+      window.localStorage.removeItem("token");
+      window.localStorage.removeItem("userType");
+      window.localStorage.removeItem("adminData");
+      // Only redirect if not already on the login page to avoid redirect loops
+      if (!window.location.pathname.startsWith("/admin/login")) {
+        window.location.href = "/admin/login";
+      }
+    }
+
     return Promise.reject(error);
   }
 );
