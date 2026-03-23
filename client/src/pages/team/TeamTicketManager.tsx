@@ -399,7 +399,7 @@ function TicketDetailPanel({
   const age = slaHours(ticket.createdAt);
 
   return (
-    <DialogContent className="max-w-2xl max-h-[90vh] flex flex-col gap-0 overflow-hidden p-0">
+    <DialogContent className="max-w-2xl h-[90vh] flex flex-col gap-0 overflow-hidden p-0">
       {/* Fixed Header */}
       <DialogHeader className="px-6 pt-5 pb-3 border-b shrink-0">
         <div className="flex items-start gap-2">
@@ -424,9 +424,8 @@ function TicketDetailPanel({
       </DialogHeader>
 
       {/* Scrollable Body */}
-      <div className="flex-1 min-h-0 overflow-hidden">
-        <ScrollArea className="h-full">
-          <div className="px-6 py-4 space-y-5">
+      <div className="flex-1 min-h-0 overflow-y-auto">
+        <div className="px-6 py-4 space-y-5">
 
             {/* Description */}
             <div>
@@ -701,8 +700,7 @@ function TicketDetailPanel({
             {/* Bottom spacer */}
             <div className="h-2" />
           </div>
-        </ScrollArea>
-      </div>
+        </div>
 
       {/* Fixed Reply Box */}
       <div className="px-6 py-4 border-t shrink-0 bg-gray-50/50 space-y-2">

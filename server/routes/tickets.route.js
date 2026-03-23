@@ -1,6 +1,6 @@
 import express from 'express';
 import Ticket from '../models/ticket.model.js';
-import User from '../models/user.model.intelligent.js';
+import { User } from '../models/user.model.intelligent.js';
 import auth from '../middleware/auth.js';
 import rocketChatService from '../services/rocketchat.service.js';
 import logger from '../config/logger.js';
@@ -238,9 +238,16 @@ router.post('/from-whatsapp', async (req, res) => {
 // Get agents for assignment
 router.get('/agents', auth, async (req, res) => {
   try {
-    const agents = await User.find({
-      role: { $in: ['admin', 'agent', 'support', 'team'] }
-    }).select('name email role isOnline lastActivity');
+    const rows = await User.findAll({
+      where: { role: ['admin', 'agent', 'support', 'team'] },
+      attributes: ['id', 'uid', 'firstName', 'lastName', 'email', 'role'],
+    });
+    const agents = rows.map(u => ({
+      _id:   u.uid || String(u.id),
+      name:  `${u.firstName || ''} ${u.lastName || ''}`.trim() || u.email,
+      email: u.email,
+      role:  u.role,
+    }));
     res.json(agents);
   } catch (error) {
     console.error('Error fetching agents:', error);
