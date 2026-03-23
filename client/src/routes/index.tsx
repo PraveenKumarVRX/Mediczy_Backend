@@ -184,6 +184,19 @@ const CRMLeadDetail            = lazy(() => import("@/pages/admin/CRMLeadDetail"
 const AIAnalyticsDashboard     = lazy(() => import("@/pages/admin/AIAnalyticsDashboard"));
 const SIBAIDashboard           = lazy(() => import("@/pages/admin/SIBAIDashboard"));
 
+// ─── CRM ─────────────────────────────────────────────────────────────────────
+const CRMLogin     = lazy(() => import("@/pages/crm/CRMLogin"));
+const CRMDashboard = lazy(() => import("@/pages/crm/CRMDashboard"));
+
+const _CRMModulePages = () => import("@/pages/crm/CRMModulePages");
+const CRMLeadsPage      = lazyNamed(_CRMModulePages, "CRMLeadsPage");
+const CRMDealsPage      = lazyNamed(_CRMModulePages, "CRMDealsPage");
+const CRMContactsPage   = lazyNamed(_CRMModulePages, "CRMContactsPage");
+const CRMActivitiesPage = lazyNamed(_CRMModulePages, "CRMActivitiesPage");
+const CRMPipelinePage   = lazyNamed(_CRMModulePages, "CRMPipelinePage");
+const CRMReportsPage    = lazyNamed(_CRMModulePages, "CRMReportsPage");
+const CRMSettingsPage   = lazyNamed(_CRMModulePages, "CRMSettingsPage");
+
 // ─── Team ────────────────────────────────────────────────────────────────────
 const TeamLogin              = lazy(() => import("@/pages/team/TeamLogin"));
 const TeamDashboard          = lazy(() => import("@/pages/team/TeamDashboard"));
@@ -847,6 +860,17 @@ const AppRoutes = () => {
         <Route path="/assistant/orders"            element={<MainLayout><OrderTasks /></MainLayout>} />
         <Route path="/assistant/reports"           element={<MainLayout><AssistantReports /></MainLayout>} />
         <Route path="/assistant/profile"           element={<MainLayout><AssistantDashboard /></MainLayout>} />
+
+        {/* ── CRM ─────────────────────────────────────────────────────── */}
+        <Route path="/crm/login"         element={<CRMLogin />} />
+        <Route path="/crm/dashboard"     element={<CRMDashboard />} />
+        <Route path="/crm/leads"         element={<CRMLeadsPage />} />
+        <Route path="/crm/deals"         element={<CRMDealsPage />} />
+        <Route path="/crm/contacts"      element={<CRMContactsPage />} />
+        <Route path="/crm/activities"    element={<CRMActivitiesPage />} />
+        <Route path="/crm/pipeline"      element={<CRMPipelinePage />} />
+        <Route path="/crm/reports"       element={<CRMReportsPage />} />
+        <Route path="/crm/settings"      element={<CRMSettingsPage />} />
 
         {/* ── Team ────────────────────────────────────────────────────── */}
         <Route path="/team/login"                    element={<TeamLogin />} />

@@ -26,6 +26,7 @@ const ROLE_TOKEN_KEYS: Record<string, string> = {
   insurer: "insurerToken",
   ngo: "ngoToken",
   hospitalInsurance: "hospitalInsuranceToken",
+  crm: "crmToken",
 };
 
 const ALL_TOKEN_KEYS = Array.from(

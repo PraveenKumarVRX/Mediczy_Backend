@@ -186,9 +186,41 @@ api.interceptors.response.use(
       window.localStorage.removeItem("token");
       window.localStorage.removeItem("userType");
       window.localStorage.removeItem("adminData");
-      // Only redirect if not already on the login page to avoid redirect loops
       if (!window.location.pathname.startsWith("/admin/login")) {
         window.location.href = "/admin/login";
+      }
+    }
+
+    // CRM 401 — auto-refresh or redirect
+    if (
+      error.response?.status === 401 &&
+      !originalRequest._retry &&
+      typeof window !== "undefined" &&
+      getUserType() === "crm"
+    ) {
+      const crmRefresh = window.localStorage.getItem("crmRefreshToken");
+      if (crmRefresh) {
+        originalRequest._retry = true;
+        try {
+          const { data } = await axios.post(
+            `${api.defaults.baseURL}/crm/auth/refresh`,
+            { refreshToken: crmRefresh },
+            { skipAuth: true } as any
+          );
+          if (data.success && data.token) {
+            window.localStorage.setItem("crmToken", data.token);
+            if (data.refreshToken) window.localStorage.setItem("crmRefreshToken", data.refreshToken);
+            (originalRequest as any).headers = { ...(originalRequest.headers || {}), Authorization: `Bearer ${data.token}` };
+            return api(originalRequest);
+          }
+        } catch {}
+      }
+      window.localStorage.removeItem("crmToken");
+      window.localStorage.removeItem("crmRefreshToken");
+      window.localStorage.removeItem("crmUserData");
+      window.localStorage.removeItem("userType");
+      if (!window.location.pathname.startsWith("/crm/login")) {
+        window.location.href = "/crm/login";
       }
     }
 
