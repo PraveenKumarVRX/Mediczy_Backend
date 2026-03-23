@@ -1,33 +1,46 @@
 import { useState, useEffect, useCallback } from 'react';
-import { useNavigate, Link } from 'react-router-dom';
-import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
+import { useNavigate, Link, useLocation } from 'react-router-dom';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import {
   Target, Users, DollarSign, TrendingUp, Activity, BarChart3,
-  ArrowUpRight, ArrowDownRight, Clock, AlertCircle, LogOut,
-  Phone, Mail, Calendar, FileText, Briefcase, ChevronRight, ChevronLeft,
-  Home, UserPlus, PieChart, Settings, Plus, Search, Filter, Trash2, Edit,
-  CheckCircle, XCircle, MoreHorizontal, Eye, X, Save,
+  Clock, LogOut, Phone, Mail, Calendar, FileText,
+  Briefcase, ChevronRight, ChevronLeft, LayoutGrid,
+  PieChart, Settings, Plus, Search, Trash2, Edit,
+  CheckCircle, X, Save, Bell, ArrowRight,
 } from 'lucide-react';
 import api from '@/utils/api';
 
-// ─── Shared CRM layout wrapper ────────────────────────────────────────────────
+// ─── Shared sidebar nav config ─────────────────────────────────────────────────
 
-const navItems = [
-  { icon: Home, label: 'Dashboard', path: '/crm/dashboard' },
-  { icon: Target, label: 'Leads', path: '/crm/leads' },
-  { icon: Briefcase, label: 'Deals', path: '/crm/deals' },
-  { icon: Users, label: 'Contacts', path: '/crm/contacts' },
-  { icon: Activity, label: 'Activities', path: '/crm/activities' },
-  { icon: BarChart3, label: 'Pipeline', path: '/crm/pipeline' },
-  { icon: PieChart, label: 'Reports', path: '/crm/reports' },
+const sidebarNav = [
+  { section: 'OVERVIEW', items: [
+    { icon: LayoutGrid, label: 'Dashboard', path: '/crm/dashboard' },
+  ]},
+  { section: 'SALES', items: [
+    { icon: Target, label: 'Leads', path: '/crm/leads' },
+    { icon: Briefcase, label: 'Deals', path: '/crm/deals' },
+    { icon: BarChart3, label: 'Pipeline', path: '/crm/pipeline' },
+  ]},
+  { section: 'MANAGE', items: [
+    { icon: Users, label: 'Contacts', path: '/crm/contacts' },
+    { icon: Activity, label: 'Activities', path: '/crm/activities' },
+  ]},
+  { section: 'INSIGHTS', items: [
+    { icon: PieChart, label: 'Reports', path: '/crm/reports' },
+    { icon: Settings, label: 'Settings', path: '/crm/settings' },
+  ]},
 ];
 
-function CRMLayout({ title, activePath, children }: { title: string; activePath: string; children: React.ReactNode }) {
+// ─── CRMLayout — premium dark sidebar layout ──────────────────────────────────
+
+function CRMLayout({ title, children }: { title: string; activePath?: string; children: React.ReactNode }) {
   const navigate = useNavigate();
+  const location = useLocation();
   const [crmUser, setCrmUser] = useState<any>(null);
+  const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
+  const [mobileSidebarOpen, setMobileSidebarOpen] = useState(false);
 
   useEffect(() => {
     const token = localStorage.getItem('crmToken');
@@ -47,39 +60,117 @@ function CRMLayout({ title, activePath, children }: { title: string; activePath:
     navigate('/crm/login');
   };
 
-  return (
-    <div className="min-h-screen bg-gradient-to-br from-slate-50 to-slate-100">
-      <header className="sticky top-0 z-50 bg-white/80 backdrop-blur-lg border-b border-slate-200 shadow-sm">
-        <div className="max-w-[1600px] mx-auto px-4 sm:px-6 flex items-center justify-between h-14">
-          <div className="flex items-center gap-3">
-            <Link to="/crm/dashboard" className="p-2 rounded-xl bg-gradient-to-br from-emerald-500 to-teal-500">
-              <Target className="h-5 w-5 text-white" />
-            </Link>
-            <h1 className="text-base font-bold text-slate-800">{title}</h1>
+  const SidebarContent = () => (
+    <div className="flex flex-col h-full">
+      <div className="p-5 pb-6">
+        <div className="flex items-center gap-3">
+          <div className="w-9 h-9 rounded-xl bg-gradient-to-br from-violet-500 to-blue-500 flex items-center justify-center shadow-lg shadow-violet-500/20 flex-shrink-0">
+            <Target className="h-4.5 w-4.5 text-white" />
           </div>
-          <nav className="hidden md:flex items-center gap-1">
-            {navItems.map(({ icon: Icon, label, path }) => (
-              <Link key={path} to={path}
-                className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-sm font-medium transition-colors
-                  ${activePath === path ? 'bg-emerald-50 text-emerald-700' : 'text-slate-600 hover:bg-slate-100'}`}>
-                <Icon className="h-4 w-4" />{label}
-              </Link>
-            ))}
-          </nav>
-          <div className="flex items-center gap-3">
-            {crmUser && <span className="text-sm text-slate-600 hidden lg:block">{crmUser.firstName} {crmUser.lastName}</span>}
-            <Button variant="ghost" size="sm" onClick={handleLogout}><LogOut className="h-4 w-4 text-slate-500 hover:text-red-500" /></Button>
+          {!sidebarCollapsed && (
+            <div className="overflow-hidden">
+              <span className="text-sm font-bold text-white block">Mediqzy CRM</span>
+              <span className="text-[9px] text-violet-400/60 uppercase tracking-[0.15em]">Sales Hub</span>
+            </div>
+          )}
+        </div>
+      </div>
+      <nav className="flex-1 px-3 space-y-5 overflow-y-auto">
+        {sidebarNav.map(({ section, items }) => (
+          <div key={section}>
+            {!sidebarCollapsed && (
+              <p className="text-[9px] font-semibold text-slate-600 uppercase tracking-[0.18em] px-3 mb-2">{section}</p>
+            )}
+            <div className="space-y-0.5">
+              {items.map(({ icon: Icon, label, path }) => {
+                const active = location.pathname === path;
+                return (
+                  <Link key={path} to={path} onClick={() => setMobileSidebarOpen(false)}
+                    className={`flex items-center gap-3 px-3 py-2.5 rounded-xl text-[13px] font-medium transition-all duration-200
+                      ${active
+                        ? 'bg-violet-500/15 text-violet-300 shadow-sm shadow-violet-500/10'
+                        : 'text-slate-500 hover:text-slate-300 hover:bg-white/[0.04]'}`}
+                    title={sidebarCollapsed ? label : undefined}
+                  >
+                    <Icon className={`h-[18px] w-[18px] flex-shrink-0 ${active ? 'text-violet-400' : ''}`} />
+                    {!sidebarCollapsed && <span>{label}</span>}
+                  </Link>
+                );
+              })}
+            </div>
+          </div>
+        ))}
+      </nav>
+      {crmUser && (
+        <div className="p-3 mt-auto">
+          <div className={`flex items-center gap-3 p-3 rounded-xl bg-white/[0.03] border border-white/[0.05] ${sidebarCollapsed ? 'justify-center' : ''}`}>
+            <div className="w-8 h-8 rounded-lg bg-gradient-to-br from-violet-500/30 to-blue-500/30 flex items-center justify-center text-xs font-bold text-violet-300 flex-shrink-0">
+              {(crmUser.firstName?.[0] || 'C').toUpperCase()}
+            </div>
+            {!sidebarCollapsed && (
+              <div className="flex-1 min-w-0">
+                <p className="text-xs font-medium text-slate-300 truncate">{crmUser.firstName} {crmUser.lastName}</p>
+                <p className="text-[10px] text-slate-600 truncate">{crmUser.email}</p>
+              </div>
+            )}
+            <button onClick={handleLogout} className="p-1.5 rounded-lg hover:bg-white/[0.05] text-slate-600 hover:text-red-400 transition-colors flex-shrink-0" title="Sign out">
+              <LogOut className="h-3.5 w-3.5" />
+            </button>
           </div>
         </div>
-      </header>
-      <main className="max-w-[1600px] mx-auto px-4 sm:px-6 py-6">{children}</main>
-      <nav className="md:hidden fixed bottom-0 left-0 right-0 bg-white border-t border-slate-200 px-2 py-1 z-50">
+      )}
+    </div>
+  );
+
+  return (
+    <div className="min-h-screen bg-[#0a0e1a] flex">
+      {mobileSidebarOpen && (
+        <div className="fixed inset-0 z-50 lg:hidden">
+          <div className="absolute inset-0 bg-black/60 backdrop-blur-sm" onClick={() => setMobileSidebarOpen(false)} />
+          <div className="absolute left-0 top-0 bottom-0 w-64 bg-[#0d1120] border-r border-white/[0.06] animate-in slide-in-from-left duration-200">
+            <SidebarContent />
+          </div>
+        </div>
+      )}
+      <aside className={`hidden lg:flex flex-col fixed left-0 top-0 bottom-0 bg-[#0d1120]/80 backdrop-blur-xl border-r border-white/[0.06] z-40 transition-all duration-300 ${sidebarCollapsed ? 'w-[72px]' : 'w-[240px]'}`}>
+        <SidebarContent />
+      </aside>
+      <div className={`flex-1 transition-all duration-300 ${sidebarCollapsed ? 'lg:ml-[72px]' : 'lg:ml-[240px]'}`}>
+        <header className="sticky top-0 z-30 h-16 bg-[#0a0e1a]/80 backdrop-blur-xl border-b border-white/[0.04] flex items-center justify-between px-6">
+          <div className="flex items-center gap-4">
+            <button onClick={() => { if (window.innerWidth < 1024) setMobileSidebarOpen(true); else setSidebarCollapsed(!sidebarCollapsed); }}
+              className="p-2 rounded-lg hover:bg-white/[0.05] text-slate-500 hover:text-slate-300 transition-colors">
+              <svg className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                <path strokeLinecap="round" strokeLinejoin="round" d="M3.75 6.75h16.5M3.75 12h16.5m-16.5 5.25h16.5" />
+              </svg>
+            </button>
+            <h1 className="text-lg font-bold text-white">{title}</h1>
+          </div>
+          <div className="flex items-center gap-2">
+            <button className="relative p-2.5 rounded-xl hover:bg-white/[0.05] text-slate-500 hover:text-slate-300 transition-colors">
+              <Bell className="h-4.5 w-4.5" />
+            </button>
+          </div>
+        </header>
+        <main className="p-6 pb-24 lg:pb-6">{children}</main>
+      </div>
+      <nav className="lg:hidden fixed bottom-0 left-0 right-0 bg-[#0d1120]/95 backdrop-blur-xl border-t border-white/[0.06] px-2 py-1.5 z-40">
         <div className="flex justify-around">
-          {navItems.slice(0, 5).map(({ icon: Icon, label, path }) => (
-            <Link key={path} to={path} className={`flex flex-col items-center gap-0.5 p-2 rounded-lg text-[10px] ${activePath === path ? 'text-emerald-600' : 'text-slate-400'}`}>
-              <Icon className="h-5 w-5" />{label}
-            </Link>
-          ))}
+          {[
+            { icon: LayoutGrid, label: 'Home', path: '/crm/dashboard' },
+            { icon: Target, label: 'Leads', path: '/crm/leads' },
+            { icon: Briefcase, label: 'Deals', path: '/crm/deals' },
+            { icon: Users, label: 'Contacts', path: '/crm/contacts' },
+            { icon: PieChart, label: 'Reports', path: '/crm/reports' },
+          ].map(({ icon: Icon, label, path }) => {
+            const active = location.pathname === path;
+            return (
+              <Link key={path} to={path} className={`flex flex-col items-center gap-0.5 py-1.5 px-3 rounded-xl transition-colors ${active ? 'text-violet-400' : 'text-slate-600 hover:text-slate-400'}`}>
+                <Icon className="h-5 w-5" />
+                <span className="text-[9px] font-medium">{label}</span>
+              </Link>
+            );
+          })}
         </div>
       </nav>
     </div>
@@ -91,17 +182,27 @@ function authHeaders() {
   return t ? { Authorization: `Bearer ${t}` } : {};
 }
 
-// ─── Pagination helper ─────────────────────────────────────────────────────────
 function Pagination({ page, totalPages, setPage }: { page: number; totalPages: number; setPage: (p: number) => void }) {
   if (totalPages <= 1) return null;
   return (
-    <div className="flex items-center justify-center gap-2 mt-4">
-      <Button variant="outline" size="sm" disabled={page <= 1} onClick={() => setPage(page - 1)}><ChevronLeft className="h-4 w-4" /></Button>
-      <span className="text-sm text-slate-600">Page {page} of {totalPages}</span>
-      <Button variant="outline" size="sm" disabled={page >= totalPages} onClick={() => setPage(page + 1)}><ChevronRight className="h-4 w-4" /></Button>
+    <div className="flex items-center justify-center gap-3 mt-6">
+      <button disabled={page <= 1} onClick={() => setPage(page - 1)}
+        className="px-3 py-1.5 rounded-lg text-sm font-medium bg-white/[0.05] border border-white/[0.08] text-slate-400 hover:text-white hover:bg-white/[0.08] disabled:opacity-30 disabled:cursor-not-allowed transition-all">
+        <ChevronLeft className="h-4 w-4" />
+      </button>
+      <span className="text-sm text-slate-500">{page} / {totalPages}</span>
+      <button disabled={page >= totalPages} onClick={() => setPage(page + 1)}
+        className="px-3 py-1.5 rounded-lg text-sm font-medium bg-white/[0.05] border border-white/[0.08] text-slate-400 hover:text-white hover:bg-white/[0.08] disabled:opacity-30 disabled:cursor-not-allowed transition-all">
+        <ChevronRight className="h-4 w-4" />
+      </button>
     </div>
   );
 }
+
+// ─── Shared dark-theme table styles ─────────────────────────────────────────
+
+const thClass = 'pb-3 text-[11px] font-semibold text-slate-500 uppercase tracking-wider';
+const tdClass = 'py-3.5';
 
 // ═══════════════════════════════════════════════════════════════════════════════
 // LEADS PAGE
@@ -135,11 +236,8 @@ export function CRMLeadsPage() {
 
   const handleSave = async () => {
     try {
-      if (editLead) {
-        await api.put(`/crm/leads/${editLead.id}`, form, { headers: authHeaders() });
-      } else {
-        await api.post('/crm/leads', form, { headers: authHeaders() });
-      }
+      if (editLead) await api.put(`/crm/leads/${editLead.id}`, form, { headers: authHeaders() });
+      else await api.post('/crm/leads', form, { headers: authHeaders() });
       setShowForm(false); setEditLead(null);
       setForm({ name: '', email: '', phone: '', company: '', source: 'manual', status: 'new', priority: 'medium', notes: '' });
       fetchLeads();
@@ -157,100 +255,138 @@ export function CRMLeadsPage() {
     setShowForm(true);
   };
 
-  const statusColors: Record<string, string> = { new: 'bg-blue-100 text-blue-700', contacted: 'bg-sky-100 text-sky-700', qualified: 'bg-indigo-100 text-indigo-700', converted: 'bg-emerald-100 text-emerald-700', lost: 'bg-red-100 text-red-700' };
-  const priorityColors: Record<string, string> = { high: 'bg-red-100 text-red-700', medium: 'bg-yellow-100 text-yellow-700', low: 'bg-slate-100 text-slate-600' };
+  const statusBadge: Record<string, string> = {
+    new: 'bg-blue-500/15 text-blue-400 border-blue-500/20',
+    contacted: 'bg-sky-500/15 text-sky-400 border-sky-500/20',
+    qualified: 'bg-violet-500/15 text-violet-400 border-violet-500/20',
+    converted: 'bg-emerald-500/15 text-emerald-400 border-emerald-500/20',
+    lost: 'bg-red-500/15 text-red-400 border-red-500/20',
+  };
+  const priorityBadge: Record<string, string> = {
+    high: 'bg-red-500/15 text-red-400 border-red-500/20',
+    medium: 'bg-amber-500/15 text-amber-400 border-amber-500/20',
+    low: 'bg-slate-500/15 text-slate-400 border-slate-500/20',
+  };
 
   return (
-    <CRMLayout title="Leads Management" activePath="/crm/leads">
-      <div className="space-y-4">
+    <CRMLayout title="Leads">
+      <div className="space-y-5">
+        {/* Toolbar */}
         <div className="flex flex-col sm:flex-row gap-3 justify-between">
           <div className="flex gap-2 flex-1">
-            <div className="relative flex-1 max-w-md">
-              <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-slate-400" />
-              <Input placeholder="Search leads..." className="pl-9" value={search} onChange={e => { setSearch(e.target.value); setPage(1); }} />
+            <div className="relative flex-1 max-w-sm">
+              <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-slate-600" />
+              <input placeholder="Search leads..." value={search} onChange={e => { setSearch(e.target.value); setPage(1); }}
+                className="w-full h-10 pl-10 pr-4 rounded-xl bg-white/[0.05] border border-white/[0.08] text-sm text-white placeholder:text-slate-600 focus:outline-none focus:border-violet-500/30 transition-colors" />
             </div>
-            <select className="border border-slate-200 rounded-lg px-3 py-2 text-sm bg-white" value={statusFilter} onChange={e => { setStatusFilter(e.target.value); setPage(1); }}>
-              <option value="all">All Status</option>
-              {['new', 'contacted', 'qualified', 'converted', 'lost'].map(s => <option key={s} value={s}>{s.charAt(0).toUpperCase() + s.slice(1)}</option>)}
+            <select value={statusFilter} onChange={e => { setStatusFilter(e.target.value); setPage(1); }}
+              className="h-10 px-3 rounded-xl bg-white/[0.05] border border-white/[0.08] text-sm text-slate-300 focus:outline-none focus:border-violet-500/30">
+              <option value="all" className="bg-[#0d1120]">All Status</option>
+              {['new', 'contacted', 'qualified', 'converted', 'lost'].map(s => <option key={s} value={s} className="bg-[#0d1120]">{s.charAt(0).toUpperCase() + s.slice(1)}</option>)}
             </select>
           </div>
           <Button onClick={() => { setEditLead(null); setForm({ name: '', email: '', phone: '', company: '', source: 'manual', status: 'new', priority: 'medium', notes: '' }); setShowForm(true); }}
-            className="bg-emerald-500 hover:bg-emerald-600 text-white">
-            <Plus className="h-4 w-4 mr-1" /> New Lead
+            className="h-10 bg-gradient-to-r from-violet-600 to-blue-600 hover:from-violet-500 hover:to-blue-500 text-white rounded-xl shadow-lg shadow-violet-600/20">
+            <Plus className="h-4 w-4 mr-1.5" /> New Lead
           </Button>
         </div>
 
+        {/* Form modal */}
         {showForm && (
-          <Card className="border-0 shadow-lg">
-            <CardHeader className="pb-3 flex flex-row items-center justify-between">
-              <CardTitle className="text-sm">{editLead ? 'Edit Lead' : 'Create New Lead'}</CardTitle>
-              <Button variant="ghost" size="sm" onClick={() => { setShowForm(false); setEditLead(null); }}><X className="h-4 w-4" /></Button>
-            </CardHeader>
-            <CardContent>
-              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3">
-                <div><Label className="text-xs">Name *</Label><Input value={form.name} onChange={e => setForm({...form, name: e.target.value})} placeholder="Lead name" /></div>
-                <div><Label className="text-xs">Email</Label><Input type="email" value={form.email} onChange={e => setForm({...form, email: e.target.value})} placeholder="Email" /></div>
-                <div><Label className="text-xs">Phone</Label><Input value={form.phone} onChange={e => setForm({...form, phone: e.target.value})} placeholder="Phone" /></div>
-                <div><Label className="text-xs">Company</Label><Input value={form.company} onChange={e => setForm({...form, company: e.target.value})} placeholder="Company" /></div>
-                <div><Label className="text-xs">Source</Label>
-                  <select className="w-full border rounded-md px-3 py-2 text-sm" value={form.source} onChange={e => setForm({...form, source: e.target.value})}>
-                    {['manual', 'website', 'referral', 'social', 'cold_call', 'event', 'partner', 'advertisement'].map(s => <option key={s} value={s}>{s.replace('_', ' ')}</option>)}
-                  </select>
+          <div className="p-5 rounded-2xl bg-white/[0.04] border border-white/[0.08] space-y-4">
+            <div className="flex items-center justify-between">
+              <h3 className="text-sm font-semibold text-white">{editLead ? 'Edit Lead' : 'Create New Lead'}</h3>
+              <button onClick={() => { setShowForm(false); setEditLead(null); }} className="p-1.5 rounded-lg hover:bg-white/[0.05] text-slate-500"><X className="h-4 w-4" /></button>
+            </div>
+            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3">
+              {[
+                { label: 'Name *', field: 'name', placeholder: 'Lead name' },
+                { label: 'Email', field: 'email', placeholder: 'Email', type: 'email' },
+                { label: 'Phone', field: 'phone', placeholder: 'Phone' },
+                { label: 'Company', field: 'company', placeholder: 'Company' },
+              ].map(({ label, field, placeholder, type }) => (
+                <div key={field} className="space-y-1">
+                  <label className="text-[10px] font-medium text-slate-500 uppercase tracking-wider">{label}</label>
+                  <input type={type || 'text'} value={(form as any)[field]} onChange={e => setForm({ ...form, [field]: e.target.value })} placeholder={placeholder}
+                    className="w-full h-9 px-3 rounded-lg bg-white/[0.05] border border-white/[0.08] text-sm text-white placeholder:text-slate-600 focus:outline-none focus:border-violet-500/30" />
                 </div>
-                <div><Label className="text-xs">Status</Label>
-                  <select className="w-full border rounded-md px-3 py-2 text-sm" value={form.status} onChange={e => setForm({...form, status: e.target.value})}>
-                    {['new', 'contacted', 'qualified', 'converted', 'lost'].map(s => <option key={s} value={s}>{s.charAt(0).toUpperCase() + s.slice(1)}</option>)}
-                  </select>
-                </div>
-                <div><Label className="text-xs">Priority</Label>
-                  <select className="w-full border rounded-md px-3 py-2 text-sm" value={form.priority} onChange={e => setForm({...form, priority: e.target.value})}>
-                    {['low', 'medium', 'high'].map(p => <option key={p} value={p}>{p.charAt(0).toUpperCase() + p.slice(1)}</option>)}
-                  </select>
-                </div>
-                <div className="sm:col-span-2 lg:col-span-4"><Label className="text-xs">Notes</Label><Input value={form.notes} onChange={e => setForm({...form, notes: e.target.value})} placeholder="Notes..." /></div>
+              ))}
+              <div className="space-y-1">
+                <label className="text-[10px] font-medium text-slate-500 uppercase tracking-wider">Source</label>
+                <select value={form.source} onChange={e => setForm({ ...form, source: e.target.value })}
+                  className="w-full h-9 px-3 rounded-lg bg-white/[0.05] border border-white/[0.08] text-sm text-slate-300 focus:outline-none">
+                  {['manual', 'website', 'referral', 'social', 'cold_call', 'event', 'partner', 'advertisement'].map(s => <option key={s} value={s} className="bg-[#0d1120]">{s.replace('_', ' ')}</option>)}
+                </select>
               </div>
-              <div className="flex justify-end mt-4">
-                <Button onClick={handleSave} className="bg-emerald-500 hover:bg-emerald-600 text-white"><Save className="h-4 w-4 mr-1" /> {editLead ? 'Update' : 'Create'} Lead</Button>
+              <div className="space-y-1">
+                <label className="text-[10px] font-medium text-slate-500 uppercase tracking-wider">Status</label>
+                <select value={form.status} onChange={e => setForm({ ...form, status: e.target.value })}
+                  className="w-full h-9 px-3 rounded-lg bg-white/[0.05] border border-white/[0.08] text-sm text-slate-300 focus:outline-none">
+                  {['new', 'contacted', 'qualified', 'converted', 'lost'].map(s => <option key={s} value={s} className="bg-[#0d1120]">{s.charAt(0).toUpperCase() + s.slice(1)}</option>)}
+                </select>
               </div>
-            </CardContent>
-          </Card>
+              <div className="space-y-1">
+                <label className="text-[10px] font-medium text-slate-500 uppercase tracking-wider">Priority</label>
+                <select value={form.priority} onChange={e => setForm({ ...form, priority: e.target.value })}
+                  className="w-full h-9 px-3 rounded-lg bg-white/[0.05] border border-white/[0.08] text-sm text-slate-300 focus:outline-none">
+                  {['low', 'medium', 'high'].map(p => <option key={p} value={p} className="bg-[#0d1120]">{p.charAt(0).toUpperCase() + p.slice(1)}</option>)}
+                </select>
+              </div>
+              <div className="sm:col-span-2 lg:col-span-4 space-y-1">
+                <label className="text-[10px] font-medium text-slate-500 uppercase tracking-wider">Notes</label>
+                <input value={form.notes} onChange={e => setForm({ ...form, notes: e.target.value })} placeholder="Notes..."
+                  className="w-full h-9 px-3 rounded-lg bg-white/[0.05] border border-white/[0.08] text-sm text-white placeholder:text-slate-600 focus:outline-none focus:border-violet-500/30" />
+              </div>
+            </div>
+            <div className="flex justify-end">
+              <Button onClick={handleSave} className="bg-gradient-to-r from-violet-600 to-blue-600 hover:from-violet-500 hover:to-blue-500 text-white rounded-xl">
+                <Save className="h-4 w-4 mr-1.5" /> {editLead ? 'Update' : 'Create'}
+              </Button>
+            </div>
+          </div>
         )}
 
+        {/* Table */}
         {loading ? (
-          <div className="py-20 text-center"><div className="w-8 h-8 border-4 border-emerald-100 border-t-emerald-500 rounded-full animate-spin mx-auto mb-2" /><p className="text-sm text-slate-500">Loading leads...</p></div>
+          <div className="py-20 text-center"><div className="w-10 h-10 border-2 border-violet-500/30 border-t-violet-400 rounded-full animate-spin mx-auto mb-3" /><p className="text-sm text-slate-600">Loading...</p></div>
         ) : leads.length === 0 ? (
-          <div className="py-20 text-center"><Target className="h-12 w-12 text-slate-300 mx-auto mb-3" /><p className="text-slate-500">No leads found</p></div>
+          <div className="py-20 text-center"><Target className="h-12 w-12 text-slate-700 mx-auto mb-3" /><p className="text-slate-500">No leads found</p><p className="text-xs text-slate-600 mt-1">Create your first lead to get started</p></div>
         ) : (
-          <div className="overflow-x-auto">
-            <table className="w-full text-sm">
-              <thead><tr className="border-b border-slate-200 text-left">
-                <th className="pb-2 font-medium text-slate-500">Name</th><th className="pb-2 font-medium text-slate-500">Company</th>
-                <th className="pb-2 font-medium text-slate-500">Status</th><th className="pb-2 font-medium text-slate-500">Priority</th>
-                <th className="pb-2 font-medium text-slate-500">Source</th><th className="pb-2 font-medium text-slate-500">Created</th>
-                <th className="pb-2 font-medium text-slate-500 text-right">Actions</th>
-              </tr></thead>
-              <tbody>
-                {leads.map(l => (
-                  <tr key={l.id} className="border-b border-slate-100 hover:bg-slate-50 transition-colors">
-                    <td className="py-3">
-                      <p className="font-medium text-slate-800">{l.name}</p>
-                      <p className="text-xs text-slate-400">{l.email || l.phone}</p>
-                    </td>
-                    <td className="py-3 text-slate-600">{l.company || '-'}</td>
-                    <td className="py-3"><span className={`px-2 py-0.5 rounded-full text-xs font-medium ${statusColors[l.status] || 'bg-slate-100 text-slate-600'}`}>{l.status}</span></td>
-                    <td className="py-3"><span className={`px-2 py-0.5 rounded-full text-xs font-medium ${priorityColors[l.priority] || ''}`}>{l.priority}</span></td>
-                    <td className="py-3 text-slate-500 text-xs">{l.source}</td>
-                    <td className="py-3 text-slate-400 text-xs">{new Date(l.created_at).toLocaleDateString()}</td>
-                    <td className="py-3 text-right">
-                      <div className="flex items-center justify-end gap-1">
-                        <Button variant="ghost" size="sm" onClick={() => openEdit(l)}><Edit className="h-3.5 w-3.5" /></Button>
-                        <Button variant="ghost" size="sm" onClick={() => handleDelete(l.id)}><Trash2 className="h-3.5 w-3.5 text-red-400" /></Button>
-                      </div>
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
+          <div className="rounded-2xl bg-white/[0.02] border border-white/[0.06] overflow-hidden">
+            <div className="overflow-x-auto">
+              <table className="w-full text-sm">
+                <thead><tr className="border-b border-white/[0.06]">
+                  <th className={`${thClass} pl-5 text-left`}>Name</th>
+                  <th className={`${thClass} text-left`}>Company</th>
+                  <th className={`${thClass} text-left`}>Status</th>
+                  <th className={`${thClass} text-left`}>Priority</th>
+                  <th className={`${thClass} text-left`}>Source</th>
+                  <th className={`${thClass} text-left`}>Created</th>
+                  <th className={`${thClass} pr-5 text-right`}>Actions</th>
+                </tr></thead>
+                <tbody>
+                  {leads.map(l => (
+                    <tr key={l.id} className="border-b border-white/[0.03] hover:bg-white/[0.02] transition-colors">
+                      <td className={`${tdClass} pl-5`}>
+                        <p className="font-medium text-white">{l.name}</p>
+                        <p className="text-[11px] text-slate-600 mt-0.5">{l.email || l.phone || ''}</p>
+                      </td>
+                      <td className={`${tdClass} text-slate-400`}>{l.company || '—'}</td>
+                      <td className={tdClass}><span className={`px-2.5 py-1 rounded-lg text-[11px] font-medium border ${statusBadge[l.status] || 'bg-slate-500/15 text-slate-400 border-slate-500/20'}`}>{l.status}</span></td>
+                      <td className={tdClass}><span className={`px-2.5 py-1 rounded-lg text-[11px] font-medium border ${priorityBadge[l.priority] || ''}`}>{l.priority}</span></td>
+                      <td className={`${tdClass} text-[11px] text-slate-500`}>{l.source}</td>
+                      <td className={`${tdClass} text-[11px] text-slate-600`}>{new Date(l.created_at).toLocaleDateString()}</td>
+                      <td className={`${tdClass} pr-5 text-right`}>
+                        <div className="flex items-center justify-end gap-1">
+                          <button onClick={() => openEdit(l)} className="p-1.5 rounded-lg hover:bg-white/[0.05] text-slate-500 hover:text-white transition-colors"><Edit className="h-3.5 w-3.5" /></button>
+                          <button onClick={() => handleDelete(l.id)} className="p-1.5 rounded-lg hover:bg-red-500/10 text-slate-600 hover:text-red-400 transition-colors"><Trash2 className="h-3.5 w-3.5" /></button>
+                        </div>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
           </div>
         )}
         <Pagination page={page} totalPages={totalPages} setPage={setPage} />
@@ -276,7 +412,15 @@ export function CRMDealsPage() {
   const navigate = useNavigate();
 
   const stages = ['qualification', 'discovery', 'proposal', 'negotiation', 'contract', 'won', 'lost'];
-  const stageColors: Record<string,string> = { qualification: 'bg-gray-100 text-gray-700', discovery: 'bg-blue-100 text-blue-700', proposal: 'bg-indigo-100 text-indigo-700', negotiation: 'bg-amber-100 text-amber-700', contract: 'bg-purple-100 text-purple-700', won: 'bg-emerald-100 text-emerald-700', lost: 'bg-red-100 text-red-700' };
+  const stageBadge: Record<string, string> = {
+    qualification: 'bg-slate-500/15 text-slate-400 border-slate-500/20',
+    discovery: 'bg-blue-500/15 text-blue-400 border-blue-500/20',
+    proposal: 'bg-violet-500/15 text-violet-400 border-violet-500/20',
+    negotiation: 'bg-amber-500/15 text-amber-400 border-amber-500/20',
+    contract: 'bg-purple-500/15 text-purple-400 border-purple-500/20',
+    won: 'bg-emerald-500/15 text-emerald-400 border-emerald-500/20',
+    lost: 'bg-red-500/15 text-red-400 border-red-500/20',
+  };
 
   const fetchDeals = useCallback(async () => {
     setLoading(true);
@@ -315,89 +459,110 @@ export function CRMDealsPage() {
   const fmtCurr = (v: any) => `₹${(parseFloat(v || 0)).toLocaleString('en-IN')}`;
 
   return (
-    <CRMLayout title="Deals Management" activePath="/crm/deals">
-      <div className="space-y-4">
+    <CRMLayout title="Deals">
+      <div className="space-y-5">
         <div className="flex flex-col sm:flex-row gap-3 justify-between">
           <div className="flex gap-2 flex-1">
-            <div className="relative flex-1 max-w-md">
-              <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-slate-400" />
-              <Input placeholder="Search deals..." className="pl-9" value={search} onChange={e => { setSearch(e.target.value); setPage(1); }} />
+            <div className="relative flex-1 max-w-sm">
+              <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-slate-600" />
+              <input placeholder="Search deals..." value={search} onChange={e => { setSearch(e.target.value); setPage(1); }}
+                className="w-full h-10 pl-10 pr-4 rounded-xl bg-white/[0.05] border border-white/[0.08] text-sm text-white placeholder:text-slate-600 focus:outline-none focus:border-violet-500/30 transition-colors" />
             </div>
-            <select className="border border-slate-200 rounded-lg px-3 py-2 text-sm bg-white" value={stageFilter} onChange={e => { setStageFilter(e.target.value); setPage(1); }}>
-              <option value="all">All Stages</option>
-              {stages.map(s => <option key={s} value={s}>{s.charAt(0).toUpperCase() + s.slice(1)}</option>)}
+            <select value={stageFilter} onChange={e => { setStageFilter(e.target.value); setPage(1); }}
+              className="h-10 px-3 rounded-xl bg-white/[0.05] border border-white/[0.08] text-sm text-slate-300 focus:outline-none">
+              <option value="all" className="bg-[#0d1120]">All Stages</option>
+              {stages.map(s => <option key={s} value={s} className="bg-[#0d1120]">{s.charAt(0).toUpperCase() + s.slice(1)}</option>)}
             </select>
           </div>
           <Button onClick={() => { setEditDeal(null); setForm({ title: '', value: '', stage: 'qualification', probability: '10', expected_close: '', contact_name: '', contact_email: '', company: '', notes: '' }); setShowForm(true); }}
-            className="bg-blue-500 hover:bg-blue-600 text-white">
-            <Plus className="h-4 w-4 mr-1" /> New Deal
+            className="h-10 bg-gradient-to-r from-blue-600 to-cyan-600 hover:from-blue-500 hover:to-cyan-500 text-white rounded-xl shadow-lg shadow-blue-600/20">
+            <Plus className="h-4 w-4 mr-1.5" /> New Deal
           </Button>
         </div>
 
         {showForm && (
-          <Card className="border-0 shadow-lg">
-            <CardHeader className="pb-3 flex flex-row items-center justify-between">
-              <CardTitle className="text-sm">{editDeal ? 'Edit Deal' : 'Create New Deal'}</CardTitle>
-              <Button variant="ghost" size="sm" onClick={() => { setShowForm(false); setEditDeal(null); }}><X className="h-4 w-4" /></Button>
-            </CardHeader>
-            <CardContent>
-              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3">
-                <div><Label className="text-xs">Title *</Label><Input value={form.title} onChange={e => setForm({...form, title: e.target.value})} placeholder="Deal title" /></div>
-                <div><Label className="text-xs">Value (₹)</Label><Input type="number" value={form.value} onChange={e => setForm({...form, value: e.target.value})} placeholder="0" /></div>
-                <div><Label className="text-xs">Stage</Label>
-                  <select className="w-full border rounded-md px-3 py-2 text-sm" value={form.stage} onChange={e => setForm({...form, stage: e.target.value})}>
-                    {stages.map(s => <option key={s} value={s}>{s.charAt(0).toUpperCase() + s.slice(1)}</option>)}
-                  </select>
+          <div className="p-5 rounded-2xl bg-white/[0.04] border border-white/[0.08] space-y-4">
+            <div className="flex items-center justify-between">
+              <h3 className="text-sm font-semibold text-white">{editDeal ? 'Edit Deal' : 'Create New Deal'}</h3>
+              <button onClick={() => { setShowForm(false); setEditDeal(null); }} className="p-1.5 rounded-lg hover:bg-white/[0.05] text-slate-500"><X className="h-4 w-4" /></button>
+            </div>
+            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3">
+              {[
+                { label: 'Title *', field: 'title', placeholder: 'Deal title' },
+                { label: 'Value (₹)', field: 'value', placeholder: '0', type: 'number' },
+                { label: 'Probability (%)', field: 'probability', placeholder: '10', type: 'number' },
+                { label: 'Expected Close', field: 'expected_close', type: 'date' },
+                { label: 'Contact Name', field: 'contact_name', placeholder: 'Contact' },
+                { label: 'Contact Email', field: 'contact_email', placeholder: 'Email', type: 'email' },
+                { label: 'Company', field: 'company', placeholder: 'Company' },
+              ].map(({ label, field, placeholder, type }) => (
+                <div key={field} className="space-y-1">
+                  <label className="text-[10px] font-medium text-slate-500 uppercase tracking-wider">{label}</label>
+                  <input type={type || 'text'} value={(form as any)[field]} onChange={e => setForm({ ...form, [field]: e.target.value })} placeholder={placeholder}
+                    className="w-full h-9 px-3 rounded-lg bg-white/[0.05] border border-white/[0.08] text-sm text-white placeholder:text-slate-600 focus:outline-none focus:border-violet-500/30" />
                 </div>
-                <div><Label className="text-xs">Probability (%)</Label><Input type="number" min="0" max="100" value={form.probability} onChange={e => setForm({...form, probability: e.target.value})} /></div>
-                <div><Label className="text-xs">Expected Close</Label><Input type="date" value={form.expected_close} onChange={e => setForm({...form, expected_close: e.target.value})} /></div>
-                <div><Label className="text-xs">Contact Name</Label><Input value={form.contact_name} onChange={e => setForm({...form, contact_name: e.target.value})} placeholder="Contact" /></div>
-                <div><Label className="text-xs">Contact Email</Label><Input type="email" value={form.contact_email} onChange={e => setForm({...form, contact_email: e.target.value})} /></div>
-                <div><Label className="text-xs">Company</Label><Input value={form.company} onChange={e => setForm({...form, company: e.target.value})} placeholder="Company" /></div>
-                <div className="sm:col-span-2 lg:col-span-4"><Label className="text-xs">Notes</Label><Input value={form.notes} onChange={e => setForm({...form, notes: e.target.value})} placeholder="Notes..." /></div>
+              ))}
+              <div className="space-y-1">
+                <label className="text-[10px] font-medium text-slate-500 uppercase tracking-wider">Stage</label>
+                <select value={form.stage} onChange={e => setForm({ ...form, stage: e.target.value })}
+                  className="w-full h-9 px-3 rounded-lg bg-white/[0.05] border border-white/[0.08] text-sm text-slate-300 focus:outline-none">
+                  {stages.map(s => <option key={s} value={s} className="bg-[#0d1120]">{s.charAt(0).toUpperCase() + s.slice(1)}</option>)}
+                </select>
               </div>
-              <div className="flex justify-end mt-4">
-                <Button onClick={handleSave} className="bg-blue-500 hover:bg-blue-600 text-white"><Save className="h-4 w-4 mr-1" /> {editDeal ? 'Update' : 'Create'} Deal</Button>
+              <div className="sm:col-span-2 lg:col-span-4 space-y-1">
+                <label className="text-[10px] font-medium text-slate-500 uppercase tracking-wider">Notes</label>
+                <input value={form.notes} onChange={e => setForm({ ...form, notes: e.target.value })} placeholder="Notes..."
+                  className="w-full h-9 px-3 rounded-lg bg-white/[0.05] border border-white/[0.08] text-sm text-white placeholder:text-slate-600 focus:outline-none focus:border-violet-500/30" />
               </div>
-            </CardContent>
-          </Card>
+            </div>
+            <div className="flex justify-end">
+              <Button onClick={handleSave} className="bg-gradient-to-r from-blue-600 to-cyan-600 hover:from-blue-500 hover:to-cyan-500 text-white rounded-xl">
+                <Save className="h-4 w-4 mr-1.5" /> {editDeal ? 'Update' : 'Create'}
+              </Button>
+            </div>
+          </div>
         )}
 
         {loading ? (
-          <div className="py-20 text-center"><div className="w-8 h-8 border-4 border-blue-100 border-t-blue-500 rounded-full animate-spin mx-auto mb-2" /><p className="text-sm text-slate-500">Loading deals...</p></div>
+          <div className="py-20 text-center"><div className="w-10 h-10 border-2 border-blue-500/30 border-t-blue-400 rounded-full animate-spin mx-auto mb-3" /></div>
         ) : deals.length === 0 ? (
-          <div className="py-20 text-center"><Briefcase className="h-12 w-12 text-slate-300 mx-auto mb-3" /><p className="text-slate-500">No deals found</p></div>
+          <div className="py-20 text-center"><Briefcase className="h-12 w-12 text-slate-700 mx-auto mb-3" /><p className="text-slate-500">No deals found</p></div>
         ) : (
-          <div className="overflow-x-auto">
-            <table className="w-full text-sm">
-              <thead><tr className="border-b border-slate-200 text-left">
-                <th className="pb-2 font-medium text-slate-500">Title</th><th className="pb-2 font-medium text-slate-500">Value</th>
-                <th className="pb-2 font-medium text-slate-500">Stage</th><th className="pb-2 font-medium text-slate-500">Prob.</th>
-                <th className="pb-2 font-medium text-slate-500">Company</th><th className="pb-2 font-medium text-slate-500">Close Date</th>
-                <th className="pb-2 font-medium text-slate-500 text-right">Actions</th>
-              </tr></thead>
-              <tbody>
-                {deals.map(d => (
-                  <tr key={d.id} className="border-b border-slate-100 hover:bg-slate-50 transition-colors">
-                    <td className="py-3">
-                      <p className="font-medium text-slate-800">{d.title}</p>
-                      <p className="text-xs text-slate-400">{d.contact_name || d.contact_email || ''}</p>
-                    </td>
-                    <td className="py-3 font-medium text-slate-800">{fmtCurr(d.value)}</td>
-                    <td className="py-3"><span className={`px-2 py-0.5 rounded-full text-xs font-medium ${stageColors[d.stage] || ''}`}>{d.stage}</span></td>
-                    <td className="py-3 text-slate-600">{d.probability}%</td>
-                    <td className="py-3 text-slate-500">{d.company || '-'}</td>
-                    <td className="py-3 text-slate-400 text-xs">{d.expected_close ? new Date(d.expected_close).toLocaleDateString() : '-'}</td>
-                    <td className="py-3 text-right">
-                      <div className="flex items-center justify-end gap-1">
-                        <Button variant="ghost" size="sm" onClick={() => openEdit(d)}><Edit className="h-3.5 w-3.5" /></Button>
-                        <Button variant="ghost" size="sm" onClick={() => handleDelete(d.id)}><Trash2 className="h-3.5 w-3.5 text-red-400" /></Button>
-                      </div>
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
+          <div className="rounded-2xl bg-white/[0.02] border border-white/[0.06] overflow-hidden">
+            <div className="overflow-x-auto">
+              <table className="w-full text-sm">
+                <thead><tr className="border-b border-white/[0.06]">
+                  <th className={`${thClass} pl-5 text-left`}>Title</th>
+                  <th className={`${thClass} text-left`}>Value</th>
+                  <th className={`${thClass} text-left`}>Stage</th>
+                  <th className={`${thClass} text-left`}>Prob.</th>
+                  <th className={`${thClass} text-left`}>Company</th>
+                  <th className={`${thClass} text-left`}>Close Date</th>
+                  <th className={`${thClass} pr-5 text-right`}>Actions</th>
+                </tr></thead>
+                <tbody>
+                  {deals.map(d => (
+                    <tr key={d.id} className="border-b border-white/[0.03] hover:bg-white/[0.02] transition-colors">
+                      <td className={`${tdClass} pl-5`}>
+                        <p className="font-medium text-white">{d.title}</p>
+                        <p className="text-[11px] text-slate-600 mt-0.5">{d.contact_name || d.contact_email || ''}</p>
+                      </td>
+                      <td className={`${tdClass} font-semibold text-emerald-400`}>{fmtCurr(d.value)}</td>
+                      <td className={tdClass}><span className={`px-2.5 py-1 rounded-lg text-[11px] font-medium border ${stageBadge[d.stage] || ''}`}>{d.stage}</span></td>
+                      <td className={`${tdClass} text-slate-400`}>{d.probability}%</td>
+                      <td className={`${tdClass} text-slate-500`}>{d.company || '—'}</td>
+                      <td className={`${tdClass} text-[11px] text-slate-600`}>{d.expected_close ? new Date(d.expected_close).toLocaleDateString() : '—'}</td>
+                      <td className={`${tdClass} pr-5 text-right`}>
+                        <div className="flex items-center justify-end gap-1">
+                          <button onClick={() => openEdit(d)} className="p-1.5 rounded-lg hover:bg-white/[0.05] text-slate-500 hover:text-white transition-colors"><Edit className="h-3.5 w-3.5" /></button>
+                          <button onClick={() => handleDelete(d.id)} className="p-1.5 rounded-lg hover:bg-red-500/10 text-slate-600 hover:text-red-400 transition-colors"><Trash2 className="h-3.5 w-3.5" /></button>
+                        </div>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
           </div>
         )}
         <Pagination page={page} totalPages={totalPages} setPage={setPage} />
@@ -454,70 +619,89 @@ export function CRMContactsPage() {
   };
 
   return (
-    <CRMLayout title="Contacts" activePath="/crm/contacts">
-      <div className="space-y-4">
+    <CRMLayout title="Contacts">
+      <div className="space-y-5">
         <div className="flex flex-col sm:flex-row gap-3 justify-between">
-          <div className="relative flex-1 max-w-md">
-            <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-slate-400" />
-            <Input placeholder="Search contacts..." className="pl-9" value={search} onChange={e => { setSearch(e.target.value); setPage(1); }} />
+          <div className="relative flex-1 max-w-sm">
+            <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-slate-600" />
+            <input placeholder="Search contacts..." value={search} onChange={e => { setSearch(e.target.value); setPage(1); }}
+              className="w-full h-10 pl-10 pr-4 rounded-xl bg-white/[0.05] border border-white/[0.08] text-sm text-white placeholder:text-slate-600 focus:outline-none focus:border-violet-500/30 transition-colors" />
           </div>
           <Button onClick={() => { setEditContact(null); setForm({ name: '', email: '', phone: '', company: '', designation: '', city: '', state: '', notes: '' }); setShowForm(true); }}
-            className="bg-purple-500 hover:bg-purple-600 text-white">
-            <Plus className="h-4 w-4 mr-1" /> New Contact
+            className="h-10 bg-gradient-to-r from-amber-600 to-orange-600 hover:from-amber-500 hover:to-orange-500 text-white rounded-xl shadow-lg shadow-amber-600/20">
+            <Plus className="h-4 w-4 mr-1.5" /> New Contact
           </Button>
         </div>
 
         {showForm && (
-          <Card className="border-0 shadow-lg">
-            <CardHeader className="pb-3 flex flex-row items-center justify-between">
-              <CardTitle className="text-sm">{editContact ? 'Edit Contact' : 'New Contact'}</CardTitle>
-              <Button variant="ghost" size="sm" onClick={() => { setShowForm(false); setEditContact(null); }}><X className="h-4 w-4" /></Button>
-            </CardHeader>
-            <CardContent>
-              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3">
-                <div><Label className="text-xs">Name *</Label><Input value={form.name} onChange={e => setForm({...form, name: e.target.value})} placeholder="Full name" /></div>
-                <div><Label className="text-xs">Email</Label><Input type="email" value={form.email} onChange={e => setForm({...form, email: e.target.value})} /></div>
-                <div><Label className="text-xs">Phone</Label><Input value={form.phone} onChange={e => setForm({...form, phone: e.target.value})} /></div>
-                <div><Label className="text-xs">Company</Label><Input value={form.company} onChange={e => setForm({...form, company: e.target.value})} /></div>
-                <div><Label className="text-xs">Designation</Label><Input value={form.designation} onChange={e => setForm({...form, designation: e.target.value})} /></div>
-                <div><Label className="text-xs">City</Label><Input value={form.city} onChange={e => setForm({...form, city: e.target.value})} /></div>
-                <div><Label className="text-xs">State</Label><Input value={form.state} onChange={e => setForm({...form, state: e.target.value})} /></div>
-                <div className="sm:col-span-2 lg:col-span-4"><Label className="text-xs">Notes</Label><Input value={form.notes} onChange={e => setForm({...form, notes: e.target.value})} placeholder="Notes..." /></div>
+          <div className="p-5 rounded-2xl bg-white/[0.04] border border-white/[0.08] space-y-4">
+            <div className="flex items-center justify-between">
+              <h3 className="text-sm font-semibold text-white">{editContact ? 'Edit Contact' : 'New Contact'}</h3>
+              <button onClick={() => { setShowForm(false); setEditContact(null); }} className="p-1.5 rounded-lg hover:bg-white/[0.05] text-slate-500"><X className="h-4 w-4" /></button>
+            </div>
+            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3">
+              {[
+                { label: 'Name *', field: 'name', placeholder: 'Full name' },
+                { label: 'Email', field: 'email', type: 'email' },
+                { label: 'Phone', field: 'phone' },
+                { label: 'Company', field: 'company' },
+                { label: 'Designation', field: 'designation' },
+                { label: 'City', field: 'city' },
+                { label: 'State', field: 'state' },
+              ].map(({ label, field, type }) => (
+                <div key={field} className="space-y-1">
+                  <label className="text-[10px] font-medium text-slate-500 uppercase tracking-wider">{label}</label>
+                  <input type={type || 'text'} value={(form as any)[field]} onChange={e => setForm({ ...form, [field]: e.target.value })}
+                    className="w-full h-9 px-3 rounded-lg bg-white/[0.05] border border-white/[0.08] text-sm text-white placeholder:text-slate-600 focus:outline-none focus:border-violet-500/30" />
+                </div>
+              ))}
+              <div className="sm:col-span-2 lg:col-span-4 space-y-1">
+                <label className="text-[10px] font-medium text-slate-500 uppercase tracking-wider">Notes</label>
+                <input value={form.notes} onChange={e => setForm({ ...form, notes: e.target.value })} placeholder="Notes..."
+                  className="w-full h-9 px-3 rounded-lg bg-white/[0.05] border border-white/[0.08] text-sm text-white placeholder:text-slate-600 focus:outline-none focus:border-violet-500/30" />
               </div>
-              <div className="flex justify-end mt-4">
-                <Button onClick={handleSave} className="bg-purple-500 hover:bg-purple-600 text-white"><Save className="h-4 w-4 mr-1" /> {editContact ? 'Update' : 'Create'}</Button>
-              </div>
-            </CardContent>
-          </Card>
+            </div>
+            <div className="flex justify-end">
+              <Button onClick={handleSave} className="bg-gradient-to-r from-amber-600 to-orange-600 hover:from-amber-500 hover:to-orange-500 text-white rounded-xl">
+                <Save className="h-4 w-4 mr-1.5" /> {editContact ? 'Update' : 'Create'}
+              </Button>
+            </div>
+          </div>
         )}
 
         {loading ? (
-          <div className="py-20 text-center"><div className="w-8 h-8 border-4 border-purple-100 border-t-purple-500 rounded-full animate-spin mx-auto mb-2" /></div>
+          <div className="py-20 text-center"><div className="w-10 h-10 border-2 border-amber-500/30 border-t-amber-400 rounded-full animate-spin mx-auto" /></div>
         ) : contacts.length === 0 ? (
-          <div className="py-20 text-center"><Users className="h-12 w-12 text-slate-300 mx-auto mb-3" /><p className="text-slate-500">No contacts found</p></div>
+          <div className="py-20 text-center"><Users className="h-12 w-12 text-slate-700 mx-auto mb-3" /><p className="text-slate-500">No contacts found</p></div>
         ) : (
-          <div className="overflow-x-auto">
-            <table className="w-full text-sm">
-              <thead><tr className="border-b border-slate-200 text-left">
-                <th className="pb-2 font-medium text-slate-500">Name</th><th className="pb-2 font-medium text-slate-500">Company</th>
-                <th className="pb-2 font-medium text-slate-500">Phone</th><th className="pb-2 font-medium text-slate-500">Location</th>
-                <th className="pb-2 font-medium text-slate-500 text-right">Actions</th>
-              </tr></thead>
-              <tbody>
-                {contacts.map(c => (
-                  <tr key={c.id} className="border-b border-slate-100 hover:bg-slate-50 transition-colors">
-                    <td className="py-3"><p className="font-medium text-slate-800">{c.name}</p><p className="text-xs text-slate-400">{c.email || c.designation}</p></td>
-                    <td className="py-3 text-slate-600">{c.company || '-'}</td>
-                    <td className="py-3 text-slate-600">{c.phone || '-'}</td>
-                    <td className="py-3 text-slate-500 text-xs">{[c.city,c.state].filter(Boolean).join(', ') || '-'}</td>
-                    <td className="py-3 text-right"><div className="flex items-center justify-end gap-1">
-                      <Button variant="ghost" size="sm" onClick={() => openEdit(c)}><Edit className="h-3.5 w-3.5" /></Button>
-                      <Button variant="ghost" size="sm" onClick={() => handleDelete(c.id)}><Trash2 className="h-3.5 w-3.5 text-red-400" /></Button>
-                    </div></td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
+          <div className="rounded-2xl bg-white/[0.02] border border-white/[0.06] overflow-hidden">
+            <div className="overflow-x-auto">
+              <table className="w-full text-sm">
+                <thead><tr className="border-b border-white/[0.06]">
+                  <th className={`${thClass} pl-5 text-left`}>Name</th>
+                  <th className={`${thClass} text-left`}>Company</th>
+                  <th className={`${thClass} text-left`}>Phone</th>
+                  <th className={`${thClass} text-left`}>Location</th>
+                  <th className={`${thClass} pr-5 text-right`}>Actions</th>
+                </tr></thead>
+                <tbody>
+                  {contacts.map(c => (
+                    <tr key={c.id} className="border-b border-white/[0.03] hover:bg-white/[0.02] transition-colors">
+                      <td className={`${tdClass} pl-5`}><p className="font-medium text-white">{c.name}</p><p className="text-[11px] text-slate-600 mt-0.5">{c.email || c.designation || ''}</p></td>
+                      <td className={`${tdClass} text-slate-400`}>{c.company || '—'}</td>
+                      <td className={`${tdClass} text-slate-400`}>{c.phone || '—'}</td>
+                      <td className={`${tdClass} text-[11px] text-slate-500`}>{[c.city, c.state].filter(Boolean).join(', ') || '—'}</td>
+                      <td className={`${tdClass} pr-5 text-right`}>
+                        <div className="flex items-center justify-end gap-1">
+                          <button onClick={() => openEdit(c)} className="p-1.5 rounded-lg hover:bg-white/[0.05] text-slate-500 hover:text-white transition-colors"><Edit className="h-3.5 w-3.5" /></button>
+                          <button onClick={() => handleDelete(c.id)} className="p-1.5 rounded-lg hover:bg-red-500/10 text-slate-600 hover:text-red-400 transition-colors"><Trash2 className="h-3.5 w-3.5" /></button>
+                        </div>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
           </div>
         )}
         <Pagination page={page} totalPages={totalPages} setPage={setPage} />
@@ -541,8 +725,14 @@ export function CRMActivitiesPage() {
   const navigate = useNavigate();
 
   const types = ['call', 'email', 'meeting', 'task', 'note', 'followup'];
-  const typeColors: Record<string,string> = { call: 'bg-purple-100 text-purple-700', email: 'bg-blue-100 text-blue-700', meeting: 'bg-cyan-100 text-cyan-700', task: 'bg-amber-100 text-amber-700', note: 'bg-slate-100 text-slate-700', followup: 'bg-pink-100 text-pink-700' };
-  const typeIcons: Record<string,any> = { call: Phone, email: Mail, meeting: Calendar, task: CheckCircle, note: FileText, followup: Clock };
+  const typeBadge: Record<string, { bg: string; icon: any }> = {
+    call:     { bg: 'bg-violet-500/15 text-violet-400', icon: Phone },
+    email:    { bg: 'bg-blue-500/15 text-blue-400', icon: Mail },
+    meeting:  { bg: 'bg-cyan-500/15 text-cyan-400', icon: Calendar },
+    task:     { bg: 'bg-amber-500/15 text-amber-400', icon: CheckCircle },
+    note:     { bg: 'bg-slate-500/15 text-slate-400', icon: FileText },
+    followup: { bg: 'bg-pink-500/15 text-pink-400', icon: Clock },
+  };
 
   const fetchActivities = useCallback(async () => {
     setLoading(true);
@@ -574,62 +764,80 @@ export function CRMActivitiesPage() {
   };
 
   return (
-    <CRMLayout title="Activities" activePath="/crm/activities">
-      <div className="space-y-4">
+    <CRMLayout title="Activities">
+      <div className="space-y-5">
         <div className="flex flex-col sm:flex-row gap-3 justify-between">
-          <select className="border border-slate-200 rounded-lg px-3 py-2 text-sm bg-white" value={typeFilter} onChange={e => { setTypeFilter(e.target.value); setPage(1); }}>
-            <option value="all">All Types</option>
-            {types.map(t => <option key={t} value={t}>{t.charAt(0).toUpperCase() + t.slice(1)}</option>)}
+          <select value={typeFilter} onChange={e => { setTypeFilter(e.target.value); setPage(1); }}
+            className="h-10 px-3 rounded-xl bg-white/[0.05] border border-white/[0.08] text-sm text-slate-300 focus:outline-none">
+            <option value="all" className="bg-[#0d1120]">All Types</option>
+            {types.map(t => <option key={t} value={t} className="bg-[#0d1120]">{t.charAt(0).toUpperCase() + t.slice(1)}</option>)}
           </select>
-          <Button onClick={() => setShowForm(true)} className="bg-purple-500 hover:bg-purple-600 text-white">
-            <Plus className="h-4 w-4 mr-1" /> Log Activity
+          <Button onClick={() => setShowForm(true)}
+            className="h-10 bg-gradient-to-r from-violet-600 to-purple-600 hover:from-violet-500 hover:to-purple-500 text-white rounded-xl shadow-lg shadow-violet-600/20">
+            <Plus className="h-4 w-4 mr-1.5" /> Log Activity
           </Button>
         </div>
 
         {showForm && (
-          <Card className="border-0 shadow-lg">
-            <CardHeader className="pb-3 flex flex-row items-center justify-between">
-              <CardTitle className="text-sm">Log New Activity</CardTitle>
-              <Button variant="ghost" size="sm" onClick={() => setShowForm(false)}><X className="h-4 w-4" /></Button>
-            </CardHeader>
-            <CardContent>
-              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3">
-                <div><Label className="text-xs">Type *</Label>
-                  <select className="w-full border rounded-md px-3 py-2 text-sm" value={form.type} onChange={e => setForm({...form, type: e.target.value})}>
-                    {types.map(t => <option key={t} value={t}>{t.charAt(0).toUpperCase() + t.slice(1)}</option>)}
-                  </select>
-                </div>
-                <div><Label className="text-xs">Title *</Label><Input value={form.title} onChange={e => setForm({...form, title: e.target.value})} placeholder="Activity title" /></div>
-                <div><Label className="text-xs">Scheduled At</Label><Input type="datetime-local" value={form.scheduled_at} onChange={e => setForm({...form, scheduled_at: e.target.value})} /></div>
-                <div className="sm:col-span-2 lg:col-span-4"><Label className="text-xs">Description</Label><Input value={form.description} onChange={e => setForm({...form, description: e.target.value})} placeholder="Description..." /></div>
+          <div className="p-5 rounded-2xl bg-white/[0.04] border border-white/[0.08] space-y-4">
+            <div className="flex items-center justify-between">
+              <h3 className="text-sm font-semibold text-white">Log New Activity</h3>
+              <button onClick={() => setShowForm(false)} className="p-1.5 rounded-lg hover:bg-white/[0.05] text-slate-500"><X className="h-4 w-4" /></button>
+            </div>
+            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3">
+              <div className="space-y-1">
+                <label className="text-[10px] font-medium text-slate-500 uppercase tracking-wider">Type</label>
+                <select value={form.type} onChange={e => setForm({ ...form, type: e.target.value })}
+                  className="w-full h-9 px-3 rounded-lg bg-white/[0.05] border border-white/[0.08] text-sm text-slate-300 focus:outline-none">
+                  {types.map(t => <option key={t} value={t} className="bg-[#0d1120]">{t.charAt(0).toUpperCase() + t.slice(1)}</option>)}
+                </select>
               </div>
-              <div className="flex justify-end mt-4">
-                <Button onClick={handleSave} className="bg-purple-500 hover:bg-purple-600 text-white"><Save className="h-4 w-4 mr-1" /> Log Activity</Button>
+              <div className="space-y-1">
+                <label className="text-[10px] font-medium text-slate-500 uppercase tracking-wider">Title *</label>
+                <input value={form.title} onChange={e => setForm({ ...form, title: e.target.value })} placeholder="Activity title"
+                  className="w-full h-9 px-3 rounded-lg bg-white/[0.05] border border-white/[0.08] text-sm text-white placeholder:text-slate-600 focus:outline-none focus:border-violet-500/30" />
               </div>
-            </CardContent>
-          </Card>
+              <div className="space-y-1">
+                <label className="text-[10px] font-medium text-slate-500 uppercase tracking-wider">Scheduled At</label>
+                <input type="datetime-local" value={form.scheduled_at} onChange={e => setForm({ ...form, scheduled_at: e.target.value })}
+                  className="w-full h-9 px-3 rounded-lg bg-white/[0.05] border border-white/[0.08] text-sm text-slate-300 focus:outline-none focus:border-violet-500/30" />
+              </div>
+              <div className="sm:col-span-2 lg:col-span-4 space-y-1">
+                <label className="text-[10px] font-medium text-slate-500 uppercase tracking-wider">Description</label>
+                <input value={form.description} onChange={e => setForm({ ...form, description: e.target.value })} placeholder="Description..."
+                  className="w-full h-9 px-3 rounded-lg bg-white/[0.05] border border-white/[0.08] text-sm text-white placeholder:text-slate-600 focus:outline-none focus:border-violet-500/30" />
+              </div>
+            </div>
+            <div className="flex justify-end">
+              <Button onClick={handleSave} className="bg-gradient-to-r from-violet-600 to-purple-600 hover:from-violet-500 hover:to-purple-500 text-white rounded-xl">
+                <Save className="h-4 w-4 mr-1.5" /> Log Activity
+              </Button>
+            </div>
+          </div>
         )}
 
         {loading ? (
-          <div className="py-20 text-center"><div className="w-8 h-8 border-4 border-purple-100 border-t-purple-500 rounded-full animate-spin mx-auto mb-2" /></div>
+          <div className="py-20 text-center"><div className="w-10 h-10 border-2 border-violet-500/30 border-t-violet-400 rounded-full animate-spin mx-auto" /></div>
         ) : activities.length === 0 ? (
-          <div className="py-20 text-center"><Activity className="h-12 w-12 text-slate-300 mx-auto mb-3" /><p className="text-slate-500">No activities</p></div>
+          <div className="py-20 text-center"><Activity className="h-12 w-12 text-slate-700 mx-auto mb-3" /><p className="text-slate-500">No activities yet</p></div>
         ) : (
           <div className="space-y-2">
             {activities.map(a => {
-              const Icon = typeIcons[a.type] || Activity;
+              const badge = typeBadge[a.type] || { bg: 'bg-slate-500/15 text-slate-400', icon: Activity };
+              const Icon = badge.icon;
               const isOverdue = !a.completed_at && a.scheduled_at && new Date(a.scheduled_at) < new Date();
               return (
-                <div key={a.id} className={`flex items-center gap-3 p-3 rounded-lg border transition-colors ${isOverdue ? 'border-red-200 bg-red-50' : a.completed_at ? 'border-green-100 bg-green-50/50' : 'border-slate-100 bg-white hover:bg-slate-50'}`}>
-                  <div className={`p-2 rounded-lg ${typeColors[a.type] || 'bg-slate-100'}`}><Icon className="h-4 w-4" /></div>
+                <div key={a.id} className={`flex items-center gap-4 p-4 rounded-xl border transition-all duration-200
+                  ${isOverdue ? 'bg-red-500/[0.04] border-red-500/20' : a.completed_at ? 'bg-emerald-500/[0.03] border-emerald-500/10' : 'bg-white/[0.02] border-white/[0.06] hover:bg-white/[0.04]'}`}>
+                  <div className={`p-2.5 rounded-xl ${badge.bg}`}><Icon className="h-4 w-4" /></div>
                   <div className="flex-1 min-w-0">
-                    <p className={`text-sm font-medium ${a.completed_at ? 'line-through text-slate-400' : 'text-slate-800'}`}>{a.title}</p>
-                    <p className="text-xs text-slate-400">{a.description || ''}</p>
-                    {a.scheduled_at && <p className="text-[10px] text-slate-400 mt-0.5"><Clock className="inline h-3 w-3 mr-1" />{new Date(a.scheduled_at).toLocaleString()}</p>}
+                    <p className={`text-sm font-medium ${a.completed_at ? 'line-through text-slate-600' : 'text-white'}`}>{a.title}</p>
+                    {a.description && <p className="text-[11px] text-slate-600 mt-0.5">{a.description}</p>}
+                    {a.scheduled_at && <p className="text-[10px] text-slate-600 mt-1 flex items-center gap-1"><Clock className="h-3 w-3" />{new Date(a.scheduled_at).toLocaleString()}</p>}
                   </div>
                   <div className="flex items-center gap-1">
-                    {!a.completed_at && <Button variant="ghost" size="sm" onClick={() => handleComplete(a.id)}><CheckCircle className="h-4 w-4 text-green-500" /></Button>}
-                    <Button variant="ghost" size="sm" onClick={() => handleDelete(a.id)}><Trash2 className="h-3.5 w-3.5 text-red-400" /></Button>
+                    {!a.completed_at && <button onClick={() => handleComplete(a.id)} className="p-2 rounded-lg hover:bg-emerald-500/10 text-slate-600 hover:text-emerald-400 transition-colors"><CheckCircle className="h-4 w-4" /></button>}
+                    <button onClick={() => handleDelete(a.id)} className="p-2 rounded-lg hover:bg-red-500/10 text-slate-600 hover:text-red-400 transition-colors"><Trash2 className="h-3.5 w-3.5" /></button>
                   </div>
                 </div>
               );
@@ -643,7 +851,7 @@ export function CRMActivitiesPage() {
 }
 
 // ═══════════════════════════════════════════════════════════════════════════════
-// PIPELINE PAGE (Kanban-style)
+// PIPELINE PAGE (Kanban)
 // ═══════════════════════════════════════════════════════════════════════════════
 
 export function CRMPipelinePage() {
@@ -651,8 +859,13 @@ export function CRMPipelinePage() {
   const [loading, setLoading] = useState(true);
   const navigate = useNavigate();
 
-  const stageLabels: Record<string,string> = { qualification: 'Qualification', discovery: 'Discovery', proposal: 'Proposal', negotiation: 'Negotiation', contract: 'Contract' };
-  const stageColors: Record<string,string> = { qualification: 'border-gray-300 bg-gray-50', discovery: 'border-blue-300 bg-blue-50', proposal: 'border-indigo-300 bg-indigo-50', negotiation: 'border-amber-300 bg-amber-50', contract: 'border-purple-300 bg-purple-50' };
+  const stageConfig: Record<string, { label: string; color: string; border: string; bg: string }> = {
+    qualification: { label: 'Qualification', color: 'text-slate-400', border: 'border-slate-500/20', bg: 'bg-slate-500/10' },
+    discovery:     { label: 'Discovery', color: 'text-blue-400', border: 'border-blue-500/20', bg: 'bg-blue-500/10' },
+    proposal:      { label: 'Proposal', color: 'text-violet-400', border: 'border-violet-500/20', bg: 'bg-violet-500/10' },
+    negotiation:   { label: 'Negotiation', color: 'text-amber-400', border: 'border-amber-500/20', bg: 'bg-amber-500/10' },
+    contract:      { label: 'Contract', color: 'text-purple-400', border: 'border-purple-500/20', bg: 'bg-purple-500/10' },
+  };
 
   useEffect(() => {
     const fetchPipeline = async () => {
@@ -666,50 +879,52 @@ export function CRMPipelinePage() {
   }, [navigate]);
 
   const fmtCurr = (v: any) => `₹${(parseFloat(v || 0)).toLocaleString('en-IN')}`;
-
-  if (loading) return <CRMLayout title="Sales Pipeline" activePath="/crm/pipeline"><div className="py-20 text-center"><div className="w-8 h-8 border-4 border-emerald-100 border-t-emerald-500 rounded-full animate-spin mx-auto" /></div></CRMLayout>;
-
   const orderedStages = ['qualification', 'discovery', 'proposal', 'negotiation', 'contract'];
   const pipelineMap = Object.fromEntries(pipeline.map(p => [p.stage, p]));
   const totalPipeline = pipeline.reduce((s, p) => s + parseFloat(p.total_value || 0), 0);
   const totalWeighted = pipeline.reduce((s, p) => s + parseFloat(p.weighted_value || 0), 0);
 
   return (
-    <CRMLayout title="Sales Pipeline" activePath="/crm/pipeline">
-      <div className="space-y-6">
-        <div className="flex flex-col sm:flex-row gap-4 items-start sm:items-center justify-between">
-          <div>
-            <p className="text-2xl font-bold text-slate-900">{fmtCurr(totalPipeline)}</p>
-            <p className="text-sm text-slate-500">Total pipeline value ({fmtCurr(totalWeighted)} weighted)</p>
+    <CRMLayout title="Sales Pipeline">
+      {loading ? (
+        <div className="py-20 text-center"><div className="w-10 h-10 border-2 border-violet-500/30 border-t-violet-400 rounded-full animate-spin mx-auto" /></div>
+      ) : (
+        <div className="space-y-6">
+          <div className="flex flex-col sm:flex-row gap-4 items-start sm:items-center justify-between">
+            <div>
+              <p className="text-3xl font-bold text-white tracking-tight">{fmtCurr(totalPipeline)}</p>
+              <p className="text-sm text-slate-500 mt-0.5">Total pipeline value &middot; {fmtCurr(totalWeighted)} weighted</p>
+            </div>
+            <Link to="/crm/deals">
+              <Button className="bg-gradient-to-r from-blue-600 to-cyan-600 hover:from-blue-500 hover:to-cyan-500 text-white rounded-xl shadow-lg shadow-blue-600/20">
+                <Plus className="h-4 w-4 mr-1.5" /> New Deal
+              </Button>
+            </Link>
           </div>
-          <Link to="/crm/deals">
-            <Button className="bg-blue-500 hover:bg-blue-600 text-white"><Plus className="h-4 w-4 mr-1" /> New Deal</Button>
-          </Link>
-        </div>
 
-        <div className="grid grid-cols-1 md:grid-cols-5 gap-4">
-          {orderedStages.map(stage => {
-            const data = pipelineMap[stage] || { count: 0, total_value: '0', weighted_value: '0' };
-            return (
-              <Card key={stage} className={`border-2 ${stageColors[stage] || 'border-slate-200'}`}>
-                <CardHeader className="pb-2 pt-3 px-4">
-                  <div className="flex items-center justify-between">
-                    <CardTitle className="text-xs font-semibold uppercase tracking-wider text-slate-600">{stageLabels[stage] || stage}</CardTitle>
-                    <span className="text-xs font-bold bg-white px-2 py-0.5 rounded-full shadow-sm">{parseInt(data.count)}</span>
+          <div className="grid grid-cols-1 md:grid-cols-5 gap-4">
+            {orderedStages.map(stage => {
+              const cfg = stageConfig[stage];
+              const data = pipelineMap[stage] || { count: 0, total_value: '0', weighted_value: '0' };
+              const pct = totalPipeline > 0 ? (parseFloat(data.total_value || '0') / totalPipeline * 100) : 0;
+              return (
+                <div key={stage} className={`p-5 rounded-2xl bg-white/[0.03] border ${cfg.border} hover:bg-white/[0.05] transition-all duration-200`}>
+                  <div className="flex items-center justify-between mb-4">
+                    <span className={`text-[10px] font-bold uppercase tracking-[0.15em] ${cfg.color}`}>{cfg.label}</span>
+                    <span className={`text-xs font-bold px-2 py-0.5 rounded-lg ${cfg.bg} ${cfg.color}`}>{parseInt(data.count)}</span>
                   </div>
-                </CardHeader>
-                <CardContent className="px-4 pb-3">
-                  <p className="text-lg font-bold text-slate-800">{fmtCurr(data.total_value)}</p>
-                  <p className="text-[10px] text-slate-500">Weighted: {fmtCurr(data.weighted_value)}</p>
-                  <div className="mt-3 h-1.5 bg-white/80 rounded-full overflow-hidden">
-                    <div className="h-full bg-emerald-400 rounded-full" style={{ width: `${totalPipeline > 0 ? (parseFloat(data.total_value || '0') / totalPipeline * 100) : 0}%` }} />
+                  <p className="text-xl font-bold text-white">{fmtCurr(data.total_value)}</p>
+                  <p className="text-[10px] text-slate-600 mt-0.5">Weighted: {fmtCurr(data.weighted_value)}</p>
+                  <div className="mt-4 h-1.5 bg-white/[0.04] rounded-full overflow-hidden">
+                    <div className={`h-full rounded-full transition-all duration-700 bg-gradient-to-r from-violet-500 to-blue-500`}
+                      style={{ width: `${Math.max(pct, 3)}%` }} />
                   </div>
-                </CardContent>
-              </Card>
-            );
-          })}
+                </div>
+              );
+            })}
+          </div>
         </div>
-      </div>
+      )}
     </CRMLayout>
   );
 }
@@ -744,115 +959,124 @@ export function CRMReportsPage() {
   }, [period, navigate]);
 
   const fmtCurr = (v: any) => `₹${(parseFloat(v || 0)).toLocaleString('en-IN')}`;
-  const funnelColors = ['bg-blue-500', 'bg-sky-500', 'bg-indigo-500', 'bg-violet-500', 'bg-amber-500', 'bg-emerald-500', 'bg-red-500'];
+  const funnelColors = ['bg-blue-500', 'bg-violet-500', 'bg-cyan-500', 'bg-indigo-500', 'bg-amber-500', 'bg-emerald-500', 'bg-red-500'];
   const maxFunnel = Math.max(...funnel.map(f => parseInt(f.count || '0')), 1);
 
-  if (loading) return <CRMLayout title="Sales Reports" activePath="/crm/reports"><div className="py-20 text-center"><div className="w-8 h-8 border-4 border-emerald-100 border-t-emerald-500 rounded-full animate-spin mx-auto" /></div></CRMLayout>;
-
   return (
-    <CRMLayout title="Sales Reports" activePath="/crm/reports">
-      <div className="space-y-6">
-        {/* Sales Funnel */}
-        <Card className="border-0 shadow-md">
-          <CardHeader className="pb-2"><CardTitle className="text-sm font-semibold flex items-center gap-2"><TrendingUp className="h-4 w-4 text-emerald-500" /> Sales Funnel</CardTitle></CardHeader>
-          <CardContent>
+    <CRMLayout title="Reports">
+      {loading ? (
+        <div className="py-20 text-center"><div className="w-10 h-10 border-2 border-violet-500/30 border-t-violet-400 rounded-full animate-spin mx-auto" /></div>
+      ) : (
+        <div className="space-y-6">
+          {/* Sales Funnel */}
+          <div className="p-5 rounded-2xl bg-white/[0.03] border border-white/[0.06]">
+            <div className="flex items-center gap-2 mb-5">
+              <TrendingUp className="h-4 w-4 text-emerald-400" />
+              <h3 className="text-sm font-semibold text-white">Sales Funnel</h3>
+            </div>
             <div className="space-y-3">
               {funnel.map((f, i) => {
                 const pct = maxFunnel > 0 ? Math.round((parseInt(f.count) / maxFunnel) * 100) : 0;
                 return (
                   <div key={f.stage}>
-                    <div className="flex justify-between text-sm mb-1">
-                      <span className="capitalize text-slate-700 font-medium">{f.stage}</span>
-                      <span className="text-slate-500">{f.count}</span>
+                    <div className="flex justify-between text-[11px] mb-1.5">
+                      <span className="capitalize text-slate-400 font-medium">{f.stage}</span>
+                      <span className="text-slate-300 font-semibold">{f.count}</span>
                     </div>
-                    <div className="h-6 bg-slate-100 rounded overflow-hidden relative">
-                      <div className={`h-full ${funnelColors[i] || 'bg-slate-400'} rounded transition-all duration-700`} style={{ width: `${pct}%` }} />
+                    <div className="h-2 bg-white/[0.04] rounded-full overflow-hidden">
+                      <div className={`h-full ${funnelColors[i] || 'bg-slate-500'} rounded-full transition-all duration-700`} style={{ width: `${Math.max(pct, 3)}%` }} />
                     </div>
                   </div>
                 );
               })}
             </div>
-          </CardContent>
-        </Card>
+          </div>
 
-        {/* Revenue */}
-        <Card className="border-0 shadow-md">
-          <CardHeader className="pb-2 flex flex-row items-center justify-between">
-            <CardTitle className="text-sm font-semibold flex items-center gap-2"><DollarSign className="h-4 w-4 text-green-500" /> Revenue Report</CardTitle>
-            <select className="border rounded-md px-2 py-1 text-xs" value={period} onChange={e => setPeriod(e.target.value)}>
-              <option value="7">7 days</option><option value="30">30 days</option><option value="90">90 days</option><option value="365">1 year</option>
-            </select>
-          </CardHeader>
-          <CardContent>
+          {/* Revenue */}
+          <div className="p-5 rounded-2xl bg-white/[0.03] border border-white/[0.06]">
+            <div className="flex items-center justify-between mb-5">
+              <div className="flex items-center gap-2">
+                <DollarSign className="h-4 w-4 text-emerald-400" />
+                <h3 className="text-sm font-semibold text-white">Revenue Report</h3>
+              </div>
+              <select value={period} onChange={e => setPeriod(e.target.value)}
+                className="h-8 px-2 rounded-lg bg-white/[0.05] border border-white/[0.08] text-[11px] text-slate-300 focus:outline-none">
+                <option value="7" className="bg-[#0d1120]">7 days</option>
+                <option value="30" className="bg-[#0d1120]">30 days</option>
+                <option value="90" className="bg-[#0d1120]">90 days</option>
+                <option value="365" className="bg-[#0d1120]">1 year</option>
+              </select>
+            </div>
             {revenue && (
-              <div className="space-y-4">
+              <div className="space-y-5">
                 <div className="grid grid-cols-2 gap-4">
-                  <div className="p-4 bg-green-50 rounded-xl">
-                    <p className="text-2xl font-bold text-green-700">{fmtCurr(revenue.totals?.total_revenue)}</p>
-                    <p className="text-xs text-green-600">Total Revenue ({period} days)</p>
+                  <div className="p-4 rounded-xl bg-emerald-500/10 border border-emerald-500/20">
+                    <p className="text-2xl font-bold text-emerald-400">{fmtCurr(revenue.totals?.total_revenue)}</p>
+                    <p className="text-[11px] text-emerald-500/80 mt-1">Total Revenue ({period}d)</p>
                   </div>
-                  <div className="p-4 bg-blue-50 rounded-xl">
-                    <p className="text-2xl font-bold text-blue-700">{revenue.totals?.total_won || 0}</p>
-                    <p className="text-xs text-blue-600">Deals Won</p>
+                  <div className="p-4 rounded-xl bg-blue-500/10 border border-blue-500/20">
+                    <p className="text-2xl font-bold text-blue-400">{revenue.totals?.total_won || 0}</p>
+                    <p className="text-[11px] text-blue-500/80 mt-1">Deals Won</p>
                   </div>
                 </div>
                 {revenue.daily?.length > 0 && (
                   <div className="space-y-1">
-                    <p className="text-xs text-slate-500 font-medium">Daily Breakdown</p>
+                    <p className="text-[10px] text-slate-500 font-semibold uppercase tracking-wider mb-2">Daily Breakdown</p>
                     {revenue.daily.slice(-10).map((d: any) => (
-                      <div key={d.date} className="flex items-center justify-between text-xs py-1 border-b border-slate-50">
-                        <span className="text-slate-500">{new Date(d.date).toLocaleDateString()}</span>
-                        <span className="font-medium text-slate-700">{fmtCurr(d.revenue)} ({d.deals_won} deals)</span>
+                      <div key={d.date} className="flex items-center justify-between py-2 px-3 rounded-lg hover:bg-white/[0.02] transition-colors">
+                        <span className="text-[11px] text-slate-500">{new Date(d.date).toLocaleDateString()}</span>
+                        <span className="text-[11px] font-medium text-slate-300">{fmtCurr(d.revenue)} <span className="text-slate-600">({d.deals_won} deals)</span></span>
                       </div>
                     ))}
                   </div>
                 )}
               </div>
             )}
-          </CardContent>
-        </Card>
+          </div>
 
-        {/* Team Performance */}
-        <Card className="border-0 shadow-md">
-          <CardHeader className="pb-2"><CardTitle className="text-sm font-semibold flex items-center gap-2"><Users className="h-4 w-4 text-purple-500" /> Team Performance</CardTitle></CardHeader>
-          <CardContent>
+          {/* Team Performance */}
+          <div className="p-5 rounded-2xl bg-white/[0.03] border border-white/[0.06]">
+            <div className="flex items-center gap-2 mb-5">
+              <Users className="h-4 w-4 text-violet-400" />
+              <h3 className="text-sm font-semibold text-white">Team Performance</h3>
+            </div>
             {teamPerf.length === 0 ? (
-              <p className="text-sm text-slate-400 py-4 text-center">No team data yet</p>
+              <p className="text-sm text-slate-600 py-6 text-center">No team data yet</p>
             ) : (
-              <div className="overflow-x-auto">
+              <div className="rounded-xl bg-white/[0.02] border border-white/[0.04] overflow-hidden">
                 <table className="w-full text-sm">
-                  <thead><tr className="border-b border-slate-200 text-left">
-                    <th className="pb-2 font-medium text-slate-500">Name</th>
-                    <th className="pb-2 font-medium text-slate-500 text-center">Leads</th>
-                    <th className="pb-2 font-medium text-slate-500 text-center">Converted</th>
-                    <th className="pb-2 font-medium text-slate-500 text-center">Deals Won</th>
-                    <th className="pb-2 font-medium text-slate-500 text-right">Revenue</th>
-                    <th className="pb-2 font-medium text-slate-500 text-center">Activities</th>
+                  <thead><tr className="border-b border-white/[0.06]">
+                    <th className={`${thClass} pl-4 text-left`}>Name</th>
+                    <th className={`${thClass} text-center`}>Leads</th>
+                    <th className={`${thClass} text-center`}>Converted</th>
+                    <th className={`${thClass} text-center`}>Won</th>
+                    <th className={`${thClass} text-right`}>Revenue</th>
+                    <th className={`${thClass} pr-4 text-center`}>Activities</th>
                   </tr></thead>
                   <tbody>
                     {teamPerf.map((t: any) => (
-                      <tr key={t.id} className="border-b border-slate-100">
-                        <td className="py-2"><p className="font-medium text-slate-800">{t.firstName} {t.lastName}</p><p className="text-xs text-slate-400">{t.email}</p></td>
-                        <td className="py-2 text-center">{t.total_leads}</td>
-                        <td className="py-2 text-center text-emerald-600 font-medium">{t.converted_leads}</td>
-                        <td className="py-2 text-center text-blue-600 font-medium">{t.won_deals}</td>
-                        <td className="py-2 text-right font-medium text-green-600">{fmtCurr(t.revenue)}</td>
-                        <td className="py-2 text-center">{t.total_activities}</td>
+                      <tr key={t.id} className="border-b border-white/[0.03] hover:bg-white/[0.02]">
+                        <td className="py-3 pl-4"><p className="font-medium text-white">{t.firstName} {t.lastName}</p><p className="text-[10px] text-slate-600">{t.email}</p></td>
+                        <td className="py-3 text-center text-slate-400">{t.total_leads}</td>
+                        <td className="py-3 text-center text-emerald-400 font-medium">{t.converted_leads}</td>
+                        <td className="py-3 text-center text-blue-400 font-medium">{t.won_deals}</td>
+                        <td className="py-3 text-right font-medium text-emerald-400">{fmtCurr(t.revenue)}</td>
+                        <td className="py-3 pr-4 text-center text-slate-400">{t.total_activities}</td>
                       </tr>
                     ))}
                   </tbody>
                 </table>
               </div>
             )}
-          </CardContent>
-        </Card>
-      </div>
+          </div>
+        </div>
+      )}
     </CRMLayout>
   );
 }
 
 // ═══════════════════════════════════════════════════════════════════════════════
-// CRM SETTINGS PAGE
+// SETTINGS PAGE
 // ═══════════════════════════════════════════════════════════════════════════════
 
 export function CRMSettingsPage() {
@@ -872,28 +1096,32 @@ export function CRMSettingsPage() {
   }, [navigate]);
 
   return (
-    <CRMLayout title="Settings" activePath="/crm/settings">
-      <Card className="border-0 shadow-md max-w-2xl">
-        <CardHeader><CardTitle className="text-base">CRM Profile</CardTitle></CardHeader>
-        <CardContent>
+    <CRMLayout title="Settings">
+      <div className="max-w-2xl">
+        <div className="p-6 rounded-2xl bg-white/[0.03] border border-white/[0.06]">
+          <h3 className="text-base font-semibold text-white mb-5">CRM Profile</h3>
           {crmUser ? (
-            <div className="space-y-4">
-              <div className="flex items-center gap-4">
-                <div className="w-16 h-16 rounded-full bg-emerald-100 flex items-center justify-center text-emerald-600 font-bold text-xl">
-                  {(crmUser.firstName?.[0] || '') + (crmUser.lastName?.[0] || '')}
-                </div>
-                <div>
-                  <p className="text-lg font-bold text-slate-800">{crmUser.firstName} {crmUser.lastName}</p>
-                  <p className="text-sm text-slate-500">{crmUser.email}</p>
-                  <p className="text-xs text-slate-400">{crmUser.designation} &middot; {crmUser.department}</p>
-                </div>
+            <div className="flex items-center gap-5">
+              <div className="w-16 h-16 rounded-2xl bg-gradient-to-br from-violet-500/30 to-blue-500/30 flex items-center justify-center text-xl font-bold text-violet-300 flex-shrink-0">
+                {(crmUser.firstName?.[0] || '') + (crmUser.lastName?.[0] || '')}
+              </div>
+              <div>
+                <p className="text-lg font-bold text-white">{crmUser.firstName} {crmUser.lastName}</p>
+                <p className="text-sm text-slate-500">{crmUser.email}</p>
+                <p className="text-xs text-slate-600 mt-1">{crmUser.designation || 'CRM User'} &middot; {crmUser.department || 'Sales'}</p>
               </div>
             </div>
           ) : (
-            <p className="text-sm text-slate-400">Loading profile...</p>
+            <div className="flex items-center gap-3">
+              <div className="w-10 h-10 rounded-lg bg-white/[0.05] animate-pulse" />
+              <div className="space-y-2">
+                <div className="h-4 w-32 bg-white/[0.05] rounded animate-pulse" />
+                <div className="h-3 w-48 bg-white/[0.05] rounded animate-pulse" />
+              </div>
+            </div>
           )}
-        </CardContent>
-      </Card>
+        </div>
+      </div>
     </CRMLayout>
   );
 }
