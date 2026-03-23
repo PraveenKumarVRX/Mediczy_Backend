@@ -113,84 +113,81 @@ router.get('/hospitals', async (req, res) => {
 
 /**
  * Get all labs with pagination and filtering
+ * Source: labs table in PostgreSQL (address is JSONB)
  */
 router.get('/labs', async (req, res) => {
     try {
         const { page = 1, limit = 50, search = '', city = '', state = '', area = '' } = req.query;
-        
-        await ensureDirectory(LABS_BASE);
-        const files = await fs.readdir(LABS_BASE);
-        
-        // Load lab profiles
-        let labs = files.length > 0
-            ? await Promise.all(
-                files.map(async (file) => {
-                    const content = await fs.readFile(path.join(LABS_BASE, file), 'utf-8');
-                    return JSON.parse(content);
-                })
-            )
-            : [];
-        
-        // Filter labs
+        const offset = (parseInt(page) - 1) * parseInt(limit);
+
+        const conditions = [];
+        const params = [];
+
         if (search) {
-            const searchLower = search.toLowerCase();
-            labs = labs.filter(l => 
-                l.basic_info.name.toLowerCase().includes(searchLower) ||
-                (l.basic_info.address || '').toLowerCase().includes(searchLower)
-            );
+            params.push(`%${search}%`);
+            conditions.push(`(name ILIKE $${params.length} OR address->>'street' ILIKE $${params.length})`);
         }
-        
         if (city) {
-            labs = labs.filter(l => 
-                (l.basic_info.city || '').toLowerCase().includes(city.toLowerCase())
-            );
+            params.push(`%${city}%`);
+            conditions.push(`address->>'city' ILIKE $${params.length}`);
         }
-        
         if (state) {
-            labs = labs.filter(l => 
-                (l.basic_info.state || '').toLowerCase().includes(state.toLowerCase())
-            );
+            params.push(`%${state}%`);
+            conditions.push(`address->>'state' ILIKE $${params.length}`);
         }
-        
-        if (area) {
-            labs = labs.filter(l => 
-                (l.basic_info.area || '').toLowerCase().includes(area.toLowerCase())
-            );
-        }
-        
-        // Pagination
-        const startIndex = (page - 1) * limit;
-        const endIndex = startIndex + parseInt(limit);
-        const paginatedLabs = labs.slice(startIndex, endIndex);
-        
-        // Transform to admin format
-        const transformed = paginatedLabs.map(l => ({
-            id: l.id,
-            name: l.basic_info.name,
-            address: l.basic_info.address,
-            area: l.basic_info.area,
-            locality: l.basic_info.locality,
-            city: l.basic_info.city,
-            state: l.basic_info.state,
-            pincode: l.basic_info.pincode,
-            latitude: l.basic_info.coordinates?.latitude,
-            longitude: l.basic_info.coordinates?.longitude,
-            services: l.services || [],
-            classification: l.classification?.type,
-            quality_score: l.quality_indicators?.data_quality === 'good' ? 0.8 : 0.5,
-            contact: l.basic_info.contact,
-            pincode_mapped: l.metadata?.pincode_mapped || false,
-            timestamp: l.timestamp
-        }));
-        
+
+        const where = conditions.length ? `WHERE ${conditions.join(' AND ')}` : '';
+
+        const countResult = await pool.query(
+            `SELECT COUNT(*) FROM labs ${where}`, params
+        );
+        const total = parseInt(countResult.rows[0].count);
+
+        const dataResult = await pool.query(
+            `SELECT id, unique_id, name, "phoneNumber", email, address, services,
+                    facilities, status, "isVerified", rating, metadata, "createdAt"
+             FROM labs ${where}
+             ORDER BY name ASC
+             LIMIT $${params.length + 1} OFFSET $${params.length + 2}`,
+            [...params, parseInt(limit), offset]
+        );
+
+        const transformed = dataResult.rows.map(l => {
+            const addr = l.address || {};
+            const coords = addr.coordinates || {};
+            return {
+                id: l.unique_id || l.id,
+                name: l.name,
+                address: addr.street || addr.formatted || '',
+                area: addr.area || addr.locality || null,
+                city: addr.city || null,
+                state: addr.state || null,
+                pincode: addr.pincode || addr.zip || null,
+                latitude: coords.latitude ? parseFloat(coords.latitude) : null,
+                longitude: coords.longitude ? parseFloat(coords.longitude) : null,
+                services: Array.isArray(l.services) ? l.services : [],
+                facilities: Array.isArray(l.facilities) ? l.facilities : [],
+                classification: 'lab',
+                rating: l.rating ? parseFloat(l.rating) : null,
+                quality_score: 0.7,
+                contact: {
+                    phone: l.phoneNumber || '',
+                    email: l.email || ''
+                },
+                status: l.status,
+                is_verified: l.isVerified,
+                timestamp: l.createdAt
+            };
+        });
+
         res.json({
             success: true,
             data: transformed,
             pagination: {
-                total: labs.length,
+                total,
                 page: parseInt(page),
                 limit: parseInt(limit),
-                pages: Math.ceil(labs.length / limit)
+                pages: Math.ceil(total / parseInt(limit))
             }
         });
     } catch (error) {
@@ -636,13 +633,16 @@ router.get('/stats', async (req, res) => {
  */
 router.get('/cities', async (req, res) => {
     try {
-        const [clinicsResult, hospitalsResult] = await Promise.all([
+        const [clinicsResult, hospitalsResult, labsResult] = await Promise.all([
             pool.query(`SELECT DISTINCT location->>'city' AS city FROM provider_clinics WHERE location->>'city' IS NOT NULL`),
-            pool.query(`SELECT DISTINCT city FROM hospitals WHERE city IS NOT NULL AND city != ''`)
+            pool.query(`SELECT DISTINCT city FROM hospitals WHERE city IS NOT NULL AND city != ''`),
+            pool.query(`SELECT DISTINCT address->>'city' AS city FROM labs WHERE address->>'city' IS NOT NULL AND address->>'city' != ''`)
         ]);
-        const clinicCities = clinicsResult.rows.map(r => r.city);
-        const hospitalCities = hospitalsResult.rows.map(r => r.city);
-        const cities = [...new Set([...clinicCities, ...hospitalCities])].filter(Boolean).sort();
+        const cities = [...new Set([
+            ...clinicsResult.rows.map(r => r.city),
+            ...hospitalsResult.rows.map(r => r.city),
+            ...labsResult.rows.map(r => r.city)
+        ])].filter(Boolean).sort();
         res.json({ success: true, data: cities });
     } catch (error) {
         res.status(500).json({ success: false, error: error.message });
@@ -654,13 +654,16 @@ router.get('/cities', async (req, res) => {
  */
 router.get('/states', async (req, res) => {
     try {
-        const [clinicsResult, hospitalsResult] = await Promise.all([
+        const [clinicsResult, hospitalsResult, labsResult] = await Promise.all([
             pool.query(`SELECT DISTINCT location->>'state' AS state FROM provider_clinics WHERE location->>'state' IS NOT NULL`),
-            pool.query(`SELECT DISTINCT state FROM hospitals WHERE state IS NOT NULL AND state != ''`)
+            pool.query(`SELECT DISTINCT state FROM hospitals WHERE state IS NOT NULL AND state != ''`),
+            pool.query(`SELECT DISTINCT address->>'state' AS state FROM labs WHERE address->>'state' IS NOT NULL AND address->>'state' != ''`)
         ]);
-        const clinicStates = clinicsResult.rows.map(r => r.state);
-        const hospitalStates = hospitalsResult.rows.map(r => r.state);
-        const states = [...new Set([...clinicStates, ...hospitalStates])].filter(Boolean).sort();
+        const states = [...new Set([
+            ...clinicsResult.rows.map(r => r.state),
+            ...hospitalsResult.rows.map(r => r.state),
+            ...labsResult.rows.map(r => r.state)
+        ])].filter(Boolean).sort();
         res.json({ success: true, data: states });
     } catch (error) {
         res.status(500).json({ success: false, error: error.message });
