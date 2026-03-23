@@ -3,6 +3,7 @@ import fs from 'fs/promises';
 import path from 'path';
 import { fileURLToPath } from 'url';
 import crypto from 'crypto';
+import pool from '../../db/pgPool.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -149,58 +150,78 @@ router.post('/', async (req, res) => {
 
 router.patch('/:id/details', async (req, res) => {
     try {
-        await ensureDirectory();
         const { id } = req.params;
         const { updates = {} } = req.body || {};
-        const filePath = path.join(HOSPITALS_BASE, `${id}.json`);
 
-        const exists = await fs.stat(filePath).then(() => true).catch(() => false);
-        if (!exists) {
+        // Build dynamic SET clause from provided fields
+        const fieldMap = {
+            name: 'hospital_name',
+            address: 'address',
+            city: 'city',
+            state: 'state',
+            pincode: 'pincode',
+            phone: 'phone_number',
+            email: 'email',
+            network_type: 'network_type',
+            cashless_enabled: 'cashless_enabled',
+            total_beds: 'total_beds',
+            available_beds: 'available_beds',
+            status: 'status',
+            is_verified: 'is_verified',
+        };
+
+        const setClauses = [];
+        const params = [];
+
+        for (const [key, col] of Object.entries(fieldMap)) {
+            if (updates[key] !== undefined) {
+                params.push(updates[key]);
+                setClauses.push(`${col} = $${params.length}`);
+            }
+        }
+
+        if (setClauses.length === 0) {
+            return res.status(400).json({ success: false, message: 'No valid fields to update' });
+        }
+
+        setClauses.push(`updated_at = NOW()`);
+
+        // Support both unique_id (string) and numeric id
+        params.push(id);
+        const whereClause = isNaN(id)
+            ? `unique_id = $${params.length}`
+            : `(unique_id = $${params.length} OR id = $${params.length}::int)`;
+
+        const result = await pool.query(
+            `UPDATE hospitals SET ${setClauses.join(', ')} WHERE ${whereClause} RETURNING *`,
+            params
+        );
+
+        if (result.rowCount === 0) {
             return res.status(404).json({ success: false, message: 'Hospital not found' });
         }
 
-        const profile = JSON.parse(await fs.readFile(filePath, 'utf-8'));
-
-        profile.basic_info = {
-            ...profile.basic_info,
-            name: updates.name ?? profile.basic_info?.name,
-            address: updates.address || profile.basic_info?.address,
-            city: updates.city ?? profile.basic_info?.city,
-            state: updates.state ?? profile.basic_info?.state,
-            pincode: updates.pincode ?? profile.basic_info?.pincode,
-            area: updates.area ?? profile.basic_info?.area,
-            contact: {
-                ...profile.basic_info?.contact,
-                phone: updates.phone ?? profile.basic_info?.contact?.phone,
-                email: updates.email ?? profile.basic_info?.contact?.email,
-            },
-        };
-
-        profile.classification = {
-            ...profile.classification,
-            type: updates.classification || profile.classification?.type || 'hospital',
-            sub_type: updates.type || updates.classification || profile.classification?.sub_type,
-            confidence: profile.classification?.confidence || 1.0,
-        };
-
-        profile.metadata = {
-            ...profile.metadata,
-            registration_number: updates.registrationNumber ?? profile.metadata?.registration_number,
-            website: updates.website ?? profile.metadata?.website,
-            active: updates.isActive !== undefined ? !!updates.isActive : profile.metadata?.active,
-        };
-
-        profile.capabilities = {
-            ...profile.capabilities,
-            emergency_services: updates.emergencyServices !== undefined ? !!updates.emergencyServices : profile.capabilities?.emergency_services,
-            bed_count: updates.totalBeds !== undefined ? updates.totalBeds : profile.capabilities?.bed_count,
-            available_beds: updates.availableBeds !== undefined ? updates.availableBeds : profile.capabilities?.available_beds,
-        };
-
-        await fs.writeFile(filePath, JSON.stringify(profile, null, 2));
-
-        const formatted = formatHospitalProfile(profile);
-        res.json({ success: true, message: 'Hospital updated successfully', data: formatted });
+        const h = result.rows[0];
+        res.json({
+            success: true,
+            message: 'Hospital updated successfully',
+            data: {
+                id: h.unique_id || h.id,
+                name: h.hospital_name,
+                address: h.address,
+                city: h.city,
+                state: h.state,
+                pincode: h.pincode,
+                phone: h.phone_number,
+                email: h.email,
+                status: h.status,
+                is_verified: h.is_verified,
+                total_beds: h.total_beds,
+                available_beds: h.available_beds,
+                network_type: h.network_type,
+                cashless_enabled: h.cashless_enabled,
+            }
+        });
     } catch (error) {
         console.error('Error updating hospital:', error);
         res.status(500).json({ success: false, message: 'Failed to update hospital', error: error.message });
