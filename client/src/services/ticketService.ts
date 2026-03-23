@@ -228,7 +228,7 @@ class TicketService {
 
   // Get agents
   async getAgents() {
-    return this.makeRequest('/agents');
+    return this.makeRequest('/tickets/agents');
   }
 
   // Export tickets
