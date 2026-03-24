@@ -293,11 +293,15 @@ export function CRMRFQDetailPage() {
   const [memberTotalPages, setMemberTotalPages] = useState(1);
   const [memberSearch, setMemberSearch] = useState('');
   const [loading, setLoading] = useState(true);
-  const [tab, setTab] = useState<'overview' | 'analytics' | 'members' | 'quotes' | 'ai-quote'>('overview');
+  const [tab, setTab] = useState<'overview' | 'analytics' | 'members' | 'claims' | 'quotes' | 'ai-quote'>('overview');
   const fileRef = useRef<HTMLInputElement>(null);
+  const claimsFileRef = useRef<HTMLInputElement>(null);
   const [uploading, setUploading] = useState(false);
+  const [claimsUploading, setClaimsUploading] = useState(false);
   const [aiQuote, setAiQuote] = useState<any>(null);
   const [aiLoading, setAiLoading] = useState(false);
+  const [claimsAnalysis, setClaimsAnalysis] = useState<any>(null);
+  const [claimsLoading, setClaimsLoading] = useState(false);
 
   const fetchRFQ = useCallback(async () => {
     setLoading(true);
@@ -326,6 +330,38 @@ export function CRMRFQDetailPage() {
 
   useEffect(() => { fetchRFQ(); fetchAnalytics(); }, [fetchRFQ, fetchAnalytics]);
   useEffect(() => { fetchMembers(); }, [fetchMembers]);
+
+  const fetchClaimsAnalysis = useCallback(async () => {
+    setClaimsLoading(true);
+    try {
+      const { data } = await api.get(`/crm/rfqs/${id}/claims-analysis`, { headers: authHeaders() });
+      if (data.success && data.data) setClaimsAnalysis(data.data);
+    } catch { /* */ }
+    setClaimsLoading(false);
+  }, [id]);
+
+  useEffect(() => { fetchClaimsAnalysis(); }, [fetchClaimsAnalysis]);
+
+  const handleClaimsUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    setClaimsUploading(true);
+    try {
+      const fd = new FormData();
+      fd.append('file', file);
+      const { data } = await api.post(`/crm/rfqs/${id}/upload-claims`, fd, {
+        headers: { ...authHeaders(), 'Content-Type': 'multipart/form-data' },
+        timeout: 120000,
+      });
+      if (data.success) {
+        fetchClaimsAnalysis();
+      }
+    } catch (err: any) {
+      alert(err?.response?.data?.message || 'Claims upload failed');
+    }
+    setClaimsUploading(false);
+    if (claimsFileRef.current) claimsFileRef.current.value = '';
+  };
 
   const generateAIQuote = useCallback(async () => {
     setAiLoading(true);
@@ -389,6 +425,7 @@ export function CRMRFQDetailPage() {
     { key: 'overview', label: 'Broking Slip', icon: FileText },
     { key: 'analytics', label: 'Analytics', icon: BarChart3 },
     { key: 'members', label: `Members (${rfq.member_count?.toLocaleString() || 0})`, icon: Users },
+    { key: 'claims', label: `Claims${claimsAnalysis ? ` (${claimsAnalysis.summary.total_claims.toLocaleString()})` : ''}`, icon: Activity },
     { key: 'quotes', label: `Quotes (${quotes.length})`, icon: DollarSign },
     { key: 'ai-quote', label: 'AI Quote Engine', icon: BrainCircuit },
   ] as const;
@@ -412,6 +449,12 @@ export function CRMRFQDetailPage() {
         </div>
         <div className="flex gap-2">
           <input ref={fileRef} type="file" accept=".xlsx,.xls" onChange={handleMemberUpload} className="hidden" />
+          <input ref={claimsFileRef} type="file" accept=".xlsx,.xls,.csv" onChange={handleClaimsUpload} className="hidden" />
+          <Button onClick={() => claimsFileRef.current?.click()} disabled={claimsUploading} variant="outline"
+            className="border-amber-500/20 text-amber-400 hover:bg-amber-500/10 rounded-xl h-9 text-sm gap-2">
+            {claimsUploading ? <RefreshCw className="h-3.5 w-3.5 animate-spin" /> : <FileSpreadsheet className="h-3.5 w-3.5" />}
+            Upload Claims
+          </Button>
           <Button onClick={() => fileRef.current?.click()} disabled={uploading} variant="outline"
             className="border-white/[0.1] text-slate-300 hover:bg-white/[0.05] rounded-xl h-9 text-sm gap-2">
             {uploading ? <RefreshCw className="h-3.5 w-3.5 animate-spin" /> : <Upload className="h-3.5 w-3.5" />}
@@ -444,7 +487,8 @@ export function CRMRFQDetailPage() {
           page={memberPage} totalPages={memberTotalPages} setPage={setMemberPage} />
       )}
       {tab === 'quotes' && <QuotesTab quotes={quotes} rfqId={rfq.id} onRefresh={fetchRFQ} navigate={navigate} />}
-      {tab === 'ai-quote' && <AIQuoteTab rfqId={rfq.id} aiQuote={aiQuote} aiLoading={aiLoading} onGenerate={generateAIQuote} navigate={navigate} />}
+      {tab === 'claims' && <ClaimsExperienceTab analysis={claimsAnalysis} loading={claimsLoading} onUpload={() => claimsFileRef.current?.click()} uploading={claimsUploading} />}
+      {tab === 'ai-quote' && <AIQuoteTab rfqId={rfq.id} aiQuote={aiQuote} aiLoading={aiLoading} onGenerate={generateAIQuote} navigate={navigate} claimsAnalysis={claimsAnalysis} />}
     </div>
     </CRMLayout>
   );
@@ -900,10 +944,397 @@ function QuotesTab({ quotes, rfqId, onRefresh, navigate }: any) {
 
 
 // ═══════════════════════════════════════════════════════════════════════════════
+// CLAIMS EXPERIENCE TAB — Full underwriting analysis dashboard
+// ═══════════════════════════════════════════════════════════════════════════════
+
+function ClaimsExperienceTab({ analysis, loading, onUpload, uploading }: any) {
+  if (loading) {
+    return (
+      <div className="flex items-center justify-center h-64">
+        <RefreshCw className="h-6 w-6 text-amber-400 animate-spin" />
+      </div>
+    );
+  }
+
+  if (!analysis) {
+    return (
+      <div className="flex flex-col items-center justify-center py-20 space-y-6">
+        <div className="relative">
+          <div className="absolute inset-0 bg-gradient-to-r from-amber-600/20 to-orange-600/20 rounded-full blur-3xl" />
+          <div className="relative bg-gradient-to-br from-amber-500/10 to-orange-500/10 border border-amber-500/20 rounded-3xl p-8">
+            <FileSpreadsheet className="h-16 w-16 text-amber-400" />
+          </div>
+        </div>
+        <div className="text-center space-y-2 max-w-lg">
+          <h3 className="text-xl font-bold text-white">No Claims History Uploaded</h3>
+          <p className="text-sm text-slate-400 leading-relaxed">
+            Upload previous year claims MIS data to enable <span className="text-amber-300">experience-based underwriting</span>. 
+            The engine will analyze <span className="text-cyan-300">ICR</span>, <span className="text-emerald-300">utilization rates</span>, 
+            <span className="text-violet-300">trend patterns</span>, service &amp; relationship distributions for accurate pricing.
+          </p>
+        </div>
+        <Button onClick={onUpload} disabled={uploading}
+          className="bg-gradient-to-r from-amber-600 to-orange-600 hover:from-amber-500 hover:to-orange-500 border-0 rounded-xl h-11 px-8 gap-3 text-sm font-semibold shadow-lg shadow-amber-600/25">
+          {uploading ? <RefreshCw className="h-4 w-4 animate-spin" /> : <Upload className="h-4 w-4" />} Upload Claims MIS
+        </Button>
+      </div>
+    );
+  }
+
+  const a = analysis;
+  const k = a.kpis;
+  const icrColor = k.utilization_rate > 50 ? 'text-red-400' : k.utilization_rate > 30 ? 'text-amber-400' : 'text-emerald-400';
+
+  return (
+    <div className="space-y-6">
+      {/* ─── KPI Strip ─────────────────────────────────────────── */}
+      <div className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-7 gap-3">
+        {[
+          { label: 'Total Claims', value: a.summary.total_claims.toLocaleString(), color: 'from-violet-600 to-indigo-600' },
+          { label: 'Total Claimed', value: formatCurrency(a.summary.total_claimed), color: 'from-red-600 to-pink-600' },
+          { label: 'Total Approved', value: formatCurrency(a.summary.total_approved), color: 'from-emerald-600 to-teal-600' },
+          { label: 'Utilization Rate', value: `${k.utilization_rate}%`, color: k.utilization_rate > 50 ? 'from-red-600 to-orange-600' : 'from-cyan-600 to-blue-600' },
+          { label: 'Claim Frequency', value: `${k.claim_frequency}/yr`, color: 'from-amber-600 to-orange-600' },
+          { label: 'Approval Ratio', value: `${k.approval_ratio}%`, color: 'from-blue-600 to-indigo-600' },
+          { label: 'Avg Claim Size', value: `₹${a.summary.avg_claim_size.toLocaleString()}`, color: 'from-slate-600 to-zinc-600' },
+        ].map(({ label, value, color }) => (
+          <div key={label} className="relative overflow-hidden rounded-2xl border border-white/[0.08] bg-white/[0.03] p-3">
+            <div className={`absolute top-0 left-0 w-full h-1 bg-gradient-to-r ${color}`} />
+            <p className="text-[9px] text-slate-500 uppercase font-semibold tracking-wider mb-1">{label}</p>
+            <p className="text-lg font-bold text-white">{value}</p>
+          </div>
+        ))}
+      </div>
+
+      {/* ─── Underwriting Flags ──────────────────────────────── */}
+      {a.underwriting_flags?.length > 0 && (
+        <div className="space-y-2">
+          {a.underwriting_flags.map((f: any, i: number) => (
+            <div key={i} className={`flex items-start gap-3 p-3 rounded-xl border ${
+              f.type === 'critical' ? 'border-red-500/30 bg-red-500/5' : f.type === 'warning' ? 'border-amber-500/30 bg-amber-500/5' : 'border-blue-500/30 bg-blue-500/5'}`}>
+              <AlertCircle className={`h-4 w-4 mt-0.5 flex-shrink-0 ${
+                f.type === 'critical' ? 'text-red-400' : f.type === 'warning' ? 'text-amber-400' : 'text-blue-400'}`} />
+              <p className="text-xs text-slate-300">{f.message}</p>
+            </div>
+          ))}
+        </div>
+      )}
+
+      {/* ─── Claim Severity Distribution ─────────────────────── */}
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-5">
+        <Card>
+          <h3 className="text-sm font-semibold text-white mb-4 flex items-center gap-2">
+            <BarChart3 className="h-4 w-4 text-violet-400" /> Claim Severity Distribution
+          </h3>
+          <div className="space-y-2">
+            {a.severity_distribution.map((s: any) => {
+              const maxCount = Math.max(...a.severity_distribution.map((x: any) => x.count));
+              return (
+                <div key={s.band} className="flex items-center gap-3">
+                  <span className="text-[10px] text-slate-500 w-16 text-right font-mono">{s.band}</span>
+                  <div className="flex-1 h-5 bg-white/[0.03] rounded-full overflow-hidden">
+                    <div className="h-full bg-gradient-to-r from-violet-500 to-indigo-500 rounded-full flex items-center justify-end pr-2"
+                      style={{ width: `${Math.max(5, (s.count / maxCount) * 100)}%` }}>
+                      <span className="text-[9px] text-white font-bold">{s.count}</span>
+                    </div>
+                  </div>
+                  <span className="text-[10px] text-slate-500 w-16 text-right">{formatCurrency(s.total)}</span>
+                </div>
+              );
+            })}
+          </div>
+        </Card>
+
+        {/* ─── Service-Type Distribution ────────────────────── */}
+        <Card>
+          <h3 className="text-sm font-semibold text-white mb-4 flex items-center gap-2">
+            <PieChart className="h-4 w-4 text-cyan-400" /> Service-Type Distribution
+          </h3>
+          <div className="space-y-3">
+            {a.service_distribution.map((s: any, i: number) => (
+              <div key={s.service_type} className="space-y-1.5">
+                <div className="flex items-center justify-between">
+                  <div className="flex items-center gap-2">
+                    <div className="w-2.5 h-2.5 rounded-full" style={{ background: CHART_COLORS[i % CHART_COLORS.length] }} />
+                    <span className="text-xs text-white font-medium">{s.service_type}</span>
+                  </div>
+                  <div className="flex items-center gap-3">
+                    <span className="text-[10px] text-slate-500">{s.claim_count} claims</span>
+                    <span className="text-xs text-amber-400 font-semibold">{s.share_pct}%</span>
+                  </div>
+                </div>
+                <div className="h-1.5 bg-white/[0.05] rounded-full overflow-hidden">
+                  <div className="h-full rounded-full" style={{ width: `${s.share_pct}%`, background: CHART_COLORS[i % CHART_COLORS.length] }} />
+                </div>
+                <div className="flex justify-between text-[10px] text-slate-500">
+                  <span>Claimed: {formatCurrency(s.total_claimed)}</span>
+                  <span>Approved: {formatCurrency(s.total_approved)}</span>
+                  <span>Avg: ₹{s.avg_per_claim.toLocaleString()}</span>
+                </div>
+              </div>
+            ))}
+          </div>
+        </Card>
+      </div>
+
+      {/* ─── Relationship-Wise Utilization ────────────────────── */}
+      <Card>
+        <h3 className="text-sm font-semibold text-white mb-4 flex items-center gap-2">
+          <Users className="h-4 w-4 text-emerald-400" /> Relationship-Wise Utilization
+        </h3>
+        <div className="overflow-x-auto">
+          <table className="w-full text-sm">
+            <thead>
+              <tr className="border-b border-white/[0.06]">
+                {['Relationship', 'Claims', 'Unique Claimants', 'Members', 'Utilization %', 'Claims/Claimant', 'Total Claimed', 'Total Approved', 'Avg/Claim'].map(h => (
+                  <th key={h} className="py-2 px-2 text-[10px] text-slate-500 uppercase font-semibold text-left whitespace-nowrap">{h}</th>
+                ))}
+              </tr>
+            </thead>
+            <tbody>
+              {a.relationship_analysis.map((r: any) => (
+                <tr key={r.relationship} className="border-b border-white/[0.03] hover:bg-white/[0.02]">
+                  <td className="py-2.5 px-2 text-white font-medium">{r.relationship}</td>
+                  <td className="py-2.5 px-2 text-slate-300">{r.claim_count.toLocaleString()}</td>
+                  <td className="py-2.5 px-2 text-slate-300">{r.unique_claimants.toLocaleString()}</td>
+                  <td className="py-2.5 px-2 text-slate-400">{r.member_count.toLocaleString()}</td>
+                  <td className="py-2.5 px-2">
+                    <span className={`text-xs font-bold ${r.utilization_rate > 50 ? 'text-red-400' : r.utilization_rate > 30 ? 'text-amber-400' : 'text-emerald-400'}`}>
+                      {r.utilization_rate}%
+                    </span>
+                  </td>
+                  <td className="py-2.5 px-2 text-cyan-400">{r.claims_per_claimant}</td>
+                  <td className="py-2.5 px-2 text-slate-300">{formatCurrency(r.total_claimed)}</td>
+                  <td className="py-2.5 px-2 text-emerald-400">{formatCurrency(r.total_approved)}</td>
+                  <td className="py-2.5 px-2 text-amber-400">₹{r.avg_per_claim.toLocaleString()}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      </Card>
+
+      {/* ─── Age Band Claims + Monthly Trend ─────────────────── */}
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-5">
+        <Card>
+          <h3 className="text-sm font-semibold text-white mb-4 flex items-center gap-2">
+            <BarChart3 className="h-4 w-4 text-amber-400" /> Age-Band Claims Analysis
+          </h3>
+          {a.age_band_claims.length > 0 ? (
+            <ResponsiveContainer width="100%" height={260}>
+              <BarChart data={a.age_band_claims}>
+                <CartesianGrid strokeDasharray="3 3" stroke="rgba(255,255,255,0.05)" />
+                <XAxis dataKey="age_band" tick={{ fill: '#94a3b8', fontSize: 10 }} />
+                <YAxis tick={{ fill: '#94a3b8', fontSize: 10 }} tickFormatter={(v: number) => v >= 100000 ? `₹${(v/100000).toFixed(0)}L` : `₹${(v/1000).toFixed(0)}K`} />
+                <Tooltip contentStyle={{ background: '#1e293b', border: '1px solid rgba(255,255,255,0.1)', borderRadius: 12, fontSize: 11 }} />
+                <Bar dataKey="total_claimed" name="Claimed" fill="#f59e0b" radius={[4,4,0,0]} />
+                <Bar dataKey="total_approved" name="Approved" fill="#10b981" radius={[4,4,0,0]} />
+              </BarChart>
+            </ResponsiveContainer>
+          ) : <p className="text-xs text-slate-500 text-center py-8">No age data available</p>}
+        </Card>
+
+        <Card>
+          <h3 className="text-sm font-semibold text-white mb-4 flex items-center gap-2">
+            <TrendingUp className="h-4 w-4 text-cyan-400" /> Monthly Claims Trend
+          </h3>
+          {a.monthly_trend.length > 0 ? (
+            <ResponsiveContainer width="100%" height={260}>
+              <BarChart data={a.monthly_trend}>
+                <CartesianGrid strokeDasharray="3 3" stroke="rgba(255,255,255,0.05)" />
+                <XAxis dataKey="month" tick={{ fill: '#94a3b8', fontSize: 9 }} angle={-35} textAnchor="end" height={50} />
+                <YAxis tick={{ fill: '#94a3b8', fontSize: 10 }} tickFormatter={(v: number) => v >= 100000 ? `₹${(v/100000).toFixed(0)}L` : `₹${(v/1000).toFixed(0)}K`} />
+                <Tooltip contentStyle={{ background: '#1e293b', border: '1px solid rgba(255,255,255,0.1)', borderRadius: 12, fontSize: 11 }} />
+                <Bar dataKey="claimed" name="Claimed" fill="#8b5cf6" radius={[4,4,0,0]} />
+                <Bar dataKey="approved" name="Approved" fill="#06b6d4" radius={[4,4,0,0]} />
+              </BarChart>
+            </ResponsiveContainer>
+          ) : <p className="text-xs text-slate-500 text-center py-8">No monthly data available</p>}
+        </Card>
+      </div>
+
+      {/* ─── Top Diagnoses + Claim Status ─────────────────────── */}
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-5">
+        <Card>
+          <h3 className="text-sm font-semibold text-white mb-4 flex items-center gap-2">
+            <Shield className="h-4 w-4 text-red-400" /> Top Diagnoses by Cost
+          </h3>
+          <div className="space-y-2 max-h-72 overflow-y-auto">
+            {a.top_diagnoses.map((d: any, i: number) => {
+              const maxClaimed = Math.max(...a.top_diagnoses.map((x: any) => x.total_claimed));
+              return (
+                <div key={i} className="flex items-center gap-3">
+                  <span className="text-[10px] text-slate-500 w-5 text-right">{i + 1}</span>
+                  <div className="flex-1">
+                    <div className="flex justify-between mb-1">
+                      <span className="text-xs text-slate-300 truncate max-w-[200px]">{d.diagnosis}</span>
+                      <span className="text-xs text-amber-400 font-medium">{formatCurrency(d.total_claimed)}</span>
+                    </div>
+                    <div className="h-1 bg-white/[0.05] rounded-full overflow-hidden">
+                      <div className="h-full bg-gradient-to-r from-red-500 to-pink-500 rounded-full"
+                        style={{ width: `${(d.total_claimed / maxClaimed) * 100}%` }} />
+                    </div>
+                  </div>
+                  <span className="text-[10px] text-slate-500 w-12 text-right">{d.claim_count} claims</span>
+                </div>
+              );
+            })}
+          </div>
+        </Card>
+
+        <Card>
+          <h3 className="text-sm font-semibold text-white mb-4 flex items-center gap-2">
+            <Check className="h-4 w-4 text-emerald-400" /> Claim Status Distribution
+          </h3>
+          <div className="space-y-3">
+            {a.claim_status_distribution.map((s: any, i: number) => {
+              const total = a.summary.total_claims;
+              const pct = total > 0 ? Math.round(s.count / total * 100) : 0;
+              return (
+                <div key={s.status} className="space-y-1.5">
+                  <div className="flex justify-between">
+                    <span className="text-xs text-white font-medium">{s.status}</span>
+                    <span className="text-xs text-slate-400">{s.count.toLocaleString()} ({pct}%)</span>
+                  </div>
+                  <div className="h-2 bg-white/[0.05] rounded-full overflow-hidden">
+                    <div className="h-full rounded-full" style={{ width: `${pct}%`, background: CHART_COLORS[i % CHART_COLORS.length] }} />
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+          {/* Provider type breakdown */}
+          {a.provider_type_distribution?.length > 0 && (
+            <>
+              <div className="border-t border-white/[0.06] mt-5 pt-4">
+                <p className="text-[10px] text-slate-500 uppercase font-semibold mb-3">Provider Type</p>
+                <div className="grid grid-cols-2 gap-3">
+                  {a.provider_type_distribution.map((p: any, i: number) => (
+                    <div key={p.type} className="bg-white/[0.02] border border-white/[0.05] rounded-xl p-3 text-center">
+                      <p className="text-xs text-slate-500">{p.type}</p>
+                      <p className="text-lg font-bold text-white mt-1">{p.claims.toLocaleString()}</p>
+                      <p className="text-[10px] text-slate-500">claims &middot; {formatCurrency(p.total_claimed)}</p>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            </>
+          )}
+        </Card>
+      </div>
+
+      {/* ─── SI Utilization + Repeat Claimants ───────────────── */}
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-5">
+        <Card>
+          <h3 className="text-sm font-semibold text-white mb-4 flex items-center gap-2">
+            <Target className="h-4 w-4 text-violet-400" /> SI Utilization Distribution
+          </h3>
+          <div className="space-y-3">
+            {Object.entries(a.si_utilization.distribution).map(([band, count]: [string, any], i) => {
+              const total = Object.values(a.si_utilization.distribution).reduce((s: number, v: any) => s + v, 0) as number;
+              const pct = total > 0 ? Math.round(count / total * 100) : 0;
+              return (
+                <div key={band} className="space-y-1.5">
+                  <div className="flex justify-between">
+                    <span className="text-xs text-slate-300">{band}</span>
+                    <span className="text-xs text-slate-400">{count} members ({pct}%)</span>
+                  </div>
+                  <div className="h-2 bg-white/[0.05] rounded-full overflow-hidden">
+                    <div className={`h-full rounded-full ${band === '>100%' ? 'bg-red-500' : band === '75-100%' ? 'bg-amber-500' : 'bg-emerald-500'}`}
+                      style={{ width: `${Math.max(3, pct)}%` }} />
+                  </div>
+                </div>
+              );
+            })}
+            <div className="border-t border-white/[0.06] pt-3 mt-3">
+              <div className="flex justify-between">
+                <span className="text-xs text-slate-500">Avg SI Utilization</span>
+                <span className={`text-sm font-bold ${a.si_utilization.avg_pct > 60 ? 'text-red-400' : a.si_utilization.avg_pct > 40 ? 'text-amber-400' : 'text-emerald-400'}`}>
+                  {a.si_utilization.avg_pct}%
+                </span>
+              </div>
+            </div>
+          </div>
+        </Card>
+
+        <Card>
+          <h3 className="text-sm font-semibold text-white mb-4 flex items-center gap-2">
+            <Hash className="h-4 w-4 text-cyan-400" /> Repeat Claimant Frequency
+          </h3>
+          <div className="space-y-3">
+            {a.repeat_claimant_freq.map((r: any, i: number) => {
+              const total = a.repeat_claimant_freq.reduce((s: number, x: any) => s + x.count, 0);
+              const pct = total > 0 ? Math.round(r.count / total * 100) : 0;
+              return (
+                <div key={r.band} className="space-y-1.5">
+                  <div className="flex justify-between">
+                    <span className="text-xs text-slate-300">{r.band}</span>
+                    <span className="text-xs text-slate-400">{r.count} members ({pct}%)</span>
+                  </div>
+                  <div className="h-2 bg-white/[0.05] rounded-full overflow-hidden">
+                    <div className="h-full bg-gradient-to-r from-cyan-500 to-blue-500 rounded-full" style={{ width: `${Math.max(3, pct)}%` }} />
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+          {/* Top claimants preview */}
+          {a.top_claimants?.length > 0 && (
+            <div className="border-t border-white/[0.06] mt-4 pt-3">
+              <p className="text-[10px] text-slate-500 uppercase font-semibold mb-2">Top 5 Claimants by Cost</p>
+              {a.top_claimants.slice(0, 5).map((c: any, i: number) => (
+                <div key={i} className="flex justify-between py-1.5 border-b border-white/[0.03] last:border-0">
+                  <div>
+                    <span className="text-xs text-white">{c.name || c.emp_code}</span>
+                    <span className="text-[10px] text-slate-500 ml-2">{c.relationship} &middot; {c.claim_count} claims</span>
+                  </div>
+                  <span className="text-xs text-amber-400 font-medium">{formatCurrency(c.total_claimed)}</span>
+                </div>
+              ))}
+            </div>
+          )}
+        </Card>
+      </div>
+
+      {/* ─── Percentile Summary ──────────────────────────────── */}
+      <Card>
+        <h3 className="text-sm font-semibold text-white mb-4 flex items-center gap-2">
+          <Gauge className="h-4 w-4 text-amber-400" /> Claim Size Percentile Analysis
+        </h3>
+        <div className="grid grid-cols-2 md:grid-cols-6 gap-4">
+          {[
+            { label: 'Average', value: a.summary.avg_claim_size },
+            { label: 'Median (P50)', value: a.summary.median_claim },
+            { label: 'P90', value: a.summary.p90_claim },
+            { label: 'P95', value: a.summary.p95_claim },
+            { label: 'P99', value: a.summary.p99_claim },
+            { label: 'Maximum', value: a.summary.max_claim },
+          ].map(({ label, value }) => (
+            <div key={label} className="text-center bg-white/[0.02] border border-white/[0.05] rounded-xl p-3">
+              <p className="text-[10px] text-slate-500 uppercase font-semibold">{label}</p>
+              <p className="text-lg font-bold text-white mt-1">₹{value.toLocaleString()}</p>
+            </div>
+          ))}
+        </div>
+      </Card>
+
+      {/* Upload new claims button */}
+      <div className="flex justify-center pt-2">
+        <Button onClick={onUpload} disabled={uploading} variant="outline"
+          className="border-amber-500/20 text-amber-400 hover:bg-amber-500/10 rounded-xl h-10 px-6 gap-2">
+          {uploading ? <RefreshCw className="h-4 w-4 animate-spin" /> : <Upload className="h-4 w-4" />}
+          Re-upload Claims MIS
+        </Button>
+      </div>
+    </div>
+  );
+}
+
+// ═══════════════════════════════════════════════════════════════════════════════
 // AI QUOTE GENERATION TAB
 // ═══════════════════════════════════════════════════════════════════════════════
 
-function AIQuoteTab({ rfqId, aiQuote, aiLoading, onGenerate, navigate }: any) {
+function AIQuoteTab({ rfqId, aiQuote, aiLoading, onGenerate, navigate, claimsAnalysis }: any) {
   const [visibleSteps, setVisibleSteps] = useState(0);
 
   // Animate reasoning steps appearing one by one
@@ -944,11 +1375,21 @@ function AIQuoteTab({ rfqId, aiQuote, aiLoading, onGenerate, navigate }: any) {
             <span className="text-amber-300">claims experience</span> to generate actuarially-priced OPD &amp; Wellness quotes.
           </p>
         </div>
+        {/* Claims data status badge */}
+        <div className={`flex items-center gap-2 px-4 py-2 rounded-full border ${claimsAnalysis 
+          ? 'border-emerald-500/30 bg-emerald-500/10' : 'border-amber-500/30 bg-amber-500/10'}`}>
+          {claimsAnalysis ? <Check className="h-4 w-4 text-emerald-400" /> : <AlertCircle className="h-4 w-4 text-amber-400" />}
+          <span className={`text-xs font-medium ${claimsAnalysis ? 'text-emerald-300' : 'text-amber-300'}`}>
+            {claimsAnalysis 
+              ? `${claimsAnalysis.summary.total_claims.toLocaleString()} claims loaded — Experience-based pricing will be used`
+              : 'No claims data — Benchmark-based pricing will be used'}
+          </span>
+        </div>
         <div className="grid grid-cols-2 md:grid-cols-4 gap-3 text-center">
           {[
             { icon: Activity, label: 'Age-Banded Risk', color: 'text-violet-400' },
             { icon: Target, label: 'OPD Utilization', color: 'text-cyan-400' },
-            { icon: TrendingUp, label: 'Claims Experience', color: 'text-emerald-400' },
+            { icon: TrendingUp, label: 'Claims Experience', color: claimsAnalysis ? 'text-emerald-400' : 'text-slate-600' },
             { icon: Gauge, label: 'IBNR + Margin', color: 'text-amber-400' },
           ].map(({ icon: Icon, label, color }) => (
             <div key={label} className="bg-white/[0.03] border border-white/[0.06] rounded-xl p-3">
@@ -994,6 +1435,62 @@ function AIQuoteTab({ rfqId, aiQuote, aiLoading, onGenerate, navigate }: any) {
 
   return (
     <div className="space-y-6">
+      {/* ─── Pricing Method Badge ─────────────────────────────── */}
+      {d.risk_assessment.pricing_method && (
+        <div className={`flex items-center justify-between p-4 rounded-2xl border ${
+          d.risk_assessment.pricing_method === 'experience'
+            ? 'border-emerald-500/30 bg-emerald-500/5' : 'border-slate-500/20 bg-white/[0.02]'
+        }`}>
+          <div className="flex items-center gap-3">
+            <div className={`w-3 h-3 rounded-full ${d.risk_assessment.pricing_method === 'experience' ? 'bg-emerald-400' : 'bg-slate-500'}`} />
+            <div>
+              <span className="text-sm font-bold text-white">
+                {d.risk_assessment.pricing_method === 'experience' ? 'Experience-Rated Pricing' : 'Benchmark-Based Pricing'}
+              </span>
+              {d.risk_assessment.pricing_method === 'experience' && (
+                <span className="text-xs text-emerald-400 ml-2">Credibility: {d.risk_assessment.credibility_factor}%</span>
+              )}
+            </div>
+          </div>
+          {d.risk_assessment.icr && (
+            <div className={`px-3 py-1.5 rounded-lg border ${
+              d.risk_assessment.icr.verdict === 'ADVERSE' ? 'border-red-500/30 bg-red-500/10' :
+              d.risk_assessment.icr.verdict === 'FAVORABLE' ? 'border-emerald-500/30 bg-emerald-500/10' : 'border-amber-500/30 bg-amber-500/10'
+            }`}>
+              <span className="text-[10px] text-slate-500 uppercase">ICR</span>
+              <span className={`text-sm font-bold ml-2 ${
+                d.risk_assessment.icr.verdict === 'ADVERSE' ? 'text-red-400' :
+                d.risk_assessment.icr.verdict === 'FAVORABLE' ? 'text-emerald-400' : 'text-amber-400'
+              }`}>{d.risk_assessment.icr.icr}%</span>
+              <span className={`text-[10px] ml-1 ${
+                d.risk_assessment.icr.verdict === 'ADVERSE' ? 'text-red-400' :
+                d.risk_assessment.icr.verdict === 'FAVORABLE' ? 'text-emerald-400' : 'text-amber-400'
+              }`}>{d.risk_assessment.icr.verdict}</span>
+            </div>
+          )}
+        </div>
+      )}
+
+      {/* ─── Claims Experience Summary (when available) ───────── */}
+      {d.claims_experience && (
+        <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-3">
+          {[
+            { label: 'Claims Analyzed', value: d.claims_experience.total_claims.toLocaleString(), color: 'from-violet-600 to-indigo-600' },
+            { label: 'PMPY (Approved)', value: `₹${d.claims_experience.pmpy_approved.toLocaleString()}`, color: 'from-emerald-600 to-teal-600' },
+            { label: 'Utilization Rate', value: `${d.claims_experience.utilization_rate}%`, color: d.claims_experience.utilization_rate > 50 ? 'from-red-600 to-orange-600' : 'from-cyan-600 to-blue-600' },
+            { label: 'Claim Frequency', value: `${d.claims_experience.claim_frequency_pmpy}/yr`, color: 'from-amber-600 to-orange-600' },
+            { label: 'Approval Ratio', value: `${d.claims_experience.approval_ratio}%`, color: 'from-blue-600 to-indigo-600' },
+            { label: 'Observed Trend', value: `${d.claims_experience.observed_trend > 0 ? '+' : ''}${d.claims_experience.observed_trend}%`, color: d.claims_experience.observed_trend > 15 ? 'from-red-600 to-pink-600' : 'from-slate-600 to-zinc-600' },
+          ].map(({ label, value, color }) => (
+            <div key={label} className="relative overflow-hidden rounded-2xl border border-white/[0.08] bg-white/[0.03] p-3">
+              <div className={`absolute top-0 left-0 w-full h-1 bg-gradient-to-r ${color}`} />
+              <p className="text-[9px] text-slate-500 uppercase font-semibold tracking-wider mb-1">{label}</p>
+              <p className="text-lg font-bold text-white">{value}</p>
+            </div>
+          ))}
+        </div>
+      )}
+
       {/* ─── Hero Summary Strip ───────────────────────────────────── */}
       <div className="grid grid-cols-2 md:grid-cols-5 gap-3">
         {[

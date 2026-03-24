@@ -228,8 +228,38 @@ const LOCKOUT_MAX_ATTEMPTS = 10;
       );
       CREATE INDEX IF NOT EXISTS idx_quotes_rfq ON crm_quotes(rfq_id);
       CREATE INDEX IF NOT EXISTS idx_quotes_status ON crm_quotes(status);
+
+      CREATE TABLE IF NOT EXISTS crm_rfq_claims (
+        id              BIGSERIAL PRIMARY KEY,
+        rfq_id          BIGINT NOT NULL REFERENCES crm_rfqs(id) ON DELETE CASCADE,
+        claim_number    VARCHAR(100),
+        emp_code        VARCHAR(50),
+        employee_name   VARCHAR(255),
+        relationship    VARCHAR(50),
+        gender          VARCHAR(10),
+        age             INTEGER,
+        claim_date      DATE,
+        service_type    VARCHAR(100),
+        service_category VARCHAR(100),
+        diagnosis       VARCHAR(500),
+        provider_name   VARCHAR(255),
+        provider_type   VARCHAR(50),
+        claimed_amount  NUMERIC(12,2) DEFAULT 0,
+        approved_amount NUMERIC(12,2) DEFAULT 0,
+        paid_amount     NUMERIC(12,2) DEFAULT 0,
+        rejection_reason VARCHAR(255),
+        claim_status    VARCHAR(50),
+        policy_year     VARCHAR(20),
+        si_amount       NUMERIC(12,2) DEFAULT 0,
+        band            VARCHAR(20),
+        created_at      TIMESTAMPTZ NOT NULL DEFAULT NOW()
+      );
+      CREATE INDEX IF NOT EXISTS idx_rfq_claims_rfq ON crm_rfq_claims(rfq_id);
+      CREATE INDEX IF NOT EXISTS idx_rfq_claims_emp ON crm_rfq_claims(emp_code);
+      CREATE INDEX IF NOT EXISTS idx_rfq_claims_svc ON crm_rfq_claims(service_type);
+      CREATE INDEX IF NOT EXISTS idx_rfq_claims_date ON crm_rfq_claims(claim_date);
     `);
-    console.log('[CRM] DB tables initialized (incl. RFQ)');
+    console.log('[CRM] DB tables initialized (incl. RFQ + Claims)');
   } catch (err) {
     console.error('[CRM] DB table init error:', err.message);
   }
@@ -1414,6 +1444,150 @@ router.post('/rfqs/:id/ai-generate-quote', authCRM, async (req, res) => {
         familySizes.reduce((s, r) => s + parseInt(r.cnt), 0)
       : 4.0;
 
+    // ── 1b. CLAIMS EXPERIENCE DATA ──────────────────────────────────────────
+    // If claims history is uploaded, use it for experience-based underwriting
+    const claimsCountRes = await pool.query(`SELECT COUNT(*) AS total FROM crm_rfq_claims WHERE rfq_id = $1`, [rfqId]);
+    const hasClaimsExperience = parseInt(claimsCountRes.rows[0].total) > 0;
+    let claimsExperience = null;
+
+    if (hasClaimsExperience) {
+      const [claimsSummary, claimsSvcDist, claimsMonthly, claimsRelDist, claimsAgeDist, claimsSevDist] = await Promise.all([
+        pool.query(`SELECT
+          COUNT(*) AS total_claims,
+          COUNT(DISTINCT emp_code) AS unique_claimants,
+          COALESCE(SUM(claimed_amount), 0) AS total_claimed,
+          COALESCE(SUM(approved_amount), 0) AS total_approved,
+          COALESCE(SUM(paid_amount), 0) AS total_paid,
+          COALESCE(AVG(claimed_amount), 0) AS avg_claimed,
+          COALESCE(AVG(approved_amount), 0) AS avg_approved,
+          PERCENTILE_CONT(0.5) WITHIN GROUP (ORDER BY claimed_amount) AS median_claim,
+          PERCENTILE_CONT(0.9) WITHIN GROUP (ORDER BY claimed_amount) AS p90_claim,
+          PERCENTILE_CONT(0.95) WITHIN GROUP (ORDER BY claimed_amount) AS p95_claim,
+          MAX(claimed_amount) AS max_claim,
+          MIN(claim_date) AS earliest_claim, MAX(claim_date) AS latest_claim
+          FROM crm_rfq_claims WHERE rfq_id = $1`, [rfqId]),
+        pool.query(`SELECT service_type, COUNT(*) AS cnt, COALESCE(SUM(claimed_amount),0) AS claimed,
+          COALESCE(SUM(approved_amount),0) AS approved, COALESCE(AVG(claimed_amount),0) AS avg_claim
+          FROM crm_rfq_claims WHERE rfq_id = $1 GROUP BY service_type ORDER BY claimed DESC`, [rfqId]),
+        pool.query(`SELECT TO_CHAR(claim_date,'YYYY-MM') AS month, COUNT(*) AS claims,
+          COALESCE(SUM(claimed_amount),0) AS claimed, COALESCE(SUM(approved_amount),0) AS approved
+          FROM crm_rfq_claims WHERE rfq_id = $1 AND claim_date IS NOT NULL GROUP BY month ORDER BY month`, [rfqId]),
+        pool.query(`SELECT UPPER(TRIM(COALESCE(relationship,'UNKNOWN'))) AS rel, COUNT(*) AS cnt,
+          COALESCE(SUM(claimed_amount),0) AS claimed, COUNT(DISTINCT emp_code) AS uniqueEmp
+          FROM crm_rfq_claims WHERE rfq_id = $1 GROUP BY rel ORDER BY claimed DESC`, [rfqId]),
+        pool.query(`SELECT age_band, cnt, claimed, approved FROM (
+          SELECT CASE WHEN age<18 THEN '0-17' WHEN age<30 THEN '18-29' WHEN age<45 THEN '30-44'
+            WHEN age<60 THEN '45-59' WHEN age<75 THEN '60-74' ELSE '75+' END AS age_band,
+            COUNT(*) AS cnt, COALESCE(SUM(claimed_amount),0) AS claimed, COALESCE(SUM(approved_amount),0) AS approved
+          FROM crm_rfq_claims WHERE rfq_id = $1 AND age IS NOT NULL GROUP BY age_band) sub ORDER BY age_band`, [rfqId]),
+        pool.query(`SELECT
+          CASE WHEN claimed_amount<500 THEN '<500' WHEN claimed_amount<1000 THEN '500-1K'
+            WHEN claimed_amount<2500 THEN '1K-2.5K' WHEN claimed_amount<5000 THEN '2.5K-5K'
+            WHEN claimed_amount<10000 THEN '5K-10K' WHEN claimed_amount<25000 THEN '10K-25K' ELSE '25K+' END AS band,
+          COUNT(*) AS cnt, COALESCE(SUM(claimed_amount),0) AS total
+          FROM crm_rfq_claims WHERE rfq_id = $1 GROUP BY band ORDER BY MIN(claimed_amount)`, [rfqId]),
+      ]);
+
+      const cs = claimsSummary.rows[0];
+      const totalClaimsCount = parseInt(cs.total_claims);
+      const totalClaimedAmt = parseFloat(cs.total_claimed);
+      const totalApprovedAmt = parseFloat(cs.total_approved);
+      const uniqueClaimants = parseInt(cs.unique_claimants);
+
+      // Compute policy period in months
+      const earliestClaim = new Date(cs.earliest_claim);
+      const latestClaim = new Date(cs.latest_claim);
+      const policyMonths = Math.max(1, Math.round((latestClaim - earliestClaim) / (30.44 * 24 * 60 * 60 * 1000)));
+      const annualizationFactor = 12 / Math.min(policyMonths, 12);
+
+      // Annualized claims
+      const annualizedClaimed = totalClaimedAmt * annualizationFactor;
+      const annualizedApproved = totalApprovedAmt * annualizationFactor;
+
+      // Per-member-per-year (PMPY) cost
+      const pmpyClaimed = annualizedClaimed / totalMembers;
+      const pmpyApproved = annualizedApproved / totalMembers;
+
+      // Utilization rate
+      const claimsUtilizationRate = uniqueClaimants / totalMembers;
+
+      // Claim frequency per member per year
+      const claimFreqPMPY = (totalClaimsCount * annualizationFactor) / totalMembers;
+
+      // Approval ratio
+      const approvalRatio = totalClaimedAmt > 0 ? totalApprovedAmt / totalClaimedAmt : 0;
+
+      // Monthly trend for growth rate
+      const monthlyData = claimsMonthly.rows;
+      let observedTrend = 0;
+      if (monthlyData.length >= 4) {
+        const half = Math.floor(monthlyData.length / 2);
+        const firstHalfAvg = monthlyData.slice(0, half).reduce((s, m) => s + parseFloat(m.claimed), 0) / half;
+        const secondHalfAvg = monthlyData.slice(half).reduce((s, m) => s + parseFloat(m.claimed), 0) / (monthlyData.length - half);
+        observedTrend = firstHalfAvg > 0 ? (secondHalfAvg - firstHalfAvg) / firstHalfAvg : 0;
+      }
+
+      // Service-type breakdown for experience
+      const svcExperience = {};
+      for (const r of claimsSvcDist.rows) {
+        svcExperience[r.service_type] = {
+          claim_count: parseInt(r.cnt),
+          total_claimed: parseFloat(r.claimed),
+          total_approved: parseFloat(r.approved),
+          avg_claim: parseFloat(r.avg_claim),
+          share: totalClaimedAmt > 0 ? parseFloat(r.claimed) / totalClaimedAmt : 0,
+        };
+      }
+
+      // Age-band experience for actual risk factors
+      const ageBandExperience = {};
+      for (const r of claimsAgeDist.rows) {
+        ageBandExperience[r.age_band] = {
+          claims: parseInt(r.cnt),
+          claimed: parseFloat(r.claimed),
+          approved: parseFloat(r.approved),
+          per_claim: parseInt(r.cnt) > 0 ? parseFloat(r.claimed) / parseInt(r.cnt) : 0,
+        };
+      }
+
+      // Relationship experience
+      const relExperience = {};
+      for (const r of claimsRelDist.rows) {
+        relExperience[r.rel] = {
+          claims: parseInt(r.cnt),
+          claimed: parseFloat(r.claimed),
+          unique_claimants: parseInt(r.uniqueemp),
+        };
+      }
+
+      claimsExperience = {
+        total_claims: totalClaimsCount,
+        total_claimed: Math.round(totalClaimedAmt),
+        total_approved: Math.round(totalApprovedAmt),
+        unique_claimants: uniqueClaimants,
+        policy_months: policyMonths,
+        annualization_factor: Math.round(annualizationFactor * 100) / 100,
+        annualized_claimed: Math.round(annualizedClaimed),
+        annualized_approved: Math.round(annualizedApproved),
+        pmpy_claimed: Math.round(pmpyClaimed),
+        pmpy_approved: Math.round(pmpyApproved),
+        utilization_rate: Math.round(claimsUtilizationRate * 1000) / 10,
+        claim_frequency_pmpy: Math.round(claimFreqPMPY * 100) / 100,
+        approval_ratio: Math.round(approvalRatio * 1000) / 10,
+        avg_claim_size: Math.round(parseFloat(cs.avg_claimed)),
+        median_claim: Math.round(parseFloat(cs.median_claim) || 0),
+        p90_claim: Math.round(parseFloat(cs.p90_claim) || 0),
+        p95_claim: Math.round(parseFloat(cs.p95_claim) || 0),
+        max_claim: Math.round(parseFloat(cs.max_claim) || 0),
+        observed_trend: Math.round(observedTrend * 1000) / 10,
+        service_distribution: svcExperience,
+        age_band_experience: ageBandExperience,
+        relationship_experience: relExperience,
+        severity_distribution: claimsSevDist.rows.map(r => ({ band: r.band, count: parseInt(r.cnt), total: Math.round(parseFloat(r.total)) })),
+        monthly_trend: monthlyData.map(m => ({ month: m.month, claims: parseInt(m.claims), claimed: Math.round(parseFloat(m.claimed)), approved: Math.round(parseFloat(m.approved)) })),
+      };
+    }
+
     // ── 2. ACTUARIAL MODEL — Indian Group OPD Pricing ───────────────────────
     //
     // Based on IRDA industry benchmarks & published GHI claims data 2024-2026:
@@ -1533,32 +1707,148 @@ router.post('/rfqs/:id/ai-generate-quote', authCRM, async (req, res) => {
       impact: familySizeFactor > 1.03 ? 'adverse' : 'favorable'
     });
 
-    // Experience-based loading (if previous premium data exists)
+    // ── 2c-EXP. CLAIMS EXPERIENCE-BASED UNDERWRITING ──────────────────────
     let experienceFactor = 1.0;
-    const premiumPaid = rfq.premium_paid;
-    const livesInception = typeof rfq.lives_at_inception === 'string'
-      ? JSON.parse(rfq.lives_at_inception || '{}') : (rfq.lives_at_inception || {});
-    const prevLives = livesInception.total || totalMembers;
+    let experienceMethod = 'benchmark'; // 'benchmark' or 'experience'
+    let experienceBasedPurePremium = null; // if we have claims data, this is the experience-derived pure premium
+    let icrMetric = null;
+    let experienceCredibility = 0; // 0 to 1 — how much we trust experience vs benchmark
 
-    if (premiumPaid && premiumPaid !== 'Details awaited' && !isNaN(parseFloat(premiumPaid.replace(/[₹,]/g, '')))) {
-      const prevPremium = parseFloat(premiumPaid.replace(/[₹,]/g, ''));
-      const prevPerLife = prevPremium / prevLives;
-      // Medical inflation trending: 12-14% p.a. in India
-      const inflationFactor = 1.13;
-      experienceFactor = inflationFactor;
+    if (hasClaimsExperience && claimsExperience) {
+      experienceMethod = 'experience';
+      const ce = claimsExperience;
+
+      // Credibility factor: Bühlmann credibility = min(1, sqrt(N/k)) where k depends on variance
+      // For group OPD with >100 claims, credibility is very high
+      const k = 500; // credibility threshold — lower means we reach full credibility faster
+      experienceCredibility = Math.min(1.0, Math.sqrt(ce.total_claims / k));
+      experienceCredibility = Math.max(experienceCredibility, 0.3); // minimum 30% credibility for any claims data
+
       reasoning.push({
-        step: 'Experience Rating',
-        detail: `Previous premium ₹${prevPremium.toLocaleString()} for ${prevLives.toLocaleString()} lives (₹${Math.round(prevPerLife).toLocaleString()}/life). Applying 13% medical inflation trend.`,
-        factor: inflationFactor,
-        impact: 'adverse'
+        step: 'Claims Experience Loaded',
+        detail: `${ce.total_claims.toLocaleString()} claims analyzed over ${ce.policy_months} months. ` +
+          `Total claimed: ₹${ce.total_claimed.toLocaleString()}, Approved: ₹${ce.total_approved.toLocaleString()}. ` +
+          `Bühlmann credibility factor: ${(experienceCredibility * 100).toFixed(0)}% — ${experienceCredibility >= 0.8 ? 'HIGH confidence in experience data, will dominate pricing' : experienceCredibility >= 0.5 ? 'MODERATE credibility, blending with benchmarks' : 'LOW volume, supplementing with benchmarks'}.`,
+        factor: experienceCredibility,
+        impact: 'result'
       });
-    } else {
+
+      // ICR — Incurred Claims Ratio
+      // If we have premium data, compute actual ICR
+      const premiumPaid = rfq.premium_paid;
+      let prevPremium = 0;
+      if (premiumPaid && premiumPaid !== 'Details awaited' && !isNaN(parseFloat(String(premiumPaid).replace(/[₹,]/g, '')))) {
+        prevPremium = parseFloat(String(premiumPaid).replace(/[₹,]/g, ''));
+      }
+      if (prevPremium > 0) {
+        icrMetric = {
+          premium: prevPremium,
+          incurred: ce.annualized_approved,
+          icr: Math.round(ce.annualized_approved / prevPremium * 1000) / 10,
+          verdict: ce.annualized_approved / prevPremium > 0.85 ? 'ADVERSE' :
+                   ce.annualized_approved / prevPremium > 0.65 ? 'NORMAL' : 'FAVORABLE',
+        };
+        reasoning.push({
+          step: 'Incurred Claims Ratio (ICR)',
+          detail: `Annual premium ₹${prevPremium.toLocaleString()} vs annualized incurred claims ₹${ce.annualized_approved.toLocaleString()}. ` +
+            `ICR = ${icrMetric.icr}% — ${icrMetric.verdict}. ` +
+            `${icrMetric.icr > 85 ? 'Portfolio is loss-making — significant premium increase required.' : icrMetric.icr > 65 ? 'Normal range — standard inflation adjustment.' : 'Favorable — potential for competitive pricing.'}`,
+          factor: icrMetric.icr,
+          impact: icrMetric.verdict === 'ADVERSE' ? 'adverse' : icrMetric.verdict === 'FAVORABLE' ? 'favorable' : 'neutral'
+        });
+      }
+
+      // Utilization analysis
       reasoning.push({
-        step: 'Experience Rating',
-        detail: `Previous premium data not available — using first-principles actuarial base rates. No experience-based adjustment.`,
+        step: 'Utilization Analysis',
+        detail: `${ce.utilization_rate}% of members utilized the policy (${ce.unique_claimants.toLocaleString()} of ${totalMembers.toLocaleString()}). ` +
+          `Claim frequency: ${ce.claim_frequency_pmpy} claims/member/year. ` +
+          `${ce.utilization_rate > 50 ? 'HIGH utilization — indicates heavy usage pattern, pricing must reflect this.' : ce.utilization_rate > 30 ? 'Moderate utilization — standard OPD pattern.' : 'Low utilization — potential for leaner pricing.'}`,
+        factor: ce.utilization_rate,
+        impact: ce.utilization_rate > 50 ? 'adverse' : ce.utilization_rate < 25 ? 'favorable' : 'neutral'
+      });
+
+      // Service-wise distribution insight
+      const topSvc = Object.entries(ce.service_distribution).sort((a, b) => b[1].total_claimed - a[1].total_claimed);
+      if (topSvc.length > 0) {
+        const svcSummary = topSvc.slice(0, 4).map(([svc, d]) => `${svc}: ₹${d.total_claimed.toLocaleString()} (${Math.round(d.share * 100)}%)`).join(', ');
+        reasoning.push({
+          step: 'Service-Wise Distribution',
+          detail: `Claims breakdown: ${svcSummary}. ${topSvc[0] ? `${topSvc[0][0]} dominates at ${Math.round(topSvc[0][1].share * 100)}% of total claims.` : ''}`,
+          impact: 'neutral'
+        });
+      }
+
+      // Trend analysis
+      if (ce.observed_trend !== 0) {
+        const trendDir = ce.observed_trend > 0 ? 'increasing' : 'decreasing';
+        const trendSeverity = Math.abs(ce.observed_trend) > 20 ? 'sharply' : Math.abs(ce.observed_trend) > 10 ? 'moderately' : 'slightly';
+        reasoning.push({
+          step: 'Claims Trend Analysis',
+          detail: `Claims are ${trendSeverity} ${trendDir} at ${ce.observed_trend > 0 ? '+' : ''}${ce.observed_trend}% (H1 vs H2 comparison). ` +
+            `${ce.observed_trend > 15 ? 'Significant upward pressure on renewal pricing.' : ce.observed_trend > 5 ? 'Normal medical inflation visible.' : ce.observed_trend < -5 ? 'Declining trend — favorable for renewal.' : 'Stable claims trajectory.'}`,
+          factor: ce.observed_trend,
+          impact: ce.observed_trend > 15 ? 'adverse' : ce.observed_trend < -5 ? 'favorable' : 'neutral'
+        });
+      }
+
+      // Severity analysis
+      reasoning.push({
+        step: 'Claim Severity Profile',
+        detail: `Avg claim ₹${ce.avg_claim_size.toLocaleString()}, Median ₹${ce.median_claim.toLocaleString()}, P90 ₹${ce.p90_claim.toLocaleString()}, P95 ₹${ce.p95_claim.toLocaleString()}, Max ₹${ce.max_claim.toLocaleString()}. ` +
+          `${ce.p90_claim > ce.avg_claim_size * 3 ? 'Significant tail risk — a few large claims are pulling the average up.' : 'Distribution is fairly concentrated — limited tail risk.'}`,
+        impact: ce.p90_claim > ce.avg_claim_size * 3 ? 'adverse' : 'neutral'
+      });
+
+      // ── EXPERIENCE-BASED PURE PREMIUM CALCULATION ────────────────────────
+      // The gold standard: use actual PMPY cost, adjusted for trend + inflation + IBNR
+      const observedMedicalInflation = Math.max(ce.observed_trend / 100, 0.08); // floor at 8% (India baseline)
+      const trendAdjustedPMPY = ce.pmpy_approved * (1 + observedMedicalInflation);
+      experienceBasedPurePremium = trendAdjustedPMPY * totalMembers;
+
+      // Experience factor vs benchmarks
+      if (totalExpectedOPDClaims > 0) {
+        experienceFactor = experienceBasedPurePremium / totalExpectedOPDClaims;
+        experienceFactor = Math.max(0.5, Math.min(experienceFactor, 3.0)); // cap at 0.5x to 3.0x
+
+        reasoning.push({
+          step: 'Experience vs Benchmark Comparison',
+          detail: `Experience PMPY (trend-adjusted): ₹${Math.round(trendAdjustedPMPY).toLocaleString()}/member/year. ` +
+            `Benchmark PMPY: ₹${Math.round(totalExpectedOPDClaims / totalMembers).toLocaleString()}/member/year. ` +
+            `Experience is ${experienceFactor > 1 ? `${Math.round((experienceFactor - 1) * 100)}% HIGHER` : `${Math.round((1 - experienceFactor) * 100)}% LOWER`} than benchmarks. ` +
+            `Using credibility-weighted blend: ${(experienceCredibility * 100).toFixed(0)}% experience + ${((1 - experienceCredibility) * 100).toFixed(0)}% benchmark.`,
+          factor: Math.round(experienceFactor * 100) / 100,
+          impact: experienceFactor > 1.15 ? 'adverse' : experienceFactor < 0.85 ? 'favorable' : 'neutral'
+        });
+      }
+    } else {
+      // No claims experience — pure benchmark pricing
+      reasoning.push({
+        step: 'Claims Experience',
+        detail: `No claims history uploaded. Using industry benchmark actuarial rates (IRDA published data 2024-26). Upload previous year claims MIS for experience-rated pricing.`,
         factor: 1.0,
         impact: 'neutral'
       });
+
+      // Fall back to premium-based experience if available
+      const premiumPaid = rfq.premium_paid;
+      if (premiumPaid && premiumPaid !== 'Details awaited' && !isNaN(parseFloat(String(premiumPaid).replace(/[₹,]/g, '')))) {
+        const prevPremium = parseFloat(String(premiumPaid).replace(/[₹,]/g, ''));
+        experienceFactor = 1.13; // 13% medical inflation
+        reasoning.push({
+          step: 'Premium Inflation Adjustment',
+          detail: `Previous premium ₹${prevPremium.toLocaleString()} for ${totalMembers.toLocaleString()} lives. Applying 13% medical inflation (no claims data for experience rating).`,
+          factor: 1.13,
+          impact: 'adverse'
+        });
+      } else {
+        reasoning.push({
+          step: 'Premium History',
+          detail: `No previous premium data available. Using pure first-principles actuarial pricing.`,
+          factor: 1.0,
+          impact: 'neutral'
+        });
+      }
     }
 
     // Age concentration risk
@@ -1592,13 +1882,35 @@ router.post('/rfqs/:id/ai-generate-quote', authCRM, async (req, res) => {
     });
 
     // ── 3. COMPUTE FINAL PRICING ────────────────────────────────────────────
-    // Composite adjustment factor
-    const compositeFactor = genderFactor * familySizeFactor * experienceFactor *
-                            ageConcentrationFactor * ibnrFactor * profitMargin * adminLoading;
+    // Credibility-weighted blend: experience data + benchmark
+    // Z * Experience + (1-Z) * Benchmark  where Z = credibility factor
+    const Z = experienceCredibility;
 
-    // Expected OPD premium (pure + loaded)
-    const pureOPDPremium = totalExpectedOPDClaims * genderFactor * familySizeFactor * ageConcentrationFactor;
-    const loadedOPDPremium = pureOPDPremium * ibnrFactor * profitMargin * adminLoading * experienceFactor;
+    // Composite adjustment factor (for benchmark path)
+    const benchmarkCompositeFactor = genderFactor * familySizeFactor *
+                            ageConcentrationFactor * ibnrFactor * profitMargin * adminLoading * experienceFactor;
+
+    // Pure premium computation
+    let blendedPurePremium;
+    if (hasClaimsExperience && experienceBasedPurePremium !== null) {
+      // Credibility-weighted blend
+      const benchmarkPure = totalExpectedOPDClaims * genderFactor * familySizeFactor * ageConcentrationFactor;
+      const experiencePure = experienceBasedPurePremium;
+      blendedPurePremium = Z * experiencePure + (1 - Z) * benchmarkPure;
+      reasoning.push({
+        step: 'Credibility-Weighted Pure Premium',
+        detail: `Blended pure premium: ${(Z * 100).toFixed(0)}% × Experience (₹${Math.round(experiencePure).toLocaleString()}) + ` +
+          `${((1 - Z) * 100).toFixed(0)}% × Benchmark (₹${Math.round(benchmarkPure).toLocaleString()}) = ₹${Math.round(blendedPurePremium).toLocaleString()}`,
+        impact: 'result'
+      });
+    } else {
+      blendedPurePremium = totalExpectedOPDClaims * genderFactor * familySizeFactor * ageConcentrationFactor;
+    }
+
+    // Apply loadings
+    const pureOPDPremium = blendedPurePremium;
+    const loadedOPDPremium = pureOPDPremium * ibnrFactor * profitMargin * adminLoading;
+    const compositeFactor = loadedOPDPremium / (totalExpectedOPDClaims || 1);
 
     // Expected Wellness premium
     // Wellness is optional — typically 40-60% uptake in group policies
@@ -1705,6 +2017,9 @@ router.post('/rfqs/:id/ai-generate-quote', authCRM, async (req, res) => {
           gender_factor: Math.round(genderFactor * 1000) / 1000,
           family_size_factor: familySizeFactor,
           composite_factor: Math.round(compositeFactor * 1000) / 1000,
+          pricing_method: experienceMethod,
+          credibility_factor: Math.round(experienceCredibility * 100),
+          icr: icrMetric,
         },
 
         // OPD pricing
@@ -1751,6 +2066,9 @@ router.post('/rfqs/:id/ai-generate-quote', authCRM, async (req, res) => {
         // AI reasoning chain
         reasoning,
 
+        // Claims experience data (if available)
+        claims_experience: claimsExperience,
+
         // Recommended quote parameters (ready to apply to Quote Builder)
         recommended_quote: {
           total_premium: Math.round(loadedOPDPremium),
@@ -1767,16 +2085,536 @@ router.post('/rfqs/:id/ai-generate-quote', authCRM, async (req, res) => {
             lives: s.lives,
           })),
           terms: `OPD Quote generated using AI actuarial engine.\n` +
+            `Pricing Method: ${experienceMethod === 'experience' ? 'EXPERIENCE-RATED (claims history analyzed)' : 'BENCHMARK-BASED (no claims data)'}\n` +
+            (icrMetric ? `Incurred Claims Ratio: ${icrMetric.icr}% (${icrMetric.verdict})\n` : '') +
+            (hasClaimsExperience && claimsExperience ? `Claims Data: ${claimsExperience.total_claims.toLocaleString()} claims, Utilization ${claimsExperience.utilization_rate}%\n` : '') +
             `Risk Score: ${overallRiskScore}/100 (${riskCategory})\n` +
             `Expected Loss Ratio: ${expectedLossRatio}%\n` +
             `Population: ${totalMembers.toLocaleString()} lives, avg age ${avgAge.toFixed(1)}\n` +
-            `Pricing basis: Floater per-family, age-banded actuarial model with IBNR & margin loading.`,
+            `Pricing basis: ${experienceMethod === 'experience' ? 'Credibility-weighted experience + benchmark blend' : 'Floater per-family, age-banded actuarial model'} with IBNR & margin loading.`,
         }
       }
     });
   } catch (error) {
     console.error('[CRM AI Quote Generate]', error.message, error.stack);
     return res.status(500).json({ success: false, message: 'AI quote generation failed: ' + error.message });
+  }
+});
+
+// ─── Upload Claims History ───────────────────────────────────────────────────
+// Accepts claims MIS Excel/CSV with flexible column mapping
+router.post('/rfqs/:id/upload-claims', authCRM, upload.single('file'), async (req, res) => {
+  try {
+    const rfqId = req.params.id;
+    const rfqCheck = await sharedPool.query(`SELECT id FROM crm_rfqs WHERE id = $1`, [rfqId]);
+    if (!rfqCheck.rows.length) return res.status(404).json({ success: false, message: 'RFQ not found' });
+    if (!req.file) return res.status(400).json({ success: false, message: 'Claims Excel/CSV file required' });
+
+    const workbook = XLSX.read(req.file.buffer, { type: 'buffer', cellDates: true });
+    // Find claims sheet — typically the largest sheet or one with "claim" in name
+    let claimsSheet = null;
+    let claimsSheetName = '';
+    for (const name of workbook.SheetNames) {
+      if (name.toLowerCase().includes('claim') || name.toLowerCase().includes('mis') || name.toLowerCase().includes('dump')) {
+        claimsSheet = workbook.Sheets[name];
+        claimsSheetName = name;
+        break;
+      }
+    }
+    if (!claimsSheet) {
+      // Use the sheet with most rows
+      let maxRows = 0;
+      for (const name of workbook.SheetNames) {
+        const ws = workbook.Sheets[name];
+        const range = XLSX.utils.decode_range(ws['!ref'] || 'A1');
+        if (range.e.r > maxRows) { maxRows = range.e.r; claimsSheet = ws; claimsSheetName = name; }
+      }
+    }
+    if (!claimsSheet) return res.status(400).json({ success: false, message: 'No claims data found in uploaded file' });
+
+    const rows = XLSX.utils.sheet_to_json(claimsSheet, { defval: null });
+    if (!rows.length) return res.status(400).json({ success: false, message: 'No claims rows found' });
+
+    // Flexible column mapping for claims — supports various insurer/TPA formats
+    const colMap = (row) => {
+      const keys = Object.keys(row);
+      const find = (patterns) => {
+        for (const p of patterns) {
+          const k = keys.find(k => k.toLowerCase().replace(/[^a-z0-9]/g, '').includes(p));
+          if (k) return row[k];
+        }
+        return null;
+      };
+      const parseDate = (v) => {
+        if (!v) return null;
+        if (v instanceof Date) return v.toISOString().split('T')[0];
+        const d = new Date(v);
+        return !isNaN(d.getTime()) ? d.toISOString().split('T')[0] : null;
+      };
+      const parseNum = (v) => {
+        if (!v) return 0;
+        if (typeof v === 'number') return v;
+        return parseFloat(String(v).replace(/[₹,]/g, '')) || 0;
+      };
+      return {
+        claim_number: find(['claimno', 'claimnumber', 'claimid', 'claimref', 'intimationno', 'claimrefno']) || null,
+        emp_code: (find(['empcode', 'employeecode', 'empid', 'employeeid', 'empno', 'employeeno', 'memberid', 'policyholderid']) || '').toString(),
+        employee_name: find(['employeename', 'empname', 'membername', 'insuredname', 'patientname', 'claimantname']) || null,
+        relationship: find(['relationship', 'relation', 'relationType', 'dependentrelation']) || null,
+        gender: find(['gender', 'sex']) || null,
+        age: parseInt(find(['age', 'ageatclaim', 'claimantage'])) || null,
+        claim_date: parseDate(find(['claimdate', 'dateofclaim', 'treatmentdate', 'servicedate', 'admissiondate', 'incurreddate', 'intimationdate', 'visitdate'])),
+        service_type: find(['servicetype', 'claimtype', 'treatmenttype', 'benefittype', 'service', 'typeofclaim', 'typeofservice', 'category', 'procedure']) || null,
+        service_category: find(['servicecategory', 'category', 'subcategory', 'department', 'speciality', 'specialty']) || null,
+        diagnosis: find(['diagnosis', 'ailment', 'diseasegroup', 'icd', 'icdcode', 'diagnosisname', 'natureofillness']) || null,
+        provider_name: find(['providername', 'hospitalname', 'clinicname', 'networkprovider', 'labname', 'pharmacyname', 'vendor']) || null,
+        provider_type: find(['providertype', 'networktype', 'network', 'cashless', 'reimbursement']) || null,
+        claimed_amount: parseNum(find(['claimedamount', 'claimamount', 'billedamount', 'totalclaim', 'amountclaimed', 'grossclaim', 'incurredamount'])),
+        approved_amount: parseNum(find(['approvedamount', 'settledamount', 'sanctionedamount', 'paidamount', 'netpayable', 'admissibleamount'])),
+        paid_amount: parseNum(find(['paidamount', 'netpaid', 'disbursedamount', 'settledamount', 'amountpaid'])),
+        rejection_reason: find(['rejectionreason', 'reason', 'remarks', 'closurereason', 'denialreason']) || null,
+        claim_status: find(['claimstatus', 'status', 'claimstate']) || null,
+        policy_year: find(['policyyear', 'policyperiod', 'year', 'policyterm']) || null,
+        si_amount: parseNum(find(['suminsured', 'siamount', 'si', 'coveramount'])),
+        band: find(['band', 'grade', 'level', 'category']) || null,
+      };
+    };
+
+    // Delete old claims for this RFQ
+    await sharedPool.query(`DELETE FROM crm_rfq_claims WHERE rfq_id = $1`, [rfqId]);
+
+    let inserted = 0;
+    const batchSize = 500;
+    for (let i = 0; i < rows.length; i += batchSize) {
+      const batch = rows.slice(i, i + batchSize);
+      const values = []; const placeholders = [];
+      let pIdx = 1;
+      for (const raw of batch) {
+        const c = colMap(raw);
+        // Normalize service type
+        let svcType = (c.service_type || '').trim();
+        if (!svcType) {
+          // Try to infer from other fields
+          const allVals = Object.values(raw).join(' ').toLowerCase();
+          if (allVals.includes('pharmac') || allVals.includes('medicine')) svcType = 'Pharmacy';
+          else if (allVals.includes('lab') || allVals.includes('diagnostic') || allVals.includes('pathology') || allVals.includes('radiology')) svcType = 'Lab/Diagnostic';
+          else if (allVals.includes('consult') || allVals.includes('doctor') || allVals.includes('opd visit')) svcType = 'Consultation';
+          else if (allVals.includes('wellness') || allVals.includes('health check') || allVals.includes('preventive')) svcType = 'Wellness';
+          else svcType = 'Other';
+        }
+        values.push(rfqId, c.claim_number, c.emp_code, c.employee_name, c.relationship, c.gender,
+          c.age, c.claim_date, svcType, c.service_category, c.diagnosis, c.provider_name, c.provider_type,
+          c.claimed_amount, c.approved_amount, c.paid_amount, c.rejection_reason, c.claim_status,
+          c.policy_year, c.si_amount, c.band);
+        placeholders.push(`($${pIdx},$${pIdx+1},$${pIdx+2},$${pIdx+3},$${pIdx+4},$${pIdx+5},$${pIdx+6},$${pIdx+7},$${pIdx+8},$${pIdx+9},$${pIdx+10},$${pIdx+11},$${pIdx+12},$${pIdx+13},$${pIdx+14},$${pIdx+15},$${pIdx+16},$${pIdx+17},$${pIdx+18},$${pIdx+19},$${pIdx+20})`);
+        pIdx += 21;
+      }
+      if (placeholders.length > 0) {
+        await sharedPool.query(
+          `INSERT INTO crm_rfq_claims (rfq_id, claim_number, emp_code, employee_name, relationship, gender,
+            age, claim_date, service_type, service_category, diagnosis, provider_name, provider_type,
+            claimed_amount, approved_amount, paid_amount, rejection_reason, claim_status,
+            policy_year, si_amount, band)
+           VALUES ${placeholders.join(',')}`, values
+        );
+        inserted += batch.length;
+      }
+    }
+
+    return res.status(200).json({
+      success: true,
+      message: `Uploaded ${inserted} claims from sheet "${claimsSheetName}"`,
+      data: { claimCount: inserted, sheetName: claimsSheetName }
+    });
+  } catch (error) {
+    console.error('[CRM Claims Upload]', error.message);
+    return res.status(500).json({ success: false, message: 'Failed to upload claims: ' + error.message });
+  }
+});
+
+// ─── Claims Experience Analysis ──────────────────────────────────────────────
+// Deep actuarial analysis of claims history for underwriting
+router.get('/rfqs/:id/claims-analysis', authCRM, async (req, res) => {
+  try {
+    const rfqId = req.params.id;
+    const pool = sharedPool;
+
+    // Check if claims data exists
+    const countRes = await pool.query(`SELECT COUNT(*) AS total FROM crm_rfq_claims WHERE rfq_id = $1`, [rfqId]);
+    const totalClaims = parseInt(countRes.rows[0].total);
+    if (totalClaims === 0) {
+      return res.status(200).json({ success: true, data: null, message: 'No claims data uploaded yet' });
+    }
+
+    // Fetch RFQ for context
+    const rfqRes = await pool.query(`SELECT * FROM crm_rfqs WHERE id = $1`, [rfqId]);
+    const rfq = rfqRes.rows[0];
+    const memberCountRes = await pool.query(`SELECT COUNT(*) AS total, COUNT(DISTINCT emp_code) AS employees FROM crm_rfq_members WHERE rfq_id = $1`, [rfqId]);
+    const totalMembers = parseInt(memberCountRes.rows[0].total) || 1;
+    const totalEmployees = parseInt(memberCountRes.rows[0].employees) || 1;
+
+    // Run all analytics queries in parallel
+    const [
+      summaryRes, serviceRes, monthlyRes, relationRes, ageBandRes,
+      topDiagRes, statusRes, providerTypeRes, severityRes,
+      topClaimantsRes, repeatClaimRes, siUtilRes
+    ] = await Promise.all([
+      // 1. Overall claims summary
+      pool.query(`SELECT 
+        COUNT(*) AS total_claims,
+        COUNT(DISTINCT emp_code) AS unique_claimants,
+        COALESCE(SUM(claimed_amount), 0) AS total_claimed,
+        COALESCE(SUM(approved_amount), 0) AS total_approved,
+        COALESCE(SUM(paid_amount), 0) AS total_paid,
+        COALESCE(AVG(claimed_amount), 0) AS avg_claimed,
+        COALESCE(AVG(approved_amount), 0) AS avg_approved,
+        MAX(claimed_amount) AS max_claim,
+        MIN(claim_date) AS earliest_claim,
+        MAX(claim_date) AS latest_claim,
+        PERCENTILE_CONT(0.5) WITHIN GROUP (ORDER BY claimed_amount) AS median_claim,
+        PERCENTILE_CONT(0.9) WITHIN GROUP (ORDER BY claimed_amount) AS p90_claim,
+        PERCENTILE_CONT(0.95) WITHIN GROUP (ORDER BY claimed_amount) AS p95_claim,
+        PERCENTILE_CONT(0.99) WITHIN GROUP (ORDER BY claimed_amount) AS p99_claim
+        FROM crm_rfq_claims WHERE rfq_id = $1`, [rfqId]),
+
+      // 2. Service-type distribution
+      pool.query(`SELECT 
+        service_type,
+        COUNT(*) AS claim_count,
+        COUNT(DISTINCT emp_code) AS unique_claimants,
+        COALESCE(SUM(claimed_amount), 0) AS total_claimed,
+        COALESCE(SUM(approved_amount), 0) AS total_approved,
+        COALESCE(AVG(claimed_amount), 0) AS avg_per_claim,
+        COALESCE(AVG(approved_amount), 0) AS avg_approved_per_claim
+        FROM crm_rfq_claims WHERE rfq_id = $1
+        GROUP BY service_type ORDER BY total_claimed DESC`, [rfqId]),
+
+      // 3. Monthly trend
+      pool.query(`SELECT 
+        TO_CHAR(claim_date, 'YYYY-MM') AS month,
+        COUNT(*) AS claims,
+        COALESCE(SUM(claimed_amount), 0) AS claimed,
+        COALESCE(SUM(approved_amount), 0) AS approved,
+        COUNT(DISTINCT emp_code) AS claimants
+        FROM crm_rfq_claims WHERE rfq_id = $1 AND claim_date IS NOT NULL
+        GROUP BY month ORDER BY month`, [rfqId]),
+
+      // 4. Relationship-wise utilization
+      pool.query(`SELECT 
+        UPPER(TRIM(COALESCE(relationship, 'UNKNOWN'))) AS relationship,
+        COUNT(*) AS claim_count,
+        COUNT(DISTINCT emp_code) AS unique_claimants,
+        COALESCE(SUM(claimed_amount), 0) AS total_claimed,
+        COALESCE(SUM(approved_amount), 0) AS total_approved,
+        COALESCE(AVG(claimed_amount), 0) AS avg_per_claim
+        FROM crm_rfq_claims WHERE rfq_id = $1
+        GROUP BY relationship ORDER BY total_claimed DESC`, [rfqId]),
+
+      // 5. Age-band claims analysis
+      pool.query(`SELECT age_band, claim_count, total_claimed, total_approved, avg_per_claim FROM (
+        SELECT 
+          CASE WHEN age < 18 THEN '0-17' WHEN age < 30 THEN '18-29' WHEN age < 45 THEN '30-44'
+               WHEN age < 60 THEN '45-59' WHEN age < 75 THEN '60-74' ELSE '75+' END AS age_band,
+          COUNT(*) AS claim_count,
+          COALESCE(SUM(claimed_amount), 0) AS total_claimed,
+          COALESCE(SUM(approved_amount), 0) AS total_approved,
+          COALESCE(AVG(claimed_amount), 0) AS avg_per_claim
+        FROM crm_rfq_claims WHERE rfq_id = $1 AND age IS NOT NULL
+        GROUP BY age_band
+      ) sub ORDER BY age_band`, [rfqId]),
+
+      // 6. Top diagnoses
+      pool.query(`SELECT 
+        COALESCE(diagnosis, 'Unspecified') AS diagnosis,
+        COUNT(*) AS claim_count,
+        COALESCE(SUM(claimed_amount), 0) AS total_claimed,
+        COALESCE(SUM(approved_amount), 0) AS total_approved
+        FROM crm_rfq_claims WHERE rfq_id = $1
+        GROUP BY diagnosis ORDER BY total_claimed DESC LIMIT 15`, [rfqId]),
+
+      // 7. Claim status distribution
+      pool.query(`SELECT 
+        UPPER(TRIM(COALESCE(claim_status, 'UNKNOWN'))) AS status,
+        COUNT(*) AS count,
+        COALESCE(SUM(claimed_amount), 0) AS total_claimed,
+        COALESCE(SUM(approved_amount), 0) AS total_approved
+        FROM crm_rfq_claims WHERE rfq_id = $1
+        GROUP BY status ORDER BY count DESC`, [rfqId]),
+
+      // 8. Provider type (cashless vs reimbursement)
+      pool.query(`SELECT 
+        UPPER(TRIM(COALESCE(provider_type, 'UNKNOWN'))) AS provider_type,
+        COUNT(*) AS claims,
+        COALESCE(SUM(claimed_amount), 0) AS total_claimed,
+        COALESCE(SUM(approved_amount), 0) AS total_approved
+        FROM crm_rfq_claims WHERE rfq_id = $1
+        GROUP BY provider_type ORDER BY claims DESC`, [rfqId]),
+
+      // 9. Claim severity distribution
+      pool.query(`SELECT 
+        CASE 
+          WHEN claimed_amount < 500 THEN '< ₹500'
+          WHEN claimed_amount < 1000 THEN '₹500-1K'
+          WHEN claimed_amount < 2500 THEN '₹1K-2.5K'
+          WHEN claimed_amount < 5000 THEN '₹2.5K-5K'
+          WHEN claimed_amount < 10000 THEN '₹5K-10K'
+          WHEN claimed_amount < 25000 THEN '₹10K-25K'
+          ELSE '₹25K+'
+        END AS severity_band,
+        COUNT(*) AS count,
+        COALESCE(SUM(claimed_amount), 0) AS total
+        FROM crm_rfq_claims WHERE rfq_id = $1
+        GROUP BY severity_band ORDER BY MIN(claimed_amount)`, [rfqId]),
+
+      // 10. Top claimants (repeat utilizers)
+      pool.query(`SELECT 
+        emp_code, employee_name, relationship,
+        COUNT(*) AS claim_count,
+        COALESCE(SUM(claimed_amount), 0) AS total_claimed,
+        COALESCE(SUM(approved_amount), 0) AS total_approved
+        FROM crm_rfq_claims WHERE rfq_id = $1
+        GROUP BY emp_code, employee_name, relationship
+        ORDER BY total_claimed DESC LIMIT 20`, [rfqId]),
+
+      // 11. Repeat claimant frequency
+      pool.query(`SELECT freq_band, cnt FROM (
+        SELECT 
+          CASE WHEN cc = 1 THEN '1 claim' WHEN cc <= 3 THEN '2-3 claims'
+               WHEN cc <= 5 THEN '4-5 claims' WHEN cc <= 10 THEN '6-10 claims'
+               ELSE '10+ claims' END AS freq_band,
+          COUNT(*) AS cnt
+        FROM (SELECT emp_code, COUNT(*) AS cc FROM crm_rfq_claims WHERE rfq_id = $1 GROUP BY emp_code) sub
+        GROUP BY freq_band
+      ) sub2 ORDER BY MIN(cnt) DESC`, [rfqId]),
+
+      // 12. SI utilization rate
+      pool.query(`SELECT 
+        emp_code,
+        COALESCE(MAX(si_amount), 0) AS si,
+        COALESCE(SUM(claimed_amount), 0) AS total_claimed,
+        CASE WHEN MAX(si_amount) > 0 THEN ROUND(SUM(claimed_amount) / MAX(si_amount) * 100, 1) ELSE 0 END AS utilization_pct
+        FROM crm_rfq_claims WHERE rfq_id = $1 AND si_amount > 0
+        GROUP BY emp_code
+        ORDER BY utilization_pct DESC`, [rfqId]),
+    ]);
+
+    const s = summaryRes.rows[0];
+    const totalClaimed = parseFloat(s.total_claimed) || 0;
+    const totalApproved = parseFloat(s.total_approved) || 0;
+    const totalPaid = parseFloat(s.total_paid) || 0;
+    const uniqueClaimants = parseInt(s.unique_claimants) || 0;
+
+    // Compute derived metrics
+    const utilizationRate = (uniqueClaimants / totalMembers * 100);
+    const claimFrequency = totalClaims / totalMembers;
+    const approvalRatio = totalClaimed > 0 ? (totalApproved / totalClaimed * 100) : 0;
+
+    // Claims per month trend
+    const months = monthlyRes.rows;
+    let monthOverMonthGrowth = [];
+    for (let i = 1; i < months.length; i++) {
+      const prevClaimed = parseFloat(months[i-1].claimed) || 1;
+      const currClaimed = parseFloat(months[i].claimed) || 0;
+      monthOverMonthGrowth.push({
+        month: months[i].month,
+        growth_pct: Math.round((currClaimed - prevClaimed) / prevClaimed * 100),
+      });
+    }
+    const avgMonthlyGrowth = monthOverMonthGrowth.length > 0
+      ? monthOverMonthGrowth.reduce((s, m) => s + m.growth_pct, 0) / monthOverMonthGrowth.length : 0;
+
+    // Annualized trend (if we have > 6 months of data)
+    let annualizedTrend = null;
+    if (months.length >= 6) {
+      const firstHalf = months.slice(0, Math.floor(months.length / 2));
+      const secondHalf = months.slice(Math.floor(months.length / 2));
+      const firstTotal = firstHalf.reduce((s, m) => s + parseFloat(m.claimed), 0);
+      const secondTotal = secondHalf.reduce((s, m) => s + parseFloat(m.claimed), 0);
+      const monthsInHalf = firstHalf.length;
+      const annualizedFirst = firstTotal / monthsInHalf * 12;
+      const annualizedSecond = secondTotal / secondHalf.length * 12;
+      annualizedTrend = annualizedFirst > 0
+        ? Math.round((annualizedSecond - annualizedFirst) / annualizedFirst * 100) : 0;
+    }
+
+    // SI utilization distribution
+    const siUtilRows = siUtilRes.rows;
+    const siUtilBands = { '0-25%': 0, '25-50%': 0, '50-75%': 0, '75-100%': 0, '>100%': 0 };
+    let avgSIUtil = 0;
+    for (const r of siUtilRows) {
+      const pct = parseFloat(r.utilization_pct);
+      avgSIUtil += pct;
+      if (pct > 100) siUtilBands['>100%']++;
+      else if (pct > 75) siUtilBands['75-100%']++;
+      else if (pct > 50) siUtilBands['50-75%']++;
+      else if (pct > 25) siUtilBands['25-50%']++;
+      else siUtilBands['0-25%']++;
+    }
+    avgSIUtil = siUtilRows.length > 0 ? avgSIUtil / siUtilRows.length : 0;
+
+    // Service-type concentration (Herfindahl Index)
+    const serviceShares = serviceRes.rows.map(r => {
+      const share = totalClaimed > 0 ? parseFloat(r.total_claimed) / totalClaimed : 0;
+      return { ...r, share, share_pct: Math.round(share * 1000) / 10 };
+    });
+    const herfindahl = serviceShares.reduce((s, r) => s + r.share * r.share, 0);
+
+    // Underwriting flags
+    const flags = [];
+    if (utilizationRate > 50) flags.push({ type: 'warning', message: `High utilization rate (${utilizationRate.toFixed(1)}%) — exceeds 50% threshold` });
+    if (avgSIUtil > 60) flags.push({ type: 'warning', message: `High SI exhaustion (${avgSIUtil.toFixed(1)}% avg) — consider increasing SI or premium` });
+    if (siUtilBands['>100%'] > uniqueClaimants * 0.05) flags.push({ type: 'critical', message: `${siUtilBands['>100%']} members exceeded their SI — indicates underpricing or adverse selection` });
+    if (approvalRatio < 70) flags.push({ type: 'info', message: `Low approval ratio (${approvalRatio.toFixed(1)}%) — high claim rejection, verify exclusion alignment` });
+    if (annualizedTrend !== null && annualizedTrend > 20) flags.push({ type: 'critical', message: `Escalating claims trend (+${annualizedTrend}% annualized) — significant deterioration` });
+    if (herfindahl > 0.5) flags.push({ type: 'info', message: `Concentrated service utilization (HHI ${(herfindahl * 100).toFixed(0)}) — ${serviceShares[0]?.service_type || 'top service'} dominates` });
+
+    // Large loss analysis — claims > 2x median
+    const medianClaim = parseFloat(s.median_claim) || 0;
+    const largeLossThreshold = Math.max(medianClaim * 3, 5000);
+    const largeLosses = totalClaims > 0 ? {
+      threshold: largeLossThreshold,
+      // Will compute on the fly
+    } : null;
+
+    // Relationship utilization rate (against member population)
+    const relMemberRes = await pool.query(`SELECT UPPER(TRIM(relationship)) AS rel, COUNT(*) AS count FROM crm_rfq_members WHERE rfq_id = $1 GROUP BY rel`, [rfqId]);
+    const relMemberMap = {};
+    for (const r of relMemberRes.rows) relMemberMap[r.rel] = parseInt(r.count);
+
+    const relationAnalysis = relationRes.rows.map(r => {
+      const memberCount = relMemberMap[r.relationship] || relMemberMap[r.relationship?.replace('IN_LAW', 'IN LAW')] || 0;
+      return {
+        relationship: r.relationship,
+        claim_count: parseInt(r.claim_count),
+        unique_claimants: parseInt(r.unique_claimants),
+        member_count: memberCount,
+        utilization_rate: memberCount > 0 ? Math.round(parseInt(r.unique_claimants) / memberCount * 1000) / 10 : 0,
+        total_claimed: parseFloat(r.total_claimed),
+        total_approved: parseFloat(r.total_approved),
+        avg_per_claim: Math.round(parseFloat(r.avg_per_claim)),
+        claims_per_claimant: parseInt(r.unique_claimants) > 0 ? Math.round(parseInt(r.claim_count) / parseInt(r.unique_claimants) * 10) / 10 : 0,
+      };
+    });
+
+    return res.status(200).json({
+      success: true,
+      data: {
+        // Header
+        rfq_id: parseInt(rfqId),
+        total_members: totalMembers,
+        total_employees: totalEmployees,
+
+        // Core metrics
+        summary: {
+          total_claims: totalClaims,
+          unique_claimants: uniqueClaimants,
+          total_claimed: Math.round(totalClaimed),
+          total_approved: Math.round(totalApproved),
+          total_paid: Math.round(totalPaid),
+          avg_claim_size: Math.round(parseFloat(s.avg_claimed)),
+          median_claim: Math.round(medianClaim),
+          p90_claim: Math.round(parseFloat(s.p90_claim) || 0),
+          p95_claim: Math.round(parseFloat(s.p95_claim) || 0),
+          p99_claim: Math.round(parseFloat(s.p99_claim) || 0),
+          max_claim: Math.round(parseFloat(s.max_claim) || 0),
+          earliest_claim: s.earliest_claim,
+          latest_claim: s.latest_claim,
+        },
+
+        // Underwriting KPIs
+        kpis: {
+          utilization_rate: Math.round(utilizationRate * 10) / 10,
+          claim_frequency: Math.round(claimFrequency * 100) / 100,
+          approval_ratio: Math.round(approvalRatio * 10) / 10,
+          avg_si_utilization: Math.round(avgSIUtil * 10) / 10,
+          annualized_trend: annualizedTrend,
+          avg_monthly_growth: Math.round(avgMonthlyGrowth * 10) / 10,
+          service_concentration_hhi: Math.round(herfindahl * 100),
+        },
+
+        // Distributions
+        service_distribution: serviceShares.map(r => ({
+          service_type: r.service_type,
+          claim_count: parseInt(r.claim_count),
+          unique_claimants: parseInt(r.unique_claimants),
+          total_claimed: Math.round(parseFloat(r.total_claimed)),
+          total_approved: Math.round(parseFloat(r.total_approved)),
+          avg_per_claim: Math.round(parseFloat(r.avg_per_claim)),
+          share_pct: r.share_pct,
+        })),
+
+        monthly_trend: months.map(m => ({
+          month: m.month,
+          claims: parseInt(m.claims),
+          claimed: Math.round(parseFloat(m.claimed)),
+          approved: Math.round(parseFloat(m.approved)),
+          claimants: parseInt(m.claimants),
+        })),
+        month_over_month_growth: monthOverMonthGrowth,
+
+        relationship_analysis: relationAnalysis,
+
+        age_band_claims: ageBandRes.rows.map(r => ({
+          age_band: r.age_band,
+          claim_count: parseInt(r.claim_count),
+          total_claimed: Math.round(parseFloat(r.total_claimed)),
+          total_approved: Math.round(parseFloat(r.total_approved)),
+          avg_per_claim: Math.round(parseFloat(r.avg_per_claim)),
+        })),
+
+        claim_status_distribution: statusRes.rows.map(r => ({
+          status: r.status,
+          count: parseInt(r.count),
+          total_claimed: Math.round(parseFloat(r.total_claimed)),
+          total_approved: Math.round(parseFloat(r.total_approved)),
+        })),
+
+        provider_type_distribution: providerTypeRes.rows.map(r => ({
+          type: r.provider_type,
+          claims: parseInt(r.claims),
+          total_claimed: Math.round(parseFloat(r.total_claimed)),
+          total_approved: Math.round(parseFloat(r.total_approved)),
+        })),
+
+        severity_distribution: severityRes.rows.map(r => ({
+          band: r.severity_band,
+          count: parseInt(r.count),
+          total: Math.round(parseFloat(r.total)),
+        })),
+
+        top_diagnoses: topDiagRes.rows.map(r => ({
+          diagnosis: r.diagnosis,
+          claim_count: parseInt(r.claim_count),
+          total_claimed: Math.round(parseFloat(r.total_claimed)),
+          total_approved: Math.round(parseFloat(r.total_approved)),
+        })),
+
+        top_claimants: topClaimantsRes.rows.map(r => ({
+          emp_code: r.emp_code,
+          name: r.employee_name,
+          relationship: r.relationship,
+          claim_count: parseInt(r.claim_count),
+          total_claimed: Math.round(parseFloat(r.total_claimed)),
+          total_approved: Math.round(parseFloat(r.total_approved)),
+        })),
+
+        repeat_claimant_freq: repeatClaimRes.rows.map(r => ({
+          band: r.freq_band,
+          count: parseInt(r.cnt),
+        })),
+
+        si_utilization: {
+          avg_pct: Math.round(avgSIUtil * 10) / 10,
+          distribution: siUtilBands,
+        },
+
+        // Underwriting flags
+        underwriting_flags: flags,
+      }
+    });
+  } catch (error) {
+    console.error('[CRM Claims Analysis]', error.message, error.stack);
+    return res.status(500).json({ success: false, message: 'Claims analysis failed: ' + error.message });
   }
 });
 
