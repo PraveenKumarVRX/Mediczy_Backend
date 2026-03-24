@@ -1384,7 +1384,7 @@ function AIQuoteTab({ rfqId, aiQuote, aiLoading, onGenerate, navigate, claimsAna
   // Set default selected tier from backend recommendation
   useEffect(() => {
     if (aiQuote?.mediqzy_pricing?.recommended_tier) {
-      setSelectedMarginPct(aiQuote.mediqzy_pricing.recommended_tier);
+      setSelectedMarginPct(aiQuote.mediqzy_pricing.recommended_tier.margin_pct ?? aiQuote.mediqzy_pricing.recommended_tier);
     }
   }, [aiQuote]);
 
@@ -2001,7 +2001,7 @@ function AIQuoteTab({ rfqId, aiQuote, aiLoading, onGenerate, navigate, claimsAna
               </div>
               <div className="flex items-center gap-2 px-3 py-1.5 rounded-full bg-emerald-500/10 border border-emerald-500/20">
                 <span className="text-[10px] text-emerald-400 font-semibold">RECOMMENDED</span>
-                <span className="text-xs font-bold text-emerald-300">{d.mediqzy_pricing.recommended_tier}%</span>
+                <span className="text-xs font-bold text-emerald-300">{d.mediqzy_pricing.recommended_tier?.margin_pct ?? d.mediqzy_pricing.recommended_tier}%</span>
               </div>
             </div>
 
@@ -2009,7 +2009,7 @@ function AIQuoteTab({ rfqId, aiQuote, aiLoading, onGenerate, navigate, claimsAna
             <div className="grid grid-cols-5 gap-2 mb-5">
               {d.mediqzy_pricing.tiers.map((tier: any) => {
                 const isSelected = tier.margin_pct === selectedMarginPct;
-                const isRecommended = tier.margin_pct === d.mediqzy_pricing.recommended_tier;
+                const isRecommended = tier.margin_pct === (d.mediqzy_pricing.recommended_tier?.margin_pct ?? d.mediqzy_pricing.recommended_tier);
                 return (
                   <button key={tier.margin_pct} onClick={() => setSelectedMarginPct(tier.margin_pct)}
                     className={`relative p-4 rounded-2xl border-2 transition-all duration-300 text-center ${
