@@ -1988,6 +1988,166 @@ router.post('/rfqs/:id/ai-generate-quote', authCRM, async (req, res) => {
       impact: 'result'
     });
 
+    // ── 3e. LLM UNDERWRITING ASSESSMENT (smart-crm.in / local Insurance LLM) ─
+    // Send the computed actuarial data to the local insurance LLM on RTX 3060
+    // for qualitative underwriting commentary, risk insights & recommendations
+    const SMART_CRM_URL = process.env.SMART_CRM_URL || 'https://smart-crm.in/v1/chat/completions';
+    const SMART_CRM_MODEL = process.env.SMART_CRM_MODEL || 'open-insurance-llama3';
+    const SMART_CRM_PORT = parseInt(process.env.SMART_CRM_PORT || '8083');
+
+    let llmAssessment = null;
+    try {
+      const llmPayload = {
+        rfq: {
+          insured_name: rfq.insured_name,
+          policy_type: rfq.policy_type,
+          product_type: rfq.product_type,
+          existing_insurer: rfq.existing_insurer,
+          inception_date: rfq.inception_date,
+          expiry_date: rfq.expiry_date,
+          premium_paid: rfq.premium_paid,
+        },
+        population: {
+          total_members: totalMembers,
+          employees: totalEmployees,
+          dependants: totalMembers - totalEmployees,
+          avg_age: Math.round(avgAge * 10) / 10,
+          avg_family_size: Math.round(avgFamilySize * 10) / 10,
+          male_pct: Math.round(maleRatio * 100),
+          high_risk_pct_45plus: Math.round(highRiskPct * 100),
+        },
+        actuarial_results: {
+          pure_premium: Math.round(pureOPDPremium),
+          loaded_premium: Math.round(loadedOPDPremium),
+          per_life: Math.round(loadedOPDPremium / totalMembers),
+          per_family: Math.round(loadedOPDPremium / totalEmployees),
+          risk_score: overallRiskScore,
+          risk_category: riskCategory,
+          expected_loss_ratio: expectedLossRatio,
+          pricing_method: experienceMethod,
+          composite_factor: Math.round(compositeFactor * 1000) / 1000,
+        },
+        age_band_summary: bandAnalysis.map(b => ({
+          band: b.age_band, lives: b.lives, pct: b.pct_of_total,
+          risk_factor: b.risk_factor, opd_cost_pp: b.expected_opd_cost_per_person,
+        })),
+        slab_summary: slabPricing.map(s => ({
+          si: s.si_amount, families: s.lives, premium_per_family: s.premium_per_family,
+          utilization_cap_pct: s.utilization_cap_pct,
+        })),
+      };
+
+      // Add claims experience if available
+      if (hasClaimsExperience && claimsExperience) {
+        llmPayload.claims_experience = {
+          total_claims: claimsExperience.total_claims,
+          total_claimed: claimsExperience.total_claimed,
+          total_approved: claimsExperience.total_approved,
+          pmpy_approved: claimsExperience.pmpy_approved,
+          utilization_rate: claimsExperience.utilization_rate,
+          claim_frequency: claimsExperience.claim_frequency_pmpy,
+          approval_ratio: claimsExperience.approval_ratio,
+          observed_trend: claimsExperience.observed_trend,
+          avg_claim_size: claimsExperience.avg_claim_size,
+          median_claim: claimsExperience.median_claim,
+          p90_claim: claimsExperience.p90_claim,
+          p95_claim: claimsExperience.p95_claim,
+          service_distribution: Object.entries(claimsExperience.service_distribution || {}).map(([svc, d]) => ({
+            service: svc, share_pct: Math.round(d.share * 100), avg_claim: Math.round(d.avg_claim),
+          })),
+        };
+        if (icrMetric) {
+          llmPayload.claims_experience.icr = icrMetric.icr;
+          llmPayload.claims_experience.icr_verdict = icrMetric.verdict;
+        }
+      }
+
+      const systemPrompt = `You are an expert insurance underwriter and actuary specializing in Indian group health insurance (OPD, GMC, GPA).
+You are reviewing an RFQ and the actuarial engine's computed pricing. Your role is to provide a detailed underwriting assessment.
+
+RESPOND IN JSON FORMAT ONLY with this exact structure:
+{
+  "executive_summary": "2-3 sentence summary of the risk and recommended action",
+  "risk_insights": [
+    {"title": "...", "detail": "...", "severity": "high|medium|low"}
+  ],
+  "pricing_commentary": "Detailed paragraph on whether the computed premium is adequate, aggressive, or conservative and why",
+  "claims_commentary": "If claims data present, analyze ICR, utilization, trends, red flags. If no claims data, state that experience rating was not possible",
+  "recommendations": [
+    "Specific actionable recommendation 1",
+    "Specific actionable recommendation 2"
+  ],
+  "negotiation_range": {
+    "floor_premium_per_family": <number>,
+    "recommended_premium_per_family": <number>,
+    "ceiling_premium_per_family": <number>,
+    "rationale": "Why this range"
+  },
+  "special_conditions": ["Suggested policy conditions or exclusions"],
+  "confidence_level": "high|medium|low",
+  "confidence_rationale": "Why this confidence level"
+}
+
+Consider Indian market specifics: medical inflation 12-14%, pharmacy dominance in OPD, seasonal patterns (monsoon spike), regional provider cost variations, IRDA regulations.
+Do NOT include markdown formatting. Return valid JSON only.`;
+
+      const userPrompt = `Analyze this RFQ and provide your underwriting assessment:\n\n${JSON.stringify(llmPayload, null, 2)}`;
+
+      const llmRes = await fetch(SMART_CRM_URL, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          model: SMART_CRM_MODEL,
+          messages: [
+            { role: 'system', content: systemPrompt },
+            { role: 'user', content: userPrompt },
+          ],
+          max_tokens: 2048,
+          temperature: 0.3,
+          agent_type: 'Insurance',
+          model_port: SMART_CRM_PORT,
+        }),
+        signal: AbortSignal.timeout(45000),
+      });
+
+      if (llmRes.ok) {
+        const llmData = await llmRes.json();
+        const content = llmData?.choices?.[0]?.message?.content;
+        if (content) {
+          // Parse JSON from LLM response — handle potential markdown code blocks
+          let cleanContent = content.trim();
+          if (cleanContent.startsWith('```')) {
+            cleanContent = cleanContent.replace(/^```(?:json)?\n?/, '').replace(/\n?```$/, '').trim();
+          }
+          try {
+            llmAssessment = JSON.parse(cleanContent);
+            reasoning.push({
+              step: 'AI Underwriting Assessment',
+              detail: llmAssessment.executive_summary || 'LLM underwriting analysis completed.',
+              impact: llmAssessment.confidence_level === 'high' ? 'result' :
+                      llmAssessment.confidence_level === 'low' ? 'adverse' : 'neutral'
+            });
+          } catch (parseErr) {
+            // If JSON parse fails, still use the raw text
+            llmAssessment = { executive_summary: cleanContent, raw: true };
+            reasoning.push({
+              step: 'AI Underwriting Assessment',
+              detail: cleanContent.substring(0, 300),
+              impact: 'neutral'
+            });
+          }
+        }
+      }
+      console.log(`[CRM AI Quote] LLM assessment ${llmAssessment ? 'received' : 'empty'} from ${SMART_CRM_URL}`);
+    } catch (llmErr) {
+      console.warn(`[CRM AI Quote] LLM call to ${SMART_CRM_URL} failed: ${llmErr.message}. Proceeding without LLM assessment.`);
+      reasoning.push({
+        step: 'AI Underwriting Assessment',
+        detail: `Insurance LLM (smart-crm.in) unavailable — actuarial model pricing stands as-is. Error: ${llmErr.message}`,
+        impact: 'neutral'
+      });
+    }
+
     // ── 4. BUILD RESPONSE ───────────────────────────────────────────────────
     return res.status(200).json({
       success: true,
@@ -2068,6 +2228,9 @@ router.post('/rfqs/:id/ai-generate-quote', authCRM, async (req, res) => {
 
         // Claims experience data (if available)
         claims_experience: claimsExperience,
+
+        // LLM underwriting assessment (from smart-crm.in Insurance LLM)
+        llm_assessment: llmAssessment,
 
         // Recommended quote parameters (ready to apply to Quote Builder)
         recommended_quote: {

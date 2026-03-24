@@ -1537,6 +1537,147 @@ function AIQuoteTab({ rfqId, aiQuote, aiLoading, onGenerate, navigate, claimsAna
         </div>
       </Card>
 
+      {/* ─── LLM Underwriting Assessment (smart-crm.in) ──────── */}
+      {d.llm_assessment && !d.llm_assessment.raw && (
+        <Card>
+          <h3 className="text-sm font-semibold text-white mb-4 flex items-center gap-2">
+            <BrainCircuit className="h-4 w-4 text-emerald-400" />
+            Insurance LLM Underwriting Assessment
+            <span className="text-[9px] text-slate-600 bg-white/[0.05] px-2 py-0.5 rounded-full ml-auto font-mono">smart-crm.in</span>
+          </h3>
+
+          {/* Executive Summary */}
+          {d.llm_assessment.executive_summary && (
+            <div className="bg-gradient-to-r from-emerald-500/5 to-teal-500/5 border border-emerald-500/20 rounded-xl p-4 mb-4">
+              <p className="text-sm text-slate-200 leading-relaxed">{d.llm_assessment.executive_summary}</p>
+              {d.llm_assessment.confidence_level && (
+                <div className="flex items-center gap-2 mt-3">
+                  <span className="text-[10px] text-slate-500 uppercase">Confidence:</span>
+                  <span className={`text-xs font-bold px-2 py-0.5 rounded-full ${
+                    d.llm_assessment.confidence_level === 'high' ? 'bg-emerald-500/15 text-emerald-400' :
+                    d.llm_assessment.confidence_level === 'low' ? 'bg-red-500/15 text-red-400' : 'bg-amber-500/15 text-amber-400'
+                  }`}>{d.llm_assessment.confidence_level.toUpperCase()}</span>
+                  {d.llm_assessment.confidence_rationale && (
+                    <span className="text-[10px] text-slate-500 ml-1">{d.llm_assessment.confidence_rationale}</span>
+                  )}
+                </div>
+              )}
+            </div>
+          )}
+
+          {/* Risk Insights */}
+          {d.llm_assessment.risk_insights?.length > 0 && (
+            <div className="mb-4">
+              <p className="text-[10px] text-slate-500 uppercase font-semibold mb-2">Risk Insights</p>
+              <div className="space-y-2">
+                {d.llm_assessment.risk_insights.map((r: any, i: number) => (
+                  <div key={i} className={`flex items-start gap-3 p-3 rounded-xl border ${
+                    r.severity === 'high' ? 'border-red-500/20 bg-red-500/5' :
+                    r.severity === 'medium' ? 'border-amber-500/20 bg-amber-500/5' : 'border-slate-500/10 bg-white/[0.02]'
+                  }`}>
+                    <div className={`w-2 h-2 rounded-full mt-1.5 flex-shrink-0 ${
+                      r.severity === 'high' ? 'bg-red-400' : r.severity === 'medium' ? 'bg-amber-400' : 'bg-emerald-400'
+                    }`} />
+                    <div>
+                      <p className="text-xs font-bold text-white">{r.title}</p>
+                      <p className="text-xs text-slate-400 mt-0.5">{r.detail}</p>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+
+          <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+            {/* Pricing Commentary */}
+            {d.llm_assessment.pricing_commentary && (
+              <div>
+                <p className="text-[10px] text-slate-500 uppercase font-semibold mb-2">Pricing Commentary</p>
+                <p className="text-xs text-slate-300 leading-relaxed">{d.llm_assessment.pricing_commentary}</p>
+              </div>
+            )}
+
+            {/* Claims Commentary */}
+            {d.llm_assessment.claims_commentary && (
+              <div>
+                <p className="text-[10px] text-slate-500 uppercase font-semibold mb-2">Claims Commentary</p>
+                <p className="text-xs text-slate-300 leading-relaxed">{d.llm_assessment.claims_commentary}</p>
+              </div>
+            )}
+          </div>
+
+          {/* Negotiation Range */}
+          {d.llm_assessment.negotiation_range && (
+            <div className="mt-4 bg-white/[0.02] border border-white/[0.06] rounded-xl p-4">
+              <p className="text-[10px] text-slate-500 uppercase font-semibold mb-3">LLM Suggested Negotiation Range</p>
+              <div className="flex items-center gap-4">
+                <div className="text-center flex-1">
+                  <p className="text-[10px] text-slate-600">Floor</p>
+                  <p className="text-lg font-bold text-red-400">₹{(d.llm_assessment.negotiation_range.floor_premium_per_family || 0).toLocaleString()}</p>
+                  <p className="text-[10px] text-slate-600">/family</p>
+                </div>
+                <div className="h-8 w-px bg-white/[0.08]" />
+                <div className="text-center flex-1">
+                  <p className="text-[10px] text-emerald-500 font-semibold">Recommended</p>
+                  <p className="text-2xl font-bold text-emerald-400">₹{(d.llm_assessment.negotiation_range.recommended_premium_per_family || 0).toLocaleString()}</p>
+                  <p className="text-[10px] text-slate-600">/family</p>
+                </div>
+                <div className="h-8 w-px bg-white/[0.08]" />
+                <div className="text-center flex-1">
+                  <p className="text-[10px] text-slate-600">Ceiling</p>
+                  <p className="text-lg font-bold text-amber-400">₹{(d.llm_assessment.negotiation_range.ceiling_premium_per_family || 0).toLocaleString()}</p>
+                  <p className="text-[10px] text-slate-600">/family</p>
+                </div>
+              </div>
+              {d.llm_assessment.negotiation_range.rationale && (
+                <p className="text-[10px] text-slate-500 mt-3 leading-relaxed">{d.llm_assessment.negotiation_range.rationale}</p>
+              )}
+            </div>
+          )}
+
+          {/* Recommendations + Special Conditions */}
+          <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 mt-4">
+            {d.llm_assessment.recommendations?.length > 0 && (
+              <div>
+                <p className="text-[10px] text-slate-500 uppercase font-semibold mb-2">Recommendations</p>
+                <ul className="space-y-1.5">
+                  {d.llm_assessment.recommendations.map((r: string, i: number) => (
+                    <li key={i} className="flex items-start gap-2 text-xs text-slate-300">
+                      <Check className="h-3.5 w-3.5 text-emerald-400 mt-0.5 flex-shrink-0" />
+                      {r}
+                    </li>
+                  ))}
+                </ul>
+              </div>
+            )}
+            {d.llm_assessment.special_conditions?.length > 0 && (
+              <div>
+                <p className="text-[10px] text-slate-500 uppercase font-semibold mb-2">Suggested Policy Conditions</p>
+                <ul className="space-y-1.5">
+                  {d.llm_assessment.special_conditions.map((c: string, i: number) => (
+                    <li key={i} className="flex items-start gap-2 text-xs text-slate-300">
+                      <Shield className="h-3.5 w-3.5 text-amber-400 mt-0.5 flex-shrink-0" />
+                      {c}
+                    </li>
+                  ))}
+                </ul>
+              </div>
+            )}
+          </div>
+        </Card>
+      )}
+
+      {/* Raw LLM response fallback */}
+      {d.llm_assessment?.raw && d.llm_assessment.executive_summary && (
+        <Card>
+          <h3 className="text-sm font-semibold text-white mb-3 flex items-center gap-2">
+            <BrainCircuit className="h-4 w-4 text-emerald-400" /> Insurance LLM Assessment
+            <span className="text-[9px] text-slate-600 bg-white/[0.05] px-2 py-0.5 rounded-full ml-auto font-mono">smart-crm.in</span>
+          </h3>
+          <p className="text-xs text-slate-300 leading-relaxed whitespace-pre-wrap">{d.llm_assessment.executive_summary}</p>
+        </Card>
+      )}
+
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-5">
         {/* ─── Population Demographics ──────────────────────────── */}
         <Card>
