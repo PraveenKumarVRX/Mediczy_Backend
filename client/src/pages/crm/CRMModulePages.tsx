@@ -38,7 +38,7 @@ const sidebarNav = [
 
 // ─── CRMLayout — premium dark sidebar layout ──────────────────────────────────
 
-function CRMLayout({ title, children }: { title: string; activePath?: string; children: React.ReactNode }) {
+export function CRMLayout({ title, children }: { title: string; activePath?: string; children: React.ReactNode }) {
   const navigate = useNavigate();
   const location = useLocation();
   const [crmUser, setCrmUser] = useState<any>(null);

@@ -11,6 +11,7 @@ import {
   ArrowLeft, Copy, IndianRupee,
 } from 'lucide-react';
 import api from '@/utils/api';
+import { CRMLayout } from './CRMModulePages';
 import {
   BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer,
   PieChart as RePieChart, Pie, Cell, Legend,
@@ -160,6 +161,7 @@ export function CRMRFQsPage() {
   };
 
   return (
+    <CRMLayout title="RFQs">
     <div className="space-y-6">
       {/* Stats Row */}
       {stats && (
@@ -272,6 +274,7 @@ export function CRMRFQsPage() {
       </Card>
       <Pagination page={page} totalPages={totalPages} setPage={setPage} />
     </div>
+    </CRMLayout>
   );
 }
 
@@ -344,17 +347,21 @@ export function CRMRFQDetailPage() {
   };
 
   if (loading) return (
+    <CRMLayout title="RFQ Detail">
     <div className="flex items-center justify-center h-64">
       <RefreshCw className="h-6 w-6 text-violet-400 animate-spin" />
     </div>
+    </CRMLayout>
   );
 
   if (!rfq) return (
+    <CRMLayout title="RFQ Detail">
     <div className="text-center py-20">
       <AlertCircle className="h-12 w-12 text-slate-600 mx-auto mb-3" />
       <p className="text-slate-400">RFQ not found</p>
       <Button onClick={() => navigate('/crm/rfqs')} variant="outline" className="mt-4 border-white/[0.1] text-slate-300">Back to RFQs</Button>
     </div>
+    </CRMLayout>
   );
 
   const lives = typeof rfq.lives_at_inception === 'string' ? JSON.parse(rfq.lives_at_inception || '{}') : (rfq.lives_at_inception || {});
@@ -372,6 +379,7 @@ export function CRMRFQDetailPage() {
   ] as const;
 
   return (
+    <CRMLayout title={rfq.insured_name || 'RFQ Detail'}>
     <div className="space-y-6">
       {/* Header */}
       <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
@@ -422,6 +430,7 @@ export function CRMRFQDetailPage() {
       )}
       {tab === 'quotes' && <QuotesTab quotes={quotes} rfqId={rfq.id} onRefresh={fetchRFQ} navigate={navigate} />}
     </div>
+    </CRMLayout>
   );
 }
 
@@ -1001,12 +1010,15 @@ export function CRMQuoteBuilderPage() {
   }, [form.total_premium, form.total_lives]);
 
   if (loading) return (
+    <CRMLayout title="Quote Builder">
     <div className="flex items-center justify-center h-64">
       <RefreshCw className="h-6 w-6 text-violet-400 animate-spin" />
     </div>
+    </CRMLayout>
   );
 
   return (
+    <CRMLayout title={isNew ? 'Create Quote' : 'Edit Quote'}>
     <div className="max-w-4xl mx-auto space-y-6">
       {/* Header */}
       <div className="flex items-center gap-4">
@@ -1154,5 +1166,6 @@ export function CRMQuoteBuilderPage() {
         </Button>
       </div>
     </div>
+    </CRMLayout>
   );
 }

@@ -1473,12 +1473,12 @@ router.get('/rfqs-stats', authCRM, async (req, res) => {
   try {
     const { rows } = await sharedPool.query(`SELECT
       COUNT(*) AS total,
-      COUNT(*) FILTER (WHERE status = 'received') AS received,
-      COUNT(*) FILTER (WHERE status = 'quoting') AS quoting,
-      COUNT(*) FILTER (WHERE status = 'quoted') AS quoted,
-      COUNT(*) FILTER (WHERE status = 'won') AS won,
-      COUNT(*) FILTER (WHERE status = 'lost') AS lost,
-      COUNT(*) FILTER (WHERE created_at >= NOW() - INTERVAL '7 days') AS this_week,
+      COUNT(*) FILTER (WHERE r.status = 'received') AS received,
+      COUNT(*) FILTER (WHERE r.status = 'quoting') AS quoting,
+      COUNT(*) FILTER (WHERE r.status = 'quoted') AS quoted,
+      COUNT(*) FILTER (WHERE r.status = 'won') AS won,
+      COUNT(*) FILTER (WHERE r.status = 'lost') AS lost,
+      COUNT(*) FILTER (WHERE r.created_at >= NOW() - INTERVAL '7 days') AS this_week,
       COALESCE(SUM(q.total_premium), 0) AS total_quoted_premium
       FROM crm_rfqs r
       LEFT JOIN crm_quotes q ON q.rfq_id = r.id AND q.status NOT IN ('draft','rejected')`);
