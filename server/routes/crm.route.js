@@ -1054,18 +1054,20 @@ const stdGender = (v) => {
 };
 const stdRelationship = (v) => {
   if (!v) return null;
-  const s = String(v).trim().toUpperCase().replace(/[^A-Z]/g, '');
+  const raw = String(v).trim();
+  const s = raw.toUpperCase().replace(/[^A-Z0-9]/g, '');
   const map = {
     SELF: 'SELF', EMPLOYEE: 'SELF', EMP: 'SELF', PRIMARY: 'SELF', PROPOSER: 'SELF',
     SPOUSE: 'SPOUSE', WIFE: 'SPOUSE', HUSBAND: 'SPOUSE', PARTNER: 'SPOUSE',
-    SON: 'SON', DAUGHTER: 'DAUGHTER', CHILD: 'CHILD', KID: 'CHILD',
-    FATHER: 'FATHER', MOTHER: 'MOTHER', PARENT: 'PARENT', DAD: 'FATHER', MOM: 'MOTHER',
-    FATHERINLAW: 'FATHER-IN-LAW', MOTHERINLAW: 'MOTHER-IN-LAW',
-    BROTHERINLAW: 'BROTHER-IN-LAW', SISTERINLAW: 'SISTER-IN-LAW',
-    BROTHER: 'BROTHER', SISTER: 'SISTER', SIBLING: 'SIBLING',
+    SON: 'CHILD', DAUGHTER: 'CHILD', CHILD: 'CHILD', CHILD1: 'CHILD', CHILD2: 'CHILD', CHILD3: 'CHILD', CHILD4: 'CHILD', KID: 'CHILD',
+    FATHER: 'PARENT', MOTHER: 'PARENT', PARENT: 'PARENT', PARENTS: 'PARENT', DAD: 'PARENT', MOM: 'PARENT',
+    FATHERINLAW: 'PARENT-IN-LAW', MOTHERINLAW: 'PARENT-IN-LAW',
+    PARENTSINLAW: 'PARENT-IN-LAW', PARENTINLAW: 'PARENT-IN-LAW',
+    BROTHERINLAW: 'SIBLING-IN-LAW', SISTERINLAW: 'SIBLING-IN-LAW',
+    BROTHER: 'SIBLING', SISTER: 'SIBLING', SIBLING: 'SIBLING',
     DEPENDENT: 'DEPENDENT', DEPENDANT: 'DEPENDENT',
   };
-  return map[s] || String(v).trim();
+  return map[s] || raw;
 };
 const stdClaimStatus = (v) => {
   if (!v) return null;
@@ -1444,7 +1446,7 @@ router.get('/rfqs/:id/member-analytics', authCRM, async (req, res) => {
         COALESCE(SUM(si_expiring),0) AS total_si_expiring, COALESCE(SUM(si_proposed),0) AS total_si_proposed
         FROM crm_rfq_members WHERE rfq_id = $1`, [rfqId]),
       pool.query(`SELECT gender, COUNT(*) AS count FROM crm_rfq_members WHERE rfq_id = $1 GROUP BY gender ORDER BY count DESC`, [rfqId]),
-      pool.query(`SELECT relation_type, COUNT(*) AS count FROM crm_rfq_members WHERE rfq_id = $1 GROUP BY relation_type ORDER BY count DESC`, [rfqId]),
+      pool.query(`SELECT COALESCE(NULLIF(relationship,''), relation_type, 'Unknown') AS relation_type, COUNT(*) AS count FROM crm_rfq_members WHERE rfq_id = $1 GROUP BY 1 ORDER BY count DESC`, [rfqId]),
       pool.query(`SELECT
         CASE WHEN age < 18 THEN '0-17' WHEN age < 30 THEN '18-29' WHEN age < 45 THEN '30-44'
              WHEN age < 60 THEN '45-59' WHEN age < 75 THEN '60-74' ELSE '75+' END AS age_band,
