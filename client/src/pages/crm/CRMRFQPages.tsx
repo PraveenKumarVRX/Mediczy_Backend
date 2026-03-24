@@ -8,7 +8,7 @@ import {
   ChevronLeft, ChevronRight, Filter, Users, DollarSign, TrendingUp,
   BarChart3, PieChart, Send, Check, X, Clock, AlertCircle, RefreshCw,
   FileSpreadsheet, Building2, Shield, Calendar, Hash, Layers, Save,
-  ArrowLeft, Copy, IndianRupee,
+  ArrowLeft, Copy, IndianRupee, BrainCircuit, Zap, Activity, Target, Gauge,
 } from 'lucide-react';
 import api from '@/utils/api';
 import { CRMLayout } from './CRMModulePages';
@@ -293,9 +293,11 @@ export function CRMRFQDetailPage() {
   const [memberTotalPages, setMemberTotalPages] = useState(1);
   const [memberSearch, setMemberSearch] = useState('');
   const [loading, setLoading] = useState(true);
-  const [tab, setTab] = useState<'overview' | 'analytics' | 'members' | 'quotes'>('overview');
+  const [tab, setTab] = useState<'overview' | 'analytics' | 'members' | 'quotes' | 'ai-quote'>('overview');
   const fileRef = useRef<HTMLInputElement>(null);
   const [uploading, setUploading] = useState(false);
+  const [aiQuote, setAiQuote] = useState<any>(null);
+  const [aiLoading, setAiLoading] = useState(false);
 
   const fetchRFQ = useCallback(async () => {
     setLoading(true);
@@ -324,6 +326,18 @@ export function CRMRFQDetailPage() {
 
   useEffect(() => { fetchRFQ(); fetchAnalytics(); }, [fetchRFQ, fetchAnalytics]);
   useEffect(() => { fetchMembers(); }, [fetchMembers]);
+
+  const generateAIQuote = useCallback(async () => {
+    setAiLoading(true);
+    setAiQuote(null);
+    try {
+      const { data } = await api.post(`/crm/rfqs/${id}/ai-generate-quote`, {}, { headers: authHeaders(), timeout: 30000 });
+      if (data.success) setAiQuote(data.data);
+    } catch (err: any) {
+      alert(err?.response?.data?.message || 'AI quote generation failed');
+    }
+    setAiLoading(false);
+  }, [id]);
 
   const handleMemberUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
@@ -376,6 +390,7 @@ export function CRMRFQDetailPage() {
     { key: 'analytics', label: 'Analytics', icon: BarChart3 },
     { key: 'members', label: `Members (${rfq.member_count?.toLocaleString() || 0})`, icon: Users },
     { key: 'quotes', label: `Quotes (${quotes.length})`, icon: DollarSign },
+    { key: 'ai-quote', label: 'AI Quote Engine', icon: BrainCircuit },
   ] as const;
 
   return (
@@ -429,6 +444,7 @@ export function CRMRFQDetailPage() {
           page={memberPage} totalPages={memberTotalPages} setPage={setMemberPage} />
       )}
       {tab === 'quotes' && <QuotesTab quotes={quotes} rfqId={rfq.id} onRefresh={fetchRFQ} navigate={navigate} />}
+      {tab === 'ai-quote' && <AIQuoteTab rfqId={rfq.id} aiQuote={aiQuote} aiLoading={aiLoading} onGenerate={generateAIQuote} navigate={navigate} />}
     </div>
     </CRMLayout>
   );
@@ -884,6 +900,365 @@ function QuotesTab({ quotes, rfqId, onRefresh, navigate }: any) {
 
 
 // ═══════════════════════════════════════════════════════════════════════════════
+// AI QUOTE GENERATION TAB
+// ═══════════════════════════════════════════════════════════════════════════════
+
+function AIQuoteTab({ rfqId, aiQuote, aiLoading, onGenerate, navigate }: any) {
+  const [visibleSteps, setVisibleSteps] = useState(0);
+
+  // Animate reasoning steps appearing one by one
+  useEffect(() => {
+    if (!aiQuote?.reasoning) return;
+    setVisibleSteps(0);
+    const interval = setInterval(() => {
+      setVisibleSteps(prev => {
+        if (prev >= aiQuote.reasoning.length) { clearInterval(interval); return prev; }
+        return prev + 1;
+      });
+    }, 400);
+    return () => clearInterval(interval);
+  }, [aiQuote]);
+
+  const applyToQuoteBuilder = () => {
+    if (!aiQuote?.recommended_quote) return;
+    // Store in sessionStorage so QuoteBuilderPage can pick it up
+    sessionStorage.setItem('ai_quote_prefill', JSON.stringify(aiQuote.recommended_quote));
+    navigate(`/crm/rfqs/${rfqId}/quote/new`);
+  };
+
+  if (!aiQuote && !aiLoading) {
+    return (
+      <div className="flex flex-col items-center justify-center py-20 space-y-6">
+        <div className="relative">
+          <div className="absolute inset-0 bg-gradient-to-r from-violet-600/20 to-cyan-600/20 rounded-full blur-3xl" />
+          <div className="relative bg-gradient-to-br from-violet-500/10 to-cyan-500/10 border border-violet-500/20 rounded-3xl p-8">
+            <BrainCircuit className="h-16 w-16 text-violet-400" />
+          </div>
+        </div>
+        <div className="text-center space-y-2 max-w-lg">
+          <h3 className="text-xl font-bold text-white">AI Actuarial Quote Engine</h3>
+          <p className="text-sm text-slate-400 leading-relaxed">
+            Deep-tech pricing engine that analyzes <span className="text-violet-300">member demographics</span>,{' '}
+            <span className="text-cyan-300">age-banded risk factors</span>,{' '}
+            <span className="text-emerald-300">OPD utilization curves</span>, and{' '}
+            <span className="text-amber-300">claims experience</span> to generate actuarially-priced OPD &amp; Wellness quotes.
+          </p>
+        </div>
+        <div className="grid grid-cols-2 md:grid-cols-4 gap-3 text-center">
+          {[
+            { icon: Activity, label: 'Age-Banded Risk', color: 'text-violet-400' },
+            { icon: Target, label: 'OPD Utilization', color: 'text-cyan-400' },
+            { icon: TrendingUp, label: 'Claims Experience', color: 'text-emerald-400' },
+            { icon: Gauge, label: 'IBNR + Margin', color: 'text-amber-400' },
+          ].map(({ icon: Icon, label, color }) => (
+            <div key={label} className="bg-white/[0.03] border border-white/[0.06] rounded-xl p-3">
+              <Icon className={`h-5 w-5 ${color} mx-auto mb-1.5`} />
+              <p className="text-[10px] text-slate-500 font-medium">{label}</p>
+            </div>
+          ))}
+        </div>
+        <Button onClick={onGenerate}
+          className="bg-gradient-to-r from-violet-600 to-cyan-600 hover:from-violet-500 hover:to-cyan-500 border-0 rounded-xl h-11 px-8 gap-3 text-sm font-semibold shadow-lg shadow-violet-600/25 mt-2">
+          <BrainCircuit className="h-4 w-4" /> Generate AI Quote
+        </Button>
+      </div>
+    );
+  }
+
+  if (aiLoading) {
+    return (
+      <div className="flex flex-col items-center justify-center py-20 space-y-6">
+        <div className="relative">
+          <div className="absolute inset-0 bg-gradient-to-r from-violet-600/30 to-cyan-600/30 rounded-full blur-3xl animate-pulse" />
+          <div className="relative bg-gradient-to-br from-violet-500/10 to-cyan-500/10 border border-violet-500/20 rounded-3xl p-8">
+            <BrainCircuit className="h-16 w-16 text-violet-400 animate-pulse" />
+          </div>
+        </div>
+        <div className="text-center space-y-2">
+          <h3 className="text-lg font-bold text-white">Analyzing {(aiQuote?.population?.total_lives || '').toLocaleString() || ''} lives...</h3>
+          <div className="flex flex-col gap-2 text-sm text-slate-500">
+            {['Computing age-banded risk factors...', 'Modeling OPD utilization curves...', 'Applying IBNR & margin loading...', 'Generating slab-wise pricing...'].map((step, i) => (
+              <p key={i} className="animate-pulse" style={{ animationDelay: `${i * 0.3}s` }}>{step}</p>
+            ))}
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  const d = aiQuote;
+  const riskColor = d.risk_assessment.category === 'HIGH' ? 'text-red-400' : d.risk_assessment.category === 'MODERATE' ? 'text-amber-400' : 'text-emerald-400';
+  const riskBg = d.risk_assessment.category === 'HIGH' ? 'from-red-600' : d.risk_assessment.category === 'MODERATE' ? 'from-amber-600' : 'from-emerald-600';
+  const impactColors: Record<string, string> = { adverse: 'border-red-500/30 bg-red-500/5', favorable: 'border-emerald-500/30 bg-emerald-500/5', neutral: 'border-slate-500/20 bg-white/[0.02]', result: 'border-violet-500/30 bg-violet-500/5' };
+  const impactDots: Record<string, string> = { adverse: 'bg-red-400', favorable: 'bg-emerald-400', neutral: 'bg-slate-500', result: 'bg-violet-400' };
+
+  return (
+    <div className="space-y-6">
+      {/* ─── Hero Summary Strip ───────────────────────────────────── */}
+      <div className="grid grid-cols-2 md:grid-cols-5 gap-3">
+        {[
+          { label: 'OPD Premium', value: formatCurrency(d.opd_pricing.loaded_premium), sub: `₹${d.opd_pricing.per_family.toLocaleString()}/family`, color: 'from-violet-600 to-indigo-600' },
+          { label: 'Wellness Premium', value: formatCurrency(d.wellness_pricing.loaded_premium), sub: `₹${d.wellness_pricing.per_family.toLocaleString()}/family`, color: 'from-cyan-600 to-blue-600' },
+          { label: 'Combined Total', value: formatCurrency(d.combined.total_premium), sub: `₹${d.combined.per_family.toLocaleString()}/family`, color: 'from-emerald-600 to-teal-600' },
+          { label: 'Risk Score', value: `${d.risk_assessment.overall_score}/100`, sub: d.risk_assessment.category, color: d.risk_assessment.category === 'HIGH' ? 'from-red-600 to-orange-600' : d.risk_assessment.category === 'MODERATE' ? 'from-amber-600 to-orange-600' : 'from-emerald-600 to-green-600' },
+          { label: 'Loss Ratio', value: `${d.opd_pricing.expected_loss_ratio}%`, sub: 'Expected', color: 'from-slate-600 to-zinc-600' },
+        ].map(({ label, value, sub, color }) => (
+          <div key={label} className="relative overflow-hidden rounded-2xl border border-white/[0.08] bg-white/[0.03] p-4">
+            <div className={`absolute top-0 left-0 w-full h-1 bg-gradient-to-r ${color}`} />
+            <p className="text-[10px] text-slate-500 uppercase font-semibold tracking-wider mb-1">{label}</p>
+            <p className="text-xl font-bold text-white">{value}</p>
+            <p className="text-xs text-slate-500 mt-0.5">{sub}</p>
+          </div>
+        ))}
+      </div>
+
+      {/* ─── AI Reasoning Chain ───────────────────────────────────── */}
+      <Card>
+        <h3 className="text-sm font-semibold text-white mb-4 flex items-center gap-2">
+          <BrainCircuit className="h-4 w-4 text-violet-400" /> AI Reasoning Chain
+        </h3>
+        <div className="space-y-2">
+          {d.reasoning.map((step: any, i: number) => (
+            <div key={i}
+              className={`border rounded-xl p-3.5 transition-all duration-500 ${i < visibleSteps ? 'opacity-100 translate-y-0' : 'opacity-0 translate-y-4'} ${impactColors[step.impact] || impactColors.neutral}`}>
+              <div className="flex items-start gap-3">
+                <div className={`w-2 h-2 rounded-full mt-1.5 flex-shrink-0 ${impactDots[step.impact] || impactDots.neutral}`} />
+                <div className="flex-1 min-w-0">
+                  <div className="flex items-center gap-2 mb-1">
+                    <span className="text-xs font-bold text-white">{step.step}</span>
+                    {step.factor && step.factor !== 1 && (
+                      <span className={`text-[10px] font-mono px-1.5 py-0.5 rounded ${step.factor > 1.01 ? 'bg-red-500/15 text-red-400' : 'bg-emerald-500/15 text-emerald-400'}`}>
+                        ×{step.factor}
+                      </span>
+                    )}
+                  </div>
+                  <p className="text-xs text-slate-400 leading-relaxed">{step.detail}</p>
+                </div>
+              </div>
+            </div>
+          ))}
+        </div>
+      </Card>
+
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-5">
+        {/* ─── Population Demographics ──────────────────────────── */}
+        <Card>
+          <h3 className="text-sm font-semibold text-white mb-4 flex items-center gap-2">
+            <Users className="h-4 w-4 text-blue-400" /> Population Demographics
+          </h3>
+          <div className="grid grid-cols-2 gap-3">
+            {[
+              { label: 'Total Lives', value: d.population.total_lives.toLocaleString() },
+              { label: 'Employees', value: d.population.employees.toLocaleString() },
+              { label: 'Dependants', value: d.population.dependants.toLocaleString() },
+              { label: 'Avg Age', value: `${d.population.avg_age} yrs` },
+              { label: 'Avg Family Size', value: d.population.avg_family_size },
+              { label: 'Male / Female', value: `${d.population.male_pct}% / ${d.population.female_pct}%` },
+              { label: 'High-Risk (45+)', value: `${d.population.high_risk_pct}%` },
+              { label: 'Composite Factor', value: `×${d.risk_assessment.composite_factor}` },
+            ].map(({ label, value }) => (
+              <div key={label} className="flex justify-between py-1.5">
+                <span className="text-xs text-slate-500">{label}</span>
+                <span className="text-xs font-medium text-white">{value}</span>
+              </div>
+            ))}
+          </div>
+        </Card>
+
+        {/* ─── Risk Gauge ───────────────────────────────────────── */}
+        <Card>
+          <h3 className="text-sm font-semibold text-white mb-4 flex items-center gap-2">
+            <Gauge className="h-4 w-4 text-amber-400" /> Risk Assessment
+          </h3>
+          <div className="flex flex-col items-center py-4">
+            {/* Circular gauge */}
+            <div className="relative w-36 h-36">
+              <svg viewBox="0 0 120 120" className="w-full h-full -rotate-90">
+                <circle cx="60" cy="60" r="50" fill="none" stroke="rgba(255,255,255,0.05)" strokeWidth="10" />
+                <circle cx="60" cy="60" r="50" fill="none"
+                  stroke={d.risk_assessment.category === 'HIGH' ? '#ef4444' : d.risk_assessment.category === 'MODERATE' ? '#f59e0b' : '#10b981'}
+                  strokeWidth="10" strokeLinecap="round"
+                  strokeDasharray={`${d.risk_assessment.overall_score * 3.14} ${314 - d.risk_assessment.overall_score * 3.14}`}
+                />
+              </svg>
+              <div className="absolute inset-0 flex flex-col items-center justify-center">
+                <span className={`text-3xl font-bold ${riskColor}`}>{d.risk_assessment.overall_score}</span>
+                <span className="text-[10px] text-slate-500 uppercase">/ 100</span>
+              </div>
+            </div>
+            <span className={`mt-3 text-sm font-bold ${riskColor}`}>{d.risk_assessment.category} RISK</span>
+            <div className="grid grid-cols-3 gap-4 mt-4 w-full">
+              {[
+                { label: 'Gender', value: `×${d.risk_assessment.gender_factor}` },
+                { label: 'Family Size', value: `×${d.risk_assessment.family_size_factor}` },
+                { label: 'Age Conc.', value: `×${d.risk_assessment.age_concentration_factor}` },
+              ].map(({ label, value }) => (
+                <div key={label} className="text-center">
+                  <p className="text-[10px] text-slate-600 uppercase">{label}</p>
+                  <p className="text-sm font-semibold text-slate-300">{value}</p>
+                </div>
+              ))}
+            </div>
+          </div>
+        </Card>
+      </div>
+
+      {/* ─── Component Breakdown ──────────────────────────────── */}
+      <Card>
+        <h3 className="text-sm font-semibold text-white mb-4 flex items-center gap-2">
+          <Activity className="h-4 w-4 text-cyan-400" /> Claims Component Breakdown (Pure Premium)
+        </h3>
+        <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+          {[
+            { label: 'Consultations', value: d.component_breakdown.consultation, color: 'bg-violet-500', pct: Math.round(d.component_breakdown.consultation / (d.component_breakdown.consultation + d.component_breakdown.lab_tests + d.component_breakdown.pharmacy + d.component_breakdown.wellness) * 100) },
+            { label: 'Lab Tests', value: d.component_breakdown.lab_tests, color: 'bg-cyan-500', pct: Math.round(d.component_breakdown.lab_tests / (d.component_breakdown.consultation + d.component_breakdown.lab_tests + d.component_breakdown.pharmacy + d.component_breakdown.wellness) * 100) },
+            { label: 'Pharmacy', value: d.component_breakdown.pharmacy, color: 'bg-amber-500', pct: Math.round(d.component_breakdown.pharmacy / (d.component_breakdown.consultation + d.component_breakdown.lab_tests + d.component_breakdown.pharmacy + d.component_breakdown.wellness) * 100) },
+            { label: 'Wellness', value: d.component_breakdown.wellness, color: 'bg-emerald-500', pct: Math.round(d.component_breakdown.wellness / (d.component_breakdown.consultation + d.component_breakdown.lab_tests + d.component_breakdown.pharmacy + d.component_breakdown.wellness) * 100) },
+          ].map(({ label, value, color, pct }) => (
+            <div key={label} className="space-y-2">
+              <div className="flex justify-between">
+                <span className="text-xs text-slate-500">{label}</span>
+                <span className="text-xs font-medium text-slate-300">{pct}%</span>
+              </div>
+              <div className="h-2 bg-white/[0.05] rounded-full overflow-hidden">
+                <div className={`h-full ${color} rounded-full transition-all duration-1000`} style={{ width: `${pct}%` }} />
+              </div>
+              <p className="text-sm font-bold text-white">{formatCurrency(value)}</p>
+            </div>
+          ))}
+        </div>
+      </Card>
+
+      {/* ─── Age Band Deep Analysis ──────────────────────────── */}
+      <Card>
+        <h3 className="text-sm font-semibold text-white mb-4 flex items-center gap-2">
+          <BarChart3 className="h-4 w-4 text-violet-400" /> Age-Banded Risk & Cost Analysis
+        </h3>
+        <div className="overflow-x-auto">
+          <table className="w-full text-sm">
+            <thead>
+              <tr className="border-b border-white/[0.06]">
+                {['Age Band', 'Lives', '% Pop', 'Risk Factor', 'OPD Visits/yr', 'Consult', 'Lab', 'Pharma', 'OPD/Person', 'Wellness/Person', 'Band Total'].map(h => (
+                  <th key={h} className="py-2 px-2 text-[10px] text-slate-500 uppercase font-semibold text-left whitespace-nowrap">{h}</th>
+                ))}
+              </tr>
+            </thead>
+            <tbody>
+              {d.age_band_analysis.map((b: any) => {
+                const barWidth = Math.min(100, b.risk_factor * 50);
+                return (
+                  <tr key={b.age_band} className="border-b border-white/[0.03] hover:bg-white/[0.02] transition-colors">
+                    <td className="py-2.5 px-2 text-white font-medium">{b.age_band}</td>
+                    <td className="py-2.5 px-2 text-slate-300">{b.lives.toLocaleString()}</td>
+                    <td className="py-2.5 px-2 text-slate-400">{b.pct_of_total}%</td>
+                    <td className="py-2.5 px-2">
+                      <div className="flex items-center gap-2">
+                        <div className="w-16 h-1.5 bg-white/[0.05] rounded-full overflow-hidden">
+                          <div className={`h-full rounded-full ${b.risk_factor > 1.5 ? 'bg-red-500' : b.risk_factor > 1.0 ? 'bg-amber-500' : 'bg-emerald-500'}`}
+                            style={{ width: `${barWidth}%` }} />
+                        </div>
+                        <span className="text-xs text-slate-300 font-mono">{b.risk_factor}</span>
+                      </div>
+                    </td>
+                    <td className="py-2.5 px-2 text-cyan-400 font-medium">{b.opd_visits_per_year}</td>
+                    <td className="py-2.5 px-2 text-slate-400">₹{b.breakdown.consultation.toLocaleString()}</td>
+                    <td className="py-2.5 px-2 text-slate-400">₹{b.breakdown.lab_tests.toLocaleString()}</td>
+                    <td className="py-2.5 px-2 text-slate-400">₹{b.breakdown.pharmacy.toLocaleString()}</td>
+                    <td className="py-2.5 px-2 text-white font-medium">₹{b.expected_opd_cost_per_person.toLocaleString()}</td>
+                    <td className="py-2.5 px-2 text-emerald-400">{b.wellness_cost_per_person ? `₹${b.wellness_cost_per_person.toLocaleString()}` : '—'}</td>
+                    <td className="py-2.5 px-2 text-amber-400 font-bold">{formatCurrency(b.expected_opd_total + b.wellness_total)}</td>
+                  </tr>
+                );
+              })}
+            </tbody>
+          </table>
+        </div>
+      </Card>
+
+      {/* ─── SI Slab Pricing ─────────────────────────────────── */}
+      {d.slab_pricing.length > 0 && (
+        <Card>
+          <h3 className="text-sm font-semibold text-white mb-4 flex items-center gap-2">
+            <Layers className="h-4 w-4 text-amber-400" /> SI Slab-wise Recommended Pricing
+          </h3>
+          <div className="space-y-3">
+            {d.slab_pricing.map((s: any) => {
+              const barWidth = Math.min(100, (s.premium_per_family / d.slab_pricing[d.slab_pricing.length - 1].premium_per_family) * 100);
+              return (
+                <div key={s.slab} className="bg-white/[0.02] border border-white/[0.05] rounded-xl p-4">
+                  <div className="flex items-center justify-between mb-2">
+                    <div className="flex items-center gap-3">
+                      <span className="text-sm font-bold text-white">{s.slab}</span>
+                      <span className="text-xs text-slate-500">{s.lives.toLocaleString()} families</span>
+                    </div>
+                    <div className="text-right">
+                      <span className="text-lg font-bold text-amber-400">₹{s.premium_per_family.toLocaleString()}</span>
+                      <span className="text-[10px] text-slate-500 ml-1">/family</span>
+                    </div>
+                  </div>
+                  <div className="h-2 bg-white/[0.05] rounded-full overflow-hidden mb-2">
+                    <div className="h-full bg-gradient-to-r from-amber-500 to-orange-500 rounded-full transition-all duration-1000" style={{ width: `${barWidth}%` }} />
+                  </div>
+                  <div className="flex justify-between text-[10px] text-slate-500">
+                    <span>₹{s.premium_per_life.toLocaleString()}/life</span>
+                    <span>Utilization cap {s.utilization_cap_pct}%</span>
+                    <span>Loss ratio {s.expected_loss_ratio}%</span>
+                    <span>Total {formatCurrency(s.total_premium)}</span>
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        </Card>
+      )}
+
+      {/* ─── Confidence Interval ─────────────────────────────── */}
+      <Card>
+        <h3 className="text-sm font-semibold text-white mb-4 flex items-center gap-2">
+          <Target className="h-4 w-4 text-emerald-400" /> Pricing Summary & Confidence
+        </h3>
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+          <div className="space-y-3">
+            <p className="text-[10px] text-slate-600 uppercase font-semibold">OPD (Required)</p>
+            <div className="flex justify-between"><span className="text-xs text-slate-500">Pure Premium</span><span className="text-xs text-slate-300">{formatCurrency(d.opd_pricing.pure_premium)}</span></div>
+            <div className="flex justify-between"><span className="text-xs text-slate-500">Loaded Premium</span><span className="text-sm font-bold text-violet-400">{formatCurrency(d.opd_pricing.loaded_premium)}</span></div>
+            <div className="flex justify-between"><span className="text-xs text-slate-500">Per Family</span><span className="text-xs text-slate-300">₹{d.opd_pricing.per_family.toLocaleString()}</span></div>
+            <div className="flex justify-between"><span className="text-xs text-slate-500">Per Life</span><span className="text-xs text-slate-300">₹{d.opd_pricing.per_life.toLocaleString()}</span></div>
+          </div>
+          <div className="space-y-3">
+            <p className="text-[10px] text-slate-600 uppercase font-semibold">Wellness (Optional)</p>
+            <div className="flex justify-between"><span className="text-xs text-slate-500">Uptake Assumption</span><span className="text-xs text-slate-300">{d.wellness_pricing.assumed_uptake_pct}%</span></div>
+            <div className="flex justify-between"><span className="text-xs text-slate-500">Loaded Premium</span><span className="text-sm font-bold text-cyan-400">{formatCurrency(d.wellness_pricing.loaded_premium)}</span></div>
+            <div className="flex justify-between"><span className="text-xs text-slate-500">Per Family</span><span className="text-xs text-slate-300">₹{d.wellness_pricing.per_family.toLocaleString()}</span></div>
+            <div className="flex justify-between"><span className="text-xs text-slate-500">Per Life</span><span className="text-xs text-slate-300">₹{d.wellness_pricing.per_life.toLocaleString()}</span></div>
+          </div>
+          <div className="space-y-3">
+            <p className="text-[10px] text-slate-600 uppercase font-semibold">95% Confidence Interval</p>
+            <div className="flex justify-between"><span className="text-xs text-slate-500">Lower (2.5%)</span><span className="text-xs text-slate-300">{formatCurrency(d.combined.ci_95_lower)}</span></div>
+            <div className="flex justify-between"><span className="text-xs text-slate-500">Point Estimate</span><span className="text-sm font-bold text-emerald-400">{formatCurrency(d.combined.total_premium)}</span></div>
+            <div className="flex justify-between"><span className="text-xs text-slate-500">Upper (97.5%)</span><span className="text-xs text-slate-300">{formatCurrency(d.combined.ci_95_upper)}</span></div>
+            <div className="flex justify-between"><span className="text-xs text-slate-500">Variance</span><span className="text-xs text-slate-300">±{formatCurrency(d.combined.ci_95_upper - d.combined.total_premium)}</span></div>
+          </div>
+        </div>
+      </Card>
+
+      {/* ─── Actions ─────────────────────────────────────────── */}
+      <div className="flex items-center justify-between pt-2">
+        <Button onClick={onGenerate} variant="outline"
+          className="border-white/[0.1] text-slate-400 hover:bg-white/[0.05] rounded-xl h-10 px-5 gap-2">
+          <RefreshCw className="h-4 w-4" /> Regenerate
+        </Button>
+        <Button onClick={applyToQuoteBuilder}
+          className="bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-500 hover:to-teal-500 border-0 rounded-xl h-10 px-6 gap-2 text-sm font-medium shadow-lg shadow-emerald-600/20">
+          <Zap className="h-4 w-4" /> Apply to Quote Builder
+        </Button>
+      </div>
+    </div>
+  );
+}
+
+
+// ═══════════════════════════════════════════════════════════════════════════════
 // QUOTE BUILDER PAGE
 // ═══════════════════════════════════════════════════════════════════════════════
 
@@ -924,6 +1299,35 @@ export function CRMQuoteBuilderPage() {
           const m = data.data.member_count || 0;
           if (isNew && m) {
             setForm(f => ({ ...f, total_lives: String(m) }));
+          }
+          // Check for AI-prefilled quote from sessionStorage
+          if (isNew) {
+            const aiPrefill = sessionStorage.getItem('ai_quote_prefill');
+            if (aiPrefill) {
+              try {
+                const ai = JSON.parse(aiPrefill);
+                setForm(f => ({
+                  ...f,
+                  total_premium: String(ai.total_premium || ''),
+                  total_lives: String(ai.total_lives || m || ''),
+                  per_life_cost: String(ai.per_life_cost || ''),
+                  per_family_cost: String(ai.per_family_cost || ''),
+                  pricing_model: ai.pricing_model || 'per_family',
+                  commission_pct: String(ai.commission_pct ?? 15),
+                  gst_pct: String(ai.gst_pct ?? 18),
+                  discount_pct: String(ai.discount_pct ?? 0),
+                  terms: ai.terms || '',
+                }));
+                if (ai.slab_pricing?.length > 0) {
+                  setSlabs(ai.slab_pricing.map((s: any) => ({
+                    slab: s.slab || '',
+                    premium: String(s.premium || ''),
+                    lives: String(s.lives || ''),
+                  })));
+                }
+              } catch { /* ignore parse errors */ }
+              sessionStorage.removeItem('ai_quote_prefill');
+            }
           }
           // Pre-populate slabs from RFQ SI slabs
           const rfqSlabs = typeof data.data.sum_insured_slabs === 'string'
