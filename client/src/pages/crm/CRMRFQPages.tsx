@@ -1537,13 +1537,13 @@ function AIQuoteTab({ rfqId, aiQuote, aiLoading, onGenerate, navigate, claimsAna
         </div>
       </Card>
 
-      {/* ─── LLM Underwriting Assessment (smart-crm.in) ──────── */}
+      {/* ─── LLM Underwriting Assessment (isha-inc.com) ──────── */}
       {d.llm_assessment && !d.llm_assessment.raw && (
         <Card>
           <h3 className="text-sm font-semibold text-white mb-4 flex items-center gap-2">
             <BrainCircuit className="h-4 w-4 text-emerald-400" />
             Insurance LLM Underwriting Assessment
-            <span className="text-[9px] text-slate-600 bg-white/[0.05] px-2 py-0.5 rounded-full ml-auto font-mono">smart-crm.in</span>
+            <span className="text-[9px] text-slate-600 bg-white/[0.05] px-2 py-0.5 rounded-full ml-auto font-mono">isha-inc.com</span>
           </h3>
 
           {/* Executive Summary */}
@@ -1672,7 +1672,7 @@ function AIQuoteTab({ rfqId, aiQuote, aiLoading, onGenerate, navigate, claimsAna
         <Card>
           <h3 className="text-sm font-semibold text-white mb-3 flex items-center gap-2">
             <BrainCircuit className="h-4 w-4 text-emerald-400" /> Insurance LLM Assessment
-            <span className="text-[9px] text-slate-600 bg-white/[0.05] px-2 py-0.5 rounded-full ml-auto font-mono">smart-crm.in</span>
+            <span className="text-[9px] text-slate-600 bg-white/[0.05] px-2 py-0.5 rounded-full ml-auto font-mono">isha-inc.com</span>
           </h3>
           <p className="text-xs text-slate-300 leading-relaxed whitespace-pre-wrap">{d.llm_assessment.executive_summary}</p>
         </Card>

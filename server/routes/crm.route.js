@@ -1988,12 +1988,11 @@ router.post('/rfqs/:id/ai-generate-quote', authCRM, async (req, res) => {
       impact: 'result'
     });
 
-    // ── 3e. LLM UNDERWRITING ASSESSMENT (smart-crm.in / local Insurance LLM) ─
+    // ── 3e. LLM UNDERWRITING ASSESSMENT (isha-inc.com / iSHA Insurance LLM via DocsGPT SSE) ─
     // Send the computed actuarial data to the local insurance LLM on RTX 3060
     // for qualitative underwriting commentary, risk insights & recommendations
-    const SMART_CRM_URL = process.env.SMART_CRM_URL || 'https://smart-crm.in/v1/chat/completions';
-    const SMART_CRM_MODEL = process.env.SMART_CRM_MODEL || 'open-insurance-llama3';
-    const SMART_CRM_PORT = parseInt(process.env.SMART_CRM_PORT || '8083');
+    const ISHA_LLM_URL = process.env.ISHA_LLM_URL || 'https://isha-inc.com/stream';
+    const ISHA_LLM_TIMEOUT = parseInt(process.env.ISHA_LLM_TIMEOUT || '60000');
 
     let llmAssessment = null;
     try {
@@ -2062,8 +2061,9 @@ router.post('/rfqs/:id/ai-generate-quote', authCRM, async (req, res) => {
         }
       }
 
-      const systemPrompt = `You are an expert insurance underwriter and actuary specializing in Indian group health insurance (OPD, GMC, GPA).
-You are reviewing an RFQ and the actuarial engine's computed pricing. Your role is to provide a detailed underwriting assessment.
+      // Build the question for DocsGPT / iSHA iDMS
+      const llmQuestion = `You are an expert insurance underwriter and actuary specializing in Indian group health insurance (OPD, GMC, GPA).
+You are reviewing an RFQ and the actuarial engine's computed pricing. Provide a detailed underwriting assessment.
 
 RESPOND IN JSON FORMAT ONLY with this exact structure:
 {
@@ -2089,61 +2089,108 @@ RESPOND IN JSON FORMAT ONLY with this exact structure:
 }
 
 Consider Indian market specifics: medical inflation 12-14%, pharmacy dominance in OPD, seasonal patterns (monsoon spike), regional provider cost variations, IRDA regulations.
-Do NOT include markdown formatting. Return valid JSON only.`;
+Do NOT include markdown formatting. Return valid JSON only.
 
-      const userPrompt = `Analyze this RFQ and provide your underwriting assessment:\n\n${JSON.stringify(llmPayload, null, 2)}`;
+Here is the RFQ data to analyze:
+${JSON.stringify(llmPayload, null, 2)}`;
 
-      const llmRes = await fetch(SMART_CRM_URL, {
+      // Call iSHA iDMS /stream endpoint (DocsGPT SSE format)
+      const llmRes = await fetch(ISHA_LLM_URL, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          model: SMART_CRM_MODEL,
-          messages: [
-            { role: 'system', content: systemPrompt },
-            { role: 'user', content: userPrompt },
-          ],
-          max_tokens: 2048,
-          temperature: 0.3,
-          agent_type: 'Insurance',
-          model_port: SMART_CRM_PORT,
+          question: llmQuestion,
+          history: [],
         }),
-        signal: AbortSignal.timeout(45000),
+        signal: AbortSignal.timeout(ISHA_LLM_TIMEOUT),
       });
 
-      if (llmRes.ok) {
-        const llmData = await llmRes.json();
-        const content = llmData?.choices?.[0]?.message?.content;
-        if (content) {
-          // Parse JSON from LLM response — handle potential markdown code blocks
-          let cleanContent = content.trim();
-          if (cleanContent.startsWith('```')) {
-            cleanContent = cleanContent.replace(/^```(?:json)?\n?/, '').replace(/\n?```$/, '').trim();
-          }
-          try {
-            llmAssessment = JSON.parse(cleanContent);
-            reasoning.push({
-              step: 'AI Underwriting Assessment',
-              detail: llmAssessment.executive_summary || 'LLM underwriting analysis completed.',
-              impact: llmAssessment.confidence_level === 'high' ? 'result' :
-                      llmAssessment.confidence_level === 'low' ? 'adverse' : 'neutral'
-            });
-          } catch (parseErr) {
-            // If JSON parse fails, still use the raw text
-            llmAssessment = { executive_summary: cleanContent, raw: true };
-            reasoning.push({
-              step: 'AI Underwriting Assessment',
-              detail: cleanContent.substring(0, 300),
-              impact: 'neutral'
-            });
+      // Helper: parse SSE text and extract full answer from DocsGPT stream
+      const parseSseAnswer = (sseText) => {
+        let answer = '';
+        for (const line of sseText.split('\n')) {
+          if (line.startsWith('data: ')) {
+            try {
+              const evt = JSON.parse(line.slice(6));
+              if (evt.type === 'answer' && evt.answer) {
+                answer += evt.answer;
+              }
+            } catch { /* skip non-JSON data lines */ }
           }
         }
+        return answer;
+      };
+
+      // Helper: attempt a single LLM call and return fullAnswer string
+      const attemptLlmCall = async () => {
+        const res = await fetch(ISHA_LLM_URL, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ question: llmQuestion, history: [] }),
+          signal: AbortSignal.timeout(ISHA_LLM_TIMEOUT),
+        });
+        if (!res.ok) {
+          console.warn(`[CRM AI Quote] LLM HTTP ${res.status} from ${ISHA_LLM_URL}`);
+          return '';
+        }
+        const sseText = await res.text();
+        console.log(`[CRM AI Quote] SSE response length: ${sseText.length} chars`);
+        const answer = parseSseAnswer(sseText);
+        if (!answer) {
+          console.warn(`[CRM AI Quote] SSE had no answer chunks. First 500 chars: ${sseText.substring(0, 500)}`);
+        }
+        return answer;
+      };
+
+      // Try up to 2 attempts (retry once on empty)
+      let fullAnswer = '';
+      if (llmRes.ok) {
+        const sseText = await llmRes.text();
+        console.log(`[CRM AI Quote] SSE response length: ${sseText.length} chars`);
+        fullAnswer = parseSseAnswer(sseText);
+        if (!fullAnswer) {
+          console.warn(`[CRM AI Quote] First attempt empty. SSE first 500 chars: ${sseText.substring(0, 500)}`);
+          console.log(`[CRM AI Quote] Retrying LLM call...`);
+          try {
+            fullAnswer = await attemptLlmCall();
+          } catch (retryErr) {
+            console.warn(`[CRM AI Quote] Retry failed: ${retryErr.message}`);
+          }
+        }
+      } else {
+        console.warn(`[CRM AI Quote] LLM HTTP ${llmRes.status} from ${ISHA_LLM_URL}`);
       }
-      console.log(`[CRM AI Quote] LLM assessment ${llmAssessment ? 'received' : 'empty'} from ${SMART_CRM_URL}`);
+
+      if (fullAnswer) {
+        // Parse JSON from LLM response — handle potential markdown code blocks
+        let cleanContent = fullAnswer.trim();
+        if (cleanContent.startsWith('```')) {
+          cleanContent = cleanContent.replace(/^```(?:json)?\n?/, '').replace(/\n?```$/, '').trim();
+        }
+        try {
+          llmAssessment = JSON.parse(cleanContent);
+          reasoning.push({
+            step: 'AI Underwriting Assessment',
+            detail: llmAssessment.executive_summary || 'LLM underwriting analysis completed.',
+            impact: llmAssessment.confidence_level === 'high' ? 'result' :
+                    llmAssessment.confidence_level === 'low' ? 'adverse' : 'neutral'
+          });
+        } catch (parseErr) {
+          // If JSON parse fails, still use the raw text
+          llmAssessment = { executive_summary: cleanContent, raw: true };
+          reasoning.push({
+            step: 'AI Underwriting Assessment',
+            detail: cleanContent.substring(0, 300),
+            impact: 'neutral'
+          });
+        }
+      }
+      console.log(`[CRM AI Quote] LLM assessment ${llmAssessment ? 'received' : 'empty'} from ${ISHA_LLM_URL}`);
     } catch (llmErr) {
-      console.warn(`[CRM AI Quote] LLM call to ${SMART_CRM_URL} failed: ${llmErr.message}. Proceeding without LLM assessment.`);
+      console.warn(`[CRM AI Quote] LLM call to ${ISHA_LLM_URL} failed: ${llmErr.message}. Proceeding without LLM assessment.`);
       reasoning.push({
         step: 'AI Underwriting Assessment',
-        detail: `Insurance LLM (smart-crm.in) unavailable — actuarial model pricing stands as-is. Error: ${llmErr.message}`,
+        detail: `Insurance LLM (isha-inc.com) unavailable — actuarial model pricing stands as-is. Error: ${llmErr.message}`,
         impact: 'neutral'
       });
     }
@@ -2229,7 +2276,7 @@ Do NOT include markdown formatting. Return valid JSON only.`;
         // Claims experience data (if available)
         claims_experience: claimsExperience,
 
-        // LLM underwriting assessment (from smart-crm.in Insurance LLM)
+        // LLM underwriting assessment (from isha-inc.com iSHA Insurance LLM)
         llm_assessment: llmAssessment,
 
         // Recommended quote parameters (ready to apply to Quote Builder)
