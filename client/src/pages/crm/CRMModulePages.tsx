@@ -27,6 +27,9 @@ const sidebarNav = [
     { icon: Users, label: 'Contacts', path: '/crm/contacts' },
     { icon: Activity, label: 'Activities', path: '/crm/activities' },
   ]},
+  { section: 'INSURANCE', items: [
+    { icon: FileText, label: 'RFQs', path: '/crm/rfqs' },
+  ]},
   { section: 'INSIGHTS', items: [
     { icon: PieChart, label: 'Reports', path: '/crm/reports' },
     { icon: Settings, label: 'Settings', path: '/crm/settings' },

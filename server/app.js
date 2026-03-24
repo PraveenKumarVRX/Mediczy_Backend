@@ -643,6 +643,8 @@ app.use((req, res, next) => {
     '/api/cdss/knowledge/upload',
     '/api/corporate-bookings/reports/upload',
     '/api/team/emails/send',
+    '/api/crm/rfqs/upload-excel',
+    '/api/crm/rfqs',
   ];
   if (multerPaths.some(p => req.path === p || req.path.startsWith(p + '/'))) {
     return next();

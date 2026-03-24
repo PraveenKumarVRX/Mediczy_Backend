@@ -296,6 +296,12 @@ const USER_TYPE_PERMISSIONS = {
     ],
     tokenField: 'assistantId'
   },
+  crm: {
+    allowedPaths: [
+      '/api/crm',
+    ],
+    tokenField: 'userId'
+  },
   corporate: {
     allowedPaths: [
       '/api/corporate',

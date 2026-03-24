@@ -3,7 +3,7 @@ import { useNavigate, Link, useLocation } from 'react-router-dom';
 import { Button } from '@/components/ui/button';
 import {
   Target, Users, DollarSign, TrendingUp, Activity, BarChart3,
-  ArrowUpRight, ArrowDownRight, Clock, LogOut,
+  ArrowUpRight, ArrowDownRight, Clock, LogOut, FileText,
   Phone, Mail, Calendar, Briefcase, ChevronRight,
   Home, PieChart, Settings, Zap, ChevronDown, Bell,
   LayoutGrid, ArrowRight,
@@ -29,6 +29,9 @@ const sidebarNav = [
   { section: 'MANAGE', items: [
     { icon: Users, label: 'Contacts', path: '/crm/contacts' },
     { icon: Activity, label: 'Activities', path: '/crm/activities' },
+  ]},
+  { section: 'INSURANCE', items: [
+    { icon: FileText, label: 'RFQs', path: '/crm/rfqs' },
   ]},
   { section: 'INSIGHTS', items: [
     { icon: PieChart, label: 'Reports', path: '/crm/reports' },

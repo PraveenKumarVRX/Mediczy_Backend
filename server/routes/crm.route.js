@@ -2,12 +2,16 @@ import express from 'express';
 import { body, validationResult } from 'express-validator';
 import { createHash, randomUUID } from 'crypto';
 import jwt from 'jsonwebtoken';
+import multer from 'multer';
+import XLSX from 'xlsx';
 import userModel from '../models/user.model.intelligent.js';
 import { authCRM } from '../middleware/crm.middleware.js';
 import { JWT_CONFIG } from '../config/auth.config.js';
 import { authLimiter } from '../middleware/rateLimiter.middleware.js';
 import { auditLoginAttempt } from '../middleware/audit.middleware.js';
 import sharedPool from '../db/pgPool.js';
+
+const upload = multer({ storage: multer.memoryStorage(), limits: { fileSize: 50 * 1024 * 1024 } });
 
 const router = express.Router();
 
@@ -139,7 +143,93 @@ const LOCKOUT_MAX_ATTEMPTS = 10;
       CREATE INDEX IF NOT EXISTS idx_contacts_email   ON crm_contacts(email);
       CREATE INDEX IF NOT EXISTS idx_contacts_company  ON crm_contacts(company);
     `);
-    console.log('[CRM] DB tables initialized');
+    // ─── RFQ tables ────────────────────────────────────────────────────────
+    await pool.query(`
+      CREATE TABLE IF NOT EXISTS crm_rfqs (
+        id                BIGSERIAL    PRIMARY KEY,
+        rfq_number        VARCHAR(50)  NOT NULL UNIQUE,
+        status            VARCHAR(30)  NOT NULL DEFAULT 'received',
+        broker_name       VARCHAR(255),
+        broker_company    VARCHAR(255),
+        broker_email      VARCHAR(255),
+        broker_phone      VARCHAR(50),
+        insured_name      VARCHAR(500) NOT NULL,
+        insured_address   TEXT,
+        policy_type       VARCHAR(100) DEFAULT 'Group Mediclaim',
+        product_type      VARCHAR(100) DEFAULT 'OPD',
+        existing_insurer  VARCHAR(255),
+        existing_tpa      VARCHAR(255),
+        policy_start      DATE,
+        policy_end        DATE,
+        premium_paid      VARCHAR(255),
+        lives_at_inception JSONB DEFAULT '{}'::jsonb,
+        lives_at_renewal   JSONB DEFAULT '{}'::jsonb,
+        coverage_scope    JSONB DEFAULT '{}'::jsonb,
+        special_conditions JSONB DEFAULT '[]'::jsonb,
+        exclusions        TEXT,
+        terms_and_conditions TEXT,
+        notes             TEXT,
+        member_count      INTEGER DEFAULT 0,
+        sum_insured_slabs JSONB DEFAULT '[]'::jsonb,
+        deal_id           BIGINT,
+        lead_id           BIGINT,
+        assigned_to       INTEGER,
+        created_by        INTEGER NOT NULL,
+        created_at        TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+        updated_at        TIMESTAMPTZ NOT NULL DEFAULT NOW()
+      );
+      CREATE INDEX IF NOT EXISTS idx_rfqs_status ON crm_rfqs(status);
+      CREATE INDEX IF NOT EXISTS idx_rfqs_number ON crm_rfqs(rfq_number);
+      CREATE INDEX IF NOT EXISTS idx_rfqs_insured ON crm_rfqs(insured_name);
+
+      CREATE TABLE IF NOT EXISTS crm_rfq_members (
+        id            BIGSERIAL PRIMARY KEY,
+        rfq_id        BIGINT NOT NULL REFERENCES crm_rfqs(id) ON DELETE CASCADE,
+        sr_no         INTEGER,
+        emp_code      VARCHAR(50),
+        relationship  VARCHAR(50),
+        relation_type VARCHAR(50),
+        gender        VARCHAR(10),
+        dob           DATE,
+        age           INTEGER,
+        si_expiring   NUMERIC(12,2) DEFAULT 0,
+        si_proposed   NUMERIC(12,2) DEFAULT 0,
+        designation   VARCHAR(255),
+        band          VARCHAR(20),
+        doj           DATE,
+        employee_name VARCHAR(255),
+        created_at    TIMESTAMPTZ NOT NULL DEFAULT NOW()
+      );
+      CREATE INDEX IF NOT EXISTS idx_rfq_members_rfq ON crm_rfq_members(rfq_id);
+      CREATE INDEX IF NOT EXISTS idx_rfq_members_emp ON crm_rfq_members(emp_code);
+
+      CREATE TABLE IF NOT EXISTS crm_quotes (
+        id              BIGSERIAL PRIMARY KEY,
+        rfq_id          BIGINT NOT NULL REFERENCES crm_rfqs(id) ON DELETE CASCADE,
+        quote_number    VARCHAR(50) NOT NULL UNIQUE,
+        status          VARCHAR(30) NOT NULL DEFAULT 'draft',
+        version         INTEGER DEFAULT 1,
+        valid_until     DATE,
+        total_premium   NUMERIC(15,2) DEFAULT 0,
+        total_lives     INTEGER DEFAULT 0,
+        per_life_cost   NUMERIC(12,2) DEFAULT 0,
+        per_family_cost NUMERIC(12,2) DEFAULT 0,
+        pricing_model   VARCHAR(50) DEFAULT 'per_family',
+        commission_pct  NUMERIC(5,2) DEFAULT 0,
+        gst_pct         NUMERIC(5,2) DEFAULT 18,
+        discount_pct    NUMERIC(5,2) DEFAULT 0,
+        coverage_details JSONB DEFAULT '{}'::jsonb,
+        slab_pricing    JSONB DEFAULT '[]'::jsonb,
+        terms           TEXT,
+        notes           TEXT,
+        created_by      INTEGER NOT NULL,
+        created_at      TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+        updated_at      TIMESTAMPTZ NOT NULL DEFAULT NOW()
+      );
+      CREATE INDEX IF NOT EXISTS idx_quotes_rfq ON crm_quotes(rfq_id);
+      CREATE INDEX IF NOT EXISTS idx_quotes_status ON crm_quotes(status);
+    `);
+    console.log('[CRM] DB tables initialized (incl. RFQ)');
   } catch (err) {
     console.error('[CRM] DB table init error:', err.message);
   }
@@ -787,6 +877,613 @@ router.get('/reports/team-performance', authCRM, async (req, res) => {
       ORDER BY revenue DESC`);
     return res.status(200).json({ success: true, data: rows });
   } catch (error) { return res.status(500).json({ success: false, message: 'Failed to generate team report' }); }
+});
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// RFQ MANAGEMENT
+// ═══════════════════════════════════════════════════════════════════════════════
+
+function generateRFQNumber() {
+  const d = new Date();
+  const y = d.getFullYear();
+  const m = String(d.getMonth() + 1).padStart(2, '0');
+  const r = String(Math.floor(Math.random() * 9000) + 1000);
+  return `RFQ-${y}${m}-${r}`;
+}
+
+function generateQuoteNumber(rfqNumber) {
+  const r = String(Math.floor(Math.random() * 9000) + 1000);
+  return rfqNumber.replace('RFQ-', 'QT-') + '-' + r;
+}
+
+// ─── List RFQs ───────────────────────────────────────────────────────────────
+router.get('/rfqs', authCRM, async (req, res) => {
+  try {
+    const { page = 1, limit = 25, status, search, sortBy = 'created_at', sortOrder = 'DESC' } = req.query;
+    const offset = (parseInt(page) - 1) * parseInt(limit);
+    const conditions = []; const params = [];
+    if (status && status !== 'all') { params.push(status); conditions.push(`status = $${params.length}`); }
+    if (search) { params.push(`%${search}%`); conditions.push(`(insured_name ILIKE $${params.length} OR rfq_number ILIKE $${params.length} OR broker_company ILIKE $${params.length})`); }
+    const where = conditions.length ? `WHERE ${conditions.join(' AND ')}` : '';
+    const allowedSorts = ['created_at', 'updated_at', 'insured_name', 'status', 'rfq_number', 'member_count'];
+    const sort = allowedSorts.includes(sortBy) ? sortBy : 'created_at';
+    const order = sortOrder === 'ASC' ? 'ASC' : 'DESC';
+    const [countRes, dataRes] = await Promise.all([
+      sharedPool.query(`SELECT COUNT(*) FROM crm_rfqs ${where}`, params),
+      sharedPool.query(`SELECT r.*, (SELECT COUNT(*) FROM crm_quotes q WHERE q.rfq_id = r.id) AS quote_count
+        FROM crm_rfqs r ${where} ORDER BY ${sort} ${order} LIMIT $${params.length + 1} OFFSET $${params.length + 2}`,
+        [...params, parseInt(limit), offset])
+    ]);
+    return res.status(200).json({ success: true, data: dataRes.rows, pagination: { total: parseInt(countRes.rows[0].count), page: parseInt(page), limit: parseInt(limit), totalPages: Math.ceil(parseInt(countRes.rows[0].count) / parseInt(limit)) } });
+  } catch (error) { console.error('[CRM RFQ List]', error.message); return res.status(500).json({ success: false, message: 'Failed to fetch RFQs' }); }
+});
+
+// ─── Create RFQ ──────────────────────────────────────────────────────────────
+router.post('/rfqs', authCRM, [body('insured_name').notEmpty().withMessage('Insured name is required')], async (req, res) => {
+  const errors = validationResult(req);
+  if (!errors.isEmpty()) return res.status(400).json({ success: false, message: errors.array()[0].msg });
+  try {
+    const {
+      insured_name, insured_address, policy_type, product_type, broker_name, broker_company, broker_email, broker_phone,
+      existing_insurer, existing_tpa, policy_start, policy_end, premium_paid,
+      lives_at_inception, lives_at_renewal, coverage_scope, special_conditions, exclusions,
+      terms_and_conditions, notes, sum_insured_slabs
+    } = req.body;
+    const rfq_number = generateRFQNumber();
+    const { rows } = await sharedPool.query(
+      `INSERT INTO crm_rfqs (rfq_number, insured_name, insured_address, policy_type, product_type,
+        broker_name, broker_company, broker_email, broker_phone,
+        existing_insurer, existing_tpa, policy_start, policy_end, premium_paid,
+        lives_at_inception, lives_at_renewal, coverage_scope, special_conditions, exclusions,
+        terms_and_conditions, notes, sum_insured_slabs, assigned_to, created_by)
+       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$21,$22,$23,$24) RETURNING *`,
+      [rfq_number, insured_name, insured_address || null, policy_type || 'Group Mediclaim', product_type || 'OPD',
+        broker_name || null, broker_company || null, broker_email || null, broker_phone || null,
+        existing_insurer || null, existing_tpa || null, policy_start || null, policy_end || null, premium_paid || null,
+        JSON.stringify(lives_at_inception || {}), JSON.stringify(lives_at_renewal || {}),
+        JSON.stringify(coverage_scope || {}), JSON.stringify(special_conditions || []), exclusions || null,
+        terms_and_conditions || null, notes || null, JSON.stringify(sum_insured_slabs || []),
+        req.crmUser.id, req.crmUser.id]
+    );
+    return res.status(201).json({ success: true, data: rows[0] });
+  } catch (error) { console.error('[CRM RFQ Create]', error.message); return res.status(500).json({ success: false, message: 'Failed to create RFQ' }); }
+});
+
+// ─── Get RFQ Detail ──────────────────────────────────────────────────────────
+router.get('/rfqs/:id', authCRM, async (req, res) => {
+  try {
+    const { rows } = await sharedPool.query(`SELECT * FROM crm_rfqs WHERE id = $1`, [req.params.id]);
+    if (!rows.length) return res.status(404).json({ success: false, message: 'RFQ not found' });
+    const quotes = await sharedPool.query(`SELECT * FROM crm_quotes WHERE rfq_id = $1 ORDER BY created_at DESC`, [req.params.id]);
+    return res.status(200).json({ success: true, data: { ...rows[0], quotes: quotes.rows } });
+  } catch (error) { return res.status(500).json({ success: false, message: 'Failed to fetch RFQ' }); }
+});
+
+// ─── Update RFQ ──────────────────────────────────────────────────────────────
+router.put('/rfqs/:id', authCRM, async (req, res) => {
+  try {
+    const {
+      insured_name, insured_address, policy_type, product_type, status,
+      broker_name, broker_company, broker_email, broker_phone,
+      existing_insurer, existing_tpa, policy_start, policy_end, premium_paid,
+      lives_at_inception, lives_at_renewal, coverage_scope, special_conditions,
+      exclusions, terms_and_conditions, notes, sum_insured_slabs, assigned_to, deal_id, lead_id
+    } = req.body;
+    const { rows } = await sharedPool.query(
+      `UPDATE crm_rfqs SET
+        insured_name = COALESCE($1, insured_name), insured_address = COALESCE($2, insured_address),
+        policy_type = COALESCE($3, policy_type), product_type = COALESCE($4, product_type),
+        status = COALESCE($5, status),
+        broker_name = COALESCE($6, broker_name), broker_company = COALESCE($7, broker_company),
+        broker_email = COALESCE($8, broker_email), broker_phone = COALESCE($9, broker_phone),
+        existing_insurer = COALESCE($10, existing_insurer), existing_tpa = COALESCE($11, existing_tpa),
+        policy_start = COALESCE($12, policy_start), policy_end = COALESCE($13, policy_end),
+        premium_paid = COALESCE($14, premium_paid),
+        lives_at_inception = COALESCE($15, lives_at_inception), lives_at_renewal = COALESCE($16, lives_at_renewal),
+        coverage_scope = COALESCE($17, coverage_scope), special_conditions = COALESCE($18, special_conditions),
+        exclusions = COALESCE($19, exclusions), terms_and_conditions = COALESCE($20, terms_and_conditions),
+        notes = COALESCE($21, notes), sum_insured_slabs = COALESCE($22, sum_insured_slabs),
+        assigned_to = COALESCE($23, assigned_to), deal_id = COALESCE($24, deal_id), lead_id = COALESCE($25, lead_id),
+        updated_at = NOW()
+       WHERE id = $26 RETURNING *`,
+      [insured_name, insured_address, policy_type, product_type, status,
+        broker_name, broker_company, broker_email, broker_phone,
+        existing_insurer, existing_tpa, policy_start, policy_end, premium_paid,
+        lives_at_inception ? JSON.stringify(lives_at_inception) : null,
+        lives_at_renewal ? JSON.stringify(lives_at_renewal) : null,
+        coverage_scope ? JSON.stringify(coverage_scope) : null,
+        special_conditions ? JSON.stringify(special_conditions) : null,
+        exclusions, terms_and_conditions, notes,
+        sum_insured_slabs ? JSON.stringify(sum_insured_slabs) : null,
+        assigned_to, deal_id, lead_id, req.params.id]
+    );
+    if (!rows.length) return res.status(404).json({ success: false, message: 'RFQ not found' });
+    return res.status(200).json({ success: true, data: rows[0] });
+  } catch (error) { console.error('[CRM RFQ Update]', error.message); return res.status(500).json({ success: false, message: 'Failed to update RFQ' }); }
+});
+
+// ─── Delete RFQ ──────────────────────────────────────────────────────────────
+router.delete('/rfqs/:id', authCRM, async (req, res) => {
+  try {
+    const { rowCount } = await sharedPool.query(`DELETE FROM crm_rfqs WHERE id = $1`, [req.params.id]);
+    if (!rowCount) return res.status(404).json({ success: false, message: 'RFQ not found' });
+    return res.status(200).json({ success: true, message: 'RFQ deleted' });
+  } catch (error) { return res.status(500).json({ success: false, message: 'Failed to delete RFQ' }); }
+});
+
+// ─── Upload Member Excel ─────────────────────────────────────────────────────
+router.post('/rfqs/:id/upload-members', authCRM, upload.single('file'), async (req, res) => {
+  try {
+    const rfqId = req.params.id;
+    const rfqCheck = await sharedPool.query(`SELECT id FROM crm_rfqs WHERE id = $1`, [rfqId]);
+    if (!rfqCheck.rows.length) return res.status(404).json({ success: false, message: 'RFQ not found' });
+
+    if (!req.file) return res.status(400).json({ success: false, message: 'Excel file required' });
+
+    const workbook = XLSX.read(req.file.buffer, { type: 'buffer', cellDates: true });
+    // Find the member-list sheet (the one with many rows, not the RFQ slip)
+    let memberSheet = null;
+    let memberSheetName = '';
+    for (const name of workbook.SheetNames) {
+      const ws = workbook.Sheets[name];
+      const range = XLSX.utils.decode_range(ws['!ref'] || 'A1');
+      if (range.e.r > 50) { memberSheet = ws; memberSheetName = name; break; }
+    }
+    if (!memberSheet) {
+      // Fallback: use second sheet or first
+      memberSheetName = workbook.SheetNames[1] || workbook.SheetNames[0];
+      memberSheet = workbook.Sheets[memberSheetName];
+    }
+
+    const rows = XLSX.utils.sheet_to_json(memberSheet, { defval: null });
+    if (!rows.length) return res.status(400).json({ success: false, message: 'No member data found in the sheet' });
+
+    // Map columns flexibly
+    const colMap = (row) => {
+      const keys = Object.keys(row);
+      const find = (patterns) => {
+        for (const p of patterns) {
+          const k = keys.find(k => k.toLowerCase().replace(/[^a-z0-9]/g, '').includes(p));
+          if (k) return row[k];
+        }
+        return null;
+      };
+      return {
+        sr_no: find(['srno', 'sno', 'serial']) || find(['slno']),
+        emp_code: find(['empcode', 'employeecode', 'empid', 'employeeid']),
+        relationship: find(['relationship']),
+        relation_type: find(['relation']),
+        gender: find(['gender', 'sex']),
+        dob: find(['dob', 'dateofbirth', 'birthdate']),
+        age: find(['age']),
+        si_expiring: find(['siexpiring', 'opdsiexpiring', 'expiringsi', 'currentsi']),
+        si_proposed: find(['siproposed', 'opdsiproposed', 'proposedsi', 'newsi']),
+        designation: find(['designation', 'title', 'jobtitle']),
+        band: find(['band', 'grade', 'level']),
+        doj: find(['doj', 'dateofjoining', 'joindate']),
+      };
+    };
+
+    // Delete old members for this RFQ
+    await sharedPool.query(`DELETE FROM crm_rfq_members WHERE rfq_id = $1`, [rfqId]);
+
+    let inserted = 0;
+    const batchSize = 500;
+    for (let i = 0; i < rows.length; i += batchSize) {
+      const batch = rows.slice(i, i + batchSize);
+      const values = []; const placeholders = [];
+      let pIdx = 1;
+      for (const raw of batch) {
+        const m = colMap(raw);
+        let dobVal = null;
+        if (m.dob) {
+          if (m.dob instanceof Date) dobVal = m.dob.toISOString().split('T')[0];
+          else { const d = new Date(m.dob); if (!isNaN(d.getTime())) dobVal = d.toISOString().split('T')[0]; }
+        }
+        let dojVal = null;
+        if (m.doj) {
+          if (m.doj instanceof Date) dojVal = m.doj.toISOString().split('T')[0];
+          else { const d = new Date(m.doj); if (!isNaN(d.getTime())) dojVal = d.toISOString().split('T')[0]; }
+        }
+        const empName = m.relationship?.toUpperCase() === 'SELF' ? (raw['Name'] || raw['Employee Name'] || null) : null;
+        values.push(rfqId, m.sr_no, m.emp_code?.toString() || null, m.relationship, m.relation_type, m.gender,
+          dobVal, m.age ? parseInt(m.age) : null, parseFloat(m.si_expiring) || 0, parseFloat(m.si_proposed) || 0,
+          m.designation, m.band, dojVal, empName);
+        placeholders.push(`($${pIdx},$${pIdx+1},$${pIdx+2},$${pIdx+3},$${pIdx+4},$${pIdx+5},$${pIdx+6},$${pIdx+7},$${pIdx+8},$${pIdx+9},$${pIdx+10},$${pIdx+11},$${pIdx+12},$${pIdx+13})`);
+        pIdx += 14;
+      }
+      await sharedPool.query(
+        `INSERT INTO crm_rfq_members (rfq_id, sr_no, emp_code, relationship, relation_type, gender, dob, age, si_expiring, si_proposed, designation, band, doj, employee_name)
+         VALUES ${placeholders.join(',')}`, values
+      );
+      inserted += batch.length;
+    }
+
+    // Update member count
+    await sharedPool.query(`UPDATE crm_rfqs SET member_count = $1, updated_at = NOW() WHERE id = $2`, [inserted, rfqId]);
+
+    return res.status(200).json({
+      success: true,
+      message: `Uploaded ${inserted} members from sheet "${memberSheetName}"`,
+      data: { memberCount: inserted, sheetName: memberSheetName }
+    });
+  } catch (error) {
+    console.error('[CRM RFQ Upload]', error.message);
+    return res.status(500).json({ success: false, message: 'Failed to upload members: ' + error.message });
+  }
+});
+
+// ─── Upload RFQ from Broker Excel (auto-parse broking slip) ──────────────────
+router.post('/rfqs/upload-excel', authCRM, upload.single('file'), async (req, res) => {
+  try {
+    if (!req.file) return res.status(400).json({ success: false, message: 'Excel file required' });
+
+    const workbook = XLSX.read(req.file.buffer, { type: 'buffer', cellDates: true });
+    // Find RFQ sheet (small sheet) and member sheet (large sheet)
+    let rfqSheet = null, memberSheet = null, rfqSheetName = '', memberSheetName = '';
+    for (const name of workbook.SheetNames) {
+      const ws = workbook.Sheets[name];
+      const range = XLSX.utils.decode_range(ws['!ref'] || 'A1');
+      const rowCount = range.e.r - range.s.r + 1;
+      if (rowCount <= 100 && !rfqSheet) { rfqSheet = ws; rfqSheetName = name; }
+      else if (rowCount > 100 && !memberSheet) { memberSheet = ws; memberSheetName = name; }
+    }
+    if (!rfqSheet && workbook.SheetNames.length > 0) {
+      rfqSheet = workbook.Sheets[workbook.SheetNames[0]];
+      rfqSheetName = workbook.SheetNames[0];
+    }
+
+    // Parse broking slip
+    const cellVal = (addr) => {
+      const c = rfqSheet?.[addr];
+      return c ? (c.w || (c.v instanceof Date ? c.v.toISOString().split('T')[0] : c.v?.toString()) || '') : '';
+    };
+    // Map all cells to find data by scanning B column labels → D column values
+    const parsed = {};
+    if (rfqSheet) {
+      const range = XLSX.utils.decode_range(rfqSheet['!ref'] || 'A1:I50');
+      for (let r = range.s.r; r <= range.e.r; r++) {
+        const labelCell = rfqSheet[XLSX.utils.encode_cell({ r, c: 1 })]; // Column B
+        const valueCell = rfqSheet[XLSX.utils.encode_cell({ r, c: 3 })]; // Column D
+        if (labelCell?.v && valueCell?.v) {
+          const label = labelCell.v.toString().toLowerCase().trim();
+          const val = valueCell.v instanceof Date ? valueCell.v.toISOString().split('T')[0] : valueCell.v;
+          parsed[label] = val;
+        }
+      }
+    }
+    // Extract policy period from dates
+    let policyStart = null, policyEnd = null;
+    if (parsed['policy period']) {
+      policyStart = parsed['policy period'];
+    }
+    // Check column F for "To" date
+    if (rfqSheet) {
+      const range = XLSX.utils.decode_range(rfqSheet['!ref'] || 'A1:I50');
+      for (let r = range.s.r; r <= range.e.r; r++) {
+        const eCell = rfqSheet[XLSX.utils.encode_cell({ r, c: 4 })]; // Col E
+        const fCell = rfqSheet[XLSX.utils.encode_cell({ r, c: 5 })]; // Col F
+        if (eCell?.v?.toString().toLowerCase().includes('to') && fCell?.v) {
+          policyEnd = fCell.v instanceof Date ? fCell.v.toISOString().split('T')[0] : fCell.v?.toString();
+        }
+      }
+    }
+
+    const getNum = (key) => { const v = parsed[key]; return v ? parseInt(v) || 0 : 0; };
+
+    const rfqData = {
+      insured_name: parsed['insured name'] || parsed['insured'] || 'Unknown',
+      insured_address: parsed['address'] || null,
+      existing_insurer: parsed['existing insurer'] || null,
+      existing_tpa: parsed['existing tpa'] || null,
+      policy_start: policyStart,
+      policy_end: policyEnd,
+      premium_paid: parsed['premium paid at inception (excluding of service tax)'] || parsed['premium paid'] || null,
+      lives_at_inception: {
+        employees: getNum('total no. of employees at inception'),
+        dependants: getNum('total no. of dependants at inception'),
+        total: getNum('total no. of lives at inception'),
+      },
+      lives_at_renewal: {
+        employees: getNum('total no. of employees at renewal'),
+        dependants: getNum('total no. of dependants at renewal'),
+        total: getNum('total no. of lives at renewal'),
+      },
+      coverage_scope: {
+        family_composition: parsed['family composition'] || null,
+        type: parsed['type'] || null,
+        claim_type: parsed['claim type'] || parsed['claim type '] || null,
+        sum_insured: parsed['policy sum insured'] || parsed['policy sum insured '] || null,
+        opd_tele_consultation: parsed['opd doctor consultations (tele consultations)'] || null,
+        opd_physical_consultation: parsed['opd doctor consultations (physical consultations)'] || parsed['opd doctor consultations (physical consultations) '] || null,
+        lab_tests: parsed['lab tests and diagnostics'] || parsed['lab tests and diagnostics '] || null,
+        pharmacy: parsed['pharmacy cover'] || parsed['pharmacy cover '] || null,
+      },
+      special_conditions: [],
+      exclusions: parsed['general opd exclusions'] || null,
+      terms_and_conditions: parsed['t&cs to be noted'] || null,
+    };
+    // Gather special conditions
+    for (const [k, v] of Object.entries(parsed)) {
+      if (k.startsWith('condition ') && v) {
+        rfqData.special_conditions.push({ condition: k, detail: v.toString() });
+      }
+    }
+    // Parse SI slabs from sum_insured text
+    const siText = rfqData.coverage_scope.sum_insured || '';
+    const siSlabs = [];
+    const siMatches = siText.match(/₹[\d,]+/g) || [];
+    for (const m of siMatches) {
+      const val = parseInt(m.replace(/[₹,]/g, ''));
+      if (val && !isNaN(val)) siSlabs.push(val);
+    }
+
+    const rfq_number = generateRFQNumber();
+    const { rows } = await sharedPool.query(
+      `INSERT INTO crm_rfqs (rfq_number, insured_name, insured_address, policy_type, product_type,
+        existing_insurer, existing_tpa, policy_start, policy_end, premium_paid,
+        lives_at_inception, lives_at_renewal, coverage_scope, special_conditions, exclusions,
+        terms_and_conditions, notes, sum_insured_slabs, assigned_to, created_by)
+       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20) RETURNING *`,
+      [rfq_number, rfqData.insured_name, rfqData.insured_address, 'Group Mediclaim', rfqSheetName.includes('OPD') ? 'OPD' : 'Group Mediclaim',
+        rfqData.existing_insurer, rfqData.existing_tpa, rfqData.policy_start, rfqData.policy_end, rfqData.premium_paid,
+        JSON.stringify(rfqData.lives_at_inception), JSON.stringify(rfqData.lives_at_renewal),
+        JSON.stringify(rfqData.coverage_scope), JSON.stringify(rfqData.special_conditions),
+        rfqData.exclusions, rfqData.terms_and_conditions,
+        `Auto-parsed from broker Excel: ${req.file.originalname}`,
+        JSON.stringify(siSlabs), req.crmUser.id, req.crmUser.id]
+    );
+
+    const rfqId = rows[0].id;
+    let memberCount = 0;
+
+    // Auto-upload members if member sheet exists
+    if (memberSheet) {
+      const mRows = XLSX.utils.sheet_to_json(memberSheet, { defval: null });
+      const colMap = (row) => {
+        const keys = Object.keys(row);
+        const find = (patterns) => { for (const p of patterns) { const k = keys.find(k => k.toLowerCase().replace(/[^a-z0-9]/g, '').includes(p)); if (k) return row[k]; } return null; };
+        return {
+          sr_no: find(['srno', 'sno', 'serial']) || find(['slno']),
+          emp_code: find(['empcode', 'employeecode', 'empid']),
+          relationship: find(['relationship']),
+          relation_type: find(['relation']),
+          gender: find(['gender', 'sex']),
+          dob: find(['dob', 'dateofbirth']),
+          age: find(['age']),
+          si_expiring: find(['siexpiring', 'opdsiexpiring', 'expiringsi']),
+          si_proposed: find(['siproposed', 'opdsiproposed', 'proposedsi']),
+          designation: find(['designation', 'jobtitle']),
+          band: find(['band', 'grade']),
+          doj: find(['doj', 'dateofjoining']),
+        };
+      };
+
+      const batchSize = 500;
+      for (let i = 0; i < mRows.length; i += batchSize) {
+        const batch = mRows.slice(i, i + batchSize);
+        const values = []; const placeholders = [];
+        let pIdx = 1;
+        for (const raw of batch) {
+          const m = colMap(raw);
+          let dobVal = null;
+          if (m.dob) { if (m.dob instanceof Date) dobVal = m.dob.toISOString().split('T')[0]; else { const d = new Date(m.dob); if (!isNaN(d.getTime())) dobVal = d.toISOString().split('T')[0]; } }
+          let dojVal = null;
+          if (m.doj) { if (m.doj instanceof Date) dojVal = m.doj.toISOString().split('T')[0]; else { const d = new Date(m.doj); if (!isNaN(d.getTime())) dojVal = d.toISOString().split('T')[0]; } }
+          values.push(rfqId, m.sr_no, m.emp_code?.toString() || null, m.relationship, m.relation_type, m.gender,
+            dobVal, m.age ? parseInt(m.age) : null, parseFloat(m.si_expiring) || 0, parseFloat(m.si_proposed) || 0,
+            m.designation, m.band, dojVal, null);
+          placeholders.push(`($${pIdx},$${pIdx+1},$${pIdx+2},$${pIdx+3},$${pIdx+4},$${pIdx+5},$${pIdx+6},$${pIdx+7},$${pIdx+8},$${pIdx+9},$${pIdx+10},$${pIdx+11},$${pIdx+12},$${pIdx+13})`);
+          pIdx += 14;
+        }
+        await sharedPool.query(
+          `INSERT INTO crm_rfq_members (rfq_id, sr_no, emp_code, relationship, relation_type, gender, dob, age, si_expiring, si_proposed, designation, band, doj, employee_name)
+           VALUES ${placeholders.join(',')}`, values
+        );
+        memberCount += batch.length;
+      }
+      await sharedPool.query(`UPDATE crm_rfqs SET member_count = $1, updated_at = NOW() WHERE id = $2`, [memberCount, rfqId]);
+    }
+
+    return res.status(201).json({
+      success: true,
+      message: `RFQ created: ${rfq_number}. Parsed ${Object.keys(parsed).length} fields. ${memberCount} members uploaded.`,
+      data: { ...rows[0], member_count: memberCount }
+    });
+  } catch (error) {
+    console.error('[CRM RFQ Upload Excel]', error.message);
+    return res.status(500).json({ success: false, message: 'Failed to parse RFQ Excel: ' + error.message });
+  }
+});
+
+// ─── Member Analytics ────────────────────────────────────────────────────────
+router.get('/rfqs/:id/member-analytics', authCRM, async (req, res) => {
+  try {
+    const rfqId = req.params.id;
+    const pool = sharedPool;
+    const [
+      totalRes, genderRes, relationRes, ageBandRes, bandRes, siRes, familySizeRes
+    ] = await Promise.all([
+      pool.query(`SELECT COUNT(*) AS total, COUNT(DISTINCT emp_code) AS employees,
+        COUNT(*) FILTER (WHERE relationship ILIKE 'SELF') AS self_count,
+        AVG(age) AS avg_age, MIN(age) AS min_age, MAX(age) AS max_age,
+        COALESCE(SUM(si_expiring),0) AS total_si_expiring, COALESCE(SUM(si_proposed),0) AS total_si_proposed
+        FROM crm_rfq_members WHERE rfq_id = $1`, [rfqId]),
+      pool.query(`SELECT gender, COUNT(*) AS count FROM crm_rfq_members WHERE rfq_id = $1 GROUP BY gender ORDER BY count DESC`, [rfqId]),
+      pool.query(`SELECT relation_type, COUNT(*) AS count FROM crm_rfq_members WHERE rfq_id = $1 GROUP BY relation_type ORDER BY count DESC`, [rfqId]),
+      pool.query(`SELECT
+        CASE WHEN age < 18 THEN '0-17' WHEN age < 30 THEN '18-29' WHEN age < 45 THEN '30-44'
+             WHEN age < 60 THEN '45-59' WHEN age < 75 THEN '60-74' ELSE '75+' END AS age_band,
+        COUNT(*) AS count
+        FROM crm_rfq_members WHERE rfq_id = $1 AND age IS NOT NULL GROUP BY age_band ORDER BY age_band`, [rfqId]),
+      pool.query(`SELECT band, COUNT(*) AS count, COUNT(DISTINCT emp_code) AS emp_count
+        FROM crm_rfq_members WHERE rfq_id = $1 AND band IS NOT NULL GROUP BY band ORDER BY band`, [rfqId]),
+      pool.query(`SELECT si_proposed, COUNT(*) AS count
+        FROM crm_rfq_members WHERE rfq_id = $1 AND relationship ILIKE 'SELF' AND si_proposed > 0
+        GROUP BY si_proposed ORDER BY si_proposed`, [rfqId]),
+      pool.query(`SELECT emp_code, COUNT(*) AS family_size
+        FROM crm_rfq_members WHERE rfq_id = $1 GROUP BY emp_code ORDER BY family_size DESC`, [rfqId]),
+    ]);
+    // Compute family size distribution
+    const familySizes = familySizeRes.rows.reduce((acc, r) => {
+      const s = parseInt(r.family_size);
+      const key = s <= 6 ? s.toString() : '7+';
+      acc[key] = (acc[key] || 0) + 1;
+      return acc;
+    }, {});
+
+    return res.status(200).json({
+      success: true,
+      data: {
+        summary: totalRes.rows[0],
+        gender_distribution: genderRes.rows,
+        relation_distribution: relationRes.rows,
+        age_bands: ageBandRes.rows,
+        band_distribution: bandRes.rows,
+        si_distribution: siRes.rows,
+        family_size_distribution: familySizes,
+        avg_family_size: familySizeRes.rows.length > 0
+          ? (familySizeRes.rows.reduce((s, r) => s + parseInt(r.family_size), 0) / familySizeRes.rows.length).toFixed(1)
+          : 0,
+      }
+    });
+  } catch (error) { console.error('[CRM Member Analytics]', error.message); return res.status(500).json({ success: false, message: 'Failed to generate analytics' }); }
+});
+
+// ─── Get Members (paginated) ─────────────────────────────────────────────────
+router.get('/rfqs/:id/members', authCRM, async (req, res) => {
+  try {
+    const { page = 1, limit = 50, search, band, relationship } = req.query;
+    const offset = (parseInt(page) - 1) * parseInt(limit);
+    const conditions = [`rfq_id = $1`]; const params = [req.params.id];
+    if (search) { params.push(`%${search}%`); conditions.push(`(emp_code ILIKE $${params.length} OR designation ILIKE $${params.length} OR employee_name ILIKE $${params.length})`); }
+    if (band) { params.push(band); conditions.push(`band = $${params.length}`); }
+    if (relationship) { params.push(relationship); conditions.push(`relationship ILIKE $${params.length}`); }
+    const where = `WHERE ${conditions.join(' AND ')}`;
+    const [countRes, dataRes] = await Promise.all([
+      sharedPool.query(`SELECT COUNT(*) FROM crm_rfq_members ${where}`, params),
+      sharedPool.query(`SELECT * FROM crm_rfq_members ${where} ORDER BY sr_no ASC LIMIT $${params.length + 1} OFFSET $${params.length + 2}`,
+        [...params, parseInt(limit), offset])
+    ]);
+    return res.status(200).json({ success: true, data: dataRes.rows, pagination: { total: parseInt(countRes.rows[0].count), page: parseInt(page), limit: parseInt(limit), totalPages: Math.ceil(parseInt(countRes.rows[0].count) / parseInt(limit)) } });
+  } catch (error) { return res.status(500).json({ success: false, message: 'Failed to fetch members' }); }
+});
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// QUOTE / PROPOSAL MANAGEMENT
+// ═══════════════════════════════════════════════════════════════════════════════
+
+// ─── Create Quote ────────────────────────────────────────────────────────────
+router.post('/rfqs/:id/quotes', authCRM, async (req, res) => {
+  try {
+    const rfqId = req.params.id;
+    const rfqCheck = await sharedPool.query(`SELECT id, rfq_number FROM crm_rfqs WHERE id = $1`, [rfqId]);
+    if (!rfqCheck.rows.length) return res.status(404).json({ success: false, message: 'RFQ not found' });
+
+    const {
+      valid_until, total_premium, total_lives, per_life_cost, per_family_cost,
+      pricing_model, commission_pct, gst_pct, discount_pct,
+      coverage_details, slab_pricing, terms, notes
+    } = req.body;
+
+    const versionRes = await sharedPool.query(`SELECT COALESCE(MAX(version),0)+1 AS next FROM crm_quotes WHERE rfq_id=$1`, [rfqId]);
+    const version = versionRes.rows[0].next;
+    const quote_number = generateQuoteNumber(rfqCheck.rows[0].rfq_number) + '-V' + version;
+
+    const { rows } = await sharedPool.query(
+      `INSERT INTO crm_quotes (rfq_id, quote_number, version, valid_until,
+        total_premium, total_lives, per_life_cost, per_family_cost,
+        pricing_model, commission_pct, gst_pct, discount_pct,
+        coverage_details, slab_pricing, terms, notes, created_by)
+       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17) RETURNING *`,
+      [rfqId, quote_number, version, valid_until || null,
+        total_premium || 0, total_lives || 0, per_life_cost || 0, per_family_cost || 0,
+        pricing_model || 'per_family', commission_pct || 0, gst_pct ?? 18, discount_pct || 0,
+        JSON.stringify(coverage_details || {}), JSON.stringify(slab_pricing || []),
+        terms || null, notes || null, req.crmUser.id]
+    );
+
+    // Update RFQ status to quoting if still received
+    await sharedPool.query(`UPDATE crm_rfqs SET status = CASE WHEN status = 'received' THEN 'quoting' ELSE status END, updated_at = NOW() WHERE id = $1`, [rfqId]);
+
+    return res.status(201).json({ success: true, data: rows[0] });
+  } catch (error) { console.error('[CRM Quote Create]', error.message); return res.status(500).json({ success: false, message: 'Failed to create quote' }); }
+});
+
+// ─── List Quotes for RFQ ─────────────────────────────────────────────────────
+router.get('/rfqs/:id/quotes', authCRM, async (req, res) => {
+  try {
+    const { rows } = await sharedPool.query(`SELECT * FROM crm_quotes WHERE rfq_id = $1 ORDER BY version DESC`, [req.params.id]);
+    return res.status(200).json({ success: true, data: rows });
+  } catch (error) { return res.status(500).json({ success: false, message: 'Failed to fetch quotes' }); }
+});
+
+// ─── Update Quote ────────────────────────────────────────────────────────────
+router.put('/quotes/:id', authCRM, async (req, res) => {
+  try {
+    const {
+      status, valid_until, total_premium, total_lives, per_life_cost, per_family_cost,
+      pricing_model, commission_pct, gst_pct, discount_pct,
+      coverage_details, slab_pricing, terms, notes
+    } = req.body;
+    const { rows } = await sharedPool.query(
+      `UPDATE crm_quotes SET
+        status = COALESCE($1, status), valid_until = COALESCE($2, valid_until),
+        total_premium = COALESCE($3, total_premium), total_lives = COALESCE($4, total_lives),
+        per_life_cost = COALESCE($5, per_life_cost), per_family_cost = COALESCE($6, per_family_cost),
+        pricing_model = COALESCE($7, pricing_model), commission_pct = COALESCE($8, commission_pct),
+        gst_pct = COALESCE($9, gst_pct), discount_pct = COALESCE($10, discount_pct),
+        coverage_details = COALESCE($11, coverage_details), slab_pricing = COALESCE($12, slab_pricing),
+        terms = COALESCE($13, terms), notes = COALESCE($14, notes), updated_at = NOW()
+       WHERE id = $15 RETURNING *`,
+      [status, valid_until, total_premium, total_lives, per_life_cost, per_family_cost,
+        pricing_model, commission_pct, gst_pct, discount_pct,
+        coverage_details ? JSON.stringify(coverage_details) : null,
+        slab_pricing ? JSON.stringify(slab_pricing) : null,
+        terms, notes, req.params.id]
+    );
+    if (!rows.length) return res.status(404).json({ success: false, message: 'Quote not found' });
+
+    // If quote is sent, update RFQ status
+    if (status === 'sent') {
+      await sharedPool.query(`UPDATE crm_rfqs SET status = 'quoted', updated_at = NOW() WHERE id = $1 AND status IN ('received','quoting')`, [rows[0].rfq_id]);
+    }
+    if (status === 'accepted') {
+      await sharedPool.query(`UPDATE crm_rfqs SET status = 'won', updated_at = NOW() WHERE id = $1`, [rows[0].rfq_id]);
+    }
+    if (status === 'rejected') {
+      await sharedPool.query(`UPDATE crm_rfqs SET status = 'lost', updated_at = NOW() WHERE id = $1`, [rows[0].rfq_id]);
+    }
+
+    return res.status(200).json({ success: true, data: rows[0] });
+  } catch (error) { console.error('[CRM Quote Update]', error.message); return res.status(500).json({ success: false, message: 'Failed to update quote' }); }
+});
+
+// ─── Delete Quote ────────────────────────────────────────────────────────────
+router.delete('/quotes/:id', authCRM, async (req, res) => {
+  try {
+    const { rowCount } = await sharedPool.query(`DELETE FROM crm_quotes WHERE id = $1`, [req.params.id]);
+    if (!rowCount) return res.status(404).json({ success: false, message: 'Quote not found' });
+    return res.status(200).json({ success: true, message: 'Quote deleted' });
+  } catch (error) { return res.status(500).json({ success: false, message: 'Failed to delete quote' }); }
+});
+
+// ─── RFQ Dashboard Stats ────────────────────────────────────────────────────
+router.get('/rfqs-stats', authCRM, async (req, res) => {
+  try {
+    const { rows } = await sharedPool.query(`SELECT
+      COUNT(*) AS total,
+      COUNT(*) FILTER (WHERE status = 'received') AS received,
+      COUNT(*) FILTER (WHERE status = 'quoting') AS quoting,
+      COUNT(*) FILTER (WHERE status = 'quoted') AS quoted,
+      COUNT(*) FILTER (WHERE status = 'won') AS won,
+      COUNT(*) FILTER (WHERE status = 'lost') AS lost,
+      COUNT(*) FILTER (WHERE created_at >= NOW() - INTERVAL '7 days') AS this_week,
+      COALESCE(SUM(q.total_premium), 0) AS total_quoted_premium
+      FROM crm_rfqs r
+      LEFT JOIN crm_quotes q ON q.rfq_id = r.id AND q.status NOT IN ('draft','rejected')`);
+    return res.status(200).json({ success: true, data: rows[0] });
+  } catch (error) { return res.status(500).json({ success: false, message: 'Failed to fetch RFQ stats' }); }
 });
 
 export default router;

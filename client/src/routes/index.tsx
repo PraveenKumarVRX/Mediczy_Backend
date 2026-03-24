@@ -197,6 +197,11 @@ const CRMPipelinePage   = lazyNamed(_CRMModulePages, "CRMPipelinePage");
 const CRMReportsPage    = lazyNamed(_CRMModulePages, "CRMReportsPage");
 const CRMSettingsPage   = lazyNamed(_CRMModulePages, "CRMSettingsPage");
 
+const _CRMRFQPages = () => import("@/pages/crm/CRMRFQPages");
+const CRMRFQsPage        = lazyNamed(_CRMRFQPages, "CRMRFQsPage");
+const CRMRFQDetailPage   = lazyNamed(_CRMRFQPages, "CRMRFQDetailPage");
+const CRMQuoteBuilderPage = lazyNamed(_CRMRFQPages, "CRMQuoteBuilderPage");
+
 // ─── Team ────────────────────────────────────────────────────────────────────
 const TeamLogin              = lazy(() => import("@/pages/team/TeamLogin"));
 const TeamDashboard          = lazy(() => import("@/pages/team/TeamDashboard"));
@@ -871,6 +876,9 @@ const AppRoutes = () => {
         <Route path="/crm/pipeline"      element={<CRMPipelinePage />} />
         <Route path="/crm/reports"       element={<CRMReportsPage />} />
         <Route path="/crm/settings"      element={<CRMSettingsPage />} />
+        <Route path="/crm/rfqs"           element={<CRMRFQsPage />} />
+        <Route path="/crm/rfqs/:id"       element={<CRMRFQDetailPage />} />
+        <Route path="/crm/rfqs/:id/quote/:quoteId" element={<CRMQuoteBuilderPage />} />
 
         {/* ── Team ────────────────────────────────────────────────────── */}
         <Route path="/team/login"                    element={<TeamLogin />} />
