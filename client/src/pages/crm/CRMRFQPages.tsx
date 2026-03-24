@@ -487,7 +487,7 @@ function OverviewTab({ rfq, lives, livesRenewal, coverage, conditions, slabs }: 
             {Object.entries(lives).length > 0 ? Object.entries(lives).map(([k, v]) => (
               <div key={k} className="flex justify-between py-1">
                 <span className="text-xs text-slate-500 capitalize">{k.replace(/_/g, ' ')}</span>
-                <span className="text-sm text-white font-medium">{(v as number)?.toLocaleString?.() || v as string}</span>
+                <span className="text-sm text-white font-medium">{typeof v === 'object' ? JSON.stringify(v) : String(v)}</span>
               </div>
             )) : <p className="text-xs text-slate-600">—</p>}
           </div>
@@ -496,7 +496,7 @@ function OverviewTab({ rfq, lives, livesRenewal, coverage, conditions, slabs }: 
             {Object.entries(livesRenewal).length > 0 ? Object.entries(livesRenewal).map(([k, v]) => (
               <div key={k} className="flex justify-between py-1">
                 <span className="text-xs text-slate-500 capitalize">{k.replace(/_/g, ' ')}</span>
-                <span className="text-sm text-white font-medium">{(v as number)?.toLocaleString?.() || v as string}</span>
+                <span className="text-sm text-white font-medium">{typeof v === 'object' ? JSON.stringify(v) : String(v)}</span>
               </div>
             )) : <p className="text-xs text-slate-600">—</p>}
           </div>
@@ -526,7 +526,7 @@ function OverviewTab({ rfq, lives, livesRenewal, coverage, conditions, slabs }: 
             {Object.entries(coverage).map(([k, v]) => (
               <div key={k} className="py-2 px-3 rounded-lg bg-white/[0.02]">
                 <p className="text-xs text-slate-500 capitalize mb-1">{k.replace(/_/g, ' ')}</p>
-                <p className="text-sm text-slate-300">{v as string}</p>
+                <p className="text-sm text-slate-300">{typeof v === 'string' ? v : JSON.stringify(v)}</p>
               </div>
             ))}
           </div>
@@ -538,10 +538,10 @@ function OverviewTab({ rfq, lives, livesRenewal, coverage, conditions, slabs }: 
         <Card className="lg:col-span-2">
           <h3 className="text-sm font-semibold text-white mb-4 flex items-center gap-2"><AlertCircle className="h-4 w-4 text-amber-400" /> Special Conditions</h3>
           <div className="space-y-2">
-            {conditions.map((c: string, i: number) => (
+            {conditions.map((c: any, i: number) => (
               <div key={i} className="flex gap-3 py-2 px-3 rounded-lg bg-white/[0.02]">
                 <span className="text-xs font-bold text-violet-400 mt-0.5">{i + 1}.</span>
-                <p className="text-sm text-slate-300">{c}</p>
+                <p className="text-sm text-slate-300">{typeof c === 'string' ? c : (c?.detail || c?.condition || JSON.stringify(c))}</p>
               </div>
             ))}
           </div>
