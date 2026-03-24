@@ -2302,7 +2302,40 @@ ${JSON.stringify(llmPayload, null, 2)}`;
             `Expected Loss Ratio: ${expectedLossRatio}%\n` +
             `Population: ${totalMembers.toLocaleString()} lives, avg age ${avgAge.toFixed(1)}\n` +
             `Pricing basis: ${experienceMethod === 'experience' ? 'Credibility-weighted experience + benchmark blend' : 'Floater per-family, age-banded actuarial model'} with IBNR & margin loading.`,
-        }
+        },
+
+        // ── Mediqzy Margin Pricing (tentative client-quote prices) ──
+        // Shows what to charge the corporate/insurer for Mediqzy to make 10–30% margin
+        mediqzy_pricing: (() => {
+          const basePremium = Math.round(totalPremium);
+          const basePerLife = Math.round(totalPerLife);
+          const basePerFamily = Math.round(totalPerFamily);
+          const tiers = [10, 15, 20, 25, 30].map(marginPct => {
+            const multiplier = 1 + marginPct / 100;
+            return {
+              margin_pct: marginPct,
+              total_premium: Math.round(basePremium * multiplier),
+              per_life: Math.round(basePerLife * multiplier),
+              per_family: Math.round(basePerFamily * multiplier),
+              mediqzy_revenue: Math.round(basePremium * multiplier) - basePremium,
+              effective_margin: marginPct,
+              slab_pricing: slabPricing.map(s => ({
+                slab: s.slab,
+                lives: s.lives,
+                base_premium_per_family: s.premium_per_family,
+                quoted_premium_per_family: Math.round(s.premium_per_family * multiplier),
+                margin_per_family: Math.round(s.premium_per_family * multiplier) - s.premium_per_family,
+              })),
+            };
+          });
+          return {
+            actuarial_cost: basePremium,
+            actuarial_per_life: basePerLife,
+            actuarial_per_family: basePerFamily,
+            tiers,
+            recommended_tier: tiers.find(t => t.margin_pct === 20), // 20% is sweet spot
+          };
+        })(),
       }
     });
   } catch (error) {

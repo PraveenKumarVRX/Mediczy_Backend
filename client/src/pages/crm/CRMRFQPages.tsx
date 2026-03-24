@@ -167,24 +167,30 @@ export function CRMRFQsPage() {
       {stats && (
         <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-3">
           {[
-            { label: 'Total RFQs', value: stats.total || 0, icon: FileText, color: 'violet' },
-            { label: 'Received', value: stats.received || 0, icon: Clock, color: 'blue' },
-            { label: 'Quoting', value: stats.quoting || 0, icon: Edit, color: 'amber' },
-            { label: 'Quoted', value: stats.quoted || 0, icon: Send, color: 'violet' },
-            { label: 'Won', value: stats.won || 0, icon: Check, color: 'emerald' },
-            { label: 'Premium', value: formatCurrency(stats.total_quoted_premium || 0), icon: IndianRupee, color: 'emerald' },
-          ].map(({ label, value, icon: Icon, color }) => (
-            <Card key={label} className="!p-4">
+            { label: 'Total RFQs', value: stats.total || 0, icon: FileText, gradient: 'from-violet-500 to-purple-600', bg: 'bg-violet-500/10', iconColor: 'text-violet-400' },
+            { label: 'Received', value: stats.received || 0, icon: Clock, gradient: 'from-blue-500 to-cyan-500', bg: 'bg-blue-500/10', iconColor: 'text-blue-400' },
+            { label: 'Quoting', value: stats.quoting || 0, icon: Edit, gradient: 'from-amber-500 to-orange-500', bg: 'bg-amber-500/10', iconColor: 'text-amber-400' },
+            { label: 'Quoted', value: stats.quoted || 0, icon: Send, gradient: 'from-violet-500 to-indigo-500', bg: 'bg-violet-500/10', iconColor: 'text-violet-400' },
+            { label: 'Won', value: stats.won || 0, icon: Check, gradient: 'from-emerald-500 to-green-500', bg: 'bg-emerald-500/10', iconColor: 'text-emerald-400' },
+            { label: 'Pipeline Value', value: formatCurrency(stats.total_quoted_premium || 0), icon: IndianRupee, gradient: 'from-emerald-500 to-teal-500', bg: 'bg-emerald-500/10', iconColor: 'text-emerald-400' },
+          ].map(({ label, value, icon: Icon, gradient, bg, iconColor }) => (
+            <div key={label} className="relative group p-4 rounded-2xl bg-white/[0.03] border border-white/[0.06] hover:border-white/[0.1] transition-all duration-300 overflow-hidden">
+              <div className={`absolute -top-4 -right-4 w-12 h-12 rounded-full bg-gradient-to-br ${gradient} opacity-[0.07] group-hover:opacity-[0.12] transition-opacity`} />
               <div className="flex items-center gap-3">
-                <div className={`w-9 h-9 rounded-xl bg-${color}-500/10 flex items-center justify-center`}>
-                  <Icon className={`h-4 w-4 text-${color}-400`} />
+                <div className={`w-9 h-9 rounded-xl ${bg} flex items-center justify-center ring-1 ring-white/[0.05]`}>
+                  <Icon className={`h-4 w-4 ${iconColor}`} />
                 </div>
                 <div>
                   <p className="text-[11px] text-slate-500 font-medium">{label}</p>
                   <p className="text-lg font-bold text-white">{value}</p>
                 </div>
               </div>
-            </Card>
+              {label === 'Won' && stats.total > 0 && (
+                <div className="mt-2 h-1 bg-white/[0.04] rounded-full overflow-hidden">
+                  <div className="h-full bg-emerald-500 rounded-full" style={{ width: `${Math.round(((stats.won || 0) / stats.total) * 100)}%` }} />
+                </div>
+              )}
+            </div>
           ))}
         </div>
       )}
@@ -227,8 +233,8 @@ export function CRMRFQsPage() {
           <table className="w-full">
             <thead>
               <tr className="border-b border-white/[0.06]">
-                {['RFQ #', 'Insured Name', 'Policy Type', 'Broker', 'Members', 'Quotes', 'Status', 'Date', ''].map(h => (
-                  <th key={h} className="px-5 py-3.5 text-left text-[11px] font-semibold text-slate-500 uppercase tracking-wider">{h}</th>
+                {['RFQ #', 'Insured Name', 'Policy', 'Broker', 'Members', 'Est. Premium', 'Margin (20%)', 'Quotes', 'Status', 'Date', ''].map(h => (
+                  <th key={h} className="px-4 py-3 text-left text-[10px] font-semibold text-slate-500 uppercase tracking-wider whitespace-nowrap">{h}</th>
                 ))}
               </tr>
             </thead>
@@ -236,38 +242,62 @@ export function CRMRFQsPage() {
               {loading ? (
                 Array.from({ length: 5 }).map((_, i) => (
                   <tr key={i} className="border-b border-white/[0.04]">
-                    {Array.from({ length: 9 }).map((_, j) => (
-                      <td key={j} className="px-5 py-4"><div className="h-4 bg-white/[0.05] rounded animate-pulse w-20" /></td>
+                    {Array.from({ length: 11 }).map((_, j) => (
+                      <td key={j} className="px-4 py-3.5"><div className="h-4 bg-white/[0.05] rounded animate-pulse w-16" /></td>
                     ))}
                   </tr>
                 ))
               ) : rfqs.length === 0 ? (
-                <tr><td colSpan={9} className="px-5 py-16 text-center">
+                <tr><td colSpan={11} className="px-5 py-16 text-center">
                   <FileSpreadsheet className="h-12 w-12 text-slate-700 mx-auto mb-3" />
                   <p className="text-slate-500 text-sm">No RFQs yet. Upload a broker Excel to get started.</p>
                 </td></tr>
-              ) : rfqs.map(r => (
-                <tr key={r.id} className="border-b border-white/[0.04] hover:bg-white/[0.02] cursor-pointer transition-colors"
-                  onClick={() => navigate(`/crm/rfqs/${r.id}`)}>
-                  <td className="px-5 py-3.5 text-sm font-mono text-violet-400">{r.rfq_number}</td>
-                  <td className="px-5 py-3.5">
-                    <p className="text-sm font-medium text-white truncate max-w-[200px]">{r.insured_name}</p>
-                    <p className="text-[11px] text-slate-600">{r.product_type || 'GMC'}</p>
-                  </td>
-                  <td className="px-5 py-3.5 text-sm text-slate-400">{r.policy_type || '—'}</td>
-                  <td className="px-5 py-3.5 text-sm text-slate-400 truncate max-w-[140px]">{r.broker_company || '—'}</td>
-                  <td className="px-5 py-3.5 text-sm text-slate-300 font-medium">{r.member_count?.toLocaleString() || 0}</td>
-                  <td className="px-5 py-3.5 text-sm text-slate-300 font-medium">{r.quote_count || 0}</td>
-                  <td className="px-5 py-3.5"><StatusBadge status={r.status} map={STATUS_COLORS} /></td>
-                  <td className="px-5 py-3.5 text-sm text-slate-500">{formatDate(r.created_at)}</td>
-                  <td className="px-5 py-3.5">
-                    <button onClick={e => { e.stopPropagation(); deleteRFQ(r.id); }}
-                      className="p-2 rounded-lg hover:bg-red-500/10 text-slate-600 hover:text-red-400 transition-colors">
-                      <Trash2 className="h-3.5 w-3.5" />
-                    </button>
-                  </td>
-                </tr>
-              ))}
+              ) : rfqs.map(r => {
+                const estPremium = (r.member_count || 0) * 18000;
+                const estMargin = Math.round(estPremium * 0.20);
+                return (
+                  <tr key={r.id} className="border-b border-white/[0.04] hover:bg-white/[0.02] cursor-pointer transition-colors group"
+                    onClick={() => navigate(`/crm/rfqs/${r.id}`)}>
+                    <td className="px-4 py-3 text-xs font-mono text-violet-400 font-medium">{r.rfq_number}</td>
+                    <td className="px-4 py-3">
+                      <div className="flex items-center gap-2.5">
+                        <div className="w-8 h-8 rounded-lg bg-gradient-to-br from-violet-500/15 to-blue-500/15 border border-violet-500/10 flex items-center justify-center flex-shrink-0">
+                          <Building2 className="h-3.5 w-3.5 text-violet-400" />
+                        </div>
+                        <div>
+                          <p className="text-sm font-medium text-white truncate max-w-[200px] group-hover:text-violet-300 transition-colors">{r.insured_name}</p>
+                          <p className="text-[10px] text-slate-600">{r.product_type || 'GMC'}</p>
+                        </div>
+                      </div>
+                    </td>
+                    <td className="px-4 py-3 text-xs text-slate-400">{r.policy_type || '—'}</td>
+                    <td className="px-4 py-3 text-xs text-slate-400 truncate max-w-[120px]">{r.broker_company || '—'}</td>
+                    <td className="px-4 py-3">
+                      <span className="text-sm font-bold text-white">{(r.member_count || 0).toLocaleString()}</span>
+                      <span className="text-[10px] text-slate-600 ml-1">lives</span>
+                    </td>
+                    <td className="px-4 py-3 text-sm text-slate-300">{formatCurrency(estPremium)}</td>
+                    <td className="px-4 py-3 text-sm font-semibold text-emerald-400">{formatCurrency(estMargin)}</td>
+                    <td className="px-4 py-3">
+                      {(r.quote_count || 0) > 0 ? (
+                        <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md bg-violet-500/10 text-violet-400 text-xs font-semibold">
+                          {r.quote_count} <FileText className="h-3 w-3" />
+                        </span>
+                      ) : (
+                        <span className="text-xs text-slate-600">—</span>
+                      )}
+                    </td>
+                    <td className="px-4 py-3"><StatusBadge status={r.status} map={STATUS_COLORS} /></td>
+                    <td className="px-4 py-3 text-xs text-slate-500 whitespace-nowrap">{formatDate(r.created_at)}</td>
+                    <td className="px-4 py-3">
+                      <button onClick={e => { e.stopPropagation(); deleteRFQ(r.id); }}
+                        className="p-2 rounded-lg hover:bg-red-500/10 text-slate-600 hover:text-red-400 transition-colors opacity-0 group-hover:opacity-100">
+                        <Trash2 className="h-3.5 w-3.5" />
+                      </button>
+                    </td>
+                  </tr>
+                );
+              })}
             </tbody>
           </table>
         </div>
@@ -1336,6 +1366,7 @@ function ClaimsExperienceTab({ analysis, loading, onUpload, uploading }: any) {
 
 function AIQuoteTab({ rfqId, aiQuote, aiLoading, onGenerate, navigate, claimsAnalysis }: any) {
   const [visibleSteps, setVisibleSteps] = useState(0);
+  const [selectedMarginPct, setSelectedMarginPct] = useState(20);
 
   // Animate reasoning steps appearing one by one
   useEffect(() => {
@@ -1350,10 +1381,34 @@ function AIQuoteTab({ rfqId, aiQuote, aiLoading, onGenerate, navigate, claimsAna
     return () => clearInterval(interval);
   }, [aiQuote]);
 
-  const applyToQuoteBuilder = () => {
+  // Set default selected tier from backend recommendation
+  useEffect(() => {
+    if (aiQuote?.mediqzy_pricing?.recommended_tier) {
+      setSelectedMarginPct(aiQuote.mediqzy_pricing.recommended_tier);
+    }
+  }, [aiQuote]);
+
+  const applyToQuoteBuilder = (useMargin?: boolean) => {
     if (!aiQuote?.recommended_quote) return;
-    // Store in sessionStorage so QuoteBuilderPage can pick it up
-    sessionStorage.setItem('ai_quote_prefill', JSON.stringify(aiQuote.recommended_quote));
+    let prefill = { ...aiQuote.recommended_quote };
+    // If margin pricing is available and user chose to apply it, override with margin-adjusted pricing
+    if (useMargin && aiQuote?.mediqzy_pricing?.tiers) {
+      const tier = aiQuote.mediqzy_pricing.tiers.find((t: any) => t.margin_pct === selectedMarginPct);
+      if (tier) {
+        prefill = {
+          ...prefill,
+          total_premium: tier.total_premium,
+          per_life_cost: tier.per_life,
+          per_family_cost: tier.per_family,
+          slab_pricing: tier.slab_pricing?.map((s: any) => ({
+            slab: s.slab,
+            premium: s.quoted_premium_per_family,
+            lives: s.lives,
+          })),
+        };
+      }
+    }
+    sessionStorage.setItem('ai_quote_prefill', JSON.stringify(prefill));
     navigate(`/crm/rfqs/${rfqId}/quote/new`);
   };
 
@@ -1880,16 +1935,160 @@ function AIQuoteTab({ rfqId, aiQuote, aiLoading, onGenerate, navigate, claimsAna
         </div>
       </Card>
 
+      {/* ─── Mediqzy Revenue & Margin Pricing ─────────────── */}
+      {d.mediqzy_pricing && (
+        <div className="relative overflow-hidden rounded-2xl border border-emerald-500/20 bg-gradient-to-br from-emerald-900/20 via-teal-900/15 to-cyan-900/10">
+          <div className="absolute -right-16 -top-16 w-48 h-48 bg-gradient-to-br from-emerald-500/5 to-teal-500/5 rounded-full blur-3xl" />
+          <div className="p-5 relative">
+            <div className="flex items-center justify-between mb-5">
+              <div className="flex items-center gap-3">
+                <div className="p-2.5 rounded-xl bg-emerald-500/15 ring-1 ring-emerald-500/20">
+                  <IndianRupee className="h-5 w-5 text-emerald-400" />
+                </div>
+                <div>
+                  <h3 className="text-sm font-bold text-white">Mediqzy Revenue & Margin Calculator</h3>
+                  <p className="text-[10px] text-emerald-400/60 mt-0.5">
+                    Actuarial cost: {formatCurrency(d.mediqzy_pricing.actuarial_cost)} · Select your target margin below
+                  </p>
+                </div>
+              </div>
+              <div className="flex items-center gap-2 px-3 py-1.5 rounded-full bg-emerald-500/10 border border-emerald-500/20">
+                <span className="text-[10px] text-emerald-400 font-semibold">RECOMMENDED</span>
+                <span className="text-xs font-bold text-emerald-300">{d.mediqzy_pricing.recommended_tier}%</span>
+              </div>
+            </div>
+
+            {/* Margin Tier Selector */}
+            <div className="grid grid-cols-5 gap-2 mb-5">
+              {d.mediqzy_pricing.tiers.map((tier: any) => {
+                const isSelected = tier.margin_pct === selectedMarginPct;
+                const isRecommended = tier.margin_pct === d.mediqzy_pricing.recommended_tier;
+                return (
+                  <button key={tier.margin_pct} onClick={() => setSelectedMarginPct(tier.margin_pct)}
+                    className={`relative p-4 rounded-2xl border-2 transition-all duration-300 text-center ${
+                      isSelected
+                        ? 'border-emerald-400 bg-emerald-500/10 shadow-lg shadow-emerald-500/10 scale-[1.02]'
+                        : 'border-white/[0.06] bg-white/[0.02] hover:border-white/[0.12] hover:bg-white/[0.04]'
+                    }`}>
+                    {isRecommended && (
+                      <div className="absolute -top-2 left-1/2 -translate-x-1/2 px-2 py-0.5 rounded-full bg-emerald-500 text-[8px] font-bold text-white uppercase whitespace-nowrap">
+                        Sweet Spot
+                      </div>
+                    )}
+                    <p className={`text-2xl font-bold ${isSelected ? 'text-emerald-400' : 'text-slate-300'}`}>{tier.margin_pct}%</p>
+                    <p className="text-[10px] text-slate-500 mt-1">Margin</p>
+                    <div className="mt-2 pt-2 border-t border-white/[0.05]">
+                      <p className={`text-sm font-bold ${isSelected ? 'text-emerald-300' : 'text-slate-400'}`}>
+                        {formatCurrency(tier.mediqzy_revenue)}
+                      </p>
+                      <p className="text-[9px] text-slate-600">Revenue</p>
+                    </div>
+                  </button>
+                );
+              })}
+            </div>
+
+            {/* Selected Tier Detail */}
+            {(() => {
+              const tier = d.mediqzy_pricing.tiers.find((t: any) => t.margin_pct === selectedMarginPct);
+              if (!tier) return null;
+              return (
+                <div className="space-y-4">
+                  {/* Summary strip */}
+                  <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+                    {[
+                      { label: 'Client Pays (Total)', value: formatCurrency(tier.total_premium), color: 'text-white', sub: 'Inc. margin' },
+                      { label: 'Per Life', value: `₹${tier.per_life.toLocaleString()}`, color: 'text-slate-300', sub: `Base ₹${d.mediqzy_pricing.actuarial_per_life.toLocaleString()}` },
+                      { label: 'Per Family', value: `₹${tier.per_family.toLocaleString()}`, color: 'text-slate-300', sub: `Base ₹${d.mediqzy_pricing.actuarial_per_family.toLocaleString()}` },
+                      { label: 'Mediqzy Revenue', value: formatCurrency(tier.mediqzy_revenue), color: 'text-emerald-400', sub: `${tier.margin_pct}% effective margin` },
+                    ].map(({ label, value, color, sub }) => (
+                      <div key={label} className="bg-white/[0.03] border border-white/[0.05] rounded-xl p-3.5">
+                        <p className="text-[10px] text-slate-600 uppercase font-semibold">{label}</p>
+                        <p className={`text-lg font-bold ${color} mt-1`}>{value}</p>
+                        <p className="text-[10px] text-slate-600 mt-0.5">{sub}</p>
+                      </div>
+                    ))}
+                  </div>
+
+                  {/* Slab-wise margin breakdown */}
+                  {tier.slab_pricing?.length > 0 && (
+                    <div>
+                      <p className="text-[10px] text-slate-500 uppercase font-semibold mb-2">Slab-wise Margin Breakdown</p>
+                      <div className="space-y-2">
+                        {tier.slab_pricing.map((s: any) => {
+                          const marginAmt = s.margin_per_family || (s.quoted_premium_per_family - s.base_premium_per_family);
+                          return (
+                            <div key={s.slab} className="flex items-center justify-between bg-white/[0.02] border border-white/[0.04] rounded-xl px-4 py-3">
+                              <div className="flex items-center gap-4">
+                                <span className="text-sm font-bold text-white">{s.slab}</span>
+                                <span className="text-xs text-slate-500">{s.lives?.toLocaleString()} families</span>
+                              </div>
+                              <div className="flex items-center gap-6">
+                                <div className="text-right">
+                                  <p className="text-[10px] text-slate-600">Base</p>
+                                  <p className="text-xs text-slate-400">₹{s.base_premium_per_family?.toLocaleString()}</p>
+                                </div>
+                                <div className="text-[10px] text-slate-600">→</div>
+                                <div className="text-right">
+                                  <p className="text-[10px] text-emerald-500">Quoted</p>
+                                  <p className="text-sm font-bold text-emerald-400">₹{s.quoted_premium_per_family?.toLocaleString()}</p>
+                                </div>
+                                <div className="text-right min-w-[72px]">
+                                  <p className="text-[10px] text-slate-600">Margin/family</p>
+                                  <p className="text-xs font-semibold text-amber-400">+₹{marginAmt?.toLocaleString()}</p>
+                                </div>
+                              </div>
+                            </div>
+                          );
+                        })}
+                      </div>
+                    </div>
+                  )}
+
+                  {/* Visual margin bar */}
+                  <div className="bg-white/[0.02] border border-white/[0.04] rounded-xl p-4">
+                    <div className="flex items-center justify-between mb-2">
+                      <span className="text-[10px] text-slate-500 uppercase font-semibold">Revenue Composition</span>
+                      <span className="text-xs text-slate-400">
+                        {formatCurrency(d.mediqzy_pricing.actuarial_cost)} actuarial + {formatCurrency(tier.mediqzy_revenue)} margin = {formatCurrency(tier.total_premium)}
+                      </span>
+                    </div>
+                    <div className="h-4 bg-white/[0.03] rounded-full overflow-hidden flex">
+                      <div className="h-full bg-gradient-to-r from-violet-500 to-blue-500 transition-all duration-500"
+                        style={{ width: `${(d.mediqzy_pricing.actuarial_cost / tier.total_premium) * 100}%` }} />
+                      <div className="h-full bg-gradient-to-r from-emerald-500 to-teal-500 transition-all duration-500"
+                        style={{ width: `${(tier.mediqzy_revenue / tier.total_premium) * 100}%` }} />
+                    </div>
+                    <div className="flex justify-between mt-1.5">
+                      <span className="text-[10px] text-violet-400">Actuarial Cost ({(100 - tier.margin_pct).toFixed(0)}%)</span>
+                      <span className="text-[10px] text-emerald-400">Mediqzy Margin ({tier.margin_pct}%)</span>
+                    </div>
+                  </div>
+                </div>
+              );
+            })()}
+          </div>
+        </div>
+      )}
+
       {/* ─── Actions ─────────────────────────────────────────── */}
       <div className="flex items-center justify-between pt-2">
         <Button onClick={onGenerate} variant="outline"
           className="border-white/[0.1] text-slate-400 hover:bg-white/[0.05] rounded-xl h-10 px-5 gap-2">
           <RefreshCw className="h-4 w-4" /> Regenerate
         </Button>
-        <Button onClick={applyToQuoteBuilder}
-          className="bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-500 hover:to-teal-500 border-0 rounded-xl h-10 px-6 gap-2 text-sm font-medium shadow-lg shadow-emerald-600/20">
-          <Zap className="h-4 w-4" /> Apply to Quote Builder
-        </Button>
+        <div className="flex items-center gap-3">
+          <Button onClick={() => applyToQuoteBuilder(false)} variant="outline"
+            className="border-white/[0.1] text-slate-400 hover:bg-white/[0.05] rounded-xl h-10 px-5 gap-2 text-sm">
+            <Zap className="h-4 w-4" /> Apply at Cost
+          </Button>
+          {d.mediqzy_pricing && (
+            <Button onClick={() => applyToQuoteBuilder(true)}
+              className="bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-500 hover:to-teal-500 border-0 rounded-xl h-10 px-6 gap-2 text-sm font-medium shadow-lg shadow-emerald-600/20">
+              <IndianRupee className="h-4 w-4" /> Apply at {selectedMarginPct}% Margin
+            </Button>
+          )}
+        </div>
       </div>
     </div>
   );
