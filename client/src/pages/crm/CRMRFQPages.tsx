@@ -1526,6 +1526,53 @@ function AIQuoteTab({ rfqId, aiQuote, aiLoading, onGenerate, navigate, claimsAna
         </div>
       )}
 
+      {/* ─── Data Quality & Pricing Adjustments ─────────────── */}
+      {d.data_quality && (
+        <div className={`p-4 rounded-2xl border ${
+          d.data_quality.grade === 'A' ? 'border-emerald-500/30 bg-emerald-500/5' :
+          d.data_quality.grade === 'B' ? 'border-blue-500/30 bg-blue-500/5' :
+          d.data_quality.grade === 'C' ? 'border-amber-500/30 bg-amber-500/5' : 'border-red-500/30 bg-red-500/5'
+        }`}>
+          <div className="flex items-center justify-between mb-2">
+            <div className="flex items-center gap-2">
+              <span className="text-sm font-bold text-white">Data Quality</span>
+              <span className={`px-2 py-0.5 rounded text-xs font-black ${
+                d.data_quality.grade === 'A' ? 'bg-emerald-500/20 text-emerald-400' :
+                d.data_quality.grade === 'B' ? 'bg-blue-500/20 text-blue-400' :
+                d.data_quality.grade === 'C' ? 'bg-amber-500/20 text-amber-400' : 'bg-red-500/20 text-red-400'
+              }`}>Grade {d.data_quality.grade}</span>
+            </div>
+            <span className="text-xs text-slate-400">{d.data_quality.completeness_score}% complete</span>
+          </div>
+          {d.data_quality.warnings?.length > 0 && (
+            <div className="space-y-1">
+              {d.data_quality.warnings.map((w: any, i: number) => (
+                <div key={i} className="flex items-start gap-2 text-xs">
+                  <span className="text-amber-400 mt-0.5">⚠</span>
+                  <span className="text-slate-400"><span className="text-white font-semibold">{w.missing}</span> missing {w.field} — {w.impact}</span>
+                </div>
+              ))}
+            </div>
+          )}
+          {/* Pricing adjustments chips */}
+          {d.pricing_adjustments && (
+            <div className="flex flex-wrap gap-2 mt-3 pt-3 border-t border-white/[0.06]">
+              <span className="px-2 py-1 rounded-lg bg-white/[0.04] border border-white/[0.08] text-[10px] text-slate-400">
+                🏙️ {d.pricing_adjustments.city_tier?.label || 'Metro'} ×{d.pricing_adjustments.city_tier?.multiplier}
+              </span>
+              {d.pricing_adjustments.medical_inflation?.factor > 1 && (
+                <span className="px-2 py-1 rounded-lg bg-white/[0.04] border border-white/[0.08] text-[10px] text-slate-400">
+                  📈 Inflation +{((d.pricing_adjustments.medical_inflation.factor - 1) * 100).toFixed(1)}%
+                </span>
+              )}
+              <span className="px-2 py-1 rounded-lg bg-white/[0.04] border border-white/[0.08] text-[10px] text-slate-400">
+                👥 Group ×{d.pricing_adjustments.group_size?.factor}
+              </span>
+            </div>
+          )}
+        </div>
+      )}
+
       {/* ─── Claims Experience Summary (when available) ───────── */}
       {d.claims_experience && (
         <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-3">

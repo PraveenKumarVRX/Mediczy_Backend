@@ -1423,8 +1423,44 @@ router.post('/rfqs/:id/ai-generate-quote', authCRM, async (req, res) => {
     ]);
     const summary = summaryRes.rows[0];
     const totalMembers = parseInt(summary.total) || 0;
-    const totalEmployees = parseInt(summary.employees) || 0;
+    // Fallback: if emp_code is all null, use self_count (members with relationship=SELF); else estimate from avg family size of 4
+    const totalEmployees = parseInt(summary.employees) || parseInt(summary.self_count) || Math.ceil(totalMembers / 4);
     if (totalMembers === 0) return res.status(400).json({ success: false, message: 'No members found — upload member data first' });
+
+    // ── 1a. DATA QUALITY VALIDATION ─────────────────────────────────────────
+    const dataQualityRes = await pool.query(`SELECT
+      COUNT(*) FILTER (WHERE age IS NULL) AS missing_age,
+      COUNT(*) FILTER (WHERE gender IS NULL OR TRIM(gender) = '') AS missing_gender,
+      COUNT(*) FILTER (WHERE si_proposed IS NULL OR si_proposed = 0) AS missing_si,
+      COUNT(*) FILTER (WHERE si_expiring IS NULL OR si_expiring = 0) AS missing_si_expiring,
+      COUNT(*) FILTER (WHERE dob IS NULL) AS missing_dob,
+      COUNT(*) FILTER (WHERE relationship IS NULL OR TRIM(relationship) = '') AS missing_relationship,
+      COUNT(*) FILTER (WHERE emp_code IS NULL OR TRIM(emp_code) = '') AS missing_emp_code
+      FROM crm_rfq_members WHERE rfq_id = $1`, [rfqId]);
+    const dq = dataQualityRes.rows[0];
+    const dataQualityWarnings = [];
+    const missingAge = parseInt(dq.missing_age);
+    const missingGender = parseInt(dq.missing_gender);
+    const missingSI = parseInt(dq.missing_si);
+    const missingDob = parseInt(dq.missing_dob);
+    const missingRelationship = parseInt(dq.missing_relationship);
+    const missingEmpCode = parseInt(dq.missing_emp_code);
+    if (missingAge > 0) dataQualityWarnings.push({ field: 'age', missing: missingAge, impact: 'Excluded from age-banded pricing — may understate risk-weighted costs' });
+    if (missingGender > 0) dataQualityWarnings.push({ field: 'gender', missing: missingGender, impact: 'Gender factor defaulted to 50:50 for these members' });
+    if (missingSI > 0) dataQualityWarnings.push({ field: 'si_proposed', missing: missingSI, impact: 'Cannot compute slab-wise pricing for these members' });
+    if (missingDob > 0) dataQualityWarnings.push({ field: 'dob', missing: missingDob, impact: 'Age may be inaccurate or missing' });
+    if (missingRelationship > 0) dataQualityWarnings.push({ field: 'relationship', missing: missingRelationship, impact: 'Employee/dependent split may be inaccurate' });
+    if (missingEmpCode > 0) dataQualityWarnings.push({ field: 'emp_code', missing: missingEmpCode, impact: 'Family grouping may be unreliable' });
+
+    const completenessScore = Math.round((1 - (missingAge + missingGender + missingSI) / (totalMembers * 3)) * 100);
+    const dataCompleteness = {
+      total_members: totalMembers,
+      fields_checked: ['age', 'gender', 'si_proposed', 'dob', 'relationship', 'emp_code'],
+      missing: { age: missingAge, gender: missingGender, si_proposed: missingSI, dob: missingDob, relationship: missingRelationship, emp_code: missingEmpCode },
+      completeness_score: completenessScore,
+      grade: completenessScore >= 95 ? 'A' : completenessScore >= 80 ? 'B' : completenessScore >= 60 ? 'C' : 'D',
+      warnings: dataQualityWarnings,
+    };
 
     const avgAge = parseFloat(summary.avg_age) || 35;
 
@@ -1439,10 +1475,16 @@ router.post('/rfqs/:id/ai-generate-quote', authCRM, async (req, res) => {
 
     // Family size distribution
     const familySizes = familyRes.rows;
-    const avgFamilySize = familySizes.length > 0
-      ? familySizes.reduce((s, r) => s + parseInt(r.family_size) * parseInt(r.cnt), 0) /
-        familySizes.reduce((s, r) => s + parseInt(r.cnt), 0)
-      : 4.0;
+    let avgFamilySize = 4.0; // industry default
+    if (familySizes.length > 0) {
+      const totalFamilySizeCount = familySizes.reduce((s, r) => s + parseInt(r.cnt), 0);
+      if (totalFamilySizeCount > 0) {
+        avgFamilySize = familySizes.reduce((s, r) => s + parseInt(r.family_size) * parseInt(r.cnt), 0) / totalFamilySizeCount;
+      }
+      // Sanity: if emp_code is missing, all members are in one giant "family" — cap it
+      if (avgFamilySize > 10) avgFamilySize = totalMembers / totalEmployees;
+      if (!isFinite(avgFamilySize) || avgFamilySize < 1) avgFamilySize = 4.0;
+    }
 
     // ── 1b. CLAIMS EXPERIENCE DATA ──────────────────────────────────────────
     // If claims history is uploaded, use it for experience-based underwriting
@@ -1611,13 +1653,31 @@ router.post('/rfqs/:id/ai-generate-quote', authCRM, async (req, res) => {
       '75+':   { utilization: 2.50, severity: 2.20, opd_visits: 7.2, lab_freq: 4.0, pharma_ratio: 0.90 },
     };
 
-    // OPD unit costs (₹) — Indian metro/tier-1 benchmarks 2025-26
+    // ── City Tier Cost Adjustment ───────────────────────────────────────────
+    // Indian healthcare costs vary 25-40% by city tier
+    const CITY_TIERS = {
+      metro:  { multiplier: 1.00, label: 'Metro',  cities: ['mumbai','delhi','bangalore','bengaluru','chennai','hyderabad','kolkata','pune','new delhi','navi mumbai','thane','gurgaon','gurugram','noida','ghaziabad','faridabad'] },
+      tier_1: { multiplier: 0.88, label: 'Tier-1', cities: ['ahmedabad','jaipur','lucknow','chandigarh','kochi','cochin','coimbatore','indore','bhopal','nagpur','visakhapatnam','vizag','patna','vadodara','surat','thiruvananthapuram','trivandrum','mysore','mysuru','mangalore','mangaluru','dehradun','bhubaneswar','ludhiana'] },
+      tier_2: { multiplier: 0.75, label: 'Tier-2', cities: ['agra','varanasi','allahabad','prayagraj','meerut','jodhpur','raipur','ranchi','guwahati','jabalpur','udaipur','aurangabad','amritsar','rajkot','madurai','salem','tiruchirappalli','trichy','hubli','belgaum','belagavi','nashik','solapur','kolhapur','guntur','warangal'] },
+    };
+    let detectedCityTier = 'metro';
+    let cityTierMultiplier = 1.0;
+    const insuredAddr = (rfq.insured_address || rfq.insured_name || '').toLowerCase();
+    for (const [tier, info] of Object.entries(CITY_TIERS)) {
+      if (info.cities.some(c => insuredAddr.includes(c))) {
+        detectedCityTier = tier;
+        cityTierMultiplier = info.multiplier;
+        break;
+      }
+    }
+
+    // OPD unit costs (₹) — Indian benchmarks 2025-26, adjusted for city tier (×${cityTierMultiplier})
     const OPD_UNIT_COSTS = {
-      tele_consult: 500,              // per tele consult
-      physical_consult: 1000,         // per physical visit (GP/Specialist avg)
-      specialist_consult: 1500,       // per specialist visit
-      lab_test_avg: 800,              // avg per lab test episode
-      pharmacy_per_episode: 600,      // per prescription fill
+      tele_consult: Math.round(500 * cityTierMultiplier),
+      physical_consult: Math.round(1000 * cityTierMultiplier),
+      specialist_consult: Math.round(1500 * cityTierMultiplier),
+      lab_test_avg: Math.round(800 * cityTierMultiplier),
+      pharmacy_per_episode: Math.round(600 * cityTierMultiplier),
     };
 
     // Wellness health checkup costs by age band
@@ -1681,6 +1741,30 @@ router.post('/rfqs/:id/ai-generate-quote', authCRM, async (req, res) => {
       });
     }
 
+    // ── 2b-POST. Medical Inflation Projection ──────────────────────────────
+    // Indian medical inflation: 12-14% CAGR. Project benchmark costs from base year
+    // (FY 2025-26 = Apr 2025) forward to the new policy inception date.
+    const MEDICAL_INFLATION_ANNUAL = 0.13; // 13% annual (India mid-range)
+    const BASE_YEAR_DATE = new Date('2025-04-01');
+    const policyStart = rfq.policy_start ? new Date(rfq.policy_start) :
+                         rfq.inception_date ? new Date(rfq.inception_date) : new Date();
+    const monthsFromBase = Math.max(0, (policyStart - BASE_YEAR_DATE) / (30.44 * 24 * 60 * 60 * 1000));
+    const inflationProjectionFactor = Math.pow(1 + MEDICAL_INFLATION_ANNUAL, monthsFromBase / 12);
+
+    if (inflationProjectionFactor > 1.005) {
+      totalExpectedOPDClaims *= inflationProjectionFactor;
+      totalExpectedWellnessCost *= inflationProjectionFactor;
+      for (const band of bandAnalysis) {
+        band.expected_opd_cost_per_person = Math.round(band.expected_opd_cost_per_person * inflationProjectionFactor);
+        band.expected_opd_total = Math.round(band.expected_opd_total * inflationProjectionFactor);
+        band.wellness_cost_per_person = Math.round(band.wellness_cost_per_person * inflationProjectionFactor);
+        band.wellness_total = Math.round(band.wellness_total * inflationProjectionFactor);
+        band.breakdown.consultation = Math.round(band.breakdown.consultation * inflationProjectionFactor);
+        band.breakdown.lab_tests = Math.round(band.breakdown.lab_tests * inflationProjectionFactor);
+        band.breakdown.pharmacy = Math.round(band.breakdown.pharmacy * inflationProjectionFactor);
+      }
+    }
+
     // ── 2c. Experience Rating & Inflation Adjustment ────────────────────────
     const reasoning = [];
     reasoning.push({
@@ -1688,6 +1772,26 @@ router.post('/rfqs/:id/ai-generate-quote', authCRM, async (req, res) => {
       detail: `${totalMembers.toLocaleString()} total lives (${totalEmployees.toLocaleString()} employees, ${(totalMembers - totalEmployees).toLocaleString()} dependants). Avg age ${avgAge.toFixed(1)} years. Avg family size ${avgFamilySize.toFixed(1)}.`,
       impact: 'neutral'
     });
+
+    // City tier reasoning
+    if (cityTierMultiplier !== 1.0) {
+      reasoning.push({
+        step: 'City Tier Adjustment',
+        detail: `Detected ${CITY_TIERS[detectedCityTier]?.label || detectedCityTier} city from "${rfq.insured_address || rfq.insured_name || 'N/A'}". OPD costs adjusted ×${cityTierMultiplier} vs metro baseline. ${detectedCityTier === 'tier_2' ? 'Significantly lower provider costs in this region.' : 'Moderately lower provider costs vs metro.'}`,
+        factor: cityTierMultiplier,
+        impact: 'favorable'
+      });
+    }
+
+    // Medical inflation reasoning
+    if (inflationProjectionFactor > 1.005) {
+      reasoning.push({
+        step: 'Medical Inflation Projection',
+        detail: `Policy starts ${policyStart.toISOString().slice(0, 10)}. Benchmark costs (FY 2025-26 base) inflated by ${((inflationProjectionFactor - 1) * 100).toFixed(1)}% to project forward ${Math.round(monthsFromBase)} months at 13% annual medical inflation CAGR.`,
+        factor: Math.round(inflationProjectionFactor * 1000) / 1000,
+        impact: 'adverse'
+      });
+    }
 
     // Gender adjustment: female populations have ~5-8% higher OPD utilization (gynec + pediatric proxy)
     const genderFactor = 1.0 + (1 - maleRatio) * 0.08;
@@ -1706,6 +1810,29 @@ router.post('/rfqs/:id/ai-generate-quote', authCRM, async (req, res) => {
       factor: familySizeFactor,
       impact: familySizeFactor > 1.03 ? 'adverse' : 'favorable'
     });
+
+    // Group size credibility & adverse selection loading
+    const groupSizeFactor = totalMembers < 50 ? 1.15 :
+      totalMembers < 100 ? 1.08 :
+      totalMembers < 500 ? 1.03 :
+      totalMembers < 2000 ? 1.00 :
+      totalMembers < 5000 ? 0.98 : 0.96;
+    reasoning.push({
+      step: 'Group Size Factor',
+      detail: `${totalMembers.toLocaleString()} total lives. ${totalMembers < 100 ? 'Small group — higher adverse selection risk, loading applied.' : totalMembers < 500 ? 'Medium group — modest loading for limited pooling.' : totalMembers >= 2000 ? 'Large group — favorable pooling economics, slight discount applied.' : 'Standard group size — no adjustment.'}`,
+      factor: groupSizeFactor,
+      impact: groupSizeFactor > 1.05 ? 'adverse' : groupSizeFactor < 1.0 ? 'favorable' : 'neutral'
+    });
+
+    // Data quality reasoning
+    if (dataQualityWarnings.length > 0) {
+      reasoning.push({
+        step: 'Data Quality Alert',
+        detail: `Data completeness: ${completenessScore}% (Grade ${dataCompleteness.grade}). ${dataQualityWarnings.length} issue(s): ${dataQualityWarnings.map(w => `${w.missing} missing ${w.field}`).join(', ')}. Pricing reliability may be reduced.`,
+        factor: completenessScore / 100,
+        impact: completenessScore < 80 ? 'adverse' : 'neutral'
+      });
+    }
 
     // ── 2c-EXP. CLAIMS EXPERIENCE-BASED UNDERWRITING ──────────────────────
     let experienceFactor = 1.0;
@@ -1887,14 +2014,14 @@ router.post('/rfqs/:id/ai-generate-quote', authCRM, async (req, res) => {
     const Z = experienceCredibility;
 
     // Composite adjustment factor (for benchmark path)
-    const benchmarkCompositeFactor = genderFactor * familySizeFactor *
+    const benchmarkCompositeFactor = genderFactor * familySizeFactor * groupSizeFactor *
                             ageConcentrationFactor * ibnrFactor * profitMargin * adminLoading * experienceFactor;
 
     // Pure premium computation
     let blendedPurePremium;
     if (hasClaimsExperience && experienceBasedPurePremium !== null) {
       // Credibility-weighted blend
-      const benchmarkPure = totalExpectedOPDClaims * genderFactor * familySizeFactor * ageConcentrationFactor;
+      const benchmarkPure = totalExpectedOPDClaims * genderFactor * familySizeFactor * groupSizeFactor * ageConcentrationFactor;
       const experiencePure = experienceBasedPurePremium;
       blendedPurePremium = Z * experiencePure + (1 - Z) * benchmarkPure;
       reasoning.push({
@@ -1904,7 +2031,7 @@ router.post('/rfqs/:id/ai-generate-quote', authCRM, async (req, res) => {
         impact: 'result'
       });
     } else {
-      blendedPurePremium = totalExpectedOPDClaims * genderFactor * familySizeFactor * ageConcentrationFactor;
+      blendedPurePremium = totalExpectedOPDClaims * genderFactor * familySizeFactor * groupSizeFactor * ageConcentrationFactor;
     }
 
     // Apply loadings
@@ -1950,7 +2077,7 @@ router.post('/rfqs/:id/ai-generate-quote', authCRM, async (req, res) => {
         const utilizationCap = Math.min(0.50 + 0.35 * siRatio, 0.90); // 50% to 85% of SI
         const expectedClaimPerFamily = si * utilizationCap;
         const slabPremiumPerFamily = expectedClaimPerFamily * (ibnrFactor * profitMargin * adminLoading) *
-          genderFactor * familySizeFactor * ageConcentrationFactor * experienceFactor;
+          genderFactor * familySizeFactor * groupSizeFactor * ageConcentrationFactor * experienceFactor;
         const slabTotalPremium = slabPremiumPerFamily * lives;
 
         slabPricing.push({
@@ -2216,6 +2343,16 @@ ${JSON.stringify(llmPayload, null, 2)}`;
           high_risk_pct: Math.round(highRiskPct * 100),
         },
 
+        // Data quality assessment
+        data_quality: dataCompleteness,
+
+        // Pricing adjustments applied
+        pricing_adjustments: {
+          city_tier: { detected: detectedCityTier, label: CITY_TIERS[detectedCityTier]?.label || 'Metro', multiplier: cityTierMultiplier, source: rfq.insured_address || rfq.insured_name || 'N/A' },
+          medical_inflation: { annual_rate_pct: Math.round(MEDICAL_INFLATION_ANNUAL * 100), projection_months: Math.round(monthsFromBase), factor: Math.round(inflationProjectionFactor * 1000) / 1000, policy_start: policyStart.toISOString().slice(0, 10), base_year: '2025-26' },
+          group_size: { lives: totalMembers, factor: groupSizeFactor },
+        },
+
         // Risk assessment
         risk_assessment: {
           overall_score: overallRiskScore,
@@ -2223,6 +2360,7 @@ ${JSON.stringify(llmPayload, null, 2)}`;
           age_concentration_factor: ageConcentrationFactor,
           gender_factor: Math.round(genderFactor * 1000) / 1000,
           family_size_factor: familySizeFactor,
+          group_size_factor: groupSizeFactor,
           composite_factor: Math.round(compositeFactor * 1000) / 1000,
           pricing_method: experienceMethod,
           credibility_factor: Math.round(experienceCredibility * 100),
@@ -2300,6 +2438,9 @@ ${JSON.stringify(llmPayload, null, 2)}`;
             (hasClaimsExperience && claimsExperience ? `Claims Data: ${claimsExperience.total_claims.toLocaleString()} claims, Utilization ${claimsExperience.utilization_rate}%\n` : '') +
             `Risk Score: ${overallRiskScore}/100 (${riskCategory})\n` +
             `Expected Loss Ratio: ${expectedLossRatio}%\n` +
+            `City Tier: ${CITY_TIERS[detectedCityTier]?.label || 'Metro'} (cost multiplier ${cityTierMultiplier})\n` +
+            (inflationProjectionFactor > 1.005 ? `Medical Inflation: +${((inflationProjectionFactor - 1) * 100).toFixed(1)}% projected to ${policyStart.toISOString().slice(0, 10)}\n` : '') +
+            `Data Quality: Grade ${dataCompleteness.grade} (${completenessScore}% complete)\n` +
             `Population: ${totalMembers.toLocaleString()} lives, avg age ${avgAge.toFixed(1)}\n` +
             `Pricing basis: ${experienceMethod === 'experience' ? 'Credibility-weighted experience + benchmark blend' : 'Floater per-family, age-banded actuarial model'} with IBNR & margin loading.`,
         },
