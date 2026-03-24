@@ -1596,9 +1596,9 @@ function AIQuoteTab({ rfqId, aiQuote, aiLoading, onGenerate, navigate, claimsAna
       {/* ─── Hero Summary Strip ───────────────────────────────────── */}
       <div className="grid grid-cols-2 md:grid-cols-5 gap-3">
         {[
-          { label: 'OPD Premium', value: formatCurrency(d.opd_pricing.loaded_premium), sub: `₹${d.opd_pricing.per_family.toLocaleString()}/family`, color: 'from-violet-600 to-indigo-600' },
-          { label: 'Wellness Premium', value: formatCurrency(d.wellness_pricing.loaded_premium), sub: `₹${d.wellness_pricing.per_family.toLocaleString()}/family`, color: 'from-cyan-600 to-blue-600' },
-          { label: 'Combined Total', value: formatCurrency(d.combined.total_premium), sub: `₹${d.combined.per_family.toLocaleString()}/family`, color: 'from-emerald-600 to-teal-600' },
+          { label: 'OPD Premium', value: formatCurrency(d.opd_pricing.loaded_premium), sub: `₹${(d.opd_pricing.per_family ?? d.opd_pricing.per_life ?? 0).toLocaleString()}/family`, color: 'from-violet-600 to-indigo-600' },
+          { label: 'Wellness Premium', value: formatCurrency(d.wellness_pricing.loaded_premium), sub: `₹${(d.wellness_pricing.per_family ?? d.wellness_pricing.per_life ?? 0).toLocaleString()}/family`, color: 'from-cyan-600 to-blue-600' },
+          { label: 'Combined Total', value: formatCurrency(d.combined.total_premium), sub: `₹${(d.combined.per_family ?? d.combined.per_life ?? 0).toLocaleString()}/family`, color: 'from-emerald-600 to-teal-600' },
           { label: 'Risk Score', value: `${d.risk_assessment.overall_score}/100`, sub: d.risk_assessment.category, color: d.risk_assessment.category === 'HIGH' ? 'from-red-600 to-orange-600' : d.risk_assessment.category === 'MODERATE' ? 'from-amber-600 to-orange-600' : 'from-emerald-600 to-green-600' },
           { label: 'Loss Ratio', value: `${d.opd_pricing.expected_loss_ratio}%`, sub: 'Expected', color: 'from-slate-600 to-zinc-600' },
         ].map(({ label, value, sub, color }) => (
@@ -1962,15 +1962,15 @@ function AIQuoteTab({ rfqId, aiQuote, aiLoading, onGenerate, navigate, claimsAna
             <p className="text-[10px] text-slate-600 uppercase font-semibold">OPD (Required)</p>
             <div className="flex justify-between"><span className="text-xs text-slate-500">Pure Premium</span><span className="text-xs text-slate-300">{formatCurrency(d.opd_pricing.pure_premium)}</span></div>
             <div className="flex justify-between"><span className="text-xs text-slate-500">Loaded Premium</span><span className="text-sm font-bold text-violet-400">{formatCurrency(d.opd_pricing.loaded_premium)}</span></div>
-            <div className="flex justify-between"><span className="text-xs text-slate-500">Per Family</span><span className="text-xs text-slate-300">₹{d.opd_pricing.per_family.toLocaleString()}</span></div>
-            <div className="flex justify-between"><span className="text-xs text-slate-500">Per Life</span><span className="text-xs text-slate-300">₹{d.opd_pricing.per_life.toLocaleString()}</span></div>
+            <div className="flex justify-between"><span className="text-xs text-slate-500">Per Family</span><span className="text-xs text-slate-300">₹{(d.opd_pricing.per_family ?? d.opd_pricing.per_life ?? 0).toLocaleString()}</span></div>
+            <div className="flex justify-between"><span className="text-xs text-slate-500">Per Life</span><span className="text-xs text-slate-300">₹{(d.opd_pricing.per_life ?? 0).toLocaleString()}</span></div>
           </div>
           <div className="space-y-3">
             <p className="text-[10px] text-slate-600 uppercase font-semibold">Wellness (Optional)</p>
             <div className="flex justify-between"><span className="text-xs text-slate-500">Uptake Assumption</span><span className="text-xs text-slate-300">{d.wellness_pricing.assumed_uptake_pct}%</span></div>
             <div className="flex justify-between"><span className="text-xs text-slate-500">Loaded Premium</span><span className="text-sm font-bold text-cyan-400">{formatCurrency(d.wellness_pricing.loaded_premium)}</span></div>
-            <div className="flex justify-between"><span className="text-xs text-slate-500">Per Family</span><span className="text-xs text-slate-300">₹{d.wellness_pricing.per_family.toLocaleString()}</span></div>
-            <div className="flex justify-between"><span className="text-xs text-slate-500">Per Life</span><span className="text-xs text-slate-300">₹{d.wellness_pricing.per_life.toLocaleString()}</span></div>
+            <div className="flex justify-between"><span className="text-xs text-slate-500">Per Family</span><span className="text-xs text-slate-300">₹{(d.wellness_pricing.per_family ?? d.wellness_pricing.per_life ?? 0).toLocaleString()}</span></div>
+            <div className="flex justify-between"><span className="text-xs text-slate-500">Per Life</span><span className="text-xs text-slate-300">₹{(d.wellness_pricing.per_life ?? 0).toLocaleString()}</span></div>
           </div>
           <div className="space-y-3">
             <p className="text-[10px] text-slate-600 uppercase font-semibold">95% Confidence Interval</p>
@@ -2045,8 +2045,8 @@ function AIQuoteTab({ rfqId, aiQuote, aiLoading, onGenerate, navigate, claimsAna
                   <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
                     {[
                       { label: 'Client Pays (Total)', value: formatCurrency(tier.total_premium), color: 'text-white', sub: 'Inc. margin' },
-                      { label: 'Per Life', value: `₹${tier.per_life.toLocaleString()}`, color: 'text-slate-300', sub: `Base ₹${d.mediqzy_pricing.actuarial_per_life.toLocaleString()}` },
-                      { label: 'Per Family', value: `₹${tier.per_family.toLocaleString()}`, color: 'text-slate-300', sub: `Base ₹${d.mediqzy_pricing.actuarial_per_family.toLocaleString()}` },
+                      { label: 'Per Life', value: `₹${(tier.per_life ?? 0).toLocaleString()}`, color: 'text-slate-300', sub: `Base ₹${(d.mediqzy_pricing.actuarial_per_life ?? 0).toLocaleString()}` },
+                      { label: 'Per Family', value: `₹${(tier.per_family ?? 0).toLocaleString()}`, color: 'text-slate-300', sub: `Base ₹${(d.mediqzy_pricing.actuarial_per_family ?? 0).toLocaleString()}` },
                       { label: 'Mediqzy Revenue', value: formatCurrency(tier.mediqzy_revenue), color: 'text-emerald-400', sub: `${tier.margin_pct}% effective margin` },
                     ].map(({ label, value, color, sub }) => (
                       <div key={label} className="bg-white/[0.03] border border-white/[0.05] rounded-xl p-3.5">
