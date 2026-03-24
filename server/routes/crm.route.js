@@ -1041,6 +1041,102 @@ router.delete('/rfqs/:id', authCRM, async (req, res) => {
   } catch (error) { return res.status(500).json({ success: false, message: 'Failed to delete RFQ' }); }
 });
 
+// ─── AI Data Cleaning & Standardization Engine ──────────────────────────────
+// Normalizes messy Excel data into clean, consistent values for actuarial accuracy
+const stdGender = (v) => {
+  if (!v) return null;
+  const s = String(v).trim().toUpperCase();
+  if (['M', 'MALE', 'BOY', 'MR', 'MR.'].includes(s)) return 'M';
+  if (['F', 'FEMALE', 'GIRL', 'MS', 'MS.', 'MRS', 'MRS.', 'MISS'].includes(s)) return 'F';
+  if (s.startsWith('M')) return 'M';
+  if (s.startsWith('F')) return 'F';
+  return null;
+};
+const stdRelationship = (v) => {
+  if (!v) return null;
+  const s = String(v).trim().toUpperCase().replace(/[^A-Z]/g, '');
+  const map = {
+    SELF: 'SELF', EMPLOYEE: 'SELF', EMP: 'SELF', PRIMARY: 'SELF', PROPOSER: 'SELF',
+    SPOUSE: 'SPOUSE', WIFE: 'SPOUSE', HUSBAND: 'SPOUSE', PARTNER: 'SPOUSE',
+    SON: 'SON', DAUGHTER: 'DAUGHTER', CHILD: 'CHILD', KID: 'CHILD',
+    FATHER: 'FATHER', MOTHER: 'MOTHER', PARENT: 'PARENT', DAD: 'FATHER', MOM: 'MOTHER',
+    FATHERINLAW: 'FATHER-IN-LAW', MOTHERINLAW: 'MOTHER-IN-LAW',
+    BROTHERINLAW: 'BROTHER-IN-LAW', SISTERINLAW: 'SISTER-IN-LAW',
+    BROTHER: 'BROTHER', SISTER: 'SISTER', SIBLING: 'SIBLING',
+    DEPENDENT: 'DEPENDENT', DEPENDANT: 'DEPENDENT',
+  };
+  return map[s] || String(v).trim();
+};
+const stdClaimStatus = (v) => {
+  if (!v) return null;
+  const s = String(v).trim().toUpperCase().replace(/[^A-Z]/g, '');
+  if (['APPROVED', 'SETTLED', 'PAID', 'ACCEPTED', 'PROCESSED', 'DISBURSED'].includes(s)) return 'Approved';
+  if (['REJECTED', 'DENIED', 'DECLINED', 'REPUDIATED', 'CLOSEDREJECTED'].includes(s)) return 'Rejected';
+  if (['PENDING', 'INPROCESS', 'UNDERPROCESS', 'INTIMATED', 'OPEN', 'REGISTERED', 'SUBMITTED'].includes(s)) return 'Pending';
+  if (['PARTIALAPPROVED', 'PARTIALLYSETTLED', 'PARTIALPAID', 'PARTIAL'].includes(s)) return 'Partial';
+  if (['CANCELLED', 'WITHDRAWN', 'CLOSEDCANCELLED'].includes(s)) return 'Cancelled';
+  return String(v).trim();
+};
+const stdServiceType = (v) => {
+  if (!v) return null;
+  const s = String(v).trim().toUpperCase().replace(/[^A-Z]/g, '');
+  if (['IPD', 'INPATIENT', 'HOSPITALIZATION', 'HOSPITALISATION', 'SURGICAL', 'DAYCARE'].includes(s)) return 'IPD';
+  if (['OPD', 'OUTPATIENT', 'OPDCONSULTATION', 'OPDVISIT', 'WALKIN'].includes(s)) return 'OPD';
+  if (['PHARMACY', 'MEDICINE', 'MEDICINES', 'DRUGS', 'PHARMA', 'CHEMIST'].includes(s)) return 'Pharmacy';
+  if (['LAB', 'LABTEST', 'DIAGNOSTIC', 'DIAGNOSTICS', 'PATHOLOGY', 'RADIOLOGY', 'LABDIAGNOSTIC', 'INVESTIGATION'].includes(s)) return 'Lab/Diagnostic';
+  if (['CONSULTATION', 'DOCTORCONSULTATION', 'TELECONSULTATION', 'TELE', 'CONSULT'].includes(s)) return 'Consultation';
+  if (['WELLNESS', 'HEALTHCHECK', 'HEALTHCHECKUP', 'PREVENTIVE', 'SCREENING', 'AHC'].includes(s)) return 'Wellness';
+  if (['MATERNITY', 'DELIVERY', 'CSECTION', 'NORMALDELIVERY', 'PREGNANCY'].includes(s)) return 'Maternity';
+  if (['DENTAL', 'DENTISTRY'].includes(s)) return 'Dental';
+  if (['VISION', 'OPTICAL', 'EYE', 'OPHTHALMOLOGY'].includes(s)) return 'Vision';
+  return String(v).trim();
+};
+const stdEmpCode = (v) => {
+  if (!v) return null;
+  return String(v).trim().toUpperCase();
+};
+const stdParseDate = (v) => {
+  if (!v) return null;
+  if (v instanceof Date) return v.toISOString().split('T')[0];
+  // Excel serial number (e.g. 45000 = ~2023-03-14)
+  if (typeof v === 'number' && v > 25000 && v < 60000) {
+    const d = new Date((v - 25569) * 86400000);
+    return !isNaN(d.getTime()) ? d.toISOString().split('T')[0] : null;
+  }
+  const s = String(v).trim();
+  // dd/mm/yyyy or dd-mm-yyyy
+  const dmy = s.match(/^(\d{1,2})[\/\-.](\d{1,2})[\/\-.](\d{4})$/);
+  if (dmy) {
+    const d = new Date(`${dmy[3]}-${dmy[2].padStart(2,'0')}-${dmy[1].padStart(2,'0')}`);
+    if (!isNaN(d.getTime())) return d.toISOString().split('T')[0];
+  }
+  // yyyy-mm-dd or yyyy/mm/dd
+  const ymd = s.match(/^(\d{4})[\/\-.](\d{1,2})[\/\-.](\d{1,2})$/);
+  if (ymd) {
+    const d = new Date(`${ymd[1]}-${ymd[2].padStart(2,'0')}-${ymd[3].padStart(2,'0')}`);
+    if (!isNaN(d.getTime())) return d.toISOString().split('T')[0];
+  }
+  // Fallback to JS Date parse
+  const d = new Date(s);
+  return !isNaN(d.getTime()) ? d.toISOString().split('T')[0] : null;
+};
+const stdParseAmount = (v) => {
+  if (!v) return 0;
+  if (typeof v === 'number') return v;
+  return parseFloat(String(v).replace(/[₹,\s]/g, '')) || 0;
+};
+const stdComputeAge = (dob) => {
+  if (!dob) return null;
+  const d = new Date(dob);
+  if (isNaN(d.getTime())) return null;
+  const now = new Date();
+  let age = now.getFullYear() - d.getFullYear();
+  if (now.getMonth() < d.getMonth() || (now.getMonth() === d.getMonth() && now.getDate() < d.getDate())) age--;
+  return age > 0 && age < 150 ? age : null;
+};
+// Cleaning stats tracker
+const newCleaningStats = () => ({ gender: 0, relationship: 0, age_computed: 0, date_fixed: 0, amount_fixed: 0, emp_code: 0, claim_status: 0, service_type: 0 });
+
 // ─── Upload Member Excel ─────────────────────────────────────────────────────
 router.post('/rfqs/:id/upload-members', authCRM, upload.single('file'), async (req, res) => {
   try {
@@ -1098,6 +1194,7 @@ router.post('/rfqs/:id/upload-members', authCRM, upload.single('file'), async (r
     await sharedPool.query(`DELETE FROM crm_rfq_members WHERE rfq_id = $1`, [rfqId]);
 
     let inserted = 0;
+    const stats = newCleaningStats();
     const batchSize = 500;
     for (let i = 0; i < rows.length; i += batchSize) {
       const batch = rows.slice(i, i + batchSize);
@@ -1105,19 +1202,24 @@ router.post('/rfqs/:id/upload-members', authCRM, upload.single('file'), async (r
       let pIdx = 1;
       for (const raw of batch) {
         const m = colMap(raw);
-        let dobVal = null;
-        if (m.dob) {
-          if (m.dob instanceof Date) dobVal = m.dob.toISOString().split('T')[0];
-          else { const d = new Date(m.dob); if (!isNaN(d.getTime())) dobVal = d.toISOString().split('T')[0]; }
-        }
-        let dojVal = null;
-        if (m.doj) {
-          if (m.doj instanceof Date) dojVal = m.doj.toISOString().split('T')[0];
-          else { const d = new Date(m.doj); if (!isNaN(d.getTime())) dojVal = d.toISOString().split('T')[0]; }
-        }
-        const empName = m.relationship?.toUpperCase() === 'SELF' ? (raw['Name'] || raw['Employee Name'] || null) : null;
-        values.push(rfqId, m.sr_no, m.emp_code?.toString() || null, m.relationship, m.relation_type, m.gender,
-          dobVal, m.age ? parseInt(m.age) : null, parseFloat(m.si_expiring) || 0, parseFloat(m.si_proposed) || 0,
+        // ── AI Data Standardization ──
+        const cleanGender = stdGender(m.gender);
+        if (m.gender && cleanGender !== m.gender) stats.gender++;
+        const cleanRel = stdRelationship(m.relationship);
+        if (m.relationship && cleanRel !== m.relationship) stats.relationship++;
+        const cleanEmp = stdEmpCode(m.emp_code);
+        if (m.emp_code && cleanEmp !== m.emp_code?.toString()) stats.emp_code++;
+        const dobVal = stdParseDate(m.dob);
+        if (m.dob && dobVal) stats.date_fixed++;
+        const dojVal = stdParseDate(m.doj);
+        if (m.doj && dojVal) stats.date_fixed++;
+        let ageVal = m.age ? parseInt(m.age) : null;
+        if (!ageVal && dobVal) { ageVal = stdComputeAge(dobVal); if (ageVal) stats.age_computed++; }
+        const siExp = stdParseAmount(m.si_expiring);
+        const siProp = stdParseAmount(m.si_proposed);
+        const empName = cleanRel === 'SELF' ? (raw['Name'] || raw['Employee Name'] || null) : null;
+        values.push(rfqId, m.sr_no, cleanEmp, cleanRel, m.relation_type, cleanGender,
+          dobVal, ageVal, siExp, siProp,
           m.designation, m.band, dojVal, empName);
         placeholders.push(`($${pIdx},$${pIdx+1},$${pIdx+2},$${pIdx+3},$${pIdx+4},$${pIdx+5},$${pIdx+6},$${pIdx+7},$${pIdx+8},$${pIdx+9},$${pIdx+10},$${pIdx+11},$${pIdx+12},$${pIdx+13})`);
         pIdx += 14;
@@ -1132,10 +1234,11 @@ router.post('/rfqs/:id/upload-members', authCRM, upload.single('file'), async (r
     // Update member count
     await sharedPool.query(`UPDATE crm_rfqs SET member_count = $1, updated_at = NOW() WHERE id = $2`, [inserted, rfqId]);
 
+    console.log(`[CRM Upload Members] RFQ ${rfqId}: ${inserted} members, cleaned: ${JSON.stringify(stats)}`);
     return res.status(200).json({
       success: true,
-      message: `Uploaded ${inserted} members from sheet "${memberSheetName}"`,
-      data: { memberCount: inserted, sheetName: memberSheetName }
+      message: `Uploaded ${inserted} members from sheet "${memberSheetName}" — AI cleaned & standardized`,
+      data: { memberCount: inserted, sheetName: memberSheetName, cleaning: stats }
     });
   } catch (error) {
     console.error('[CRM RFQ Upload]', error.message);
@@ -1296,12 +1399,13 @@ router.post('/rfqs/upload-excel', authCRM, upload.single('file'), async (req, re
         let pIdx = 1;
         for (const raw of batch) {
           const m = colMap(raw);
-          let dobVal = null;
-          if (m.dob) { if (m.dob instanceof Date) dobVal = m.dob.toISOString().split('T')[0]; else { const d = new Date(m.dob); if (!isNaN(d.getTime())) dobVal = d.toISOString().split('T')[0]; } }
-          let dojVal = null;
-          if (m.doj) { if (m.doj instanceof Date) dojVal = m.doj.toISOString().split('T')[0]; else { const d = new Date(m.doj); if (!isNaN(d.getTime())) dojVal = d.toISOString().split('T')[0]; } }
-          values.push(rfqId, m.sr_no, m.emp_code?.toString() || null, m.relationship, m.relation_type, m.gender,
-            dobVal, m.age ? parseInt(m.age) : null, parseFloat(m.si_expiring) || 0, parseFloat(m.si_proposed) || 0,
+          // ── AI Data Standardization ──
+          const dobVal = stdParseDate(m.dob);
+          const dojVal = stdParseDate(m.doj);
+          let ageVal = m.age ? parseInt(m.age) : null;
+          if (!ageVal && dobVal) ageVal = stdComputeAge(dobVal);
+          values.push(rfqId, m.sr_no, stdEmpCode(m.emp_code), stdRelationship(m.relationship), m.relation_type, stdGender(m.gender),
+            dobVal, ageVal, stdParseAmount(m.si_expiring), stdParseAmount(m.si_proposed),
             m.designation, m.band, dojVal, null);
           placeholders.push(`($${pIdx},$${pIdx+1},$${pIdx+2},$${pIdx+3},$${pIdx+4},$${pIdx+5},$${pIdx+6},$${pIdx+7},$${pIdx+8},$${pIdx+9},$${pIdx+10},$${pIdx+11},$${pIdx+12},$${pIdx+13})`);
           pIdx += 14;
@@ -2529,17 +2633,8 @@ router.post('/rfqs/:id/upload-claims', authCRM, upload.single('file'), async (re
         }
         return null;
       };
-      const parseDate = (v) => {
-        if (!v) return null;
-        if (v instanceof Date) return v.toISOString().split('T')[0];
-        const d = new Date(v);
-        return !isNaN(d.getTime()) ? d.toISOString().split('T')[0] : null;
-      };
-      const parseNum = (v) => {
-        if (!v) return 0;
-        if (typeof v === 'number') return v;
-        return parseFloat(String(v).replace(/[₹,]/g, '')) || 0;
-      };
+      const parseDate = (v) => stdParseDate(v);
+      const parseNum = (v) => stdParseAmount(v);
       return {
         claim_number: find(['claimno', 'claimnumber', 'claimid', 'claimref', 'intimationno', 'claimrefno']) || null,
         emp_code: (find(['empcode', 'employeecode', 'empid', 'employeeid', 'empno', 'employeeno', 'memberid', 'policyholderid']) || '').toString(),
@@ -2568,6 +2663,7 @@ router.post('/rfqs/:id/upload-claims', authCRM, upload.single('file'), async (re
     await sharedPool.query(`DELETE FROM crm_rfq_claims WHERE rfq_id = $1`, [rfqId]);
 
     let inserted = 0;
+    const stats = newCleaningStats();
     const batchSize = 500;
     for (let i = 0; i < rows.length; i += batchSize) {
       const batch = rows.slice(i, i + batchSize);
@@ -2575,10 +2671,20 @@ router.post('/rfqs/:id/upload-claims', authCRM, upload.single('file'), async (re
       let pIdx = 1;
       for (const raw of batch) {
         const c = colMap(raw);
-        // Normalize service type
-        let svcType = (c.service_type || '').trim();
+        // ── AI Data Standardization ──
+        const cleanGender = stdGender(c.gender);
+        if (c.gender && cleanGender !== c.gender) stats.gender++;
+        const cleanRel = stdRelationship(c.relationship);
+        if (c.relationship && cleanRel !== c.relationship) stats.relationship++;
+        const cleanEmp = stdEmpCode(c.emp_code);
+        if (c.emp_code && cleanEmp !== c.emp_code) stats.emp_code++;
+        const cleanStatus = stdClaimStatus(c.claim_status);
+        if (c.claim_status && cleanStatus !== c.claim_status) stats.claim_status++;
+        const claimDate = stdParseDate(c.claim_date) || c.claim_date;
+        if (c.claim_date && claimDate !== c.claim_date) stats.date_fixed++;
+        // Standardize service type with fallback inference
+        let svcType = stdServiceType(c.service_type);
         if (!svcType) {
-          // Try to infer from other fields
           const allVals = Object.values(raw).join(' ').toLowerCase();
           if (allVals.includes('pharmac') || allVals.includes('medicine')) svcType = 'Pharmacy';
           else if (allVals.includes('lab') || allVals.includes('diagnostic') || allVals.includes('pathology') || allVals.includes('radiology')) svcType = 'Lab/Diagnostic';
@@ -2586,9 +2692,10 @@ router.post('/rfqs/:id/upload-claims', authCRM, upload.single('file'), async (re
           else if (allVals.includes('wellness') || allVals.includes('health check') || allVals.includes('preventive')) svcType = 'Wellness';
           else svcType = 'Other';
         }
-        values.push(rfqId, c.claim_number, c.emp_code, c.employee_name, c.relationship, c.gender,
-          c.age, c.claim_date, svcType, c.service_category, c.diagnosis, c.provider_name, c.provider_type,
-          c.claimed_amount, c.approved_amount, c.paid_amount, c.rejection_reason, c.claim_status,
+        if (c.service_type && svcType !== (c.service_type || '').trim()) stats.service_type++;
+        values.push(rfqId, c.claim_number, cleanEmp, c.employee_name, cleanRel, cleanGender,
+          c.age, claimDate, svcType, c.service_category, c.diagnosis, c.provider_name, c.provider_type,
+          c.claimed_amount, c.approved_amount, c.paid_amount, c.rejection_reason, cleanStatus,
           c.policy_year, c.si_amount, c.band);
         placeholders.push(`($${pIdx},$${pIdx+1},$${pIdx+2},$${pIdx+3},$${pIdx+4},$${pIdx+5},$${pIdx+6},$${pIdx+7},$${pIdx+8},$${pIdx+9},$${pIdx+10},$${pIdx+11},$${pIdx+12},$${pIdx+13},$${pIdx+14},$${pIdx+15},$${pIdx+16},$${pIdx+17},$${pIdx+18},$${pIdx+19},$${pIdx+20})`);
         pIdx += 21;
@@ -2605,10 +2712,11 @@ router.post('/rfqs/:id/upload-claims', authCRM, upload.single('file'), async (re
       }
     }
 
+    console.log(`[CRM Upload Claims] RFQ ${rfqId}: ${inserted} claims, cleaned: ${JSON.stringify(stats)}`);
     return res.status(200).json({
       success: true,
-      message: `Uploaded ${inserted} claims from sheet "${claimsSheetName}"`,
-      data: { claimCount: inserted, sheetName: claimsSheetName }
+      message: `Uploaded ${inserted} claims from sheet "${claimsSheetName}" — AI cleaned & standardized`,
+      data: { claimCount: inserted, sheetName: claimsSheetName, cleaning: stats }
     });
   } catch (error) {
     console.error('[CRM Claims Upload]', error.message);
