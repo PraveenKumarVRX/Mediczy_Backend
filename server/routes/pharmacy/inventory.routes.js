@@ -978,4 +978,5 @@ router.post('/cims/advanced-search', verifyPharmacyToken, async (req, res) => {
   }
 });
 
+export { MASTER_MEDICINES };
 export default router;

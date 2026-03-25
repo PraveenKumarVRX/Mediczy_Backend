@@ -417,6 +417,9 @@ const Pharmacy = () => {
                                   </div>
                                   <div className="text-right shrink-0">
                                     <p className="text-sm font-bold text-emerald-600">₹{med.price}</p>
+                                    {med.packSize && (
+                                      <p className="text-[10px] text-slate-400 dark:text-slate-500">{med.packSize}</p>
+                                    )}
                                     {med.prescriptionRequired && (
                                       <span className="text-[10px] text-amber-600 dark:text-amber-400 font-medium">Rx</span>
                                     )}
@@ -441,7 +444,7 @@ const Pharmacy = () => {
                             <div key={item.id} className="flex items-center gap-3 px-3 py-2.5">
                               <div className="flex-1 min-w-0">
                                 <p className="text-sm font-medium dark:text-white truncate">{item.name}</p>
-                                <p className="text-xs text-slate-500 dark:text-slate-400">₹{item.price} each</p>
+                                <p className="text-xs text-slate-500 dark:text-slate-400">₹{item.price}{item.packSize ? ` / ${item.packSize}` : ' each'}</p>
                               </div>
                               <div className="flex items-center gap-1.5 shrink-0">
                                 <Button
