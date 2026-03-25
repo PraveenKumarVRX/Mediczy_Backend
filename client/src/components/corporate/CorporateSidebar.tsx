@@ -19,6 +19,7 @@ import {
   ShieldAlert,
   Trophy,
   CalendarDays,
+  Gauge,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { useState, useEffect } from "react";
@@ -33,6 +34,7 @@ interface SidebarItem {
 
 const mainNavItems: SidebarItem[] = [
   { icon: LayoutDashboard, label: "Dashboard", href: "/corporate/dashboard" },
+  { icon: Gauge, label: "Command Center", href: "/corporate/command-center" },
   { icon: Bell, label: "Notifications", href: "/corporate/notifications", badge: 3 },
   { icon: Users, label: "Employees", href: "/corporate/employees" },
   { icon: CalendarCheck, label: "Appointments", href: "/corporate/appointments" },

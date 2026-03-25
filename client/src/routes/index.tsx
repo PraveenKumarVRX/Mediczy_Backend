@@ -96,6 +96,10 @@ const EmployeeWellnessCalendar = lazy(() => import("@/pages/patient/EmployeeWell
 const AIReportScanner       = lazy(() => import("@/pages/patient/AIReportScanner"));
 const AISymptomTriage       = lazy(() => import("@/pages/patient/AISymptomTriage"));
 const SmartHealthDashboard  = lazy(() => import("@/pages/patient/SmartHealthDashboard"));
+const SmartBenefitsHub      = lazy(() => import("@/pages/patient/SmartBenefitsHub"));
+const FamilyHealthHub       = lazy(() => import("@/pages/patient/FamilyHealthHub"));
+const WellnessRewards       = lazy(() => import("@/pages/patient/WellnessRewards"));
+const ClaimsExpress         = lazy(() => import("@/pages/patient/ClaimsExpress"));
 
 // ─── Billing ─────────────────────────────────────────────────────────────────
 const OrderCheckout  = lazy(() => import("@/pages/billing/OrderCheckout"));
@@ -425,6 +429,7 @@ const CorporateGamification         = lazy(() => import("@/pages/corporate/Corpo
 const CorporateWellnessCalendar     = lazy(() => import("@/pages/corporate/CorporateWellnessCalendar"));
 const CorporateCompliance           = lazy(() => import("@/pages/corporate/CorporateCompliance"));
 const CorporateSupport              = lazy(() => import("@/pages/corporate/CorporateSupport"));
+const CorporateCommandCenter        = lazy(() => import("@/pages/corporate/CorporateCommandCenter"));
 
 // ─── TPA ─────────────────────────────────────────────────────────────────────
 const TpaLogin               = lazy(() => import("@/pages/tpa/TpaLogin"));
@@ -984,6 +989,7 @@ const AppRoutes = () => {
         <Route path="/corporate/gamification"            element={<CorporateGamification />} />
         <Route path="/corporate/wellness-calendar"       element={<CorporateWellnessCalendar />} />
         <Route path="/corporate/support"                 element={<CorporateSupport />} />
+        <Route path="/corporate/command-center"            element={<CorporateCommandCenter />} />
 
         {/* ── TPA ─────────────────────────────────────────────────────── */}
         <Route path="/tpa/login"          element={<TpaLogin />} />
@@ -1265,6 +1271,10 @@ const AppRoutes = () => {
         <Route path="/report-scanner"          element={<AIReportScanner />} />
         <Route path="/symptom-checker"         element={<AISymptomTriage />} />
         <Route path="/smart-health"            element={<SmartHealthDashboard />} />
+        <Route path="/benefits"               element={<SmartBenefitsHub />} />
+        <Route path="/family-hub"             element={<FamilyHealthHub />} />
+        <Route path="/wellness-rewards"       element={<WellnessRewards />} />
+        <Route path="/claims-express"         element={<ClaimsExpress />} />
 
         {/* ── Billing ─────────────────────────────────────────────────── */}
         <Route path="/billing/checkout"        element={<MainLayout><OrderCheckout /></MainLayout>} />

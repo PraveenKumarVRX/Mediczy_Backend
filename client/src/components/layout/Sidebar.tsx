@@ -46,7 +46,11 @@ import {
   ClipboardList,
   Receipt,
   Brain,
-  Ticket
+  Ticket,
+  Gift,
+  UsersRound,
+  Zap,
+  Sparkles
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
@@ -74,6 +78,7 @@ const sidebarItems: SidebarItem[] = [
   { icon: BookHeart, label: "Health Diary", path: "/health-diary", category: "Health" },
   { icon: ShieldCheck, label: "Health Risk Assessment", path: "/health-risk-assessment", category: "Health" },
   { icon: Trophy, label: "Wellness Challenges", path: "/wellness-challenges", category: "Health" },
+  { icon: Gift, label: "Wellness Rewards", path: "/wellness-rewards", category: "Health" },
   { icon: CalendarDays, label: "Wellness Calendar", path: "/wellness-calendar", category: "Health" },
   { icon: Apple, label: "Diet Plans", path: "/diet", category: "Health" },
   { icon: Bot, label: "AI Doctor", path: "/ai-doctor", category: "Health" },
@@ -97,8 +102,13 @@ const sidebarItems: SidebarItem[] = [
   { icon: Wallet, label: "Wallet", path: "/wallet", category: "Finance" },
   { icon: Crown, label: "Membership Plans", path: "/my-plans", category: "Finance" },
   { icon: CreditCard, label: "My Membership Card", path: "/membership-card", category: "Finance" },
+  { icon: Sparkles, label: "Smart Benefits", path: "/benefits", category: "Finance" },
+  { icon: Zap, label: "Claims Express", path: "/claims-express", category: "Finance" },
   { icon: FileStack, label: "Order History", path: "/billing/orders", category: "Finance" },
   { icon: Receipt, label: "My Invoices", path: "/billing/invoices", category: "Finance" },
+  
+  // Family
+  { icon: UsersRound, label: "Family Health Hub", path: "/family-hub", category: "Family" },
 ];
 
 const teamSidebarItems: SidebarItem[] = [
