@@ -423,6 +423,94 @@ router.post('/orders/:orderId/reorder', authUser, async (req, res) => {
 });
 
 /**
+ * GET /api/billing/orders/pharmacy/medicine-search
+ * Patient-accessible medicine search using CIMS database
+ */
+router.get('/orders/pharmacy/medicine-search', authUser, async (req, res) => {
+  try {
+    const { q, limit = 20 } = req.query;
+
+    if (!q || q.length < 2) {
+      return res.json({ success: true, data: [], message: 'Enter at least 2 characters' });
+    }
+
+    // Try CIMS service first
+    let results = [];
+    try {
+      const cimsService = (await import('../services/cims-medicine.service.js')).default;
+      const cimsResults = cimsService.searchByName(q, { page: 1, limit: parseInt(limit) });
+      if (cimsResults && cimsResults.data && cimsResults.data.length > 0) {
+        results = cimsResults.data.map(m => ({
+          id: m.id || m.brandName,
+          name: m.brandName || m.name,
+          genericName: m.genericName || '',
+          category: m.category || '',
+          manufacturer: m.manufacturer || '',
+          strength: m.strength || '',
+          form: m.form || 'tablet',
+          price: m.mrp || 0,
+          packSize: m.packSize || '',
+          schedule: m.schedule || 'OTC',
+          prescriptionRequired: m.schedule && m.schedule !== 'OTC'
+        }));
+      }
+    } catch {
+      // CIMS not available, will fall through to master list
+    }
+
+    // Fallback to master medicines list if CIMS returned nothing
+    if (results.length === 0) {
+      const MASTER_MEDICINES = [
+        { name: 'Paracetamol 500mg', genericName: 'Acetaminophen', category: 'Pain Relief', manufacturer: 'Cipla', price: 2.50, form: 'tablet' },
+        { name: 'Paracetamol 650mg', genericName: 'Acetaminophen', category: 'Pain Relief', manufacturer: 'Sun Pharma', price: 3.00, form: 'tablet' },
+        { name: 'Ibuprofen 400mg', genericName: 'Ibuprofen', category: 'Pain Relief', manufacturer: 'Dr. Reddy', price: 3.50, form: 'tablet' },
+        { name: 'Diclofenac 50mg', genericName: 'Diclofenac Sodium', category: 'Pain Relief', manufacturer: 'Novartis', price: 4.00, form: 'tablet' },
+        { name: 'Aspirin 75mg', genericName: 'Acetylsalicylic Acid', category: 'Pain Relief', manufacturer: 'Bayer', price: 2.00, form: 'tablet' },
+        { name: 'Combiflam', genericName: 'Ibuprofen + Paracetamol', category: 'Pain Relief', manufacturer: 'Sanofi', price: 5.50, form: 'tablet' },
+        { name: 'Amoxicillin 250mg', genericName: 'Amoxicillin', category: 'Antibiotic', manufacturer: 'GSK', price: 8.00, form: 'capsule' },
+        { name: 'Amoxicillin 500mg', genericName: 'Amoxicillin', category: 'Antibiotic', manufacturer: 'Cipla', price: 12.00, form: 'capsule' },
+        { name: 'Azithromycin 500mg', genericName: 'Azithromycin', category: 'Antibiotic', manufacturer: 'Cipla', price: 45.00, form: 'tablet' },
+        { name: 'Cetirizine 10mg', genericName: 'Cetirizine', category: 'Antiallergy', manufacturer: 'Dr. Reddy', price: 3.00, form: 'tablet' },
+        { name: 'Montelukast 10mg', genericName: 'Montelukast', category: 'Antiallergy', manufacturer: 'Sun Pharma', price: 6.00, form: 'tablet' },
+        { name: 'Omeprazole 20mg', genericName: 'Omeprazole', category: 'Gastric', manufacturer: 'Cipla', price: 5.00, form: 'capsule' },
+        { name: 'Pantoprazole 40mg', genericName: 'Pantoprazole', category: 'Gastric', manufacturer: 'Sun Pharma', price: 7.00, form: 'tablet' },
+        { name: 'Metformin 500mg', genericName: 'Metformin', category: 'Diabetes', manufacturer: 'USV', price: 3.00, form: 'tablet' },
+        { name: 'Atorvastatin 10mg', genericName: 'Atorvastatin', category: 'Cholesterol', manufacturer: 'Pfizer', price: 8.00, form: 'tablet' },
+        { name: 'Amlodipine 5mg', genericName: 'Amlodipine', category: 'Blood Pressure', manufacturer: 'Cipla', price: 4.00, form: 'tablet' },
+        { name: 'Losartan 50mg', genericName: 'Losartan', category: 'Blood Pressure', manufacturer: 'Sun Pharma', price: 6.00, form: 'tablet' },
+        { name: 'Vitamin D3 60000 IU', genericName: 'Cholecalciferol', category: 'Vitamins', manufacturer: 'Cadila', price: 30.00, form: 'sachet' },
+        { name: 'Vitamin B Complex', genericName: 'B-Complex Vitamins', category: 'Vitamins', manufacturer: 'Abbott', price: 4.00, form: 'tablet' },
+        { name: 'Calcium + Vitamin D3', genericName: 'Calcium Carbonate + Cholecalciferol', category: 'Vitamins', manufacturer: 'USV', price: 5.00, form: 'tablet' },
+        { name: 'Iron + Folic Acid', genericName: 'Ferrous Fumarate + Folic Acid', category: 'Supplements', manufacturer: 'Alkem', price: 3.50, form: 'tablet' },
+        { name: 'ORS Powder', genericName: 'Oral Rehydration Salts', category: 'Gastric', manufacturer: 'WHO Standard', price: 10.00, form: 'sachet' },
+        { name: 'Dolo 650', genericName: 'Paracetamol', category: 'Pain Relief', manufacturer: 'Micro Labs', price: 3.50, form: 'tablet' },
+        { name: 'Crocin Advance', genericName: 'Paracetamol', category: 'Pain Relief', manufacturer: 'GSK', price: 3.00, form: 'tablet' },
+        { name: 'Allegra 120mg', genericName: 'Fexofenadine', category: 'Antiallergy', manufacturer: 'Sanofi', price: 12.00, form: 'tablet' },
+      ];
+      const query = q.toLowerCase();
+      results = MASTER_MEDICINES
+        .filter(m => m.name.toLowerCase().includes(query) || m.genericName.toLowerCase().includes(query) || m.category.toLowerCase().includes(query))
+        .slice(0, parseInt(limit))
+        .map((m, idx) => ({
+          id: `MASTER-${idx}`,
+          name: m.name,
+          genericName: m.genericName,
+          category: m.category,
+          manufacturer: m.manufacturer,
+          price: m.price,
+          form: m.form,
+          prescriptionRequired: ['Antibiotic'].includes(m.category)
+        }));
+    }
+
+    return res.json({ success: true, query: q, data: results });
+  } catch (error) {
+    console.error('Medicine search error:', error);
+    return res.status(500).json({ success: false, message: 'Medicine search failed', error: error.message });
+  }
+});
+
+/**
  * GET /api/billing/orders/pharmacy/history
  * Get pharmacy-specific order history with detailed medicine info
  */

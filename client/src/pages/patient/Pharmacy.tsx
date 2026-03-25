@@ -1,9 +1,10 @@
-import { useState, useEffect, useMemo } from 'react';
+import { useState, useEffect, useMemo, useRef, useCallback } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import {
   Pill, ShoppingCart, MapPin, Clock, Plus, Search, Package,
   RefreshCw, Eye, Truck, CheckCircle, XCircle,
-  FileText, CreditCard, Calendar, IndianRupee, Activity, BoxIcon
+  FileText, CreditCard, Calendar, IndianRupee, Activity, BoxIcon,
+  Minus, Trash2, Loader2, AlertCircle
 } from 'lucide-react';
 import { Card, CardContent } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
@@ -68,6 +69,24 @@ interface DetailedOrder extends PharmacyOrder {
   notes?: string;
 }
 
+interface MedicineResult {
+  id: string;
+  name: string;
+  genericName?: string;
+  category?: string;
+  manufacturer?: string;
+  strength?: string;
+  form?: string;
+  price: number;
+  packSize?: string;
+  schedule?: string;
+  prescriptionRequired?: boolean;
+}
+
+interface CartItem extends MedicineResult {
+  quantity: number;
+}
+
 // ──────────────────── Helpers ────────────────────
 
 const statusConfig: Record<string, { bg: string; text: string; icon: React.ElementType; dot: string }> = {
@@ -110,6 +129,15 @@ const Pharmacy = () => {
   const [showDetailsDialog, setShowDetailsDialog] = useState(false);
   const [selectedOrder, setSelectedOrder] = useState<DetailedOrder | null>(null);
   const [detailsLoading, setDetailsLoading] = useState(false);
+
+  // ── Medicine search state ──
+  const [medQuery, setMedQuery] = useState('');
+  const [medResults, setMedResults] = useState<MedicineResult[]>([]);
+  const [medSearching, setMedSearching] = useState(false);
+  const [cart, setCart] = useState<CartItem[]>([]);
+  const [deliveryAddr, setDeliveryAddr] = useState('');
+  const [placingOrder, setPlacingOrder] = useState(false);
+  const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   useEffect(() => { fetchPharmacyOrders(); }, []);
 
@@ -215,6 +243,76 @@ const Pharmacy = () => {
     }
   };
 
+  // ── Medicine search (debounced) ──
+  const searchMedicines = useCallback(async (query: string) => {
+    if (query.trim().length < 2) { setMedResults([]); setMedSearching(false); return; }
+    try {
+      setMedSearching(true);
+      const { data } = await api.get(`/billing/orders/pharmacy/medicine-search?q=${encodeURIComponent(query.trim())}&limit=10`);
+      if (data.success) setMedResults(data.data || []);
+      else setMedResults([]);
+    } catch {
+      setMedResults([]);
+    } finally {
+      setMedSearching(false);
+    }
+  }, []);
+
+  const onMedQueryChange = (value: string) => {
+    setMedQuery(value);
+    if (debounceRef.current) clearTimeout(debounceRef.current);
+    if (value.trim().length < 2) { setMedResults([]); setMedSearching(false); return; }
+    setMedSearching(true);
+    debounceRef.current = setTimeout(() => searchMedicines(value), 350);
+  };
+
+  const addToCart = (med: MedicineResult) => {
+    setCart(prev => {
+      const existing = prev.find(c => c.id === med.id);
+      if (existing) return prev.map(c => c.id === med.id ? { ...c, quantity: c.quantity + 1 } : c);
+      return [...prev, { ...med, quantity: 1 }];
+    });
+    setMedQuery('');
+    setMedResults([]);
+  };
+
+  const updateCartQty = (id: string, delta: number) => {
+    setCart(prev => prev.map(c => c.id === id ? { ...c, quantity: Math.max(1, c.quantity + delta) } : c));
+  };
+
+  const removeFromCart = (id: string) => {
+    setCart(prev => prev.filter(c => c.id !== id));
+  };
+
+  const cartTotal = useMemo(() => cart.reduce((sum, c) => sum + c.price * c.quantity, 0), [cart]);
+
+  const handlePlaceOrder = async () => {
+    if (cart.length === 0) { toast.error('Add at least one medicine'); return; }
+    if (!deliveryAddr.trim()) { toast.error('Enter a delivery address'); return; }
+    try {
+      setPlacingOrder(true);
+      const { data } = await api.post('/billing/orders', {
+        orderType: 'medicine',
+        items: cart.map(c => ({ name: c.name, quantity: c.quantity, price: c.price, medicineId: c.id })),
+        deliveryAddress: deliveryAddr.trim(),
+        prescriptionRequired: cart.some(c => c.prescriptionRequired),
+      });
+      if (data.success) {
+        toast.success('Order placed!', { description: `Order #${data.data?.order?.orderNumber || data.data?.order?.id || ''} created.` });
+        setShowOrderDialog(false);
+        setCart([]);
+        setMedQuery('');
+        setMedResults([]);
+        setDeliveryAddr('');
+        fetchPharmacyOrders();
+      }
+    } catch (error: any) {
+      toast.error('Failed to place order', { description: error.response?.data?.message || 'Please try again.' });
+    } finally {
+      setPlacingOrder(false);
+    }
+  };
+
   // ──────────────────── Render ────────────────────
 
   return (
@@ -262,45 +360,162 @@ const Pharmacy = () => {
                     New Order
                   </Button>
                 </DialogTrigger>
-                <DialogContent className="max-w-md dark:bg-slate-900 dark:border-slate-700">
+                <DialogContent className="max-w-lg dark:bg-slate-900 dark:border-slate-700 max-h-[90vh] overflow-y-auto">
                   <DialogHeader>
                     <DialogTitle className="flex items-center gap-2 dark:text-white">
                       <ShoppingCart className="h-5 w-5 text-emerald-600" />
                       Order Medicines
                     </DialogTitle>
                     <DialogDescription className="dark:text-slate-400">
-                      Upload a prescription or search for medicines to place an order.
+                      Search for medicines, add to cart, and place your order.
                     </DialogDescription>
                   </DialogHeader>
-                  <div className="space-y-5 py-2">
+                  <div className="space-y-4 py-2">
+
+                    {/* ── Search ── */}
                     <div className="space-y-2">
                       <Label className="dark:text-slate-300">Search Medicine</Label>
                       <div className="relative">
                         <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-slate-400" />
-                        <Input placeholder="e.g. Paracetamol 500mg..." className="pl-9 dark:bg-slate-800 dark:border-slate-600" />
+                        <Input
+                          placeholder="Type at least 2 characters, e.g. Paracetamol..."
+                          className="pl-9 dark:bg-slate-800 dark:border-slate-600"
+                          value={medQuery}
+                          onChange={(e) => onMedQueryChange(e.target.value)}
+                          autoFocus
+                        />
+                        {medSearching && (
+                          <Loader2 className="absolute right-3 top-1/2 -translate-y-1/2 h-4 w-4 text-emerald-500 animate-spin" />
+                        )}
                       </div>
+
+                      {/* Search results dropdown */}
+                      {medQuery.trim().length >= 2 && (
+                        <div className="border rounded-xl dark:border-slate-700 dark:bg-slate-800/80 bg-white shadow-lg max-h-52 overflow-y-auto">
+                          {medSearching && medResults.length === 0 ? (
+                            <div className="flex items-center justify-center gap-2 py-6 text-sm text-slate-500">
+                              <Loader2 className="h-4 w-4 animate-spin" /> Searching...
+                            </div>
+                          ) : medResults.length === 0 ? (
+                            <div className="flex items-center justify-center gap-2 py-6 text-sm text-slate-500 dark:text-slate-400">
+                              <AlertCircle className="h-4 w-4" /> No medicines found
+                            </div>
+                          ) : (
+                            medResults.map(med => (
+                              <button
+                                key={med.id}
+                                type="button"
+                                className="w-full text-left px-4 py-3 hover:bg-emerald-50 dark:hover:bg-emerald-900/20 transition-colors border-b last:border-b-0 dark:border-slate-700/50"
+                                onClick={() => addToCart(med)}
+                              >
+                                <div className="flex items-center justify-between gap-2">
+                                  <div className="min-w-0 flex-1">
+                                    <p className="text-sm font-semibold dark:text-white truncate">{med.name}</p>
+                                    <p className="text-xs text-slate-500 dark:text-slate-400 truncate">
+                                      {[med.genericName, med.manufacturer, med.form, med.strength, med.packSize].filter(Boolean).join(' · ')}
+                                    </p>
+                                  </div>
+                                  <div className="text-right shrink-0">
+                                    <p className="text-sm font-bold text-emerald-600">₹{med.price}</p>
+                                    {med.prescriptionRequired && (
+                                      <span className="text-[10px] text-amber-600 dark:text-amber-400 font-medium">Rx</span>
+                                    )}
+                                  </div>
+                                </div>
+                              </button>
+                            ))
+                          )}
+                        </div>
+                      )}
                     </div>
+
+                    {/* ── Cart ── */}
+                    {cart.length > 0 && (
+                      <div className="space-y-2">
+                        <Label className="dark:text-slate-300 flex items-center gap-2">
+                          Cart
+                          <Badge variant="secondary" className="text-xs">{cart.length} item{cart.length > 1 ? 's' : ''}</Badge>
+                        </Label>
+                        <div className="border rounded-xl dark:border-slate-700 divide-y dark:divide-slate-700">
+                          {cart.map(item => (
+                            <div key={item.id} className="flex items-center gap-3 px-3 py-2.5">
+                              <div className="flex-1 min-w-0">
+                                <p className="text-sm font-medium dark:text-white truncate">{item.name}</p>
+                                <p className="text-xs text-slate-500 dark:text-slate-400">₹{item.price} each</p>
+                              </div>
+                              <div className="flex items-center gap-1.5 shrink-0">
+                                <Button
+                                  type="button" variant="outline" size="icon"
+                                  className="h-7 w-7 dark:border-slate-600"
+                                  onClick={() => updateCartQty(item.id, -1)}
+                                >
+                                  <Minus className="h-3 w-3" />
+                                </Button>
+                                <span className="text-sm font-semibold w-6 text-center dark:text-white">{item.quantity}</span>
+                                <Button
+                                  type="button" variant="outline" size="icon"
+                                  className="h-7 w-7 dark:border-slate-600"
+                                  onClick={() => updateCartQty(item.id, 1)}
+                                >
+                                  <Plus className="h-3 w-3" />
+                                </Button>
+                              </div>
+                              <span className="text-sm font-bold text-emerald-600 w-16 text-right">₹{(item.price * item.quantity).toFixed(0)}</span>
+                              <Button
+                                type="button" variant="ghost" size="icon"
+                                className="h-7 w-7 text-red-500 hover:text-red-600 hover:bg-red-50 dark:hover:bg-red-900/20"
+                                onClick={() => removeFromCart(item.id)}
+                              >
+                                <Trash2 className="h-3.5 w-3.5" />
+                              </Button>
+                            </div>
+                          ))}
+                          <div className="flex items-center justify-between px-3 py-2.5 bg-slate-50 dark:bg-slate-800/50 rounded-b-xl">
+                            <span className="text-sm font-semibold dark:text-slate-300">Total</span>
+                            <span className="text-lg font-bold text-emerald-600">₹{cartTotal.toFixed(0)}</span>
+                          </div>
+                        </div>
+                        {cart.some(c => c.prescriptionRequired) && (
+                          <div className="flex items-start gap-2 p-2.5 rounded-lg bg-amber-50 dark:bg-amber-900/20 border border-amber-200 dark:border-amber-800">
+                            <AlertCircle className="h-4 w-4 text-amber-600 mt-0.5 shrink-0" />
+                            <p className="text-xs text-amber-700 dark:text-amber-300">Some items require a prescription. You may be asked to upload one.</p>
+                          </div>
+                        )}
+                      </div>
+                    )}
+
+                    {/* ── Upload Prescription ── */}
                     <div className="space-y-2">
-                      <Label className="dark:text-slate-300">Upload Prescription</Label>
-                      <div className="border-2 border-dashed rounded-xl p-6 text-center hover:border-emerald-400 transition-colors dark:border-slate-600 dark:hover:border-emerald-500">
-                        <FileText className="h-8 w-8 mx-auto text-slate-400 mb-2" />
-                        <p className="text-sm text-slate-500 dark:text-slate-400 mb-2">Drag & drop or click to upload</p>
-                        <Input type="file" accept="image/*,.pdf" className="max-w-[200px] mx-auto text-xs" />
+                      <Label className="dark:text-slate-300">Upload Prescription (optional)</Label>
+                      <div className="border-2 border-dashed rounded-xl p-4 text-center hover:border-emerald-400 transition-colors dark:border-slate-600 dark:hover:border-emerald-500">
+                        <FileText className="h-6 w-6 mx-auto text-slate-400 mb-1" />
+                        <p className="text-xs text-slate-500 dark:text-slate-400 mb-1.5">Drag & drop or click to upload</p>
+                        <Input type="file" accept="image/*,.pdf" className="max-w-[180px] mx-auto text-xs" />
                       </div>
                     </div>
+
+                    {/* ── Delivery Address ── */}
                     <div className="space-y-2">
                       <Label className="dark:text-slate-300">Delivery Address</Label>
-                      <Input placeholder="Enter delivery address" className="dark:bg-slate-800 dark:border-slate-600" />
+                      <Input
+                        placeholder="Enter delivery address"
+                        className="dark:bg-slate-800 dark:border-slate-600"
+                        value={deliveryAddr}
+                        onChange={(e) => setDeliveryAddr(e.target.value)}
+                      />
                     </div>
+
+                    {/* ── Place Order ── */}
                     <Button
                       className="w-full bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-700 hover:to-teal-700 shadow-lg font-semibold h-11"
-                      onClick={() => {
-                        toast.info('Order placement coming soon', { description: 'This feature is under development.' });
-                        setShowOrderDialog(false);
-                      }}
+                      onClick={handlePlaceOrder}
+                      disabled={cart.length === 0 || placingOrder}
                     >
-                      <ShoppingCart className="h-4 w-4 mr-2" />
-                      Place Order
+                      {placingOrder ? (
+                        <><Loader2 className="h-4 w-4 mr-2 animate-spin" /> Placing Order...</>
+                      ) : (
+                        <><ShoppingCart className="h-4 w-4 mr-2" /> Place Order {cart.length > 0 && `· ₹${cartTotal.toFixed(0)}`}</>
+                      )}
                     </Button>
                   </div>
                 </DialogContent>
