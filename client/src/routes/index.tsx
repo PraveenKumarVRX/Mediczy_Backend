@@ -1259,10 +1259,10 @@ const AppRoutes = () => {
         <Route path="/patient/network-hospitals"  element={<MainLayout><NetworkHospitals /></MainLayout>} />
         <Route path="/patient/network-clinics"   element={<MainLayout><NetworkClinics /></MainLayout>} />
         <Route path="/patient/buy-insurance"      element={<MainLayout><BuyInsurance /></MainLayout>} />
-        <Route path="/patient/claims"             element={<MainLayout><ClaimsManagement /></MainLayout>} />
+        <Route path="/patient/claims"             element={<ClaimsExpress />} />
         <Route path="/patient/ai-health-analysis" element={<MainLayout><AIHealthAnalysis /></MainLayout>} />
-        <Route path="/patient/wellness-challenges" element={<EmployeeGamification />} />
-        <Route path="/wellness-challenges"        element={<EmployeeGamification />} />
+        <Route path="/patient/wellness-challenges" element={<WellnessRewards />} />
+        <Route path="/wellness-challenges"        element={<WellnessRewards />} />
         <Route path="/patient/wellness-calendar"  element={<EmployeeWellnessCalendar />} />
         <Route path="/wellness-calendar"          element={<EmployeeWellnessCalendar />} />
         <Route path="/health-risk-assessment"     element={<UserHealthRiskAssessment />} />
