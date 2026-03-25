@@ -162,23 +162,26 @@ const MyMembershipCard = () => {
   const [activeInfoTab, setActiveInfoTab] = useState<'benefits' | 'coverage' | 'contacts'>('benefits');
 
   /* ─── data fetching ─── */
-  const { data: userData, isLoading: userLoading } = useQuery({
+  const { data: userData, isLoading: userLoading, isError: userError, refetch: refetchUser } = useQuery({
     queryKey: ['user-profile'],
     queryFn: async () => {
       const { data } = await api.get('/users/profile');
       return data;
     },
+    retry: 1,
   });
 
-  const { data: planData, isLoading: planLoading } = useQuery({
+  const { data: planData, isLoading: planLoading, isError: planError, refetch: refetchPlan } = useQuery({
     queryKey: ['user-plan'],
     queryFn: async () => {
       const { data } = await api.get('/membership/my/current');
       return data;
     },
+    retry: 1,
   });
 
   const isLoading = userLoading || planLoading;
+  const hasError = userError || planError;
   const user = userData?.user || userData;
   const plan = planData?.plan || planData?.userPlan?.plan;
 
@@ -317,6 +320,29 @@ const MyMembershipCard = () => {
           ))}
         </div>
         <Skeleton className="h-48 rounded-xl" />
+      </motion.div>
+    );
+  }
+
+  /* ─── error state ─── */
+  if (hasError && !user) {
+    return (
+      <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} className="flex flex-col items-center justify-center py-20 px-4 text-center">
+        <div className="h-16 w-16 rounded-2xl bg-red-100 dark:bg-red-950/40 flex items-center justify-center mb-4">
+          <Shield className="h-8 w-8 text-red-500" />
+        </div>
+        <h2 className="text-xl font-bold mb-2">Unable to Load Health Card</h2>
+        <p className="text-muted-foreground text-sm max-w-md mb-6">
+          We couldn't retrieve your membership details. This may be due to a session timeout or network issue.
+        </p>
+        <div className="flex gap-3">
+          <Button variant="outline" onClick={() => { refetchUser(); refetchPlan(); }}>
+            Try Again
+          </Button>
+          <Button onClick={() => navigate('/login')}>
+            Sign In
+          </Button>
+        </div>
       </motion.div>
     );
   }
