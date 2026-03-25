@@ -433,7 +433,7 @@ router.get('/orders/pharmacy/history', authUser, async (req, res) => {
 
     const where = { 
       userId,
-      orderType: 'pharmacy'
+      orderType: 'medicine'
     };
     if (status) where.status = status;
 
