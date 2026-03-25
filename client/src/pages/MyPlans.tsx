@@ -1,4 +1,5 @@
 import { useMemo, useState, useEffect } from "react";
+import { motion } from "framer-motion";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import MainLayout from "@/components/layout/MainLayout";
 import { Card } from "@/components/ui/card";
@@ -6,7 +7,10 @@ import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { useToast } from "@/hooks/use-toast";
 import api from "@/utils/api";
-import { Crown, CheckCircle, Loader2, TrendingUp, Activity, Zap, RefreshCw } from "lucide-react";
+import { Crown, CheckCircle, Loader2, TrendingUp, Activity, Zap, RefreshCw, Shield, Star, Sparkles } from "lucide-react";
+
+const container = { hidden: { opacity: 0 }, show: { opacity: 1, transition: { staggerChildren: 0.06 } } };
+const item = { hidden: { opacity: 0, y: 20 }, show: { opacity: 1, y: 0, transition: { duration: 0.4, ease: [.25,.46,.45,.94] } } };
 
 type TeleConsultLimits = Record<string, number> & { allSpecialties?: number };
 
@@ -291,14 +295,26 @@ const MyPlans = () => {
   const isLoading = loadingCurrent || loadingUsage || loadingPlans;
 
   return (
-      <div className="space-y-6 animate-in">
-        <div>
-          <h1 className="primary-grad text-3xl font-bold">My Plans</h1>
-          <p className="text-muted-foreground">Subscribe to a plan and track your remaining benefits</p>
-        </div>
+      <motion.div variants={container} initial="hidden" animate="show" className="max-w-7xl mx-auto space-y-6 px-4 md:px-6 py-6">
+        {/* Premium Hero Header */}
+        <motion.div variants={item} className="relative overflow-hidden rounded-2xl bg-gradient-to-r from-slate-800 via-slate-900 to-slate-800 p-6 md:p-8 text-white shadow-2xl">
+          <div className="absolute inset-0 bg-[url('data:image/svg+xml;base64,PHN2ZyB3aWR0aD0iNjAiIGhlaWdodD0iNjAiIHZpZXdCb3g9IjAgMCA2MCA2MCIgeG1sbnM9Imh0dHA6Ly93d3cudzMub3JnLzIwMDAvc3ZnIj48ZyBmaWxsPSJub25lIiBmaWxsLXJ1bGU9ImV2ZW5vZGQiPjxwYXRoIGQ9Ik0zNiAxOGMzLjMxNCAwIDYgMi42ODYgNiA2cy0yLjY4NiA2LTYgNi02LTIuNjg2LTYtNiAyLjY4Ni02IDYtNiIgc3Ryb2tlPSJyZ2JhKDI1NSwyNTUsMjU1LDAuMSkiLz48L2c+PC9zdmc+')] opacity-30" />
+          <div className="absolute top-0 right-0 w-64 h-64 bg-gradient-to-br from-amber-500/20 to-transparent rounded-full blur-3xl" />
+          <div className="relative">
+            <div className="flex items-center gap-3 mb-3">
+              <div className="p-2.5 rounded-xl bg-gradient-to-br from-amber-500 to-amber-600 shadow-lg shadow-amber-500/30">
+                <Crown className="w-6 h-6" />
+              </div>
+              <Badge className="bg-white/10 text-white/90 border-white/20 font-medium">Membership</Badge>
+            </div>
+            <h1 className="text-2xl md:text-3xl font-bold mb-2">My Plans</h1>
+            <p className="text-slate-300 text-sm md:text-base">Subscribe to a plan and track your remaining benefits</p>
+          </div>
+        </motion.div>
 
         {/* Live Usage Update Banner */}
         {userPlan && (
+          <motion.div variants={item}>
           <Card className={`p-4 border-2 transition-all duration-500 ${
             showUsageBanner 
               ? "bg-gradient-to-r from-emerald-50 via-blue-50 to-purple-50 border-emerald-400 shadow-lg animate-in slide-in-from-top" 
@@ -357,21 +373,23 @@ const MyPlans = () => {
               </div>
             )}
           </Card>
+          </motion.div>
         )}
 
         {isLoading ? (
           <div className="flex items-center justify-center min-h-[240px]">
-            <Loader2 className="h-6 w-6 animate-spin" />
+            <Loader2 className="h-6 w-6 animate-spin text-amber-500" />
           </div>
         ) : (
           <>
             {/* Current Plan */}
-            <Card className="p-6">
+            <motion.div variants={item}>
+              <Card className="p-6 bg-white dark:bg-slate-800 border-slate-200 dark:border-slate-700">
               {!userPlan ? (
                 <div className="flex items-center justify-between">
                   <div>
-                    <h3 className="text-xl font-semibold">No Active Plan</h3>
-                    <p className="text-gray-600">Choose a plan below to get started.</p>
+                    <h3 className="text-xl font-semibold text-slate-800 dark:text-white">No Active Plan</h3>
+                    <p className="text-gray-600 dark:text-slate-400">Choose a plan below to get started.</p>
                   </div>
                   <Crown className="h-8 w-8 text-amber-500" />
                 </div>
@@ -445,12 +463,13 @@ const MyPlans = () => {
                 </div>
               )}
             </Card>
+            </motion.div>
 
             {/* Available Plans */}
-            <div className="space-y-3">
-              <h2 className="text-xl font-semibold">Available Plans</h2>
+            <motion.div variants={item} className="space-y-3">
+              <h2 className="text-xl font-semibold text-slate-800 dark:text-white">Available Plans</h2>
               {availablePlans.length === 0 ? (
-                <Card className="p-6 text-center text-gray-600">No plans available at the moment.</Card>
+                <Card className="p-6 text-center text-gray-600 dark:text-slate-400 dark:bg-slate-800 dark:border-slate-700">No plans available at the moment.</Card>
               ) : (
                 <div className="grid md:grid-cols-2 lg:grid-cols-3 gap-6">
                   {availablePlans.map((p) => {
@@ -458,7 +477,8 @@ const MyPlans = () => {
                     const parsedPrice = Number(p.price);
                     const priceValue = p.priceINR ?? (Number.isFinite(parsedPrice) ? parsedPrice : 0);
                     return (
-                    <Card key={p.id} className="p-6 space-y-3">
+                    <motion.div key={p.id} whileHover={{ y: -6, scale: 1.02 }} transition={{ type: 'spring', stiffness: 300 }}>
+                    <Card className="p-6 space-y-3 bg-white dark:bg-slate-800 border-slate-200 dark:border-slate-700 hover:shadow-xl transition-shadow">
                       <div className="flex items-start justify-between">
                         <div>
                           <h3 className="text-lg font-semibold">{p.name}</h3>
@@ -496,33 +516,35 @@ const MyPlans = () => {
                       <Button
                         disabled={!p.isActive || Boolean(userPlan) || subscribingId === p.id}
                         onClick={() => handleSubscribe(p.id)}
-                        className="w-full mt-2"
+                        className="w-full mt-2 bg-gradient-to-r from-amber-500 to-amber-600 hover:from-amber-600 hover:to-amber-700 text-white"
                       >
-                        {subscribingId === p.id ? <Loader2 className="h-4 w-4 animate-spin mr-2" /> : null}
+                        {subscribingId === p.id ? <Loader2 className="h-4 w-4 animate-spin mr-2" /> : <Star className="h-4 w-4 mr-2" />}
                         {userPlan ? "Already Subscribed" : "Subscribe"}
                       </Button>
                     </Card>
+                    </motion.div>
                   )})}
                 </div>
               )}
-            </div>
+            </motion.div>
 
             {/* Upgrade Options - Show when user has active plan */}
             {userPlan && upgradeOptions.length > 0 && (
-              <div className="space-y-3">
+              <motion.div variants={item} className="space-y-3">
                 <div className="flex items-center gap-2">
-                  <TrendingUp className="h-5 w-5 text-primary" />
-                  <h2 className="text-xl font-semibold">Upgrade Your Plan</h2>
+                  <TrendingUp className="h-5 w-5 text-amber-500" />
+                  <h2 className="text-xl font-semibold text-slate-800 dark:text-white">Upgrade Your Plan</h2>
                 </div>
                 <p className="text-sm text-muted-foreground">
                   Upgrade to a higher tier and get prorated credit for your remaining days
                 </p>
                 <div className="grid md:grid-cols-2 lg:grid-cols-3 gap-6">
                   {upgradeOptions.map((opt) => (
-                    <Card key={opt.id} className={`p-6 space-y-3 border-2 ${opt.isUpgrade ? 'border-primary/50 bg-primary/5' : 'border-gray-200'}`}>
+                    <motion.div key={opt.id} whileHover={{ y: -6, scale: 1.02 }} transition={{ type: 'spring', stiffness: 300 }}>
+                    <Card className={`p-6 space-y-3 border-2 ${opt.isUpgrade ? 'border-amber-400/50 bg-amber-50/50 dark:bg-amber-900/10 dark:border-amber-500/30' : 'border-gray-200 dark:border-slate-700 bg-white dark:bg-slate-800'}`}>
                       <div className="flex items-start justify-between">
                         <div>
-                          <h3 className="text-lg font-semibold">{opt.name}</h3>
+                          <h3 className="text-lg font-semibold text-slate-800 dark:text-white">{opt.name}</h3>
                           <Badge variant={opt.isUpgrade ? "default" : "secondary"} className="mt-1">
                             {opt.tierName} {opt.isUpgrade && '↑'}
                           </Badge>
@@ -531,25 +553,25 @@ const MyPlans = () => {
                       </div>
                       
                       <div className="space-y-1">
-                        <div className="text-sm text-muted-foreground line-through">
+                        <div className="text-sm text-slate-500 dark:text-slate-400 line-through">
                           Original: ₹{opt.originalPrice.toLocaleString('en-IN')}
                         </div>
-                        <div className="text-sm text-emerald-600">
+                        <div className="text-sm text-emerald-600 dark:text-emerald-400">
                           Prorated credit: -₹{opt.proratedRefund.toLocaleString('en-IN')}
                         </div>
-                        <div className="text-2xl font-bold text-primary">
+                        <div className="text-2xl font-bold bg-gradient-to-r from-amber-600 to-orange-600 bg-clip-text text-transparent">
                           Pay: ₹{opt.amountDue.toLocaleString('en-IN')}
                         </div>
                       </div>
                       
                       {opt.description && (
-                        <p className="text-sm text-gray-600 line-clamp-2">{opt.description}</p>
+                        <p className="text-sm text-gray-600 dark:text-slate-400 line-clamp-2">{opt.description}</p>
                       )}
                       
                       <Button
                         disabled={upgradingId === opt.id}
                         onClick={() => handleUpgrade(opt.id, opt.name, opt.amountDue)}
-                        className="w-full"
+                        className={`w-full ${opt.isUpgrade ? 'bg-gradient-to-r from-amber-500 to-orange-500 hover:from-amber-600 hover:to-orange-600 text-white' : ''}`}
                         variant={opt.isUpgrade ? "default" : "outline"}
                       >
                         {upgradingId === opt.id ? (
@@ -560,17 +582,18 @@ const MyPlans = () => {
                         {opt.isUpgrade ? 'Upgrade Now' : 'Switch Plan'}
                       </Button>
                     </Card>
+                    </motion.div>
                   ))}
                 </div>
-              </div>
+              </motion.div>
             )}
 
             {/* Addon Plans */}
             {addonPlans.length > 0 && (
-              <div className="space-y-3">
+              <motion.div variants={item} className="space-y-3">
                 <div className="flex items-center gap-2">
-                  <Zap className="h-5 w-5 text-amber-500" />
-                  <h2 className="text-xl font-semibold">Optional Add-ons</h2>
+                  <Sparkles className="h-5 w-5 text-purple-500" />
+                  <h2 className="text-xl font-semibold text-slate-800 dark:text-white">Optional Add-ons</h2>
                 </div>
                 <p className="text-sm text-muted-foreground">
                   Enhance your membership with additional benefits
@@ -580,7 +603,8 @@ const MyPlans = () => {
                     const parsedPrice = Number(addon.price);
                     const priceValue = addon.priceINR ?? (Number.isFinite(parsedPrice) ? parsedPrice : 0);
                     return (
-                      <Card key={addon.id} className={`p-6 space-y-3 ${addon.isSubscribed ? 'border-emerald-500 bg-emerald-50' : ''}`}>
+                      <motion.div key={addon.id} whileHover={{ y: -4 }} transition={{ type: 'spring', stiffness: 300 }}>
+                      <Card className={`p-6 space-y-3 bg-white dark:bg-slate-800 border-slate-200 dark:border-slate-700 ${addon.isSubscribed ? 'border-emerald-500 bg-emerald-50 dark:bg-emerald-900/10' : ''}`}>
                         <div className="flex items-start justify-between">
                           <div>
                             <h3 className="text-lg font-semibold">{addon.name}</h3>
@@ -626,14 +650,15 @@ const MyPlans = () => {
                           {addon.isSubscribed ? 'Already Added' : 'Add to Plan'}
                         </Button>
                       </Card>
+                      </motion.div>
                     );
                   })}
                 </div>
-              </div>
+              </motion.div>
             )}
           </>
         )}
-      </div>
+      </motion.div>
   );
 };
 

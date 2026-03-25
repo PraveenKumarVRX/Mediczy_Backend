@@ -1,4 +1,5 @@
 import { useState, useEffect } from "react";
+import { motion } from "framer-motion";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -10,6 +11,7 @@ import {
   CardTitle,
 } from "@/components/ui/card";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
+import { Badge } from "@/components/ui/badge";
 import { useToast } from "@/hooks/use-toast";
 import {
   Form,
@@ -26,11 +28,14 @@ import { useQueryClient } from "@tanstack/react-query";
 import { profileProps, UserProps } from "@/lib/user.type";
 import { useAuth } from "@/auth/AuthProvider";
 import MainLayout from "@/components/layout/MainLayout";
-import { MapPin, Wifi, WifiOff, Calendar } from "lucide-react";
+import { MapPin, Wifi, WifiOff, Calendar, User, Shield, Phone, Mail, Edit3, Save, X } from "lucide-react";
 import { Switch } from "@radix-ui/react-switch";
 import axios from "axios";
 import api from "@/utils/api";
 import { useSocket } from "@/context/SocketContext";
+
+const container = { hidden: { opacity: 0 }, show: { opacity: 1, transition: { staggerChildren: 0.06 } } };
+const item = { hidden: { opacity: 0, y: 20 }, show: { opacity: 1, y: 0, transition: { duration: 0.4, ease: [.25,.46,.45,.94] } } };
 
 const profileSchema = z.object({
   firstName: z.string().min(2, "First name must be at least 2 characters"),
@@ -285,40 +290,58 @@ const Profile = () => {
   };
 
   return (
-      <div className="animate-in min-h-screen bg-slate-50 dark:bg-slate-900 p-6">
-        <div className="mb-8">
-          <h1 className="text-3xl font-bold bg-gradient-to-r from-teal-600 to-teal-400 bg-clip-text text-transparent">Profile</h1>
-          <p className="text-slate-600 dark:text-slate-400">Manage your profile settings</p>
-        </div>
+      <motion.div variants={container} initial="hidden" animate="show" className="max-w-7xl mx-auto space-y-6 px-4 md:px-6 py-6">
+        {/* Premium Hero Header */}
+        <motion.div variants={item} className="relative overflow-hidden rounded-2xl bg-gradient-to-r from-slate-800 via-slate-900 to-slate-800 p-6 md:p-8 text-white shadow-2xl">
+          <div className="absolute inset-0 bg-[url('data:image/svg+xml;base64,PHN2ZyB3aWR0aD0iNjAiIGhlaWdodD0iNjAiIHZpZXdCb3g9IjAgMCA2MCA2MCIgeG1sbnM9Imh0dHA6Ly93d3cudzMub3JnLzIwMDAvc3ZnIj48ZyBmaWxsPSJub25lIiBmaWxsLXJ1bGU9ImV2ZW5vZGQiPjxwYXRoIGQ9Ik0zNiAxOGMzLjMxNCAwIDYgMi42ODYgNiA2cy0yLjY4NiA2LTYgNi02LTIuNjg2LTYtNiAyLjY4Ni02IDYtNiIgc3Ryb2tlPSJyZ2JhKDI1NSwyNTUsMjU1LDAuMSkiLz48L2c+PC9zdmc+')] opacity-30" />
+          <div className="absolute top-0 right-0 w-64 h-64 bg-gradient-to-br from-teal-500/20 to-transparent rounded-full blur-3xl" />
+          <div className="relative flex flex-col md:flex-row md:items-center gap-6">
+            <Avatar className="h-24 w-24 ring-4 ring-white/20 ring-offset-4 ring-offset-slate-900 shadow-2xl">
+              <AvatarImage src="https://github.com/shadcn.png" />
+              <AvatarFallback className="bg-gradient-to-br from-teal-500 to-teal-600 text-white text-2xl font-bold">
+                {(form.getValues("firstName")?.[0] || "")}{(form.getValues("lastName")?.[0] || "")}
+              </AvatarFallback>
+            </Avatar>
+            <div className="flex-1">
+              <div className="flex items-center gap-3 mb-2">
+                <div className="p-2 rounded-xl bg-gradient-to-br from-teal-500 to-teal-600 shadow-lg shadow-teal-500/30">
+                  <User className="w-5 h-5" />
+                </div>
+                <Badge className="bg-white/10 text-white/90 border-white/20 font-medium">
+                  {userType === "doctor" ? "Healthcare Provider" : "Patient Profile"}
+                </Badge>
+                <Badge className={`${isOnline ? 'bg-emerald-500/20 text-emerald-300 border-emerald-400/30' : 'bg-slate-500/20 text-slate-300 border-slate-400/30'}`}>
+                  {isOnline ? "Online" : "Offline"}
+                </Badge>
+              </div>
+              <h1 className="text-2xl md:text-3xl font-bold mb-1">
+                {form.getValues("firstName")} {form.getValues("lastName")}
+              </h1>
+              <p className="text-slate-300 text-sm">{form.getValues("email")}</p>
+            </div>
+            <Button
+              variant="outline"
+              onClick={() => setIsEditing(!isEditing)}
+              className="bg-white/10 border-white/20 text-white hover:bg-white/20 self-start"
+            >
+              {isEditing ? <><X className="h-4 w-4 mr-2" />Cancel</> : <><Edit3 className="h-4 w-4 mr-2" />Edit Profile</>}
+            </Button>
+          </div>
+        </motion.div>
 
         <div className="grid gap-6">
           {/* Personal Information Card */}
+          <motion.div variants={item}>
           <Card className="bg-white dark:bg-slate-800/50 border-slate-200 dark:border-slate-700 shadow-sm">
             <CardHeader className="flex flex-row items-center justify-between border-b border-slate-200 dark:border-slate-700">
-              <CardTitle className="text-slate-800 dark:text-white">Personal Information</CardTitle>
-              <Button
-                variant="outline"
-                onClick={() => setIsEditing(!isEditing)}
-                className="border-teal-500 text-teal-600 hover:bg-teal-50 dark:border-teal-400 dark:text-teal-400 dark:hover:bg-teal-900/20"
-              >
-                {isEditing ? "Cancel" : "Edit Profile"}
-              </Button>
+              <CardTitle className="text-slate-800 dark:text-white flex items-center gap-2">
+                <div className="p-1.5 rounded-lg bg-gradient-to-br from-teal-500 to-teal-600">
+                  <User className="h-4 w-4 text-white" />
+                </div>
+                Personal Information
+              </CardTitle>
             </CardHeader>
             <CardContent className="pt-6">
-              <div className="mb-6 flex items-center gap-4">
-                <Avatar className="h-20 w-20 ring-2 ring-teal-500 ring-offset-2 dark:ring-offset-slate-800">
-                  <AvatarImage src="https://github.com/shadcn.png" />
-                  <AvatarFallback className="bg-teal-100 text-teal-700 dark:bg-teal-900 dark:text-teal-300">JD</AvatarFallback>
-                </Avatar>
-                <div>
-                  <h2 className="text-xl font-semibold text-slate-800 dark:text-white">
-                    {form.getValues("firstName")} {form.getValues("lastName")}
-                  </h2>
-                  <p className="text-sm text-slate-500 dark:text-slate-400">
-                    {form.getValues("email")}
-                  </p>
-                </div>
-              </div>
 
               {isEditing ? (
                 <Form {...form}>
@@ -507,11 +530,18 @@ const Profile = () => {
               )}
             </CardContent>
           </Card>
+          </motion.div>
 
           {/* Emergency Contacts Card */}
+          <motion.div variants={item}>
           <Card className="bg-white dark:bg-slate-800/50 border-slate-200 dark:border-slate-700 shadow-sm">
             <CardHeader className="flex flex-row items-center justify-between border-b border-slate-200 dark:border-slate-700">
-              <CardTitle className="text-slate-800 dark:text-white">Emergency Contacts</CardTitle>
+              <CardTitle className="text-slate-800 dark:text-white flex items-center gap-2">
+                <div className="p-1.5 rounded-lg bg-gradient-to-br from-rose-500 to-rose-600">
+                  <Shield className="h-4 w-4 text-white" />
+                </div>
+                Emergency Contacts
+              </CardTitle>
               <Button
                 variant="outline"
                 onClick={() => setIsAddingContact(!isAddingContact)}
@@ -591,11 +621,18 @@ const Profile = () => {
               </div>
             </CardContent>
           </Card>
+          </motion.div>
 
           {/* New Card for Location and Online Status */}
+          <motion.div variants={item}>
           <Card className="bg-white dark:bg-slate-800/50 border-slate-200 dark:border-slate-700 shadow-sm">
             <CardHeader className="border-b border-slate-200 dark:border-slate-700">
-              <CardTitle className="text-slate-800 dark:text-white">Availability & Location</CardTitle>
+              <CardTitle className="text-slate-800 dark:text-white flex items-center gap-2">
+                <div className="p-1.5 rounded-lg bg-gradient-to-br from-indigo-500 to-indigo-600">
+                  <MapPin className="h-4 w-4 text-white" />
+                </div>
+                Availability & Location
+              </CardTitle>
             </CardHeader>
             <CardContent className="pt-6">
               <div className="space-y-6">
@@ -683,8 +720,9 @@ const Profile = () => {
               </p>
             </CardFooter>
           </Card>
+          </motion.div>
         </div>
-      </div>
+      </motion.div>
   );
 };
 

@@ -1,4 +1,5 @@
 import { useState, useEffect } from "react";
+import { motion } from "framer-motion";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -28,6 +29,9 @@ import {
   TableRow,
 } from "@/components/ui/table";
 import { PurchaseCoinsDialog } from "@/components/wallet/PurchaseCoinsDialog";
+
+const container = { hidden: { opacity: 0 }, show: { opacity: 1, transition: { staggerChildren: 0.06 } } };
+const item = { hidden: { opacity: 0, y: 20 }, show: { opacity: 1, y: 0, transition: { duration: 0.4, ease: [.25,.46,.45,.94] } } };
 
 export default function Wallet() {
   const { toast } = useToast();
@@ -156,30 +160,36 @@ export default function Wallet() {
   }
 
   return (
-    <div className="container mx-auto p-6 space-y-6">
-      {/* Header */}
-      <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-3">
-        <div>
-          <h1 className="text-2xl sm:text-3xl font-bold flex items-center gap-2">
-            <WalletIcon className="h-7 w-7 sm:h-8 sm:w-8" />
-            Health Coins Wallet
-          </h1>
-          <p className="text-muted-foreground mt-1 text-sm sm:text-base">
-            Earn and spend health coins for rewards and services
-          </p>
+    <motion.div variants={container} initial="hidden" animate="show" className="max-w-7xl mx-auto space-y-6 px-4 md:px-6 py-6">
+      {/* Premium Hero Header */}
+      <motion.div variants={item} className="relative overflow-hidden rounded-2xl bg-gradient-to-r from-slate-800 via-slate-900 to-slate-800 p-6 md:p-8 text-white shadow-2xl">
+        <div className="absolute inset-0 bg-[url('data:image/svg+xml;base64,PHN2ZyB3aWR0aD0iNjAiIGhlaWdodD0iNjAiIHZpZXdCb3g9IjAgMCA2MCA2MCIgeG1sbnM9Imh0dHA6Ly93d3cudzMub3JnLzIwMDAvc3ZnIj48ZyBmaWxsPSJub25lIiBmaWxsLXJ1bGU9ImV2ZW5vZGQiPjxwYXRoIGQ9Ik0zNiAxOGMzLjMxNCAwIDYgMi42ODYgNiA2cy0yLjY4NiA2LTYgNi02LTIuNjg2LTYtNiAyLjY4Ni02IDYtNiIgc3Ryb2tlPSJyZ2JhKDI1NSwyNTUsMjU1LDAuMSkiLz48L2c+PC9zdmc+')] opacity-30" />
+        <div className="absolute top-0 right-0 w-64 h-64 bg-gradient-to-br from-emerald-500/20 to-transparent rounded-full blur-3xl" />
+        <div className="relative flex flex-col md:flex-row md:items-center md:justify-between gap-4">
+          <div>
+            <div className="flex items-center gap-3 mb-3">
+              <div className="p-2.5 rounded-xl bg-gradient-to-br from-emerald-500 to-emerald-600 shadow-lg shadow-emerald-500/30">
+                <Coins className="w-6 h-6" />
+              </div>
+              <Badge className="bg-white/10 text-white/90 border-white/20 font-medium">Health Coins</Badge>
+            </div>
+            <h1 className="text-2xl md:text-3xl font-bold mb-2">Health Coins Wallet</h1>
+            <p className="text-slate-300 text-sm md:text-base">Earn and spend health coins for rewards and services</p>
+          </div>
+          <Button onClick={() => setShowPurchaseDialog(true)} size="lg" className="bg-gradient-to-r from-emerald-500 to-emerald-600 hover:from-emerald-600 hover:to-emerald-700 text-white shadow-lg shadow-emerald-500/30 self-start">
+            <Plus className="h-4 w-4 mr-2" />
+            Buy Coins
+          </Button>
         </div>
-        <Button onClick={() => setShowPurchaseDialog(true)} size="lg" className="w-full sm:w-auto">
-          <Plus className="h-4 w-4 mr-2" />
-          Buy Coins
-        </Button>
-      </div>
+      </motion.div>
 
       {/* Balance Card */}
-      <Card className="bg-gradient-to-br from-primary/10 to-primary/5 border-primary/20">
+      <motion.div variants={item}>
+      <Card className="bg-gradient-to-br from-emerald-500/10 to-emerald-500/5 border-emerald-500/20 dark:from-emerald-900/20 dark:to-emerald-900/10 dark:border-emerald-500/20">
         <CardHeader>
           <CardTitle className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-2">
             <span className="flex items-center gap-2">
-              <Coins className="h-6 w-6 text-primary" />
+              <Coins className="h-6 w-6 text-emerald-600 dark:text-emerald-400" />
               Current Balance
             </span>
             <Button onClick={claimDailyReward} disabled={claiming} variant="secondary" size="sm" className="w-full sm:w-auto">
@@ -191,9 +201,9 @@ export default function Wallet() {
         <CardContent>
           <div className="grid grid-cols-1 md:grid-cols-4 gap-6">
             <div className="md:col-span-1">
-              <div className="text-5xl font-bold text-primary flex items-center gap-2">
+              <div className="text-5xl font-bold bg-gradient-to-r from-emerald-600 to-teal-600 bg-clip-text text-transparent flex items-center gap-2">
                 {wallet?.balance?.toFixed(0) || 0}
-                <span className="text-xl text-muted-foreground">HC</span>
+                <span className="text-xl text-slate-500 dark:text-slate-400">HC</span>
               </div>
               <p className="text-sm text-muted-foreground mt-2">Health Coins</p>
             </div>
@@ -252,10 +262,12 @@ export default function Wallet() {
           )}
         </CardContent>
       </Card>
+      </motion.div>
 
       {/* Today's Activity */}
       {wallet?.todayActivity && (
-        <Card>
+        <motion.div variants={item}>
+        <Card className="bg-white dark:bg-slate-800 border-slate-200 dark:border-slate-700">
           <CardHeader>
             <CardTitle className="flex items-center gap-2">
               <Calendar className="h-5 w-5" />
@@ -307,10 +319,12 @@ export default function Wallet() {
             </div>
           </CardContent>
         </Card>
+        </motion.div>
       )}
 
       {/* Transaction History */}
-      <Card>
+      <motion.div variants={item}>
+      <Card className="bg-white dark:bg-slate-800 border-slate-200 dark:border-slate-700">
         <CardHeader>
           <CardTitle className="flex items-center gap-2">
             <History className="h-5 w-5" />
@@ -366,6 +380,7 @@ export default function Wallet() {
           )}
         </CardContent>
       </Card>
+      </motion.div>
 
       {/* Purchase Dialog */}
       <PurchaseCoinsDialog
@@ -373,6 +388,6 @@ export default function Wallet() {
         onOpenChange={setShowPurchaseDialog}
         onSuccess={fetchWallet}
       />
-    </div>
+    </motion.div>
   );
 }
