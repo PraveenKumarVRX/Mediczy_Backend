@@ -1,4 +1,5 @@
 import { useState, useEffect } from 'react';
+import { motion, AnimatePresence } from 'framer-motion';
 import { FlaskConical, Calendar, MapPin, Download, Plus, Search, Filter, Loader2, ShoppingCart, Trash2, X, Navigation, Building2 } from 'lucide-react';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
@@ -11,6 +12,9 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { useToast } from '@/hooks/use-toast';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import api from '@/utils/api';
+
+const container = { hidden: { opacity: 0 }, show: { opacity: 1, transition: { staggerChildren: 0.06 } } };
+const item = { hidden: { opacity: 0, y: 20 }, show: { opacity: 1, y: 0, transition: { duration: 0.4, ease: [.25,.46,.45,.94] } } };
 
 interface LabTest {
   id: string;
@@ -582,9 +586,9 @@ const LabTests = () => {
   };
 
   return (
-      <div className="max-w-7xl mx-auto space-y-6 animate-in fade-in duration-500 px-4 md:px-6 py-6">
+      <motion.div variants={container} initial="hidden" animate="show" className="max-w-7xl mx-auto space-y-6 px-4 md:px-6 py-6">
         {/* Header */}
-        <div className="relative overflow-hidden rounded-2xl bg-gradient-to-r from-slate-800 via-slate-900 to-slate-800 p-6 md:p-8 text-white shadow-2xl">
+        <motion.div variants={item} className="relative overflow-hidden rounded-2xl bg-gradient-to-r from-slate-800 via-slate-900 to-slate-800 p-6 md:p-8 text-white shadow-2xl">
           <div className="absolute inset-0 bg-[url('data:image/svg+xml;base64,PHN2ZyB3aWR0aD0iNjAiIGhlaWdodD0iNjAiIHZpZXdCb3g9IjAgMCA2MCA2MCIgeG1sbnM9Imh0dHA6Ly93d3cudzMub3JnLzIwMDAvc3ZnIj48ZyBmaWxsPSJub25lIiBmaWxsLXJ1bGU9ImV2ZW5vZGQiPjxwYXRoIGQ9Ik0zNiAxOGMzLjMxNCAwIDYgMi42ODYgNiA2cy0yLjY4NiA2LTYgNi02LTIuNjg2LTYtNiAyLjY4Ni02IDYtNiIgc3Ryb2tlPSJyZ2JhKDI1NSwyNTUsMjU1LDAuMSkiLz48L2c+PC9zdmc+')] opacity-30" />
           <div className="absolute top-0 right-0 w-64 h-64 bg-gradient-to-br from-teal-500/20 to-transparent rounded-full blur-3xl" />
           <div className="relative flex flex-col md:flex-row md:items-center md:justify-between gap-4">
@@ -1207,10 +1211,11 @@ const LabTests = () => {
               </DialogContent>
             </Dialog>
           </div>
-        </div>
+        </motion.div>
 
         {/* Stats */}
-        <div className="grid grid-cols-1 md:grid-cols-4 gap-4 mb-6">
+        <motion.div variants={item} className="grid grid-cols-1 md:grid-cols-4 gap-4 mb-6">
+          <motion.div whileHover={{ y: -4, scale: 1.02 }} transition={{ type: 'spring', stiffness: 300 }}>
           <Card className="bg-white dark:bg-slate-800 border-slate-200 dark:border-slate-700 cursor-pointer hover:shadow-lg transition-shadow" onClick={() => setFilterStatus('all')}>
             <CardContent className="pt-6">
               <div className="text-center">
@@ -1219,6 +1224,8 @@ const LabTests = () => {
               </div>
             </CardContent>
           </Card>
+          </motion.div>
+          <motion.div whileHover={{ y: -4, scale: 1.02 }} transition={{ type: 'spring', stiffness: 300 }}>
           <Card className="bg-white dark:bg-slate-800 border-slate-200 dark:border-slate-700 cursor-pointer hover:shadow-lg transition-shadow" onClick={() => setFilterStatus('pending')}>
             <CardContent className="pt-6">
               <div className="text-center">
@@ -1227,6 +1234,8 @@ const LabTests = () => {
               </div>
             </CardContent>
           </Card>
+          </motion.div>
+          <motion.div whileHover={{ y: -4, scale: 1.02 }} transition={{ type: 'spring', stiffness: 300 }}>
           <Card className="bg-white dark:bg-slate-800 border-slate-200 dark:border-slate-700 cursor-pointer hover:shadow-lg transition-shadow" onClick={() => setFilterStatus('in_progress')}>
             <CardContent className="pt-6">
               <div className="text-center">
@@ -1235,6 +1244,8 @@ const LabTests = () => {
               </div>
             </CardContent>
           </Card>
+          </motion.div>
+          <motion.div whileHover={{ y: -4, scale: 1.02 }} transition={{ type: 'spring', stiffness: 300 }}>
           <Card className="bg-white dark:bg-slate-800 border-slate-200 dark:border-slate-700 cursor-pointer hover:shadow-lg transition-shadow" onClick={() => setFilterStatus('completed')}>
             <CardContent className="pt-6">
               <div className="text-center">
@@ -1243,9 +1254,11 @@ const LabTests = () => {
               </div>
             </CardContent>
           </Card>
-        </div>
+          </motion.div>
+        </motion.div>
 
         {/* Controls */}
+        <motion.div variants={item}>
         <Card className="mb-6 bg-white dark:bg-slate-800 border-slate-200 dark:border-slate-700">
           <CardContent className="pt-6">
             <div className="flex flex-col gap-4">
@@ -1306,14 +1319,16 @@ const LabTests = () => {
             </div>
           </CardContent>
         </Card>
+        </motion.div>
 
         {/* Available Tests to Book */}
         {searchTerm && (
-          <div className="mb-6">
+          <motion.div variants={item} className="mb-6">
             <h2 className="text-xl font-semibold mb-4 text-gray-900 dark:text-white">Available Tests ({filteredAvailableTests.length})</h2>
             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
               {filteredAvailableTests.slice(0, 12).map((test) => (
-                <Card key={test.id} className="hover:shadow-lg transition-shadow cursor-pointer bg-white dark:bg-slate-800 border-slate-200 dark:border-slate-700" onClick={() => handleBookTest(test)}>
+                <motion.div key={test.id} whileHover={{ y: -4 }} transition={{ type: 'spring', stiffness: 300 }}>
+                <Card className="hover:shadow-lg transition-shadow cursor-pointer bg-white dark:bg-slate-800 border-slate-200 dark:border-slate-700" onClick={() => handleBookTest(test)}>
                   <CardHeader>
                     <div className="flex items-start justify-between">
                       <div className="flex-1">
@@ -1344,6 +1359,7 @@ const LabTests = () => {
                     </Button>
                   </CardContent>
                 </Card>
+                </motion.div>
               ))}
             </div>
             {filteredAvailableTests.length > 12 && (
@@ -1351,10 +1367,11 @@ const LabTests = () => {
                 Showing 12 of {filteredAvailableTests.length} tests. Refine your search for more specific results.
               </p>
             )}
-          </div>
+          </motion.div>
         )}
 
         {/* My Booked Tests */}
+        <motion.div variants={item}>
         <h2 className="text-xl font-semibold mb-4 text-gray-900 dark:text-white">My Lab Tests ({filteredTests.length})</h2>
         {isLoading ? (
           <div className="flex items-center justify-center py-12">
@@ -1363,8 +1380,10 @@ const LabTests = () => {
           </div>
         ) : (
         <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+          <AnimatePresence>
           {filteredTests.map((test) => (
-            <Card key={test.id} className="hover:shadow-lg transition-shadow bg-white dark:bg-slate-800 border-slate-200 dark:border-slate-700">
+            <motion.div key={test.id} whileHover={{ y: -4 }} transition={{ type: 'spring', stiffness: 300 }} layout>
+            <Card className="hover:shadow-lg transition-shadow bg-white dark:bg-slate-800 border-slate-200 dark:border-slate-700">
               <CardHeader>
                 <div className="flex items-start justify-between">
                   <div className="flex-1">
@@ -1430,7 +1449,9 @@ const LabTests = () => {
                 </div>
               </CardContent>
             </Card>
+            </motion.div>
           ))}
+          </AnimatePresence>
         </div>
         )}
 
@@ -1447,7 +1468,8 @@ const LabTests = () => {
             </CardContent>
           </Card>
         )}
-      </div>
+        </motion.div>
+      </motion.div>
   );
 };
 
