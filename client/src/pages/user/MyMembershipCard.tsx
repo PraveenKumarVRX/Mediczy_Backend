@@ -48,16 +48,6 @@ import { useState, useRef, useEffect, useCallback } from 'react';
 import QRCode from 'qrcode';
 import html2canvas from 'html2canvas';
 
-/* ─── animation variants ─── */
-const container = {
-  hidden: { opacity: 0 },
-  show: { opacity: 1, transition: { staggerChildren: 0.06 } },
-};
-const item = {
-  hidden: { opacity: 0, y: 20 },
-  show: { opacity: 1, y: 0, transition: { duration: 0.4, ease: [0.25, 0.46, 0.45, 0.94] } },
-};
-
 /* ─── tier design system (Aetna-grade color palettes) ─── */
 const tierConfig: Record<string, {
   gradient: string;
@@ -348,9 +338,9 @@ const MyMembershipCard = () => {
   }
 
   return (
-    <motion.div variants={container} initial="hidden" animate="show" className="space-y-6 md:space-y-8 pb-8">
+    <div className="space-y-6 md:space-y-8 pb-8">
       {/* ───────── PAGE HEADER ───────── */}
-      <motion.div variants={item}>
+      <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.4, ease: [0.25, 0.46, 0.45, 0.94] }}>
         <div className={`relative overflow-hidden rounded-2xl bg-gradient-to-r ${config.headerGradient} p-6 md:p-8 text-white`}>
           {/* subtle pattern overlay */}
           <div className="absolute inset-0 opacity-[0.04]" style={{
@@ -395,7 +385,7 @@ const MyMembershipCard = () => {
         <div className="lg:col-span-3 space-y-6">
 
           {/* ── membership card with 3D flip ── */}
-          <motion.div variants={item}>
+          <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.4, ease: [0.25, 0.46, 0.45, 0.94] }}>
             <div
               ref={cardRef}
               className="relative cursor-pointer select-none mx-auto max-w-lg"
@@ -527,7 +517,7 @@ const MyMembershipCard = () => {
           </motion.div>
 
           {/* ── member ID quick-copy strip ── */}
-          <motion.div variants={item}>
+          <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.4, ease: [0.25, 0.46, 0.45, 0.94] }}>
             <Card className="border-dashed">
               <CardContent className="p-4 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3">
                 <div className="flex items-center gap-3">
@@ -558,7 +548,7 @@ const MyMembershipCard = () => {
           </motion.div>
 
           {/* ── quick actions grid ── */}
-          <motion.div variants={item}>
+          <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.4, ease: [0.25, 0.46, 0.45, 0.94] }}>
             <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
               {quickActions.map((action) => (
                 <motion.button
@@ -576,7 +566,7 @@ const MyMembershipCard = () => {
           </motion.div>
 
           {/* ── coverage summary cards ── */}
-          <motion.div variants={item}>
+          <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.4, ease: [0.25, 0.46, 0.45, 0.94] }}>
             <h3 className="text-sm font-semibold text-muted-foreground uppercase tracking-wider mb-3">Coverage At A Glance</h3>
             <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
               {coverageItems.map((ci) => (
@@ -596,7 +586,7 @@ const MyMembershipCard = () => {
         <div className="lg:col-span-2 space-y-6">
 
           {/* ── plan overview card ── */}
-          <motion.div variants={item}>
+          <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.4, ease: [0.25, 0.46, 0.45, 0.94] }}>
             <Card className="overflow-hidden">
               <div className={`h-2 bg-gradient-to-r ${config.headerGradient}`} />
               <CardContent className="p-5">
@@ -630,7 +620,7 @@ const MyMembershipCard = () => {
           </motion.div>
 
           {/* ── tabbed info panel ── */}
-          <motion.div variants={item}>
+          <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.4, ease: [0.25, 0.46, 0.45, 0.94] }}>
             <Card>
               <CardContent className="p-0">
                 {/* tabs */}
@@ -761,7 +751,7 @@ const MyMembershipCard = () => {
           </motion.div>
 
           {/* ── how to use ── */}
-          <motion.div variants={item}>
+          <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.4, ease: [0.25, 0.46, 0.45, 0.94] }}>
             <Card>
               <CardContent className="p-5">
                 <h3 className="text-sm font-semibold text-muted-foreground uppercase tracking-wider mb-4">How To Use Your Card</h3>
@@ -788,7 +778,7 @@ const MyMembershipCard = () => {
           </motion.div>
 
           {/* ── member since badge ── */}
-          <motion.div variants={item}>
+          <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.4, ease: [0.25, 0.46, 0.45, 0.94] }}>
             <div className="flex items-center gap-3 text-sm text-muted-foreground px-1">
               <Clock className="h-4 w-4" />
               <span>Member since {memberSince} · Card last refreshed {new Date().toLocaleDateString('en-IN')}</span>
@@ -796,7 +786,7 @@ const MyMembershipCard = () => {
           </motion.div>
         </div>
       </div>
-    </motion.div>
+    </div>
   );
 };
 
