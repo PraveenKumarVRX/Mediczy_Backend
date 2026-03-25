@@ -1,4 +1,5 @@
 import { useState, useEffect } from 'react';
+import { motion } from 'framer-motion';
 import { Pill, ShoppingCart, MapPin, Clock, Plus, Search, Package, RefreshCw, Eye, X, Truck, CheckCircle } from 'lucide-react';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
@@ -8,6 +9,10 @@ import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, Di
 import { Label } from '@/components/ui/label';
 import { toast } from 'sonner';
 import api from '@/utils/api';
+import MainLayout from '@/components/layout/MainLayout';
+
+const container = { hidden: { opacity: 0 }, show: { opacity: 1, transition: { staggerChildren: 0.06 } } };
+const itemVar = { hidden: { opacity: 0, y: 20 }, show: { opacity: 1, y: 0, transition: { duration: 0.4, ease: [.25,.46,.45,.94] } } };
 
 interface PharmacyOrder {
   id: string;
@@ -227,36 +232,39 @@ const Pharmacy = () => {
 
   const getStatusColor = (status: string) => {
     const colors = {
-      pending: 'bg-yellow-100 text-yellow-800',
-      confirmed: 'bg-blue-100 text-blue-800',
-      out_for_delivery: 'bg-purple-100 text-purple-800',
-      delivered: 'bg-green-100 text-green-800',
-      cancelled: 'bg-red-100 text-red-800'
+      pending: 'bg-amber-100 text-amber-700 dark:bg-amber-900/40 dark:text-amber-300',
+      confirmed: 'bg-blue-100 text-blue-700 dark:bg-blue-900/40 dark:text-blue-300',
+      out_for_delivery: 'bg-purple-100 text-purple-700 dark:bg-purple-900/40 dark:text-purple-300',
+      delivered: 'bg-emerald-100 text-emerald-700 dark:bg-emerald-900/40 dark:text-emerald-300',
+      cancelled: 'bg-red-100 text-red-700 dark:bg-red-900/40 dark:text-red-300'
     };
     return colors[status as keyof typeof colors];
   };
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-green-50 via-white to-blue-50 p-6">
-      <div className="max-w-7xl mx-auto">
-        {/* Header */}
-        <div className="mb-6">
-          <div className="flex items-center justify-between">
+    <MainLayout>
+    <motion.div initial="hidden" animate="show" variants={container} className="max-w-7xl mx-auto space-y-6 px-4 md:px-6 py-6">
+        {/* Premium Header */}
+        <motion.div variants={itemVar} className="relative overflow-hidden rounded-2xl bg-gradient-to-r from-emerald-700 via-green-700 to-emerald-800 p-6 md:p-8 text-white shadow-2xl">
+          <div className="absolute inset-0 bg-[radial-gradient(ellipse_at_top_right,rgba(255,255,255,0.15),transparent_60%)]" />
+          <div className="absolute top-0 right-0 w-72 h-72 bg-gradient-to-br from-white/10 to-transparent rounded-full blur-3xl -translate-y-1/2 translate-x-1/3" />
+          <div className="relative flex items-center justify-between flex-wrap gap-4">
             <div>
-              <div className="flex items-center gap-3 mb-2">
-                <Pill className="h-8 w-8 text-green-600" />
-                <h1 className="text-3xl font-bold text-gray-900">Pharmacy</h1>
+              <div className="flex items-center gap-3 mb-3">
+                <div className="p-2.5 rounded-xl bg-white/15 backdrop-blur-sm shadow-lg"><Pill className="w-6 h-6" /></div>
+                <Badge className="bg-white/15 text-white/90 border-white/20 font-medium">Medicine Hub</Badge>
               </div>
-              <p className="text-gray-600">Order medicines and track your pharmacy orders</p>
+              <h1 className="text-2xl md:text-3xl font-bold mb-1">Pharmacy</h1>
+              <p className="text-emerald-200 text-sm md:text-base">Order medicines and track your pharmacy orders</p>
             </div>
             <Dialog open={showOrderDialog} onOpenChange={setShowOrderDialog}>
               <DialogTrigger asChild>
-                <Button className="bg-green-600 hover:bg-green-700">
+                <Button className="bg-white text-emerald-700 hover:bg-white/90 shadow-lg font-semibold" aria-label="New order">
                   <Plus className="h-4 w-4 mr-2" />
                   New Order
                 </Button>
               </DialogTrigger>
-              <DialogContent className="max-w-md">
+              <DialogContent className="max-w-md dark:bg-slate-900">
                 <DialogHeader>
                   <DialogTitle>Order Medicines</DialogTitle>
                   <DialogDescription>
@@ -276,130 +284,127 @@ const Pharmacy = () => {
                     <Label>Delivery Address</Label>
                     <Input placeholder="Enter delivery address" />
                   </div>
-                  <Button className="w-full bg-green-600 hover:bg-green-700">
+                  <Button className="w-full bg-emerald-600 hover:bg-emerald-700">
                     Place Order
                   </Button>
                 </div>
               </DialogContent>
             </Dialog>
           </div>
-        </div>
+        </motion.div>
 
         {/* Stats */}
-        <div className="grid grid-cols-1 md:grid-cols-4 gap-4 mb-6">
-          <Card>
-            <CardContent className="pt-6">
-              <div className="text-center">
-                <div className="text-3xl font-bold text-gray-900">{stats.totalOrders}</div>
-                <div className="text-sm text-gray-600">Total Orders</div>
-              </div>
-            </CardContent>
-          </Card>
-          <Card>
-            <CardContent className="pt-6">
-              <div className="text-center">
-                <div className="text-3xl font-bold text-blue-600">
-                  {stats.activeOrders}
-                </div>
-                <div className="text-sm text-gray-600">Active</div>
-              </div>
-            </CardContent>
-          </Card>
-          <Card>
-            <CardContent className="pt-6">
-              <div className="text-center">
-                <div className="text-3xl font-bold text-green-600">
-                  {stats.deliveredOrders}
-                </div>
-                <div className="text-sm text-gray-600">Delivered</div>
-              </div>
-            </CardContent>
-          </Card>
-          <Card>
-            <CardContent className="pt-6">
-              <div className="text-center">
-                <div className="text-3xl font-bold text-purple-600">
-                  ₹{stats.totalSpent.toFixed(2)}
-                </div>
-                <div className="text-sm text-gray-600">Total Spent</div>
-              </div>
-            </CardContent>
-          </Card>
-        </div>
+        <motion.div variants={itemVar} className="grid grid-cols-1 md:grid-cols-4 gap-4">
+          {[
+            { label: 'Total Orders', value: stats.totalOrders, gradient: 'from-slate-600 to-slate-800' },
+            { label: 'Active', value: stats.activeOrders, gradient: 'from-blue-500 to-indigo-500' },
+            { label: 'Delivered', value: stats.deliveredOrders, gradient: 'from-emerald-500 to-teal-500' },
+            { label: 'Total Spent', value: `₹${stats.totalSpent.toFixed(2)}`, gradient: 'from-purple-500 to-pink-500' },
+          ].map((stat) => (
+            <motion.div key={stat.label} whileHover={{ scale: 1.03, y: -2 }} transition={{ type: 'spring', stiffness: 400, damping: 25 }}>
+              <Card className="dark:bg-slate-800/50 dark:border-slate-700/60 border-slate-200/80 hover:shadow-xl transition-all duration-300">
+                <CardContent className="pt-6">
+                  <div className="text-center">
+                    <div className={`text-3xl font-bold bg-gradient-to-r ${stat.gradient} bg-clip-text text-transparent`}>{stat.value}</div>
+                    <div className="text-sm text-slate-600 dark:text-slate-400">{stat.label}</div>
+                  </div>
+                </CardContent>
+              </Card>
+            </motion.div>
+          ))}
+        </motion.div>
 
         {/* Quick Actions */}
-        <div className="grid grid-cols-1 md:grid-cols-4 gap-4 mb-6">
-          <Card className="cursor-pointer hover:shadow-lg transition-shadow">
+        <motion.div variants={itemVar} className="grid grid-cols-1 md:grid-cols-4 gap-4">
+          <motion.div whileHover={{ scale: 1.03, y: -2 }} transition={{ type: 'spring', stiffness: 400, damping: 25 }}>
+          <Card className="cursor-pointer hover:shadow-xl transition-all duration-300 dark:bg-slate-800/50 dark:border-slate-700/60">
             <CardContent className="pt-6">
               <div className="text-center">
-                <ShoppingCart className="h-12 w-12 text-green-600 mx-auto mb-3" />
-                <h3 className="font-semibold mb-1">Browse Medicines</h3>
-                <p className="text-sm text-gray-600">Search and order medicines</p>
+                <div className="w-14 h-14 rounded-2xl bg-emerald-100 dark:bg-emerald-900/30 flex items-center justify-center mx-auto mb-3">
+                  <ShoppingCart className="h-7 w-7 text-emerald-600 dark:text-emerald-400" />
+                </div>
+                <h3 className="font-semibold mb-1 dark:text-white">Browse Medicines</h3>
+                <p className="text-sm text-slate-600 dark:text-slate-400">Search and order medicines</p>
               </div>
             </CardContent>
           </Card>
-          <Card className="cursor-pointer hover:shadow-lg transition-shadow">
+          </motion.div>
+          <motion.div whileHover={{ scale: 1.03, y: -2 }} transition={{ type: 'spring', stiffness: 400, damping: 25 }}>
+          <Card className="cursor-pointer hover:shadow-xl transition-all duration-300 dark:bg-slate-800/50 dark:border-slate-700/60">
             <CardContent className="pt-6">
               <div className="text-center">
-                <Package className="h-12 w-12 text-blue-600 mx-auto mb-3" />
-                <h3 className="font-semibold mb-1">Track Order</h3>
-                <p className="text-sm text-gray-600">Check delivery status</p>
+                <div className="w-14 h-14 rounded-2xl bg-blue-100 dark:bg-blue-900/30 flex items-center justify-center mx-auto mb-3">
+                  <Package className="h-7 w-7 text-blue-600 dark:text-blue-400" />
+                </div>
+                <h3 className="font-semibold mb-1 dark:text-white">Track Order</h3>
+                <p className="text-sm text-slate-600 dark:text-slate-400">Check delivery status</p>
               </div>
             </CardContent>
           </Card>
-          <Card className="cursor-pointer hover:shadow-lg transition-shadow">
+          </motion.div>
+          <motion.div whileHover={{ scale: 1.03, y: -2 }} transition={{ type: 'spring', stiffness: 400, damping: 25 }}>
+          <Card className="cursor-pointer hover:shadow-xl transition-all duration-300 dark:bg-slate-800/50 dark:border-slate-700/60">
             <CardContent className="pt-6">
               <div className="text-center">
-                <Clock className="h-12 w-12 text-purple-600 mx-auto mb-3" />
-                <h3 className="font-semibold mb-1">Reorder</h3>
-                <p className="text-sm text-gray-600">Reorder previous medicines</p>
+                <div className="w-14 h-14 rounded-2xl bg-purple-100 dark:bg-purple-900/30 flex items-center justify-center mx-auto mb-3">
+                  <Clock className="h-7 w-7 text-purple-600 dark:text-purple-400" />
+                </div>
+                <h3 className="font-semibold mb-1 dark:text-white">Reorder</h3>
+                <p className="text-sm text-slate-600 dark:text-slate-400">Reorder previous medicines</p>
               </div>
             </CardContent>
           </Card>
+          </motion.div>
+          <motion.div whileHover={{ scale: 1.03, y: -2 }} transition={{ type: 'spring', stiffness: 400, damping: 25 }}>
           <Card 
-            className="cursor-pointer hover:shadow-lg transition-shadow"
+            className="cursor-pointer hover:shadow-xl transition-all duration-300 dark:bg-slate-800/50 dark:border-slate-700/60"
             onClick={() => fetchPharmacyOrders()}
           >
             <CardContent className="pt-6">
               <div className="text-center">
-                <RefreshCw className={`h-12 w-12 text-orange-600 mx-auto mb-3 ${loading ? 'animate-spin' : ''}`} />
-                <h3 className="font-semibold mb-1">Refresh</h3>
-                <p className="text-sm text-gray-600">Update order status</p>
+                <div className="w-14 h-14 rounded-2xl bg-orange-100 dark:bg-orange-900/30 flex items-center justify-center mx-auto mb-3">
+                  <RefreshCw className={`h-7 w-7 text-orange-600 dark:text-orange-400 ${loading ? 'animate-spin' : ''}`} />
+                </div>
+                <h3 className="font-semibold mb-1 dark:text-white">Refresh</h3>
+                <p className="text-sm text-slate-600 dark:text-slate-400">Update order status</p>
               </div>
             </CardContent>
           </Card>
-        </div>
+          </motion.div>
+        </motion.div>
 
         {/* Orders List */}
-        <Card>
+        <motion.div variants={itemVar}>
+        <Card className="dark:bg-slate-800/50 dark:border-slate-700/60">
           <CardHeader>
-            <CardTitle>Order History</CardTitle>
-            <CardDescription>View and manage your pharmacy orders</CardDescription>
+            <CardTitle className="dark:text-white">Order History</CardTitle>
+            <CardDescription className="dark:text-slate-400">View and manage your pharmacy orders</CardDescription>
           </CardHeader>
           <CardContent>
             <div className="space-y-4">
-              {orders.map((order) => (
-                <Card key={order.id} className="hover:shadow-md transition-shadow">
+              {orders.map((order, orderIdx) => (
+                <motion.div key={order.id} initial={{ opacity: 0, x: -10 }} animate={{ opacity: 1, x: 0 }} transition={{ delay: orderIdx * 0.05, duration: 0.3 }}>
+                <Card className="hover:shadow-xl hover:-translate-y-0.5 transition-all duration-300 dark:bg-slate-800/30 dark:border-slate-700">
                   <CardContent className="pt-6">
                     <div className="flex items-start justify-between mb-4">
                       <div>
                         <div className="flex items-center gap-3 mb-2">
-                          <h3 className="font-semibold">Order #{order.id}</h3>
+                          <h3 className="font-semibold dark:text-white">Order #{order.id}</h3>
                           <Badge className={getStatusColor(order.status)}>
                             {order.status.replace('_', ' ')}
                           </Badge>
                           {order.prescriptionRequired && (
-                            <Badge variant="outline" className="bg-orange-50 text-orange-700">
+                            <Badge variant="outline" className="bg-orange-50 text-orange-700 dark:bg-orange-900/30 dark:text-orange-300">
                               Prescription Required
                             </Badge>
                           )}
                         </div>
-                        <p className="text-sm text-gray-600">
+                        <p className="text-sm text-slate-600 dark:text-slate-400">
                           Ordered on {new Date(order.orderDate).toLocaleDateString()}
                         </p>
                       </div>
                       <div className="text-right">
-                        <div className="text-2xl font-bold text-green-600">
+                        <div className="text-2xl font-bold text-emerald-600 dark:text-emerald-400">
                           ₹{order.totalAmount}
                         </div>
                       </div>
@@ -410,14 +415,14 @@ const Pharmacy = () => {
                       {order.items.map((item, index) => (
                         <div key={index} className="flex justify-between text-sm">
                           <span>{item.name} x {item.quantity}</span>
-                          <span className="text-gray-600">₹{item.price}</span>
+                          <span className="text-slate-600 dark:text-slate-400">₹{item.price}</span>
                         </div>
                       ))}
                     </div>
 
-                    <div className="flex items-start gap-2 mb-4 p-3 bg-gray-50 rounded-md">
-                      <MapPin className="h-4 w-4 text-gray-600 mt-0.5" />
-                      <div className="text-sm text-gray-700">
+                    <div className="flex items-start gap-2 mb-4 p-3 bg-slate-50 dark:bg-slate-700/30 rounded-xl">
+                      <MapPin className="h-4 w-4 text-slate-600 dark:text-slate-400 mt-0.5" />
+                      <div className="text-sm text-slate-700 dark:text-slate-300">
                         <span className="font-medium">Delivery Address:</span>
                         <p>{order.deliveryAddress}</p>
                       </div>
@@ -464,14 +469,16 @@ const Pharmacy = () => {
                     </div>
                   </CardContent>
                 </Card>
+                </motion.div>
               ))}
             </div>
           </CardContent>
         </Card>
+        </motion.div>
 
         {/* Order Details Dialog */}
         <Dialog open={showDetailsDialog} onOpenChange={setShowDetailsDialog}>
-          <DialogContent className="max-w-2xl max-h-[90vh] overflow-y-auto">
+          <DialogContent className="max-w-2xl max-h-[90vh] overflow-y-auto dark:bg-slate-900">
             <DialogHeader>
               <DialogTitle className="flex items-center gap-2">
                 <Package className="h-5 w-5 text-green-600" />
@@ -665,7 +672,7 @@ const Pharmacy = () => {
                     }
                   }}
                   disabled={reorderLoading === selectedOrder?.id}
-                  className="bg-green-600 hover:bg-green-700"
+                  className="bg-emerald-600 hover:bg-emerald-700"
                 >
                   {reorderLoading === selectedOrder?.id ? (
                     <RefreshCw className="h-4 w-4 mr-2 animate-spin" />
@@ -681,8 +688,8 @@ const Pharmacy = () => {
             </DialogFooter>
           </DialogContent>
         </Dialog>
-      </div>
-    </div>
+    </motion.div>
+    </MainLayout>
   );
 };
 

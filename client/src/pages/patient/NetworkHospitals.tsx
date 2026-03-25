@@ -1,4 +1,5 @@
 import React, { useState } from 'react';
+import { motion } from 'framer-motion';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -6,6 +7,10 @@ import { Badge } from '@/components/ui/badge';
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { useToast } from '@/hooks/use-toast';
 import { MapPin, Phone, Clock, Star, Navigation, Search, Filter, Building2, Hospital, CheckCircle } from 'lucide-react';
+import MainLayout from '@/components/layout/MainLayout';
+
+const container = { hidden: { opacity: 0 }, show: { opacity: 1, transition: { staggerChildren: 0.06 } } };
+const item = { hidden: { opacity: 0, y: 20 }, show: { opacity: 1, y: 0, transition: { duration: 0.4, ease: [.25,.46,.45,.94] } } };
 
 interface NetworkHospital {
   id: string;
@@ -173,10 +178,10 @@ const NetworkHospitals: React.FC = () => {
 
   const getAvailabilityBadge = (availability: string) => {
     const variants: Record<string, { label: string; color: string }> = {
-      open_24_7: { label: 'Open 24/7', color: 'bg-green-100 text-green-800' },
-      open_now: { label: 'Open Now', color: 'bg-blue-100 text-blue-800' },
-      closes_soon: { label: 'Closes Soon', color: 'bg-yellow-100 text-yellow-800' },
-      closed: { label: 'Closed', color: 'bg-red-100 text-red-800' }
+      open_24_7: { label: 'Open 24/7', color: 'bg-emerald-100 text-emerald-700 dark:bg-emerald-900/40 dark:text-emerald-300' },
+      open_now: { label: 'Open Now', color: 'bg-blue-100 text-blue-700 dark:bg-blue-900/40 dark:text-blue-300' },
+      closes_soon: { label: 'Closes Soon', color: 'bg-amber-100 text-amber-700 dark:bg-amber-900/40 dark:text-amber-300' },
+      closed: { label: 'Closed', color: 'bg-red-100 text-red-700 dark:bg-red-900/40 dark:text-red-300' }
     };
     const variant = variants[availability];
     return <Badge className={variant.color}>{variant.label}</Badge>;
@@ -192,34 +197,46 @@ const NetworkHospitals: React.FC = () => {
     );
 
   return (
-    <div className="container mx-auto p-6">
-      <div className="flex justify-between items-center mb-6">
-        <div>
-          <h1 className="text-3xl font-bold">Network Hospitals</h1>
-          <p className="text-gray-600 mt-1">Find cashless and network hospitals near you</p>
+    <MainLayout>
+    <motion.div initial="hidden" animate="show" variants={container} className="max-w-7xl mx-auto space-y-6 px-4 md:px-6 py-6">
+      {/* Premium Header */}
+      <motion.div variants={item} className="relative overflow-hidden rounded-2xl bg-gradient-to-r from-blue-700 via-indigo-700 to-blue-800 p-6 md:p-8 text-white shadow-2xl">
+        <div className="absolute inset-0 bg-[radial-gradient(ellipse_at_top_right,rgba(255,255,255,0.15),transparent_60%)]" />
+        <div className="absolute top-0 right-0 w-72 h-72 bg-gradient-to-br from-white/10 to-transparent rounded-full blur-3xl -translate-y-1/2 translate-x-1/3" />
+        <div className="relative flex items-center justify-between flex-wrap gap-4">
+          <div>
+            <div className="flex items-center gap-3 mb-3">
+              <div className="p-2.5 rounded-xl bg-white/15 backdrop-blur-sm shadow-lg"><Hospital className="w-6 h-6" /></div>
+              <Badge className="bg-white/15 text-white/90 border-white/20 font-medium">Healthcare Network</Badge>
+            </div>
+            <h1 className="text-2xl md:text-3xl font-bold mb-1">Network Hospitals</h1>
+            <p className="text-blue-200 text-sm md:text-base">Find cashless and network hospitals near you</p>
+          </div>
+          <Button variant="outline" onClick={handleUseMyLocation} className="bg-white/10 border-white/20 text-white hover:bg-white/20" aria-label="Use my location">
+            <Navigation className="mr-2 h-4 w-4" />
+            Use My Location
+          </Button>
         </div>
-        <Button variant="outline" onClick={handleUseMyLocation}>
-          <Navigation className="mr-2 h-4 w-4" />
-          Use My Location
-        </Button>
-      </div>
+      </motion.div>
 
       {/* Search and Filters */}
-      <div className="space-y-4 mb-6">
+      <motion.div variants={item} className="space-y-4">
         <div className="flex gap-4">
           <div className="flex-1 relative">
-            <Search className="absolute left-3 top-3 h-4 w-4 text-gray-400" />
+            <Search className="absolute left-3 top-3 h-4 w-4 text-slate-400 dark:text-slate-500" />
             <Input
               placeholder="Search by name, speciality, or city..."
               value={searchTerm}
               onChange={(e) => setSearchTerm(e.target.value)}
-              className="pl-10"
+              className="pl-10 rounded-xl dark:bg-slate-800 dark:border-slate-700"
+              aria-label="Search hospitals"
             />
           </div>
           <select
-            className="flex h-10 rounded-md border border-input bg-background px-3 py-2 text-sm"
+            className="flex h-10 rounded-xl border border-input bg-background px-3 py-2 text-sm dark:bg-slate-800 dark:border-slate-700 dark:text-slate-200 focus:ring-2 focus:ring-blue-500"
             value={selectedCity}
             onChange={(e) => setSelectedCity(e.target.value)}
+            aria-label="Filter by city"
           >
             {cities.map(city => (
               <option key={city} value={city}>
@@ -230,7 +247,7 @@ const NetworkHospitals: React.FC = () => {
         </div>
 
         {/* Type Filter */}
-        <div className="flex gap-2 overflow-x-auto">
+        <div className="flex gap-2 overflow-x-auto pb-1 scrollbar-hide">
           {hospitalTypes.map(type => {
             const Icon = type.icon;
             return (
@@ -239,6 +256,7 @@ const NetworkHospitals: React.FC = () => {
                 variant={selectedType === type.value ? 'default' : 'outline'}
                 onClick={() => setSelectedType(type.value)}
                 size="sm"
+                className="rounded-full whitespace-nowrap transition-all duration-200"
               >
                 <Icon className="mr-2 h-4 w-4" />
                 {type.label}
@@ -246,74 +264,56 @@ const NetworkHospitals: React.FC = () => {
             );
           })}
         </div>
-      </div>
+      </motion.div>
 
       {/* Stats */}
-      <div className="grid md:grid-cols-4 gap-4 mb-6">
-        <Card>
-          <CardHeader className="pb-2">
-            <CardTitle className="text-sm font-medium text-gray-600">Total Network</CardTitle>
-          </CardHeader>
-          <CardContent>
-            <p className="text-3xl font-bold">{hospitals.length}</p>
-            <p className="text-xs text-gray-500 mt-1">healthcare providers</p>
-          </CardContent>
-        </Card>
-        <Card>
-          <CardHeader className="pb-2">
-            <CardTitle className="text-sm font-medium text-gray-600">Cashless Enabled</CardTitle>
-          </CardHeader>
-          <CardContent>
-            <p className="text-3xl font-bold">
-              {hospitals.filter(h => h.cashless).length}
-            </p>
-            <p className="text-xs text-gray-500 mt-1">facilities</p>
-          </CardContent>
-        </Card>
-        <Card>
-          <CardHeader className="pb-2">
-            <CardTitle className="text-sm font-medium text-gray-600">Open Now</CardTitle>
-          </CardHeader>
-          <CardContent>
-            <p className="text-3xl font-bold">
-              {hospitals.filter(h => h.availability === 'open_now' || h.availability === 'open_24_7').length}
-            </p>
-            <p className="text-xs text-gray-500 mt-1">available</p>
-          </CardContent>
-        </Card>
-        <Card>
-          <CardHeader className="pb-2">
-            <CardTitle className="text-sm font-medium text-gray-600">Cities Covered</CardTitle>
-          </CardHeader>
-          <CardContent>
-            <p className="text-3xl font-bold">{cities.length - 1}</p>
-            <p className="text-xs text-gray-500 mt-1">across India</p>
-          </CardContent>
-        </Card>
-      </div>
+      <motion.div variants={item} className="grid md:grid-cols-4 gap-4">
+        {[
+          { label: 'Total Network', value: hospitals.length, sub: 'healthcare providers', gradient: 'from-blue-500 to-indigo-500' },
+          { label: 'Cashless Enabled', value: hospitals.filter(h => h.cashless).length, sub: 'facilities', gradient: 'from-emerald-500 to-teal-500' },
+          { label: 'Open Now', value: hospitals.filter(h => h.availability === 'open_now' || h.availability === 'open_24_7').length, sub: 'available', gradient: 'from-amber-500 to-orange-500' },
+          { label: 'Cities Covered', value: cities.length - 1, sub: 'across India', gradient: 'from-purple-500 to-pink-500' },
+        ].map((stat, idx) => (
+          <motion.div key={stat.label} whileHover={{ scale: 1.03, y: -2 }} transition={{ type: 'spring', stiffness: 400, damping: 25 }}>
+            <Card className="dark:bg-slate-800/50 dark:border-slate-700/60 border-slate-200/80 hover:shadow-xl transition-all duration-300">
+              <CardHeader className="pb-2">
+                <CardTitle className="text-sm font-medium text-slate-600 dark:text-slate-400">{stat.label}</CardTitle>
+              </CardHeader>
+              <CardContent>
+                <p className={`text-3xl font-bold bg-gradient-to-r ${stat.gradient} bg-clip-text text-transparent`}>{stat.value}</p>
+                <p className="text-xs text-slate-500 dark:text-slate-400 mt-1">{stat.sub}</p>
+              </CardContent>
+            </Card>
+          </motion.div>
+        ))}
+      </motion.div>
 
       {/* Hospitals List */}
-      <div className="space-y-4">
+      <motion.div variants={item} className="space-y-4">
         {filteredHospitals.length === 0 ? (
-          <Card>
-            <CardContent className="text-center py-12 text-gray-500">
-              <Hospital className="h-12 w-12 mx-auto mb-3 opacity-50" />
-              <p>No hospitals found matching your criteria</p>
+          <Card className="dark:bg-slate-800/50 dark:border-slate-700/60">
+            <CardContent className="text-center py-12">
+              <div className="w-16 h-16 rounded-full bg-slate-100 dark:bg-slate-700 flex items-center justify-center mx-auto mb-4">
+                <Hospital className="h-8 w-8 text-slate-400" />
+              </div>
+              <p className="text-lg font-medium text-slate-700 dark:text-slate-300">No hospitals found</p>
+              <p className="text-sm text-slate-500 dark:text-slate-400 mt-1">Try adjusting your search or filters</p>
             </CardContent>
           </Card>
         ) : (
-          filteredHospitals.map((hospital) => (
-            <Card key={hospital.id} className="hover:shadow-md transition-shadow">
+          filteredHospitals.map((hospital, idx) => (
+            <motion.div key={hospital.id} initial={{ opacity: 0, x: -10 }} animate={{ opacity: 1, x: 0 }} transition={{ delay: idx * 0.05, duration: 0.3 }}>
+            <Card className="hover:shadow-xl hover:-translate-y-0.5 transition-all duration-300 dark:bg-slate-800/50 dark:border-slate-700/60 border-slate-200/80">
               <CardHeader>
                 <div className="flex items-start justify-between">
                   <div className="flex-1">
                     <div className="flex items-start gap-3">
-                      <div className="p-2 bg-blue-100 rounded-lg">
-                        <Hospital className="h-6 w-6 text-blue-600" />
+                      <div className="p-2 bg-blue-100 dark:bg-blue-900/30 rounded-lg">
+                        <Hospital className="h-6 w-6 text-blue-600 dark:text-blue-400" />
                       </div>
                       <div className="flex-1">
-                        <CardTitle className="text-xl mb-1">{hospital.name}</CardTitle>
-                        <div className="flex items-center gap-2 text-sm text-gray-600 mb-2">
+                        <CardTitle className="text-xl mb-1 dark:text-white">{hospital.name}</CardTitle>
+                        <div className="flex items-center gap-2 text-sm text-slate-600 dark:text-slate-400 mb-2">
                           <div className="flex items-center">
                             <Star className="h-4 w-4 fill-yellow-400 text-yellow-400 mr-1" />
                             <span className="font-medium">{hospital.rating}</span>
@@ -324,11 +324,11 @@ const NetworkHospitals: React.FC = () => {
                             {hospital.type.replace('_', ' ')}
                           </Badge>
                         </div>
-                        <div className="flex items-start gap-1 text-sm text-gray-600 mb-2">
+                        <div className="flex items-start gap-1 text-sm text-slate-600 dark:text-slate-400 mb-2">
                           <MapPin className="h-4 w-4 mt-0.5 flex-shrink-0" />
                           <span>{hospital.address}, {hospital.city}, {hospital.state}</span>
                         </div>
-                        <div className="flex items-center gap-4 text-sm text-gray-600">
+                        <div className="flex items-center gap-4 text-sm text-slate-600 dark:text-slate-400">
                           <div className="flex items-center gap-1">
                             <Navigation className="h-4 w-4" />
                             <span>{hospital.distance}</span>
@@ -344,7 +344,7 @@ const NetworkHospitals: React.FC = () => {
                   <div className="flex flex-col gap-2 items-end">
                     {getAvailabilityBadge(hospital.availability)}
                     {hospital.cashless && (
-                      <Badge className="bg-green-100 text-green-800">
+                      <Badge className="bg-emerald-100 text-emerald-700 dark:bg-emerald-900/40 dark:text-emerald-300">
                         <CheckCircle className="h-3 w-3 mr-1" />
                         Cashless
                       </Badge>
@@ -356,7 +356,7 @@ const NetworkHospitals: React.FC = () => {
                 <div className="space-y-3">
                   {/* Specialities */}
                   <div>
-                    <p className="text-sm font-medium text-gray-700 mb-2">Specialities:</p>
+                    <p className="text-sm font-medium text-slate-700 dark:text-slate-300 mb-2">Specialities:</p>
                     <div className="flex flex-wrap gap-2">
                       {hospital.specialities.map((spec, index) => (
                         <Badge key={index} variant="secondary">
@@ -368,7 +368,7 @@ const NetworkHospitals: React.FC = () => {
 
                   {/* Facilities */}
                   <div>
-                    <p className="text-sm font-medium text-gray-700 mb-2">Facilities:</p>
+                    <p className="text-sm font-medium text-slate-700 dark:text-slate-300 mb-2">Facilities:</p>
                     <div className="flex flex-wrap gap-2">
                       {hospital.facilities.map((facility, index) => (
                         <Badge key={index} variant="outline">
@@ -380,11 +380,11 @@ const NetworkHospitals: React.FC = () => {
 
                   {/* Actions */}
                   <div className="flex gap-2 pt-2">
-                    <Button className="flex-1" onClick={() => handleCallNow(hospital.phone)}>
+                    <Button className="flex-1" onClick={() => handleCallNow(hospital.phone)} aria-label={`Call ${hospital.name}`}>
                       <Phone className="mr-2 h-4 w-4" />
                       Call Now
                     </Button>
-                    <Button variant="outline" onClick={() => handleDirections(hospital)}>
+                    <Button variant="outline" onClick={() => handleDirections(hospital)} aria-label={`Get directions to ${hospital.name}`}>
                       <Navigation className="mr-2 h-4 w-4" />
                       Directions
                     </Button>
@@ -394,6 +394,7 @@ const NetworkHospitals: React.FC = () => {
                         setSelectedHospitalDetails(hospital);
                         setDetailsOpen(true);
                       }}
+                      aria-label={`View details for ${hospital.name}`}
                     >
                       View Details
                     </Button>
@@ -401,29 +402,30 @@ const NetworkHospitals: React.FC = () => {
                 </div>
               </CardContent>
             </Card>
+            </motion.div>
           ))
         )}
-      </div>
+      </motion.div>
 
       <Dialog open={detailsOpen} onOpenChange={setDetailsOpen}>
-        <DialogContent className="max-w-xl">
+        <DialogContent className="max-w-xl dark:bg-slate-900">
           <DialogHeader>
             <DialogTitle>{selectedHospitalDetails?.name || "Hospital Details"}</DialogTitle>
           </DialogHeader>
 
           {selectedHospitalDetails && (
             <div className="space-y-4">
-              <div className="text-sm text-gray-600">
+              <div className="text-sm text-slate-600 dark:text-slate-400">
                 {selectedHospitalDetails.address}, {selectedHospitalDetails.city}, {selectedHospitalDetails.state}
               </div>
 
               <div className="flex flex-wrap gap-2">
                 {getAvailabilityBadge(selectedHospitalDetails.availability)}
                 {selectedHospitalDetails.insurance_accepted && (
-                  <Badge className="bg-blue-100 text-blue-800">Insurance Accepted</Badge>
+                  <Badge className="bg-blue-100 text-blue-700 dark:bg-blue-900/40 dark:text-blue-300">Insurance Accepted</Badge>
                 )}
                 {selectedHospitalDetails.cashless && (
-                  <Badge className="bg-green-100 text-green-800">
+                  <Badge className="bg-emerald-100 text-emerald-700 dark:bg-emerald-900/40 dark:text-emerald-300">
                     <CheckCircle className="h-3 w-3 mr-1" />
                     Cashless
                   </Badge>
@@ -431,7 +433,7 @@ const NetworkHospitals: React.FC = () => {
               </div>
 
               <div className="space-y-2">
-                <div className="text-sm font-medium text-gray-700">Specialities</div>
+                <div className="text-sm font-medium text-slate-700 dark:text-slate-300">Specialities</div>
                 <div className="flex flex-wrap gap-2">
                   {selectedHospitalDetails.specialities.map((spec) => (
                     <Badge key={spec} variant="secondary">{spec}</Badge>
@@ -440,7 +442,7 @@ const NetworkHospitals: React.FC = () => {
               </div>
 
               <div className="space-y-2">
-                <div className="text-sm font-medium text-gray-700">Facilities</div>
+                <div className="text-sm font-medium text-slate-700 dark:text-slate-300">Facilities</div>
                 <div className="flex flex-wrap gap-2">
                   {selectedHospitalDetails.facilities.map((facility) => (
                     <Badge key={facility} variant="outline">{facility}</Badge>
@@ -462,7 +464,8 @@ const NetworkHospitals: React.FC = () => {
           )}
         </DialogContent>
       </Dialog>
-    </div>
+    </motion.div>
+    </MainLayout>
   );
 };
 

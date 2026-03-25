@@ -1,11 +1,16 @@
 import React, { useState } from 'react';
+import { motion } from 'framer-motion';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Badge } from '@/components/ui/badge';
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle, DialogTrigger } from '@/components/ui/dialog';
-import { Shield, TrendingUp, Users, Award, Check, Plus, Search, Filter, ChevronRight } from 'lucide-react';
+import { Shield, TrendingUp, Users, Award, Check, Plus, Search, Filter, ChevronRight, Sparkles } from 'lucide-react';
+import MainLayout from '@/components/layout/MainLayout';
+
+const container = { hidden: { opacity: 0 }, show: { opacity: 1, transition: { staggerChildren: 0.06 } } };
+const item = { hidden: { opacity: 0, y: 20 }, show: { opacity: 1, y: 0, transition: { duration: 0.4, ease: [.25,.46,.45,.94] } } };
 
 interface InsurancePlan {
   id: string;
@@ -159,14 +164,25 @@ const BuyInsurance: React.FC = () => {
   };
 
   return (
-    <div className="container mx-auto p-6">
-      <div className="mb-6">
-        <h1 className="text-3xl font-bold">Buy Health Insurance</h1>
-        <p className="text-gray-600 mt-1">Compare and buy the best health insurance plans</p>
-      </div>
+    <MainLayout>
+      <motion.div initial="hidden" animate="show" variants={container} className="max-w-7xl mx-auto space-y-6 px-4 md:px-6 py-6">
+        {/* Premium Header */}
+        <motion.div variants={item} className="relative overflow-hidden rounded-2xl bg-gradient-to-r from-blue-700 via-indigo-700 to-violet-800 p-6 md:p-8 text-white shadow-2xl">
+          <div className="absolute inset-0 bg-[radial-gradient(ellipse_at_top_right,rgba(255,255,255,0.15),transparent_60%)]" />
+          <div className="absolute top-0 right-0 w-72 h-72 bg-gradient-to-br from-white/10 to-transparent rounded-full blur-3xl -translate-y-1/2 translate-x-1/3" />
+          <div className="relative">
+            <div className="flex items-center gap-3 mb-3">
+              <div className="p-2.5 rounded-xl bg-white/15 backdrop-blur-sm shadow-lg"><Sparkles className="w-6 h-6" /></div>
+              <Badge className="bg-white/15 text-white/90 border-white/20 font-medium">Insurance Marketplace</Badge>
+            </div>
+            <h1 className="text-2xl md:text-3xl font-bold mb-1">Buy Health Insurance</h1>
+            <p className="text-indigo-200 text-sm md:text-base">Compare and buy the best health insurance plans</p>
+          </div>
+        </motion.div>
 
-      {/* Benefits Banner */}
-      <Card className="bg-gradient-to-r from-blue-50 to-purple-50 mb-6">
+        {/* Benefits Banner */}
+        <motion.div variants={item}>
+        <Card className="bg-gradient-to-r from-blue-50 to-purple-50 dark:from-slate-800/60 dark:to-indigo-900/20 border-slate-200/80 dark:border-slate-700/50">
         <CardContent className="pt-6">
           <div className="grid md:grid-cols-4 gap-4">
             <div className="flex items-center gap-3">
@@ -174,8 +190,8 @@ const BuyInsurance: React.FC = () => {
                 <Shield className="h-6 w-6 text-blue-600" />
               </div>
               <div>
-                <p className="font-semibold">Cashless Treatment</p>
-                <p className="text-sm text-gray-600">12,000+ Hospitals</p>
+                <p className="font-semibold text-slate-900 dark:text-white">Cashless Treatment</p>
+                <p className="text-sm text-slate-600 dark:text-slate-400">12,000+ Hospitals</p>
               </div>
             </div>
             <div className="flex items-center gap-3">
@@ -183,8 +199,8 @@ const BuyInsurance: React.FC = () => {
                 <Check className="h-6 w-6 text-green-600" />
               </div>
               <div>
-                <p className="font-semibold">Instant Policy</p>
-                <p className="text-sm text-gray-600">Get covered in minutes</p>
+                <p className="font-semibold text-slate-900 dark:text-white">Instant Policy</p>
+                <p className="text-sm text-slate-600 dark:text-slate-400">Get covered in minutes</p>
               </div>
             </div>
             <div className="flex items-center gap-3">
@@ -192,8 +208,8 @@ const BuyInsurance: React.FC = () => {
                 <TrendingUp className="h-6 w-6 text-purple-600" />
               </div>
               <div>
-                <p className="font-semibold">No Claims Bonus</p>
-                <p className="text-sm text-gray-600">Increase coverage</p>
+                <p className="font-semibold text-slate-900 dark:text-white">No Claims Bonus</p>
+                <p className="text-sm text-slate-600 dark:text-slate-400">Increase coverage</p>
               </div>
             </div>
             <div className="flex items-center gap-3">
@@ -201,16 +217,17 @@ const BuyInsurance: React.FC = () => {
                 <Users className="h-6 w-6 text-orange-600" />
               </div>
               <div>
-                <p className="font-semibold">Family Protection</p>
-                <p className="text-sm text-gray-600">Cover your loved ones</p>
+                <p className="font-semibold text-slate-900 dark:text-white">Family Protection</p>
+                <p className="text-sm text-slate-600 dark:text-slate-400">Cover your loved ones</p>
               </div>
             </div>
           </div>
         </CardContent>
       </Card>
+      </motion.div>
 
       {/* Search and Filter */}
-      <div className="space-y-4 mb-6">
+      <motion.div variants={item} className="space-y-4">
         <div className="flex gap-4">
           <div className="flex-1 relative">
             <Search className="absolute left-3 top-3 h-4 w-4 text-gray-400" />
@@ -218,7 +235,8 @@ const BuyInsurance: React.FC = () => {
               placeholder="Search plans or providers..."
               value={searchTerm}
               onChange={(e) => setSearchTerm(e.target.value)}
-              className="pl-10"
+              className="pl-10 h-11 rounded-xl dark:bg-slate-800 dark:border-slate-700"
+              aria-label="Search insurance plans"
             />
           </div>
           <Button variant="outline">
@@ -235,17 +253,19 @@ const BuyInsurance: React.FC = () => {
               variant={selectedType === type.value ? 'default' : 'outline'}
               onClick={() => setSelectedType(type.value)}
               size="sm"
-            >
-              {type.label}
-            </Button>
+            className="rounded-full whitespace-nowrap transition-all duration-200"
+          >
+            {type.label}
+          </Button>
           ))}
         </div>
-      </div>
+      </motion.div>
 
       {/* Insurance Plans */}
-      <div className="grid md:grid-cols-2 gap-6">
-        {filteredPlans.map((plan) => (
-          <Card key={plan.id} className={`hover:shadow-lg transition-shadow ${plan.recommended ? 'border-2 border-blue-500' : ''}`}>
+      <motion.div variants={item} className="grid md:grid-cols-2 gap-6">
+        {filteredPlans.map((plan, idx) => (
+          <motion.div key={plan.id} initial={{ opacity: 0, y: 16 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: idx * 0.08, duration: 0.4 }} whileHover={{ y: -4 }}>
+          <Card className={`hover:shadow-xl transition-all duration-300 dark:bg-slate-800/50 dark:border-slate-700/60 ${plan.recommended ? 'border-2 border-blue-500 dark:border-blue-400' : 'border-slate-200/80'}`}>
             <CardHeader>
               <div className="flex items-start justify-between">
                 <div>
@@ -271,17 +291,17 @@ const BuyInsurance: React.FC = () => {
             <CardContent>
               <div className="space-y-4">
                 {/* Coverage Amount */}
-                <div className="text-center p-4 bg-gray-50 rounded-lg">
-                  <p className="text-sm text-gray-600">Sum Insured</p>
-                  <p className="text-3xl font-bold text-blue-600">{plan.coverage}</p>
+                <div className="text-center p-4 bg-slate-50 dark:bg-slate-700/30 rounded-xl">
+                  <p className="text-sm text-slate-600 dark:text-slate-400">Sum Insured</p>
+                  <p className="text-3xl font-bold text-blue-600 dark:text-blue-400">{plan.coverage}</p>
                 </div>
 
                 {/* Premium */}
-                <div className="flex items-center justify-between p-4 border rounded-lg">
+                <div className="flex items-center justify-between p-4 border dark:border-slate-600 rounded-xl">
                   <div>
-                    <p className="text-sm text-gray-600">Premium Starting At</p>
-                    <p className="text-2xl font-bold">₹{plan.premium.monthly.toLocaleString()}/mo</p>
-                    <p className="text-xs text-gray-500">₹{plan.premium.annual.toLocaleString()}/year</p>
+                    <p className="text-sm text-slate-600 dark:text-slate-400">Premium Starting At</p>
+                    <p className="text-2xl font-bold text-slate-900 dark:text-white">₹{plan.premium.monthly.toLocaleString()}/mo</p>
+                    <p className="text-xs text-slate-500 dark:text-slate-400">₹{plan.premium.annual.toLocaleString()}/year</p>
                   </div>
                   <Button>Buy Now</Button>
                 </div>
@@ -314,8 +334,9 @@ const BuyInsurance: React.FC = () => {
               </div>
             </CardContent>
           </Card>
+          </motion.div>
         ))}
-      </div>
+      </motion.div>
 
       {/* Plan Details Dialog */}
       <Dialog open={isDetailsDialogOpen} onOpenChange={setIsDetailsDialogOpen}>
@@ -392,34 +413,37 @@ const BuyInsurance: React.FC = () => {
       </Dialog>
 
       {/* Why Choose Us */}
-      <Card className="mt-8">
+      <motion.div variants={item}>
+      <Card className="bg-gradient-to-br from-slate-50 to-blue-50/50 dark:from-slate-800/60 dark:to-indigo-900/20 border-slate-200/80 dark:border-slate-700/50">
         <CardHeader>
           <CardTitle>Why Buy Insurance Through Mediczy?</CardTitle>
         </CardHeader>
         <CardContent>
           <div className="grid md:grid-cols-3 gap-6">
             <div>
-              <h4 className="font-semibold mb-2">Best Prices</h4>
-              <p className="text-sm text-gray-600">
+              <h4 className="font-semibold mb-2 text-slate-900 dark:text-white">Best Prices</h4>
+              <p className="text-sm text-slate-600 dark:text-slate-400">
                 Compare plans from top insurers and get the best rates with exclusive discounts
               </p>
             </div>
             <div>
-              <h4 className="font-semibold mb-2">Easy Claims</h4>
-              <p className="text-sm text-gray-600">
+              <h4 className="font-semibold mb-2 text-slate-900 dark:text-white">Easy Claims</h4>
+              <p className="text-sm text-slate-600 dark:text-slate-400">
                 Hassle-free claim settlement with 24/7 support and guidance throughout the process
               </p>
             </div>
             <div>
-              <h4 className="font-semibold mb-2">Expert Advice</h4>
-              <p className="text-sm text-gray-600">
+              <h4 className="font-semibold mb-2 text-slate-900 dark:text-white">Expert Advice</h4>
+              <p className="text-sm text-slate-600 dark:text-slate-400">
                 Get personalized recommendations from our health insurance experts
               </p>
             </div>
           </div>
         </CardContent>
       </Card>
-    </div>
+      </motion.div>
+      </motion.div>
+    </MainLayout>
   );
 };
 

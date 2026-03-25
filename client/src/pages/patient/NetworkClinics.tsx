@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useCallback } from 'react';
+import { motion } from 'framer-motion';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -9,6 +10,10 @@ import {
   MapPin, Phone, Search, Building2, Stethoscope,
   Navigation, ChevronLeft, ChevronRight, Loader2
 } from 'lucide-react';
+import MainLayout from '@/components/layout/MainLayout';
+
+const container = { hidden: { opacity: 0 }, show: { opacity: 1, transition: { staggerChildren: 0.06 } } };
+const item = { hidden: { opacity: 0, y: 20 }, show: { opacity: 1, y: 0, transition: { duration: 0.4, ease: [.25,.46,.45,.94] } } };
 
 const API_BASE = import.meta.env.VITE_API_URL || '';
 
@@ -118,66 +123,79 @@ const NetworkClinics: React.FC = () => {
     clinic.specialty || clinic.type || 'Clinic';
 
   return (
-    <div className="container mx-auto px-4 py-6 max-w-4xl">
-      {/* Header */}
-      <div className="mb-6">
-        <h1 className="text-2xl font-bold text-slate-800 dark:text-white">Find Clinics</h1>
-        <p className="text-sm text-slate-500 dark:text-slate-400 mt-1">
-          Search from {total > 0 ? `${total} ` : ''}clinics across India — Clove Dental, Apollo Clinic, and more
-        </p>
-      </div>
+    <MainLayout>
+    <motion.div initial="hidden" animate="show" variants={container} className="max-w-4xl mx-auto space-y-6 px-4 py-6">
+      {/* Premium Header */}
+      <motion.div variants={item} className="relative overflow-hidden rounded-2xl bg-gradient-to-r from-teal-700 via-emerald-700 to-teal-800 p-6 md:p-8 text-white shadow-2xl">
+        <div className="absolute inset-0 bg-[radial-gradient(ellipse_at_top_right,rgba(255,255,255,0.15),transparent_60%)]" />
+        <div className="absolute top-0 right-0 w-72 h-72 bg-gradient-to-br from-white/10 to-transparent rounded-full blur-3xl -translate-y-1/2 translate-x-1/3" />
+        <div className="relative">
+          <div className="flex items-center gap-3 mb-3">
+            <div className="p-2.5 rounded-xl bg-white/15 backdrop-blur-sm shadow-lg"><Stethoscope className="w-6 h-6" /></div>
+            <Badge className="bg-white/15 text-white/90 border-white/20 font-medium">Clinic Network</Badge>
+          </div>
+          <h1 className="text-2xl md:text-3xl font-bold mb-1">Find Clinics</h1>
+          <p className="text-teal-200 text-sm md:text-base">
+            Search from {total > 0 ? `${total} ` : ''}clinics across India — Clove Dental, Apollo Clinic, and more
+          </p>
+        </div>
+      </motion.div>
 
       {/* Search Bar */}
-      <div className="flex gap-2 mb-4">
+      <motion.div variants={item} className="flex gap-2">
         <div className="flex-1 relative">
-          <Search className="absolute left-3 top-3 h-4 w-4 text-gray-400" />
+          <Search className="absolute left-3 top-3 h-4 w-4 text-slate-400 dark:text-slate-500" />
           <Input
             placeholder="Search by name, city, pincode, or specialty..."
             value={searchInput}
             onChange={(e) => setSearchInput(e.target.value)}
             onKeyDown={handleKeyDown}
-            className="pl-10"
+            className="pl-10 rounded-xl dark:bg-slate-800 dark:border-slate-700"
+            aria-label="Search clinics"
           />
         </div>
-        <Button onClick={handleSearch} disabled={loading}>
+        <Button onClick={handleSearch} disabled={loading} className="rounded-xl">
           {loading ? <Loader2 className="h-4 w-4 animate-spin" /> : 'Search'}
         </Button>
-      </div>
+      </motion.div>
 
       {/* Type Filter */}
-      <div className="flex gap-2 overflow-x-auto pb-2 mb-6">
+      <motion.div variants={item} className="flex gap-2 overflow-x-auto pb-1 scrollbar-hide">
         {CLINIC_TYPES.map((t) => (
           <Button
             key={t.value}
             variant={selectedType === t.value ? 'default' : 'outline'}
             size="sm"
             onClick={() => handleTypeSelect(t.value)}
+            className="rounded-full whitespace-nowrap transition-all duration-200"
           >
             {t.label}
           </Button>
         ))}
-      </div>
+      </motion.div>
 
       {/* Results count */}
       {!loading && (
-        <p className="text-sm text-slate-500 mb-4">
+        <motion.p variants={item} className="text-sm text-slate-500 dark:text-slate-400">
           Showing {clinics.length} of {total} clinics
           {search && ` matching "${search}"`}
-        </p>
+        </motion.p>
       )}
 
       {/* Clinic List */}
       {loading ? (
         <div className="flex items-center justify-center py-20">
           <Loader2 className="h-8 w-8 animate-spin text-teal-500" />
-          <span className="ml-3 text-slate-500">Loading clinics...</span>
+          <span className="ml-3 text-slate-500 dark:text-slate-400">Loading clinics...</span>
         </div>
       ) : clinics.length === 0 ? (
-        <Card>
-          <CardContent className="text-center py-12 text-gray-500">
-            <Building2 className="h-12 w-12 mx-auto mb-3 opacity-40" />
-            <p className="font-medium">No clinics found</p>
-            <p className="text-sm mt-1">Try a different search term or clear the filter</p>
+        <Card className="dark:bg-slate-800/50 dark:border-slate-700/60">
+          <CardContent className="text-center py-12">
+            <div className="w-16 h-16 rounded-full bg-slate-100 dark:bg-slate-700 flex items-center justify-center mx-auto mb-4">
+              <Building2 className="h-8 w-8 text-slate-400" />
+            </div>
+            <p className="text-lg font-medium text-slate-700 dark:text-slate-300">No clinics found</p>
+            <p className="text-sm text-slate-500 dark:text-slate-400 mt-1">Try a different search term or clear the filter</p>
             {search && (
               <Button variant="outline" className="mt-4" onClick={() => { setSearchInput(''); setSearch(''); }}>
                 Clear search
@@ -186,9 +204,10 @@ const NetworkClinics: React.FC = () => {
           </CardContent>
         </Card>
       ) : (
-        <div className="space-y-4">
-          {clinics.map((clinic) => (
-            <Card key={clinic.id} className="hover:shadow-md transition-shadow">
+        <motion.div variants={item} className="space-y-4">
+          {clinics.map((clinic, idx) => (
+            <motion.div key={clinic.id} initial={{ opacity: 0, x: -10 }} animate={{ opacity: 1, x: 0 }} transition={{ delay: idx * 0.04, duration: 0.3 }}>
+            <Card className="hover:shadow-xl hover:-translate-y-0.5 transition-all duration-300 dark:bg-slate-800/50 dark:border-slate-700/60 border-slate-200/80">
               <CardHeader className="pb-2">
                 <div className="flex items-start gap-3">
                   <div className="p-2 bg-teal-50 dark:bg-teal-900/30 rounded-lg mt-1 flex-shrink-0">
@@ -266,8 +285,9 @@ const NetworkClinics: React.FC = () => {
                 </div>
               </CardContent>
             </Card>
+            </motion.div>
           ))}
-        </div>
+        </motion.div>
       )}
 
       {/* Pagination */}
@@ -297,7 +317,7 @@ const NetworkClinics: React.FC = () => {
 
       {/* Detail Dialog */}
       <Dialog open={detailsOpen} onOpenChange={setDetailsOpen}>
-        <DialogContent className="max-w-lg">
+        <DialogContent className="max-w-lg dark:bg-slate-900">
           <DialogHeader>
             <DialogTitle>{selectedClinic?.name}</DialogTitle>
           </DialogHeader>
@@ -357,7 +377,8 @@ const NetworkClinics: React.FC = () => {
           )}
         </DialogContent>
       </Dialog>
-    </div>
+    </motion.div>
+    </MainLayout>
   );
 };
 

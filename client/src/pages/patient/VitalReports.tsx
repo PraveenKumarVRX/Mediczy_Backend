@@ -1,4 +1,5 @@
 import React, { useState } from 'react';
+import { motion, AnimatePresence } from 'framer-motion';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -6,6 +7,10 @@ import { Label } from '@/components/ui/label';
 import { Badge } from '@/components/ui/badge';
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle, DialogTrigger } from '@/components/ui/dialog';
 import { Activity, Heart, Thermometer, Droplets, Wind, Scale, TrendingUp, TrendingDown, Plus, Calendar, Clock, Download } from 'lucide-react';
+import MainLayout from '@/components/layout/MainLayout';
+
+const container = { hidden: { opacity: 0 }, show: { opacity: 1, transition: { staggerChildren: 0.06 } } };
+const item = { hidden: { opacity: 0, y: 20 }, show: { opacity: 1, y: 0, transition: { duration: 0.4, ease: [.25,.46,.45,.94] } } };
 
 interface VitalReading {
   id: string;
@@ -97,10 +102,10 @@ const VitalReports: React.FC = () => {
 
   const getStatusBadge = (status: string) => {
     const variants: Record<string, { label: string; color: string }> = {
-      normal: { label: 'Normal', color: 'bg-green-100 text-green-800' },
-      low: { label: 'Low', color: 'bg-yellow-100 text-yellow-800' },
-      high: { label: 'High', color: 'bg-orange-100 text-orange-800' },
-      critical: { label: 'Critical', color: 'bg-red-100 text-red-800' }
+      normal: { label: 'Normal', color: 'bg-emerald-100 text-emerald-700 dark:bg-emerald-900/40 dark:text-emerald-300' },
+      low: { label: 'Low', color: 'bg-amber-100 text-amber-700 dark:bg-amber-900/40 dark:text-amber-300' },
+      high: { label: 'High', color: 'bg-orange-100 text-orange-700 dark:bg-orange-900/40 dark:text-orange-300' },
+      critical: { label: 'Critical', color: 'bg-red-100 text-red-700 dark:bg-red-900/40 dark:text-red-300' }
     };
     const variant = variants[status];
     return <Badge className={variant.color}>{variant.label}</Badge>;
@@ -145,20 +150,28 @@ const VitalReports: React.FC = () => {
   };
 
   return (
-    <div className="container mx-auto p-6">
-      <div className="flex justify-between items-center mb-6">
-        <div>
-          <h1 className="text-3xl font-bold">Vital Reports</h1>
-          <p className="text-gray-600 mt-1">Track and monitor your health vitals</p>
-        </div>
-        <Dialog open={isAddDialogOpen} onOpenChange={setIsAddDialogOpen}>
+    <MainLayout>
+      <motion.div initial="hidden" animate="show" variants={container} className="max-w-7xl mx-auto space-y-6 px-4 md:px-6 py-6">
+        {/* Premium Header */}
+        <motion.div variants={item} className="relative overflow-hidden rounded-2xl bg-gradient-to-r from-rose-700 via-pink-700 to-rose-800 p-6 md:p-8 text-white shadow-2xl">
+          <div className="absolute inset-0 bg-[radial-gradient(ellipse_at_top_right,rgba(255,255,255,0.15),transparent_60%)]" />
+          <div className="absolute top-0 right-0 w-72 h-72 bg-gradient-to-br from-white/10 to-transparent rounded-full blur-3xl -translate-y-1/2 translate-x-1/3" />
+          <div className="relative flex items-center justify-between flex-wrap gap-4">
+            <div>
+              <div className="flex items-center gap-3 mb-3">
+                <div className="p-2.5 rounded-xl bg-white/15 backdrop-blur-sm shadow-lg"><Heart className="w-6 h-6" /></div>
+                <Badge className="bg-white/15 text-white/90 border-white/20 font-medium">Health Vitals</Badge>
+              </div>
+              <h1 className="text-2xl md:text-3xl font-bold mb-1">Vital Reports</h1>
+              <p className="text-rose-200 text-sm md:text-base">Track and monitor your health vitals</p>
+            </div>
+            <Dialog open={isAddDialogOpen} onOpenChange={setIsAddDialogOpen}>
           <DialogTrigger asChild>
-            <Button>
-              <Plus className="mr-2 h-4 w-4" />
-              Record Vital
+            <Button className="bg-white text-rose-700 hover:bg-white/90 shadow-lg font-semibold" aria-label="Record vital">
+              <Plus className="mr-2 h-4 w-4" /> Record Vital
             </Button>
           </DialogTrigger>
-          <DialogContent>
+          <DialogContent className="dark:bg-slate-900">
             <DialogHeader>
               <DialogTitle>Record New Vital</DialogTitle>
               <DialogDescription>Enter your vital reading details</DialogDescription>
@@ -206,15 +219,17 @@ const VitalReports: React.FC = () => {
             </DialogFooter>
           </DialogContent>
         </Dialog>
-      </div>
+          </div>
+        </motion.div>
 
       {/* Latest Readings Summary */}
-      <div className="grid md:grid-cols-3 lg:grid-cols-6 gap-4 mb-6">
+      <motion.div variants={item} className="grid md:grid-cols-3 lg:grid-cols-6 gap-4">
         {vitalTypes.map(vitalType => {
           const latest = getLatestReading(vitalType.value);
           const Icon = vitalType.icon;
           return (
-            <Card key={vitalType.value} className="cursor-pointer hover:shadow-md transition-shadow">
+            <motion.div key={vitalType.value} whileHover={{ scale: 1.04, y: -2 }} transition={{ type: 'spring', stiffness: 400, damping: 25 }}>
+            <Card className="cursor-pointer hover:shadow-xl transition-all duration-300 dark:bg-slate-800/50 dark:border-slate-700/60 border-slate-200/80">
               <CardHeader className="pb-2">
                 <div className="flex justify-between items-start">
                   <Icon className={`h-5 w-5 ${vitalType.color}`} />
@@ -223,25 +238,27 @@ const VitalReports: React.FC = () => {
                 <CardTitle className="text-sm font-medium">{vitalType.label}</CardTitle>
               </CardHeader>
               <CardContent>
-                <div className="text-2xl font-bold">
+                <div className="text-2xl font-bold text-slate-900 dark:text-white">
                   {latest ? `${latest.value} ${latest.unit}` : '--'}
                 </div>
                 {latest && (
-                  <p className="text-xs text-gray-500 mt-1">
+                  <p className="text-xs text-slate-500 dark:text-slate-400 mt-1">
                     {new Date(latest.timestamp).toLocaleDateString()}
                   </p>
                 )}
               </CardContent>
             </Card>
+            </motion.div>
           );
         })}
-      </div>
+      </motion.div>
 
       {/* Filter Tabs */}
-      <div className="flex gap-2 mb-6 overflow-x-auto">
+      <motion.div variants={item} className="flex gap-2 overflow-x-auto pb-1 scrollbar-hide">
         <Button
           variant={selectedType === 'all' ? 'default' : 'outline'}
           onClick={() => setSelectedType('all')}
+          className="rounded-full whitespace-nowrap transition-all duration-200"
         >
           All Readings
         </Button>
@@ -250,14 +267,16 @@ const VitalReports: React.FC = () => {
             key={type.value}
             variant={selectedType === type.value ? 'default' : 'outline'}
             onClick={() => setSelectedType(type.value)}
+            className="rounded-full whitespace-nowrap transition-all duration-200"
           >
             {type.label}
           </Button>
         ))}
-      </div>
+      </motion.div>
 
       {/* Readings History */}
-      <Card>
+      <motion.div variants={item}>
+      <Card className="dark:bg-slate-800/50 dark:border-slate-700/60 border-slate-200/80">
         <CardHeader>
           <CardTitle>Reading History</CardTitle>
           <CardDescription>
@@ -269,26 +288,29 @@ const VitalReports: React.FC = () => {
         <CardContent>
           <div className="space-y-4">
             {filteredVitals.length === 0 ? (
-              <div className="text-center py-8 text-gray-500">
-                <Activity className="h-12 w-12 mx-auto mb-3 opacity-50" />
-                <p>No vital readings recorded yet</p>
+              <div className="text-center py-12">
+                <div className="w-16 h-16 rounded-full bg-slate-100 dark:bg-slate-700 flex items-center justify-center mx-auto mb-4">
+                  <Activity className="h-8 w-8 text-slate-400" />
+                </div>
+                <p className="text-lg font-medium text-slate-700 dark:text-slate-300">No vital readings recorded yet</p>
+                <p className="text-sm text-slate-500 dark:text-slate-400 mt-1">Record your first vital to start tracking</p>
               </div>
             ) : (
-              filteredVitals.map((vital) => (
-                <div key={vital.id} className="flex items-start justify-between p-4 border rounded-lg hover:bg-gray-50">
+              filteredVitals.map((vital, idx) => (
+                <motion.div key={vital.id} initial={{ opacity: 0, x: -10 }} animate={{ opacity: 1, x: 0 }} transition={{ delay: idx * 0.04, duration: 0.3 }} className="flex items-start justify-between p-4 border dark:border-slate-700 rounded-xl hover:bg-slate-50 dark:hover:bg-slate-700/30 transition-colors">
                   <div className="flex items-start gap-4">
                     {getVitalIcon(vital.type)}
                     <div>
-                      <h4 className="font-semibold">
+                      <h4 className="font-semibold text-slate-900 dark:text-white">
                         {vitalTypes.find(v => v.value === vital.type)?.label}
                       </h4>
-                      <p className="text-2xl font-bold text-gray-900 mt-1">
-                        {vital.value} <span className="text-sm font-normal text-gray-500">{vital.unit}</span>
+                      <p className="text-2xl font-bold text-slate-900 dark:text-white mt-1">
+                        {vital.value} <span className="text-sm font-normal text-slate-500 dark:text-slate-400">{vital.unit}</span>
                       </p>
                       {vital.notes && (
-                        <p className="text-sm text-gray-600 mt-1">{vital.notes}</p>
+                        <p className="text-sm text-slate-600 dark:text-slate-400 mt-1">{vital.notes}</p>
                       )}
-                      <div className="flex items-center gap-4 mt-2 text-xs text-gray-500">
+                      <div className="flex items-center gap-4 mt-2 text-xs text-slate-500 dark:text-slate-400">
                         <div className="flex items-center gap-1">
                           <Calendar className="h-3 w-3" />
                           {new Date(vital.timestamp).toLocaleDateString()}
@@ -304,13 +326,15 @@ const VitalReports: React.FC = () => {
                   <div className="flex items-center gap-2">
                     {getStatusBadge(vital.status)}
                   </div>
-                </div>
+                </motion.div>
               ))
             )}
           </div>
         </CardContent>
       </Card>
-    </div>
+      </motion.div>
+      </motion.div>
+    </MainLayout>
   );
 };
 
