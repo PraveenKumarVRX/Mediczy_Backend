@@ -316,6 +316,12 @@ export function CRMRFQsPage() {
 export function CRMRFQDetailPage() {
   const { id } = useParams<{ id: string }>();
   const navigate = useNavigate();
+
+  // Guard: if id is not numeric (e.g. "new"), redirect to RFQ list
+  useEffect(() => {
+    if (id && !/^\d+$/.test(id)) navigate('/crm/rfqs', { replace: true });
+  }, [id, navigate]);
+
   const [rfq, setRfq] = useState<any>(null);
   const [analytics, setAnalytics] = useState<any>(null);
   const [members, setMembers] = useState<any[]>([]);
@@ -333,42 +339,48 @@ export function CRMRFQDetailPage() {
   const [claimsAnalysis, setClaimsAnalysis] = useState<any>(null);
   const [claimsLoading, setClaimsLoading] = useState(false);
 
+  const isValidId = id && /^\d+$/.test(id);
+
   const fetchRFQ = useCallback(async () => {
+    if (!isValidId) return;
     setLoading(true);
     try {
       const { data } = await api.get(`/crm/rfqs/${id}`, { headers: authHeaders() });
       if (data.success) setRfq(data.data);
     } catch { /* */ }
     setLoading(false);
-  }, [id]);
+  }, [id, isValidId]);
 
   const fetchAnalytics = useCallback(async () => {
+    if (!isValidId) return;
     try {
       const { data } = await api.get(`/crm/rfqs/${id}/member-analytics`, { headers: authHeaders() });
       if (data.success) setAnalytics(data.data);
     } catch { /* */ }
-  }, [id]);
+  }, [id, isValidId]);
 
   const fetchMembers = useCallback(async () => {
+    if (!isValidId) return;
     try {
       const params: any = { page: memberPage, limit: 50 };
       if (memberSearch) params.search = memberSearch;
       const { data } = await api.get(`/crm/rfqs/${id}/members`, { headers: authHeaders(), params });
       if (data.success) { setMembers(data.data); setMemberTotalPages(data.pagination?.totalPages || 1); }
     } catch { /* */ }
-  }, [id, memberPage, memberSearch]);
+  }, [id, isValidId, memberPage, memberSearch]);
 
   useEffect(() => { fetchRFQ(); fetchAnalytics(); }, [fetchRFQ, fetchAnalytics]);
   useEffect(() => { fetchMembers(); }, [fetchMembers]);
 
   const fetchClaimsAnalysis = useCallback(async () => {
+    if (!isValidId) return;
     setClaimsLoading(true);
     try {
       const { data } = await api.get(`/crm/rfqs/${id}/claims-analysis`, { headers: authHeaders() });
       if (data.success && data.data) setClaimsAnalysis(data.data);
     } catch { /* */ }
     setClaimsLoading(false);
-  }, [id]);
+  }, [id, isValidId]);
 
   useEffect(() => { fetchClaimsAnalysis(); }, [fetchClaimsAnalysis]);
 

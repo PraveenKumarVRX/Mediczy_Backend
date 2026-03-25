@@ -979,6 +979,12 @@ router.post('/rfqs', authCRM, [body('insured_name').notEmpty().withMessage('Insu
   } catch (error) { console.error('[CRM RFQ Create]', error.message); return res.status(500).json({ success: false, message: 'Failed to create RFQ' }); }
 });
 
+// ─── Numeric ID guard for /rfqs/:id routes ──────────────────────────────────
+router.param('id', (req, res, next, id) => {
+  if (!/^\d+$/.test(id)) return res.status(400).json({ success: false, message: 'Invalid ID: must be numeric' });
+  next();
+});
+
 // ─── Get RFQ Detail ──────────────────────────────────────────────────────────
 router.get('/rfqs/:id', authCRM, async (req, res) => {
   try {
