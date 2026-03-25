@@ -3,6 +3,10 @@
  * Tests: CRM Auth → RFQ CRUD → AI Quote Generation → Claims Upload → Claims Analysis → LLM Integration
  */
 
+import { createRequire } from 'module';
+const require = createRequire(import.meta.url);
+const XLSX = require('./server/node_modules/xlsx');
+
 const BASE = 'http://localhost:8888/api/crm';
 const CRM_EMAIL = 'crm@mediczy.com';
 const CRM_PASSWORD = 'Crm@1234567';
@@ -145,8 +149,7 @@ async function testRFQCreation() {
 
   // Seed members directly via DB to have a proper population for AI quote
   await test('Seed 50 test members via upload-members', async () => {
-    // Build a synthetic member list as Excel-like JSON
-    // The upload-members endpoint also accepts JSON array
+    // Build a synthetic member list and generate a real Excel file
     const members = [];
     const relationships = ['SELF', 'SPOUSE', 'CHILD'];
     const genders = ['M', 'F'];
@@ -160,33 +163,45 @@ async function testRFQCreation() {
                   Math.floor(Math.random() * 30) + 25;
       const bandIdx = Math.floor((i - 1) / 17);
       members.push({
-        sr_no: i,
-        emp_code: `EMP${String(i).padStart(4, '0')}`,
-        employee_name: `Test Employee ${i}`,
-        relationship: relationships[relIdx],
-        gender: genders[i % 2],
-        age: age,
-        dob: `${2026 - age}-06-15`,
-        si_proposed: siSlabs[bandIdx] || 500000,
-        band: bands[bandIdx] || 'Band B',
-        designation: relIdx === 0 ? 'Manager' : undefined
+        'Sr No': i,
+        'Emp Code': `EMP${String(i).padStart(4, '0')}`,
+        'Employee Name': `Test Employee ${i}`,
+        'Relationship': relationships[relIdx],
+        'Gender': genders[i % 2],
+        'Age': age,
+        'DOB': `${2026 - age}-06-15`,
+        'SI Proposed': siSlabs[bandIdx] || 500000,
+        'Band': bands[bandIdx] || 'Band B',
+        'Designation': relIdx === 0 ? 'Manager' : ''
       });
     }
 
-    // Try direct JSON body upload (the endpoint may support this)
-    const { status, data } = await api('POST', `/rfqs/${TEST_RFQ_ID}/upload-members`, {
-      members: members
+    // Generate real Excel buffer using xlsx
+    const ws = XLSX.utils.json_to_sheet(members);
+    const wb = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(wb, ws, 'Members');
+    const excelBuffer = XLSX.write(wb, { type: 'buffer', bookType: 'xlsx' });
+
+    // Upload as multipart form-data
+    const formData = new FormData();
+    formData.append('file', new Blob([excelBuffer], {
+      type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'
+    }), 'test-members.xlsx');
+
+    const headers = {};
+    if (TOKEN) headers['Authorization'] = `Bearer ${TOKEN}`;
+
+    const res = await fetch(`${BASE}/rfqs/${TEST_RFQ_ID}/upload-members`, {
+      method: 'POST',
+      headers,
+      body: formData
     });
-    
-    // If the endpoint requires multipart file, we'll use a different approach
-    if (status === 200 || status === 201) {
-      assert(data.success === true, `Upload members failed: ${JSON.stringify(data)}`);
-    } else if (status === 400 && /file|excel|multipart/i.test(data?.message || '')) {
-      // Expected — endpoint requires Excel file upload, not JSON
-      console.log(dim(`    └─ Endpoint requires Excel file (${data.message}) — skipping`));
-    } else {
-      throw new Error(`Upload members returned ${status}: ${JSON.stringify(data).slice(0, 200)}`);
-    }
+    const data = await res.json();
+
+    assert(res.status === 200 || res.status === 201,
+      `Upload members returned ${res.status}: ${JSON.stringify(data).slice(0, 300)}`);
+    assert(data.success === true, `Upload members failed: ${JSON.stringify(data)}`);
+    console.log(dim(`    └─ ${data.inserted || data.count || 50} members uploaded`));
   });
 
   await test('GET /rfqs/:id — verify RFQ exists', async () => {
