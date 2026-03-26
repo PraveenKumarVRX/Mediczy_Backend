@@ -3,6 +3,7 @@ import { JWT_CONFIG } from '../config/auth.config.js';
 import crypto from 'crypto';
 import fs from 'fs';
 import path from 'path';
+import WhatsAppTemplate from '../models/whatsapp-template.model.js';
 
 // WhatsApp Business API Configuration
 const WHATSAPP_ACCESS_TOKEN = process.env.WHATSAPP_ACCESS_TOKEN;
@@ -52,59 +53,8 @@ const validatePhoneNumber = (phoneNumber) => {
   throw new Error('Invalid phone number format. Please use international format (e.g., 1234567890)');
 };
 
-// In-memory storage (replace with database in production)
+// In-memory storage for campaigns, messages, stats (templates are in PostgreSQL)
 let whatsappData = {
-  templates: [
-    {
-      id: '1',
-      name: 'appointment_reminder',
-      status: 'APPROVED',
-      category: 'UTILITY',
-      language: 'en_US',
-      body: 'Hello {{1}}, this is a reminder for your appointment with Dr. {{2}} on {{3}} at {{4}}. Please confirm by replying YES.',
-      footer: 'Mediczy Healthcare',
-      createdAt: new Date().toISOString(),
-      lastUsed: null,
-      usageCount: 0
-    },
-    {
-      id: '2',
-      name: 'prescription_ready',
-      status: 'APPROVED',
-      category: 'UTILITY',
-      language: 'en_US',
-      body: 'Hi {{1}}, your prescription is ready for pickup at our pharmacy. Prescription ID: {{2}}. Please bring a valid ID.',
-      footer: 'Mediczy Pharmacy',
-      createdAt: new Date().toISOString(),
-      lastUsed: new Date().toISOString(),
-      usageCount: 25
-    },
-    {
-      id: '3',
-      name: 'test_results_available',
-      status: 'APPROVED',
-      category: 'UTILITY',
-      language: 'en_US',
-      body: 'Dear {{1}}, your test results are now available. Please log in to your Mediczy account or visit our lab to collect them. Report ID: {{2}}.',
-      footer: 'Mediczy Labs',
-      createdAt: new Date().toISOString(),
-      lastUsed: new Date().toISOString(),
-      usageCount: 18
-    },
-    {
-      id: '4',
-      name: 'health_checkup_confirmation',
-      status: 'APPROVED',
-      category: 'UTILITY',
-      language: 'en_US',
-      header: 'Health Checkup Appointment Update',
-      body: 'Dear {{1}},\n\nYour health checkup appointment has been confirmed!\n\n📍 Lab: {{2}}\n📌 Address: {{3}}\n📅 Date: {{4}}\n🕐 Time: {{5}}\n\nPlease arrive 15 minutes early with a valid ID. Fasting may be required for certain tests — kindly check email for more details.\n\nFor rescheduling or queries, contact us via this chat.',
-      footer: 'SmartHealth',
-      createdAt: new Date().toISOString(),
-      lastUsed: null,
-      usageCount: 0
-    }
-  ],
   campaigns: [
     {
       id: '1',
@@ -198,15 +148,11 @@ export const getWhatsAppTemplates = async (req, res) => {
     console.log('📋 Fetching WhatsApp message templates');
     
     const { status, category } = req.query;
-    let templates = [...whatsappData.templates];
+    const where = {};
+    if (status) where.status = status;
+    if (category) where.category = category;
     
-    if (status) {
-      templates = templates.filter(t => t.status === status);
-    }
-    
-    if (category) {
-      templates = templates.filter(t => t.category === category);
-    }
+    const templates = await WhatsAppTemplate.findAll({ where, order: [['createdAt', 'DESC']] });
     
     res.json({
       success: true,
@@ -237,32 +183,15 @@ export const createWhatsAppTemplate = async (req, res) => {
       });
     }
     
-    const newTemplate = {
-      id: String(Date.now()),
+    const newTemplate = await WhatsAppTemplate.create({
       name: name.toLowerCase().replace(/\s+/g, '_'),
-      status: 'PENDING', // Will be PENDING until approved by WhatsApp
+      status: 'PENDING',
       category,
       language,
       body,
       footer: footer || '',
-      header: header || '',
-      createdAt: new Date().toISOString(),
-      lastUsed: null,
-      usageCount: 0
-    };
-    
-    whatsappData.templates.push(newTemplate);
-    
-    // In production, you would submit this to WhatsApp Business API for approval
-    // For demo, we'll simulate instant approval for certain templates
-    if (newTemplate.name.includes('test') || newTemplate.name.includes('demo')) {
-      setTimeout(() => {
-        const template = whatsappData.templates.find(t => t.id === newTemplate.id);
-        if (template) {
-          template.status = 'APPROVED';
-        }
-      }, 2000);
-    }
+      header: header || ''
+    });
     
     res.status(201).json({
       success: true,
@@ -271,6 +200,9 @@ export const createWhatsAppTemplate = async (req, res) => {
     });
   } catch (error) {
     console.error('Error creating WhatsApp template:', error);
+    if (error.name === 'SequelizeUniqueConstraintError') {
+      return res.status(409).json({ success: false, message: 'A template with this name already exists' });
+    }
     res.status(500).json({
       success: false,
       message: 'Failed to create message template'
@@ -286,33 +218,29 @@ export const updateWhatsAppTemplate = async (req, res) => {
     const { id } = req.params;
     const { name, category, language, body, footer, header } = req.body;
     
-    const templateIndex = whatsappData.templates.findIndex(t => t.id === id);
-    if (templateIndex === -1) {
+    const template = await WhatsAppTemplate.findByPk(id);
+    if (!template) {
       return res.status(404).json({
         success: false,
         message: 'Template not found'
       });
     }
     
-    // Update template
-    const updatedTemplate = {
-      ...whatsappData.templates[templateIndex],
-      name: name || whatsappData.templates[templateIndex].name,
-      category: category || whatsappData.templates[templateIndex].category,
-      language: language || whatsappData.templates[templateIndex].language,
-      body: body || whatsappData.templates[templateIndex].body,
-      footer: footer || whatsappData.templates[templateIndex].footer,
-      header: header || whatsappData.templates[templateIndex].header,
-      status: 'PENDING', // Needs re-approval after changes
-      updatedAt: new Date().toISOString()
-    };
+    // Update fields that were provided
+    if (name) template.name = name;
+    if (category) template.category = category;
+    if (language) template.language = language;
+    if (body) template.body = body;
+    if (footer !== undefined) template.footer = footer;
+    if (header !== undefined) template.header = header;
+    template.status = 'PENDING'; // Needs re-approval after changes
     
-    whatsappData.templates[templateIndex] = updatedTemplate;
+    await template.save();
     
     res.json({
       success: true,
       message: 'Template updated successfully',
-      data: updatedTemplate
+      data: template
     });
   } catch (error) {
     console.error('Error updating WhatsApp template:', error);
@@ -334,13 +262,13 @@ export const approveWhatsAppTemplate = async (req, res) => {
       return res.status(400).json({ success: false, message: 'Status must be APPROVED or REJECTED' });
     }
     
-    const template = whatsappData.templates.find(t => t.id === id);
+    const template = await WhatsAppTemplate.findByPk(id);
     if (!template) {
       return res.status(404).json({ success: false, message: 'Template not found' });
     }
     
     template.status = status;
-    template.updatedAt = new Date().toISOString();
+    await template.save();
     
     console.log(`✅ WhatsApp template "${template.name}" ${status.toLowerCase()}`);
     
@@ -362,20 +290,21 @@ export const deleteWhatsAppTemplate = async (req, res) => {
     
     const { id } = req.params;
     
-    const templateIndex = whatsappData.templates.findIndex(t => t.id === id);
-    if (templateIndex === -1) {
+    const template = await WhatsAppTemplate.findByPk(id);
+    if (!template) {
       return res.status(404).json({
         success: false,
         message: 'Template not found'
       });
     }
     
-    const deletedTemplate = whatsappData.templates.splice(templateIndex, 1)[0];
+    const data = template.toJSON();
+    await template.destroy();
     
     res.json({
       success: true,
       message: 'Template deleted successfully',
-      data: deletedTemplate
+      data
     });
   } catch (error) {
     console.error('Error deleting WhatsApp template:', error);
@@ -426,7 +355,7 @@ export const createWhatsAppCampaign = async (req, res) => {
       });
     }
     
-    const template = whatsappData.templates.find(t => t.id === templateId);
+    const template = await WhatsAppTemplate.findByPk(templateId);
     if (!template) {
       return res.status(404).json({
         success: false,
