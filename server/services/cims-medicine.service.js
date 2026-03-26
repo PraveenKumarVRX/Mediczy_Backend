@@ -64,6 +64,7 @@ class CIMSMedicineService {
       });
 
       this.buildIndexes();
+      this.applyPriceOverrides();
       this.clearCache();
 
       this.loaded = true;
@@ -512,6 +513,80 @@ class CIMSMedicineService {
     }
 
     return this.paginate(results, page, limit, med => this.formatMedicineResponse(med));
+  }
+
+  /**
+   * Update prices for medicines by ID
+   * @param {Array<{id: string, mrp: number}>} priceUpdates
+   * @returns {{ updated: number, notFound: string[] }}
+   */
+  updatePrices(priceUpdates) {
+    const notFound = [];
+    let updated = 0;
+
+    for (const { id, mrp } of priceUpdates) {
+      const med = this.medicines.find(m => m.id === id);
+      if (med) {
+        med.mrp = mrp;
+        updated++;
+      } else {
+        notFound.push(id);
+      }
+    }
+
+    // Persist overrides to a file so they survive restarts
+    const dataDir = path.join(__dirname, '../data');
+    const overridePath = path.join(dataDir, 'cims-medicine-price-overrides.json');
+    let existing = {};
+    try {
+      existing = JSON.parse(fs.readFileSync(overridePath, 'utf8'));
+    } catch { /* file may not exist yet */ }
+
+    for (const { id, mrp } of priceUpdates) {
+      existing[id] = { mrp, updatedAt: new Date().toISOString() };
+    }
+    fs.writeFileSync(overridePath, JSON.stringify(existing, null, 2));
+
+    this.clearCache();
+    return { updated, notFound };
+  }
+
+  /**
+   * Apply persisted price overrides (called on loadDatabase)
+   */
+  applyPriceOverrides() {
+    const overridePath = path.join(__dirname, '../data/cims-medicine-price-overrides.json');
+    try {
+      const overrides = JSON.parse(fs.readFileSync(overridePath, 'utf8'));
+      let applied = 0;
+      for (const [id, data] of Object.entries(overrides)) {
+        const med = this.medicines.find(m => m.id === id);
+        if (med && data.mrp != null) {
+          med.mrp = data.mrp;
+          applied++;
+        }
+      }
+      if (applied > 0) {
+        console.log(`[CIMS] ✅ Applied ${applied} price overrides`);
+      }
+    } catch { /* no overrides file */ }
+  }
+
+  /**
+   * Reload entire database from files
+   */
+  reloadDatabase() {
+    this.medicines = [];
+    this.categories = [];
+    this.categoryIndex = new Map();
+    this.categoryIndexLower = new Map();
+    this.genericIndex = new Map();
+    this.scheduleIndex = new Map();
+    this.pregnancySafeIndex = [];
+    this.cache = new Map();
+    this.loaded = false;
+    this.loadDatabase();
+    return { total: this.medicines.length, loaded: this.loaded };
   }
 }
 

@@ -477,6 +477,7 @@ const Pharmacy = () => {
                             <span className="text-sm font-semibold dark:text-slate-300">Total</span>
                             <span className="text-lg font-bold text-emerald-600">₹{cartTotal.toFixed(0)}</span>
                           </div>
+                          <p className="text-[10px] text-slate-400 dark:text-slate-500 text-center mt-1 px-2">Prices shown are approximate MRP. Actual billing may vary.</p>
                         </div>
                         {cart.some(c => c.prescriptionRequired) && (
                           <div className="flex items-start gap-2 p-2.5 rounded-lg bg-amber-50 dark:bg-amber-900/20 border border-amber-200 dark:border-amber-800">

@@ -11,6 +11,7 @@ import Nurse from '../models/nurse.model.intelligent.js';
 import Assistant from '../models/assistant.model.intelligent.js';
 import { Op } from 'sequelize';
 import welcomeEmailService from '../services/welcome-email.service.js';
+import cimsService from '../services/cims-medicine.service.js';
 import { postgresSequelize } from '../db/postgres-sequelize.js';
 import { 
   adminLogin, 
@@ -4554,6 +4555,77 @@ router.post('/insurers', authUser, requireRole('admin'), async (req, res) => {
       message: 'Failed to create insurer',
       error: error.message
     });
+  }
+});
+
+// ─── Medicine Price Management ───
+
+/**
+ * PUT /admin/medicines/prices
+ * Bulk update medicine MRP prices
+ * Body: { updates: [{ id: "CIMS5001", mrp: 25.50 }, ...] }
+ */
+router.put('/medicines/prices', authUser, requireRole('admin', 'superadmin'), async (req, res) => {
+  try {
+    const { updates } = req.body;
+    if (!Array.isArray(updates) || updates.length === 0) {
+      return res.status(400).json({ success: false, message: 'updates array is required' });
+    }
+    if (updates.length > 500) {
+      return res.status(400).json({ success: false, message: 'Maximum 500 updates per request' });
+    }
+
+    // Validate each entry
+    for (const u of updates) {
+      if (!u.id || typeof u.id !== 'string') {
+        return res.status(400).json({ success: false, message: `Invalid id: ${u.id}` });
+      }
+      if (typeof u.mrp !== 'number' || u.mrp < 0 || u.mrp > 100000) {
+        return res.status(400).json({ success: false, message: `Invalid mrp for ${u.id}: ${u.mrp}` });
+      }
+    }
+
+    const result = cimsService.updatePrices(updates);
+    return res.json({
+      success: true,
+      updated: result.updated,
+      notFound: result.notFound,
+      message: `${result.updated} prices updated${result.notFound.length ? `, ${result.notFound.length} IDs not found` : ''}`
+    });
+  } catch (error) {
+    console.error('Medicine price update failed:', error);
+    return res.status(500).json({ success: false, message: 'Price update failed' });
+  }
+});
+
+/**
+ * GET /admin/medicines/stats
+ * Get medicine database statistics
+ */
+router.get('/medicines/stats', authUser, requireRole('admin', 'superadmin'), (req, res) => {
+  try {
+    const stats = cimsService.getStats();
+    return res.json({ success: true, data: stats });
+  } catch (error) {
+    return res.status(500).json({ success: false, message: 'Failed to get stats' });
+  }
+});
+
+/**
+ * POST /admin/medicines/reload
+ * Reload medicine database from files (after adding new data files)
+ */
+router.post('/medicines/reload', authUser, requireRole('admin', 'superadmin'), (req, res) => {
+  try {
+    const result = cimsService.reloadDatabase();
+    return res.json({
+      success: true,
+      message: `Database reloaded: ${result.total} medicines`,
+      total: result.total
+    });
+  } catch (error) {
+    console.error('Medicine database reload failed:', error);
+    return res.status(500).json({ success: false, message: 'Reload failed' });
   }
 });
 
