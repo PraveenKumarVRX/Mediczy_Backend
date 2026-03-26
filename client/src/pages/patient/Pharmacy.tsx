@@ -87,6 +87,17 @@ interface CartItem extends MedicineResult {
   quantity: number;
 }
 
+/** Parse packSize like "10 tablets" → { qty: 10, unit: 'tablet' } */
+const parsePackSize = (packSize?: string): { qty: number; unit: string } => {
+  if (!packSize) return { qty: 1, unit: 'unit' };
+  const match = packSize.match(/(\d+)\s*(.*)/);
+  if (!match) return { qty: 1, unit: 'unit' };
+  const qty = parseInt(match[1], 10) || 1;
+  const raw = (match[2]?.trim().toLowerCase()) || 'unit';
+  const unit = raw.endsWith('s') && raw.length > 2 ? raw.slice(0, -1) : raw;
+  return { qty, unit };
+};
+
 // ──────────────────── Helpers ────────────────────
 
 const statusConfig: Record<string, { bg: string; text: string; icon: React.ElementType; dot: string }> = {
@@ -284,7 +295,10 @@ const Pharmacy = () => {
     setCart(prev => prev.filter(c => c.id !== id));
   };
 
-  const cartTotal = useMemo(() => cart.reduce((sum, c) => sum + c.price * c.quantity, 0), [cart]);
+  const cartTotal = useMemo(() => cart.reduce((sum, c) => {
+    const { qty: packQty } = parsePackSize(c.packSize);
+    return sum + (c.price / packQty) * c.quantity;
+  }, 0), [cart]);
 
   const handlePlaceOrder = async () => {
     if (cart.length === 0) { toast.error('Add at least one medicine'); return; }
@@ -293,7 +307,11 @@ const Pharmacy = () => {
       setPlacingOrder(true);
       const { data } = await api.post('/billing/orders', {
         orderType: 'medicine',
-        items: cart.map(c => ({ name: c.name, quantity: c.quantity, price: c.price, medicineId: c.id })),
+        items: cart.map(c => {
+          const { qty: packQty, unit } = parsePackSize(c.packSize);
+          const unitPrice = +(c.price / packQty).toFixed(2);
+          return { name: c.name, quantity: c.quantity, price: unitPrice, medicineId: c.id, unit, packPrice: c.price, packSize: c.packSize };
+        }),
         deliveryAddress: deliveryAddr.trim(),
         prescriptionRequired: cart.some(c => c.prescriptionRequired),
       });
@@ -416,9 +434,9 @@ const Pharmacy = () => {
                                     </p>
                                   </div>
                                   <div className="text-right shrink-0">
-                                    <p className="text-sm font-bold text-emerald-600">₹{med.price}</p>
+                                    <p className="text-sm font-bold text-emerald-600">₹{(med.price / parsePackSize(med.packSize).qty).toFixed(2)}<span className="text-[10px] font-normal text-slate-400">/{parsePackSize(med.packSize).unit}</span></p>
                                     {med.packSize && (
-                                      <p className="text-[10px] text-slate-400 dark:text-slate-500">{med.packSize}</p>
+                                      <p className="text-[10px] text-slate-400 dark:text-slate-500">MRP ₹{med.price} / {med.packSize}</p>
                                     )}
                                     {med.prescriptionRequired && (
                                       <span className="text-[10px] text-amber-600 dark:text-amber-400 font-medium">Rx</span>
@@ -444,7 +462,7 @@ const Pharmacy = () => {
                             <div key={item.id} className="flex items-center gap-3 px-3 py-2.5">
                               <div className="flex-1 min-w-0">
                                 <p className="text-sm font-medium dark:text-white truncate">{item.name}</p>
-                                <p className="text-xs text-slate-500 dark:text-slate-400">₹{item.price}{item.packSize ? ` / ${item.packSize}` : ' each'}</p>
+                                <p className="text-xs text-slate-500 dark:text-slate-400">₹{(item.price / parsePackSize(item.packSize).qty).toFixed(2)} / {parsePackSize(item.packSize).unit}</p>
                               </div>
                               <div className="flex items-center gap-1.5 shrink-0">
                                 <Button
@@ -463,7 +481,7 @@ const Pharmacy = () => {
                                   <Plus className="h-3 w-3" />
                                 </Button>
                               </div>
-                              <span className="text-sm font-bold text-emerald-600 w-16 text-right">₹{(item.price * item.quantity).toFixed(0)}</span>
+                              <span className="text-sm font-bold text-emerald-600 w-16 text-right">₹{((item.price / parsePackSize(item.packSize).qty) * item.quantity).toFixed(0)}</span>
                               <Button
                                 type="button" variant="ghost" size="icon"
                                 className="h-7 w-7 text-red-500 hover:text-red-600 hover:bg-red-50 dark:hover:bg-red-900/20"
