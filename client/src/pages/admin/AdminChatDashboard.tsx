@@ -2364,6 +2364,30 @@ function WhatsAppMessaging() {
   return (
     <div className="grid gap-6 lg:grid-cols-3">
       <div className="lg:col-span-2 space-y-6">
+        {/* Template Management Banner */}
+        <Card className="border-emerald-200 dark:border-emerald-800 bg-gradient-to-r from-emerald-50 to-teal-50 dark:from-emerald-950/30 dark:to-teal-950/30">
+          <CardContent className="flex items-center justify-between py-4">
+            <div className="flex items-center gap-3">
+              <div className="p-2 rounded-lg bg-emerald-100 dark:bg-emerald-900/50">
+                <MessageSquare className="h-5 w-5 text-emerald-600" />
+              </div>
+              <div>
+                <p className="font-semibold text-sm">WhatsApp Template Manager</p>
+                <p className="text-xs text-muted-foreground">Create, edit, preview & submit templates for Meta approval</p>
+              </div>
+            </div>
+            <Button
+              size="sm"
+              className="bg-emerald-600 hover:bg-emerald-700 text-white gap-1.5"
+              onClick={() => window.location.href = '/team/whatsapp-templates'}
+            >
+              <Plus className="h-3.5 w-3.5" />
+              Manage Templates
+              <ExternalLink className="h-3 w-3 ml-0.5" />
+            </Button>
+          </CardContent>
+        </Card>
+
         <Card>
           <CardHeader>
             <CardTitle className="flex items-center space-x-2">
@@ -2655,7 +2679,15 @@ function WhatsAppMessaging() {
             <Button
               variant="outline"
               className="w-full justify-start"
-              onClick={() => window.open('/admin/whatsapp-management', '_blank')}
+              onClick={() => window.location.href = '/team/whatsapp-templates'}
+            >
+              <Edit className="mr-2 h-4 w-4" />
+              Create & Manage Templates
+            </Button>
+            <Button
+              variant="outline"
+              className="w-full justify-start"
+              onClick={() => window.location.href = '/admin/whatsapp'}
             >
               <Settings className="mr-2 h-4 w-4" />
               Configure WhatsApp
