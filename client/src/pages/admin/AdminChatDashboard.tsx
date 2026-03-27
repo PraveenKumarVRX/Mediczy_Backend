@@ -91,7 +91,7 @@ import api from '@/utils/api';
 export default function AdminChatDashboard() {
   const { toast } = useToast();
   const [activeTab, setActiveTab] = useState('chat');
-  const [selectedRoom, setSelectedRoom] = useState('general');
+  const [selectedRoom, setSelectedRoom] = useState<string | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const [analyticsLoading, setAnalyticsLoading] = useState(false);
   const [chatMessage, setChatMessage] = useState('');
@@ -333,6 +333,170 @@ export default function AdminChatDashboard() {
   const [dashboardOverview, setDashboardOverview] = useState<any | null>(null);
   const [sibHealth, setSibHealth] = useState<any | null>(null);
 
+  const normalizeChatRoom = (room: any) => ({
+    id: String(room.id),
+    name: room.title || room.name || String(room.id),
+    type: room.type || 'channel',
+    description: room.description || '',
+    members: Array.isArray(room.participants) ? room.participants.length : (room.members || 0),
+    unread: room.unread || 0,
+    lastMessage: room.lastMessage?.content || room.lastMessage || 'No messages yet',
+    lastActivity: room.lastActivity
+      ? new Date(room.lastActivity).toLocaleString()
+      : room.createdAt
+        ? new Date(room.createdAt).toLocaleString()
+        : 'now',
+    isPrivate: room.type === 'team_internal' && room.id !== 'team_general',
+    isMuted: false,
+    isPinned: room.id === 'team_general',
+    isWhatsApp: room.type === 'whatsapp_customer',
+    isBot: false,
+  });
+
+  const loadTeamMembers = async () => {
+    const token = adminToken || teamToken;
+    if (!token) return;
+
+    try {
+      const { data } = await api.get('/chat/team-members', {
+        headers: { Authorization: `Bearer ${token}` }
+      });
+
+      if (data?.success && Array.isArray(data.members) && data.members.length > 0) {
+        setAgents(data.members.map((member: any) => ({
+          id: String(member.id),
+          name: member.name,
+          role: member.designation || member.specialization || member.department || member.role || 'Team Member',
+          status: member.isOnline ? 'online' : 'offline',
+          avatar: member.avatar || null,
+          activeChats: 0,
+          totalChats: 0,
+          avgResponseTime: '—',
+          rating: 0,
+        })));
+      }
+    } catch (err) {
+      console.error('Failed to load team members', err);
+    }
+  };
+
+  const loadRooms = async () => {
+    const token = adminToken || teamToken;
+
+    try {
+      setIsLoading(true);
+      setError(null);
+
+      const botRoom = {
+        id: 'dr-isha-bot',
+        name: 'Dr. iSHA',
+        type: 'bot',
+        description: 'AI Medical Assistant',
+        members: 1,
+        unread: 0,
+        lastMessage: 'Hello! I am Dr. iSHA, your AI medical assistant. How can I help you today?',
+        lastActivity: 'now',
+        isPrivate: false,
+        isMuted: false,
+        isPinned: true,
+        isWhatsApp: false,
+        isBot: true
+      };
+
+      let realRooms: any[] = [];
+      if (token) {
+        const response = await api.get('/chat/rooms', {
+          headers: { Authorization: `Bearer ${token}` }
+        });
+
+        if (response.data?.success && Array.isArray(response.data.rooms)) {
+          realRooms = response.data.rooms
+            .filter((room: any) => room.type !== 'whatsapp_customer')
+            .map(normalizeChatRoom);
+        }
+      }
+
+      let whatsappRooms: any[] = [];
+      try {
+        const { data } = await api.get('/whatsapp-production/conversations');
+        whatsappRooms = (data.conversations || []).map((conv: any) => ({
+          id: `whatsapp_${conv.phoneNumber}`,
+          name: conv.customerName || conv.phoneNumber,
+          type: 'whatsapp',
+          description: 'WhatsApp conversation',
+          members: 2,
+          unread: conv.unreadCount || 0,
+          lastMessage: conv.lastMessage || 'No messages',
+          lastActivity: conv.lastActivity ? new Date(conv.lastActivity).toLocaleString() : 'unknown',
+          isPrivate: false,
+          isMuted: false,
+          isPinned: false,
+          isWhatsApp: true,
+          isBot: false,
+          phoneNumber: conv.phoneNumber,
+          messageCount: conv.messageCount || conv.messages?.length || 0
+        }));
+
+        setWhatsappConversations(data.conversations || []);
+      } catch (whatsappError) {
+        console.error('Failed to load WhatsApp conversations', whatsappError);
+      }
+
+      const allRooms = [botRoom, ...realRooms, ...whatsappRooms];
+      setRooms(allRooms);
+
+      const selectedRoomStillExists = selectedRoom && allRooms.some(room => room.id === selectedRoom);
+      if (!selectedRoomStillExists) {
+        setSelectedRoom(allRooms[0]?.id || null);
+      }
+    } catch (e: any) {
+      console.error('Failed to load chat rooms', e);
+      setError(e?.response?.data?.message || 'Failed to load chat rooms');
+      setRooms([]);
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  const loadChatMessages = async (roomId: string) => {
+    const token = adminToken || teamToken;
+    if (!token) return;
+
+    try {
+      setIsLoading(true);
+      setError(null);
+
+      const response = await api.get(`/chat/rooms/${roomId}/messages`, {
+        headers: { Authorization: `Bearer ${token}` },
+        params: { limit: 50 }
+      });
+
+      if (response.data?.success && Array.isArray(response.data.messages)) {
+        const formattedMessages = response.data.messages.map((msg: any, index: number) => ({
+          id: msg.id || index + 1,
+          sender: msg.userName || msg.userId || 'Unknown',
+          avatar: msg.avatar || null,
+          content: msg.message || msg.content || '',
+          timestamp: msg.timestamp ? new Date(msg.timestamp).toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit' }) : 'now',
+          type: msg.source === 'whatsapp' ? 'whatsapp' : (msg.isBot ? 'bot' : 'text'),
+          isBot: msg.isBot || false,
+          isWhatsApp: msg.source === 'whatsapp',
+          phoneNumber: msg.phoneNumber,
+          reactions: msg.reactions || []
+        }));
+        setRoomMessages(formattedMessages);
+      } else {
+        setRoomMessages([]);
+      }
+    } catch (e: any) {
+      console.error('Failed to load chat messages', e);
+      setError(e?.response?.data?.message || 'Failed to load messages');
+      setRoomMessages([]);
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
   const loadDashboardOverview = async () => {
     if (!adminToken) return;
     try {
@@ -471,148 +635,9 @@ export default function AdminChatDashboard() {
     }
   }, [selectedWhatsappNumber]);
 
-  // Load available rooms for the admin
   useEffect(() => {
-    const loadRooms = async () => {
-      try {
-        setIsLoading(true);
-        setError(null);
-        
-        // Load WhatsApp conversations and convert to rooms
-        let allRooms = [
-          {
-            id: 'dr-isha-bot',
-            name: 'Dr. iSHA',
-            type: 'bot',
-            description: 'AI Medical Assistant',
-            members: 1,
-            unread: 0,
-            lastMessage: 'Hello! I am Dr. iSHA, your AI medical assistant. How can I help you today?',
-            lastActivity: 'now',
-            isPrivate: false,
-            isMuted: false,
-            isPinned: true,
-            isWhatsApp: false,
-            isBot: true
-          },
-          {
-            id: 'general',
-            name: 'general',
-            type: 'channel',
-            description: 'General discussion and updates',
-            members: 234,
-            unread: 0,
-            lastMessage: 'Welcome to the general chat',
-            lastActivity: 'now',
-            isPrivate: false,
-            isMuted: false,
-            isPinned: false,
-            isWhatsApp: false
-          },
-          {
-            id: 'patient-support',
-            name: 'patient-support',
-            type: 'channel',
-            description: 'Patient support channel',
-            members: 156,
-            unread: 5,
-            lastMessage: 'Patient inquiry received',
-            lastActivity: '5 mins ago',
-            isPrivate: false,
-            isMuted: false,
-            isPinned: true,
-            isWhatsApp: false
-          },
-          {
-            id: 'doctors',
-            name: 'doctors',
-            type: 'channel',
-            description: 'Doctor coordination channel',
-            members: 45,
-            unread: 2,
-            lastMessage: 'Morning rounds completed',
-            lastActivity: '10 mins ago',
-            isPrivate: true,
-            isMuted: false,
-            isPinned: false,
-            isWhatsApp: false
-          },
-          {
-            id: 'emergency',
-            name: 'emergency',
-            type: 'channel',
-            description: 'Emergency notifications',
-            members: 89,
-            unread: 0,
-            lastMessage: 'All clear',
-            lastActivity: '1 hour ago',
-            isPrivate: false,
-            isMuted: false,
-            isPinned: true,
-            isWhatsApp: false
-          }
-        ];
-
-        // Load WhatsApp conversations and add as channels
-        try {
-          const { data } = await api.get('/whatsapp-production/conversations');
-          const whatsappRooms = (data.conversations || []).map((conv: any) => ({
-            id: `whatsapp_${conv.phoneNumber}`,
-            name: conv.phoneNumber,
-            type: 'whatsapp',
-            description: 'WhatsApp conversation',
-            members: 2,
-            unread: conv.unreadCount || 0,
-            lastMessage: conv.lastMessage || 'No messages',
-            lastActivity: conv.lastActivity ? new Date(conv.lastActivity).toLocaleString() : 'unknown',
-            isPrivate: false,
-            isMuted: false,
-            isPinned: false,
-            isWhatsApp: true,
-            phoneNumber: conv.phoneNumber,
-            messageCount: conv.messages?.length || 0
-          }));
-          
-          allRooms = [...allRooms, ...whatsappRooms];
-          setWhatsappConversations(data.conversations || []);
-        } catch (error) {
-          console.error('Failed to load WhatsApp conversations', error);
-          // Add a test WhatsApp channel for now
-          allRooms.push({
-            id: 'whatsapp_test',
-            name: 'WhatsApp',
-            type: 'whatsapp',
-            description: 'WhatsApp conversations',
-            members: 2,
-            unread: 0,
-            lastMessage: 'Click to view WhatsApp messages',
-            lastActivity: 'now',
-            isPrivate: false,
-            isMuted: false,
-            isPinned: false,
-            isWhatsApp: true,
-            isBot: false,
-            phoneNumber: '+917373007737',
-            messageCount: 0
-          });
-        }
-        
-        console.log('All rooms loaded:', allRooms);
-        console.log('Bot rooms:', allRooms.filter(r => r.isBot));
-        setRooms(allRooms);
-        if (!selectedRoom && allRooms.length > 0) {
-          setSelectedRoom(allRooms[0].id);
-        }
-      } catch (e: any) {
-        console.error('Failed to load chat rooms', e);
-        setError(e?.response?.data?.message || 'Failed to load chat rooms');
-      } finally {
-        setIsLoading(false);
-      }
-    };
-
     loadRooms();
-  }, []);
+  }, [adminToken, teamToken]);
 
   // Load admin analytics overview (doesn't block the main UI)
   useEffect(() => {
@@ -620,50 +645,23 @@ export default function AdminChatDashboard() {
     loadSIBHealth(); // Load SIB chatbot health status
   }, [adminToken]);
 
+  useEffect(() => {
+    loadTeamMembers();
+  }, [adminToken, teamToken]);
+
   // Load messages when room changes
   useEffect(() => {
     if (!selectedRoom) return;
-    const loadMessages = async () => {
-      try {
-        setIsLoading(true);
-        setError(null);
-        
-        // Fetch real messages from the API
-        const token = adminToken || teamToken;
-        const response = await api.get(`/chat/rooms/${selectedRoom}/messages`, {
-          headers: { Authorization: `Bearer ${token}` },
-          params: { limit: 50 }
-        });
-        
-        if (response.data?.success && response.data?.messages) {
-          // Transform API messages to match component format
-          const formattedMessages = response.data.messages.map((msg: any, index: number) => ({
-            id: msg.id || index + 1,
-            sender: msg.userName || msg.userId || 'Unknown',
-            avatar: msg.avatar || null,
-            content: msg.message || msg.content || '',
-            timestamp: msg.timestamp ? new Date(msg.timestamp).toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit' }) : 'now',
-            type: msg.source === 'whatsapp' ? 'whatsapp' : (msg.isBot ? 'bot' : 'text'),
-            isBot: msg.isBot || false,
-            isWhatsApp: msg.source === 'whatsapp',
-            phoneNumber: msg.phoneNumber,
-            reactions: msg.reactions || []
-          }));
-          setRoomMessages(formattedMessages);
-        } else {
-          setRoomMessages([]);
-        }
-      } catch (e: any) {
-        console.error('Failed to load chat messages', e);
-        setError(e?.response?.data?.message || 'Failed to load messages');
+    const currentSelectedRoom = rooms.find(room => room.id === selectedRoom);
+    if (currentSelectedRoom?.isBot || currentSelectedRoom?.isWhatsApp) {
+      if (currentSelectedRoom?.isWhatsApp) {
         setRoomMessages([]);
-      } finally {
-        setIsLoading(false);
       }
-    };
+      return;
+    }
 
-    loadMessages();
-  }, [selectedRoom, adminToken, teamToken]);
+    loadChatMessages(selectedRoom);
+  }, [selectedRoom, adminToken, teamToken, rooms]);
 
   const handleSendMessage = async () => {
     if (!chatMessage.trim() || !selectedRoom) return;
@@ -782,33 +780,79 @@ export default function AdminChatDashboard() {
         setIsBotTyping(false);
       }
     } else {
-      // Regular channel message (existing behavior)
+      try {
+        const token = adminToken || teamToken;
+        const response = await api.post(`/chat/rooms/${selectedRoom}/messages`, {
+          message: userMessage,
+          type: 'text'
+        }, {
+          headers: { Authorization: `Bearer ${token}` }
+        });
+
+        if (!response.data?.success) {
+          throw new Error(response.data?.message || 'Failed to send message');
+        }
+
+        await loadChatMessages(selectedRoom);
+        await loadRooms();
+
+        toast({
+          title: 'Message Sent',
+          description: 'Your message has been sent successfully',
+        });
+      } catch (error: any) {
+        console.error('Failed to send chat message', error);
+        setRoomMessages(prev => prev.filter(message => message.id !== newUserMsg.id));
+        toast({
+          title: 'Send Failed',
+          description: error?.response?.data?.message || error?.message || 'Failed to send message',
+          variant: 'destructive'
+        });
+      }
+    }
+  };
+
+  const handleCreateRoom = async (roomData) => {
+    const token = adminToken || teamToken;
+    const roomId = roomData.name
+      .trim()
+      .toLowerCase()
+      .replace(/[^a-z0-9]+/g, '-')
+      .replace(/^-+|-+$/g, '');
+
+    if (!token || !roomId) {
+      toast({ title: 'Create Failed', description: 'Invalid room details', variant: 'destructive' });
+      return;
+    }
+
+    try {
+      const response = await api.post('/chat/rooms', {
+        id: roomId,
+        type: 'channel',
+        participants: [],
+        title: roomId,
+        description: roomData.description || ''
+      }, {
+        headers: { Authorization: `Bearer ${token}` }
+      });
+
+      if (!response.data?.success) {
+        throw new Error(response.data?.message || 'Failed to create room');
+      }
+
+      await loadRooms();
+      setSelectedRoom(roomId);
+      toast({ title: 'Room Created', description: `${roomData.name} has been created successfully` });
+    } catch (error: any) {
       toast({
-        title: 'Message Sent',
-        description: 'Your message has been sent successfully',
+        title: 'Create Failed',
+        description: error?.response?.data?.message || error?.message || 'Failed to create room',
+        variant: 'destructive'
       });
     }
   };
 
-  const handleCreateRoom = (roomData) => {
-    const newRoom = {
-      id: `room_${Date.now()}`,
-      name: roomData.name,
-      type: 'channel',
-      description: roomData.description,
-      members: 1,
-      unread: 0,
-      lastMessage: 'Room created',
-      lastActivity: 'now',
-      isPrivate: roomData.private,
-      isMuted: false,
-      isPinned: false
-    };
-    setRooms(prev => [...prev, newRoom]);
-    toast({ title: 'Room Created', description: `${roomData.name} has been created successfully` });
-  };
-
-  const currentRoom = rooms.find(r => r.id === selectedRoom) || rooms[0];
+  const currentRoom = rooms.find(r => r.id === selectedRoom) || rooms[0] || null;
 
   if (isLoading) {
     return (

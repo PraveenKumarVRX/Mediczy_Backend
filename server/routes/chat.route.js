@@ -36,6 +36,77 @@ export { chatRooms, messages };
 const activeUsers = new Map();
 const MAX_ACTIVE_USERS = 10000; // Limit to prevent memory leak
 
+const DEFAULT_TEAM_ROOMS = [
+  {
+    id: 'general',
+    type: 'channel',
+    title: 'general',
+    description: 'General discussion and updates'
+  },
+  {
+    id: 'patient-support',
+    type: 'channel',
+    title: 'patient-support',
+    description: 'Patient support channel'
+  },
+  {
+    id: 'doctors',
+    type: 'channel',
+    title: 'doctors',
+    description: 'Doctor coordination channel'
+  },
+  {
+    id: 'emergency',
+    type: 'channel',
+    title: 'emergency',
+    description: 'Emergency notifications'
+  },
+  {
+    id: 'team_general',
+    type: 'team_internal',
+    title: 'Team Chat',
+    description: 'Internal team communication'
+  },
+  {
+    id: 'whatsapp_general',
+    type: 'whatsapp_customer',
+    title: 'WhatsApp Customers',
+    description: 'Incoming messages from WhatsApp customers'
+  }
+];
+
+const addParticipantToRoom = async (room, userId) => {
+  const participantId = String(userId);
+  const existingParticipants = Array.isArray(room.participants) ? room.participants.map(String) : [];
+
+  if (!existingParticipants.includes(participantId)) {
+    room.participants = [...existingParticipants, participantId];
+    await chatRooms.set(room.id, room);
+  } else if (!Array.isArray(room.participants)) {
+    room.participants = existingParticipants;
+    await chatRooms.set(room.id, room);
+  }
+
+  return room;
+};
+
+const ensureDefaultRoom = async (roomDefinition, userId) => {
+  let room = await chatRooms.get(roomDefinition.id);
+
+  if (!room) {
+    room = {
+      ...roomDefinition,
+      participants: [],
+      createdAt: new Date().toISOString(),
+      lastActivity: new Date().toISOString()
+    };
+    await chatRooms.set(room.id, room);
+    await messages.set(room.id, []);
+  }
+
+  return addParticipantToRoom(room, userId);
+};
+
 // Cleanup inactive users every 15 minutes
 setInterval(() => {
   const now = Date.now();
@@ -67,16 +138,20 @@ setInterval(() => {
 router.post('/rooms', authUser, async (req, res) => {
   try {
     const { id, type, participants, title, description } = req.body;
+    const userId = req.user.id;
     if (!id || !type || !participants || !title) {
       return res.status(400).json({ success: false, message: 'Missing required fields' });
     }
     if (await chatRooms.has(id)) {
       return res.status(409).json({ success: false, message: 'Room already exists' });
     }
+    const normalizedParticipants = Array.from(
+      new Set([...(Array.isArray(participants) ? participants : []), userId].map(String))
+    );
     const roomData = {
       id,
       type,
-      participants,
+      participants: normalizedParticipants,
       createdAt: new Date().toISOString(),
       title,
       description: description || '',
@@ -97,10 +172,16 @@ router.post('/rooms', authUser, async (req, res) => {
  */
 router.get('/rooms', authUser, async (req, res) => {
   try {
-    const userId = req.user.id;
+    const userId = String(req.user.id);
     const userRole = req.user.role;
     
     let availableRooms = [];
+    const pushUniqueRoom = (room) => {
+      if (!room || availableRooms.some(existingRoom => existingRoom.id === room.id)) {
+        return;
+      }
+      availableRooms.push(room);
+    };
     
     if (userRole === 'user' || userRole === 'patient') {
       // Regular users can access user-team support chat
@@ -120,61 +201,32 @@ router.get('/rooms', authUser, async (req, res) => {
     }
     
     if (userRole === 'team' || userRole === 'admin' || userRole === 'doctor') {
-      // Team members can access both user support and internal team chats
-      
-      // Add user support rooms where they are assigned
       const allRoomEntries = await chatRooms.entries();
       for (const [roomId, room] of allRoomEntries) {
         if (room.type === 'user_team' && (room.assignedTeam?.includes(userId) || userRole === 'admin')) {
-          availableRooms.push(room);
+          pushUniqueRoom(room);
+          continue;
+        }
+
+        if (['team_internal', 'channel', 'whatsapp_customer'].includes(room.type)) {
+          const hydratedRoom = await addParticipantToRoom(room, userId);
+          pushUniqueRoom(hydratedRoom);
         }
       }
-      
-      // Add team internal chat rooms
-      const teamRoomId = 'team_general';
-      if (!(await chatRooms.has(teamRoomId))) {
-        await chatRooms.set(teamRoomId, {
-          id: teamRoomId,
-          type: 'team_internal',
-          participants: [],
-          createdAt: new Date().toISOString(),
-          title: 'Team Chat',
-          description: 'Internal team communication'
-        });
+
+      for (const roomDefinition of DEFAULT_TEAM_ROOMS) {
+        const ensuredRoom = await ensureDefaultRoom(roomDefinition, userId);
+        pushUniqueRoom(ensuredRoom);
       }
-      
-      const teamRoom = await chatRooms.get(teamRoomId);
-      if (!teamRoom.participants.includes(userId)) {
-        teamRoom.participants.push(userId);
-        await chatRooms.set(teamRoomId, teamRoom);
-      }
-      availableRooms.push(teamRoom);
-      
-      // Add WhatsApp customer messages room
-      const whatsappRoomId = 'whatsapp_general';
-      if (!(await chatRooms.has(whatsappRoomId))) {
-        await chatRooms.set(whatsappRoomId, {
-          id: whatsappRoomId,
-          type: 'whatsapp_customer',
-          participants: [],
-          createdAt: new Date().toISOString(),
-          title: 'WhatsApp Customers',
-          description: 'Incoming messages from WhatsApp customers'
-        });
-        await messages.set(whatsappRoomId, []);
-      }
-      
-      const whatsappRoom = await chatRooms.get(whatsappRoomId);
-      if (!whatsappRoom.participants.includes(userId)) {
-        whatsappRoom.participants.push(userId);
-        await chatRooms.set(whatsappRoomId, whatsappRoom);
-      }
-      availableRooms.push(whatsappRoom);
     }
     
     res.json({
       success: true,
-      rooms: availableRooms
+      rooms: availableRooms.sort((a, b) => {
+        const aTitle = a.title || a.id;
+        const bTitle = b.title || b.id;
+        return aTitle.localeCompare(bTitle);
+      })
     });
   } catch (error) {
     console.error('Error fetching chat rooms:', error);
@@ -655,53 +707,79 @@ router.get('/team-members', authUser, async (req, res) => {
     }
 
     const teamMembers = [];
-    
-    // Import intelligent models (PostgreSQL)
-    const { Doctor } = await import('../models/doctor.model.intelligent.js');
-    const { Nurse } = await import('../models/nurse.model.intelligent.js');
-    const { Assistant } = await import('../models/assistant.model.intelligent.js');
+    const [
+      doctorModule,
+      nurseModule,
+      assistantModule,
+      teamMemberModule
+    ] = await Promise.all([
+      import('../models/doctor.model.intelligent.js'),
+      import('../models/nurse.model.intelligent.js'),
+      import('../models/assistant.model.intelligent.js'),
+      import('../models/postgres/team-member.model.postgres.js')
+    ]);
+
+    const Doctor = doctorModule.default;
+    const Nurse = nurseModule.default;
+    const Assistant = assistantModule.default;
+    const TeamMember = teamMemberModule.default;
     
     // Get doctors
     const doctors = await Doctor.findAll();
     doctors.forEach(doctor => {
       teamMembers.push({
-        id: doctor.id,
+        id: String(doctor.id),
         name: `${doctor.prefix || 'Dr'} ${doctor.firstName} ${doctor.lastName}`,
         email: doctor.email,
         role: 'doctor',
         specialization: doctor.specialization,
-        isOnline: activeUsers.has(doctor.id),
-        lastSeen: activeUsers.has(doctor.id) ? 'Online' : 'Recently',
+        isOnline: activeUsers.has(String(doctor.id)),
+        lastSeen: activeUsers.has(String(doctor.id)) ? 'Online' : 'Recently',
         avatar: doctor.doctorImage || null
+      });
+    });
+
+    const teamUsers = await TeamMember.findAll();
+    teamUsers.forEach(teamMember => {
+      teamMembers.push({
+        id: String(teamMember.id),
+        name: `${teamMember.firstName} ${teamMember.lastName}`.trim(),
+        email: teamMember.email,
+        role: teamMember.role || 'team',
+        department: teamMember.department,
+        designation: teamMember.designation,
+        isOnline: activeUsers.has(String(teamMember.id)),
+        lastSeen: activeUsers.has(String(teamMember.id)) ? 'Online' : 'Recently',
+        avatar: teamMember.profileImage || null
       });
     });
     
     // Get nurses
-    const nurses = await db.Nurse.findAll();
+    const nurses = await Nurse.findAll();
     nurses.forEach(nurse => {
       teamMembers.push({
-        id: nurse.id,
+        id: String(nurse.id),
         name: `${nurse.firstName} ${nurse.lastName}`,
         email: nurse.email,
         role: 'nurse',
         department: nurse.department,
         specialty: nurse.specialty,
-        isOnline: activeUsers.has(nurse.id),
-        lastSeen: activeUsers.has(nurse.id) ? 'Online' : 'Recently'
+        isOnline: activeUsers.has(String(nurse.id)),
+        lastSeen: activeUsers.has(String(nurse.id)) ? 'Online' : 'Recently'
       });
     });
     
     // Get assistants
-    const assistants = await db.Assistant.findAll();
+    const assistants = await Assistant.findAll();
     assistants.forEach(assistant => {
       teamMembers.push({
-        id: assistant.id,
+        id: String(assistant.id),
         name: `${assistant.firstName} ${assistant.lastName}`,
         email: assistant.email,
         role: 'assistant',
-        roleTitle: assistant.roleTitle,
-        isOnline: activeUsers.has(assistant.id),
-        lastSeen: activeUsers.has(assistant.id) ? 'Online' : 'Recently'
+        roleTitle: assistant.roleTitle || assistant.role,
+        isOnline: activeUsers.has(String(assistant.id)),
+        lastSeen: activeUsers.has(String(assistant.id)) ? 'Online' : 'Recently'
       });
     });
     
@@ -709,7 +787,7 @@ router.get('/team-members', authUser, async (req, res) => {
     // For now including hardcoded admin if exists in activeUsers
     if (userRole === 'admin') {
       teamMembers.push({
-        id: userId,
+        id: String(userId),
         name: req.user.firstName ? `${req.user.firstName} ${req.user.lastName || ''}` : 'Admin',
         email: req.user.email,
         role: 'admin',
@@ -720,7 +798,9 @@ router.get('/team-members', authUser, async (req, res) => {
 
     res.json({
       success: true,
-      members: teamMembers
+      members: teamMembers.filter((member, index, array) =>
+        array.findIndex((candidate) => candidate.id === member.id && candidate.role === member.role) === index
+      )
     });
   } catch (error) {
     console.error('Error fetching team members:', error);
