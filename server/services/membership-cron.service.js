@@ -1,5 +1,6 @@
 import cron from 'node-cron';
 import { syncAllUsersStatus } from '../middleware/membership.middleware.js';
+import { tick, tickError } from '../utils/cronRegistry.js';
 
 /**
  * Cron job to sync user status with membership validity
@@ -17,6 +18,7 @@ export const startMembershipSyncCron = () => {
       console.log(`   - Total users checked: ${results.total}`);
       console.log(`   - Activated (valid membership): ${results.activated}`);
       console.log(`   - Deactivated (no/expired membership): ${results.deactivated}`);
+      tick('membership_sync', { total: results.total, activated: results.activated, deactivated: results.deactivated });
       console.log(`   - Unchanged: ${results.unchanged}`);
       
       if (results.errors.length > 0) {
@@ -26,6 +28,7 @@ export const startMembershipSyncCron = () => {
         });
       }
     } catch (error) {
+      tickError('membership_sync', error.message);
       console.error('❌ Daily membership sync failed:', error);
     }
   });

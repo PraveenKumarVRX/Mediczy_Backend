@@ -2,6 +2,7 @@ import cron from 'node-cron';
 import { Invoice, Payment } from '../models/billing.model.intelligent.js';
 import notificationService from './notification.service.js';
 import { Op } from 'sequelize';
+import { tick, tickError } from '../utils/cronRegistry.js';
 
 /**
  * Payment Reminder Automation Service
@@ -144,8 +145,10 @@ class PaymentReminderService {
       } else {
         console.log('ℹ️  No payment reminders to send today');
       }
+      tick('payment_reminders', remindersSent);
 
     } catch (error) {
+      tickError('payment_reminders', error.message);
       console.error('❌ Error in payment reminder check:', error);
     }
   }

@@ -17,6 +17,7 @@
 import cron from 'node-cron';
 import pool from '../db/pgPool.js';
 import llmProvider from './ai-brain/llm-provider.js';
+import { tick, tickError } from '../utils/cronRegistry.js';
 
 class HealthRiskScoreCron {
   constructor() {
@@ -124,8 +125,10 @@ class HealthRiskScoreCron {
 
       const elapsed = Date.now() - startTime;
       console.log(`✅ [HealthRisk] Completed: ${created} created, ${updated} updated in ${elapsed}ms`);
+      tick('ai_health_risk', { created, updated, patients: patients.length, elapsedMs: elapsed });
 
     } catch (error) {
+      tickError('ai_health_risk', error.message);
       console.error('❌ [HealthRisk] Cron error:', error.message);
     }
   }

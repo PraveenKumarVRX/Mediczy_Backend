@@ -17,6 +17,7 @@
 
 import cron from 'node-cron';
 import pool from '../db/pgPool.js';
+import { tick, tickError } from '../utils/cronRegistry.js';
 
 class SmartNotificationsCron {
   constructor() {
@@ -83,8 +84,10 @@ class SmartNotificationsCron {
 
       const elapsed = Date.now() - startTime;
       console.log(`✅ [SmartNotif] Generated ${total} notifications in ${elapsed}ms`);
+      tick('ai_smart_notif', { total, elapsedMs: elapsed });
 
     } catch (error) {
+      tickError('ai_smart_notif', error.message);
       console.error('❌ [SmartNotif] Cron error:', error.message);
     }
   }

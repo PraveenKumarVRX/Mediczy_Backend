@@ -1,0 +1,177 @@
+{
+  "ai_health_risk": {
+    "lastRun": "2026-03-27T10:58:23.425Z",
+    "lastStatus": "success",
+    "runCount": 1,
+    "errorCount": 0,
+    "lastError": null,
+    "lastDetails": {
+      "created": 0,
+      "updated": 13,
+      "patients": 13,
+      "elapsedMs": 4395
+    },
+    "recentLogs": [
+      {
+        "ts": "2026-03-27T10:58:23.425Z",
+        "status": "success",
+        "details": {
+          "created": 0,
+          "updated": 13,
+          "patients": 13,
+          "elapsedMs": 4395
+        }
+      }
+    ]
+  },
+  "ai_smart_notif": {
+    "lastRun": "2026-03-27T10:58:49.050Z",
+    "lastStatus": "success",
+    "runCount": 1,
+    "errorCount": 0,
+    "lastError": null,
+    "lastDetails": {
+      "total": 0,
+      "elapsedMs": 15
+    },
+    "recentLogs": [
+      {
+        "ts": "2026-03-27T10:58:49.050Z",
+        "status": "success",
+        "details": {
+          "total": 0,
+          "elapsedMs": 15
+        }
+      }
+    ]
+  },
+  "ai_self_learning": {
+    "lastRun": "2026-03-27T10:59:19.083Z",
+    "lastStatus": "success",
+    "runCount": 1,
+    "errorCount": 0,
+    "lastError": null,
+    "lastDetails": {
+      "scored": 0,
+      "patterns": 0,
+      "insights": 0,
+      "elapsedMs": 18
+    },
+    "recentLogs": [
+      {
+        "ts": "2026-03-27T10:59:19.083Z",
+        "status": "success",
+        "details": {
+          "scored": 0,
+          "patterns": 0,
+          "insights": 0,
+          "elapsedMs": 18
+        }
+      }
+    ]
+  },
+  "appt_reminder": {
+    "lastRun": "2026-03-27T11:00:00.060Z",
+    "lastStatus": "success",
+    "runCount": 1,
+    "errorCount": 0,
+    "lastError": null,
+    "lastDetails": {
+      "sent24h": 0,
+      "sent2h": 0,
+      "sent15min": 0
+    },
+    "recentLogs": [
+      {
+        "ts": "2026-03-27T11:00:00.060Z",
+        "status": "success",
+        "details": {
+          "sent24h": 0,
+          "sent2h": 0,
+          "sent15min": 0
+        }
+      }
+    ]
+  },
+  "device_heartbeat": {
+    "lastRun": "2026-03-27T11:05:00.032Z",
+    "lastStatus": "success",
+    "runCount": 2,
+    "errorCount": 0,
+    "lastError": null,
+    "lastDetails": {},
+    "recentLogs": [
+      {
+        "ts": "2026-03-27T11:00:00.062Z",
+        "status": "success",
+        "details": {}
+      },
+      {
+        "ts": "2026-03-27T11:05:00.032Z",
+        "status": "success",
+        "details": {}
+      }
+    ]
+  },
+  "device_amc": {
+    "lastRun": "2026-03-27T11:00:00.068Z",
+    "lastStatus": "success",
+    "runCount": 1,
+    "errorCount": 0,
+    "lastError": null,
+    "lastDetails": {},
+    "recentLogs": [
+      {
+        "ts": "2026-03-27T11:00:00.069Z",
+        "status": "success",
+        "details": {}
+      }
+    ]
+  },
+  "webinar_reminder": {
+    "lastRun": "2026-03-27T11:00:00.138Z",
+    "lastStatus": "success",
+    "runCount": 1,
+    "errorCount": 0,
+    "lastError": null,
+    "lastDetails": {
+      "sent1week": 0,
+      "sent24h": 0,
+      "sent2h": 0,
+      "sent15min": 0
+    },
+    "recentLogs": [
+      {
+        "ts": "2026-03-27T11:00:00.138Z",
+        "status": "success",
+        "details": {
+          "sent1week": 0,
+          "sent24h": 0,
+          "sent2h": 0,
+          "sent15min": 0
+        }
+      }
+    ]
+  },
+  "ai_clinical_insights": {
+    "lastRun": "2026-03-27T11:00:19.066Z",
+    "lastStatus": "success",
+    "runCount": 1,
+    "errorCount": 0,
+    "lastError": null,
+    "lastDetails": {
+      "total": 0,
+      "elapsedMs": 26
+    },
+    "recentLogs": [
+      {
+        "ts": "2026-03-27T11:00:19.066Z",
+        "status": "success",
+        "details": {
+          "total": 0,
+          "elapsedMs": 26
+        }
+      }
+    ]
+  }
+}

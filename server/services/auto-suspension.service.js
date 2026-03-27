@@ -15,6 +15,7 @@ import Tenant from '../models/postgres/tenant.model.postgres.js';
 import saasBillingService from './saas-billing.service.js';
 import nodemailer from 'nodemailer';
 import cron from 'node-cron';
+import { tick, tickError } from '../utils/cronRegistry.js';
 
 // Configuration
 const CONFIG = {
@@ -107,9 +108,11 @@ class AutoSuspensionService {
       await this.checkReactivationEligibility();
 
       console.log('[AutoSuspension] Check completed successfully');
+      tick('auto_suspension');
 
     } catch (error) {
       console.error('[AutoSuspension] Check failed:', error);
+      tickError('auto_suspension', error.message);
     } finally {
       this.isRunning = false;
     }

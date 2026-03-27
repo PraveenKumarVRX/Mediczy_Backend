@@ -11,6 +11,7 @@
 import cron from 'node-cron';
 import { Op } from 'sequelize';
 import Appointment from '../models/appointment.model.intelligent.js';
+import { tick, tickError } from '../utils/cronRegistry.js';
 
 /**
  * Cancel expired appointments from previous day
@@ -97,7 +98,9 @@ const scheduleAppointmentAutoCancel = () => {
     try {
       const result = await cancelExpiredAppointments();
       console.log(`📊 Auto-cancel summary: ${result.cancelled} appointments marked as no-show`);
+      tick('appt_autocancel', { cancelled: result.cancelled, processed: result.processed });
     } catch (error) {
+      tickError('appt_autocancel', error.message);
       console.error('❌ Appointment auto-cancel job failed:', error);
     }
   }, {
@@ -112,7 +115,9 @@ const scheduleAppointmentAutoCancel = () => {
       if (result.cancelled > 0) {
         console.log(`📊 Morning cleanup: ${result.cancelled} additional appointments marked as no-show`);
       }
+      tick('appt_morning_cleanup', { cancelled: result.cancelled });
     } catch (error) {
+      tickError('appt_morning_cleanup', error.message);
       console.error('❌ Morning cleanup job failed:', error);
     }
   }, {

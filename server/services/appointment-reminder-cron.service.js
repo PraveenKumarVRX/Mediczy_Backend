@@ -2,6 +2,7 @@ import cron from 'node-cron';
 import Appointment from '../models/appointment.model.intelligent.js';
 import notificationService from './notification.service.js';
 import { Op } from 'sequelize';
+import { tick, tickError } from '../utils/cronRegistry.js';
 
 /**
  * Appointment Reminder Automation Service
@@ -111,9 +112,11 @@ class AppointmentReminderService {
       if (sent24h + sent2h + sent15min > 0) {
         console.log(`✅ Reminders sent: 24h=${sent24h}, 2h=${sent2h}, 15min=${sent15min}`);
       }
+      tick('appt_reminder', { sent24h, sent2h, sent15min });
 
     } catch (error) {
       console.error('❌ Error in appointment reminder check:', error);
+      tickError('appt_reminder', error.message);
     }
   }
 

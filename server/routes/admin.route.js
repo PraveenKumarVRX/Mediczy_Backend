@@ -4629,4 +4629,44 @@ router.post('/medicines/reload', authUser, requireRole('admin', 'superadmin'), (
   }
 });
 
+// ── Automation / Cron Jobs Dashboard ─────────────────────────────────────────
+
+/**
+ * GET /api/admin/automation/jobs
+ * Returns live status of all registered cron jobs.
+ */
+router.get('/automation/jobs', authUser, requireRole('admin'), async (req, res) => {
+  try {
+    const { getStatus } = await import('../utils/cronRegistry.js');
+    return res.json({ success: true, data: getStatus(), retrievedAt: new Date().toISOString() });
+  } catch (err) {
+    console.error('automation/jobs error:', err);
+    return res.status(500).json({ success: false, message: 'Failed to fetch automation status' });
+  }
+});
+
+/**
+ * GET /api/admin/automation/jobs/:key/logs
+ * Returns recent execution log for a single task.
+ */
+router.get('/automation/jobs/:key/logs', authUser, requireRole('admin'), async (req, res) => {
+  try {
+    const { getTaskLogs } = await import('../utils/cronRegistry.js');
+    const logs = getTaskLogs(req.params.key);
+    return res.json({ success: true, key: req.params.key, logs });
+  } catch (err) {
+    console.error('automation/jobs/:key/logs error:', err);
+    return res.status(500).json({ success: false, message: 'Failed to fetch task logs' });
+  }
+});
+
+/**
+ * POST /api/admin/automation/jobs/:key/trigger
+ * Manually trigger a task (runs its function immediately).
+ */
+router.post('/automation/jobs/:key/trigger', authUser, requireRole('admin'), async (req, res) => {
+  return res.status(501).json({ success: false, message: 'Manual trigger not yet implemented for this task' });
+});
+
 export default router;
+

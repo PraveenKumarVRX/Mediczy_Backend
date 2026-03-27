@@ -5,6 +5,7 @@ import { Prescription } from '../models/index.js';
 import Doctor from '../models/doctor.model.intelligent.js';
 import notificationService from './notification.service.js';
 import { Op } from 'sequelize';
+import { tick, tickError } from '../utils/cronRegistry.js';
 
 /**
  * Doctor Performance Reports Service
@@ -72,9 +73,11 @@ class DoctorPerformanceReportService {
       }
 
       console.log(`✅ Sent ${reportsSent} performance reports`);
+      tick('doctor_performance', { reportsSent });
 
     } catch (error) {
       console.error('❌ Error generating performance reports:', error);
+      tickError('doctor_performance', error.message);
     }
   }
 

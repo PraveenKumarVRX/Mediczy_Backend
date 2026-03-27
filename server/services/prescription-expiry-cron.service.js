@@ -2,6 +2,7 @@ import cron from 'node-cron';
 import { Prescription } from '../models/index.js';
 import notificationService from './notification.service.js';
 import { Op } from 'sequelize';
+import { tick, tickError } from '../utils/cronRegistry.js';
 
 /**
  * Prescription Expiry Alert Service
@@ -116,9 +117,11 @@ class PrescriptionExpiryService {
       } else {
         console.log('ℹ️  No prescription expiry alerts to send today');
       }
+      tick('prescription_expiry', { total, ...alertsSent });
 
     } catch (error) {
       console.error('❌ Error in prescription expiry check:', error);
+      tickError('prescription_expiry', error.message);
     }
   }
 

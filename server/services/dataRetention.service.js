@@ -4,6 +4,7 @@ import User from '../models/user.model.intelligent.js';
 import Doctor from '../models/doctor.model.intelligent.js';
 import AuditLog from '../models/auditLog.model.intelligent.js';
 import Consent from '../models/consent.model.intelligent.js';
+import { tick, tickError } from '../utils/cronRegistry.js';
 
 /**
  * Data Retention Scheduler
@@ -240,23 +241,38 @@ export function initializeDataRetentionScheduler() {
   // Run daily at 2 AM
   cron.schedule('0 2 * * *', async () => {
     console.log('\n🔄 Running daily data retention tasks...');
-    await expireOldConsents();
-    await cleanupSessionLogs();
-    await checkInactiveUsers();
+    try {
+      await expireOldConsents();
+      await cleanupSessionLogs();
+      await checkInactiveUsers();
+      tick('data_retention_daily');
+    } catch (err) {
+      tickError('data_retention_daily', err.message);
+    }
   });
   
   // Run weekly on Sunday at 3 AM
   cron.schedule('0 3 * * 0', async () => {
     console.log('\n🔄 Running weekly data retention tasks...');
-    await archiveOldAuditLogs();
-    await cleanupExpiredConsents();
-    await generateComplianceReport();
+    try {
+      await archiveOldAuditLogs();
+      await cleanupExpiredConsents();
+      await generateComplianceReport();
+      tick('data_retention_weekly');
+    } catch (err) {
+      tickError('data_retention_weekly', err.message);
+    }
   });
   
   // Run monthly on 1st at 4 AM
   cron.schedule('0 4 1 * *', async () => {
     console.log('\n🔄 Running monthly compliance report...');
-    await generateComplianceReport();
+    try {
+      await generateComplianceReport();
+      tick('data_retention_monthly');
+    } catch (err) {
+      tickError('data_retention_monthly', err.message);
+    }
   });
   
   console.log('✅ Data retention scheduler initialized');

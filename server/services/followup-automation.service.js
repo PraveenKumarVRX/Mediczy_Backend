@@ -3,6 +3,7 @@ import { Prescription } from '../models/index.js';
 import Appointment from '../models/appointment.model.intelligent.js';
 import notificationService from './notification.service.js';
 import { Op } from 'sequelize';
+import { tick, tickError } from '../utils/cronRegistry.js';
 
 /**
  * Follow-Up Appointment Automation Service
@@ -115,8 +116,10 @@ class FollowUpAutomationService {
       } else {
         console.log('ℹ️  No follow-up reminders to send today');
       }
+      tick('followup_automation', remindersSent);
 
     } catch (error) {
+      tickError('followup_automation', error.message);
       console.error('❌ Error in follow-up reminder check:', error);
     }
   }

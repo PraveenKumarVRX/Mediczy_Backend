@@ -18,6 +18,7 @@
 
 import cron from 'node-cron';
 import pool from '../db/pgPool.js';
+import { tick, tickError } from '../utils/cronRegistry.js';
 
 class ClinicalInsightsCron {
   constructor() {
@@ -87,8 +88,10 @@ class ClinicalInsightsCron {
 
       const elapsed = Date.now() - startTime;
       console.log(`✅ [ClinicalInsights] Generated ${total} insights in ${elapsed}ms`);
+      tick('ai_clinical_insights', { total, elapsedMs: elapsed });
 
     } catch (error) {
+      tickError('ai_clinical_insights', error.message);
       console.error('❌ [ClinicalInsights] Cron error:', error.message);
     }
   }

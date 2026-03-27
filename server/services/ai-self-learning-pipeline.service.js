@@ -19,6 +19,7 @@ import cron from 'node-cron';
 import pool from '../db/pgPool.js';
 import llmProvider from './ai-brain/llm-provider.js';
 import { v4 as uuidv4 } from 'uuid';
+import { tick, tickError } from '../utils/cronRegistry.js';
 
 class SelfLearningPipeline {
   constructor() {
@@ -81,8 +82,10 @@ class SelfLearningPipeline {
 
       const elapsed = Date.now() - startTime;
       console.log(`✅ [SelfLearn] Pipeline complete: ${scored} scored, ${patterns.length} patterns, ${insights} insights in ${elapsed}ms`);
+      tick('ai_self_learning', { scored, patterns: patterns.length, insights, elapsedMs: elapsed });
 
     } catch (error) {
+      tickError('ai_self_learning', error.message);
       console.error('❌ [SelfLearn] Pipeline error:', error.message);
     }
   }

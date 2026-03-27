@@ -11,6 +11,7 @@
 import cron from 'node-cron';
 import { Sequelize } from 'sequelize';
 import webinarNotificationService from './webinar-notification.service.js';
+import { tick, tickError } from '../utils/cronRegistry.js';
 
 const sequelize = new Sequelize(
   process.env.POSTGRES_DATABASE || 'mediczy_ai',
@@ -141,9 +142,11 @@ class WebinarReminderService {
       } else {
         console.log('ℹ️  No webinar reminders to send at this time');
       }
+      tick('webinar_reminder', { sent1week, sent24h, sent2h, sent15min });
 
     } catch (error) {
       console.error('❌ Webinar reminder check failed:', error);
+      tickError('webinar_reminder', error.message);
     }
   }
 
