@@ -11,6 +11,7 @@ import { postgresSequelize } from '../db/postgres-sequelize.js';
 import EmailInbox from '../models/emailInbox.model.js';
 import { createAutoTicket } from './autoTicketService.js';
 import logger from '../config/logger.js';
+import whatsappProductionService from './whatsapp-production.service.js';
 
 // ─── Constants ────────────────────────────────────────────────────────────────
 
@@ -735,6 +736,19 @@ export async function saveHealthReportFromEmail(email) {
 
       savedCount++;
       logger.info(`[emailAutoProcess] Report "${fileName}" → user ${user.id} [${confidence}/${matchMethod}] (email ${email.id})`);
+
+      // Send WhatsApp notification with report download link
+      try {
+        const phone = user.phoneNumber || user.phone;
+        if (phone) {
+          const patientName = `${user.firstName || ''} ${user.lastName || ''}`.trim() || 'Patient';
+          const reportUrl = att.downloadUrl || '';
+          await whatsappProductionService.sendHealthReportReady({ to: phone, patientName, reportUrl });
+          logger.info(`[emailAutoProcess] WhatsApp report notification sent to ${phone} for "${fileName}"`);
+        }
+      } catch (waErr) {
+        logger.warn(`[emailAutoProcess] WhatsApp notification skipped for user ${user.id}: ${waErr.message}`);
+      }
     }
 
     if (savedCount > 0) {

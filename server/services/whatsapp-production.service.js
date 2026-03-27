@@ -104,9 +104,9 @@ class WhatsAppProductionService {
   }
 
   /**
-   * Send health report notification
+   * Send health report notification with optional download URL
    */
-  async sendHealthReportReady({ to, patientName }) {
+  async sendHealthReportReady({ to, patientName, reportUrl }) {
     if (!this.twilioConfigured) {
       throw new Error('Twilio WhatsApp is not configured');
     }
@@ -115,9 +115,10 @@ class WhatsAppProductionService {
 
     if (this.templates.healthReport) {
       messageParams.contentSid = this.templates.healthReport;
-      messageParams.contentVariables = JSON.stringify({ '1': patientName });
+      messageParams.contentVariables = JSON.stringify({ '1': patientName, '2': reportUrl || '' });
     } else {
-      messageParams.body = `*Health Report Ready* 📋\n\nDear ${patientName}, your health report is now available. Please log in to your SmartHealth account or visit the lab to collect it.\n\n_SmartHealth_`;
+      const urlLine = reportUrl ? `\nUrl : ${reportUrl}` : '';
+      messageParams.body = `Health Check up Reports\n\nHello ${patientName}\n\nYour Health Check Up reports are ready. Kindly download the reports from the below link.${urlLine}\n\nTeam SmartHealth`;
     }
 
     return await this.client.messages.create(messageParams);
