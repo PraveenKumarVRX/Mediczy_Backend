@@ -164,7 +164,28 @@ async function findUserByName(fullName, corporateId = null) {
        LIMIT 1`,
       { replacements }
     );
-    return rows2[0] || null;
+    if (rows2[0]) return rows2[0];
+
+    // Third try: partial last name match for cases where the queried name omits a middle name
+    // e.g. "SACHIN MODI" matches user with lastName "RASIKLAL MODI" (last token matches)
+    // Also handles reversed prefix (e.g. "K JOSHI" where lastName contains the token "JOSHI")
+    const lastToken = parts[parts.length - 1];
+    if (lastToken && lastToken.length >= 3) {
+      const [rows3] = await postgresSequelize.query(
+        `SELECT u.id, u."firstName", u."lastName", u.email, u."phoneNumber", u.organization_id
+         FROM users u
+         WHERE LOWER(u."firstName") LIKE LOWER(:firstPat)
+           AND (LOWER(u."lastName") LIKE LOWER(:lastPat)
+                OR LOWER(u."firstName") LIKE LOWER(:combinedPat))
+           ${corpFilter}
+         ORDER BY length(u."lastName") ASC
+         LIMIT 1`,
+        { replacements: { ...replacements, firstPat: `${firstName}%`, lastPat: `%${lastToken}`, combinedPat: `%${lastToken}` } }
+      );
+      if (rows3[0]) return rows3[0];
+    }
+
+    return null;
   } catch (e) {
     logger.warn('[emailAutoProcess] findUserByName error:', e.message);
     return null;
@@ -596,12 +617,33 @@ export function detectLabReport(email) {
     subjectWords.length >= 2 && subjectWords.length <= 4 &&
     subjectWords.every(w => /^[A-Za-z.]{2,}$/.test(w));
 
+  // Also handle "REPORTS - SACHIN MODI" / "Reports_Mr Vasim Pathan" patterns
+  // common in Agilus & similar labs where subject = "REPORTS - <NAME>"
+  let subjectExtractedName = null;
+  if (!subjectIsPatientName) {
+    // Pattern: "REPORTS - NAME" or "Reports – NAME" or "Report: NAME"
+    const reportsPrefix = trimmedSubject.match(/^Reports?[\s_-]+(?:Mr\.?\s*|Mrs\.?\s*|Ms\.?\s*)?(.{4,})$/i);
+    if (reportsPrefix) {
+      // Strip anything after "//" or "|" (often a secondary description)
+      let candidate = reportsPrefix[1].replace(/\s*[\/|].*$/, '').trim();
+      // Remove stray leading/trailing punctuation
+      candidate = candidate.replace(/^[-–\s]+|[-–\s]+$/g, '').trim();
+      if (candidate.length >= 4 && /[A-Za-z]{2}/.test(candidate)) {
+        subjectExtractedName = candidate;
+      }
+    }
+  }
+
+  const patientName = subjectIsPatientName
+    ? trimmedSubject
+    : (subjectExtractedName || null);
+
   return {
     isReport: true,
     labName,
     pdfAttachments: fromLab ? pdfAttachments : (legacyReportAtt ? [legacyReportAtt] : []),
-    subjectIsPatientName,
-    patientName: subjectIsPatientName ? trimmedSubject : null,
+    subjectIsPatientName: subjectIsPatientName || !!subjectExtractedName,
+    patientName,
   };
 }
 
