@@ -576,6 +576,7 @@ const PUBLIC_ENDPOINTS = [
   '/api/cdss/knowledge/search', // Semantic search in knowledge base
   '/api/cdss/knowledge/stats', // Knowledge base statistics
   '/api/cdss/knowledge/sources', // Available knowledge sources
+  '/api/public/', // Public signed-token download endpoints (report PDFs, etc.)
 ];
 
 /**

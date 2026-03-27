@@ -132,6 +132,7 @@ import healthIntelligenceRouter from './routes/health-intelligence.route.js';
 import sibControlRouter from './routes/sib-control.route.js';
 import sibChatbotsRouter from './routes/sib-chatbots.route.js';
 import { ringFencingMiddleware } from './middleware/ringFencing.js';
+import publicReportRouter from './routes/public-report.route.js';
 import onlineConsultationRouter from './routes/online-consultation.route.js';
 import notificationRouter from './routes/notification.route.js';
 import embeddingsRouter from './routes/embeddings.route.js';
@@ -729,6 +730,8 @@ app.get('/razorpay-test', (req, res) => {
 
 // 9. Session Timeout (HIPAA 15-minute idle timeout)
 app.use(sessionTimeout);
+// Public signed-token report download (no auth required — handled by JWT verification)
+app.use('/api/public', publicReportRouter);
 // 10. Ring-Fencing Middleware (Prevent cross-user privilege escalation)
 app.use(ringFencingMiddleware);
 

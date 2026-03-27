@@ -13,6 +13,7 @@ import { createAutoTicket } from './autoTicketService.js';
 import logger from '../config/logger.js';
 import whatsappProductionService from './whatsapp-production.service.js';
 import { tick, tickError } from '../utils/cronRegistry.js';
+import jwt from 'jsonwebtoken';
 
 // Lazy imports for AI QC (avoid startup cost)
 let _llmProvider = null;
@@ -830,7 +831,14 @@ export async function saveHealthReportFromEmail(email) {
       // ────────────────────────────────────────────────────────────────────────
 
       const fileName = att.filename || 'Health Report.pdf';
-      const filePath = att.downloadUrl || `/api/team/emails/${email.id}/attachment`;
+      // Generate a signed time-limited download token (7 days) for the public download URL
+      const downloadToken = jwt.sign(
+        { emailId: email.id, contentId: att.contentId, fileName },
+        process.env.JWT_SECRET,
+        { expiresIn: '7d' }
+      );
+      const publicReportUrl = `https://mediqzy.com/api/public/report-download/${downloadToken}`;
+      const filePath = publicReportUrl;
       const reportName = (nameFromFile || att.filename?.replace(/\.pdf$/i, '') || 'Health Report');
 
       await postgresSequelize.query(
@@ -847,7 +855,7 @@ export async function saveHealthReportFromEmail(email) {
             userId:   user.id,
             fileName,
             filePath,
-            fileUrl:  att.downloadUrl || filePath,
+            fileUrl:  publicReportUrl,
             fileSize: att.size || 0,
             mimeType: att.mimeType || 'application/pdf',
             testName: reportName,
@@ -884,7 +892,7 @@ export async function saveHealthReportFromEmail(email) {
         const phone = user.phoneNumber || user.phone;
         if (phone) {
           const patientName = `${user.firstName || ''} ${user.lastName || ''}`.trim() || 'Patient';
-          const reportUrl = att.downloadUrl || '';
+          const reportUrl = publicReportUrl;
           await whatsappProductionService.sendHealthReportReady({ to: phone, patientName, reportUrl });
           logger.info(`[emailAutoProcess] WhatsApp report notification sent to ${phone} for "${fileName}"`);
           tick('whatsapp_report', { patient: patientName, file: fileName });
