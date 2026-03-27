@@ -330,7 +330,8 @@ const USER_TYPE_PERMISSIONS = {
       '/api/hospital/appointments',
       '/api/hospital/departments',
       '/api/insurance/admin',
-      '/api/ehr'  // Electronic Health Records
+      '/api/ehr',  // Electronic Health Records
+      '/api/users/change-password'  // Password change from hospital settings
     ],
     tokenField: 'hospitalId'
   },
