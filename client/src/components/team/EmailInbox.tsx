@@ -1068,13 +1068,53 @@ const EmailInbox: React.FC = () => {
                 <div className="text-sm text-foreground leading-relaxed">
                   {selectedEmail.htmlBody ? (
                     <div
-                      className="prose prose-sm max-w-none dark:prose-invert overflow-x-auto"
+                      className="email-html-body overflow-x-auto"
+                      style={{
+                        colorScheme: 'light',
+                        backgroundColor: '#ffffff',
+                        color: '#111111',
+                        borderRadius: '0.5rem',
+                        padding: '1rem',
+                      }}
                       dangerouslySetInnerHTML={{ __html: sanitize(selectedEmail.htmlBody) }}
                     />
                   ) : (
                     <pre className="whitespace-pre-wrap font-sans text-sm text-foreground">{selectedEmail.body}</pre>
                   )}
                 </div>
+                {/* Attachments in reading pane */}
+                {Array.isArray(selectedEmail.attachments) && selectedEmail.attachments.length > 0 && (
+                  <div className="mt-4 pt-4 border-t border-border">
+                    <p className="text-xs font-semibold text-muted-foreground mb-2 flex items-center gap-1.5">
+                      <Paperclip className="w-3.5 h-3.5" />
+                      {selectedEmail.attachments.length} Attachment{selectedEmail.attachments.length !== 1 ? 's' : ''}
+                    </p>
+                    <div className="flex flex-wrap gap-2">
+                      {selectedEmail.attachments.map((att: any, i: number) => {
+                        const name = att.filename || att.fileName || att.name || `Attachment ${i + 1}`;
+                        const url = att.downloadUrl || att.url || null;
+                        const size = att.size ? `${Math.round(att.size / 1024)} KB` : '';
+                        const isPdf = /\.pdf$/i.test(name) || att.mimeType === 'application/pdf';
+                        return (
+                          <a
+                            key={i}
+                            href={url || '#'}
+                            target={url ? '_blank' : undefined}
+                            rel="noopener noreferrer"
+                            onClick={!url ? (e) => e.preventDefault() : undefined}
+                            className="flex items-center gap-2 px-3 py-2 rounded-lg bg-muted hover:bg-muted/80 border border-border text-xs font-medium text-foreground transition-colors max-w-[240px] group"
+                            title={name}
+                          >
+                            <FileText className={`w-4 h-4 shrink-0 ${isPdf ? 'text-red-500' : 'text-blue-500'}`} />
+                            <span className="truncate flex-1">{name}</span>
+                            {size && <span className="text-muted-foreground shrink-0">{size}</span>}
+                            {url && <ChevronRight className="w-3 h-3 text-muted-foreground shrink-0 group-hover:text-foreground" />}
+                          </a>
+                        );
+                      })}
+                    </div>
+                  </div>
+                )}
                 {(selectedEmail.autoUpdatesApplied?.length ?? 0) > 0 && (
                   <div className="mt-6 pt-4 border-t border-border">
                     <p className="text-xs font-semibold text-muted-foreground mb-2">✨ AI Auto Updates Applied</p>
