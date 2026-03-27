@@ -196,6 +196,9 @@ const EmailInbox: React.FC = () => {
   // AI ticket state
   const [aiTicketLoading, setAiTicketLoading]         = useState(false);
 
+  // Maximize / fullscreen reading pane
+  const [emailMaximized, setEmailMaximized]           = useState(false);
+
   // ── Fetch ────────────────────────────────────────────────────────
   const fetchInbox = useCallback(async () => {
     setLoading(true);
@@ -1034,6 +1037,13 @@ const EmailInbox: React.FC = () => {
                       <Star className={`w-4 h-4 ${selectedEmail.isStarred ? 'fill-yellow-400 text-yellow-400' : 'text-muted-foreground'}`} />
                     </button>
                     <button
+                      onClick={() => setEmailMaximized(true)}
+                      className="p-1.5 rounded hover:bg-muted text-muted-foreground hover:text-foreground transition-colors"
+                      title="Open fullscreen"
+                    >
+                      <Maximize2 className="w-4 h-4" />
+                    </button>
+                    <button
                       onClick={() => deleteEmail(selectedEmail.id)}
                       className="p-1.5 rounded hover:bg-red-500/10 text-muted-foreground hover:text-red-500 transition-colors"
                     >
@@ -1181,6 +1191,168 @@ const EmailInbox: React.FC = () => {
           )}
         </div>
       </div>
+
+      {/* ─── Fullscreen Email Modal ─── */}
+      {emailMaximized && selectedEmail && (
+        <div className="fixed inset-0 z-[60] bg-background flex flex-col">
+          {/* Header */}
+          <div className="shrink-0 flex items-start gap-3 px-6 py-4 border-b border-border bg-background/95 backdrop-blur-sm">
+            <div className="flex-1 min-w-0">
+              <div className="flex items-center gap-2 text-xs text-muted-foreground mb-1">
+                <span className="font-semibold text-foreground truncate">{selectedEmail.fromName || selectedEmail.from}</span>
+                {selectedEmail.fromName && <span className="truncate hidden sm:inline">&lt;{selectedEmail.from}&gt;</span>}
+                <span className="shrink-0 ml-auto">
+                  {selectedEmail.date ? new Date(selectedEmail.date).toLocaleString() : ''}
+                </span>
+              </div>
+              <h2 className="font-bold text-foreground text-lg leading-snug truncate">{selectedEmail.subject}</h2>
+              {selectedEmail.aiProcessed && (
+                <div className="flex flex-wrap items-center gap-1.5 mt-1.5">
+                  {selectedEmail.aiIntent && (
+                    <span className="text-[10px] px-2 py-0.5 rounded-full bg-purple-500/10 text-purple-600 border border-purple-400/20 font-medium">
+                      {selectedEmail.aiIntent.replace(/_/g, ' ')}
+                    </span>
+                  )}
+                  {selectedEmail.aiConfidence && (
+                    <span className={`text-[10px] px-2 py-0.5 rounded-full font-medium border ${
+                      selectedEmail.aiConfidence === 'high' ? 'bg-emerald-500/10 text-emerald-600 border-emerald-400/20' :
+                      selectedEmail.aiConfidence === 'medium' ? 'bg-yellow-500/10 text-yellow-600 border-yellow-400/20' :
+                      'bg-red-500/10 text-red-600 border-red-400/20'
+                    }`}>{selectedEmail.aiConfidence} confidence</span>
+                  )}
+                </div>
+              )}
+            </div>
+            {/* Action buttons */}
+            <div className="shrink-0 flex items-center gap-1">
+              <button
+                onClick={() => composerOpen ? setComposerOpen(false) : startReply(selectedEmail)}
+                className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold transition-colors ${composerOpen ? 'bg-blue-500/15 text-blue-600' : 'bg-blue-600 hover:bg-blue-700 text-white'}`}
+                title="Reply"
+              >
+                <Reply className="w-3.5 h-3.5" /> Reply
+              </button>
+              <button onClick={() => toggleStar(selectedEmail.id)} className="p-2 rounded-lg hover:bg-muted transition-colors">
+                <Star className={`w-4 h-4 ${selectedEmail.isStarred ? 'fill-yellow-400 text-yellow-400' : 'text-muted-foreground'}`} />
+              </button>
+              <button
+                onClick={() => { deleteEmail(selectedEmail.id); setEmailMaximized(false); }}
+                className="p-2 rounded-lg hover:bg-red-500/10 text-muted-foreground hover:text-red-500 transition-colors"
+                title="Delete"
+              >
+                <Trash2 className="w-4 h-4" />
+              </button>
+              <button
+                onClick={() => setEmailMaximized(false)}
+                className="p-2 rounded-lg hover:bg-muted text-muted-foreground hover:text-foreground transition-colors ml-2"
+                title="Exit fullscreen"
+              >
+                <Minimize2 className="w-4 h-4" />
+              </button>
+            </div>
+          </div>
+
+          {/* Scrollable body */}
+          <div className="flex-1 overflow-y-auto px-6 py-5">
+            {selectedEmail.htmlBody ? (
+              <div
+                style={{
+                  colorScheme: 'light',
+                  backgroundColor: '#ffffff',
+                  color: '#111111',
+                  borderRadius: '0.5rem',
+                  padding: '1.5rem',
+                }}
+                dangerouslySetInnerHTML={{ __html: sanitize(selectedEmail.htmlBody) }}
+              />
+            ) : (
+              <pre className="whitespace-pre-wrap font-sans text-sm text-foreground">{selectedEmail.body}</pre>
+            )}
+
+            {/* Attachments */}
+            {Array.isArray(selectedEmail.attachments) && selectedEmail.attachments.length > 0 && (
+              <div className="mt-6 pt-5 border-t border-border">
+                <p className="text-xs font-semibold text-muted-foreground mb-3 flex items-center gap-1.5">
+                  <Paperclip className="w-3.5 h-3.5" />
+                  {selectedEmail.attachments.length} Attachment{selectedEmail.attachments.length !== 1 ? 's' : ''}
+                </p>
+                <div className="flex flex-wrap gap-2">
+                  {selectedEmail.attachments.map((att: any, i: number) => {
+                    const name = att.filename || att.fileName || att.name || `Attachment ${i + 1}`;
+                    const url = att.downloadUrl || att.url || null;
+                    const size = att.size ? `${Math.round(att.size / 1024)} KB` : '';
+                    const isPdf = /\.pdf$/i.test(name) || att.mimeType === 'application/pdf';
+                    return (
+                      <a
+                        key={i}
+                        href={url || '#'}
+                        target={url ? '_blank' : undefined}
+                        rel="noopener noreferrer"
+                        onClick={!url ? (e) => e.preventDefault() : undefined}
+                        className="flex items-center gap-2 px-3 py-2 rounded-lg bg-muted hover:bg-muted/80 border border-border text-xs font-medium text-foreground transition-colors max-w-[280px] group"
+                        title={name}
+                      >
+                        <FileText className={`w-4 h-4 shrink-0 ${isPdf ? 'text-red-500' : 'text-blue-500'}`} />
+                        <span className="truncate flex-1">{name}</span>
+                        {size && <span className="text-muted-foreground shrink-0">{size}</span>}
+                        {url && <ChevronRight className="w-3 h-3 text-muted-foreground shrink-0 group-hover:text-foreground" />}
+                      </a>
+                    );
+                  })}
+                </div>
+              </div>
+            )}
+          </div>
+
+          {/* Reply composer pinned at bottom */}
+          {composerOpen && (
+            <div
+              className="shrink-0 border-t border-border flex flex-col bg-background shadow-[0_-4px_16px_rgba(0,0,0,0.06)] overflow-hidden"
+              style={{ maxHeight: composerExpanded ? '55%' : 'min(380px, 48%)' }}
+            >
+              {/* Reply header */}
+              <div className="shrink-0 flex items-center gap-2 px-4 py-2 border-b border-border bg-muted/10">
+                <Reply className="w-3.5 h-3.5 text-blue-500 shrink-0" />
+                <span className="text-xs font-semibold text-foreground flex-1 truncate">
+                  Reply to {selectedEmail.fromName || selectedEmail.from}
+                </span>
+                <button onClick={() => setShowCcBcc(!showCcBcc)}
+                  className="text-[11px] text-muted-foreground hover:text-foreground px-2 py-0.5 rounded hover:bg-muted transition-colors shrink-0">Cc / Bcc</button>
+                <button onClick={() => setComposerExpanded(!composerExpanded)}
+                  className="p-1 rounded hover:bg-muted text-muted-foreground hover:text-foreground transition-colors">
+                  {composerExpanded ? <Minimize2 className="w-3 h-3" /> : <Maximize2 className="w-3 h-3" />}
+                </button>
+                <button onClick={() => setComposerOpen(false)}
+                  className="p-1 rounded hover:bg-muted text-muted-foreground hover:text-foreground transition-colors">
+                  <X className="w-3 h-3" />
+                </button>
+              </div>
+              {showCcBcc && (
+                <div className="shrink-0 border-b border-border">
+                  <div className="flex items-center px-4 py-1.5 border-b border-border/50">
+                    <span className="w-8 text-xs font-semibold text-muted-foreground shrink-0">Cc</span>
+                    <input type="text" value={composerCc} onChange={e => setComposerCc(e.target.value)}
+                      placeholder="cc@example.com" className="flex-1 text-xs bg-transparent focus:outline-none placeholder:text-muted-foreground/40" />
+                  </div>
+                  <div className="flex items-center px-4 py-1.5">
+                    <span className="w-8 text-xs font-semibold text-muted-foreground shrink-0">Bcc</span>
+                    <input type="text" value={composerBcc} onChange={e => setComposerBcc(e.target.value)}
+                      placeholder="bcc@example.com" className="flex-1 text-xs bg-transparent focus:outline-none placeholder:text-muted-foreground/40" />
+                  </div>
+                </div>
+              )}
+              <FormattingToolbar />
+              <div
+                ref={bodyRef}
+                contentEditable suppressContentEditableWarning
+                className="flex-1 px-4 py-2 text-sm text-foreground focus:outline-none overflow-y-auto"
+                style={{ minHeight: 80 }}
+              />
+              <ComposerFooter compact />
+            </div>
+          )}
+        </div>
+      )}
 
       {/* ─── Ticket Modal ─── */}
       {showTicketModal && (
