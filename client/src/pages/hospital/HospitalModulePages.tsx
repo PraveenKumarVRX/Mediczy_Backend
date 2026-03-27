@@ -1,12 +1,15 @@
 import { useState } from "react";
 import HospitalLayout from "@/components/hospital/HospitalLayout";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
 import { useToast } from "@/hooks/use-toast";
 import { loadHospitalStore, saveHospitalStore } from "@/utils/hospitalStorage";
+import api from "@/utils/api";
+import { Eye, EyeOff, Lock, ShieldCheck } from "lucide-react";
 
 interface StatCardProps {
   title: string;
@@ -451,25 +454,152 @@ export const HospitalNotificationsPage = () => (
   />
 );
 
-export const HospitalSettingsPage = () => (
-  <ManagedSection
-    storageKey="hospital-settings-updates"
-    title="Settings"
-    subtitle="Portal level preferences and automations"
-    stats={[
-      { title: "Workflows", value: "12 active" },
-      { title: "Integrations", value: "8 linked" },
-      { title: "API Keys", value: "4" },
-      { title: "Audit Logs", value: "24h clean" },
-    ]}
-    initialItems={[
-      { label: "On-call policy", meta: "Last updated 2d ago", status: "Synced" },
-      { label: "Billing templates", meta: "GST 18% default", status: "Active" },
-      { label: "Security", meta: "2FA enforced", status: "Secured" },
-    ]}
-    actionLabel="Edit settings"
-  />
-);
+export const HospitalSettingsPage = () => {
+  const { toast } = useToast();
+
+  const [current, setCurrent] = useState("");
+  const [newPwd, setNewPwd] = useState("");
+  const [confirm, setConfirm] = useState("");
+  const [showCurrent, setShowCurrent] = useState(false);
+  const [showNew, setShowNew] = useState(false);
+  const [showConfirm, setShowConfirm] = useState(false);
+  const [loading, setLoading] = useState(false);
+
+  const handleChangePassword = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (newPwd !== confirm) {
+      toast({ title: "Passwords don't match", variant: "destructive" });
+      return;
+    }
+    setLoading(true);
+    try {
+      await api.post("/users/change-password", {
+        currentPassword: current,
+        newPassword: newPwd,
+        confirmPassword: confirm,
+      });
+      toast({ title: "Password updated successfully" });
+      setCurrent(""); setNewPwd(""); setConfirm("");
+    } catch (err: any) {
+      const msg =
+        err?.response?.data?.errors?.[0]?.msg ||
+        err?.response?.data?.message ||
+        "Failed to change password";
+      toast({ title: msg, variant: "destructive" });
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  return (
+    <HospitalLayout>
+      <div className="p-6 space-y-6 max-w-2xl">
+        <div>
+          <h1 className="text-2xl font-bold text-slate-900">Settings</h1>
+          <p className="text-sm text-muted-foreground mt-1">Portal preferences and security</p>
+        </div>
+
+        {/* Password Change Card */}
+        <Card>
+          <CardHeader className="flex flex-row items-center gap-3 pb-2">
+            <div className="w-9 h-9 rounded-lg bg-blue-100 flex items-center justify-center">
+              <Lock className="h-5 w-5 text-blue-600" />
+            </div>
+            <div>
+              <CardTitle className="text-base">Change Password</CardTitle>
+              <CardDescription className="text-xs">Update your hospital portal login password</CardDescription>
+            </div>
+          </CardHeader>
+          <CardContent>
+            <form onSubmit={handleChangePassword} className="space-y-4">
+              {/* Current Password */}
+              <div className="space-y-1">
+                <Label htmlFor="current-password">Current Password</Label>
+                <div className="relative">
+                  <Input
+                    id="current-password"
+                    type={showCurrent ? "text" : "password"}
+                    value={current}
+                    onChange={e => setCurrent(e.target.value)}
+                    placeholder="Enter current password"
+                    required
+                    className="pr-10"
+                  />
+                  <button
+                    type="button"
+                    className="absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground"
+                    onClick={() => setShowCurrent(v => !v)}
+                  >
+                    {showCurrent ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
+                  </button>
+                </div>
+              </div>
+
+              {/* New Password */}
+              <div className="space-y-1">
+                <Label htmlFor="new-password">New Password</Label>
+                <div className="relative">
+                  <Input
+                    id="new-password"
+                    type={showNew ? "text" : "password"}
+                    value={newPwd}
+                    onChange={e => setNewPwd(e.target.value)}
+                    placeholder="Min 8 chars, upper, lower, number, symbol"
+                    required
+                    className="pr-10"
+                  />
+                  <button
+                    type="button"
+                    className="absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground"
+                    onClick={() => setShowNew(v => !v)}
+                  >
+                    {showNew ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
+                  </button>
+                </div>
+                <p className="text-xs text-muted-foreground">Must contain uppercase, lowercase, number and special character (@$!%*?&)</p>
+              </div>
+
+              {/* Confirm Password */}
+              <div className="space-y-1">
+                <Label htmlFor="confirm-password">Confirm New Password</Label>
+                <div className="relative">
+                  <Input
+                    id="confirm-password"
+                    type={showConfirm ? "text" : "password"}
+                    value={confirm}
+                    onChange={e => setConfirm(e.target.value)}
+                    placeholder="Re-enter new password"
+                    required
+                    className="pr-10"
+                  />
+                  <button
+                    type="button"
+                    className="absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground"
+                    onClick={() => setShowConfirm(v => !v)}
+                  >
+                    {showConfirm ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
+                  </button>
+                </div>
+                {confirm && newPwd && confirm !== newPwd && (
+                  <p className="text-xs text-red-500">Passwords do not match</p>
+                )}
+              </div>
+
+              <Button
+                type="submit"
+                disabled={loading || !current || !newPwd || !confirm || newPwd !== confirm}
+                className="w-full sm:w-auto"
+              >
+                <ShieldCheck className="h-4 w-4 mr-2" />
+                {loading ? "Updating…" : "Update Password"}
+              </Button>
+            </form>
+          </CardContent>
+        </Card>
+      </div>
+    </HospitalLayout>
+  );
+};
 
 export const HospitalSupportPage = () => (
   <ManagedSection
