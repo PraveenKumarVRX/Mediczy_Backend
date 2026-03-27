@@ -70,6 +70,170 @@ function extractLabPatientId(pdfText) {
   return { labPatientId, clientPatientId };
 }
 
+/**
+ * Parse individual lab test results from Agilus-format PDF text.
+ * Returns array of { testName, section, value, numericValue, unit, referenceRange, flag, isAbnormal }
+ */
+function extractLabResults(pdfText) {
+  if (!pdfText) return [];
+
+  // Known units — mg/dL, μg/dL etc. MUST come before g/dL to avoid partial match on endsWith
+  const UNITS = [
+    'mil/μL', 'thou/μL', 'μIU/mL', 'mIU/mL', 'ng/mL', 'pg/mL', 'μg/dL', 'μmol/L',
+    'mmol/L', 'mEq/L', 'mm at 1 hr', 'kg/sqmts', 'MM HG', 'mm/Hg', 'mg/dL', 'g/dL',
+    'U/L', 'IU/L', '/HPF', '/LPF', 'fL', 'pg', 'mts', 'Kgs', 'RATIO', 'sec', 'INR', '%',
+  ];
+
+  // Sections that contain actual test results
+  const EXTRACT_SECTIONS = new Set([
+    'Haematology', 'Immunohaematology', 'Biochemistry', 'Lipid Profile',
+    'Urinalysis', 'Hormones', 'Specialised Chemistry', 'Anthropometric', 'Clinical Examination',
+  ]);
+
+  const SECTION_MAP = [
+    [/HAEMATOLOGY|HEMATOLOGY/i,             'Haematology'],
+    [/IMMUNOHAEMATOLOGY/i,                  'Immunohaematology'],
+    [/BIOCHEMISTRY.*LIPID|LIPID PROFILE/i,  'Lipid Profile'],
+    [/BIOCHEMISTRY/i,                       'Biochemistry'],
+    [/URINALYSIS/i,                         'Urinalysis'],
+    [/SPECIALISED CHEMISTRY|HORMONE/i,      'Hormones'],
+    [/ANTHROPOMETRIC/i,                     'Anthropometric'],
+    [/GENERAL EXAMINATION|CARDIOVASCULAR/i, 'Clinical Examination'],
+  ];
+
+  const SKIP_RE = [
+    /^METHOD\s*:/i, /^Interpretation\s*\(/i, /^View Details/i,
+    /^Page \d+\s+Of/i, /^Dr\.\s/i, /^ULR No\./i, /Agilus Diagnostics/i,
+    /^PERFORMED AT/i, /^PATIENT NAME\s*:/i, /^PATIENT ID\s*:/i,
+    /^ACCESSION NO\s*:/i, /^ABHA NO/i, /^DRAWN\s*:/i, /^RECEIVED\s*:/i,
+    /^REPORTED\s*:/i, /^REF\. DOCTOR/i, /^CLNT\.PATIENT ID/i, /^CODE\/NAME/i,
+    /^DIAGNOSTIC REPORT/i, /^GLOBAL HEALTH/i, /^Final Results/i,
+    /^Tel\s*:/i, /^Email\s*:/i, /^Fax\s*:/i, /^\*+/, /^\*\*End Of Report/i,
+    /CONDITIONS OF LABORATORY/i, /Please visit www\./i,
+    /^\d+\.\s+(It|All|Result|A\s+requested|Specimen|Incorrect|Discrepancy)/i,
+    /^NO\.10\/1/i, /^ARUMBAKKAM/i, /^Grand Mall/i, /^Fortis Hospital/i,
+    // Panel sub-headers
+    /^BLOOD COUNTS,/i, /^RBC AND PLATELET INDICES/i, /^WBC DIFFERENTIAL COUNT/i,
+    /^MORPHOLOGY \(MICROSCOPY\)/i, /^ERYTHROCYTE SEDIMENTATION RATE/i,
+    /^ABO GROUP & RH TYPE/i, /^GLUCOSE FASTING \(FBS\)/i, /^GLUCOSE POST-PRANDIAL/i,
+    /^LIVER FUNCTION PROFILE/i, /^BLOOD UREA NITROGEN \(BUN\)/i,
+    /^CREATININE, SERUM/i, /^URIC ACID, SERUM/i, /^LIPID PROFILE WITH/i,
+    /^TSH 3RD GENERATION/i, /^PHYSICAL EXAMINATION, URINE/i,
+    /^CHEMICAL EXAMINATION, URINE/i, /^MICROSCOPIC EXAMINATION, URINE/i,
+    /^ULTRASOUND ABDOMEN/i, /^ECG$/i, /^XRAY-CHEST/i, /^IMPRESSION /i,
+    // Reference-range continuation lines (classification labels with comparison operators)
+    /^(Very\s+)?(High|Low|Borderline|Desirable|Normal|Optimal|Adequate)\s*[>:<\/=]/i,
+    /^(Near\s+Optimal|High\s+Risk|Low\s+Risk|Borderline\s+[Hh]igh)\s*[>:<\/=]/i,
+    // Classification labels followed directly by a number (no colon) e.g. "High 200-499"
+    /^(High|Low|Normal)\s+\d/i,
+    /^(Below|Above)\s+\d/i,
+  ];
+
+  const SKIP_ZONE_RE = [
+    /^MEDICAL HISTORY/i, /^RELEVANT .+ HISTORY/i, /^HISTORY OF MEDICATIONS/i,
+    /^SUMMARY$/i, /^REMARKS\s*\/\s*RECOMMENDATION/i, /^Comments$/i,
+    /^OUR PANEL DOCTORS/i, /^CHECK UP DONE BY/i, /^REPORT REVIEWED BY/i,
+    /^RADIOLOGIST/i, /Interpretation\(s\)/i,
+  ];
+
+  // NUM_PAT: slash-fraction first, then decimal, then integer-or-dash-range
+  const NUM_PAT = '(?:\\d+(?:\\.\\d+)?\\/\\d+(?:\\.\\d+)?|\\d+\\.\\d+|\\d+(?:-\\d+)?)';
+  const RESULT_RE = new RegExp(`^(.+?)\\s+(${NUM_PAT})\\s*(High|Low|H|L)?\\s*(.*)$`, 'i');
+
+  const results = [];
+  const seen    = new Set();
+  let currentSection = 'General';
+  let inSkipZone     = false;
+  const allLines = pdfText.split('\n');
+
+  for (let i = 0; i < allLines.length; i++) {
+    const line = allLines[i].trim();
+    if (!line) continue;
+
+    if (SKIP_ZONE_RE.some(p => p.test(line))) { inSkipZone = true; continue; }
+
+    for (const [pat, name] of SECTION_MAP) {
+      if (pat.test(line)) { currentSection = name; inSkipZone = false; break; }
+    }
+
+    if (inSkipZone) continue;
+    if (!EXTRACT_SECTIONS.has(currentSection)) continue; // only extract in medical sections
+    if (SKIP_RE.some(p => p.test(line))) continue;
+    if (line.length > 160) continue;
+    if (/[a-z]{4,}\s+[a-z]{4,}\s+[a-z]{4,}/.test(line)) continue; // prose
+
+    // Find unit at end of line; if not found, peek at next line for standalone unit
+    let unit = null;
+    let core = line;
+    for (const u of UNITS) {
+      if (line.endsWith(u)) { unit = u; core = line.slice(0, line.length - u.length).trim(); break; }
+    }
+    if (!unit && i + 1 < allLines.length) {
+      const nextLine = allLines[i + 1].trim();
+      for (const u of UNITS) {
+        if (nextLine === u) { unit = u; i++; break; } // consume the standalone unit line
+      }
+    }
+
+    const m = core.match(RESULT_RE);
+    if (m) {
+      let testName   = m[1].trim().replace(/\s+/g, ' ');
+      const rawValue = m[2];
+      const flagRaw  = m[3];
+      const refRange = m[4].trim() || null;
+
+      // If lazy regex absorbed "NOT DETECTED" into testName, re-emit as qualitative
+      const ndIdx = testName.toUpperCase().indexOf('NOT DETECTED');
+      if (ndIdx > 0) {
+        testName = testName.slice(0, ndIdx).trim();
+        const key = `${testName.toLowerCase()}|not detected`;
+        if (!seen.has(key)) {
+          seen.add(key);
+          results.push({ testName, section: currentSection, value: 'NOT DETECTED', numericValue: null, unit, referenceRange: refRange, flag: null, isAbnormal: false });
+        }
+        continue;
+      }
+
+      if (testName.length < 2) continue;
+      if (!/^[A-Z]/.test(testName)) continue;         // must start with uppercase (screens phone/address fragments)
+      if (/^\d/.test(testName)) continue;
+      if (/[a-z]{3,}/.test(testName)) continue;       // testNames in Agilus are ALL CAPS; ≥3 consecutive lowercase = noise
+      if (!unit && /^\d{5,}$/.test(rawValue)) continue; // postcode-like values (e.g. 600106) without a unit
+      if (/^(NO\.|C\d{3}|CHECK UP|OUR|REPORT|RADIOLOGIST)/i.test(testName)) continue;
+
+      const flag = flagRaw ? (flagRaw.match(/^H/i) ? 'High' : 'Low') : null;
+      const numericValue = parseFloat(rawValue.replace(/-\d+$/, ''));
+      const key = `${testName.toLowerCase()}|${rawValue}`;
+      if (seen.has(key)) continue;
+      seen.add(key);
+
+      results.push({
+        testName, section: currentSection,
+        value: rawValue, numericValue: isNaN(numericValue) ? null : numericValue,
+        unit, referenceRange: refRange || null, flag, isAbnormal: !!flag,
+      });
+      continue;
+    }
+
+    // Qualitative results using multi-space column alignment
+    const QUAL_RE = /^(NOT DETECTED|POSITIVE|NEGATIVE|NORMAL|ABSENT|PRESENT|ADEQUATE|CLEAR|YELLOW|AMBER|PALE YELLOW|O|A|B|AB)$/i;
+    const cols = line.split(/\s{2,}|\t/);
+    if (cols.length >= 2) {
+      const testName = cols[0].trim();
+      const value    = cols[1].trim();
+      if (testName.length >= 3 && /^[A-Z]/.test(testName) && !/[a-z]{3,}/.test(testName) && QUAL_RE.test(value)) {
+        const key = `${testName.toLowerCase()}|${value.toLowerCase()}`;
+        if (!seen.has(key)) {
+          seen.add(key);
+          results.push({ testName: testName.replace(/\s+/g, ' '), section: currentSection, value, numericValue: null, unit: null, referenceRange: cols[2]?.trim() || null, flag: null, isAbnormal: false });
+        }
+      }
+    }
+  }
+
+  return results;
+}
+
 // ─── Constants ────────────────────────────────────────────────────────────────
 
 /** Known diagnostic / labs domains whose emails carry health reports */
@@ -965,7 +1129,7 @@ export async function saveHealthReportFromEmail(email) {
       const { user, confidence, matchMethod, validationDetails, employeeId: matchedEmpId } = matchResult;
 
       // ── AI QC Gate ──────────────────────────────────────────────────────────
-      const qc = await aiQcReport({ confidence, user, att, matchMethod });
+      const qc = await aiQcReport({ confidence, user, att, matchMethod, preExtractedText: pdfText || undefined });
       if (!qc.passed) {
         logger.warn(`[emailAutoProcess] AI QC BLOCKED "${att.filename}" for user ${user.id}: ${qc.reason}`);
         continue; // skip this attachment — do not save or notify
@@ -1028,6 +1192,67 @@ export async function saveHealthReportFromEmail(email) {
           },
         }
       );
+
+      // ── Get new report ID for EHR storage ───────────────────────────────────
+      const [[newReport]] = await postgresSequelize.query(
+        `SELECT id FROM reports WHERE "userId" = :userId AND metadata->>'emailId' = :emailId AND "fileName" = :fileName LIMIT 1`,
+        { replacements: { userId: user.id, emailId: email.id, fileName } }
+      );
+      const newReportId = newReport?.id || null;
+
+      // ── Extract & store structured lab results (EHR) ─────────────────────
+      if (pdfText && newReportId) {
+        try {
+          const labResults = extractLabResults(pdfText);
+          if (labResults.length > 0) {
+            // Bulk insert into lab_results
+            const valuesSQL = labResults.map((_, i) =>
+              `(:reportId, :userId, :testName${i}, :section${i}, :value${i}, :numericValue${i}, :unit${i}, :referenceRange${i}, :flag${i}, :isAbnormal${i}, :reportDate, :labName, :labPatientId)`
+            ).join(', ');
+
+            const replacements = { reportId: newReportId, userId: user.id, reportDate, labName: meta.labName, labPatientId };
+            labResults.forEach((r, i) => {
+              replacements[`testName${i}`]      = r.testName;
+              replacements[`section${i}`]       = r.section;
+              replacements[`value${i}`]         = r.value;
+              replacements[`numericValue${i}`]  = r.numericValue;
+              replacements[`unit${i}`]          = r.unit;
+              replacements[`referenceRange${i}`]= r.referenceRange;
+              replacements[`flag${i}`]          = r.flag;
+              replacements[`isAbnormal${i}`]    = r.isAbnormal;
+            });
+
+            await postgresSequelize.query(
+              `INSERT INTO lab_results ("reportId","userId","testName","section","value","numericValue","unit","referenceRange","flag","isAbnormal","reportDate","labName","labPatientId")
+               VALUES ${valuesSQL}`,
+              { replacements }
+            );
+
+            // Update aiAnalysis on the report for quick access
+            const abnormalTests = labResults.filter(r => r.isAbnormal).map(r => ({ testName: r.testName, value: r.value, unit: r.unit, flag: r.flag }));
+            await postgresSequelize.query(
+              `UPDATE reports SET "aiAnalysis" = :aiAnalysis::jsonb WHERE id = :id`,
+              {
+                replacements: {
+                  id: newReportId,
+                  aiAnalysis: JSON.stringify({
+                    extractedAt: new Date().toISOString(),
+                    testCount: labResults.length,
+                    abnormalCount: abnormalTests.length,
+                    abnormalTests,
+                    tests: labResults,
+                  }),
+                },
+              }
+            );
+
+            logger.info(`[emailAutoProcess] EHR: stored ${labResults.length} test results (${abnormalTests.length} abnormal) for report ${newReportId}`);
+          }
+        } catch (ehrErr) {
+          logger.warn(`[emailAutoProcess] EHR extraction failed for report ${newReportId}: ${ehrErr.message}`);
+        }
+      }
+      // ────────────────────────────────────────────────────────────────────────
 
       savedCount++;
       logger.info(`[emailAutoProcess] Report "${fileName}" → user ${user.id} [${confidence}/${matchMethod}] (email ${email.id})`);
