@@ -17,7 +17,7 @@
 
 import cron from 'node-cron';
 import pool from '../db/pgPool.js';
-import { tick, tickError } from '../utils/cronRegistry.js';
+import { tick, tickError, tickStart } from '../utils/cronRegistry.js';
 
 class SmartNotificationsCron {
   constructor() {
@@ -58,6 +58,7 @@ class SmartNotificationsCron {
 
   async generateSmartNotifications() {
     const startTime = Date.now();
+    tickStart('ai_smart_notif');
     console.log('🔔 [SmartNotif] Generating smart notifications...');
 
     try {

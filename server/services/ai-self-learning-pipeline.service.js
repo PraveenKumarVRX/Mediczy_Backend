@@ -19,7 +19,7 @@ import cron from 'node-cron';
 import pool from '../db/pgPool.js';
 import llmProvider from './ai-brain/llm-provider.js';
 import { v4 as uuidv4 } from 'uuid';
-import { tick, tickError } from '../utils/cronRegistry.js';
+import { tick, tickError, tickStart } from '../utils/cronRegistry.js';
 
 class SelfLearningPipeline {
   constructor() {
@@ -63,6 +63,7 @@ class SelfLearningPipeline {
    */
   async runPipeline() {
     const startTime = Date.now();
+    tickStart('ai_self_learning');
     console.log('🧠 [SelfLearn] Starting learning pipeline...');
 
     try {

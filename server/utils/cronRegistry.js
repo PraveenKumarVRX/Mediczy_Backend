@@ -15,42 +15,50 @@ const MAX_RECENT = 30; // keep last 30 executions per task
 // ── Task definitions ─────────────────────────────────────────────────────────
 export const TASK_DEFINITIONS = [
   // Device
-  { key: 'device_heartbeat',    name: 'Device Heartbeat Check',          schedule: 'Every 5 min',   category: 'device',     scheduleDesc: '*/5 * * * *' },
-  { key: 'device_amc',          name: 'Device AMC/Subscription Check',   schedule: 'Every hour',    category: 'device',     scheduleDesc: '0 * * * *' },
-  { key: 'device_maintenance',  name: 'Device Maintenance Schedule',     schedule: 'Daily 9 AM',    category: 'device',     scheduleDesc: '0 9 * * *' },
-  { key: 'device_health_report',name: 'Device Daily Health Report',      schedule: 'Daily 8 AM',    category: 'device',     scheduleDesc: '0 8 * * *' },
+  { key: 'device_heartbeat',      name: 'Device Heartbeat Check',               schedule: 'Every 5 min',      category: 'device',     scheduleDesc: '*/5 * * * *' },
+  { key: 'device_amc',            name: 'Device AMC/Subscription Check',         schedule: 'Every hour',       category: 'device',     scheduleDesc: '0 * * * *' },
+  { key: 'device_maintenance',    name: 'Device Maintenance Schedule',           schedule: 'Daily 9 AM',       category: 'device',     scheduleDesc: '0 9 * * *' },
+  { key: 'device_health_report',  name: 'Device Daily Health Report',            schedule: 'Daily 8 AM',       category: 'device',     scheduleDesc: '0 8 * * *' },
   // Appointments
-  { key: 'appt_autocancel',     name: 'Appointment Auto-Cancel',         schedule: 'Daily midnight', category: 'appointment', scheduleDesc: '0 0 * * *' },
-  { key: 'appt_morning_cleanup',name: 'Appointment Morning Cleanup',     schedule: 'Daily 6 AM',    category: 'appointment', scheduleDesc: '0 6 * * *' },
-  { key: 'appt_reminder',       name: 'Appointment Reminders (24h/2h/15min)', schedule: 'Every 30 min', category: 'appointment', scheduleDesc: '*/30 * * * *' },
-  { key: 'followup_automation', name: 'Follow-Up Appointment Automation',schedule: 'Daily 10 AM',   category: 'appointment', scheduleDesc: '0 10 * * *' },
+  { key: 'appt_autocancel',       name: 'Appointment Auto-Cancel',               schedule: 'Daily midnight',   category: 'appointment', scheduleDesc: '0 0 * * *' },
+  { key: 'appt_morning_cleanup',  name: 'Appointment Morning Cleanup',           schedule: 'Daily 6 AM',       category: 'appointment', scheduleDesc: '0 6 * * *' },
+  { key: 'appt_reminder',         name: 'Appointment Reminders (24h/2h/15min)',  schedule: 'Every 30 min',     category: 'appointment', scheduleDesc: '*/30 * * * *' },
+  { key: 'appt_notification',     name: 'Upcoming Appointment Notifications',    schedule: 'Every 1 min',      category: 'appointment', scheduleDesc: '* * * * *' },
+  { key: 'followup_automation',   name: 'Follow-Up Appointment Automation',      schedule: 'Daily 10 AM',      category: 'appointment', scheduleDesc: '0 10 * * *' },
   // Webinars
-  { key: 'webinar_reminder',    name: 'Webinar Reminders',               schedule: 'Every 30 min',  category: 'webinar',    scheduleDesc: '*/30 * * * *' },
+  { key: 'webinar_reminder',      name: 'Webinar Reminders',                     schedule: 'Every 30 min',     category: 'webinar',    scheduleDesc: '*/30 * * * *' },
   // Membership
-  { key: 'membership_sync',     name: 'Membership Sync & Deactivation',  schedule: 'Daily 2 AM',    category: 'membership', scheduleDesc: '0 2 * * *' },
-  { key: 'membership_alerts',   name: 'Membership Expiry Alerts',        schedule: 'Daily 9 AM',    category: 'membership', scheduleDesc: '0 9 * * *' },
+  { key: 'membership_sync',       name: 'Membership Sync & Deactivation',        schedule: 'Daily 2 AM',       category: 'membership', scheduleDesc: '0 2 * * *' },
+  { key: 'membership_alerts',     name: 'Membership Expiry Alerts',              schedule: 'Daily 9 AM',       category: 'membership', scheduleDesc: '0 9 * * *' },
   // Billing
-  { key: 'payment_reminders',   name: 'Payment Reminders',               schedule: 'Daily 9 AM',    category: 'billing',    scheduleDesc: '0 9 * * *' },
-  { key: 'tenant_billing',      name: 'Tenant Billing (Auto-Invoices)',   schedule: '1st of month',  category: 'billing',    scheduleDesc: '0 0 1 * *' },
+  { key: 'payment_reminders',     name: 'Payment Reminders',                     schedule: 'Daily 9 AM',       category: 'billing',    scheduleDesc: '0 9 * * *' },
+  { key: 'tenant_billing',        name: 'Tenant Billing (Auto-Invoices)',         schedule: '1st of month',     category: 'billing',    scheduleDesc: '0 0 1 * *' },
   // Clinical
-  { key: 'medication_morning',  name: 'Medication Reminder — Morning',   schedule: 'Daily 8 AM',    category: 'clinical',   scheduleDesc: '0 8 * * *' },
-  { key: 'medication_afternoon',name: 'Medication Reminder — Afternoon', schedule: 'Daily 2 PM',    category: 'clinical',   scheduleDesc: '0 14 * * *' },
-  { key: 'medication_evening',  name: 'Medication Reminder — Evening',   schedule: 'Daily 8 PM',    category: 'clinical',   scheduleDesc: '0 20 * * *' },
-  { key: 'prescription_expiry', name: 'Prescription Expiry Alerts',      schedule: 'Daily 9:30 AM', category: 'clinical',   scheduleDesc: '30 9 * * *' },
+  { key: 'medication_morning',    name: 'Medication Reminder — Morning',         schedule: 'Daily 8 AM',       category: 'clinical',   scheduleDesc: '0 8 * * *' },
+  { key: 'medication_afternoon',  name: 'Medication Reminder — Afternoon',       schedule: 'Daily 2 PM',       category: 'clinical',   scheduleDesc: '0 14 * * *' },
+  { key: 'medication_evening',    name: 'Medication Reminder — Evening',         schedule: 'Daily 8 PM',       category: 'clinical',   scheduleDesc: '0 20 * * *' },
+  { key: 'prescription_expiry',   name: 'Prescription Expiry Alerts',            schedule: 'Daily 9:30 AM',    category: 'clinical',   scheduleDesc: '30 9 * * *' },
+  // WhatsApp Automation
+  { key: 'whatsapp_report',       name: 'WhatsApp Health Report Dispatch',       schedule: 'On email receipt', category: 'whatsapp',   scheduleDesc: 'event-driven' },
+  { key: 'whatsapp_appt_remind',  name: 'WhatsApp Appointment Reminders',        schedule: 'Every 30 min',     category: 'whatsapp',   scheduleDesc: '*/30 * * * *' },
+  { key: 'whatsapp_med_remind',   name: 'WhatsApp Medication Reminders',         schedule: 'Daily 3×',         category: 'whatsapp',   scheduleDesc: '0 8,14,20 * * *' },
   // Analytics
-  { key: 'doctor_performance',  name: 'Doctor Performance Reports',      schedule: 'Weekly Mon 9 AM', category: 'analytics', scheduleDesc: '0 9 * * 1' },
+  { key: 'doctor_performance',    name: 'Doctor Performance Reports',            schedule: 'Weekly Mon 9 AM',  category: 'analytics',  scheduleDesc: '0 9 * * 1' },
   // SaaS
-  { key: 'auto_suspension',     name: 'Auto-Suspension (Unpaid Tenants)',schedule: 'Every 30 min',  category: 'saas',       scheduleDesc: '*/30 * * * *' },
-  { key: 'system_health',       name: 'System Health Monitor',           schedule: 'Every 1 min',   category: 'system',     scheduleDesc: '* * * * *' },
+  { key: 'auto_suspension',       name: 'Auto-Suspension (Unpaid Tenants)',      schedule: 'Daily 6 AM',       category: 'saas',       scheduleDesc: '0 6 * * *' },
+  { key: 'tenant_billing_cron',   name: 'Tenant Monthly Invoicing',              schedule: '1st of month',     category: 'saas',       scheduleDesc: '0 0 1 * *' },
+  { key: 'system_health',         name: 'System Health Monitor',                 schedule: 'Every 1 min',      category: 'system',     scheduleDesc: '* * * * *' },
+  { key: 'email_sync',            name: 'Email Inbox Sync (IMAP)',               schedule: 'Every 5 min',      category: 'system',     scheduleDesc: '*/5 * * * *' },
   // AI
-  { key: 'ai_health_risk',      name: 'AI Health Risk Score',            schedule: 'Every 6 hours', category: 'ai',         scheduleDesc: '0 */6 * * *' },
-  { key: 'ai_smart_notif',      name: 'AI Smart Notifications',          schedule: 'Every 2 hours', category: 'ai',         scheduleDesc: '15 */2 * * *' },
-  { key: 'ai_clinical_insights',name: 'AI Clinical Insights',            schedule: 'Every 8 hours', category: 'ai',         scheduleDesc: '0 */8 * * *' },
-  { key: 'ai_self_learning',    name: 'AI Self-Learning Pipeline',       schedule: 'Every 4 hours', category: 'ai',         scheduleDesc: '30 */4 * * *' },
+  { key: 'ai_health_risk',        name: 'AI Health Risk Score',                  schedule: 'Every 6 hours',    category: 'ai',         scheduleDesc: '0 */6 * * *' },
+  { key: 'ai_smart_notif',        name: 'AI Smart Notifications',                schedule: 'Every 2 hours',    category: 'ai',         scheduleDesc: '15 */2 * * *' },
+  { key: 'ai_clinical_insights',  name: 'AI Clinical Insights',                  schedule: 'Every 8 hours',    category: 'ai',         scheduleDesc: '0 */8 * * *' },
+  { key: 'ai_self_learning',      name: 'AI Self-Learning Pipeline',             schedule: 'Every 4 hours',    category: 'ai',         scheduleDesc: '30 */4 * * *' },
+  { key: 'ai_proactive_alerts',   name: 'AI Proactive Patient Alerts',           schedule: 'Every 4 hours',    category: 'ai',         scheduleDesc: '0 */4 * * *' },
   // Compliance
-  { key: 'data_retention_daily',name: 'Data Retention — Daily',          schedule: 'Daily 2 AM',    category: 'compliance', scheduleDesc: '0 2 * * *' },
-  { key: 'data_retention_weekly',name: 'Data Retention — Weekly',        schedule: 'Weekly Sun 3 AM', category: 'compliance', scheduleDesc: '0 3 * * 0' },
-  { key: 'data_retention_monthly',name: 'Data Retention — Monthly',      schedule: '1st of month 4 AM', category: 'compliance', scheduleDesc: '0 4 1 * *' },
+  { key: 'data_retention_daily',  name: 'Data Retention — Daily',                schedule: 'Daily 2 AM',       category: 'compliance', scheduleDesc: '0 2 * * *' },
+  { key: 'data_retention_weekly', name: 'Data Retention — Weekly',               schedule: 'Weekly Sun 3 AM',  category: 'compliance', scheduleDesc: '0 3 * * 0' },
+  { key: 'data_retention_monthly',name: 'Data Retention — Monthly',              schedule: '1st of month 4 AM',category: 'compliance', scheduleDesc: '0 4 1 * *' },
 ];
 
 // Key lookup map
@@ -58,6 +66,9 @@ const TASK_KEYS = new Set(TASK_DEFINITIONS.map(t => t.key));
 
 // ── In-memory state ───────────────────────────────────────────────────────────
 const registry = new Map();
+
+// Track currently-running tasks: key → { startedAt: ISO string }
+const running = new Map();
 
 // ── Persistence ───────────────────────────────────────────────────────────────
 function loadFromDisk() {
@@ -88,6 +99,20 @@ setInterval(saveToDisk, 60_000).unref(); // persist every minute, don't block sh
 // ── Public API ────────────────────────────────────────────────────────────────
 
 /**
+ * Mark a task as currently executing (call at start of cron function)
+ */
+export function tickStart(key) {
+  running.set(key, { startedAt: new Date().toISOString() });
+}
+
+/**
+ * Clear the running state (called automatically by tick/tickError)
+ */
+export function tickEnd(key) {
+  running.delete(key);
+}
+
+/**
  * Record a successful cron execution
  * @param {string} key - task key from TASK_DEFINITIONS
  * @param {object} details - optional metadata { processed, sent, skipped, ... }
@@ -96,6 +121,7 @@ export function tick(key, details = {}) {
   if (!TASK_KEYS.has(key)) {
     console.warn(`⚠️  cronRegistry.tick: unknown key "${key}"`);
   }
+  running.delete(key); // clear running state
   const existing = registry.get(key) || { runCount: 0, errorCount: 0, recentLogs: [] };
   const entry = {
     lastRun: new Date().toISOString(),
@@ -122,6 +148,7 @@ export function tickError(key, errorMessage, details = {}) {
   if (!TASK_KEYS.has(key)) {
     console.warn(`⚠️  cronRegistry.tickError: unknown key "${key}"`);
   }
+  running.delete(key); // clear running state
   const existing = registry.get(key) || { runCount: 0, errorCount: 0, recentLogs: [] };
   const entry = {
     lastRun: new Date().toISOString(),
@@ -144,6 +171,7 @@ export function tickError(key, errorMessage, details = {}) {
  * @param {function} fn - async cron function, should return details object
  */
 export async function withCron(key, fn) {
+  tickStart(key);
   try {
     const details = await fn();
     tick(key, details || {});
@@ -159,6 +187,7 @@ export async function withCron(key, fn) {
 export function getStatus() {
   return TASK_DEFINITIONS.map(def => {
     const state = registry.get(def.key) || {};
+    const runState = running.get(def.key) || null;
     return {
       ...def,
       lastRun: state.lastRun || null,
@@ -168,6 +197,8 @@ export function getStatus() {
       lastError: state.lastError || null,
       lastDetails: state.lastDetails || {},
       recentLogs: state.recentLogs || [],
+      isRunning: !!runState,
+      runningStartedAt: runState ? runState.startedAt : null,
     };
   });
 }
@@ -180,4 +211,4 @@ export function getTaskLogs(key) {
   return state.recentLogs || [];
 }
 
-export default { tick, tickError, withCron, getStatus, getTaskLogs };
+export default { tick, tickStart, tickEnd, tickError, withCron, getStatus, getTaskLogs };

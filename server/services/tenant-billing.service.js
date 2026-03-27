@@ -8,6 +8,7 @@
 import { connectPostgres } from '../db/postgres.js';
 import tenantRegistry from './tenant-registry.service.js';
 import cron from 'node-cron';
+import { tick, tickStart, tickError } from '../utils/cronRegistry.js';
 
 const BILLING_TIERS = {
   free: { name: 'Free', pricePerSeat: 0, aiCallsIncluded: 100, storageGB: 1 },
@@ -195,18 +196,24 @@ class TenantBillingService {
   }
 
   async generateAllInvoices() {
+    tickStart('tenant_billing_cron');
     const { tenants } = await tenantRegistry.listTenants({ status: 'active' });
     const period = new Date().toISOString().slice(0, 7);
     let generated = 0;
-    for (const tenant of tenants) {
-      try {
-        await this.generateInvoice(tenant.id, period);
-        generated++;
-      } catch (e) {
-        console.error(`Invoice generation failed for tenant ${tenant.id}:`, e.message);
+    try {
+      for (const tenant of tenants) {
+        try {
+          await this.generateInvoice(tenant.id, period);
+          generated++;
+        } catch (e) {
+          console.error(`Invoice generation failed for tenant ${tenant.id}:`, e.message);
+        }
       }
+      console.log(`💰 Generated ${generated} invoices for ${period}`);
+      tick('tenant_billing_cron', { generated, period, total: tenants.length });
+    } catch (error) {
+      tickError('tenant_billing_cron', error.message);
     }
-    console.log(`💰 Generated ${generated} invoices for ${period}`);
   }
 }
 

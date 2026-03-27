@@ -18,7 +18,7 @@
 
 import cron from 'node-cron';
 import pool from '../db/pgPool.js';
-import { tick, tickError } from '../utils/cronRegistry.js';
+import { tick, tickError, tickStart } from '../utils/cronRegistry.js';
 
 class ClinicalInsightsCron {
   constructor() {
@@ -59,6 +59,7 @@ class ClinicalInsightsCron {
 
   async generateInsights() {
     const startTime = Date.now();
+    tickStart('ai_clinical_insights');
     console.log('🔬 [ClinicalInsights] Generating clinical insights...');
 
     try {

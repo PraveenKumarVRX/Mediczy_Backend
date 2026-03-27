@@ -8,6 +8,7 @@ import Appointment from '../models/appointment.model.intelligent.js';
 import { User } from '../models/user.model.intelligent.js';
 import { Doctor } from '../models/index.js';
 import { Op } from 'sequelize';
+import { tick, tickError } from '../utils/cronRegistry.js';
 
 class AppointmentNotificationService {
   constructor(io) {
@@ -101,8 +102,10 @@ class AppointmentNotificationService {
 
       // Clean up old notification records (older than 30 minutes)
       this.cleanupOldNotifications();
+      tick('appt_notification', { checked: upcomingAppointments.length });
     } catch (error) {
       console.error('❌ Error checking upcoming appointments:', error);
+      tickError('appt_notification', error.message);
     }
   }
 

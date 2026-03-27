@@ -17,7 +17,7 @@
 import cron from 'node-cron';
 import pool from '../db/pgPool.js';
 import llmProvider from './ai-brain/llm-provider.js';
-import { tick, tickError } from '../utils/cronRegistry.js';
+import { tick, tickError, tickStart } from '../utils/cronRegistry.js';
 
 class HealthRiskScoreCron {
   constructor() {
@@ -59,6 +59,7 @@ class HealthRiskScoreCron {
    */
   async computeAllScores() {
     const startTime = Date.now();
+    tickStart('ai_health_risk');
     console.log('🏥 [HealthRisk] Starting health risk score computation...');
 
     try {

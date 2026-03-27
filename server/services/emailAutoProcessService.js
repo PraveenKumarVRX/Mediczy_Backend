@@ -12,6 +12,7 @@ import EmailInbox from '../models/emailInbox.model.js';
 import { createAutoTicket } from './autoTicketService.js';
 import logger from '../config/logger.js';
 import whatsappProductionService from './whatsapp-production.service.js';
+import { tick, tickError } from '../utils/cronRegistry.js';
 
 // Lazy imports for AI QC (avoid startup cost)
 let _llmProvider = null;
@@ -886,6 +887,7 @@ export async function saveHealthReportFromEmail(email) {
           const reportUrl = att.downloadUrl || '';
           await whatsappProductionService.sendHealthReportReady({ to: phone, patientName, reportUrl });
           logger.info(`[emailAutoProcess] WhatsApp report notification sent to ${phone} for "${fileName}"`);
+          tick('whatsapp_report', { patient: patientName, file: fileName });
         }
       } catch (waErr) {
         logger.warn(`[emailAutoProcess] WhatsApp notification skipped for user ${user.id}: ${waErr.message}`);

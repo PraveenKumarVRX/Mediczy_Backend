@@ -25,6 +25,7 @@ import {
   Bot,
   Settings,
   Zap,
+  MessageSquare,
 } from "lucide-react";
 
 const API_URL =
@@ -57,6 +58,8 @@ interface CronTask {
   lastError: string | null;
   lastDetails: Record<string, unknown>;
   recentLogs: CronLog[];
+  isRunning: boolean;
+  runningStartedAt: string | null;
 }
 
 // ── Category config ───────────────────────────────────────────────────────────
@@ -76,6 +79,7 @@ const CATEGORY_CONFIG: Record<
   system:      { label: "System",              icon: Settings,    color: "text-gray-600"   },
   ai:          { label: "AI Services",         icon: Bot,         color: "text-violet-600" },
   compliance:  { label: "Compliance / GDPR",   icon: Shield,      color: "text-yellow-700" },
+  whatsapp:    { label: "WhatsApp Automation",   icon: MessageSquare, color: "text-green-600" },
 };
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
@@ -89,7 +93,13 @@ function relativeTime(iso: string | null): string {
   }
 }
 
-function StatusBadge({ status }: { status: "success" | "error" | "never" }) {
+function StatusBadge({ status, isRunning }: { status: "success" | "error" | "never"; isRunning?: boolean }) {
+  if (isRunning)
+    return (
+      <Badge className="bg-emerald-500 text-white gap-1 animate-pulse">
+        <span className="h-2 w-2 rounded-full bg-white inline-block" /> Running
+      </Badge>
+    );
   if (status === "success")
     return (
       <Badge className="bg-green-100 text-green-800 border-green-200 gap-1">
@@ -123,24 +133,42 @@ function DetailsChip({ details }: { details: Record<string, unknown> }) {
 
 function TaskRow({ task }: { task: CronTask }) {
   const [expanded, setExpanded] = useState(false);
+  const elapsedMs = task.isRunning && task.runningStartedAt
+    ? Date.now() - new Date(task.runningStartedAt).getTime()
+    : null;
+  const elapsedSec = elapsedMs !== null ? Math.floor(elapsedMs / 1000) : null;
 
   return (
     <>
       <tr
-        className="border-b hover:bg-muted/30 cursor-pointer transition-colors"
+        className={`border-b hover:bg-muted/30 cursor-pointer transition-colors ${task.isRunning ? "bg-emerald-50/60" : ""}`}
         onClick={() => setExpanded((v) => !v)}
       >
-        <td className="py-3 px-4 font-medium text-sm">{task.name}</td>
+        <td className="py-3 px-4 font-medium text-sm">
+          {task.name}
+          {task.isRunning && (
+            <span className="ml-2 inline-flex items-center gap-1 text-[10px] font-semibold text-emerald-700 bg-emerald-100 rounded px-1.5 py-0.5">
+              <span className="h-1.5 w-1.5 rounded-full bg-emerald-500 animate-ping inline-block" />
+              LIVE
+            </span>
+          )}
+        </td>
         <td className="py-3 px-4 text-sm text-muted-foreground">{task.schedule}</td>
         <td className="py-3 px-4">
-          <StatusBadge status={task.lastStatus} />
+          <StatusBadge status={task.lastStatus} isRunning={task.isRunning} />
         </td>
         <td className="py-3 px-4 text-sm text-muted-foreground">
-          {relativeTime(task.lastRun)}
-          {task.lastStatus === "success" && task.lastDetails && (
+          {task.isRunning ? (
+            <span className="text-emerald-700 font-medium">
+              Running{elapsedSec !== null ? ` · ${elapsedSec}s elapsed` : ""}
+            </span>
+          ) : (
+            relativeTime(task.lastRun)
+          )}
+          {!task.isRunning && task.lastStatus === "success" && task.lastDetails && (
             <DetailsChip details={task.lastDetails} />
           )}
-          {task.lastStatus === "error" && task.lastError && (
+          {!task.isRunning && task.lastStatus === "error" && task.lastError && (
             <span className="ml-2 text-xs text-red-500 truncate max-w-xs inline-block">
               {task.lastError}
             </span>
@@ -224,6 +252,7 @@ function CategorySection({ category, tasks }: { category: string; tasks: CronTas
   const Icon = cfg.icon;
   const errors = tasks.filter((t) => t.lastStatus === "error").length;
   const ok = tasks.filter((t) => t.lastStatus === "success").length;
+  const running = tasks.filter((t) => t.isRunning).length;
 
   return (
     <Card className="mb-4">
@@ -234,12 +263,18 @@ function CategorySection({ category, tasks }: { category: string; tasks: CronTas
           <span className="text-xs font-normal text-muted-foreground ml-1">
             ({tasks.length} task{tasks.length !== 1 ? "s" : ""})
           </span>
+          {running > 0 && (
+            <Badge className="bg-emerald-500 text-white text-xs animate-pulse gap-1">
+              <span className="h-1.5 w-1.5 rounded-full bg-white inline-block" />
+              {running} running
+            </Badge>
+          )}
           {errors > 0 && (
             <Badge className="ml-auto bg-red-100 text-red-700 border-red-200 text-xs">
               {errors} error{errors !== 1 ? "s" : ""}
             </Badge>
           )}
-          {errors === 0 && ok > 0 && (
+          {errors === 0 && ok > 0 && running === 0 && (
             <Badge className="ml-auto bg-green-100 text-green-700 border-green-200 text-xs">
               All healthy
             </Badge>
@@ -329,11 +364,12 @@ export default function AdminWorkflowAutomation() {
   const healthy = tasks.filter((t) => t.lastStatus === "success").length;
   const errored = tasks.filter((t) => t.lastStatus === "error").length;
   const neverRun = tasks.filter((t) => t.lastStatus === "never").length;
+  const runningNow = tasks.filter((t) => t.isRunning).length;
 
   // Category order
   const categoryOrder = [
     "device", "appointment", "webinar", "membership", "billing",
-    "clinical", "analytics", "saas", "ai", "compliance", "system",
+    "clinical", "analytics", "saas", "ai", "compliance", "system", "whatsapp",
   ];
   const sortedCategories = [
     ...categoryOrder.filter((c) => grouped[c]),
@@ -374,13 +410,22 @@ export default function AdminWorkflowAutomation() {
         </div>
 
         {/* Summary cards */}
-        <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-6">
+        <div className="grid grid-cols-2 md:grid-cols-5 gap-4 mb-6">
           <Card>
             <CardContent className="p-4 flex items-center gap-3">
               <Activity className="h-8 w-8 text-primary opacity-80" />
               <div>
                 <p className="text-2xl font-bold">{total}</p>
                 <p className="text-xs text-muted-foreground">Total Tasks</p>
+              </div>
+            </CardContent>
+          </Card>
+          <Card className={runningNow > 0 ? "border-emerald-300 bg-emerald-50" : ""}>
+            <CardContent className="p-4 flex items-center gap-3">
+              <RefreshCw className={`h-8 w-8 text-emerald-600 ${runningNow > 0 ? "animate-spin" : "opacity-30"}`} />
+              <div>
+                <p className={`text-2xl font-bold ${runningNow > 0 ? "text-emerald-700" : "text-muted-foreground"}`}>{runningNow}</p>
+                <p className="text-xs text-muted-foreground">Running Now</p>
               </div>
             </CardContent>
           </Card>
