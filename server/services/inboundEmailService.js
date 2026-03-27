@@ -178,14 +178,23 @@ class InboundEmailService {
    * Extract attachments from email
    */
   extractAttachments(attachments = []) {
-    return attachments.map(att => ({
-      filename: att.filename,
-      mimeType: att.contentType,
-      size: att.size,
-      contentId: att.contentId,
-      contentDisposition: att.contentDisposition,
-      downloadUrl: `/api/team/emails/attachments/${att.contentId}` // Will be implemented
-    }));
+    return attachments.map(att => {
+      const obj = {
+        filename: att.filename,
+        mimeType: att.contentType,
+        size: att.size,
+        contentId: att.contentId,
+        contentDisposition: att.contentDisposition,
+        downloadUrl: `/api/team/emails/attachments/${att.contentId}` // Will be implemented
+      };
+      // Store PDF bytes as base64 for AI QC (max 8 MB to avoid bloating DB)
+      const isPdf = att.contentType === 'application/pdf' ||
+                    (att.filename && /\.pdf$/i.test(att.filename));
+      if (isPdf && Buffer.isBuffer(att.content) && att.content.length <= 8 * 1024 * 1024) {
+        obj.contentBase64 = att.content.toString('base64');
+      }
+      return obj;
+    });
   }
 
   /**

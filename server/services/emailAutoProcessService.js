@@ -13,6 +13,18 @@ import { createAutoTicket } from './autoTicketService.js';
 import logger from '../config/logger.js';
 import whatsappProductionService from './whatsapp-production.service.js';
 
+// Lazy imports for AI QC (avoid startup cost)
+let _llmProvider = null;
+const getLLM = async () => {
+  if (!_llmProvider) _llmProvider = (await import('./ai-brain/llm-provider.js')).default;
+  return _llmProvider;
+};
+let _pdfParse = null;
+const getPdfParse = async () => {
+  if (!_pdfParse) _pdfParse = (await import('pdf-parse')).default;
+  return _pdfParse;
+};
+
 // ─── Constants ────────────────────────────────────────────────────────────────
 
 /** Known diagnostic / labs domains whose emails carry health reports */
@@ -592,6 +604,119 @@ export function detectLabReport(email) {
 }
 
 /**
+ * AI Quality Control for a health report PDF attachment.
+ *
+ * 1. Blocks low-confidence patient matches outright.
+ * 2. Extracts text from the PDF (if bytes available) and asks the LLM to
+ *    pull the patient name directly from the document.
+ * 3. Cross-verifies the AI-extracted name against the matched user.
+ *
+ * @param {object} opts
+ * @param {string} opts.confidence    - 'low'|'medium'|'high'
+ * @param {object} opts.user          - matched user object { firstName, lastName }
+ * @param {object} opts.att           - attachment object (may have contentBase64)
+ * @param {string} opts.matchMethod   - for logging
+ * @returns {{ passed: boolean, reason: string, aiPatientName: string|null }}
+ */
+async function aiQcReport({ confidence, user, att, matchMethod }) {
+  // ── Gate 1: reject low confidence immediately ─────────────────────────────
+  if (confidence === 'low') {
+    return {
+      passed: false,
+      reason: `Confidence too low (${confidence}) for match method "${matchMethod}" — report blocked to avoid misdelivery`,
+      aiPatientName: null,
+    };
+  }
+
+  // ── Gate 2: AI PDF name extraction + cross-verify ──────────────────────────
+  // PDF bytes must have been stored at parse time
+  if (!att.contentBase64) {
+    // No bytes available — fall back to confidence-only gate (medium/high passes)
+    logger.info('[QC] No PDF bytes available for AI verification — passing on confidence alone');
+    return { passed: true, reason: 'no-pdf-bytes;confidence-gate-passed', aiPatientName: null };
+  }
+
+  try {
+    const pdfParse = await getPdfParse();
+    const buffer = Buffer.from(att.contentBase64, 'base64');
+    let rawText = '';
+
+    try {
+      const parsed = await pdfParse(buffer, { max: 3 }); // first 3 pages only
+      rawText = parsed.text || '';
+    } catch (pdfErr) {
+      logger.warn(`[QC] pdf-parse failed for "${att.filename}": ${pdfErr.message}`);
+      // Cannot extract text — pass on confidence
+      return { passed: true, reason: 'pdf-parse-failed;confidence-gate-passed', aiPatientName: null };
+    }
+
+    if (rawText.trim().length < 20) {
+      logger.info('[QC] PDF text too short for AI verification — confidence gate passed');
+      return { passed: true, reason: 'pdf-too-short;confidence-gate-passed', aiPatientName: null };
+    }
+
+    // Truncate to ~4000 chars (enough for the header / patient info section)
+    const snippet = rawText.substring(0, 4000);
+
+    const llm = await getLLM();
+    const result = await llm.chat({
+      messages: [
+        {
+          role: 'system',
+          content: 'You are a medical document QC AI. Extract ONLY the patient name from the report text. Return JSON: {"patientName":"<name or null>"}. No markdown, no other keys.'
+        },
+        {
+          role: 'user',
+          content: `Extract the patient name from this medical report text:\n\n${snippet}`
+        }
+      ],
+      temperature: 0,
+      maxTokens: 80,
+    });
+
+    let aiPatientName = null;
+    try {
+      const cleaned = result.content.replace(/```json\n?|```\n?/g, '').trim();
+      const parsed = JSON.parse(cleaned);
+      aiPatientName = parsed.patientName || null;
+    } catch {
+      // Non-JSON fallback: try to grab quoted name
+      const match = result.content.match(/"patientName"\s*:\s*"([^"]+)"/);
+      aiPatientName = match ? match[1] : null;
+    }
+
+    if (!aiPatientName) {
+      logger.info('[QC] AI could not extract patient name — confidence gate passed');
+      return { passed: true, reason: 'ai-name-not-found;confidence-gate-passed', aiPatientName: null };
+    }
+
+    // Cross-verify AI-extracted name vs. matched user
+    const userFullName = `${user.firstName || ''} ${user.lastName || ''}`.trim();
+    const nameMatch = crossValidateName(aiPatientName, userFullName);
+
+    logger.info(`[QC] AI name="${aiPatientName}" vs user="${userFullName}" → ${nameMatch}`);
+
+    if (nameMatch === 'none') {
+      return {
+        passed: false,
+        reason: `AI extracted patient name "${aiPatientName}" does not match user "${userFullName}" — report blocked`,
+        aiPatientName,
+      };
+    }
+
+    return {
+      passed: true,
+      reason: `AI name match: ${nameMatch} ("${aiPatientName}" ↔ "${userFullName}")`,
+      aiPatientName,
+    };
+  } catch (err) {
+    // AI service failure — fail open (pass) to not block legitimate reports
+    logger.warn(`[QC] AI QC error (non-blocking): ${err.message}`);
+    return { passed: true, reason: `ai-error-fail-open: ${err.message}`, aiPatientName: null };
+  }
+}
+
+/**
  * Save health-report PDFs from lab emails to the `reports` table.
  * Uses 2-level validation to match each PDF to the correct employee.
  *
@@ -693,6 +818,16 @@ export async function saveHealthReportFromEmail(email) {
       }
 
       const { user, confidence, matchMethod, validationDetails, employeeId: matchedEmpId } = matchResult;
+
+      // ── AI QC Gate ──────────────────────────────────────────────────────────
+      const qc = await aiQcReport({ confidence, user, att, matchMethod });
+      if (!qc.passed) {
+        logger.warn(`[emailAutoProcess] AI QC BLOCKED "${att.filename}" for user ${user.id}: ${qc.reason}`);
+        continue; // skip this attachment — do not save or notify
+      }
+      logger.info(`[emailAutoProcess] AI QC PASSED "${att.filename}": ${qc.reason}`);
+      // ────────────────────────────────────────────────────────────────────────
+
       const fileName = att.filename || 'Health Report.pdf';
       const filePath = att.downloadUrl || `/api/team/emails/${email.id}/attachment`;
       const reportName = (nameFromFile || att.filename?.replace(/\.pdf$/i, '') || 'Health Report');
@@ -729,6 +864,12 @@ export async function saveHealthReportFromEmail(email) {
               confidence,
               employeeId:   matchedEmpId,
               validation:   validationDetails,
+              // AI QC audit
+              aiQc: {
+                passed:        qc.passed,
+                reason:        qc.reason,
+                aiPatientName: qc.aiPatientName,
+              },
             }),
           },
         }
