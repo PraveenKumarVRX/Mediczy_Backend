@@ -131,7 +131,7 @@ async function checkInactiveUsers() {
         lastLoginAt: {
           [Op.lt]: inactivityDate
         },
-        isActive: true,
+        status: 'active',
         deletedAt: null
       }
     });
