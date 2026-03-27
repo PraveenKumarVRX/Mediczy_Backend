@@ -21,11 +21,54 @@ const getLLM = async () => {
   if (!_llmProvider) _llmProvider = (await import('./ai-brain/llm-provider.js')).default;
   return _llmProvider;
 };
-let _pdfParse = null;
+let _PDFParse = null;
 const getPdfParse = async () => {
-  if (!_pdfParse) _pdfParse = (await import('pdf-parse')).default;
-  return _pdfParse;
+  // pdf-parse v2 exports PDFParse class (not a default function)
+  if (!_PDFParse) _PDFParse = (await import('pdf-parse')).PDFParse;
+  return _PDFParse;
 };
+
+/**
+ * Extract raw text from a PDF buffer using pdf-parse v2 PDFParse class.
+ * Returns empty string on failure.
+ */
+async function extractPdfText(buffer) {
+  try {
+    const PDFParse_ = await getPdfParse();
+    const parser = new PDFParse_({ verbosity: -1, data: buffer });
+    await parser.load();
+    const result = await parser.getText();
+    // getText() returns { pages: [{text: string}] }
+    const pages = Array.isArray(result?.pages) ? result.pages : [];
+    return pages.map(p => p.text || '').join('\n');
+  } catch {
+    return '';
+  }
+}
+
+/**
+ * Extract the lab's own patient ID from PDF text.
+ * Agilus/similar labs print a PATIENT ID field (e.g. SACHM2803750).
+ * This is NOT the corporate employee ID, but serves as a persistent
+ * cross-reference: once mapped to a userId, future reports match definitively.
+ *
+ * Also checks for CLNT.PATIENT ID which SHOULD contain the corporate employee ID
+ * if the lab fills it in correctly.
+ */
+function extractLabPatientId(pdfText) {
+  if (!pdfText) return { labPatientId: null, clientPatientId: null };
+
+  // CLNT.PATIENT ID — the corporate/client reference (e.g. Equitas employee ID)
+  const clientMatch = pdfText.match(/CLNT\.?\s*PATIENT\s*ID\s*:?\s*([A-Z0-9]{3,20})(?:\s|$)/i);
+  const clientPatientId = clientMatch?.[1]?.trim() || null;
+
+  // PATIENT ID — lab's own internal patient code (e.g. SACHM2803750)
+  // Exclude generic codes like accession numbers
+  const labMatch = pdfText.match(/(?<!CLNT\.?\s*)(?<!CLNT\s)PATIENT\s+ID\s*:?\s*([A-Z][A-Z0-9]{4,19})(?:\s|$)/i);
+  const labPatientId = labMatch?.[1]?.trim() || null;
+
+  return { labPatientId, clientPatientId };
+}
 
 // ─── Constants ────────────────────────────────────────────────────────────────
 
@@ -254,9 +297,13 @@ async function getCorporateEmployeeMeta(userId) {
 /**
  * Normalise a name for fuzzy comparison: lowercase, strip punctuation, collapse spaces.
  */
+/** Common honorifics to strip when comparing names */
+const HONORIFICS_RE = /^(mr\.?|mrs\.?|ms\.?|miss\.?|dr\.?|prof\.?|shri\.?|smt\.?|sh\.?)\s*/i;
+
 function normaliseName(name) {
   if (!name) return '';
   return name.toLowerCase()
+    .replace(HONORIFICS_RE, '')   // strip leading honorific (MR., DR., SHRI, etc.)
     .replace(/[^a-z\s]/g, '')
     .replace(/\s+/g, ' ')
     .trim();
@@ -265,7 +312,7 @@ function normaliseName(name) {
 /**
  * Cross-validate two names. Returns a confidence score:
  *   'exact'   — full match (after normalisation)
- *   'strong'  — one name contains the other, or first+last tokens match
+ *   'strong'  — one name contains the other, first+last match, or all tokens of shorter name appear in longer
  *   'partial' — first name token matches
  *   'none'    — no match
  */
@@ -287,6 +334,11 @@ function crossValidateName(nameA, nameB) {
   const lastMatch  = tokA[tokA.length - 1] === tokB[tokB.length - 1];
   if (firstMatch && lastMatch && tokA.length >= 2 && tokB.length >= 2) return 'strong';
   if (firstMatch && (tokA.length === 1 || tokB.length === 1)) return 'partial';
+
+  // All tokens of the SHORTER name appear in the LONGER name
+  // Handles "SACHIN MODI" matching "SACHIN RASIKLAL MODI" (middle name omitted)
+  const [shorter, longer] = tokA.length <= tokB.length ? [tokA, tokB] : [tokB, tokA];
+  if (shorter.length >= 2 && shorter.every(t => longer.includes(t))) return 'strong';
 
   return 'none';
 }
@@ -662,41 +714,39 @@ export function detectLabReport(email) {
  * @param {string} opts.matchMethod   - for logging
  * @returns {{ passed: boolean, reason: string, aiPatientName: string|null }}
  */
-async function aiQcReport({ confidence, user, att, matchMethod }) {
+async function aiQcReport({ confidence, user, att, matchMethod, preExtractedText }) {
   // ── Gate 1: reject low confidence immediately ─────────────────────────────
   if (confidence === 'low') {
     return {
       passed: false,
       reason: `Confidence too low (${confidence}) for match method "${matchMethod}" — report blocked to avoid misdelivery`,
       aiPatientName: null,
+      labPatientId: null,
+      clientPatientId: null,
     };
   }
 
   // ── Gate 2: AI PDF name extraction + cross-verify ──────────────────────────
-  // PDF bytes must have been stored at parse time
   if (!att.contentBase64) {
-    // No bytes available — fall back to confidence-only gate (medium/high passes)
     logger.info('[QC] No PDF bytes available for AI verification — passing on confidence alone');
-    return { passed: true, reason: 'no-pdf-bytes;confidence-gate-passed', aiPatientName: null };
+    return { passed: true, reason: 'no-pdf-bytes;confidence-gate-passed', aiPatientName: null, labPatientId: null, clientPatientId: null };
   }
 
-  try {
-    const pdfParse = await getPdfParse();
-    const buffer = Buffer.from(att.contentBase64, 'base64');
-    let rawText = '';
+  const buffer = Buffer.from(att.contentBase64, 'base64');
+  // Re-use pre-extracted text if already done during Level-0 lookup
+  const rawText = (preExtractedText && preExtractedText.length > 20)
+    ? preExtractedText
+    : await extractPdfText(buffer);
 
-    try {
-      const parsed = await pdfParse(buffer, { max: 3 }); // first 3 pages only
-      rawText = parsed.text || '';
-    } catch (pdfErr) {
-      logger.warn(`[QC] pdf-parse failed for "${att.filename}": ${pdfErr.message}`);
-      // Cannot extract text — pass on confidence
-      return { passed: true, reason: 'pdf-parse-failed;confidence-gate-passed', aiPatientName: null };
-    }
+  try {
+    // Extract lab patient ID fields from PDF for audit + caching
+    const { labPatientId, clientPatientId } = extractLabPatientId(rawText);
+    if (labPatientId) logger.info(`[QC] Lab patient ID extracted: "${labPatientId}" (clientPatientId: "${clientPatientId || 'none'}") from "${att.filename}"`);
+    if (clientPatientId) logger.info(`[QC] CLNT.PATIENT ID found: "${clientPatientId}" — this may be the corporate employee ID`);
 
     if (rawText.trim().length < 20) {
       logger.info('[QC] PDF text too short for AI verification — confidence gate passed');
-      return { passed: true, reason: 'pdf-too-short;confidence-gate-passed', aiPatientName: null };
+      return { passed: true, reason: 'pdf-too-short;confidence-gate-passed', aiPatientName: null, labPatientId: labPatientId || null, clientPatientId: clientPatientId || null };
     }
 
     // Truncate to ~4000 chars (enough for the header / patient info section)
@@ -731,7 +781,7 @@ async function aiQcReport({ confidence, user, att, matchMethod }) {
 
     if (!aiPatientName) {
       logger.info('[QC] AI could not extract patient name — confidence gate passed');
-      return { passed: true, reason: 'ai-name-not-found;confidence-gate-passed', aiPatientName: null };
+      return { passed: true, reason: 'ai-name-not-found;confidence-gate-passed', aiPatientName: null, labPatientId: labPatientId || null, clientPatientId: clientPatientId || null };
     }
 
     // Cross-verify AI-extracted name vs. matched user
@@ -745,6 +795,8 @@ async function aiQcReport({ confidence, user, att, matchMethod }) {
         passed: false,
         reason: `AI extracted patient name "${aiPatientName}" does not match user "${userFullName}" — report blocked`,
         aiPatientName,
+        labPatientId: labPatientId || null,
+        clientPatientId: clientPatientId || null,
       };
     }
 
@@ -752,11 +804,12 @@ async function aiQcReport({ confidence, user, att, matchMethod }) {
       passed: true,
       reason: `AI name match: ${nameMatch} ("${aiPatientName}" ↔ "${userFullName}")`,
       aiPatientName,
+      labPatientId: labPatientId || null,
+      clientPatientId: clientPatientId || null,
     };
   } catch (err) {
-    // AI service failure — fail open (pass) to not block legitimate reports
     logger.warn(`[QC] AI QC error (non-blocking): ${err.message}`);
-    return { passed: true, reason: `ai-error-fail-open: ${err.message}`, aiPatientName: null };
+    return { passed: true, reason: `ai-error-fail-open: ${err.message}`, aiPatientName: null, labPatientId: null, clientPatientId: null };
   }
 }
 
@@ -808,6 +861,54 @@ export async function saveHealthReportFromEmail(email) {
 
       const nameFromFile = extractNameFromFilename(att.filename);
       let matchResult = null;
+
+      // ── Level 0: Lab Patient ID cache lookup (fastest, most definitive) ───
+      // Extract patient ID from PDF bytes — Agilus-style PATIENT ID field
+      // Once a labPatientId is mapped to a userId (stored in report metadata),
+      // future reports with the same ID match definitively without name guessing.
+      let pdfText = '';
+      let labPatientId = null;
+      let clientPatientId = null;
+      if (att.contentBase64) {
+        pdfText = await extractPdfText(Buffer.from(att.contentBase64, 'base64'));
+        ({ labPatientId, clientPatientId } = extractLabPatientId(pdfText));
+
+        // If the lab filled in CLNT.PATIENT ID with the corporate employee ID, use it directly
+        if (clientPatientId) {
+          matchResult = await findEmployeeValidated({
+            empId: clientPatientId,
+            name: nameFromFile || meta.patientName,
+            corporateId,
+            source: `clnt-patient-id:${clientPatientId}`,
+          });
+          if (matchResult) logger.info(`[emailAutoProcess] Level-0 match via CLNT.PATIENT ID "${clientPatientId}" → user ${matchResult.user.id}`);
+        }
+
+        // If not matched yet, check if this labPatientId was mapped before in prior reports
+        if (!matchResult && labPatientId) {
+          const [prevReports] = await postgresSequelize.query(
+            `SELECT "userId" FROM reports WHERE metadata->>'labPatientId' = :labPatientId LIMIT 1`,
+            { replacements: { labPatientId } }
+          );
+          if (prevReports[0]) {
+            const prevUserId = prevReports[0].userId;
+            const [userRows] = await postgresSequelize.query(
+              `SELECT id, "firstName", "lastName", email, "phoneNumber", organization_id FROM users WHERE id = :id LIMIT 1`,
+              { replacements: { id: prevUserId } }
+            );
+            if (userRows[0]) {
+              matchResult = {
+                user: userRows[0],
+                confidence: 'high',
+                matchMethod: 'lab-patient-id-cache',
+                validationDetails: [{ check: 'labPatientIdCache', labPatientId, cachedUserId: prevUserId, result: 'pass' }],
+                employeeId: null,
+              };
+              logger.info(`[emailAutoProcess] Level-0 cache hit: labPatientId "${labPatientId}" → user ${prevUserId} (previously matched)`);
+            }
+          }
+        }
+      }
 
       // ── Level 1+2: Try to match via HTML table cross-reference ────
       if (nameFromFile && tableUserCache.size > 0) {
@@ -914,6 +1015,8 @@ export async function saveHealthReportFromEmail(email) {
               matchMethod,
               confidence,
               employeeId:   matchedEmpId,
+              labPatientId: labPatientId,
+              clientPatientId: clientPatientId,
               validation:   validationDetails,
               // AI QC audit
               aiQc: {
