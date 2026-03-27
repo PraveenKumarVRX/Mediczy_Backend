@@ -94,9 +94,9 @@
     ]
   },
   "device_heartbeat": {
-    "lastRun": "2026-03-27T11:05:00.032Z",
+    "lastRun": "2026-03-27T11:10:00.058Z",
     "lastStatus": "success",
-    "runCount": 2,
+    "runCount": 3,
     "errorCount": 0,
     "lastError": null,
     "lastDetails": {},
@@ -108,6 +108,11 @@
       },
       {
         "ts": "2026-03-27T11:05:00.032Z",
+        "status": "success",
+        "details": {}
+      },
+      {
+        "ts": "2026-03-27T11:10:00.058Z",
         "status": "success",
         "details": {}
       }

@@ -289,7 +289,7 @@ export default function AdminWorkflowAutomation() {
       const { data } = await axios.get(`${API_URL}/api/admin/automation/jobs`, {
         headers: { Authorization: `Bearer ${token}` },
       });
-      setTasks(data.tasks || data || []);
+      setTasks(data.data || data.tasks || (Array.isArray(data) ? data : []));
       setLastUpdated(new Date());
       setError(null);
       setCountdown(REFRESH_INTERVAL);
