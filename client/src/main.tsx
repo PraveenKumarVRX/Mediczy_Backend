@@ -3,6 +3,37 @@ import { createRoot } from 'react-dom/client'
 import App from './App.tsx'
 import './index.css'
 
+// ── Stale chunk recovery ───────────────────────────────────────────────────
+// After a new deployment, the browser may have cached the old HTML which
+// references JS chunks that no longer exist on the CDN. Vite throws a
+// "Failed to fetch dynamically imported module" TypeError. We catch it
+// globally and force a one-time hard reload so the browser picks up the
+// fresh index.html and all new chunk URLs.
+window.addEventListener('vite:preloadError', () => {
+  if (!sessionStorage.getItem('chunk_reload')) {
+    sessionStorage.setItem('chunk_reload', '1');
+    window.location.reload();
+  }
+});
+
+// Fallback for browsers / bundler versions that don't emit vite:preloadError
+const _origOnError = window.onerror;
+window.onerror = function (msg, _src, _line, _col, err) {
+  if (
+    err instanceof TypeError &&
+    (String(msg).includes('Failed to fetch dynamically imported module') ||
+      String(msg).includes('Importing a module script failed'))
+  ) {
+    if (!sessionStorage.getItem('chunk_reload')) {
+      sessionStorage.setItem('chunk_reload', '1');
+      window.location.reload();
+      return true; // suppress console error
+    }
+  }
+  if (_origOnError) return _origOnError.apply(this, arguments as any);
+};
+// ──────────────────────────────────────────────────────────────────────────
+
 createRoot(document.getElementById("root")!).render(
   <StrictMode>
     <App />

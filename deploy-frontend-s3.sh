@@ -56,7 +56,12 @@ if aws cloudfront create-invalidation \
     --distribution-id "$CLOUDFRONT_ID" \
     --paths "/index.html" "/" "/*" > /dev/null 2>&1; then
   echo -e "${GREEN}✅ CloudFront cache invalidated${NC}"
-  # Safe to clean up old assets now that cache is invalidated
+  # Wait briefly so active users finish loading in-flight pages before
+  # we delete old hashed chunks. CloudFront TTL is gone but browsers that
+  # already have the OLD index.html in memory still reference old chunk URLs
+  # for ~30-60 seconds. The frontend also handles this with a self-reload.
+  echo -e "${YELLOW}🧹 Waiting 60s before cleaning old S3 assets...${NC}"
+  sleep 60
   echo -e "${YELLOW}🧹 Cleaning up old S3 assets (post-invalidation)...${NC}"
   aws s3 sync "$BUILD_DIR" "$S3_BUCKET" --delete --cache-control "public,max-age=31536000,immutable" --exclude "*.html" --exclude "serviceWorker.js" --exclude "service-worker.js" > /dev/null 2>&1
   echo -e "${GREEN}✅ Old assets cleaned up${NC}"
