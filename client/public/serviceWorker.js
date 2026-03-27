@@ -1,5 +1,5 @@
 // Service Worker for Mediczy Healthcare Platform
-const CACHE_NAME = 'mediczy-v14'; // v14: stop caching JS/CSS bundles — only offline HTML fallback
+const CACHE_NAME = 'mediczy-v15'; // v15: force cache clear for settings page update
 const ESSENTIAL_URLS = [
   '/'
 ];
