@@ -113,6 +113,7 @@ interface HealthReport {
   uploader_first?: string;
   uploader_last?: string;
   order_number?: string;
+  source?: 'manual' | 'email';
 }
 
 const REPORT_TYPES = [
@@ -1491,6 +1492,7 @@ export default function CorporateHealthBooking() {
                           <div className="flex items-center gap-2 flex-wrap">
                             <p className="font-medium text-sm">{rpt.report_name}</p>
                             <Badge variant="outline" className="text-xs">{REPORT_TYPES.find(t => t.value === rpt.report_type)?.label || rpt.report_type}</Badge>
+                            {rpt.source === 'email' && <Badge className="text-xs bg-purple-100 text-purple-700">📧 Auto-Processed</Badge>}
                           </div>
                           <p className="text-xs text-muted-foreground mt-0.5">
                             <User className="inline h-3 w-3 mr-1" />{rpt.firstName} {rpt.lastName}

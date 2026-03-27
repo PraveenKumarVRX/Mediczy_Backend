@@ -838,6 +838,8 @@ router.post(
 // ──────────────────────────────────────────────
 // GET /api/corporate-bookings/reports
 // List all uploaded reports (optionally filter by employee)
+// Merges manually-uploaded corporate_health_reports with auto-processed
+// email reports from the reports table (both linked to the same corporate).
 // ──────────────────────────────────────────────
 router.get('/reports', authUser, requireTeamOrAdmin, async (req, res) => {
   try {
@@ -845,59 +847,100 @@ router.get('/reports', authUser, requireTeamOrAdmin, async (req, res) => {
     if (!corporateId) return res.status(400).json({ success: false, message: 'corporateId is required' });
     const offset = (parseInt(page) - 1) * parseInt(limit);
 
-    const empFilter = employeeId ? 'AND chr.employee_id = :employeeId' : '';
+    const empFilterChr = employeeId ? 'AND chr.employee_id = :employeeId' : '';
+    const empFilterRpt = employeeId ? 'AND r."userId" = :employeeId' : '';
+
+    // UNION of:
+    //   1. corporate_health_reports — manually uploaded via team portal
+    //   2. reports — auto-processed from lab emails (joined to corporate via user_associations)
+    const unionQuery = `
+      SELECT
+        chr.id,
+        chr.report_name,
+        chr.report_type,
+        chr.report_date::timestamptz AS report_date,
+        chr.report_url,
+        chr.file_size_bytes,
+        chr.mime_type,
+        chr.notes,
+        chr.notified_email,
+        chr.notified_whatsapp,
+        chr.notified_at,
+        chr.created_at,
+        chr.lab_order_id,
+        'manual' AS source,
+        u.id AS employee_id,
+        u."firstName",
+        u."lastName",
+        u.email,
+        u."phoneNumber",
+        up."firstName" AS uploader_first,
+        up."lastName" AS uploader_last,
+        lo.order_number
+      FROM corporate_health_reports chr
+      JOIN users u ON u.id = chr.employee_id
+      LEFT JOIN users up ON up.id = chr.uploaded_by
+      LEFT JOIN lab_orders lo ON lo.id = chr.lab_order_id
+      WHERE chr.corporate_id = :corporateId
+        ${empFilterChr}
+
+      UNION ALL
+
+      SELECT
+        r.id,
+        r."fileName" AS report_name,
+        r."reportType" AS report_type,
+        r."reportDate"::timestamptz AS report_date,
+        r."fileUrl" AS report_url,
+        r."fileSize" AS file_size_bytes,
+        r."mimeType" AS mime_type,
+        r.description AS notes,
+        FALSE AS notified_email,
+        TRUE AS notified_whatsapp,
+        r."createdAt" AS notified_at,
+        r."createdAt" AS created_at,
+        NULL::int AS lab_order_id,
+        'email' AS source,
+        u.id AS employee_id,
+        u."firstName",
+        u."lastName",
+        u.email,
+        u."phoneNumber",
+        NULL::varchar AS uploader_first,
+        NULL::varchar AS uploader_last,
+        NULL::varchar AS order_number
+      FROM reports r
+      JOIN users u ON u.id = r."userId"
+      JOIN user_associations ua ON ua."userId" = u.id
+        AND ua."entityType" = 'corporate'
+        AND ua."entityId" = :corporateId
+      WHERE r."reportType" = 'lab'
+        ${empFilterRpt}
+    `;
 
     const reports = await postgresSequelize.query(
-      `SELECT
-         chr.id,
-         chr.report_name,
-         chr.report_type,
-         chr.report_date,
-         chr.report_url,
-         chr.file_size_bytes,
-         chr.mime_type,
-         chr.notes,
-         chr.notified_email,
-         chr.notified_whatsapp,
-         chr.notified_at,
-         chr.created_at,
-         chr.lab_order_id,
-         u.id AS employee_id,
-         u."firstName",
-         u."lastName",
-         u.email,
-         u."phoneNumber",
-         up."firstName" AS uploader_first,
-         up."lastName" AS uploader_last,
-         lo.order_number
-       FROM corporate_health_reports chr
-       JOIN users u ON u.id = chr.employee_id
-       LEFT JOIN users up ON up.id = chr.uploaded_by
-       LEFT JOIN lab_orders lo ON lo.id = chr.lab_order_id
-       WHERE chr.corporate_id = :corporateId
-         ${empFilter}
-       ORDER BY chr.created_at DESC
+      `SELECT * FROM (${unionQuery}) combined
+       ORDER BY created_at DESC
        LIMIT :limit OFFSET :offset`,
       {
         replacements: {
           corporateId: parseInt(corporateId),
           ...(employeeId ? { employeeId: parseInt(employeeId) } : {}),
           limit: parseInt(limit),
-          offset
+          offset,
         },
-        type: postgresSequelize.QueryTypes.SELECT
+        type: postgresSequelize.QueryTypes.SELECT,
       }
     );
 
     const [countRow] = await postgresSequelize.query(
-      `SELECT COUNT(*) AS total FROM corporate_health_reports
-       WHERE corporate_id = :corporateId ${empFilter}`,
+      `SELECT COUNT(*) AS total FROM (${unionQuery}) combined`,
       {
         replacements: {
           corporateId: parseInt(corporateId),
-          ...(employeeId ? { employeeId: parseInt(employeeId) } : {})
+          ...(employeeId ? { employeeId: parseInt(employeeId) } : {}),
         },
-        type: postgresSequelize.QueryTypes.SELECT
+        type: postgresSequelize.QueryTypes.SELECT,
       }
     );
 
