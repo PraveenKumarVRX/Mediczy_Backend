@@ -1,12 +1,12 @@
 // Service Worker for Mediczy Healthcare Platform
-const CACHE_NAME = 'mediczy-v15'; // v15: force cache clear for settings page update
+const CACHE_NAME = 'mediczy-v16'; // v16: force cache clear — password form settings page
 const ESSENTIAL_URLS = [
   '/'
 ];
 
 // Install event - cache only the HTML shell for offline fallback
 self.addEventListener('install', (event) => {
-  console.log('🔧 ServiceWorker v14 installing...');
+  console.log('🔧 ServiceWorker v16 installing...');
   event.waitUntil(
     caches.open(CACHE_NAME)
       .then((cache) => {
@@ -24,7 +24,7 @@ self.addEventListener('install', (event) => {
 
 // Activate event - clean up ALL old caches and take control
 self.addEventListener('activate', (event) => {
-  console.log('🚀 ServiceWorker v14 activating...');
+  console.log('🚀 ServiceWorker v16 activating...');
   event.waitUntil(
     caches.keys().then((cacheNames) => {
       return Promise.all(

@@ -889,7 +889,7 @@ router.get('/reports', authUser, requireTeamOrAdmin, async (req, res) => {
       SELECT
         r.id,
         r."fileName" AS report_name,
-        r."reportType" AS report_type,
+        r."reportType"::text AS report_type,
         r."reportDate"::timestamptz AS report_date,
         r."fileUrl" AS report_url,
         r."fileSize" AS file_size_bytes,

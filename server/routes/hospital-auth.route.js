@@ -1000,4 +1000,83 @@ export const hospitalLogout = async (req, res) => {
 
 router.post('/logout', hospitalLogout);
 
+// ─── POST /api/hospital/auth/change-password ──────────────────────────────────
+// Change password for the logged-in hospital account.
+// Handles two login paths:
+//   1. Direct hospital login  → password stored in `hospitals` table
+//   2. Tenant staff login     → password stored in `users` table
+// ─────────────────────────────────────────────────────────────────────────────
+router.post('/change-password', authUser, async (req, res) => {
+  try {
+    const { currentPassword, newPassword, confirmPassword } = req.body;
+    if (!currentPassword || !newPassword || !confirmPassword) {
+      return res.status(400).json({ success: false, message: 'All password fields are required' });
+    }
+    if (newPassword !== confirmPassword) {
+      return res.status(400).json({ success: false, message: 'Passwords do not match' });
+    }
+    if (newPassword.length < 8) {
+      return res.status(400).json({ success: false, message: 'New password must be at least 8 characters' });
+    }
+    const strongPwd = /^(?=.*[a-z])(?=.*[A-Z])(?=.*\d)(?=.*[@$!%*?&])[A-Za-z\d@$!%*?&]/.test(newPassword);
+    if (!strongPwd) {
+      return res.status(400).json({ success: false, message: 'Password must contain uppercase, lowercase, number, and special character (@$!%*?&)' });
+    }
+
+    const hospitalId = req.user?.hospital_id || req.user?.hospitalId || req.user?.id;
+    const userId     = req.user?.id;
+    const userEmail  = req.user?.email;
+
+    // Path 1: direct hospital account (hospitals table)
+    const { rows: hospRows } = await sharedPool.query(
+      'SELECT id, email, password FROM hospitals WHERE id = $1 OR email = $2 LIMIT 1',
+      [hospitalId, userEmail]
+    );
+
+    if (hospRows.length) {
+      const hospital = hospRows[0];
+      const valid = await bcrypt.compare(currentPassword, hospital.password);
+      if (!valid) {
+        return res.status(401).json({ success: false, message: 'Current password is incorrect' });
+      }
+      const same = await bcrypt.compare(newPassword, hospital.password);
+      if (same) {
+        return res.status(400).json({ success: false, message: 'New password must be different from current password' });
+      }
+      const hashed = await bcrypt.hash(newPassword, 10);
+      await sharedPool.query('UPDATE hospitals SET password = $1 WHERE id = $2', [hashed, hospital.id]);
+      console.log(`✅ Hospital password changed (hospitals table): ${hospital.email}`);
+      return res.json({ success: true, message: 'Password changed successfully.' });
+    }
+
+    // Path 2: tenant staff login — password is in users table
+    const { rows: userRows } = await sharedPool.query(
+      'SELECT id, email, password FROM users WHERE id = $1 AND email = $2 LIMIT 1',
+      [userId, userEmail]
+    );
+
+    if (!userRows.length) {
+      return res.status(404).json({ success: false, message: 'Hospital account not found' });
+    }
+
+    const user = userRows[0];
+    const valid = await bcrypt.compare(currentPassword, user.password);
+    if (!valid) {
+      return res.status(401).json({ success: false, message: 'Current password is incorrect' });
+    }
+    const same = await bcrypt.compare(newPassword, user.password);
+    if (same) {
+      return res.status(400).json({ success: false, message: 'New password must be different from current password' });
+    }
+    const hashed = await bcrypt.hash(newPassword, 10);
+    await sharedPool.query('UPDATE users SET password = $1 WHERE id = $2', [hashed, user.id]);
+    console.log(`✅ Hospital password changed (users table): ${user.email}`);
+    return res.json({ success: true, message: 'Password changed successfully.' });
+
+  } catch (err) {
+    console.error('[hospital-auth] change-password error:', err);
+    return res.status(500).json({ success: false, message: 'Failed to change password' });
+  }
+});
+
 export default router;

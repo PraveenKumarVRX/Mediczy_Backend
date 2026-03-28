@@ -1,3 +1,4 @@
+// v2 — password change form (settings page rebuild)
 import { useState } from "react";
 import HospitalLayout from "@/components/hospital/HospitalLayout";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
@@ -473,7 +474,7 @@ export const HospitalSettingsPage = () => {
     }
     setLoading(true);
     try {
-      await api.post("/users/change-password", {
+      await api.post("/hospital/auth/change-password", {
         currentPassword: current,
         newPassword: newPwd,
         confirmPassword: confirm,
@@ -495,7 +496,7 @@ export const HospitalSettingsPage = () => {
     <HospitalLayout>
       <div className="p-6 space-y-6 max-w-2xl">
         <div>
-          <h1 className="text-2xl font-bold text-slate-900">Settings</h1>
+          <h1 className="text-2xl font-bold text-slate-900 dark:text-white">Settings</h1>
           <p className="text-sm text-muted-foreground mt-1">Portal preferences and security</p>
         </div>
 
