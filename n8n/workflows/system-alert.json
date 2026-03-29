@@ -4,37 +4,59 @@
     {
       "parameters": {
         "path": "system-alert",
-        "method": "POST",
         "responseMode": "onReceived",
-        "responseData": "allEntries"
+        "responseData": "allEntries",
+        "httpMethod": "POST"
       },
       "id": "system-alert-webhook",
       "name": "System Alert Webhook",
       "type": "n8n-nodes-base.webhook",
       "typeVersion": 1,
-      "position": [240, 200]
+      "position": [
+        240,
+        200
+      ],
+      "webhookId": "system-alert"
     },
     {
       "parameters": {
         "values": {
           "string": [
-            { "name": "alertType",    "value": "={{$json[\"alertType\"]}}" },
-            { "name": "severity",     "value": "={{$json[\"severity\"] || 'medium'}}" },
-            { "name": "message",      "value": "={{$json[\"message\"]}}" },
-            { "name": "service",      "value": "={{$json[\"service\"] || 'mediczy-server'}}" },
-            { "name": "timestamp",    "value": "={{$json[\"timestamp\"]}}" },
-            { "name": "adminEmail",   "value": "={{$json[\"adminEmail\"] || 'admin@mediczy.com'}}" },
+            {
+              "name": "alertType",
+              "value": "={{$json[\"body\"][\"alertType\"]}}"
+            },
+            {
+              "name": "severity",
+              "value": "={{$json[\"body\"][\"severity\"] || 'medium'}}"
+            },
+            {
+              "name": "message",
+              "value": "={{$json[\"body\"][\"message\"]}}"
+            },
+            {
+              "name": "service",
+              "value": "={{$json[\"body\"][\"service\"] || 'mediczy-server'}}"
+            },
+            {
+              "name": "timestamp",
+              "value": "={{$json[\"body\"][\"timestamp\"]}}"
+            },
+            {
+              "name": "adminEmail",
+              "value": "={{$json[\"body\"][\"adminEmail\"] || 'admin@mediczy.com'}}"
+            },
             {
               "name": "emailSubject",
-              "value": "=[{{$json[\"severity\"].toUpperCase()}}] Mediczy System Alert – {{$json[\"alertType\"]}}"
+              "value": "=[{{$json[\"body\"][\"severity\"].toUpperCase()}}] Mediczy System Alert – {{$json[\"body\"][\"alertType\"]}}"
             },
             {
               "name": "emailBody",
-              "value": "=🚨 SYSTEM ALERT\n\nType: {{$json[\"alertType\"]}}\nSeverity: {{$json[\"severity\"]}}\nService: {{$json[\"service\"]}}\nTime: {{$json[\"timestamp\"]}}\n\nDetails:\n{{$json[\"message\"]}}\n\nMediczy Monitoring"
+              "value": "=🚨 SYSTEM ALERT\n\nType: {{$json[\"body\"][\"alertType\"]}}\nSeverity: {{$json[\"body\"][\"severity\"]}}\nService: {{$json[\"body\"][\"service\"]}}\nTime: {{$json[\"body\"][\"timestamp\"]}}\n\nDetails:\n{{$json[\"body\"][\"message\"]}}\n\nMediczy Monitoring"
             },
             {
               "name": "whatsappBody",
-              "value": "=🚨 [{{$json[\"severity\"].toUpperCase()}}] Mediczy Alert: {{$json[\"alertType\"]}} – {{$json[\"message\"].substring(0,100)}}..."
+              "value": "=🚨 [{{$json[\"body\"][\"severity\"].toUpperCase()}}] Mediczy Alert: {{$json[\"body\"][\"alertType\"]}} – {{$json[\"body\"][\"message\"].substring(0,100)}}..."
             }
           ]
         }
@@ -43,33 +65,69 @@
       "name": "Prepare Alert",
       "type": "n8n-nodes-base.set",
       "typeVersion": 2,
-      "position": [500, 200]
+      "position": [
+        500,
+        200
+      ]
     },
     {
       "parameters": {
         "url": "={{$env.MEDICZY_BASE_URL}}/api/notifications/send-internal",
         "method": "POST",
         "sendBody": true,
-        "jsonParameters": true,
-        "options": { "timeout": 10000 },
-        "bodyParametersJson": "={\n  \"adminEmail\": \"{{$json.adminEmail}}\",\n  \"type\": \"system_alert\",\n  \"channels\": [\"email\", \"whatsapp\"],\n  \"subject\": \"{{$json.emailSubject}}\",\n  \"body\": \"{{$json.emailBody}}\",\n  \"whatsappBody\": \"{{$json.whatsappBody}}\",\n  \"priority\": \"{{$json.severity === 'critical' ? 'critical' : 'high'}}\",\n  \"data\": { \"alertType\": \"{{$json.alertType}}\", \"severity\": \"{{$json.severity}}\", \"service\": \"{{$json.service}}\" }\n}",
-        "headerParametersJson": "={ \"Authorization\": \"Bearer {{$env.MEDICZY_INTERNAL_TOKEN}}\" }"
+        "options": {
+          "timeout": 10000
+        },
+        "contentType": "json",
+        "specifyBody": "json",
+        "jsonBody": "={{ ({\n  \"adminEmail\": $json.adminEmail,\n  \"type\": \"system_alert\",\n  \"channels\": [\"email\", \"whatsapp\"],\n  \"subject\": $json.emailSubject,\n  \"body\": $json.emailBody,\n  \"whatsappBody\": $json.whatsappBody,\n  \"priority\": $json.severity === 'critical' ? 'critical' : 'high',\n  \"data\": { \"alertType\": $json.alertType, \"severity\": $json.severity, \"service\": $json.service }\n}) }}",
+        "sendHeaders": true,
+        "specifyHeaders": "keypair",
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Authorization",
+              "value": "=Bearer {{$env.MEDICZY_INTERNAL_TOKEN}}"
+            }
+          ]
+        }
       },
       "id": "send-system-alert",
       "name": "Send Alert",
       "type": "n8n-nodes-base.httpRequest",
       "typeVersion": 4,
-      "position": [780, 200]
+      "position": [
+        780,
+        200
+      ]
     }
   ],
   "connections": {
     "System Alert Webhook": {
-      "main": [[{ "node": "Prepare Alert", "type": "main", "index": 0 }]]
+      "main": [
+        [
+          {
+            "node": "Prepare Alert",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
     },
     "Prepare Alert": {
-      "main": [[{ "node": "Send Alert", "type": "main", "index": 0 }]]
+      "main": [
+        [
+          {
+            "node": "Send Alert",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
     }
   },
   "active": false,
-  "settings": { "executionOrder": "v1" }
+  "settings": {
+    "executionOrder": "v1"
+  }
 }

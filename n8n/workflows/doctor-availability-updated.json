@@ -1,0 +1,81 @@
+{
+  "name": "Mediczy - Doctor Availability Updated",
+  "nodes": [
+    {
+      "parameters": {
+        "path": "doctor-availability-updated",
+        "responseMode": "responseNode",
+        "httpMethod": "POST",
+        "options": {}
+      },
+      "id": "availability-webhook",
+      "name": "Availability Updated Webhook",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 1,
+      "position": [240, 300],
+      "webhookId": "doctor-availability-updated"
+    },
+    {
+      "parameters": {
+        "values": {
+          "string": [
+            { "name": "doctorId",   "value": "={{$json[\"body\"][\"doctorId\"]}}" },
+            { "name": "doctorName", "value": "={{$json[\"body\"][\"doctorName\"]}}" },
+            { "name": "timezone",   "value": "={{$json[\"body\"][\"timezone\"]}}" },
+            { "name": "slots",      "value": "={{JSON.stringify($json[\"body\"][\"availability\"])}}" }
+          ]
+        }
+      },
+      "id": "prepare-availability",
+      "name": "Prepare Availability Data",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 2,
+      "position": [480, 300]
+    },
+    {
+      "parameters": {
+        "url": "={{$env.MEDICZY_BASE_URL}}/api/notifications/send-internal",
+        "method": "POST",
+        "sendBody": true,
+        "contentType": "json",
+        "specifyBody": "json",
+        "jsonBody": "={{ ({\n  \"type\": \"doctor_availability_updated\",\n  \"channels\": [\"in-app\", \"email\"],\n  \"subject\": \"Dr. \" + $json.doctorName + \" has updated availability\",\n  \"body\": \"Dr. \" + $json.doctorName + \" has updated their availability schedule. New slots are now open for booking. Book your appointment now through the Mediczy app.\",\n  \"priority\": \"normal\",\n  \"broadcastToWaitlist\": true,\n  \"data\": {\n    \"doctorId\": $json.doctorId,\n    \"doctorName\": $json.doctorName,\n    \"timezone\": $json.timezone,\n    \"availableSlots\": $json.slots\n  }\n}) }}",
+        "sendHeaders": true,
+        "specifyHeaders": "keypair",
+        "headerParameters": {
+          "parameters": [{ "name": "Authorization", "value": "=Bearer {{$env.MEDICZY_INTERNAL_TOKEN}}" }]
+        },
+        "options": { "timeout": 10000 }
+      },
+      "id": "notify-waitlist",
+      "name": "Notify Waitlisted Patients",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4,
+      "position": [720, 300]
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={{ JSON.stringify({ success: true, workflow: 'doctor-availability-updated' }) }}"
+      },
+      "id": "respond-ok",
+      "name": "Respond OK",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1,
+      "position": [960, 300]
+    }
+  ],
+  "connections": {
+    "Availability Updated Webhook": {
+      "main": [[{ "node": "Prepare Availability Data", "type": "main", "index": 0 }]]
+    },
+    "Prepare Availability Data": {
+      "main": [[{ "node": "Notify Waitlisted Patients", "type": "main", "index": 0 }]]
+    },
+    "Notify Waitlisted Patients": {
+      "main": [[{ "node": "Respond OK", "type": "main", "index": 0 }]]
+    }
+  },
+  "active": false,
+  "settings": { "executionOrder": "v1" }
+}

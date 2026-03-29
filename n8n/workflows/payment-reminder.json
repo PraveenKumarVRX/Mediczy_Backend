@@ -4,34 +4,59 @@
     {
       "parameters": {
         "path": "payment-reminder",
-        "method": "POST",
         "responseMode": "onReceived",
-        "responseData": "allEntries"
+        "responseData": "allEntries",
+        "httpMethod": "POST"
       },
       "id": "pay-reminder-webhook",
       "name": "Payment Reminder Webhook",
       "type": "n8n-nodes-base.webhook",
       "typeVersion": 1,
-      "position": [240, 200]
+      "position": [
+        240,
+        200
+      ],
+      "webhookId": "payment-reminder"
     },
     {
       "parameters": {
         "values": {
           "string": [
-            { "name": "patientId",     "value": "={{$json[\"patientId\"]}}" },
-            { "name": "patientName",   "value": "={{$json[\"patientName\"]}}" },
-            { "name": "invoiceId",     "value": "={{$json[\"invoiceId\"]}}" },
-            { "name": "invoiceNumber", "value": "={{$json[\"invoiceNumber\"]}}" },
-            { "name": "amount",        "value": "={{$json[\"amount\"]}}" },
-            { "name": "dueDate",       "value": "={{$json[\"dueDate\"]}}" },
-            { "name": "timeframe",     "value": "={{$json[\"timeframe\"]}}" },
+            {
+              "name": "patientId",
+              "value": "={{$json[\"body\"][\"patientId\"]}}"
+            },
+            {
+              "name": "patientName",
+              "value": "={{$json[\"body\"][\"patientName\"]}}"
+            },
+            {
+              "name": "invoiceId",
+              "value": "={{$json[\"body\"][\"invoiceId\"]}}"
+            },
+            {
+              "name": "invoiceNumber",
+              "value": "={{$json[\"body\"][\"invoiceNumber\"]}}"
+            },
+            {
+              "name": "amount",
+              "value": "={{$json[\"body\"][\"amount\"]}}"
+            },
+            {
+              "name": "dueDate",
+              "value": "={{$json[\"body\"][\"dueDate\"]}}"
+            },
+            {
+              "name": "timeframe",
+              "value": "={{$json[\"body\"][\"timeframe\"]}}"
+            },
             {
               "name": "emailSubject",
-              "value": "=Payment Due in {{$json[\"timeframe\"]}} – Invoice {{$json[\"invoiceNumber\"]}}"
+              "value": "=Payment Due in {{$json[\"body\"][\"timeframe\"]}} – Invoice {{$json[\"body\"][\"invoiceNumber\"]}}"
             },
             {
               "name": "emailBody",
-              "value": "=Hi {{$json[\"patientName\"]}},\n\nThis is a reminder that Invoice {{$json[\"invoiceNumber\"]}} for ₹{{$json[\"amount\"]}} is due on {{$json[\"dueDate\"]}} ({{$json[\"timeframe\"]}} away).\n\nPlease complete your payment to avoid late fees.\n\nTeam Mediczy"
+              "value": "=Hi {{$json[\"body\"][\"patientName\"]}},\n\nThis is a reminder that Invoice {{$json[\"body\"][\"invoiceNumber\"]}} for ₹{{$json[\"body\"][\"amount\"]}} is due on {{$json[\"body\"][\"dueDate\"]}} ({{$json[\"body\"][\"timeframe\"]}} away).\n\nPlease complete your payment to avoid late fees.\n\nTeam Mediczy"
             }
           ]
         }
@@ -40,33 +65,69 @@
       "name": "Prepare Message",
       "type": "n8n-nodes-base.set",
       "typeVersion": 2,
-      "position": [500, 200]
+      "position": [
+        500,
+        200
+      ]
     },
     {
       "parameters": {
         "url": "={{$env.MEDICZY_BASE_URL}}/api/notifications/send-internal",
         "method": "POST",
         "sendBody": true,
-        "jsonParameters": true,
-        "options": { "timeout": 10000 },
-        "bodyParametersJson": "={\n  \"userId\": \"{{$json.patientId}}\",\n  \"type\": \"payment_reminder\",\n  \"channels\": [\"email\", \"in-app\"],\n  \"subject\": \"{{$json.emailSubject}}\",\n  \"body\": \"{{$json.emailBody}}\",\n  \"data\": { \"invoiceId\": \"{{$json.invoiceId}}\", \"invoiceNumber\": \"{{$json.invoiceNumber}}\", \"amount\": {{$json.amount}}, \"dueDate\": \"{{$json.dueDate}}\" },\n  \"actionUrl\": \"/billing/invoice/{{$json.invoiceId}}\"\n}",
-        "headerParametersJson": "={ \"Authorization\": \"Bearer {{$env.MEDICZY_INTERNAL_TOKEN}}\" }"
+        "options": {
+          "timeout": 10000
+        },
+        "contentType": "json",
+        "specifyBody": "json",
+        "jsonBody": "={{ ({\n  \"userId\": $json.patientId,\n  \"type\": \"payment_reminder\",\n  \"channels\": [\"email\", \"in-app\"],\n  \"subject\": $json.emailSubject,\n  \"body\": $json.emailBody,\n  \"data\": { \"invoiceId\": $json.invoiceId, \"invoiceNumber\": $json.invoiceNumber, \"amount\": $json.amount, \"dueDate\": $json.dueDate },\n  \"actionUrl\": \"/billing/invoice/$json.invoiceId\"\n}) }}",
+        "sendHeaders": true,
+        "specifyHeaders": "keypair",
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Authorization",
+              "value": "=Bearer {{$env.MEDICZY_INTERNAL_TOKEN}}"
+            }
+          ]
+        }
       },
       "id": "send-pay-reminder",
       "name": "Send Notification",
       "type": "n8n-nodes-base.httpRequest",
       "typeVersion": 4,
-      "position": [780, 200]
+      "position": [
+        780,
+        200
+      ]
     }
   ],
   "connections": {
     "Payment Reminder Webhook": {
-      "main": [[{ "node": "Prepare Message", "type": "main", "index": 0 }]]
+      "main": [
+        [
+          {
+            "node": "Prepare Message",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
     },
     "Prepare Message": {
-      "main": [[{ "node": "Send Notification", "type": "main", "index": 0 }]]
+      "main": [
+        [
+          {
+            "node": "Send Notification",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
     }
   },
   "active": false,
-  "settings": { "executionOrder": "v1" }
+  "settings": {
+    "executionOrder": "v1"
+  }
 }

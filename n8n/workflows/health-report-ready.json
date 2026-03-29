@@ -4,44 +4,44 @@
     {
       "parameters": {
         "path": "health-report-ready",
-        "method": "POST",
         "responseMode": "onReceived",
-        "responseData": "allEntries"
+        "responseData": "allEntries",
+        "httpMethod": "POST"
       },
       "id": "health-report-webhook",
       "name": "Health Report Webhook",
       "type": "n8n-nodes-base.webhook",
       "typeVersion": 1,
-      "position": [240, 200],
-      "notes": "Trigger: POST /webhook/health-report-ready"
+      "position": [
+        240,
+        200
+      ],
+      "notes": "Trigger: POST /webhook/health-report-ready",
+      "webhookId": "health-report-ready"
     },
     {
       "parameters": {
         "values": {
           "string": [
             {
-              "name": "toEmail",
-              "value": "={{$json[\"patientEmail\"]}}"
-            },
-            {
-              "name": "toPhone",
-              "value": "={{$json[\"patientPhone\"]}}"
+              "name": "patientId",
+              "value": "={{$json[\"body\"][\"patientId\"]}}"
             },
             {
               "name": "patientName",
-              "value": "={{$json[\"patientName\"]}}"
+              "value": "={{$json[\"body\"][\"patientName\"]}}"
+            },
+            {
+              "name": "reportId",
+              "value": "={{$json[\"body\"][\"reportId\"]}}"
+            },
+            {
+              "name": "bookingId",
+              "value": "={{$json[\"body\"][\"bookingId\"]}}"
             },
             {
               "name": "reportUrl",
-              "value": "={{$json[\"reportUrl\"]}}"
-            },
-            {
-              "name": "emailSubject",
-              "value": "Your health report is ready"
-            },
-            {
-              "name": "emailBody",
-              "value": "Hi {{$json[\"patientName\"] || 'there'}}, your report is ready: {{$json[\"reportUrl\"]}}"
+              "value": "={{$json[\"body\"][\"reportUrl\"]}}"
             }
           ]
         }
@@ -50,43 +50,41 @@
       "name": "Prepare Message",
       "type": "n8n-nodes-base.set",
       "typeVersion": 2,
-      "position": [520, 200]
+      "position": [
+        520,
+        200
+      ]
     },
     {
       "parameters": {
-        "url": "={{$env.MEDICZY_BASE_URL}}/api/communication/email/send",
+        "url": "={{$env.MEDICZY_BASE_URL}}/api/notifications/send-internal",
         "method": "POST",
         "sendBody": true,
-        "jsonParameters": true,
         "options": {
           "timeout": 10000
         },
-        "bodyParametersJson": "={\n  \"to\": $json[\"toEmail\"],\n  \"subject\": $json[\"emailSubject\"],\n  \"html\": $json[\"emailBody\"]\n}",
-        "headerParametersJson": "={\n  \"Authorization\": \"Bearer {{$env.MEDICZY_INTERNAL_TOKEN}}\"\n}"
+        "contentType": "json",
+        "specifyBody": "json",
+        "jsonBody": "={{ ({\n  \"userId\": $json.patientId,\n  \"userType\": \"patient\",\n  \"type\": \"health_report_ready\",\n  \"channels\": [\"email\", \"whatsapp\", \"in-app\"],\n  \"subject\": \"Your health report is ready\",\n  \"body\": \"Hi \" + $json.patientName + \", your health report is ready. View it here: \" + $json.reportUrl,\n  \"whatsappBody\": \"Hi \" + $json.patientName + \", your health report from Mediczy is ready. View it: \" + $json.reportUrl,\n  \"priority\": \"normal\",\n  \"data\": { \"reportId\": $json.reportId, \"reportUrl\": $json.reportUrl, \"bookingId\": $json.bookingId }\n}) }}",
+        "sendHeaders": true,
+        "specifyHeaders": "keypair",
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Authorization",
+              "value": "=Bearer {{$env.MEDICZY_INTERNAL_TOKEN}}"
+            }
+          ]
+        }
       },
-      "id": "send-email",
-      "name": "Send Email (Backend)",
+      "id": "notify-patient-report",
+      "name": "Notify Patient (Report Ready)",
       "type": "n8n-nodes-base.httpRequest",
       "typeVersion": 4,
-      "position": [800, 120],
-      "notes": "Requires MEDICZY_BASE_URL and MEDICZY_INTERNAL_TOKEN in n8n env"
-    },
-    {
-      "parameters": {
-        "url": "={{$env.MEDICZY_BASE_URL}}/api/whatsapp-production/send/health-report",
-        "method": "POST",
-        "sendBody": true,
-        "jsonParameters": true,
-        "options": {
-          "timeout": 10000
-        },
-        "bodyParametersJson": "={\n  \"to\": $json[\"toPhone\"],\n  \"patientName\": $json[\"patientName\"]\n}"
-      },
-      "id": "send-whatsapp",
-      "name": "Send WhatsApp (Backend)",
-      "type": "n8n-nodes-base.httpRequest",
-      "typeVersion": 4,
-      "position": [800, 280]
+      "position": [
+        800,
+        200
+      ]
     }
   ],
   "connections": {
@@ -105,12 +103,7 @@
       "main": [
         [
           {
-            "node": "Send Email (Backend)",
-            "type": "main",
-            "index": 0
-          },
-          {
-            "node": "Send WhatsApp (Backend)",
+            "node": "Notify Patient (Report Ready)",
             "type": "main",
             "index": 0
           }

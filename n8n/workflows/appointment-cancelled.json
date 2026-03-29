@@ -1,0 +1,134 @@
+{
+  "name": "Mediczy - Appointment Cancelled",
+  "nodes": [
+    {
+      "parameters": {
+        "path": "appointment-cancelled",
+        "responseMode": "responseNode",
+        "httpMethod": "POST",
+        "options": {}
+      },
+      "id": "appt-cancelled-webhook",
+      "name": "Appointment Cancelled Webhook",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 1,
+      "position": [240, 300],
+      "webhookId": "appointment-cancelled"
+    },
+    {
+      "parameters": {
+        "values": {
+          "string": [
+            { "name": "appointmentId",   "value": "={{$json[\"body\"][\"appointmentId\"]}}" },
+            { "name": "patientId",       "value": "={{$json[\"body\"][\"patientId\"]}}" },
+            { "name": "patientName",     "value": "={{$json[\"body\"][\"patientName\"]}}" },
+            { "name": "patientEmail",    "value": "={{$json[\"body\"][\"patientEmail\"]}}" },
+            { "name": "patientPhone",    "value": "={{$json[\"body\"][\"patientPhone\"]}}" },
+            { "name": "doctorId",        "value": "={{$json[\"body\"][\"doctorId\"]}}" },
+            { "name": "doctorName",      "value": "={{$json[\"body\"][\"doctorName\"]}}" },
+            { "name": "appointmentDate", "value": "={{$json[\"body\"][\"appointmentDate\"]}}" },
+            { "name": "appointmentTime", "value": "={{$json[\"body\"][\"appointmentTime\"]}}" },
+            { "name": "cancelledBy",     "value": "={{$json[\"body\"][\"cancelledBy\"]}}" },
+            { "name": "reason",          "value": "={{$json[\"body\"][\"reason\"] || 'No reason provided'}}" },
+            { "name": "consultationFee", "value": "={{$json[\"body\"][\"consultationFee\"]}}" },
+            {
+              "name": "patientEmailSubject",
+              "value": "=❌ Appointment Cancelled – {{$json[\"body\"][\"appointmentDate\"]}}"
+            },
+            {
+              "name": "patientEmailBody",
+              "value": "=Hi {{$json[\"body\"][\"patientName\"]}},\n\nYour appointment with Dr. {{$json[\"body\"][\"doctorName\"]}} on {{$json[\"body\"][\"appointmentDate\"]}} at {{$json[\"body\"][\"appointmentTime\"]}} has been cancelled.\n\nReason: {{$json[\"body\"][\"reason\"] || 'N/A'}}\nCancelled by: {{$json[\"body\"][\"cancelledBy\"]}}\n\nIf you paid online, your refund will be processed within 5–7 business days.\n\nBooking a new appointment: https://mediqzy.com/appointments\n\nTeam Mediczy"
+            },
+            {
+              "name": "patientWhatsapp",
+              "value": "=❌ Your appointment with Dr. {{$json[\"body\"][\"doctorName\"]}} on {{$json[\"body\"][\"appointmentDate\"]}} has been cancelled. Reason: {{$json[\"body\"][\"reason\"] || 'N/A'}}. Book again at mediqzy.com"
+            },
+            {
+              "name": "doctorEmailSubject",
+              "value": "=📅 Appointment Cancelled – {{$json[\"body\"][\"patientName\"]}} on {{$json[\"body\"][\"appointmentDate\"]}}"
+            },
+            {
+              "name": "doctorEmailBody",
+              "value": "=Dear Dr. {{$json[\"body\"][\"doctorName\"]}},\n\nThe appointment with {{$json[\"body\"][\"patientName\"]}} scheduled for {{$json[\"body\"][\"appointmentDate\"]}} at {{$json[\"body\"][\"appointmentTime\"]}} has been cancelled.\n\nReason: {{$json[\"body\"][\"reason\"] || 'N/A'}}\nCancelled by: {{$json[\"body\"][\"cancelledBy\"]}}\n\nTeam Mediczy"
+            }
+          ]
+        }
+      },
+      "id": "prepare-cancellation",
+      "name": "Prepare Cancellation Messages",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 2,
+      "position": [500, 300]
+    },
+    {
+      "parameters": {
+        "url": "={{$env.MEDICZY_BASE_URL}}/api/notifications/send-internal",
+        "method": "POST",
+        "sendBody": true,
+        "contentType": "json",
+        "specifyBody": "json",
+        "jsonBody": "={{ ({\n  \"userId\": $json.patientId,\n  \"userType\": \"patient\",\n  \"type\": \"appointment_cancelled\",\n  \"channels\": [\"email\", \"whatsapp\", \"in-app\"],\n  \"subject\": $json.patientEmailSubject,\n  \"body\": $json.patientEmailBody,\n  \"whatsappBody\": $json.patientWhatsapp,\n  \"priority\": \"high\",\n  \"data\": { \"appointmentId\": $json.appointmentId, \"cancelledBy\": $json.cancelledBy, \"reason\": $json.reason }\n}) }}",
+        "sendHeaders": true,
+        "specifyHeaders": "keypair",
+        "headerParameters": {
+          "parameters": [{ "name": "Authorization", "value": "=Bearer {{$env.MEDICZY_INTERNAL_TOKEN}}" }]
+        },
+        "options": { "timeout": 10000 }
+      },
+      "id": "notify-patient-cancel",
+      "name": "Notify Patient",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4,
+      "position": [780, 160]
+    },
+    {
+      "parameters": {
+        "url": "={{$env.MEDICZY_BASE_URL}}/api/notifications/send-internal",
+        "method": "POST",
+        "sendBody": true,
+        "contentType": "json",
+        "specifyBody": "json",
+        "jsonBody": "={{ ({\n  \"userId\": $json.doctorId,\n  \"userType\": \"doctor\",\n  \"type\": \"appointment_cancelled\",\n  \"channels\": [\"email\", \"in-app\"],\n  \"subject\": $json.doctorEmailSubject,\n  \"body\": $json.doctorEmailBody,\n  \"priority\": \"normal\",\n  \"data\": { \"appointmentId\": $json.appointmentId, \"patientName\": $json.patientName, \"appointmentDate\": $json.appointmentDate }\n}) }}",
+        "sendHeaders": true,
+        "specifyHeaders": "keypair",
+        "headerParameters": {
+          "parameters": [{ "name": "Authorization", "value": "=Bearer {{$env.MEDICZY_INTERNAL_TOKEN}}" }]
+        },
+        "options": { "timeout": 10000 }
+      },
+      "id": "notify-doctor-cancel",
+      "name": "Notify Doctor",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4,
+      "position": [780, 440]
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={{ JSON.stringify({ success: true, workflow: 'appointment-cancelled' }) }}"
+      },
+      "id": "respond-ok",
+      "name": "Respond OK",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1,
+      "position": [1060, 300]
+    }
+  ],
+  "connections": {
+    "Appointment Cancelled Webhook": {
+      "main": [[{ "node": "Prepare Cancellation Messages", "type": "main", "index": 0 }]]
+    },
+    "Prepare Cancellation Messages": {
+      "main": [
+        [
+          { "node": "Notify Patient", "type": "main", "index": 0 },
+          { "node": "Notify Doctor",  "type": "main", "index": 0 }
+        ]
+      ]
+    },
+    "Notify Patient": { "main": [[{ "node": "Respond OK", "type": "main", "index": 0 }]] },
+    "Notify Doctor":  { "main": [[{ "node": "Respond OK", "type": "main", "index": 0 }]] }
+  },
+  "active": false,
+  "settings": { "executionOrder": "v1" }
+}

@@ -1,0 +1,82 @@
+{
+  "name": "Mediczy - Wearable Data Sync",
+  "nodes": [
+    {
+      "parameters": {
+        "path": "wearable-sync",
+        "responseMode": "responseNode",
+        "httpMethod": "POST",
+        "options": {}
+      },
+      "id": "wearable-webhook",
+      "name": "Wearable Sync Webhook",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 1,
+      "position": [240, 300],
+      "webhookId": "wearable-sync"
+    },
+    {
+      "parameters": {
+        "values": {
+          "string": [
+            { "name": "patientId",   "value": "={{$json[\"body\"][\"patientId\"]}}" },
+            { "name": "deviceType",  "value": "={{$json[\"body\"][\"deviceType\"]}}" },
+            { "name": "dataType",    "value": "={{$json[\"body\"][\"dataType\"]}}" },
+            { "name": "metrics",     "value": "={{JSON.stringify($json[\"body\"][\"metrics\"])}}" },
+            { "name": "syncedAt",    "value": "={{$now}}" }
+          ]
+        }
+      },
+      "id": "prepare-wearable",
+      "name": "Prepare Wearable Data",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 2,
+      "position": [480, 300]
+    },
+    {
+      "parameters": {
+        "url": "={{$env.MEDICZY_BASE_URL}}/api/health-data/wearable-ingest",
+        "method": "POST",
+        "sendBody": true,
+        "contentType": "json",
+        "specifyBody": "json",
+        "jsonBody": "={{ ({\n  \"patientId\": $json.patientId,\n  \"deviceType\": $json.deviceType,\n  \"dataType\": $json.dataType,\n  \"metrics\": JSON.parse($json.metrics),\n  \"syncedAt\": $json.syncedAt,\n  \"source\": \"n8n-wearable-sync\"\n}) }}",
+        "sendHeaders": true,
+        "specifyHeaders": "keypair",
+        "headerParameters": {
+          "parameters": [{ "name": "Authorization", "value": "=Bearer {{$env.MEDICZY_INTERNAL_TOKEN}}" }]
+        },
+        "options": { "timeout": 15000 }
+      },
+      "id": "ingest-wearable-data",
+      "name": "Ingest Wearable Data",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4,
+      "position": [720, 300]
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={{ JSON.stringify({ success: true, workflow: 'wearable-sync', syncedAt: $('Prepare Wearable Data').item.json.syncedAt }) }}"
+      },
+      "id": "respond-ok",
+      "name": "Respond OK",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1,
+      "position": [960, 300]
+    }
+  ],
+  "connections": {
+    "Wearable Sync Webhook": {
+      "main": [[{ "node": "Prepare Wearable Data", "type": "main", "index": 0 }]]
+    },
+    "Prepare Wearable Data": {
+      "main": [[{ "node": "Ingest Wearable Data", "type": "main", "index": 0 }]]
+    },
+    "Ingest Wearable Data": {
+      "main": [[{ "node": "Respond OK", "type": "main", "index": 0 }]]
+    }
+  },
+  "active": false,
+  "settings": { "executionOrder": "v1" }
+}

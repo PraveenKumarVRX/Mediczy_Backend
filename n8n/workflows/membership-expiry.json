@@ -4,38 +4,63 @@
     {
       "parameters": {
         "path": "membership-expiry",
-        "method": "POST",
         "responseMode": "onReceived",
-        "responseData": "allEntries"
+        "responseData": "allEntries",
+        "httpMethod": "POST"
       },
       "id": "membership-expiry-webhook",
       "name": "Membership Expiry Webhook",
       "type": "n8n-nodes-base.webhook",
       "typeVersion": 1,
-      "position": [240, 200]
+      "position": [
+        240,
+        200
+      ],
+      "webhookId": "membership-expiry"
     },
     {
       "parameters": {
         "values": {
           "string": [
-            { "name": "userId",        "value": "={{$json[\"userId\"]}}" },
-            { "name": "userName",      "value": "={{$json[\"userName\"]}}" },
-            { "name": "userEmail",     "value": "={{$json[\"userEmail\"]}}" },
-            { "name": "planName",      "value": "={{$json[\"planName\"]}}" },
-            { "name": "expiryDate",    "value": "={{$json[\"expiryDate\"]}}" },
-            { "name": "daysRemaining", "value": "={{$json[\"daysRemaining\"]}}" },
-            { "name": "autoRenew",     "value": "={{$json[\"autoRenew\"]}}" },
+            {
+              "name": "patientId",
+              "value": "={{$json[\"body\"][\"patientId\"]}}"
+            },
+            {
+              "name": "patientName",
+              "value": "={{$json[\"body\"][\"patientName\"]}}"
+            },
+            {
+              "name": "patientEmail",
+              "value": "={{$json[\"body\"][\"patientEmail\"]}}"
+            },
+            {
+              "name": "planName",
+              "value": "={{$json[\"body\"][\"planName\"]}}"
+            },
+            {
+              "name": "expiresAt",
+              "value": "={{$json[\"body\"][\"expiresAt\"]}}"
+            },
+            {
+              "name": "daysUntilExpiry",
+              "value": "={{$json[\"body\"][\"daysUntilExpiry\"]}}"
+            },
+            {
+              "name": "renewalUrl",
+              "value": "={{$json[\"body\"][\"renewalUrl\"] || '/membership'}}"
+            },
             {
               "name": "emailSubject",
-              "value": "=Your Mediczy Membership Expires in {{$json[\"daysRemaining\"]}} Day(s)"
+              "value": "=Your Mediczy Membership Expires in {{$json[\"body\"][\"daysUntilExpiry\"]}} Day(s)"
             },
             {
               "name": "emailBody",
-              "value": "=Hi {{$json[\"userName\"]}},\n\nYour Mediczy {{$json[\"planName\"]}} membership expires in {{$json[\"daysRemaining\"]}} day(s) on {{$json[\"expiryDate\"]}}.\n\n{{$json[\"autoRenew\"] === 'true' ? 'Auto-renewal is enabled — no action needed.' : 'Renew now to continue enjoying uninterrupted healthcare access.'}}\n\nTeam Mediczy"
+              "value": "=Hi {{$json[\"body\"][\"patientName\"]}},\n\nYour Mediczy {{$json[\"body\"][\"planName\"]}} membership expires in {{$json[\"body\"][\"daysUntilExpiry\"]}} day(s) on {{$json[\"body\"][\"expiresAt\"]}}.\n\nRenew now to continue enjoying uninterrupted healthcare access.\n\nTeam Mediczy"
             },
             {
               "name": "whatsappBody",
-              "value": "=📅 Heads up {{$json[\"userName\"]}}: your Mediczy {{$json[\"planName\"]}} membership expires in {{$json[\"daysRemaining\"]}} day(s) on {{$json[\"expiryDate\"]}}. Renew now!"
+              "value": "=📅 Heads up {{$json[\"body\"][\"patientName\"]}}: your Mediczy {{$json[\"body\"][\"planName\"]}} membership expires in {{$json[\"body\"][\"daysUntilExpiry\"]}} day(s). Renew now!"
             }
           ]
         }
@@ -44,33 +69,69 @@
       "name": "Prepare Message",
       "type": "n8n-nodes-base.set",
       "typeVersion": 2,
-      "position": [500, 200]
+      "position": [
+        500,
+        200
+      ]
     },
     {
       "parameters": {
         "url": "={{$env.MEDICZY_BASE_URL}}/api/notifications/send-internal",
         "method": "POST",
         "sendBody": true,
-        "jsonParameters": true,
-        "options": { "timeout": 10000 },
-        "bodyParametersJson": "={\n  \"userId\": \"{{$json.userId}}\",\n  \"type\": \"membership_expiring\",\n  \"channels\": [\"email\", \"whatsapp\", \"in-app\"],\n  \"subject\": \"{{$json.emailSubject}}\",\n  \"body\": \"{{$json.emailBody}}\",\n  \"whatsappBody\": \"{{$json.whatsappBody}}\",\n  \"data\": { \"planName\": \"{{$json.planName}}\", \"expiryDate\": \"{{$json.expiryDate}}\", \"daysRemaining\": {{$json.daysRemaining}} },\n  \"actionUrl\": \"/membership\"\n}",
-        "headerParametersJson": "={ \"Authorization\": \"Bearer {{$env.MEDICZY_INTERNAL_TOKEN}}\" }"
+        "options": {
+          "timeout": 10000
+        },
+        "contentType": "json",
+        "specifyBody": "json",
+        "jsonBody": "={{ ({\n  \"userId\": $json.patientId,\n  \"type\": \"membership_expiring\",\n  \"channels\": [\"email\", \"whatsapp\", \"in-app\"],\n  \"subject\": $json.emailSubject,\n  \"body\": $json.emailBody,\n  \"whatsappBody\": $json.whatsappBody,\n  \"data\": { \"planName\": $json.planName, \"expiresAt\": $json.expiresAt, \"daysUntilExpiry\": $json.daysUntilExpiry },\n  \"actionUrl\": $json.renewalUrl\n}) }}",
+        "sendHeaders": true,
+        "specifyHeaders": "keypair",
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Authorization",
+              "value": "=Bearer {{$env.MEDICZY_INTERNAL_TOKEN}}"
+            }
+          ]
+        }
       },
       "id": "send-membership-expiry",
       "name": "Send Notification",
       "type": "n8n-nodes-base.httpRequest",
       "typeVersion": 4,
-      "position": [780, 200]
+      "position": [
+        780,
+        200
+      ]
     }
   ],
   "connections": {
     "Membership Expiry Webhook": {
-      "main": [[{ "node": "Prepare Message", "type": "main", "index": 0 }]]
+      "main": [
+        [
+          {
+            "node": "Prepare Message",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
     },
     "Prepare Message": {
-      "main": [[{ "node": "Send Notification", "type": "main", "index": 0 }]]
+      "main": [
+        [
+          {
+            "node": "Send Notification",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
     }
   },
   "active": false,
-  "settings": { "executionOrder": "v1" }
+  "settings": {
+    "executionOrder": "v1"
+  }
 }

@@ -1,0 +1,158 @@
+{
+  "name": "Mediczy - Health Alert Escalation",
+  "nodes": [
+    {
+      "parameters": {
+        "path": "health-alert",
+        "responseMode": "responseNode",
+        "httpMethod": "POST",
+        "options": {}
+      },
+      "id": "health-alert-webhook",
+      "name": "Health Alert Webhook",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 1,
+      "position": [240, 300],
+      "webhookId": "health-alert"
+    },
+    {
+      "parameters": {
+        "values": {
+          "string": [
+            { "name": "alertId",          "value": "={{$json[\"body\"][\"alertId\"]}}" },
+            { "name": "patientId",        "value": "={{$json[\"body\"][\"patientId\"]}}" },
+            { "name": "patientName",      "value": "={{$json[\"body\"][\"patientName\"]}}" },
+            { "name": "patientPhone",     "value": "={{$json[\"body\"][\"patientPhone\"]}}" },
+            { "name": "doctorId",         "value": "={{$json[\"body\"][\"doctorId\"]}}" },
+            { "name": "severity",         "value": "={{$json[\"body\"][\"severity\"]}}" },
+            { "name": "metric",           "value": "={{$json[\"body\"][\"metric\"]}}" },
+            { "name": "value",            "value": "={{$json[\"body\"][\"value\"]}}" },
+            { "name": "threshold",        "value": "={{$json[\"body\"][\"threshold\"]}}" },
+            { "name": "message",          "value": "={{$json[\"body\"][\"message\"]}}" },
+            { "name": "emergencyContact", "value": "={{$json[\"body\"][\"emergencyContact\"]}}" }
+          ]
+        }
+      },
+      "id": "prepare-alert",
+      "name": "Prepare Alert Data",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 2,
+      "position": [480, 300]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "string": [
+            {
+              "value1": "={{$json[\"severity\"]}}",
+              "value2": "critical"
+            }
+          ]
+        }
+      },
+      "id": "check-severity",
+      "name": "Is Critical?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 1,
+      "position": [720, 300]
+    },
+    {
+      "parameters": {
+        "url": "={{$env.MEDICZY_BASE_URL}}/api/notifications/send-internal",
+        "method": "POST",
+        "sendBody": true,
+        "contentType": "json",
+        "specifyBody": "json",
+        "jsonBody": "={{ ({\n  \"userId\": $json.patientId,\n  \"userType\": \"patient\",\n  \"type\": \"health_alert_critical\",\n  \"channels\": [\"whatsapp\", \"sms\", \"in-app\", \"email\"],\n  \"subject\": \"🚨 CRITICAL HEALTH ALERT – Immediate Action Required\",\n  \"body\": \"CRITICAL ALERT for \" + $json.patientName + \": \" + $json.metric + \" value \" + $json.value + \" exceeds safe threshold of \" + $json.threshold + \". \" + $json.message + \" Contact your doctor immediately or call emergency services.\",\n  \"whatsappBody\": \"🚨 CRITICAL: \" + $json.metric + \" = \" + $json.value + \" (threshold: \" + $json.threshold + \"). \" + $json.message + \" Please seek immediate medical attention!\",\n  \"priority\": \"critical\",\n  \"data\": { \"alertId\": $json.alertId, \"severity\": \"critical\", \"metric\": $json.metric, \"value\": $json.value }\n}) }}",
+        "sendHeaders": true,
+        "specifyHeaders": "keypair",
+        "headerParameters": {
+          "parameters": [{ "name": "Authorization", "value": "=Bearer {{$env.MEDICZY_INTERNAL_TOKEN}}" }]
+        },
+        "options": { "timeout": 10000 }
+      },
+      "id": "notify-patient-critical",
+      "name": "Alert Patient (Critical)",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4,
+      "position": [960, 160]
+    },
+    {
+      "parameters": {
+        "url": "={{$env.MEDICZY_BASE_URL}}/api/notifications/send-internal",
+        "method": "POST",
+        "sendBody": true,
+        "contentType": "json",
+        "specifyBody": "json",
+        "jsonBody": "={{ ({\n  \"userId\": $json.doctorId,\n  \"userType\": \"doctor\",\n  \"type\": \"health_alert_critical\",\n  \"channels\": [\"whatsapp\", \"in-app\", \"email\"],\n  \"subject\": \"🚨 CRITICAL: Patient \" + $json.patientName + \" – Immediate Review Required\",\n  \"body\": \"CRITICAL health alert for patient \" + $json.patientName + \": \" + $json.metric + \" = \" + $json.value + \" (threshold: \" + $json.threshold + \"). \" + $json.message,\n  \"whatsappBody\": \"🚨 CRITICAL: \" + $json.patientName + \" has \" + $json.metric + \" = \" + $json.value + \". Immediate review required!\",\n  \"priority\": \"critical\",\n  \"data\": { \"alertId\": $json.alertId, \"patientId\": $json.patientId, \"patientName\": $json.patientName, \"severity\": \"critical\" }\n}) }}",
+        "sendHeaders": true,
+        "specifyHeaders": "keypair",
+        "headerParameters": {
+          "parameters": [{ "name": "Authorization", "value": "=Bearer {{$env.MEDICZY_INTERNAL_TOKEN}}" }]
+        },
+        "options": { "timeout": 10000 }
+      },
+      "id": "notify-doctor-critical",
+      "name": "Alert Doctor (Critical)",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4,
+      "position": [960, 320]
+    },
+    {
+      "parameters": {
+        "url": "={{$env.MEDICZY_BASE_URL}}/api/notifications/send-internal",
+        "method": "POST",
+        "sendBody": true,
+        "contentType": "json",
+        "specifyBody": "json",
+        "jsonBody": "={{ ({\n  \"userId\": $json.patientId,\n  \"userType\": \"patient\",\n  \"type\": \"health_alert\",\n  \"channels\": [\"in-app\", \"email\"],\n  \"subject\": (\"⚠️ Health Alert – \" + $json.metric + \" reading requires attention\"),\n  \"body\": (\"Hi \" + $json.patientName + \", your \" + $json.metric + \" reading of \" + $json.value + \" is outside the normal range (threshold: \" + $json.threshold + \"). \" + $json.message + \" Please consult your doctor.\"),\n  \"priority\": \"high\",\n  \"data\": { \"alertId\": $json.alertId, \"severity\": $json.severity, \"metric\": $json.metric, \"value\": $json.value }\n}) }}",
+        "sendHeaders": true,
+        "specifyHeaders": "keypair",
+        "headerParameters": {
+          "parameters": [{ "name": "Authorization", "value": "=Bearer {{$env.MEDICZY_INTERNAL_TOKEN}}" }]
+        },
+        "options": { "timeout": 10000 }
+      },
+      "id": "notify-patient-normal",
+      "name": "Alert Patient (Non-Critical)",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4,
+      "position": [960, 500]
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={{ JSON.stringify({ success: true, workflow: 'health-alert', severity: $('Prepare Alert Data').item.json.severity }) }}"
+      },
+      "id": "respond-ok",
+      "name": "Respond OK",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1,
+      "position": [1240, 320]
+    }
+  ],
+  "connections": {
+    "Health Alert Webhook": {
+      "main": [[{ "node": "Prepare Alert Data", "type": "main", "index": 0 }]]
+    },
+    "Prepare Alert Data": {
+      "main": [[{ "node": "Is Critical?", "type": "main", "index": 0 }]]
+    },
+    "Is Critical?": {
+      "main": [
+        [
+          { "node": "Alert Patient (Critical)", "type": "main", "index": 0 },
+          { "node": "Alert Doctor (Critical)",  "type": "main", "index": 0 }
+        ],
+        [
+          { "node": "Alert Patient (Non-Critical)", "type": "main", "index": 0 }
+        ]
+      ]
+    },
+    "Alert Patient (Critical)":    { "main": [[{ "node": "Respond OK", "type": "main", "index": 0 }]] },
+    "Alert Doctor (Critical)":     { "main": [[{ "node": "Respond OK", "type": "main", "index": 0 }]] },
+    "Alert Patient (Non-Critical)":{ "main": [[{ "node": "Respond OK", "type": "main", "index": 0 }]] }
+  },
+  "active": false,
+  "settings": { "executionOrder": "v1" }
+}

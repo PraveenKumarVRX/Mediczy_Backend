@@ -1,5 +1,5 @@
 import express from 'express';
-import Appointment from '../../models/appointment.model.intelligent.js';
+import IntelligentAppointment from '../../models/appointment.model.intelligent.js';
 import { queues } from '../../config/queues.js';
 
 const router = express.Router();
@@ -10,6 +10,24 @@ const router = express.Router();
  * These endpoints receive callbacks from n8n workflows
  * after workflow execution or errors.
  */
+
+/**
+ * Verify internal token sent by n8n (MEDICZY_INTERNAL_TOKEN)
+ * GET /health is exempt so monitoring tools can reach it
+ */
+const verifyN8nInternalToken = (req, res, next) => {
+  if (req.method === 'GET' && req.path === '/health') return next();
+  const internalToken = process.env.MEDICZY_INTERNAL_TOKEN;
+  if (!internalToken) return next(); // token not configured → skip check
+  const authHeader = req.headers.authorization || '';
+  const token = authHeader.startsWith('Bearer ') ? authHeader.slice(7) : null;
+  if (!token || token !== internalToken) {
+    return res.status(401).json({ success: false, error: 'Unauthorized: invalid internal token' });
+  }
+  next();
+};
+
+router.use(verifyN8nInternalToken);
 
 /**
  * n8n workflow completion callback
@@ -28,18 +46,24 @@ router.post('/workflow-complete', async (req, res) => {
 
     console.log(`✅ n8n workflow completed: ${workflowName} (${executionId})`);
 
-    // Update appointment if applicable
-    if (data.appointmentId) {
-      await Appointment.findByIdAndUpdate(data.appointmentId, {
-        $set: {
-          'metadata.n8nExecutionId': executionId,
-          'metadata.n8nWorkflowName': workflowName,
-          'metadata.lastN8nUpdate': new Date()
-        },
-        $inc: {
-          'metadata.n8nExecutionCount': 1
-        }
-      });
+    // Update appointment metadata if applicable
+    if (data?.appointmentId) {
+      const appt = await IntelligentAppointment.findByPk(data.appointmentId);
+      if (appt) {
+        const existing = appt.metadata || {};
+        await IntelligentAppointment.update(
+          {
+            metadata: {
+              ...existing,
+              n8nExecutionId: executionId,
+              n8nWorkflowName: workflowName,
+              lastN8nUpdate: new Date().toISOString(),
+              n8nExecutionCount: (existing.n8nExecutionCount ?? 0) + 1,
+            },
+          },
+          { where: { id: data.appointmentId } }
+        ).catch(() => {}); // non-critical
+      }
     }
 
     // Log to analytics queue
@@ -175,12 +199,22 @@ router.post('/payment-retry', async (req, res) => {
 
     // Update appointment payment status if successful
     if (status === 'success' && appointmentId) {
-      await Appointment.findByIdAndUpdate(appointmentId, {
-        paymentStatus: 'completed',
-        'metadata.paymentRetryCount': retryAttempt,
-        'metadata.paymentRetrySuccess': true,
-        'metadata.lastPaymentAttempt': new Date()
-      });
+      const appt = await IntelligentAppointment.findByPk(appointmentId);
+      if (appt) {
+        const existing = appt.metadata || {};
+        await IntelligentAppointment.update(
+          {
+            payment_status: 'completed',
+            metadata: {
+              ...existing,
+              paymentRetryCount: retryAttempt,
+              paymentRetrySuccess: true,
+              lastPaymentAttempt: new Date().toISOString(),
+            },
+          },
+          { where: { id: appointmentId } }
+        ).catch(() => {});
+      }
     }
 
     // Log to analytics

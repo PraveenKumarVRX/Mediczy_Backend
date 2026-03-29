@@ -1,0 +1,85 @@
+{
+  "name": "Mediczy - Prescription Expired Reminder",
+  "nodes": [
+    {
+      "parameters": {
+        "path": "prescription-expired",
+        "responseMode": "responseNode",
+        "httpMethod": "POST",
+        "options": {}
+      },
+      "id": "prescription-expired-webhook",
+      "name": "Prescription Expired Webhook",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 1,
+      "position": [240, 300],
+      "webhookId": "prescription-expired"
+    },
+    {
+      "parameters": {
+        "values": {
+          "string": [
+            { "name": "prescriptionId", "value": "={{$json[\"body\"][\"prescriptionId\"]}}" },
+            { "name": "patientId",      "value": "={{$json[\"body\"][\"patientId\"]}}" },
+            { "name": "patientName",    "value": "={{$json[\"body\"][\"patientName\"]}}" },
+            { "name": "patientEmail",   "value": "={{$json[\"body\"][\"patientEmail\"]}}" },
+            { "name": "patientPhone",   "value": "={{$json[\"body\"][\"patientPhone\"]}}" },
+            { "name": "doctorName",     "value": "={{$json[\"body\"][\"doctorName\"]}}" },
+            { "name": "medications",    "value": "={{$json[\"body\"][\"medications\"]}}" },
+            { "name": "expiredAt",      "value": "={{$json[\"body\"][\"expiredAt\"]}}" }
+          ]
+        }
+      },
+      "id": "prepare-expiry",
+      "name": "Prepare Expiry Data",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 2,
+      "position": [480, 300]
+    },
+    {
+      "parameters": {
+        "url": "={{$env.MEDICZY_BASE_URL}}/api/notifications/send-internal",
+        "method": "POST",
+        "sendBody": true,
+        "contentType": "json",
+        "specifyBody": "json",
+        "jsonBody": "={{ ({\n  \"userId\": $json.patientId,\n  \"userType\": \"patient\",\n  \"type\": \"prescription_expired\",\n  \"channels\": [\"email\", \"whatsapp\", \"in-app\"],\n  \"subject\": \"Your prescription has expired – Renewal required\",\n  \"body\": \"Hi \" + $json.patientName + \", your prescription from Dr. \" + $json.doctorName + \" expired on \" + $json.expiredAt + \". Please book an appointment for a renewal to continue your medications: \" + $json.medications + \".\",\n  \"whatsappBody\": \"Hi \" + $json.patientName + \", your prescription from Dr. \" + $json.doctorName + \" has expired. Please book an appointment to renew it via the Mediczy app.\",\n  \"priority\": \"normal\",\n  \"data\": { \"prescriptionId\": $json.prescriptionId, \"expiredAt\": $json.expiredAt }\n}) }}",
+        "sendHeaders": true,
+        "specifyHeaders": "keypair",
+        "headerParameters": {
+          "parameters": [{ "name": "Authorization", "value": "=Bearer {{$env.MEDICZY_INTERNAL_TOKEN}}" }]
+        },
+        "options": { "timeout": 10000 }
+      },
+      "id": "notify-patient-expiry",
+      "name": "Notify Patient – Renewal Reminder",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4,
+      "position": [720, 300]
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={{ JSON.stringify({ success: true, workflow: 'prescription-expired' }) }}"
+      },
+      "id": "respond-ok",
+      "name": "Respond OK",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1,
+      "position": [960, 300]
+    }
+  ],
+  "connections": {
+    "Prescription Expired Webhook": {
+      "main": [[{ "node": "Prepare Expiry Data", "type": "main", "index": 0 }]]
+    },
+    "Prepare Expiry Data": {
+      "main": [[{ "node": "Notify Patient – Renewal Reminder", "type": "main", "index": 0 }]]
+    },
+    "Notify Patient – Renewal Reminder": {
+      "main": [[{ "node": "Respond OK", "type": "main", "index": 0 }]]
+    }
+  },
+  "active": false,
+  "settings": { "executionOrder": "v1" }
+}

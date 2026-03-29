@@ -1,0 +1,107 @@
+{
+  "name": "Mediczy - Doctor Onboarding",
+  "nodes": [
+    {
+      "parameters": {
+        "path": "doctor-onboarding",
+        "responseMode": "responseNode",
+        "httpMethod": "POST",
+        "options": {}
+      },
+      "id": "doctor-onboarding-webhook",
+      "name": "Doctor Onboarding Webhook",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 1,
+      "position": [240, 300],
+      "webhookId": "doctor-onboarding"
+    },
+    {
+      "parameters": {
+        "values": {
+          "string": [
+            { "name": "doctorId",       "value": "={{$json[\"body\"][\"doctorId\"]}}" },
+            { "name": "doctorName",     "value": "={{$json[\"body\"][\"doctorName\"]}}" },
+            { "name": "email",          "value": "={{$json[\"body\"][\"email\"]}}" },
+            { "name": "phone",          "value": "={{$json[\"body\"][\"phone\"]}}" },
+            { "name": "specialization", "value": "={{$json[\"body\"][\"specialization\"]}}" },
+            { "name": "licenseNumber",  "value": "={{$json[\"body\"][\"licenseNumber\"]}}" },
+            { "name": "status",         "value": "={{$json[\"body\"][\"status\"]}}" }
+          ]
+        }
+      },
+      "id": "prepare-onboarding",
+      "name": "Prepare Onboarding Data",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 2,
+      "position": [480, 300]
+    },
+    {
+      "parameters": {
+        "url": "={{$env.MEDICZY_BASE_URL}}/api/notifications/send-internal",
+        "method": "POST",
+        "sendBody": true,
+        "contentType": "json",
+        "specifyBody": "json",
+        "jsonBody": "={{ ({\n  \"userId\": $json.doctorId,\n  \"userType\": \"doctor\",\n  \"type\": \"doctor_welcome\",\n  \"channels\": [\"email\", \"whatsapp\", \"in-app\"],\n  \"subject\": \"Welcome to Mediczy, Dr. \" + $json.doctorName + \"!\",\n  \"body\": \"Welcome to Mediczy, Dr. \" + $json.doctorName + \"! Your registration has been received and is under review. Your license number \" + $json.licenseNumber + \" will be verified by our team within 24-48 hours. Once approved you can start accepting appointments. If you have questions please contact support.\",\n  \"whatsappBody\": \"Welcome to Mediczy, Dr. \" + $json.doctorName + \"! 🎉 Your account is under verification. We'll notify you once approved.\",\n  \"priority\": \"normal\",\n  \"data\": { \"doctorId\": $json.doctorId, \"licenseNumber\": $json.licenseNumber, \"specialization\": $json.specialization }\n}) }}",
+        "sendHeaders": true,
+        "specifyHeaders": "keypair",
+        "headerParameters": {
+          "parameters": [{ "name": "Authorization", "value": "=Bearer {{$env.MEDICZY_INTERNAL_TOKEN}}" }]
+        },
+        "options": { "timeout": 10000 }
+      },
+      "id": "notify-doctor-welcome",
+      "name": "Send Doctor Welcome",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4,
+      "position": [720, 180]
+    },
+    {
+      "parameters": {
+        "url": "={{$env.MEDICZY_BASE_URL}}/api/notifications/send-internal",
+        "method": "POST",
+        "sendBody": true,
+        "contentType": "json",
+        "specifyBody": "json",
+        "jsonBody": "={{ ({\n  \"userType\": \"admin\",\n  \"type\": \"new_doctor_registration\",\n  \"channels\": [\"email\", \"in-app\"],\n  \"subject\": \"New Doctor Registration – Verification Required: Dr. \" + $json.doctorName,\n  \"body\": \"A new doctor has registered on Mediczy and requires verification.\\n\\nName: Dr. \" + $json.doctorName + \"\\nSpecialization: \" + $json.specialization + \"\\nLicense: \" + $json.licenseNumber + \"\\nEmail: \" + $json.email + \"\\n\\nPlease log in to the admin panel to review and approve this registration.\",\n  \"priority\": \"high\",\n  \"data\": { \"doctorId\": $json.doctorId, \"licenseNumber\": $json.licenseNumber, \"status\": $json.status }\n}) }}",
+        "sendHeaders": true,
+        "specifyHeaders": "keypair",
+        "headerParameters": {
+          "parameters": [{ "name": "Authorization", "value": "=Bearer {{$env.MEDICZY_INTERNAL_TOKEN}}" }]
+        },
+        "options": { "timeout": 10000 }
+      },
+      "id": "notify-admin",
+      "name": "Notify Admin – New Doctor",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4,
+      "position": [720, 420]
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={{ JSON.stringify({ success: true, workflow: 'doctor-onboarding' }) }}"
+      },
+      "id": "respond-ok",
+      "name": "Respond OK",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1,
+      "position": [960, 300]
+    }
+  ],
+  "connections": {
+    "Doctor Onboarding Webhook": {
+      "main": [[{ "node": "Prepare Onboarding Data", "type": "main", "index": 0 }]]
+    },
+    "Prepare Onboarding Data": {
+      "main": [[
+        { "node": "Send Doctor Welcome",     "type": "main", "index": 0 },
+        { "node": "Notify Admin – New Doctor", "type": "main", "index": 0 }
+      ]]
+    },
+    "Send Doctor Welcome":      { "main": [[{ "node": "Respond OK", "type": "main", "index": 0 }]] },
+    "Notify Admin – New Doctor":{ "main": [[{ "node": "Respond OK", "type": "main", "index": 0 }]] }
+  },
+  "active": false,
+  "settings": { "executionOrder": "v1" }
+}

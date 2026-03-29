@@ -4,33 +4,59 @@
     {
       "parameters": {
         "path": "webinar-reminder",
-        "method": "POST",
         "responseMode": "onReceived",
-        "responseData": "allEntries"
+        "responseData": "allEntries",
+        "httpMethod": "POST"
       },
       "id": "webinar-reminder-webhook",
       "name": "Webinar Reminder Webhook",
       "type": "n8n-nodes-base.webhook",
       "typeVersion": 1,
-      "position": [240, 200]
+      "position": [
+        240,
+        200
+      ],
+      "webhookId": "webinar-reminder"
     },
     {
       "parameters": {
         "values": {
           "string": [
-            { "name": "webinarId",    "value": "={{$json[\"webinarId\"]}}" },
-            { "name": "webinarTitle", "value": "={{$json[\"webinarTitle\"]}}" },
-            { "name": "scheduledAt",  "value": "={{$json[\"scheduledAt\"]}}" },
-            { "name": "reminderType", "value": "={{$json[\"reminderType\"]}}" },
-            { "name": "hostName",     "value": "={{$json[\"hostName\"]}}" },
-            { "name": "joinUrl",      "value": "={{$json[\"joinUrl\"]}}" },
+            {
+              "name": "adminEmail",
+              "value": "={{$json[\"body\"][\"adminEmail\"] || 'admin@mediczy.com'}}"
+            },
+            {
+              "name": "webinarId",
+              "value": "={{$json[\"body\"][\"webinarId\"]}}"
+            },
+            {
+              "name": "webinarTitle",
+              "value": "={{$json[\"body\"][\"webinarTitle\"]}}"
+            },
+            {
+              "name": "scheduledAt",
+              "value": "={{$json[\"body\"][\"scheduledAt\"]}}"
+            },
+            {
+              "name": "reminderType",
+              "value": "={{$json[\"body\"][\"reminderType\"]}}"
+            },
+            {
+              "name": "hostName",
+              "value": "={{$json[\"body\"][\"hostName\"]}}"
+            },
+            {
+              "name": "joinUrl",
+              "value": "={{$json[\"body\"][\"joinUrl\"]}}"
+            },
             {
               "name": "emailSubject",
-              "value": "=Webinar Reminder – {{$json[\"webinarTitle\"]}} ({{$json[\"reminderType\"]}})"
+              "value": "=Webinar Reminder – {{$json[\"body\"][\"webinarTitle\"]}} ({{$json[\"body\"][\"reminderType\"]}})"
             },
             {
               "name": "emailBody",
-              "value": "=Your webinar \"{{$json[\"webinarTitle\"]}}\" hosted by {{$json[\"hostName\"]}} is coming up!\n\nScheduled: {{$json[\"scheduledAt\"]}}\nReminder: {{$json[\"reminderType\"]}}\n\nJoin here: {{$json[\"joinUrl\"]}}\n\nTeam Mediczy"
+              "value": "=Your webinar \"{{$json[\"body\"][\"webinarTitle\"]}}\" hosted by {{$json[\"body\"][\"hostName\"]}} is coming up!\n\nScheduled: {{$json[\"body\"][\"scheduledAt\"]}}\nReminder: {{$json[\"body\"][\"reminderType\"]}}\n\nJoin here: {{$json[\"body\"][\"joinUrl\"]}}\n\nTeam Mediczy"
             }
           ]
         }
@@ -39,33 +65,69 @@
       "name": "Prepare Message",
       "type": "n8n-nodes-base.set",
       "typeVersion": 2,
-      "position": [500, 200]
+      "position": [
+        500,
+        200
+      ]
     },
     {
       "parameters": {
         "url": "={{$env.MEDICZY_BASE_URL}}/api/notifications/send-internal",
         "method": "POST",
         "sendBody": true,
-        "jsonParameters": true,
-        "options": { "timeout": 10000 },
-        "bodyParametersJson": "={\n  \"type\": \"webinar_reminder\",\n  \"channels\": [\"email\", \"in-app\"],\n  \"subject\": \"{{$json.emailSubject}}\",\n  \"body\": \"{{$json.emailBody}}\",\n  \"data\": { \"webinarId\": \"{{$json.webinarId}}\", \"reminderType\": \"{{$json.reminderType}}\", \"joinUrl\": \"{{$json.joinUrl}}\" }\n}",
-        "headerParametersJson": "={ \"Authorization\": \"Bearer {{$env.MEDICZY_INTERNAL_TOKEN}}\" }"
+        "options": {
+          "timeout": 10000
+        },
+        "contentType": "json",
+        "specifyBody": "json",
+        "jsonBody": "={{ ({\n  \"adminEmail\": $json.adminEmail,\n  \"type\": \"webinar_reminder\",\n  \"channels\": [\"email\", \"in-app\"],\n  \"subject\": $json.emailSubject,\n  \"body\": $json.emailBody,\n  \"data\": { \"webinarId\": $json.webinarId, \"reminderType\": $json.reminderType, \"joinUrl\": $json.joinUrl }\n}) }}",
+        "sendHeaders": true,
+        "specifyHeaders": "keypair",
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Authorization",
+              "value": "=Bearer {{$env.MEDICZY_INTERNAL_TOKEN}}"
+            }
+          ]
+        }
       },
       "id": "send-webinar-reminder",
       "name": "Send Notification",
       "type": "n8n-nodes-base.httpRequest",
       "typeVersion": 4,
-      "position": [780, 200]
+      "position": [
+        780,
+        200
+      ]
     }
   ],
   "connections": {
     "Webinar Reminder Webhook": {
-      "main": [[{ "node": "Prepare Message", "type": "main", "index": 0 }]]
+      "main": [
+        [
+          {
+            "node": "Prepare Message",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
     },
     "Prepare Message": {
-      "main": [[{ "node": "Send Notification", "type": "main", "index": 0 }]]
+      "main": [
+        [
+          {
+            "node": "Send Notification",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
     }
   },
   "active": false,
-  "settings": { "executionOrder": "v1" }
+  "settings": {
+    "executionOrder": "v1"
+  }
 }

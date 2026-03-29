@@ -103,7 +103,8 @@ class N8NService {
    */
   async appointmentReminder(appointmentData, reminderType) {
     return this.trigger('appointment-reminder', {
-      appointmentId: appointmentData.id,
+      appointmentId: appointmentData.appointmentId || appointmentData.id,
+      patientId: appointmentData.patientId || appointmentData.userId,
       patientName: appointmentData.patientName,
       patientEmail: appointmentData.patientEmail,
       patientPhone: appointmentData.patientPhone,
@@ -111,7 +112,7 @@ class N8NService {
       appointmentDate: appointmentData.appointmentDate,
       appointmentTime: appointmentData.appointmentTime,
       consultationType: appointmentData.consultationType,
-      reminderType: reminderType, // '24h', '1h', '15min'
+      reminderType: reminderType || appointmentData.reminderType, // '24h', '1h', '15min'
       timestamp: new Date().toISOString()
     });
   }
@@ -121,15 +122,18 @@ class N8NService {
    */
   async appointmentCancelled(appointmentData, cancelledBy, reason) {
     return this.trigger('appointment-cancelled', {
-      appointmentId: appointmentData.id,
+      appointmentId: appointmentData.appointmentId || appointmentData.id,
+      patientId: appointmentData.patientId || appointmentData.userId,
       patientName: appointmentData.patientName,
       patientEmail: appointmentData.patientEmail,
       patientPhone: appointmentData.patientPhone,
+      doctorId: appointmentData.doctorId,
       doctorName: appointmentData.doctorName,
       appointmentDate: appointmentData.appointmentDate,
       appointmentTime: appointmentData.appointmentTime,
-      cancelledBy: cancelledBy, // 'patient' or 'doctor'
-      reason: reason,
+      consultationFee: appointmentData.consultationFee,
+      cancelledBy: cancelledBy || appointmentData.cancelledBy, // 'patient' or 'doctor'
+      reason: reason || appointmentData.reason,
       timestamp: new Date().toISOString()
     });
   }
@@ -181,15 +185,16 @@ class N8NService {
    */
   async paymentFailed(paymentData) {
     return this.trigger('payment-failed', {
-      paymentId: paymentData.id,
+      paymentId: paymentData.paymentId || paymentData.id,
       appointmentId: paymentData.appointmentId,
-      patientId: paymentData.userId,
+      patientId: paymentData.patientId || paymentData.userId,
       patientName: paymentData.patientName,
       patientEmail: paymentData.patientEmail,
       patientPhone: paymentData.patientPhone,
+      invoiceId: paymentData.invoiceId || paymentData.paymentId || paymentData.id,
       amount: paymentData.amount,
       currency: paymentData.currency || 'INR',
-      reason: paymentData.failureReason,
+      reason: paymentData.failureReason || paymentData.reason,
       attemptCount: paymentData.attemptCount || 1,
       timestamp: new Date().toISOString()
     });
@@ -200,11 +205,14 @@ class N8NService {
    */
   async paymentSuccess(paymentData) {
     return this.trigger('payment-success', {
-      paymentId: paymentData.id,
+      paymentId: paymentData.paymentId || paymentData.id,
       appointmentId: paymentData.appointmentId,
+      patientId: paymentData.patientId || paymentData.userId,
       patientName: paymentData.patientName,
       patientEmail: paymentData.patientEmail,
       patientPhone: paymentData.patientPhone,
+      invoiceId: paymentData.invoiceId || paymentData.paymentId || paymentData.id,
+      transactionId: paymentData.transactionId || paymentData.razorpayPaymentId || paymentData.paymentId || paymentData.id,
       amount: paymentData.amount,
       currency: paymentData.currency || 'INR',
       timestamp: new Date().toISOString()
@@ -348,8 +356,18 @@ class N8NService {
    * Trigger daily report workflow
    */
   async generateDailyReport(reportDate) {
+    const reportPayload = typeof reportDate === 'object' && reportDate !== null
+      ? reportDate
+      : { date: reportDate };
+
     return this.trigger('daily-report', {
-      reportDate: reportDate,
+      date: reportPayload.date || reportPayload.reportDate,
+      totalAppointments: reportPayload.totalAppointments || 0,
+      completedAppointments: reportPayload.completedAppointments || 0,
+      newPatients: reportPayload.newPatients || 0,
+      revenue: reportPayload.revenue || 0,
+      pendingPayments: reportPayload.pendingPayments || 0,
+      adminEmail: reportPayload.adminEmail || process.env.ADMIN_EMAIL || 'admin@mediczy.com',
       timestamp: new Date().toISOString()
     });
   }
@@ -359,10 +377,53 @@ class N8NService {
    */
   async systemAlert(alertData) {
     return this.trigger('system-alert', {
-      alertType: alertData.type,
+      alertType: alertData.alertType || alertData.type,
       severity: alertData.severity,
       message: alertData.message,
+      service: alertData.service || alertData.source || 'mediczy-server',
+      adminEmail: alertData.adminEmail || process.env.ADMIN_EMAIL || 'admin@mediczy.com',
       details: alertData.details,
+      timestamp: alertData.timestamp || new Date().toISOString()
+    });
+  }
+
+  // ============================================
+  // MEMBERSHIP WORKFLOWS
+  // ============================================
+
+  /**
+   * Trigger membership expiry workflow
+   * Notifies patient and prompts renewal
+   */
+  async membershipExpiry(membershipData, daysUntilExpiry) {
+    return this.trigger('membership-expiry', {
+      memberId: membershipData.id,
+      patientId: membershipData.userId,
+      patientName: membershipData.patientName,
+      patientEmail: membershipData.patientEmail,
+      patientPhone: membershipData.patientPhone,
+      planName: membershipData.planName,
+      expiresAt: membershipData.expiresAt,
+      daysUntilExpiry: daysUntilExpiry,
+      renewalUrl: membershipData.renewalUrl || '/membership',
+      timestamp: new Date().toISOString()
+    });
+  }
+
+  /**
+   * Trigger prescription expired workflow
+   * Sends renewal reminder to patient
+   */
+  async prescriptionExpired(prescriptionData) {
+    return this.trigger('prescription-expired', {
+      prescriptionId: prescriptionData.id,
+      patientId: prescriptionData.patientId,
+      patientName: prescriptionData.patientName,
+      patientEmail: prescriptionData.patientEmail,
+      patientPhone: prescriptionData.patientPhone,
+      doctorName: prescriptionData.doctorName,
+      medications: prescriptionData.medications,
+      expiredAt: prescriptionData.expiredAt,
       timestamp: new Date().toISOString()
     });
   }
@@ -393,12 +454,12 @@ class N8NService {
    * Get workflow execution stats (if n8n API is accessible)
    */
   async getStats() {
-    // This would require n8n API credentials
-    // For now, return placeholder
+    const health = await this.healthCheck();
     return {
       enabled: this.enabled,
       baseURL: this.baseURL,
-      message: 'Stats available in n8n UI'
+      n8nAvailable: health.available,
+      message: health.available ? 'n8n is running' : (health.reason || health.error || 'n8n unavailable')
     };
   }
 }

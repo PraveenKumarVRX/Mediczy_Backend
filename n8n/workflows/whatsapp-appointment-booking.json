@@ -1,0 +1,108 @@
+{
+  "name": "Mediczy - WhatsApp Appointment Booking",
+  "nodes": [
+    {
+      "parameters": {
+        "path": "whatsapp-appointment-booking",
+        "responseMode": "responseNode",
+        "httpMethod": "POST",
+        "options": {}
+      },
+      "id": "whatsapp-booking-webhook",
+      "name": "WhatsApp Booking Webhook",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 1,
+      "position": [240, 300],
+      "webhookId": "whatsapp-appointment-booking"
+    },
+    {
+      "parameters": {
+        "values": {
+          "string": [
+            { "name": "userId",         "value": "={{$json[\"body\"][\"userId\"]}}" },
+            { "name": "patientName",    "value": "={{$json[\"body\"][\"patientName\"]}}" },
+            { "name": "patientPhone",   "value": "={{$json[\"body\"][\"patientPhone\"]}}" },
+            { "name": "patientEmail",   "value": "={{$json[\"body\"][\"patientEmail\"]}}" },
+            { "name": "specialistType", "value": "={{$json[\"body\"][\"specialistType\"]}}" },
+            { "name": "bookingType",    "value": "={{$json[\"body\"][\"bookingType\"]}}" },
+            { "name": "source",         "value": "={{$json[\"body\"][\"source\"]}}" },
+            { "name": "timestamp",      "value": "={{$json[\"body\"][\"timestamp\"]}}" }
+          ]
+        }
+      },
+      "id": "prepare-booking",
+      "name": "Prepare Booking Data",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 2,
+      "position": [480, 300]
+    },
+    {
+      "parameters": {
+        "url": "={{$env.MEDICZY_BASE_URL}}/api/appointments/whatsapp-initiate",
+        "method": "POST",
+        "sendBody": true,
+        "contentType": "json",
+        "specifyBody": "json",
+        "jsonBody": "={{ ({\n  \"userId\": $json.userId,\n  \"specialistType\": $json.specialistType,\n  \"bookingType\": $json.bookingType,\n  \"source\": \"whatsapp\",\n  \"patientPhone\": $json.patientPhone,\n  \"timestamp\": $json.timestamp\n}) }}",
+        "sendHeaders": true,
+        "specifyHeaders": "keypair",
+        "headerParameters": {
+          "parameters": [{ "name": "Authorization", "value": "=Bearer {{$env.MEDICZY_INTERNAL_TOKEN}}" }]
+        },
+        "options": { "timeout": 10000 }
+      },
+      "id": "initiate-booking",
+      "name": "Initiate Booking via API",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4,
+      "position": [720, 180]
+    },
+    {
+      "parameters": {
+        "url": "={{$env.MEDICZY_BASE_URL}}/api/notifications/send-internal",
+        "method": "POST",
+        "sendBody": true,
+        "contentType": "json",
+        "specifyBody": "json",
+        "jsonBody": "={{ ({\n  \"userId\": $('Prepare Booking Data').item.json.userId,\n  \"userType\": \"patient\",\n  \"type\": \"whatsapp_booking_received\",\n  \"channels\": [\"whatsapp\", \"in-app\"],\n  \"subject\": \"Appointment booking request received\",\n  \"whatsappBody\": \"📅 Hi \" + $('Prepare Booking Data').item.json.patientName + \", we've received your appointment request for a \" + $('Prepare Booking Data').item.json.specialistType + \". We're finding available slots for you. You'll receive a confirmation shortly via the Mediczy app.\",\n  \"priority\": \"normal\",\n  \"data\": {\n    \"specialistType\": $('Prepare Booking Data').item.json.specialistType,\n    \"bookingType\": $('Prepare Booking Data').item.json.bookingType,\n    \"source\": \"whatsapp\",\n    \"timestamp\": $('Prepare Booking Data').item.json.timestamp\n  }\n}) }}",
+        "sendHeaders": true,
+        "specifyHeaders": "keypair",
+        "headerParameters": {
+          "parameters": [{ "name": "Authorization", "value": "=Bearer {{$env.MEDICZY_INTERNAL_TOKEN}}" }]
+        },
+        "options": { "timeout": 10000 }
+      },
+      "id": "confirm-via-whatsapp",
+      "name": "Send WhatsApp Confirmation",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4,
+      "position": [720, 420]
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={{ JSON.stringify({ success: true, workflow: 'whatsapp-appointment-booking' }) }}"
+      },
+      "id": "respond-ok",
+      "name": "Respond OK",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1,
+      "position": [960, 300]
+    }
+  ],
+  "connections": {
+    "WhatsApp Booking Webhook": {
+      "main": [[{ "node": "Prepare Booking Data", "type": "main", "index": 0 }]]
+    },
+    "Prepare Booking Data": {
+      "main": [[
+        { "node": "Initiate Booking via API",    "type": "main", "index": 0 },
+        { "node": "Send WhatsApp Confirmation",  "type": "main", "index": 0 }
+      ]]
+    },
+    "Initiate Booking via API":   { "main": [[{ "node": "Respond OK", "type": "main", "index": 0 }]] },
+    "Send WhatsApp Confirmation":  { "main": [[{ "node": "Respond OK", "type": "main", "index": 0 }]] }
+  },
+  "active": false,
+  "settings": { "executionOrder": "v1" }
+}

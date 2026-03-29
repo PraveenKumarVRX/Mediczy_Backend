@@ -4,32 +4,51 @@
     {
       "parameters": {
         "path": "payment-success",
-        "method": "POST",
         "responseMode": "onReceived",
-        "responseData": "allEntries"
+        "responseData": "allEntries",
+        "httpMethod": "POST"
       },
       "id": "pay-success-webhook",
       "name": "Payment Success Webhook",
       "type": "n8n-nodes-base.webhook",
       "typeVersion": 1,
-      "position": [240, 200]
+      "position": [
+        240,
+        200
+      ],
+      "webhookId": "payment-success"
     },
     {
       "parameters": {
         "values": {
           "string": [
-            { "name": "patientId",     "value": "={{$json[\"patientId\"]}}" },
-            { "name": "patientName",   "value": "={{$json[\"patientName\"]}}" },
-            { "name": "invoiceId",     "value": "={{$json[\"invoiceId\"]}}" },
-            { "name": "amount",        "value": "={{$json[\"amount\"]}}" },
-            { "name": "transactionId", "value": "={{$json[\"transactionId\"]}}" },
+            {
+              "name": "patientId",
+              "value": "={{$json[\"body\"][\"patientId\"]}}"
+            },
+            {
+              "name": "patientName",
+              "value": "={{$json[\"body\"][\"patientName\"]}}"
+            },
+            {
+              "name": "invoiceId",
+              "value": "={{$json[\"body\"][\"invoiceId\"]}}"
+            },
+            {
+              "name": "amount",
+              "value": "={{$json[\"body\"][\"amount\"]}}"
+            },
+            {
+              "name": "transactionId",
+              "value": "={{$json[\"body\"][\"transactionId\"]}}"
+            },
             {
               "name": "emailSubject",
               "value": "Payment Received – Thank You!"
             },
             {
               "name": "emailBody",
-              "value": "=Hi {{$json[\"patientName\"]}},\n\nWe have successfully received your payment of ₹{{$json[\"amount\"]}}.\n\nTransaction ID: {{$json[\"transactionId\"]}}\n\nThank you for using Mediczy!\n\nTeam Mediczy"
+              "value": "=Hi {{$json[\"body\"][\"patientName\"]}},\n\nWe have successfully received your payment of ₹{{$json[\"body\"][\"amount\"]}}.\n\nTransaction ID: {{$json[\"body\"][\"transactionId\"]}}\n\nThank you for using Mediczy!\n\nTeam Mediczy"
             }
           ]
         }
@@ -38,33 +57,69 @@
       "name": "Prepare Message",
       "type": "n8n-nodes-base.set",
       "typeVersion": 2,
-      "position": [500, 200]
+      "position": [
+        500,
+        200
+      ]
     },
     {
       "parameters": {
         "url": "={{$env.MEDICZY_BASE_URL}}/api/notifications/send-internal",
         "method": "POST",
         "sendBody": true,
-        "jsonParameters": true,
-        "options": { "timeout": 10000 },
-        "bodyParametersJson": "={\n  \"userId\": \"{{$json.patientId}}\",\n  \"type\": \"payment_success\",\n  \"channels\": [\"email\", \"in-app\"],\n  \"subject\": \"{{$json.emailSubject}}\",\n  \"body\": \"{{$json.emailBody}}\",\n  \"data\": { \"invoiceId\": \"{{$json.invoiceId}}\", \"amount\": {{$json.amount}}, \"transactionId\": \"{{$json.transactionId}}\" },\n  \"actionUrl\": \"/billing\"\n}",
-        "headerParametersJson": "={ \"Authorization\": \"Bearer {{$env.MEDICZY_INTERNAL_TOKEN}}\" }"
+        "options": {
+          "timeout": 10000
+        },
+        "contentType": "json",
+        "specifyBody": "json",
+        "jsonBody": "={{ ({\n  \"userId\": $json.patientId,\n  \"type\": \"payment_success\",\n  \"channels\": [\"email\", \"in-app\"],\n  \"subject\": $json.emailSubject,\n  \"body\": $json.emailBody,\n  \"data\": { \"invoiceId\": $json.invoiceId, \"amount\": $json.amount, \"transactionId\": $json.transactionId },\n  \"actionUrl\": \"/billing\"\n}) }}",
+        "sendHeaders": true,
+        "specifyHeaders": "keypair",
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Authorization",
+              "value": "=Bearer {{$env.MEDICZY_INTERNAL_TOKEN}}"
+            }
+          ]
+        }
       },
       "id": "send-pay-success",
       "name": "Send Notification",
       "type": "n8n-nodes-base.httpRequest",
       "typeVersion": 4,
-      "position": [780, 200]
+      "position": [
+        780,
+        200
+      ]
     }
   ],
   "connections": {
     "Payment Success Webhook": {
-      "main": [[{ "node": "Prepare Message", "type": "main", "index": 0 }]]
+      "main": [
+        [
+          {
+            "node": "Prepare Message",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
     },
     "Prepare Message": {
-      "main": [[{ "node": "Send Notification", "type": "main", "index": 0 }]]
+      "main": [
+        [
+          {
+            "node": "Send Notification",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
     }
   },
   "active": false,
-  "settings": { "executionOrder": "v1" }
+  "settings": {
+    "executionOrder": "v1"
+  }
 }

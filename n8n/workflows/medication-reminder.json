@@ -4,32 +4,55 @@
     {
       "parameters": {
         "path": "medication-reminder",
-        "method": "POST",
         "responseMode": "onReceived",
-        "responseData": "allEntries"
+        "responseData": "allEntries",
+        "httpMethod": "POST"
       },
       "id": "med-reminder-webhook",
       "name": "Medication Reminder Webhook",
       "type": "n8n-nodes-base.webhook",
       "typeVersion": 1,
-      "position": [240, 200]
+      "position": [
+        240,
+        200
+      ],
+      "webhookId": "medication-reminder"
     },
     {
       "parameters": {
         "values": {
           "string": [
-            { "name": "userId",          "value": "={{$json[\"userId\"]}}" },
-            { "name": "medicationName",  "value": "={{$json[\"medicationName\"]}}" },
-            { "name": "dosage",          "value": "={{$json[\"dosage\"]}}" },
-            { "name": "frequency",       "value": "={{$json[\"frequency\"]}}" },
-            { "name": "nextDoseTime",    "value": "={{$json[\"nextDoseTime\"]}}" },
+            {
+              "name": "patientId",
+              "value": "={{$json[\"body\"][\"patientId\"]}}"
+            },
+            {
+              "name": "patientName",
+              "value": "={{$json[\"body\"][\"patientName\"]}}"
+            },
+            {
+              "name": "medicationName",
+              "value": "={{$json[\"body\"][\"medicationName\"]}}"
+            },
+            {
+              "name": "dosage",
+              "value": "={{$json[\"body\"][\"dosage\"]}}"
+            },
+            {
+              "name": "frequency",
+              "value": "={{$json[\"body\"][\"frequency\"]}}"
+            },
+            {
+              "name": "timeOfDay",
+              "value": "={{$json[\"body\"][\"timeOfDay\"]}}"
+            },
             {
               "name": "whatsappBody",
-              "value": "=💊 Medication Reminder: Time to take {{$json[\"medicationName\"]}} ({{$json[\"dosage\"]}}) – {{$json[\"frequency\"]}} dose. Next dose: {{$json[\"nextDoseTime\"]}}."
+              "value": "=💊 Medication Reminder: Time to take {{$json[\"body\"][\"medicationName\"]}} ({{$json[\"body\"][\"dosage\"]}}) – {{$json[\"body\"][\"frequency\"]}} dose. Scheduled for: {{$json[\"body\"][\"timeOfDay\"]}}."
             },
             {
               "name": "pushBody",
-              "value": "=Time to take {{$json[\"medicationName\"]}} – {{$json[\"dosage\"]}}"
+              "value": "=Time to take {{$json[\"body\"][\"medicationName\"]}} – {{$json[\"body\"][\"dosage\"]}}"
             }
           ]
         }
@@ -38,33 +61,69 @@
       "name": "Prepare Message",
       "type": "n8n-nodes-base.set",
       "typeVersion": 2,
-      "position": [500, 200]
+      "position": [
+        500,
+        200
+      ]
     },
     {
       "parameters": {
         "url": "={{$env.MEDICZY_BASE_URL}}/api/notifications/send-internal",
         "method": "POST",
         "sendBody": true,
-        "jsonParameters": true,
-        "options": { "timeout": 10000 },
-        "bodyParametersJson": "={\n  \"userId\": \"{{$json.userId}}\",\n  \"type\": \"medication_reminder\",\n  \"channels\": [\"whatsapp\", \"in-app\", \"push\"],\n  \"body\": \"{{$json.whatsappBody}}\",\n  \"data\": { \"medicationName\": \"{{$json.medicationName}}\", \"dosage\": \"{{$json.dosage}}\", \"nextDoseTime\": \"{{$json.nextDoseTime}}\" }\n}",
-        "headerParametersJson": "={ \"Authorization\": \"Bearer {{$env.MEDICZY_INTERNAL_TOKEN}}\" }"
+        "options": {
+          "timeout": 10000
+        },
+        "contentType": "json",
+        "specifyBody": "json",
+        "jsonBody": "={{ ({\n  \"userId\": $json.patientId,\n  \"type\": \"medication_reminder\",\n  \"channels\": [\"whatsapp\", \"in-app\", \"push\"],\n  \"body\": $json.whatsappBody,\n  \"data\": { \"medicationName\": $json.medicationName, \"dosage\": $json.dosage, \"timeOfDay\": $json.timeOfDay }\n}) }}",
+        "sendHeaders": true,
+        "specifyHeaders": "keypair",
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Authorization",
+              "value": "=Bearer {{$env.MEDICZY_INTERNAL_TOKEN}}"
+            }
+          ]
+        }
       },
       "id": "send-med-reminder",
       "name": "Send Notification",
       "type": "n8n-nodes-base.httpRequest",
       "typeVersion": 4,
-      "position": [780, 200]
+      "position": [
+        780,
+        200
+      ]
     }
   ],
   "connections": {
     "Medication Reminder Webhook": {
-      "main": [[{ "node": "Prepare Message", "type": "main", "index": 0 }]]
+      "main": [
+        [
+          {
+            "node": "Prepare Message",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
     },
     "Prepare Message": {
-      "main": [[{ "node": "Send Notification", "type": "main", "index": 0 }]]
+      "main": [
+        [
+          {
+            "node": "Send Notification",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
     }
   },
   "active": false,
-  "settings": { "executionOrder": "v1" }
+  "settings": {
+    "executionOrder": "v1"
+  }
 }

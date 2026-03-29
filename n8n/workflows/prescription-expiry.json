@@ -4,33 +4,55 @@
     {
       "parameters": {
         "path": "prescription-expiry",
-        "method": "POST",
         "responseMode": "onReceived",
-        "responseData": "allEntries"
+        "responseData": "allEntries",
+        "httpMethod": "POST"
       },
       "id": "rx-expiry-webhook",
       "name": "Prescription Expiry Webhook",
       "type": "n8n-nodes-base.webhook",
       "typeVersion": 1,
-      "position": [240, 200]
+      "position": [
+        240,
+        200
+      ],
+      "webhookId": "prescription-expiry"
     },
     {
       "parameters": {
         "values": {
           "string": [
-            { "name": "patientId",        "value": "={{$json[\"patientId\"]}}" },
-            { "name": "patientName",      "value": "={{$json[\"patientName\"]}}" },
-            { "name": "doctorName",       "value": "={{$json[\"doctorName\"]}}" },
-            { "name": "daysBeforeExpiry", "value": "={{$json[\"daysBeforeExpiry\"]}}" },
-            { "name": "expiryDate",       "value": "={{$json[\"expiryDate\"]}}" },
-            { "name": "prescriptionId",   "value": "={{$json[\"prescriptionId\"]}}" },
+            {
+              "name": "patientId",
+              "value": "={{$json[\"body\"][\"patientId\"]}}"
+            },
+            {
+              "name": "patientName",
+              "value": "={{$json[\"body\"][\"patientName\"]}}"
+            },
+            {
+              "name": "doctorName",
+              "value": "={{$json[\"body\"][\"doctorName\"]}}"
+            },
+            {
+              "name": "daysBeforeExpiry",
+              "value": "={{$json[\"body\"][\"daysBeforeExpiry\"]}}"
+            },
+            {
+              "name": "expiryDate",
+              "value": "={{$json[\"body\"][\"expiryDate\"]}}"
+            },
+            {
+              "name": "prescriptionId",
+              "value": "={{$json[\"body\"][\"prescriptionId\"]}}"
+            },
             {
               "name": "emailSubject",
-              "value": "=Your prescription expires in {{$json[\"daysBeforeExpiry\"]}} day(s)"
+              "value": "=Your prescription expires in {{$json[\"body\"][\"daysBeforeExpiry\"]}} day(s)"
             },
             {
               "name": "emailBody",
-              "value": "=Hi {{$json[\"patientName\"]}},\n\nYour prescription (issued by Dr. {{$json[\"doctorName\"]}}) is expiring in {{$json[\"daysBeforeExpiry\"]}} day(s) on {{$json[\"expiryDate\"]}}.\n\nPlease book a follow-up consultation to renew your prescription.\n\nTeam Mediczy"
+              "value": "=Hi {{$json[\"body\"][\"patientName\"]}},\n\nYour prescription (issued by Dr. {{$json[\"body\"][\"doctorName\"]}}) is expiring in {{$json[\"body\"][\"daysBeforeExpiry\"]}} day(s) on {{$json[\"body\"][\"expiryDate\"]}}.\n\nPlease book a follow-up consultation to renew your prescription.\n\nTeam Mediczy"
             }
           ]
         }
@@ -39,33 +61,69 @@
       "name": "Prepare Message",
       "type": "n8n-nodes-base.set",
       "typeVersion": 2,
-      "position": [500, 200]
+      "position": [
+        500,
+        200
+      ]
     },
     {
       "parameters": {
         "url": "={{$env.MEDICZY_BASE_URL}}/api/notifications/send-internal",
         "method": "POST",
         "sendBody": true,
-        "jsonParameters": true,
-        "options": { "timeout": 10000 },
-        "bodyParametersJson": "={\n  \"userId\": \"{{$json.patientId}}\",\n  \"type\": \"prescription_expiring_soon\",\n  \"channels\": [\"email\", \"in-app\"],\n  \"subject\": \"{{$json.emailSubject}}\",\n  \"body\": \"{{$json.emailBody}}\",\n  \"data\": { \"prescriptionId\": \"{{$json.prescriptionId}}\", \"daysBeforeExpiry\": {{$json.daysBeforeExpiry}}, \"expiryDate\": \"{{$json.expiryDate}}\" },\n  \"actionUrl\": \"/book-appointment\"\n}",
-        "headerParametersJson": "={ \"Authorization\": \"Bearer {{$env.MEDICZY_INTERNAL_TOKEN}}\" }"
+        "options": {
+          "timeout": 10000
+        },
+        "contentType": "json",
+        "specifyBody": "json",
+        "jsonBody": "={{ ({\n  \"userId\": $json.patientId,\n  \"type\": \"prescription_expiring_soon\",\n  \"channels\": [\"email\", \"in-app\"],\n  \"subject\": $json.emailSubject,\n  \"body\": $json.emailBody,\n  \"data\": { \"prescriptionId\": $json.prescriptionId, \"daysBeforeExpiry\": $json.daysBeforeExpiry, \"expiryDate\": $json.expiryDate },\n  \"actionUrl\": \"/book-appointment\"\n}) }}",
+        "sendHeaders": true,
+        "specifyHeaders": "keypair",
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Authorization",
+              "value": "=Bearer {{$env.MEDICZY_INTERNAL_TOKEN}}"
+            }
+          ]
+        }
       },
       "id": "send-rx-expiry",
       "name": "Send Notification",
       "type": "n8n-nodes-base.httpRequest",
       "typeVersion": 4,
-      "position": [780, 200]
+      "position": [
+        780,
+        200
+      ]
     }
   ],
   "connections": {
     "Prescription Expiry Webhook": {
-      "main": [[{ "node": "Prepare Message", "type": "main", "index": 0 }]]
+      "main": [
+        [
+          {
+            "node": "Prepare Message",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
     },
     "Prepare Message": {
-      "main": [[{ "node": "Send Notification", "type": "main", "index": 0 }]]
+      "main": [
+        [
+          {
+            "node": "Send Notification",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
     }
   },
   "active": false,
-  "settings": { "executionOrder": "v1" }
+  "settings": {
+    "executionOrder": "v1"
+  }
 }

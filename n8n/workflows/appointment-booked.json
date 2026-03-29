@@ -1,0 +1,133 @@
+{
+  "name": "Mediczy - Appointment Booked",
+  "nodes": [
+    {
+      "parameters": {
+        "path": "appointment-booked",
+        "responseMode": "responseNode",
+        "httpMethod": "POST",
+        "options": {}
+      },
+      "id": "appt-booked-webhook",
+      "name": "Appointment Booked Webhook",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 1,
+      "position": [240, 300],
+      "webhookId": "appointment-booked"
+    },
+    {
+      "parameters": {
+        "values": {
+          "string": [
+            { "name": "appointmentId",   "value": "={{$json[\"body\"][\"appointmentId\"]}}" },
+            { "name": "patientId",       "value": "={{$json[\"body\"][\"patientId\"]}}" },
+            { "name": "patientName",     "value": "={{$json[\"body\"][\"patientName\"]}}" },
+            { "name": "patientEmail",    "value": "={{$json[\"body\"][\"patientEmail\"]}}" },
+            { "name": "patientPhone",    "value": "={{$json[\"body\"][\"patientPhone\"]}}" },
+            { "name": "doctorId",        "value": "={{$json[\"body\"][\"doctorId\"]}}" },
+            { "name": "doctorName",      "value": "={{$json[\"body\"][\"doctorName\"]}}" },
+            { "name": "appointmentDate", "value": "={{$json[\"body\"][\"appointmentDate\"]}}" },
+            { "name": "appointmentTime", "value": "={{$json[\"body\"][\"appointmentTime\"]}}" },
+            { "name": "consultationType","value": "={{$json[\"body\"][\"consultationType\"]}}" },
+            { "name": "consultationFee", "value": "={{$json[\"body\"][\"consultationFee\"]}}" },
+            {
+              "name": "patientEmailSubject",
+              "value": "=✅ Appointment Confirmed – {{$json[\"body\"][\"appointmentDate\"]}} at {{$json[\"body\"][\"appointmentTime\"]}}"
+            },
+            {
+              "name": "patientEmailBody",
+              "value": "=Hi {{$json[\"body\"][\"patientName\"]}},\n\nYour appointment has been confirmed!\n\n📅 Date: {{$json[\"body\"][\"appointmentDate\"]}}\n🕐 Time: {{$json[\"body\"][\"appointmentTime\"]}}\n👨‍⚕️ Doctor: Dr. {{$json[\"body\"][\"doctorName\"]}}\n💻 Type: {{$json[\"body\"][\"consultationType\"]}}\n💰 Fee: ₹{{$json[\"body\"][\"consultationFee\"]}}\n\nYou will receive a reminder 24h and 1h before your appointment.\n\nTeam Mediczy"
+            },
+            {
+              "name": "patientWhatsapp",
+              "value": "=✅ Appointment confirmed with Dr. {{$json[\"body\"][\"doctorName\"]}} on {{$json[\"body\"][\"appointmentDate\"]}} at {{$json[\"body\"][\"appointmentTime\"]}}. Fee: ₹{{$json[\"body\"][\"consultationFee\"]}}. See you soon! – Team Mediczy"
+            },
+            {
+              "name": "doctorEmailSubject",
+              "value": "=📅 New Appointment – {{$json[\"body\"][\"patientName\"]}} on {{$json[\"body\"][\"appointmentDate\"]}}"
+            },
+            {
+              "name": "doctorEmailBody",
+              "value": "=Dear Dr. {{$json[\"body\"][\"doctorName\"]}},\n\nA new appointment has been booked.\n\n👤 Patient: {{$json[\"body\"][\"patientName\"]}}\n📅 Date: {{$json[\"body\"][\"appointmentDate\"]}}\n🕐 Time: {{$json[\"body\"][\"appointmentTime\"]}}\n💻 Type: {{$json[\"body\"][\"consultationType\"]}}\n\nPlease log in to Mediczy to view details.\n\nTeam Mediczy"
+            }
+          ]
+        }
+      },
+      "id": "prepare-appt-booked",
+      "name": "Prepare Messages",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 2,
+      "position": [500, 300]
+    },
+    {
+      "parameters": {
+        "url": "={{$env.MEDICZY_BASE_URL}}/api/notifications/send-internal",
+        "method": "POST",
+        "sendBody": true,
+        "contentType": "json",
+        "specifyBody": "json",
+        "jsonBody": "={{ ({\n  \"userId\": $json.patientId,\n  \"userType\": \"patient\",\n  \"type\": \"appointment_booked\",\n  \"channels\": [\"email\", \"whatsapp\", \"in-app\"],\n  \"subject\": $json.patientEmailSubject,\n  \"body\": $json.patientEmailBody,\n  \"whatsappBody\": $json.patientWhatsapp,\n  \"priority\": \"high\",\n  \"data\": { \"appointmentId\": $json.appointmentId, \"doctorName\": $json.doctorName, \"appointmentDate\": $json.appointmentDate, \"appointmentTime\": $json.appointmentTime }\n}) }}",
+        "sendHeaders": true,
+        "specifyHeaders": "keypair",
+        "headerParameters": {
+          "parameters": [{ "name": "Authorization", "value": "=Bearer {{$env.MEDICZY_INTERNAL_TOKEN}}" }]
+        },
+        "options": { "timeout": 10000 }
+      },
+      "id": "notify-patient",
+      "name": "Notify Patient",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4,
+      "position": [780, 180]
+    },
+    {
+      "parameters": {
+        "url": "={{$env.MEDICZY_BASE_URL}}/api/notifications/send-internal",
+        "method": "POST",
+        "sendBody": true,
+        "contentType": "json",
+        "specifyBody": "json",
+        "jsonBody": "={{ ({\n  \"userId\": $json.doctorId,\n  \"userType\": \"doctor\",\n  \"type\": \"new_appointment\",\n  \"channels\": [\"email\", \"in-app\"],\n  \"subject\": $json.doctorEmailSubject,\n  \"body\": $json.doctorEmailBody,\n  \"priority\": \"normal\",\n  \"data\": { \"appointmentId\": $json.appointmentId, \"patientName\": $json.patientName, \"appointmentDate\": $json.appointmentDate, \"appointmentTime\": $json.appointmentTime }\n}) }}",
+        "sendHeaders": true,
+        "specifyHeaders": "keypair",
+        "headerParameters": {
+          "parameters": [{ "name": "Authorization", "value": "=Bearer {{$env.MEDICZY_INTERNAL_TOKEN}}" }]
+        },
+        "options": { "timeout": 10000 }
+      },
+      "id": "notify-doctor",
+      "name": "Notify Doctor",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4,
+      "position": [780, 420]
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={{ JSON.stringify({ success: true, workflow: 'appointment-booked', appointmentId: $('Prepare Messages').item.json.appointmentId }) }}"
+      },
+      "id": "respond-ok",
+      "name": "Respond OK",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1,
+      "position": [1060, 300]
+    }
+  ],
+  "connections": {
+    "Appointment Booked Webhook": {
+      "main": [[{ "node": "Prepare Messages", "type": "main", "index": 0 }]]
+    },
+    "Prepare Messages": {
+      "main": [
+        [
+          { "node": "Notify Patient", "type": "main", "index": 0 },
+          { "node": "Notify Doctor",  "type": "main", "index": 0 }
+        ]
+      ]
+    },
+    "Notify Patient":  { "main": [[{ "node": "Respond OK", "type": "main", "index": 0 }]] },
+    "Notify Doctor":   { "main": [[{ "node": "Respond OK", "type": "main", "index": 0 }]] }
+  },
+  "active": false,
+  "settings": { "executionOrder": "v1" }
+}

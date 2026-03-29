@@ -1,0 +1,95 @@
+{
+  "name": "Mediczy - Prescription Issued",
+  "nodes": [
+    {
+      "parameters": {
+        "path": "prescription-issued",
+        "responseMode": "responseNode",
+        "httpMethod": "POST",
+        "options": {}
+      },
+      "id": "rx-issued-webhook",
+      "name": "Prescription Issued Webhook",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 1,
+      "position": [240, 300],
+      "webhookId": "prescription-issued"
+    },
+    {
+      "parameters": {
+        "values": {
+          "string": [
+            { "name": "prescriptionId",    "value": "={{$json[\"body\"][\"prescriptionId\"]}}" },
+            { "name": "patientId",         "value": "={{$json[\"body\"][\"patientId\"]}}" },
+            { "name": "patientName",       "value": "={{$json[\"body\"][\"patientName\"]}}" },
+            { "name": "patientEmail",      "value": "={{$json[\"body\"][\"patientEmail\"]}}" },
+            { "name": "patientPhone",      "value": "={{$json[\"body\"][\"patientPhone\"]}}" },
+            { "name": "doctorName",        "value": "={{$json[\"body\"][\"doctorName\"]}}" },
+            { "name": "instructions",      "value": "={{$json[\"body\"][\"instructions\"] || 'Follow as directed'}}" },
+            { "name": "pharmacyPreference","value": "={{$json[\"body\"][\"pharmacyPreference\"] || 'any'}}" },
+            {
+              "name": "emailSubject",
+              "value": "=💊 Your Prescription from Dr. {{$json[\"body\"][\"doctorName\"]}} is Ready"
+            },
+            {
+              "name": "emailBody",
+              "value": "=Hi {{$json[\"body\"][\"patientName\"]}},\n\nDr. {{$json[\"body\"][\"doctorName\"]}} has issued a prescription for you.\n\n📋 Instructions: {{$json[\"body\"][\"instructions\"] || 'Follow as directed'}}\n\nYou can view and download your prescription in the Mediczy app under My Prescriptions.\n\n⚠️  Please follow the dosage instructions carefully and complete your full course of medication.\n\nIf you have any questions, please contact your doctor through the Mediczy app.\n\nTeam Mediczy"
+            },
+            {
+              "name": "whatsappBody",
+              "value": "=💊 Your prescription from Dr. {{$json[\"body\"][\"doctorName\"]}} is ready on the Mediczy app. Follow instructions: {{$json[\"body\"][\"instructions\"] || 'as directed'}}."
+            }
+          ]
+        }
+      },
+      "id": "prepare-rx",
+      "name": "Prepare Prescription Notification",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 2,
+      "position": [500, 300]
+    },
+    {
+      "parameters": {
+        "url": "={{$env.MEDICZY_BASE_URL}}/api/notifications/send-internal",
+        "method": "POST",
+        "sendBody": true,
+        "contentType": "json",
+        "specifyBody": "json",
+        "jsonBody": "={{ ({\n  \"userId\": $json.patientId,\n  \"userType\": \"patient\",\n  \"type\": \"prescription_issued\",\n  \"channels\": [\"email\", \"whatsapp\", \"in-app\"],\n  \"subject\": $json.emailSubject,\n  \"body\": $json.emailBody,\n  \"whatsappBody\": $json.whatsappBody,\n  \"priority\": \"high\",\n  \"data\": { \"prescriptionId\": $json.prescriptionId, \"doctorName\": $json.doctorName },\n  \"actionUrl\": \"/prescriptions\"\n}) }}",
+        "sendHeaders": true,
+        "specifyHeaders": "keypair",
+        "headerParameters": {
+          "parameters": [{ "name": "Authorization", "value": "=Bearer {{$env.MEDICZY_INTERNAL_TOKEN}}" }]
+        },
+        "options": { "timeout": 10000 }
+      },
+      "id": "notify-patient-rx",
+      "name": "Notify Patient",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4,
+      "position": [780, 300]
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={{ JSON.stringify({ success: true, workflow: 'prescription-issued', prescriptionId: $('Prepare Prescription Notification').item.json.prescriptionId }) }}"
+      },
+      "id": "respond-ok",
+      "name": "Respond OK",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1,
+      "position": [1060, 300]
+    }
+  ],
+  "connections": {
+    "Prescription Issued Webhook": {
+      "main": [[{ "node": "Prepare Prescription Notification", "type": "main", "index": 0 }]]
+    },
+    "Prepare Prescription Notification": {
+      "main": [[{ "node": "Notify Patient", "type": "main", "index": 0 }]]
+    },
+    "Notify Patient": { "main": [[{ "node": "Respond OK", "type": "main", "index": 0 }]] }
+  },
+  "active": false,
+  "settings": { "executionOrder": "v1" }
+}

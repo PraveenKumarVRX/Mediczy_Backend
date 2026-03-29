@@ -578,6 +578,8 @@ const PUBLIC_ENDPOINTS = [
   '/api/cdss/knowledge/stats', // Knowledge base statistics
   '/api/cdss/knowledge/sources', // Available knowledge sources
   '/api/public/', // Public signed-token download endpoints (report PDFs, etc.)
+  '/api/notifications/send-internal', // n8n internal workflow notification endpoint (token-auth at route level)
+  '/api/webhooks/n8n-callback/', // n8n workflow callbacks (server-to-server, token-auth at route level)
 ];
 
 /**

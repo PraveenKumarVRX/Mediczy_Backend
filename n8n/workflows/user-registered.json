@@ -4,40 +4,44 @@
     {
       "parameters": {
         "path": "user-registered",
-        "method": "POST",
         "responseMode": "onReceived",
-        "responseData": "allEntries"
+        "responseData": "allEntries",
+        "httpMethod": "POST"
       },
       "id": "user-registered-webhook",
       "name": "User Registered Webhook",
       "type": "n8n-nodes-base.webhook",
       "typeVersion": 1,
-      "position": [240, 200],
-      "notes": "Trigger: POST /webhook/user-registered"
+      "position": [
+        240,
+        200
+      ],
+      "notes": "Trigger: POST /webhook/user-registered",
+      "webhookId": "user-registered"
     },
     {
       "parameters": {
         "values": {
           "string": [
             {
-              "name": "toEmail",
-              "value": "={{$json[\"email\"]}}"
+              "name": "userId",
+              "value": "={{$json[\"body\"][\"userId\"]}}"
             },
             {
-              "name": "toPhone",
-              "value": "={{$json[\"phone\"]}}"
+              "name": "userType",
+              "value": "={{$json[\"body\"][\"userType\"] || 'patient'}}"
             },
             {
-              "name": "emailSubject",
-              "value": "Welcome to Mediczy"
+              "name": "userName",
+              "value": "={{$json[\"body\"][\"name\"]}}"
             },
             {
-              "name": "emailBody",
-              "value": "Hi {{$json[\"name\"] || 'there'}}, your account is ready."
+              "name": "userEmail",
+              "value": "={{$json[\"body\"][\"email\"]}}"
             },
             {
               "name": "whatsappBody",
-              "value": "Welcome to Mediczy, {{$json[\"name\"] || 'there'}}. Your account is ready."
+              "value": "=Welcome to Mediczy, {{$json[\"body\"][\"name\"] || 'there'}}! Your account is ready. Start your health journey today."
             }
           ]
         }
@@ -46,41 +50,41 @@
       "name": "Prepare Message",
       "type": "n8n-nodes-base.set",
       "typeVersion": 2,
-      "position": [520, 200]
+      "position": [
+        520,
+        200
+      ]
     },
     {
       "parameters": {
-        "url": "={{$env.MEDICZY_BASE_URL}}/api/communication/email/send",
+        "url": "={{$env.MEDICZY_BASE_URL}}/api/notifications/send-internal",
         "method": "POST",
         "sendBody": true,
-        "jsonParameters": true,
         "options": {
           "timeout": 10000
         },
-        "bodyParametersJson": "={\n  \"to\": $json[\"toEmail\"],\n  \"subject\": $json[\"emailSubject\"],\n  \"html\": $json[\"emailBody\"]\n}",
-        "headerParametersJson": "={\n  \"Authorization\": \"Bearer {{$env.MEDICZY_INTERNAL_TOKEN}}\"\n}"
+        "contentType": "json",
+        "specifyBody": "json",
+        "jsonBody": "={{ ({\n  \"userId\": $json.userId,\n  \"userType\": $json.userType,\n  \"type\": \"welcome\",\n  \"channels\": [\"email\", \"whatsapp\", \"in-app\"],\n  \"subject\": \"Welcome to Mediczy!\",\n  \"body\": \"Hi \" + $json.userName + \", welcome to Mediczy! Your account is ready. Start booking appointments, tracking your health, and consulting our AI Doctor today.\",\n  \"whatsappBody\": $json.whatsappBody,\n  \"priority\": \"normal\",\n  \"data\": { \"userId\": $json.userId, \"userType\": $json.userType }\n}) }}",
+        "sendHeaders": true,
+        "specifyHeaders": "keypair",
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Authorization",
+              "value": "=Bearer {{$env.MEDICZY_INTERNAL_TOKEN}}"
+            }
+          ]
+        }
       },
-      "id": "send-email",
-      "name": "Send Email (Backend)",
+      "id": "send-welcome",
+      "name": "Send Welcome Notification",
       "type": "n8n-nodes-base.httpRequest",
       "typeVersion": 4,
-      "position": [800, 120],
-      "notes": "Requires MEDICZY_BASE_URL and MEDICZY_INTERNAL_TOKEN in n8n env"
-    },
-    {
-      "parameters": {
-        "resource": "message",
-        "operation": "send",
-        "from": "={{$env.TWILIO_WHATSAPP_NUMBER}}",
-        "to": "={{$json[\"toPhone\"]}}",
-        "message": "={{$json[\"whatsappBody\"]}}"
-      },
-      "id": "send-whatsapp",
-      "name": "Send WhatsApp (Twilio)",
-      "type": "n8n-nodes-base.twilio",
-      "typeVersion": 1,
-      "position": [800, 280],
-      "notes": "Requires Twilio credentials in n8n"
+      "position": [
+        800,
+        200
+      ]
     }
   ],
   "connections": {
@@ -99,12 +103,7 @@
       "main": [
         [
           {
-            "node": "Send Email (Backend)",
-            "type": "main",
-            "index": 0
-          },
-          {
-            "node": "Send WhatsApp (Twilio)",
+            "node": "Send Welcome Notification",
             "type": "main",
             "index": 0
           }
