@@ -3,6 +3,7 @@ import { Prescription } from '../models/index.js';
 import notificationService from './notification.service.js';
 import { Op } from 'sequelize';
 import { tick, tickError } from '../utils/cronRegistry.js';
+import n8nService from './n8n.service.js';
 
 /**
  * Prescription Expiry Alert Service
@@ -201,6 +202,15 @@ class PrescriptionExpiryService {
     const patientId = prescription.patientId || prescription.userId;
     const doctorName = prescription.doctorName || 'your doctor';
 
+    n8nService.trigger('prescription-expiry', {
+      prescriptionId: prescription.prescriptionId,
+      patientId,
+      patientName,
+      doctorName,
+      daysBeforeExpiry,
+      expiryDate: expiryDate instanceof Date ? expiryDate.toISOString() : expiryDate,
+    }).catch(() => {});
+
     await notificationService.send({
       userId: patientId,
       userType: 'patient',
@@ -233,6 +243,13 @@ class PrescriptionExpiryService {
     const patientName = prescription.patientName || 'Patient';
     const patientId = prescription.patientId || prescription.userId;
     const doctorName = prescription.doctorName || 'your doctor';
+
+    n8nService.trigger('prescription-expired', {
+      prescriptionId: prescription.prescriptionId,
+      patientId,
+      patientName,
+      doctorName,
+    }).catch(() => {});
 
     await notificationService.send({
       userId: patientId,

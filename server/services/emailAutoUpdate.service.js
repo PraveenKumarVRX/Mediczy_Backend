@@ -5,6 +5,22 @@
 
 import { postgresSequelize } from '../db/postgres-sequelize.js';
 import { Op } from 'sequelize';
+import nodemailer from 'nodemailer';
+import whatsappProductionService from './whatsapp-production.service.js';
+
+// Shared SMTP transporter (lazy singleton)
+let _smtpTransporter = null;
+function getSmtpTransporter() {
+  if (!_smtpTransporter) {
+    _smtpTransporter = nodemailer.createTransport({
+      host: process.env.SMTP_HOST,
+      port: parseInt(process.env.SMTP_PORT || '465'),
+      secure: parseInt(process.env.SMTP_PORT || '465') === 465,
+      auth: { user: process.env.SMTP_USER, pass: process.env.SMTP_PASSWORD },
+    });
+  }
+  return _smtpTransporter;
+}
 
 export async function autoUpdatePortal(email, aiAnalysis) {
   const updates = [];
@@ -50,66 +66,223 @@ export async function autoUpdatePortal(email, aiAnalysis) {
 }
 
 /**
- * Handle appointment request emails
+ * Handle appointment request emails — full pipeline:
+ *  1. Send acknowledgement email immediately
+ *  2. Look up / update patient details in DB
+ *  3. Book appointment (appointments table, status=pending)
+ *  4. Send booking confirmation via email + WhatsApp
  */
 async function handleAppointmentRequest(email, aiAnalysis) {
   const updates = [];
 
   try {
-    // Extract patient name and preferred date from email
+    // ── Extract key fields ──────────────────────────────────────────────────
+    const senderEmail = parseSenderEmail(email.from);
     const patientName = aiAnalysis.entities?.patientName || extractNameFromEmail(email.from);
-    const preferredDate = aiAnalysis.entities?.date || extractDateFromText(email.body);
+    const rawDate     = aiAnalysis.entities?.date || extractDateFromText(email.body || email.htmlBody || '');
+    const phone       = aiAnalysis.entities?.phone || extractPhoneFromText(email.body || '');
 
-    // Search for matching patient appointments or create inquiry
-    if (patientName && preferredDate) {
-      // Create appointment inquiry record
-      const [appointmentInquiry, created] = await postgresSequelize.query(`
-        INSERT INTO appointment_inquiries (
-          email, 
-          patient_name, 
-          preferred_date, 
-          status, 
-          source, 
-          team_member_id, 
-          created_at
-        )
-        VALUES (
-          :email,
-          :patientName,
-          :preferredDate,
-          'pending',
-          'email',
-          :teamMemberId,
-          NOW()
-        )
-        ON CONFLICT DO NOTHING
-        RETURNING id
-      `, {
-        replacements: {
-          email: email.from,
-          patientName,
-          preferredDate,
-          teamMemberId: email.teamMemberId
-        }
-      });
+    // Compute appointment date: use extracted date or next business day
+    let appointmentDate = rawDate ? new Date(rawDate) : null;
+    if (!appointmentDate || isNaN(appointmentDate.getTime())) {
+      // Default: next weekday at 10:00 AM
+      appointmentDate = nextBusinessDay();
+    }
+    const apptDateStr = appointmentDate.toISOString().slice(0, 10);   // YYYY-MM-DD
+    const apptTime    = '10:00:00';
+    const apptDateTimeISO = `${apptDateStr}T${apptTime}`;
+    const displayDate = appointmentDate.toLocaleDateString('en-IN', { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' });
 
-      if (created) {
-        updates.push({
-          type: 'appointment_inquiry',
-          action: 'created',
-          details: {
-            patientName,
-            preferredDate
-          },
-          timestamp: new Date()
+    // ── Step 1: Send acknowledgement email immediately ──────────────────────
+    if (senderEmail) {
+      try {
+        await getSmtpTransporter().sendMail({
+          from: `"Mediqzy Care" <${process.env.SMTP_USER}>`,
+          to: senderEmail,
+          subject: `We received your health checkup request — SmartHealth`,
+          html: `
+            <div style="font-family:Arial,sans-serif;max-width:600px;margin:0 auto;padding:20px;">
+              <div style="background:linear-gradient(135deg,#0ea5e9,#6366f1);padding:30px;text-align:center;border-radius:12px 12px 0 0;">
+                <h1 style="color:#fff;margin:0;font-size:20px;">Request Received ✅</h1>
+              </div>
+              <div style="background:#f8fafc;padding:30px;border:1px solid #e2e8f0;border-radius:0 0 12px 12px;">
+                <p style="font-size:16px;color:#334155;">Dear <strong>${patientName}</strong>,</p>
+                <p style="color:#475569;">Thank you for reaching out! We have received your health checkup appointment request and our team is reviewing it.</p>
+                <p style="color:#475569;">We will confirm your appointment details within <strong>24 hours</strong>. If you have any urgent queries, please reply to this email.</p>
+                <hr style="border:none;border-top:1px solid #e2e8f0;margin:20px 0;">
+                <p style="color:#94a3b8;font-size:12px;text-align:center;">Team Mediqzy &nbsp;|&nbsp; support@mediqzy.com</p>
+              </div>
+            </div>`,
         });
+        console.log(`[autoUpdate] Acknowledgement email sent to ${senderEmail}`);
+        updates.push({ type: 'ack_email_sent', action: 'sent', details: { to: senderEmail }, timestamp: new Date() });
+      } catch (ackErr) {
+        console.warn(`[autoUpdate] Ack email failed: ${ackErr.message}`);
       }
     }
+
+    // ── Step 2: Look up / update patient in users table ────────────────────
+    let user = null;
+    if (senderEmail) {
+      const [[found]] = await postgresSequelize.query(
+        `SELECT id, "firstName", "lastName", email, "phoneNumber" FROM users WHERE LOWER(email) = LOWER(:email) LIMIT 1`,
+        { replacements: { email: senderEmail } }
+      );
+      user = found || null;
+    }
+
+    // Update phone number if we extracted one and user lacks it
+    if (user && phone && !user.phoneNumber) {
+      await postgresSequelize.query(
+        `UPDATE users SET "phoneNumber" = :phone, "updatedAt" = NOW() WHERE id = :id`,
+        { replacements: { phone, id: user.id } }
+      );
+      user.phoneNumber = phone;
+      updates.push({ type: 'patient_phone_updated', action: 'updated', details: { userId: user.id, phone }, timestamp: new Date() });
+    }
+
+    // ── Step 3: Save to appointment_inquiries & book appointment ───────────
+    // Each write is independent — a FK miss on inquiry won't block the appointment record
+    try {
+      await postgresSequelize.query(
+        `INSERT INTO appointment_inquiries
+           (email_id, patient_name, patient_email, preferred_date, status, notes, created_at, updated_at)
+         VALUES
+           (:emailId, :patientName, :patientEmail, :preferredDate, 'scheduled', :notes, NOW(), NOW())
+         ON CONFLICT DO NOTHING`,
+        {
+          replacements: {
+            emailId:       email.id,
+            patientName,
+            patientEmail:  senderEmail || '',
+            preferredDate: apptDateStr,
+            notes:         `Auto-booked from inbound email. Subject: ${email.subject}`,
+          },
+        }
+      );
+    } catch (iqErr) {
+      console.warn(`[autoUpdate] appointment_inquiries insert skipped: ${iqErr.message}`);
+    }
+
+    // Insert into appointments table
+    let appointmentId = null;
+    try {
+      const [[newAppt]] = await postgresSequelize.query(
+        `INSERT INTO appointments
+           ("patientName", "patientEmail", "patientPhone",
+            "doctorName", "appointmentDate", "appointmentTime", "appointmentDateTime",
+            "consultationType", status, reason, notes,
+            "userId", "createdAt", "updatedAt")
+         VALUES
+           (:patientName, :patientEmail, :patientPhone,
+            'To be assigned', :appointmentDate, :appointmentTime, :appointmentDateTime,
+            'in-person', 'pending', :reason, :notes,
+            :userId, NOW(), NOW())
+         RETURNING id`,
+        {
+          replacements: {
+            patientName,
+            patientEmail:        senderEmail || '',
+            patientPhone:        phone || user?.phoneNumber || '',
+            appointmentDate:     apptDateStr,
+            appointmentTime:     apptTime,
+            appointmentDateTime: apptDateTimeISO,
+            reason:              `Health checkup request via email`,
+            notes:               `Auto-booked from inbound email (id=${email.id}). Subject: ${email.subject}`,
+            userId:              user?.id || null,
+          },
+        }
+      );
+      appointmentId = newAppt?.id;
+      console.log(`[autoUpdate] Appointment #${appointmentId} created for ${patientName} on ${apptDateStr}`);
+      updates.push({ type: 'appointment_booked', action: 'created', details: { appointmentId, appointmentDate: apptDateStr }, timestamp: new Date() });
+    } catch (apptErr) {
+      console.warn(`[autoUpdate] appointments insert failed: ${apptErr.message}`);
+    }
+
+    // ── Step 4: Confirmation email + WhatsApp ──────────────────────────────
+    const location = 'Mediqzy Health Centre';
+
+    // Confirmation email
+    if (senderEmail) {
+      try {
+        await getSmtpTransporter().sendMail({
+          from: `"Mediqzy Health" <${process.env.SMTP_USER}>`,
+          to: senderEmail,
+          subject: `Your health checkup appointment is confirmed — ${displayDate}`,
+          html: `
+            <div style="font-family:Arial,sans-serif;max-width:600px;margin:0 auto;padding:20px;">
+              <div style="background:linear-gradient(135deg,#10b981,#0ea5e9);padding:30px;text-align:center;border-radius:12px 12px 0 0;">
+                <h1 style="color:#fff;margin:0;font-size:20px;">Appointment Confirmed 🎉</h1>
+              </div>
+              <div style="background:#f8fafc;padding:30px;border:1px solid #e2e8f0;border-radius:0 0 12px 12px;">
+                <p style="font-size:16px;color:#334155;">Dear <strong>${patientName}</strong>,</p>
+                <p style="color:#475569;">Your health checkup appointment has been booked. Here are the details:</p>
+                <table style="width:100%;border-collapse:collapse;margin:16px 0;">
+                  <tr><td style="padding:8px;color:#64748b;width:40%;">📅 Date</td><td style="padding:8px;color:#1e293b;font-weight:600;">${displayDate}</td></tr>
+                  <tr style="background:#f1f5f9;"><td style="padding:8px;color:#64748b;">🕙 Time</td><td style="padding:8px;color:#1e293b;font-weight:600;">10:00 AM</td></tr>
+                  <tr><td style="padding:8px;color:#64748b;">📍 Location</td><td style="padding:8px;color:#1e293b;font-weight:600;">${location}</td></tr>
+                  <tr style="background:#f1f5f9;"><td style="padding:8px;color:#64748b;">🔖 Ref ID</td><td style="padding:8px;color:#1e293b;font-weight:600;">#${appointmentId}</td></tr>
+                </table>
+                <p style="color:#475569;">Please arrive <strong>15 minutes early</strong> and bring a valid photo ID.</p>
+                <p style="color:#475569;">To reschedule or cancel, reply to this email or call us at <strong>support@mediqzy.com</strong>.</p>
+                <hr style="border:none;border-top:1px solid #e2e8f0;margin:20px 0;">
+                <p style="color:#94a3b8;font-size:12px;text-align:center;">Team Mediqzy &nbsp;|&nbsp; support@mediqzy.com</p>
+              </div>
+            </div>`,
+        });
+        console.log(`[autoUpdate] Confirmation email sent to ${senderEmail}`);
+        updates.push({ type: 'confirmation_email_sent', action: 'sent', details: { to: senderEmail }, timestamp: new Date() });
+      } catch (confErr) {
+        console.warn(`[autoUpdate] Confirmation email failed: ${confErr.message}`);
+      }
+    }
+
+    // WhatsApp confirmation
+    const patientPhone = phone || user?.phoneNumber;
+    if (patientPhone) {
+      try {
+        await whatsappProductionService.sendAppointmentConfirmation({
+          to: patientPhone,
+          patientName,
+          doctorName: 'our medical team',
+          date: displayDate,
+          time: '10:00 AM',
+          location,
+          isHealthCheckup: true,
+        });
+        console.log(`[autoUpdate] WhatsApp confirmation sent to ${patientPhone}`);
+        updates.push({ type: 'whatsapp_confirmation_sent', action: 'sent', details: { to: patientPhone }, timestamp: new Date() });
+      } catch (waErr) {
+        console.warn(`[autoUpdate] WhatsApp confirmation failed: ${waErr.message}`);
+      }
+    }
+
   } catch (error) {
-    console.error('Error handling appointment request:', error);
+    console.error('Error handling appointment request:', error.message);
   }
 
   return updates;
+}
+
+// ── Internal helpers ──────────────────────────────────────────────────────────
+
+function parseSenderEmail(rawFrom) {
+  if (!rawFrom) return '';
+  const match = rawFrom.match(/<([^>]+)>/);
+  return match ? match[1].trim().toLowerCase() : rawFrom.trim().toLowerCase();
+}
+
+function nextBusinessDay() {
+  const d = new Date();
+  d.setDate(d.getDate() + 1);
+  while (d.getDay() === 0 || d.getDay() === 6) d.setDate(d.getDate() + 1);
+  return d;
+}
+
+function extractPhoneFromText(text) {
+  const m = text.match(/(?:\+91[-\s]?)?[6-9]\d{9}/);
+  return m ? m[0].replace(/[\s-]/g, '') : null;
 }
 
 /**

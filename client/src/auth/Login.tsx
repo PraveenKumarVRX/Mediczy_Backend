@@ -164,6 +164,18 @@ const Login = () => {
       initializeFirebaseMessaging().catch(err => {
         console.log('Firebase messaging initialization skipped:', err.message);
       });
+
+      // Gate: redirect to plan selection if user has no active plan
+      try {
+        const planRes = await api.get('/membership/my/current');
+        if (!planRes?.data?.userPlan) {
+          navigate('/choose-plan', { replace: true });
+          return;
+        }
+      } catch {
+        // Allow through if check fails
+      }
+
       navigate("/", { replace: true });
     } catch (error: any) {
       toast({
@@ -270,8 +282,18 @@ const Login = () => {
           
           // Dispatch auth change event for same-tab updates
           window.dispatchEvent(new Event('authChange'));
-          
-          // Navigate to patient dashboard - user login redirects here
+
+          // Gate: redirect to plan selection if user has no active plan
+          try {
+            const planRes = await api.get('/membership/my/current');
+            if (!planRes?.data?.userPlan) {
+              navigate('/choose-plan', { replace: true });
+              return;
+            }
+          } catch {
+            // If plan check fails, allow through — don't block login
+          }
+
           navigate("/", { replace: true });
         },
         onError: (error) => {

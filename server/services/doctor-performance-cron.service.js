@@ -6,6 +6,7 @@ import Doctor from '../models/doctor.model.intelligent.js';
 import notificationService from './notification.service.js';
 import { Op } from 'sequelize';
 import { tick, tickError } from '../utils/cronRegistry.js';
+import n8nService from './n8n.service.js';
 
 /**
  * Doctor Performance Reports Service
@@ -236,6 +237,17 @@ class DoctorPerformanceReportService {
    */
   async sendReportEmail(doctor, report) {
     console.log(`📧 Sending performance report to Dr. ${doctor.firstName} ${doctor.lastName}`);
+
+    n8nService.trigger('doctor-performance', {
+      doctorId: doctor.id,
+      doctorName: `${doctor.firstName} ${doctor.lastName}`,
+      doctorEmail: doctor.email,
+      weekStart: report.period?.start,
+      weekEnd: report.period?.end,
+      consultationsCompleted: report.consultations?.completed,
+      revenue: report.revenue?.total,
+      avgRating: report.ratings?.average,
+    }).catch(() => {});
 
     const emailHtml = this.buildReportHTML(doctor, report);
 

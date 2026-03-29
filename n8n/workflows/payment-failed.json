@@ -1,0 +1,74 @@
+{
+  "name": "Mediczy - Payment Failed",
+  "nodes": [
+    {
+      "parameters": {
+        "path": "payment-failed",
+        "method": "POST",
+        "responseMode": "onReceived",
+        "responseData": "allEntries"
+      },
+      "id": "pay-failed-webhook",
+      "name": "Payment Failed Webhook",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 1,
+      "position": [240, 200]
+    },
+    {
+      "parameters": {
+        "values": {
+          "string": [
+            { "name": "patientId",     "value": "={{$json[\"patientId\"]}}" },
+            { "name": "patientName",   "value": "={{$json[\"patientName\"]}}" },
+            { "name": "invoiceId",     "value": "={{$json[\"invoiceId\"]}}" },
+            { "name": "amount",        "value": "={{$json[\"amount\"]}}" },
+            { "name": "reason",        "value": "={{$json[\"reason\"] || 'Payment declined'}}" },
+            {
+              "name": "emailSubject",
+              "value": "Payment Failed – Action Required"
+            },
+            {
+              "name": "emailBody",
+              "value": "=Hi {{$json[\"patientName\"]}},\n\nUnfortunately, your payment of ₹{{$json[\"amount\"]}} could not be processed.\n\nReason: {{$json[\"reason\"] || 'Payment declined'}}\n\nPlease update your payment method and try again.\n\nTeam Mediczy"
+            },
+            {
+              "name": "whatsappBody",
+              "value": "=⚠️ Payment of ₹{{$json[\"amount\"]}} failed. Please update your payment method at the Mediczy app to avoid service disruption."
+            }
+          ]
+        }
+      },
+      "id": "prepare-pay-failed",
+      "name": "Prepare Message",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 2,
+      "position": [500, 200]
+    },
+    {
+      "parameters": {
+        "url": "={{$env.MEDICZY_BASE_URL}}/api/notifications/send-internal",
+        "method": "POST",
+        "sendBody": true,
+        "jsonParameters": true,
+        "options": { "timeout": 10000 },
+        "bodyParametersJson": "={\n  \"userId\": \"{{$json.patientId}}\",\n  \"type\": \"payment_failed\",\n  \"channels\": [\"email\", \"whatsapp\", \"in-app\"],\n  \"subject\": \"{{$json.emailSubject}}\",\n  \"body\": \"{{$json.emailBody}}\",\n  \"whatsappBody\": \"{{$json.whatsappBody}}\",\n  \"priority\": \"high\",\n  \"data\": { \"invoiceId\": \"{{$json.invoiceId}}\", \"amount\": {{$json.amount}} },\n  \"actionUrl\": \"/billing\"\n}",
+        "headerParametersJson": "={ \"Authorization\": \"Bearer {{$env.MEDICZY_INTERNAL_TOKEN}}\" }"
+      },
+      "id": "send-pay-failed",
+      "name": "Send Notification",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4,
+      "position": [780, 200]
+    }
+  ],
+  "connections": {
+    "Payment Failed Webhook": {
+      "main": [[{ "node": "Prepare Message", "type": "main", "index": 0 }]]
+    },
+    "Prepare Message": {
+      "main": [[{ "node": "Send Notification", "type": "main", "index": 0 }]]
+    }
+  },
+  "active": false,
+  "settings": { "executionOrder": "v1" }
+}

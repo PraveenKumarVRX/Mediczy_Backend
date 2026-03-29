@@ -3,11 +3,12 @@ import { body, param } from 'express-validator';
 import { Op } from 'sequelize';
 import { authUser, requireRole } from '../middleware/auth.middleware.js';
 import { MembershipPlan, UserPlan } from '../models/postgres/membershipPlan.model.postgres.js';
+import paymentService from '../services/payment.service.js';
 
 const router = express.Router();
 
-// -------- Super Admin Endpoints (Master Plans) --------
-router.post('/admin/plans', authUser, requireRole('admin'), [
+// -------- Super Admin / Team Endpoints (Master Plans) --------
+router.post('/admin/plans', authUser, requireRole(['admin', 'team']), [
   body('name').notEmpty(),
   body('durationDays').optional().isInt({ min:1 }),
   body('priceINR').optional().isFloat({ min:0 }),
@@ -34,7 +35,7 @@ router.post('/admin/plans', authUser, requireRole('admin'), [
   }
 });
 
-router.get('/admin/plans', authUser, requireRole('admin'), async (req,res) => {
+router.get('/admin/plans', authUser, requireRole(['admin', 'team']), async (req,res) => {
   try {
     const { masterOnly, includeCustomized } = req.query;
     
@@ -70,7 +71,7 @@ router.get('/admin/plans', authUser, requireRole('admin'), async (req,res) => {
   }
 });
 
-router.put('/admin/plans/:id', authUser, requireRole('admin'), [ param('id').isInt() ], async (req,res) => {
+router.put('/admin/plans/:id', authUser, requireRole(['admin', 'team']), [ param('id').isInt() ], async (req,res) => {
   try {
     const plan = await MembershipPlan.findByPk(req.params.id);
     if(!plan) return res.status(404).json({ message:'Plan not found' });
@@ -81,7 +82,7 @@ router.put('/admin/plans/:id', authUser, requireRole('admin'), [ param('id').isI
   }
 });
 
-router.delete('/admin/plans/:id', authUser, requireRole('admin'), [ param('id').isInt() ], async (req,res) => {
+router.delete('/admin/plans/:id', authUser, requireRole(['admin', 'team']), [ param('id').isInt() ], async (req,res) => {
   try {
     const plan = await MembershipPlan.findByPk(req.params.id);
     if(!plan) return res.status(404).json({ message:'Plan not found' });
@@ -95,7 +96,10 @@ router.delete('/admin/plans/:id', authUser, requireRole('admin'), [ param('id').
 // -------- User Endpoints --------
 router.get('/plans', async (_req,res) => {
   try {
-    const plans = await MembershipPlan.findAll({ where:{ isActive:true }, order:[['price','ASC']] });
+    const plans = await MembershipPlan.findAll({ 
+      where:{ isActive:true, planType: 'primary' }, 
+      order:[['tier','ASC'],['price','ASC']] 
+    });
     res.json({ plans });
   } catch(e) {
     console.error(e);
@@ -183,6 +187,38 @@ router.post('/subscribe/:planId', authUser, [ param('planId').isInt() ], async (
   }
 });
 
+// -------- PLAN PAYMENT ORDER --------
+// Create a Razorpay order for a plan upgrade (called before the actual upgrade)
+router.post('/payment-order', authUser, [
+  body('amount').isFloat({ min: 0.5 }),
+  body('planId').isInt(),
+  body('planName').notEmpty()
+], async (req, res) => {
+  try {
+    const { amount, planId, planName } = req.body;
+    const receipt = `plan${planId}_u${req.user.id}_${Date.now()}`.slice(0, 40);
+    const orderResult = await paymentService.createOrder({
+      amount,
+      currency: 'INR',
+      receipt,
+      notes: { planId: String(planId), userId: String(req.user.id), planName }
+    });
+    if (!orderResult.success) {
+      return res.status(500).json({ message: 'Failed to create payment order', error: orderResult.error });
+    }
+    const gatewayConfig = paymentService.getGatewayConfig();
+    res.json({
+      success: true,
+      order: orderResult.order,
+      gatewayConfig,
+      transaction: { description: `Upgrade to ${planName}` }
+    });
+  } catch (e) {
+    console.error('Payment order error:', e);
+    res.status(500).json({ message: 'Payment order creation failed', error: e.message });
+  }
+});
+
 // -------- PLAN UPGRADE --------
 // Upgrade from current plan to a higher tier plan (prorated)
 router.post('/upgrade/:newPlanId', authUser, [ param('newPlanId').isInt() ], async (req, res) => {
@@ -251,7 +287,23 @@ router.post('/upgrade/:newPlanId', authUser, [ param('newPlanId').isInt() ], asy
     // Calculate new plan price
     const newPlanPrice = parseFloat(newPlan.discountedPrice || newPlan.price || 0);
     const amountDue = Math.max(0, newPlanPrice - proratedRefund);
-    
+
+    // Verify payment when amount is due
+    const { razorpay_payment_id, razorpay_order_id, razorpay_signature } = req.body;
+    if (amountDue > 0) {
+      if (!razorpay_payment_id || !razorpay_order_id || !razorpay_signature) {
+        return res.status(400).json({
+          requiresPayment: true,
+          amountDue,
+          message: 'Payment verification data required for this upgrade'
+        });
+      }
+      const isValid = paymentService.verifyPaymentSignature({ razorpay_order_id, razorpay_payment_id, razorpay_signature });
+      if (!isValid) {
+        return res.status(400).json({ message: 'Payment verification failed. Please retry.' });
+      }
+    }
+
     // Cancel current plan
     await currentUserPlan.update({ 
       status: 'upgraded',
@@ -274,6 +326,8 @@ router.post('/upgrade/:newPlanId', authUser, [ param('newPlanId').isInt() ], asy
       startDate: newStartDate.toISOString().slice(0, 10),
       endDate: newEndDate.toISOString().slice(0, 10),
       paidAmount: amountDue,
+      paymentId: razorpay_payment_id || null,
+      paymentMethod: razorpay_payment_id ? 'razorpay' : null,
       metadata: {
         planName: newPlan.name,
         planType: newPlan.planType || 'primary',
@@ -359,7 +413,7 @@ router.get('/upgrade-options', authUser, async (req, res) => {
     const proratedRefund = Math.round(dailyRate * remainingDays * 100) / 100;
     
     const optionsWithPricing = upgradeOptions
-      .filter(p => (p.tier || 1) >= currentTier)
+      .filter(p => (p.tier || 1) > currentTier)
       .map(plan => {
         const planPrice = parseFloat(plan.discountedPrice || plan.price || 0);
         const amountDue = Math.max(0, planPrice - proratedRefund);
@@ -377,7 +431,8 @@ router.get('/upgrade-options', authUser, async (req, res) => {
           isUpgrade,
           features: plan.features,
           benefits: plan.benefits,
-          durationMonths: plan.durationMonths
+          durationMonths: plan.durationMonths,
+          metadata: plan.metadata || {}
         };
       });
     

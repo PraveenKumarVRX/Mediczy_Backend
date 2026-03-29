@@ -1,88 +1,387 @@
-import { useMemo, useState, useEffect } from "react";
-import { motion } from "framer-motion";
+import { useState } from "react";
+import { motion, AnimatePresence } from "framer-motion";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
-import MainLayout from "@/components/layout/MainLayout";
 import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { useToast } from "@/hooks/use-toast";
 import api from "@/utils/api";
-import { Crown, CheckCircle, Loader2, TrendingUp, Activity, Zap, RefreshCw, Shield, Star, Sparkles } from "lucide-react";
+import { useAuth } from "@/auth/AuthProvider";
+import { openRazorpayCheckout } from "@/utils/razorpay";
+import {
+  Crown, CheckCircle2, Loader2, TrendingUp, Zap, Shield, Star, Gem,
+  Pill, Home, Ambulance, Stethoscope, Calendar, X, AlertCircle,
+  Video, MapPin, FlaskConical, HeartPulse, Syringe, Smile
+} from "lucide-react";
 
-const container = { hidden: { opacity: 0 }, show: { opacity: 1, transition: { staggerChildren: 0.06 } } };
-const item = { hidden: { opacity: 0, y: 20 }, show: { opacity: 1, y: 0, transition: { duration: 0.4, ease: [.25,.46,.45,.94] } } };
+// ── Animation variants ──────────────────────────────────────────────────────
+const stagger = {
+  hidden: { opacity: 0 },
+  show: { opacity: 1, transition: { staggerChildren: 0.08 } }
+};
+const fadeUp = {
+  hidden: { opacity: 0, y: 24 },
+  show: { opacity: 1, y: 0, transition: { duration: 0.45, ease: [0.25, 0.46, 0.45, 0.94] } }
+};
 
-type TeleConsultLimits = Record<string, number> & { allSpecialties?: number };
+// ── Tier configuration ───────────────────────────────────────────────────────
+const TIERS: Record<number, {
+  label: string; Icon: React.FC<{ className?: string }>;
+  gradient: string; ring: string; badge: string; accent: string; track: string;
+}> = {
+  1: { label: "Basic",    Icon: Shield,  gradient: "from-slate-600 to-slate-800",  ring: "#64748b", badge: "bg-slate-100 text-slate-700 border-slate-300", accent: "text-slate-600", track: "#e2e8f0" },
+  2: { label: "Silver",   Icon: Star,    gradient: "from-sky-500 to-blue-600",     ring: "#0ea5e9", badge: "bg-sky-50 text-sky-700 border-sky-300",       accent: "text-sky-600",   track: "#e0f2fe" },
+  3: { label: "Gold",     Icon: Crown,   gradient: "from-amber-500 to-yellow-600", ring: "#f59e0b", badge: "bg-amber-50 text-amber-700 border-amber-300", accent: "text-amber-600", track: "#fef3c7" },
+  4: { label: "Platinum", Icon: Gem,     gradient: "from-purple-600 to-violet-700",ring: "#7c3aed", badge: "bg-purple-50 text-purple-700 border-purple-300",accent: "text-purple-600",track: "#ede9fe" },
+};
 
-interface UserPlan {
-  id: number;
-  membershipPlanId: number;
-  startDate: string; // DATEONLY
-  endDate: string; // DATEONLY
-  status: "active" | "expired" | "cancelled";
-  appliedLimits: {
-    benefitLimits?: Record<string, number>;
-    teleConsultLimits?: TeleConsultLimits;
-    healthCheckPackage?: string;
-    priceINR?: number;
-  };
-  usage?: any;
-  MembershipPlan?: MembershipPlan; // if included
+const TIER_LIST = [1, 2, 3, 4];
+
+// ── Types ────────────────────────────────────────────────────────────────────
+interface BenefitLimits { pharmacyLimitINR?: number; homeCareLimitINR?: number; ambulanceLimitINR?: number }
+interface TeleConsultLimits { allSpecialties?: number; [k: string]: number | undefined }
+interface CoverageItem { limit?: number; limitINR?: number; unit?: string; package?: string }
+interface CoverageDetails {
+  onlineConsult?: CoverageItem; physicalConsult?: CoverageItem;
+  labTests?: CoverageItem; pharmacy?: CoverageItem;
+  homeCare?: CoverageItem; ambulance?: CoverageItem;
+  healthCheck?: CoverageItem; emergencyConsult?: CoverageItem; dental?: CoverageItem;
 }
 
-interface MembershipPlan {
-  id: number;
-  name: string;
-  description?: string;
-  durationMonths?: number;
-  durationDays?: number;
-  price?: string | number;
-  priceINR?: number;
-  isActive: boolean;
-  benefitLimits?: Record<string, number>;
-  teleConsultLimits?: TeleConsultLimits;
-  healthCheckPackage?: string;
-  features?: string[];
-  benefits?: string[];
-  limitations?: Record<string, number>;
+interface ActiveUserPlan {
+  id: number; membershipPlanId: number; startDate: string; endDate: string;
+  status: "active" | "expired" | "cancelled"; paidAmount?: number;
+  appliedLimits: { benefitLimits?: BenefitLimits; teleConsultLimits?: TeleConsultLimits; healthCheckPackage?: string; priceINR?: number };
+  usage?: Record<string, any>;
+  plan?: PlanData; MembershipPlan?: PlanData;
+}
+interface PlanData { id: number; name: string; description?: string; tier?: number; tierName?: string; price?: string | number; discountedPrice?: string | number; durationMonths?: number; features?: string[]; benefits?: string[]; metadata?: { coverageDetails?: CoverageDetails; [k: string]: any } }
+interface UpgradeOption { id: number; name: string; description?: string; tier: number; tierName: string; originalPrice: number; proratedRefund: number; amountDue: number; isUpgrade: boolean; features?: string[]; benefits?: string[]; durationMonths?: number; metadata?: { coverageDetails?: CoverageDetails; [k: string]: any } }
+interface UpgradeOptionsRes { hasActivePlan: boolean; currentPlan: { id: number; name: string; tier: number; tierName: string; endDate: string; remainingDays: number; proratedRefund: number } | null; upgradeOptions: UpgradeOption[] }
+interface UsageRes { active: ActiveUserPlan | null; remaining: BenefitLimits | null }
+
+// ── Coverage config ──────────────────────────────────────────────────────────
+const COVERAGE_ROWS: Array<{
+  key: keyof CoverageDetails;
+  label: string;
+  sub: string;
+  Icon: React.FC<{ className?: string }>;
+  type: "consult" | "money" | "package";
+  color: string;
+}> = [
+  { key: "onlineConsult",    label: "Online Consultation",   sub: "Tele/Video",        Icon: Video,        type: "consult",  color: "#0ea5e9" },
+  { key: "physicalConsult",  label: "Physical Consultation", sub: "In-clinic/Offline",  Icon: MapPin,       type: "consult",  color: "#7c3aed" },
+  { key: "labTests",         label: "Lab Tests & Diagnostics",sub: "Blood, radiology",  Icon: FlaskConical, type: "money",    color: "#db2777" },
+  { key: "pharmacy",         label: "Pharmacy",              sub: "Prescribed medicines",Icon: Pill,         type: "money",    color: "#16a34a" },
+  { key: "homeCare",         label: "Home Care",             sub: "Nursing at home",   Icon: Home,         type: "money",    color: "#0891b2" },
+  { key: "ambulance",        label: "Ambulance",             sub: "Emergency transport",Icon: Ambulance,    type: "money",    color: "#dc2626" },
+  { key: "healthCheck",      label: "Annual Health Check",   sub: "Preventive screening",Icon: HeartPulse,  type: "package", color: "#d97706" },
+  { key: "emergencyConsult", label: "Emergency Consultation",sub: "Urgent consultations",Icon: Syringe,     type: "consult",  color: "#ea580c" },
+  { key: "dental",           label: "Dental Coverage",       sub: "Dental treatments",  Icon: Smile,        type: "money",    color: "#4f46e5" },
+];
+
+function formatCoverageValue(row: typeof COVERAGE_ROWS[0], item?: CoverageItem): { text: string; included: boolean } {
+  if (!item) return { text: "Not included", included: false };
+  if (row.type === "package") {
+    const pkg = item.package ?? "None";
+    return { text: pkg === "None" || !pkg ? "Not included" : pkg, included: pkg !== "None" && !!pkg };
+  }
+  if (row.type === "money") {
+    const v = item.limitINR ?? 0;
+    return { text: v > 0 ? `₹${v.toLocaleString("en-IN")}` : "Not included", included: v > 0 };
+  }
+  // consult
+  const v = item.limit ?? 0;
+  if (v >= 999) return { text: "Unlimited", included: true };
+  if (v === 0) return { text: "Not included", included: false };
+  return { text: `${v}/month`, included: true };
 }
 
-type TeleAll = { mode: 'all'; allowed: number; used: number; remaining: number };
-type TelePerItem = { spec: string; allowed: number; used: number; remaining: number };
-type TelePer = { mode: 'per-spec'; items: TelePerItem[] };
-type TeleStats = TeleAll | TelePer | null;
-
-interface UpgradeOption {
-  id: number;
-  name: string;
-  description?: string;
+// ── Coverage grid (current plan detail) ──────────────────────────────────────
+function CoverageGrid({ coverage, tier, remaining, usedConsults }: {
+  coverage: CoverageDetails;
   tier: number;
-  tierName: string;
-  originalPrice: number;
-  proratedRefund: number;
-  amountDue: number;
-  isUpgrade: boolean;
-  features?: any;
-  benefits?: any;
-  durationMonths?: number;
+  remaining: BenefitLimits | null;
+  usedConsults: number;
+}) {
+  const cfg = TIERS[tier] ?? TIERS[1];
+  return (
+    <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
+      {COVERAGE_ROWS.map(row => {
+        const item = coverage[row.key];
+        const { text, included } = formatCoverageValue(row, item);
+        const Icon = row.Icon;
+
+        // Live remaining for tracked benefits
+        let liveText = text;
+        let usedInfo: string | null = null;
+        if (included && row.key === "onlineConsult" && (item?.limit ?? 0) < 999) {
+          const allowed = item?.limit ?? 0;
+          const rem = Math.max(0, allowed - usedConsults);
+          liveText = `${rem} remaining`;
+          usedInfo = `${usedConsults} used · ${allowed} total`;
+        }
+        if (included && row.key === "pharmacy" && remaining?.pharmacyLimitINR !== undefined) {
+          liveText = `₹${remaining.pharmacyLimitINR.toLocaleString("en-IN")} left`;
+          const total = item?.limitINR ?? 0;
+          usedInfo = `₹${(total - remaining.pharmacyLimitINR).toLocaleString("en-IN")} used`;
+        }
+        if (included && row.key === "homeCare" && remaining?.homeCareLimitINR !== undefined) {
+          liveText = `₹${remaining.homeCareLimitINR.toLocaleString("en-IN")} left`;
+          const total = item?.limitINR ?? 0;
+          usedInfo = `₹${(total - remaining.homeCareLimitINR).toLocaleString("en-IN")} used`;
+        }
+        if (included && row.key === "ambulance" && remaining?.ambulanceLimitINR !== undefined) {
+          liveText = `₹${remaining.ambulanceLimitINR.toLocaleString("en-IN")} left`;
+          const total = item?.limitINR ?? 0;
+          usedInfo = `₹${(total - remaining.ambulanceLimitINR).toLocaleString("en-IN")} used`;
+        }
+
+        return (
+          <div key={row.key} className={`flex items-start gap-3 p-3 rounded-xl border transition-colors ${
+            included
+              ? "bg-white dark:bg-gray-800 border-gray-100 dark:border-gray-700"
+              : "bg-gray-50 dark:bg-gray-900 border-gray-100 dark:border-gray-800 opacity-50"
+          }`}>
+            <div className="p-2 rounded-lg shrink-0" style={{ background: included ? row.color + "18" : "#f3f4f6" }}>
+              <Icon className="w-4 h-4" style={{ color: included ? row.color : "#9ca3af" }} />
+            </div>
+            <div className="min-w-0">
+              <p className="text-xs text-gray-500 dark:text-gray-400 leading-tight">{row.label}</p>
+              <p className={`text-sm font-semibold leading-snug mt-0.5 ${
+                included ? "text-gray-900 dark:text-white" : "text-gray-400"
+              }`}>
+                {included && row.type === "package" ? (
+                  <span className="text-xs font-medium leading-tight">{liveText}</span>
+                ) : liveText}
+              </p>
+              {usedInfo && <p className="text-[10px] text-gray-400 mt-0.5">{usedInfo}</p>}
+              {!usedInfo && included && <p className="text-[10px] text-gray-400 mt-0.5">{row.sub}</p>}
+            </div>
+          </div>
+        );
+      })}
+    </div>
+  );
 }
 
-interface AddonPlan extends MembershipPlan {
-  isSubscribed: boolean;
+// ── Coverage summary chips for upgrade cards ───────────────────────────────────
+function CoverageSummary({ coverage }: { coverage?: CoverageDetails }) {
+  if (!coverage) return null;
+  const rows = COVERAGE_ROWS.map(r => ({ ...r, val: formatCoverageValue(r, coverage[r.key]) }));
+  const included = rows.filter(r => r.val.included);
+  return (
+    <div className="flex flex-wrap gap-1.5 mt-3 mb-4">
+      {included.map(r => (
+        <div key={r.key} className="flex items-center gap-1 px-2 py-1 rounded-full text-[10px] font-medium bg-white/15 text-white/90">
+          <r.Icon className="w-2.5 h-2.5" />{r.val.text === "Unlimited" ? `${r.label}: ∞` : `${r.label}: ${r.val.text}`}
+        </div>
+      ))}
+    </div>
+  );
 }
 
+// ── Circular teleconsult ring ─────────────────────────────────────────────────
+function TeleconsultRing({ used, allowed, tier }: { used: number; allowed: number; tier: number }) {
+  const cfg = TIERS[tier] ?? TIERS[1];
+  const unlimited = allowed >= 999;
+  const r = 46; const circ = 2 * Math.PI * r;
+  const pct = unlimited ? 1 : allowed > 0 ? Math.min(used / allowed, 1) : 0;
+  const offset = circ * (1 - pct);
+  const remaining = unlimited ? "∞" : Math.max(0, allowed - used);
+  return (
+    <div className="flex flex-col items-center gap-2">
+      <div className="relative w-28 h-28">
+        <svg className="w-28 h-28 -rotate-90" viewBox="0 0 100 100">
+          <circle cx="50" cy="50" r={r} fill="none" stroke={cfg.track} strokeWidth="9" />
+          <circle cx="50" cy="50" r={r} fill="none" strokeWidth="9" strokeLinecap="round"
+            stroke={cfg.ring} strokeDasharray={circ}
+            strokeDashoffset={unlimited ? 0 : offset}
+            style={{ transition: "stroke-dashoffset 1.2s ease" }} />
+        </svg>
+        <div className="absolute inset-0 flex flex-col items-center justify-center">
+          <span className="text-2xl font-black leading-none">{remaining}</span>
+          <span className="text-[10px] text-gray-400 mt-0.5">left</span>
+        </div>
+      </div>
+      <div className="text-center">
+        <p className="text-xs font-semibold text-gray-700 dark:text-gray-200">Teleconsults</p>
+        <p className="text-[10px] text-gray-400">{unlimited ? "Unlimited" : `${used} used · ${allowed} total`}</p>
+      </div>
+    </div>
+  );
+}
+
+// ── Single benefit bar ────────────────────────────────────────────────────────
+function BenefitBar({ label, Icon, used, total, color }: { label: string; Icon: React.FC<{ className?: string }>; used: number; total: number; color: string }) {
+  const remaining = Math.max(0, total - used);
+  const pct = total > 0 ? Math.min(((total - used) / total) * 100, 100) : 0;
+  if (total === 0) return (
+    <div className="flex items-center gap-3 py-2 opacity-40">
+      <div className="p-1.5 rounded-lg bg-gray-100 dark:bg-gray-800"><Icon className="w-4 h-4 text-gray-400" /></div>
+      <div className="flex-1">
+        <div className="flex justify-between mb-1"><span className="text-sm text-gray-500">{label}</span><span className="text-xs text-gray-400">Not included</span></div>
+        <div className="h-1.5 rounded-full bg-gray-100 dark:bg-gray-800" />
+      </div>
+    </div>
+  );
+  return (
+    <div className="flex items-center gap-3 py-2">
+      <div className="p-1.5 rounded-lg" style={{ background: color + "22" }}><Icon className="w-4 h-4" style={{ color }} /></div>
+      <div className="flex-1">
+        <div className="flex justify-between mb-1.5">
+          <span className="text-sm font-medium text-gray-700 dark:text-gray-200">{label}</span>
+          <span className="text-sm font-semibold" style={{ color }}>₹{remaining.toLocaleString("en-IN")} left</span>
+        </div>
+        <div className="h-2 rounded-full bg-gray-100 dark:bg-gray-700 overflow-hidden">
+          <motion.div className="h-full rounded-full" initial={{ width: 0 }} animate={{ width: `${pct}%` }}
+            transition={{ duration: 1.1, ease: "easeOut" }} style={{ background: `linear-gradient(90deg, ${color}aa, ${color})` }} />
+        </div>
+        <p className="text-[10px] text-gray-400 mt-0.5">₹{used.toLocaleString("en-IN")} used of ₹{total.toLocaleString("en-IN")}</p>
+      </div>
+    </div>
+  );
+}
+
+// ── Tier roadmap ──────────────────────────────────────────────────────────────
+function TierRoadmap({ currentTier }: { currentTier: number }) {
+  return (
+    <div className="flex items-center gap-0 w-full">
+      {TIER_LIST.map((t, i) => {
+        const cfg = TIERS[t];
+        const Icon = cfg.Icon;
+        const active = t === currentTier;
+        const completed = t < currentTier;
+        return (
+          <div key={t} className="flex items-center flex-1 last:flex-none">
+            <div className="flex flex-col items-center gap-1">
+              <div className={`w-10 h-10 rounded-full flex items-center justify-center border-2 transition-all ${
+                active ? `bg-gradient-to-br ${cfg.gradient} border-transparent shadow-lg` :
+                completed ? "bg-emerald-500 border-transparent" : "bg-white dark:bg-gray-800 border-gray-200 dark:border-gray-700"
+              }`}>
+                <Icon className={`w-5 h-5 ${active || completed ? "text-white" : "text-gray-400"}`} />
+              </div>
+              <span className={`text-[10px] font-semibold ${active ? cfg.accent : completed ? "text-emerald-600" : "text-gray-400"}`}>{cfg.label}</span>
+            </div>
+            {i < TIER_LIST.length - 1 && (
+              <div className={`flex-1 h-0.5 mx-1 ${completed ? "bg-emerald-400" : "bg-gray-200 dark:bg-gray-700"}`} />
+            )}
+          </div>
+        );
+      })}
+    </div>
+  );
+}
+
+// ── Upgrade confirmation modal ─────────────────────────────────────────────────
+function ConfirmUpgradeModal({ plan, onConfirm, onCancel, isLoading }: {
+  plan: UpgradeOption; onConfirm: () => void; onCancel: () => void; isLoading: boolean;
+}) {
+  const cfg = TIERS[plan.tier] ?? TIERS[2];
+  const Icon = cfg.Icon;
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/50 backdrop-blur-sm">
+      <motion.div initial={{ opacity: 0, scale: 0.92 }} animate={{ opacity: 1, scale: 1 }} exit={{ opacity: 0, scale: 0.92 }}
+        className="bg-white dark:bg-gray-900 rounded-2xl shadow-2xl max-w-sm w-full overflow-hidden">
+        <div className={`p-5 bg-gradient-to-br ${cfg.gradient} text-white`}>
+          <div className="flex items-center gap-3">
+            <div className="p-2 rounded-xl bg-white/15"><Icon className="w-5 h-5" /></div>
+            <div><h3 className="font-bold text-lg">Upgrade to {plan.name}</h3><p className="text-white/70 text-xs">{plan.tierName} Plan · {plan.durationMonths || 1} month</p></div>
+          </div>
+        </div>
+        <div className="p-5 space-y-4">
+          <div className="rounded-xl bg-gray-50 dark:bg-gray-800 p-4 space-y-2">
+            <div className="flex justify-between text-sm"><span className="text-gray-500">Plan price</span><span className="font-medium">₹{plan.originalPrice.toLocaleString("en-IN")}</span></div>
+            {plan.proratedRefund > 0 && <div className="flex justify-between text-sm"><span className="text-gray-500">Prorated credit</span><span className="text-emerald-600 font-medium">-₹{plan.proratedRefund.toLocaleString("en-IN")}</span></div>}
+            <div className="border-t dark:border-gray-700 pt-2 flex justify-between"><span className="font-semibold">Amount due</span><span className="font-bold text-lg" style={{ color: cfg.ring }}>₹{plan.amountDue.toLocaleString("en-IN")}</span></div>
+          </div>
+          <p className="text-xs text-gray-500 flex items-start gap-1.5"><AlertCircle className="w-3.5 h-3.5 mt-0.5 shrink-0" />Your current plan will be cancelled and a prorated refund applied.</p>
+          <div className="flex gap-3">
+            <Button variant="outline" className="flex-1" onClick={onCancel} disabled={isLoading}><X className="w-4 h-4 mr-1.5" />Cancel</Button>
+            <Button onClick={onConfirm} disabled={isLoading} className={`flex-1 bg-gradient-to-r ${cfg.gradient} text-white border-0 hover:opacity-90`}>
+              {isLoading ? <Loader2 className="w-4 h-4 animate-spin mr-1.5" /> : <TrendingUp className="w-4 h-4 mr-1.5" />}
+              {plan.amountDue > 0 ? `Pay ₹${plan.amountDue.toLocaleString("en-IN")} & Upgrade` : "Confirm Upgrade"}
+            </Button>
+          </div>
+        </div>
+      </motion.div>
+    </div>
+  );
+}
+
+// ── Upgrade plan card ──────────────────────────────────────────────────────────
+function UpgradeCard({ plan, onRequest, isPopular }: { plan: UpgradeOption; onRequest: () => void; isPopular: boolean }) {
+  const cfg = TIERS[plan.tier] ?? TIERS[2];
+  const Icon = cfg.Icon;
+  const coverage = plan.metadata?.coverageDetails;
+  return (
+    <motion.div whileHover={{ y: -6 }} transition={{ type: "spring", stiffness: 300 }}
+      className={`relative rounded-2xl border-2 overflow-hidden ${isPopular ? "border-amber-400 shadow-xl shadow-amber-100/60 dark:shadow-amber-900/20" : "border-gray-200 dark:border-gray-700"}`}>
+      {isPopular && <div className="absolute top-0 inset-x-0 h-0.5 bg-gradient-to-r from-amber-400 via-yellow-300 to-amber-400" />}
+      {isPopular && <div className="absolute top-3.5 right-3.5"><Badge className="bg-amber-100 text-amber-800 border-amber-300 text-[10px] font-bold uppercase tracking-wide">Most Popular</Badge></div>}
+      <div className={`p-5 bg-gradient-to-br ${cfg.gradient} text-white`}>
+        <div className="p-2 rounded-xl bg-white/15 w-fit mb-3"><Icon className="w-5 h-5" /></div>
+        <h3 className="text-xl font-bold">{plan.name}</h3>
+        <p className="text-white/70 text-xs mt-0.5">{plan.description}</p>
+        <div className="mt-3 flex items-end gap-1">
+          <span className="text-3xl font-black">₹{plan.originalPrice.toLocaleString("en-IN")}</span>
+          <span className="text-white/60 text-sm mb-1">/month</span>
+        </div>
+        {plan.proratedRefund > 0 && <p className="text-[11px] text-white/60 mt-1">After ₹{plan.proratedRefund} credit → pay ₹{plan.amountDue}</p>}
+        {/* Coverage chips inside gradient header */}
+        {coverage && <CoverageSummary coverage={coverage} />}
+      </div>
+      <div className="p-5 bg-white dark:bg-gray-900">
+        {/* Detailed coverage table */}
+        {coverage ? (
+          <div className="space-y-2 mb-5">
+            {COVERAGE_ROWS.map(row => {
+              const { text, included } = formatCoverageValue(row, coverage[row.key]);
+              const RowIcon = row.Icon;
+              if (!included) return null;
+              return (
+                <div key={row.key} className="flex items-center gap-2.5 text-sm">
+                  <div className="p-1 rounded-md shrink-0" style={{ background: row.color + "18" }}>
+                    <RowIcon className="w-3.5 h-3.5" style={{ color: row.color }} />
+                  </div>
+                  <span className="text-gray-600 dark:text-gray-400 flex-1">{row.label}</span>
+                  <span className="font-semibold text-gray-900 dark:text-white text-xs">{text}</span>
+                </div>
+              );
+            })}
+          </div>
+        ) : (
+          <ul className="space-y-2.5 mb-5">
+            {(Array.isArray(plan.features) ? plan.features : []).map((f, i) => (
+              <li key={i} className="flex items-start gap-2.5 text-sm text-gray-700 dark:text-gray-300">
+                <CheckCircle2 className={`w-4 h-4 shrink-0 mt-0.5 ${cfg.accent}`} />{f}
+              </li>
+            ))}
+          </ul>
+        )}
+        <Button onClick={onRequest} className={`w-full bg-gradient-to-r ${cfg.gradient} text-white border-0 hover:opacity-90 font-semibold`}>
+          <TrendingUp className="w-4 h-4 mr-2" />Upgrade to {plan.tierName}
+        </Button>
+      </div>
+    </motion.div>
+  );
+}
+
+// ── Main component ─────────────────────────────────────────────────────────────
 const MyPlans = () => {
   const { toast } = useToast();
+  const { currentUser } = useAuth();
   const qc = useQueryClient();
-  const [subscribingId, setSubscribingId] = useState<number | null>(null);
+  const [upgradePending, setUpgradePending] = useState<UpgradeOption | null>(null);
   const [upgradingId, setUpgradingId] = useState<number | null>(null);
-  const [showUsageBanner, setShowUsageBanner] = useState(false);
+  const [subscribingId, setSubscribingId] = useState<number | null>(null);
 
+  // ── Queries ────────────────────────────────────────────────────────────────
   const { data: currentRes, isLoading: loadingCurrent } = useQuery({
     queryKey: ["myPlan", "current"],
     queryFn: async () => {
       const { data } = await api.get("/membership/my/current");
-      return data as { userPlan: UserPlan | null };
+      return data as { userPlan: ActiveUserPlan | null };
     },
   });
 
@@ -90,575 +389,315 @@ const MyPlans = () => {
     queryKey: ["myPlan", "usage"],
     queryFn: async () => {
       const { data } = await api.get("/membership/my/usage");
-      return data as { active: UserPlan | null; remaining: Record<string, number> | null };
+      return data as UsageRes;
     },
-    refetchInterval: 10000, // Poll every 10s to show live updates
+    refetchInterval: 15000,
     refetchOnWindowFocus: true,
+  });
+
+  const { data: upgradeRes, isLoading: loadingUpgrade } = useQuery({
+    queryKey: ["plans", "upgrade-options"],
+    queryFn: async () => {
+      const { data } = await api.get("/membership/upgrade-options");
+      return data as UpgradeOptionsRes;
+    },
   });
 
   const { data: plansRes, isLoading: loadingPlans } = useQuery({
     queryKey: ["plans", "available"],
     queryFn: async () => {
       const { data } = await api.get("/membership/plans");
-      return data as { plans: MembershipPlan[] };
+      return data as { plans: PlanData[] };
     },
+    enabled: !currentRes?.userPlan, // only fetch when no active plan (for subscribe flow)
   });
 
-  // Fetch upgrade options if user has active plan
-  const { data: upgradeRes } = useQuery({
-    queryKey: ["plans", "upgrade-options"],
-    queryFn: async () => {
-      const { data } = await api.get("/membership/upgrade-options");
-      return data as { 
-        hasActivePlan: boolean; 
-        currentPlan: any; 
-        upgradeOptions: UpgradeOption[];
-      };
-    },
-    enabled: !!currentRes?.userPlan,
-  });
+  // ── Derived data ───────────────────────────────────────────────────────────
+  const userPlan = currentRes?.userPlan ?? null;
+  const planDetails = userPlan?.plan ?? userPlan?.MembershipPlan ?? null;
+  const currentTier = upgradeRes?.currentPlan?.tier ?? planDetails?.tier ?? 1;
+  const tierCfg = TIERS[currentTier] ?? TIERS[1];
+  const TierIcon = tierCfg.Icon;
 
-  // Fetch addon plans
-  const { data: addonsRes } = useQuery({
-    queryKey: ["plans", "addons"],
-    queryFn: async () => {
-      const { data } = await api.get("/membership/addons");
-      return data as { addons: AddonPlan[]; activeAddons: any[] };
-    },
-  });
+  const remaining = usageRes?.remaining ?? null;
+  const upgradeOptions = upgradeRes?.upgradeOptions ?? [];
+  const availablePlans = plansRes?.plans ?? [];
 
-  const userPlan = currentRes?.userPlan || null;
-  const availablePlans = plansRes?.plans || [];
-  const upgradeOptions = upgradeRes?.upgradeOptions || [];
-  const addonPlans = addonsRes?.addons || [];
-  const remainingMoney = usageRes?.remaining || null;
-  const [lastUsageUpdate, setLastUsageUpdate] = useState<string | null>(null);
+  const benefitLimits = userPlan?.appliedLimits?.benefitLimits ?? {};
+  const teleConsultLimits = userPlan?.appliedLimits?.teleConsultLimits ?? {};
+  const teleUsage: Record<string, number> = userPlan?.usage?.teleConsult ?? userPlan?.usage?.teleConsults ?? {};
+  const usedConsults = Object.values(teleUsage).reduce((s, v) => s + Number(v ?? 0), 0);
+  const allowedConsults = teleConsultLimits.allSpecialties ?? 0;
 
-  // Show banner when usage data updates
-  useEffect(() => {
-    if (usageRes && userPlan) {
-      const currentTimestamp = JSON.stringify(usageRes);
-      if (lastUsageUpdate && lastUsageUpdate !== currentTimestamp) {
-        setShowUsageBanner(true);
-        const timer = setTimeout(() => setShowUsageBanner(false), 8000);
-        return () => clearTimeout(timer);
-      }
-      setLastUsageUpdate(currentTimestamp);
-    }
-  }, [usageRes, userPlan]);
+  const pharmacyTotal = benefitLimits.pharmacyLimitINR ?? 0;
+  const homecareTotal = benefitLimits.homeCareLimitINR ?? 0;
+  const ambulanceTotal = benefitLimits.ambulanceLimitINR ?? 0;
+  const pharmacyUsed = (pharmacyTotal) - (remaining?.pharmacyLimitINR ?? pharmacyTotal);
+  const homecareUsed = (homecareTotal) - (remaining?.homeCareLimitINR ?? homecareTotal);
+  const ambulanceUsed = (ambulanceTotal) - (remaining?.ambulanceLimitINR ?? ambulanceTotal);
 
-  const teleConsultStats: TeleStats = useMemo(() => {
-    const allowed = (userPlan?.appliedLimits?.teleConsultLimits || {}) as TeleConsultLimits;
-    const usage = userPlan?.usage || {};
-    const teleUsage = usage.teleConsult || usage.teleConsults || usage.teleConsultCounts || {};
+  const remainingDays = userPlan
+    ? Math.max(0, Math.ceil((new Date(userPlan.endDate).getTime() - Date.now()) / 864e5))
+    : 0;
 
-    if (!userPlan) return null;
+  const isLoading = loadingCurrent || loadingUsage;
 
-    // allSpecialties mode
-    if (typeof allowed.allSpecialties === "number") {
-      const vals = Object.values(teleUsage as Record<string, any>).map((v) => Number(v ?? 0));
-      const totalUsed: number = vals.reduce((sum: number, v: number) => sum + v, 0);
-      const allowedAll = Number(allowed.allSpecialties) || 0;
-      const stats: TeleAll = {
-        mode: "all",
-        allowed: allowedAll,
-        used: totalUsed,
-        remaining: Math.max(allowedAll - totalUsed, 0),
-      };
-      return stats;
-    }
-
-    // per-specialty mode
-    const perSpec: TelePerItem[] = Object.entries(allowed).map(([spec, count]) => {
-      if (spec === "allSpecialties") return null;
-      const used = Number(teleUsage?.[spec] || 0);
-      const allowedCount = Number(count || 0);
-      const item: TelePerItem = {
-        spec,
-        allowed: allowedCount,
-        used,
-        remaining: Math.max(allowedCount - used, 0),
-      };
-      return item;
-    }).filter(Boolean) as TelePerItem[];
-
-    const stats: TelePer = { mode: "per-spec", items: perSpec };
-    return stats;
-  }, [userPlan]);
+  // ── Handlers ───────────────────────────────────────────────────────────────
+  const invalidateAll = () => Promise.all([
+    qc.invalidateQueries({ queryKey: ["myPlan", "current"] }),
+    qc.invalidateQueries({ queryKey: ["myPlan", "usage"] }),
+    qc.invalidateQueries({ queryKey: ["plans", "upgrade-options"] }),
+    qc.invalidateQueries({ queryKey: ["plans", "available"] }),
+    qc.invalidateQueries({ queryKey: ["user-plan"] }),
+    qc.invalidateQueries({ queryKey: ["user-profile"] }),
+  ]);
 
   const handleSubscribe = async (planId: number) => {
-    if (userPlan) {
-      toast({
-        title: "Already Subscribed",
-        description: "You already have an active plan. Please wait for it to expire before subscribing again.",
-      });
-      return;
-    }
-    if (!confirm("Subscribe to this plan?")) return;
     setSubscribingId(planId);
-    // Optimistic: create a pseudo plan entry to show immediately
-    const optimisticKey = ["myPlan", "current"];
-    const prev = qc.getQueryData(optimisticKey);
-    const chosen = availablePlans.find(p => p.id === planId);
-    if (chosen) {
-      const startDate = new Date();
-      // Support both durationDays and durationMonths
-      const durationDays = chosen.durationDays || ((chosen.durationMonths || 1) * 30);
-      const endDate = new Date(startDate.getTime() + durationDays * 24 * 60 * 60 * 1000);
-      qc.setQueryData(optimisticKey, { userPlan: {
-        id: -1,
-        membershipPlanId: chosen.id,
-        startDate: startDate.toISOString().slice(0,10),
-        endDate: endDate.toISOString().slice(0,10),
-        status: 'active',
-        appliedLimits: {
-          benefitLimits: chosen.benefitLimits || chosen.limitations,
-          teleConsultLimits: chosen.teleConsultLimits,
-          healthCheckPackage: chosen.healthCheckPackage,
-          priceINR: chosen.priceINR || Number(chosen.price) || 0
-        },
-        usage: {},
-      } as any });
-    }
     try {
       await api.post(`/membership/subscribe/${planId}`);
-      toast({ title: "Subscription successful" });
-      await Promise.all([
-        qc.invalidateQueries({ queryKey: ["myPlan", "current"] }),
-        qc.invalidateQueries({ queryKey: ["myPlan", "usage"] }),
-        qc.invalidateQueries({ queryKey: ["plans", "upgrade-options"] }),
-        qc.invalidateQueries({ queryKey: ["plans", "addons"] }),
-      ]);
+      toast({ title: "Plan activated!", description: "Your subscription is now active." });
+      await invalidateAll();
     } catch (e: any) {
-      // Rollback
-      qc.invalidateQueries({ queryKey: ["myPlan", "current"] });
-      toast({ title: "Subscription failed", description: e?.response?.data?.message || e.message, variant: "destructive" });
-    } finally {
-      setSubscribingId(null);
-    }
+      toast({ title: "Subscription failed", description: e?.response?.data?.message ?? e.message, variant: "destructive" });
+    } finally { setSubscribingId(null); }
   };
 
-  // Handle plan upgrade
-  const handleUpgrade = async (planId: number, planName: string, amountDue: number) => {
-    const confirmMsg = amountDue > 0 
-      ? `Upgrade to ${planName}? You'll pay ₹${amountDue.toLocaleString('en-IN')} (prorated amount).`
-      : `Upgrade to ${planName}? No additional payment required due to prorated refund.`;
-    
-    if (!confirm(confirmMsg)) return;
-    
-    setUpgradingId(planId);
+  const handleUpgrade = async () => {
+    if (!upgradePending) return;
+    const plan = upgradePending;
+    setUpgradingId(plan.id);
     try {
-      const { data } = await api.post(`/membership/upgrade/${planId}`);
-      toast({ 
-        title: "Plan Upgraded Successfully!", 
-        description: `You are now on ${data.newPlan.name}. ${data.previousPlan.proratedRefund > 0 ? `Prorated refund: ₹${data.previousPlan.proratedRefund}` : ''}`
+      if (plan.amountDue <= 0) {
+        // Prorated credit covers full price — no payment needed
+        const { data } = await api.post(`/membership/upgrade/${plan.id}`);
+        toast({ title: "Plan upgraded!", description: `You're now on ${data.newPlan?.name ?? plan.name}.` });
+        setUpgradePending(null);
+        await invalidateAll();
+        setUpgradingId(null);
+        return;
+      }
+
+      // Create Razorpay order via backend
+      const { data: orderData } = await api.post('/membership/payment-order', {
+        amount: plan.amountDue,
+        planId: plan.id,
+        planName: plan.name
       });
-      await Promise.all([
-        qc.invalidateQueries({ queryKey: ["myPlan", "current"] }),
-        qc.invalidateQueries({ queryKey: ["myPlan", "usage"] }),
-        qc.invalidateQueries({ queryKey: ["plans", "upgrade-options"] }),
-      ]);
+
+      // Open Razorpay checkout
+      await openRazorpayCheckout(orderData, {
+        prefill: {
+          name: currentUser ? `${currentUser.firstName ?? ''} ${currentUser.lastName ?? ''}`.trim() : '',
+          email: currentUser?.email ?? '',
+          contact: currentUser?.phoneNumber ?? ''
+        },
+        onSuccess: async (response) => {
+          try {
+            const { data } = await api.post(`/membership/upgrade/${plan.id}`, {
+              razorpay_payment_id: response.razorpay_payment_id,
+              razorpay_order_id: response.razorpay_order_id,
+              razorpay_signature: response.razorpay_signature
+            });
+            toast({ title: "Payment successful!", description: `You're now on ${data.newPlan?.name ?? plan.name}. Welcome!` });
+            setUpgradePending(null);
+            await invalidateAll();
+          } catch (e: any) {
+            toast({ title: "Upgrade failed after payment", description: e?.response?.data?.message ?? e.message, variant: "destructive" });
+          } finally {
+            setUpgradingId(null);
+          }
+        },
+        onFailure: (error) => {
+          const msg = error?.message ?? String(error);
+          if (msg !== 'Payment cancelled by user') {
+            toast({ title: "Payment failed", description: msg, variant: "destructive" });
+          }
+          setUpgradingId(null);
+        }
+      });
     } catch (e: any) {
-      toast({ 
-        title: "Upgrade Failed", 
-        description: e?.response?.data?.message || e.message, 
-        variant: "destructive" 
-      });
-    } finally {
+      toast({ title: "Upgrade failed", description: e?.response?.data?.message ?? e.message, variant: "destructive" });
       setUpgradingId(null);
     }
   };
 
-  // Handle addon subscription
-  const handleSubscribeAddon = async (planId: number, planName: string) => {
-    if (!confirm(`Subscribe to ${planName} addon?`)) return;
-    
-    setSubscribingId(planId);
-    try {
-      await api.post(`/membership/subscribe/${planId}`);
-      toast({ title: `${planName} addon activated!` });
-      await Promise.all([
-        qc.invalidateQueries({ queryKey: ["plans", "addons"] }),
-        qc.invalidateQueries({ queryKey: ["myPlan", "current"] }),
-      ]);
-    } catch (e: any) {
-      toast({ 
-        title: "Subscription Failed", 
-        description: e?.response?.data?.message || e.message, 
-        variant: "destructive" 
-      });
-    } finally {
-      setSubscribingId(null);
-    }
-  };
-
-  const isLoading = loadingCurrent || loadingUsage || loadingPlans;
-
+  // ── Render ─────────────────────────────────────────────────────────────────
   return (
-      <motion.div variants={container} initial="hidden" animate="show" className="max-w-7xl mx-auto space-y-6 px-4 md:px-6 py-6">
-        {/* Premium Hero Header */}
-        <motion.div variants={item} className="relative overflow-hidden rounded-2xl bg-gradient-to-r from-slate-800 via-slate-900 to-slate-800 p-6 md:p-8 text-white shadow-2xl">
-          <div className="absolute inset-0 bg-[url('data:image/svg+xml;base64,PHN2ZyB3aWR0aD0iNjAiIGhlaWdodD0iNjAiIHZpZXdCb3g9IjAgMCA2MCA2MCIgeG1sbnM9Imh0dHA6Ly93d3cudzMub3JnLzIwMDAvc3ZnIj48ZyBmaWxsPSJub25lIiBmaWxsLXJ1bGU9ImV2ZW5vZGQiPjxwYXRoIGQ9Ik0zNiAxOGMzLjMxNCAwIDYgMi42ODYgNiA2cy0yLjY4NiA2LTYgNi02LTIuNjg2LTYtNiAyLjY4Ni02IDYtNiIgc3Ryb2tlPSJyZ2JhKDI1NSwyNTUsMjU1LDAuMSkiLz48L2c+PC9zdmc+')] opacity-30" />
-          <div className="absolute top-0 right-0 w-64 h-64 bg-gradient-to-br from-amber-500/20 to-transparent rounded-full blur-3xl" />
-          <div className="relative">
-            <div className="flex items-center gap-3 mb-3">
-              <div className="p-2.5 rounded-xl bg-gradient-to-br from-amber-500 to-amber-600 shadow-lg shadow-amber-500/30">
-                <Crown className="w-6 h-6" />
-              </div>
-              <Badge className="bg-white/10 text-white/90 border-white/20 font-medium">Membership</Badge>
-            </div>
-            <h1 className="text-2xl md:text-3xl font-bold mb-2">My Plans</h1>
-            <p className="text-slate-300 text-sm md:text-base">Subscribe to a plan and track your remaining benefits</p>
+    <>
+      <AnimatePresence>
+        {upgradePending && (
+          <ConfirmUpgradeModal
+            plan={upgradePending}
+            onConfirm={handleUpgrade}
+            onCancel={() => setUpgradePending(null)}
+            isLoading={upgradingId === upgradePending.id}
+          />
+        )}
+      </AnimatePresence>
+
+      <motion.div variants={stagger} initial="hidden" animate="show" className="max-w-5xl mx-auto space-y-6 px-4 md:px-6 py-6">
+
+        {/* ── Page header ── */}
+        <motion.div variants={fadeUp} className="flex items-center gap-3 mb-2">
+          <div className={`p-2.5 rounded-xl bg-gradient-to-br ${tierCfg.gradient} shadow-lg`}>
+            <Crown className="w-5 h-5 text-white" />
+          </div>
+          <div>
+            <h1 className="text-2xl font-bold text-gray-900 dark:text-white">My Health Plan</h1>
+            <p className="text-sm text-gray-500 dark:text-gray-400">Manage subscription & track your benefits</p>
           </div>
         </motion.div>
 
-        {/* Live Usage Update Banner */}
-        {userPlan && (
-          <motion.div variants={item}>
-          <Card className={`p-4 border-2 transition-all duration-500 ${
-            showUsageBanner 
-              ? "bg-gradient-to-r from-emerald-50 via-blue-50 to-purple-50 border-emerald-400 shadow-lg animate-in slide-in-from-top" 
-              : "bg-gradient-to-r from-gray-50 to-slate-50 border-gray-200"
-          }`}>
-            <div className="flex items-center gap-3">
-              {showUsageBanner ? (
-                <Zap className="h-6 w-6 text-emerald-600 animate-pulse" />
-              ) : (
-                <Activity className="h-5 w-5 text-gray-600" />
-              )}
-              <div className="flex-1">
-                <div className="flex items-center gap-2">
-                  <h3 className={`font-semibold ${showUsageBanner ? "text-emerald-900" : "text-gray-900"}`}>
-                    {showUsageBanner ? "✨ Usage Updated!" : "Live Usage Tracking"}
-                  </h3>
-                  <Badge variant="outline" className={showUsageBanner ? "bg-emerald-100 text-emerald-700 animate-pulse" : "bg-gray-100 text-gray-700"}>
-                    {showUsageBanner ? "Updated" : "Active"}
-                  </Badge>
-                </div>
-                <p className={`text-sm ${showUsageBanner ? "text-emerald-700" : "text-gray-600"}`}>
-                  {showUsageBanner 
-                    ? "Your consultation was tracked and limits have been updated in real-time" 
-                    : "Your plan usage is monitored automatically after each consultation"}
-                </p>
-              </div>
-              {showUsageBanner ? (
-                <TrendingUp className="h-6 w-6 text-emerald-600 animate-bounce" />
-              ) : (
-                <RefreshCw className="h-5 w-5 text-gray-400 animate-spin" style={{ animationDuration: "3s" }} />
-              )}
-            </div>
-            {showUsageBanner && teleConsultStats && (
-              <div className="mt-3 pt-3 border-t border-emerald-200">
-                <div className="grid grid-cols-3 gap-4 text-center">
-                  <div>
-                    <div className="text-2xl font-bold text-emerald-600">
-                      {teleConsultStats.mode === 'all' ? teleConsultStats.remaining : 
-                       teleConsultStats.items.reduce((sum, it) => sum + it.remaining, 0)}
-                    </div>
-                    <div className="text-xs text-gray-600">Consultations Left</div>
-                  </div>
-                  <div>
-                    <div className="text-2xl font-bold text-blue-600">
-                      ₹{Number(remainingMoney?.pharmacyLimitINR || 0).toLocaleString("en-IN")}
-                    </div>
-                    <div className="text-xs text-gray-600">Pharmacy Balance</div>
-                  </div>
-                  <div>
-                    <div className="text-2xl font-bold text-purple-600">
-                      {userPlan.endDate ? Math.ceil((new Date(userPlan.endDate).getTime() - new Date().getTime()) / (1000 * 60 * 60 * 24)) : 0}
-                    </div>
-                    <div className="text-xs text-gray-600">Days Remaining</div>
-                  </div>
-                </div>
-              </div>
-            )}
-          </Card>
-          </motion.div>
-        )}
-
         {isLoading ? (
-          <div className="flex items-center justify-center min-h-[240px]">
-            <Loader2 className="h-6 w-6 animate-spin text-amber-500" />
+          <div className="flex items-center justify-center min-h-[300px]">
+            <Loader2 className="w-6 h-6 animate-spin text-amber-500" />
           </div>
-        ) : (
-          <>
-            {/* Current Plan */}
-            <motion.div variants={item}>
-              <Card className="p-6 bg-white dark:bg-slate-800 border-slate-200 dark:border-slate-700">
-              {!userPlan ? (
-                <div className="flex items-center justify-between">
-                  <div>
-                    <h3 className="text-xl font-semibold text-slate-800 dark:text-white">No Active Plan</h3>
-                    <p className="text-gray-600 dark:text-slate-400">Choose a plan below to get started.</p>
-                  </div>
-                  <Crown className="h-8 w-8 text-amber-500" />
-                </div>
-              ) : (
-                <div className="space-y-4">
-                  <div className="flex items-start justify-between">
-                    <div>
-                      <div className="flex items-center gap-2">
-                        <h3 className="text-2xl font-semibold">Active Membership</h3>
-                        <Badge className="bg-emerald-100 text-emerald-700">Active</Badge>
-                      </div>
-                      <p className="text-gray-600 mt-1">Valid from {new Date(userPlan.startDate).toLocaleDateString("en-IN")} to {new Date(userPlan.endDate).toLocaleDateString("en-IN")}</p>
-                    </div>
-                    <Crown className="h-8 w-8 text-amber-500" />
-                  </div>
-
-                  {/* Benefits */}
-                  <div className="grid md:grid-cols-3 gap-4">
-                    <Card className="p-4">
-                      <div className="text-sm text-gray-500">Pharmacy</div>
-                      <div className="text-lg font-semibold">
-                        ₹{Number(remainingMoney?.pharmacyLimitINR ?? userPlan.appliedLimits?.benefitLimits?.pharmacyLimitINR ?? 0).toLocaleString("en-IN")}
-                        <span className="text-sm text-gray-500 font-normal"> remaining</span>
-                      </div>
-                    </Card>
-                    <Card className="p-4">
-                      <div className="text-sm text-gray-500">Home Care</div>
-                      <div className="text-lg font-semibold">
-                        ₹{Number(remainingMoney?.homeCareLimitINR ?? userPlan.appliedLimits?.benefitLimits?.homeCareLimitINR ?? 0).toLocaleString("en-IN")}
-                        <span className="text-sm text-gray-500 font-normal"> remaining</span>
-                      </div>
-                    </Card>
-                    <Card className="p-4">
-                      <div className="text-sm text-gray-500">Ambulance</div>
-                      <div className="text-lg font-semibold">
-                        ₹{Number(remainingMoney?.ambulanceLimitINR ?? userPlan.appliedLimits?.benefitLimits?.ambulanceLimitINR ?? 0).toLocaleString("en-IN")}
-                        <span className="text-sm text-gray-500 font-normal"> remaining</span>
-                      </div>
-                    </Card>
-                  </div>
-
-                  {/* Teleconsult limits */}
-                  <Card className="p-4">
-                    <div className="text-sm text-gray-500 mb-2">Teleconsults</div>
-                    {!teleConsultStats ? (
-                      <div className="text-gray-600">No teleconsult limits available for this plan.</div>
-                    ) : teleConsultStats.mode === "all" ? (
-                      <div className="flex items-center gap-4">
-                        <div className="text-lg font-semibold">Allowed: {teleConsultStats.allowed}</div>
-                        <div>Used: {teleConsultStats.used}</div>
-                        <div className="text-emerald-700">Remaining: {teleConsultStats.remaining}</div>
-                      </div>
-                    ) : (
-                      <div className="grid md:grid-cols-2 gap-2">
-                        {teleConsultStats.items.map((it) => (
-                          <div key={it.spec} className="flex items-center justify-between border rounded-md p-2">
-                            <div className="font-medium">{it.spec}</div>
-                            <div className="text-sm">{it.used}/{it.allowed} used</div>
-                            <div className="text-sm text-emerald-700">{it.remaining} left</div>
-                          </div>
-                        ))}
-                      </div>
-                    )}
-                  </Card>
-
-                  {/* Health Check */}
-                  <div className="text-sm text-gray-600">
-                    <CheckCircle className="inline h-4 w-4 mr-1 text-emerald-600" />
-                    Health Check Package: <span className="font-medium">{userPlan.appliedLimits?.healthCheckPackage || "—"}</span>
-                  </div>
-                </div>
-              )}
-            </Card>
-            </motion.div>
-
-            {/* Available Plans */}
-            <motion.div variants={item} className="space-y-3">
-              <h2 className="text-xl font-semibold text-slate-800 dark:text-white">Available Plans</h2>
-              {availablePlans.length === 0 ? (
-                <Card className="p-6 text-center text-gray-600 dark:text-slate-400 dark:bg-slate-800 dark:border-slate-700">No plans available at the moment.</Card>
-              ) : (
-                <div className="grid md:grid-cols-2 lg:grid-cols-3 gap-6">
-                  {availablePlans.map((p) => {
-                    const durationDays = p.durationDays || ((p.durationMonths || 1) * 30);
-                    const parsedPrice = Number(p.price);
-                    const priceValue = p.priceINR ?? (Number.isFinite(parsedPrice) ? parsedPrice : 0);
+        ) : !userPlan ? (
+          /* ── No plan state ─────────────────────────────────────────────── */
+          <motion.div variants={fadeUp}>
+            <Card className="p-8 text-center space-y-4 border-dashed border-2 border-gray-200 dark:border-gray-700">
+              <div className="w-16 h-16 mx-auto rounded-2xl bg-gradient-to-br from-amber-100 to-amber-200 dark:from-amber-900/30 dark:to-amber-800/20 flex items-center justify-center">
+                <Crown className="w-8 h-8 text-amber-500" />
+              </div>
+              <div>
+                <h2 className="text-xl font-bold text-gray-900 dark:text-white">No Active Plan</h2>
+                <p className="text-gray-500 dark:text-gray-400 text-sm mt-1">Choose a plan below to unlock healthcare benefits</p>
+              </div>
+              {loadingPlans ? <Loader2 className="w-5 h-5 animate-spin mx-auto text-amber-500" /> : (
+                <div className="grid sm:grid-cols-2 lg:grid-cols-3 gap-4 mt-4 text-left">
+                  {availablePlans.map(p => {
+                    const pTier = p.metadata?.tier ?? 1;
+                    const pCfg = TIERS[pTier] ?? TIERS[1];
+                    const PIcon = pCfg.Icon;
+                    const price = Number(p.discountedPrice ?? p.price ?? 0);
                     return (
-                    <motion.div key={p.id} whileHover={{ y: -6, scale: 1.02 }} transition={{ type: 'spring', stiffness: 300 }}>
-                    <Card className="p-6 space-y-3 bg-white dark:bg-slate-800 border-slate-200 dark:border-slate-700 hover:shadow-xl transition-shadow">
-                      <div className="flex items-start justify-between">
+                      <div key={p.id} className={`p-4 rounded-2xl border-2 ${pCfg.badge.replace("text-", "border-").replace(/bg-\S+/, "").trim()} bg-white dark:bg-gray-800 space-y-3`}>
+                        <div className={`p-2 rounded-lg w-fit bg-gradient-to-br ${pCfg.gradient}`}><PIcon className="w-4 h-4 text-white" /></div>
                         <div>
-                          <h3 className="text-lg font-semibold">{p.name}</h3>
-                          <p className="text-sm text-gray-600">{durationDays} days</p>
+                          <h3 className="font-semibold text-gray-900 dark:text-white">{p.name}</h3>
+                          <p className="text-xs text-gray-500 mt-0.5 line-clamp-2">{p.description}</p>
                         </div>
-                        <Badge className={p.isActive ? "bg-green-100 text-green-700" : "bg-gray-100 text-gray-700"}>
-                          {p.isActive ? "Active" : "Inactive"}
-                        </Badge>
-                      </div>
-                      <div className="text-2xl font-bold">₹{Number(priceValue).toLocaleString("en-IN")}</div>
-                      {p.description && <p className="text-sm text-gray-600 line-clamp-3">{p.description}</p>}
-                      {p.healthCheckPackage && (
-                        <div className="text-sm"><span className="text-gray-500">Health Check:</span> {p.healthCheckPackage}</div>
-                      )}
-                      {/* Features list */}
-                      {p.features && p.features.length > 0 && (
-                        <div className="text-sm text-gray-600">
-                          <p className="font-medium mb-1">Features:</p>
-                          <ul className="list-disc list-inside space-y-1">
-                            {p.features.slice(0, 3).map((f, i) => (
-                              <li key={i}>{f}</li>
-                            ))}
-                          </ul>
+                        <div className="font-bold text-lg text-gray-900 dark:text-white">
+                          {price === 0 ? "Free" : `₹${price.toLocaleString("en-IN")}/mo`}
                         </div>
-                      )}
-                      <div className="text-sm text-gray-600">
-                        Teleconsults: {typeof p.teleConsultLimits?.allSpecialties === "number" ? (
-                          <span>{p.teleConsultLimits?.allSpecialties} for all specialties</span>
-                        ) : p.limitations?.maxConsultations ? (
-                          <span>{p.limitations.maxConsultations} consultations included</span>
-                        ) : (
-                          <span>{Object.keys(p.teleConsultLimits || {}).length || 'Unlimited'} specialties covered</span>
-                        )}
-                      </div>
-                      <Button
-                        disabled={!p.isActive || Boolean(userPlan) || subscribingId === p.id}
-                        onClick={() => handleSubscribe(p.id)}
-                        className="w-full mt-2 bg-gradient-to-r from-amber-500 to-amber-600 hover:from-amber-600 hover:to-amber-700 text-white"
-                      >
-                        {subscribingId === p.id ? <Loader2 className="h-4 w-4 animate-spin mr-2" /> : <Star className="h-4 w-4 mr-2" />}
-                        {userPlan ? "Already Subscribed" : "Subscribe"}
-                      </Button>
-                    </Card>
-                    </motion.div>
-                  )})}
-                </div>
-              )}
-            </motion.div>
-
-            {/* Upgrade Options - Show when user has active plan */}
-            {userPlan && upgradeOptions.length > 0 && (
-              <motion.div variants={item} className="space-y-3">
-                <div className="flex items-center gap-2">
-                  <TrendingUp className="h-5 w-5 text-amber-500" />
-                  <h2 className="text-xl font-semibold text-slate-800 dark:text-white">Upgrade Your Plan</h2>
-                </div>
-                <p className="text-sm text-muted-foreground">
-                  Upgrade to a higher tier and get prorated credit for your remaining days
-                </p>
-                <div className="grid md:grid-cols-2 lg:grid-cols-3 gap-6">
-                  {upgradeOptions.map((opt) => (
-                    <motion.div key={opt.id} whileHover={{ y: -6, scale: 1.02 }} transition={{ type: 'spring', stiffness: 300 }}>
-                    <Card className={`p-6 space-y-3 border-2 ${opt.isUpgrade ? 'border-amber-400/50 bg-amber-50/50 dark:bg-amber-900/10 dark:border-amber-500/30' : 'border-gray-200 dark:border-slate-700 bg-white dark:bg-slate-800'}`}>
-                      <div className="flex items-start justify-between">
-                        <div>
-                          <h3 className="text-lg font-semibold text-slate-800 dark:text-white">{opt.name}</h3>
-                          <Badge variant={opt.isUpgrade ? "default" : "secondary"} className="mt-1">
-                            {opt.tierName} {opt.isUpgrade && '↑'}
-                          </Badge>
-                        </div>
-                        {opt.isUpgrade && <Zap className="h-5 w-5 text-amber-500" />}
-                      </div>
-                      
-                      <div className="space-y-1">
-                        <div className="text-sm text-slate-500 dark:text-slate-400 line-through">
-                          Original: ₹{opt.originalPrice.toLocaleString('en-IN')}
-                        </div>
-                        <div className="text-sm text-emerald-600 dark:text-emerald-400">
-                          Prorated credit: -₹{opt.proratedRefund.toLocaleString('en-IN')}
-                        </div>
-                        <div className="text-2xl font-bold bg-gradient-to-r from-amber-600 to-orange-600 bg-clip-text text-transparent">
-                          Pay: ₹{opt.amountDue.toLocaleString('en-IN')}
-                        </div>
-                      </div>
-                      
-                      {opt.description && (
-                        <p className="text-sm text-gray-600 dark:text-slate-400 line-clamp-2">{opt.description}</p>
-                      )}
-                      
-                      <Button
-                        disabled={upgradingId === opt.id}
-                        onClick={() => handleUpgrade(opt.id, opt.name, opt.amountDue)}
-                        className={`w-full ${opt.isUpgrade ? 'bg-gradient-to-r from-amber-500 to-orange-500 hover:from-amber-600 hover:to-orange-600 text-white' : ''}`}
-                        variant={opt.isUpgrade ? "default" : "outline"}
-                      >
-                        {upgradingId === opt.id ? (
-                          <Loader2 className="h-4 w-4 animate-spin mr-2" />
-                        ) : (
-                          <TrendingUp className="h-4 w-4 mr-2" />
-                        )}
-                        {opt.isUpgrade ? 'Upgrade Now' : 'Switch Plan'}
-                      </Button>
-                    </Card>
-                    </motion.div>
-                  ))}
-                </div>
-              </motion.div>
-            )}
-
-            {/* Addon Plans */}
-            {addonPlans.length > 0 && (
-              <motion.div variants={item} className="space-y-3">
-                <div className="flex items-center gap-2">
-                  <Sparkles className="h-5 w-5 text-purple-500" />
-                  <h2 className="text-xl font-semibold text-slate-800 dark:text-white">Optional Add-ons</h2>
-                </div>
-                <p className="text-sm text-muted-foreground">
-                  Enhance your membership with additional benefits
-                </p>
-                <div className="grid md:grid-cols-2 lg:grid-cols-3 gap-6">
-                  {addonPlans.map((addon) => {
-                    const parsedPrice = Number(addon.price);
-                    const priceValue = addon.priceINR ?? (Number.isFinite(parsedPrice) ? parsedPrice : 0);
-                    return (
-                      <motion.div key={addon.id} whileHover={{ y: -4 }} transition={{ type: 'spring', stiffness: 300 }}>
-                      <Card className={`p-6 space-y-3 bg-white dark:bg-slate-800 border-slate-200 dark:border-slate-700 ${addon.isSubscribed ? 'border-emerald-500 bg-emerald-50 dark:bg-emerald-900/10' : ''}`}>
-                        <div className="flex items-start justify-between">
-                          <div>
-                            <h3 className="text-lg font-semibold">{addon.name}</h3>
-                            <p className="text-sm text-gray-600">
-                              {addon.durationMonths ? `${addon.durationMonths} months` : 'Lifetime'}
-                            </p>
-                          </div>
-                          {addon.isSubscribed ? (
-                            <Badge className="bg-emerald-100 text-emerald-700">Active</Badge>
-                          ) : (
-                            <Badge variant="outline">Add-on</Badge>
-                          )}
-                        </div>
-                        
-                        <div className="text-2xl font-bold">₹{Number(priceValue).toLocaleString('en-IN')}</div>
-                        
-                        {addon.description && (
-                          <p className="text-sm text-gray-600 line-clamp-2">{addon.description}</p>
-                        )}
-                        
-                        {addon.features && Array.isArray(addon.features) && addon.features.length > 0 && (
-                          <ul className="text-sm text-gray-600 space-y-1">
-                            {(addon.features as string[]).slice(0, 3).map((f, i) => (
-                              <li key={i} className="flex items-center gap-1">
-                                <CheckCircle className="h-3 w-3 text-emerald-500" />
-                                {f}
-                              </li>
-                            ))}
-                          </ul>
-                        )}
-                        
-                        <Button
-                          disabled={addon.isSubscribed || subscribingId === addon.id || !addon.isActive}
-                          onClick={() => handleSubscribeAddon(addon.id, addon.name)}
-                          className="w-full"
-                          variant={addon.isSubscribed ? "secondary" : "outline"}
-                        >
-                          {subscribingId === addon.id ? (
-                            <Loader2 className="h-4 w-4 animate-spin mr-2" />
-                          ) : addon.isSubscribed ? (
-                            <CheckCircle className="h-4 w-4 mr-2" />
-                          ) : null}
-                          {addon.isSubscribed ? 'Already Added' : 'Add to Plan'}
+                        <Button size="sm" className={`w-full bg-gradient-to-r ${pCfg.gradient} text-white border-0 hover:opacity-90`}
+                          onClick={() => handleSubscribe(p.id)} disabled={subscribingId === p.id}>
+                          {subscribingId === p.id ? <Loader2 className="w-3.5 h-3.5 animate-spin mr-1.5" /> : null}
+                          Subscribe
                         </Button>
-                      </Card>
-                      </motion.div>
+                      </div>
                     );
                   })}
                 </div>
+              )}
+            </Card>
+          </motion.div>
+        ) : (
+          <>
+            {/* ── Active plan hero card ──────────────────────────────────── */}
+            <motion.div variants={fadeUp}>
+              <Card className={`overflow-hidden border-2 ${tierCfg.badge.split(" ").find(c => c.startsWith("border-")) ?? "border-gray-200"}`}>
+                {/* Top gradient header */}
+                <div className={`p-6 bg-gradient-to-br ${tierCfg.gradient} text-white relative overflow-hidden`}>
+                  <div className="absolute -right-8 -top-8 w-40 h-40 rounded-full bg-white/5" />
+                  <div className="absolute -right-4 top-8 w-24 h-24 rounded-full bg-white/5" />
+                  <div className="relative flex items-start justify-between">
+                    <div>
+                      <div className="flex items-center gap-2 mb-1">
+                        <Badge className="bg-white/20 text-white border-white/30 text-xs">{tierCfg.label} Plan</Badge>
+                        <Badge className="bg-emerald-400/30 text-white border-emerald-300/30 text-xs">Active</Badge>
+                      </div>
+                      <h2 className="text-2xl font-black">{planDetails?.name ?? "My Plan"}</h2>
+                      <p className="text-white/70 text-sm mt-1 flex items-center gap-1.5">
+                        <Calendar className="w-3.5 h-3.5" />
+                        Valid until {new Date(userPlan.endDate).toLocaleDateString("en-IN", { day: "numeric", month: "long", year: "numeric" })}
+                      </p>
+                    </div>
+                    {/* Days remaining ring */}
+                    <div className="flex flex-col items-center">
+                      <div className="relative w-16 h-16">
+                        <svg className="w-16 h-16 -rotate-90" viewBox="0 0 60 60">
+                          <circle cx="30" cy="30" r="26" fill="none" stroke="rgba(255,255,255,0.2)" strokeWidth="6" />
+                          <circle cx="30" cy="30" r="26" fill="none" strokeWidth="6" strokeLinecap="round"
+                            stroke="white" strokeDasharray={2 * Math.PI * 26}
+                            strokeDashoffset={2 * Math.PI * 26 * (1 - Math.min(remainingDays / 365, 1))}
+                            style={{ transition: "stroke-dashoffset 1.2s ease" }} />
+                        </svg>
+                        <div className="absolute inset-0 flex flex-col items-center justify-center">
+                          <span className="text-lg font-black leading-none">{remainingDays}</span>
+                          <span className="text-[8px] text-white/70">days</span>
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+
+                {/* ── Coverage breakdown ── */}
+                <div className="p-5">
+                  {planDetails?.metadata?.coverageDetails ? (
+                    <>
+                      <div className="flex items-center gap-2 mb-4">
+                        <Stethoscope className="w-4 h-4 text-gray-400" />
+                        <p className="text-xs font-semibold text-gray-400 uppercase tracking-wider">Plan Coverage</p>
+                      </div>
+                      <CoverageGrid
+                        coverage={planDetails.metadata.coverageDetails}
+                        tier={currentTier}
+                        remaining={remaining}
+                        usedConsults={usedConsults}
+                      />
+                    </>
+                  ) : (
+                    /* Fallback: original bars if no coverageDetails */
+                    <div className="grid md:grid-cols-[auto,1fr] gap-6 items-start">
+                      <TeleconsultRing used={usedConsults} allowed={allowedConsults} tier={currentTier} />
+                      <div className="space-y-1 divide-y dark:divide-gray-800">
+                        <BenefitBar label="Pharmacy" Icon={Pill} used={pharmacyUsed} total={pharmacyTotal} color="#16a34a" />
+                        <BenefitBar label="Home Care" Icon={Home} used={homecareUsed} total={homecareTotal} color="#0ea5e9" />
+                        <BenefitBar label="Ambulance" Icon={Ambulance} used={ambulanceUsed} total={ambulanceTotal} color="#dc2626" />
+                      </div>
+                    </div>
+                  )}
+                </div>
+              </Card>
+            </motion.div>
+
+            {/* ── Tier progress roadmap ──────────────────────────────────── */}
+            <motion.div variants={fadeUp}>
+              <Card className="p-5">
+                <p className="text-xs font-semibold text-gray-400 uppercase tracking-wider mb-4">Your Plan Journey</p>
+                <TierRoadmap currentTier={currentTier} />
+              </Card>
+            </motion.div>
+
+            {/* ── Upgrade options ────────────────────────────────────────── */}
+            {(loadingUpgrade || upgradeOptions.length > 0) && (
+              <motion.div variants={fadeUp} className="space-y-4">
+                <div className="flex items-center gap-2.5">
+                  <div className="p-2 rounded-lg bg-amber-100 dark:bg-amber-900/30"><Zap className="w-4 h-4 text-amber-600" /></div>
+                  <div>
+                    <h2 className="text-lg font-bold text-gray-900 dark:text-white">Upgrade Your Plan</h2>
+                    <p className="text-xs text-gray-500 dark:text-gray-400">Get more benefits with prorated credit from your current plan</p>
+                  </div>
+                </div>
+                {loadingUpgrade ? (
+                  <div className="flex justify-center py-8"><Loader2 className="w-5 h-5 animate-spin text-amber-500" /></div>
+                ) : (
+                  <div className="grid sm:grid-cols-2 lg:grid-cols-3 gap-5">
+                    {upgradeOptions.map((opt, i) => (
+                      <motion.div key={opt.id} custom={i} variants={fadeUp}>
+                        <UpgradeCard plan={opt} onRequest={() => setUpgradePending(opt)} isPopular={opt.tier === 3} />
+                      </motion.div>
+                    ))}
+                  </div>
+                )}
               </motion.div>
             )}
           </>
         )}
       </motion.div>
+    </>
   );
 };
 

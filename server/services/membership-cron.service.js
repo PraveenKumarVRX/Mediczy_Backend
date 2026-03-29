@@ -1,6 +1,7 @@
 import cron from 'node-cron';
 import { syncAllUsersStatus } from '../middleware/membership.middleware.js';
 import { tick, tickError } from '../utils/cronRegistry.js';
+import n8nService from './n8n.service.js';
 
 /**
  * Cron job to sync user status with membership validity
@@ -105,6 +106,17 @@ Mediczy Team
 
           await notificationService.default.sendEmail(user.email, subject, message);
           notificationsSent++;
+
+          n8nService.trigger('membership-expiry', {
+            userId: user.id,
+            userEmail: user.email,
+            userName: user.firstName,
+            planId: plan.id,
+            planName: plan.planName,
+            expiryDate: plan.endDate,
+            daysRemaining,
+            autoRenew: plan.autoRenew,
+          }).catch(() => {});
           
           console.log(`✅ Expiry notification sent to user ${user.id} (${user.email}) - ${daysRemaining} days remaining`);
         } catch (error) {

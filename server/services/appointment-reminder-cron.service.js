@@ -3,6 +3,7 @@ import Appointment from '../models/appointment.model.intelligent.js';
 import notificationService from './notification.service.js';
 import { Op } from 'sequelize';
 import { tick, tickError } from '../utils/cronRegistry.js';
+import n8nService from './n8n.service.js';
 
 /**
  * Appointment Reminder Automation Service
@@ -177,6 +178,19 @@ class AppointmentReminderService {
 
     const appointmentTime = this.formatTime(appointment.appointmentTime);
     const appointmentDate = this.formatDate(appointment.appointmentDate);
+
+    // Trigger n8n workflow (best-effort)
+    n8nService.appointmentReminder({
+      appointmentId: appointment.id,
+      patientId: appointment.userId,
+      doctorId: appointment.doctorId,
+      patientName: appointment.patientName,
+      doctorName: appointment.doctorName,
+      appointmentDate,
+      appointmentTime,
+      consultationType: appointment.consultationType || 'consultation',
+      reminderType: '24h'
+    }).catch(() => {});
 
     // Send to patient
     await notificationService.send({

@@ -3,6 +3,7 @@ import { Prescription } from '../models/index.js';
 import notificationService from './notification.service.js';
 import { Op } from 'sequelize';
 import { tick, tickError } from '../utils/cronRegistry.js';
+import n8nService from './n8n.service.js';
 
 /**
  * Medication Reminder Automation Service
@@ -137,6 +138,15 @@ class MedicationReminderService {
     const medList = medications.map(med => 
       `${med.name} - ${med.dosage}`
     ).join(', ');
+
+    // Trigger n8n workflow (best-effort)
+    n8nService.medicationReminder({
+      userId: patientId,
+      medicationName: medications.map(m => m.name).join(', '),
+      dosage: medications.map(m => m.dosage).join(', '),
+      frequency: timeOfDay,
+      nextDoseTime: timeOfDay === 'morning' ? '08:00' : timeOfDay === 'afternoon' ? '14:00' : '20:00'
+    }).catch(() => {});
 
     await notificationService.send({
       userId: patientId,

@@ -26,7 +26,7 @@ import { HeartPulse, Eye, EyeOff, Chrome, Facebook, Calendar } from "lucide-reac
 import "../index.css";
 import { OTPInput } from "@/components/OTPInput";
 import api from "@/utils/api";
-import { setAuthData } from "@/hooks/auth";
+// setAuthData intentionally omitted – users must log in after signup
 
 const formSchema = z.object({
   email: z.string().email("Must be a valid email"),
@@ -205,15 +205,11 @@ const Register = () => {
         signupData,
         { skipAuth: true } as any
       );
-      if (data?.token) {
-        const userId = data.user?.id || data.user?.user_id;
-        setAuthData(data.token, "user", userId);
-      }
       toast({
-        title: "Success",
-        description: "Account created successfully. Redirecting to login...",
+        title: "Account created!",
+        description: "Please log in to choose your health plan and get started.",
       });
-      navigate("/");
+      navigate("/login");
     } catch (error: any) {
       toast({
         variant: "destructive",

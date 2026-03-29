@@ -1,0 +1,76 @@
+{
+  "name": "Mediczy - Membership Expiry",
+  "nodes": [
+    {
+      "parameters": {
+        "path": "membership-expiry",
+        "method": "POST",
+        "responseMode": "onReceived",
+        "responseData": "allEntries"
+      },
+      "id": "membership-expiry-webhook",
+      "name": "Membership Expiry Webhook",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 1,
+      "position": [240, 200]
+    },
+    {
+      "parameters": {
+        "values": {
+          "string": [
+            { "name": "userId",        "value": "={{$json[\"userId\"]}}" },
+            { "name": "userName",      "value": "={{$json[\"userName\"]}}" },
+            { "name": "userEmail",     "value": "={{$json[\"userEmail\"]}}" },
+            { "name": "planName",      "value": "={{$json[\"planName\"]}}" },
+            { "name": "expiryDate",    "value": "={{$json[\"expiryDate\"]}}" },
+            { "name": "daysRemaining", "value": "={{$json[\"daysRemaining\"]}}" },
+            { "name": "autoRenew",     "value": "={{$json[\"autoRenew\"]}}" },
+            {
+              "name": "emailSubject",
+              "value": "=Your Mediczy Membership Expires in {{$json[\"daysRemaining\"]}} Day(s)"
+            },
+            {
+              "name": "emailBody",
+              "value": "=Hi {{$json[\"userName\"]}},\n\nYour Mediczy {{$json[\"planName\"]}} membership expires in {{$json[\"daysRemaining\"]}} day(s) on {{$json[\"expiryDate\"]}}.\n\n{{$json[\"autoRenew\"] === 'true' ? 'Auto-renewal is enabled — no action needed.' : 'Renew now to continue enjoying uninterrupted healthcare access.'}}\n\nTeam Mediczy"
+            },
+            {
+              "name": "whatsappBody",
+              "value": "=📅 Heads up {{$json[\"userName\"]}}: your Mediczy {{$json[\"planName\"]}} membership expires in {{$json[\"daysRemaining\"]}} day(s) on {{$json[\"expiryDate\"]}}. Renew now!"
+            }
+          ]
+        }
+      },
+      "id": "prepare-membership-expiry",
+      "name": "Prepare Message",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 2,
+      "position": [500, 200]
+    },
+    {
+      "parameters": {
+        "url": "={{$env.MEDICZY_BASE_URL}}/api/notifications/send-internal",
+        "method": "POST",
+        "sendBody": true,
+        "jsonParameters": true,
+        "options": { "timeout": 10000 },
+        "bodyParametersJson": "={\n  \"userId\": \"{{$json.userId}}\",\n  \"type\": \"membership_expiring\",\n  \"channels\": [\"email\", \"whatsapp\", \"in-app\"],\n  \"subject\": \"{{$json.emailSubject}}\",\n  \"body\": \"{{$json.emailBody}}\",\n  \"whatsappBody\": \"{{$json.whatsappBody}}\",\n  \"data\": { \"planName\": \"{{$json.planName}}\", \"expiryDate\": \"{{$json.expiryDate}}\", \"daysRemaining\": {{$json.daysRemaining}} },\n  \"actionUrl\": \"/membership\"\n}",
+        "headerParametersJson": "={ \"Authorization\": \"Bearer {{$env.MEDICZY_INTERNAL_TOKEN}}\" }"
+      },
+      "id": "send-membership-expiry",
+      "name": "Send Notification",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4,
+      "position": [780, 200]
+    }
+  ],
+  "connections": {
+    "Membership Expiry Webhook": {
+      "main": [[{ "node": "Prepare Message", "type": "main", "index": 0 }]]
+    },
+    "Prepare Message": {
+      "main": [[{ "node": "Send Notification", "type": "main", "index": 0 }]]
+    }
+  },
+  "active": false,
+  "settings": { "executionOrder": "v1" }
+}

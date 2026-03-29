@@ -1,0 +1,73 @@
+{
+  "name": "Mediczy - Doctor Performance Report",
+  "nodes": [
+    {
+      "parameters": {
+        "path": "doctor-performance",
+        "method": "POST",
+        "responseMode": "onReceived",
+        "responseData": "allEntries"
+      },
+      "id": "doctor-perf-webhook",
+      "name": "Doctor Performance Webhook",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 1,
+      "position": [240, 200]
+    },
+    {
+      "parameters": {
+        "values": {
+          "string": [
+            { "name": "doctorId",              "value": "={{$json[\"doctorId\"]}}" },
+            { "name": "doctorName",            "value": "={{$json[\"doctorName\"]}}" },
+            { "name": "doctorEmail",           "value": "={{$json[\"doctorEmail\"]}}" },
+            { "name": "weekStart",             "value": "={{$json[\"weekStart\"]}}" },
+            { "name": "weekEnd",               "value": "={{$json[\"weekEnd\"]}}" },
+            { "name": "consultationsCompleted","value": "={{$json[\"consultationsCompleted\"]}}" },
+            { "name": "revenue",               "value": "={{$json[\"revenue\"]}}" },
+            { "name": "avgRating",             "value": "={{$json[\"avgRating\"]}}" },
+            {
+              "name": "emailSubject",
+              "value": "=Weekly Performance Report – {{$json[\"weekStart\"]}} to {{$json[\"weekEnd\"]}}"
+            },
+            {
+              "name": "emailBody",
+              "value": "=Hi Dr. {{$json[\"doctorName\"]}},\n\nHere is your weekly performance summary:\n\nPeriod: {{$json[\"weekStart\"]}} – {{$json[\"weekEnd\"]}}\nConsultations Completed: {{$json[\"consultationsCompleted\"]}}\nRevenue Generated: ₹{{$json[\"revenue\"]}}\nAverage Rating: {{$json[\"avgRating\"]}}/5\n\nKeep up the great work!\n\nTeam Mediczy"
+            }
+          ]
+        }
+      },
+      "id": "prepare-doctor-perf",
+      "name": "Prepare Message",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 2,
+      "position": [500, 200]
+    },
+    {
+      "parameters": {
+        "url": "={{$env.MEDICZY_BASE_URL}}/api/notifications/send-internal",
+        "method": "POST",
+        "sendBody": true,
+        "jsonParameters": true,
+        "options": { "timeout": 10000 },
+        "bodyParametersJson": "={\n  \"userId\": \"{{$json.doctorId}}\",\n  \"userType\": \"doctor\",\n  \"type\": \"performance_report\",\n  \"channels\": [\"email\", \"in-app\"],\n  \"subject\": \"{{$json.emailSubject}}\",\n  \"body\": \"{{$json.emailBody}}\",\n  \"data\": { \"doctorId\": \"{{$json.doctorId}}\", \"weekStart\": \"{{$json.weekStart}}\", \"weekEnd\": \"{{$json.weekEnd}}\" }\n}",
+        "headerParametersJson": "={ \"Authorization\": \"Bearer {{$env.MEDICZY_INTERNAL_TOKEN}}\" }"
+      },
+      "id": "send-doctor-perf",
+      "name": "Send Notification",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4,
+      "position": [780, 200]
+    }
+  ],
+  "connections": {
+    "Doctor Performance Webhook": {
+      "main": [[{ "node": "Prepare Message", "type": "main", "index": 0 }]]
+    },
+    "Prepare Message": {
+      "main": [[{ "node": "Send Notification", "type": "main", "index": 0 }]]
+    }
+  },
+  "active": false,
+  "settings": { "executionOrder": "v1" }
+}

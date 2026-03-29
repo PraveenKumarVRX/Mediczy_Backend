@@ -12,6 +12,7 @@ import cron from 'node-cron';
 import { Sequelize } from 'sequelize';
 import webinarNotificationService from './webinar-notification.service.js';
 import { tick, tickError } from '../utils/cronRegistry.js';
+import n8nService from './n8n.service.js';
 
 const sequelize = new Sequelize(
   process.env.POSTGRES_DATABASE || 'mediczy_ai',
@@ -105,6 +106,7 @@ class WebinarReminderService {
               scheduledStart <= sevenDaysLater &&
               !webinar.reminder_1week_sent) {
             await webinarNotificationService.sendOneWeekReminder(webinar);
+            n8nService.trigger('webinar-reminder', { webinarId: webinar.id, webinarTitle: webinar.title, scheduledAt: webinar.scheduled_at, reminderType: '1-week', hostName: webinar.host_name || '', joinUrl: webinar.join_url || '' }).catch(() => {});
             sent1week++;
           }
 
@@ -113,6 +115,7 @@ class WebinarReminderService {
               scheduledStart <= twentyFourHoursLater &&
               !webinar.reminder_24h_sent) {
             await webinarNotificationService.send24HourReminder(webinar);
+            n8nService.trigger('webinar-reminder', { webinarId: webinar.id, webinarTitle: webinar.title, scheduledAt: webinar.scheduled_at, reminderType: '24h', hostName: webinar.host_name || '', joinUrl: webinar.join_url || '' }).catch(() => {});
             sent24h++;
           }
 
@@ -121,6 +124,7 @@ class WebinarReminderService {
               scheduledStart <= twoHoursLater &&
               !webinar.reminder_2h_sent) {
             await webinarNotificationService.send2HourReminder(webinar);
+            n8nService.trigger('webinar-reminder', { webinarId: webinar.id, webinarTitle: webinar.title, scheduledAt: webinar.scheduled_at, reminderType: '2h', hostName: webinar.host_name || '', joinUrl: webinar.join_url || '' }).catch(() => {});
             sent2h++;
           }
 
@@ -129,6 +133,7 @@ class WebinarReminderService {
               scheduledStart <= fifteenMinutesLater &&
               !webinar.reminder_15min_sent) {
             await webinarNotificationService.send15MinuteReminder(webinar);
+            n8nService.trigger('webinar-reminder', { webinarId: webinar.id, webinarTitle: webinar.title, scheduledAt: webinar.scheduled_at, reminderType: '15min', hostName: webinar.host_name || '', joinUrl: webinar.join_url || '' }).catch(() => {});
             sent15min++;
           }
 

@@ -237,6 +237,15 @@ const TeamDashboard = () => {
       iconColor: "text-pink-500",
       link: "/team/support-tickets",
       pattern: "radial-gradient(circle at 100% 50%, rgba(236, 72, 153, 0.05) 0%, transparent 50%)",
+    },
+    {
+      title: "Health Plans",
+      description: "Create & configure membership plans",
+      icon: Crown,
+      color: "bg-gradient-to-br from-amber-500/10 to-yellow-500/10 border-amber-500/20",
+      iconColor: "text-amber-500",
+      link: "/team/health-plans",
+      pattern: "radial-gradient(circle at 50% 50%, rgba(245, 158, 11, 0.05) 0%, transparent 50%)",
     }
   ];
 

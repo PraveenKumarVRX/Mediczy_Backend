@@ -1,0 +1,77 @@
+{
+  "name": "Mediczy - Appointment Reminder",
+  "nodes": [
+    {
+      "parameters": {
+        "path": "appointment-reminder",
+        "method": "POST",
+        "responseMode": "onReceived",
+        "responseData": "allEntries"
+      },
+      "id": "appt-reminder-webhook",
+      "name": "Appointment Reminder Webhook",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 1,
+      "position": [240, 200]
+    },
+    {
+      "parameters": {
+        "values": {
+          "string": [
+            { "name": "patientName",      "value": "={{$json[\"patientName\"]}}" },
+            { "name": "doctorName",       "value": "={{$json[\"doctorName\"]}}" },
+            { "name": "appointmentDate",  "value": "={{$json[\"appointmentDate\"]}}" },
+            { "name": "appointmentTime",  "value": "={{$json[\"appointmentTime\"]}}" },
+            { "name": "consultationType", "value": "={{$json[\"consultationType\"]}}" },
+            { "name": "reminderType",     "value": "={{$json[\"reminderType\"]}}" },
+            { "name": "patientId",        "value": "={{$json[\"patientId\"]}}" },
+            { "name": "appointmentId",    "value": "={{$json[\"appointmentId\"]}}" },
+            {
+              "name": "emailSubject",
+              "value": "=Appointment Reminder – {{$json[\"reminderType\"]}} notice"
+            },
+            {
+              "name": "emailBody",
+              "value": "=Hi {{$json[\"patientName\"]}},\n\nThis is a reminder for your appointment with Dr. {{$json[\"doctorName\"]}} on {{$json[\"appointmentDate\"]}} at {{$json[\"appointmentTime\"]}} ({{$json[\"consultationType\"]}}).\n\nPlease be on time.\n\nTeam Mediczy"
+            },
+            {
+              "name": "whatsappBody",
+              "value": "=Hi {{$json[\"patientName\"]}}, reminder: your appointment with Dr. {{$json[\"doctorName\"]}} is on {{$json[\"appointmentDate\"]}} at {{$json[\"appointmentTime\"]}}. Do not miss it!"
+            }
+          ]
+        }
+      },
+      "id": "prepare-appt-reminder",
+      "name": "Prepare Message",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 2,
+      "position": [500, 200]
+    },
+    {
+      "parameters": {
+        "url": "={{$env.MEDICZY_BASE_URL}}/api/notifications/send-internal",
+        "method": "POST",
+        "sendBody": true,
+        "jsonParameters": true,
+        "options": { "timeout": 10000 },
+        "bodyParametersJson": "={\n  \"userId\": \"{{$json.patientId}}\",\n  \"type\": \"appointment_reminder\",\n  \"channels\": [\"email\", \"whatsapp\", \"in-app\"],\n  \"subject\": \"{{$json.emailSubject}}\",\n  \"body\": \"{{$json.emailBody}}\",\n  \"whatsappBody\": \"{{$json.whatsappBody}}\",\n  \"data\": { \"appointmentId\": \"{{$json.appointmentId}}\", \"reminderType\": \"{{$json.reminderType}}\" }\n}",
+        "headerParametersJson": "={ \"Authorization\": \"Bearer {{$env.MEDICZY_INTERNAL_TOKEN}}\" }"
+      },
+      "id": "send-appt-reminder",
+      "name": "Send Notification",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4,
+      "position": [780, 200]
+    }
+  ],
+  "connections": {
+    "Appointment Reminder Webhook": {
+      "main": [[{ "node": "Prepare Message", "type": "main", "index": 0 }]]
+    },
+    "Prepare Message": {
+      "main": [[{ "node": "Send Notification", "type": "main", "index": 0 }]]
+    }
+  },
+  "active": false,
+  "settings": { "executionOrder": "v1" }
+}

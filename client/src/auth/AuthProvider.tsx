@@ -398,6 +398,7 @@ export const AuthProvider = ({ children }) => {
       "/intermediary/login",
       "/insurance-broker/login",
       "/aggregator/login",
+      "/choose-plan",
       // Hospital department login pages
       "/accounts/login",
       "/mrd/login",
@@ -413,7 +414,7 @@ export const AuthProvider = ({ children }) => {
     if (!authState.token && !isPublicRoute) {
       setAuthState(prev => ({ ...prev, hasCheckedAuth: true }));
       navigate("/login", { replace: true });
-    } else if (authState.token && isAuthenticated && isPublicRoute) {
+    } else if (authState.token && isAuthenticated && isPublicRoute && location.pathname !== "/choose-plan") {
       setAuthState(prev => ({ ...prev, hasCheckedAuth: true }));
       // Redirect authenticated users away from login pages to their dashboard
       let redirectPath = "/";

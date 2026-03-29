@@ -3,6 +3,7 @@ import { Invoice, Payment } from '../models/billing.model.intelligent.js';
 import notificationService from './notification.service.js';
 import { Op } from 'sequelize';
 import { tick, tickError } from '../utils/cronRegistry.js';
+import n8nService from './n8n.service.js';
 
 /**
  * Payment Reminder Automation Service
@@ -189,6 +190,16 @@ class PaymentReminderService {
     console.log(`💳 Sending ${timeframe} reminder for invoice ${invoice.invoiceNumber}`);
 
     const dueDate = this.formatDate(invoice.dueDate);
+
+    n8nService.trigger('payment-reminder', {
+      invoiceId: invoice.id,
+      invoiceNumber: invoice.invoiceNumber,
+      patientId: invoice.userId,
+      patientName: invoice.patientDetails?.name || 'Patient',
+      amount: invoice.total,
+      dueDate: invoice.dueDate,
+      timeframe,
+    }).catch(() => {});
 
     await notificationService.send({
       userId: invoice.userId,

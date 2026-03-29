@@ -14,6 +14,21 @@ import logger from '../config/logger.js';
 import whatsappProductionService from './whatsapp-production.service.js';
 import { tick, tickError } from '../utils/cronRegistry.js';
 import jwt from 'jsonwebtoken';
+import nodemailer from 'nodemailer';
+
+// Shared SMTP transporter for system report notifications
+let _smtpTransporter = null;
+const getSmtpTransporter = () => {
+  if (!_smtpTransporter) {
+    _smtpTransporter = nodemailer.createTransport({
+      host: process.env.SMTP_HOST,
+      port: parseInt(process.env.SMTP_PORT || '465'),
+      secure: parseInt(process.env.SMTP_PORT || '465') === 465,
+      auth: { user: process.env.SMTP_USER, pass: process.env.SMTP_PASSWORD },
+    });
+  }
+  return _smtpTransporter;
+};
 
 // Lazy imports for AI QC (avoid startup cost)
 let _llmProvider = null;
@@ -1269,6 +1284,40 @@ export async function saveHealthReportFromEmail(email) {
         }
       } catch (waErr) {
         logger.warn(`[emailAutoProcess] WhatsApp notification skipped for user ${user.id}: ${waErr.message}`);
+      }
+
+      // Send email notification with report download link
+      try {
+        const patientEmail = user.email || user.workEmail;
+        if (patientEmail) {
+          const patientName = `${user.firstName || ''} ${user.lastName || ''}`.trim() || 'Patient';
+          const transporter = getSmtpTransporter();
+          await transporter.sendMail({
+            from: `"SmartHealth Care" <${process.env.SMTP_USER}>`,
+            to: patientEmail,
+            subject: `Your Health Report is Ready — ${fileName.replace(/\.pdf$/i, '')}`,
+            html: `
+              <div style="font-family:Arial,sans-serif;max-width:600px;margin:0 auto;padding:20px;">
+                <div style="background:linear-gradient(135deg,#0ea5e9,#6366f1);padding:30px;text-align:center;border-radius:12px 12px 0 0;">
+                  <h1 style="color:#fff;margin:0;font-size:22px;">Your Health Report is Ready</h1>
+                </div>
+                <div style="background:#f8fafc;padding:30px;border:1px solid #e2e8f0;border-radius:0 0 12px 12px;">
+                  <p style="font-size:16px;color:#334155;">Dear <strong>${patientName}</strong>,</p>
+                  <p style="color:#475569;">Your health report <strong>${fileName}</strong> has been uploaded to your Mediqzy health portal and is ready to view.</p>
+                  ${publicReportUrl ? `<div style="text-align:center;margin:24px 0;">
+                    <a href="${publicReportUrl}" style="background:#0ea5e9;color:#fff;padding:14px 32px;border-radius:8px;text-decoration:none;font-weight:600;font-size:15px;">Download Report</a>
+                  </div>` : ''}
+                  <p style="color:#64748b;font-size:13px;">You can also view all your reports by logging in to <a href="https://app.mediqzy.com" style="color:#0ea5e9;">app.mediqzy.com</a>.</p>
+                  <hr style="border:none;border-top:1px solid #e2e8f0;margin:20px 0;">
+                  <p style="color:#94a3b8;font-size:12px;text-align:center;">Team Mediqzy &nbsp;|&nbsp; support@mediqzy.com</p>
+                </div>
+              </div>`,
+          });
+          logger.info(`[emailAutoProcess] Email report notification sent to ${patientEmail} for "${fileName}"`);
+          tick('email_report', { patient: patientName, file: fileName });
+        }
+      } catch (emailErr) {
+        logger.warn(`[emailAutoProcess] Email notification skipped for user ${user.id}: ${emailErr.message}`);
       }
     }
 

@@ -64,6 +64,7 @@ const HomecareBooking       = lazy(() => import("@/pages/HomecareBooking"));
 const HealthFeedPage        = lazy(() => import("@/pages/HealthFeedPage"));
 const RepostsPage           = lazy(() => import("@/pages/Reposts"));
 const MyPlans               = lazy(() => import("@/pages/MyPlans"));
+const ChoosePlan            = lazy(() => import("@/pages/user/ChoosePlan"));
 const MyMembershipCard      = lazy(() => import("@/pages/user/MyMembershipCard"));
 const MyPrescriptions       = lazy(() => import("@/pages/MyPrescriptions"));
 const Diet                  = lazy(() => import("@/pages/Diet"));
@@ -220,6 +221,7 @@ const TeamCorporateManagement  = lazy(() => import("@/pages/team/TeamCorporateMa
 const CorporateHealthBooking   = lazy(() => import("@/pages/team/CorporateHealthBooking"));
 const TeamEmployeeManagement   = lazy(() => import("@/pages/team/TeamEmployeeManagement"));
 const TeamSettings             = lazy(() => import("@/pages/team/TeamSettings"));
+const TeamHealthPlans          = lazy(() => import("@/pages/team/TeamHealthPlans"));
 
 const _TeamModulePages = () => import("@/pages/team/TeamModulePages");
 const TeamUserManagementPage     = lazyNamed(_TeamModulePages, "TeamUserManagementPage");
@@ -907,7 +909,7 @@ const AppRoutes = () => {
         <Route path="/team/chat"                     element={<TeamChatDashboardPage />} />
         <Route path="/team/whatsapp"                 element={<WhatsAppCommunication />} />
         <Route path="/team/whatsapp-templates"          element={<WhatsAppTemplates />} />
-        <Route path="/team/health-plans"             element={<TeamHealthPlansPage />} />
+        <Route path="/team/health-plans"             element={<TeamHealthPlans />} />
         <Route path="/team/activity"                 element={<TeamActivityLogsPage />} />
         <Route path="/team/settings"                 element={<TeamSettings />} />
 
@@ -1245,6 +1247,7 @@ const AppRoutes = () => {
         <Route path="/my-appointments"       element={<Navigate to="/appointments" replace />} />
         <Route path="/my-prescriptions"      element={<MyPrescriptions />} />
         <Route path="/my-plans"              element={<MainLayout><MyPlans /></MainLayout>} />
+        <Route path="/choose-plan"           element={<ChoosePlan />} />
         <Route path="/membership-card"       element={<MainLayout><MyMembershipCard /></MainLayout>} />
         <Route path="/diet"                  element={<MainLayout><Diet /></MainLayout>} />
         <Route path="/calorie-calculator"    element={<MainLayout><CalorieCalculator /></MainLayout>} />

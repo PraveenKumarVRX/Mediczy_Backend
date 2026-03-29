@@ -2,6 +2,7 @@ import express from 'express';
 import { authUser } from '../middleware/auth.middleware.js';
 import membershipService from '../services/membership.service.js';
 import { PLAN_TYPES } from '../config/membership-plans.config.js';
+import pool from '../db/pgPool.js';
 
 const router = express.Router();
 
@@ -319,6 +320,116 @@ router.post('/check-feature', authUser, async (req, res) => {
       success: false,
       message: 'Failed to check feature access',
       error: error.message
+    });
+  }
+});
+
+/**
+ * POST /api/membership-plans/corporate/self-enroll
+ * Self-service: logged-in user claims their corporate plan by supplying
+ * corporateName, employeeId, and officialEmail.
+ * The server looks up the corporate, validates the employee record exists,
+ * then maps the corporate's active plan to the user.
+ */
+router.post('/corporate/self-enroll', authUser, async (req, res) => {
+  try {
+    const { corporateName, employeeId, officialEmail } = req.body;
+
+    if (!corporateName || !employeeId || !officialEmail) {
+      return res.status(400).json({
+        success: false,
+        message: 'Corporate name, employee ID, and official email are all required'
+      });
+    }
+
+    // 1. Find the corporate by name (case-insensitive)
+    const corpResult = await pool.query(
+      `SELECT id, "companyName" AS name FROM corporates WHERE LOWER("companyName") = LOWER($1) AND status = 'active' LIMIT 1`,
+      [corporateName.trim()]
+    );
+
+    if (!corpResult.rows.length) {
+      return res.status(404).json({
+        success: false,
+        message: 'Corporate organisation not found. Check the name and try again.'
+      });
+    }
+
+    const corporate = corpResult.rows[0];
+
+    // 2. Verify the employee record at that corporate
+    const empResult = await pool.query(
+      `SELECT id FROM user_associations
+       WHERE LOWER(metadata->>'employeeId') = LOWER($1)
+         AND LOWER(metadata->>'officialEmail') = LOWER($2)
+         AND "entityType" = 'corporate'
+         AND "entityId" = $3
+       LIMIT 1`,
+      [employeeId.trim(), officialEmail.trim().toLowerCase(), corporate.id]
+    );
+
+    if (!empResult.rows.length) {
+      return res.status(400).json({
+        success: false,
+        message: 'Employee ID or official email does not match our records for this corporate.'
+      });
+    }
+
+    // 3. Find the corporate's active plan slug
+    const planResult = await pool.query(
+      `SELECT mp.slug
+       FROM user_plans up
+       JOIN membership_plans mp ON mp.id = up."membershipPlanId"
+       WHERE up."userId" = $1
+         AND up.status = 'active'
+         AND up."corporateId" IS NOT NULL
+       ORDER BY up."startDate" DESC
+       LIMIT 1`,
+      [empResult.rows[0].id]
+    );
+
+    // Fallback: use the corporate's default plan slug if the employee doesn't
+    // have one assigned yet — admin will have configured it on the corporate.
+    let slug = planResult.rows[0]?.slug;
+
+    if (!slug) {
+      const corpPlanResult = await pool.query(
+        `SELECT mp.slug
+         FROM corporate_plans cp
+         JOIN membership_plans mp ON mp.id = cp."membershipPlanId"
+         WHERE cp."corporateId" = $1 AND cp.status = 'active'
+         ORDER BY cp."createdAt" DESC
+         LIMIT 1`,
+        [corporate.id]
+      );
+      slug = corpPlanResult.rows[0]?.slug;
+    }
+
+    if (!slug) {
+      return res.status(400).json({
+        success: false,
+        message: 'No active corporate health plan found. Please contact your HR or admin.'
+      });
+    }
+
+    // 4. Enroll (or map) the plan to the requesting user
+    const subscription = await membershipService.enrollUser(req.user.id, slug, {
+      billingCycle: 'MONTHLY',
+      paymentMethod: 'corporate',
+      metadata: { corporateId: corporate.id, employeeId, officialEmail }
+    });
+
+    return res.json({
+      success: true,
+      message: `Corporate plan mapped successfully. Welcome to ${corporate.name} health benefits!`,
+      data: { subscription }
+    });
+  } catch (error) {
+    console.error('[self-enroll] error:', error.message);
+    return res.status(500).json({
+      success: false,
+      message: 'Failed to link corporate plan. Please try again or contact support.',
+      error: process.env.NODE_ENV === 'development' ? error.message : undefined
     });
   }
 });

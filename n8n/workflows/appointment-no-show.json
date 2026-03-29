@@ -1,0 +1,74 @@
+{
+  "name": "Mediczy - Appointment No-Show Follow-up",
+  "nodes": [
+    {
+      "parameters": {
+        "path": "appointment-no-show",
+        "method": "POST",
+        "responseMode": "onReceived",
+        "responseData": "allEntries"
+      },
+      "id": "no-show-webhook",
+      "name": "No-Show Webhook",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 1,
+      "position": [240, 200]
+    },
+    {
+      "parameters": {
+        "values": {
+          "string": [
+            { "name": "patientId",       "value": "={{$json[\"patientId\"]}}" },
+            { "name": "patientName",     "value": "={{$json[\"patientName\"]}}" },
+            { "name": "doctorName",      "value": "={{$json[\"doctorName\"]}}" },
+            { "name": "appointmentId",   "value": "={{$json[\"appointmentId\"]}}" },
+            { "name": "appointmentDate", "value": "={{$json[\"appointmentDate\"]}}" },
+            {
+              "name": "emailSubject",
+              "value": "We missed you! Reschedule your appointment"
+            },
+            {
+              "name": "emailBody",
+              "value": "=Hi {{$json[\"patientName\"]}},\n\nWe noticed you missed your appointment with Dr. {{$json[\"doctorName\"]}} on {{$json[\"appointmentDate\"]}}.\n\nYour health matters to us. Please reschedule at your earliest convenience.\n\nTeam Mediczy"
+            },
+            {
+              "name": "whatsappBody",
+              "value": "=Hi {{$json[\"patientName\"]}}, we missed you at your appointment with Dr. {{$json[\"doctorName\"]}} on {{$json[\"appointmentDate\"]}}. Please reschedule via the Mediczy app."
+            }
+          ]
+        }
+      },
+      "id": "prepare-no-show",
+      "name": "Prepare Message",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 2,
+      "position": [500, 200]
+    },
+    {
+      "parameters": {
+        "url": "={{$env.MEDICZY_BASE_URL}}/api/notifications/send-internal",
+        "method": "POST",
+        "sendBody": true,
+        "jsonParameters": true,
+        "options": { "timeout": 10000 },
+        "bodyParametersJson": "={\n  \"userId\": \"{{$json.patientId}}\",\n  \"type\": \"appointment_no_show\",\n  \"channels\": [\"email\", \"whatsapp\", \"in-app\"],\n  \"subject\": \"{{$json.emailSubject}}\",\n  \"body\": \"{{$json.emailBody}}\",\n  \"whatsappBody\": \"{{$json.whatsappBody}}\",\n  \"data\": { \"appointmentId\": \"{{$json.appointmentId}}\" },\n  \"actionUrl\": \"/book-appointment\"\n}",
+        "headerParametersJson": "={ \"Authorization\": \"Bearer {{$env.MEDICZY_INTERNAL_TOKEN}}\" }"
+      },
+      "id": "send-no-show",
+      "name": "Send Notification",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4,
+      "position": [780, 200]
+    }
+  ],
+  "connections": {
+    "No-Show Webhook": {
+      "main": [[{ "node": "Prepare Message", "type": "main", "index": 0 }]]
+    },
+    "Prepare Message": {
+      "main": [[{ "node": "Send Notification", "type": "main", "index": 0 }]]
+    }
+  },
+  "active": false,
+  "settings": { "executionOrder": "v1" }
+}
