@@ -36,8 +36,8 @@ export const validators = {
   tenantId: () => param('tenantId')
     .notEmpty()
     .withMessage('Tenant ID is required')
-    .isLength({ min: 3, max: 50 })
-    .withMessage('Tenant ID must be between 3 and 50 characters'),
+    .isLength({ min: 1, max: 50 })
+    .withMessage('Tenant ID must be between 1 and 50 characters'),
 
   // Resource IDs
   resourceId: (field = 'id') => param(field)
@@ -221,7 +221,7 @@ export const labsValidation = {
 
   uploadReport: [
     validators.tenantId(),
-    validators.resourceId('booking_id'),
+    validators.resourceId('bookingId'),
     body('report_url').isURL().withMessage('Invalid report URL'),
     handleValidationErrors
   ]
@@ -288,6 +288,53 @@ export const wellnessValidation = {
     validators.tenantId(),
     body('plan_id').notEmpty().withMessage('plan_id is required'),
     validators.date('start_date', false),
+    handleValidationErrors
+  ]
+};
+
+// Activity Monitor validation
+export const activityValidation = {
+  logActivity: [
+    validators.tenantId(),
+    body('user_id').notEmpty().withMessage('user_id is required'),
+    body('metric_type')
+      .isIn(['heart_rate', 'bmi', 'calories', 'distance', 'sleep'])
+      .withMessage('metric_type must be one of: heart_rate, bmi, calories, distance, sleep'),
+    body('value')
+      .isNumeric()
+      .withMessage('value must be a number')
+      .custom(v => parseFloat(v) >= 0)
+      .withMessage('value must be >= 0'),
+    body('recorded_at').optional().isISO8601().withMessage('recorded_at must be ISO 8601'),
+    body('source')
+      .optional()
+      .isIn(['manual', 'wearable', 'google_fit', 'apple_health', 'fitbit', 'garmin'])
+      .withMessage('Invalid source'),
+    body('metadata').optional().isObject().withMessage('metadata must be an object'),
+    handleValidationErrors
+  ],
+
+  logBatch: [
+    validators.tenantId(),
+    body('user_id').notEmpty().withMessage('user_id is required'),
+    body('entries').isArray({ min: 1, max: 200 }).withMessage('entries must be a non-empty array (max 200)'),
+    body('entries.*.metric_type')
+      .isIn(['heart_rate', 'bmi', 'calories', 'distance', 'sleep'])
+      .withMessage('Each entry must have a valid metric_type'),
+    body('entries.*.value').isNumeric().withMessage('Each entry must have a numeric value'),
+    handleValidationErrors
+  ],
+
+  queryParams: [
+    validators.tenantId(),
+    query('user_id').notEmpty().withMessage('user_id is required'),
+    query('period')
+      .optional()
+      .isIn(['daily', 'weekly', 'monthly'])
+      .withMessage('period must be daily, weekly, or monthly'),
+    query('date').optional().isISO8601().withMessage('date must be ISO 8601 (YYYY-MM-DD)'),
+    query('start_date').optional().isISO8601().withMessage('start_date must be ISO 8601'),
+    query('end_date').optional().isISO8601().withMessage('end_date must be ISO 8601'),
     handleValidationErrors
   ]
 };
@@ -370,5 +417,6 @@ export default {
   wellnessValidation,
   webhooksValidation,
   appointmentsValidation,
-  doctorsValidation
+  doctorsValidation,
+  activityValidation
 };

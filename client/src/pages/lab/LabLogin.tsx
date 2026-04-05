@@ -1,11 +1,11 @@
 import { useState, useEffect } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { useNavigate, Link } from 'react-router-dom';
 import { motion } from 'framer-motion';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
 import { Alert, AlertDescription } from '@/components/ui/alert';
-import { FlaskConical, Eye, EyeOff, Activity, Lock, ArrowRight, CheckCircle2 } from 'lucide-react';
+import { FlaskConical, Eye, EyeOff, Activity, Lock, ArrowRight, CheckCircle2, Clock } from 'lucide-react';
 import api from '@/utils/api';
 import { clearAuthTokens } from '@/hooks/auth';
 
@@ -16,6 +16,7 @@ const LabLogin = () => {
   const [error, setError] = useState<string | null>(null);
   const [showPassword, setShowPassword] = useState(false);
   const [isCheckingAuth, setIsCheckingAuth] = useState(true);
+  const [isPending, setIsPending] = useState(false);
   const navigate = useNavigate();
 
   useEffect(() => {
@@ -70,6 +71,7 @@ const LabLogin = () => {
       if (timeoutId) clearTimeout(timeoutId);
     } catch (err: any) {
       console.error('Lab login error:', err);
+      if (err?.response?.data?.pending) { setIsPending(true); return; }
       if (err?.name === 'AbortError' || err?.code === 'ERR_CANCELED') {
         setError('Request timeout. Please check your connection and try again.');
       } else {
@@ -119,6 +121,15 @@ const LabLogin = () => {
           </CardHeader>
           <CardContent>
             <form onSubmit={onSubmit} className="space-y-6">
+              {isPending && (
+                <div className="mb-2 flex items-start gap-3 p-4 bg-amber-50 border border-amber-200 rounded-xl">
+                  <Clock className="w-5 h-5 text-amber-500 mt-0.5 shrink-0" />
+                  <div>
+                    <p className="font-semibold text-amber-800 text-sm">Account Under Review</p>
+                    <p className="text-amber-700 text-xs mt-1">Your registration is being reviewed. You'll receive an email with login credentials once approved (24–48 hours).</p>
+                  </div>
+                </div>
+              )}
               {error && (
                 <Alert variant="destructive" className="animate-in slide-in-from-top-2" role="alert">
                   <AlertDescription className="flex items-center gap-2">
@@ -212,6 +223,13 @@ const LabLogin = () => {
               <a href="mailto:support@mediczy.com" className="text-lime-600 hover:underline font-medium">
                 support@mediczy.com
               </a>
+            </div>
+            <div className="mt-4">
+              <Link to="/lab/register">
+                <button className="w-full h-11 rounded-xl border-2 border-blue-500 text-blue-600 font-bold text-sm hover:bg-blue-50 active:scale-95 transition-all">
+                  New lab? Register here
+                </button>
+              </Link>
             </div>
           </CardContent>
         </Card>

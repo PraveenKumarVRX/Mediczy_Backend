@@ -1,10 +1,10 @@
 import { useState, useEffect } from "react";
-import { useNavigate } from "react-router-dom";
+import { useNavigate, Link } from "react-router-dom";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
-import { Home, Eye, EyeOff, AlertCircle, Loader2 } from "lucide-react";
+import { Home, Eye, EyeOff, AlertCircle, Loader2, Clock } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import api from '@/utils/api';
 
@@ -14,6 +14,7 @@ const HomecareLogin = () => {
   const [showPassword, setShowPassword] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
   const [isCheckingAuth, setIsCheckingAuth] = useState(true);
+  const [isPending, setIsPending] = useState(false);
   const navigate = useNavigate();
   const { toast } = useToast();
 
@@ -109,6 +110,7 @@ const HomecareLogin = () => {
       }
     } catch (error: any) {
       console.error("Login error:", error);
+      if (error?.response?.data?.pending) { setIsPending(true); return; }
       toast({
         title: "Error",
         description: error?.response?.data?.message || "Unable to connect to server. Please try again.",
@@ -150,6 +152,15 @@ const HomecareLogin = () => {
 
         <CardContent>
           <form onSubmit={handleLogin} className="space-y-4">
+            {isPending && (
+              <div className="flex items-start gap-3 p-4 bg-amber-50 border border-amber-200 rounded-xl">
+                <Clock className="w-5 h-5 text-amber-500 mt-0.5 shrink-0" />
+                <div>
+                  <p className="font-semibold text-amber-800 text-sm">Account Under Review</p>
+                  <p className="text-amber-700 text-xs mt-1">Your application is being reviewed. You'll receive login credentials by email once approved (24–48 hours).</p>
+                </div>
+              </div>
+            )}
             <div className="space-y-2">
               <Label htmlFor="email" className="text-sm font-medium">
                 Email Address
@@ -236,6 +247,11 @@ const HomecareLogin = () => {
                 Contact Support
               </a>
             </p>
+            <Link to="/homecare/register">
+              <button className="w-full h-11 rounded-xl border-2 border-pink-500 text-pink-600 font-bold text-sm hover:bg-pink-50 active:scale-95 transition-all">
+                New provider? Register here
+              </button>
+            </Link>
           </div>
         </CardContent>
       </Card>

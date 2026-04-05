@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import InsurancePortalLayout from '@/components/hospital-insurance/InsurancePortalLayout';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
@@ -7,6 +7,7 @@ import { Input } from '@/components/ui/input';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { useToast } from '@/hooks/use-toast';
+import { fetchPortalSection, savePortalSection } from '@/utils/hospitalInsurancePortalApi';
 import { Settings, Shield, Bell, Save, Key, Globe, Mail } from 'lucide-react';
 
 const InsuranceSettingsPage = () => {
@@ -25,8 +26,21 @@ const InsuranceSettingsPage = () => {
     webhookUrl: '', callbackUrl: '',
   });
 
-  const handleSave = (section: string) => {
-    toast({ title: 'Settings Saved', description: `${section} settings saved successfully.` });
+  useEffect(() => {
+    fetchPortalSection('settings').then(res => {
+      const d = res?.data || {};
+      if (d.general)   setGeneral(g => ({ ...g, ...d.general }));
+      if (d.apiConfig) setApiConfig(a => ({ ...a, ...d.apiConfig }));
+    }).catch(() => {});
+  }, []);
+
+  const handleSave = async (section: string) => {
+    try {
+      await savePortalSection('settings', { general, apiConfig });
+      toast({ title: 'Settings Saved', description: `${section} settings saved successfully.` });
+    } catch {
+      toast({ title: 'Save Failed', description: 'Could not save settings. Try again.', variant: 'destructive' });
+    }
   };
 
   return (

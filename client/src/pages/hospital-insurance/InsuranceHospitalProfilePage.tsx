@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import InsurancePortalLayout from '@/components/hospital-insurance/InsurancePortalLayout';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
@@ -7,8 +7,8 @@ import { Input } from '@/components/ui/input';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Textarea } from '@/components/ui/textarea';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
-import api from '@/utils/api';
 import { useToast } from '@/hooks/use-toast';
+import { fetchPortalSection, savePortalSection } from '@/utils/hospitalInsurancePortalApi';
 import { Building2, Bed, Users, Mail, Save, Plus, Trash2, CreditCard } from 'lucide-react';
 
 const InsuranceHospitalProfilePage = () => {
@@ -44,24 +44,45 @@ const InsuranceHospitalProfilePage = () => {
   const [users, setUsers] = useState<any[]>([]);
   const [newUser, setNewUser] = useState({ name: '', email: '', role: 'claim_executive', phone: '' });
 
+  // Load persisted profile on mount
+  useEffect(() => {
+    fetchPortalSection('hospital-profile').then(res => {
+      const d = res?.data || {};
+      if (d.basic)      setBasic(b => ({ ...b, ...d.basic }));
+      if (d.account)    setAccount(a => ({ ...a, ...d.account }));
+      if (d.rooms?.length) setRooms(d.rooms);
+      if (d.teamEmails) setTeamEmails(t => ({ ...t, ...d.teamEmails }));
+      if (d.users?.length) setUsers(d.users);
+    }).catch(() => {});
+  }, []);
+
   const handleSaveBasic = async () => {
     setLoading(true);
     try {
+      await savePortalSection('hospital-profile', { basic, account, rooms, teamEmails, users });
       toast({ title: 'Saved', description: 'Hospital basic details saved.' });
+    } catch {
+      toast({ title: 'Save Failed', description: 'Could not save. Try again.', variant: 'destructive' });
     } finally { setLoading(false); }
   };
 
   const handleSaveAccount = async () => {
     setLoading(true);
     try {
+      await savePortalSection('hospital-profile', { basic, account, rooms, teamEmails, users });
       toast({ title: 'Saved', description: 'Account details saved.' });
+    } catch {
+      toast({ title: 'Save Failed', description: 'Could not save. Try again.', variant: 'destructive' });
     } finally { setLoading(false); }
   };
 
   const handleSaveInfrastructure = async () => {
     setLoading(true);
     try {
+      await savePortalSection('hospital-profile', { basic, account, rooms, teamEmails, users });
       toast({ title: 'Saved', description: 'Infrastructure details saved.' });
+    } catch {
+      toast({ title: 'Save Failed', description: 'Could not save. Try again.', variant: 'destructive' });
     } finally { setLoading(false); }
   };
 

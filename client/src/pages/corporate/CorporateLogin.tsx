@@ -3,7 +3,7 @@ import { useNavigate, Link } from "react-router-dom";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import * as z from "zod";
-import { Building2, CheckCircle2, HeartPulse, Shield, Users } from "lucide-react";
+import { Building2, CheckCircle2, HeartPulse, Shield, Users, Clock } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import {
   Form,
@@ -31,6 +31,7 @@ const CorporateLogin = () => {
   const { toast } = useToast();
   const [showPassword, setShowPassword] = useState(false);
   const [isCheckingAuth, setIsCheckingAuth] = useState(true);
+  const [isPending, setIsPending] = useState(false);
 
   // Check if already authenticated
   useEffect(() => {
@@ -93,6 +94,7 @@ const CorporateLogin = () => {
           navigate("/corporate/dashboard");
         },
         onError: (error) => {
+          if ((error as any)?.response?.data?.pending) { setIsPending(true); return; }
           toast({
             variant: "destructive",
             title: "Login failed",
@@ -173,6 +175,15 @@ const CorporateLogin = () => {
 
           <Card className="shadow-lg">
             <CardContent className="pt-6">
+              {isPending && (
+                <div className="mb-4 flex items-start gap-3 p-4 bg-amber-50 border border-amber-200 rounded-xl">
+                  <Clock className="w-5 h-5 text-amber-500 mt-0.5 shrink-0" />
+                  <div>
+                    <p className="font-semibold text-amber-800 text-sm">Account Under Review</p>
+                    <p className="text-amber-700 text-xs mt-1">Your registration is being reviewed. You'll receive an email with login credentials once approved (24–48 hours).</p>
+                  </div>
+                </div>
+              )}
               <Form {...form}>
                 <form onSubmit={form.handleSubmit(onSubmit)} className="space-y-6">
                   <FormField
@@ -249,6 +260,11 @@ const CorporateLogin = () => {
             <p>
               Need help? Email <a className="underline" href="mailto:success@mediqzy.com">success@mediqzy.com</a>
             </p>
+            <Link to="/corporate/register">
+              <button className="w-full h-11 rounded-xl border-2 border-violet-500 text-violet-600 font-bold text-sm hover:bg-violet-50 active:scale-95 transition-all mt-1">
+                New company? Register here
+              </button>
+            </Link>
             <p>
               Looking for the general login? <Link to="/login" className="text-primary underline">Return here</Link>
             </p>

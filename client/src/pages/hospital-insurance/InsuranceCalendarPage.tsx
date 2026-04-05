@@ -12,15 +12,25 @@ const InsuranceCalendarPage = () => {
   const [view, setView] = useState<'month' | 'week' | 'day'>('month');
   const [currentDate, setCurrentDate] = useState(new Date());
 
+  // Build dates relative to today so events always appear in current month
+  const d = (offset: number) => {
+    const dt = new Date();
+    dt.setDate(dt.getDate() + offset);
+    return dt.toISOString().slice(0, 10);
+  };
+
   const events = [
-    { id: 1, title: 'Pre-Auth Follow-up - Rajesh Kumar', date: '2025-06-20', time: '10:00', type: 'followup', color: 'bg-blue-500' },
-    { id: 2, title: 'Claim Submission Deadline - ICICI', date: '2025-06-20', time: '17:00', type: 'deadline', color: 'bg-red-500' },
-    { id: 3, title: 'TPA Meeting - Star Health', date: '2025-06-21', time: '14:00', type: 'meeting', color: 'bg-purple-500' },
-    { id: 4, title: 'Document Upload - PA-2025-0089', date: '2025-06-22', time: '11:00', type: 'task', color: 'bg-amber-500' },
-    { id: 5, title: 'Discharge - Priya Singh', date: '2025-06-23', time: '09:00', type: 'discharge', color: 'bg-green-500' },
-    { id: 6, title: 'Settlement Review Meeting', date: '2025-06-25', time: '15:00', type: 'meeting', color: 'bg-purple-500' },
-    { id: 7, title: 'NHCX Onboarding Call', date: '2025-06-26', time: '11:00', type: 'meeting', color: 'bg-purple-500' },
-    { id: 8, title: 'Monthly MIS Report Due', date: '2025-06-30', time: '23:59', type: 'deadline', color: 'bg-red-500' },
+    { id: 1, title: 'Pre-Auth Follow-up - Sunita Sharma', date: d(1), time: '10:00', type: 'followup', color: 'bg-blue-500' },
+    { id: 2, title: 'Claim Submission Deadline - CLM-2026-0006', date: d(1), time: '17:00', type: 'deadline', color: 'bg-red-500' },
+    { id: 3, title: 'TPA Meeting - Star Health', date: d(3), time: '14:00', type: 'meeting', color: 'bg-purple-500' },
+    { id: 4, title: 'Document Upload - CLM-2026-0010 (CABG)', date: d(0), time: '11:00', type: 'task', color: 'bg-amber-500' },
+    { id: 5, title: 'Discharge - Meera Devi (TKR)', date: d(0), time: '09:00', type: 'discharge', color: 'bg-green-500' },
+    { id: 6, title: 'PA Query Reply Deadline - Amit Verma', date: d(2), time: '15:00', type: 'deadline', color: 'bg-red-500' },
+    { id: 7, title: 'TPA Meeting - HDFC Ergo', date: d(5), time: '11:00', type: 'meeting', color: 'bg-purple-500' },
+    { id: 8, title: 'Monthly MIS Report Due', date: d(25), time: '23:59', type: 'deadline', color: 'bg-red-500' },
+    { id: 9, title: 'Settlement Review - CLM-2026-0004', date: d(4), time: '10:00', type: 'followup', color: 'bg-blue-500' },
+    { id: 10, title: 'Discharge - Suresh Patel (URS)', date: d(0), time: '12:00', type: 'discharge', color: 'bg-green-500' },
+    { id: 11, title: 'Pre-Auth Expiry Check - PA-2026-0004', date: d(5), time: '09:00', type: 'task', color: 'bg-amber-500' },
   ];
 
   const getDaysInMonth = (date: Date) => {

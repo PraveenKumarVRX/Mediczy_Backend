@@ -13,16 +13,19 @@
 import jwt from 'jsonwebtoken';
 import crypto from 'crypto';
 import pg from 'pg';
+import dotenv from 'dotenv';
+
+dotenv.config();
 
 const { Pool } = pg;
 
 // Database connection
 const pool = new Pool({
-  host: process.env.DB_HOST || 'localhost',
-  port: process.env.DB_PORT || 5432,
-  database: process.env.DB_NAME || 'mediczy_ai',
-  user: process.env.DB_USER || 'mediczy_helper',
-  password: process.env.DB_PASSWORD,
+  host: process.env.POSTGRES_HOST || process.env.DB_HOST || 'localhost',
+  port: parseInt(process.env.POSTGRES_PORT || process.env.DB_PORT || '5432'),
+  database: process.env.POSTGRES_DATABASE || process.env.DB_NAME || 'mediczy_ai',
+  user: process.env.POSTGRES_USER || process.env.DB_USER || 'mediczy_helper',
+  password: process.env.POSTGRES_PASSWORD || process.env.DB_PASSWORD,
 });
 
 // JWT secret keys
@@ -294,18 +297,23 @@ async function verifyToken(req, res, next) {
     req.role = decoded.role || 'patient';
 
     // Log API access
-    await logAudit({
-      tenant_id: decoded.tenant_id,
-      user_id: decoded.user_id,
-      user_role: decoded.role,
-      action: 'api_access',
-      resource_type: 'api',
-      resource_id: req.path,
-      endpoint: req.path,
-      http_method: req.method,
-      ip_address: req.ip,
-      user_agent: req.headers['user-agent']
-    });
+    try {
+      await logAudit({
+        tenant_id: decoded.tenant_id,
+        user_id: decoded.user_id,
+        user_role: decoded.role,
+        action: 'api_access',
+        resource_type: 'api',
+        resource_id: req.path,
+        endpoint: req.path,
+        http_method: req.method,
+        ip_address: req.ip,
+        user_agent: req.headers['user-agent']
+      });
+    } catch (auditErr) {
+      console.error('[api-auth] logAudit FAILED:', auditErr.message);
+      // Don't fail the request for audit log errors
+    }
 
     next();
   } catch (error) {
@@ -348,7 +356,7 @@ async function verifyTenant(req, res, next) {
     }
 
     // Verify user has access to this tenant
-    if (req.tenantId !== requestedTenantId) {
+    if (String(req.tenantId) !== String(requestedTenantId)) {
       return res.status(403).json({
         error: {
           code: 'FORBIDDEN',
@@ -378,8 +386,8 @@ async function verifyTenant(req, res, next) {
       
       // Set PostgreSQL session variable for RLS (Row-Level Security)
       await client.query(
-        'SET LOCAL app.current_tenant = $1',
-        [requestedTenantId]
+        'SELECT set_config($1, $2::text, true)',
+        ['app.current_tenant', String(requestedTenantId)]
       );
       
       next();

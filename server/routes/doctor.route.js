@@ -479,6 +479,28 @@ router.get("/dashboard/stats", authDoctor, async (req, res) => {
     });
     const responseRate = totalRequests > 0 ? Math.round((acceptedRequests / totalRequests) * 100) : 95;
 
+    // Today's appointment counts
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
+    const tomorrow = new Date(today);
+    tomorrow.setDate(tomorrow.getDate() + 1);
+
+    const todayAppointments = await Appointment.count({
+      where: { doctorId, appointmentDate: { [Op.gte]: today, [Op.lt]: tomorrow } }
+    });
+    const pendingAppointments = await Appointment.count({
+      where: { doctorId, status: 'pending' }
+    });
+    const completedToday = await Appointment.count({
+      where: { doctorId, status: 'completed', appointmentDate: { [Op.gte]: today, [Op.lt]: tomorrow } }
+    });
+
+    // Revenue: sum of consultation fees from completed appointments this month
+    const revenueResult = await Appointment.sum('consultationFee', {
+      where: { doctorId, status: 'completed', appointmentDate: { [Op.gte]: startOfMonth } }
+    });
+    const revenue = revenueResult || 0;
+
     res.json({
       success: true,
       totalPatients,
@@ -488,7 +510,11 @@ router.get("/dashboard/stats", authDoctor, async (req, res) => {
       patientGrowth,
       consultationGrowth,
       ratingGrowth,
-      responseRateGrowth: 2
+      responseRateGrowth: 2,
+      todayAppointments,
+      pendingAppointments,
+      completedToday,
+      revenue
     });
 
   } catch (error) {

@@ -258,6 +258,7 @@ const LAB_DOMAINS = new Set([
   'drmohans.com', 'neuberg.in', 'labindia.com', 'healthspring.in',
   'dianovalabs.com', 'healthians.com', 'redcliffe.in', 'vijayapath.in',
   'vijayapath.com', 'pulseimagingcentre.com', 'pulseimagingcentre.gmail.com',
+  'radolabs.in', 'medalldiagnostics.com',
 ]);
 
 /** Regexes that indicate subject / filename looks like a health report */
@@ -1012,12 +1013,16 @@ export async function saveHealthReportFromEmail(email) {
     const corporateId = resolveCorporateFromEmail(email);
     const reportDate = email.receivedAt || email.createdAt || new Date();
 
-    // Avoid duplicate report entries for the same email
-    const [existingRows] = await postgresSequelize.query(
-      `SELECT id FROM reports WHERE metadata->>'emailId' = :emailId LIMIT 1`,
+    // Check how many PDFs from this email were already saved
+    // (handles partial saves caused by worker restarts mid-loop)
+    const [savedFileNames] = await postgresSequelize.query(
+      `SELECT "fileName" FROM reports WHERE metadata->>'emailId' = :emailId`,
       { replacements: { emailId: email.id } }
     );
-    if (existingRows.length > 0) {
+    const alreadySavedFiles = new Set(savedFileNames.map(r => r.fileName));
+    // If every PDF attachment already has a saved report, mark done and skip
+    const allPdfs = meta.pdfAttachments.filter(a => !/\.(jpg|jpeg|png|gif|bmp)$/i.test(a.filename || ''));
+    if (allPdfs.length > 0 && allPdfs.every(a => alreadySavedFiles.has(a.filename))) {
       await email.update({ healthReportSaved: true });
       return false;
     }
@@ -1153,6 +1158,14 @@ export async function saveHealthReportFromEmail(email) {
       // ────────────────────────────────────────────────────────────────────────
 
       const fileName = att.filename || 'Health Report.pdf';
+
+      // Skip attachments already saved in a previous (interrupted) run
+      if (alreadySavedFiles.has(fileName)) {
+        savedCount++;
+        logger.info(`[emailAutoProcess] Report "${fileName}" already saved (recovery skip) for email ${email.id}`);
+        continue;
+      }
+
       // Generate a signed time-limited download token (7 days) for the public download URL
       const downloadToken = jwt.sign(
         { emailId: email.id, contentId: att.contentId, fileName },

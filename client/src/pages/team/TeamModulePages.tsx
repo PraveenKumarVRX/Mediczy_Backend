@@ -3,10 +3,34 @@ import AdminChatDashboard from "@/pages/admin/AdminChatDashboard";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Separator } from "@/components/ui/separator";
-import { CheckCircle2, FlaskConical, Calendar, RefreshCw, User } from "lucide-react";
+import {
+  CheckCircle2,
+  FlaskConical,
+  Calendar,
+  RefreshCw,
+  User,
+  Activity,
+  Search,
+  Download,
+  Filter,
+  ChevronDown,
+  ChevronRight,
+  Shield,
+  Database,
+  AlertCircle,
+  CheckCircle,
+  XCircle,
+  Clock,
+  TrendingUp,
+  Users,
+  Zap,
+} from "lucide-react";
 import { Link } from "react-router-dom";
 import { useQuery } from "@tanstack/react-query";
+import { useState, useCallback, useMemo, useEffect, useRef } from "react";
 import api from "@/utils/api";
 
 interface Metric {
@@ -464,5 +488,467 @@ export const TeamAppointmentsPage = () => {
 };
 export const TeamChatDashboardPage = () => <AdminChatDashboard />;
 export const TeamHealthPlansPage = createModulePage("healthPlans");
-export const TeamActivityLogsPage = createModulePage("activityLogs");
 export const TeamSettingsPage = createModulePage("settings");
+
+// ─── Activity Logs — full real-time implementation ───────────────────────────
+
+interface ActivityLogEntry {
+  id: string;
+  timestamp: string;
+  userId?: string | number;
+  userType: "user" | "doctor" | "admin" | "system" | "team";
+  userEmail?: string;
+  activity: string;
+  action: string;
+  resource: string;
+  resourceId?: string;
+  result: "success" | "failure" | "warning" | "info";
+  details: string;
+  ipAddress?: string;
+  userAgent?: string;
+  method?: string;
+  path?: string;
+  statusCode?: number;
+  duration?: number;
+  metadata?: Record<string, unknown>;
+}
+
+interface ActivityStats {
+  total: number;
+  last24Hours: number;
+  last7Days: number;
+  failures24h: number;
+  byResult: Record<string, number>;
+  byUserType: Record<string, number>;
+  topActions: { action: string; count: number }[];
+}
+
+type Scope = "all" | "mine" | "users";
+
+const RESULT_META: Record<string, { icon: JSX.Element; cls: string; label: string }> = {
+  success: { icon: <CheckCircle className="h-3.5 w-3.5" />, cls: "bg-emerald-500/15 text-emerald-400 border-emerald-500/30", label: "Success" },
+  failure: { icon: <XCircle className="h-3.5 w-3.5" />, cls: "bg-red-500/15 text-red-400 border-red-500/30", label: "Failure" },
+  warning: { icon: <AlertCircle className="h-3.5 w-3.5" />, cls: "bg-amber-500/15 text-amber-400 border-amber-500/30", label: "Warning" },
+  info: { icon: <Clock className="h-3.5 w-3.5" />, cls: "bg-blue-500/15 text-blue-400 border-blue-500/30", label: "Info" },
+};
+
+const USER_TYPE_META: Record<string, { icon: JSX.Element; cls: string }> = {
+  admin:  { icon: <Shield className="h-3.5 w-3.5" />, cls: "text-purple-400" },
+  doctor: { icon: <User className="h-3.5 w-3.5" />, cls: "text-blue-400" },
+  user:   { icon: <Users className="h-3.5 w-3.5" />, cls: "text-emerald-400" },
+  team:   { icon: <Zap className="h-3.5 w-3.5" />, cls: "text-amber-400" },
+  system: { icon: <Database className="h-3.5 w-3.5" />, cls: "text-slate-400" },
+};
+
+function fmtTime(ts: string) {
+  const d = new Date(ts);
+  return d.toLocaleString("en-IN", { day: "2-digit", month: "short", hour: "2-digit", minute: "2-digit", hour12: true });
+}
+
+function fmtDuration(ms?: number) {
+  if (!ms) return null;
+  if (ms < 1000) return `${ms}ms`;
+  return `${(ms / 1000).toFixed(1)}s`;
+}
+
+function downloadCsv(logs: ActivityLogEntry[]) {
+  const cols = ["Timestamp", "User", "Type", "Action", "Resource", "Result", "Details", "IP", "Path"];
+  const rows = logs.map(l => [
+    l.timestamp, l.userEmail || l.userId || "", l.userType,
+    l.action, l.resource, l.result, (l.details || "").replace(/,/g, ";"),
+    l.ipAddress || "", l.path || ""
+  ]);
+  const csv = [cols, ...rows].map(r => r.join(",")).join("\n");
+  const blob = new Blob([csv], { type: "text/csv" });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement("a");
+  a.href = url;
+  a.download = `activity-logs-${Date.now()}.csv`;
+  a.click();
+  URL.revokeObjectURL(url);
+}
+
+export const TeamActivityLogsPage = () => {
+  const [scope, setScope] = useState<Scope>("all");
+  const [search, setSearch] = useState("");
+  const [debouncedSearch, setDebouncedSearch] = useState("");
+  const [userTypeFilter, setUserTypeFilter] = useState("all");
+  const [actionFilter, setActionFilter] = useState("all");
+  const [resultFilter, setResultFilter] = useState("all");
+  const [startDate, setStartDate] = useState("");
+  const [endDate, setEndDate] = useState("");
+  const [page, setPage] = useState(1);
+  const [expandedId, setExpandedId] = useState<string | null>(null);
+  const [autoRefresh, setAutoRefresh] = useState(false);
+  const debounceRef = useRef<ReturnType<typeof setTimeout>>();
+
+  // Debounce search input
+  useEffect(() => {
+    clearTimeout(debounceRef.current);
+    debounceRef.current = setTimeout(() => {
+      setDebouncedSearch(search);
+      setPage(1);
+    }, 350);
+    return () => clearTimeout(debounceRef.current);
+  }, [search]);
+
+  const buildParams = useCallback(() => {
+    const p: Record<string, string> = { page: String(page), limit: "25" };
+    if (scope !== "all") p.scope = scope;
+    if (userTypeFilter !== "all") p.userType = userTypeFilter;
+    if (actionFilter !== "all") p.action = actionFilter;
+    if (resultFilter !== "all") p.result = resultFilter;
+    if (startDate) p.startDate = startDate;
+    if (endDate) p.endDate = endDate;
+    if (debouncedSearch) p.search = debouncedSearch;
+    return new URLSearchParams(p).toString();
+  }, [scope, page, userTypeFilter, actionFilter, resultFilter, startDate, endDate, debouncedSearch]);
+
+  const { data: logsData, isLoading: logsLoading, refetch: refetchLogs, isFetching } = useQuery({
+    queryKey: ["team-activity-logs", scope, page, userTypeFilter, actionFilter, resultFilter, startDate, endDate, debouncedSearch],
+    queryFn: async () => {
+      const { data } = await api.get(`/team/activity-logs?${buildParams()}`);
+      return data;
+    },
+    refetchInterval: autoRefresh ? 30_000 : false,
+  });
+
+  const { data: statsData, refetch: refetchStats } = useQuery({
+    queryKey: ["team-activity-stats"],
+    queryFn: async () => {
+      const { data } = await api.get("/team/activity-stats");
+      return data;
+    },
+    refetchInterval: autoRefresh ? 60_000 : false,
+  });
+
+  const logs: ActivityLogEntry[] = logsData?.logs || [];
+  const pagination = logsData?.pagination;
+  const stats: ActivityStats | undefined = statsData?.stats;
+
+  const handleRefresh = useCallback(() => {
+    refetchLogs();
+    refetchStats();
+  }, [refetchLogs, refetchStats]);
+
+  const clearFilters = () => {
+    setSearch(""); setUserTypeFilter("all"); setActionFilter("all");
+    setResultFilter("all"); setStartDate(""); setEndDate(""); setPage(1);
+  };
+
+  const hasFilters = userTypeFilter !== "all" || actionFilter !== "all" || resultFilter !== "all" || startDate || endDate || debouncedSearch;
+
+  const TABS: { key: Scope; label: string; icon: JSX.Element }[] = [
+    { key: "all", label: "All Activity", icon: <Activity className="h-3.5 w-3.5" /> },
+    { key: "mine", label: "My Activity", icon: <Shield className="h-3.5 w-3.5" /> },
+    { key: "users", label: "Users / Patients", icon: <Users className="h-3.5 w-3.5" /> },
+  ];
+
+  return (
+    <MainLayout>
+      <div className="max-w-7xl mx-auto space-y-5 animate-in fade-in">
+
+        {/* ── Header ── */}
+        <div className="flex flex-col sm:flex-row sm:items-start sm:justify-between gap-3">
+          <div>
+            <p className="text-xs uppercase tracking-wide text-muted-foreground">Team / Audit</p>
+            <h1 className="text-2xl font-semibold mt-0.5">Activity & Audit Logs</h1>
+            <p className="text-sm text-muted-foreground mt-1">
+              Real-time record of all platform actions — your activity, users, doctors, and system events.
+            </p>
+          </div>
+          <div className="flex items-center gap-2 shrink-0">
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => setAutoRefresh(v => !v)}
+              className={autoRefresh ? "border-primary/50 text-primary" : ""}
+            >
+              <Zap className={`h-3.5 w-3.5 mr-1.5 ${autoRefresh ? "text-primary" : ""}`} />
+              {autoRefresh ? "Live" : "Auto-refresh"}
+            </Button>
+            <Button variant="outline" size="sm" onClick={handleRefresh} disabled={isFetching}>
+              <RefreshCw className={`h-3.5 w-3.5 mr-1.5 ${isFetching ? "animate-spin" : ""}`} />
+              Refresh
+            </Button>
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => downloadCsv(logs)}
+              disabled={logs.length === 0}
+            >
+              <Download className="h-3.5 w-3.5 mr-1.5" />
+              Export
+            </Button>
+          </div>
+        </div>
+
+        {/* ── Stats bar ── */}
+        {stats && (
+          <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+            {[
+              { label: "Events (24h)", value: stats.last24Hours.toLocaleString(), icon: <Activity className="h-4 w-4 text-primary" />, sub: `${stats.total.toLocaleString()} total` },
+              { label: "Failures (24h)", value: stats.failures24h.toLocaleString(), icon: <XCircle className="h-4 w-4 text-red-400" />, sub: "Needs attention" },
+              { label: "User Events", value: stats.byUserType.user?.toLocaleString() || "0", icon: <Users className="h-4 w-4 text-emerald-400" />, sub: "Patients / users" },
+              { label: "7-Day Volume", value: stats.last7Days.toLocaleString(), icon: <TrendingUp className="h-4 w-4 text-blue-400" />, sub: "Rolling window" },
+            ].map(m => (
+              <div key={m.label} className="rounded-xl border bg-muted/40 p-4 flex items-start gap-3">
+                <div className="mt-0.5">{m.icon}</div>
+                <div>
+                  <p className="text-xs uppercase tracking-wide text-muted-foreground">{m.label}</p>
+                  <p className="text-xl font-semibold">{m.value}</p>
+                  <p className="text-xs text-muted-foreground">{m.sub}</p>
+                </div>
+              </div>
+            ))}
+          </div>
+        )}
+
+        {/* ── Scope tabs ── */}
+        <div className="flex gap-1 p-1 rounded-lg bg-muted/40 border w-fit">
+          {TABS.map(t => (
+            <button
+              key={t.key}
+              onClick={() => { setScope(t.key); setPage(1); }}
+              className={`flex items-center gap-1.5 px-3 py-1.5 rounded-md text-sm font-medium transition-all ${
+                scope === t.key
+                  ? "bg-background border shadow-sm text-foreground"
+                  : "text-muted-foreground hover:text-foreground"
+              }`}
+            >
+              {t.icon}{t.label}
+            </button>
+          ))}
+        </div>
+
+        {/* ── Filters ── */}
+        <Card>
+          <CardContent className="p-4">
+            <div className="grid sm:grid-cols-2 lg:grid-cols-5 gap-2">
+              <div className="relative lg:col-span-2">
+                <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-muted-foreground" />
+                <Input
+                  placeholder="Search activity, email, IP…"
+                  value={search}
+                  onChange={e => setSearch(e.target.value)}
+                  className="pl-8 h-8 text-sm"
+                />
+              </div>
+
+              <Select value={resultFilter} onValueChange={v => { setResultFilter(v); setPage(1); }}>
+                <SelectTrigger className="h-8 text-sm"><SelectValue placeholder="Result" /></SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="all">All results</SelectItem>
+                  <SelectItem value="success">Success</SelectItem>
+                  <SelectItem value="failure">Failure</SelectItem>
+                  <SelectItem value="warning">Warning</SelectItem>
+                  <SelectItem value="info">Info</SelectItem>
+                </SelectContent>
+              </Select>
+
+              <Select value={userTypeFilter} onValueChange={v => { setUserTypeFilter(v); setPage(1); }}>
+                <SelectTrigger className="h-8 text-sm"><SelectValue placeholder="User type" /></SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="all">All types</SelectItem>
+                  <SelectItem value="user">User / Patient</SelectItem>
+                  <SelectItem value="doctor">Doctor</SelectItem>
+                  <SelectItem value="admin">Admin / Team</SelectItem>
+                  <SelectItem value="system">System</SelectItem>
+                </SelectContent>
+              </Select>
+
+              <Select value={actionFilter} onValueChange={v => { setActionFilter(v); setPage(1); }}>
+                <SelectTrigger className="h-8 text-sm"><SelectValue placeholder="Action" /></SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="all">All actions</SelectItem>
+                  <SelectItem value="login">Login</SelectItem>
+                  <SelectItem value="logout">Logout</SelectItem>
+                  <SelectItem value="create">Create</SelectItem>
+                  <SelectItem value="update">Update</SelectItem>
+                  <SelectItem value="delete">Delete</SelectItem>
+                  <SelectItem value="view">View</SelectItem>
+                  <SelectItem value="export">Export</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+
+            <div className="flex flex-wrap items-center gap-2 mt-3">
+              <div className="flex items-center gap-1.5">
+                <Calendar className="h-3.5 w-3.5 text-muted-foreground" />
+                <input
+                  type="date"
+                  value={startDate}
+                  onChange={e => { setStartDate(e.target.value); setPage(1); }}
+                  className="h-7 rounded border bg-background px-2 text-xs"
+                />
+                <span className="text-xs text-muted-foreground">to</span>
+                <input
+                  type="date"
+                  value={endDate}
+                  onChange={e => { setEndDate(e.target.value); setPage(1); }}
+                  className="h-7 rounded border bg-background px-2 text-xs"
+                />
+              </div>
+              {hasFilters && (
+                <button onClick={clearFilters} className="text-xs text-muted-foreground hover:text-foreground underline underline-offset-2">
+                  Clear filters
+                </button>
+              )}
+              {pagination && (
+                <span className="ml-auto text-xs text-muted-foreground">
+                  {pagination.total.toLocaleString()} result{pagination.total !== 1 ? "s" : ""}
+                </span>
+              )}
+            </div>
+          </CardContent>
+        </Card>
+
+        {/* ── Log table ── */}
+        <Card>
+          <CardContent className="p-0">
+            {logsLoading ? (
+              <div className="py-20 text-center text-muted-foreground">
+                <Activity className="h-8 w-8 mx-auto mb-3 animate-pulse" />
+                Loading activity logs…
+              </div>
+            ) : logs.length === 0 ? (
+              <div className="py-20 text-center space-y-2">
+                <Activity className="h-8 w-8 mx-auto text-muted-foreground" />
+                <p className="text-muted-foreground">No activity logs found.</p>
+                {hasFilters && (
+                  <button onClick={clearFilters} className="text-xs text-primary underline">
+                    Clear filters
+                  </button>
+                )}
+              </div>
+            ) : (
+              <div className="overflow-x-auto">
+                <table className="w-full text-sm">
+                  <thead>
+                    <tr className="border-b text-xs uppercase text-muted-foreground">
+                      <th className="px-4 py-3 text-left w-6" />
+                      <th className="px-4 py-3 text-left">Time</th>
+                      <th className="px-4 py-3 text-left">User</th>
+                      <th className="px-4 py-3 text-left">Activity</th>
+                      <th className="px-4 py-3 text-left">Resource</th>
+                      <th className="px-4 py-3 text-left">Result</th>
+                      <th className="px-4 py-3 text-left">IP / Dur</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {logs.map(log => {
+                      const rm = RESULT_META[log.result] || RESULT_META.info;
+                      const um = USER_TYPE_META[log.userType] || USER_TYPE_META.system;
+                      const isExpanded = expandedId === log.id;
+                      return (
+                        <>
+                          <tr
+                            key={log.id}
+                            className={`border-b transition-colors cursor-pointer hover:bg-muted/30 ${isExpanded ? "bg-muted/20" : ""}`}
+                            onClick={() => setExpandedId(isExpanded ? null : log.id)}
+                          >
+                            <td className="px-4 py-3">
+                              {isExpanded
+                                ? <ChevronDown className="h-3.5 w-3.5 text-muted-foreground" />
+                                : <ChevronRight className="h-3.5 w-3.5 text-muted-foreground" />
+                              }
+                            </td>
+                            <td className="px-4 py-3 whitespace-nowrap text-xs text-muted-foreground">
+                              {fmtTime(log.timestamp)}
+                            </td>
+                            <td className="px-4 py-3">
+                              <div className={`flex items-center gap-1.5 ${um.cls}`}>
+                                {um.icon}
+                                <span className="font-medium truncate max-w-[120px]">
+                                  {log.userEmail || (log.userId ? `#${log.userId}` : "—")}
+                                </span>
+                              </div>
+                              <p className="text-[10px] text-muted-foreground capitalize">{log.userType}</p>
+                            </td>
+                            <td className="px-4 py-3">
+                              <p className="font-medium">{log.activity}</p>
+                              <p className="text-xs text-muted-foreground truncate max-w-[180px]">{log.details}</p>
+                            </td>
+                            <td className="px-4 py-3">
+                              <Badge variant="outline" className="text-[10px] capitalize">{log.resource}</Badge>
+                              {log.method && (
+                                <p className="text-[10px] text-muted-foreground mt-0.5">{log.method}</p>
+                              )}
+                            </td>
+                            <td className="px-4 py-3">
+                              <Badge variant="outline" className={`text-[10px] flex items-center gap-1 w-fit ${rm.cls}`}>
+                                {rm.icon}{rm.label}
+                              </Badge>
+                              {log.statusCode && (
+                                <p className="text-[10px] text-muted-foreground mt-0.5">{log.statusCode}</p>
+                              )}
+                            </td>
+                            <td className="px-4 py-3 text-xs text-muted-foreground whitespace-nowrap">
+                              {log.ipAddress || "—"}
+                              {log.duration && (
+                                <p className="text-[10px]">{fmtDuration(log.duration)}</p>
+                              )}
+                            </td>
+                          </tr>
+                          {isExpanded && (
+                            <tr key={`${log.id}-detail`} className="border-b bg-muted/10">
+                              <td colSpan={7} className="px-6 py-4">
+                                <div className="grid sm:grid-cols-2 gap-4 text-xs">
+                                  <div className="space-y-1.5">
+                                    <p><span className="text-muted-foreground">Log ID:</span> <span className="font-mono">{log.id}</span></p>
+                                    <p><span className="text-muted-foreground">Full timestamp:</span> {new Date(log.timestamp).toLocaleString("en-IN")}</p>
+                                    <p><span className="text-muted-foreground">Path:</span> <span className="font-mono">{log.path || "—"}</span></p>
+                                    <p><span className="text-muted-foreground">Resource ID:</span> {log.resourceId || "—"}</p>
+                                  </div>
+                                  <div className="space-y-1.5">
+                                    <p><span className="text-muted-foreground">User agent:</span> <span className="break-all">{log.userAgent || "—"}</span></p>
+                                    <p><span className="text-muted-foreground">Details:</span> {log.details}</p>
+                                    {log.metadata && (
+                                      <p><span className="text-muted-foreground">Session:</span> {(log.metadata as any).sessionId || "—"}</p>
+                                    )}
+                                  </div>
+                                </div>
+                              </td>
+                            </tr>
+                          )}
+                        </>
+                      );
+                    })}
+                  </tbody>
+                </table>
+              </div>
+            )}
+          </CardContent>
+        </Card>
+
+        {/* ── Pagination ── */}
+        {pagination && pagination.pages > 1 && (
+          <div className="flex items-center justify-between text-sm">
+            <p className="text-muted-foreground text-xs">
+              Page {pagination.page} of {pagination.pages}
+            </p>
+            <div className="flex gap-2">
+              <Button
+                variant="outline"
+                size="sm"
+                disabled={page <= 1}
+                onClick={() => setPage(p => p - 1)}
+              >
+                Previous
+              </Button>
+              <Button
+                variant="outline"
+                size="sm"
+                disabled={page >= pagination.pages}
+                onClick={() => setPage(p => p + 1)}
+              >
+                Next
+              </Button>
+            </div>
+          </div>
+        )}
+
+      </div>
+    </MainLayout>
+  );
+};

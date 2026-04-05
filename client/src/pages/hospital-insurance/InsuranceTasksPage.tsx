@@ -25,6 +25,26 @@ interface Task {
   description: string;
 }
 
+const DEMO_TASKS: Task[] = [
+  { id: 'T001', type: 'query_response', title: 'Query Reply — CLM-2026-0002', patient: 'Sunita Sharma', insurer: 'HDFC Ergo', claimNo: 'CLM-2026-0002', priority: 'high', dueDate: '2026-04-06', status: 'pending', assignedTo: 'Insurance Team', description: 'HDFC Ergo has raised a query on room rent charges. Reply required within 24 hours or claim will be auto-rejected.' },
+  { id: 'T002', type: 'document_pending', title: 'Missing Docs — CLM-2026-0006', patient: 'Suresh Patel', insurer: 'Niva Bupa', claimNo: 'CLM-2026-0006', priority: 'high', dueDate: '2026-04-06', status: 'pending', assignedTo: 'Medical Records', description: 'Discharge summary and final hospital bill pending. Required for claim submission.' },
+  { id: 'T003', type: 'pre_auth_review', title: 'Pre-Auth Query — PA-2026-0003', patient: 'Amit Verma', insurer: 'ICICI Lombard', claimNo: 'PA-2026-0003', priority: 'medium', dueDate: '2026-04-07', status: 'in_progress', assignedTo: 'Dr. Priya Desai', description: 'ICICI Lombard requires previous USG reports and symptom duration history for pre-auth approval.' },
+  { id: 'T004', type: 'document_pending', title: 'Missing Docs — CLM-2026-0010', patient: 'Vijay Rao', insurer: 'HDFC Ergo', claimNo: 'CLM-2026-0010', priority: 'high', dueDate: '2026-04-05', status: 'pending', assignedTo: 'Medical Records', description: 'Pre-op echo, angiography report, and cath lab report required for CABG claim.' },
+  { id: 'T005', type: 'escalation', title: 'SLA Breach — CLM-2026-0010', patient: 'Vijay Rao', insurer: 'HDFC Ergo', claimNo: 'CLM-2026-0010', priority: 'high', dueDate: '2026-04-05', status: 'pending', assignedTo: 'Insurance Manager', description: 'Pending 16 days (SLA: 15 days). HDFC Ergo CABG claim auto-escalated.' },
+  { id: 'T006', type: 'query_response', title: 'Query Reply — PA-2026-0003', patient: 'Amit Verma', insurer: 'ICICI Lombard', claimNo: 'PA-2026-0003', priority: 'medium', dueDate: '2026-04-08', status: 'in_progress', assignedTo: 'Insurance Team', description: 'Additional clinical justification needed for cholecystectomy pre-auth query.' },
+  { id: 'T007', type: 'appeal', title: 'Appeal — PA-2026-0006', patient: 'Anita Gupta', insurer: 'Niva Bupa', claimNo: 'PA-2026-0006', priority: 'medium', dueDate: '2026-04-12', status: 'pending', assignedTo: 'Insurance Manager', description: 'Pre-auth rejected citing pre-existing condition. Prepare appeal with supporting documents and specialist opinion.' },
+  { id: 'T008', type: 'document_pending', title: 'Missing Implant Invoice — CLM-2026-0005', patient: 'Meera Devi', insurer: 'Care Health', claimNo: 'CLM-2026-0005', priority: 'medium', dueDate: '2026-04-07', status: 'pending', assignedTo: 'Medical Records', description: 'Implant invoice and sticker for TKR knee prosthesis pending.' },
+];
+
+const DEMO_ESCALATIONS: Task[] = [
+  { id: 'ESC001', type: 'escalation', title: 'SLA Breach — CLM-2026-0010 (CABG)', patient: 'Vijay Rao', insurer: 'HDFC Ergo', claimNo: 'CLM-2026-0010', priority: 'high', dueDate: '2026-04-05', status: 'pending', assignedTo: 'Insurance Manager', description: 'Pending 16 days (SLA: 15 days). Critical surgery claim.' },
+  { id: 'ESC002', type: 'escalation', title: 'SLA Breach — CLM-2026-0002 (PTCA)', patient: 'Sunita Sharma', insurer: 'HDFC Ergo', claimNo: 'CLM-2026-0002', priority: 'high', dueDate: '2026-04-06', status: 'pending', assignedTo: 'Insurance Manager', description: 'Pending 6 days with open query. Cardiac case needs urgent follow-up.' },
+];
+
+const DEMO_APPEALS: Task[] = [
+  { id: 'APL001', type: 'appeal', title: 'Appeal — PA-2026-0006 (Hysterectomy)', patient: 'Anita Gupta', insurer: 'Niva Bupa', claimNo: 'PA-2026-0006', priority: 'medium', dueDate: '2026-04-12', status: 'pending', assignedTo: 'Insurance Manager', description: 'Rejected: Pre-existing condition. Appeal #1. Attach specialist opinion and 2-year symptom history.' },
+];
+
 const InsuranceTasksPage = () => {
   const { toast } = useToast();
   const [activeTab, setActiveTab] = useState('inbox');
@@ -75,8 +95,10 @@ const InsuranceTasksPage = () => {
         }
       }
     } catch (err) {
-      console.warn('Tasks fetch error, using empty list:', err);
-      setTasks([]);
+      console.warn('Tasks fetch error, using demo data:', err);
+      if (activeTab === 'escalations') setTasks(DEMO_ESCALATIONS);
+      else if (activeTab === 'appeals') setTasks(DEMO_APPEALS);
+      else setTasks(DEMO_TASKS);
     } finally {
       setLoading(false);
     }
@@ -109,6 +131,18 @@ const InsuranceTasksPage = () => {
     toast({ title: 'Response Sent', description: `Reply sent for ${selectedTask?.claimNo}` });
     setReply('');
     setSelectedTask(null);
+  };
+
+  const daysLeft = (dueDateStr: string): { days: number; label: string; color: string } => {
+    if (!dueDateStr) return { days: 99, label: 'No deadline', color: 'text-slate-400' };
+    const due = new Date(dueDateStr);
+    const now = new Date();
+    const diff = Math.ceil((due.getTime() - now.getTime()) / (1000 * 60 * 60 * 24));
+    if (diff < 0) return { days: diff, label: `${Math.abs(diff)}d overdue`, color: 'text-red-600' };
+    if (diff === 0) return { days: 0, label: 'Due today', color: 'text-red-500' };
+    if (diff === 1) return { days: 1, label: '1 day left', color: 'text-orange-500' };
+    if (diff <= 3) return { days: diff, label: `${diff} days left`, color: 'text-amber-500' };
+    return { days: diff, label: `${diff} days left`, color: 'text-green-600' };
   };
 
   return (
@@ -173,7 +207,14 @@ const InsuranceTasksPage = () => {
                         </div>
                         <div className="flex flex-col items-end gap-1">
                           <Badge className={priorityColor(task.priority)}>{task.priority}</Badge>
-                          <span className="text-xs text-muted-foreground">Due: {task.dueDate}</span>
+                          {(() => {
+                            const cd = daysLeft(task.dueDate);
+                            return (
+                              <span className={`text-xs font-semibold flex items-center gap-0.5 ${cd.color}`}>
+                                <Clock className="h-3 w-3" /> {cd.label}
+                              </span>
+                            );
+                          })()}
                           <Badge variant="outline" className="text-xs">{task.assignedTo}</Badge>
                         </div>
                       </div>

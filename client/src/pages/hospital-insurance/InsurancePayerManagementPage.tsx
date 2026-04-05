@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import InsurancePortalLayout from '@/components/hospital-insurance/InsurancePortalLayout';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
@@ -8,6 +8,7 @@ import { Textarea } from '@/components/ui/textarea';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { useToast } from '@/hooks/use-toast';
+import { fetchPortalSection, savePortalSection } from '@/utils/hospitalInsurancePortalApi';
 import { Plus, Search, Edit, Trash2, Save, CheckCircle2, Building2 } from 'lucide-react';
 
 const InsurancePayerManagementPage = () => {
@@ -16,7 +17,7 @@ const InsurancePayerManagementPage = () => {
   const [search, setSearch] = useState('');
   const [showAddPayer, setShowAddPayer] = useState(false);
 
-  const [payerEmails, setPayerEmails] = useState([
+  const [payerEmails, setPayerEmails] = useState<any[]>([
     { id: 1, insurer: 'Star Health', primaryEmail: 'claims@starhealth.in', ccEmails: 'escalation@starhealth.in', type: 'claims', region: 'South' },
     { id: 2, insurer: 'Star Health', primaryEmail: 'preauth@starhealth.in', ccEmails: '', type: 'pre_auth', region: 'South' },
     { id: 3, insurer: 'ICICI Lombard', primaryEmail: 'health.claims@icicilombard.com', ccEmails: 'senior.claims@icicilombard.com', type: 'claims', region: 'West' },
@@ -24,7 +25,7 @@ const InsurancePayerManagementPage = () => {
     { id: 5, insurer: 'Bajaj Allianz', primaryEmail: 'hospital.claims@bajajallianz.co.in', ccEmails: '', type: 'claims', region: 'North' },
   ]);
 
-  const [announcements] = useState([
+  const [announcements, setAnnouncements] = useState<any[]>([
     { id: 1, insurer: 'Star Health', title: 'New claim submission portal', date: '2025-06-15', content: 'All hospitals must switch to new e-claims portal by July 1, 2025. Training sessions available.' },
     { id: 2, insurer: 'ICICI Lombard', title: 'Updated tariff rates effective July 2025', date: '2025-06-10', content: 'Revised tariff rates for room rent and procedures. Check the updated schedule.' },
     { id: 3, insurer: 'IRDAI', title: 'Mandatory NHCX integration by Q3 2025', date: '2025-06-01', content: 'All network hospitals must onboard NHCX by September 2025.' },
@@ -32,20 +33,38 @@ const InsurancePayerManagementPage = () => {
 
   const [newEmail, setNewEmail] = useState({ insurer: '', primaryEmail: '', ccEmails: '', type: 'claims', region: '' });
 
+  useEffect(() => {
+    fetchPortalSection('payer-management').then(res => {
+      const d = res?.data || {};
+      if (d.payerEmails?.length)    setPayerEmails(d.payerEmails);
+      if (d.announcements?.length) setAnnouncements(d.announcements);
+    }).catch(() => {});
+  }, []);
+
+  const persistPayerEmails = async (updated: any[]) => {
+    try {
+      await savePortalSection('payer-management', { payerEmails: updated, announcements });
+    } catch {
+      toast({ title: 'Auto-save failed', description: 'Changes may not be persisted.', variant: 'destructive' });
+    }
+  };
+
   const filteredEmails = payerEmails.filter(pe =>
     pe.insurer.toLowerCase().includes(search.toLowerCase()) ||
     pe.primaryEmail.toLowerCase().includes(search.toLowerCase())
   );
 
-  const handleAddEmail = () => {
+  const handleAddEmail = async () => {
     if (!newEmail.insurer || !newEmail.primaryEmail) {
       toast({ title: 'Error', description: 'Insurer and primary email required.', variant: 'destructive' });
       return;
     }
-    setPayerEmails([...payerEmails, { ...newEmail, id: Date.now() }]);
+    const updated = [...payerEmails, { ...newEmail, id: Date.now() }];
+    setPayerEmails(updated);
     setNewEmail({ insurer: '', primaryEmail: '', ccEmails: '', type: 'claims', region: '' });
     setShowAddPayer(false);
     toast({ title: 'Added', description: 'Payer email configuration added.' });
+    await persistPayerEmails(updated);
   };
 
   return (
@@ -116,7 +135,12 @@ const InsurancePayerManagementPage = () => {
                         <td className="py-2 px-3 text-center">
                           <Button variant="ghost" size="sm"><Edit className="h-3 w-3" /></Button>
                           <Button variant="ghost" size="sm" className="text-red-600"
-                            onClick={() => { setPayerEmails(payerEmails.filter(p => p.id !== pe.id)); toast({ title: 'Deleted' }); }}>
+                            onClick={async () => {
+                              const updated = payerEmails.filter(p => p.id !== pe.id);
+                              setPayerEmails(updated);
+                              toast({ title: 'Deleted' });
+                              await persistPayerEmails(updated);
+                            }}>
                             <Trash2 className="h-3 w-3" />
                           </Button>
                         </td>

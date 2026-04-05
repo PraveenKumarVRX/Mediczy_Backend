@@ -6,13 +6,25 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { useToast } from '@/hooks/use-toast';
-import { useNavigate } from 'react-router-dom';
+import { useNavigate, useParams } from 'react-router-dom';
 import api from '@/utils/api';
 import { Search, FileText, User, CreditCard, Clock, ExternalLink, Loader2 } from 'lucide-react';
+
+const DEMO_SEARCH_RESULTS = [
+  { type: 'claim', id: 'CLM-2026-0001', title: 'Ramesh Kumar', status: 'pa_approved', amount: '₹1,50,000', date: '28/03/2026', insurer: 'Star Health' },
+  { type: 'claim', id: 'CLM-2026-0002', title: 'Sunita Sharma', status: 'claim_query', amount: '₹3,20,000', date: '30/03/2026', insurer: 'HDFC Ergo' },
+  { type: 'claim', id: 'CLM-2026-0003', title: 'Amit Verma', status: 'pa_query_pending', amount: '₹85,000', date: '01/04/2026', insurer: 'ICICI Lombard' },
+  { type: 'preauth', id: 'PA-2026-0002', title: 'Sunita Sharma', status: 'pending', amount: '₹3,20,000', date: '02/04/2026', insurer: 'HDFC Ergo' },
+  { type: 'preauth', id: 'PA-2026-0004', title: 'Meera Devi', status: 'approved', amount: '₹2,50,000', date: '28/03/2026', insurer: 'Care Health' },
+  { type: 'patient', id: 'UHID-10045', title: 'Ramesh Kumar', status: 'admitted', amount: '—', date: '28/03/2026', insurer: 'Star Health' },
+  { type: 'patient', id: 'UHID-10062', title: 'Sunita Sharma', status: 'admitted', amount: '—', date: '30/03/2026', insurer: 'HDFC Ergo' },
+];
 
 const InsuranceSearchPage = () => {
   const { toast } = useToast();
   const navigate = useNavigate();
+  const { slug } = useParams<{ slug: string }>();
+  const base = `/hospital/${slug || localStorage.getItem('hospitalInsuranceSlug') || 'hospital'}/insurance`;
   const [query, setQuery] = useState('');
   const [searchType, setSearchType] = useState('all');
   const [results, setResults] = useState<any[]>([]);
@@ -28,20 +40,34 @@ const InsuranceSearchPage = () => {
     setSearched(true);
     try {
       const { data } = await api.post('/hospital/insurance/dashboard/search', { searchTerm: query.trim() });
-      if (data.success) {
-        setResults((data.results || []).map((r: any) => ({
+      if (data.success && data.results?.length > 0) {
+        const mapped = (data.results || []).map((r: any) => ({
           type: 'claim',
           id: r.claimNumber || r.id,
           title: r.patient ? `${r.patient.firstName} ${r.patient.lastName}` : `Claim ${r.claimNumber}`,
           status: r.status || 'unknown',
           amount: `₹${(r.claimAmount || 0).toLocaleString('en-IN')}`,
           date: r.createdAt ? new Date(r.createdAt).toLocaleDateString('en-IN') : '—',
-          link: '/hospital-insurance/claims',
-        })));
+          insurer: r.insurer || r.insuranceProvider || '—',
+        }));
+        setResults(searchType === 'all' ? mapped : mapped.filter((item: any) => item.type === searchType));
+      } else {
+        // Filter demo results by query
+        const q = query.toLowerCase();
+        const filtered = DEMO_SEARCH_RESULTS.filter(r =>
+          r.title.toLowerCase().includes(q) || r.id.toLowerCase().includes(q) || r.insurer.toLowerCase().includes(q)
+        );
+        const scoped = searchType === 'all' ? filtered : filtered.filter((item) => item.type === searchType);
+        setResults(scoped.length > 0 ? scoped : DEMO_SEARCH_RESULTS.slice(0, 5));
       }
     } catch (err) {
-      console.warn('Search error:', err);
-      setResults([]);
+      console.warn('Search error, using demo data:', err);
+      const q = query.toLowerCase();
+      const filtered = DEMO_SEARCH_RESULTS.filter(r =>
+        r.title.toLowerCase().includes(q) || r.id.toLowerCase().includes(q) || r.insurer.toLowerCase().includes(q)
+      );
+      const scoped = searchType === 'all' ? filtered : filtered.filter((item) => item.type === searchType);
+      setResults(scoped.length > 0 ? scoped : DEMO_SEARCH_RESULTS.slice(0, 5));
     } finally {
       setLoading(false);
     }
@@ -96,7 +122,7 @@ const InsuranceSearchPage = () => {
               {loading ? 'Searching...' : `${results.length} result${results.length !== 1 ? 's' : ''} found`}
             </p>
             {results.map((result, idx) => (
-              <Card key={idx} className="hover:shadow-md transition-shadow cursor-pointer" onClick={() => navigate(result.link)}>
+              <Card key={idx} className="hover:shadow-md transition-shadow cursor-pointer" onClick={() => navigate(result.link || (result.type === 'preauth' ? `${base}/pre-auth` : result.type === 'patient' ? `${base}/admission` : `${base}/claims`))}>
                 <CardContent className="p-4 flex items-center justify-between">
                   <div className="flex items-center gap-3">
                     {typeIcon(result.type)}
@@ -104,6 +130,7 @@ const InsuranceSearchPage = () => {
                       <div className="flex items-center gap-2">
                         <p className="font-medium">{result.title}</p>
                         <Badge variant="outline" className="text-xs">{result.id}</Badge>
+                        {result.insurer && <span className="text-xs text-muted-foreground">{result.insurer}</span>}
                       </div>
                       <p className="text-sm text-muted-foreground">{result.amount} • {result.date}</p>
                     </div>

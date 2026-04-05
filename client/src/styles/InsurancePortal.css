@@ -1,0 +1,322 @@
+/**
+ * Insurance Portal — Premium Design System
+ * Scoped to .ins-portal wrapper. Upgrades all inner pages
+ * automatically without modifying each component file.
+ */
+
+/* ─── Card Upgrades ─────────────────────────────────────────── */
+.ins-portal .rounded-lg.border,
+.ins-portal [class*="rounded-lg"][class*="border"][class*="bg-card"],
+.ins-portal [class*="rounded-xl"][class*="border"] {
+  border-radius: 16px !important;
+  border-color: hsl(var(--border)) !important;
+  box-shadow: 0 1px 4px rgba(0, 0, 0, 0.05) !important;
+  background: hsl(var(--card)) !important;
+  transition: box-shadow 0.2s ease, border-color 0.2s ease;
+}
+
+.ins-portal .rounded-lg.border:hover,
+.ins-portal [class*="rounded-lg"][class*="border"][class*="bg-card"]:hover {
+  box-shadow: 0 4px 20px rgba(0, 0, 0, 0.08) !important;
+  border-color: rgba(168, 85, 247, 0.2) !important;
+}
+
+/* CardHeader refinements */
+.ins-portal [class*="flex"][class*="p-6"] h3,
+.ins-portal .text-2xl.font-semibold {
+  font-size: 13px !important;
+  font-weight: 700 !important;
+  color: hsl(var(--card-foreground));
+  letter-spacing: -0.01em;
+}
+
+/* ─── Table Upgrades ─────────────────────────────────────────── */
+.ins-portal table thead tr {
+  background: rgba(168, 85, 247, 0.03) !important;
+}
+
+.ins-portal table thead th {
+  color: hsl(var(--muted-foreground)) !important;
+  font-size: 10.5px !important;
+  font-weight: 700 !important;
+  text-transform: uppercase !important;
+  letter-spacing: 0.07em !important;
+  padding-top: 11px !important;
+  padding-bottom: 11px !important;
+  border-bottom: 1px solid hsl(var(--border)) !important;
+}
+
+.ins-portal table tbody tr {
+  transition: background 0.12s ease;
+}
+
+.ins-portal table tbody tr:hover {
+  background: rgba(168, 85, 247, 0.04) !important;
+}
+
+.ins-portal table tbody tr + tr {
+  border-top: 1px solid hsl(var(--border) / 0.5);
+}
+
+/* ─── Tab Upgrades ─────────────────────────────────────────── */
+.ins-portal [role="tablist"] {
+  background: hsl(var(--muted)) !important;
+  border-radius: 12px !important;
+  padding: 4px !important;
+  gap: 2px;
+}
+
+.ins-portal [role="tab"] {
+  border-radius: 9px !important;
+  font-size: 12.5px !important;
+  font-weight: 500;
+  color: hsl(var(--muted-foreground)) !important;
+  transition: all 0.15s ease;
+}
+
+.ins-portal [role="tab"][data-state="active"] {
+  background: hsl(var(--card)) !important;
+  color: #9333ea !important;
+  font-weight: 600 !important;
+  box-shadow: 0 1px 4px rgba(0, 0, 0, 0.1) !important;
+}
+
+/* ─── Input Upgrades ─────────────────────────────────────────── */
+.ins-portal input[type="text"],
+.ins-portal input[type="search"],
+.ins-portal input[type="email"],
+.ins-portal input[type="password"],
+.ins-portal input[type="number"],
+.ins-portal input[type="date"],
+.ins-portal textarea {
+  border-radius: 10px !important;
+  border-color: hsl(var(--border)) !important;
+  transition: border-color 0.18s, box-shadow 0.18s;
+}
+
+.ins-portal input:focus,
+.ins-portal textarea:focus {
+  border-color: rgba(168, 85, 247, 0.5) !important;
+  box-shadow: 0 0 0 3px rgba(168, 85, 247, 0.07) !important;
+  outline: none !important;
+}
+
+/* ─── Select Upgrades ─────────────────────────────────────────── */
+.ins-portal button[role="combobox"] {
+  border-radius: 10px !important;
+  border-color: hsl(var(--border)) !important;
+}
+
+/* ─── Badge Upgrades ─────────────────────────────────────────── */
+.ins-portal .inline-flex.rounded-full,
+.ins-portal [class*="inline-flex"][class*="rounded-full"] {
+  font-size: 10.5px !important;
+  font-weight: 600 !important;
+  letter-spacing: 0.03em !important;
+  padding: 2px 9px !important;
+}
+
+/* ─── Button Primary Upgrade ─────────────────────────────────────────── */
+.ins-portal button[class*="bg-primary"],
+.ins-portal [class*="bg-primary"] {
+  background: linear-gradient(135deg, #a855f7 0%, #3b82f6 100%) !important;
+  box-shadow: 0 2px 8px rgba(168, 85, 247, 0.28) !important;
+  border: none !important;
+}
+
+.ins-portal button[class*="bg-primary"]:hover {
+  background: linear-gradient(135deg, #9333ea 0%, #2563eb 100%) !important;
+  box-shadow: 0 4px 14px rgba(147, 51, 234, 0.38) !important;
+}
+
+/* ─── Page-level padding ─────────────────────────────────────── */
+.ins-portal {
+  position: relative;
+  padding: 20px 24px;
+  color: hsl(var(--foreground));
+}
+
+.ins-portal::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  border-radius: 24px;
+  background: linear-gradient(135deg, rgba(168, 85, 247, 0.02), rgba(59, 130, 246, 0.015));
+  pointer-events: none;
+  z-index: 0;
+}
+
+.ins-portal > * {
+  position: relative;
+  z-index: 1;
+}
+
+/* ─── Dialog / Modal Upgrades ─────────────────────────────────── */
+.ins-portal [role="dialog"] > div,
+[data-radix-popper-content-wrapper] > [class*="rounded"] {
+  border-radius: 20px !important;
+  box-shadow: 0 20px 60px rgba(0, 0, 0, 0.14) !important;
+}
+
+/* ─── Dropdown Menu Upgrades ─────────────────────────────────── */
+[data-radix-popper-content-wrapper] [role="menu"] {
+  border-radius: 14px !important;
+  border-color: hsl(var(--border)) !important;
+  box-shadow: 0 8px 30px rgba(0, 0, 0, 0.1) !important;
+}
+
+/* ─── Scrollbar ─────────────────────────────────────────────── */
+.ins-portal ::-webkit-scrollbar { width: 6px; height: 6px; }
+.ins-portal ::-webkit-scrollbar-track { background: transparent; }
+.ins-portal ::-webkit-scrollbar-thumb { background: rgba(0,0,0,0.12); border-radius: 3px; }
+.ins-portal ::-webkit-scrollbar-thumb:hover { background: rgba(168,85,247,0.35); }
+.dark .ins-portal ::-webkit-scrollbar-thumb { background: rgba(255,255,255,0.15); }
+
+/* ─── Dark Theme Utility Remapping ─────────────────────────── */
+.dark .ins-portal .bg-white,
+.dark .ins-portal .bg-slate-50,
+.dark .ins-portal .bg-slate-100,
+.dark .ins-portal .bg-gray-50,
+.dark .ins-portal .bg-gray-100,
+.dark .ins-portal .bg-blue-50,
+.dark .ins-portal .bg-indigo-50,
+.dark .ins-portal .bg-purple-50,
+.dark .ins-portal .bg-violet-50,
+.dark .ins-portal .bg-cyan-50,
+.dark .ins-portal .bg-lime-50,
+.dark .ins-portal .bg-emerald-50,
+.dark .ins-portal .bg-green-50,
+.dark .ins-portal .bg-red-50,
+.dark .ins-portal .bg-amber-50,
+.dark .ins-portal .bg-orange-50,
+.dark .ins-portal .bg-yellow-50,
+.dark .ins-portal .bg-white\/60,
+.dark .ins-portal .bg-white\/70,
+.dark .ins-portal .bg-white\/80,
+.dark .ins-portal [style*="background: white"] {
+  background: hsl(var(--card)) !important;
+}
+
+.dark .ins-portal .bg-indigo-50,
+.dark .ins-portal .bg-indigo-100,
+.dark .ins-portal .bg-blue-50,
+.dark .ins-portal .bg-blue-100,
+.dark .ins-portal .bg-purple-50,
+.dark .ins-portal .bg-purple-100,
+.dark .ins-portal .bg-violet-50,
+.dark .ins-portal .bg-violet-100 {
+  background-color: rgba(99, 102, 241, 0.16) !important;
+}
+
+.dark .ins-portal .bg-amber-50,
+.dark .ins-portal .bg-amber-100,
+.dark .ins-portal .bg-orange-50,
+.dark .ins-portal .bg-orange-100,
+.dark .ins-portal .bg-yellow-50,
+.dark .ins-portal .bg-yellow-100 {
+  background-color: rgba(245, 158, 11, 0.15) !important;
+}
+
+.dark .ins-portal .bg-green-50,
+.dark .ins-portal .bg-green-100,
+.dark .ins-portal .bg-emerald-50,
+.dark .ins-portal .bg-emerald-100,
+.dark .ins-portal .bg-lime-50,
+.dark .ins-portal .bg-lime-100 {
+  background-color: rgba(34, 197, 94, 0.14) !important;
+}
+
+.dark .ins-portal .bg-red-50,
+.dark .ins-portal .bg-red-100 {
+  background-color: rgba(239, 68, 68, 0.14) !important;
+}
+
+.dark .ins-portal .text-blue-700,
+.dark .ins-portal .text-indigo-700,
+.dark .ins-portal .text-purple-700,
+.dark .ins-portal .text-violet-700,
+.dark .ins-portal .text-cyan-700 {
+  color: #c4b5fd !important;
+}
+
+.dark .ins-portal .text-green-700,
+.dark .ins-portal .text-emerald-700,
+.dark .ins-portal .text-lime-700 {
+  color: #86efac !important;
+}
+
+.dark .ins-portal .text-red-700 {
+  color: #fca5a5 !important;
+}
+
+.dark .ins-portal .text-amber-700,
+.dark .ins-portal .text-orange-700,
+.dark .ins-portal .text-yellow-700 {
+  color: #fcd34d !important;
+}
+
+.dark .ins-portal .hover\:bg-slate-50:hover,
+.dark .ins-portal .hover\:bg-slate-100:hover,
+.dark .ins-portal .hover\:bg-gray-50:hover,
+.dark .ins-portal .hover\:bg-gray-100:hover {
+  background-color: hsl(var(--muted)) !important;
+}
+
+.dark .ins-portal .text-slate-900,
+.dark .ins-portal .text-slate-800,
+.dark .ins-portal .text-slate-700,
+.dark .ins-portal .text-gray-900,
+.dark .ins-portal .text-gray-800,
+.dark .ins-portal .text-gray-700,
+.dark .ins-portal [style*="color: #0f172a"],
+.dark .ins-portal [style*="color: #1e293b"],
+.dark .ins-portal [style*="color: #334155"] {
+  color: hsl(var(--foreground)) !important;
+}
+
+.dark .ins-portal .text-slate-600,
+.dark .ins-portal .text-slate-500,
+.dark .ins-portal .text-slate-400,
+.dark .ins-portal .text-slate-300,
+.dark .ins-portal .text-gray-600,
+.dark .ins-portal .text-gray-500,
+.dark .ins-portal .text-gray-400,
+.dark .ins-portal [style*="color: #475569"],
+.dark .ins-portal [style*="color: #64748b"],
+.dark .ins-portal [style*="color: #94a3b8"] {
+  color: hsl(var(--muted-foreground)) !important;
+}
+
+.dark .ins-portal .border-slate-50,
+.dark .ins-portal .border-slate-100,
+.dark .ins-portal .border-slate-200,
+.dark .ins-portal .border-slate-300,
+.dark .ins-portal .border-gray-100,
+.dark .ins-portal .border-gray-200,
+.dark .ins-portal .border-gray-300,
+.dark .ins-portal .divide-y > :not([hidden]) ~ :not([hidden]),
+.dark .ins-portal [style*="rgba(0, 0, 0, 0.06)"],
+.dark .ins-portal [style*="rgba(0, 0, 0, 0.08)"] {
+  border-color: hsl(var(--border)) !important;
+}
+
+.dark .ins-portal thead.bg-slate-50,
+.dark .ins-portal tr.hover\:bg-slate-50:hover,
+.dark .ins-portal tr.hover\:bg-slate-100:hover {
+  background-color: hsl(var(--muted)) !important;
+}
+
+.dark .ins-portal .shadow-lg,
+.dark .ins-portal .shadow-xl {
+  box-shadow: 0 12px 32px rgba(0, 0, 0, 0.28) !important;
+}
+
+.dark .ins-portal .hover\:bg-slate-800\/50:hover,
+.dark .ins-portal .dark\:hover\:bg-slate-800\/50:hover,
+.dark .ins-portal .dark\:bg-slate-900,
+.dark .ins-portal .dark\:bg-slate-900\/30,
+.dark .ins-portal .dark\:bg-slate-900\/20,
+.dark .ins-portal .dark\:bg-slate-800,
+.dark .ins-portal .dark\:bg-slate-800\/50 {
+  background-color: hsl(var(--card)) !important;
+}

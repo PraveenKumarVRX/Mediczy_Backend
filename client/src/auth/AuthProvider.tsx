@@ -136,7 +136,10 @@ export const AuthProvider = ({ children }) => {
     const isAssistantRoute = location.pathname.startsWith('/assistant');
     
     // Check for portal-specific routes that have their own auth
-    const isHospitalInsuranceRoute = location.pathname.startsWith('/hospital-insurance');
+    // Matches: /hospital-insurance/* AND /hospital/:slug/insurance/*
+    const isHospitalInsuranceRoute =
+      location.pathname.startsWith('/hospital-insurance') ||
+      /^\/hospital\/[^/]+\/insurance(\/|$)/.test(location.pathname);
     const isHospitalRoute = location.pathname.startsWith('/hospital') && !isHospitalInsuranceRoute;
     const isClinicRoute = location.pathname.startsWith('/clinic');
     const isLabRoute = location.pathname.startsWith('/lab');

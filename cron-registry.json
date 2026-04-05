@@ -1,292 +1,332 @@
 {
   "ai_health_risk": {
-    "lastRun": "2026-03-29T18:00:01.186Z",
+    "lastRun": "2026-04-05T18:37:33.933Z",
     "lastStatus": "success",
-    "runCount": 26,
+    "runCount": 76,
     "errorCount": 0,
     "lastError": null,
     "lastDetails": {
       "created": 0,
       "updated": 13,
       "patients": 13,
-      "elapsedMs": 1119
+      "elapsedMs": 3253
     },
     "recentLogs": [
       {
-        "ts": "2026-03-27T10:58:23.425Z",
+        "ts": "2026-04-03T12:00:01.720Z",
         "status": "success",
         "details": {
           "created": 0,
           "updated": 13,
           "patients": 13,
-          "elapsedMs": 4395
+          "elapsedMs": 1672
         }
       },
       {
-        "ts": "2026-03-27T12:00:01.552Z",
+        "ts": "2026-04-03T18:00:01.043Z",
         "status": "success",
         "details": {
           "created": 0,
           "updated": 13,
           "patients": 13,
-          "elapsedMs": 1501
+          "elapsedMs": 977
         }
       },
       {
-        "ts": "2026-03-27T12:21:22.557Z",
+        "ts": "2026-04-04T00:00:01.414Z",
         "status": "success",
         "details": {
           "created": 0,
           "updated": 13,
           "patients": 13,
-          "elapsedMs": 4484
+          "elapsedMs": 1323
         }
       },
       {
-        "ts": "2026-03-27T13:27:48.675Z",
+        "ts": "2026-04-04T06:00:01.274Z",
         "status": "success",
         "details": {
           "created": 0,
           "updated": 13,
           "patients": 13,
-          "elapsedMs": 3283
+          "elapsedMs": 1204
         }
       },
       {
-        "ts": "2026-03-27T14:32:25.595Z",
+        "ts": "2026-04-04T07:02:24.810Z",
         "status": "success",
         "details": {
           "created": 0,
           "updated": 13,
           "patients": 13,
-          "elapsedMs": 3332
+          "elapsedMs": 4046
         }
       },
       {
-        "ts": "2026-03-27T14:43:46.373Z",
+        "ts": "2026-04-04T07:08:13.870Z",
         "status": "success",
         "details": {
           "created": 0,
           "updated": 13,
           "patients": 13,
-          "elapsedMs": 3521
+          "elapsedMs": 3416
         }
       },
       {
-        "ts": "2026-03-27T14:46:17.383Z",
+        "ts": "2026-04-04T07:14:14.220Z",
         "status": "success",
         "details": {
           "created": 0,
           "updated": 13,
           "patients": 13,
-          "elapsedMs": 3123
+          "elapsedMs": 3120
         }
       },
       {
-        "ts": "2026-03-27T14:48:20.892Z",
+        "ts": "2026-04-04T07:20:16.931Z",
         "status": "success",
         "details": {
           "created": 0,
           "updated": 13,
           "patients": 13,
-          "elapsedMs": 3452
+          "elapsedMs": 3720
         }
       },
       {
-        "ts": "2026-03-27T16:34:38.181Z",
+        "ts": "2026-04-04T07:22:49.109Z",
         "status": "success",
         "details": {
           "created": 0,
           "updated": 13,
           "patients": 13,
-          "elapsedMs": 3135
+          "elapsedMs": 3171
         }
       },
       {
-        "ts": "2026-03-27T16:36:07.825Z",
+        "ts": "2026-04-04T07:33:58.793Z",
         "status": "success",
         "details": {
           "created": 0,
           "updated": 13,
           "patients": 13,
-          "elapsedMs": 3347
+          "elapsedMs": 3327
         }
       },
       {
-        "ts": "2026-03-27T16:38:56.840Z",
+        "ts": "2026-04-04T07:37:23.612Z",
         "status": "success",
         "details": {
           "created": 0,
           "updated": 13,
           "patients": 13,
-          "elapsedMs": 3953
+          "elapsedMs": 3248
         }
       },
       {
-        "ts": "2026-03-27T16:40:20.833Z",
+        "ts": "2026-04-04T07:54:19.694Z",
         "status": "success",
         "details": {
           "created": 0,
           "updated": 13,
           "patients": 13,
-          "elapsedMs": 3929
+          "elapsedMs": 3233
         }
       },
       {
-        "ts": "2026-03-27T18:38:30.073Z",
+        "ts": "2026-04-04T09:41:20.777Z",
         "status": "success",
         "details": {
           "created": 0,
           "updated": 13,
           "patients": 13,
-          "elapsedMs": 3289
+          "elapsedMs": 3322
         }
       },
       {
-        "ts": "2026-03-28T00:21:43.445Z",
+        "ts": "2026-04-04T09:43:31.048Z",
         "status": "success",
         "details": {
           "created": 0,
           "updated": 13,
           "patients": 13,
-          "elapsedMs": 3752
+          "elapsedMs": 3225
         }
       },
       {
-        "ts": "2026-03-28T06:00:01.823Z",
+        "ts": "2026-04-04T10:49:19.812Z",
         "status": "success",
         "details": {
           "created": 0,
           "updated": 13,
           "patients": 13,
-          "elapsedMs": 1718
+          "elapsedMs": 3559
         }
       },
       {
-        "ts": "2026-03-28T11:31:29.474Z",
+        "ts": "2026-04-04T10:50:49.111Z",
         "status": "success",
         "details": {
           "created": 0,
           "updated": 13,
           "patients": 13,
-          "elapsedMs": 3797
+          "elapsedMs": 3134
         }
       },
       {
-        "ts": "2026-03-28T12:00:01.131Z",
+        "ts": "2026-04-04T12:00:23.679Z",
         "status": "success",
         "details": {
           "created": 0,
           "updated": 13,
           "patients": 13,
-          "elapsedMs": 1066
+          "elapsedMs": 3302
         }
       },
       {
-        "ts": "2026-03-28T16:43:48.300Z",
+        "ts": "2026-04-04T18:00:01.344Z",
         "status": "success",
         "details": {
           "created": 0,
           "updated": 13,
           "patients": 13,
-          "elapsedMs": 3984
+          "elapsedMs": 1278
         }
       },
       {
-        "ts": "2026-03-28T17:04:55.960Z",
+        "ts": "2026-04-04T18:36:57.714Z",
         "status": "success",
         "details": {
           "created": 0,
           "updated": 13,
           "patients": 13,
-          "elapsedMs": 3281
+          "elapsedMs": 3242
         }
       },
       {
-        "ts": "2026-03-28T17:30:13.681Z",
+        "ts": "2026-04-04T18:44:12.056Z",
         "status": "success",
         "details": {
           "created": 0,
           "updated": 13,
           "patients": 13,
-          "elapsedMs": 4596
+          "elapsedMs": 4041
         }
       },
       {
-        "ts": "2026-03-28T18:00:01.241Z",
+        "ts": "2026-04-04T18:47:19.452Z",
         "status": "success",
         "details": {
           "created": 0,
           "updated": 13,
           "patients": 13,
-          "elapsedMs": 1194
+          "elapsedMs": 4680
         }
       },
       {
-        "ts": "2026-03-29T06:34:41.840Z",
+        "ts": "2026-04-05T00:00:01.200Z",
         "status": "success",
         "details": {
           "created": 0,
           "updated": 13,
           "patients": 13,
-          "elapsedMs": 3590
+          "elapsedMs": 1128
         }
       },
       {
-        "ts": "2026-03-29T07:40:52.528Z",
+        "ts": "2026-04-05T06:00:01.598Z",
         "status": "success",
         "details": {
           "created": 0,
           "updated": 13,
           "patients": 13,
-          "elapsedMs": 3642
+          "elapsedMs": 1490
         }
       },
       {
-        "ts": "2026-03-29T07:59:13.522Z",
+        "ts": "2026-04-05T12:00:01.461Z",
         "status": "success",
         "details": {
           "created": 0,
           "updated": 13,
           "patients": 13,
-          "elapsedMs": 4037
+          "elapsedMs": 1387
         }
       },
       {
-        "ts": "2026-03-29T17:04:47.440Z",
+        "ts": "2026-04-05T13:39:55.242Z",
         "status": "success",
         "details": {
           "created": 0,
           "updated": 13,
           "patients": 13,
-          "elapsedMs": 3628
+          "elapsedMs": 5212
         }
       },
       {
-        "ts": "2026-03-29T18:00:01.186Z",
+        "ts": "2026-04-05T16:15:55.895Z",
         "status": "success",
         "details": {
           "created": 0,
           "updated": 13,
           "patients": 13,
-          "elapsedMs": 1119
+          "elapsedMs": 3351
+        }
+      },
+      {
+        "ts": "2026-04-05T17:52:07.090Z",
+        "status": "success",
+        "details": {
+          "created": 0,
+          "updated": 13,
+          "patients": 13,
+          "elapsedMs": 3481
+        }
+      },
+      {
+        "ts": "2026-04-05T18:00:01.161Z",
+        "status": "success",
+        "details": {
+          "created": 0,
+          "updated": 13,
+          "patients": 13,
+          "elapsedMs": 1105
+        }
+      },
+      {
+        "ts": "2026-04-05T18:28:41.239Z",
+        "status": "success",
+        "details": {
+          "created": 0,
+          "updated": 13,
+          "patients": 13,
+          "elapsedMs": 3199
+        }
+      },
+      {
+        "ts": "2026-04-05T18:37:33.933Z",
+        "status": "success",
+        "details": {
+          "created": 0,
+          "updated": 13,
+          "patients": 13,
+          "elapsedMs": 3253
         }
       }
     ]
   },
   "ai_smart_notif": {
-    "lastRun": "2026-03-29T17:05:13.847Z",
+    "lastRun": "2026-04-05T18:38:00.698Z",
     "lastStatus": "success",
-    "runCount": 34,
+    "runCount": 142,
     "errorCount": 0,
     "lastError": null,
     "lastDetails": {
-      "total": 1,
-      "elapsedMs": 27
+      "total": 0,
+      "elapsedMs": 11
     },
     "recentLogs": [
       {
-        "ts": "2026-03-27T14:32:52.278Z",
+        "ts": "2026-04-04T09:41:47.473Z",
         "status": "success",
         "details": {
           "total": 0,
@@ -294,7 +334,7 @@
         }
       },
       {
-        "ts": "2026-03-27T14:44:12.867Z",
+        "ts": "2026-04-04T09:43:57.842Z",
         "status": "success",
         "details": {
           "total": 0,
@@ -302,31 +342,15 @@
         }
       },
       {
-        "ts": "2026-03-27T14:46:44.276Z",
+        "ts": "2026-04-04T10:15:00.072Z",
         "status": "success",
         "details": {
           "total": 0,
-          "elapsedMs": 11
+          "elapsedMs": 27
         }
       },
       {
-        "ts": "2026-03-27T14:48:47.456Z",
-        "status": "success",
-        "details": {
-          "total": 0,
-          "elapsedMs": 11
-        }
-      },
-      {
-        "ts": "2026-03-27T16:15:00.071Z",
-        "status": "success",
-        "details": {
-          "total": 1,
-          "elapsedMs": 31
-        }
-      },
-      {
-        "ts": "2026-03-27T16:35:05.065Z",
+        "ts": "2026-04-04T10:49:46.271Z",
         "status": "success",
         "details": {
           "total": 0,
@@ -334,7 +358,15 @@
         }
       },
       {
-        "ts": "2026-03-27T16:36:34.496Z",
+        "ts": "2026-04-04T10:51:15.997Z",
+        "status": "success",
+        "details": {
+          "total": 0,
+          "elapsedMs": 11
+        }
+      },
+      {
+        "ts": "2026-04-04T12:00:50.393Z",
         "status": "success",
         "details": {
           "total": 0,
@@ -342,23 +374,55 @@
         }
       },
       {
-        "ts": "2026-03-27T16:39:22.907Z",
+        "ts": "2026-04-04T12:15:00.068Z",
         "status": "success",
         "details": {
           "total": 0,
-          "elapsedMs": 14
+          "elapsedMs": 41
         }
       },
       {
-        "ts": "2026-03-27T16:40:46.923Z",
+        "ts": "2026-04-04T14:15:00.078Z",
         "status": "success",
         "details": {
           "total": 0,
-          "elapsedMs": 12
+          "elapsedMs": 44
         }
       },
       {
-        "ts": "2026-03-27T18:38:56.803Z",
+        "ts": "2026-04-04T16:15:00.073Z",
+        "status": "success",
+        "details": {
+          "total": 0,
+          "elapsedMs": 35
+        }
+      },
+      {
+        "ts": "2026-04-04T18:15:00.059Z",
+        "status": "success",
+        "details": {
+          "total": 0,
+          "elapsedMs": 35
+        }
+      },
+      {
+        "ts": "2026-04-04T18:37:24.490Z",
+        "status": "success",
+        "details": {
+          "total": 0,
+          "elapsedMs": 10
+        }
+      },
+      {
+        "ts": "2026-04-04T18:44:38.032Z",
+        "status": "success",
+        "details": {
+          "total": 0,
+          "elapsedMs": 11
+        }
+      },
+      {
+        "ts": "2026-04-04T18:47:44.794Z",
         "status": "success",
         "details": {
           "total": 0,
@@ -366,7 +430,55 @@
         }
       },
       {
-        "ts": "2026-03-27T20:15:00.082Z",
+        "ts": "2026-04-04T20:15:00.089Z",
+        "status": "success",
+        "details": {
+          "total": 2,
+          "elapsedMs": 34
+        }
+      },
+      {
+        "ts": "2026-04-04T22:15:00.072Z",
+        "status": "success",
+        "details": {
+          "total": 6,
+          "elapsedMs": 44
+        }
+      },
+      {
+        "ts": "2026-04-05T00:15:00.052Z",
+        "status": "success",
+        "details": {
+          "total": 0,
+          "elapsedMs": 30
+        }
+      },
+      {
+        "ts": "2026-04-05T02:15:00.054Z",
+        "status": "success",
+        "details": {
+          "total": 1,
+          "elapsedMs": 27
+        }
+      },
+      {
+        "ts": "2026-04-05T04:15:00.060Z",
+        "status": "success",
+        "details": {
+          "total": 0,
+          "elapsedMs": 25
+        }
+      },
+      {
+        "ts": "2026-04-05T06:15:00.074Z",
+        "status": "success",
+        "details": {
+          "total": 0,
+          "elapsedMs": 40
+        }
+      },
+      {
+        "ts": "2026-04-05T08:15:00.069Z",
         "status": "success",
         "details": {
           "total": 0,
@@ -374,39 +486,15 @@
         }
       },
       {
-        "ts": "2026-03-28T00:22:09.708Z",
+        "ts": "2026-04-05T10:15:00.064Z",
         "status": "success",
         "details": {
           "total": 0,
-          "elapsedMs": 11
+          "elapsedMs": 30
         }
       },
       {
-        "ts": "2026-03-28T02:15:00.062Z",
-        "status": "success",
-        "details": {
-          "total": 0,
-          "elapsedMs": 37
-        }
-      },
-      {
-        "ts": "2026-03-28T04:15:00.080Z",
-        "status": "success",
-        "details": {
-          "total": 0,
-          "elapsedMs": 59
-        }
-      },
-      {
-        "ts": "2026-03-28T06:15:00.090Z",
-        "status": "success",
-        "details": {
-          "total": 0,
-          "elapsedMs": 63
-        }
-      },
-      {
-        "ts": "2026-03-28T08:15:00.064Z",
+        "ts": "2026-04-05T12:15:00.073Z",
         "status": "success",
         "details": {
           "total": 0,
@@ -414,7 +502,23 @@
         }
       },
       {
-        "ts": "2026-03-28T10:15:00.070Z",
+        "ts": "2026-04-05T13:40:20.055Z",
+        "status": "success",
+        "details": {
+          "total": 0,
+          "elapsedMs": 18
+        }
+      },
+      {
+        "ts": "2026-04-05T14:15:00.082Z",
+        "status": "success",
+        "details": {
+          "total": 0,
+          "elapsedMs": 40
+        }
+      },
+      {
+        "ts": "2026-04-05T16:15:00.088Z",
         "status": "success",
         "details": {
           "total": 0,
@@ -422,47 +526,15 @@
         }
       },
       {
-        "ts": "2026-03-28T11:31:55.690Z",
+        "ts": "2026-04-05T16:16:22.571Z",
         "status": "success",
         "details": {
           "total": 0,
-          "elapsedMs": 11
+          "elapsedMs": 19
         }
       },
       {
-        "ts": "2026-03-28T12:15:00.048Z",
-        "status": "success",
-        "details": {
-          "total": 0,
-          "elapsedMs": 17
-        }
-      },
-      {
-        "ts": "2026-03-28T14:15:00.045Z",
-        "status": "success",
-        "details": {
-          "total": 0,
-          "elapsedMs": 20
-        }
-      },
-      {
-        "ts": "2026-03-28T16:15:00.057Z",
-        "status": "success",
-        "details": {
-          "total": 0,
-          "elapsedMs": 24
-        }
-      },
-      {
-        "ts": "2026-03-28T16:44:14.339Z",
-        "status": "success",
-        "details": {
-          "total": 1,
-          "elapsedMs": 17
-        }
-      },
-      {
-        "ts": "2026-03-28T17:05:22.700Z",
+        "ts": "2026-04-05T17:52:33.631Z",
         "status": "success",
         "details": {
           "total": 0,
@@ -470,31 +542,15 @@
         }
       },
       {
-        "ts": "2026-03-28T17:30:39.113Z",
+        "ts": "2026-04-05T18:15:00.060Z",
         "status": "success",
         "details": {
           "total": 0,
-          "elapsedMs": 21
+          "elapsedMs": 29
         }
       },
       {
-        "ts": "2026-03-28T18:15:00.065Z",
-        "status": "success",
-        "details": {
-          "total": 2,
-          "elapsedMs": 37
-        }
-      },
-      {
-        "ts": "2026-03-28T20:15:00.096Z",
-        "status": "success",
-        "details": {
-          "total": 8,
-          "elapsedMs": 53
-        }
-      },
-      {
-        "ts": "2026-03-29T06:35:08.270Z",
+        "ts": "2026-04-05T18:29:08.061Z",
         "status": "success",
         "details": {
           "total": 0,
@@ -502,46 +558,60 @@
         }
       },
       {
-        "ts": "2026-03-29T07:41:18.919Z",
+        "ts": "2026-04-05T18:38:00.698Z",
         "status": "success",
         "details": {
           "total": 0,
-          "elapsedMs": 26
-        }
-      },
-      {
-        "ts": "2026-03-29T07:59:39.504Z",
-        "status": "success",
-        "details": {
-          "total": 0,
-          "elapsedMs": 12
-        }
-      },
-      {
-        "ts": "2026-03-29T17:05:13.847Z",
-        "status": "success",
-        "details": {
-          "total": 1,
-          "elapsedMs": 27
+          "elapsedMs": 11
         }
       }
     ]
   },
   "ai_self_learning": {
-    "lastRun": "2026-03-29T17:05:43.843Z",
+    "lastRun": "2026-04-05T18:38:30.723Z",
     "lastStatus": "success",
-    "runCount": 26,
+    "runCount": 88,
     "errorCount": 0,
     "lastError": null,
     "lastDetails": {
       "scored": 0,
       "patterns": 0,
       "insights": 0,
-      "elapsedMs": 6
+      "elapsedMs": 18
     },
     "recentLogs": [
       {
-        "ts": "2026-03-27T10:59:19.083Z",
+        "ts": "2026-04-03T20:30:00.093Z",
+        "status": "success",
+        "details": {
+          "scored": 0,
+          "patterns": 0,
+          "insights": 0,
+          "elapsedMs": 43
+        }
+      },
+      {
+        "ts": "2026-04-04T00:30:00.111Z",
+        "status": "success",
+        "details": {
+          "scored": 0,
+          "patterns": 0,
+          "insights": 0,
+          "elapsedMs": 68
+        }
+      },
+      {
+        "ts": "2026-04-04T04:30:00.079Z",
+        "status": "success",
+        "details": {
+          "scored": 0,
+          "patterns": 0,
+          "insights": 0,
+          "elapsedMs": 36
+        }
+      },
+      {
+        "ts": "2026-04-04T07:03:20.810Z",
         "status": "success",
         "details": {
           "scored": 0,
@@ -551,67 +621,7 @@
         }
       },
       {
-        "ts": "2026-03-27T12:22:18.098Z",
-        "status": "success",
-        "details": {
-          "scored": 0,
-          "patterns": 0,
-          "insights": 0,
-          "elapsedMs": 6
-        }
-      },
-      {
-        "ts": "2026-03-27T12:30:00.100Z",
-        "status": "success",
-        "details": {
-          "scored": 0,
-          "patterns": 0,
-          "insights": 0,
-          "elapsedMs": 54
-        }
-      },
-      {
-        "ts": "2026-03-27T13:28:45.429Z",
-        "status": "success",
-        "details": {
-          "scored": 0,
-          "patterns": 0,
-          "insights": 0,
-          "elapsedMs": 18
-        }
-      },
-      {
-        "ts": "2026-03-27T14:33:22.300Z",
-        "status": "success",
-        "details": {
-          "scored": 0,
-          "patterns": 0,
-          "insights": 0,
-          "elapsedMs": 17
-        }
-      },
-      {
-        "ts": "2026-03-27T14:44:42.897Z",
-        "status": "success",
-        "details": {
-          "scored": 0,
-          "patterns": 0,
-          "insights": 0,
-          "elapsedMs": 18
-        }
-      },
-      {
-        "ts": "2026-03-27T14:47:14.297Z",
-        "status": "success",
-        "details": {
-          "scored": 0,
-          "patterns": 0,
-          "insights": 0,
-          "elapsedMs": 18
-        }
-      },
-      {
-        "ts": "2026-03-27T14:49:17.479Z",
+        "ts": "2026-04-04T07:09:10.500Z",
         "status": "success",
         "details": {
           "scored": 0,
@@ -621,17 +631,17 @@
         }
       },
       {
-        "ts": "2026-03-27T16:30:00.100Z",
+        "ts": "2026-04-04T07:15:11.146Z",
         "status": "success",
         "details": {
           "scored": 0,
           "patterns": 0,
           "insights": 0,
-          "elapsedMs": 53
+          "elapsedMs": 18
         }
       },
       {
-        "ts": "2026-03-27T16:37:04.519Z",
+        "ts": "2026-04-04T07:21:13.258Z",
         "status": "success",
         "details": {
           "scored": 0,
@@ -641,37 +651,17 @@
         }
       },
       {
-        "ts": "2026-03-27T16:41:16.949Z",
+        "ts": "2026-04-04T07:23:45.980Z",
         "status": "success",
         "details": {
           "scored": 0,
           "patterns": 0,
           "insights": 0,
-          "elapsedMs": 19
+          "elapsedMs": 16
         }
       },
       {
-        "ts": "2026-03-27T18:39:26.811Z",
-        "status": "success",
-        "details": {
-          "scored": 0,
-          "patterns": 0,
-          "insights": 0,
-          "elapsedMs": 6
-        }
-      },
-      {
-        "ts": "2026-03-27T20:30:00.072Z",
-        "status": "success",
-        "details": {
-          "scored": 0,
-          "patterns": 0,
-          "insights": 0,
-          "elapsedMs": 24
-        }
-      },
-      {
-        "ts": "2026-03-28T00:22:39.718Z",
+        "ts": "2026-04-04T07:38:20.394Z",
         "status": "success",
         "details": {
           "scored": 0,
@@ -681,87 +671,47 @@
         }
       },
       {
-        "ts": "2026-03-28T00:30:00.160Z",
+        "ts": "2026-04-04T07:55:16.503Z",
         "status": "success",
         "details": {
           "scored": 0,
           "patterns": 0,
           "insights": 0,
-          "elapsedMs": 97
+          "elapsedMs": 18
         }
       },
       {
-        "ts": "2026-03-28T04:30:00.082Z",
+        "ts": "2026-04-04T08:30:00.070Z",
         "status": "success",
         "details": {
           "scored": 0,
           "patterns": 0,
           "insights": 0,
-          "elapsedMs": 33
+          "elapsedMs": 37
         }
       },
       {
-        "ts": "2026-03-28T08:30:00.082Z",
+        "ts": "2026-04-04T09:42:17.485Z",
         "status": "success",
         "details": {
           "scored": 0,
           "patterns": 0,
           "insights": 0,
-          "elapsedMs": 40
+          "elapsedMs": 5
         }
       },
       {
-        "ts": "2026-03-28T11:32:25.712Z",
+        "ts": "2026-04-04T09:44:27.854Z",
         "status": "success",
         "details": {
           "scored": 0,
           "patterns": 0,
           "insights": 0,
-          "elapsedMs": 11
+          "elapsedMs": 5
         }
       },
       {
-        "ts": "2026-03-28T12:30:00.100Z",
-        "status": "success",
-        "details": {
-          "scored": 0,
-          "patterns": 0,
-          "insights": 0,
-          "elapsedMs": 38
-        }
-      },
-      {
-        "ts": "2026-03-28T16:44:44.352Z",
-        "status": "success",
-        "details": {
-          "scored": 0,
-          "patterns": 0,
-          "insights": 0,
-          "elapsedMs": 6
-        }
-      },
-      {
-        "ts": "2026-03-28T17:05:52.704Z",
-        "status": "success",
-        "details": {
-          "scored": 0,
-          "patterns": 0,
-          "insights": 0,
-          "elapsedMs": 6
-        }
-      },
-      {
-        "ts": "2026-03-28T17:31:09.127Z",
-        "status": "success",
-        "details": {
-          "scored": 0,
-          "patterns": 0,
-          "insights": 0,
-          "elapsedMs": 6
-        }
-      },
-      {
-        "ts": "2026-03-29T06:35:38.297Z",
+        "ts": "2026-04-04T10:51:46.024Z",
         "status": "success",
         "details": {
           "scored": 0,
@@ -771,41 +721,171 @@
         }
       },
       {
-        "ts": "2026-03-29T07:41:48.913Z",
+        "ts": "2026-04-04T12:01:20.414Z",
         "status": "success",
         "details": {
           "scored": 0,
           "patterns": 0,
           "insights": 0,
-          "elapsedMs": 6
+          "elapsedMs": 17
         }
       },
       {
-        "ts": "2026-03-29T08:00:09.520Z",
+        "ts": "2026-04-04T12:30:00.071Z",
         "status": "success",
         "details": {
           "scored": 0,
           "patterns": 0,
           "insights": 0,
-          "elapsedMs": 7
+          "elapsedMs": 36
         }
       },
       {
-        "ts": "2026-03-29T17:05:43.843Z",
+        "ts": "2026-04-04T16:30:00.068Z",
         "status": "success",
         "details": {
           "scored": 0,
           "patterns": 0,
           "insights": 0,
-          "elapsedMs": 6
+          "elapsedMs": 26
+        }
+      },
+      {
+        "ts": "2026-04-04T18:37:54.529Z",
+        "status": "success",
+        "details": {
+          "scored": 0,
+          "patterns": 0,
+          "insights": 0,
+          "elapsedMs": 23
+        }
+      },
+      {
+        "ts": "2026-04-04T18:48:14.829Z",
+        "status": "success",
+        "details": {
+          "scored": 0,
+          "patterns": 0,
+          "insights": 0,
+          "elapsedMs": 20
+        }
+      },
+      {
+        "ts": "2026-04-04T20:30:00.070Z",
+        "status": "success",
+        "details": {
+          "scored": 0,
+          "patterns": 0,
+          "insights": 0,
+          "elapsedMs": 37
+        }
+      },
+      {
+        "ts": "2026-04-05T00:30:00.112Z",
+        "status": "success",
+        "details": {
+          "scored": 0,
+          "patterns": 0,
+          "insights": 0,
+          "elapsedMs": 53
+        }
+      },
+      {
+        "ts": "2026-04-05T04:30:00.078Z",
+        "status": "success",
+        "details": {
+          "scored": 0,
+          "patterns": 0,
+          "insights": 0,
+          "elapsedMs": 32
+        }
+      },
+      {
+        "ts": "2026-04-05T08:30:00.081Z",
+        "status": "success",
+        "details": {
+          "scored": 0,
+          "patterns": 0,
+          "insights": 0,
+          "elapsedMs": 29
+        }
+      },
+      {
+        "ts": "2026-04-05T12:30:00.094Z",
+        "status": "success",
+        "details": {
+          "scored": 0,
+          "patterns": 0,
+          "insights": 0,
+          "elapsedMs": 30
+        }
+      },
+      {
+        "ts": "2026-04-05T13:40:50.089Z",
+        "status": "success",
+        "details": {
+          "scored": 0,
+          "patterns": 0,
+          "insights": 0,
+          "elapsedMs": 25
+        }
+      },
+      {
+        "ts": "2026-04-05T16:16:52.599Z",
+        "status": "success",
+        "details": {
+          "scored": 0,
+          "patterns": 0,
+          "insights": 0,
+          "elapsedMs": 22
+        }
+      },
+      {
+        "ts": "2026-04-05T16:30:00.088Z",
+        "status": "success",
+        "details": {
+          "scored": 0,
+          "patterns": 0,
+          "insights": 0,
+          "elapsedMs": 39
+        }
+      },
+      {
+        "ts": "2026-04-05T17:53:03.635Z",
+        "status": "success",
+        "details": {
+          "scored": 0,
+          "patterns": 0,
+          "insights": 0,
+          "elapsedMs": 5
+        }
+      },
+      {
+        "ts": "2026-04-05T18:29:38.083Z",
+        "status": "success",
+        "details": {
+          "scored": 0,
+          "patterns": 0,
+          "insights": 0,
+          "elapsedMs": 18
+        }
+      },
+      {
+        "ts": "2026-04-05T18:38:30.723Z",
+        "status": "success",
+        "details": {
+          "scored": 0,
+          "patterns": 0,
+          "insights": 0,
+          "elapsedMs": 18
         }
       }
     ]
   },
   "appt_reminder": {
-    "lastRun": "2026-03-29T18:00:00.074Z",
+    "lastRun": "2026-04-05T18:30:00.054Z",
     "lastStatus": "success",
-    "runCount": 57,
+    "runCount": 388,
     "errorCount": 0,
     "lastError": null,
     "lastDetails": {
@@ -815,7 +895,7 @@
     },
     "recentLogs": [
       {
-        "ts": "2026-03-28T06:00:00.132Z",
+        "ts": "2026-04-05T04:00:00.069Z",
         "status": "success",
         "details": {
           "sent24h": 0,
@@ -824,7 +904,7 @@
         }
       },
       {
-        "ts": "2026-03-28T06:30:00.039Z",
+        "ts": "2026-04-05T04:30:00.056Z",
         "status": "success",
         "details": {
           "sent24h": 0,
@@ -833,7 +913,7 @@
         }
       },
       {
-        "ts": "2026-03-28T07:00:00.053Z",
+        "ts": "2026-04-05T05:00:00.042Z",
         "status": "success",
         "details": {
           "sent24h": 0,
@@ -842,7 +922,7 @@
         }
       },
       {
-        "ts": "2026-03-28T07:30:00.041Z",
+        "ts": "2026-04-05T05:30:00.038Z",
         "status": "success",
         "details": {
           "sent24h": 0,
@@ -851,7 +931,7 @@
         }
       },
       {
-        "ts": "2026-03-28T08:00:00.077Z",
+        "ts": "2026-04-05T06:00:00.129Z",
         "status": "success",
         "details": {
           "sent24h": 0,
@@ -860,7 +940,7 @@
         }
       },
       {
-        "ts": "2026-03-28T08:30:00.054Z",
+        "ts": "2026-04-05T06:30:00.046Z",
         "status": "success",
         "details": {
           "sent24h": 0,
@@ -869,7 +949,7 @@
         }
       },
       {
-        "ts": "2026-03-28T09:00:00.097Z",
+        "ts": "2026-04-05T07:00:00.058Z",
         "status": "success",
         "details": {
           "sent24h": 0,
@@ -878,7 +958,7 @@
         }
       },
       {
-        "ts": "2026-03-28T09:30:00.065Z",
+        "ts": "2026-04-05T07:30:00.061Z",
         "status": "success",
         "details": {
           "sent24h": 0,
@@ -887,7 +967,7 @@
         }
       },
       {
-        "ts": "2026-03-28T10:00:00.044Z",
+        "ts": "2026-04-05T08:00:00.080Z",
         "status": "success",
         "details": {
           "sent24h": 0,
@@ -896,7 +976,7 @@
         }
       },
       {
-        "ts": "2026-03-28T10:30:00.046Z",
+        "ts": "2026-04-05T08:30:00.057Z",
         "status": "success",
         "details": {
           "sent24h": 0,
@@ -905,7 +985,7 @@
         }
       },
       {
-        "ts": "2026-03-28T11:00:00.090Z",
+        "ts": "2026-04-05T09:00:00.073Z",
         "status": "success",
         "details": {
           "sent24h": 0,
@@ -914,7 +994,7 @@
         }
       },
       {
-        "ts": "2026-03-28T12:00:00.079Z",
+        "ts": "2026-04-05T09:30:00.065Z",
         "status": "success",
         "details": {
           "sent24h": 0,
@@ -923,7 +1003,7 @@
         }
       },
       {
-        "ts": "2026-03-28T12:30:00.071Z",
+        "ts": "2026-04-05T10:00:00.062Z",
         "status": "success",
         "details": {
           "sent24h": 0,
@@ -932,7 +1012,7 @@
         }
       },
       {
-        "ts": "2026-03-28T13:00:00.067Z",
+        "ts": "2026-04-05T10:30:00.047Z",
         "status": "success",
         "details": {
           "sent24h": 0,
@@ -941,7 +1021,7 @@
         }
       },
       {
-        "ts": "2026-03-28T13:30:00.063Z",
+        "ts": "2026-04-05T11:00:00.065Z",
         "status": "success",
         "details": {
           "sent24h": 0,
@@ -950,7 +1030,7 @@
         }
       },
       {
-        "ts": "2026-03-28T14:00:00.061Z",
+        "ts": "2026-04-05T11:30:00.039Z",
         "status": "success",
         "details": {
           "sent24h": 0,
@@ -959,7 +1039,7 @@
         }
       },
       {
-        "ts": "2026-03-28T14:30:00.035Z",
+        "ts": "2026-04-05T12:00:00.088Z",
         "status": "success",
         "details": {
           "sent24h": 0,
@@ -968,7 +1048,7 @@
         }
       },
       {
-        "ts": "2026-03-28T15:00:00.049Z",
+        "ts": "2026-04-05T12:30:00.071Z",
         "status": "success",
         "details": {
           "sent24h": 0,
@@ -977,7 +1057,7 @@
         }
       },
       {
-        "ts": "2026-03-28T15:30:00.033Z",
+        "ts": "2026-04-05T13:00:00.049Z",
         "status": "success",
         "details": {
           "sent24h": 0,
@@ -986,7 +1066,7 @@
         }
       },
       {
-        "ts": "2026-03-28T16:00:00.087Z",
+        "ts": "2026-04-05T13:30:00.051Z",
         "status": "success",
         "details": {
           "sent24h": 0,
@@ -995,7 +1075,7 @@
         }
       },
       {
-        "ts": "2026-03-28T17:00:00.045Z",
+        "ts": "2026-04-05T14:00:00.054Z",
         "status": "success",
         "details": {
           "sent24h": 0,
@@ -1004,7 +1084,7 @@
         }
       },
       {
-        "ts": "2026-03-28T18:00:00.070Z",
+        "ts": "2026-04-05T14:30:00.051Z",
         "status": "success",
         "details": {
           "sent24h": 0,
@@ -1013,7 +1093,7 @@
         }
       },
       {
-        "ts": "2026-03-28T18:30:00.061Z",
+        "ts": "2026-04-05T15:00:00.051Z",
         "status": "success",
         "details": {
           "sent24h": 0,
@@ -1022,7 +1102,7 @@
         }
       },
       {
-        "ts": "2026-03-28T19:00:00.045Z",
+        "ts": "2026-04-05T15:30:00.050Z",
         "status": "success",
         "details": {
           "sent24h": 0,
@@ -1031,7 +1111,7 @@
         }
       },
       {
-        "ts": "2026-03-28T19:30:00.041Z",
+        "ts": "2026-04-05T16:00:00.077Z",
         "status": "success",
         "details": {
           "sent24h": 0,
@@ -1040,7 +1120,7 @@
         }
       },
       {
-        "ts": "2026-03-28T20:00:00.072Z",
+        "ts": "2026-04-05T16:30:00.057Z",
         "status": "success",
         "details": {
           "sent24h": 0,
@@ -1049,7 +1129,7 @@
         }
       },
       {
-        "ts": "2026-03-29T07:00:00.065Z",
+        "ts": "2026-04-05T17:00:00.077Z",
         "status": "success",
         "details": {
           "sent24h": 0,
@@ -1058,7 +1138,7 @@
         }
       },
       {
-        "ts": "2026-03-29T08:00:00.140Z",
+        "ts": "2026-04-05T17:30:00.040Z",
         "status": "success",
         "details": {
           "sent24h": 0,
@@ -1067,7 +1147,7 @@
         }
       },
       {
-        "ts": "2026-03-29T17:30:00.045Z",
+        "ts": "2026-04-05T18:00:00.072Z",
         "status": "success",
         "details": {
           "sent24h": 0,
@@ -1076,7 +1156,7 @@
         }
       },
       {
-        "ts": "2026-03-29T18:00:00.074Z",
+        "ts": "2026-04-05T18:30:00.054Z",
         "status": "success",
         "details": {
           "sent24h": 0,
@@ -1087,329 +1167,329 @@
     ]
   },
   "device_heartbeat": {
-    "lastRun": "2026-03-29T18:10:00.035Z",
+    "lastRun": "2026-04-05T18:30:00.060Z",
     "lastStatus": "success",
-    "runCount": 352,
+    "runCount": 2352,
     "errorCount": 0,
     "lastError": null,
     "lastDetails": {},
     "recentLogs": [
       {
-        "ts": "2026-03-28T20:05:00.032Z",
+        "ts": "2026-04-05T16:00:00.086Z",
         "status": "success",
         "details": {}
       },
       {
-        "ts": "2026-03-28T20:10:00.036Z",
+        "ts": "2026-04-05T16:05:00.040Z",
         "status": "success",
         "details": {}
       },
       {
-        "ts": "2026-03-28T20:15:00.050Z",
+        "ts": "2026-04-05T16:10:00.034Z",
         "status": "success",
         "details": {}
       },
       {
-        "ts": "2026-03-28T20:20:00.027Z",
+        "ts": "2026-04-05T16:15:00.062Z",
         "status": "success",
         "details": {}
       },
       {
-        "ts": "2026-03-28T20:25:00.041Z",
+        "ts": "2026-04-05T16:20:00.032Z",
         "status": "success",
         "details": {}
       },
       {
-        "ts": "2026-03-29T06:35:00.037Z",
+        "ts": "2026-04-05T16:25:00.028Z",
         "status": "success",
         "details": {}
       },
       {
-        "ts": "2026-03-29T06:40:00.037Z",
+        "ts": "2026-04-05T16:30:00.065Z",
         "status": "success",
         "details": {}
       },
       {
-        "ts": "2026-03-29T06:45:00.037Z",
+        "ts": "2026-04-05T16:35:00.029Z",
         "status": "success",
         "details": {}
       },
       {
-        "ts": "2026-03-29T06:50:00.040Z",
+        "ts": "2026-04-05T16:40:00.034Z",
         "status": "success",
         "details": {}
       },
       {
-        "ts": "2026-03-29T06:55:00.024Z",
+        "ts": "2026-04-05T16:45:00.032Z",
         "status": "success",
         "details": {}
       },
       {
-        "ts": "2026-03-29T07:00:00.070Z",
+        "ts": "2026-04-05T16:50:00.026Z",
         "status": "success",
         "details": {}
       },
       {
-        "ts": "2026-03-29T07:45:00.035Z",
+        "ts": "2026-04-05T16:55:00.026Z",
         "status": "success",
         "details": {}
       },
       {
-        "ts": "2026-03-29T07:50:00.045Z",
+        "ts": "2026-04-05T17:00:00.080Z",
         "status": "success",
         "details": {}
       },
       {
-        "ts": "2026-03-29T07:55:00.034Z",
+        "ts": "2026-04-05T17:05:00.030Z",
         "status": "success",
         "details": {}
       },
       {
-        "ts": "2026-03-29T08:00:00.144Z",
+        "ts": "2026-04-05T17:10:00.042Z",
         "status": "success",
         "details": {}
       },
       {
-        "ts": "2026-03-29T08:05:00.043Z",
+        "ts": "2026-04-05T17:15:00.047Z",
         "status": "success",
         "details": {}
       },
       {
-        "ts": "2026-03-29T17:05:00.032Z",
+        "ts": "2026-04-05T17:20:00.029Z",
         "status": "success",
         "details": {}
       },
       {
-        "ts": "2026-03-29T17:10:00.046Z",
+        "ts": "2026-04-05T17:25:00.030Z",
         "status": "success",
         "details": {}
       },
       {
-        "ts": "2026-03-29T17:15:00.032Z",
+        "ts": "2026-04-05T17:30:00.050Z",
         "status": "success",
         "details": {}
       },
       {
-        "ts": "2026-03-29T17:20:00.041Z",
+        "ts": "2026-04-05T17:35:00.029Z",
         "status": "success",
         "details": {}
       },
       {
-        "ts": "2026-03-29T17:25:00.027Z",
+        "ts": "2026-04-05T17:40:00.036Z",
         "status": "success",
         "details": {}
       },
       {
-        "ts": "2026-03-29T17:30:00.053Z",
+        "ts": "2026-04-05T17:45:00.030Z",
         "status": "success",
         "details": {}
       },
       {
-        "ts": "2026-03-29T17:35:00.038Z",
+        "ts": "2026-04-05T17:50:00.034Z",
         "status": "success",
         "details": {}
       },
       {
-        "ts": "2026-03-29T17:40:00.030Z",
+        "ts": "2026-04-05T17:55:00.034Z",
         "status": "success",
         "details": {}
       },
       {
-        "ts": "2026-03-29T17:45:00.028Z",
+        "ts": "2026-04-05T18:00:00.081Z",
         "status": "success",
         "details": {}
       },
       {
-        "ts": "2026-03-29T17:50:00.022Z",
+        "ts": "2026-04-05T18:05:00.037Z",
         "status": "success",
         "details": {}
       },
       {
-        "ts": "2026-03-29T17:55:00.029Z",
+        "ts": "2026-04-05T18:10:00.038Z",
         "status": "success",
         "details": {}
       },
       {
-        "ts": "2026-03-29T18:00:00.082Z",
+        "ts": "2026-04-05T18:15:00.037Z",
         "status": "success",
         "details": {}
       },
       {
-        "ts": "2026-03-29T18:05:00.038Z",
+        "ts": "2026-04-05T18:20:00.027Z",
         "status": "success",
         "details": {}
       },
       {
-        "ts": "2026-03-29T18:10:00.035Z",
+        "ts": "2026-04-05T18:30:00.060Z",
         "status": "success",
         "details": {}
       }
     ]
   },
   "device_amc": {
-    "lastRun": "2026-03-29T18:00:00.081Z",
+    "lastRun": "2026-04-05T18:00:00.078Z",
     "lastStatus": "success",
-    "runCount": 31,
+    "runCount": 197,
     "errorCount": 0,
     "lastError": null,
     "lastDetails": {},
     "recentLogs": [
       {
-        "ts": "2026-03-27T12:00:00.094Z",
+        "ts": "2026-04-04T13:00:00.053Z",
         "status": "success",
         "details": {}
       },
       {
-        "ts": "2026-03-27T13:00:00.075Z",
+        "ts": "2026-04-04T14:00:00.073Z",
         "status": "success",
         "details": {}
       },
       {
-        "ts": "2026-03-27T14:00:00.109Z",
+        "ts": "2026-04-04T15:00:00.083Z",
         "status": "success",
         "details": {}
       },
       {
-        "ts": "2026-03-27T15:00:00.095Z",
+        "ts": "2026-04-04T16:00:00.093Z",
         "status": "success",
         "details": {}
       },
       {
-        "ts": "2026-03-27T16:00:00.081Z",
+        "ts": "2026-04-04T17:00:00.064Z",
         "status": "success",
         "details": {}
       },
       {
-        "ts": "2026-03-27T19:00:00.090Z",
+        "ts": "2026-04-04T18:00:00.090Z",
         "status": "success",
         "details": {}
       },
       {
-        "ts": "2026-03-27T20:00:00.086Z",
+        "ts": "2026-04-04T19:00:00.061Z",
         "status": "success",
         "details": {}
       },
       {
-        "ts": "2026-03-28T01:00:00.065Z",
+        "ts": "2026-04-04T20:00:00.111Z",
         "status": "success",
         "details": {}
       },
       {
-        "ts": "2026-03-28T02:00:00.136Z",
+        "ts": "2026-04-04T21:00:00.058Z",
         "status": "success",
         "details": {}
       },
       {
-        "ts": "2026-03-28T03:00:00.071Z",
+        "ts": "2026-04-04T22:00:00.059Z",
         "status": "success",
         "details": {}
       },
       {
-        "ts": "2026-03-28T04:00:00.093Z",
+        "ts": "2026-04-04T23:00:00.047Z",
         "status": "success",
         "details": {}
       },
       {
-        "ts": "2026-03-28T05:00:00.071Z",
+        "ts": "2026-04-05T00:00:00.116Z",
         "status": "success",
         "details": {}
       },
       {
-        "ts": "2026-03-28T06:00:00.137Z",
+        "ts": "2026-04-05T01:00:00.050Z",
         "status": "success",
         "details": {}
       },
       {
-        "ts": "2026-03-28T07:00:00.058Z",
+        "ts": "2026-04-05T02:00:00.146Z",
         "status": "success",
         "details": {}
       },
       {
-        "ts": "2026-03-28T08:00:00.088Z",
+        "ts": "2026-04-05T03:00:00.117Z",
         "status": "success",
         "details": {}
       },
       {
-        "ts": "2026-03-28T09:00:00.104Z",
+        "ts": "2026-04-05T04:00:00.074Z",
         "status": "success",
         "details": {}
       },
       {
-        "ts": "2026-03-28T10:00:00.072Z",
+        "ts": "2026-04-05T05:00:00.051Z",
         "status": "success",
         "details": {}
       },
       {
-        "ts": "2026-03-28T11:00:00.084Z",
+        "ts": "2026-04-05T06:00:00.132Z",
         "status": "success",
         "details": {}
       },
       {
-        "ts": "2026-03-28T12:00:00.076Z",
+        "ts": "2026-04-05T07:00:00.060Z",
         "status": "success",
         "details": {}
       },
       {
-        "ts": "2026-03-28T13:00:00.068Z",
+        "ts": "2026-04-05T08:00:00.098Z",
         "status": "success",
         "details": {}
       },
       {
-        "ts": "2026-03-28T14:00:00.070Z",
+        "ts": "2026-04-05T09:00:00.078Z",
         "status": "success",
         "details": {}
       },
       {
-        "ts": "2026-03-28T15:00:00.062Z",
+        "ts": "2026-04-05T10:00:00.077Z",
         "status": "success",
         "details": {}
       },
       {
-        "ts": "2026-03-28T16:00:00.093Z",
+        "ts": "2026-04-05T11:00:00.070Z",
         "status": "success",
         "details": {}
       },
       {
-        "ts": "2026-03-28T17:00:00.049Z",
+        "ts": "2026-04-05T12:00:00.102Z",
         "status": "success",
         "details": {}
       },
       {
-        "ts": "2026-03-28T18:00:00.083Z",
+        "ts": "2026-04-05T13:00:00.062Z",
         "status": "success",
         "details": {}
       },
       {
-        "ts": "2026-03-28T19:00:00.051Z",
+        "ts": "2026-04-05T14:00:00.064Z",
         "status": "success",
         "details": {}
       },
       {
-        "ts": "2026-03-28T20:00:00.075Z",
+        "ts": "2026-04-05T15:00:00.059Z",
         "status": "success",
         "details": {}
       },
       {
-        "ts": "2026-03-29T07:00:00.069Z",
+        "ts": "2026-04-05T16:00:00.084Z",
         "status": "success",
         "details": {}
       },
       {
-        "ts": "2026-03-29T08:00:00.149Z",
+        "ts": "2026-04-05T17:00:00.079Z",
         "status": "success",
         "details": {}
       },
       {
-        "ts": "2026-03-29T18:00:00.081Z",
+        "ts": "2026-04-05T18:00:00.078Z",
         "status": "success",
         "details": {}
       }
     ]
   },
   "webinar_reminder": {
-    "lastRun": "2026-03-29T18:00:00.100Z",
+    "lastRun": "2026-04-05T18:30:00.113Z",
     "lastStatus": "success",
-    "runCount": 57,
+    "runCount": 388,
     "errorCount": 0,
     "lastError": null,
     "lastDetails": {
@@ -1420,7 +1500,7 @@
     },
     "recentLogs": [
       {
-        "ts": "2026-03-28T06:00:00.176Z",
+        "ts": "2026-04-05T04:00:00.099Z",
         "status": "success",
         "details": {
           "sent1week": 0,
@@ -1430,7 +1510,7 @@
         }
       },
       {
-        "ts": "2026-03-28T06:30:00.064Z",
+        "ts": "2026-04-05T04:30:00.080Z",
         "status": "success",
         "details": {
           "sent1week": 0,
@@ -1440,7 +1520,7 @@
         }
       },
       {
-        "ts": "2026-03-28T07:00:00.073Z",
+        "ts": "2026-04-05T05:00:00.067Z",
         "status": "success",
         "details": {
           "sent1week": 0,
@@ -1450,7 +1530,7 @@
         }
       },
       {
-        "ts": "2026-03-28T07:30:00.056Z",
+        "ts": "2026-04-05T05:30:00.069Z",
         "status": "success",
         "details": {
           "sent1week": 0,
@@ -1460,7 +1540,7 @@
         }
       },
       {
-        "ts": "2026-03-28T08:00:00.117Z",
+        "ts": "2026-04-05T06:00:00.166Z",
         "status": "success",
         "details": {
           "sent1week": 0,
@@ -1470,7 +1550,7 @@
         }
       },
       {
-        "ts": "2026-03-28T08:30:00.080Z",
+        "ts": "2026-04-05T06:30:00.065Z",
         "status": "success",
         "details": {
           "sent1week": 0,
@@ -1480,7 +1560,7 @@
         }
       },
       {
-        "ts": "2026-03-28T09:00:00.122Z",
+        "ts": "2026-04-05T07:00:00.081Z",
         "status": "success",
         "details": {
           "sent1week": 0,
@@ -1490,7 +1570,7 @@
         }
       },
       {
-        "ts": "2026-03-28T09:30:00.086Z",
+        "ts": "2026-04-05T07:30:00.086Z",
         "status": "success",
         "details": {
           "sent1week": 0,
@@ -1500,7 +1580,7 @@
         }
       },
       {
-        "ts": "2026-03-28T10:00:00.086Z",
+        "ts": "2026-04-05T08:00:00.131Z",
         "status": "success",
         "details": {
           "sent1week": 0,
@@ -1510,7 +1590,7 @@
         }
       },
       {
-        "ts": "2026-03-28T10:30:00.074Z",
+        "ts": "2026-04-05T08:30:00.079Z",
         "status": "success",
         "details": {
           "sent1week": 0,
@@ -1520,7 +1600,7 @@
         }
       },
       {
-        "ts": "2026-03-28T11:00:00.108Z",
+        "ts": "2026-04-05T09:00:00.107Z",
         "status": "success",
         "details": {
           "sent1week": 0,
@@ -1530,7 +1610,7 @@
         }
       },
       {
-        "ts": "2026-03-28T12:00:00.151Z",
+        "ts": "2026-04-05T09:30:00.120Z",
         "status": "success",
         "details": {
           "sent1week": 0,
@@ -1540,7 +1620,7 @@
         }
       },
       {
-        "ts": "2026-03-28T12:30:00.101Z",
+        "ts": "2026-04-05T10:00:00.093Z",
         "status": "success",
         "details": {
           "sent1week": 0,
@@ -1550,7 +1630,7 @@
         }
       },
       {
-        "ts": "2026-03-28T13:00:00.084Z",
+        "ts": "2026-04-05T10:30:00.088Z",
         "status": "success",
         "details": {
           "sent1week": 0,
@@ -1560,7 +1640,7 @@
         }
       },
       {
-        "ts": "2026-03-28T13:30:00.085Z",
+        "ts": "2026-04-05T11:00:00.099Z",
         "status": "success",
         "details": {
           "sent1week": 0,
@@ -1570,7 +1650,7 @@
         }
       },
       {
-        "ts": "2026-03-28T14:00:00.085Z",
+        "ts": "2026-04-05T11:30:00.065Z",
         "status": "success",
         "details": {
           "sent1week": 0,
@@ -1580,7 +1660,7 @@
         }
       },
       {
-        "ts": "2026-03-28T14:30:00.061Z",
+        "ts": "2026-04-05T12:00:00.131Z",
         "status": "success",
         "details": {
           "sent1week": 0,
@@ -1590,7 +1670,7 @@
         }
       },
       {
-        "ts": "2026-03-28T15:00:00.079Z",
+        "ts": "2026-04-05T12:30:00.095Z",
         "status": "success",
         "details": {
           "sent1week": 0,
@@ -1600,7 +1680,7 @@
         }
       },
       {
-        "ts": "2026-03-28T15:30:00.071Z",
+        "ts": "2026-04-05T13:00:00.076Z",
         "status": "success",
         "details": {
           "sent1week": 0,
@@ -1610,7 +1690,7 @@
         }
       },
       {
-        "ts": "2026-03-28T16:00:00.115Z",
+        "ts": "2026-04-05T13:30:00.071Z",
         "status": "success",
         "details": {
           "sent1week": 0,
@@ -1620,7 +1700,7 @@
         }
       },
       {
-        "ts": "2026-03-28T17:00:00.088Z",
+        "ts": "2026-04-05T14:00:00.111Z",
         "status": "success",
         "details": {
           "sent1week": 0,
@@ -1630,7 +1710,7 @@
         }
       },
       {
-        "ts": "2026-03-28T18:00:00.127Z",
+        "ts": "2026-04-05T14:30:00.078Z",
         "status": "success",
         "details": {
           "sent1week": 0,
@@ -1640,7 +1720,7 @@
         }
       },
       {
-        "ts": "2026-03-28T18:30:00.082Z",
+        "ts": "2026-04-05T15:00:00.077Z",
         "status": "success",
         "details": {
           "sent1week": 0,
@@ -1650,7 +1730,7 @@
         }
       },
       {
-        "ts": "2026-03-28T19:00:00.072Z",
+        "ts": "2026-04-05T15:30:00.079Z",
         "status": "success",
         "details": {
           "sent1week": 0,
@@ -1660,7 +1740,7 @@
         }
       },
       {
-        "ts": "2026-03-28T19:30:00.068Z",
+        "ts": "2026-04-05T16:00:00.111Z",
         "status": "success",
         "details": {
           "sent1week": 0,
@@ -1670,7 +1750,7 @@
         }
       },
       {
-        "ts": "2026-03-28T20:00:00.097Z",
+        "ts": "2026-04-05T16:30:00.112Z",
         "status": "success",
         "details": {
           "sent1week": 0,
@@ -1680,7 +1760,7 @@
         }
       },
       {
-        "ts": "2026-03-29T07:00:00.135Z",
+        "ts": "2026-04-05T17:00:00.100Z",
         "status": "success",
         "details": {
           "sent1week": 0,
@@ -1690,7 +1770,7 @@
         }
       },
       {
-        "ts": "2026-03-29T08:00:00.218Z",
+        "ts": "2026-04-05T17:30:00.065Z",
         "status": "success",
         "details": {
           "sent1week": 0,
@@ -1700,7 +1780,7 @@
         }
       },
       {
-        "ts": "2026-03-29T17:30:00.106Z",
+        "ts": "2026-04-05T18:00:00.139Z",
         "status": "success",
         "details": {
           "sent1week": 0,
@@ -1710,7 +1790,7 @@
         }
       },
       {
-        "ts": "2026-03-29T18:00:00.100Z",
+        "ts": "2026-04-05T18:30:00.113Z",
         "status": "success",
         "details": {
           "sent1week": 0,
@@ -1722,90 +1802,74 @@
     ]
   },
   "ai_clinical_insights": {
-    "lastRun": "2026-03-29T17:06:43.875Z",
+    "lastRun": "2026-04-05T18:30:38.079Z",
     "lastStatus": "success",
-    "runCount": 20,
+    "runCount": 56,
     "errorCount": 0,
     "lastError": null,
     "lastDetails": {
       "total": 0,
-      "elapsedMs": 48
+      "elapsedMs": 26
     },
     "recentLogs": [
       {
-        "ts": "2026-03-27T11:00:19.066Z",
+        "ts": "2026-03-31T08:00:00.178Z",
         "status": "success",
         "details": {
           "total": 0,
-          "elapsedMs": 26
+          "elapsedMs": 89
         }
       },
       {
-        "ts": "2026-03-27T12:23:18.106Z",
+        "ts": "2026-03-31T16:00:00.173Z",
         "status": "success",
         "details": {
           "total": 0,
-          "elapsedMs": 24
+          "elapsedMs": 118
         }
       },
       {
-        "ts": "2026-03-27T13:29:45.427Z",
+        "ts": "2026-04-01T00:00:00.213Z",
         "status": "success",
         "details": {
           "total": 0,
-          "elapsedMs": 25
+          "elapsedMs": 113
         }
       },
       {
-        "ts": "2026-03-27T14:34:22.295Z",
+        "ts": "2026-04-01T08:00:00.152Z",
         "status": "success",
         "details": {
           "total": 0,
-          "elapsedMs": 24
+          "elapsedMs": 93
         }
       },
       {
-        "ts": "2026-03-27T14:50:17.474Z",
+        "ts": "2026-04-01T16:00:00.129Z",
         "status": "success",
         "details": {
           "total": 0,
-          "elapsedMs": 24
+          "elapsedMs": 68
         }
       },
       {
-        "ts": "2026-03-27T16:00:00.125Z",
+        "ts": "2026-04-02T00:00:00.170Z",
         "status": "success",
         "details": {
           "total": 0,
-          "elapsedMs": 75
+          "elapsedMs": 95
         }
       },
       {
-        "ts": "2026-03-27T16:42:16.944Z",
+        "ts": "2026-04-02T08:00:00.168Z",
         "status": "success",
         "details": {
           "total": 0,
-          "elapsedMs": 27
+          "elapsedMs": 102
         }
       },
       {
-        "ts": "2026-03-27T18:40:26.806Z",
-        "status": "success",
-        "details": {
-          "total": 0,
-          "elapsedMs": 13
-        }
-      },
-      {
-        "ts": "2026-03-28T00:23:39.711Z",
-        "status": "success",
-        "details": {
-          "total": 0,
-          "elapsedMs": 11
-        }
-      },
-      {
-        "ts": "2026-03-28T08:00:00.126Z",
+        "ts": "2026-04-02T16:00:00.123Z",
         "status": "success",
         "details": {
           "total": 0,
@@ -1813,7 +1877,79 @@
         }
       },
       {
-        "ts": "2026-03-28T11:33:25.707Z",
+        "ts": "2026-04-03T00:00:00.200Z",
+        "status": "success",
+        "details": {
+          "total": 0,
+          "elapsedMs": 70
+        }
+      },
+      {
+        "ts": "2026-04-03T08:00:00.162Z",
+        "status": "success",
+        "details": {
+          "total": 0,
+          "elapsedMs": 79
+        }
+      },
+      {
+        "ts": "2026-04-03T16:00:00.152Z",
+        "status": "success",
+        "details": {
+          "total": 0,
+          "elapsedMs": 71
+        }
+      },
+      {
+        "ts": "2026-04-04T00:00:00.313Z",
+        "status": "success",
+        "details": {
+          "total": 0,
+          "elapsedMs": 223
+        }
+      },
+      {
+        "ts": "2026-04-04T07:04:20.788Z",
+        "status": "success",
+        "details": {
+          "total": 0,
+          "elapsedMs": 10
+        }
+      },
+      {
+        "ts": "2026-04-04T07:16:11.136Z",
+        "status": "success",
+        "details": {
+          "total": 0,
+          "elapsedMs": 23
+        }
+      },
+      {
+        "ts": "2026-04-04T07:39:20.405Z",
+        "status": "success",
+        "details": {
+          "total": 0,
+          "elapsedMs": 27
+        }
+      },
+      {
+        "ts": "2026-04-04T07:56:16.489Z",
+        "status": "success",
+        "details": {
+          "total": 0,
+          "elapsedMs": 14
+        }
+      },
+      {
+        "ts": "2026-04-04T08:00:00.139Z",
+        "status": "success",
+        "details": {
+          "total": 0,
+          "elapsedMs": 65
+        }
+      },
+      {
+        "ts": "2026-04-04T09:45:27.860Z",
         "status": "success",
         "details": {
           "total": 0,
@@ -1821,15 +1957,79 @@
         }
       },
       {
-        "ts": "2026-03-28T16:00:00.120Z",
+        "ts": "2026-04-04T10:52:46.001Z",
         "status": "success",
         "details": {
           "total": 0,
-          "elapsedMs": 61
+          "elapsedMs": 11
         }
       },
       {
-        "ts": "2026-03-28T16:45:44.353Z",
+        "ts": "2026-04-04T12:02:20.398Z",
+        "status": "success",
+        "details": {
+          "total": 0,
+          "elapsedMs": 12
+        }
+      },
+      {
+        "ts": "2026-04-04T16:00:00.146Z",
+        "status": "success",
+        "details": {
+          "total": 0,
+          "elapsedMs": 79
+        }
+      },
+      {
+        "ts": "2026-04-04T18:38:54.522Z",
+        "status": "success",
+        "details": {
+          "total": 0,
+          "elapsedMs": 37
+        }
+      },
+      {
+        "ts": "2026-04-04T18:49:14.823Z",
+        "status": "success",
+        "details": {
+          "total": 0,
+          "elapsedMs": 35
+        }
+      },
+      {
+        "ts": "2026-04-05T00:00:00.161Z",
+        "status": "success",
+        "details": {
+          "total": 0,
+          "elapsedMs": 85
+        }
+      },
+      {
+        "ts": "2026-04-05T08:00:00.132Z",
+        "status": "success",
+        "details": {
+          "total": 0,
+          "elapsedMs": 72
+        }
+      },
+      {
+        "ts": "2026-04-05T13:41:50.064Z",
+        "status": "success",
+        "details": {
+          "total": 0,
+          "elapsedMs": 25
+        }
+      },
+      {
+        "ts": "2026-04-05T16:00:00.142Z",
+        "status": "success",
+        "details": {
+          "total": 0,
+          "elapsedMs": 77
+        }
+      },
+      {
+        "ts": "2026-04-05T16:17:52.585Z",
         "status": "success",
         "details": {
           "total": 0,
@@ -1837,67 +2037,27 @@
         }
       },
       {
-        "ts": "2026-03-28T17:06:52.701Z",
+        "ts": "2026-04-05T17:54:03.641Z",
         "status": "success",
         "details": {
           "total": 0,
-          "elapsedMs": 13
+          "elapsedMs": 23
         }
       },
       {
-        "ts": "2026-03-28T17:32:09.174Z",
+        "ts": "2026-04-05T18:30:38.079Z",
         "status": "success",
         "details": {
           "total": 0,
-          "elapsedMs": 75
-        }
-      },
-      {
-        "ts": "2026-03-29T06:36:38.290Z",
-        "status": "success",
-        "details": {
-          "total": 0,
-          "elapsedMs": 25
-        }
-      },
-      {
-        "ts": "2026-03-29T07:42:48.922Z",
-        "status": "success",
-        "details": {
-          "total": 0,
-          "elapsedMs": 25
-        }
-      },
-      {
-        "ts": "2026-03-29T08:00:00.173Z",
-        "status": "success",
-        "details": {
-          "total": 0,
-          "elapsedMs": 64
-        }
-      },
-      {
-        "ts": "2026-03-29T08:01:09.524Z",
-        "status": "success",
-        "details": {
-          "total": 0,
-          "elapsedMs": 24
-        }
-      },
-      {
-        "ts": "2026-03-29T17:06:43.875Z",
-        "status": "success",
-        "details": {
-          "total": 0,
-          "elapsedMs": 48
+          "elapsedMs": 26
         }
       }
     ]
   },
   "appt_notification": {
-    "lastRun": "2026-03-29T18:14:00.038Z",
+    "lastRun": "2026-04-05T18:39:00.014Z",
     "lastStatus": "success",
-    "runCount": 1686,
+    "runCount": 11693,
     "errorCount": 0,
     "lastError": null,
     "lastDetails": {
@@ -1905,210 +2065,210 @@
     },
     "recentLogs": [
       {
-        "ts": "2026-03-29T17:45:00.033Z",
+        "ts": "2026-04-05T17:59:00.020Z",
         "status": "success",
         "details": {
           "checked": 0
         }
       },
       {
-        "ts": "2026-03-29T17:46:00.013Z",
+        "ts": "2026-04-05T18:00:00.079Z",
         "status": "success",
         "details": {
           "checked": 0
         }
       },
       {
-        "ts": "2026-03-29T17:47:00.022Z",
+        "ts": "2026-04-05T18:01:00.032Z",
         "status": "success",
         "details": {
           "checked": 0
         }
       },
       {
-        "ts": "2026-03-29T17:48:00.018Z",
+        "ts": "2026-04-05T18:02:00.020Z",
         "status": "success",
         "details": {
           "checked": 0
         }
       },
       {
-        "ts": "2026-03-29T17:49:00.029Z",
+        "ts": "2026-04-05T18:03:00.016Z",
         "status": "success",
         "details": {
           "checked": 0
         }
       },
       {
-        "ts": "2026-03-29T17:50:00.028Z",
+        "ts": "2026-04-05T18:04:00.025Z",
         "status": "success",
         "details": {
           "checked": 0
         }
       },
       {
-        "ts": "2026-03-29T17:51:00.017Z",
+        "ts": "2026-04-05T18:05:00.040Z",
         "status": "success",
         "details": {
           "checked": 0
         }
       },
       {
-        "ts": "2026-03-29T17:52:00.015Z",
+        "ts": "2026-04-05T18:06:00.029Z",
         "status": "success",
         "details": {
           "checked": 0
         }
       },
       {
-        "ts": "2026-03-29T17:53:00.018Z",
+        "ts": "2026-04-05T18:07:00.012Z",
         "status": "success",
         "details": {
           "checked": 0
         }
       },
       {
-        "ts": "2026-03-29T17:54:00.013Z",
+        "ts": "2026-04-05T18:08:00.029Z",
         "status": "success",
         "details": {
           "checked": 0
         }
       },
       {
-        "ts": "2026-03-29T17:55:00.032Z",
+        "ts": "2026-04-05T18:09:00.015Z",
         "status": "success",
         "details": {
           "checked": 0
         }
       },
       {
-        "ts": "2026-03-29T17:56:00.021Z",
+        "ts": "2026-04-05T18:10:00.043Z",
         "status": "success",
         "details": {
           "checked": 0
         }
       },
       {
-        "ts": "2026-03-29T17:57:00.013Z",
+        "ts": "2026-04-05T18:11:00.021Z",
         "status": "success",
         "details": {
           "checked": 0
         }
       },
       {
-        "ts": "2026-03-29T17:58:00.015Z",
+        "ts": "2026-04-05T18:12:00.017Z",
         "status": "success",
         "details": {
           "checked": 0
         }
       },
       {
-        "ts": "2026-03-29T17:59:00.013Z",
+        "ts": "2026-04-05T18:13:00.014Z",
         "status": "success",
         "details": {
           "checked": 0
         }
       },
       {
-        "ts": "2026-03-29T18:00:00.084Z",
+        "ts": "2026-04-05T18:14:00.025Z",
         "status": "success",
         "details": {
           "checked": 0
         }
       },
       {
-        "ts": "2026-03-29T18:01:00.031Z",
+        "ts": "2026-04-05T18:15:00.041Z",
         "status": "success",
         "details": {
           "checked": 0
         }
       },
       {
-        "ts": "2026-03-29T18:02:00.014Z",
+        "ts": "2026-04-05T18:16:00.018Z",
         "status": "success",
         "details": {
           "checked": 0
         }
       },
       {
-        "ts": "2026-03-29T18:03:00.026Z",
+        "ts": "2026-04-05T18:17:00.016Z",
         "status": "success",
         "details": {
           "checked": 0
         }
       },
       {
-        "ts": "2026-03-29T18:04:00.021Z",
+        "ts": "2026-04-05T18:18:00.018Z",
         "status": "success",
         "details": {
           "checked": 0
         }
       },
       {
-        "ts": "2026-03-29T18:05:00.043Z",
+        "ts": "2026-04-05T18:19:00.016Z",
         "status": "success",
         "details": {
           "checked": 0
         }
       },
       {
-        "ts": "2026-03-29T18:06:00.017Z",
+        "ts": "2026-04-05T18:20:00.036Z",
         "status": "success",
         "details": {
           "checked": 0
         }
       },
       {
-        "ts": "2026-03-29T18:07:00.018Z",
+        "ts": "2026-04-05T18:29:00.029Z",
         "status": "success",
         "details": {
           "checked": 0
         }
       },
       {
-        "ts": "2026-03-29T18:08:00.014Z",
+        "ts": "2026-04-05T18:30:00.058Z",
         "status": "success",
         "details": {
           "checked": 0
         }
       },
       {
-        "ts": "2026-03-29T18:09:00.017Z",
+        "ts": "2026-04-05T18:31:00.022Z",
         "status": "success",
         "details": {
           "checked": 0
         }
       },
       {
-        "ts": "2026-03-29T18:10:00.043Z",
+        "ts": "2026-04-05T18:32:00.021Z",
         "status": "success",
         "details": {
           "checked": 0
         }
       },
       {
-        "ts": "2026-03-29T18:11:00.022Z",
+        "ts": "2026-04-05T18:33:00.014Z",
         "status": "success",
         "details": {
           "checked": 0
         }
       },
       {
-        "ts": "2026-03-29T18:12:00.029Z",
+        "ts": "2026-04-05T18:34:00.019Z",
         "status": "success",
         "details": {
           "checked": 0
         }
       },
       {
-        "ts": "2026-03-29T18:13:00.014Z",
+        "ts": "2026-04-05T18:38:00.059Z",
         "status": "success",
         "details": {
           "checked": 0
         }
       },
       {
-        "ts": "2026-03-29T18:14:00.038Z",
+        "ts": "2026-04-05T18:39:00.014Z",
         "status": "success",
         "details": {
           "checked": 0
@@ -2117,9 +2277,9 @@
     ]
   },
   "medication_afternoon": {
-    "lastRun": "2026-03-28T14:00:00.062Z",
+    "lastRun": "2026-04-05T14:00:00.062Z",
     "lastStatus": "success",
-    "runCount": 2,
+    "runCount": 9,
     "errorCount": 0,
     "lastError": null,
     "lastDetails": {},
@@ -2133,13 +2293,48 @@
         "ts": "2026-03-28T14:00:00.062Z",
         "status": "success",
         "details": {}
+      },
+      {
+        "ts": "2026-03-30T14:00:00.130Z",
+        "status": "success",
+        "details": {}
+      },
+      {
+        "ts": "2026-03-31T14:00:00.053Z",
+        "status": "success",
+        "details": {}
+      },
+      {
+        "ts": "2026-04-01T14:00:00.068Z",
+        "status": "success",
+        "details": {}
+      },
+      {
+        "ts": "2026-04-02T14:00:00.055Z",
+        "status": "success",
+        "details": {}
+      },
+      {
+        "ts": "2026-04-03T14:00:00.055Z",
+        "status": "success",
+        "details": {}
+      },
+      {
+        "ts": "2026-04-04T14:00:00.067Z",
+        "status": "success",
+        "details": {}
+      },
+      {
+        "ts": "2026-04-05T14:00:00.062Z",
+        "status": "success",
+        "details": {}
       }
     ]
   },
   "ai_proactive_alerts": {
-    "lastRun": "2026-03-29T08:00:00.214Z",
+    "lastRun": "2026-04-05T16:00:00.114Z",
     "lastStatus": "success",
-    "runCount": 8,
+    "runCount": 49,
     "errorCount": 0,
     "lastError": null,
     "lastDetails": {
@@ -2150,7 +2345,7 @@
     },
     "recentLogs": [
       {
-        "ts": "2026-03-27T16:00:00.120Z",
+        "ts": "2026-03-31T16:00:00.170Z",
         "status": "success",
         "details": {
           "total": 0,
@@ -2160,7 +2355,7 @@
         }
       },
       {
-        "ts": "2026-03-27T20:00:00.109Z",
+        "ts": "2026-03-31T20:00:00.128Z",
         "status": "success",
         "details": {
           "total": 0,
@@ -2170,7 +2365,7 @@
         }
       },
       {
-        "ts": "2026-03-28T04:00:00.122Z",
+        "ts": "2026-04-01T00:00:00.227Z",
         "status": "success",
         "details": {
           "total": 0,
@@ -2180,7 +2375,7 @@
         }
       },
       {
-        "ts": "2026-03-28T08:00:00.127Z",
+        "ts": "2026-04-01T04:00:00.156Z",
         "status": "success",
         "details": {
           "total": 0,
@@ -2190,7 +2385,7 @@
         }
       },
       {
-        "ts": "2026-03-28T12:00:00.126Z",
+        "ts": "2026-04-01T08:00:00.156Z",
         "status": "success",
         "details": {
           "total": 0,
@@ -2200,7 +2395,7 @@
         }
       },
       {
-        "ts": "2026-03-28T16:00:00.116Z",
+        "ts": "2026-04-01T12:00:00.135Z",
         "status": "success",
         "details": {
           "total": 0,
@@ -2210,7 +2405,7 @@
         }
       },
       {
-        "ts": "2026-03-28T20:00:00.107Z",
+        "ts": "2026-04-01T16:00:00.125Z",
         "status": "success",
         "details": {
           "total": 0,
@@ -2220,7 +2415,227 @@
         }
       },
       {
-        "ts": "2026-03-29T08:00:00.214Z",
+        "ts": "2026-04-01T20:00:00.131Z",
+        "status": "success",
+        "details": {
+          "total": 0,
+          "overdue": 0,
+          "labTrend": 0,
+          "adherence": 0
+        }
+      },
+      {
+        "ts": "2026-04-02T00:00:00.168Z",
+        "status": "success",
+        "details": {
+          "total": 0,
+          "overdue": 0,
+          "labTrend": 0,
+          "adherence": 0
+        }
+      },
+      {
+        "ts": "2026-04-02T04:00:00.118Z",
+        "status": "success",
+        "details": {
+          "total": 0,
+          "overdue": 0,
+          "labTrend": 0,
+          "adherence": 0
+        }
+      },
+      {
+        "ts": "2026-04-02T08:00:00.176Z",
+        "status": "success",
+        "details": {
+          "total": 0,
+          "overdue": 0,
+          "labTrend": 0,
+          "adherence": 0
+        }
+      },
+      {
+        "ts": "2026-04-02T12:00:00.160Z",
+        "status": "success",
+        "details": {
+          "total": 0,
+          "overdue": 0,
+          "labTrend": 0,
+          "adherence": 0
+        }
+      },
+      {
+        "ts": "2026-04-02T16:00:00.126Z",
+        "status": "success",
+        "details": {
+          "total": 0,
+          "overdue": 0,
+          "labTrend": 0,
+          "adherence": 0
+        }
+      },
+      {
+        "ts": "2026-04-02T20:00:00.136Z",
+        "status": "success",
+        "details": {
+          "total": 0,
+          "overdue": 0,
+          "labTrend": 0,
+          "adherence": 0
+        }
+      },
+      {
+        "ts": "2026-04-03T00:00:00.207Z",
+        "status": "success",
+        "details": {
+          "total": 0,
+          "overdue": 0,
+          "labTrend": 0,
+          "adherence": 0
+        }
+      },
+      {
+        "ts": "2026-04-03T04:00:00.158Z",
+        "status": "success",
+        "details": {
+          "total": 0,
+          "overdue": 0,
+          "labTrend": 0,
+          "adherence": 0
+        }
+      },
+      {
+        "ts": "2026-04-03T08:00:00.154Z",
+        "status": "success",
+        "details": {
+          "total": 0,
+          "overdue": 0,
+          "labTrend": 0,
+          "adherence": 0
+        }
+      },
+      {
+        "ts": "2026-04-03T12:00:00.232Z",
+        "status": "success",
+        "details": {
+          "total": 0,
+          "overdue": 0,
+          "labTrend": 0,
+          "adherence": 0
+        }
+      },
+      {
+        "ts": "2026-04-03T16:00:00.148Z",
+        "status": "success",
+        "details": {
+          "total": 0,
+          "overdue": 0,
+          "labTrend": 0,
+          "adherence": 0
+        }
+      },
+      {
+        "ts": "2026-04-03T20:00:00.117Z",
+        "status": "success",
+        "details": {
+          "total": 0,
+          "overdue": 0,
+          "labTrend": 0,
+          "adherence": 0
+        }
+      },
+      {
+        "ts": "2026-04-04T00:00:00.355Z",
+        "status": "success",
+        "details": {
+          "total": 0,
+          "overdue": 0,
+          "labTrend": 0,
+          "adherence": 0
+        }
+      },
+      {
+        "ts": "2026-04-04T04:00:00.180Z",
+        "status": "success",
+        "details": {
+          "total": 0,
+          "overdue": 0,
+          "labTrend": 0,
+          "adherence": 0
+        }
+      },
+      {
+        "ts": "2026-04-04T08:00:00.143Z",
+        "status": "success",
+        "details": {
+          "total": 0,
+          "overdue": 0,
+          "labTrend": 0,
+          "adherence": 0
+        }
+      },
+      {
+        "ts": "2026-04-04T16:00:00.134Z",
+        "status": "success",
+        "details": {
+          "total": 0,
+          "overdue": 0,
+          "labTrend": 0,
+          "adherence": 0
+        }
+      },
+      {
+        "ts": "2026-04-04T20:00:00.147Z",
+        "status": "success",
+        "details": {
+          "total": 0,
+          "overdue": 0,
+          "labTrend": 0,
+          "adherence": 0
+        }
+      },
+      {
+        "ts": "2026-04-05T00:00:00.200Z",
+        "status": "success",
+        "details": {
+          "total": 0,
+          "overdue": 0,
+          "labTrend": 0,
+          "adherence": 0
+        }
+      },
+      {
+        "ts": "2026-04-05T04:00:00.096Z",
+        "status": "success",
+        "details": {
+          "total": 0,
+          "overdue": 0,
+          "labTrend": 0,
+          "adherence": 0
+        }
+      },
+      {
+        "ts": "2026-04-05T08:00:00.129Z",
+        "status": "success",
+        "details": {
+          "total": 0,
+          "overdue": 0,
+          "labTrend": 0,
+          "adherence": 0
+        }
+      },
+      {
+        "ts": "2026-04-05T12:00:00.147Z",
+        "status": "success",
+        "details": {
+          "total": 0,
+          "overdue": 0,
+          "labTrend": 0,
+          "adherence": 0
+        }
+      },
+      {
+        "ts": "2026-04-05T16:00:00.114Z",
         "status": "success",
         "details": {
           "total": 0,
@@ -2232,9 +2647,9 @@
     ]
   },
   "medication_evening": {
-    "lastRun": "2026-03-28T20:00:00.066Z",
+    "lastRun": "2026-04-04T20:00:00.092Z",
     "lastStatus": "success",
-    "runCount": 2,
+    "runCount": 9,
     "errorCount": 0,
     "lastError": null,
     "lastDetails": {},
@@ -2248,17 +2663,52 @@
         "ts": "2026-03-28T20:00:00.066Z",
         "status": "success",
         "details": {}
+      },
+      {
+        "ts": "2026-03-29T20:00:00.066Z",
+        "status": "success",
+        "details": {}
+      },
+      {
+        "ts": "2026-03-30T20:00:00.091Z",
+        "status": "success",
+        "details": {}
+      },
+      {
+        "ts": "2026-03-31T20:00:00.062Z",
+        "status": "success",
+        "details": {}
+      },
+      {
+        "ts": "2026-04-01T20:00:00.061Z",
+        "status": "success",
+        "details": {}
+      },
+      {
+        "ts": "2026-04-02T20:00:00.061Z",
+        "status": "success",
+        "details": {}
+      },
+      {
+        "ts": "2026-04-03T20:00:00.062Z",
+        "status": "success",
+        "details": {}
+      },
+      {
+        "ts": "2026-04-04T20:00:00.092Z",
+        "status": "success",
+        "details": {}
       }
     ]
   },
   "appt_morning_cleanup": {
-    "lastRun": "2026-03-28T00:30:00.088Z",
+    "lastRun": "2026-04-05T00:30:00.074Z",
     "lastStatus": "success",
-    "runCount": 1,
+    "runCount": 8,
     "errorCount": 0,
     "lastError": null,
     "lastDetails": {
-      "cancelled": 1
+      "cancelled": 0
     },
     "recentLogs": [
       {
@@ -2267,13 +2717,62 @@
         "details": {
           "cancelled": 1
         }
+      },
+      {
+        "ts": "2026-03-30T00:30:00.058Z",
+        "status": "success",
+        "details": {
+          "cancelled": 0
+        }
+      },
+      {
+        "ts": "2026-03-31T00:30:00.074Z",
+        "status": "success",
+        "details": {
+          "cancelled": 1
+        }
+      },
+      {
+        "ts": "2026-04-01T00:30:00.077Z",
+        "status": "success",
+        "details": {
+          "cancelled": 0
+        }
+      },
+      {
+        "ts": "2026-04-02T00:30:00.077Z",
+        "status": "success",
+        "details": {
+          "cancelled": 1
+        }
+      },
+      {
+        "ts": "2026-04-03T00:30:00.060Z",
+        "status": "success",
+        "details": {
+          "cancelled": 0
+        }
+      },
+      {
+        "ts": "2026-04-04T00:30:00.094Z",
+        "status": "success",
+        "details": {
+          "cancelled": 2
+        }
+      },
+      {
+        "ts": "2026-04-05T00:30:00.074Z",
+        "status": "success",
+        "details": {
+          "cancelled": 0
+        }
       }
     ]
   },
   "data_retention_daily": {
-    "lastRun": "2026-03-28T02:00:00.314Z",
+    "lastRun": "2026-04-05T02:00:00.349Z",
     "lastStatus": "success",
-    "runCount": 1,
+    "runCount": 8,
     "errorCount": 0,
     "lastError": null,
     "lastDetails": {},
@@ -2282,13 +2781,48 @@
         "ts": "2026-03-28T02:00:00.314Z",
         "status": "success",
         "details": {}
+      },
+      {
+        "ts": "2026-03-30T02:00:00.323Z",
+        "status": "success",
+        "details": {}
+      },
+      {
+        "ts": "2026-03-31T02:00:00.362Z",
+        "status": "success",
+        "details": {}
+      },
+      {
+        "ts": "2026-04-01T02:00:00.333Z",
+        "status": "success",
+        "details": {}
+      },
+      {
+        "ts": "2026-04-02T02:00:00.368Z",
+        "status": "success",
+        "details": {}
+      },
+      {
+        "ts": "2026-04-03T02:00:00.376Z",
+        "status": "success",
+        "details": {}
+      },
+      {
+        "ts": "2026-04-04T02:00:00.372Z",
+        "status": "success",
+        "details": {}
+      },
+      {
+        "ts": "2026-04-05T02:00:00.349Z",
+        "status": "success",
+        "details": {}
       }
     ]
   },
   "membership_sync": {
-    "lastRun": "2026-03-28T02:00:16.455Z",
+    "lastRun": "2026-04-05T02:00:18.004Z",
     "lastStatus": "success",
-    "runCount": 1,
+    "runCount": 8,
     "errorCount": 0,
     "lastError": null,
     "lastDetails": {
@@ -2305,13 +2839,76 @@
           "activated": 0,
           "deactivated": 0
         }
+      },
+      {
+        "ts": "2026-03-30T02:00:17.535Z",
+        "status": "success",
+        "details": {
+          "total": 4880,
+          "activated": 0,
+          "deactivated": 0
+        }
+      },
+      {
+        "ts": "2026-03-31T02:00:17.139Z",
+        "status": "success",
+        "details": {
+          "total": 4880,
+          "activated": 0,
+          "deactivated": 0
+        }
+      },
+      {
+        "ts": "2026-04-01T02:00:18.421Z",
+        "status": "success",
+        "details": {
+          "total": 4880,
+          "activated": 0,
+          "deactivated": 0
+        }
+      },
+      {
+        "ts": "2026-04-02T02:00:16.580Z",
+        "status": "success",
+        "details": {
+          "total": 4880,
+          "activated": 0,
+          "deactivated": 0
+        }
+      },
+      {
+        "ts": "2026-04-03T02:00:17.400Z",
+        "status": "success",
+        "details": {
+          "total": 4880,
+          "activated": 0,
+          "deactivated": 0
+        }
+      },
+      {
+        "ts": "2026-04-04T02:00:17.457Z",
+        "status": "success",
+        "details": {
+          "total": 4880,
+          "activated": 0,
+          "deactivated": 0
+        }
+      },
+      {
+        "ts": "2026-04-05T02:00:18.004Z",
+        "status": "success",
+        "details": {
+          "total": 4880,
+          "activated": 0,
+          "deactivated": 0
+        }
       }
     ]
   },
   "auto_suspension": {
-    "lastRun": "2026-03-28T06:00:00.149Z",
+    "lastRun": "2026-04-05T06:00:00.136Z",
     "lastStatus": "success",
-    "runCount": 1,
+    "runCount": 8,
     "errorCount": 0,
     "lastError": null,
     "lastDetails": {},
@@ -2320,18 +2917,53 @@
         "ts": "2026-03-28T06:00:00.149Z",
         "status": "success",
         "details": {}
+      },
+      {
+        "ts": "2026-03-30T06:00:00.084Z",
+        "status": "success",
+        "details": {}
+      },
+      {
+        "ts": "2026-03-31T06:00:00.105Z",
+        "status": "success",
+        "details": {}
+      },
+      {
+        "ts": "2026-04-01T06:00:00.124Z",
+        "status": "success",
+        "details": {}
+      },
+      {
+        "ts": "2026-04-02T06:00:00.111Z",
+        "status": "success",
+        "details": {}
+      },
+      {
+        "ts": "2026-04-03T06:00:00.104Z",
+        "status": "success",
+        "details": {}
+      },
+      {
+        "ts": "2026-04-04T06:00:00.115Z",
+        "status": "success",
+        "details": {}
+      },
+      {
+        "ts": "2026-04-05T06:00:00.136Z",
+        "status": "success",
+        "details": {}
       }
     ]
   },
   "whatsapp_report": {
-    "lastRun": "2026-03-28T07:05:09.861Z",
+    "lastRun": "2026-04-04T10:55:34.427Z",
     "lastStatus": "success",
-    "runCount": 3,
+    "runCount": 4,
     "errorCount": 0,
     "lastError": null,
     "lastDetails": {
-      "patient": "Rupesh Rakesh Kohli",
-      "file": "RUPESH KOHLI.pdf"
+      "patient": "Ali Asgar Shad",
+      "file": "Ali Asgar Shad XRAY USG ECG.pdf"
     },
     "recentLogs": [
       {
@@ -2357,13 +2989,21 @@
           "patient": "Rupesh Rakesh Kohli",
           "file": "RUPESH KOHLI.pdf"
         }
+      },
+      {
+        "ts": "2026-04-04T10:55:34.427Z",
+        "status": "success",
+        "details": {
+          "patient": "Ali Asgar Shad",
+          "file": "Ali Asgar Shad XRAY USG ECG.pdf"
+        }
       }
     ]
   },
   "medication_morning": {
-    "lastRun": "2026-03-29T08:00:00.134Z",
+    "lastRun": "2026-04-05T08:00:00.084Z",
     "lastStatus": "success",
-    "runCount": 2,
+    "runCount": 9,
     "errorCount": 0,
     "lastError": null,
     "lastDetails": {},
@@ -2377,13 +3017,48 @@
         "ts": "2026-03-29T08:00:00.134Z",
         "status": "success",
         "details": {}
+      },
+      {
+        "ts": "2026-03-30T08:00:00.101Z",
+        "status": "success",
+        "details": {}
+      },
+      {
+        "ts": "2026-03-31T08:00:00.107Z",
+        "status": "success",
+        "details": {}
+      },
+      {
+        "ts": "2026-04-01T08:00:00.078Z",
+        "status": "success",
+        "details": {}
+      },
+      {
+        "ts": "2026-04-02T08:00:00.088Z",
+        "status": "success",
+        "details": {}
+      },
+      {
+        "ts": "2026-04-03T08:00:00.093Z",
+        "status": "success",
+        "details": {}
+      },
+      {
+        "ts": "2026-04-04T08:00:00.092Z",
+        "status": "success",
+        "details": {}
+      },
+      {
+        "ts": "2026-04-05T08:00:00.084Z",
+        "status": "success",
+        "details": {}
       }
     ]
   },
   "device_health_report": {
-    "lastRun": "2026-03-29T08:00:00.162Z",
+    "lastRun": "2026-04-05T08:00:00.109Z",
     "lastStatus": "success",
-    "runCount": 2,
+    "runCount": 9,
     "errorCount": 0,
     "lastError": null,
     "lastDetails": {},
@@ -2397,13 +3072,48 @@
         "ts": "2026-03-29T08:00:00.162Z",
         "status": "success",
         "details": {}
+      },
+      {
+        "ts": "2026-03-30T08:00:00.130Z",
+        "status": "success",
+        "details": {}
+      },
+      {
+        "ts": "2026-03-31T08:00:00.156Z",
+        "status": "success",
+        "details": {}
+      },
+      {
+        "ts": "2026-04-01T08:00:00.111Z",
+        "status": "success",
+        "details": {}
+      },
+      {
+        "ts": "2026-04-02T08:00:00.153Z",
+        "status": "success",
+        "details": {}
+      },
+      {
+        "ts": "2026-04-03T08:00:00.140Z",
+        "status": "success",
+        "details": {}
+      },
+      {
+        "ts": "2026-04-04T08:00:00.108Z",
+        "status": "success",
+        "details": {}
+      },
+      {
+        "ts": "2026-04-05T08:00:00.109Z",
+        "status": "success",
+        "details": {}
       }
     ]
   },
   "device_maintenance": {
-    "lastRun": "2026-03-28T09:00:00.094Z",
+    "lastRun": "2026-04-05T09:00:00.071Z",
     "lastStatus": "success",
-    "runCount": 1,
+    "runCount": 8,
     "errorCount": 0,
     "lastError": null,
     "lastDetails": {},
@@ -2412,14 +3122,49 @@
         "ts": "2026-03-28T09:00:00.094Z",
         "status": "success",
         "details": {}
+      },
+      {
+        "ts": "2026-03-30T09:00:00.123Z",
+        "status": "success",
+        "details": {}
+      },
+      {
+        "ts": "2026-03-31T09:00:00.116Z",
+        "status": "success",
+        "details": {}
+      },
+      {
+        "ts": "2026-04-01T09:00:00.073Z",
+        "status": "success",
+        "details": {}
+      },
+      {
+        "ts": "2026-04-02T09:00:00.104Z",
+        "status": "success",
+        "details": {}
+      },
+      {
+        "ts": "2026-04-03T09:00:00.077Z",
+        "status": "success",
+        "details": {}
+      },
+      {
+        "ts": "2026-04-04T09:00:00.080Z",
+        "status": "success",
+        "details": {}
+      },
+      {
+        "ts": "2026-04-05T09:00:00.071Z",
+        "status": "success",
+        "details": {}
       }
     ]
   },
   "payment_reminders": {
-    "lastRun": "2026-03-28T09:00:00.309Z",
+    "lastRun": "2026-04-05T09:00:00.283Z",
     "lastStatus": "error",
-    "runCount": 1,
-    "errorCount": 1,
+    "runCount": 8,
+    "errorCount": 8,
     "lastError": "invalid input value for enum enum_invoices_status: \"pending\"",
     "lastDetails": {},
     "recentLogs": [
@@ -2428,13 +3173,55 @@
         "status": "error",
         "errorMessage": "invalid input value for enum enum_invoices_status: \"pending\"",
         "details": {}
+      },
+      {
+        "ts": "2026-03-30T09:00:00.381Z",
+        "status": "error",
+        "errorMessage": "invalid input value for enum enum_invoices_status: \"pending\"",
+        "details": {}
+      },
+      {
+        "ts": "2026-03-31T09:00:00.291Z",
+        "status": "error",
+        "errorMessage": "invalid input value for enum enum_invoices_status: \"pending\"",
+        "details": {}
+      },
+      {
+        "ts": "2026-04-01T09:00:00.282Z",
+        "status": "error",
+        "errorMessage": "invalid input value for enum enum_invoices_status: \"pending\"",
+        "details": {}
+      },
+      {
+        "ts": "2026-04-02T09:00:00.289Z",
+        "status": "error",
+        "errorMessage": "invalid input value for enum enum_invoices_status: \"pending\"",
+        "details": {}
+      },
+      {
+        "ts": "2026-04-03T09:00:00.289Z",
+        "status": "error",
+        "errorMessage": "invalid input value for enum enum_invoices_status: \"pending\"",
+        "details": {}
+      },
+      {
+        "ts": "2026-04-04T09:00:00.296Z",
+        "status": "error",
+        "errorMessage": "invalid input value for enum enum_invoices_status: \"pending\"",
+        "details": {}
+      },
+      {
+        "ts": "2026-04-05T09:00:00.283Z",
+        "status": "error",
+        "errorMessage": "invalid input value for enum enum_invoices_status: \"pending\"",
+        "details": {}
       }
     ]
   },
   "prescription_expiry": {
-    "lastRun": "2026-03-28T09:30:00.062Z",
+    "lastRun": "2026-04-05T09:30:00.053Z",
     "lastStatus": "success",
-    "runCount": 1,
+    "runCount": 7,
     "errorCount": 0,
     "lastError": null,
     "lastDetails": {
@@ -2453,13 +3240,73 @@
           "threeDays": 0,
           "expired": 0
         }
+      },
+      {
+        "ts": "2026-03-30T09:30:00.060Z",
+        "status": "success",
+        "details": {
+          "total": 0,
+          "sevenDays": 0,
+          "threeDays": 0,
+          "expired": 0
+        }
+      },
+      {
+        "ts": "2026-03-31T09:30:00.059Z",
+        "status": "success",
+        "details": {
+          "total": 0,
+          "sevenDays": 0,
+          "threeDays": 0,
+          "expired": 0
+        }
+      },
+      {
+        "ts": "2026-04-01T09:30:00.051Z",
+        "status": "success",
+        "details": {
+          "total": 0,
+          "sevenDays": 0,
+          "threeDays": 0,
+          "expired": 0
+        }
+      },
+      {
+        "ts": "2026-04-02T09:30:00.059Z",
+        "status": "success",
+        "details": {
+          "total": 0,
+          "sevenDays": 0,
+          "threeDays": 0,
+          "expired": 0
+        }
+      },
+      {
+        "ts": "2026-04-03T09:30:00.046Z",
+        "status": "success",
+        "details": {
+          "total": 0,
+          "sevenDays": 0,
+          "threeDays": 0,
+          "expired": 0
+        }
+      },
+      {
+        "ts": "2026-04-05T09:30:00.053Z",
+        "status": "success",
+        "details": {
+          "total": 0,
+          "sevenDays": 0,
+          "threeDays": 0,
+          "expired": 0
+        }
       }
     ]
   },
   "followup_automation": {
-    "lastRun": "2026-03-28T10:00:00.057Z",
+    "lastRun": "2026-04-05T10:00:00.064Z",
     "lastStatus": "success",
-    "runCount": 1,
+    "runCount": 8,
     "errorCount": 0,
     "lastError": null,
     "lastDetails": {
@@ -2476,13 +3323,76 @@
           "threeDays": 0,
           "oneDay": 0
         }
+      },
+      {
+        "ts": "2026-03-30T10:00:00.051Z",
+        "status": "success",
+        "details": {
+          "sevenDays": 0,
+          "threeDays": 0,
+          "oneDay": 0
+        }
+      },
+      {
+        "ts": "2026-03-31T10:00:00.064Z",
+        "status": "success",
+        "details": {
+          "sevenDays": 0,
+          "threeDays": 0,
+          "oneDay": 0
+        }
+      },
+      {
+        "ts": "2026-04-01T10:00:00.068Z",
+        "status": "success",
+        "details": {
+          "sevenDays": 0,
+          "threeDays": 0,
+          "oneDay": 0
+        }
+      },
+      {
+        "ts": "2026-04-02T10:00:00.062Z",
+        "status": "success",
+        "details": {
+          "sevenDays": 0,
+          "threeDays": 0,
+          "oneDay": 0
+        }
+      },
+      {
+        "ts": "2026-04-03T10:00:00.068Z",
+        "status": "success",
+        "details": {
+          "sevenDays": 0,
+          "threeDays": 0,
+          "oneDay": 0
+        }
+      },
+      {
+        "ts": "2026-04-04T10:00:00.058Z",
+        "status": "success",
+        "details": {
+          "sevenDays": 0,
+          "threeDays": 0,
+          "oneDay": 0
+        }
+      },
+      {
+        "ts": "2026-04-05T10:00:00.064Z",
+        "status": "success",
+        "details": {
+          "sevenDays": 0,
+          "threeDays": 0,
+          "oneDay": 0
+        }
       }
     ]
   },
   "appt_autocancel": {
-    "lastRun": "2026-03-28T18:30:00.059Z",
+    "lastRun": "2026-04-05T18:30:00.053Z",
     "lastStatus": "success",
-    "runCount": 1,
+    "runCount": 7,
     "errorCount": 0,
     "lastError": null,
     "lastDetails": {
@@ -2497,6 +3407,124 @@
           "cancelled": 0,
           "processed": 0
         }
+      },
+      {
+        "ts": "2026-03-30T18:30:00.051Z",
+        "status": "success",
+        "details": {
+          "cancelled": 0,
+          "processed": 0
+        }
+      },
+      {
+        "ts": "2026-03-31T18:30:00.048Z",
+        "status": "success",
+        "details": {
+          "cancelled": 0,
+          "processed": 0
+        }
+      },
+      {
+        "ts": "2026-04-01T18:30:00.068Z",
+        "status": "success",
+        "details": {
+          "cancelled": 0,
+          "processed": 0
+        }
+      },
+      {
+        "ts": "2026-04-02T18:30:00.070Z",
+        "status": "success",
+        "details": {
+          "cancelled": 0,
+          "processed": 0
+        }
+      },
+      {
+        "ts": "2026-04-03T18:30:00.048Z",
+        "status": "success",
+        "details": {
+          "cancelled": 0,
+          "processed": 0
+        }
+      },
+      {
+        "ts": "2026-04-05T18:30:00.053Z",
+        "status": "success",
+        "details": {
+          "cancelled": 0,
+          "processed": 0
+        }
+      }
+    ]
+  },
+  "doctor_performance": {
+    "lastRun": "2026-03-30T09:00:05.607Z",
+    "lastStatus": "success",
+    "runCount": 1,
+    "errorCount": 0,
+    "lastError": null,
+    "lastDetails": {
+      "reportsSent": 552
+    },
+    "recentLogs": [
+      {
+        "ts": "2026-03-30T09:00:05.607Z",
+        "status": "success",
+        "details": {
+          "reportsSent": 552
+        }
+      }
+    ]
+  },
+  "data_retention_monthly": {
+    "lastRun": "2026-04-01T04:00:00.072Z",
+    "lastStatus": "success",
+    "runCount": 1,
+    "errorCount": 0,
+    "lastError": null,
+    "lastDetails": {},
+    "recentLogs": [
+      {
+        "ts": "2026-04-01T04:00:00.072Z",
+        "status": "success",
+        "details": {}
+      }
+    ]
+  },
+  "email_report": {
+    "lastRun": "2026-04-04T10:55:34.824Z",
+    "lastStatus": "success",
+    "runCount": 1,
+    "errorCount": 0,
+    "lastError": null,
+    "lastDetails": {
+      "patient": "Ali Asgar Shad",
+      "file": "Ali Asgar Shad XRAY USG ECG.pdf"
+    },
+    "recentLogs": [
+      {
+        "ts": "2026-04-04T10:55:34.824Z",
+        "status": "success",
+        "details": {
+          "patient": "Ali Asgar Shad",
+          "file": "Ali Asgar Shad XRAY USG ECG.pdf"
+        }
+      }
+    ]
+  },
+  "data_retention_weekly": {
+    "lastRun": "2026-04-05T03:00:00.091Z",
+    "lastStatus": "success",
+    "runCount": 1,
+    "errorCount": 0,
+    "lastError": null,
+    "lastDetails": {},
+    "recentLogs": [
+      {
+        "ts": "2026-04-05T03:00:00.091Z",
+        "status": "success",
+        "details": {}
       }
     ]
   }

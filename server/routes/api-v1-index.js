@@ -18,6 +18,7 @@ import pharmacyRoutes from './api-v1-pharmacy.js';
 import homecareRoutes from './api-v1-homecare.js';
 import wellnessRoutes from './api-v1-wellness.js';
 import webhooksRoutes from './api-v1-webhooks.js';
+import activityRoutes from './api-v1-activity.js';
 
 const router = express.Router();
 
@@ -40,6 +41,7 @@ router.use('/:tenantId/pharmacy', pharmacyRoutes);
 router.use('/:tenantId/homecare', homecareRoutes);
 router.use('/:tenantId/wellness', wellnessRoutes);
 router.use('/:tenantId/webhooks', webhooksRoutes);
+router.use('/:tenantId/activity', activityRoutes);
 
 // Health check endpoint
 router.get('/health', (req, res) => {
@@ -68,7 +70,8 @@ router.get('/', (req, res) => {
       pharmacy: '/v1/{tenant-id}/pharmacy',
       homecare: '/v1/{tenant-id}/homecare',
       wellness: '/v1/{tenant-id}/wellness',
-      webhooks: '/v1/{tenant-id}/webhooks'
+      webhooks: '/v1/{tenant-id}/webhooks',
+      activity: '/v1/{tenant-id}/activity'
     },
     status: 'beta',
     contact: {

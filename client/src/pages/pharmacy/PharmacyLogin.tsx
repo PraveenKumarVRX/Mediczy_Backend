@@ -1,11 +1,11 @@
 import { useState, useEffect } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { useNavigate, Link } from 'react-router-dom';
 import { motion } from 'framer-motion';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
 import { Alert, AlertDescription } from '@/components/ui/alert';
-import { Pill, Eye, EyeOff, Activity, Lock, ArrowRight, CheckCircle2 } from 'lucide-react';
+import { Pill, Eye, EyeOff, Activity, Lock, ArrowRight, CheckCircle2, Clock } from 'lucide-react';
 import { useToast } from '@/hooks/use-toast';
 import api from '@/utils/api';
 
@@ -14,6 +14,7 @@ const PharmacyLogin = () => {
   const [password, setPassword] = useState('');
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [isPending, setIsPending] = useState(false);
   const [showPassword, setShowPassword] = useState(false);
   const [isCheckingAuth, setIsCheckingAuth] = useState(true);
   const navigate = useNavigate();
@@ -100,6 +101,7 @@ const PharmacyLogin = () => {
       navigate('/pharmacy/dashboard');
     } catch (err: any) {
       console.error('Pharmacy login error:', err);
+      if (err?.response?.data?.pending) { setIsPending(true); return; }
       const isDemoCredentials = email === 'pharmacy@mediczy.com' && password === 'Pharmacy123';
 
       // Allow offline demo login when API is unavailable
@@ -158,6 +160,15 @@ const PharmacyLogin = () => {
           </CardHeader>
           <CardContent>
             <form onSubmit={onSubmit} className="space-y-6">
+              {isPending && (
+                <div className="mb-2 flex items-start gap-3 p-4 bg-amber-50 border border-amber-200 rounded-xl">
+                  <Clock className="w-5 h-5 text-amber-500 mt-0.5 shrink-0" />
+                  <div>
+                    <p className="font-semibold text-amber-800 text-sm">Account Under Review</p>
+                    <p className="text-amber-700 text-xs mt-1">Your registration is being reviewed. You'll receive an email with login credentials once approved (24–48 hours).</p>
+                  </div>
+                </div>
+              )}
               {error && (
                 <Alert variant="destructive" className="animate-in slide-in-from-top-2">
                   <AlertDescription className="flex items-center gap-2">
@@ -231,6 +242,13 @@ const PharmacyLogin = () => {
               <a href="mailto:support@mediczy.com" className="text-teal-600 hover:underline font-medium">
                 support@mediczy.com
               </a>
+            </div>
+            <div className="mt-4">
+              <Link to="/pharmacy/register">
+                <button className="w-full h-11 rounded-xl border-2 border-emerald-500 text-emerald-600 font-bold text-sm hover:bg-emerald-50 active:scale-95 transition-all">
+                  New pharmacy? Register here
+                </button>
+              </Link>
             </div>
           </CardContent>
         </Card>

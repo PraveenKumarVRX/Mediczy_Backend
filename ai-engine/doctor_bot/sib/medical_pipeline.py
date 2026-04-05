@@ -468,67 +468,36 @@ class MedicalPipeline:
         if patient_data:
             patient_context = self._build_patient_context(patient_data)
         
-        default_system = """You are Dr. iSHA 👨‍⚕️, a professional AI medical assistant at Mediczy Healthcare.
+        default_system = """You are Dr. iSHA 🩺, a friendly AI health assistant at Mediczy.
 
-🚫 CRITICAL: NO PRESCRIPTION AUTHORITY - STRICT ENFORCEMENT
-You are NOT a licensed physician and CANNOT prescribe medications under any circumstances.
+PERSONALITY: Warm, concise, conversational — like a knowledgeable friend who happens to be a doctor. Never cold, never robotic.
 
-When asked "What medicine should I take?" or similar:
-❌ NEVER say: "acetaminophen", "ibuprofen", "paracetamol", "aspirin" or ANY medication names
-❌ NEVER mention: "500mg", "twice daily", dosages, or specific drugs
-✅ ALWAYS say: "I cannot recommend specific medications. Please consult a licensed physician who can examine you and prescribe appropriate treatment. Would you like me to help book an appointment?"
+RESPONSE RULES (NON-NEGOTIABLE):
+- MAXIMUM 3 sentences per reply. No essays, no bullet lists unless absolutely needed.
+- One idea at a time. Ask ONE follow-up question if needed — never two.
+- Use plain language. No medical jargon unless the user used it first.
+- NEVER repeat what the user just said back to them.
+- NEVER start with "Great question!" or hollow filler phrases.
+- End with a short, natural follow-up like "Want me to book a doctor for you?" or "Does that help?"
 
-Educational exceptions (ONLY when asked "What is [medicine] used for?"):
-✅ You CAN explain: "Paracetamol is commonly used as a fever reducer and pain reliever"
-✅ You CANNOT say: "Take paracetamol for your fever"
+PRESCRIPTION RULE: Never name specific medications to treat the user. If asked "what medicine for X", say: "That one really needs a doctor's call — want me to book you an appointment?" (one sentence, done).
 
-CORRECT RESPONSES:
-User: "What medicine for fever?"
-You: "I cannot recommend specific medications. Fever can have many causes, and only a licensed doctor can prescribe the right treatment after examining you. Would you like me to help book a doctor's appointment?"
+PATIENT CONTEXT: If patient data is provided, use their name and reference their actual appointments/prescriptions naturally.
 
-User: "What is paracetamol used for?"
-You: "Paracetamol (acetaminophen) is an over-the-counter medication used to reduce fever and relieve mild to moderate pain. However, I cannot advise you to take it - please consult a pharmacist or doctor for proper guidance on any medication."
+EMERGENCIES: "Please call 108 / 911 immediately." — nothing more needed.
 
-⚠️ CRITICAL: MEDICAL ASSISTANT ONLY
-You ONLY answer health and medical-related questions. For non-medical queries (entrepreneurship, general knowledge, food reviews, career advice, etc.):
-Reply: "I'm Dr. iSHA, your health assistant. I'm designed to help with medical and health questions only. Is there anything health-related I can assist you with?"
+NON-HEALTH QUESTIONS: "I'm only set up for health topics — what's going on health-wise?"
 
-📋 USING PATIENT CONTEXT (MOST IMPORTANT):
-When PATIENT CONTEXT is provided above:
-- If asked about appointments: Give SPECIFIC dates/times from the data
-- If asked about prescriptions/medications: Reference the ACTUAL medication names from their history
-- If asked about health checkup: Look at the appointments for scheduled checkups
-- Use the patient's NAME when greeting them
-- NEVER say "contact the clinic" if you already have their data - GIVE THE ACTUAL INFORMATION
+EXAMPLES of good replies:
+User: "I have a headache since morning"
+You: "How bad is it on a scale of 1–10, and is it throbbing or more of a pressure feeling?"
 
-EXAMPLE - Appointment Query:
-User: "When is my health checkup?"
-WRONG: "I would recommend contacting our clinic directly for your appointment schedule."
-RIGHT: "Senthilkumar, your next health checkup is scheduled with Dr. Sharma on February 5th at 10:30 AM. Is there anything else you'd like to know about your appointment?"
+User: "When is my next appointment?"
+You: "Your next appointment is with Dr. Sharma on Feb 5 at 10:30 AM. Need to reschedule?"
 
-🗣️ CONVERSATION STYLE:
-- Use time-based greetings: "Good morning", "Good afternoon", "Good evening" based on current time
-- When user says thanks: "You're welcome! Happy to help. Is there anything else I can assist you with?"
-- ALWAYS end every response with: "Happy to help! Is there anything else I can assist you with?" OR "Would you like me to help book an appointment?"
-- When user says goodbye: "Take care! Feel free to reach out anytime. Stay healthy! 💙"
-- Be warm, empathetic, and professional
-- Ask 1-2 clarifying questions for symptoms before advising
-- Use patient's first name when available
-- Keep responses concise (2-3 short paragraphs max)
-
-🏥 DOCTOR CONSULTATION:
-When medical consultation is needed:
-- 👨‍⚕️ General Physician (available 24/7)
-- 🏥 Specialist (based on symptoms)
-Ask: "Would you like me to help book an appointment?"
-
-⚡ STRICT RULES:
-1. ONLY respond to health/medical questions - decline others politely
-2. USE patient context data when available - give specific information
-3. For emergencies → Call 108/911 immediately
-4. You are NOT a replacement for professional medical care
-5. NEVER EVER recommend or name specific medications for treatment
-6. Keep responses concise and actionable"""
+User: "Thanks"
+You: "Anytime! Anything else on your mind?"
+"""
         
         system_prompt = system_prompt or default_system
         
@@ -623,8 +592,8 @@ Ask: "Would you like me to help book an appointment?"
                     {"role": "system", "content": system_prompt},
                     {"role": "user", "content": prompt}
                 ],
-                "max_tokens": 150,
-                "temperature": 0.7,
+                "max_tokens": 300,
+                "temperature": 0.75,
                 "agent_type": agent_type,
                 "model_port": port  # Hint for backend routing
             },
@@ -661,8 +630,8 @@ Ask: "Would you like me to help book an appointment?"
                     {"role": "system", "content": system_prompt},
                     {"role": "user", "content": prompt}
                 ],
-                temperature=0.7,
-                max_tokens=800  # Increased from 150 to allow proper responses
+                temperature=0.75,
+                max_tokens=300  # Short conversational replies
             )
             
             latency = (time.time() - start) * 1000
@@ -696,8 +665,8 @@ Ask: "Would you like me to help book an appointment?"
                     {"role": "system", "content": system_prompt},
                     {"role": "user", "content": prompt}
                 ],
-                max_tokens=800,  # Increased from 150
-                temperature=0.7
+                max_tokens=300,  # Short conversational replies
+                temperature=0.75
             )
             
             latency = (time.time() - start) * 1000
@@ -989,6 +958,42 @@ Thank you for sharing your health concern with me.
         # Final fallback to standard generate_response
         return self.generate_response(query, context, patient_data)
     
+    def _get_isha_token(self) -> Optional[str]:
+        """Get a valid iSHA bearer token, refreshing if expired."""
+        import time
+        import requests
+
+        isha_url = os.environ.get("ISHA_AI_URL", "https://ai.isha.buzz")
+        username = os.environ.get("ISHA_AUTH_USERNAME", "admin")
+        password = os.environ.get("ISHA_AUTH_PASSWORD", "admin123")
+
+        # Return cached token if still valid (with 5-minute buffer)
+        if hasattr(self, '_isha_token') and self._isha_token:
+            if time.time() < getattr(self, '_isha_token_exp', 0) - 300:
+                return self._isha_token
+
+        try:
+            resp = requests.post(
+                f"{isha_url}/auth/login",
+                json={"username": username, "password": password},
+                timeout=8
+            )
+            if resp.status_code == 200:
+                data = resp.json()
+                token = data.get("access_token")
+                # Decode expiry from JWT payload (middle segment)
+                import base64, json as _json
+                payload_b64 = token.split(".")[1]
+                payload_b64 += "=" * (4 - len(payload_b64) % 4)
+                payload = _json.loads(base64.b64decode(payload_b64))
+                self._isha_token = token
+                self._isha_token_exp = payload.get("exp", time.time() + 3600)
+                logger.info("🔑 iSHA token refreshed")
+                return token
+        except Exception as e:
+            logger.warning(f"⚠️ iSHA token refresh failed: {e}")
+        return None
+
     def _call_isha(self, query: str, context: Optional[List[str]], 
                    patient_data: Optional[Dict]) -> Optional[str]:
         """Call iSHA.buzz API via /v1/chat/completions endpoint with connection pooling"""
@@ -1004,25 +1009,33 @@ Thank you for sharing your health concern with me.
                 adapter = HTTPAdapter(pool_connections=10, pool_maxsize=10, max_retries=retry)
                 self._isha_session.mount('https://', adapter)
             
+            # Get auth token
+            token = self._get_isha_token()
+            if not token:
+                logger.warning("⚠️ iSHA token unavailable, skipping")
+                return None
+            
             # Build concise system prompt
-            system_prompt = "You are Dr. iSHA, a medical AI. Be helpful, accurate, and concise."
+            system_prompt = """You are Dr. iSHA 🩺, a friendly AI health assistant at Mediczy. MAXIMUM 3 sentences per reply. Ask ONE follow-up question if needed — never two. No bullet lists. No filler phrases. End naturally like 'Want me to book a doctor?' Never name medications for treatment."""
             if context:
                 system_prompt += f"\n\nContext:\n" + "\n".join(context[:2])
             
+            isha_url = os.environ.get("ISHA_AI_URL", "https://ai.isha.buzz")
             # Use the correct endpoint with agent_type
             response = self._isha_session.post(
-                "https://ai.isha.buzz/v1/chat/completions",
+                f"{isha_url}/v1/chat/completions",
+                headers={"Authorization": f"Bearer {token}"},
                 json={
                     "agent_type": "Clinical",
                     "messages": [
                         {"role": "system", "content": system_prompt},
                         {"role": "user", "content": query}
                     ],
-                    "max_tokens": 150,  # Reduced for speed
-                    "temperature": 0.7,
+                    "max_tokens": 300,
+                    "temperature": 0.75,
                     "stream": False
                 },
-                timeout=15  # Reduced timeout
+                timeout=15
             )
             
             if response.status_code == 200:
@@ -1046,20 +1059,22 @@ Thank you for sharing your health concern with me.
                 return None
             
             # Build system prompt
-            system_prompt = "You are Dr. iSHA, a medical AI assistant. Provide helpful, accurate, and concise medical information."
+            system_prompt = """STRICT RULE: Reply in 2 sentences maximum, then ONE question. No paragraphs. No bullet lists. No filler like "I'm so sorry."
+
+You are Dr. iSHA 🩺, a friendly AI health assistant. Be warm but ultra-brief. Only reference patient context if the user directly asks about it. Never name medications for treatment. Never list multiple questions."""
             if context:
-                system_prompt += f"\n\nRelevant context:\n" + "\n".join(context[:2])
+                system_prompt += f"\n\nBackground (use only if asked):\n" + "\n".join(context[:1])
             
             client = Groq(api_key=self.groq_api_key)
             
             response = client.chat.completions.create(
-                model="llama-3.3-70b-versatile",
+                model="llama-3.1-8b-instant",
                 messages=[
                     {"role": "system", "content": system_prompt},
                     {"role": "user", "content": query}
                 ],
-                max_tokens=200,
-                temperature=0.7
+                max_tokens=120,
+                temperature=0.75
             )
             
             return response.choices[0].message.content
@@ -1082,10 +1097,10 @@ Thank you for sharing your health concern with me.
             model = genai.GenerativeModel('gemini-1.5-flash')
             
             # Build prompt with context
-            prompt = f"You are Dr. iSHA, a medical AI assistant. Provide helpful, accurate medical information.\n\n"
+            prompt = "You are Dr. iSHA 🩺, a friendly AI health assistant at Mediczy. MAXIMUM 3 sentences per reply. Ask ONE follow-up question if needed — never two. No bullet lists. End naturally.\n\n"
             if context:
                 prompt += f"Context:\n" + "\n".join(context[:2]) + "\n\n"
-            prompt += f"User question: {query}\n\nProvide a helpful, concise response:"
+            prompt += f"User question: {query}\n\nReply in 3 sentences max:"
             
             response = model.generate_content(prompt)
             return response.text

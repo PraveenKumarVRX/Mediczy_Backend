@@ -113,6 +113,7 @@ import hospitalAuthRouter from './routes/hospital-auth.route.js';
 import hospitalAuthAliasRouter from './routes/hospital/auth.routes.js';
 import hospitalInsuranceRouter from './routes/hospital-insurance.route.js';
 import hospitalInsuranceAuthRouter from './routes/hospital-insurance/auth.routes.js';
+import hospitalInsuranceEmailRouter from './routes/hospital-insurance/email.route.js';
 import clinicRouter from './routes/clinic.route.js';
 import pharmacyRouter from './routes/pharmacy.route.js';
 import ambulanceRouter from './routes/ambulance.route.js';
@@ -159,6 +160,7 @@ import userAssociationRouter from './routes/userAssociation.route.js';
 // Webinar routes
 import adminWebinarRouter from './routes/admin/webinar.routes.js';
 import adminWebinarModulesRouter from './routes/admin/webinar-modules.routes.js';
+import adminPendingRegistrationsRouter from './routes/admin/pending-registrations.route.js';
 import doctorWebinarRouter from './routes/doctor/webinar.routes.js';
 import publicWebinarRouter from './routes/webinar.routes.js';
 
@@ -646,6 +648,11 @@ app.use((req, res, next) => {
     '/api/team/emails/send',
     '/api/crm/rfqs/upload-excel',
     '/api/crm/rfqs',
+    '/api/clinic/register',
+    '/api/lab/register',
+    '/api/pharmacy/register',
+    '/api/homecare/register',
+    '/api/corporate/register',
   ];
   if (multerPaths.some(p => req.path === p || req.path.startsWith(p + '/'))) {
     return next();
@@ -705,7 +712,7 @@ app.use((req, res, next) => {
 });
 app.use(activityLogger({
   includeBody: false, // Set to detailed logging (be careful with sensitive data)
-  excludePaths: ['/health', '/api/admin/activity-logs', '/api/admin/activity-stats']
+  excludePaths: ['/health', '/api/admin/activity-logs', '/api/admin/activity-stats', '/api/team/activity-logs', '/api/team/activity-stats']
 }));
 
 // Twilio WhatsApp Webhook Bypass - MUST RUN FIRST before session/auth checks
@@ -1049,6 +1056,7 @@ app.use("/api/insurance-broker", insuranceBrokerRouter); // Insurance broker/int
 app.use('/api/broker-integrations', brokerIntegrationRouter); // Broker server-to-server integration + signed webhooks
 app.use("/api/hospital/insurance", hospitalInsuranceRouter); // IHX-like hospital insurance claims dashboard
 app.use("/api/hospital-insurance/auth", hospitalInsuranceAuthRouter); // Separate insurance portal login
+app.use("/api/hospital/insurance/emails", hospitalInsuranceEmailRouter); // Insurance portal email AI inbox
 app.use("/api/tpa", tpaRouter); // TPA (Third Party Administrator) login
 app.use("/api/appointments", appointmentRouter);
 app.use("/api/lab-tests", labTestsRouter);
@@ -1084,6 +1092,7 @@ app.use('/api/admin', adminRouter);
 app.use('/api/admin', adminApiRouter); // API credentials, aggregators, and other admin APIs
 app.use('/api/admin/webinars', authUser, requireRole('admin'), adminWebinarRouter); // Super admin webinar management
 app.use('/api/admin/webinar-modules', authUser, requireRole('admin'), adminWebinarModulesRouter); // Webinar module & notification configuration
+app.use('/api/admin/pending-registrations', adminPendingRegistrationsRouter); // Super admin review & approve entity registrations
 app.use('/api/admin/module-access', moduleAccessRouter);
 app.use('/api/module-access', moduleAccessRouter); // Public endpoint for checking user's own module access
 app.use('/api/admin/roles', roleRouter); // Role management with CRUD + module access

@@ -77,7 +77,8 @@ const USER_TYPE_PERMISSIONS = {
       '/api/clinics',  // Clinic directory
       '/api/poc-devices',  // POC device management
       '/api/firebase',  // Firebase status & test
-      '/api/ehr'  // Electronic Health Records
+      '/api/ehr',  // Electronic Health Records
+      '/v1'  // API v1 multi-tenant mobile app endpoints
     ],
     tokenField: 'userId'
   },
@@ -154,7 +155,8 @@ const USER_TYPE_PERMISSIONS = {
       '/api/clinics',  // Clinic directory
       '/api/poc-devices',  // POC device management
       '/api/firebase',  // Firebase status & test
-      '/api/ehr'  // Electronic Health Records
+      '/api/ehr',  // Electronic Health Records
+      '/v1'  // API v1 multi-tenant mobile app endpoints
     ],
     tokenField: 'userId'
   },
@@ -187,7 +189,8 @@ const USER_TYPE_PERMISSIONS = {
       '/api/v3/ai-brain',  // AI Brain intelligence layer
       '/api/v3/ai-intelligence',  // Drug interactions, triage, risk scores, insights
       '/api/ehr',  // Electronic Health Records - patient records access
-      '/api/fhir'  // FHIR R4 interoperability endpoints
+      '/api/fhir',  // FHIR R4 interoperability endpoints
+      '/v1'  // API v1 multi-tenant mobile app endpoints
     ],
     tokenField: 'doctorId'
   },
@@ -241,7 +244,8 @@ const USER_TYPE_PERMISSIONS = {
       '/api/v3/ai-intelligence',  // Drug interactions, triage, risk scores, insights
       '/api/v3/ai-analytics',  // AI analytics dashboard (admin only)
       '/api/ehr',  // Electronic Health Records
-      '/api/fhir'  // FHIR R4 interoperability endpoints
+      '/api/fhir',  // FHIR R4 interoperability endpoints
+      '/v1'  // API v1 multi-tenant mobile app endpoints
     ],
     tokenField: 'adminId'
   },
@@ -267,7 +271,8 @@ const USER_TYPE_PERMISSIONS = {
       '/api/whatsapp-production',  // Team access to WhatsApp conversations
       '/api/whatsapp',  // Team access to WhatsApp templates & messaging
       '/api/sib-chatbots',  // Team access to SIB AI chatbots
-      '/api/ehr'  // Electronic Health Records
+      '/api/ehr',  // Electronic Health Records
+      '/v1'  // API v1 multi-tenant mobile app endpoints
     ],
     tokenField: 'teamId'
   },
@@ -516,8 +521,11 @@ const PUBLIC_ENDPOINTS = [
   '/api/hospital/auth/refresh',
   '/api/hospital/auth/logout',
   '/api/clinic/login',
+  '/api/clinic/register',
   '/api/lab/login',
+  '/api/lab/register',
   '/api/pharmacy/login',
+  '/api/pharmacy/register',
   '/api/ambulance/login',
   '/api/tpa/login',
   '/api/psu/login',
@@ -532,6 +540,9 @@ const PUBLIC_ENDPOINTS = [
   '/api/broker-integrations/claims/submit',
   '/api/broker-integrations/webhooks',
   '/api/homecare/login',
+  '/api/homecare/register',
+  '/api/corporate/login',
+  '/api/corporate/register',
   '/api/ngo/login',
   '/api/oauth',
   '/oauth',  // OAuth 2.0 SSO endpoints (Rocket.Chat integration)

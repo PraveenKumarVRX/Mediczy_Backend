@@ -1,4 +1,5 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
+import { fetchPortalSection, savePortalSection } from '@/utils/hospitalInsurancePortalApi';
 import InsurancePortalLayout from '@/components/hospital-insurance/InsurancePortalLayout';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
@@ -21,11 +22,19 @@ const InsuranceABDMPage = () => {
     mobile: '', email: '', address: '', state: '', district: '',
   });
 
-  const [linkedRecords] = useState([
+  const [linkedRecords, setLinkedRecords] = useState<any[]>([
     { id: 1, abhaId: '91-1234-5678-9012', name: 'Rajesh Kumar', dob: '1985-03-15', mobile: '9876543210', status: 'verified', linkedDate: '2025-06-10' },
     { id: 2, abhaId: '91-2345-6789-0123', name: 'Priya Singh', dob: '1990-07-22', mobile: '9876543211', status: 'verified', linkedDate: '2025-06-12' },
     { id: 3, abhaId: '91-3456-7890-1234', name: 'Amit Verma', dob: '1978-11-05', mobile: '9876543212', status: 'pending', linkedDate: '2025-06-18' },
   ]);
+
+  useEffect(() => {
+    fetchPortalSection('compliance/abdm').then(d => {
+      if (!d) return;
+      if (d.linkedRecords?.length) setLinkedRecords(d.linkedRecords);
+      if (typeof d.abhaStep === 'number') setAbhaStep(d.abhaStep);
+    });
+  }, []);
 
   const handleSendOTP = () => {
     if (abhaForm.method === 'aadhaar' && abhaForm.aadhaarNo.length !== 12) {
@@ -45,9 +54,21 @@ const InsuranceABDMPage = () => {
     setAbhaStep(2);
   };
 
-  const handleCreateABHA = () => {
-    toast({ title: 'ABHA Created', description: 'ABHA Health ID created successfully!' });
+  const handleCreateABHA = async () => {
+    const newRecord = {
+      id: Date.now(),
+      abhaId: `91-${Math.floor(1000+Math.random()*9000)}-${Math.floor(1000+Math.random()*9000)}-${Math.floor(1000+Math.random()*9000)}`,
+      name: abhaForm.name,
+      dob: abhaForm.dob,
+      mobile: abhaForm.mobile,
+      status: 'verified',
+      linkedDate: new Date().toISOString().slice(0, 10),
+    };
+    const updated = [...linkedRecords, newRecord];
+    setLinkedRecords(updated);
     setAbhaStep(3);
+    await savePortalSection('compliance/abdm', { linkedRecords: updated, abhaStep: 3 });
+    toast({ title: 'ABHA Created', description: 'ABHA Health ID created successfully!' });
   };
 
   return (

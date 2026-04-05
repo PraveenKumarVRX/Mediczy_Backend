@@ -6,10 +6,20 @@
 import express from 'express';
 import bcrypt from 'bcrypt';
 import jwt from 'jsonwebtoken';
+import multer from 'multer';
 import { JWT_CONFIG } from '../config/auth.config.js';
 import { Pharmacy } from '../models/index.js';
 import { authLimiter } from '../middleware/rateLimiter.middleware.js';
 import { auditLoginAttempt } from '../middleware/audit.middleware.js';
+
+const upload = multer({
+  storage: multer.memoryStorage(),
+  limits: { fileSize: 10 * 1024 * 1024 },
+  fileFilter: (_, file, cb) => {
+    const allowed = ['application/pdf', 'image/jpeg', 'image/jpg', 'image/png', 'image/webp'];
+    cb(null, allowed.includes(file.mimetype));
+  }
+});
 import dashboardRouter from './pharmacy/dashboard.routes.js';
 import inventoryRouter from './pharmacy/inventory.routes.js';
 import posRouter from './pharmacy/pos.routes.js';
@@ -79,6 +89,23 @@ router.post('/login', authLimiter, async (req, res) => {
       });
     }
 
+    // Check for pending approval
+    if (pharmacy.status === 'pending') {
+      await auditLoginAttempt(req, pharmacy.id, normalizedEmail, false, 'Pharmacy pending approval');
+      return res.status(403).json({
+        success: false,
+        pending: true,
+        message: 'Your account is under review by our team. You will receive an email once approved.'
+      });
+    }
+    if (pharmacy.status !== 'active') {
+      await auditLoginAttempt(req, pharmacy.id, normalizedEmail, false, 'Pharmacy inactive');
+      return res.status(403).json({
+        success: false,
+        message: 'Account is inactive. Please contact support.'
+      });
+    }
+
     // Generate JWT token
     const token = jwt.sign(
       {
@@ -130,14 +157,19 @@ router.post('/register', async (req, res) => {
       email,
       password,
       phone,
-      license_number,
+      licenseNumber,
       address,
-      type = 'Retail Pharmacy',
-      tenant_id
+      type = 'Retail',
+      city,
+      state
     } = req.body;
 
+    if (!name || !email || !password) {
+      return res.status(400).json({ success: false, message: 'Name, email, and password are required' });
+    }
+
     // Check if pharmacy exists
-    const existing = await Pharmacy.findOne({ where: { email } });
+    const existing = await Pharmacy.findOne({ where: { email: String(email).toLowerCase() } });
     if (existing) {
       return res.status(409).json({
         success: false,
@@ -145,46 +177,35 @@ router.post('/register', async (req, res) => {
       });
     }
 
-    // Hash password
-    const hashedPassword = await bcrypt.hash(password, 10);
+    const registrationDocs = [];
+    if (req.files?.length > 0) {
+      for (const file of req.files) {
+        try {
+          const { uploadToMinio } = await import('../services/minio-upload.service.js');
+          const result = await uploadToMinio({ buffer: file.buffer, originalName: file.originalname, mimeType: file.mimetype, keyPrefix: 'registrations/pharmacy' });
+          if (result.success) registrationDocs.push({ name: file.originalname, url: result.url, key: result.key, size: file.size, uploadedAt: new Date() });
+        } catch (e) { console.warn('Pharmacy doc upload skipped:', e.message); }
+      }
+    }
 
-    // Create pharmacy
+    // Create pharmacy (model hook hashes password + status defaults to pending)
     const pharmacy = await Pharmacy.create({
       name,
-      email,
-      password: hashedPassword,
-      phone,
-      license_number,
-      address,
-      type,
-      tenant_id,
-      status: 'active'
+      email: String(email).toLowerCase(),
+      password,
+      phoneNumber: phone,
+      licenseNumber: licenseNumber || null,
+      address: address ? { street: address, city: city || '', state: state || '' } : {},
+      pharmacyType: type,
+      metadata: { registrationDocs, submittedAt: new Date() },
+      status: 'pending'
     });
-
-    // Generate token
-    const token = jwt.sign(
-      {
-        id: pharmacy.id,
-        pharmacyId: pharmacy.id,
-        email: pharmacy.email,
-        role: 'pharmacy',
-        userType: 'pharmacy',
-        type: 'pharmacy',
-        tenant_id: pharmacy.tenant_id
-      },
-      JWT_CONFIG.SECRET,
-      { expiresIn: '7d' }
-    );
 
     res.status(201).json({
       success: true,
-      token,
-      pharmacy: {
-        id: pharmacy.id,
-        name: pharmacy.name,
-        email: pharmacy.email,
-        phone: pharmacy.phone
-      }
+      message: 'Application submitted. Our team will review and activate your account within 24–48 hours.',
+      registrationId: pharmacy.id,
+      entityType: 'pharmacy'
     });
   } catch (error) {
     console.error('Pharmacy registration error:', error);

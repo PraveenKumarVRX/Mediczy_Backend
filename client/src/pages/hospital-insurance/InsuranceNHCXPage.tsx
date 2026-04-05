@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import InsurancePortalLayout from '@/components/hospital-insurance/InsurancePortalLayout';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
@@ -6,6 +6,7 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { useToast } from '@/hooks/use-toast';
+import { fetchPortalSection, savePortalSection } from '@/utils/hospitalInsurancePortalApi';
 import { Shield, Globe, CheckCircle2, AlertTriangle, ArrowRight, FileText, Link2, Building2 } from 'lucide-react';
 
 const InsuranceNHCXPage = () => {
@@ -22,6 +23,21 @@ const InsuranceNHCXPage = () => {
     participantName: '', participantCode: '', role: 'provider',
     signingCertificate: '', encryptionCertificate: '', callbackUrl: '',
   });
+
+  useEffect(() => {
+    fetchPortalSection('compliance/nhcx').then(res => {
+      const d = res?.data || {};
+      if (typeof d.onboardingStep === 'number') setOnboardingStep(d.onboardingStep);
+      if (d.hfrData)         setHfrData(x => ({ ...x, ...d.hfrData }));
+      if (d.participantData) setParticipantData(x => ({ ...x, ...d.participantData }));
+    }).catch(() => {});
+  }, []);
+
+  const persistNHCX = async (step: number) => {
+    try {
+      await savePortalSection('compliance/nhcx', { onboardingStep: step, hfrData, participantData });
+    } catch { /* silent */ }
+  };
 
   const steps = [
     { title: 'Health Facility Registry', desc: 'Register on HFR (ABDM)' },
@@ -64,7 +80,7 @@ const InsuranceNHCXPage = () => {
                     </p>
                     <div className="flex gap-4 mt-4">
                       <div className="text-center">
-                        <p className="text-2xl font-bold text-indigo-600">0/5</p>
+                        <p className="text-2xl font-bold text-indigo-600">{onboardingStep}/5</p>
                         <p className="text-xs text-muted-foreground">Steps Complete</p>
                       </div>
                       <div className="text-center">
@@ -72,7 +88,7 @@ const InsuranceNHCXPage = () => {
                         <p className="text-xs text-muted-foreground">Environment</p>
                       </div>
                       <div className="text-center">
-                        <p className="text-2xl font-bold text-red-600">Not Active</p>
+                        <p className={`text-2xl font-bold ${onboardingStep >= 5 ? 'text-green-600' : 'text-red-600'}`}>{onboardingStep >= 5 ? 'Active' : 'Not Active'}</p>
                         <p className="text-xs text-muted-foreground">Status</p>
                       </div>
                     </div>
@@ -159,7 +175,7 @@ const InsuranceNHCXPage = () => {
                   </div>
                   <div className="flex justify-between">
                     <Button variant="outline" asChild><a href="https://facilitysbx.abdm.gov.in" target="_blank" rel="noopener"><Globe className="h-4 w-4 mr-1" /> Open HFR Portal</a></Button>
-                    <Button onClick={() => { setOnboardingStep(1); toast({ title: 'Step 1 Complete' }); }} className="bg-indigo-600 hover:bg-indigo-700">Next: Create Participant <ArrowRight className="h-4 w-4 ml-1" /></Button>
+                    <Button onClick={async () => { setOnboardingStep(1); toast({ title: 'Step 1 Complete' }); await persistNHCX(1); }} className="bg-indigo-600 hover:bg-indigo-700">Next: Create Participant <ArrowRight className="h-4 w-4 ml-1" /></Button>
                   </div>
                 </CardContent>
               </Card>
@@ -177,7 +193,7 @@ const InsuranceNHCXPage = () => {
                   </div>
                   <div className="flex justify-between">
                     <Button variant="outline" onClick={() => setOnboardingStep(0)}>Back</Button>
-                    <Button onClick={() => { setOnboardingStep(2); toast({ title: 'Step 2 Complete' }); }} className="bg-indigo-600 hover:bg-indigo-700">Next: Certificates <ArrowRight className="h-4 w-4 ml-1" /></Button>
+                    <Button onClick={async () => { setOnboardingStep(2); toast({ title: 'Step 2 Complete' }); await persistNHCX(2); }} className="bg-indigo-600 hover:bg-indigo-700">Next: Certificates <ArrowRight className="h-4 w-4 ml-1" /></Button>
                   </div>
                 </CardContent>
               </Card>
@@ -192,7 +208,7 @@ const InsuranceNHCXPage = () => {
                   <p className="text-sm text-muted-foreground mt-2">This step requires coordination with your IT team and NHCX support.</p>
                   <div className="flex justify-center gap-3 mt-6">
                     <Button variant="outline" onClick={() => setOnboardingStep(Math.max(0, onboardingStep - 1))}>Back</Button>
-                    {onboardingStep < 4 && <Button onClick={() => setOnboardingStep(onboardingStep + 1)} className="bg-indigo-600 hover:bg-indigo-700">Mark Complete & Next <ArrowRight className="h-4 w-4 ml-1" /></Button>}
+                    {onboardingStep < 4 && <Button onClick={async () => { const next = onboardingStep + 1; setOnboardingStep(next); await persistNHCX(next); }} className="bg-indigo-600 hover:bg-indigo-700">Mark Complete & Next <ArrowRight className="h-4 w-4 ml-1" /></Button>}
                     {onboardingStep === 4 && <Button className="bg-green-600 hover:bg-green-700" onClick={() => toast({ title: 'NHCX Go Live', description: 'Production activation initiated!' })}>Activate Production <CheckCircle2 className="h-4 w-4 ml-1" /></Button>}
                   </div>
                 </CardContent>

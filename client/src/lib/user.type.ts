@@ -29,7 +29,8 @@ interface profileProps {
 }
 
 interface doctorProfileProps {
-  _id?:string;
+  _id?: string;
+  id?: string | number;
   firstName: string;
   lastName: string;
   email: string;
@@ -37,6 +38,8 @@ interface doctorProfileProps {
   isOnline?: boolean;
   location?: locationProp;
   specialization?: string;
-  experience? : number;
+  experience?: number;
+  profileImage?: string;
+  rating?: number;
 }
 export type { UserProps, cardsProps, profileProps, doctorProfileProps };

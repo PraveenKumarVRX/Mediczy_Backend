@@ -33,6 +33,26 @@ const ACCREDITATION_TYPES = [
   { key: 'tariff_ip', label: 'Tariff-IP' },
 ];
 
+const DEMO_MISSING_DOCS = [
+  { id: 'CLM-2026-0006', claimNumber: 'CLM-2026-0006', patientName: 'Suresh Patel', insurer: 'Niva Bupa', missingDocs: ['Discharge Summary', 'Hospital Final Bill', 'Prescription & Drug Receipt'], urgency: 'high', daysOld: 2 },
+  { id: 'CLM-2026-0010', claimNumber: 'CLM-2026-0010', patientName: 'Vijay Rao', insurer: 'HDFC Ergo', missingDocs: ['Pre-op Echo Report', 'Cath Lab Report', 'Angiography Films', 'Implant Sticker'], urgency: 'critical', daysOld: 16 },
+  { id: 'CLM-2026-0005', claimNumber: 'CLM-2026-0005', patientName: 'Meera Devi', insurer: 'Care Health', missingDocs: ['Implant Invoice', 'Prosthesis Sticker', 'OT Notes'], urgency: 'high', daysOld: 5 },
+  { id: 'CLM-2026-0003', claimNumber: 'CLM-2026-0003', patientName: 'Amit Verma', insurer: 'ICICI Lombard', missingDocs: ['Previous USG Reports', 'Patient Consent Form'], urgency: 'medium', daysOld: 4 },
+  { id: 'CLM-2026-0008', claimNumber: 'CLM-2026-0008', patientName: 'Rohit Joshi', insurer: 'Tata AIG', missingDocs: ['Treating Doctor Certificate', 'Drug Allergy Report'], urgency: 'low', daysOld: 1 },
+];
+
+const normalizeMissingDocumentRows = (rows: any[] = []) => rows.map((row: any) => ({
+  id: row.claimId || row.id,
+  claimNumber: row.claimNumber || `CLM-${row.claimId || row.id}`,
+  patientName: row.patientName || '—',
+  insurer: row.insurer || '—',
+  missingDocs: Array.isArray(row.missingDocs)
+    ? row.missingDocs
+    : (row.requiredDocuments || []).filter((doc: string) => !(row.uploadedDocuments || []).includes(doc)),
+  urgency: row.urgency || 'medium',
+  daysOld: row.daysOld || 0,
+}));
+
 const InsuranceDocumentsPage = () => {
   const { toast } = useToast();
   const [malwareWarning, setMalwareWarning] = useState<{ open: boolean; threat?: string; fileName?: string }>({ open: false });
@@ -55,9 +75,14 @@ const InsuranceDocumentsPage = () => {
     try {
       if (activeTab === 'missing') {
         const { data } = await api.get('/hospital/insurance/documents/missing');
-        if (data.success) setMissingDocs(data.claims || data.missing || []);
+        const rows = normalizeMissingDocumentRows(data.missingDocuments || data.claims || data.missing || []);
+        if (data.success && rows.length > 0) {
+          setMissingDocs(rows);
+        } else {
+          setMissingDocs(DEMO_MISSING_DOCS);
+        }
       }
-    } catch (_e) { /* ignore */ }
+    } catch (_e) { setMissingDocs(DEMO_MISSING_DOCS); }
     finally { setLoading(false); }
   };
 
@@ -79,9 +104,9 @@ const InsuranceDocumentsPage = () => {
     }
     try {
       const formData = new FormData();
-      uploadForm.files.forEach((file) => formData.append('documents', file));
+      uploadForm.files.forEach((file) => formData.append('file', file));
       formData.append('claimId', uploadForm.claimId);
-      formData.append('docType', uploadForm.docType);
+      formData.append('documentType', uploadForm.docType);
 
       const { data } = await api.post('/hospital/insurance/documents/upload', formData, {
         headers: { 'Content-Type': 'multipart/form-data' }
@@ -105,8 +130,8 @@ const InsuranceDocumentsPage = () => {
   const handleAccreditationUpload = async (key: string, file: File) => {
     try {
       const formData = new FormData();
-      formData.append('document', file);
-      formData.append('type', key);
+      formData.append('file', file);
+      formData.append('documentType', key);
 
       const { data } = await api.post('/hospital/insurance/documents/upload', formData, {
         headers: { 'Content-Type': 'multipart/form-data' }

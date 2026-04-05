@@ -18,6 +18,31 @@ import { generateICalFile, generateDoctorICalFile, generateICalFilename } from '
 // Initialize SMS service
 const smsService = new SMSService();
 
+// ── Activity log helper (fire-and-forget, never throws) ─────────────────────
+function _logChannelActivity(action, resource, details, recipientInfo, result) {
+  try {
+    if (!global.activityLogs) global.activityLogs = [];
+    const entry = {
+      id: `log_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`,
+      timestamp: new Date().toISOString(),
+      userId: recipientInfo?.userId || null,
+      userType: 'system',
+      userEmail: recipientInfo?.email || null,
+      activity: action,
+      action: 'send',
+      resource,
+      result: result ? 'success' : 'failure',
+      details,
+      ipAddress: 'internal',
+      path: '/internal/notification-service',
+      method: 'INTERNAL',
+      metadata: { channel: resource, recipient: recipientInfo }
+    };
+    global.activityLogs.unshift(entry);
+    if (global.activityLogs.length > 10000) global.activityLogs = global.activityLogs.slice(0, 10000);
+  } catch (_) { /* never let logging break the caller */ }
+}
+
 // ============================================
 // FCM TOKEN MODEL
 // ============================================
@@ -426,15 +451,26 @@ class NotificationService {
 
       const result = await emailService.sendEmail(emailOptions);
 
+      _logChannelActivity(
+        `Email sent — ${title}`,
+        'email',
+        `To: ${email} | Subject: ${title} | Type: ${type || 'notification'}`,
+        { userId, email },
+        true
+      );
+
       return { success: true, email, result };
     } catch (error) {
+      _logChannelActivity(
+        `Email failed — ${title}`,
+        'email',
+        `Failed to ${email || 'unknown'} | Error: ${error.message}`,
+        { userId, email },
+        false
+      );
       return { success: false, error: error.message };
     }
   }
-
-  /**
-   * Send SMS Notification
-   */
   async sendSMS(userId, userType, message) {
     try {
       // Get user phone
@@ -500,8 +536,23 @@ class NotificationService {
         body: waBody
       });
 
+      _logChannelActivity(
+        `WhatsApp sent — ${title}`,
+        'whatsapp',
+        `To: ${formattedPhone} (${userName}) | Title: ${title} | Type: ${data?.type || 'notification'}`,
+        { userId, phone: formattedPhone },
+        true
+      );
+
       return { success: true, phone: formattedPhone, result };
     } catch (error) {
+      _logChannelActivity(
+        `WhatsApp failed — ${title}`,
+        'whatsapp',
+        `Failed to ${formattedPhone || phone} | Error: ${error.message}`,
+        { userId },
+        false
+      );
       console.error('WhatsApp notification error:', error);
       return { success: false, error: error.message };
     }

@@ -6,7 +6,7 @@ import jwt from 'jsonwebtoken';
 const activityLogger = (options = {}) => {
   const { 
     includeBody = false, 
-    excludePaths = ['/api/admin/activity-logs'],
+    excludePaths = ['/api/admin/activity-logs', '/api/team/activity-logs', '/api/team/activity-stats'],
     sensitiveFields = ['password', 'token', 'secret']
   } = options;
 
@@ -191,6 +191,36 @@ const determineActivity = (req, res) => {
   if (path.includes('/email')) {
     const action = method === 'post' ? 'send' : 'view';
     return { name: `${action} Email`, action, resource: 'email' };
+  }
+
+  // WhatsApp activities
+  if (path.includes('/whatsapp')) {
+    if (path.includes('/send') || method === 'post') {
+      // Determine message type from path
+      let msgType = 'message';
+      if (path.includes('otp'))          msgType = 'OTP';
+      else if (path.includes('appointment')) msgType = 'appointment notification';
+      else if (path.includes('reminder')) msgType = 'reminder';
+      else if (path.includes('prescription')) msgType = 'prescription';
+      else if (path.includes('health-report')) msgType = 'health report';
+      return { name: `Send WhatsApp ${msgType}`, action: 'send', resource: 'whatsapp' };
+    }
+    if (path.includes('/status') || path.includes('/webhook') || method === 'get') {
+      return { name: 'WhatsApp Status', action: 'view', resource: 'whatsapp' };
+    }
+    return { name: 'WhatsApp Activity', action: method === 'post' ? 'send' : 'view', resource: 'whatsapp' };
+  }
+
+  // Notification activities
+  if (path.includes('/notification')) {
+    const action = method === 'post' ? 'send' : 'view';
+    return { name: `${action} Notification`, action, resource: 'notification' };
+  }
+
+  // SMS activities
+  if (path.includes('/sms')) {
+    const action = method === 'post' ? 'send' : 'view';
+    return { name: `${action} SMS`, action, resource: 'sms' };
   }
 
   // Reports and exports
