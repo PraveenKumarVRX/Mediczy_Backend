@@ -237,7 +237,7 @@ export const AuthProvider = ({ children }) => {
     
     if (isClinicRoute) {
       const clinicToken = localStorage.getItem('clinicToken');
-      if (!clinicToken && location.pathname !== '/clinic/login') {
+      if (!clinicToken && location.pathname !== '/clinic/login' && location.pathname !== '/clinic/register') {
         setAuthState(prev => ({ ...prev, hasCheckedAuth: true }));
         navigate("/clinic/login", { replace: true });
         return;
@@ -248,7 +248,7 @@ export const AuthProvider = ({ children }) => {
     
     if (isLabRoute) {
       const labToken = localStorage.getItem('labToken');
-      if (!labToken && location.pathname !== '/lab/login') {
+      if (!labToken && location.pathname !== '/lab/login' && location.pathname !== '/lab/register') {
         setAuthState(prev => ({ ...prev, hasCheckedAuth: true }));
         navigate("/lab/login", { replace: true });
         return;
@@ -259,7 +259,7 @@ export const AuthProvider = ({ children }) => {
     
     if (isPharmacyRoute) {
       const pharmacyToken = localStorage.getItem('pharmacyToken');
-      if (!pharmacyToken && location.pathname !== '/pharmacy/login') {
+      if (!pharmacyToken && location.pathname !== '/pharmacy/login' && location.pathname !== '/pharmacy/register') {
         setAuthState(prev => ({ ...prev, hasCheckedAuth: true }));
         navigate("/pharmacy/login", { replace: true });
         return;
@@ -301,7 +301,7 @@ export const AuthProvider = ({ children }) => {
     
     if (isHomecareRoute) {
       const homecareToken = localStorage.getItem('homecareToken');
-      if (!homecareToken && location.pathname !== '/homecare/login') {
+      if (!homecareToken && location.pathname !== '/homecare/login' && location.pathname !== '/homecare/register') {
         setAuthState(prev => ({ ...prev, hasCheckedAuth: true }));
         navigate("/homecare/login", { replace: true });
         return;
@@ -384,10 +384,15 @@ export const AuthProvider = ({ children }) => {
       "/doctor/login",
       "/hospital/login",
       "/clinic/login",
+      "/clinic/register",
       "/lab/login",
+      "/lab/register",
       "/pharmacy/login",
+      "/pharmacy/register",
       "/ambulance/login",
       "/homecare/login",
+      "/homecare/register",
+      "/corporate/register",
       "/team-login",
       "/team/login",
       "/nurse/login",

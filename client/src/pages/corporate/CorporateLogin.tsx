@@ -260,11 +260,9 @@ const CorporateLogin = () => {
             <p>
               Need help? Email <a className="underline" href="mailto:success@mediqzy.com">success@mediqzy.com</a>
             </p>
-            <Link to="/corporate/register">
-              <button className="w-full h-11 rounded-xl border-2 border-violet-500 text-violet-600 font-bold text-sm hover:bg-violet-50 active:scale-95 transition-all mt-1">
+            <button type="button" onClick={() => navigate('/corporate/register')} className="w-full h-11 rounded-xl border-2 border-violet-500 text-violet-600 font-bold text-sm hover:bg-violet-50 active:scale-95 transition-all mt-1">
                 New company? Register here
               </button>
-            </Link>
             <p>
               Looking for the general login? <Link to="/login" className="text-primary underline">Return here</Link>
             </p>

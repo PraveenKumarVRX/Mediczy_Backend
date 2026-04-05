@@ -225,12 +225,14 @@ const ClinicLogin = () => {
             </div>
 
             {/* Register button */}
-            <Link to="/clinic/register">
-              <button className="w-full h-11 flex items-center justify-center gap-2 rounded-xl border border-teal-500/40 text-teal-400 font-bold text-sm hover:bg-teal-500/10 hover:border-teal-400/60 active:scale-95 transition-all duration-200">
-                <Building2 className="h-4 w-4" />
-                Register New Clinic
-              </button>
-            </Link>
+            <button
+              type="button"
+              onClick={() => navigate('/clinic/register')}
+              className="w-full h-11 flex items-center justify-center gap-2 rounded-xl border border-teal-500/40 text-teal-400 font-bold text-sm hover:bg-teal-500/10 hover:border-teal-400/60 active:scale-95 transition-all duration-200"
+            >
+              <Building2 className="h-4 w-4" />
+              Register New Clinic
+            </button>
           </div>
 
           {/* Trust badges */}

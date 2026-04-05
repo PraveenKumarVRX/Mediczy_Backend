@@ -225,11 +225,9 @@ const LabLogin = () => {
               </a>
             </div>
             <div className="mt-4">
-              <Link to="/lab/register">
-                <button className="w-full h-11 rounded-xl border-2 border-blue-500 text-blue-600 font-bold text-sm hover:bg-blue-50 active:scale-95 transition-all">
+              <button type="button" onClick={() => navigate('/lab/register')} className="w-full h-11 rounded-xl border-2 border-blue-500 text-blue-600 font-bold text-sm hover:bg-blue-50 active:scale-95 transition-all">
                   New lab? Register here
                 </button>
-              </Link>
             </div>
           </CardContent>
         </Card>

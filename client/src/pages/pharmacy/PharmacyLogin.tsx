@@ -244,11 +244,9 @@ const PharmacyLogin = () => {
               </a>
             </div>
             <div className="mt-4">
-              <Link to="/pharmacy/register">
-                <button className="w-full h-11 rounded-xl border-2 border-emerald-500 text-emerald-600 font-bold text-sm hover:bg-emerald-50 active:scale-95 transition-all">
+              <button type="button" onClick={() => navigate('/pharmacy/register')} className="w-full h-11 rounded-xl border-2 border-emerald-500 text-emerald-600 font-bold text-sm hover:bg-emerald-50 active:scale-95 transition-all">
                   New pharmacy? Register here
                 </button>
-              </Link>
             </div>
           </CardContent>
         </Card>

@@ -247,11 +247,9 @@ const HomecareLogin = () => {
                 Contact Support
               </a>
             </p>
-            <Link to="/homecare/register">
-              <button className="w-full h-11 rounded-xl border-2 border-pink-500 text-pink-600 font-bold text-sm hover:bg-pink-50 active:scale-95 transition-all">
-                New provider? Register here
-              </button>
-            </Link>
+            <button type="button" onClick={() => navigate('/homecare/register')} className="w-full h-11 rounded-xl border-2 border-pink-500 text-pink-600 font-bold text-sm hover:bg-pink-50 active:scale-95 transition-all">
+              New provider? Register here
+            </button>
           </div>
         </CardContent>
       </Card>
