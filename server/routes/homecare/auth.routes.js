@@ -133,6 +133,7 @@ router.post('/logout', (req, res) => {
  */
 router.post('/register', registerLimiter, hcUploadFields, async (req, res) => {
   try {
+    req.body = req.body || {};
     const { name, email, password, confirmPassword, phone, serviceType, city, state, address,
             registrationNumber, coordinatorName, coordinatorQual, coordinatorCert,
             _hp, _fat, lat, lng } = req.body;

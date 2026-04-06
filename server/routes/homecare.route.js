@@ -187,82 +187,12 @@ router.post('/book', async (req, res) => {
 });
 
 /**
- * POST /api/homecare/register
- * Register new homecare provider
+/**
+ * POST /api/homecare/register — handled by homecare/auth.routes.js (secure wizard)
  */
-router.post('/register', async (req, res) => {
-  try {
-    const {
-      name,
-      email,
-      password,
-      phone,
-      license_number,
-      address,
-      services = [],
-      tenant_id
-    } = req.body;
-
-    // Check if homecare exists
-    const existing = await HomecareProvider.findOne({ where: { email } });
-    if (existing) {
-      return res.status(409).json({
-        success: false,
-        message: 'Email already registered'
-      });
-    }
-
-    // Hash password
-    const hashedPassword = await bcrypt.hash(password, 10);
-
-    // Create homecare
-    const homecare = await HomecareProvider.create({
-      name,
-      email,
-      password: hashedPassword,
-      phone,
-      license_number,
-      address,
-      services,
-      tenant_id,
-      status: 'active'
-    });
-
-    // Generate token
-    const token = jwt.sign(
-      {
-        id: homecare.id,
-        homecareId: homecare.id,
-        email: homecare.email,
-        role: 'homecare',
-        userType: 'homecare',
-        type: 'homecare',
-        tenant_id: homecare.tenant_id
-      },
-      JWT_CONFIG.SECRET,
-      { expiresIn: '7d' }
-    );
-
-    res.status(201).json({
-      success: true,
-      token,
-      homecare: {
-        id: homecare.id,
-        name: homecare.name,
-        email: homecare.email,
-        phone: homecare.phone,
-        services: homecare.services
-      }
-    });
-  } catch (error) {
-    console.error('Homecare registration error:', error);
-    res.status(500).json({
-      success: false,
-      message: 'Registration failed',
-      error: error.message
-    });
-  }
-});
+// Registration is handled by the dedicated auth router (homecare/auth.routes.js)
+// which is mounted at /api/homecare AFTER this router.
+// DO NOT add a register handler here.
 
 /**
  * GET /api/homecare/profile

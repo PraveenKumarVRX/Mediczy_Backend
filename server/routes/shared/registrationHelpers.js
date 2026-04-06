@@ -45,10 +45,18 @@ export function createUploadMiddleware(idCardFieldName = 'contactIdCard') {
     limits: { fileSize: 10 * 1024 * 1024, files: 6 },
     fileFilter: _filter,
   });
-  return upload.fields([
+  const fields = upload.fields([
     { name: 'documents', maxCount: 5 },
     { name: idCardFieldName, maxCount: 1 },
   ]);
+  // Ensure req.body is always an object (raw POSTs without Content-Type leave it undefined)
+  return (req, res, next) => {
+    fields(req, res, err => {
+      req.body = req.body || {};
+      if (err) return next(err);
+      next();
+    });
+  };
 }
 
 // ── Rate limiter ──────────────────────────────────────────────────────────────

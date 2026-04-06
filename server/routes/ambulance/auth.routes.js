@@ -124,6 +124,7 @@ router.post('/logout', (req, res) => {
  */
 router.post('/register', registerLimiter, ambulanceUploadFields, async (req, res) => {
   try {
+    req.body = req.body || {};
     const { name, email, password, confirmPassword, phone, ambulanceType, city, state, address,
             registrationNumber, managerName, managerPhone, vehicleRegNo,
             _hp, _fat, lat, lng } = req.body;

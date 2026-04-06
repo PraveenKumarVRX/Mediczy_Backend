@@ -93,79 +93,12 @@ router.post('/login', authLimiter, async (req, res) => {
 });
 
 /**
- * POST /api/ambulance/register
- * Register new ambulance service
+/**
+ * POST /api/ambulance/register — handled by ambulance/auth.routes.js (secure wizard)
  */
-router.post('/register', async (req, res) => {
-  try {
-    const {
-      name,
-      email,
-      password,
-      phone,
-      license_number,
-      address,
-      vehicles = 1,
-      tenant_id
-    } = req.body;
-
-    // Check if ambulance exists
-    const existing = await Ambulance.findOne({ where: { email } });
-    if (existing) {
-      return res.status(409).json({
-        success: false,
-        message: 'Email already registered'
-      });
-    }
-
-    // Hash password
-    const hashedPassword = await bcrypt.hash(password, 10);
-
-    // Create ambulance
-    const ambulance = await Ambulance.create({
-      name,
-      email,
-      password: hashedPassword,
-      phone,
-      license_number,
-      address,
-      vehicles,
-      tenant_id,
-      status: 'active'
-    });
-
-    // Generate token
-    const token = jwt.sign(
-      {
-        id: ambulance.id,
-        email: ambulance.email,
-        type: 'ambulance',
-        tenant_id: ambulance.tenant_id
-      },
-      JWT_CONFIG.SECRET,
-      { expiresIn: '7d' }
-    );
-
-    res.status(201).json({
-      success: true,
-      token,
-      ambulance: {
-        id: ambulance.id,
-        name: ambulance.name,
-        email: ambulance.email,
-        phone: ambulance.phone,
-        vehicles: ambulance.vehicles
-      }
-    });
-  } catch (error) {
-    console.error('Ambulance registration error:', error);
-    res.status(500).json({
-      success: false,
-      message: 'Registration failed',
-      error: error.message
-    });
-  }
-});
+// Registration is handled by the dedicated auth router (ambulance/auth.routes.js)
+// which is mounted at /api/ambulance AFTER this router.
+// DO NOT add a register handler here.
 
 /**
  * GET /api/ambulance/profile
