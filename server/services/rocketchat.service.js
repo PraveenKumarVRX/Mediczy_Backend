@@ -13,6 +13,35 @@ class RocketChatService {
     this.userId = ROCKETCHAT_CONFIG.userId;
     this.authToken = ROCKETCHAT_CONFIG.authToken;
     this.timeout = ROCKETCHAT_CONFIG.timeout.api;
+    // Admin credentials for token refresh
+    this.adminUser = process.env.ROCKETCHAT_ADMIN_USER;
+    this.adminPassword = process.env.ROCKETCHAT_ADMIN_PASSWORD;
+  }
+
+  /**
+   * Re-authenticate with RocketChat to get a fresh token
+   */
+  async login() {
+    if (!this.adminUser || !this.adminPassword) {
+      throw new Error('ROCKETCHAT_ADMIN_USER and ROCKETCHAT_ADMIN_PASSWORD must be set for auto-login');
+    }
+    try {
+      const response = await axios.post(
+        `${ROCKETCHAT_CONFIG.url}/api/v1/login`,
+        { user: this.adminUser, password: this.adminPassword },
+        { timeout: ROCKETCHAT_CONFIG.timeout.connection }
+      );
+      if (response.data.status === 'success') {
+        this.authToken = response.data.data.authToken;
+        this.userId = response.data.data.userId;
+        logger.info('RocketChat token refreshed via auto-login');
+        return true;
+      }
+      throw new Error('Login response status was not success');
+    } catch (error) {
+      logger.error('RocketChat auto-login failed:', error.message);
+      throw error;
+    }
   }
 
   /**
@@ -27,24 +56,36 @@ class RocketChatService {
   }
 
   /**
-   * Make API request to RocketChat
+   * Make API request to RocketChat (with auto-relogin on 401)
    */
   async makeRequest(method, endpoint, data = null) {
-    try {
+    const doRequest = async () => {
       const config = {
         method,
         url: `${this.baseUrl}${endpoint}`,
         headers: this.getHeaders(),
         timeout: this.timeout
       };
+      if (data) config.data = data;
+      return axios(config);
+    };
 
-      if (data) {
-        config.data = data;
-      }
-
-      const response = await axios(config);
+    try {
+      const response = await doRequest();
       return response.data;
     } catch (error) {
+      // On 401, attempt one re-login and retry
+      if (error.response?.status === 401 && this.adminUser) {
+        logger.warn('RocketChat 401 – attempting token refresh and retry');
+        await this.login();
+        try {
+          const response = await doRequest();
+          return response.data;
+        } catch (retryError) {
+          logger.error('RocketChat API Error after re-login:', retryError.response?.data || retryError.message);
+          throw new Error(`RocketChat API Error: ${retryError.response?.data?.error || retryError.message}`);
+        }
+      }
       logger.error('RocketChat API Error:', error.response?.data || error.message);
       throw new Error(`RocketChat API Error: ${error.response?.data?.error || error.message}`);
     }

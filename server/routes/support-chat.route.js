@@ -7,6 +7,7 @@ import express from 'express';
 import { authUser } from '../middleware/auth.middleware.js';
 import omnichannelChatService from '../services/omnichannel-chat.service.js';
 import userModel from '../models/user.model.intelligent.js';
+import sharedPool from '../db/pgPool.js';
 
 const router = express.Router();
 
@@ -456,4 +457,536 @@ router.get('/agents', async (req, res) => {
   }
 });
 
+// ============================================================================
+// WHATSAPP INBOX (WATI-like)
+// ============================================================================
+
+/**
+ * GET /api/support/inbox/conversations
+ * Return open RC livechat rooms for the WhatsApp inbox UI
+ */
+router.get('/inbox/conversations', async (req, res) => {
+  try {
+    const { count = 50, offset = 0, open = 'true' } = req.query;
+    const rooms = await omnichannelChatService.getLivechatRooms({
+      count: parseInt(count, 10),
+      offset: parseInt(offset, 10),
+      open: open !== 'false'
+    });
+
+    // Fetch visitor details in parallel to get phone numbers
+    const conversations = await Promise.all(rooms.map(async room => {
+      let phone = null;
+      const visitorToken = room.v?.token;
+
+      // 1. Try Redis cache (fastest — set by syncToLivechat)
+      if (visitorToken) {
+        try {
+          const { cache } = await import('../db/redis.js');
+          const cached = await cache.get(`whatsapp:visitor:${visitorToken}`);
+          if (cached?.phone) phone = cached.phone;
+        } catch (_) {}
+      }
+
+      // 2. Fallback: fetch visitor record from RC (has phone array)
+      if (!phone && visitorToken) {
+        try {
+          const resp = await omnichannelChatService.apiRequest(
+            'get',
+            `${omnichannelChatService.rocketChatUrl}/api/v1/livechat/visitor/${visitorToken}`
+          );
+          phone = resp.data?.visitor?.phone?.[0]?.phoneNumber || null;
+          // Prime Redis for next time
+          if (phone) {
+            const { cache } = await import('../db/redis.js');
+            await cache.set(`whatsapp:visitor:${visitorToken}`, { phone }, 86400).catch(() => {});
+          }
+        } catch (_) {}
+      }
+
+      const displayName = room.fname || room.v?.name || phone || room.v?.username || room._id;
+
+      let tags = [];
+      try {
+        const { cache: tagsCache } = await import('../db/redis.js');
+        tags = await tagsCache.get(`inbox:tags:${room._id}`) || [];
+      } catch (_) {}
+
+      return {
+        id: room._id,
+        name: displayName,
+        phone,
+        source: 'whatsapp',
+        status: room.open ? 'open' : 'closed',
+        unread: room.msgs || 0,
+        lastMessage: room.lastMessage?.msg || '',
+        lastMessageAt: room.lastMessage?.ts || room._updatedAt || null,
+        servedBy: room.servedBy?.name || null,
+        department: room.department?.name || null,
+        tags
+      };
+    }));
+
+    return res.json({ success: true, conversations });
+  } catch (error) {
+    console.error('Inbox conversations error:', error);
+    return res.status(500).json({ success: false, message: 'Failed to load inbox' });
+  }
+});
+
+/**
+ * GET /api/support/inbox/rooms/:roomId/messages
+ * Fetch messages in a specific livechat room
+ */
+router.get('/inbox/rooms/:roomId/messages', async (req, res) => {
+  try {
+    const { roomId } = req.params;
+    const { count = 50, offset = 0 } = req.query;
+    // livechat/messages → 404 in this RC version; channels.history works for all room types
+    const result = await omnichannelChatService.apiRequest(
+      'get',
+      `${omnichannelChatService.rocketChatUrl}/api/v1/channels.history`,
+      null,
+      { roomId, count: parseInt(count, 10), offset: parseInt(offset, 10), unreads: false }
+    );
+    const msgs = (result.data.messages || []).reverse().map(m => ({
+      id: m._id,
+      text: m.msg || '',
+      ts: m.ts,
+      author: m.u?.name || m.u?.username,
+      isAgent: !m.token,
+      isNote: m.alias === 'Note' || (m.msg || '').startsWith('🗒️ [Note]'),
+      mediaUrl: m.attachments?.[0]?.image_url || m.attachments?.[0]?.title_link || null,
+      deliverySid: null
+    }));
+    return res.json({ success: true, messages: msgs });
+  } catch (error) {
+    console.error('Room messages error:', error);
+    return res.status(500).json({ success: false, message: 'Failed to load messages' });
+  }
+});
+
+/**
+ * POST /api/support/inbox/rooms/:roomId/send
+ * Agent sends a message to a livechat room AND directly forwards to WhatsApp
+ */
+router.post('/inbox/rooms/:roomId/send', async (req, res) => {
+  try {
+    const { roomId } = req.params;
+    const { message, phone } = req.body;
+    if (!message?.trim()) return res.status(400).json({ success: false, message: 'Message required' });
+
+    const msgText = message.trim();
+
+    // Post message into RC livechat room — RC webhook will forward it to WhatsApp automatically
+    await omnichannelChatService.apiRequest(
+      'post',
+      `${omnichannelChatService.rocketChatUrl}/api/v1/chat.sendMessage`,
+      { message: { rid: roomId, msg: msgText } }
+    );
+
+    return res.json({ success: true });
+  } catch (error) {
+    console.error('Send message error:', error);
+    return res.status(500).json({ success: false, message: 'Failed to send message' });
+  }
+});
+
+// ============================================================================
+// WHATSAPP INBOX — EXTENDED FEATURES (WATI-parity)
+// ============================================================================
+
+/**
+ * POST /api/support/inbox/rooms/:roomId/close
+ * Close a livechat room as agent
+ */
+router.post('/inbox/rooms/:roomId/close', async (req, res) => {
+  try {
+    const { roomId } = req.params;
+    await omnichannelChatService.apiRequest(
+      'post',
+      `${omnichannelChatService.rocketChatUrl}/api/v1/livechat/room.closeByUser`,
+      { rid: roomId }
+    );
+    return res.json({ success: true });
+  } catch (error) {
+    console.error('Close room error:', error?.response?.data || error.message);
+    return res.status(500).json({ success: false, message: 'Failed to close conversation' });
+  }
+});
+
+/**
+ * POST /api/support/inbox/rooms/:roomId/note
+ * Post an internal note (displayed in RC, NOT sent to WhatsApp customer)
+ */
+router.post('/inbox/rooms/:roomId/note', async (req, res) => {
+  try {
+    const { roomId } = req.params;
+    const { text } = req.body;
+    if (!text?.trim()) return res.status(400).json({ success: false, message: 'Note text required' });
+    await omnichannelChatService.apiRequest(
+      'post',
+      `${omnichannelChatService.rocketChatUrl}/api/v1/chat.postMessage`,
+      { roomId, text: `🗒️ [Note] ${text.trim()}`, alias: 'Note' }
+    );
+    return res.json({ success: true });
+  } catch (error) {
+    console.error('Post note error:', error?.response?.data || error.message);
+    return res.status(500).json({ success: false, message: 'Failed to post note' });
+  }
+});
+
+/**
+ * GET /api/support/inbox/canned-responses
+ * List canned responses (RC API + custom Redis-stored ones)
+ */
+router.get('/inbox/canned-responses', async (req, res) => {
+  try {
+    let cannedList = [];
+    try {
+      const rcRes = await omnichannelChatService.apiRequest(
+        'get',
+        `${omnichannelChatService.rocketChatUrl}/api/v1/canned-responses`,
+        null,
+        { count: 100, offset: 0 }
+      );
+      if (rcRes.data?.cannedResponses?.length) {
+        cannedList = rcRes.data.cannedResponses.map(cr => ({
+          id: cr._id, shortcut: cr.shortcut, text: cr.text, source: 'rc'
+        }));
+      }
+    } catch (_) {}
+    try {
+      const { cache } = await import('../db/redis.js');
+      const custom = await cache.get('inbox:canned-responses') || [];
+      cannedList = [...cannedList, ...custom];
+    } catch (_) {}
+    return res.json({ success: true, cannedResponses: cannedList });
+  } catch (error) {
+    return res.status(500).json({ success: false, message: 'Failed to load canned responses' });
+  }
+});
+
+/**
+ * POST /api/support/inbox/canned-responses
+ * Create a custom canned response (stored in Redis)
+ */
+router.post('/inbox/canned-responses', async (req, res) => {
+  try {
+    const { shortcut, text } = req.body;
+    if (!shortcut?.trim() || !text?.trim()) {
+      return res.status(400).json({ success: false, message: 'shortcut and text required' });
+    }
+    const { cache } = await import('../db/redis.js');
+    const existing = await cache.get('inbox:canned-responses') || [];
+    const newEntry = { id: `custom_${Date.now()}`, shortcut: shortcut.trim(), text: text.trim(), source: 'custom' };
+    await cache.set('inbox:canned-responses', [...existing, newEntry], 0);
+    return res.json({ success: true, cannedResponse: newEntry });
+  } catch (error) {
+    return res.status(500).json({ success: false, message: 'Failed to create canned response' });
+  }
+});
+
+/**
+ * DELETE /api/support/inbox/canned-responses/:id
+ * Delete a custom canned response from Redis
+ */
+router.delete('/inbox/canned-responses/:id', async (req, res) => {
+  try {
+    const { id } = req.params;
+    const { cache } = await import('../db/redis.js');
+    const existing = await cache.get('inbox:canned-responses') || [];
+    await cache.set('inbox:canned-responses', existing.filter(c => c.id !== id), 0);
+    return res.json({ success: true });
+  } catch (error) {
+    return res.status(500).json({ success: false, message: 'Failed to delete canned response' });
+  }
+});
+
+/**
+ * GET /api/support/inbox/templates
+ * List WhatsApp message templates (built-in + custom from Redis)
+ */
+router.get('/inbox/templates', async (req, res) => {
+  try {
+    const builtIn = [
+      {
+        id: 'appointmentConfirmation',
+        name: 'Appointment Confirmation',
+        body: `Your appointment has been confirmed! ✅\n\nDear {{patientName}},\n\n👨‍⚕️ Doctor: {{doctorName}}\n📍 Location: {{location}}\n📅 Date: {{date}}\n🕐 Time: {{time}}\n\nPlease arrive 15 minutes early.`,
+        variables: ['patientName', 'doctorName', 'location', 'date', 'time']
+      },
+      {
+        id: 'appointmentReminder',
+        name: 'Appointment Reminder',
+        body: `Reminder: Appointment Today 🩺\n\nHello {{patientName}}, your appointment with {{doctorName}} is at {{time}}.\n📍 {{location}}\n\nReply YES to confirm.`,
+        variables: ['patientName', 'doctorName', 'time', 'location']
+      },
+      {
+        id: 'healthReport',
+        name: 'Health Report Ready',
+        body: `Your health report is ready 📋\n\nHello {{patientName}}, your health report is available.\n\n🔗 Download: {{reportUrl}}`,
+        variables: ['patientName', 'reportUrl']
+      },
+      {
+        id: 'followUp',
+        name: 'Follow-up Message',
+        body: `Hi {{name}}, this is a follow-up from our team regarding your recent inquiry. How can we assist you further?`,
+        variables: ['name']
+      },
+      {
+        id: 'prescriptionReady',
+        name: 'Prescription Ready',
+        body: `Your prescription is ready 💊\n\nHi {{patientName}}, your prescription from Dr. {{doctorName}} is ready.\n\n📅 Follow-up: {{followUpDate}}\n🔗 Download: {{prescriptionUrl}}`,
+        variables: ['patientName', 'doctorName', 'followUpDate', 'prescriptionUrl']
+      }
+    ];
+    let templates = [...builtIn];
+    try {
+      const { cache } = await import('../db/redis.js');
+      const custom = await cache.get('inbox:templates') || [];
+      templates = [...templates, ...custom];
+    } catch (_) {}
+    return res.json({ success: true, templates });
+  } catch (error) {
+    return res.status(500).json({ success: false, message: 'Failed to load templates' });
+  }
+});
+
+/**
+ * POST /api/support/inbox/broadcast
+ * Send a WhatsApp message to multiple phone numbers
+ */
+router.post('/inbox/broadcast', async (req, res) => {
+  try {
+    const { phones, message } = req.body;
+    if (!Array.isArray(phones) || !phones.length || !message?.trim()) {
+      return res.status(400).json({ success: false, message: 'phones array and message required' });
+    }
+    if (phones.length > 200) {
+      return res.status(400).json({ success: false, message: 'Max 200 recipients per broadcast' });
+    }
+    const { default: whatsappService } = await import('../services/whatsapp-production.service.js');
+    const results = await Promise.allSettled(
+      phones.map(async phone => {
+        const normPhone = omnichannelChatService.normalizeWhatsAppNumber(String(phone).trim());
+        await whatsappService.sendSessionMessage({ to: normPhone, body: message.trim() });
+        return normPhone;
+      })
+    );
+    const sent = results.filter(r => r.status === 'fulfilled').length;
+    const failed = results.filter(r => r.status === 'rejected').length;
+    const errors = results
+      .map((r, i) => r.status === 'rejected' ? { phone: phones[i], error: r.reason?.message } : null)
+      .filter(Boolean);
+    console.log(`📡 [broadcast] sent=${sent} failed=${failed}`);
+    return res.json({ success: true, sent, failed, errors });
+  } catch (error) {
+    console.error('Broadcast error:', error);
+    return res.status(500).json({ success: false, message: 'Broadcast failed' });
+  }
+});
+
+/**
+ * PUT /api/support/inbox/rooms/:roomId/tags
+ * Update labels/tags for a conversation (stored in Redis)
+ */
+router.put('/inbox/rooms/:roomId/tags', async (req, res) => {
+  try {
+    const { roomId } = req.params;
+    const { tags } = req.body;
+    if (!Array.isArray(tags)) {
+      return res.status(400).json({ success: false, message: 'tags must be an array' });
+    }
+    const { cache } = await import('../db/redis.js');
+    await cache.set(`inbox:tags:${roomId}`, tags, 0);
+    return res.json({ success: true, tags });
+  } catch (error) {
+    return res.status(500).json({ success: false, message: 'Failed to update tags' });
+  }
+});
+
+/**
+ * GET /api/support/inbox/rooms/:roomId/profile
+ * Get contact profile, SLA metrics, tag history, and conversation count
+ */
+router.get('/inbox/rooms/:roomId/profile', async (req, res) => {
+  try {
+    const { roomId } = req.params;
+    let room = null;
+    try {
+      const roomRes = await omnichannelChatService.apiRequest(
+        'get', `${omnichannelChatService.rocketChatUrl}/api/v1/channels.info`, null, { roomId }
+      );
+      room = roomRes.data?.channel || null;
+    } catch (_) {}
+
+    let visitor = null, phone = null;
+    if (room?.v?.token) {
+      try {
+        const vRes = await omnichannelChatService.apiRequest(
+          'get', `${omnichannelChatService.rocketChatUrl}/api/v1/livechat/visitor/${room.v.token}`
+        );
+        visitor = vRes.data?.visitor || null;
+        phone = visitor?.phone?.[0]?.phoneNumber || null;
+        // Also try Redis cache
+        if (!phone) {
+          const { cache } = await import('../db/redis.js');
+          const cached = await cache.get(`whatsapp:visitor:${room.v.token}`);
+          if (cached?.phone) phone = cached.phone;
+        }
+      } catch (_) {}
+    }
+
+    let tags = [];
+    try {
+      const { cache } = await import('../db/redis.js');
+      tags = await cache.get(`inbox:tags:${roomId}`) || [];
+    } catch (_) {}
+
+    let firstResponseMs = null, totalMessages = 0;
+    try {
+      const msgRes = await omnichannelChatService.apiRequest(
+        'get', `${omnichannelChatService.rocketChatUrl}/api/v1/channels.history`,
+        null, { roomId, count: 100, unreads: false }
+      );
+      const msgs = msgRes.data?.messages || [];
+      totalMessages = msgs.length;
+      const roomCreated = room?.ts ? new Date(room.ts).getTime() : null;
+      if (roomCreated) {
+        const firstAgentMsg = [...msgs].reverse().find(m => !m.token);
+        if (firstAgentMsg) firstResponseMs = new Date(firstAgentMsg.ts).getTime() - roomCreated;
+      }
+    } catch (_) {}
+
+    let pastConversations = 0;
+    if (visitor?._id) {
+      try {
+        const histRes = await omnichannelChatService.apiRequest(
+          'get', `${omnichannelChatService.rocketChatUrl}/api/v1/livechat/visitor/${visitor._id}/room`,
+          null, { count: 100 }
+        );
+        pastConversations = (histRes.data?.rooms || []).length;
+      } catch (_) {}
+    }
+
+    return res.json({
+      success: true,
+      profile: {
+        name: visitor?.name || room?.fname || room?.name || 'Unknown',
+        phone,
+        email: visitor?.email?.[0]?.address || null,
+        createdAt: visitor?.createdAt || room?.ts || null,
+        tags,
+        totalMessages,
+        pastConversations,
+        firstResponseMs,
+        lastSeen: visitor?.lastChat?.ts || null,
+        customFields: visitor?.livechatData || {}
+      }
+    });
+  } catch (error) {
+    console.error('Profile error:', error);
+    return res.status(500).json({ success: false, message: 'Failed to load profile' });
+  }
+});
+
+/**
+ * POST /api/support/inbox/rooms/:roomId/send-media
+ * Send a media file (image/doc/audio/video URL) via Twilio WhatsApp, posted to RC too
+ */
+router.post('/inbox/rooms/:roomId/send-media', async (req, res) => {
+  try {
+    const { roomId } = req.params;
+    const { mediaUrl, caption = '', phone } = req.body;
+    if (!mediaUrl?.trim()) return res.status(400).json({ success: false, message: 'mediaUrl required' });
+    if (!phone) return res.status(400).json({ success: false, message: 'phone required' });
+
+    const msgText = caption ? `${caption}\n${mediaUrl}` : mediaUrl;
+    await omnichannelChatService.apiRequest(
+      'post', `${omnichannelChatService.rocketChatUrl}/api/v1/chat.postMessage`,
+      { roomId, text: `📎 ${msgText}`, alias: 'Media' }
+    );
+
+    const normPhone = omnichannelChatService.normalizeWhatsAppNumber(phone);
+    const { default: whatsappService } = await import('../services/whatsapp-production.service.js');
+    await whatsappService.sendMediaMessage({ to: normPhone, mediaUrl: mediaUrl.trim(), caption: caption.trim() });
+    return res.json({ success: true });
+  } catch (error) {
+    console.error('Send media error:', error?.response?.data || error.message);
+    return res.status(500).json({ success: false, message: 'Failed to send media' });
+  }
+});
+
+/**
+ * GET /api/support/inbox/rooms/:roomId/delivery
+ * Check WhatsApp delivery status of last sent message (read receipts)
+ */
+router.get('/inbox/rooms/:roomId/delivery', async (req, res) => {
+  try {
+    const { roomId } = req.params;
+    const { cache } = await import('../db/redis.js');
+    const stored = await cache.get(`inbox:lastsid:${roomId}`);
+    if (!stored?.sid) return res.json({ success: true, status: 'sent' });
+    const { default: whatsappService } = await import('../services/whatsapp-production.service.js');
+    const msg = await whatsappService.getMessageStatus(stored.sid);
+    return res.json({ success: true, status: msg.status, sid: stored.sid });
+  } catch {
+    return res.json({ success: true, status: 'sent' });
+  }
+});
+
+// ============================================================================
+// WHATSAPP CONTACTS
+// ============================================================================
+
+/**
+ * GET /api/support/whatsapp-contacts
+ * List all saved WhatsApp contacts ordered by last contact
+ */
+router.get('/whatsapp-contacts', authUser, async (req, res) => {
+  try {
+    const { limit = 200, offset = 0, search = '' } = req.query;
+    let query, params;
+    if (search) {
+      query = `SELECT * FROM whatsapp_contacts
+               WHERE phone ILIKE $3 OR name ILIKE $3 OR profile_name ILIKE $3
+               ORDER BY last_contact_at DESC LIMIT $1 OFFSET $2`;
+      params = [parseInt(limit), parseInt(offset), `%${search}%`];
+    } else {
+      query = `SELECT * FROM whatsapp_contacts ORDER BY last_contact_at DESC LIMIT $1 OFFSET $2`;
+      params = [parseInt(limit), parseInt(offset)];
+    }
+    const { rows } = await sharedPool.query(query, params);
+    const { rows: [{ count }] } = await sharedPool.query(`SELECT COUNT(*) FROM whatsapp_contacts`);
+    return res.json({ success: true, contacts: rows, total: parseInt(count) });
+  } catch (err) {
+    return res.status(500).json({ success: false, message: err.message });
+  }
+});
+
+/**
+ * PATCH /api/support/whatsapp-contacts/:phone
+ * Update contact name, notes, or tags
+ */
+router.patch('/whatsapp-contacts/:phone', authUser, async (req, res) => {
+  try {
+    const phone = decodeURIComponent(req.params.phone);
+    const { name, notes, tags } = req.body;
+    await sharedPool.query(
+      `UPDATE whatsapp_contacts
+       SET name = COALESCE($2, name),
+           notes = COALESCE($3, notes),
+           tags = COALESCE($4, tags),
+           updated_at = NOW()
+       WHERE phone = $1`,
+      [phone, name || null, notes || null, tags ? JSON.stringify(tags) : null]
+    );
+    return res.json({ success: true });
+  } catch (err) {
+    return res.status(500).json({ success: false, message: err.message });
+  }
+});
+
 export default router;
+

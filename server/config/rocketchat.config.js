@@ -4,8 +4,11 @@
  */
 
 const ROCKETCHAT_CONFIG = {
-  // RocketChat Server
-  url: process.env.ROCKETCHAT_URL || 'https://smart-chat.live',
+  // RocketChat internal URL (server-to-server API calls)
+  internalUrl: process.env.ROCKETCHAT_INTERNAL_URL || process.env.ROCKETCHAT_URL || 'http://localhost:3100',
+  
+  // RocketChat public URL (browser-facing: embeds, livechat widget, SSO)
+  url: process.env.ROCKETCHAT_PUBLIC_URL || process.env.ROCKETCHAT_URL || 'https://smart-chat.live',
   
   // Authentication
   userId: process.env.ROCKETCHAT_USER_ID || '',
@@ -15,9 +18,9 @@ const ROCKETCHAT_CONFIG = {
   enableEmbed: process.env.ROCKETCHAT_ENABLE_EMBED === 'true',
   enableSSO: process.env.ROCKETCHAT_ENABLE_SSO === 'true',
   
-  // API Endpoints
+  // API Endpoints (uses internalUrl for server-side calls)
   api: {
-    baseUrl: process.env.ROCKETCHAT_URL ? `${process.env.ROCKETCHAT_URL}/api/v1` : 'https://smart-chat.live/api/v1',
+    baseUrl: `${process.env.ROCKETCHAT_INTERNAL_URL || process.env.ROCKETCHAT_URL || 'http://localhost:3100'}/api/v1`,
     channels: '/channels.list',
     createChannel: '/channels.create',
     invite: '/channels.invite',

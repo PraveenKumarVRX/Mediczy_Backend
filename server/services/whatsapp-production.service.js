@@ -240,6 +240,20 @@ class WhatsAppProductionService {
   }
 
   /**
+   * Send media message (image, document, audio, video)
+   */
+  async sendMediaMessage({ to, mediaUrl, caption = '' }) {
+    if (!this.twilioConfigured) throw new Error('Twilio WhatsApp is not configured');
+    const params = {
+      from: this.fromNumber,
+      to: `whatsapp:${to}`,
+      mediaUrl: [mediaUrl]
+    };
+    if (caption?.trim()) params.body = caption.trim();
+    return await this.client.messages.create(params);
+  }
+
+  /**
    * Get message status
    */
   async getMessageStatus(messageSid) {

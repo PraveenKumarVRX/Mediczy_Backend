@@ -15,7 +15,8 @@ import whatsappBotService from './whatsapp-bot.service.js';
 class OmnichannelChatService {
   constructor() {
     // RocketChat Configuration
-    this.rocketChatUrl = process.env.ROCKETCHAT_URL || 'http://localhost:3100';
+    this.rocketChatUrl = process.env.ROCKETCHAT_INTERNAL_URL || process.env.ROCKETCHAT_URL || 'http://localhost:3100';
+    this.rocketChatPublicUrl = process.env.ROCKETCHAT_PUBLIC_URL || 'https://smart-chat.live';
     this.rocketChatAdminUser = process.env.ROCKETCHAT_ADMIN_USER;
     this.rocketChatAdminPassword = process.env.ROCKETCHAT_ADMIN_PASSWORD;
     this.rocketChatUserId = process.env.ROCKETCHAT_USER_ID; // Admin user ID for API auth
@@ -80,6 +81,29 @@ class OmnichannelChatService {
     };
   }
 
+  /**
+   * Make an authenticated axios request, auto-reinitializing on 401
+   */
+  async apiRequest(method, url, data = null, params = null) {
+    const doRequest = () => {
+      const cfg = { method, url, headers: this.getHeaders() };
+      if (data) cfg.data = data;
+      if (params) cfg.params = params;
+      return axios(cfg);
+    };
+
+    try {
+      return await doRequest();
+    } catch (error) {
+      if (error.response?.status === 401) {
+        console.warn('⚠️ RocketChat 401 – re-initializing and retrying');
+        const ok = await this.initialize();
+        if (ok) return doRequest();
+      }
+      throw error;
+    }
+  }
+
   // ============================================================================
   // VISITOR/PATIENT MANAGEMENT
   // ============================================================================
@@ -111,10 +135,10 @@ class OmnichannelChatService {
       };
 
       console.log(`   📤 Registering visitor in RocketChat...`);
-      const response = await axios.post(
+      const response = await this.apiRequest(
+        'post',
         `${this.rocketChatUrl}/api/v1/livechat/visitor`,
-        visitorData,
-        { headers: this.getHeaders() }
+        visitorData
       );
 
       return {
@@ -182,12 +206,11 @@ class OmnichannelChatService {
       let response;
       for (let attempt = 1; attempt <= 4; attempt++) {
         try {
-          response = await axios.get(
+          response = await this.apiRequest(
+            'get',
             `${this.rocketChatUrl}/api/v1/livechat/room`,
-            { 
-              params: roomData,
-              headers: this.getHeaders() 
-            }
+            null,
+            roomData
           );
           break;
         } catch (error) {
@@ -224,12 +247,11 @@ class OmnichannelChatService {
    */
   async getOpenRoom(visitorToken) {
     try {
-      const response = await axios.get(
+      const response = await this.apiRequest(
+        'get',
         `${this.rocketChatUrl}/api/v1/livechat/rooms`,
-        {
-          params: { token: visitorToken, open: true },
-          headers: this.getHeaders()
-        }
+        null,
+        { token: visitorToken, open: true }
       );
 
       const rooms = response.data.rooms || [];
@@ -263,10 +285,10 @@ class OmnichannelChatService {
         messageData.attachments = attachments;
       }
 
-      const response = await axios.post(
+      const response = await this.apiRequest(
+        'post',
         `${this.rocketChatUrl}/api/v1/livechat/message`,
-        messageData,
-        { headers: this.getHeaders() }
+        messageData
       );
 
       return {
@@ -287,12 +309,11 @@ class OmnichannelChatService {
    */
   async getChatHistory(roomId, visitorToken, limit = 50) {
     try {
-      const response = await axios.get(
+      const response = await this.apiRequest(
+        'get',
         `${this.rocketChatUrl}/api/v1/livechat/messages.history/${roomId}`,
-        {
-          params: { token: visitorToken, limit },
-          headers: this.getHeaders()
-        }
+        null,
+        { token: visitorToken, limit }
       );
 
       return {
@@ -661,208 +682,205 @@ class OmnichannelChatService {
    * @param {Object} webhookData - RocketChat webhook payload
    */
   async sendToWhatsApp(webhookData) {
-    const { room, message, text, channel_name, tmid, message_id } = webhookData;
-    
+    // ── Normalise payload ────────────────────────────────────────────────────
+    // Outgoing-webhook format: { room, message, text, channel_name, tmid, message_id }
+    // Omnichannel-webhook format: { type, _id, messages: [...], room, visitor, agent }
+    let room       = webhookData.room;
+    let message    = webhookData.message;
+    let text       = webhookData.text;
+    let channel_name = webhookData.channel_name;
+    let tmid       = webhookData.tmid;
+    let message_id = webhookData.message_id;
+
+    const isOmnichannelWebhook = !!webhookData.visitor || (!!webhookData.messages && !webhookData.message);
+    if (isOmnichannelWebhook) {
+      // Omnichannel (livechat) webhook — fire on agent_message
+      const msgs = webhookData.messages || [];
+      if (msgs.length === 0) {
+        return { success: true, skipped: true, reason: 'omnichannel_no_messages' };
+      }
+      message    = msgs[0];    // {_id, msg, u, t, ts, ...}
+      message_id = message._id;
+      text       = message.msg;
+      // Attach visitor to room if not present
+      if (!room?.v && webhookData.visitor) {
+        room = { ...(room || {}), v: webhookData.visitor, t: 'l' };
+      }
+      console.log('📨 [sendToWhatsApp] Omnichannel webhook, agent:', message?.u?.username, 'msg:', text?.substring(0, 60));
+    }
+
+    // Detect if this is a livechat (omnichannel) room
+    const isLivechatRoom = room?.t === 'l' || room?.type === 'l' || !!room?.v || isOmnichannelWebhook;
+
     console.log('📤 [sendToWhatsApp] Processing webhook:', {
       hasRoom: !!room,
+      roomType: room?.t || room?.type,
+      isLivechatRoom,
       hasMessage: !!message,
       hasText: !!text,
       channelName: channel_name,
       tmid: tmid,
       messageId: message_id,
       messageUser: message?.u?.username,
-      messageType: message?.u?.type,
       messageToken: !!message?.token,
       roomVisitor: !!room?.v
     });
-    
-    // IMPORTANT: Only process replies in threads (messages with tmid)
-    // This ensures we only send messages to WhatsApp if they're replies to visitor messages
-    if (!tmid) {
-      console.log('⏭️ [sendToWhatsApp] Skipping non-threaded message from #general. Only thread replies (tmid) are sent to WhatsApp');
+
+    // For NON-livechat rooms (regular channels): only reply-to-thread messages reach WhatsApp
+    if (!isLivechatRoom && !tmid) {
+      console.log('⏭️ [sendToWhatsApp] Skipping non-threaded message in regular channel');
       return { success: true, skipped: true, reason: 'not_a_thread_reply' };
     }
-    
-    // Only process agent messages (not visitor messages)
-    const isVisitorMessage = !!message?.token && (
+
+    // Skip visitor/customer messages — only forward AGENT messages to WhatsApp
+    const isVisitorMessage = !!message?.token || (
       message?.u?.type === 'visitor'
       || message?.u?.roles?.includes('livechat-visitor')
-      || message?.u?._id === room?.v?._id
-      || message?.u?.username === room?.v?.username
-      || message?.u?.name === room?.v?.name
+      || (room?.v && (
+        message?.u?._id === room.v._id
+        || message?.u?.username === room.v.username
+        || message?.u?.name === room.v.name
+      ))
     );
     if (isVisitorMessage) {
       console.log('⏭️ [sendToWhatsApp] Skipping visitor message');
       return { success: true, skipped: true };
     }
-    
+
+    // Skip system messages (room closure, transfers, etc.)
+    if (message?.t) {
+      console.log('⏭️ [sendToWhatsApp] Skipping system message type:', message.t);
+      return { success: true, skipped: true, reason: 'system_message' };
+    }
+
     // Declare lock variables early so they're accessible in finally block
     let dedupeKey = null;
     let lockKey = null;
-    let lockTTL = 30; // 30 seconds for Redis lock
-    let lockAcquired = false; // Track if lock was successfully acquired
-    
+    let lockTTL = 30;
+    let lockAcquired = false;
+
     try {
-      // Get visitor info to find WhatsApp number
       const visitor = room?.v;
-      let rawPhone = visitor?.phone?.[0]?.phoneNumber
-        || visitor?.phone?.[0]?.value
-        || visitor?.phoneNumber
-        || visitor?.phone;
-      
-      // Use message text if available (from webhook payload)
       const messageText = message?.msg || text || '';
 
-      console.log('📞 [sendToWhatsApp] Phone extraction:', {
-        hasVisitor: !!visitor,
-        rawPhone: rawPhone,
-        visitorPhone: visitor?.phone,
-        roomName: room?.name,
-        channelName: channel_name,
-        messageTextSnippet: messageText.substring(0, 80)
-      });
+      // === PHONE RESOLUTION: Multiple strategies ===
+      // 1. Livechat visitor phone array (most reliable for omnichannel)
+      let rawPhone = visitor?.phone?.[0]?.phoneNumber
+        || visitor?.phone?.[0]?.value
+        || visitor?.phone?.[0]
+        || visitor?.phoneNumber
+        || visitor?.phone;
 
-      // If no direct phone and we have a thread ID (tmid), fetch parent message
-      // to extract phone from the original incoming message
+      // 2. For regular channel threads: fetch parent message text to extract phone
       if (!rawPhone && tmid) {
-        console.log('📝 [sendToWhatsApp] No direct phone, fetching parent message from thread:', tmid);
         try {
           const parentMessage = await this.getThreadParentMessage(channel_name, tmid);
           if (parentMessage) {
-            console.log('📝 [sendToWhatsApp] Parent message text:', parentMessage.substring(0, 100));
-            const phoneMatch = parentMessage.match(/\((\+\d+)\)/);
-            if (phoneMatch && phoneMatch[1]) {
-              rawPhone = phoneMatch[1];
-              console.log('✅ [sendToWhatsApp] Extracted phone from parent message:', rawPhone);
+            // Match (+919...) or (++919...) or (919...) in parentheses
+            const phoneMatch = parentMessage.match(/\((\+{0,2}\d{7,})\)/);
+            if (phoneMatch?.[1]) {
+              rawPhone = phoneMatch[1].replace(/^\+\+/, '+');
+              if (!rawPhone.startsWith('+')) rawPhone = '+' + rawPhone;
             }
           }
-        } catch (error) {
-          console.error('❌ [sendToWhatsApp] Failed to fetch parent message:', error.message);
+        } catch (err) {
+          console.warn('⚠️ Failed to fetch thread parent:', err.message);
         }
       }
 
-      // Fallback: Extract phone from message text format
-      // Format: "📱 WhatsApp Message from Name (Patient ID: 123) (+917373007737)"
-      if (!rawPhone) {
-        console.log('📞 [sendToWhatsApp] Trying to extract phone from message...');
-        const phoneMatch = messageText.match(/\((\+\d+)\)/);
-        if (phoneMatch && phoneMatch[1]) {
-          rawPhone = phoneMatch[1];
-          console.log('✅ [sendToWhatsApp] Extracted phone from message:', rawPhone);
+      // 3. Extract phone from room name (livechat rooms are named after phone, e.g. "+917373007737")
+      if (!rawPhone && room?.name && /^\+\d{7,}$/.test(room.name)) {
+        rawPhone = room.name;
+      }
+
+      // 4. Extract phone from message text "(+91xxx)", "(++91xxx)", or "(91xxx)"
+      if (!rawPhone && messageText) {
+        const m = messageText.match(/\((\+{0,2}\d{7,})\)/);
+        if (m?.[1]) {
+          rawPhone = m[1].replace(/^\+\+/, '+');
+          if (!rawPhone.startsWith('+')) rawPhone = '+' + rawPhone;
         }
       }
 
+      // 5. Lookup Redis whatsapp contact by visitor token/id
+      if (!rawPhone && visitor?.token) {
+        try {
+          const stored = await cache.get(`whatsapp:visitor:${visitor.token}`);
+          if (stored?.phone) rawPhone = stored.phone;
+        } catch (_) {}
+      }
+
+      console.log('📞 [sendToWhatsApp] Resolved phone:', rawPhone || 'NOT FOUND', {
+        visitorToken: visitor?.token?.substring(0, 12),
+        roomName: room?.name
+      });
+
       if (!rawPhone) {
-        console.log('❌ [sendToWhatsApp] No WhatsApp number found');
+        console.log('❌ [sendToWhatsApp] No WhatsApp number found — cannot forward to WhatsApp');
         return { success: false, error: 'No WhatsApp number' };
       }
 
-      // Normalize phone early for use throughout function
       const normPhone = this.normalizeWhatsAppNumber(rawPhone);
 
-      // DEDUPLICATION: Use Redis-based processing lock to prevent concurrent processing across cluster
-      // This prevents multiple PM2 processes from processing the same message simultaneously
+      // DEDUPLICATION via Redis atomic lock
       dedupeKey = this.getWebhookDedupeKey(message_id, tmid);
       lockKey = `webhook-lock:${dedupeKey}`;
       const lockValue = Date.now().toString();
-      
-      // Try to acquire lock in Redis to prevent concurrent processing using ATOMIC SET NX
-      let lockAcquired = false;
+
       try {
-        // Use atomic SET command with NX (only set if doesn't exist) and EX (set expiration)
-        // This is atomic at the Redis server level - no race condition
-        // Returns 'OK' if set successfully, null if key already exists
         const setResult = await cache.setNX(lockKey, lockValue, lockTTL);
-        
         if (setResult === 'OK') {
           lockAcquired = true;
-          console.log('🔒 [sendToWhatsApp] Acquired Redis processing lock (atomic NX):', dedupeKey.substring(0, 8) + '...');
         } else {
-          console.log('⏭️  [sendToWhatsApp] Message already being processed by another cluster process (lock held), skipping:', { message_id, tmid, phone: normPhone });
+          console.log('⏭️ [sendToWhatsApp] Already processing (Redis lock):', dedupeKey.substring(0, 8));
           return { success: true, skipped: true, reason: 'already_processing_redis_atomic' };
         }
       } catch (atomicError) {
-        // If atomic SET NX fails, try fallback: GET then SET (non-atomic but works)
-        console.warn('⚠️  [sendToWhatsApp] Atomic SET NX failed, trying GET+SET fallback:', atomicError.message);
-        
         try {
           const existingLock = await cache.get(lockKey);
-          
-          if (existingLock) {
-            console.log('⏭️  [sendToWhatsApp] Message already being processed (GET+SET fallback), skipping');
-            return { success: true, skipped: true, reason: 'already_processing_fallback_get_set' };
-          }
-          
-          // Set lock with TTL
+          if (existingLock) return { success: true, skipped: true, reason: 'already_processing_fallback_get_set' };
           await cache.set(lockKey, lockValue, lockTTL);
           lockAcquired = true;
-          console.log('🔒 [sendToWhatsApp] Acquired Redis processing lock (GET+SET fallback)');
         } catch (fallbackError) {
-          // If Redis completely fails, use in-memory lock as last resort
-          console.warn('⚠️  [sendToWhatsApp] GET+SET fallback also failed, using in-memory lock:', fallbackError.message);
-          
           if (this.webhookProcessingLocks.has(dedupeKey)) {
-            console.log('⏭️  [sendToWhatsApp] Message already being processed (in-memory lock), skipping');
             return { success: true, skipped: true, reason: 'already_processing_inmemory' };
           }
-          
           this.webhookProcessingLocks.set(dedupeKey, true);
           lockAcquired = true;
         }
       }
-      
-      // Record in recent calls cache for post-processing safeguard
+
       this.recordWebhookCall(dedupeKey);
 
       try {
-        console.log('✅ [sendToWhatsApp] Sending to WhatsApp:', {
+        console.log('✅ [sendToWhatsApp] Forwarding agent reply to WhatsApp:', {
           to: normPhone,
-          bodyLength: messageText.length,
-          bodySnippet: messageText.substring(0, 50)
+          msgLength: messageText.length,
+          preview: messageText.substring(0, 60)
         });
 
-        // Prefer production Twilio session messaging for live replies.
         try {
           const whatsappProductionService = (await import('./whatsapp-production.service.js')).default;
           if (whatsappProductionService?.sendSessionMessage) {
-            await whatsappProductionService.sendSessionMessage({
-              to: normPhone,
-              body: messageText
-            });
+            await whatsappProductionService.sendSessionMessage({ to: normPhone, body: messageText });
           } else {
             throw new Error('WhatsApp production service unavailable');
           }
         } catch (productionError) {
-          // Fallback to the generic WhatsApp service when production is unavailable.
           const whatsappService = (await import('./whatsapp.service.js')).default;
-          await whatsappService.sendMessage({
-            to: normPhone,
-            content: messageText,
-            type: 'text'
-          });
+          await whatsappService.sendMessage({ to: normPhone, content: messageText, type: 'text' });
         }
 
-        await this.setHandoffState(normPhone, {
-          reason: 'agent_message',
-          source: 'rocketchat'
-        });
-
+        await this.setHandoffState(normPhone, { reason: 'agent_message', source: 'rocketchat' });
         console.log('✅ [sendToWhatsApp] Message sent successfully');
         return { success: true };
       } catch (error) {
         console.error('Send to WhatsApp error:', error);
         return { success: false, error: error.message };
       } finally {
-        // Release locks only if they were acquired
         if (lockAcquired && lockKey) {
-          try {
-            await cache.del(lockKey);
-            console.log('🔓 [sendToWhatsApp] Released Redis processing lock');
-          } catch (redisError) {
-            console.warn('⚠️  [sendToWhatsApp] Failed to release Redis lock:', redisError.message);
-          }
+          try { await cache.del(lockKey); } catch (_) {}
         }
-        
         if (dedupeKey && this.webhookProcessingLocks.has(dedupeKey)) {
           this.webhookProcessingLocks.delete(dedupeKey);
         }
@@ -986,7 +1004,7 @@ class OmnichannelChatService {
    */
   normalizeWhatsAppNumber(phone) {
     if (!phone) return '';
-    const trimmed = String(phone).trim().replace(/^whatsapp:/i, '');
+    const trimmed = String(phone).trim().replace(/^whatsapp:/i, '').replace(/^\++/, '+');
     if (trimmed.startsWith('+')) return trimmed;
 
     const digits = trimmed.replace(/[^\d]/g, '');
@@ -1069,8 +1087,8 @@ class OmnichannelChatService {
    */
   getWidgetConfig() {
     return {
-      url: this.rocketChatUrl,
-      livechatUrl: `${this.rocketChatUrl}/livechat`,
+      url: this.rocketChatPublicUrl,
+      livechatUrl: `${this.rocketChatPublicUrl}/livechat`,
       departments: Object.entries(this.departments).map(([key, name]) => ({
         id: key,
         name
@@ -1175,14 +1193,10 @@ class OmnichannelChatService {
    */
   async transferToDepartment(roomId, visitorToken, department) {
     try {
-      const response = await axios.post(
+      const response = await this.apiRequest(
+        'post',
         `${this.rocketChatUrl}/api/v1/livechat/room.transfer`,
-        {
-          token: visitorToken,
-          rid: roomId,
-          department: this.departments[department]
-        },
-        { headers: this.getHeaders() }
+        { token: visitorToken, rid: roomId, department: this.departments[department] }
       );
 
       return { success: true, room: response.data.room };
@@ -1203,9 +1217,11 @@ class OmnichannelChatService {
     try {
       const params = department ? { department: this.departments[department] } : {};
       
-      const response = await axios.get(
+      const response = await this.apiRequest(
+        'get',
         `${this.rocketChatUrl}/api/v1/livechat/users/agent`,
-        { params, headers: this.getHeaders() }
+        null,
+        params
       );
 
       return {
@@ -1223,9 +1239,9 @@ class OmnichannelChatService {
    */
   async getQueueStatus() {
     try {
-      const response = await axios.get(
-        `${this.rocketChatUrl}/api/v1/livechat/queue`,
-        { headers: this.getHeaders() }
+      const response = await this.apiRequest(
+        'get',
+        `${this.rocketChatUrl}/api/v1/livechat/queue`
       );
 
       return {
@@ -1253,13 +1269,10 @@ class OmnichannelChatService {
         await this.sendMessage(roomId, visitorToken, `📝 Feedback: ${feedback.rating}/5 - ${feedback.comment || 'No comment'}`);
       }
 
-      const response = await axios.post(
+      const response = await this.apiRequest(
+        'post',
         `${this.rocketChatUrl}/api/v1/livechat/room.close`,
-        {
-          token: visitorToken,
-          rid: roomId
-        },
-        { headers: this.getHeaders() }
+        { token: visitorToken, rid: roomId }
       );
 
       return { success: true };
@@ -1313,14 +1326,10 @@ class OmnichannelChatService {
       // Map internal department to RocketChat department
       const departmentName = this.departments[department] || this.departments.general;
 
-      const response = await axios.post(
+      const response = await this.apiRequest(
+        'post',
         `${this.rocketChatUrl}/api/v1/livechat/room.transfer`,
-        {
-          rid: roomId,
-          token: visitorToken,
-          department: departmentName
-        },
-        { headers: this.getHeaders() }
+        { rid: roomId, token: visitorToken, department: departmentName }
       );
 
       if (response.data.success) {
@@ -1343,14 +1352,11 @@ class OmnichannelChatService {
     try {
       const departmentName = this.departments[department] || this.departments.general;
 
-      const response = await axios.get(
+      const response = await this.apiRequest(
+        'get',
         `${this.rocketChatUrl}/api/v1/livechat/agents`,
-        {
-          headers: this.getHeaders(),
-          params: {
-            count: 100
-          }
-        }
+        null,
+        { count: 100 }
       );
 
       if (!response.data.success) {
@@ -1384,14 +1390,10 @@ class OmnichannelChatService {
   async routeToAgent(roomId, visitorToken, agentId) {
     try {
       // First transfer to department, then assign to specific agent
-      const response = await axios.post(
+      const response = await this.apiRequest(
+        'post',
         `${this.rocketChatUrl}/api/v1/livechat/room.visitor`,
-        {
-          rid: roomId,
-          token: visitorToken,
-          agentId: agentId
-        },
-        { headers: this.getHeaders() }
+        { rid: roomId, token: visitorToken, agentId }
       );
 
       if (response.data.success) {
@@ -1442,6 +1444,86 @@ class OmnichannelChatService {
     } catch (error) {
       console.error('Set priority error:', error.response?.data || error.message);
       return { success: false, error: error.message };
+    }
+  }
+
+  // ============================================================================
+  // WATI-LIKE WHATSAPP ↔ LIVECHAT BRIDGE
+  // ============================================================================
+
+  /**
+   * Ensure a RocketChat livechat room exists for this WhatsApp contact
+   * and forward the incoming message into that room.
+   * Called fire-and-forget from the WhatsApp webhook route.
+   *
+   * @param {string} phone - E.164 phone number e.g. "+91737..."
+   * @param {string} name  - Display name (ProfileName or phone)
+   * @param {string} messageText - The incoming WhatsApp message body
+   * @param {Object|null} patient - Known patient object from userContext (optional)
+   */
+  async syncToLivechat(phone, name, messageText, patient = null) {
+    try {
+      const normPhone = this.normalizeWhatsAppNumber(phone);
+
+      // Build a stable phantom patient record for the visitor
+      // Use actual name + phone so RC Omnichannel shows readable contact info
+      const displayFirst = patient?.name?.split(' ')[0] || name || normPhone;
+      const displayLast  = patient?.name?.split(' ').slice(1).join(' ') || '';
+      // For anonymous WA users: use phone as name so agents know who to call back
+      const visitorName = (displayFirst === normPhone)
+        ? normPhone
+        : `${displayFirst}${displayLast ? ' ' + displayLast : ''} (${normPhone})`;
+      const phantomPatient = {
+        id: `wa-${normPhone.replace(/[^\d]/g, '')}`,
+        firstName: visitorName,
+        lastName: '',
+        email: patient?.email || '',
+        phoneNumber: normPhone
+      };
+
+      // 1. Register visitor (idempotent – RC deduplicates by token)
+      const visitorResult = await this.registerVisitor(phantomPatient);
+      const visitorToken = visitorResult.visitorToken;
+
+      // 2. Store token → phone mapping in Redis for sendToWhatsApp
+      await cache.set(`whatsapp:visitor:${visitorToken}`, { phone: normPhone }, 86400);
+
+      // 3. Create/get livechat room
+      const roomResult = await this.createOrGetRoom(visitorToken, 'general');
+      if (!roomResult.success) {
+        console.error('❌ [syncToLivechat] Failed to get/create room:', roomResult.error);
+        return { success: false };
+      }
+      const roomId = roomResult.room._id;
+
+      // 4. Send customer message into the livechat room
+      await this.sendMessage(roomId, visitorToken, messageText);
+
+      console.log(`✅ [syncToLivechat] Room ${roomId} synced for ${normPhone}`);
+      return { success: true, roomId, visitorToken };
+    } catch (err) {
+      console.error('❌ [syncToLivechat] Error:', err.message);
+      return { success: false, error: err.message };
+    }
+  }
+
+  /**
+   * List open RC livechat rooms (for inbox API)
+   * @param {Object} opts - { count, offset, open }
+   */
+  async getLivechatRooms(opts = {}) {
+    try {
+      const { count = 50, offset = 0, open = true } = opts;
+      const response = await this.apiRequest(
+        'get',
+        `${this.rocketChatUrl}/api/v1/livechat/rooms`,
+        null,
+        { count, offset, open }
+      );
+      return response.data.rooms || [];
+    } catch (err) {
+      console.error('❌ [getLivechatRooms] Error:', err.message);
+      return [];
     }
   }
 }

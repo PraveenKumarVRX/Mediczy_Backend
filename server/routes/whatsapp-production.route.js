@@ -15,6 +15,37 @@ import sharedPool from '../db/pgPool.js';
 const router = express.Router();
 const SIB_URL = process.env.SIB_URL || 'http://localhost:8001';
 
+/**
+ * Upsert a WhatsApp contact into whatsapp_contacts on every inbound message.
+ * Creates on first contact; updates name, patient link, and last_contact_at on repeat.
+ */
+async function upsertWhatsAppContact({ phone, profileName, userContext }) {
+  try {
+    const isKnownPatient = !!userContext?.isKnownUser;
+    const patientId = userContext?.user?.id || null;
+    const name = (userContext?.isKnownUser && userContext?.user?.name)
+      ? userContext.user.name
+      : (profileName || null);
+
+    await sharedPool.query(
+      `INSERT INTO whatsapp_contacts
+         (phone, name, profile_name, is_known_patient, patient_id, message_count, first_contact_at, last_contact_at, updated_at)
+       VALUES ($1, $2, $3, $4, $5, 1, NOW(), NOW(), NOW())
+       ON CONFLICT (phone) DO UPDATE SET
+         name             = COALESCE(EXCLUDED.name, whatsapp_contacts.name),
+         profile_name     = COALESCE(EXCLUDED.profile_name, whatsapp_contacts.profile_name),
+         is_known_patient = EXCLUDED.is_known_patient OR whatsapp_contacts.is_known_patient,
+         patient_id       = COALESCE(EXCLUDED.patient_id, whatsapp_contacts.patient_id),
+         message_count    = whatsapp_contacts.message_count + 1,
+         last_contact_at  = NOW(),
+         updated_at       = NOW()`,
+      [phone, name, profileName || null, isKnownPatient, patientId]
+    );
+  } catch (err) {
+    logger.warn('⚠️ [whatsapp_contacts] upsert failed (non-fatal):', err.message);
+  }
+}
+
 const sanitizeReply = (text) => {
   const normalized = String(text || '').trim();
   const lower = normalized.toLowerCase();
@@ -990,6 +1021,9 @@ router.post('/webhook', (req, res, next) => {
       hasAppointments: userContext.appointments?.recent?.length > 0,
       hasPrescriptions: userContext.prescriptions?.recent?.length > 0
     });
+
+    // Persist contact to whatsapp_contacts (fire-and-forget, non-blocking)
+    upsertWhatsAppContact({ phone: phoneNumber, profileName: ProfileName, userContext });
     
     // Import chat rooms storage from chatStorage.js (Redis-backed)
     const { chatRooms, messages } = await import('../utils/chatStorage.js');
@@ -1045,26 +1079,26 @@ router.post('/webhook', (req, res, next) => {
     });
     
     // Post incoming WhatsApp message to RocketChat #general
-    // Try using rocketChatService first (more reliable)
+    // WATI-LIKE OMNICHANNEL: Create/get a livechat room per WhatsApp contact so agents
+    // can reply from RC Omnichannel and the reply is routed back to WhatsApp.
+    omnichannelChatService.syncToLivechat(
+      phoneNumber,
+      customerName,
+      Body || '[Media Message]',
+      userContext.isKnownUser ? userContext.user : null
+    ).then(r => {
+      logger.info('✅ WhatsApp message synced to RC livechat', { roomId: r?.roomId });
+    }).catch(err => {
+      logger.warn('⚠️ Livechat sync failed (non-fatal):', err.message);
+    });
+
+    // Also keep posting to #general for the team chat room visibility
     const rcMessage = `📱 **WhatsApp Message from ${userContext.isKnownUser ? userContext.user.name + ' (Patient ID: ' + userContext.user.id + ')' : customerName}** (${phoneNumber})\n\n${Body || '[Media Message]'}`;
     
     rocketChatService.sendMessage('GENERAL', rcMessage).then(() => {
       logger.info('✅ WhatsApp message posted to RocketChat #general via rocketChatService');
     }).catch(rcError => {
-      logger.error('⚠️ rocketChatService failed, trying omnichannelChatService:', rcError.message);
-      // Fallback to omnichannel service
-      omnichannelChatService.sendToRocketChatWebhook({
-        from: phoneNumber,
-        text: Body || '[Media Message]',
-        userName: userContext.isKnownUser 
-          ? `${userContext.user.name} (Patient ID: ${userContext.user.id})` 
-          : customerName,
-        timestamp: new Date().toISOString()
-      }).then(() => {
-        logger.info('✅ WhatsApp message posted to RocketChat #general via omnichannel');
-      }).catch(omnichannelError => {
-        logger.error('❌ Failed to post to RocketChat via both methods:', omnichannelError.message);
-      });
+      logger.warn('⚠️ rocketChatService #general post failed (non-fatal):', rcError.message);
     });
     
     // Emit Socket.IO event to notify team members (if Socket.IO is available)
