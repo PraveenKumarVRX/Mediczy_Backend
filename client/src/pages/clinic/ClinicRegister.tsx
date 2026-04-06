@@ -210,6 +210,8 @@ export default function ClinicRegister() {
   const [isDragging, setIsDragging] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const [uploadedFiles, setUploadedFiles] = useState<UploadedFile[]>([]);
+  // Bot protection: record when the form page was first loaded
+  const formArrivalTime = useRef<number>(Date.now());
 
   const [form, setForm] = useState({
     name: "", email: "", password: "", confirmPassword: "",
@@ -336,6 +338,9 @@ export default function ClinicRegister() {
       const fd = new FormData();
       Object.entries(form).forEach(([k, v]) => fd.append(k, v));
       uploadedFiles.forEach((u, i) => { fd.append("documents", u.file); fd.append(`docType_${i}`, u.docType); });
+      // Bot protection fields
+      fd.append("_hp", "");                                          // honeypot — always empty
+      fd.append("_fat", String(formArrivalTime.current));            // form arrival time
       await api.post("/clinic/register", fd, { headers: { "Content-Type": "multipart/form-data" }, skipAuth: true } as any);
       setStep(5);
     } catch (e: any) {
@@ -501,6 +506,11 @@ export default function ClinicRegister() {
                       </button>
                     </div>
                   </DField>
+                </div>
+
+                {/* Honeypot: visually hidden, never filled by real users */}
+                <div aria-hidden="true" style={{ position: "absolute", opacity: 0, height: 0, width: 0, overflow: "hidden", pointerEvents: "none" }}>
+                  <input type="text" name="_hp" autoComplete="off" tabIndex={-1} defaultValue="" />
                 </div>
 
                 <PrimaryBtn className="mt-7" onClick={() => { setError(""); if (validateStep0()) { setStep(1); setEmailOtpSent(false); setEmailOtp(""); } }}>

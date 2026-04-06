@@ -5,6 +5,12 @@ import multer from 'multer';
 import { Sequelize } from 'sequelize';
 import nodemailer from 'nodemailer';
 import twilio from 'twilio';
+import { execFile } from 'child_process';
+import { writeFile, unlink } from 'fs/promises';
+import { tmpdir } from 'os';
+import path from 'path';
+import { randomBytes } from 'crypto';
+import rateLimit from 'express-rate-limit';
 import { JWT_CONFIG } from '../../config/auth.config.js';
 import { authLimiter } from '../../middleware/rateLimiter.middleware.js';
 import { auditLoginAttempt } from '../../middleware/audit.middleware.js';
@@ -13,12 +19,70 @@ import OTP from '../../models/otp.model.intelligent.js';
 
 const upload = multer({
   storage: multer.memoryStorage(),
-  limits: { fileSize: 10 * 1024 * 1024 },
+  limits: { fileSize: 10 * 1024 * 1024, files: 5 },
   fileFilter: (_, file, cb) => {
     const allowed = ['application/pdf', 'image/jpeg', 'image/jpg', 'image/png', 'image/webp'];
-    cb(null, allowed.includes(file.mimetype));
+    // Reject disallowed MIME types
+    if (!allowed.includes(file.mimetype)) return cb(new Error('Invalid file type. Only PDF, JPEG, PNG, WebP allowed.'));
+    // Block double-extension attacks in filename
+    const dangerousExt = /\.(php|js|exe|sh|bat|cmd|py|rb|pl|asp|aspx|jsp|cgi|msi|dll|so|elf)$/i;
+    if (dangerousExt.test(file.originalname)) return cb(new Error('Suspicious file name rejected.'));
+    cb(null, true);
   }
 });
+
+// ── Strict rate limiter for registration endpoint (3 attempts per IP per hour) ──
+const registerLimiter = rateLimit({
+  windowMs: 60 * 60 * 1000,
+  max: 3,
+  keyGenerator: req => req.headers['x-forwarded-for']?.split(',')[0]?.trim() || req.ip || '0.0.0.0',
+  handler: (req, res) => res.status(429).json({ success: false, message: 'Too many registration attempts. Please try again in an hour.' }),
+  skipSuccessfulRequests: false
+});
+
+// ── Magic bytes validator ─────────────────────────────────────────────────────
+function validateMagicBytes(buffer, mimetype) {
+  if (!buffer || buffer.length < 12) return false;
+  const b = buffer;
+  switch (mimetype) {
+    case 'application/pdf':
+      return b[0] === 0x25 && b[1] === 0x50 && b[2] === 0x44 && b[3] === 0x46;
+    case 'image/jpeg':
+    case 'image/jpg':
+      return b[0] === 0xFF && b[1] === 0xD8 && b[2] === 0xFF;
+    case 'image/png':
+      return b[0] === 0x89 && b[1] === 0x50 && b[2] === 0x4E && b[3] === 0x47 &&
+             b[4] === 0x0D && b[5] === 0x0A && b[6] === 0x1A && b[7] === 0x0A;
+    case 'image/webp':
+      return b[0] === 0x52 && b[1] === 0x49 && b[2] === 0x46 && b[3] === 0x46 &&
+             b[8] === 0x57 && b[9] === 0x45 && b[10] === 0x42 && b[11] === 0x50;
+    default:
+      return false;
+  }
+}
+
+// ── ClamAV virus scanner ──────────────────────────────────────────────────────
+async function scanWithClamAV(buffer, filename) {
+  const tmpPath = path.join(tmpdir(), `mediczy_scan_${randomBytes(12).toString('hex')}`);
+  try {
+    await writeFile(tmpPath, buffer);
+    return await new Promise(resolve => {
+      execFile('/usr/bin/clamscan', ['--no-summary', '--stdout', tmpPath], { timeout: 30000 }, (err, stdout) => {
+        if (err?.code === 1) {
+          // exit code 1 = virus/malware found
+          const line = stdout?.split('\n').find(l => l.includes('FOUND')) || 'Malware detected';
+          resolve({ clean: false, threat: line.trim() });
+        } else {
+          // exit code 0 = clean, exit code 2 = error (treat as clean but log)
+          if (err?.code === 2) console.warn(`ClamAV scan error for ${filename}:`, err.message);
+          resolve({ clean: true });
+        }
+      });
+    });
+  } finally {
+    unlink(tmpPath).catch(() => {});
+  }
+}
 
 const router = express.Router();
 const JWT_SECRET = JWT_CONFIG.SECRET;
@@ -197,7 +261,7 @@ router.post('/logout', (req, res) => {
  * POST /api/clinic/register
  * Register a new clinic
  */
-router.post('/register', authLimiter, upload.array('documents', 5), async (req, res) => {
+router.post('/register', registerLimiter, upload.array('documents', 5), async (req, res) => {
   try {
     const {
       name,
@@ -209,8 +273,26 @@ router.post('/register', authLimiter, upload.array('documents', 5), async (req, 
       address,
       city,
       state,
-      registrationNumber
+      registrationNumber,
+      _hp,          // honeypot — must be empty
+      _fat          // form-arrival-time (ms since epoch) — must be > 4s ago
     } = req.body;
+
+    // ── Bot protection: honeypot ─────────────────────────────────────────────
+    if (_hp && _hp.trim().length > 0) {
+      console.warn(`Honeypot triggered from IP ${req.ip} — form submission blocked`);
+      // Return a convincing success to confuse bots
+      return res.status(201).json({ success: true, message: 'Application submitted.' });
+    }
+
+    // ── Bot protection: form timing (< 4 seconds = bot) ─────────────────────
+    if (_fat) {
+      const elapsed = Date.now() - parseInt(_fat, 10);
+      if (elapsed < 4000) {
+        console.warn(`Timing check failed from IP ${req.ip}: elapsed ${elapsed}ms`);
+        return res.status(201).json({ success: true, message: 'Application submitted.' });
+      }
+    }
 
     if (!name || !email || !password || !phone || !city) {
       return res.status(400).json({ success: false, message: 'Name, email, password, phone, and city are required' });
@@ -231,6 +313,24 @@ router.post('/register', authLimiter, upload.array('documents', 5), async (req, 
     const registrationDocs = [];
     if (req.files?.length > 0) {
       for (const file of req.files) {
+        // ── Magic bytes validation (prevent MIME spoofing) ───────────────────
+        if (!validateMagicBytes(file.buffer, file.mimetype)) {
+          return res.status(400).json({
+            success: false,
+            message: `File "${file.originalname}" failed content validation. Ensure it is a genuine PDF or image.`
+          });
+        }
+
+        // ── ClamAV virus scan ────────────────────────────────────────────────
+        const scanResult = await scanWithClamAV(file.buffer, file.originalname);
+        if (!scanResult.clean) {
+          console.error(`Malware detected in upload from IP ${req.ip}: ${scanResult.threat}`);
+          return res.status(400).json({
+            success: false,
+            message: `File "${file.originalname}" was rejected by our virus scanner. Please upload a clean file.`
+          });
+        }
+
         try {
           const { uploadToMinio } = await import('../../services/minio-upload.service.js');
           const result = await uploadToMinio({ buffer: file.buffer, originalName: file.originalname, mimeType: file.mimetype, keyPrefix: 'registrations/clinic' });
